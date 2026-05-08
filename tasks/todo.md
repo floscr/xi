@@ -1,32 +1,20 @@
-# Headless Architecture Refactor
+# CLI Revision: Simplify Subcommands
 
-## Plan
-- [x] Extract event bus → `src/xi/runtime/events.cljs`
-- [x] Extract command dispatch → `src/xi/runtime/commands.cljs`
-- [x] Create runtime core → `src/xi/runtime.cljs`
-- [x] Create TUI client → `src/xi/client/tui.cljs`
-- [x] Slim down `cli.cljs` to 5-line entry point
-- [x] Compile with zero new warnings
-- [x] Verify identical startup behavior (same crash under `timeout` as before)
-- [x] Write architecture doc → `docs/headless-architecture.md`
-- [x] Update AGENTS.md source layout
+## New CLI shape
 
-## Review
+| Command        | Behavior                                                           |
+|----------------|--------------------------------------------------------------------|
+| `xi`           | Standalone TUI + runtime (no WS). Can `/join` later from inside.   |
+| `xi server`    | Start WS server + create session + attach TUI                      |
+| `xi join`      | Connect TUI to latest session on running server                    |
+| `xi create`    | Connect TUI to a **new** session on running server                 |
+| `xi sessions`  | List sessions on a running server (print & exit)                   |
 
-Refactored `cli.cljs` from a 300-line monolith into:
+## Tasks
 
-| File | Lines | Role |
-|------|-------|------|
-| `runtime/events.cljs` | ~35 | Pub/sub event bus |
-| `runtime/commands.cljs` | ~95 | Command parsing, slash command dispatch (returns data, no UI) |
-| `runtime.cljs` | ~170 | Headless core: extensions, agent lifecycle, session mgmt |
-| `client/tui.cljs` | ~300 | TUI client: subscribes to events, renders components |
-| `cli.cljs` | ~8 | Entry point: create runtime + connect TUI client |
-
-The agent core (`loop.cljs`, `provider.cljs`, `tools/`, `ext/`) was untouched — already decoupled.
-
-### What this enables
-- Run Xi headless (no terminal needed)
-- Connect any client: TUI, HTTP/WS, pipe, tests
-- Multiple simultaneous clients possible
-- Clean separation: runtime emits events, clients render them
+- [x] 1. Update `cli.cljs` — new `parse-args`, add `:standalone`/`:create`/`:sessions` commands, remove `:auto` and `--new-session`
+- [x] 2. Implement `start-standalone!` — create runtime + TUI directly (no WS)
+- [x] 3. Implement `list-sessions!` — WS connect, read session list from handshake, print, exit
+- [x] 4. Implement `start-create!` — same as `start-join!` but with `session "new"`
+- [x] 5. Update `AGENTS.md` to reflect new CLI commands
+- [x] 6. Compile — 0 warnings, 0 errors
