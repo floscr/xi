@@ -24,8 +24,33 @@
       (js->clj (js/JSON.parse content) :keywordize-keys true))
     (catch :default _e {})))
 
+(defn- format-tool-args
+  "Format tool arguments for display in the tool header."
+  [name arguments]
+  (case name
+    "Bash"  (get arguments "command" (get arguments :command ""))
+    "Read"  (get arguments "file_path" (get arguments :file_path ""))
+    "Write" (get arguments "file_path" (get arguments :file_path ""))
+    "Edit"  (get arguments "file_path" (get arguments :file_path ""))
+    "Grep"  (str (get arguments "pattern" (get arguments :pattern ""))
+                 (when-let [g (or (get arguments "glob") (get arguments :glob))]
+                   (str " --glob " g)))
+    "Glob"  (get arguments "pattern" (get arguments :pattern ""))
+    (let [s (pr-str arguments)]
+      (when (> (count s) 2) s))))
+
+(defn- truncate-output
+  "Truncate tool output to max lines."
+  [text max-lines]
+  (let [lines (str/split-lines text)]
+    (if (<= (count lines) max-lines)
+      text
+      (str (str/join "\n" (take max-lines lines))
+           "\n" (render/fg :dim (str "... (" (- (count lines) max-lines) " more lines)"))))))
+
 (defn- run-agent-turn [sess prompt model]
   (let [text-started (atom false)
+        tool-start-time (atom nil)
         cli-session-id (:cli-session-id sess)]
     (render/start-spinner "thinking...")
     (-> (loop/run-turn
@@ -38,17 +63,20 @@
                                (reset! text-started true))
                              (js/process.stdout.write text))
                   :on-thinking (fn [_text] nil)
-                  :on-tool-start (fn [{:keys [name]}]
+                  :on-tool-start (fn [{:keys [name arguments]}]
                                    (render/stop-spinner)
-                                   (println)
-                                   (println (str "  " (render/fg :accent "→") " " (render/fg :bold name)))
-                                   (render/start-spinner (str name "...")))
-                  :on-tool-result (fn [{:keys [name is-error]}]
-                                    (render/stop-spinner)
-                                    (let [status (if is-error
-                                                  (render/fg :error "ERR")
-                                                  (render/fg :success "OK"))]
-                                      (println (str "  [" status " " (render/fg :dim (or name "tool")) "]"))))
+                                   (reset! text-started false)
+                                   (let [args-str (format-tool-args name arguments)]
+                                     (reset! tool-start-time
+                                             (render/tool-header name args-str))))
+                  :on-tool-result (fn [{:keys [content is-error]}]
+                                    (when (and (string? content) (seq content))
+                                      (render/tool-output-line
+                                       (truncate-output content 20)))
+                                    (render/tool-footer
+                                     (or @tool-start-time (js/Date.now))
+                                     {:is-error is-error})
+                                    (reset! tool-start-time nil))
                   :on-error (fn [err]
                               (render/stop-spinner)
                               (println (str (render/fg :error "[Rate limit]") " "

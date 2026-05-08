@@ -145,7 +145,9 @@
                                    "toolCall"
                                    (when (:on-tool-start callbacks)
                                      ((:on-tool-start callbacks)
-                                      {:id (:id block) :name (:name block)}))
+                                      {:id (:id block)
+                                       :name (:name block)
+                                       :arguments (:arguments block)}))
 
                                    nil)))))
                          (swap! state (fn [s]
@@ -158,7 +160,7 @@
 
                        ;; User message — tool results from CLI's own execution
                        "user"
-                       (let [content (:content msg)]
+                       (let [content (get-in msg [:message :content])]
                          (when (and (sequential? content) (:on-tool-result callbacks))
                            (doseq [block content]
                              (when (= "tool_result" (:type block))
