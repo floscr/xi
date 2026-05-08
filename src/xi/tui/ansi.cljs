@@ -82,10 +82,14 @@
     (str line (apply str (repeat padding " ")))))
 
 (defn apply-bg-to-line
-  "Apply background color function to a full-width line."
-  [line width bg-fn]
+  "Apply background color to a full-width line.
+   bg-code is the ANSI escape sequence to set the background (e.g. \"\\033[48;5;236m\").
+   Handles internal resets by re-applying the bg after each \\033[0m."
+  [line width bg-code]
   (let [padded (pad-to-width line width)]
-    (bg-fn padded)))
+    (str bg-code
+         (str/replace padded (str ESC "0m") (str ESC "0m" bg-code))
+         ESC "0m")))
 
 (defn wrap-text
   "Word-wrap text to fit within max-width columns.

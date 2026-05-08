@@ -8,7 +8,7 @@
 
 (defn make-text
   "Create a text component with optional padding and background.
-   opts: {:padding-x 1 :padding-y 0 :bg-fn nil}"
+   opts: {:padding-x 1 :padding-y 0 :bg-code nil}"
   ([text] (make-text text {}))
   ([text opts]
    (let [state (atom {:text text
@@ -17,7 +17,7 @@
                       :cached-lines nil})
          padding-x (or (:padding-x opts) 0)
          padding-y (or (:padding-y opts) 0)
-         bg-fn (:bg-fn opts)]
+         bg-code (:bg-code opts)]
      {:type :text
       :set-text (fn [t]
                   (swap! state assoc :text t :cached-text nil :cached-width nil :cached-lines nil)
@@ -35,12 +35,12 @@
                                     (ansi/wrap-text text content-width))
                           content-lines (mapv (fn [line]
                                                (let [padded (str left-pad line)]
-                                                 (if bg-fn
-                                                   (ansi/apply-bg-to-line padded width bg-fn)
+                                                 (if bg-code
+                                                   (ansi/apply-bg-to-line padded width bg-code)
                                                    (ansi/pad-to-width padded width))))
                                              wrapped)
-                          empty-line (if bg-fn
-                                      (ansi/apply-bg-to-line "" width bg-fn)
+                          empty-line (if bg-code
+                                      (ansi/apply-bg-to-line "" width bg-code)
                                       (apply str (repeat width " ")))
                           pad-lines (vec (repeat padding-y empty-line))
                           result (into [] (concat pad-lines content-lines pad-lines))]
@@ -68,7 +68,7 @@
    (let [children (atom [])
          padding-x (or (:padding-x opts) 1)
          padding-y (or (:padding-y opts) 1)
-         bg-fn (:bg-fn opts)]
+         bg-code (:bg-code opts)]
      {:type :box
       :children children
       :add-child (fn [c] (swap! children conj c) (tui/request-render!))
@@ -86,8 +86,8 @@
                                          (mapcat (fn [c] (mapv #(str left-pad %) ((:render c) content-width))))
                                          @children)
                         apply-line (fn [line]
-                                     (if bg-fn
-                                       (ansi/apply-bg-to-line line width bg-fn)
+                                     (if bg-code
+                                       (ansi/apply-bg-to-line line width bg-code)
                                        (ansi/pad-to-width line width)))
                         empty-line (apply-line "")
                         pad-lines (vec (repeat padding-y empty-line))

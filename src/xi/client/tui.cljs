@@ -67,8 +67,8 @@
 (defn- make-tool-component
   "Create a tool execution display component."
   [tool-name args-summary]
-  (let [bg-fn (fn [text] (str "\033[48;5;236m" text "\033[0m"))
-        box (comp/make-box {:padding-x 1 :padding-y 0 :bg-fn bg-fn})
+  (let [bg-code "\033[48;5;236m"
+        box (comp/make-box {:padding-x 1 :padding-y 0 :bg-code bg-code})
         short-args (when (seq args-summary)
                      (truncate (first (str/split-lines args-summary)) 120))
         header-text (comp/make-text
