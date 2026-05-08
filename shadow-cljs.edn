@@ -1,0 +1,7 @@
+{:deps true
+ :builds
+ {:main
+  {:target :node-script
+   :main xi.cli/main
+   :output-to "target/main.js"
+   :compiler-options {:optimizations :simple}}}}
