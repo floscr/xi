@@ -127,7 +127,7 @@
 
 (defn- run-agent-turn
   "Run one agent turn. Adds components to chat container as events stream in."
-  [chat-container sess loader prompt model]
+  [chat-container sess loader prompt model abort-signal]
   (let [text-started (atom false)
         current-md (atom nil)
         current-tool (atom nil)
@@ -141,6 +141,7 @@
     (-> (loop/run-turn
          (cond-> {:model model
                   :prompt prompt
+                  :abort-signal abort-signal
                   :on-text (fn [text]
                              (when-not @text-started
                                ;; Remove loader, start markdown component
@@ -357,6 +358,7 @@
         loader (comp/make-loader "thinking...")
 
         busy (atom false)
+        abort-signal (atom false)
 
         ;; Editor at the bottom
         editor-comp (editor/make-editor
@@ -375,9 +377,13 @@
                                          (tui/render-now!)
                                          ;; Run agent turn
                                          (do (reset! busy true)
-                                             (-> (run-agent-turn chat-container @sess loader text model)
+                                             (reset! abort-signal false)
+                                             (-> (run-agent-turn chat-container @sess loader text model abort-signal)
                                                  (.then (fn [result]
                                                           (reset! busy false)
+                                                          (when (:aborted result)
+                                                            (add-status-message! chat-container
+                                                                                 (ansi/fg :dim "Interrupted.")))
                                                           (when-let [sid (:session-id result)]
                                                             (swap! sess assoc :cli-session-id sid)
                                                             (when-not (:name @sess)
@@ -391,6 +397,13 @@
                                                            (add-status-message! chat-container
                                                                                 (str (ansi/fg :error "[Error]") " " (.-message err)))
                                                            (tui/render-now!)))))))))
+
+                      :on-escape (fn []
+                                   (when @busy
+                                     (reset! abort-signal true)
+                                     ((:stop loader))
+                                     ((:remove-child chat-container) loader)
+                                     (tui/render-now!)))
 
                       :on-interrupt (fn []
                                       (tui/stop-tui!)

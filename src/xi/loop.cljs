@@ -25,6 +25,7 @@
        {:model (:model opts)
         :prompt (:prompt opts)
         :system (:system opts)
+        :abort-signal (:abort-signal opts)
         :on-text (:on-text opts)
         :on-thinking (:on-thinking opts)
         :on-tool-start (:on-tool-start opts)

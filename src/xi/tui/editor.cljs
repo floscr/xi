@@ -78,6 +78,7 @@
         prompt (or (:prompt opts) "xi> ")
         on-submit (:on-submit opts)
         on-interrupt (:on-interrupt opts)
+        on-escape (:on-escape opts)
 
         get-text (fn []
                    (str/join "\n" (:lines @state)))
@@ -231,6 +232,10 @@
                          ;; Ctrl+D on empty — exit
                          (and (ctrl? data "D") (empty? (str/trim (get-text))))
                          (when on-interrupt (on-interrupt))
+
+                         ;; Escape — notify parent
+                         (is-escape? data)
+                         (when on-escape (on-escape))
 
                          ;; Enter — submit (Shift+Enter or Alt+Enter for newline not detected in raw mode easily)
                          (is-enter? data)

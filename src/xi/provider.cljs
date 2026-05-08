@@ -289,6 +289,7 @@
                      (unchecked-set "mcpServers"
                                     (js-obj MCP_SERVER_NAME mcp-server)))
 
+        abort-signal (:abort-signal opts)
         ^js sdk-query (sdk/query #js {:prompt (:prompt opts)
                                       :options query-opts})]
 
@@ -296,11 +297,19 @@
      (fn [resolve _reject]
        (let [consume
              (fn consume []
-               (-> (.next sdk-query)
-                   (.then
-                    (fn [^js result]
-                      (if (.-done result)
-                        (resolve @state)
+               ;; Check abort signal before each iteration
+               (if (and abort-signal @abort-signal)
+                 (do
+                   ;; Signal the async iterator to stop
+                   (when (.-return sdk-query)
+                     (.return sdk-query))
+                   (swap! state assoc :aborted true)
+                   (resolve @state))
+                 (-> (.next sdk-query)
+                     (.then
+                      (fn [^js result]
+                        (if (.-done result)
+                          (resolve @state)
                         (let [^js message (.-value result)
                               msg-type (.-type message)]
                           (case msg-type
@@ -351,7 +360,7 @@
                       (when (:on-error callbacks)
                         ((:on-error callbacks)
                          {:type "error" :message (.-message err)}))
-                      (resolve @state)))))]
+                      (resolve @state))))))]
          (consume))))))
 
 (defn response->assistant-message [state]
