@@ -148,6 +148,11 @@
     ;; Enable bracketed paste mode
     (write! "\033[?2004h")
 
+    ;; Enable kitty keyboard protocol (flag 1: disambiguate escape codes)
+    ;; Unmodified keys keep legacy encoding (Enter→\r, Tab→\t, etc.)
+    ;; Modified keys (Shift+Enter, etc.) get CSI u sequences
+    (write! "\033[>1u")
+
     ;; Hide cursor during rendering
     (hide-cursor!)
 
@@ -167,6 +172,9 @@
   (let [{:keys [on-input on-resize was-raw]} @terminal
         stdin js/process.stdin
         stdout js/process.stdout]
+
+    ;; Disable kitty keyboard protocol
+    (write! "\033[<u")
 
     ;; Disable bracketed paste mode
     (write! "\033[?2004l")

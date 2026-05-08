@@ -13,7 +13,13 @@
 (def ^:private BS (str (char 8)))
 
 (defn- ctrl? [data ch]
-  (= data (str (char (- (.charCodeAt ch 0) 64)))))
+  (let [legacy-code (- (.charCodeAt ch 0) 64)
+        codepoint (.charCodeAt (.toLowerCase ch) 0)]
+    (or
+     ;; Legacy: Ctrl+B → \x02, etc.
+     (= data (str (char legacy-code)))
+     ;; Kitty CSI u: Ctrl+B → \x1b[98;5u (modifier 5 = Ctrl)
+     (= data (str (char 27) "[" codepoint ";5u")))))
 
 (defn- is-enter? [data]
   (or (= data "\r") (= data "\n")))
@@ -22,7 +28,8 @@
   (or (= data DEL) (= data BS)))
 
 (defn- is-escape? [data]
-  (= data ESC))
+  (or (= data ESC)
+      (= data (str ESC "[27u"))))
 
 (defn- is-arrow-up? [data]
   (= data (str ESC "[A")))
@@ -56,6 +63,75 @@
     (and (= (count data) 1)
          (>= code 32)
          (not= code 127))))
+
+(defn- is-shift-enter? [data]
+  (or (= data (str ESC "[13;2u"))      ;; kitty keyboard protocol
+      (= data (str ESC "OM"))))
+
+(defn- is-alt-enter? [data]
+  (or (= data (str ESC "\r"))
+      (= data (str ESC "\n"))
+      (= data (str ESC "[13;3u"))))
+
+(defn- is-alt-b? [data]
+  (or (= data (str ESC "b"))
+      (= data (str ESC "[98;3u"))))
+
+(defn- is-alt-f? [data]
+  (or (= data (str ESC "f"))
+      (= data (str ESC "[102;3u"))))
+
+(defn- is-alt-d? [data]
+  (or (= data (str ESC "d"))
+      (= data (str ESC "[100;3u"))))
+
+(defn- is-alt-backspace? [data]
+  (or (= data (str ESC DEL))
+      (= data (str ESC "[127;3u"))))
+
+;; ── Word Boundary Helpers ─────────────────────────────────────────────────────
+
+(defn- word-char? [ch]
+  (boolean (re-matches #"[a-zA-Z0-9_]" (str ch))))
+
+(defn- find-word-start-backward
+  "From position pos in line, find the start of the previous word (emacs M-b)."
+  [line pos]
+  (if (<= pos 0)
+    0
+    (let [;; Phase 1: skip non-word chars backwards
+          i (loop [i (dec pos)]
+              (cond
+                (neg? i) -1
+                (word-char? (.charAt line i)) i
+                :else (recur (dec i))))]
+      (if (neg? i)
+        0
+        ;; Phase 2: skip word chars backwards
+        (loop [j i]
+          (if (and (pos? j) (word-char? (.charAt line (dec j))))
+            (recur (dec j))
+            j))))))
+
+(defn- find-word-end-forward
+  "From position pos in line, find the end of the next word (emacs M-f)."
+  [line pos]
+  (let [len (count line)]
+    (if (>= pos len)
+      len
+      (let [;; Phase 1: skip non-word chars forward
+            i (loop [i pos]
+                (cond
+                  (>= i len) len
+                  (word-char? (.charAt line i)) i
+                  :else (recur (inc i))))]
+        (if (>= i len)
+          len
+          ;; Phase 2: skip word chars forward
+          (loop [j i]
+            (if (and (< j len) (word-char? (.charAt line j)))
+              (recur (inc j))
+              j)))))))
 
 ;; ── Editor Component ──────────────────────────────────────────────────────────
 
@@ -213,6 +289,121 @@
                                    (do (set-text (nth history new-idx))
                                        (swap! state assoc :history-index new-idx))))))))
 
+        delete-word-back (fn []
+                           (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                          (let [line (nth lines cursor-line)]
+                                            (if (pos? cursor-col)
+                                              (let [target (find-word-start-backward line cursor-col)
+                                                    new-line (str (subs line 0 target) (subs line cursor-col))]
+                                                (-> s
+                                                    (assoc-in [:lines cursor-line] new-line)
+                                                    (assoc :cursor-col target)
+                                                    (assoc :cached-width nil :cached-lines nil)))
+                                              ;; At start of line — merge with previous (like backspace)
+                                              (if (pos? cursor-line)
+                                                (let [prev-line (nth lines (dec cursor-line))
+                                                      curr-line (nth lines cursor-line)
+                                                      merged (str prev-line curr-line)
+                                                      new-lines (vec (concat
+                                                                      (subvec lines 0 (dec cursor-line))
+                                                                      [merged]
+                                                                      (subvec lines (inc cursor-line))))]
+                                                  (-> s
+                                                      (assoc :lines new-lines)
+                                                      (assoc :cursor-line (dec cursor-line))
+                                                      (assoc :cursor-col (count prev-line))
+                                                      (assoc :cached-width nil :cached-lines nil)))
+                                                s)))))
+                           (tui/request-render!))
+
+        delete-word-forward (fn []
+                              (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                             (let [line (nth lines cursor-line)
+                                                   len (count line)]
+                                               (if (< cursor-col len)
+                                                 (let [target (find-word-end-forward line cursor-col)
+                                                       new-line (str (subs line 0 cursor-col) (subs line target))]
+                                                   (-> s
+                                                       (assoc-in [:lines cursor-line] new-line)
+                                                       (assoc :cached-width nil :cached-lines nil)))
+                                                 ;; At end of line — merge with next
+                                                 (if (< cursor-line (dec (count lines)))
+                                                   (let [next-line (nth lines (inc cursor-line))
+                                                         merged (str line next-line)
+                                                         new-lines (vec (concat
+                                                                         (subvec lines 0 cursor-line)
+                                                                         [merged]
+                                                                         (subvec lines (+ cursor-line 2))))]
+                                                     (-> s
+                                                         (assoc :lines new-lines)
+                                                         (assoc :cached-width nil :cached-lines nil)))
+                                                   s)))))
+                              (tui/request-render!))
+
+        move-word-back (fn []
+                         (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                        (if (pos? cursor-col)
+                                          (let [line (nth lines cursor-line)
+                                                target (find-word-start-backward line cursor-col)]
+                                            (-> s
+                                                (assoc :cursor-col target)
+                                                (assoc :cached-width nil :cached-lines nil)))
+                                          ;; At start of line — jump to end of previous line
+                                          (if (pos? cursor-line)
+                                            (let [prev-line (nth lines (dec cursor-line))]
+                                              (-> s
+                                                  (assoc :cursor-line (dec cursor-line))
+                                                  (assoc :cursor-col (count prev-line))
+                                                  (assoc :cached-width nil :cached-lines nil)))
+                                            s))))
+                         (tui/request-render!))
+
+        move-word-forward (fn []
+                            (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                           (let [line (nth lines cursor-line)
+                                                 len (count line)]
+                                             (if (< cursor-col len)
+                                               (let [target (find-word-end-forward line cursor-col)]
+                                                 (-> s
+                                                     (assoc :cursor-col target)
+                                                     (assoc :cached-width nil :cached-lines nil)))
+                                               ;; At end of line — jump to start of next line
+                                               (if (< cursor-line (dec (count lines)))
+                                                 (-> s
+                                                     (assoc :cursor-line (inc cursor-line))
+                                                     (assoc :cursor-col 0)
+                                                     (assoc :cached-width nil :cached-lines nil))
+                                                 s)))))
+                            (tui/request-render!))
+
+        transpose-chars (fn []
+                          (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                         (let [line (nth lines cursor-line)
+                                               len (count line)]
+                                           (cond
+                                             ;; At end of line with 2+ chars — swap last two
+                                             (and (= cursor-col len) (>= len 2))
+                                             (let [new-line (str (subs line 0 (- len 2))
+                                                                (str (.charAt line (dec len))
+                                                                     (.charAt line (- len 2))))]
+                                               (-> s
+                                                   (assoc-in [:lines cursor-line] new-line)
+                                                   (assoc :cached-width nil :cached-lines nil)))
+
+                                             ;; In middle with char before — swap with next, advance
+                                             (and (pos? cursor-col) (< cursor-col len))
+                                             (let [new-line (str (subs line 0 (dec cursor-col))
+                                                                (str (.charAt line cursor-col)
+                                                                     (.charAt line (dec cursor-col)))
+                                                                (subs line (inc cursor-col)))]
+                                               (-> s
+                                                   (assoc-in [:lines cursor-line] new-line)
+                                                   (update :cursor-col inc)
+                                                   (assoc :cached-width nil :cached-lines nil)))
+
+                                             :else s))))
+                          (tui/request-render!))
+
         handle-submit (fn []
                         (let [text (get-text)]
                           (when (seq (str/trim text))
@@ -233,11 +424,19 @@
                          (and (ctrl? data "D") (empty? (str/trim (get-text))))
                          (when on-interrupt (on-interrupt))
 
+                         ;; Ctrl+D with content — delete char forward
+                         (ctrl? data "D")
+                         (delete-forward)
+
                          ;; Escape — notify parent
                          (is-escape? data)
                          (when on-escape (on-escape))
 
-                         ;; Enter — submit (Shift+Enter or Alt+Enter for newline not detected in raw mode easily)
+                         ;; Shift+Enter / Alt+Enter — insert newline
+                         (or (is-shift-enter? data) (is-alt-enter? data))
+                         (insert-newline)
+
+                         ;; Enter — submit
                          (is-enter? data)
                          (handle-submit)
 
@@ -298,6 +497,50 @@
                                           (-> s
                                               (assoc-in [:lines cursor-line] before)
                                               (assoc :cached-width nil :cached-lines nil)))))
+
+                         ;; Ctrl+B — backward char
+                         (ctrl? data "B")
+                         (move-cursor 0 -1)
+
+                         ;; Ctrl+F — forward char
+                         (ctrl? data "F")
+                         (move-cursor 0 1)
+
+                         ;; Ctrl+P — previous line / history up
+                         (ctrl? data "P")
+                         (if (zero? (:cursor-line @state))
+                           (browse-history :up)
+                           (move-cursor -1 0))
+
+                         ;; Ctrl+N — next line / history down
+                         (ctrl? data "N")
+                         (if (= (:cursor-line @state) (dec (count (:lines @state))))
+                           (browse-history :down)
+                           (move-cursor 1 0))
+
+                         ;; Ctrl+W — delete word backward
+                         (ctrl? data "W")
+                         (delete-word-back)
+
+                         ;; Ctrl+T — transpose characters
+                         (ctrl? data "T")
+                         (transpose-chars)
+
+                         ;; Alt+B — backward word
+                         (is-alt-b? data)
+                         (move-word-back)
+
+                         ;; Alt+F — forward word
+                         (is-alt-f? data)
+                         (move-word-forward)
+
+                         ;; Alt+D — delete word forward
+                         (is-alt-d? data)
+                         (delete-word-forward)
+
+                         ;; Alt+Backspace — delete word backward
+                         (is-alt-backspace? data)
+                         (delete-word-back)
 
                          ;; Bracketed paste
                          (is-paste-start? data)
