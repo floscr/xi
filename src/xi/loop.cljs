@@ -25,6 +25,7 @@
        {:model (:model opts)
         :prompt (:prompt opts)
         :system (:system opts)
+        :resume-session-id (:resume-session-id opts)
         :abort-signal (:abort-signal opts)
         :on-text (:on-text opts)
         :on-thinking (:on-thinking opts)
