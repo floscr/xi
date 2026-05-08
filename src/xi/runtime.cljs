@@ -1,0 +1,211 @@
+(ns xi.runtime
+  "Headless runtime — event bus, command dispatch, agent lifecycle.
+   No UI dependencies. Clients connect and receive events."
+  (:require [xi.ext.core :as ext]
+            [xi.ext.commit :as ext-commit]
+            [xi.ext.done-notify :as ext-done-notify]
+            [xi.ext.kb :as ext-kb]
+            [xi.ext.parmezan :as ext-parmezan]
+            [xi.ext.permission-gate :as ext-permission-gate]
+            [xi.ext.plan-mode :as ext-plan-mode]
+            [xi.ext.terminal-title :as ext-terminal-title]
+            [xi.ext.web :as ext-web]
+            [xi.loop :as loop]
+            [xi.provider :as provider]
+            [xi.runtime.commands :as commands]
+            [xi.runtime.events :as events]
+            [xi.session :as session]))
+
+(def ^:private DEFAULT_MODEL "claude-sonnet-4-20250514")
+
+(defn- load-settings []
+  (try
+    (let [path (str (aget js/process.env "HOME") "/.pi/agent/settings.json")
+          content (.readFileSync (js/require "node:fs") path "utf8")]
+      (js->clj (js/JSON.parse content) :keywordize-keys true))
+    (catch :default _e {})))
+
+(defn- register-extensions! []
+  (doseq [ext [ext-plan-mode/extension
+               ext-permission-gate/extension
+               ext-kb/extension
+               ext-commit/extension
+               ext-web/extension
+               ext-parmezan/extension
+               ext-done-notify/extension
+               ext-terminal-title/extension]]
+    (ext/register-extension! ext)))
+
+;; ── Agent Turn ───────────────────────────────────────────────────────────────
+
+(defn- run-agent-turn
+  "Run one agent turn. Bridges loop callbacks to event bus."
+  [rt prompt]
+  (let [{:keys [emit!]} (:bus rt)
+        {:keys [model sess]} @(:state rt)
+        cli-session-id (:cli-session-id @sess)
+        abort-signal (:abort-signal rt)]
+
+    (emit! {:type :turn-start})
+
+    (-> (loop/run-turn
+         (cond-> {:model model
+                  :prompt prompt
+                  :abort-signal abort-signal
+
+                  :on-text
+                  (fn [text]
+                    (emit! {:type :text-delta :text text}))
+
+                  :on-thinking
+                  (fn [text]
+                    (emit! {:type :thinking :text text}))
+
+                  :on-tool-start
+                  (fn [{:keys [id name arguments]}]
+                    (emit! {:type :tool-start :id id :name name :arguments arguments}))
+
+                  :on-tool-result
+                  (fn [{:keys [name content is-error]}]
+                    (emit! {:type :tool-result :id name :content content :is-error is-error}))
+
+                  :on-error
+                  (fn [err]
+                    (emit! {:type :error :error err}))}
+           cli-session-id (assoc :resume-session-id cli-session-id)))
+
+        (.then (fn [result]
+                 (when (:aborted result)
+                   (emit! {:type :aborted}))
+                 ;; Save session
+                 (when-let [sid (:session-id result)]
+                   (swap! sess assoc :cli-session-id sid)
+                   (when-not (:name @sess)
+                     (swap! sess assoc :name (subs prompt 0 (min 60 (count prompt)))))
+                   (session/save-session! @sess))
+                 (emit! {:type :turn-end
+                         :session-id (:session-id result)
+                         :usage (:usage result)
+                         :cost (:cost result)})
+                 result)))))
+
+;; ── Public API ───────────────────────────────────────────────────────────────
+
+(defn create!
+  "Create a headless runtime. Returns runtime map.
+   opts:
+     :model - model id (default: claude-sonnet-4)
+     :cwd   - working directory (default: process.cwd)"
+  [opts]
+  (register-extensions!)
+  (let [settings (load-settings)
+        model (or (:model opts)
+                  (aget js/process.env "XI_MODEL")
+                  (:defaultModel settings)
+                  DEFAULT_MODEL)
+        cwd (or (:cwd opts) (.cwd js/process))
+        bus (events/create-bus)
+        sess (atom (session/create-session cwd))
+        state (atom {:model model
+                     :cwd cwd
+                     :sess sess})
+        rt {:bus bus
+            :state state
+            :sess sess
+            :busy (atom false)
+            :abort-signal (atom false)
+            :clients (atom #{})}]
+
+    ((:emit! bus) {:type :ready
+                   :model model
+                   :cwd cwd
+                   :extensions (ext/list-extensions)})
+    rt))
+
+(defn subscribe!
+  "Subscribe to runtime events. Returns unsubscribe fn."
+  [rt event-type handler]
+  ((:subscribe! (:bus rt)) event-type handler))
+
+(defn connect!
+  "Connect a client to the runtime. Client is a map with :on-event (required),
+   :on-connect (optional), :on-disconnect (optional)."
+  [rt client]
+  (swap! (:clients rt) conj client)
+  ;; Subscribe client to all events
+  (let [unsub ((:subscribe! (:bus rt)) :* (:on-event client))]
+    ;; Store unsub fn on client for disconnect
+    (swap! (:clients rt) disj client)
+    (let [client-with-unsub (assoc client ::unsub unsub)]
+      (swap! (:clients rt) conj client-with-unsub)
+      ;; Call on-connect
+      (when-let [on-connect (:on-connect client)]
+        (on-connect rt))
+      ;; Replay ready event
+      (let [{:keys [model cwd]} @(:state rt)]
+        ((:on-event client) {:type :ready
+                             :model model
+                             :cwd cwd
+                             :extensions (ext/list-extensions)}))
+      client-with-unsub)))
+
+(defn disconnect!
+  "Disconnect a client from the runtime."
+  [rt client]
+  (when-let [unsub (::unsub client)]
+    (unsub))
+  (swap! (:clients rt) disj client)
+  (when-let [on-disconnect (:on-disconnect client)]
+    (on-disconnect)))
+
+(defn dispatch!
+  "Send a command to the runtime. Returns a promise."
+  [rt command]
+  (let [{:keys [emit!]} (:bus rt)
+        {:keys [model cwd]} @(:state rt)
+        sess (:sess rt)
+        parsed (if (string? command)
+                 (commands/parse-input command)
+                 command)]
+    (when parsed
+      (case (:type parsed)
+        :prompt
+        (if @(:busy rt)
+          (js/Promise.resolve nil)
+          (do (reset! (:busy rt) true)
+              (reset! (:abort-signal rt) false)
+              (emit! {:type :user-message :text (:text parsed)})
+              (emit! {:type :busy-changed :busy true})
+              (-> (run-agent-turn rt (:text parsed))
+                  (.then (fn [result]
+                           (reset! (:busy rt) false)
+                           (emit! {:type :busy-changed :busy false})
+                           result))
+                  (.catch (fn [err]
+                            (reset! (:busy rt) false)
+                            (emit! {:type :busy-changed :busy false})
+                            (emit! {:type :error :error {:type "error" :message (.-message err)}})
+                            nil)))))
+
+        :command
+        (let [events (commands/handle-command parsed {:sess sess :cwd cwd :model model})]
+          (doseq [event events]
+            (emit! event))
+          (js/Promise.resolve events))
+
+        :abort
+        (do (when @(:busy rt)
+              (reset! (:abort-signal rt) true)
+              (emit! {:type :aborted}))
+            (js/Promise.resolve nil))
+
+        :quit
+        (do (emit! {:type :quit})
+            (js/Promise.resolve nil))
+
+        (js/Promise.resolve nil)))))
+
+(defn busy?
+  "Is the runtime currently running an agent turn?"
+  [rt]
+  @(:busy rt))

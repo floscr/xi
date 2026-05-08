@@ -22,13 +22,19 @@ bun target/main.js       # run
 
 ```
 src/xi/
-  cli.cljs         — entry point, REPL loop
-  provider.cljs    — Anthropic Messages API SSE client
-  loop.cljs        — agent loop (send → stream → tools → recur)
-  session.cljs     — Pi-compatible JSONL persistence
-  tools/*.cljs     — built-in tools (read, write, edit, bash, grep, ls)
-  ext/             — baked-in extensions (plan-mode, kb, commit, etc.)
-  tui/             — terminal UI (later)
+  cli.cljs             — entry point (creates runtime + connects TUI client)
+  runtime.cljs         — headless core (event bus, commands, agent lifecycle)
+  runtime/
+    events.cljs        — event bus (pub/sub)
+    commands.cljs      — command parsing & dispatch
+  client/
+    tui.cljs           — TUI client (event → component mutations)
+  loop.cljs            — agent loop (wraps provider/SDK)
+  provider.cljs        — Claude Agent SDK integration, MCP tool bridge
+  session.cljs         — session persistence (Xi, Claude CLI, Pi formats)
+  tools/*.cljs         — built-in tools (read, write, edit, bash, grep, ls)
+  ext/                 — extensions (plan-mode, kb, commit, permission-gate, etc.)
+  tui/                 — terminal UI rendering primitives
 ```
 
 ## Conventions
