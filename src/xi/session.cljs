@@ -1,22 +1,27 @@
 (ns xi.session
-  "Pi-compatible JSONL session persistence (version 3).
-   Sessions are stored in ~/.pi/agent/sessions/{cwd-encoded}/ as JSONL files.
-   Each non-header line has an id (8-char hex) and parentId forming a DAG."
-  (:require [clojure.set :as set]
-            [clojure.string :as str]
+  "Session management for Xi.
+   Xi sessions are lightweight metadata files in ~/.config/xi/sessions/{cwd-encoded}/.
+   The actual conversation data lives in claude CLI sessions (~/.claude/projects/).
+   Xi also reads Pi sessions from ~/.pi/agent/sessions/ for resume."
+  (:require [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
             ["node:crypto" :as crypto]))
 
+;; ── Paths ─────────────────────────────────────────────────────────────────────
+
+(def ^:private HOME (aget js/process.env "HOME"))
+
+(def ^:private XI_SESSIONS_DIR
+  (.join node-path HOME ".config" "xi" "sessions"))
+
+(def ^:private PI_SESSIONS_DIR
+  (.join node-path HOME ".pi" "agent" "sessions"))
+
+(def ^:private CLAUDE_PROJECTS_DIR
+  (.join node-path HOME ".claude" "projects"))
+
 ;; ── Helpers ───────────────────────────────────────────────────────────────────
-
-(def ^:private SESSIONS_DIR
-  (.join node-path (aget js/process.env "HOME") ".pi" "agent" "sessions"))
-
-(defn- gen-hex8
-  "Generate an 8-char random hex string."
-  []
-  (.toString (crypto/randomBytes 4) "hex"))
 
 (defn- gen-uuid-v7
   "Generate a UUIDv7 (time-ordered)."
@@ -24,9 +29,7 @@
   (let [now (js/Date.now)
         ts-hex (.padStart (.toString now 16) 12 "0")
         rand-hex (.toString (crypto/randomBytes 10) "hex")
-        ;; version nibble = 7
         ver-nibble (str "7" (subs rand-hex 0 3))
-        ;; variant bits = 10xx
         var-byte (bit-or (bit-and (js/parseInt (subs rand-hex 3 5) 16) 0x3f) 0x80)
         var-hex (str (.padStart (.toString var-byte 16) 2 "0") (subs rand-hex 5 7))]
     (str (subs ts-hex 0 8) "-"
@@ -37,267 +40,292 @@
 
 (defn- iso-now [] (.toISOString (js/Date.)))
 
-(defn encode-cwd
-  "Encode a CWD path to Pi's session directory format.
+(defn encode-cwd-xi
+  "Encode CWD for Xi session directory.
+   /home/floscr/Code/Projects/xi → -home-floscr-Code-Projects-xi"
+  [cwd]
+  (let [stripped (if (str/starts-with? cwd "/") (subs cwd 1) cwd)]
+    (str "-" (str/replace stripped "/" "-"))))
+
+(defn- encode-cwd-pi
+  "Encode CWD for Pi session directory (double-dash wrapped).
    /home/floscr/Code/Projects/xi → --home-floscr-Code-Projects-xi--"
   [cwd]
   (let [stripped (if (str/starts-with? cwd "/") (subs cwd 1) cwd)]
     (str "--" (str/replace stripped "/" "-") "--")))
 
-(defn- session-dir
-  "Get the session directory for a CWD."
-  [cwd]
-  (.join node-path SESSIONS_DIR (encode-cwd cwd)))
+(defn- xi-session-dir [cwd]
+  (.join node-path XI_SESSIONS_DIR (encode-cwd-xi cwd)))
 
-;; ── JSONL I/O ─────────────────────────────────────────────────────────────────
+(defn- pi-session-dir [cwd]
+  (.join node-path PI_SESSIONS_DIR (encode-cwd-pi cwd)))
 
-(defn- write-line
-  "Append a single JSON line to a session file."
-  [filepath obj]
-  (let [json (js/JSON.stringify (clj->js obj))]
-    (fs/appendFileSync filepath (str json "\n") "utf8")))
+(defn- claude-project-dir [cwd]
+  (.join node-path CLAUDE_PROJECTS_DIR (encode-cwd-xi cwd)))
 
-(defn- read-lines
-  "Read all JSON lines from a session file. Returns vec of maps."
-  [filepath]
-  (let [content (fs/readFileSync filepath "utf8")
-        lines (str/split content #"\n")]
-    (into []
-          (comp (filter seq)
-                (map (fn [line]
-                       (js->clj (js/JSON.parse line) :keywordize-keys true))))
-          lines)))
-
-;; ── Session Creation ──────────────────────────────────────────────────────────
+;; ── Xi Session Metadata ───────────────────────────────────────────────────────
+;;
+;; Xi stores a small JSON metadata file per session:
+;; {
+;;   "id": "<uuid>",
+;;   "cli_session_id": "<claude-cli-session-id>",
+;;   "cwd": "/path/to/project",
+;;   "created": "<ISO timestamp>",
+;;   "name": "Session title",
+;;   "model": "claude-opus-4-6"
+;; }
 
 (defn create-session
-  "Create a new session file. Returns session state map."
+  "Create a new Xi session. Returns session state map."
   [cwd]
-  (let [dir (session-dir cwd)
+  (let [dir (xi-session-dir cwd)
         session-id (gen-uuid-v7)
         timestamp (iso-now)
-        filename (str (str/replace timestamp #"[:.]" "-") "_" session-id ".jsonl")
-        filepath (.join node-path dir filename)
-        header {:type "session"
-                :version 3
-                :id session-id
-                :timestamp timestamp
-                :cwd cwd}]
-    ;; Ensure directory exists
+        meta {:id session-id
+              :cli-session-id nil
+              :cwd cwd
+              :created timestamp
+              :name nil
+              :model nil}]
     (when-not (fs/existsSync dir)
       (fs/mkdirSync dir #js {:recursive true}))
-    ;; Write header
-    (write-line filepath header)
-    ;; Return session state
-    {:filepath filepath
-     :session-id session-id
-     :cwd cwd
-     :head-id nil
-     :lines [header]}))
+    (assoc meta :_dir dir)))
 
-;; ── Append Entries ────────────────────────────────────────────────────────────
-
-(defn append-model-change
-  "Append a model_change entry. Returns new head-id."
-  [session provider model-id]
-  (let [id (gen-hex8)
-        entry {:type "model_change"
-               :id id
-               :parentId (:head-id session)
-               :timestamp (iso-now)
-               :provider provider
-               :modelId model-id}]
-    (write-line (:filepath session) entry)
-    (-> session
-        (assoc :head-id id)
-        (update :lines conj entry))))
-
-(defn append-message
-  "Append a message entry (user, assistant, or toolResult). Returns updated session."
-  [session msg]
-  (let [id (gen-hex8)
-        entry {:type "message"
-               :id id
-               :parentId (:head-id session)
-               :timestamp (iso-now)
-               :message (assoc msg :timestamp (js/Date.now))}]
-    (write-line (:filepath session) entry)
-    (-> session
-        (assoc :head-id id)
-        (update :lines conj entry))))
-
-(defn append-custom
-  "Append a custom event entry. Returns updated session."
-  [session custom-type data]
-  (let [id (gen-hex8)
-        entry {:type "custom"
-               :customType custom-type
-               :data data
-               :id id
-               :parentId (:head-id session)
-               :timestamp (iso-now)}]
-    (write-line (:filepath session) entry)
-    (-> session
-        (assoc :head-id id)
-        (update :lines conj entry))))
-
-(defn append-session-info
-  "Append a session_info (name) entry. Returns updated session."
-  [session name]
-  (let [id (gen-hex8)
-        entry {:type "session_info"
-               :id id
-               :parentId (:head-id session)
-               :timestamp (iso-now)
-               :name name}]
-    (write-line (:filepath session) entry)
-    (-> session
-        (assoc :head-id id)
-        (update :lines conj entry))))
-
-;; ── Session Loading ───────────────────────────────────────────────────────────
-
-(defn- find-head
-  "Find the head node (last node in the chain) given all lines.
-   The head is the node whose id is never used as a parentId by any other node."
-  [lines]
-  (let [all-ids (set (keep :id lines))
-        parent-ids (set (keep :parentId lines))
-        leaf-ids (set/difference all-ids parent-ids)]
-    ;; Pick the most recent leaf (by timestamp)
-    (->> lines
-         (filter #(contains? leaf-ids (:id %)))
-         (sort-by :timestamp)
-         last
-         :id)))
-
-(defn load-session
-  "Load a session from a JSONL file. Returns session state map."
-  [filepath]
-  (let [lines (read-lines filepath)
-        header (first lines)
-        head-id (find-head lines)]
-    {:filepath filepath
-     :session-id (:id header)
-     :cwd (:cwd header)
-     :head-id head-id
-     :lines lines}))
-
-(defn- reconstruct-chain
-  "Reconstruct the message chain from head back to root.
-   Returns messages in chronological order (root first)."
-  [lines head-id]
-  (let [by-id (into {} (map (fn [l] [(:id l) l]) lines))]
-    (loop [id head-id
-           chain []]
-      (if-let [node (get by-id id)]
-        (recur (:parentId node) (conj chain node))
-        (vec (reverse chain))))))
-
-(defn get-messages
-  "Get the message chain for the current head. Returns vec of message maps
-   (user, assistant, toolResult) in chronological order."
+(defn save-session!
+  "Persist session metadata to disk."
   [session]
-  (let [chain (reconstruct-chain (:lines session) (:head-id session))]
-    (->> chain
-         (filter #(= "message" (:type %)))
-         (mapv :message))))
+  (let [dir (or (:_dir session) (xi-session-dir (:cwd session)))
+        filepath (.join node-path dir (str (:id session) ".json"))
+        data (dissoc session :_dir)]
+    (when-not (fs/existsSync dir)
+      (fs/mkdirSync dir #js {:recursive true}))
+    (fs/writeFileSync filepath (js/JSON.stringify (clj->js data) nil 2) "utf8")
+    session))
 
-;; ── Rewind / Branching ────────────────────────────────────────────────────────────
+(defn update-session!
+  "Update session fields and persist."
+  [session updates]
+  (let [updated (merge session updates)]
+    (save-session! updated)
+    updated))
 
-(defn rewind-to
-  "Move the session head to a specific node id. Next append will branch from there."
-  [session target-id]
-  (let [valid-ids (set (keep :id (:lines session)))]
-    (when-not (contains? valid-ids target-id)
-      (throw (js/Error. (str "Node not found: " target-id))))
-    (assoc session :head-id target-id)))
+;; ── Claude CLI Session Reading ────────────────────────────────────────────────
 
-(defn build-tree
-  "Build a tree structure from session lines for visualization.
-   Returns {:roots [...] :children {parent-id → [child-nodes]}}."
-  [session]
-  (let [lines (:lines session)
-        children (group-by :parentId lines)
-        roots (get children nil [])]
-    {:roots roots
-     :children children
-     :head-id (:head-id session)}))
-
-(defn format-tree
-  "Format the session tree as a string for display."
-  [session]
-  (let [{:keys [children head-id]} (build-tree session)
-        sb (atom [])]
-    (letfn [(walk [node-id depth prefix]
-              (let [nodes (get children node-id [])
-                    ;; Skip session header
-                    nodes (if (zero? depth)
-                            (filter #(not= "session" (:type %)) nodes)
-                            nodes)]
-                (doseq [[i node] (map-indexed vector nodes)]
-                  (let [last? (= i (dec (count nodes)))
-                        connector (if last? "└─" "├─")
-                        is-head (= (:id node) head-id)
-                        label (case (:type node)
-                                "message" (let [role (get-in node [:message :role])
-                                                text (case role
-                                                       "user" (let [t (get-in node [:message :content 0 :text] "")]
-                                                                (subs t 0 (min 50 (count t))))
-                                                       "assistant" "[assistant]"
-                                                       "toolResult" (str "[" (get-in node [:message :toolName]) "]")
-                                                       (str "[" role "]"))]
-                                            (str role ": " text))
-                                "model_change" (str "model: " (:modelId node))
-                                "session_info" (str "name: " (:name node))
-                                "custom" (str "custom: " (:customType node))
-                                (str (:type node)))
-                        marker (if is-head " ◀" "")]
-                    (swap! sb conj
-                           (str prefix connector " "
-                                (:id node) " " label marker))
-                    (walk (:id node) (inc depth)
-                          (str prefix (if last? "  " "│ ")))))))]
-      (walk nil 0 ""))
-    (str/join "\n" @sb)))
-
-;; ── Session Listing ───────────────────────────────────────────────────────────
-
-(defn- get-session-name
-  "Extract session name from lines, if any session_info entry exists."
-  [lines]
-  (->> lines
-       (filter #(= "session_info" (:type %)))
-       last
-       :name))
-
-(defn- session-summary
-  "Quick summary of a session file without loading all lines."
+(defn- read-claude-session-summary
+  "Read a claude CLI session file and extract summary info."
   [filepath]
   (try
-    (let [lines (read-lines filepath)
-          header (first lines)
-          name (get-session-name lines)
-          msg-count (count (filter #(and (= "message" (:type %))
-                                        (= "user" (get-in % [:message :role])))
-                                  lines))]
-      {:filepath filepath
-       :session-id (:id header)
-       :cwd (:cwd header)
-       :timestamp (:timestamp header)
+    (let [content (fs/readFileSync filepath "utf8")
+          lines (str/split content #"\n")
+          parsed (into [] (comp (filter seq)
+                                (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
+                       lines)
+          session-id (-> filepath
+                         (.split "/")
+                         last
+                         (str/replace ".jsonl" ""))
+          user-msgs (filter #(= "user" (:type %)) parsed)
+          first-user (first user-msgs)
+          first-text (when first-user
+                       (let [content (:content (:message first-user))]
+                         (cond
+                           (string? content) content
+                           (sequential? content)
+                           (->> content
+                                (filter #(= "text" (:type %)))
+                                (map :text)
+                                first)
+                           :else nil)))
+          ;; Derive name from first user message
+          name (when first-text
+                 (let [text (str/trim first-text)
+                       ;; Skip compacted summaries
+                       text (if (str/starts-with? text "The conversation history")
+                              nil
+                              text)]
+                   (when text
+                     (subs text 0 (min 60 (count text))))))
+          timestamp (:timestamp first-user)]
+      {:session-id session-id
+       :source :claude
+       :filepath filepath
+       :timestamp timestamp
        :name name
-       :user-messages msg-count})
+       :user-messages (count user-msgs)})
     (catch :default _e nil)))
 
+;; ── Pi Session Reading ────────────────────────────────────────────────────────
+
+(defn- read-pi-session-summary
+  "Read a Pi session file and extract summary info."
+  [filepath]
+  (try
+    (let [content (fs/readFileSync filepath "utf8")
+          lines (str/split content #"\n")
+          parsed (into [] (comp (filter seq)
+                                (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
+                       lines)
+          header (first parsed)
+          name (->> parsed
+                    (filter #(= "session_info" (:type %)))
+                    last
+                    :name)
+          user-msgs (filter #(and (= "message" (:type %))
+                                  (= "user" (get-in % [:message :role])))
+                            parsed)]
+      {:session-id (:id header)
+       :source :pi
+       :filepath filepath
+       :timestamp (:timestamp header)
+       :name name
+       :user-messages (count user-msgs)})
+    (catch :default _e nil)))
+
+;; ── Xi Session Reading ────────────────────────────────────────────────────────
+
+(defn- read-xi-session-meta
+  "Read an Xi session metadata JSON file."
+  [filepath]
+  (try
+    (let [content (fs/readFileSync filepath "utf8")
+          data (js->clj (js/JSON.parse content) :keywordize-keys true)]
+      {:session-id (:id data)
+       :cli-session-id (:cli-session-id data)
+       :source :xi
+       :filepath filepath
+       :timestamp (:created data)
+       :name (:name data)
+       :model (:model data)
+       :user-messages nil})
+    (catch :default _e nil)))
+
+;; ── Session Listing (merged) ──────────────────────────────────────────────────
+
+(defn- list-dir-files [dir ext]
+  (if-not (fs/existsSync dir)
+    []
+    (->> (fs/readdirSync dir)
+         (filter #(str/ends-with? % ext))
+         (mapv #(.join node-path dir %)))))
+
 (defn list-sessions
-  "List all sessions for a CWD. Returns vec of session summaries, newest first."
+  "List all sessions for a CWD from all sources. Returns vec of session
+   summaries, newest first. Sources: Xi metadata, Claude CLI, Pi sessions."
   [cwd]
-  (let [dir (session-dir cwd)]
-    (if-not (fs/existsSync dir)
-      []
-      (let [files (->> (fs/readdirSync dir)
-                       (filter #(str/ends-with? % ".jsonl"))
-                       (map #(.join node-path dir %))
-                       (sort)
-                       reverse)]
-        (into [] (keep session-summary) files)))))
+  (let [;; Xi metadata sessions
+        xi-sessions (->> (list-dir-files (xi-session-dir cwd) ".json")
+                         (keep read-xi-session-meta))
+        ;; Claude CLI sessions
+        claude-sessions (->> (list-dir-files (claude-project-dir cwd) ".jsonl")
+                             (keep read-claude-session-summary))
+        ;; Pi sessions
+        pi-sessions (->> (list-dir-files (pi-session-dir cwd) ".jsonl")
+                         (keep read-pi-session-summary))
+        ;; Merge, dedup by session-id (Xi meta takes priority), sort by timestamp
+        xi-ids (set (keep :cli-session-id xi-sessions))
+        ;; Don't show claude sessions that have Xi metadata (avoid duplicates)
+        claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
+    (->> (concat xi-sessions claude-filtered pi-sessions)
+         (sort-by :timestamp)
+         reverse
+         vec)))
+
+;; ── Resume Support ────────────────────────────────────────────────────────────
+
+(defn load-session
+  "Load a session for resume. Returns session state map with :cli-session-id
+   for passing to claude CLI via -r."
+  [summary]
+  (case (:source summary)
+    :xi
+    (let [content (fs/readFileSync (:filepath summary) "utf8")
+          data (js->clj (js/JSON.parse content) :keywordize-keys true)]
+      {:id (:id data)
+       :cli-session-id (:cli-session-id data)
+       :cwd (:cwd data)
+       :name (:name data)
+       :source :xi})
+
+    :claude
+    {:id (:session-id summary)
+     :cli-session-id (:session-id summary)
+     :cwd nil
+     :name (:name summary)
+     :source :claude}
+
+    :pi
+    ;; Pi sessions can't be resumed via claude CLI — they use a different format.
+    ;; Show them for reference but mark as read-only.
+    {:id (:session-id summary)
+     :cli-session-id nil
+     :cwd nil
+     :name (:name summary)
+     :source :pi}))
+
+(defn read-session-messages
+  "Read conversation messages from a session for display.
+   Returns vec of {:role :text} maps for user/assistant text messages."
+  [summary]
+  (case (:source summary)
+    :claude
+    (try
+      (let [content (fs/readFileSync (:filepath summary) "utf8")
+            lines (str/split content #"\n")
+            parsed (into [] (comp (filter seq)
+                                  (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
+                         lines)]
+        (->> parsed
+             (filter #(contains? #{"user" "assistant"} (:type %)))
+             (keep (fn [line]
+                     (let [content (get-in line [:message :content])
+                           role (:type line)]
+                       (cond
+                         ;; Plain text user message
+                         (and (= "user" role) (string? content)
+                              (not (str/starts-with? content "The conversation history")))
+                         {:role "user" :text content}
+
+                         ;; Assistant with text blocks
+                         (and (= "assistant" role) (sequential? content))
+                         (let [texts (->> content
+                                          (filter #(= "text" (:type %)))
+                                          (map :text))]
+                           (when (seq texts)
+                             {:role "assistant" :text (str/join "\n" texts)}))
+
+                         :else nil))))
+             vec))
+      (catch :default _e []))
+
+    :pi
+    (try
+      (let [content (fs/readFileSync (:filepath summary) "utf8")
+            lines (str/split content #"\n")
+            parsed (into [] (comp (filter seq)
+                                  (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
+                         lines)]
+        (->> parsed
+             (filter #(= "message" (:type %)))
+             (keep (fn [line]
+                     (let [msg (:message line)
+                           role (:role msg)]
+                       (cond
+                         (= "user" role)
+                         (let [text (->> (:content msg)
+                                         (filter #(= "text" (:type %)))
+                                         (map :text)
+                                         (str/join "\n"))]
+                           (when (seq text) {:role "user" :text text}))
+
+                         (= "assistant" role)
+                         (let [text (->> (:content msg)
+                                         (filter #(= "text" (:type %)))
+                                         (map :text)
+                                         (str/join "\n"))]
+                           (when (seq text) {:role "assistant" :text text}))
+
+                         :else nil))))
+             vec))
+      (catch :default _e []))
+
+    []))
