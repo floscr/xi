@@ -29,20 +29,29 @@
 
 ;; ── Tool Call Formatting ──────────────────────────────────────────────────────
 
+(defn- get-arg
+  "Get an argument by key, trying both string and keyword forms."
+  [arguments k]
+  (or (get arguments (name k))
+      (get arguments k)))
+
 (defn- format-tool-args
   "Format tool arguments for display in the tool header."
-  [name arguments]
-  (case name
-    "Bash"  (get arguments "command" (get arguments :command ""))
-    "Read"  (get arguments "file_path" (get arguments :file_path ""))
-    "Write" (get arguments "file_path" (get arguments :file_path ""))
-    "Edit"  (get arguments "file_path" (get arguments :file_path ""))
-    "Grep"  (str (get arguments "pattern" (get arguments :pattern ""))
-                 (when-let [g (or (get arguments "glob") (get arguments :glob))]
+  [tool-name arguments]
+  (case tool-name
+    "Bash"  (get-arg arguments :command)
+    "Read"  (get-arg arguments :file_path)
+    "Write" (get-arg arguments :file_path)
+    "Edit"  (get-arg arguments :file_path)
+    "Grep"  (str (get-arg arguments :pattern)
+                 (when-let [g (get-arg arguments :glob)]
                    (str " --glob " g)))
-    "Glob"  (get arguments "pattern" (get arguments :pattern ""))
-    (let [s (pr-str arguments)]
-      (when (> (count s) 2) s))))
+    "Glob"  (get-arg arguments :pattern)
+    "Agent" (or (get-arg arguments :description)
+                (get-arg arguments :prompt)
+                (get-arg arguments :task))
+    ;; Default: skip dumping the full map
+    nil))
 
 (defn- truncate-output
   "Truncate tool output to max lines."
@@ -65,12 +74,14 @@
   [tool-name args-summary]
   (let [bg-fn (fn [text] (str "\033[48;5;236m" text "\033[0m"))
         box (comp/make-box {:padding-x 1 :padding-y 0 :bg-fn bg-fn})
+        ;; Truncate long args for the header line
+        short-args (when (seq args-summary)
+                     (truncate (first (str/split-lines args-summary)) 120))
         header-text (comp/make-text
                      (str (ansi/fg :accent (str "$ " tool-name))
-                          (when (seq args-summary)
-                            (str " " (ansi/fg :dim args-summary)))))
-        output-text (comp/make-text "" {:padding-x 0})
-        footer-text (comp/make-text "")
+                          (when short-args
+                            (str " " (ansi/fg :dim short-args)))))
+        output-text (comp/make-text "")
         start-time (js/Date.now)]
     ((:add-child box) (comp/make-spacer 1))
     ((:add-child box) header-text)
@@ -164,9 +175,20 @@
 
                   :on-tool-result (fn [{:keys [content is-error]}]
                                     (when-let [tool @current-tool]
-                                      (when (and (string? content) (seq content))
-                                        ((:set-output tool)
-                                         (truncate-output content 20)))
+                                      (let [text (cond
+                                                   (string? content) content
+                                                   (sequential? content)
+                                                   (->> content
+                                                        (keep (fn [b]
+                                                                (cond
+                                                                  (string? b) b
+                                                                  (= "text" (:type b)) (:text b)
+                                                                  :else nil)))
+                                                        (str/join "\n"))
+                                                   :else nil)]
+                                        (when (seq text)
+                                          ((:set-output tool)
+                                           (truncate-output text 20))))
                                       ((:finish tool) is-error))
                                     (reset! current-tool nil)
                                     ;; Show loader for next iteration
