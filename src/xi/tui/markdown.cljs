@@ -1,56 +1,78 @@
 (ns xi.tui.markdown
-  "Minimal markdown rendering for terminal output — code blocks, bold, headers."
+  "Markdown component — renders markdown text with ANSI formatting.
+   Implements the component protocol (render/invalidate)."
   (:require [clojure.string :as str]
-            [xi.tui.render :as render]))
+            [xi.tui.ansi :as ansi]
+            [xi.tui.core :as tui]))
 
-(defn- render-line
+(defn- render-inline
+  "Apply inline markdown formatting (bold, code)."
+  [line]
+  (-> line
+      (str/replace #"\*\*([^*]+)\*\*" (fn [[_ text]] (ansi/fg :bold text)))
+      (str/replace #"`([^`]+)`" (fn [[_ text]] (ansi/fg :accent text)))))
+
+(defn- render-md-line
   "Render a single markdown line with ANSI formatting."
   [line]
   (cond
-    ;; Headers
-    (str/starts-with? line "### ")
-    (render/fg :bold (subs line 4))
+    (str/starts-with? line "### ") (ansi/fg :bold (subs line 4))
+    (str/starts-with? line "## ")  (ansi/fg :bold (subs line 3))
+    (str/starts-with? line "# ")   (ansi/fg :bold (subs line 2))
+    (str/starts-with? line "- [x] ") (str (ansi/fg :success "✓") " " (render-inline (subs line 6)))
+    (str/starts-with? line "- [ ] ") (str (ansi/fg :dim "○") " " (render-inline (subs line 6)))
+    :else (render-inline line)))
 
-    (str/starts-with? line "## ")
-    (render/fg :bold (subs line 3))
-
-    (str/starts-with? line "# ")
-    (render/fg :bold (subs line 2))
-
-    ;; List items with checkboxes
-    (str/starts-with? line "- [x] ")
-    (str (render/fg :success "✓") " " (subs line 6))
-
-    (str/starts-with? line "- [ ] ")
-    (str (render/fg :dim "○") " " (subs line 6))
-
-    :else
-    ;; Inline formatting: **bold**, `code`
-    (-> line
-        (str/replace #"\*\*([^*]+)\*\*" (fn [[_ text]] (render/fg :bold text)))
-        (str/replace #"`([^`]+)`" (fn [[_ text]] (render/fg :accent text))))))
-
-(defn render-md
-  "Render markdown text with ANSI formatting for terminal display."
-  [text]
-  (let [lines (str/split text #"\n")
+(defn- render-md-text
+  "Render markdown text to ANSI-formatted lines."
+  [text width]
+  (let [raw-lines (str/split-lines text)
         in-code (atom false)
         result (atom [])]
-    (doseq [line lines]
+    (doseq [line raw-lines]
       (cond
-        ;; Code block start/end
         (str/starts-with? line "```")
         (if @in-code
-          (do (swap! result conj (render/fg :dim "───"))
+          (do (swap! result conj (ansi/fg :dim "───"))
               (reset! in-code false))
-          (do (swap! result conj (render/fg :dim (str "─── " (subs line 3))))
+          (do (swap! result conj (ansi/fg :dim (str "─── " (subs line 3))))
               (reset! in-code true)))
 
-        ;; Inside code block
         @in-code
-        (swap! result conj (render/fg :dim (str "  " line)))
+        (swap! result conj (ansi/fg :dim (str "  " line)))
 
-        ;; Normal line
         :else
-        (swap! result conj (render-line line))))
-    (str/join "\n" @result)))
+        ;; Wrap long lines
+        (let [formatted (render-md-line line)
+              wrapped (ansi/wrap-text formatted width)]
+          (doseq [w wrapped]
+            (swap! result conj w)))))
+    @result))
+
+(defn make-markdown
+  "Create a markdown component."
+  ([text] (make-markdown text {}))
+  ([text opts]
+   (let [state (atom {:text text
+                      :cached-text nil
+                      :cached-width nil
+                      :cached-lines nil})
+         padding-x (or (:padding-x opts) 0)]
+     {:type :markdown
+      :set-text (fn [t]
+                  (swap! state assoc :text t :cached-text nil :cached-width nil :cached-lines nil)
+                  (tui/request-render!))
+      :get-text (fn [] (:text @state))
+      :invalidate (fn [] (swap! state assoc :cached-text nil :cached-width nil :cached-lines nil))
+      :render (fn [width]
+                (let [{:keys [text cached-text cached-width cached-lines]} @state]
+                  (if (and cached-lines (= cached-text text) (= cached-width width))
+                    cached-lines
+                    (let [content-w (max 1 (- width (* 2 padding-x)))
+                          left-pad (apply str (repeat padding-x " "))
+                          lines (if (or (nil? text) (empty? text))
+                                  []
+                                  (mapv #(str left-pad %) (render-md-text text content-w)))
+                          result (if (empty? lines) [""] lines)]
+                      (swap! state assoc :cached-text text :cached-width width :cached-lines result)
+                      result))))})))

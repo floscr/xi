@@ -1,0 +1,120 @@
+(ns xi.tui.ansi
+  "Low-level ANSI escape code helpers — colors, cursor, visible-width."
+  (:require [clojure.string :as str]))
+
+;; ── Escape Codes ──────────────────────────────────────────────────────────────
+
+(def ESC "\033[")
+
+(defn fg
+  "Apply foreground color."
+  [color text]
+  (case color
+    :dim     (str ESC "90m" text ESC "0m")
+    :accent  (str ESC "36m" text ESC "0m")
+    :error   (str ESC "31m" text ESC "0m")
+    :success (str ESC "32m" text ESC "0m")
+    :warning (str ESC "33m" text ESC "0m")
+    :bold    (str ESC "1m" text ESC "0m")
+    :blue    (str ESC "34m" text ESC "0m")
+    :magenta (str ESC "35m" text ESC "0m")
+    :reset   (str ESC "0m" text)
+    text))
+
+(defn bg
+  "Apply background color."
+  [color text]
+  (case color
+    :dark   (str ESC "48;5;236m" text ESC "0m")
+    :tool   (str ESC "48;5;236m" text ESC "0m")
+    text))
+
+(def RESET (str ESC "0m"))
+
+;; ── Cursor Control ────────────────────────────────────────────────────────────
+
+(defn cursor-up [n]
+  (when (pos? n) (str ESC n "A")))
+
+(defn cursor-down [n]
+  (when (pos? n) (str ESC n "B")))
+
+(defn cursor-to-col [col]
+  (str ESC col "G"))
+
+(defn cursor-home []
+  (str ESC "H"))
+
+(def HIDE_CURSOR (str ESC "?25l"))
+(def SHOW_CURSOR (str ESC "?25h"))
+(def CLEAR_LINE (str ESC "2K"))
+(def CLEAR_FROM_CURSOR (str ESC "0J"))
+(def CLEAR_SCREEN (str ESC "2J"))
+
+;; Synchronized output — CSI ?2026h/l
+(def SYNC_START (str ESC "?2026h"))
+(def SYNC_END (str ESC "?2026l"))
+
+;; ── Visible Width ─────────────────────────────────────────────────────────────
+
+(def ^:private ansi-regex #"\033\[[^m]*m|\033\][^\007]*\007|\033_[^\007]*\007")
+
+(defn strip-ansi
+  "Strip ANSI escape sequences from text."
+  [text]
+  (str/replace text ansi-regex ""))
+
+(defn visible-width
+  "Calculate visible terminal width of a string (stripping ANSI codes).
+   Handles basic ASCII correctly. CJK/emoji widths are approximated."
+  [text]
+  (if (empty? text)
+    0
+    (count (strip-ansi text))))
+
+;; ── Line Utilities ────────────────────────────────────────────────────────────
+
+(defn pad-to-width
+  "Pad a line with spaces to fill terminal width."
+  [line width]
+  (let [vis (visible-width line)
+        padding (max 0 (- width vis))]
+    (str line (apply str (repeat padding " ")))))
+
+(defn apply-bg-to-line
+  "Apply background color function to a full-width line."
+  [line width bg-fn]
+  (let [padded (pad-to-width line width)]
+    (bg-fn padded)))
+
+(defn wrap-text
+  "Word-wrap text to fit within max-width columns.
+   Returns vector of lines."
+  [text max-width]
+  (if (or (empty? text) (<= max-width 0))
+    [""]
+    (let [lines (str/split-lines text)]
+      (into []
+            (mapcat
+             (fn [line]
+               (if (<= (visible-width line) max-width)
+                 [line]
+                 ;; Simple word-wrap: split on spaces
+                 (let [words (str/split line #" ")]
+                   (loop [result []
+                          current ""
+                          [w & more] words]
+                     (if-not w
+                       (if (seq current)
+                         (conj result current)
+                         result)
+                       (let [candidate (if (seq current)
+                                         (str current " " w)
+                                         w)]
+                         (if (> (visible-width candidate) max-width)
+                           (if (seq current)
+                             (recur (conj result current) w more)
+                             ;; Single word longer than width — force it on its own line
+                             (recur (conj result w) "" more))
+                           (recur result candidate more))))))))
+            lines)))))
