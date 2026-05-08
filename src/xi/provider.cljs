@@ -1,219 +1,360 @@
 (ns xi.provider
-  "Provider that uses Claude CLI as a bridge for API access.
-   Spawns `claude -p` subprocess which handles auth, rate limits, caching.
-   Xi's custom tools are exposed to the CLI via MCP over stdio."
-  (:require [clojure.string :as str]))
+  "Provider that uses the Claude Agent SDK for API access.
+   CC proposes tool calls via MCP; Xi intercepts and executes them
+   through its own tool pipeline (with permission gate hooks).
+   This mirrors Pi's claude-bridge architecture."
+  (:require ["@anthropic-ai/claude-agent-sdk" :as sdk]
+            ["node:child_process" :as child-process]
+            ["node:fs" :as fs]
+            ["zod" :as z]
+            [xi.ext.core :as ext]
+            [xi.tools.registry :as tools]))
 
+;; ── Claude Code Executable Resolution ─────────────────────────────────────────
 
-;; ── Claude CLI Bridge ─────────────────────────────────────────────────────────
+(defn- resolve-claude-executable []
+  (try
+    (let [which-path (-> (child-process/execSync "which claude" #js {:encoding "utf8"})
+                        (.trim))
+          real-path (fs/realpathSync which-path)]
+      (when (.endsWith real-path ".js")
+        real-path))
+    (catch :default _e nil)))
+
+(defonce ^:private claude-executable (resolve-claude-executable))
+
+;; ── JSON Schema → Zod ─────────────────────────────────────────────────────────
 ;;
-;; Architecture:
-;;   Xi spawns `claude -p --output-format stream-json` for each agent turn.
-;;   The CLI runs its own agent loop with built-in tools (Read, Write, Edit, Bash, etc.)
-;;   Xi's custom extension tools are exposed via --mcp-config as an MCP server.
-;;   The CLI handles auth, rate limits, prompt caching, and tool execution.
-;;   Xi receives the full stream of events and displays them.
+;; createSdkMcpServer needs Zod schemas. Convert our JSON Schema tool defs.
 
-(defn- build-cli-args
-  "Build claude CLI args for a streaming query."
-  [{:keys [model system mcp-config resume-session-id]}]
-  (cond-> ["claude" "-p"
-           "--output-format" "stream-json"
-           "--verbose"
-           "--dangerously-skip-permissions"]
-    model              (into ["--model" model])
-    system             (into ["--append-system-prompt" system])
-    mcp-config         (into ["--mcp-config" mcp-config "--strict-mcp-config"])
-    resume-session-id  (into ["-r" resume-session-id])))
+(defn- json-schema-prop->zod
+  "Convert a single JSON Schema property to a Zod type."
+  [prop]
+  (let [prop-type (get prop :type)
+        enum-vals (get prop :enum)
+        base (cond
+               (seq enum-vals) (.enum z (clj->js enum-vals))
+               (= "string" prop-type) (.string z)
+               (or (= "number" prop-type) (= "integer" prop-type)) (.number z)
+               (= "boolean" prop-type) (.boolean z)
+               (= "array" prop-type) (if-let [items (get prop :items)]
+                                       (.array z (json-schema-prop->zod items))
+                                       (.array z (.unknown z)))
+               (= "object" prop-type) (if-let [props (get prop :properties)]
+                                        ;; Nested object with properties — convert recursively
+                                        (let [required-set (set (get prop :required))
+                                              shape (reduce-kv
+                                                     (fn [acc k v]
+                                                       (let [zod-prop (json-schema-prop->zod v)]
+                                                         (assoc acc k (if (contains? required-set k)
+                                                                        zod-prop
+                                                                        (.optional zod-prop)))))
+                                                     {} props)]
+                                          (.object z (clj->js shape)))
+                                        ;; Generic object
+                                        (.record z (.string z) (.unknown z)))
+               :else (.unknown z))
+        described (if-let [desc (get prop :description)]
+                   (.describe base desc)
+                   base)]
+    described))
 
-(defn- parse-json-line
-  "Parse a JSON line. Returns nil on parse failure."
-  [line]
-  (when (and (string? line) (seq line))
-    (try
-      (js->clj (js/JSON.parse line) :keywordize-keys true)
-      (catch :default _e nil))))
+(defn- json-schema->zod-shape
+  "Convert a JSON Schema object to a Zod shape (map of key → ZodType)."
+  [schema]
+  (let [props (get schema :properties)
+        required-set (set (get schema :required))]
+    (when props
+      (reduce-kv
+       (fn [acc k v]
+         (let [zod-prop (json-schema-prop->zod v)]
+           (unchecked-set acc (name k)
+                          (if (contains? required-set (name k))
+                            zod-prop
+                            (.optional zod-prop)))
+           acc))
+       #js {} props))))
 
-(defn- extract-content-blocks
-  "Extract content blocks from an assistant message, converting to Xi internal format."
-  [assistant-msg]
-  (let [content (get-in assistant-msg [:message :content])]
-    (when (seq content)
-      (mapv (fn [block]
-              (case (:type block)
-                "text"     {:type "text" :text (:text block)}
-                "thinking" {:type "thinking"
-                            :thinking (or (:thinking block) "")
-                            :thinkingSignature (or (:signature block) "")}
-                "tool_use" {:type "toolCall"
-                            :id (:id block)
-                            :name (:name block)
-                            :arguments (or (:input block) {})}
-                ;; pass through unknown
-                block))
-            content))))
+;; ── MCP Tool Bridge ───────────────────────────────────────────────────────────
+;;
+;; CC's built-in tools are disabled. Xi's tools are exposed via MCP.
+;; When CC calls a tool:
+;;   1. MCP handler dispatches :tool-call hook (permission gate can block)
+;;   2. If allowed, executes via Xi's tool registry
+;;   3. Returns result to CC
 
-;; ── Stream Processing ─────────────────────────────────────────────────────────
+(def ^:private MCP_SERVER_NAME "xi-tools")
+
+(def ^:private DISALLOWED_BUILTIN_TOOLS
+  ["Read" "Write" "Edit" "Glob" "Grep" "Bash" "Agent" "AskClaude"
+   "NotebookEdit" "EnterWorktree" "ExitWorktree"
+   "CronCreate" "CronDelete" "CronList" "TeamCreate" "TeamDelete"
+   "WebFetch" "WebSearch" "TodoRead" "TodoWrite"
+   "EnterPlanMode" "ExitPlanMode" "RemoteTrigger" "SendMessage"
+   "Skill" "TaskOutput" "TaskStop" "ToolSearch"
+   "AskUserQuestion" "TaskCreate" "TaskGet" "TaskList" "TaskUpdate"])
+
+(def ^:private MCP_TOOL_PREFIX (str "mcp__" MCP_SERVER_NAME "__"))
+
+(defn- build-mcp-server
+  "Build an MCP server exposing Xi's tools."
+  []
+  (let [defs (tools/tool-definitions)
+        registry (tools/tool-registry)
+        cwd (.cwd js/process)
+        mcp-tools (into-array
+                   (map (fn [tool-def]
+                          (let [tool-name (:name tool-def)
+                                exec-fn (get registry tool-name)
+                                zod-shape (json-schema->zod-shape (:input_schema tool-def))]
+                            #js {:name tool-name
+                                 :description (:description tool-def)
+                                 :inputSchema (or zod-shape #js {})
+                                 :handler
+                                 (fn [^js args _extra]
+                                   (let [args (js->clj args :keywordize-keys true)
+                                         tool-call {:name tool-name :arguments args}
+                                         gated (ext/dispatch-hook-transform
+                                                :tool-call tool-call {:cwd cwd})]
+                                     (if (nil? gated)
+                                       ;; Blocked by permission gate
+                                       (js/Promise.resolve
+                                        #js {:content #js [#js {:type "text"
+                                                                :text "Blocked by Xi permission gate"}]
+                                             :isError true})
+                                       ;; Execute the tool
+                                       (-> (let [result (exec-fn args)]
+                                             (if (instance? js/Promise result)
+                                               result
+                                               (js/Promise.resolve result)))
+                                           (.then (fn [result]
+                                                    #js {:content (clj->js (:content result))
+                                                         :isError (boolean (:is-error result))}))
+                                           (.catch (fn [err]
+                                                     #js {:content #js [#js {:type "text"
+                                                                            :text (str "Tool error: " (.-message err))}]
+                                                          :isError true}))))))}))
+                        defs))]
+    (sdk/createSdkMcpServer
+     #js {:name MCP_SERVER_NAME
+          :version "1.0.0"
+          :tools mcp-tools})))
+
+;; ── Session State ─────────────────────────────────────────────────────────────
+
+(defonce ^:private session-state (atom nil))
+
+(defn get-session-id []
+  (:session-id @session-state))
+
+(defn clear-session! []
+  (reset! session-state nil))
+
+;; ── Stream Event Processing ──────────────────────────────────────────────────
+
+(defn- map-stop-reason [reason]
+  (case reason
+    "tool_use"   "toolUse"
+    "max_tokens" "length"
+    "end_turn"   "stop"
+    "stop"))
+
+(defn- strip-mcp-prefix
+  "Strip MCP prefix: mcp__xi-tools__bash → bash"
+  [n]
+  (if (and n (.startsWith n MCP_TOOL_PREFIX))
+    (subs n (count MCP_TOOL_PREFIX))
+    n))
+
+(defn- process-stream-event
+  [^js event callbacks state]
+  (let [event-type (.-type event)]
+    (case event-type
+      "message_start"
+      (let [usage (some-> event .-message .-usage)]
+        (when usage
+          (swap! state assoc :usage (js->clj usage :keywordize-keys true))))
+
+      "content_block_start"
+      (let [^js block (.-content_block event)
+            block-type (.-type block)]
+        (case block-type
+          "text"     nil
+          "thinking" nil
+          "tool_use" (let [id (.-id block)
+                           tool-name (strip-mcp-prefix (.-name block))
+                           input (or (js->clj (.-input block) :keywordize-keys true) {})]
+                       (swap! state update :tool-call-ids conj id)
+                       (when (:on-tool-start callbacks)
+                         ((:on-tool-start callbacks)
+                          {:id id :name tool-name :arguments input})))
+          nil))
+
+      "content_block_delta"
+      (let [^js delta (.-delta event)
+            delta-type (.-type delta)]
+        (case delta-type
+          "text_delta"     (when (:on-text callbacks) ((:on-text callbacks) (.-text delta)))
+          "thinking_delta" (when (:on-thinking callbacks) ((:on-thinking callbacks) (.-thinking delta)))
+          "input_json_delta" nil
+          "signature_delta"  nil
+          nil))
+
+      "content_block_stop" nil
+
+      "message_delta"
+      (let [^js delta (.-delta event)
+            stop-reason (.-stop_reason delta)
+            ^js usage (.-usage event)]
+        (when stop-reason
+          (swap! state assoc :stop-reason (map-stop-reason stop-reason)))
+        (when usage
+          (swap! state update :usage merge (js->clj usage :keywordize-keys true))))
+
+      "message_stop" nil
+      "ping" nil
+      nil)))
+
+(defn- process-assistant-message
+  [^js message callbacks state saw-stream-events?]
+  (when-not saw-stream-events?
+    (let [^js msg (.-message message)
+          content (when msg (js->clj (.-content msg) :keywordize-keys true))
+          usage (when msg (js->clj (.-usage msg) :keywordize-keys true))]
+      (when content
+        (doseq [block content]
+          (case (:type block)
+            "text"     (when (:on-text callbacks) ((:on-text callbacks) (:text block)))
+            "thinking" (when (:on-thinking callbacks) ((:on-thinking callbacks) (:thinking block)))
+            "tool_use" (let [id (:id block)
+                             tool-name (strip-mcp-prefix (:name block))
+                             input (or (:input block) {})]
+                         (swap! state update :tool-call-ids conj id)
+                         (when (:on-tool-start callbacks)
+                           ((:on-tool-start callbacks)
+                            {:id id :name tool-name :arguments input})))
+            nil)))
+      (when usage
+        (swap! state update :usage merge usage)))))
+
+(defn- extract-tool-results-from-user-msg
+  [^js message callbacks]
+  (let [^js msg (.-message message)
+        content (when msg (js->clj (.-content msg) :keywordize-keys true))]
+    (when (and (sequential? content) (:on-tool-result callbacks))
+      (doseq [block content]
+        (when (= "tool_result" (:type block))
+          ((:on-tool-result callbacks)
+           {:name (:tool_use_id block)
+            :content (:content block)
+            :is-error (:is_error block)}))))))
+
+;; ── Main Streaming Function ──────────────────────────────────────────────────
 
 (defn stream-messages
-  "Send a prompt to Claude via CLI bridge. Returns promise of response state map.
-   The CLI handles the full agent loop including tool execution.
-
-   opts:
-     :model       - model id
-     :prompt      - user prompt string
-     :system      - extra system prompt to append
-     :max-tokens  - max output tokens
-     :mcp-config  - path to MCP config JSON for custom tools
-     :resume-session-id - session ID to resume
-     :on-text     - callback (fn [text-delta])
-     :on-thinking - callback (fn [thinking-delta])
-     :on-tool-start - callback (fn [{:id :name}])
-     :on-tool-result - callback (fn [{:name :content}])
-     :on-error    - callback (fn [error-map])"
+  "Send a prompt to Claude via the SDK with MCP tool bridge.
+   CC proposes tools, Xi executes them. Returns promise of response state."
   [opts]
-  (let [cli-args (build-cli-args (select-keys opts [:model :system
-                                                     :mcp-config :resume-session-id]))
-        callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
+  (let [callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
                                      :on-tool-result :on-error])
-        ;; Track which content we've already emitted callbacks for
-        ;; (the CLI sends incremental assistant messages with cumulative content)
-        emitted-text (atom "")
-        emitted-blocks (atom #{})]
+        state (atom {:content [] :usage {} :stop-reason nil
+                     :model (:model opts) :session-id nil
+                     :result-text nil :cost nil :tool-call-ids []})
+        saw-stream-events? (atom false)
+
+        cwd (.cwd js/process)
+        resume-id (or (:resume-session-id opts) (get-session-id))
+        mcp-server (build-mcp-server)
+        query-opts (doto (clj->js
+                          (cond-> {:cwd cwd
+                                   :permissionMode "bypassPermissions"
+                                   :allowDangerouslySkipPermissions true
+                                   :includePartialMessages true
+                                   :disallowedTools DISALLOWED_BUILTIN_TOOLS
+                                   :allowedTools [(str MCP_TOOL_PREFIX "*")]}
+                            claude-executable
+                            (assoc :pathToClaudeCodeExecutable claude-executable)
+
+                            (:model opts)
+                            (assoc :model (:model opts))
+
+                            (:system opts)
+                            (assoc :systemPrompt
+                                   #js {:type "preset"
+                                        :preset "claude_code"
+                                        :append (:system opts)})
+
+                            resume-id
+                            (assoc :resume resume-id)))
+                     (unchecked-set "mcpServers"
+                                    (js-obj MCP_SERVER_NAME mcp-server)))
+
+        ^js sdk-query (sdk/query #js {:prompt (:prompt opts)
+                                      :options query-opts})]
 
     (js/Promise.
-     (fn [resolve reject]
-       (let [proc (js/Bun.spawn
-                   (clj->js cli-args)
-                   #js {:stdout "pipe"
-                        :stderr "pipe"
-                        :stdin "pipe"
-                        :cwd (.cwd js/process)
-                        :env (unchecked-get js/process "env")})
-             state (atom {:content []
-                          :all-content []  ;; all assistant blocks across turns
-                          :usage {}
-                          :stop-reason nil
-                          :model nil
-                          :session-id nil
-                          :done false
-                          :result-text nil
-                          :cost nil})
-             buffer (atom "")]
+     (fn [resolve _reject]
+       (let [consume
+             (fn consume []
+               (-> (.next sdk-query)
+                   (.then
+                    (fn [^js result]
+                      (if (.-done result)
+                        (resolve @state)
+                        (let [^js message (.-value result)
+                              msg-type (.-type message)]
+                          (case msg-type
+                            "stream_event"
+                            (do (reset! saw-stream-events? true)
+                                (process-stream-event
+                                 (.-event message) callbacks state))
 
-         ;; Write prompt to stdin and close
-         (.write (.-stdin proc) (str (:prompt opts)))
-         (.end (.-stdin proc))
+                            "assistant"
+                            (process-assistant-message
+                             message callbacks state @saw-stream-events?)
 
-         ;; Read stdout line by line
-         ;; Bun.spawn stdout is a ReadableStream directly (no .body)
-         (let [reader (.getReader (.-stdout proc))
-               decoder (js/TextDecoder.)]
-           (letfn [(process-message [msg]
-                     (case (:type msg)
-                       ;; System init
-                       "system"
-                       (swap! state assoc
-                              :model (:model msg)
-                              :session-id (:session_id msg))
+                            "user"
+                            (extract-tool-results-from-user-msg message callbacks)
 
-                       ;; Assistant message — extract and emit content deltas
-                       "assistant"
-                       (let [blocks (extract-content-blocks msg)
-                             usage (get-in msg [:message :usage])
-                             stop-reason (get-in msg [:message :stop_reason])]
-                         (when blocks
-                           (doseq [block blocks]
-                             (let [block-id (or (:id block) (hash block))]
-                               (when-not (contains? @emitted-blocks block-id)
-                                 (swap! emitted-blocks conj block-id)
-                                 (case (:type block)
-                                   "text"
-                                   (let [text (:text block)
-                                         prev @emitted-text
-                                         delta (if (str/starts-with? text prev)
-                                                 (subs text (count prev))
-                                                 text)]
-                                     (when (and (seq delta) (:on-text callbacks))
-                                       ((:on-text callbacks) delta))
-                                     (reset! emitted-text text))
+                            "result"
+                            (let [result-text (.-result message)
+                                  cost (.-total_cost_usd message)
+                                  ^js usage (.-usage message)]
+                              (swap! state assoc
+                                     :result-text result-text
+                                     :cost cost :done true)
+                              (when usage
+                                (swap! state update :usage merge
+                                       (js->clj usage :keywordize-keys true))))
 
-                                   "thinking"
-                                   (when (:on-thinking callbacks)
-                                     ((:on-thinking callbacks) (:thinking block)))
+                            "system"
+                            (let [subtype (.-subtype message)]
+                              (when (= "init" subtype)
+                                (let [sid (.-session_id message)]
+                                  (when sid
+                                    (swap! state assoc :session-id sid)
+                                    (reset! session-state
+                                            {:session-id sid :cursor 0 :cwd cwd})))))
 
-                                   "toolCall"
-                                   (when (:on-tool-start callbacks)
-                                     ((:on-tool-start callbacks)
-                                      {:id (:id block)
-                                       :name (:name block)
-                                       :arguments (:arguments block)}))
+                            "rate_limit_event"
+                            (let [^js info (.-rate_limit_info message)]
+                              (when (and info (= "rejected" (.-status info))
+                                         (:on-error callbacks))
+                                ((:on-error callbacks)
+                                 {:type "rate_limit"
+                                  :info (js->clj info :keywordize-keys true)})))
 
-                                   nil)))))
-                         (swap! state (fn [s]
-                                        (-> s
-                                            (assoc :content (or blocks (:content s)))
-                                            (update :all-content into (or blocks []))
-                                            (cond->
-                                              usage (assoc :usage usage)
-                                              stop-reason (assoc :stop-reason stop-reason))))))
+                            nil)
+                          (consume)))))
+                   (.catch
+                    (fn [err]
+                      (when (:on-error callbacks)
+                        ((:on-error callbacks)
+                         {:type "error" :message (.-message err)}))
+                      (resolve @state)))))]
+         (consume))))))
 
-                       ;; User message — tool results from CLI's own execution
-                       "user"
-                       (let [content (get-in msg [:message :content])]
-                         (when (and (sequential? content) (:on-tool-result callbacks))
-                           (doseq [block content]
-                             (when (= "tool_result" (:type block))
-                               ((:on-tool-result callbacks)
-                                {:name (:tool_use_id block)
-                                 :content (:content block)
-                                 :is-error (:is_error block)})))))
-
-                       ;; Result — final summary
-                       "result"
-                       (swap! state assoc
-                              :done true
-                              :result-text (:result msg)
-                              :stop-reason (or (:stop_reason msg) (:stop-reason @state))
-                              :cost (:total_cost_usd msg)
-                              :usage (or (:usage msg) (:usage @state)))
-
-                       ;; Rate limit events
-                       "rate_limit_event"
-                       (let [info (:rate_limit_info msg)]
-                         (when (and (= "rejected" (:status info)) (:on-error callbacks))
-                           ((:on-error callbacks) {:type "rate_limit" :info info})))
-
-                       ;; Ignore other types
-                       nil))
-
-                   (read-loop []
-                     (-> (.read reader)
-                         (.then
-                          (fn [result]
-                            (if (.-done result)
-                              (do (swap! state assoc :done true)
-                                  (resolve @state))
-                              (let [chunk (.decode decoder (.-value result))
-                                    text (str @buffer chunk)
-                                    lines (.split text "\n")]
-                                (reset! buffer (aget lines (dec (.-length lines))))
-                                (doseq [line (butlast lines)]
-                                  (when-let [msg (parse-json-line line)]
-                                    (process-message msg)))
-                                (read-loop)))))
-                         (.catch reject)))]
-             (read-loop)))
-
-         ;; Capture stderr
-         (-> (.text (.-stderr proc))
-             (.then (fn [stderr-text]
-                      (when (and (seq stderr-text) (not (:done @state)))
-                        (swap! state assoc :error stderr-text))))))))))
-
-(defn response->assistant-message
-  "Convert streamed response state to a normalized assistant message map."
-  [state]
+(defn response->assistant-message [state]
   {:role "assistant"
    :content (or (:content state) [])
    :model (:model state)

@@ -64,16 +64,18 @@
 
 (defn dispatch-hook-transform
   "Dispatch a transforming hook — each handler receives the result of the previous.
-   Returns the final transformed value."
+   Returns the final transformed value, or nil if any handler returns nil (= blocked)."
   [event initial-value ctx]
   (reduce
    (fn [value {:keys [handler]}]
-     (try
-       (let [result (handler value ctx)]
-         (if (some? result) result value))
-       (catch :default e
-         (js/console.error (str "[ext] Error in " (name event) " transform hook:") e)
-         value)))
+     (if (nil? value)
+       ;; Already blocked by a previous handler — short-circuit
+       (reduced nil)
+       (try
+         (handler value ctx)
+         (catch :default e
+           (js/console.error (str "[ext] Error in " (name event) " transform hook:") e)
+           value))))
    initial-value
    (get-in @registry [:hooks event])))
 

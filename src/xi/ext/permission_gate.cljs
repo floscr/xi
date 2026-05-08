@@ -22,12 +22,14 @@
   (some #(str/includes? (str path) %) patterns))
 
 (defn- permission-gate-tool-call
-  "Tool call hook: block dangerous operations."
+  "Tool call hook: block dangerous operations.
+   Tool names may be PascalCase (from SDK) or lowercase."
   [tool-call _ctx]
-  (let [{:keys [name arguments]} tool-call]
-    (case name
+  (let [{:keys [name arguments]} tool-call
+        lname (str/lower-case (or name ""))]
+    (case lname
       ("write" "edit")
-      (let [path (:path arguments)]
+      (let [path (or (:path arguments) (:file_path arguments))]
         (cond
           (blocked-path? path BLOCKED_PATHS)
           (do (println (str "  [permission] BLOCKED: write to sensitive path: " path))
@@ -40,11 +42,10 @@
           :else tool-call))
 
       "bash"
-      (let [cmd (:command arguments)]
+      (let [cmd (or (:command arguments) "")]
         (if (some #(str/includes? cmd %) GUARDED_PATTERNS)
-          (do (println (str "  [permission] WARNING: potentially dangerous command: " cmd))
-              ;; Allow but warn — in a TUI we'd prompt for confirmation
-              tool-call)
+          (do (println (str "  [permission] BLOCKED: guarded command: " cmd))
+              nil)
           tool-call))
 
       ;; Allow everything else

@@ -4,5 +4,9 @@
   "private": true,
   "devDependencies": {
     "shadow-cljs": "3.4.9"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.133",
+    "cc-session-io": "^0.3.1"
   }
 }

@@ -11,6 +11,7 @@
             [xi.ext.terminal-title :as ext-terminal-title]
             [xi.ext.web :as ext-web]
             [xi.loop :as loop]
+            [xi.provider :as provider]
             [xi.session :as session]
             [xi.tui.ansi :as ansi]
             [xi.tui.core :as tui]
@@ -267,6 +268,7 @@
 
     (= "/clear" input)
     (do (reset! sess (session/create-session cwd))
+        (provider/clear-session!)
         ((:clear chat-container))
         (add-status-message! chat-container
                              (ansi/fg :dim "New session started."))

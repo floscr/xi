@@ -1,16 +1,15 @@
 (ns xi.loop
-  "Agent loop — delegates to Claude CLI bridge for full turn execution.
-   The CLI handles tool execution, multi-turn, and the agent loop internally.
-   Xi streams events and records them."
-  (:require [clojure.string :as str]
-            [xi.provider :as provider]))
+  "Agent loop — delegates to Claude Agent SDK for turn orchestration.
+   CC proposes tool calls via MCP; Xi intercepts and executes them
+   through its own tool pipeline (with permission gate hooks)."
+  (:require [xi.provider :as provider]))
 
 (defn run-turn
-  "Run one full agent turn via the Claude CLI bridge.
+  "Run one full agent turn via the SDK with MCP tool bridge.
    Returns promise of {:messages [...] :usage {...} :session-id ...}.
 
-   The CLI runs its own agent loop — Xi doesn't execute tools directly.
-   Xi streams the events for display and records the result.
+   CC proposes tool calls, Xi executes them through its tool registry
+   (with extension hooks for permission gating).
 
    opts:
      :model       - model id
