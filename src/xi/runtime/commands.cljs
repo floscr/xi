@@ -59,7 +59,7 @@
     (let [ext-cmds (ext/list-commands)]
       [{:type :command-result
         :command "help"
-        :builtin-commands ["sessions" "resume [n]" "model" "clear" "help" "quit"]
+        :builtin-commands ["sessions" "resume [n]" "model" "new" "clear" "help" "quit"]
         :extension-commands ext-cmds}])
 
     "model"
@@ -70,6 +70,13 @@
 
     "clear"
     (do (reset! sess (session/create-session cwd))
+        (provider/clear-session!)
+        [{:type :session-cleared}])
+
+    "new"
+    (do (when (:cli-session-id @sess)
+          (session/save-session! @sess))
+        (reset! sess (session/create-session cwd))
         (provider/clear-session!)
         [{:type :session-cleared}])
 
