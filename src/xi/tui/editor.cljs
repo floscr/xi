@@ -328,24 +328,33 @@
                (let [{:keys [lines cursor-line cursor-col]} @state
                      prompt-w (ansi/visible-width prompt)
                      content-w (max 1 (- width prompt-w))
-                     ;; Border line
+                     prompt-pad (apply str (repeat prompt-w " "))
                      border (ansi/fg :dim (apply str (repeat width "─")))
-                     ;; Render each editor line
                      editor-lines
                      (into []
-                           (map-indexed
-                            (fn [i line]
-                              (let [p (if (zero? i) (ansi/fg :accent prompt) (apply str (repeat prompt-w " ")))
-                                    ;; Show cursor as visible marker
-                                    display (if (= i cursor-line)
-                                              (let [before (subs line 0 (min cursor-col (count line)))
-                                                    after (subs line (min cursor-col (count line)))
+                           (mapcat
+                            (fn [[i line]]
+                              (let [has-cursor (= i cursor-line)
+                                    ;; Insert cursor marker into line text
+                                    display (if has-cursor
+                                              (let [cc (min cursor-col (count line))
+                                                    before (subs line 0 cc)
+                                                    after (subs line cc)
                                                     cursor-ch (if (seq after) (subs after 0 1) " ")
-                                                    rest (if (seq after) (subs after 1) "")]
+                                                    rest-str (if (seq after) (subs after 1) "")]
                                                 (str before
                                                      (str ansi/ESC "7m" cursor-ch ansi/ESC "27m")
-                                                     rest))
-                                              line)]
-                                (str p display)))
-                            lines))]
+                                                     rest-str))
+                                              line)
+                                    ;; Word-wrap display text to fit content-w
+                                    wrapped (ansi/wrap-text display content-w)]
+                                ;; Prefix each visual line
+                                (map-indexed
+                                 (fn [vi vline]
+                                   (let [pfx (if (and (zero? i) (zero? vi))
+                                               (ansi/fg :accent prompt)
+                                               prompt-pad)]
+                                     (str pfx vline)))
+                                 wrapped)))
+                            (map-indexed vector lines)))]
                  (into [border] editor-lines)))}))
