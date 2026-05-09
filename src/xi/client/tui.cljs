@@ -70,7 +70,7 @@
 (defn- make-tool-component
   "Create a tool execution display component."
   [tool-name args-summary]
-  (let [bg-code "\033[48;5;236m"
+  (let [bg-code "\033[48;2;38;44;55m"
         box (comp/make-box {:padding-x 1 :padding-y 0 :bg-code bg-code})
         short-args (when (seq args-summary)
                      (truncate (first (str/split-lines args-summary)) 120))
@@ -80,7 +80,6 @@
                             (str " " short-args))))
         output-text (comp/make-text "")
         start-time (js/Date.now)]
-    ((:add-child box) (comp/make-spacer 1))
     ((:add-child box) header-text)
     ((:add-child box) (comp/make-spacer 1))
     ((:add-child box) output-text)
@@ -101,7 +100,6 @@
                  ((:add-child box) (comp/make-spacer 1))
                  ((:add-child box)
                   (comp/make-text (ansi/fg color (str "Took " duration))))
-                 ((:add-child box) (comp/make-spacer 1))
                  (tui/request-render!)))}))
 
 ;; ── Buffer Helpers ─────────────────────────────────────────────────────────
@@ -401,6 +399,8 @@
                        (truncate-output text 20))))
                   ((:finish tool) (:is-error event)))
                 (reset! current-tool nil)
+                ;; Empty line after block
+                ((:add-child chat-container) (comp/make-spacer 1))
                 ;; Show loader for next iteration
                 ((:add-child chat-container) loader)
                 ((:start loader))
