@@ -15,7 +15,9 @@
             [xi.client.tui :as tui-client]
             [xi.client.ws-transport :as ws-transport]
             [xi.server.ws :as ws]
-            [xi.server.session-manager :as sm]))
+            [xi.server.session-manager :as sm]
+            [xi.tui.buffers :as buffers]
+            [xi.tui.terminal :as term]))
 
 (def ^:private DEFAULT_PORT 7474)
 
@@ -72,7 +74,14 @@
 (defn- start-server!
   "Start server with session manager. Optionally attach a local TUI."
   [{:keys [headless port]}]
-  (let [manager (sm/create-manager {})
+  (let [;; Set up interception early so server/session logs reach the Logs buffer
+        buffer-mgr (when-not headless
+                     (let [mgr (buffers/create-manager ["Logs"])]
+                       (term/intercept-stdout!
+                        (fn [_stream text]
+                          (buffers/append! mgr "Logs" text)))
+                       mgr))
+        manager (sm/create-manager {})
         server (ws/start! manager {:port port})
         actual-port (:port server)]
 
@@ -86,7 +95,8 @@
             rt (:runtime session)
             transport {:dispatch! (fn [cmd] (runtime/dispatch! rt cmd))
                        :busy? (fn [] (runtime/busy? rt))}
-            client (tui-client/create! {:transport transport})]
+            client (tui-client/create! {:transport transport
+                                        :buffer-mgr buffer-mgr})]
         (sm/add-client! manager session-id :local-tui)
         (runtime/connect! rt client)))))
 
