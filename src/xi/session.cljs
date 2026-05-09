@@ -96,7 +96,7 @@
   [session]
   (let [dir (or (:_dir session) (xi-session-dir (:cwd session)))
         filepath (.join node-path dir (str (:id session) ".json"))
-        data (dissoc session :_dir)]
+        data (dissoc session :_dir :source)]
     (when-not (fs/existsSync dir)
       (fs/mkdirSync dir #js {:recursive true}))
     (fs/writeFileSync filepath (js/JSON.stringify (clj->js data) nil 2) "utf8")
@@ -202,17 +202,29 @@
 
 ;; ── Xi Session Reading ────────────────────────────────────────────────────────
 
+(defn- uuid7->iso
+  "Extract ISO timestamp from a UUIDv7 id (first 48 bits = unix ms)."
+  [id]
+  (try
+    (let [hex (subs (str/replace id "-" "") 0 12)
+          ms (js/parseInt hex 16)]
+      (when (pos? ms)
+        (.toISOString (js/Date. ms))))
+    (catch :default _e nil)))
+
 (defn- read-xi-session-meta
   "Read an Xi session metadata JSON file."
   [filepath]
   (try
     (let [content (fs/readFileSync filepath "utf8")
-          data (js->clj (js/JSON.parse content) :keywordize-keys true)]
+          data (js->clj (js/JSON.parse content) :keywordize-keys true)
+          timestamp (or (:created data) (uuid7->iso (:id data)))]
       {:session-id (:id data)
        :cli-session-id (:cli-session-id data)
+       :cwd (:cwd data)
        :source :xi
        :filepath filepath
-       :timestamp (:created data)
+       :timestamp timestamp
        :name (:name data)
        :model (:model data)
        :user-messages nil})
@@ -262,7 +274,9 @@
       {:id (:id data)
        :cli-session-id (:cli-session-id data)
        :cwd (:cwd data)
+       :created (:created data)
        :name (:name data)
+       :model (:model data)
        :source :xi})
 
     :claude
@@ -281,40 +295,57 @@
      :name (:name summary)
      :source :pi}))
 
+(defn- read-claude-session-messages
+  "Read conversation messages from a Claude CLI session file.
+   Returns vec of {:role :text} maps."
+  [filepath]
+  (try
+    (let [content (fs/readFileSync filepath "utf8")
+          lines (str/split content #"\n")
+          parsed (into [] (comp (filter seq)
+                                (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
+                       lines)]
+      (->> parsed
+           (filter #(contains? #{"user" "assistant"} (:type %)))
+           (keep (fn [line]
+                   (let [content (get-in line [:message :content])
+                         role (:type line)]
+                     (cond
+                       ;; Plain text user message
+                       (and (= "user" role) (string? content)
+                            (not (str/starts-with? content "The conversation history")))
+                       {:role "user" :text content}
+
+                       ;; Assistant with text blocks
+                       (and (= "assistant" role) (sequential? content))
+                       (let [texts (->> content
+                                        (filter #(= "text" (:type %)))
+                                        (map :text))]
+                         (when (seq texts)
+                           {:role "assistant" :text (str/join "\n" texts)}))
+
+                       :else nil))))
+           vec))
+    (catch :default _e [])))
+
 (defn read-session-messages
   "Read conversation messages from a session for display.
    Returns vec of {:role :text} maps for user/assistant text messages."
   [summary]
   (case (:source summary)
+    :xi
+    (if-let [cli-sid (:cli-session-id summary)]
+      (let [cwd (:cwd summary)
+            filepath (when cwd
+                       (.join node-path (claude-project-dir cwd)
+                              (str cli-sid ".jsonl")))]
+        (if (and filepath (fs/existsSync filepath))
+          (read-claude-session-messages filepath)
+          []))
+      [])
+
     :claude
-    (try
-      (let [content (fs/readFileSync (:filepath summary) "utf8")
-            lines (str/split content #"\n")
-            parsed (into [] (comp (filter seq)
-                                  (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
-                         lines)]
-        (->> parsed
-             (filter #(contains? #{"user" "assistant"} (:type %)))
-             (keep (fn [line]
-                     (let [content (get-in line [:message :content])
-                           role (:type line)]
-                       (cond
-                         ;; Plain text user message
-                         (and (= "user" role) (string? content)
-                              (not (str/starts-with? content "The conversation history")))
-                         {:role "user" :text content}
-
-                         ;; Assistant with text blocks
-                         (and (= "assistant" role) (sequential? content))
-                         (let [texts (->> content
-                                          (filter #(= "text" (:type %)))
-                                          (map :text))]
-                           (when (seq texts)
-                             {:role "assistant" :text (str/join "\n" texts)}))
-
-                         :else nil))))
-             vec))
-      (catch :default _e []))
+    (read-claude-session-messages (:filepath summary))
 
     :pi
     (try
