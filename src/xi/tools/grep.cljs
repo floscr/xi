@@ -3,18 +3,19 @@
 
 (defn execute
   "Search for a pattern in files using ripgrep."
-  [{:keys [pattern path glob]}]
+  [{:keys [pattern path glob]} {:keys [cwd]}]
   (let [args (cond-> ["rg" "--line-number" "--no-heading" "--color" "never" "-m" "100"]
                glob (into ["--glob" glob])
                true (conj pattern)
                path (conj path))]
+
     (js/Promise.
      (fn [resolve _reject]
        (let [proc (js/Bun.spawn
                    (clj->js args)
                    #js {:stdout "pipe"
                         :stderr "pipe"
-                        :cwd (.cwd js/process)})]
+                        :cwd (or cwd (.cwd js/process))})]
          (-> (js/Promise.all #js [(.text (.-stdout proc))
                                   (.text (.-stderr proc))
                                   (.-exited proc)])

@@ -6,10 +6,12 @@
 
 (defn execute
   "List directory contents with file types."
-  [{:keys [path]}]
+  [{:keys [path]} {:keys [cwd]}]
   (try
     (let [dir (or path ".")
-          resolved (.resolve node-path dir)
+          resolved (if cwd
+                     (.resolve node-path cwd dir)
+                     (.resolve node-path dir))
           entries (fs/readdirSync resolved #js {:withFileTypes true})
           lines (mapv (fn [entry]
                         (let [name (.-name entry)]

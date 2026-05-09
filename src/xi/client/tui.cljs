@@ -9,6 +9,7 @@
   (:require [clojure.string :as str]
             [xi.tui.ansi :as ansi]
             [xi.tui.core :as tui]
+            [xi.tui.completion :as completion]
             [xi.tui.components :as comp]
             [xi.tui.editor :as editor]
             [xi.tui.markdown :as md]))
@@ -135,6 +136,10 @@
         ;; Track last locally-submitted prompt to avoid double-rendering
         last-local-prompt (atom nil)
 
+        ;; Completion menu state
+        active-menu (atom nil)       ;; current completion menu component, or nil
+        menu-spacer (atom nil)       ;; spacer component inserted before menu
+
         ;; Create TUI
         root (tui/create-tui!)
         chat-container (tui/make-container)
@@ -147,6 +152,53 @@
           ((:add-child chat-container) (comp/make-text text))
           ((:add-child chat-container) (comp/make-spacer 1))
           (tui/render-now!))
+
+        ;; ── Completion Menu Helpers ──────────────────────────────────────────
+
+        ;; Forward-declared so hide/show-completion-menu! can reference editor
+        editor-comp-ref (atom nil)
+
+        hide-completion-menu!
+        (fn []
+          (when-let [menu @active-menu]
+            ;; Remove menu + its spacer from root
+            ((:remove-child root) menu)
+            (when-let [ms @menu-spacer]
+              ((:remove-child root) ms))
+            (reset! active-menu nil)
+            (reset! menu-spacer nil)
+            ;; Restore the editor
+            ((:add-child root) @editor-comp-ref)
+            (tui/set-focus! @editor-comp-ref)
+            (tui/render-now!)))
+
+        show-completion-menu!
+        (fn [opts]
+          ;; Close any existing menu first
+          (when @active-menu
+            (hide-completion-menu!))
+          (let [menu (completion/make-completion-menu
+                      (merge opts
+                             {:on-select
+                              (fn [item]
+                                (hide-completion-menu!)
+                                (when-let [cb (:on-select opts)]
+                                  (cb item)))
+                              :on-cancel
+                              (fn []
+                                (hide-completion-menu!)
+                                (when-let [cb (:on-cancel opts)]
+                                  (cb)))}))
+                ms (comp/make-spacer 1)]
+            (reset! active-menu menu)
+            (reset! menu-spacer ms)
+            ;; Replace the editor with the menu — menu has its own prompt at the bottom
+            ((:remove-child root) @editor-comp-ref)
+            ((:add-child root) ms)
+            ((:add-child root) menu)
+            ;; Focus the menu (editor is hidden until menu is dismissed)
+            (tui/set-focus! menu)
+            (tui/render-now!)))
 
         ;; Editor at the bottom
         editor-comp
@@ -168,6 +220,9 @@
                           (tui/stop-tui!)
                           (println "Bye.")
                           (js/process.exit 0))})
+
+        ;; Wire up forward reference
+        _ (reset! editor-comp-ref editor-comp)
 
         ;; Event handler — maps runtime events to TUI mutations
         on-event
@@ -313,11 +368,21 @@
                     (format-session-list-text (:sessions event))))
 
               "resume-list"
-              (add-status-message!
-               (if (empty? (:sessions event))
-                 "  (no previous sessions)"
-                 (str (ansi/fg :bold "Recent sessions (enter /resume N):\n")
-                      (format-session-list-text (:sessions event)))))
+              (if (empty? (:sessions event))
+                (add-status-message! "  (no previous sessions)")
+                (let [items (mapv (fn [s]
+                                   {:label (:name s)
+                                    :description (str (:timestamp s)
+                                                      (when (:user-messages s)
+                                                        (str " (" (:user-messages s) " msgs)"))
+                                                      (format-session-source s))
+                                    :value (:index s)})
+                                 (:sessions event))]
+                  (show-completion-menu!
+                   {:items items
+                    :prompt "resume> "
+                    :on-select (fn [item]
+                                 (dispatch! (str "/resume " (:value item))))})))
 
               "help"
               (add-status-message!
@@ -361,6 +426,8 @@
 
     ;; Return client map
     {:on-event on-event
+     :show-completion-menu! show-completion-menu!
+     :hide-completion-menu! hide-completion-menu!
 
      :on-connect
      (fn [rt-or-info]

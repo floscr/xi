@@ -3,7 +3,7 @@
 
 (defn execute
   "Find files matching a pattern."
-  [{:keys [pattern path]}]
+  [{:keys [pattern path]} {:keys [cwd]}]
   (let [dir (or path ".")
         args (cond-> ["fd" "--type" "f" "--color" "never" "--glob"]
                (seq pattern) (conj pattern)
@@ -14,7 +14,7 @@
                    (clj->js args)
                    #js {:stdout "pipe"
                         :stderr "pipe"
-                        :cwd (.cwd js/process)})]
+                        :cwd (or cwd (.cwd js/process))})]
          (-> (js/Promise.all #js [(.text (.-stdout proc))
                                   (.text (.-stderr proc))
                                   (.-exited proc)])

@@ -24,9 +24,11 @@
 (defn execute
   "Edit a file using exact text replacement.
    Accepts a vec of {:oldText :newText} edits applied against the original file."
-  [{:keys [path edits]}]
+  [{:keys [path edits]} {:keys [cwd]}]
   (try
-    (let [resolved (.resolve node-path path)
+    (let [resolved (if cwd
+                     (.resolve node-path cwd path)
+                     (.resolve node-path path))
           original (fs/readFileSync resolved "utf8")]
       (loop [content original
              [edit & remaining] edits

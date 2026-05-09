@@ -12,7 +12,7 @@
 
 (defn execute
   "Execute a bash command. Returns promise of tool result."
-  [{:keys [command timeout]}]
+  [{:keys [command timeout]} {:keys [cwd]}]
   (let [timeout-ms (or timeout DEFAULT_TIMEOUT)]
     (js/Promise.
      (fn [resolve _reject]
@@ -21,7 +21,7 @@
                    #js {:stdout "pipe"
                         :stderr "pipe"
                         :env (unchecked-get js/process "env")
-                        :cwd (.cwd js/process)})
+                        :cwd (or cwd (.cwd js/process))})
              timer (js/setTimeout
                     (fn []
                       (.kill proc)

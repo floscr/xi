@@ -123,7 +123,7 @@
                                                                 :text "Blocked by Xi permission gate"}]
                                              :isError true})
                                        ;; Execute the tool
-                                       (-> (let [result (exec-fn args)]
+                                       (-> (let [result (exec-fn args {:cwd cwd})]
                                              (if (instance? js/Promise result)
                                                result
                                                (js/Promise.resolve result)))

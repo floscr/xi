@@ -5,9 +5,11 @@
 
 (defn execute
   "Read a file's contents. Supports offset/limit for large files."
-  [{:keys [path offset limit]}]
+  [{:keys [path offset limit]} {:keys [cwd]}]
   (try
-    (let [resolved (.resolve node-path path)
+    (let [resolved (if cwd
+                     (.resolve node-path cwd path)
+                     (.resolve node-path path))
           content (fs/readFileSync resolved "utf8")
           lines (.split content "\n")
           total (.-length lines)

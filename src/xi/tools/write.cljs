@@ -5,9 +5,11 @@
 
 (defn execute
   "Write content to a file. Creates parent directories if needed."
-  [{:keys [path content]}]
+  [{:keys [path content]} {:keys [cwd]}]
   (try
-    (let [resolved (.resolve node-path path)
+    (let [resolved (if cwd
+                     (.resolve node-path cwd path)
+                     (.resolve node-path path))
           dir (.dirname node-path resolved)]
       (when-not (fs/existsSync dir)
         (fs/mkdirSync dir #js {:recursive true}))

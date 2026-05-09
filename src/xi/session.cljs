@@ -111,21 +111,37 @@
 
 ;; ── Claude CLI Session Reading ────────────────────────────────────────────────
 
+(defn- read-head-lines
+  "Read the first `max-bytes` of a file and return lines.
+   Drops the last (potentially truncated) line."
+  [filepath max-bytes]
+  (let [fd (fs/openSync filepath "r")
+        buf (js/Buffer.alloc max-bytes)
+        bytes-read (fs/readSync fd buf 0 max-bytes)
+        _ (fs/closeSync fd)
+        text (.toString buf "utf8" 0 bytes-read)
+        lines (str/split text #"\n")]
+    ;; Drop last line — it may be truncated
+    (if (> (count lines) 1)
+      (butlast lines)
+      lines)))
+
 (defn- read-claude-session-summary
-  "Read a claude CLI session file and extract summary info."
+  "Read a claude CLI session file and extract summary info.
+   Only reads the first 16KB for speed — enough for the first user message."
   [filepath]
   (try
-    (let [content (fs/readFileSync filepath "utf8")
-          lines (str/split content #"\n")
-          parsed (into [] (comp (filter seq)
-                                (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
-                       lines)
-          session-id (-> filepath
+    (let [session-id (-> filepath
                          (.split "/")
                          last
                          (str/replace ".jsonl" ""))
-          user-msgs (filter #(= "user" (:type %)) parsed)
-          first-user (first user-msgs)
+          lines (read-head-lines filepath 16384)
+          first-user (reduce (fn [_ line]
+                               (when (seq line)
+                                 (let [obj (js->clj (js/JSON.parse line) :keywordize-keys true)]
+                                   (when (= "user" (:type obj))
+                                     (reduced obj)))))
+                             nil lines)
           first-text (when first-user
                        (let [content (:content (:message first-user))]
                          (cond
@@ -136,10 +152,8 @@
                                 (map :text)
                                 first)
                            :else nil)))
-          ;; Derive name from first user message
           name (when first-text
                  (let [text (str/trim first-text)
-                       ;; Skip compacted summaries
                        text (if (str/starts-with? text "The conversation history")
                               nil
                               text)]
@@ -151,34 +165,39 @@
        :filepath filepath
        :timestamp timestamp
        :name name
-       :user-messages (count user-msgs)})
+       :user-messages nil})
     (catch :default _e nil)))
 
 ;; ── Pi Session Reading ────────────────────────────────────────────────────────
 
 (defn- read-pi-session-summary
-  "Read a Pi session file and extract summary info."
+  "Read a Pi session file and extract summary info.
+   Only reads the first 16KB for speed."
   [filepath]
   (try
-    (let [content (fs/readFileSync filepath "utf8")
-          lines (str/split content #"\n")
-          parsed (into [] (comp (filter seq)
-                                (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
-                       lines)
-          header (first parsed)
-          name (->> parsed
-                    (filter #(= "session_info" (:type %)))
-                    last
-                    :name)
-          user-msgs (filter #(and (= "message" (:type %))
-                                  (= "user" (get-in % [:message :role])))
-                            parsed)]
+    (let [lines (read-head-lines filepath 16384)
+          header (when (seq (first lines))
+                   (js->clj (js/JSON.parse (first lines)) :keywordize-keys true))
+          ;; Find session name from session_info or first user message
+          name-or-msg (reduce (fn [_ line]
+                                (when (seq line)
+                                  (let [obj (js->clj (js/JSON.parse line) :keywordize-keys true)]
+                                    (cond
+                                      (= "session_info" (:type obj))
+                                      (reduced {:name (:name obj)})
+                                      (and (= "message" (:type obj))
+                                           (= "user" (get-in obj [:message :role])))
+                                      (reduced {:name (let [text (get-in obj [:message :content])]
+                                                        (when (string? text)
+                                                          (subs text 0 (min 60 (count text)))))})
+                                      :else nil))))
+                              nil lines)]
       {:session-id (:id header)
        :source :pi
        :filepath filepath
        :timestamp (:timestamp header)
-       :name name
-       :user-messages (count user-msgs)})
+       :name (:name name-or-msg)
+       :user-messages nil})
     (catch :default _e nil)))
 
 ;; ── Xi Session Reading ────────────────────────────────────────────────────────
