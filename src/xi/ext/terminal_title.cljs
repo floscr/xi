@@ -1,8 +1,9 @@
 (ns xi.ext.terminal-title
-  "Set terminal title from session name via ANSI escape.")
+  "Set terminal title from session name via ANSI escape."
+  (:require [xi.tui.terminal :as term]))
 
 (defn- set-title [title]
-  (js/process.stdout.write (str "\033]0;" title "\007")))
+  (term/write! (str "\033]0;" title "\007")))
 
 (defn- on-turn-end [{:keys [session]}]
   (when-let [name (:name session)]

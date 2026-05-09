@@ -59,7 +59,7 @@
     (let [ext-cmds (ext/list-commands)]
       [{:type :command-result
         :command "help"
-        :builtin-commands ["sessions" "resume [n]" "model" "new" "clear" "help" "quit"]
+        :builtin-commands ["sessions" "resume [n]" "model" "buffers" "new" "clear" "help" "quit"]
         :extension-commands ext-cmds}])
 
     "model"

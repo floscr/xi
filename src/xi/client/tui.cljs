@@ -8,11 +8,13 @@
      :busy?     (fn [] -> bool)"
   (:require [clojure.string :as str]
             [xi.tui.ansi :as ansi]
+            [xi.tui.buffers :as buffers]
             [xi.tui.core :as tui]
             [xi.tui.completion :as completion]
             [xi.tui.components :as comp]
             [xi.tui.editor :as editor]
-            [xi.tui.markdown :as md]))
+            [xi.tui.markdown :as md]
+            [xi.tui.terminal :as term]))
 
 ;; ── Tool Call Formatting ──────────────────────────────────────────────────────
 
@@ -95,6 +97,14 @@
                  ((:add-child box) (comp/make-spacer 1))
                  (tui/request-render!)))}))
 
+;; ── Buffer Helpers ─────────────────────────────────────────────────────────
+
+(defn- format-timestamp [ts]
+  (let [d (js/Date. ts)]
+    (str (.padStart (str (.getHours d)) 2 "0") ":"
+         (.padStart (str (.getMinutes d)) 2 "0") ":"
+         (.padStart (str (.getSeconds d)) 2 "0"))))
+
 ;; ── Status Message Formatting ────────────────────────────────────────────────
 
 (defn- format-session-source [s]
@@ -140,18 +150,53 @@
         active-menu (atom nil)       ;; current completion menu component, or nil
         menu-spacer (atom nil)       ;; spacer component inserted before menu
 
+        ;; Session buffers — capture stray stdout/stderr
+        buffer-mgr (buffers/create-manager ["Logs"])
+
         ;; Create TUI
         root (tui/create-tui!)
         chat-container (tui/make-container)
+        view-wrapper (tui/make-container)  ;; holds the active buffer view
+        active-view (atom "Chat")          ;; "Chat" or "Logs"
         spacer (comp/make-spacer 1)
         loader (comp/make-loader "thinking...")
+
+        ;; ── Buffer View Switching ───────────────────────────────────────────
+
+        build-logs-view!
+        (fn []
+          (let [c (tui/make-container)
+                entries (buffers/get-entries buffer-mgr "Logs")]
+            ((:add-child c)
+             (comp/make-text (str (ansi/fg :bold "Logs")
+                                 (ansi/fg :dim (str " (" (count entries) " entries)")))))
+            ((:add-child c) (comp/make-spacer 1))
+            (if (empty? entries)
+              ((:add-child c) (comp/make-text (ansi/fg :dim "(empty)")))
+              (doseq [entry (take-last 100 entries)]
+                ((:add-child c)
+                 (comp/make-text (str (ansi/fg :dim (format-timestamp (:timestamp entry)))
+                                     " " (str/trim-newline (:text entry)))))))
+            ((:add-child c) (comp/make-spacer 1))
+            c))
+
+        switch-to-buffer!
+        (fn [name]
+          ((:clear view-wrapper))
+          (reset! active-view name)
+          (case name
+            "Chat" ((:add-child view-wrapper) chat-container)
+            "Logs" ((:add-child view-wrapper) (build-logs-view!)))
+          (tui/render-now!))
 
         add-status-message!
         (fn [text]
           ((:add-child chat-container) (comp/make-spacer 1))
           ((:add-child chat-container) (comp/make-text text))
           ((:add-child chat-container) (comp/make-spacer 1))
-          (tui/render-now!))
+          ;; Only render if Chat is the active view
+          (when (= @active-view "Chat")
+            (tui/render-now!)))
 
         ;; ── Completion Menu Helpers ──────────────────────────────────────────
 
@@ -200,29 +245,65 @@
             (tui/set-focus! menu)
             (tui/render-now!)))
 
+        ;; ── Local Command Handling ─────────────────────────────────────────────
+        ;; Commands handled entirely in the TUI client (no runtime round-trip).
+
+        handle-local-command!
+        (fn [text]
+          (cond
+            (= text "/buffers")
+            (let [items [{:label "Chat"
+                          :description (when (= @active-view "Chat") "• active")
+                          :value "Chat"}
+                         {:label "Logs"
+                          :description (let [n (count (buffers/get-entries buffer-mgr "Logs"))]
+                                         (str n " entries"
+                                              (when (= @active-view "Logs") " • active")))
+                          :value "Logs"}]]
+              (show-completion-menu!
+               {:items items
+                :prompt "buffer> "
+                :on-select (fn [item]
+                             (switch-to-buffer! (:value item)))})
+              true)
+
+            :else false))
+
         ;; Editor at the bottom
         editor-comp
         (editor/make-editor
          {:prompt "xi> "
           :on-submit (fn [text]
                        (let [text (str/trim text)]
-                         (when (and (seq text) (not (busy?)))
-                           ;; Remember we sent this so :user-message doesn't double-render
-                           (reset! last-local-prompt text)
-                           ;; Dispatch via transport
-                           (dispatch! text))))
+                         (when (seq text)
+                           ;; Try local commands first (work even when agent is busy)
+                           (when-not (handle-local-command! text)
+                             (when-not (busy?)
+                               ;; Auto-switch to Chat if viewing another buffer
+                               (when (not= @active-view "Chat")
+                                 (switch-to-buffer! "Chat"))
+                               ;; Remember we sent this so :user-message doesn't double-render
+                               (reset! last-local-prompt text)
+                               ;; Dispatch via transport
+                               (dispatch! text))))))
 
           :on-escape (fn []
                        (when (busy?)
                          (dispatch! {:type :abort})))
 
           :on-interrupt (fn []
+                          (term/restore-stdout!)
                           (tui/stop-tui!)
                           (println "Bye.")
                           (js/process.exit 0))})
 
         ;; Wire up forward reference
         _ (reset! editor-comp-ref editor-comp)
+
+        ;; Set up stdout/stderr interception — capture external writes to Logs buffer
+        _ (term/intercept-stdout!
+           (fn [_stream text]
+             (buffers/append! buffer-mgr "Logs" text)))
 
         ;; Event handler — maps runtime events to TUI mutations
         on-event
@@ -337,6 +418,9 @@
 
             :session-cleared
             (do ((:clear chat-container))
+                (reset! buffer-mgr {"Logs" []})
+                (when (not= @active-view "Chat")
+                  (switch-to-buffer! "Chat"))
                 (add-status-message! (ansi/fg :dim "New session started.")))
 
             :session-resumed
@@ -409,15 +493,17 @@
             (add-status-message! (ansi/fg :error (:text event)))
 
             :quit
-            (do (tui/stop-tui!)
+            (do (term/restore-stdout!)
+                (tui/stop-tui!)
                 (println "Bye.")
                 (js/process.exit 0))
 
             ;; Unknown event — ignore
             nil))]
 
-    ;; Build component tree
-    ((:add-child root) chat-container)
+    ;; Build component tree — view-wrapper holds the active buffer view
+    ((:add-child view-wrapper) chat-container)
+    ((:add-child root) view-wrapper)
     ((:add-child root) spacer)
     ((:add-child root) editor-comp)
 
@@ -446,4 +532,5 @@
 
      :on-disconnect
      (fn []
+       (term/restore-stdout!)
        (tui/stop-tui!))}))

@@ -1,7 +1,19 @@
 (ns xi.tui.terminal
   "Raw mode terminal abstraction.
-   Handles raw mode, cursor visibility, dimensions, input routing."
+   Handles raw mode, cursor visibility, dimensions, input routing.
+   Provides stdout/stderr interception to capture stray external writes."
   (:require [xi.tui.ansi :as ansi]))
+
+;; ── Stdout Interception ───────────────────────────────────────────────────────
+;;
+;; When the TUI is running, external code (shadow-cljs hot-reload, console.log
+;; from libraries) can write to stdout/stderr and corrupt the display.
+;; We intercept these writes and route them to a callback (typically a buffer).
+;; TUI's own writes go through `write!` which sets `tui-writing?` so the
+;; interceptor lets them pass through to the real stdout.
+
+(def ^:private tui-writing? (atom false))
+(def ^:private restore-fn (atom nil))
 
 (defn create-terminal
   "Create a terminal state map. Call `start!` to enter raw mode."
@@ -22,14 +34,16 @@
   (or (aget js/process.stdout "rows") 24))
 
 (defn write!
-  "Write a string to stdout."
+  "Write a string to stdout (TUI-safe — marks write as internal)."
   [s]
-  (js/process.stdout.write s))
+  (reset! tui-writing? true)
+  (js/process.stdout.write s)
+  (reset! tui-writing? false))
 
 (defn writeln!
   "Write a string + newline to stdout."
   [s]
-  (js/process.stdout.write (str s "\n")))
+  (write! (str s "\n")))
 
 (defn move-by!
   "Move cursor up (negative) or down (positive) by n lines."
@@ -194,3 +208,68 @@
       (.setRawMode stdin was-raw))
 
     (swap! terminal assoc :started false)))
+
+;; ── Stdout/Stderr Interception ───────────────────────────────────────────────────
+;;
+;; Bun's console.log/warn/error bypass process.stdout.write entirely (native I/O),
+;; so we must intercept both the console methods AND process.stdout/stderr.write.
+
+(defn- stringify-args
+  "Convert console-style arguments to a single string."
+  [args]
+  (.call (.-join (js/Array.prototype)) (to-array (map str args)) " "))
+
+(defn intercept-stdout!
+  "Intercept external stdout/stderr writes and console.log/warn/error.
+   on-capture: (fn [stream-keyword text]) where stream is :stdout or :stderr.
+   TUI writes (via write!/writeln!) pass through unaffected.
+   Call restore-stdout! to undo."
+  [on-capture]
+  (when-not @restore-fn
+    (let [stdout-orig (.-write js/process.stdout)
+          stderr-orig (.-write js/process.stderr)
+          log-orig   (.-log js/console)
+          warn-orig  (.-warn js/console)
+          error-orig (.-error js/console)]
+
+      ;; Intercept process.stdout.write (for CLJS println, direct writes)
+      (set! (.-write js/process.stdout)
+            (fn [& args]
+              (if @tui-writing?
+                (.apply stdout-orig js/process.stdout (to-array args))
+                (do (on-capture :stdout (str (first args)))
+                    true))))
+
+      ;; Intercept process.stderr.write
+      (set! (.-write js/process.stderr)
+            (fn [& args]
+              (on-capture :stderr (str (first args)))
+              true))
+
+      ;; Intercept console.log/warn/error (Bun bypasses process.stdout for these)
+      (set! (.-log js/console)
+            (fn [& args]
+              (on-capture :stdout (stringify-args args))))
+
+      (set! (.-warn js/console)
+            (fn [& args]
+              (on-capture :stderr (stringify-args args))))
+
+      (set! (.-error js/console)
+            (fn [& args]
+              (on-capture :stderr (stringify-args args))))
+
+      (reset! restore-fn
+              (fn []
+                (set! (.-write js/process.stdout) stdout-orig)
+                (set! (.-write js/process.stderr) stderr-orig)
+                (set! (.-log js/console) log-orig)
+                (set! (.-warn js/console) warn-orig)
+                (set! (.-error js/console) error-orig))))))
+
+(defn restore-stdout!
+  "Restore original stdout/stderr write functions and console methods."
+  []
+  (when-let [f @restore-fn]
+    (f)
+    (reset! restore-fn nil)))
