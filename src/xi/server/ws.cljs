@@ -66,7 +66,8 @@
                                           "new" :new
                                           "latest" :latest
                                           (or (:session msg) :latest))
-                                   session-id (sm/join-session! manager mode)
+                                   session-opts (when-let [cwd (:cwd msg)] {:cwd cwd})
+                                   session-id (sm/join-session! manager mode session-opts)
                                    session (sm/get-session manager session-id)
                                    rt (:runtime session)
 

@@ -19,10 +19,11 @@
        (.toString (js/Math.floor (* (js/Math.random) 1000000)) 36)))
 
 (defn create-session!
-  "Create a new session with a fresh runtime. Returns session-id."
-  [manager]
+  "Create a new session with a fresh runtime. Returns session-id.
+   session-opts are merged over the manager's default opts (e.g. :cwd from client)."
+  [manager & [session-opts]]
   (let [sid (gen-session-id)
-        rt (runtime/create! (:opts manager))
+        rt (runtime/create! (merge (:opts manager) session-opts))
         session {:runtime rt
                  :clients (atom #{})
                  :created (js/Date.now)}]
@@ -44,21 +45,22 @@
 
 (defn join-session!
   "Join a client to a session. Returns the session-id joined.
-   mode: :latest (join most recent or create new), :new (always create new), or a session-id string."
-  [manager mode]
+   mode: :latest (join most recent or create new), :new (always create new), or a session-id string.
+   session-opts: per-session overrides (e.g. :cwd) passed through when creating a new session."
+  [manager mode & [session-opts]]
   (case mode
     :new
-    (create-session! manager)
+    (create-session! manager session-opts)
 
     :latest
     (or (latest-session-id manager)
-        (create-session! manager))
+        (create-session! manager session-opts))
 
     ;; Explicit session-id
     (if (get-session manager mode)
       mode
       (do (js/console.error (str "[sessions] Session " mode " not found, creating new"))
-          (create-session! manager)))))
+          (create-session! manager session-opts)))))
 
 (defn add-client!
   "Add a client (ws connection) to a session. Returns the runtime client map."

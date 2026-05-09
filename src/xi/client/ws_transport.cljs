@@ -29,10 +29,11 @@
     (.addEventListener ws "open"
                        (fn [_]
                          (js/console.error (str "[ws] Connected to " url ", joining session (" session-mode ")..."))
-                         ;; Send join handshake
+                         ;; Send join handshake with client's cwd
                          (.send ws (js/JSON.stringify
                                     (clj->js {:type :join
-                                              :session session-mode})))))
+                                              :session session-mode
+                                              :cwd (.cwd js/process)})))))
 
     (.addEventListener ws "close"
                        (fn [_]
