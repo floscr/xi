@@ -23,8 +23,12 @@
     (str/starts-with? line "- [ ] ") (str (ansi/fg :dim "○") " " (render-inline (subs line 6)))
     :else (render-inline line)))
 
+(def ^:private code-bg "\033[48;2;67;76;94m")
+(def ^:private code-fg "\033[38;2;255;255;255m")
+
 (defn- render-md-text
-  "Render markdown text to ANSI-formatted lines."
+  "Render markdown text to ANSI-formatted lines.
+   Returns vectors of {:text s :code? bool} maps."
   [text width]
   (let [raw-lines (str/split-lines text)
         in-code (atom false)
@@ -33,20 +37,20 @@
       (cond
         (str/starts-with? line "```")
         (if @in-code
-          (do (swap! result conj (ansi/fg :dim "───"))
+          (do (swap! result conj {:text "" :code? true})
               (reset! in-code false))
-          (do (swap! result conj (ansi/fg :dim (str "─── " (subs line 3))))
+          (do (swap! result conj {:text "" :code? true})
               (reset! in-code true)))
 
         @in-code
-        (swap! result conj (ansi/fg :dim (str "  " line)))
+        (swap! result conj {:text (str "  " line) :code? true})
 
         :else
         ;; Wrap long lines
         (let [formatted (render-md-line line)
               wrapped (ansi/wrap-text formatted width)]
           (doseq [w wrapped]
-            (swap! result conj w)))))
+            (swap! result conj {:text w :code? false})))))
     @result))
 
 (defn make-markdown
@@ -70,9 +74,16 @@
                     cached-lines
                     (let [content-w (max 1 (- width (* 2 padding-x)))
                           left-pad (apply str (repeat padding-x " "))
-                          lines (if (or (nil? text) (empty? text))
-                                  []
-                                  (mapv #(str left-pad %) (render-md-text text content-w)))
+                          entries (if (or (nil? text) (empty? text))
+                                    []
+                                    (render-md-text text content-w))
+                          lines (mapv (fn [{:keys [text code?]}]
+                                        (let [padded (str left-pad text)]
+                                          (if code?
+                                            (ansi/apply-bg-to-line
+                                             (str code-fg padded) width code-bg)
+                                            padded)))
+                                      entries)
                           result (if (empty? lines) [""] lines)]
                       (swap! state assoc :cached-text text :cached-width width :cached-lines result)
                       result))))})))
