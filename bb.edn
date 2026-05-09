@@ -1,0 +1,26 @@
+{:tasks
+ {clean
+  {:doc "Clear shadow-cljs and classpath caches"
+   :task (do (shell {:continue true} "find" ".shadow-cljs" "-type" "f" "-delete")
+             (shell {:continue true} "find" ".cpcache" "-type" "f" "-delete")
+             (println "Caches cleared. Restart shadow-cljs."))}
+
+  build
+  {:doc "Compile the CLI (node-script) target"
+   :task (shell "npx shadow-cljs compile main")}
+
+  watch
+  {:doc "Watch-compile the CLI target with hot reload"
+   :task (shell "npx shadow-cljs watch main")}
+
+  web:build
+  {:doc "Compile the web client (browser) target"
+   :task (shell "npx shadow-cljs compile web")}
+
+  web:watch
+  {:doc "Watch-compile the web client with hot reload"
+   :task (shell "npx shadow-cljs watch web")}
+
+  watch:all
+  {:doc "Watch both CLI and web targets simultaneously"
+   :task (shell "npx shadow-cljs watch main web")}}}
