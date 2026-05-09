@@ -16,11 +16,12 @@
                         :stderr "pipe"
                         :cwd (.cwd js/process)})]
          (-> (js/Promise.all #js [(.text (.-stdout proc))
-                                  (.text (.-stderr proc))])
+                                  (.text (.-stderr proc))
+                                  (.-exited proc)])
              (.then (fn [results]
                       (let [stdout (aget results 0)
                             stderr (aget results 1)
-                            code (.-exitCode proc)]
+                            code (aget results 2)]
                         (cond
                           (= 0 code)
                           (resolve {:content [{:type "text" :text stdout}]})
@@ -30,7 +31,7 @@
 
                           :else
                           (resolve {:content [{:type "text"
-                                              :text (str "ripgrep error: " stderr)}]
+                                              :text (str "ripgrep error (exit " code "): " stderr)}]
                                     :is-error true})))))))))))
 
 (def definition

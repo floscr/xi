@@ -5,7 +5,9 @@
   "Find files matching a pattern."
   [{:keys [pattern path]}]
   (let [dir (or path ".")
-        args ["fd" "--type" "f" "--color" "never" (or pattern "")  dir]]
+        args (cond-> ["fd" "--type" "f" "--color" "never" "--glob"]
+               (seq pattern) (conj pattern)
+               true (conj dir))]
     (js/Promise.
      (fn [resolve _reject]
        (let [proc (js/Bun.spawn
@@ -14,22 +16,23 @@
                         :stderr "pipe"
                         :cwd (.cwd js/process)})]
          (-> (js/Promise.all #js [(.text (.-stdout proc))
-                                  (.text (.-stderr proc))])
+                                  (.text (.-stderr proc))
+                                  (.-exited proc)])
              (.then (fn [results]
                       (let [stdout (aget results 0)
                             stderr (aget results 1)
-                            code (.-exitCode proc)]
+                            code (aget results 2)]
                         (if (or (= 0 code) (= 1 code))
                           (resolve {:content [{:type "text"
                                                :text (if (seq stdout) stdout "No files found.")}]})
                           (resolve {:content [{:type "text"
-                                              :text (str "fd error: " stderr)}]
+                                              :text (str "fd error (exit " code "): " stderr)}]
                                     :is-error true})))))))))))
 
 (def definition
   {:name "find"
    :description "Find files matching a pattern using fd. Returns file paths."
    :input_schema {:type "object"
-                  :properties {:pattern {:type "string" :description "File name pattern (regex)"}
+                  :properties {:pattern {:type "string" :description "File name glob pattern, e.g. '*.cljs'"}
                                :path {:type "string" :description "Directory to search in (default: current dir)"}}
                   :required []}})
