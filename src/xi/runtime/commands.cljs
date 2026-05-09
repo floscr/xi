@@ -20,7 +20,7 @@
            :timestamp (:timestamp s)
            :user-messages (:user-messages s)
            :source (:source s)})
-        (range) (take 10 sessions)))
+        (range) sessions))
 
 (defn parse-input
   "Parse user input into a command map.
