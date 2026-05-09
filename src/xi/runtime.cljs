@@ -104,7 +104,7 @@
                   (aget js/process.env "XI_MODEL")
                   (:defaultModel settings)
                   DEFAULT_MODEL)
-        cwd (or (:cwd opts) (.cwd js/process))
+        cwd (or (:cwd opts) (aget js/process.env "XI_CWD") (.cwd js/process))
         bus (events/create-bus)
         sess (atom (session/create-session cwd))
         state (atom {:model model
