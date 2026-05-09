@@ -104,12 +104,18 @@
   (let [state (atom {:message message
                      :frame 0
                      :timer nil
+                     :thinking-text nil
                      :cached-width nil
                      :cached-lines nil})]
     {:type :loader
      :set-message (fn [msg]
                     (swap! state assoc :message msg :cached-width nil :cached-lines nil)
                     (tui/request-render!))
+     :set-thinking (fn [text]
+                     (swap! state assoc :thinking-text text :cached-width nil :cached-lines nil)
+                     (tui/request-render!))
+     :clear-thinking (fn []
+                       (swap! state assoc :thinking-text nil :cached-width nil :cached-lines nil))
      :start (fn []
               (when-let [t (:timer @state)]
                 (js/clearInterval t))
@@ -129,11 +135,26 @@
                (swap! state assoc :timer nil)))
      :invalidate (fn [] (swap! state assoc :cached-width nil :cached-lines nil))
      :render (fn [width]
-               (let [{:keys [message frame cached-width cached-lines]} @state]
+               (let [{:keys [message frame thinking-text cached-width cached-lines]} @state]
                  (if (and cached-lines (= cached-width width))
                    cached-lines
                    (let [spinner (nth SPINNER_FRAMES frame)
-                         line (str "" (ansi/fg :accent spinner) " " (ansi/fg :dim message))
-                         result ["" line]]
+                         header (str "" (ansi/fg :accent spinner) " " (ansi/fg :dim message))
+                         result (if (and thinking-text (seq thinking-text))
+                                  (let [max-lines 6
+                                        lines (str/split-lines thinking-text)
+                                        total (count lines)
+                                        visible (if (> total max-lines)
+                                                  (subvec (vec lines) (- total max-lines))
+                                                  lines)
+                                        content-width (max 1 (- width 4))
+                                        thinking-lines (mapv (fn [line]
+                                                               (let [trimmed (if (> (count line) content-width)
+                                                                              (str (subs line 0 content-width) "…")
+                                                                              line)]
+                                                                 (str "  " (ansi/fg :dim trimmed))))
+                                                             visible)]
+                                    (into ["" header] thinking-lines))
+                                  ["" header])]
                      (swap! state assoc :cached-width width :cached-lines result)
                      result))))}))

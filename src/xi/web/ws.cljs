@@ -169,6 +169,12 @@
     :command-error
     (append-msg! {:type :error :text (:text event)})
 
+    :history
+    (do
+      (swap! state/app-state assoc :messages [])
+      (doseq [evt (:events event)]
+        (handle-event (update evt :type keyword))))
+
     :quit
     (swap! state/app-state assoc :view :home :session-id nil)
 

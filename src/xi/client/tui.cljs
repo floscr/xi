@@ -148,6 +148,7 @@
         text-started (atom false)
         current-md (atom nil)
         current-tool (atom nil)
+        thinking-text (atom "")
         ;; Track last locally-submitted prompt to avoid double-rendering
         last-local-prompt (atom nil)
 
@@ -311,6 +312,7 @@
              (buffers/append! buffer-mgr "Logs" text)))
 
         ;; Event handler — maps runtime events to TUI mutations
+        on-event-fn (atom nil)
         on-event
         (fn [event]
           (case (:type event)
@@ -342,18 +344,29 @@
               ;; Reset turn state for new turn
               (reset! text-started false)
               (reset! current-md nil)
-              (reset! current-tool nil))
+              (reset! current-tool nil)
+              (reset! thinking-text "")
+              ((:clear-thinking loader)))
 
             :turn-start
-            (do ((:add-child chat-container) loader)
+            (do (reset! thinking-text "")
+                ((:clear-thinking loader))
+                ((:add-child chat-container) loader)
                 ((:start loader))
                 (tui/render-now!))
 
             :text-delta
             (do (when-not @text-started
-                  ;; Remove loader, start markdown component
-                  ((:stop loader))
-                  ((:remove-child chat-container) loader)
+                  ;; Persist thinking block as static text before removing loader
+                  (let [thought @thinking-text]
+                    (reset! thinking-text "")
+                    ((:clear-thinking loader))
+                    ((:stop loader))
+                    ((:remove-child chat-container) loader)
+                    (when (seq thought)
+                      ((:add-child chat-container)
+                       (comp/make-text (ansi/fg :dim thought)))
+                      ((:add-child chat-container) (comp/make-spacer 1))))
                   (let [m (md/make-markdown "")]
                     ((:add-child chat-container) m)
                     ((:add-child chat-container) (comp/make-spacer 1))
@@ -366,13 +379,22 @@
                     ((:set-text m) new-text))))
 
             :thinking
-            nil
+            (when-let [t (:text event)]
+              (swap! thinking-text str t)
+              ((:set-thinking loader) @thinking-text))
 
             :tool-start
-            (do ;; Stop loader if still showing
-                (when-not @text-started
-                  ((:stop loader))
-                  ((:remove-child chat-container) loader))
+            (do ;; Persist thinking block before removing loader
+                (let [thought @thinking-text]
+                  (reset! thinking-text "")
+                  ((:clear-thinking loader))
+                  (when-not @text-started
+                    ((:stop loader))
+                    ((:remove-child chat-container) loader)
+                    (when (seq thought)
+                      ((:add-child chat-container)
+                       (comp/make-text (ansi/fg :dim thought)))
+                      ((:add-child chat-container) (comp/make-spacer 1)))))
                 (reset! text-started false)
                 (reset! current-md nil)
                 ;; Create tool component
@@ -408,7 +430,9 @@
                 (reset! current-tool nil)
                 ;; Empty line after block
                 ((:add-child chat-container) (comp/make-spacer 1))
-                ;; Show loader for next iteration
+                ;; Show loader for next iteration (clear stale thinking text)
+                (reset! thinking-text "")
+                ((:clear-thinking loader))
                 ((:add-child chat-container) loader)
                 ((:start loader))
                 (tui/render-now!))
@@ -517,8 +541,14 @@
                 (println "Bye.")
                 (js/process.exit 0))
 
+            :history
+            (doseq [evt (:events event)]
+              (@on-event-fn (update evt :type keyword)))
+
             ;; Unknown event — ignore
-            nil))]
+            nil))
+
+        _ (reset! on-event-fn on-event)]
 
     ;; Build component tree — view-wrapper holds the active buffer view
     ((:add-child view-wrapper) chat-container)

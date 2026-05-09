@@ -119,12 +119,22 @@
                      :cwd cwd
                      :sess sess
                      :agents-md agents-md})
+        event-history (atom [])
         rt {:bus bus
             :state state
             :sess sess
             :busy (atom false)
             :abort-signal (atom false)
-            :clients (atom #{})}]
+            :clients (atom #{})
+            :event-history event-history}]
+
+    ((:subscribe! bus) :*
+     (fn [event]
+       (let [t (:type event)]
+         (if (= t :session-cleared)
+           (reset! event-history [])
+           (when-not (#{:ready :quit} t)
+             (swap! event-history conj event))))))
 
     ((:emit! bus) {:type :ready
                    :model model
@@ -160,6 +170,10 @@
                              :cwd cwd
                              :agents-files agents-files
                              :extensions (ext/list-extensions)}))
+      ;; Replay event history for late-joining clients
+      (let [history @(:event-history rt)]
+        (when (seq history)
+          ((:on-event client) {:type :history :events history})))
       client-with-unsub)))
 
 (defn disconnect!

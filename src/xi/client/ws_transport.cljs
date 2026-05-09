@@ -65,6 +65,10 @@
                                  ;; Track busy state locally
                                  (when (= :busy-changed (:type event))
                                    (reset! busy (:busy event)))
+                                 (when (= :history (:type event))
+                                   (doseq [evt (:events event)]
+                                     (when (= "busy-changed" (:type evt))
+                                       (reset! busy (:busy evt)))))
                                  ;; Forward to TUI
                                  (when on-event
                                    (on-event event)))))
