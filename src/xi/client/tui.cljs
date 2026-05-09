@@ -315,7 +315,14 @@
         (fn [event]
           (case (:type event)
             :ready
-            nil ;; Header rendered separately
+            ;; Show AGENTS.md status when loaded
+            (when-let [agents-files (seq (:agents-files event))]
+              ((:add-child chat-container)
+               (comp/make-text
+                (str (ansi/fg :dim "Loaded ") (ansi/fg :accent (str (count agents-files) " AGENTS.md"))
+                     (ansi/fg :dim (str " file" (when (> (count agents-files) 1) "s"))))))
+              ((:add-child chat-container) (comp/make-spacer 1))
+              (tui/render-now!))
 
             :user-message
             (let [text (:text event)
@@ -541,6 +548,7 @@
           (comp/make-text (ansi/fg :dim "Type /quit to exit, /help for commands.")))
          ((:add-child chat-container) (comp/make-spacer 1)))
        (tui/render-now!))
+
 
      :on-disconnect
      (fn []

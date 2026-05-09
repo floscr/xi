@@ -14,7 +14,8 @@
             [xi.provider :as provider]
             [xi.runtime.commands :as commands]
             [xi.runtime.events :as events]
-            [xi.session :as session]))
+            [xi.session :as session]
+            [xi.system-prompt :as system-prompt]))
 
 (def ^:private DEFAULT_MODEL "claude-sonnet-4-20250514")
 
@@ -42,7 +43,7 @@
   "Run one agent turn. Bridges loop callbacks to event bus."
   [rt prompt]
   (let [{:keys [emit!]} (:bus rt)
-        {:keys [model sess cwd]} @(:state rt)
+        {:keys [model sess cwd agents-md]} @(:state rt)
         cli-session-id (:cli-session-id @sess)
         abort-signal (:abort-signal rt)]
 
@@ -77,7 +78,8 @@
                   :on-error
                   (fn [err]
                     (emit! {:type :error :error err}))}
-           cli-session-id (assoc :resume-session-id cli-session-id)))
+           cli-session-id (assoc :resume-session-id cli-session-id)
+           (and agents-md (nil? cli-session-id)) (assoc :system agents-md)))
 
         (.then (fn [result]
                  (when (:aborted result)
@@ -109,11 +111,14 @@
                   (:defaultModel settings)
                   DEFAULT_MODEL)
         cwd (or (:cwd opts) (aget js/process.env "XI_CWD") (.cwd js/process))
+        agents-files (system-prompt/find-agents-md cwd)
+        agents-md (system-prompt/load-agents-md cwd)
         bus (events/create-bus)
         sess (atom (session/create-session cwd))
         state (atom {:model model
                      :cwd cwd
-                     :sess sess})
+                     :sess sess
+                     :agents-md agents-md})
         rt {:bus bus
             :state state
             :sess sess
@@ -124,6 +129,7 @@
     ((:emit! bus) {:type :ready
                    :model model
                    :cwd cwd
+                   :agents-files agents-files
                    :extensions (ext/list-extensions)})
     rt))
 
@@ -147,10 +153,12 @@
       (when-let [on-connect (:on-connect client)]
         (on-connect rt))
       ;; Replay ready event
-      (let [{:keys [model cwd]} @(:state rt)]
+      (let [{:keys [model cwd agents-md]} @(:state rt)
+            agents-files (system-prompt/find-agents-md cwd)]
         ((:on-event client) {:type :ready
                              :model model
                              :cwd cwd
+                             :agents-files agents-files
                              :extensions (ext/list-extensions)}))
       client-with-unsub)))
 

@@ -15,7 +15,7 @@ Do not create files unless necessary. Prefer editing existing files over creatin
 Be careful not to introduce security vulnerabilities.
 Don't add features, refactor code, or make improvements beyond what was asked.")
 
-(defn- find-agents-md
+(defn find-agents-md
   "Walk up from dir to root, collecting all AGENTS.md files found.
    Returns vec of paths, innermost (closest to cwd) last."
   [start-dir]
@@ -31,7 +31,7 @@ Don't add features, refactor code, or make improvements beyond what was asked.")
         (vec (reverse found))
         (recur parent found)))))
 
-(defn- load-agents-md
+(defn load-agents-md
   "Load and concatenate all AGENTS.md files from cwd to root."
   [cwd]
   (let [files (find-agents-md cwd)]
