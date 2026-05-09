@@ -2,6 +2,18 @@
   "Git commit workflow extension — hunk-level staging and commit tools."
   (:require [clojure.string :as str]))
 
+(defn- build-commit-prompt [args]
+  (str "Review the current git changes and create a commit.\n\n"
+       "Steps:\n"
+       "1. Run git_overview to see what files changed\n"
+       "2. Review the actual diffs with git_file_diff to understand the changes\n"
+       "3. Stage the appropriate files with git_stage_hunks\n"
+       "4. Write a clear conventional commit message and commit with git_commit_with_user_approval\n\n"
+       "Use conventional commit format (feat:, fix:, refactor:, chore:, docs:, etc.).\n"
+       "Keep the commit message concise and descriptive. Do NOT add co-authored-by or generated-with lines.\n"
+       (when (seq args)
+         (str "\nContext from the user: " args))))
+
 (defn- run-git
   "Run a git command, return promise of {:content [...] :is-error bool}."
   [args]
@@ -28,6 +40,11 @@
 
 (def extension
   {:name "commit"
+   :commands [{:name "commit"
+               :description "Review changes and create a git commit"
+               :handler (fn [{:keys [args]}]
+                          {:type :prompt
+                           :text (build-commit-prompt args)})}]
    :tools [{:name "git_overview"
             :description "Show changed/staged files with stat summary and line counts."
             :input_schema {:type "object"

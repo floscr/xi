@@ -104,6 +104,8 @@
 
     ;; Try extension commands
     (if-let [{:keys [handler]} (ext/get-command name)]
-      (do (handler {:session @sess :model model :cwd cwd})
-          [{:type :command-result :command name :text (str "Ran /" name)}])
+      (let [result (handler {:session @sess :model model :cwd cwd :args args})]
+        (if (and (map? result) (= :prompt (:type result)))
+          [{:type :dispatch-prompt :text (:text result)}]
+          [{:type :command-result :command name :text (str "Ran /" name)}]))
       [{:type :command-error :command name :text (str "Unknown command: /" name)}])))
