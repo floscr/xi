@@ -438,15 +438,18 @@
                 (tui/render-now!))
 
             :error
-            (do ((:stop loader))
+            (let [err (:error event)
+                  msg (or (:message err) (pr-str err))]
+              ;; Suppress spurious SDK errors during abort
+              (when-not (and msg (str/includes? msg "null is not an object"))
+                ((:stop loader))
                 ((:remove-child chat-container) loader)
-                (let [err (:error event)
-                      err-msg (comp/make-text
-                               (str (ansi/fg :error "[Error]") " "
-                                    (ansi/fg :dim (pr-str err))))]
-                  ((:add-child chat-container) err-msg)
-                  ((:add-child chat-container) (comp/make-spacer 1)))
-                (tui/render-now!))
+                ((:add-child chat-container)
+                 (comp/make-text
+                  (str (ansi/fg :error "[Error]") " "
+                       (ansi/fg :dim msg))))
+                ((:add-child chat-container) (comp/make-spacer 1))
+                (tui/render-now!)))
 
             :turn-end
             (do ((:stop loader))
