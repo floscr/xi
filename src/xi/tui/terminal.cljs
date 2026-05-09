@@ -217,7 +217,7 @@
 (defn- stringify-args
   "Convert console-style arguments to a single string."
   [args]
-  (.call (.-join (js/Array.prototype)) (to-array (map str args)) " "))
+  (.join (to-array (map str args)) " "))
 
 (defn intercept-stdout!
   "Intercept external stdout/stderr writes and console.log/warn/error.
