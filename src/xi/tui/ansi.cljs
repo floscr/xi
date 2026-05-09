@@ -4,32 +4,65 @@
 
 ;; ── Escape Codes ──────────────────────────────────────────────────────────────
 
-(def ESC "\033[")
+(def ^:private ^:const ESC "\033[")
+
+;; ── Colors ────────────────────────────────────────────────────────────────────
+
+(def reset     (str ESC "0m"))
+(def bold      (str ESC "1m"))
+(def dim       (str ESC "2m"))
+(def black     (str ESC "30m"))
+(def red       (str ESC "31m"))
+(def green     (str ESC "32m"))
+(def yellow    (str ESC "33m"))
+(def blue      (str ESC "34m"))
+(def magenta   (str ESC "35m"))
+(def cyan      (str ESC "36m"))
+(def white     (str ESC "37m"))
+(def default   (str ESC "39m"))
+(def dim-white (str ESC "90m"))
+
+(def bg-dark   (str ESC "48;5;236m"))
 
 (defn fg
-  "Apply foreground color."
+  "Wrap text in a foreground color and reset.
+   Color can be a keyword or a raw escape code string.
+   `(fg :red \"hello\")` or `(fg red \"hello\")`"
   [color text]
-  (case color
-    :dim     (str ESC "90m" text ESC "0m")
-    :accent  (str ESC "36m" text ESC "0m")
-    :error   (str ESC "31m" text ESC "0m")
-    :success (str ESC "32m" text ESC "0m")
-    :warning (str ESC "33m" text ESC "0m")
-    :bold    (str ESC "1m" text ESC "0m")
-    :blue    (str ESC "34m" text ESC "0m")
-    :magenta (str ESC "35m" text ESC "0m")
-    :reset   (str ESC "0m" text)
-    text))
+  (let [code (if (keyword? color)
+               (case color
+                 :dim     dim-white
+                 :accent  cyan
+                 :error   red
+                 :success green
+                 :warning yellow
+                 :bold    bold
+                 :red     red
+                 :green   green
+                 :yellow  yellow
+                 :blue    blue
+                 :magenta magenta
+                 :cyan    cyan
+                 :white   white
+                 :reset   reset
+                 nil)
+               color)]
+    (if code
+      (str code text reset)
+      text)))
 
 (defn bg
-  "Apply background color."
+  "Wrap text in a background color and reset."
   [color text]
-  (case color
-    :dark   (str ESC "48;5;236m" text ESC "0m")
-    :tool   (str ESC "48;5;236m" text ESC "0m")
-    text))
-
-(def RESET (str ESC "0m"))
+  (let [code (if (keyword? color)
+               (case color
+                 :dark bg-dark
+                 :tool bg-dark
+                 nil)
+               color)]
+    (if code
+      (str code text reset)
+      text)))
 
 ;; ── Cursor Control ────────────────────────────────────────────────────────────
 
