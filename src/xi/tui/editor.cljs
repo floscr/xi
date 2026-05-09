@@ -155,6 +155,7 @@
         on-submit (:on-submit opts)
         on-interrupt (:on-interrupt opts)
         on-escape (:on-escape opts)
+        on-palette (:on-palette opts)
 
         get-text (fn []
                    (str/join "\n" (:lines @state)))
@@ -506,11 +507,9 @@
                          (ctrl? data "F")
                          (move-cursor 0 1)
 
-                         ;; Ctrl+P — previous line / history up
+                         ;; Ctrl+P — command palette
                          (ctrl? data "P")
-                         (if (zero? (:cursor-line @state))
-                           (browse-history :up)
-                           (move-cursor -1 0))
+                         (when on-palette (on-palette))
 
                          ;; Ctrl+N — next line / history down
                          (ctrl? data "N")

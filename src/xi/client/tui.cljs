@@ -9,6 +9,7 @@
   (:require [clojure.string :as str]
             [xi.tui.ansi :as ansi]
             [xi.tui.buffers :as buffers]
+            [xi.tui.command-palette :as palette]
             [xi.tui.core :as tui]
             [xi.tui.completion :as completion]
             [xi.tui.components :as comp]
@@ -208,6 +209,7 @@
 
         ;; Forward-declared so hide/show-completion-menu! can reference editor
         editor-comp-ref (atom nil)
+        open-palette-fn (atom nil)
 
         hide-completion-menu!
         (fn []
@@ -273,7 +275,53 @@
                              (switch-to-buffer! (:value item)))})
               true)
 
+            (= text "/palette")
+            (do (@open-palette-fn) true)
+
+            (str/starts-with? text "/palette ")
+            (let [rest-text (str/trim (subs text 9))
+                  [sub arg] (str/split rest-text #"\s+" 2)]
+              (cond
+                (= sub "add")
+                (if (seq arg)
+                  (if (palette/add-custom! arg)
+                    (add-status-message! (str "Added to palette: " (ansi/fg :accent arg)))
+                    (add-status-message! (str "Already in palette: " arg)))
+                  (add-status-message! (ansi/fg :error "Usage: /palette add <command>")))
+
+                (= sub "remove")
+                (if (seq arg)
+                  (if (palette/remove-custom! arg)
+                    (add-status-message! (str "Removed from palette: " arg))
+                    (add-status-message! (str "Not found: " arg)))
+                  (add-status-message! (ansi/fg :error "Usage: /palette remove <command>")))
+
+                (= sub "list")
+                (let [customs (palette/list-custom)]
+                  (if (empty? customs)
+                    (add-status-message! (ansi/fg :dim "No custom commands."))
+                    (add-status-message!
+                     (str (ansi/fg :bold "Custom commands:\n")
+                          (str/join "\n" (map #(str "  " (:command %)) customs))))))
+
+                :else
+                (add-status-message! (ansi/fg :error "Usage: /palette add|remove|list <command>")))
+              true)
+
             :else false))
+
+        open-palette!
+        (fn []
+          (let [items (palette/build-items)]
+            (show-completion-menu!
+             {:items items
+              :prompt "palette> "
+              :on-select (fn [item]
+                           (let [cmd (:value item)]
+                             (palette/record-use! cmd)
+                             (when-not (handle-local-command! cmd)
+                               (dispatch! cmd))))})))
+        _ (reset! open-palette-fn open-palette!)
 
         ;; Editor at the bottom
         editor-comp
@@ -282,6 +330,8 @@
           :on-submit (fn [text]
                        (let [text (str/trim text)]
                          (when (seq text)
+                           (when (str/starts-with? text "/")
+                             (palette/record-use! text))
                            ;; Try local commands first (work even when agent is busy)
                            (when-not (handle-local-command! text)
                              (when-not (busy?)
@@ -301,7 +351,9 @@
                           (term/restore-stdout!)
                           (tui/stop-tui!)
                           (println "Bye.")
-                          (js/process.exit 0))})
+                          (js/process.exit 0))
+
+          :on-palette open-palette!})
 
         ;; Wire up forward reference
         _ (reset! editor-comp-ref editor-comp)
