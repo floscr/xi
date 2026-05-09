@@ -42,7 +42,7 @@
   "Run one agent turn. Bridges loop callbacks to event bus."
   [rt prompt]
   (let [{:keys [emit!]} (:bus rt)
-        {:keys [model sess]} @(:state rt)
+        {:keys [model sess cwd]} @(:state rt)
         cli-session-id (:cli-session-id @sess)
         abort-signal (:abort-signal rt)]
 
@@ -51,6 +51,7 @@
     (-> (loop/run-turn
          (cond-> {:model model
                   :prompt prompt
+                  :cwd cwd
                   :abort-signal abort-signal
 
                   :on-text

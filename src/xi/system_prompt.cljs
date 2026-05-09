@@ -33,12 +33,12 @@ Don't add features, refactor code, or make improvements beyond what was asked.")
 
 (defn- load-agents-md
   "Load and concatenate all AGENTS.md files from cwd to root."
-  []
-  (let [files (find-agents-md (.cwd js/process))]
+  [cwd]
+  (let [files (find-agents-md cwd)]
     (when (seq files)
       (str/join "\n\n---\n\n"
                 (map (fn [f]
-                       (str "# " (.relative node-path (.cwd js/process) f) "\n\n"
+                       (str "# " (.relative node-path cwd f) "\n\n"
                             (fs/readFileSync f "utf8")))
                      files)))))
 
@@ -53,9 +53,10 @@ Don't add features, refactor code, or make improvements beyond what was asked.")
 
 (defn build
   "Build the full system prompt string."
-  [tool-defs]
-  (let [parts [BASE_PROMPT
-               (str "Current working directory: " (.cwd js/process))
+  [tool-defs cwd]
+  (let [cwd (or cwd (.cwd js/process))
+        parts [BASE_PROMPT
+               (str "Current working directory: " cwd)
                (tool-descriptions tool-defs)
-               (load-agents-md)]]
+               (load-agents-md cwd)]]
     (str/join "\n\n" (filter some? parts))))

@@ -24,6 +24,7 @@
   (-> (provider/stream-messages
        {:model (:model opts)
         :prompt (:prompt opts)
+        :cwd (:cwd opts)
         :system (:system opts)
         :resume-session-id (:resume-session-id opts)
         :abort-signal (:abort-signal opts)

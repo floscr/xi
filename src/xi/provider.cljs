@@ -98,10 +98,9 @@
 
 (defn- build-mcp-server
   "Build an MCP server exposing Xi's tools."
-  []
+  [cwd]
   (let [defs (tools/tool-definitions)
         registry (tools/tool-registry)
-        cwd (.cwd js/process)
         mcp-tools (into-array
                    (map (fn [tool-def]
                           (let [tool-name (:name tool-def)
@@ -262,9 +261,9 @@
                      :result-text nil :cost nil :tool-call-ids []})
         saw-stream-events? (atom false)
 
-        cwd (.cwd js/process)
+        cwd (or (:cwd opts) (.cwd js/process))
         resume-id (or (:resume-session-id opts) (get-session-id))
-        mcp-server (build-mcp-server)
+        mcp-server (build-mcp-server cwd)
         query-opts (doto (clj->js
                           (cond-> {:cwd cwd
                                    :permissionMode "bypassPermissions"
