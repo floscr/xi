@@ -66,6 +66,10 @@
                   (fn [{:keys [id name arguments]}]
                     (emit! {:type :tool-start :id id :name name :arguments arguments}))
 
+                  :on-tool-args
+                  (fn [{:keys [id name arguments]}]
+                    (emit! {:type :tool-args :id id :name name :arguments arguments}))
+
                   :on-tool-result
                   (fn [{:keys [name content is-error]}]
                     (emit! {:type :tool-result :id name :content content :is-error is-error}))
@@ -189,10 +193,14 @@
                             nil)))))
 
         :command
-        (let [events (commands/handle-command parsed {:sess sess :cwd cwd :model model})]
-          (doseq [event events]
+        (let [events (commands/handle-command parsed {:sess sess :cwd cwd :model model})
+              prompt-event (first (filter #(= :dispatch-prompt (:type %)) events))
+              other-events (remove #(= :dispatch-prompt (:type %)) events)]
+          (doseq [event other-events]
             (emit! event))
-          (js/Promise.resolve events))
+          (if prompt-event
+            (dispatch! rt (:text prompt-event))
+            (js/Promise.resolve events)))
 
         :abort
         (do (when @(:busy rt)

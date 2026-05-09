@@ -31,6 +31,7 @@
         :on-text (:on-text opts)
         :on-thinking (:on-thinking opts)
         :on-tool-start (:on-tool-start opts)
+        :on-tool-args (:on-tool-args opts)
         :on-tool-result (:on-tool-result opts)
         :on-error (:on-error opts)})
       (.then

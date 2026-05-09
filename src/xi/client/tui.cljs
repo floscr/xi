@@ -77,7 +77,7 @@
         header-text (comp/make-text
                      (str (ansi/fg :accent (str "$ " tool-name))
                           (when short-args
-                            (str " " (ansi/fg :dim short-args)))))
+                            (str " " short-args))))
         output-text (comp/make-text "")
         start-time (js/Date.now)]
     ((:add-child box) (comp/make-spacer 1))
@@ -87,6 +87,13 @@
     {:component box
      :set-output (fn [text]
                    ((:set-text output-text) text))
+     :update-header (fn [new-tool-name new-args-summary]
+                      (let [short (when (seq new-args-summary)
+                                    (truncate (first (str/split-lines new-args-summary)) 120))]
+                        ((:set-text header-text)
+                         (str (ansi/fg :accent (str "$ " new-tool-name))
+                              (when short
+                                (str " " short))))))
      :finish (fn [is-error]
                (let [elapsed (- (js/Date.now) start-time)
                      duration (str (.toFixed (/ elapsed 1000) 1) "s")
@@ -151,7 +158,7 @@
         menu-spacer (atom nil)       ;; spacer component inserted before menu
 
         ;; Session buffers — capture stray stdout/stderr
-        buffer-mgr (buffers/create-manager ["Logs"])
+        buffer-mgr (or (:buffer-mgr opts) (buffers/create-manager ["Logs"]))
 
         ;; Create TUI
         root (tui/create-tui!)
@@ -369,6 +376,11 @@
                   ((:add-child chat-container) (:component tool-comp))
                   (reset! current-tool tool-comp))
                 (tui/render-now!))
+
+            :tool-args
+            (when-let [tool @current-tool]
+              (let [args-str (format-tool-args (:name event) (:arguments event))]
+                ((:update-header tool) (:name event) args-str)))
 
             :tool-result
             (do (when-let [tool @current-tool]

@@ -176,14 +176,19 @@
 
       "content_block_start"
       (let [^js block (.-content_block event)
-            block-type (.-type block)]
+            block-type (.-type block)
+            idx (.-index event)]
         (case block-type
           "text"     nil
           "thinking" nil
           "tool_use" (let [id (.-id block)
                            tool-name (strip-mcp-prefix (.-name block))
                            input (or (js->clj (.-input block) :keywordize-keys true) {})]
-                       (swap! state update :tool-call-ids conj id)
+                       (swap! state (fn [s]
+                                      (-> s
+                                          (update :tool-call-ids conj id)
+                                          (assoc-in [:pending-tool-inputs idx]
+                                                    {:id id :name tool-name :json-chunks []}))))
                        (when (:on-tool-start callbacks)
                          ((:on-tool-start callbacks)
                           {:id id :name tool-name :arguments input})))
@@ -191,15 +196,27 @@
 
       "content_block_delta"
       (let [^js delta (.-delta event)
-            delta-type (.-type delta)]
+            delta-type (.-type delta)
+            idx (.-index event)]
         (case delta-type
           "text_delta"     (when (:on-text callbacks) ((:on-text callbacks) (.-text delta)))
           "thinking_delta" (when (:on-thinking callbacks) ((:on-thinking callbacks) (.-thinking delta)))
-          "input_json_delta" nil
+          "input_json_delta"
+          (swap! state update-in [:pending-tool-inputs idx :json-chunks] conj (.-partial_json delta))
           "signature_delta"  nil
           nil))
 
-      "content_block_stop" nil
+      "content_block_stop"
+      (let [idx (.-index event)
+            pending (get-in @state [:pending-tool-inputs idx])]
+        (when pending
+          (let [json-str (apply str (:json-chunks pending))
+                args (try (js->clj (js/JSON.parse json-str) :keywordize-keys true)
+                          (catch :default _ {}))]
+            (when (:on-tool-args callbacks)
+              ((:on-tool-args callbacks)
+               {:id (:id pending) :name (:name pending) :arguments args}))
+            (swap! state update :pending-tool-inputs dissoc idx))))
 
       "message_delta"
       (let [^js delta (.-delta event)
@@ -255,10 +272,11 @@
    CC proposes tools, Xi executes them. Returns promise of response state."
   [opts]
   (let [callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
-                                     :on-tool-result :on-error])
+                                     :on-tool-args :on-tool-result :on-error])
         state (atom {:content [] :usage {} :stop-reason nil
                      :model (:model opts) :session-id nil
-                     :result-text nil :cost nil :tool-call-ids []})
+                     :result-text nil :cost nil :tool-call-ids []
+                     :pending-tool-inputs {}})
         saw-stream-events? (atom false)
 
         cwd (or (:cwd opts) (.cwd js/process))
