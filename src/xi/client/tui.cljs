@@ -355,7 +355,7 @@
                        (when (busy?)
                          (dispatch! {:type :abort})))
 
-          :on-interrupt (fn [] (shutdown! {:message "Bye."}))
+          :on-interrupt (fn [] (shutdown!))
 
           :on-palette open-palette!})
 
@@ -595,7 +595,7 @@
             (add-status-message! (ansi/fg :error (:text event)))
 
             :quit
-            (shutdown! {:message "Bye."})
+            (shutdown!)
 
             :history
             (doseq [evt (:events event)]
