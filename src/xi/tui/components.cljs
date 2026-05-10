@@ -72,6 +72,7 @@
      {:type :box
       :children children
       :add-child (fn [c] (swap! children conj c) (tui/request-render!))
+      :remove-child (fn [c] (swap! children (fn [cs] (vec (remove #(identical? % c) cs)))) (tui/request-render!))
       :clear (fn [] (reset! children []) (tui/request-render!))
       :invalidate (fn []
                     (doseq [c @children]
@@ -94,9 +95,42 @@
                         content (mapv apply-line child-lines)]
                     (into [] (concat pad-lines content pad-lines)))))})))
 
-;; ── Loader ────────────────────────────────────────────────────────────────────
+;; ── Spinner ───────────────────────────────────────────────────────────────────
 
 (def ^:private SPINNER_FRAMES ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
+
+(defn make-spinner
+  "Create a minimal inline spinner component."
+  []
+  (let [state (atom {:frame 0 :timer nil :cached-width nil :cached-lines nil})]
+    {:type :spinner
+     :start (fn []
+              (when-let [t (:timer @state)] (js/clearInterval t))
+              (let [timer (js/setInterval
+                           (fn []
+                             (swap! state (fn [s]
+                                           (-> s
+                                               (update :frame #(mod (inc %) (count SPINNER_FRAMES)))
+                                               (assoc :cached-width nil :cached-lines nil))))
+                             (tui/request-render!))
+                           80)]
+                (swap! state assoc :timer timer :cached-width nil :cached-lines nil)
+                (tui/request-render!)))
+     :stop (fn []
+             (when-let [t (:timer @state)]
+               (js/clearInterval t)
+               (swap! state assoc :timer nil)))
+     :invalidate (fn [] (swap! state assoc :cached-width nil :cached-lines nil))
+     :render (fn [_width]
+               (let [{:keys [frame cached-width cached-lines]} @state]
+                 (if (and cached-lines (= cached-width _width))
+                   cached-lines
+                   (let [spinner (nth SPINNER_FRAMES frame)
+                         result [(ansi/fg :dim spinner)]]
+                     (swap! state assoc :cached-width _width :cached-lines result)
+                     result))))}))
+
+;; ── Loader ────────────────────────────────────────────────────────────────────
 
 (defn make-loader
   "Create an animated loader/spinner component."

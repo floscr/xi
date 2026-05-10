@@ -87,13 +87,18 @@
                      (str (ansi/fg :accent (str "$ " tool-name))
                           (when short-args
                             (str " " short-args))))
+        spinner (comp/make-spinner)
         output-text (comp/make-text "")
         start-time (js/Date.now)]
     ((:add-child box) header-text)
-    ((:add-child box) (comp/make-spacer 1))
-    ((:add-child box) output-text)
+    ((:add-child box) spinner)
+    ((:start spinner))
     {:component box
      :set-output (fn [text]
+                   ((:stop spinner))
+                   ((:remove-child box) spinner)
+                   ((:add-child box) (comp/make-spacer 1))
+                   ((:add-child box) output-text)
                    ((:set-text output-text) text))
      :update-header (fn [new-tool-name new-args-summary]
                       (let [short (when (seq new-args-summary)
@@ -103,6 +108,8 @@
                               (when short
                                 (str " " short))))))
      :finish (fn [is-error]
+               ((:stop spinner))
+               ((:remove-child box) spinner)
                (let [elapsed (- (js/Date.now) start-time)
                      duration (str (.toFixed (/ elapsed 1000) 1) "s")
                      color (if is-error :error :success)]
@@ -110,6 +117,7 @@
                  ((:add-child box)
                   (comp/make-text (ansi/fg color (str "Took " duration))))
                  (tui/request-render!)))}))
+
 
 ;; ── Buffer Helpers ─────────────────────────────────────────────────────────
 
