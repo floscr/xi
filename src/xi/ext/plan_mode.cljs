@@ -1,6 +1,7 @@
 (ns xi.ext.plan-mode
   "Plan mode extension — /plan toggle for read-only code exploration.
-   Injects plan-mode system prompt, guards bash to read-only commands.")
+   Injects plan-mode system prompt, guards bash to read-only commands."
+  (:require [clojure.string :as str]))
 
 (defonce ^:private state (atom {:enabled false}))
 
@@ -41,7 +42,7 @@ An existing plan file is at `tasks/todo.md`. Read it first, then update or repla
 (defn- read-only-bash?
   "Check if a bash command looks read-only."
   [command]
-  (not (some #(clojure.string/includes? command %) DANGEROUS_PATTERNS)))
+  (not (some #(str/includes? command %) DANGEROUS_PATTERNS)))
 
 (defn- plan-mode-context
   "Context hook: inject plan mode prompt when enabled."
