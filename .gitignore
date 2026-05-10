@@ -4,3 +4,4 @@ node_modules/
 .cpcache/
 *.js.map
 resources/public/js/
+.clj-kondo/
