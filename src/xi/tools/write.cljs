@@ -1,6 +1,8 @@
 (ns xi.tools.write
   "Write file tool."
-  (:require ["node:fs" :as fs]
+  (:require [clojure.string :as str]
+            [xi.tools.util :as util]
+            ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
 (defn execute
@@ -14,8 +16,19 @@
       (when-not (fs/existsSync dir)
         (fs/mkdirSync dir #js {:recursive true}))
       (fs/writeFileSync resolved content "utf8")
-      (let [bytes (.-length (js/Buffer.from content "utf8"))]
-        {:content [{:type "text" :text (str "Successfully wrote " bytes " bytes to " path)}]}))
+      (let [display-path (if-let [root (util/git-root (or cwd (.cwd js/process)))]
+                           (.relative node-path root resolved)
+                           path)
+            lines (str/split-lines content)
+            max-preview 4
+            preview-lines (take max-preview lines)
+            preview (str/join "\n" preview-lines)
+            remaining (- (count lines) max-preview)]
+        {:content [{:type "text"
+                    :text (str display-path "\n"
+                               preview
+                               (when (pos? remaining)
+                                 (str "\n... (" remaining " more lines)")))}]}))
     (catch :default e
       {:content [{:type "text" :text (str "Error writing file: " (.-message e))}]
        :is-error true})))
