@@ -219,6 +219,9 @@
               prompt-event (first (filter #(= :dispatch-prompt (:type %)) events))
               other-events (remove #(= :dispatch-prompt (:type %)) events)]
           (doseq [event other-events]
+            (when (= :model-changed (:type event))
+              (swap! (:state rt) assoc :model (:model event))
+              (provider/clear-session!))
             (emit! event))
           (if prompt-event
             (dispatch! rt (:text prompt-event))

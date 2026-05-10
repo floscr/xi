@@ -275,6 +275,28 @@
         handle-local-command!
         (fn [text]
           (cond
+            (= text "/model")
+            (do (-> (js/fetch "http://localhost:11434/api/tags")
+                    (.then (fn [res] (.json res)))
+                    (.then (fn [^js data]
+                             (let [models (js->clj (.-models data) :keywordize-keys true)
+                                   items (mapv (fn [m]
+                                                 {:label (:name m)
+                                                  :description (get-in m [:details :parameter_size])
+                                                  :value (:name m)})
+                                               models)]
+                               (show-completion-menu!
+                                {:items items
+                                 :prompt "model> "
+                                 :on-select (fn [item]
+                                              (dispatch! (str "/model " (:value item))))})
+                               (tui/render-now!))))
+                    (.catch (fn [_err]
+                              (add-status-message!
+                               (ansi/fg :error "Could not fetch Ollama models (is ollama running?)"))
+                              (tui/render-now!))))
+                true)
+
             (= text "/buffers")
             (let [items [{:label "Chat"
                           :description (when (= @active-view "Chat") "• active")
@@ -598,6 +620,9 @@
               ;; Default for extension commands
               (when (:text event)
                 (add-status-message! (:text event))))
+
+            :model-changed
+            (add-status-message! (str "Model set to: " (ansi/fg :accent (:model event))))
 
             :command-error
             (add-status-message! (ansi/fg :error (:text event)))

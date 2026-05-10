@@ -65,8 +65,7 @@
     "model"
     (if (nil? args)
       [{:type :command-result :command "model" :model model}]
-      [{:type :command-result :command "model"
-        :text (str "Model change not yet supported at runtime. Set XI_MODEL=" args " env var.")}])
+      [{:type :model-changed :model args}])
 
     "clear"
     (do (reset! sess (session/create-session cwd))
