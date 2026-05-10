@@ -17,6 +17,14 @@
             [xi.tui.markdown :as md]
             [xi.tui.terminal :as term]))
 
+(defn- shutdown!
+  ([] (shutdown! nil))
+  ([{:keys [message exit?] :or {exit? true}}]
+   (term/restore-stdout!)
+   (tui/stop-tui!)
+   (when message (println message))
+   (when exit? (js/process.exit 0))))
+
 ;; ── Tool Call Formatting ──────────────────────────────────────────────────────
 
 (defn- get-arg
@@ -347,11 +355,7 @@
                        (when (busy?)
                          (dispatch! {:type :abort})))
 
-          :on-interrupt (fn []
-                          (term/restore-stdout!)
-                          (tui/stop-tui!)
-                          (println "Bye.")
-                          (js/process.exit 0))
+          :on-interrupt (fn [] (shutdown! {:message "Bye."}))
 
           :on-palette open-palette!})
 
@@ -591,10 +595,7 @@
             (add-status-message! (ansi/fg :error (:text event)))
 
             :quit
-            (do (term/restore-stdout!)
-                (tui/stop-tui!)
-                (println "Bye.")
-                (js/process.exit 0))
+            (shutdown! {:message "Bye."})
 
             :history
             (doseq [evt (:events event)]
@@ -636,6 +637,4 @@
 
 
      :on-disconnect
-     (fn []
-       (term/restore-stdout!)
-       (tui/stop-tui!))}))
+     (fn [] (shutdown! {:exit? false}))}))
