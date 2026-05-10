@@ -16,9 +16,7 @@
       (when-not (fs/existsSync dir)
         (fs/mkdirSync dir #js {:recursive true}))
       (fs/writeFileSync resolved content "utf8")
-      (let [display-path (if-let [root (util/git-root (or cwd (.cwd js/process)))]
-                           (.relative node-path root resolved)
-                           path)
+      (let [display-path (util/display-path resolved path cwd)
             lines (str/split-lines content)
             max-preview 4
             preview-lines (take max-preview lines)

@@ -1,6 +1,7 @@
 (ns xi.tools.edit
   "Edit file tool — exact text replacement."
   (:require [clojure.string :as str]
+            [xi.tools.util :as util]
             ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
@@ -35,8 +36,10 @@
              applied 0]
         (if-not edit
           (do (fs/writeFileSync resolved content "utf8")
-              {:content [{:type "text"
-                          :text (str "Successfully applied " applied " edit(s) to " path)}]})
+              (let [display-path (util/display-path resolved path cwd)
+                    diff (util/unified-diff original content)]
+                {:content [{:type "text"
+                            :text (str display-path "\n" diff)}]}))
           (let [result (apply-edit content edit)]
             (if (:error result)
               {:content [{:type "text" :text (:error result)}]
