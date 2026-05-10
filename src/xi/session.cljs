@@ -109,6 +109,11 @@
     (save-session! updated)
     updated))
 
+(defn touch-session!
+  "Update last-accessed timestamp and persist. Returns updated session."
+  [session]
+  (update-session! session {:last-accessed (iso-now)}))
+
 ;; ── Claude CLI Session Reading ────────────────────────────────────────────────
 
 (defn- read-head-lines
@@ -225,6 +230,7 @@
        :source :xi
        :filepath filepath
        :timestamp timestamp
+       :last-accessed (:last-accessed data)
        :name (:name data)
        :model (:model data)
        :user-messages nil})
@@ -257,7 +263,7 @@
         ;; Don't show claude sessions that have Xi metadata (avoid duplicates)
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
     (->> (concat xi-sessions claude-filtered pi-sessions)
-         (sort-by :timestamp)
+         (sort-by #(or (:last-accessed %) (:timestamp %)))
          reverse
          vec)))
 
@@ -275,6 +281,7 @@
        :cli-session-id (:cli-session-id data)
        :cwd (:cwd data)
        :created (:created data)
+       :last-accessed (:last-accessed data)
        :name (:name data)
        :model (:model data)
        :source :xi})

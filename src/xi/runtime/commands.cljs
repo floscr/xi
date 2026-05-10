@@ -94,6 +94,9 @@
         (if (and (not (js/isNaN n)) (<= 1 n) (<= n (count sessions)))
           (let [summary (nth sessions (dec n))
                 loaded (session/load-session summary)
+                loaded (if (and (= :xi (:source loaded)) (:cwd loaded))
+                         (session/touch-session! loaded)
+                         loaded)
                 messages (session/read-session-messages summary)]
             (reset! sess loaded)
             [{:type :session-resumed
