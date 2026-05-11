@@ -129,6 +129,58 @@
          (str/replace padded (str ESC "0m") (str ESC "0m" bg-code))
          ESC "0m")))
 
+(def ^:private REVERSE_ON  (str ESC "7m"))
+(def ^:private REVERSE_OFF (str ESC "27m"))
+
+(defn- skip-ansi-seq
+  "Return the end index of an ANSI escape sequence starting at i."
+  [line i len]
+  (if (and (< (inc i) len) (= (.charAt line (inc i)) "["))
+    ;; CSI: \033[ ... <final byte 64-126>
+    (loop [j (+ i 2)]
+      (if (>= j len)
+        j
+        (let [c (.charCodeAt line j)]
+          (if (and (>= c 64) (<= c 126))
+            (inc j)
+            (recur (inc j))))))
+    ;; Other esc: \033 + one char
+    (min len (+ i 2))))
+
+(defn highlight-range
+  "Apply reverse-video highlight to visible columns [from, to) in a line.
+   ANSI escape sequences are preserved and skipped when counting columns."
+  [line from to]
+  (if (or (>= from to) (empty? line))
+    line
+    (let [len (count line)
+          out (js/Array.)]
+      (loop [i 0, vcol 0, in-hl false]
+        (cond
+          ;; Done — close highlight if still open
+          (>= i len)
+          (do (when in-hl (.push out REVERSE_OFF))
+              (.join out ""))
+
+          ;; ANSI escape — copy verbatim, don't count as visible
+          (= (.charAt line i) "\033")
+          (let [end (skip-ansi-seq line i len)]
+            (.push out (.substring line i end))
+            (recur end vcol in-hl))
+
+          ;; Visible character
+          :else
+          (do
+            ;; Start highlight at `from`
+            (when (and (= vcol from) (not in-hl))
+              (.push out REVERSE_ON))
+            (.push out (.charAt line i))
+            (let [nv (inc vcol)]
+              (if (and (or in-hl (= vcol from)) (= nv to))
+                (do (.push out REVERSE_OFF)
+                    (recur (inc i) nv false))
+                (recur (inc i) nv (or in-hl (= vcol from)))))))))))
+
 (defn wrap-text
   "Word-wrap text to fit within max-width columns.
    Returns vector of lines."

@@ -1,7 +1,8 @@
 (ns xi.tui.core
   "TUI engine — viewport-based component system with alternate screen buffer.
    Content is rendered into a scrollable viewport. A bottom panel (editor/menu)
-   is pinned at the bottom of the screen. Scroll state is managed internally."
+   is pinned at the bottom of the screen. Scroll state is managed internally.
+   Mouse text selection is handled in-app with OSC 52 clipboard copy."
   (:require [clojure.string :as str]
             [xi.tui.ansi :as ansi]
             [xi.tui.terminal :as term]))
@@ -46,7 +47,12 @@
          :previous-frame []     ;; last rendered frame (exactly terminal height)
          :render-requested false
          :render-timer nil
-         :stopped false}))
+         :stopped false
+         ;; Mouse selection state
+         ;; nil when no selection, map when selecting/selected:
+         ;; {:start-row :start-col :end-row :end-col :selecting}
+         ;; row/col are 0-based screen coordinates
+         :selection nil}))
 
 (def ^:private MIN_RENDER_INTERVAL_MS 16)
 
@@ -77,14 +83,79 @@
   []
   (pos? (:scroll-offset @tui-state)))
 
+;; ── Selection Helpers ─────────────────────────────────────────────────────────
+
+(defn- normalize-selection
+  "Ensure start is before end (user may drag upward)."
+  [{:keys [start-row start-col end-row end-col] :as sel}]
+  (if (or (< end-row start-row)
+          (and (= end-row start-row) (< end-col start-col)))
+    (assoc sel
+           :start-row end-row :start-col end-col
+           :end-row start-row :end-col start-col)
+    sel))
+
+(defn- clear-selection! []
+  (when (:selection @tui-state)
+    (swap! tui-state assoc :selection nil)
+    (request-render!)))
+
+(defn- apply-selection-to-frame
+  "Apply reverse-video highlighting to lines within the selection range."
+  [frame selection]
+  (if-not selection
+    frame
+    (let [{:keys [start-row start-col end-row end-col]} (normalize-selection selection)]
+      (vec (map-indexed
+            (fn [i line]
+              (cond
+                ;; Before or after selection
+                (or (< i start-row) (> i end-row))
+                line
+
+                ;; Single-line selection
+                (and (= i start-row) (= i end-row))
+                (ansi/highlight-range line start-col end-col)
+
+                ;; First line of multi-line selection
+                (= i start-row)
+                (ansi/highlight-range line start-col (ansi/visible-width line))
+
+                ;; Last line of multi-line selection
+                (= i end-row)
+                (ansi/highlight-range line 0 end-col)
+
+                ;; Middle line — highlight entire line
+                :else
+                (ansi/highlight-range line 0 (ansi/visible-width line))))
+            frame)))))
+
+(defn- extract-selection-text
+  "Extract plain text from the selection area of the rendered frame."
+  [frame selection]
+  (let [{:keys [start-row start-col end-row end-col]} (normalize-selection selection)
+        lines (for [r (range start-row (inc end-row))
+                    :let [line (ansi/strip-ansi (nth frame r ""))
+                          from (if (= r start-row) (min start-col (count line)) 0)
+                          to (if (= r end-row) (min end-col (count line)) (count line))]]
+                (subs line (min from (count line)) (min to (count line))))]
+    (str/join "\n" lines)))
+
+(defn- copy-to-clipboard!
+  "Copy text to system clipboard via OSC 52."
+  [text]
+  (when (seq text)
+    (let [b64 (.toString (js/Buffer.from text "utf-8") "base64")]
+      (term/write! (str "\033]52;c;" b64 "\007")))))
+
 ;; ── Viewport Rendering ───────────────────────────────────────────────────────
 
 (defn- do-render!
   "Execute the render pass — viewport-based with alternate screen buffer."
   []
   (let [{:keys [content bottom-panel scroll-offset prev-content-height
-                previous-frame stopped]} @tui-state]
-    (when (and content (not stopped))
+                previous-frame stopped suspended selection]} @tui-state]
+    (when (and content (not stopped) (not suspended))
       (let [width (term/columns)
             height (term/rows)
 
@@ -140,19 +211,29 @@
                           (< n height) (into new-frame (repeat (- height n) ""))
                           :else new-frame))
 
+            ;; Apply selection highlighting (visual only — doesn't affect previous-frame diff)
+            display-frame (if (and selection (not (:selecting selection)))
+                            ;; Only show highlight for completed selections (not while dragging)
+                            ;; Actually, show during drag too for live feedback
+                            (apply-selection-to-frame new-frame selection)
+                            (if selection
+                              (apply-selection-to-frame new-frame selection)
+                              new-frame))
+
             ;; Find first difference for differential update
+            ;; Compare display-frame (with highlights) against what's on screen
             first-diff (loop [i 0]
                          (cond
                            (>= i height) nil
                            (>= i (count previous-frame)) i
-                           (not= (nth new-frame i) (nth previous-frame i nil)) i
+                           (not= (nth display-frame i) (nth previous-frame i nil)) i
                            :else (recur (inc i))))]
 
         (when (some? first-diff)
           (term/sync-start!)
           ;; Only write lines that actually changed
-          (doseq [i (range first-diff (count new-frame))]
-            (let [new-line (nth new-frame i)
+          (doseq [i (range first-diff (count display-frame))]
+            (let [new-line (nth display-frame i)
                   old-line (nth previous-frame i nil)]
               (when (not= new-line old-line)
                 (term/cursor-to! (inc i) 1)
@@ -161,7 +242,7 @@
           (term/sync-end!))
 
         (swap! tui-state assoc
-               :previous-frame new-frame
+               :previous-frame display-frame
                :scroll-offset effective-offset
                :prev-content-height total-content
                :render-requested false)))))
@@ -226,6 +307,56 @@
        :row (js/parseInt row-s 10)
        :pressed (= action "M")})))
 
+(defn- handle-mouse-event
+  "Handle mouse events: scroll wheel + text selection."
+  [{:keys [button col row pressed]}]
+  (let [;; Convert 1-based terminal coords to 0-based screen coords
+        screen-row (dec row)
+        screen-col (dec col)]
+    (cond
+      ;; Scroll wheel up
+      (= 64 button)
+      (scroll-up! 3)
+
+      ;; Scroll wheel down
+      (= 65 button)
+      (scroll-down! 3)
+
+      ;; Left button press — start selection
+      (and (= 0 button) pressed)
+      (do (swap! tui-state assoc :selection
+                 {:start-row screen-row :start-col screen-col
+                  :end-row screen-row :end-col screen-col
+                  :selecting true})
+          (request-render!))
+
+      ;; Left button drag (motion with button 0 = button code 32)
+      (and (= 32 button) pressed)
+      (when (:selection @tui-state)
+        (swap! tui-state update :selection assoc
+               :end-row screen-row :end-col screen-col)
+        (request-render!))
+
+      ;; Left button release — finish selection
+      (and (= 0 button) (not pressed))
+      (when-let [sel (:selection @tui-state)]
+        (let [norm (normalize-selection sel)]
+          (if (and (= (:start-row norm) (:end-row norm))
+                   (= (:start-col norm) (:end-col norm)))
+            ;; Click without drag — clear selection
+            (clear-selection!)
+            ;; Real selection — copy to clipboard
+            (let [frame (:previous-frame @tui-state)
+                  ;; Use a clean frame without highlights for text extraction
+                  text (extract-selection-text frame (assoc sel :selecting false))]
+              (copy-to-clipboard! text)
+              ;; Keep highlight visible briefly, then clear
+              (swap! tui-state update :selection assoc :selecting false)
+              (request-render!)
+              (js/setTimeout clear-selection! 200)))))
+
+      :else nil)))
+
 (defn- handle-input [data]
   (cond
     ;; Page Up — scroll up one page
@@ -246,13 +377,10 @@
 
     :else
     (if-let [mouse (parse-mouse-event data)]
-      ;; Mouse events — handle scroll wheel
-      (cond
-        (= 64 (:button mouse)) (scroll-up! 3)
-        (= 65 (:button mouse)) (scroll-down! 3)
-        :else nil)  ;; ignore click events
-      ;; Regular input — snap to bottom and pass to focused component
+      (handle-mouse-event mouse)
+      ;; Regular input — clear selection, snap to bottom, pass to focused component
       (do
+        (clear-selection!)
         (when (pos? (:scroll-offset @tui-state))
           (scroll-to-bottom!))
         (let [{:keys [focused]} @tui-state]
@@ -266,6 +394,8 @@
   (when-let [bp (:bottom-panel @tui-state)]
     (when-let [inv (:invalidate bp)]
       (inv)))
+  ;; Clear selection
+  (swap! tui-state assoc :selection nil)
   ;; Force full re-render (clear previous frame)
   (swap! tui-state assoc :previous-frame [])
   (request-render!))
@@ -288,9 +418,35 @@
            :previous-frame []
            :render-requested false
            :render-timer nil
-           :stopped false)
+           :stopped false
+           :selection nil)
     (term/start! terminal handle-input handle-resize)
     content))
+
+(defn run-external!
+  "Suspend the TUI, run an external command with inherited stdio, resume on exit.
+   Returns a promise. cmd is a vector of strings.
+   opts: {:cwd string, :on-suspend fn, :on-resume fn}"
+  [cmd opts]
+  (let [{:keys [terminal]} @tui-state
+        cmd-arr (clj->js cmd)]
+    (when terminal
+      (swap! tui-state assoc :suspended true)
+      (when-let [f (:on-suspend opts)] (f))
+      (term/suspend! terminal)
+      (let [proc (js/Bun.spawn
+                  cmd-arr
+                  #js {:stdin "inherit"
+                       :stdout "inherit"
+                       :stderr "inherit"
+                       :cwd (or (:cwd opts) (.cwd js/process))})]
+        (-> (.-exited proc)
+            (.then (fn [_code]
+                     (term/resume! terminal)
+                     (when-let [f (:on-resume opts)] (f))
+                     ;; Force full re-render
+                     (swap! tui-state assoc :suspended false :previous-frame [])
+                     (render-now!))))))))
 
 (defn stop-tui!
   "Stop the TUI, restore terminal."

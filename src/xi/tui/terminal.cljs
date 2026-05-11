@@ -83,16 +83,18 @@
   (write! "\033[?1049l"))
 
 (defn enable-mouse-tracking!
-  "Enable mouse button event tracking with SGR encoding."
+  "Enable button-event mouse tracking with SGR encoding.
+   Tracks press, release, motion-while-pressed, and scroll wheel.
+   Text selection is handled by the TUI (not the terminal)."
   []
-  (write! "\033[?1000h")
+  (write! "\033[?1002h")
   (write! "\033[?1006h"))
 
 (defn disable-mouse-tracking!
-  "Disable mouse button event tracking."
+  "Disable button-event mouse tracking."
   []
   (write! "\033[?1006l")
-  (write! "\033[?1000l"))
+  (write! "\033[?1002l"))
 
 (defn set-title! [title]
   (write! (str "\033]0;" title "\007")))
@@ -244,6 +246,46 @@
       (.setRawMode stdin was-raw))
 
     (swap! terminal assoc :started false)))
+
+(defn suspend!
+  "Suspend terminal for fullscreen subprocess.
+   Exits alt screen, raw mode, removes listeners so child process can own stdio."
+  [terminal]
+  (disable-mouse-tracking!)
+  (write! "\033[<u")           ;; disable kitty keyboard protocol
+  (write! "\033[?2004l")       ;; disable bracketed paste
+  (show-cursor!)
+  (exit-alt-screen!)
+  (let [{:keys [on-input on-resize]} @terminal
+        stdin js/process.stdin
+        stdout js/process.stdout]
+    (when on-input
+      (.removeListener stdin "data" on-input))
+    (when on-resize
+      (.removeListener stdout "resize" on-resize))
+    (when (.-setRawMode stdin)
+      (.setRawMode stdin false))
+    (.pause stdin)))
+
+(defn resume!
+  "Resume terminal after fullscreen subprocess."
+  [terminal]
+  (let [{:keys [on-input on-resize]} @terminal
+        stdin js/process.stdin
+        stdout js/process.stdout]
+    (when (.-setRawMode stdin)
+      (.setRawMode stdin true))
+    (.setEncoding stdin "utf8")
+    (.resume stdin)
+    (enter-alt-screen!)
+    (write! "\033[?2004h")       ;; enable bracketed paste
+    (write! "\033[>1u")          ;; enable kitty keyboard protocol
+    (hide-cursor!)
+    (enable-mouse-tracking!)
+    (when on-input
+      (.on stdin "data" on-input))
+    (when on-resize
+      (.on stdout "resize" on-resize))))
 
 ;; ── Stdout/Stderr Interception ───────────────────────────────────────────────────
 ;;
