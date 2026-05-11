@@ -63,7 +63,9 @@
    {:session-dirs [\"rel/path\" ...]      ;; dirs to rsync wholesale
     :jsonl-files  [\"rel/path\" ...]}      ;; individual JSONL conversation logs
 
-   All paths are relative to $HOME."
+   All paths are relative to $HOME.
+   JSONL paths are included regardless of whether they exist locally,
+   so callers can pull missing files from a remote."
   []
   (let [home (home-dir)
         xi-root (path-join home ".config/xi/sessions")
@@ -74,11 +76,8 @@
                                    (let [cli-sid (:cli-session-id data)
                                          cwd (:cwd data)]
                                      (when (and cli-sid cwd)
-                                       (let [encoded (encode-cwd-claude cwd)
-                                             rel (str ".claude/projects/" encoded "/" cli-sid ".jsonl")
-                                             abs (path-join home rel)]
-                                         (when (file-exists? abs)
-                                           rel)))))))
+                                       (let [encoded (encode-cwd-claude cwd)]
+                                         (str ".claude/projects/" encoded "/" cli-sid ".jsonl")))))))
                          distinct
                          vec)]
     {:session-dirs session-dirs
