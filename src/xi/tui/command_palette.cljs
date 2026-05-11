@@ -15,6 +15,7 @@
    {:label "/new"      :command "/new"      :description "Start a new session"}
    {:label "/clear"    :command "/clear"    :description "Clear current session"}
    {:label "/model"    :command "/model"    :description "Show or set model"}
+   {:label "/prompt"   :command "/prompt"   :description "Show system prompt"}
    {:label "/buffers"  :command "/buffers"  :description "Switch buffer view"}
    {:label "/quit"     :command "/quit"     :description "Exit Xi"}])
 

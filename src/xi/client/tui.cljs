@@ -60,6 +60,14 @@
     "ls"    (get-arg arguments :path)
     nil))
 
+(defn- shorten-tool-name
+  "Strip MCP prefix from tool names for display.
+   'mcp__xi-tools__read' → 'read', 'Bash' → 'Bash'"
+  [tool-name]
+  (if-let [[_ short] (re-matches #"mcp__[^_]+__(.+)" tool-name)]
+    short
+    tool-name))
+
 (defn- truncate [s max-len]
   (if (> (count s) max-len)
     (str (subs s 0 max-len) "...")
@@ -119,6 +127,24 @@
                  (tui/request-render!)))}))
 
 
+(defn- make-static-tool-component
+  "Create a static tool display for history replay (no spinner/timer)."
+  [tool-name args-summary output is-error]
+  (let [bg-code "\033[48;2;38;44;55m"
+        box (comp/make-box {:padding-x 1 :padding-y 0 :bg-code bg-code})
+        short-name (shorten-tool-name tool-name)
+        short-args (when (seq args-summary)
+                     (truncate (first (str/split-lines args-summary)) 120))
+        header-text (comp/make-text
+                     (str (ansi/fg :accent (str "$ " short-name))
+                          (when short-args
+                            (str " " short-args))))]
+    ((:add-child box) header-text)
+    (when (seq output)
+      ((:add-child box) (comp/make-spacer 1))
+      ((:add-child box) (comp/make-text (truncate-output output 20))))
+    box))
+
 ;; ── Buffer Helpers ─────────────────────────────────────────────────────────
 
 (defn- format-timestamp [ts]
@@ -169,6 +195,9 @@
         ;; Track last locally-submitted prompt to avoid double-rendering
         last-local-prompt (atom nil)
 
+        ;; Prompt buffer content
+        prompt-content (atom nil)
+
         ;; Completion menu state
         active-menu (atom nil)       ;; current completion menu component, or nil
         menu-spacer (atom nil)       ;; spacer component inserted before menu
@@ -203,13 +232,25 @@
             ((:add-child c) (comp/make-spacer 1))
             c))
 
+        build-prompt-view!
+        (fn []
+          (let [c (tui/make-container)
+                content (or @prompt-content "(no prompt loaded)")]
+            ((:add-child c)
+             (comp/make-text (ansi/fg :bold "System Prompt")))
+            ((:add-child c) (comp/make-spacer 1))
+            ((:add-child c) (comp/make-text content))
+            ((:add-child c) (comp/make-spacer 1))
+            c))
+
         switch-to-buffer!
         (fn [name]
           ((:clear view-wrapper))
           (reset! active-view name)
           (case name
             "Chat" ((:add-child view-wrapper) chat-container)
-            "Logs" ((:add-child view-wrapper) (build-logs-view!)))
+            "Logs" ((:add-child view-wrapper) (build-logs-view!))
+            "Prompt" ((:add-child view-wrapper) (build-prompt-view!)))
           (tui/render-now!))
 
         add-status-message!
@@ -298,14 +339,18 @@
                 true)
 
             (= text "/buffers")
-            (let [items [{:label "Chat"
-                          :description (when (= @active-view "Chat") "• active")
-                          :value "Chat"}
-                         {:label "Logs"
-                          :description (let [n (count (buffers/get-entries buffer-mgr "Logs"))]
-                                         (str n " entries"
-                                              (when (= @active-view "Logs") " • active")))
-                          :value "Logs"}]]
+            (let [items (cond-> [{:label "Chat"
+                                  :description (when (= @active-view "Chat") "• active")
+                                  :value "Chat"}
+                                 {:label "Logs"
+                                  :description (let [n (count (buffers/get-entries buffer-mgr "Logs"))]
+                                                 (str n " entries"
+                                                      (when (= @active-view "Logs") " • active")))
+                                  :value "Logs"}]
+                          @prompt-content
+                          (conj {:label "Prompt"
+                                 :description (when (= @active-view "Prompt") "• active")
+                                 :value "Prompt"}))]
               (show-completion-menu!
                {:items items
                 :prompt "buffer> "
@@ -556,25 +601,48 @@
                 (add-status-message! (ansi/fg :dim "New session started.")))
 
             :session-resumed
-            (let [{:keys [session summary messages]} event]
+            (let [{:keys [session summary messages]} event
+                  ;; Build tool-use-id → tool-result lookup
+                  results-by-id (into {}
+                                      (comp (filter #(= :tool-result (:type %)))
+                                            (map (fn [r] [(:tool-use-id r) r])))
+                                      messages)]
               (add-status-message!
                (str (ansi/fg :dim "Resumed: ")
                     (or (:name session) (:cli-session-id session) (:id session))
                     (format-session-source summary)
                     (ansi/fg :dim (str " (" (count messages) " messages)"))
                     (when (= :pi (:source session))
-                      (str "\n" (ansi/fg :dim "  (read-only — Pi sessions can't be continued)")))
-                    "\n"
-                    (let [recent (take-last 6 messages)]
-                      (str (when (> (count messages) (count recent))
-                             (str (ansi/fg :dim (str "  ... (" (- (count messages) (count recent)) " earlier messages)")) "\n"))
-                           (str/join "\n"
-                                     (map (fn [{:keys [role text]}]
-                                            (case role
-                                              "user" (str (ansi/fg :bold "you") ": " (truncate text 200))
-                                              "assistant" (str (ansi/fg :accent "xi") ": " (truncate text 500))
-                                              ""))
-                                          recent)))))))
+                      (str "\n" (ansi/fg :dim "  (read-only — Pi sessions can't be continued)")))))
+              ;; Render full chat history
+              (doseq [block messages]
+                (case (:type block)
+                  :text
+                  (case (:role block)
+                    "user"
+                    (do ((:add-child chat-container) (comp/make-spacer 1))
+                        ((:add-child chat-container)
+                         (comp/make-text (str (ansi/fg :bold "you") ": " (:text block))))
+                        ((:add-child chat-container) (comp/make-spacer 1)))
+                    "assistant"
+                    (do ((:add-child chat-container) (md/make-markdown (:text block)))
+                        ((:add-child chat-container) (comp/make-spacer 1)))
+                    nil)
+
+                  :tool-use
+                  (let [short-name (shorten-tool-name (:name block))
+                        args-str (format-tool-args short-name (:arguments block))
+                        result (get results-by-id (:tool-use-id block))
+                        output (:content result)
+                        is-error (:is-error result)
+                        comp (make-static-tool-component
+                              (:name block) args-str output is-error)]
+                    ((:add-child chat-container) comp)
+                    ((:add-child chat-container) (comp/make-spacer 1)))
+
+                  ;; Skip :tool-result (rendered inline with :tool-use)
+                  nil))
+              (tui/render-now!))
 
             :command-result
             (case (:command event)
@@ -611,6 +679,10 @@
                                      (map (fn [{:keys [name desc]}]
                                             (str "  /" name (when desc (str "  — " desc))))
                                           (:extension-commands event)))))))
+
+              "prompt"
+              (do (reset! prompt-content (:text event))
+                  (switch-to-buffer! "Prompt"))
 
               "model"
               (if (:model event)

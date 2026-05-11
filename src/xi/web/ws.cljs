@@ -157,10 +157,14 @@
     :session-resumed
     (let [msgs (:messages event)]
       (swap! state/app-state assoc
-             :messages (vec (map (fn [{:keys [role text content]}]
-                                   {:type (if (= role "user") :user :assistant)
-                                    :text (or text content "")})
-                                 msgs))))
+             :messages (vec (keep (fn [block]
+                                    (case (:type block)
+                                      :text {:type (if (= "user" (:role block)) :user :assistant)
+                                             :text (:text block)}
+                                      :tool-use {:type :tool
+                                                 :text (str "$ " (:name block))}
+                                      nil))
+                                  msgs))))
 
     :command-result
     (when-let [text (:text event)]

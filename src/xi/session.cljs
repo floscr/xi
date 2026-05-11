@@ -304,7 +304,11 @@
 
 (defn- read-claude-session-messages
   "Read conversation messages from a Claude CLI session file.
-   Returns vec of {:role :text} maps."
+   Returns vec of block maps:
+     {:type :text :role \"user\" :text \"...\"}
+     {:type :text :role \"assistant\" :text \"...\"}
+     {:type :tool-use :name \"tool\" :tool-use-id \"...\" :arguments {...}}
+     {:type :tool-result :tool-use-id \"...\" :content \"...\" :is-error bool}"
   [filepath]
   (try
     (let [content (fs/readFileSync filepath "utf8")
@@ -314,30 +318,57 @@
                        lines)]
       (->> parsed
            (filter #(contains? #{"user" "assistant"} (:type %)))
-           (keep (fn [line]
-                   (let [content (get-in line [:message :content])
-                         role (:type line)]
-                     (cond
-                       ;; Plain text user message
-                       (and (= "user" role) (string? content)
-                            (not (str/starts-with? content "The conversation history")))
-                       {:role "user" :text content}
+           (mapcat (fn [line]
+                     (let [content (get-in line [:message :content])
+                           role (:type line)]
+                       (cond
+                         ;; Plain text user message
+                         (and (= "user" role) (string? content)
+                              (not (str/starts-with? content "The conversation history")))
+                         [{:type :text :role "user" :text content}]
 
-                       ;; Assistant with text blocks
-                       (and (= "assistant" role) (sequential? content))
-                       (let [texts (->> content
-                                        (filter #(= "text" (:type %)))
-                                        (map :text))]
-                         (when (seq texts)
-                           {:role "assistant" :text (str/join "\n" texts)}))
+                         ;; Sequential content — extract all block types
+                         (and (sequential? content))
+                         (->> content
+                              (keep (fn [block]
+                                      (case (:type block)
+                                        "text"
+                                        {:type :text :role role :text (:text block)}
 
-                       :else nil))))
+                                        "tool_use"
+                                        {:type :tool-use
+                                         :name (:name block)
+                                         :tool-use-id (:id block)
+                                         :arguments (or (:input block) {})}
+
+                                        "tool_result"
+                                        (let [c (:content block)
+                                              text (cond
+                                                     (string? c) c
+                                                     (sequential? c)
+                                                     (->> c
+                                                          (keep (fn [b]
+                                                                  (cond
+                                                                    (string? b) b
+                                                                    (= "text" (:type b)) (:text b)
+                                                                    :else nil)))
+                                                          (str/join "\n"))
+                                                     :else nil)]
+                                          {:type :tool-result
+                                           :tool-use-id (:tool_use_id block)
+                                           :content (or text "")
+                                           :is-error (boolean (:is_error block))})
+
+                                        ;; Skip thinking, etc.
+                                        nil))))
+
+                         :else nil))))
            vec))
     (catch :default _e [])))
 
 (defn read-session-messages
   "Read conversation messages from a session for display.
-   Returns vec of {:role :text} maps for user/assistant text messages."
+   Returns vec of block maps — see read-claude-session-messages for format."
   [summary]
   (case (:source summary)
     :xi
@@ -363,25 +394,25 @@
                          lines)]
         (->> parsed
              (filter #(= "message" (:type %)))
-             (keep (fn [line]
-                     (let [msg (:message line)
-                           role (:role msg)]
-                       (cond
-                         (= "user" role)
-                         (let [text (->> (:content msg)
-                                         (filter #(= "text" (:type %)))
-                                         (map :text)
-                                         (str/join "\n"))]
-                           (when (seq text) {:role "user" :text text}))
+             (mapcat (fn [line]
+                       (let [msg (:message line)
+                             role (:role msg)]
+                         (cond
+                           (= "user" role)
+                           (let [text (->> (:content msg)
+                                           (filter #(= "text" (:type %)))
+                                           (map :text)
+                                           (str/join "\n"))]
+                             (when (seq text) [{:type :text :role "user" :text text}]))
 
-                         (= "assistant" role)
-                         (let [text (->> (:content msg)
-                                         (filter #(= "text" (:type %)))
-                                         (map :text)
-                                         (str/join "\n"))]
-                           (when (seq text) {:role "assistant" :text text}))
+                           (= "assistant" role)
+                           (let [text (->> (:content msg)
+                                           (filter #(= "text" (:type %)))
+                                           (map :text)
+                                           (str/join "\n"))]
+                             (when (seq text) [{:type :text :role "assistant" :text text}]))
 
-                         :else nil))))
+                           :else nil))))
              vec))
       (catch :default _e []))
 

@@ -4,7 +4,8 @@
   (:require [clojure.string :as str]
             [xi.ext.core :as ext]
             [xi.provider :as provider]
-            [xi.session :as session]))
+            [xi.session :as session]
+            [xi.system-prompt :as system-prompt]))
 
 (defn- truncate [s max-len]
   (if (> (count s) max-len)
@@ -59,8 +60,14 @@
     (let [ext-cmds (ext/list-commands)]
       [{:type :command-result
         :command "help"
-        :builtin-commands ["sessions" "resume [n]" "model" "buffers" "palette" "new" "clear" "help" "quit"]
+        :builtin-commands ["sessions" "resume [n]" "model" "prompt" "buffers" "palette" "new" "clear" "help" "quit"]
         :extension-commands ext-cmds}])
+
+    "prompt"
+    (let [agents-md (system-prompt/load-agents-md cwd)]
+      [{:type :command-result
+        :command "prompt"
+        :text (or agents-md "(no AGENTS.md found)")}])
 
     "model"
     (if (nil? args)
