@@ -401,6 +401,7 @@
               :prompt "palette> "
               :on-select (fn [item]
                            (let [cmd (:value item)]
+                             ((:set-text @editor-comp-ref) "")
                              (palette/record-use! cmd)
                              (when-not (handle-local-command! cmd)
                                (dispatch! cmd))))})))
@@ -601,48 +602,51 @@
                 (add-status-message! (ansi/fg :dim "New session started.")))
 
             :session-resumed
-            (let [{:keys [session summary messages]} event
-                  ;; Build tool-use-id → tool-result lookup
-                  results-by-id (into {}
-                                      (comp (filter #(= :tool-result (:type %)))
-                                            (map (fn [r] [(:tool-use-id r) r])))
-                                      messages)]
-              (add-status-message!
-               (str (ansi/fg :dim "Resumed: ")
-                    (or (:name session) (:cli-session-id session) (:id session))
-                    (format-session-source summary)
-                    (ansi/fg :dim (str " (" (count messages) " messages)"))
-                    (when (= :pi (:source session))
-                      (str "\n" (ansi/fg :dim "  (read-only — Pi sessions can't be continued)")))))
-              ;; Render full chat history
-              (doseq [block messages]
-                (case (:type block)
-                  :text
-                  (case (:role block)
-                    "user"
-                    (do ((:add-child chat-container) (comp/make-spacer 1))
-                        ((:add-child chat-container)
-                         (comp/make-text (str (ansi/fg :bold "you") ": " (:text block))))
-                        ((:add-child chat-container) (comp/make-spacer 1)))
-                    "assistant"
-                    (do ((:add-child chat-container) (md/make-markdown (:text block)))
-                        ((:add-child chat-container) (comp/make-spacer 1)))
-                    nil)
+            (do
+              (when (not= @active-view "Chat")
+                (switch-to-buffer! "Chat"))
+              (let [{:keys [session summary messages]} event
+                    ;; Build tool-use-id → tool-result lookup
+                    results-by-id (into {}
+                                        (comp (filter #(= :tool-result (:type %)))
+                                              (map (fn [r] [(:tool-use-id r) r])))
+                                        messages)]
+                (add-status-message!
+                 (str (ansi/fg :dim "Resumed: ")
+                      (or (:name session) (:cli-session-id session) (:id session))
+                      (format-session-source summary)
+                      (ansi/fg :dim (str " (" (count messages) " messages)"))
+                      (when (= :pi (:source session))
+                        (str "\n" (ansi/fg :dim "  (read-only — Pi sessions can't be continued)")))))
+                ;; Render full chat history
+                (doseq [block messages]
+                  (case (:type block)
+                    :text
+                    (case (:role block)
+                      "user"
+                      (do ((:add-child chat-container) (comp/make-spacer 1))
+                          ((:add-child chat-container)
+                           (comp/make-text (str (ansi/fg :bold "you") ": " (:text block))))
+                          ((:add-child chat-container) (comp/make-spacer 1)))
+                      "assistant"
+                      (do ((:add-child chat-container) (md/make-markdown (:text block)))
+                          ((:add-child chat-container) (comp/make-spacer 1)))
+                      nil)
 
-                  :tool-use
-                  (let [short-name (shorten-tool-name (:name block))
-                        args-str (format-tool-args short-name (:arguments block))
-                        result (get results-by-id (:tool-use-id block))
-                        output (:content result)
-                        is-error (:is-error result)
-                        comp (make-static-tool-component
-                              (:name block) args-str output is-error)]
-                    ((:add-child chat-container) comp)
-                    ((:add-child chat-container) (comp/make-spacer 1)))
+                    :tool-use
+                    (let [short-name (shorten-tool-name (:name block))
+                          args-str (format-tool-args short-name (:arguments block))
+                          result (get results-by-id (:tool-use-id block))
+                          output (:content result)
+                          is-error (:is-error result)
+                          comp (make-static-tool-component
+                                (:name block) args-str output is-error)]
+                      ((:add-child chat-container) comp)
+                      ((:add-child chat-container) (comp/make-spacer 1)))
 
-                  ;; Skip :tool-result (rendered inline with :tool-use)
-                  nil))
-              (tui/render-now!))
+                    ;; Skip :tool-result (rendered inline with :tool-use)
+                    nil))
+                (tui/render-now!)))
 
             :command-result
             (case (:command event)

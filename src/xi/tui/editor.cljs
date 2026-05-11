@@ -555,7 +555,7 @@
 
                          ;; "/" on empty editor — open command palette
                          (and (= data "/") on-palette (empty? (str/trim (get-text))))
-                         (on-palette)
+                         (do (insert-char "/") (on-palette))
 
                          ;; Printable character
                          (is-printable? data)
