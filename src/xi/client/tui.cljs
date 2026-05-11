@@ -195,6 +195,9 @@
         ;; Track last locally-submitted prompt to avoid double-rendering
         last-local-prompt (atom nil)
 
+        ;; Queued prompt — submitted while busy (e.g. right after abort)
+        queued-prompt (atom nil)
+
         ;; Prompt buffer content
         prompt-content (atom nil)
 
@@ -418,14 +421,17 @@
                              (palette/record-use! text))
                            ;; Try local commands first (work even when agent is busy)
                            (when-not (handle-local-command! text)
-                             (when-not (busy?)
-                               ;; Auto-switch to Chat if viewing another buffer
-                               (when (not= @active-view "Chat")
-                                 (switch-to-buffer! "Chat"))
-                               ;; Remember we sent this so :user-message doesn't double-render
-                               (reset! last-local-prompt text)
-                               ;; Dispatch via transport
-                               (dispatch! text))))))
+                             (if-not (busy?)
+                               (do
+                                 ;; Auto-switch to Chat if viewing another buffer
+                                 (when (not= @active-view "Chat")
+                                   (switch-to-buffer! "Chat"))
+                                 ;; Remember we sent this so :user-message doesn't double-render
+                                 (reset! last-local-prompt text)
+                                 ;; Dispatch via transport
+                                 (dispatch! text))
+                               ;; Busy — queue prompt so it dispatches when the turn ends
+                               (reset! queued-prompt text))))))
 
           :on-escape (fn []
                        (when (busy?)
@@ -472,13 +478,22 @@
                 (reset! last-local-prompt nil)))
 
             :busy-changed
-            (when (:busy event)
-              ;; Reset turn state for new turn
-              (reset! text-started false)
-              (reset! current-md nil)
-              (reset! current-tool nil)
-              (reset! thinking-text "")
-              ((:clear-thinking loader)))
+            (if (:busy event)
+              (do ;; Reset turn state for new turn
+                (reset! text-started false)
+                (reset! current-md nil)
+                (reset! current-tool nil)
+                (reset! thinking-text "")
+                ((:clear-thinking loader)))
+              ;; No longer busy — dispatch queued prompt if any
+              (let [text @queued-prompt]
+                (reset! queued-prompt nil)
+                (when text
+                  ;; Auto-switch to Chat if viewing another buffer
+                  (when (not= @active-view "Chat")
+                    (switch-to-buffer! "Chat"))
+                  (reset! last-local-prompt text)
+                  (dispatch! text))))
 
             :turn-start
             (do (reset! thinking-text "")

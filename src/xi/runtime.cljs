@@ -138,6 +138,7 @@
             :sess sess
             :busy (atom false)
             :abort-signal (atom false)
+            :pending-prompt (atom nil)
             :clients (atom #{})
             :event-history event-history}]
 
@@ -210,22 +211,41 @@
     (when parsed
       (case (:type parsed)
         :prompt
-        (if @(:busy rt)
-          (js/Promise.resolve nil)
+        (cond
+          ;; Not busy — run immediately
+          (not @(:busy rt))
           (do (reset! (:busy rt) true)
               (reset! (:abort-signal rt) false)
+              (reset! (:pending-prompt rt) nil)
               (emit! {:type :user-message :text (:text parsed)})
               (emit! {:type :busy-changed :busy true})
               (-> (run-agent-turn rt (:text parsed))
                   (.then (fn [result]
                            (reset! (:busy rt) false)
                            (emit! {:type :busy-changed :busy false})
+                           ;; Check for queued prompt from interrupt-then-type
+                           (when-let [queued @(:pending-prompt rt)]
+                             (reset! (:pending-prompt rt) nil)
+                             (dispatch! rt queued))
                            result))
                   (.catch (fn [err]
                             (reset! (:busy rt) false)
                             (emit! {:type :busy-changed :busy false})
                             (emit! {:type :error :error {:type "error" :message (.-message err)}})
-                            nil)))))
+                            ;; Check for queued prompt even after error
+                            (when-let [queued @(:pending-prompt rt)]
+                              (reset! (:pending-prompt rt) nil)
+                              (dispatch! rt queued))
+                            nil))))
+
+          ;; Busy but aborting — queue prompt for after turn settles
+          @(:abort-signal rt)
+          (do (reset! (:pending-prompt rt) (:text parsed))
+              (js/Promise.resolve nil))
+
+          ;; Busy, not aborting — drop
+          :else
+          (js/Promise.resolve nil))
 
         :command
         (let [events (commands/handle-command parsed {:sess sess :cwd cwd :model model})
