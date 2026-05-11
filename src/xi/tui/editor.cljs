@@ -553,6 +553,10 @@
                                (insert-newline)
                                (insert-char (str ch)))))
 
+                         ;; "/" on empty editor — open command palette
+                         (and (= data "/") on-palette (empty? (str/trim (get-text))))
+                         (on-palette)
+
                          ;; Printable character
                          (is-printable? data)
                          (insert-char data)
