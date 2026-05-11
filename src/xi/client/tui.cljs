@@ -89,12 +89,20 @@
   [tool-name args-summary]
   (let [bg-code "\033[48;2;38;44;55m"
         box (comp/make-box {:padding-x 1 :padding-y 0 :bg-code bg-code})
-        short-args (when (seq args-summary)
+        first-line (when (seq args-summary)
                      (truncate (first (str/split-lines args-summary)) 120))
+        rest-lines (when (seq args-summary)
+                    (let [lines (rest (str/split-lines args-summary))]
+                      (when (seq lines)
+                        (str/join "\n" (take 20 lines)))))
         header-text (comp/make-text
                      (str (ansi/fg :accent (str "$ " tool-name))
-                          (when short-args
-                            (str " " short-args))))
+                          (when first-line
+                            (str " " first-line))
+                          (when rest-lines
+                            (str "\n" (ansi/fg :dim rest-lines)
+                                 (when (> (count (str/split-lines args-summary)) 21)
+                                   (str "\n" (ansi/fg :dim "...")))))))
         spinner (comp/make-spinner)
         output-text (comp/make-text "")
         start-time (js/Date.now)]
@@ -109,12 +117,20 @@
                    ((:add-child box) output-text)
                    ((:set-text output-text) text))
      :update-header (fn [new-tool-name new-args-summary]
-                      (let [short (when (seq new-args-summary)
-                                    (truncate (first (str/split-lines new-args-summary)) 120))]
+                      (let [first-ln (when (seq new-args-summary)
+                                       (truncate (first (str/split-lines new-args-summary)) 120))
+                            rest-lns (when (seq new-args-summary)
+                                       (let [lines (rest (str/split-lines new-args-summary))]
+                                         (when (seq lines)
+                                           (str/join "\n" (take 20 lines)))))]
                         ((:set-text header-text)
                          (str (ansi/fg :accent (str "$ " new-tool-name))
-                              (when short
-                                (str " " short))))))
+                              (when first-ln
+                                (str " " first-ln))
+                              (when rest-lns
+                                (str "\n" (ansi/fg :dim rest-lns)
+                                     (when (> (count (str/split-lines new-args-summary)) 21)
+                                       (str "\n" (ansi/fg :dim "...")))))))))
      :finish (fn [is-error]
                ((:stop spinner))
                ((:remove-child box) spinner)
@@ -133,12 +149,20 @@
   (let [bg-code "\033[48;2;38;44;55m"
         box (comp/make-box {:padding-x 1 :padding-y 0 :bg-code bg-code})
         short-name (shorten-tool-name tool-name)
-        short-args (when (seq args-summary)
+        first-line (when (seq args-summary)
                      (truncate (first (str/split-lines args-summary)) 120))
+        rest-lines (when (seq args-summary)
+                    (let [lines (rest (str/split-lines args-summary))]
+                      (when (seq lines)
+                        (str/join "\n" (take 20 lines)))))
         header-text (comp/make-text
                      (str (ansi/fg :accent (str "$ " short-name))
-                          (when short-args
-                            (str " " short-args))))]
+                          (when first-line
+                            (str " " first-line))
+                          (when rest-lines
+                            (str "\n" (ansi/fg :dim rest-lines)
+                                 (when (> (count (str/split-lines args-summary)) 21)
+                                   (str "\n" (ansi/fg :dim "...")))))))]
     ((:add-child box) header-text)
     (when (seq output)
       ((:add-child box) (comp/make-spacer 1))
