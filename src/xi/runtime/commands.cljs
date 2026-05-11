@@ -2,6 +2,7 @@
   "Command parsing and dispatch — extracted from cli.cljs.
    Commands return data (events to emit), never touch UI directly."
   (:require [clojure.string :as str]
+            [xi.command-registry :as registry]
             [xi.ext.core :as ext]
             [xi.provider :as provider]
             [xi.session :as session]
@@ -95,6 +96,164 @@
            :source (:source s)})
         (range) sessions))
 
+;; ── Built-in Command Handlers ─────────────────────────────────────────────────
+;; Each handler receives ctx: {:sess :cwd :model :effort :busy :event-history :args}
+
+(defn- cmd-quit [_ctx]
+  [{:type :quit}])
+
+(defn- cmd-sessions [{:keys [cwd]}]
+  (let [sessions (session/list-sessions cwd)]
+    [{:type :command-result
+      :command "sessions"
+      :sessions (format-session-list sessions)
+      :raw-sessions sessions}]))
+
+(defn- cmd-help [_ctx]
+  (let [all-cmds (registry/list-commands)
+        builtin (remove #(= "ext" (:source %)) all-cmds)
+        ext-cmds (filter #(= "ext" (:source %)) all-cmds)]
+    [{:type :command-result
+      :command "help"
+      :builtin-commands (mapv (fn [c]
+                                (str (:name c)
+                                     (when (:description c)
+                                       (str "  — " (:description c)))))
+                              builtin)
+      :extension-commands (mapv (fn [c]
+                                  {:name (:name c) :desc (:description c)})
+                                ext-cmds)}]))
+
+(defn- cmd-debug [{:keys [sess model effort cwd busy event-history]}]
+  (let [is-claude (claude-model? model)
+        sdk-session-id (provider/get-session-id)
+        scrollback (format-scrollback (or event-history []))
+        text (str "# Xi Debug Info\n\n"
+                  "## Runtime\n"
+                  "- Model: " (or model "(none)") "\n"
+                  "- Effort: " (or effort "(default)") "\n"
+                  "- CWD: " cwd "\n"
+                  "- Busy: " (boolean busy) "\n"
+                  "- Extensions: " (str/join ", " (ext/list-extensions)) "\n"
+                  "\n## Provider\n"
+                  "- Type: " (if is-claude "Claude SDK Bridge" "OpenAI-compatible") "\n"
+                  (when is-claude
+                    (str "- SDK Session: " (or sdk-session-id "(none)") "\n"))
+                  "\n## Session\n"
+                  "- Xi ID: " (or (:id @sess) "(none)") "\n"
+                  "- CLI Session ID: " (or (:cli-session-id @sess) "(none)") "\n"
+                  "- Name: " (or (:name @sess) "(unnamed)") "\n"
+                  "\n## Scrollback\n\n"
+                  (if (seq scrollback) scrollback "(empty)"))]
+    [{:type :command-result :command "debug" :text text}]))
+
+(defn- cmd-prompt [{:keys [cwd]}]
+  (let [agents-md (system-prompt/load-agents-md cwd)]
+    [{:type :command-result
+      :command "prompt"
+      :text (or agents-md "(no AGENTS.md found)")}]))
+
+(defn- cmd-model [{:keys [args model]}]
+  (if (nil? args)
+    [{:type :command-result :command "model" :model model}]
+    [{:type :model-changed :model args}]))
+
+(defn- cmd-clear [{:keys [sess]}]
+  (reset! sess (session/create-session (:cwd @sess)))
+  (provider/clear-session!)
+  [{:type :session-cleared}])
+
+(defn- cmd-new [{:keys [sess cwd]}]
+  (when (:cli-session-id @sess)
+    (session/save-session! @sess))
+  (reset! sess (session/create-session cwd))
+  (provider/clear-session!)
+  [{:type :session-cleared}])
+
+(defn- cmd-resume [{:keys [args sess cwd]}]
+  (if (nil? args)
+    ;; Show session list for resume
+    (let [sessions (session/list-sessions cwd)]
+      [{:type :command-result
+        :command "resume-list"
+        :sessions (format-session-list sessions)
+        :raw-sessions sessions}])
+    ;; Resume specific session
+    (let [n (js/parseInt args 10)
+          sessions (session/list-sessions cwd)]
+      (if (and (not (js/isNaN n)) (<= 1 n) (<= n (count sessions)))
+        (let [summary (nth sessions (dec n))
+              loaded (session/load-session summary)
+              loaded (if (and (= :xi (:source loaded)) (:cwd loaded))
+                       (session/touch-session! loaded)
+                       loaded)
+              messages (session/read-session-messages summary)]
+          (reset! sess loaded)
+          [{:type :session-resumed
+            :session loaded
+            :summary summary
+            :messages messages}])
+        [{:type :command-error :command "resume" :text "Session not found."}]))))
+
+;; ── Registration ──────────────────────────────────────────────────────────────
+
+(defn register-builtin-commands!
+  "Register all built-in runtime commands into the central registry."
+  []
+  (registry/register-many!
+   [{:name "quit"
+     :description "Exit Xi"
+     :handler cmd-quit
+     :scope :runtime}
+
+    {:name "sessions"
+     :description "List recent sessions"
+     :handler cmd-sessions
+     :scope :runtime}
+
+    {:name "ls"
+     :description "List recent sessions"
+     :handler cmd-sessions
+     :scope :runtime
+     :hidden true}
+
+    {:name "help"
+     :description "Show available commands"
+     :handler cmd-help
+     :scope :runtime}
+
+    {:name "debug"
+     :description "Copy debug info to clipboard"
+     :handler cmd-debug
+     :scope :runtime}
+
+    {:name "prompt"
+     :description "Show system prompt"
+     :handler cmd-prompt
+     :scope :runtime}
+
+    {:name "model"
+     :description "Show or set model"
+     :handler cmd-model
+     :scope :runtime}
+
+    {:name "clear"
+     :description "Clear current session"
+     :handler cmd-clear
+     :scope :runtime}
+
+    {:name "new"
+     :description "Start a new session"
+     :handler cmd-new
+     :scope :runtime}
+
+    {:name "resume"
+     :description "Resume a previous session"
+     :handler cmd-resume
+     :scope :runtime}]))
+
+;; ── Parsing ───────────────────────────────────────────────────────────────────
+
 (defn parse-input
   "Parse user input into a command map.
    Returns {:type :prompt :text ...} or {:type :command :name ... :args ...}."
@@ -115,101 +274,24 @@
 
 (defn handle-command
   "Execute a slash command. Returns a vector of events to emit.
-   Pure data — no UI side effects."
+   Looks up command in the central registry, falls back to extension commands."
   [{:keys [name args]} {:keys [sess cwd model effort busy event-history]}]
-  (case name
-    "quit"
-    [{:type :quit}]
-
-    ("sessions" "ls")
-    (let [sessions (session/list-sessions cwd)]
-      [{:type :command-result
-        :command "sessions"
-        :sessions (format-session-list sessions)
-        :raw-sessions sessions}])
-
-    "help"
-    (let [ext-cmds (ext/list-commands)]
-      [{:type :command-result
-        :command "help"
-        :builtin-commands ["sessions" "resume [n]" "model" "prompt" "buffers" "palette" "git" "debug" "new" "clear" "help" "quit"]
-        :extension-commands ext-cmds}])
-
-    "debug"
-    (let [is-claude (claude-model? model)
-          sdk-session-id (provider/get-session-id)
-          scrollback (format-scrollback (or event-history []))
-          text (str "# Xi Debug Info\n\n"
-                    "## Runtime\n"
-                    "- Model: " (or model "(none)") "\n"
-                    "- Effort: " (or effort "(default)") "\n"
-                    "- CWD: " cwd "\n"
-                    "- Busy: " (boolean busy) "\n"
-                    "- Extensions: " (str/join ", " (ext/list-extensions)) "\n"
-                    "\n## Provider\n"
-                    "- Type: " (if is-claude "Claude SDK Bridge" "OpenAI-compatible") "\n"
-                    (when is-claude
-                      (str "- SDK Session: " (or sdk-session-id "(none)") "\n"))
-                    "\n## Session\n"
-                    "- Xi ID: " (or (:id @sess) "(none)") "\n"
-                    "- CLI Session ID: " (or (:cli-session-id @sess) "(none)") "\n"
-                    "- Name: " (or (:name @sess) "(unnamed)") "\n"
-                    "\n## Scrollback\n\n"
-                    (if (seq scrollback) scrollback "(empty)"))]
-      [{:type :command-result :command "debug" :text text}])
-
-    "prompt"
-    (let [agents-md (system-prompt/load-agents-md cwd)]
-      [{:type :command-result
-        :command "prompt"
-        :text (or agents-md "(no AGENTS.md found)")}])
-
-    "model"
-    (if (nil? args)
-      [{:type :command-result :command "model" :model model}]
-      [{:type :model-changed :model args}])
-
-    "clear"
-    (do (reset! sess (session/create-session cwd))
-        (provider/clear-session!)
-        [{:type :session-cleared}])
-
-    "new"
-    (do (when (:cli-session-id @sess)
-          (session/save-session! @sess))
-        (reset! sess (session/create-session cwd))
-        (provider/clear-session!)
-        [{:type :session-cleared}])
-
-    "resume"
-    (if (nil? args)
-      ;; Show session list for resume
-      (let [sessions (session/list-sessions cwd)]
-        [{:type :command-result
-          :command "resume-list"
-          :sessions (format-session-list sessions)
-          :raw-sessions sessions}])
-      ;; Resume specific session
-      (let [n (js/parseInt args 10)
-            sessions (session/list-sessions cwd)]
-        (if (and (not (js/isNaN n)) (<= 1 n) (<= n (count sessions)))
-          (let [summary (nth sessions (dec n))
-                loaded (session/load-session summary)
-                loaded (if (and (= :xi (:source loaded)) (:cwd loaded))
-                         (session/touch-session! loaded)
-                         loaded)
-                messages (session/read-session-messages summary)]
-            (reset! sess loaded)
-            [{:type :session-resumed
-              :session loaded
-              :summary summary
-              :messages messages}])
-          [{:type :command-error :command "resume" :text "Session not found."}])))
-
-    ;; Try extension commands
-    (if-let [{:keys [handler]} (ext/get-command name)]
-      (let [result (handler {:session @sess :model model :cwd cwd :args args})]
-        (if (and (map? result) (= :prompt (:type result)))
-          [{:type :dispatch-prompt :text (:text result)}]
-          [{:type :command-result :command name :text (str "Ran /" name)}]))
-      [{:type :command-error :command name :text (str "Unknown command: /" name)}])))
+  (let [ctx {:name name
+             :args args
+             :sess sess
+             :cwd cwd
+             :model model
+             :effort effort
+             :busy busy
+             :event-history event-history}]
+    (if-let [cmd (registry/get-command name :runtime)]
+      ;; Dispatch from central registry (runtime-scoped only)
+      ((:handler cmd) ctx)
+      ;; Fallback: try extension commands (legacy path — extensions that
+      ;; haven't migrated to the registry yet)
+      (if-let [{:keys [handler]} (ext/get-command name)]
+        (let [result (handler {:session @sess :model model :cwd cwd :args args})]
+          (if (and (map? result) (= :prompt (:type result)))
+            [{:type :dispatch-prompt :text (:text result)}]
+            [{:type :command-result :command name :text (str "Ran /" name)}]))
+        [{:type :command-error :command name :text (str "Unknown command: /" name)}]))))

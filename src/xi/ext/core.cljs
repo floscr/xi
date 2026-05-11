@@ -1,7 +1,8 @@
 (ns xi.ext.core
   "Extension registry and lifecycle dispatcher.
    Extensions register via maps with :name, :hooks, :tools, :commands.
-   Hooks are dispatched at lifecycle points matching Pi's extension API.")
+   Hooks are dispatched at lifecycle points matching Pi's extension API."
+  (:require [xi.command-registry :as cmd-registry]))
 
 ;; ── Registry ──────────────────────────────────────────────────────────────────
 
@@ -39,12 +40,24 @@
               :exec (:execute tool)
               :ext-name ext-name}))
 
-    ;; Register commands
+    ;; Register commands — into both the ext-local registry AND the central
+    ;; command registry so they appear in palette/help automatically.
     (doseq [cmd (:commands ext)]
       (swap! registry assoc-in [:commands (:name cmd)]
              {:desc (:description cmd)
               :handler (:handler cmd)
-              :ext-name ext-name}))
+              :ext-name ext-name})
+      ;; Central registry — wrap handler to match the ctx shape extensions expect
+      (cmd-registry/register!
+       {:name (:name cmd)
+        :description (:description cmd)
+        :source "ext"
+        :scope :runtime
+        :handler (fn [{:keys [sess model cwd args]}]
+                   (let [result ((:handler cmd) {:session @sess :model model :cwd cwd :args args})]
+                     (if (and (map? result) (= :prompt (:type result)))
+                       [{:type :dispatch-prompt :text (:text result)}]
+                       [{:type :command-result :command (:name cmd) :text (str "Ran /" (:name cmd))}])))}))
 
     ;; Track extension
     (swap! registry update :extensions conj ext)

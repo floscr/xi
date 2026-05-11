@@ -1,24 +1,13 @@
 (ns xi.tui.command-palette
   "Command palette — manages custom commands and recency sorting.
-   Persists to ~/.config/xi/command-palette.json."
-  (:require [xi.ext.core :as ext]
+   Reads available commands from the central command-registry.
+   Persists custom commands and recency data to ~/.config/xi/command-palette.json."
+  (:require [xi.command-registry :as registry]
             ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
 (def ^:private HOME (aget js/process.env "HOME"))
 (def ^:private CONFIG_PATH (.join node-path HOME ".config" "xi" "command-palette.json"))
-
-(def ^:private BUILTIN_COMMANDS
-  [{:label "/help"     :command "/help"     :description "Show available commands"}
-   {:label "/sessions" :command "/sessions" :description "List recent sessions"}
-   {:label "/resume"   :command "/resume"   :description "Resume a previous session"}
-   {:label "/new"      :command "/new"      :description "Start a new session"}
-   {:label "/clear"    :command "/clear"    :description "Clear current session"}
-   {:label "/model"    :command "/model"    :description "Show or set model"}
-   {:label "/prompt"   :command "/prompt"   :description "Show system prompt"}
-   {:label "/buffers"  :command "/buffers"  :description "Switch buffer view"}
-   {:label "/debug"    :command "/debug"    :description "Copy debug info to clipboard"}
-   {:label "/quit"     :command "/quit"     :description "Exit Xi"}])
 
 (defn- ensure-dir! [dir]
   (when-not (.existsSync fs dir)
@@ -73,25 +62,28 @@
     (save-config! (assoc config :recent recent))))
 
 (defn build-items
-  "Build palette items from built-in, extension, and custom commands.
+  "Build palette items from the central registry and custom commands.
    Sorted by most recently used."
   []
   (let [config (load-config)
         recent (:recent config)
         recency-map (into {} (map-indexed (fn [i cmd] [cmd i]) recent))
 
-        ext-cmds (mapv (fn [{:keys [name desc]}]
-                         {:label (str "/" name)
-                          :command (str "/" name)
-                          :description desc})
-                       (ext/list-commands))
+        ;; All registered commands (built-in + extension + client)
+        reg-cmds (mapv (fn [cmd]
+                         {:label (str "/" (:name cmd))
+                          :command (str "/" (:name cmd))
+                          :description (:description cmd)})
+                       (registry/list-commands))
 
+        ;; User's custom commands (ad-hoc palette entries)
         customs (mapv (fn [{:keys [command]}]
                         {:label command
                          :command command
                          :description "custom"})
                       (:custom config))
 
+        ;; Deduplicate, preserving order (registry first, then customs)
         seen (atom #{})
         all (reduce (fn [acc item]
                       (if (@seen (:command item))
@@ -99,7 +91,7 @@
                         (do (swap! seen conj (:command item))
                             (conj acc item))))
                     []
-                    (concat BUILTIN_COMMANDS ext-cmds customs))
+                    (concat reg-cmds customs))
 
         sorted (sort-by (fn [item]
                           [(get recency-map (:command item) 999)

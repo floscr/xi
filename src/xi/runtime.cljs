@@ -12,6 +12,7 @@
             [xi.ext.web :as ext-web]
             [xi.loop :as loop]
             [xi.provider :as provider]
+            [xi.command-registry :as cmd-registry]
             [xi.runtime.commands :as commands]
             [xi.runtime.events :as events]
             [xi.session :as session]
@@ -35,6 +36,9 @@
     (catch :default _e {})))
 
 (defn- register-extensions! []
+  ;; Register built-in commands first
+  (commands/register-builtin-commands!)
+  ;; Then extensions (their commands also feed into the central registry)
   (doseq [ext [ext-plan-mode/extension
                ext-permission-gate/extension
                ext-kb/extension

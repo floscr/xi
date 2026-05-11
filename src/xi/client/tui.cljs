@@ -7,6 +7,7 @@
      :dispatch! (fn [command-or-string] -> promise)
      :busy?     (fn [] -> bool)"
   (:require [clojure.string :as str]
+            [xi.command-registry :as cmd-registry]
             [xi.tui.ansi :as ansi]
             [xi.tui.buffers :as buffers]
             [xi.tui.command-palette :as palette]
@@ -349,91 +350,123 @@
                           (fn [_stream text]
                             (buffers/append! buffer-mgr "Logs" text))))}))
 
-        ;; ── Local Command Handling ─────────────────────────────────────────────
-        ;; Commands handled entirely in the TUI client (no runtime round-trip).
+        ;; ── Client Command Registration ─────────────────────────────────────────
+        ;; Register TUI-local commands into the central registry.
+        ;; These run entirely in the client — no runtime round-trip.
+
+        _ (cmd-registry/register-many!
+           [{:name "git"
+             :description "Open ngit"
+             :scope :client
+             :show-busy true
+             :handler (fn [_ctx] (open-git!) nil)}
+
+            {:name "model"
+             :description "Show or set model"
+             :scope :client
+             :show-busy true
+             :handler (fn [{:keys [args]}]
+                        ;; Bare /model — show Ollama picker (client-only)
+                        ;; /model <name> — return :pass-through to let runtime handle it
+                        (if (some? args)
+                          :pass-through
+                          (do (-> (js/fetch "http://localhost:11434/api/tags")
+                                  (.then (fn [res] (.json res)))
+                                  (.then (fn [^js data]
+                                           (let [models (js->clj (.-models data) :keywordize-keys true)
+                                                 items (mapv (fn [m]
+                                                               {:label (:name m)
+                                                                :description (get-in m [:details :parameter_size])
+                                                                :value (:name m)})
+                                                             models)]
+                                             (show-completion-menu!
+                                              {:items items
+                                               :prompt "model> "
+                                               :on-select (fn [item]
+                                                            (dispatch! (str "/model " (:value item))))})
+                                             (tui/render-now!))))
+                                  (.catch (fn [_err]
+                                            (add-status-message!
+                                             (ansi/fg :error "Could not fetch Ollama models (is ollama running?)"))
+                                            (tui/render-now!))))
+                              nil)))}
+
+            {:name "buffers"
+             :description "Switch buffer view"
+             :scope :client
+             :show-busy true
+             :handler (fn [_ctx]
+                        (let [items (cond-> [{:label "Chat"
+                                              :description (when (= @active-view "Chat") "• active")
+                                              :value "Chat"}
+                                             {:label "Logs"
+                                              :description (let [n (count (buffers/get-entries buffer-mgr "Logs"))]
+                                                             (str n " entries"
+                                                                  (when (= @active-view "Logs") " • active")))
+                                              :value "Logs"}]
+                                      @prompt-content
+                                      (conj {:label "Prompt"
+                                             :description (when (= @active-view "Prompt") "• active")
+                                             :value "Prompt"}))]
+                          (show-completion-menu!
+                           {:items items
+                            :prompt "buffer> "
+                            :on-select (fn [item]
+                                         (switch-to-buffer! (:value item)))}))
+                        nil)}
+
+            {:name "palette"
+             :description "Open command palette"
+             :scope :client
+             :show-busy true
+             :hidden true
+             :handler (fn [{:keys [args]}]
+                        (if (nil? args)
+                          ;; No args — open the palette picker
+                          (@open-palette-fn)
+                          ;; Sub-commands: add, remove, list
+                          (let [[sub arg] (str/split (str/trim args) #"\s+" 2)]
+                            (cond
+                              (= sub "add")
+                              (if (seq arg)
+                                (if (palette/add-custom! arg)
+                                  (add-status-message! (str "Added to palette: " (ansi/fg :accent arg)))
+                                  (add-status-message! (str "Already in palette: " arg)))
+                                (add-status-message! (ansi/fg :error "Usage: /palette add <command>")))
+
+                              (= sub "remove")
+                              (if (seq arg)
+                                (if (palette/remove-custom! arg)
+                                  (add-status-message! (str "Removed from palette: " arg))
+                                  (add-status-message! (str "Not found: " arg)))
+                                (add-status-message! (ansi/fg :error "Usage: /palette remove <command>")))
+
+                              (= sub "list")
+                              (let [customs (palette/list-custom)]
+                                (if (empty? customs)
+                                  (add-status-message! (ansi/fg :dim "No custom commands."))
+                                  (add-status-message!
+                                   (str (ansi/fg :bold "Custom commands:\n")
+                                        (str/join "\n" (map #(str "  " (:command %)) customs))))))
+
+                              :else
+                              (add-status-message! (ansi/fg :error "Usage: /palette add|remove|list <command>")))))
+                        nil)}])
+
+        ;; ── Local Command Dispatch ──────────────────────────────────────────────
+        ;; Check the central registry for :client-scoped commands.
 
         handle-local-command!
         (fn [text]
-          (cond
-            (= text "/git")
-            (do (open-git!) true)
-
-            (= text "/model")
-            (do (-> (js/fetch "http://localhost:11434/api/tags")
-                    (.then (fn [res] (.json res)))
-                    (.then (fn [^js data]
-                             (let [models (js->clj (.-models data) :keywordize-keys true)
-                                   items (mapv (fn [m]
-                                                 {:label (:name m)
-                                                  :description (get-in m [:details :parameter_size])
-                                                  :value (:name m)})
-                                               models)]
-                               (show-completion-menu!
-                                {:items items
-                                 :prompt "model> "
-                                 :on-select (fn [item]
-                                              (dispatch! (str "/model " (:value item))))})
-                               (tui/render-now!))))
-                    (.catch (fn [_err]
-                              (add-status-message!
-                               (ansi/fg :error "Could not fetch Ollama models (is ollama running?)"))
-                              (tui/render-now!))))
-                true)
-
-            (= text "/buffers")
-            (let [items (cond-> [{:label "Chat"
-                                  :description (when (= @active-view "Chat") "• active")
-                                  :value "Chat"}
-                                 {:label "Logs"
-                                  :description (let [n (count (buffers/get-entries buffer-mgr "Logs"))]
-                                                 (str n " entries"
-                                                      (when (= @active-view "Logs") " • active")))
-                                  :value "Logs"}]
-                          @prompt-content
-                          (conj {:label "Prompt"
-                                 :description (when (= @active-view "Prompt") "• active")
-                                 :value "Prompt"}))]
-              (show-completion-menu!
-               {:items items
-                :prompt "buffer> "
-                :on-select (fn [item]
-                             (switch-to-buffer! (:value item)))})
-              true)
-
-            (= text "/palette")
-            (do (@open-palette-fn) true)
-
-            (str/starts-with? text "/palette ")
-            (let [rest-text (str/trim (subs text 9))
-                  [sub arg] (str/split rest-text #"\s+" 2)]
-              (cond
-                (= sub "add")
-                (if (seq arg)
-                  (if (palette/add-custom! arg)
-                    (add-status-message! (str "Added to palette: " (ansi/fg :accent arg)))
-                    (add-status-message! (str "Already in palette: " arg)))
-                  (add-status-message! (ansi/fg :error "Usage: /palette add <command>")))
-
-                (= sub "remove")
-                (if (seq arg)
-                  (if (palette/remove-custom! arg)
-                    (add-status-message! (str "Removed from palette: " arg))
-                    (add-status-message! (str "Not found: " arg)))
-                  (add-status-message! (ansi/fg :error "Usage: /palette remove <command>")))
-
-                (= sub "list")
-                (let [customs (palette/list-custom)]
-                  (if (empty? customs)
-                    (add-status-message! (ansi/fg :dim "No custom commands."))
-                    (add-status-message!
-                     (str (ansi/fg :bold "Custom commands:\n")
-                          (str/join "\n" (map #(str "  " (:command %)) customs))))))
-
-                :else
-                (add-status-message! (ansi/fg :error "Usage: /palette add|remove|list <command>")))
-              true)
-
-            :else false))
+          (when (str/starts-with? text "/")
+            (let [parts (str/split (subs text 1) #"\s+" 2)
+                  cmd-name (first parts)
+                  args (when (second parts) (str/trim (second parts)))]
+              (when-let [cmd (cmd-registry/get-command cmd-name :client)]
+                (let [result ((:handler cmd) {:args args})]
+                  ;; :pass-through means the client handler declined —
+                  ;; let the command fall through to runtime dispatch
+                  (not= :pass-through result))))))
 
         open-palette!
         (fn []
@@ -730,16 +763,17 @@
                                  (dispatch! (str "/resume " (:value item))))})))
 
               "help"
-              (add-status-message!
-               (str (ansi/fg :bold "Commands:\n")
-                    (str/join "\n"
-                              (map #(str "  /" %) (:builtin-commands event)))
-                    (when (seq (:extension-commands event))
-                      (str "\n"
-                           (str/join "\n"
-                                     (map (fn [{:keys [name desc]}]
-                                            (str "  /" name (when desc (str "  — " desc))))
-                                          (:extension-commands event)))))))
+              (let [all-cmds (concat (:builtin-commands event)
+                                     (:extension-commands event))]
+                (add-status-message!
+                 (str (ansi/fg :bold "Commands:\n")
+                      (str/join "\n"
+                                (map (fn [c]
+                                       (if (string? c)
+                                         (str "  /" c)
+                                         (str "  /" (:name c)
+                                              (when (:desc c) (str "  — " (:desc c))))))
+                                     all-cmds)))))
 
               "prompt"
               (do (reset! prompt-content (:text event))
