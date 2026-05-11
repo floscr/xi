@@ -151,14 +151,14 @@
 
 ;; ── Stream Event Processing ──────────────────────────────────────────────────
 
-(defn- map-stop-reason [reason]
+(defn map-stop-reason [reason]
   (case reason
     "tool_use"   "toolUse"
     "max_tokens" "length"
     "end_turn"   "stop"
     "stop"))
 
-(defn- strip-mcp-prefix
+(defn strip-mcp-prefix
   "Strip MCP prefix: mcp__xi-tools__bash → bash"
   [n]
   (if (and n (.startsWith n MCP_TOOL_PREFIX))

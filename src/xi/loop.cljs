@@ -6,7 +6,7 @@
             [xi.provider :as bridge]
             [xi.provider.ollama :as ollama]))
 
-(defn- claude-model?
+(defn claude-model?
   "Returns true if model string looks like a Claude/Anthropic model."
   [model]
   (when model

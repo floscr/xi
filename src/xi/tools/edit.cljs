@@ -5,7 +5,7 @@
             ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
-(defn- apply-edit
+(defn apply-edit
   "Apply a single oldText→newText replacement. Returns {:ok content} or {:error msg}."
   [content {:keys [oldText newText]}]
   (let [idx (.indexOf content oldText)]
