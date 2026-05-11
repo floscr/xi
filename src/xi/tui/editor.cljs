@@ -89,6 +89,9 @@
   (or (= data (str ESC DEL))
       (= data (str ESC "[127;3u"))))
 
+(defn- is-ctrl-shift-g? [data]
+  (= data (str ESC "[103;6u")))
+
 ;; ── Word Boundary Helpers ─────────────────────────────────────────────────────
 
 (defn- word-char? [ch]
@@ -156,6 +159,7 @@
         on-interrupt (:on-interrupt opts)
         on-escape (:on-escape opts)
         on-palette (:on-palette opts)
+        on-git (:on-git opts)
 
         get-text (fn []
                    (str/join "\n" (:lines @state)))
@@ -524,6 +528,10 @@
                          ;; Ctrl+T — transpose characters
                          (ctrl? data "T")
                          (transpose-chars)
+
+                         ;; Ctrl+Shift+G — open git status
+                         (is-ctrl-shift-g? data)
+                         (when on-git (on-git))
 
                          ;; Alt+B — backward word
                          (is-alt-b? data)

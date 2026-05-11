@@ -313,12 +313,27 @@
             (tui/set-focus! menu)
             (tui/render-now!)))
 
+        ;; ── Git / External Process ───────────────────────────────────────────
+
+        open-git!
+        (fn []
+          (tui/run-external!
+           ["ngit"]
+           {:on-suspend (fn [] (term/restore-stdout!))
+            :on-resume (fn []
+                         (term/intercept-stdout!
+                          (fn [_stream text]
+                            (buffers/append! buffer-mgr "Logs" text))))}))
+
         ;; ── Local Command Handling ─────────────────────────────────────────────
         ;; Commands handled entirely in the TUI client (no runtime round-trip).
 
         handle-local-command!
         (fn [text]
           (cond
+            (= text "/git")
+            (do (open-git!) true)
+
             (= text "/model")
             (do (-> (js/fetch "http://localhost:11434/api/tags")
                     (.then (fn [res] (.json res)))
@@ -441,7 +456,8 @@
 
           :on-interrupt (fn [] (shutdown!))
 
-          :on-palette open-palette!})
+          :on-palette open-palette!
+          :on-git open-git!})
 
         ;; Wire up forward reference
         _ (reset! editor-comp-ref editor-comp)
