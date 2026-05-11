@@ -434,8 +434,10 @@
                                (reset! queued-prompt text))))))
 
           :on-escape (fn []
-                       (when (busy?)
-                         (dispatch! {:type :abort})))
+                       (if (tui/scrolled-up?)
+                         (tui/scroll-to-bottom!)
+                         (when (busy?)
+                           (dispatch! {:type :abort}))))
 
           :on-interrupt (fn [] (shutdown!))
 
