@@ -8,6 +8,11 @@
    :devtools {:console-support false}
    :compiler-options {:optimizations :simple}}
 
+  :test
+  {:target    :node-test
+   :output-to "target/test.js"
+   :autorun   true}
+
   :web
   {:target     :browser
    :output-dir "resources/public/js"

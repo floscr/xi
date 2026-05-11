@@ -23,4 +23,12 @@
 
   watch:all
   {:doc "Watch both CLI and web targets simultaneously"
-   :task (shell "npx shadow-cljs watch main web")}}}
+   :task (shell "npx shadow-cljs watch main web")}
+
+  test
+  {:doc "Compile and run unit tests once"
+   :task (shell "npx shadow-cljs compile test")}
+
+  test:watch
+  {:doc "Watch-compile and rerun tests on changes"
+   :task (shell "npx shadow-cljs watch test")}}}

@@ -1,4 +1,4 @@
 {:deps {thheller/shadow-cljs {:mvn/version "3.4.9"}
         no.cjohansen/replicant {:mvn/version "2025.12.1"}
         com.gitea.floscr/clj-ui-framework {:local/root "/home/floscr/Code/Projects/ui-framework"}}
- :paths ["src"]}
+ :paths ["src" "test"]}

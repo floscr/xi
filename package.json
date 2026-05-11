@@ -2,6 +2,10 @@
   "name": "xi",
   "version": "0.1.0",
   "private": true,
+  "scripts": {
+    "test": "npx shadow-cljs compile test",
+    "test:watch": "npx shadow-cljs watch test"
+  },
   "devDependencies": {
     "shadow-cljs": "3.4.9"
   },

@@ -14,6 +14,21 @@ bun target/main.js       # run
 
 - **Do NOT run `xi` / `bun target/main.js` from the agent.** It's a TUI app that requires an interactive terminal and will not work inside the agent shell. Only compile; the user tests manually.
 
+### Unit Tests
+
+```bash
+npm test                       # compile + run tests once
+npm run test:watch             # recompile + rerun on file changes
+npx shadow-cljs compile test   # equivalent to npm test
+```
+
+Tests use `cljs.test` via the shadow-cljs `:node-test` target. Test files live in `test/` mirroring the `src/` layout (e.g. `test/xi/commands_test.cljs` tests `src/xi/runtime/commands.cljs`).
+
+When adding new tests:
+1. Create `test/xi/<namespace>_test.cljs` with `(:require [cljs.test :refer [deftest is testing]])`
+2. shadow-cljs auto-discovers all `*_test.cljs` namespaces — no registration needed
+3. Prefer testing public pure functions; avoid tests that require filesystem or network I/O
+
 ## Architecture
 
 - **shadow-cljs** compiles ClojureScript to a single node-script JS file
