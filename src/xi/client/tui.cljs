@@ -209,11 +209,10 @@
         buffer-mgr (or (:buffer-mgr opts) (buffers/create-manager ["Logs"]))
 
         ;; Create TUI
-        root (tui/create-tui!)
+        content (tui/create-tui!)  ;; scrollable content area
         chat-container (tui/make-container)
         view-wrapper (tui/make-container)  ;; holds the active buffer view
         active-view (atom "Chat")          ;; "Chat" or "Logs"
-        spacer (comp/make-spacer 1)
         loader (comp/make-loader "thinking...")
 
         ;; ── Buffer View Switching ───────────────────────────────────────────
@@ -271,18 +270,18 @@
         editor-comp-ref (atom nil)
         open-palette-fn (atom nil)
 
+        restore-editor-panel!
+        (fn []
+          (tui/set-bottom-panel! @editor-comp-ref)
+          (tui/set-focus! @editor-comp-ref))
+
         hide-completion-menu!
         (fn []
-          (when-let [menu @active-menu]
-            ;; Remove menu + its spacer from root
-            ((:remove-child root) menu)
-            (when-let [ms @menu-spacer]
-              ((:remove-child root) ms))
+          (when @active-menu
             (reset! active-menu nil)
             (reset! menu-spacer nil)
-            ;; Restore the editor
-            ((:add-child root) @editor-comp-ref)
-            (tui/set-focus! @editor-comp-ref)
+            ;; Restore editor as bottom panel
+            (restore-editor-panel!)
             (tui/render-now!)))
 
         show-completion-menu!
@@ -305,10 +304,11 @@
                 ms (comp/make-spacer 1)]
             (reset! active-menu menu)
             (reset! menu-spacer ms)
-            ;; Replace the editor with the menu — menu has its own prompt at the bottom
-            ((:remove-child root) @editor-comp-ref)
-            ((:add-child root) ms)
-            ((:add-child root) menu)
+            ;; Replace the editor with the menu as bottom panel
+            (let [menu-panel (tui/make-container)]
+              ((:add-child menu-panel) ms)
+              ((:add-child menu-panel) menu)
+              (tui/set-bottom-panel! menu-panel))
             ;; Focus the menu (editor is hidden until menu is dismissed)
             (tui/set-focus! menu)
             (tui/render-now!)))
@@ -732,9 +732,10 @@
 
     ;; Build component tree — view-wrapper holds the active buffer view
     ((:add-child view-wrapper) chat-container)
-    ((:add-child root) view-wrapper)
-    ((:add-child root) spacer)
-    ((:add-child root) editor-comp)
+    ((:add-child content) view-wrapper)
+
+    ;; Set editor as pinned bottom panel
+    (tui/set-bottom-panel! editor-comp)
 
     ;; Focus the editor
     (tui/set-focus! editor-comp)

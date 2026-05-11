@@ -67,6 +67,33 @@
 (defn clear-screen! []
   (write! (str ansi/CLEAR_SCREEN (ansi/cursor-home))))
 
+(defn cursor-to!
+  "Move cursor to absolute position (1-based row and col)."
+  [row col]
+  (write! (str "\033[" row ";" col "H")))
+
+(defn enter-alt-screen!
+  "Enter alternate screen buffer."
+  []
+  (write! "\033[?1049h"))
+
+(defn exit-alt-screen!
+  "Exit alternate screen buffer (restores previous screen)."
+  []
+  (write! "\033[?1049l"))
+
+(defn enable-mouse-tracking!
+  "Enable mouse button event tracking with SGR encoding."
+  []
+  (write! "\033[?1000h")
+  (write! "\033[?1006h"))
+
+(defn disable-mouse-tracking!
+  "Disable mouse button event tracking."
+  []
+  (write! "\033[?1006l")
+  (write! "\033[?1000l"))
+
 (defn set-title! [title]
   (write! (str "\033]0;" title "\007")))
 
@@ -159,6 +186,9 @@
     (.setEncoding stdin "utf8")
     (.resume stdin)
 
+    ;; Enter alternate screen buffer
+    (enter-alt-screen!)
+
     ;; Enable bracketed paste mode
     (write! "\033[?2004h")
 
@@ -169,6 +199,9 @@
 
     ;; Hide cursor during rendering
     (hide-cursor!)
+
+    ;; Enable mouse tracking (for scroll wheel)
+    (enable-mouse-tracking!)
 
     ;; Listen for input
     (.on stdin "data" split-handler)
@@ -187,6 +220,9 @@
         stdin js/process.stdin
         stdout js/process.stdout]
 
+    ;; Disable mouse tracking
+    (disable-mouse-tracking!)
+
     ;; Disable kitty keyboard protocol
     (write! "\033[<u")
 
@@ -196,8 +232,8 @@
     ;; Show cursor
     (show-cursor!)
 
-    ;; Move to start of next line
-    (write! "\n")
+    ;; Exit alternate screen buffer (restores main screen)
+    (exit-alt-screen!)
 
     ;; Remove listeners
     (when on-input (.removeListener stdin "data" on-input))

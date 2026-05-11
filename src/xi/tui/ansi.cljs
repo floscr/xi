@@ -78,6 +78,11 @@
 (defn cursor-home []
   (str ESC "H"))
 
+(defn cursor-to
+  "Move cursor to absolute position (1-based row, column 1)."
+  [row]
+  (str ESC row ";1H"))
+
 (def HIDE_CURSOR (str ESC "?25l"))
 (def SHOW_CURSOR (str ESC "?25h"))
 (def CLEAR_LINE (str ESC "2K"))
