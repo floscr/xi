@@ -4,6 +4,7 @@
    The actual conversation data lives in claude CLI sessions (~/.claude/projects/).
    Xi also reads Pi sessions from ~/.pi/agent/sessions/ for resume."
   (:require [clojure.string :as str]
+            [xi.session.sync :as sync]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
             ["node:crypto" :as crypto]))
@@ -54,13 +55,7 @@
   (let [stripped (if (str/starts-with? cwd "/") (subs cwd 1) cwd)]
     (str "--" (str/replace stripped "/" "-") "--")))
 
-(defn- encode-cwd-claude
-  "Encode CWD for Claude CLI project directory.
-   Claude CLI replaces both / and . with -.
-   /home/floscr/.config/dotfiles → -home-floscr--config-dotfiles"
-  [cwd]
-  (let [stripped (if (str/starts-with? cwd "/") (subs cwd 1) cwd)]
-    (str "-" (str/replace stripped #"[/.]" "-"))))
+(def ^:private encode-cwd-claude sync/encode-cwd-claude)
 
 (defn- xi-session-dir [cwd]
   (.join node-path XI_SESSIONS_DIR (encode-cwd-xi cwd)))
