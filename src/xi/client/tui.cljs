@@ -750,6 +750,12 @@
                 (add-status-message! (str "Current model: " (ansi/fg :accent (:model event))))
                 (add-status-message! (:text event)))
 
+              "debug"
+              (let [text (:text event)
+                    b64 (.toString (js/Buffer.from text "utf-8") "base64")]
+                (term/write! (str "\033]52;c;" b64 "\007"))
+                (add-status-message! (ansi/fg :dim "Debug info copied to clipboard.")))
+
               ;; Default for extension commands
               (when (:text event)
                 (add-status-message! (:text event))))

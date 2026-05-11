@@ -203,7 +203,7 @@
   "Send a command to the runtime. Returns a promise."
   [rt command]
   (let [{:keys [emit!]} (:bus rt)
-        {:keys [model cwd]} @(:state rt)
+        {:keys [model cwd effort]} @(:state rt)
         sess (:sess rt)
         parsed (if (string? command)
                  (commands/parse-input command)
@@ -248,7 +248,10 @@
           (js/Promise.resolve nil))
 
         :command
-        (let [events (commands/handle-command parsed {:sess sess :cwd cwd :model model})
+        (let [events (commands/handle-command parsed {:sess sess :cwd cwd :model model
+                                                        :effort effort
+                                                        :busy @(:busy rt)
+                                                        :event-history @(:event-history rt)})
               prompt-event (first (filter #(= :dispatch-prompt (:type %)) events))
               other-events (remove #(= :dispatch-prompt (:type %)) events)]
           (doseq [event other-events]

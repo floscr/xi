@@ -12,6 +12,78 @@
     (str (subs s 0 max-len) "...")
     s))
 
+(defn- claude-model? [model]
+  (when model
+    (or (str/starts-with? model "claude-")
+        (str/starts-with? model "anthropic/")
+        (contains? #{"sonnet" "opus" "haiku"} model))))
+
+(defn- extract-text-content [content]
+  (cond
+    (string? content) content
+    (sequential? content)
+    (->> content
+         (keep #(when (= "text" (:type %)) (:text %)))
+         (str/join "\n"))
+    :else (str content)))
+
+(defn- format-scrollback [events]
+  (let [parts (atom [])
+        current-text (atom "")]
+    (doseq [event events]
+      (case (:type event)
+        :user-message
+        (do
+          (when (seq @current-text)
+            (swap! parts conj (str "### Assistant\n" @current-text))
+            (reset! current-text ""))
+          (swap! parts conj (str "### User\n" (:text event))))
+
+        :text-delta
+        (swap! current-text str (:text event))
+
+        :tool-args
+        (do
+          (when (seq @current-text)
+            (swap! parts conj (str "### Assistant\n" @current-text))
+            (reset! current-text ""))
+          (swap! parts conj
+                 (str "### Tool: " (:name event) "\n"
+                      "```json\n"
+                      (try (js/JSON.stringify (clj->js (:arguments event)) nil 2)
+                           (catch :default _ "{}"))
+                      "\n```")))
+
+        :tool-result
+        (let [text (extract-text-content (:content event))]
+          (swap! parts conj
+                 (str "### Tool Result"
+                      (when (:is-error event) " (ERROR)")
+                      "\n"
+                      (truncate text 1000))))
+
+        :turn-end
+        (do
+          (when (seq @current-text)
+            (swap! parts conj (str "### Assistant\n" @current-text))
+            (reset! current-text ""))
+          (swap! parts conj
+                 (str "---\n_Turn end"
+                      (when (:cost event) (str " | Cost: $" (:cost event)))
+                      (when (:usage event) (str " | Tokens: " (pr-str (:usage event))))
+                      "_")))
+
+        :error
+        (swap! parts conj (str "### Error\n" (pr-str (:error event))))
+
+        :aborted
+        (swap! parts conj "_Aborted_")
+
+        nil))
+    (when (seq @current-text)
+      (swap! parts conj (str "### Assistant\n" @current-text)))
+    (str/join "\n\n" @parts)))
+
 (defn- format-session-list
   "Format session list as plain data."
   [sessions]
@@ -44,7 +116,7 @@
 (defn handle-command
   "Execute a slash command. Returns a vector of events to emit.
    Pure data — no UI side effects."
-  [{:keys [name args]} {:keys [sess cwd model]}]
+  [{:keys [name args]} {:keys [sess cwd model effort busy event-history]}]
   (case name
     "quit"
     [{:type :quit}]
@@ -60,8 +132,31 @@
     (let [ext-cmds (ext/list-commands)]
       [{:type :command-result
         :command "help"
-        :builtin-commands ["sessions" "resume [n]" "model" "prompt" "buffers" "palette" "git" "new" "clear" "help" "quit"]
+        :builtin-commands ["sessions" "resume [n]" "model" "prompt" "buffers" "palette" "git" "debug" "new" "clear" "help" "quit"]
         :extension-commands ext-cmds}])
+
+    "debug"
+    (let [is-claude (claude-model? model)
+          sdk-session-id (provider/get-session-id)
+          scrollback (format-scrollback (or event-history []))
+          text (str "# Xi Debug Info\n\n"
+                    "## Runtime\n"
+                    "- Model: " (or model "(none)") "\n"
+                    "- Effort: " (or effort "(default)") "\n"
+                    "- CWD: " cwd "\n"
+                    "- Busy: " (boolean busy) "\n"
+                    "- Extensions: " (str/join ", " (ext/list-extensions)) "\n"
+                    "\n## Provider\n"
+                    "- Type: " (if is-claude "Claude SDK Bridge" "OpenAI-compatible") "\n"
+                    (when is-claude
+                      (str "- SDK Session: " (or sdk-session-id "(none)") "\n"))
+                    "\n## Session\n"
+                    "- Xi ID: " (or (:id @sess) "(none)") "\n"
+                    "- CLI Session ID: " (or (:cli-session-id @sess) "(none)") "\n"
+                    "- Name: " (or (:name @sess) "(unnamed)") "\n"
+                    "\n## Scrollback\n\n"
+                    (if (seq scrollback) scrollback "(empty)"))]
+      [{:type :command-result :command "debug" :text text}])
 
     "prompt"
     (let [agents-md (system-prompt/load-agents-md cwd)]

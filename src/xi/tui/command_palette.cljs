@@ -17,6 +17,7 @@
    {:label "/model"    :command "/model"    :description "Show or set model"}
    {:label "/prompt"   :command "/prompt"   :description "Show system prompt"}
    {:label "/buffers"  :command "/buffers"  :description "Switch buffer view"}
+   {:label "/debug"    :command "/debug"    :description "Copy debug info to clipboard"}
    {:label "/quit"     :command "/quit"     :description "Exit Xi"}])
 
 (defn- ensure-dir! [dir]
