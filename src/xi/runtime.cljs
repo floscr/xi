@@ -19,6 +19,14 @@
 
 (def ^:private DEFAULT_MODEL "claude-sonnet-4-20250514")
 
+(def ^:private THINKING_TO_EFFORT
+  "Map Pi thinking levels → Claude SDK effort levels."
+  {"minimal" "low"
+   "low"     "low"
+   "medium"  "medium"
+   "high"    "high"
+   "xhigh"   "max"})
+
 (defn- load-settings []
   (try
     (let [path (str (aget js/process.env "HOME") "/.pi/agent/settings.json")
@@ -43,7 +51,7 @@
   "Run one agent turn. Bridges loop callbacks to event bus."
   [rt prompt]
   (let [{:keys [emit!]} (:bus rt)
-        {:keys [model sess cwd agents-md]} @(:state rt)
+        {:keys [model effort sess cwd agents-md]} @(:state rt)
         cli-session-id (:cli-session-id @sess)
         abort-signal (:abort-signal rt)]
 
@@ -53,6 +61,7 @@
          (cond-> {:model model
                   :prompt prompt
                   :cwd cwd
+                  :effort effort
                   :abort-signal abort-signal
 
                   :on-text
@@ -110,12 +119,16 @@
                   (aget js/process.env "XI_MODEL")
                   (:defaultModel settings)
                   DEFAULT_MODEL)
+        effort (or (aget js/process.env "XI_EFFORT")
+                   (get THINKING_TO_EFFORT (:defaultThinkingLevel settings))
+                   "high")
         cwd (or (:cwd opts) (aget js/process.env "XI_CWD") (.cwd js/process))
         agents-files (system-prompt/find-agents-md cwd)
         agents-md (system-prompt/load-agents-md cwd)
         bus (events/create-bus)
         sess (atom (session/create-session cwd))
         state (atom {:model model
+                     :effort effort
                      :cwd cwd
                      :sess sess
                      :agents-md agents-md})

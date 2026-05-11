@@ -301,6 +301,9 @@
                                         :preset "claude_code"
                                         :append (:system opts)})
 
+                            (:effort opts)
+                            (assoc :effort (:effort opts))
+
                             resume-id
                             (assoc :resume resume-id)))
                      (unchecked-set "mcpServers"

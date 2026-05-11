@@ -23,6 +23,7 @@
      :model       - model id
      :prompt      - user prompt string
      :system      - extra system prompt to append
+     :effort      - reasoning effort level (low/medium/high/xhigh/max)
      :on-text     - callback for text deltas
      :on-thinking - callback for thinking deltas
      :on-tool-start - callback when a tool call starts
@@ -37,6 +38,7 @@
           :prompt (:prompt opts)
           :cwd (:cwd opts)
           :system (:system opts)
+          :effort (:effort opts)
           :resume-session-id (:resume-session-id opts)
           :abort-signal (:abort-signal opts)
           :on-text (:on-text opts)
