@@ -32,8 +32,9 @@ body {
 /* ---- Layout ---- */
 .container {
   width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
+  padding-inline: 0;
   flex: 1;
   min-height: 0;
   overflow: hidden;
