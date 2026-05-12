@@ -162,6 +162,52 @@
                       (catch :default _ nil))))
          (str/join ""))))
 
+;; ── Confirmation ──────────────────────────────────────────────────────────────
+;; Extensions can ask the user for confirmation before proceeding.
+;; The TUI (or other client) registers a handler at startup.
+
+(defonce ^:private confirm-handler (atom nil))
+
+(defn set-confirm-handler!
+  "Set the confirmation handler. Called by TUI/client at startup.
+   handler-fn is (fn [message] -> Promise<boolean>)."
+  [handler-fn]
+  (reset! confirm-handler handler-fn))
+
+(defn confirm!
+  "Ask the user for confirmation. Returns Promise<boolean>.
+   If no handler is set (headless mode), denies by default."
+  [message]
+  (if-let [handler @confirm-handler]
+    (handler message)
+    (js/Promise.resolve false)))
+
+;; ── Async Transform Dispatch ─────────────────────────────────────────────────
+
+(defn dispatch-hook-transform-async
+  "Like dispatch-hook-transform but supports handlers that return Promises.
+   Always returns a Promise resolving to the final value (or nil if blocked)."
+  ([event initial-value] (dispatch-hook-transform-async event initial-value nil))
+  ([event initial-value event-ctx]
+   (let [state (build-state event-ctx)
+         handlers (get-in @registry [:hooks event])]
+     (reduce
+      (fn [chain {:keys [handler]}]
+        (.then chain
+               (fn [value]
+                 (if (nil? value)
+                   nil
+                   (try
+                     (let [result (handler value state)]
+                       (if (instance? js/Promise result)
+                         result
+                         (js/Promise.resolve result)))
+                     (catch :default e
+                       (js/console.error (str "[ext] Error in " (name event) " async transform hook:") e)
+                       value))))))
+      (js/Promise.resolve initial-value)
+      handlers))))
+
 ;; ── Tool/Command Access ───────────────────────────────────────────────────────
 
 (defn get-ext-tool-definitions

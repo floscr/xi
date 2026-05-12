@@ -1,39 +1,55 @@
 (ns xi.ext.permission-gate-test
-  (:require [cljs.test :refer [deftest is testing]]
+  (:require [cljs.test :refer [deftest is testing async]]
             [xi.ext.permission-gate :as gate]))
 
 (def gate-fn (get-in gate/extension [:hooks :tool-call]))
 (def state {:cwd "/home/user/project" :model "test"})
 
+;; Helper: blocked calls now return a Promise (resolving to nil when no
+;; confirm handler is set).  Use `async` + `.then` to assert.
+
+(defn- assert-blocked [call done]
+  (let [result (gate-fn call state)]
+    (if (instance? js/Promise result)
+      (.then result (fn [v] (is (nil? v)) (done)))
+      (do (is (nil? result)) (done)))))
+
 ;; ── Write/Edit Blocking ────────────────────────────────────────────────────
 
 (deftest blocks-write-to-ssh
   (testing "blocks write to .ssh directory"
-    (is (nil? (gate-fn {:name "write" :arguments {:path "/home/user/.ssh/id_rsa"}} state)))))
+    (async done
+      (assert-blocked {:name "write" :arguments {:path "/home/user/.ssh/id_rsa"}} done))))
 
 (deftest blocks-write-to-gnupg
   (testing "blocks write to .gnupg directory"
-    (is (nil? (gate-fn {:name "edit" :arguments {:path "/home/user/.gnupg/pubring.kbx"}} state)))))
+    (async done
+      (assert-blocked {:name "edit" :arguments {:path "/home/user/.gnupg/pubring.kbx"}} done))))
 
 (deftest blocks-write-to-password-store
   (testing "blocks write to password store"
-    (is (nil? (gate-fn {:name "write" :arguments {:path "/home/user/.password-store/email.gpg"}} state)))))
+    (async done
+      (assert-blocked {:name "write" :arguments {:path "/home/user/.password-store/email.gpg"}} done))))
 
 (deftest blocks-write-to-mail
   (testing "blocks write to Mail directory"
-    (is (nil? (gate-fn {:name "write" :arguments {:path "/home/user/Mail/inbox/msg"}} state)))))
+    (async done
+      (assert-blocked {:name "write" :arguments {:path "/home/user/Mail/inbox/msg"}} done))))
 
 (deftest blocks-write-to-dotenv
   (testing "blocks write to .env files"
-    (is (nil? (gate-fn {:name "write" :arguments {:path ".env"}} state)))))
+    (async done
+      (assert-blocked {:name "write" :arguments {:path ".env"}} done))))
 
 (deftest blocks-write-to-git-dir
   (testing "blocks write to .git/ directory"
-    (is (nil? (gate-fn {:name "edit" :arguments {:path ".git/config"}} state)))))
+    (async done
+      (assert-blocked {:name "edit" :arguments {:path ".git/config"}} done))))
 
 (deftest blocks-write-to-node-modules
   (testing "blocks write to node_modules/"
-    (is (nil? (gate-fn {:name "write" :arguments {:path "node_modules/foo/index.js"}} state)))))
+    (async done
+      (assert-blocked {:name "write" :arguments {:path "node_modules/foo/index.js"}} done))))
 
 ;; ── Write/Edit Allowing ───────────────────────────────────────────────────
 
@@ -51,15 +67,18 @@
 
 (deftest blocks-dangerous-remove
   (testing "blocks dangerous remove commands"
-    (is (nil? (gate-fn {:name "bash" :arguments {:command (str "r" "m -rf /")}} state)))))
+    (async done
+      (assert-blocked {:name "bash" :arguments {:command (str "r" "m -rf /")}} done))))
 
 (deftest blocks-privileged-exec
   (testing "blocks privileged execution"
-    (is (nil? (gate-fn {:name "bash" :arguments {:command (str "su" "do apt install foo")}} state)))))
+    (async done
+      (assert-blocked {:name "bash" :arguments {:command (str "su" "do apt install foo")}} done))))
 
 (deftest blocks-disk-dump
   (testing "blocks disk dump commands"
-    (is (nil? (gate-fn {:name "bash" :arguments {:command (str "d" "d if=/dev/zero of=/dev/sda")}} state)))))
+    (async done
+      (assert-blocked {:name "bash" :arguments {:command (str "d" "d if=/dev/zero of=/dev/sda")}} done))))
 
 ;; ── Bash Allowing ──────────────────────────────────────────────────────
 
@@ -72,6 +91,18 @@
   (testing "allows git status"
     (let [call {:name "bash" :arguments {:command "git status"}}]
       (is (= call (gate-fn call state))))))
+
+;; ── Git Push Blocking ─────────────────────────────────────────────────────
+
+(deftest blocks-git-push
+  (testing "blocks git push"
+    (async done
+      (assert-blocked {:name "bash" :arguments {:command "git push origin main"}} done))))
+
+(deftest blocks-git-push-force
+  (testing "blocks git push --force"
+    (async done
+      (assert-blocked {:name "bash" :arguments {:command "git push --force"}} done))))
 
 ;; ── Other Tools Pass Through ──────────────────────────────────────────────
 
@@ -87,7 +118,12 @@
 
 ;; ── Case Insensitivity ———————————————————————————————————————————
 
-(deftest handles-uppercase-tool-names
-  (testing "handles PascalCase tool names from SDK"
-    (is (nil? (gate-fn {:name "Write" :arguments {:path ".env"}} state)))
-    (is (nil? (gate-fn {:name "BASH" :arguments {:command (str "r" "m -rf /")}} state)))))
+(deftest handles-uppercase-write
+  (testing "handles PascalCase Write tool name"
+    (async done
+      (assert-blocked {:name "Write" :arguments {:path ".env"}} done))))
+
+(deftest handles-uppercase-bash
+  (testing "handles uppercase BASH tool name"
+    (async done
+      (assert-blocked {:name "BASH" :arguments {:command (str "r" "m -rf /")}} done))))

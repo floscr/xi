@@ -110,6 +110,18 @@ Called in a chain. Each handler receives `(value, state)` and returns the (possi
 
 **Events:** `:tool-call` `:context` `:input`
 
+### Async transform hooks — `dispatch-hook-transform-async`
+
+Like `dispatch-hook-transform` but supports handlers that return Promises. Always returns a Promise. Used for `:tool-call` gating where confirmation dialogs need async user input.
+
+```clojure
+(defn- gate-tool [tool-call state]
+  (if (dangerous? tool-call)
+    (-> (ext/confirm! "Allow dangerous operation?")
+        (.then (fn [allowed?] (if allowed? tool-call nil))))
+    tool-call))  ;; sync return also works
+```
+
 ### Prompt badge hooks — `collect-prompt-badges`
 
 Special query hook. Each handler receives `state` and returns a string (or nil). All non-nil results are concatenated and displayed after the `xi>` prompt.
@@ -180,7 +192,7 @@ Add to `runtime.cljs`:
 | Extension | Hooks | Description |
 |-----------|-------|-------------|
 | `done-notify` | `:agent-end` `:prompt-badge` | Desktop notification via dunstify on turn end. Toggle with Ctrl+Shift+N, shows 🔔 badge. Middle-click notification to focus terminal. |
-| `permission-gate` | `:tool-call` | Blocks writes to sensitive paths (.ssh, .env, .git) and dangerous bash commands. |
+| `permission-gate` | `:tool-call` | Guards writes to sensitive paths (.ssh, .env, .git), dangerous bash commands, and `git push` with user confirmation. |
 | `plan-mode` | `:context` `:tool-call` | Read-only exploration mode. `/plan` toggles. Blocks writes except `tasks/todo.md`. |
 | `terminal-title` | `:session-start` `:turn-end` | Sets terminal title to session name via ANSI escape. |
 | `parmezan` | `:tool-execution-end` | Runs parmezan CLI to fix unbalanced delimiters in Clojure files after writes. |
@@ -230,8 +242,14 @@ To add a new keybinding:
 (ext/dispatch-hook :event {:extra "ctx"})
 (ext/dispatch-hook-transform :event initial-value)
 (ext/dispatch-hook-transform :event initial-value {:extra "ctx"})
+(ext/dispatch-hook-transform-async :event initial-value)  ;; Promise-aware
+(ext/dispatch-hook-transform-async :event initial-value {:extra "ctx"})
 (ext/dispatch-hook-async :event)
 (ext/collect-prompt-badges)
+
+;; Confirmation (for permission gates / interactive approval)
+(ext/set-confirm-handler! (fn [message] ...))  ;; called by TUI at startup
+(ext/confirm! "Allow this?")                    ;; returns Promise<boolean>
 
 ;; Registration
 (ext/register-extension! ext-map)

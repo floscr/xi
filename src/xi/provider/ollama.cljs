@@ -39,35 +39,35 @@
         tool-call-id (.-id tool-call)
         args (try (js->clj (js/JSON.parse args-str) :keywordize-keys true)
                   (catch :default _ {}))
-        gated (ext/dispatch-hook-transform
-               :tool-call {:name tool-name :arguments args})]
-    (if (nil? gated)
-      (js/Promise.resolve
-       {:role "tool"
-        :tool_call_id tool-call-id
-        :content "Blocked by Xi permission gate"})
-      (let [exec-fn (get registry tool-name)]
-        (if exec-fn
-          (-> (let [result (exec-fn args {:cwd cwd})]
-                (if (instance? js/Promise result) result (js/Promise.resolve result)))
-              (.then (fn [result]
-                       {:role "tool"
-                        :tool_call_id tool-call-id
-                        :content (let [c (:content result)]
-                                   (cond
-                                     (string? c) c
-                                     (sequential? c) (->> c
-                                                          (keep #(when (= "text" (:type %)) (:text %)))
-                                                          (str/join "\n"))
-                                     :else (str c)))}))
-              (.catch (fn [err]
-                        {:role "tool"
-                         :tool_call_id tool-call-id
-                         :content (str "Tool error: " (.-message err))})))
-          (js/Promise.resolve
-           {:role "tool"
-            :tool_call_id tool-call-id
-            :content (str "Unknown tool: " tool-name)}))))))
+        tc {:name tool-name :arguments args}]
+    (-> (ext/dispatch-hook-transform-async :tool-call tc)
+        (.then
+         (fn [gated]
+           (if (nil? gated)
+             {:role "tool"
+              :tool_call_id tool-call-id
+              :content "Blocked by Xi permission gate"}
+             (let [exec-fn (get registry tool-name)]
+               (if exec-fn
+                 (-> (let [result (exec-fn args {:cwd cwd})]
+                       (if (instance? js/Promise result) result (js/Promise.resolve result)))
+                     (.then (fn [result]
+                              {:role "tool"
+                               :tool_call_id tool-call-id
+                               :content (let [c (:content result)]
+                                          (cond
+                                            (string? c) c
+                                            (sequential? c) (->> c
+                                                                 (keep #(when (= "text" (:type %)) (:text %)))
+                                                                 (str/join "\n"))
+                                            :else (str c)))}))
+                     (.catch (fn [err]
+                               {:role "tool"
+                                :tool_call_id tool-call-id
+                                :content (str "Tool error: " (.-message err))})))
+                 {:role "tool"
+                  :tool_call_id tool-call-id
+                  :content (str "Unknown tool: " tool-name)}))))))))
 
 ;; ── SSE Stream Parsing ──────────────────────────────────────────────────────
 

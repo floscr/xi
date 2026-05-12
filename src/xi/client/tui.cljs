@@ -352,6 +352,21 @@
                           (fn [_stream text]
                             (buffers/append! buffer-mgr "Logs" text))))}))
 
+        ;; ── Permission Gate Confirmation ─────────────────────────────────────────
+        ;; Wire up the confirmation handler so permission-gate can ask the user
+        ;; before allowing blocked operations.
+
+        _ (ext/set-confirm-handler!
+            (fn [message]
+              (js/Promise.
+                (fn [resolve]
+                  (show-completion-menu!
+                    {:items [{:label "Allow" :description "Execute the blocked operation" :value true}
+                             {:label "Deny" :description "Block the operation" :value false}]
+                     :prompt (str "⚠ " message " ")
+                     :on-select (fn [item] (resolve (:value item)))
+                     :on-cancel (fn [] (resolve false))})))))
+
         ;; ── Client Command Registration ─────────────────────────────────────────
         ;; Register TUI-local commands into the central registry.
         ;; These run entirely in the client — no runtime round-trip.

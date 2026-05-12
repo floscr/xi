@@ -112,27 +112,28 @@
                                  :handler
                                  (fn [^js args _extra]
                                    (let [args (js->clj args :keywordize-keys true)
-                                         tool-call {:name tool-name :arguments args}
-                                         gated (ext/dispatch-hook-transform
-                                                :tool-call tool-call)]
-                                     (if (nil? gated)
-                                       ;; Blocked by permission gate
-                                       (js/Promise.resolve
-                                        #js {:content #js [#js {:type "text"
-                                                                :text "Blocked by Xi permission gate"}]
-                                             :isError true})
-                                       ;; Execute the tool
-                                       (-> (let [result (exec-fn args {:cwd cwd})]
-                                             (if (instance? js/Promise result)
-                                               result
-                                               (js/Promise.resolve result)))
-                                           (.then (fn [result]
-                                                    #js {:content (clj->js (:content result))
-                                                         :isError (boolean (:is-error result))}))
-                                           (.catch (fn [err]
-                                                     #js {:content #js [#js {:type "text"
-                                                                            :text (str "Tool error: " (.-message err))}]
-                                                          :isError true}))))))}))
+                                         tool-call {:name tool-name :arguments args}]
+                                     (-> (ext/dispatch-hook-transform-async
+                                          :tool-call tool-call)
+                                         (.then
+                                          (fn [gated]
+                                            (if (nil? gated)
+                                              ;; Blocked by permission gate
+                                              #js {:content #js [#js {:type "text"
+                                                                      :text "Blocked by Xi permission gate"}]
+                                                   :isError true}
+                                              ;; Execute the tool
+                                              (-> (let [result (exec-fn args {:cwd cwd})]
+                                                    (if (instance? js/Promise result)
+                                                      result
+                                                      (js/Promise.resolve result)))
+                                                  (.then (fn [result]
+                                                           #js {:content (clj->js (:content result))
+                                                                :isError (boolean (:is-error result))}))
+                                                  (.catch (fn [err]
+                                                            #js {:content #js [#js {:type "text"
+                                                                                   :text (str "Tool error: " (.-message err))}]
+                                                                 :isError true})))))))))}))
                         defs))]
     (sdk/createSdkMcpServer
      #js {:name MCP_SERVER_NAME
