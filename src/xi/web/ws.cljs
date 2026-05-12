@@ -43,15 +43,21 @@
 (defn- append-msg! [msg]
   (swap! state/app-state update :messages conj msg))
 
+(defonce ^:private replaying-history? (atom false))
+
 (defn- handle-event [event]
   (case (:type event)
     :waiting-for-join
-    (swap! state/app-state assoc
-           :rooms (or (:rooms event) [])
-           :view :home
-           :room-id nil
-           :messages []
-           :busy? false)
+    ;; Only show home screen if we explicitly left (room-id already nil)
+    ;; Skip when this arrives during initial connect (join already in flight)
+    (let [currently-in-room (:room-id @state/app-state)]
+      (swap! state/app-state assoc
+             :rooms (or (:rooms event) []))
+      (when-not currently-in-room
+        (swap! state/app-state assoc
+               :view :home
+               :messages []
+               :busy? false)))
 
     :room-joined
     (swap! state/app-state assoc
@@ -157,20 +163,54 @@
     (swap! state/app-state assoc :messages [])
 
     :session-resumed
-    (let [msgs (:messages event)]
+    (let [msgs (:messages event)
+          results-by-id (into {}
+                              (comp (filter #(= :tool-result (keyword (:type %))))
+                                    (map (fn [r] [(:tool-use-id r) r])))
+                              msgs)
+          session (:session event)
+          session-name (or (:name session) (:cli-session-id session) (:id session))]
       (swap! state/app-state assoc
-             :messages (vec (keep (fn [block]
-                                    (case (:type block)
-                                      :text {:type (if (= "user" (:role block)) :user :assistant)
-                                             :text (:text block)}
-                                      :tool-use {:type :tool
-                                                 :text (str "$ " (:name block))}
-                                      nil))
-                                  msgs))))
+             :messages (into [{:type :status
+                               :text (str "Resumed: " (or session-name "session"))}]
+                             (keep (fn [block]
+                                     (case (keyword (:type block))
+                                       :text {:type (if (= "user" (:role block)) :user :assistant)
+                                              :text (:text block)}
+                                       :tool-use (let [result (get results-by-id (:tool-use-id block))
+                                                       content (:content result)
+                                                       text (cond
+                                                              (string? content) content
+                                                              (sequential? content)
+                                                              (->> content
+                                                                   (keep (fn [b]
+                                                                           (cond
+                                                                             (string? b) b
+                                                                             (= "text" (:type b)) (:text b)
+                                                                             :else nil)))
+                                                                   (str/join "\n"))
+                                                              :else nil)]
+                                                  {:type :tool
+                                                   :tool-name (:name block)
+                                                   :title (format-tool-title (:name block) (:arguments block))
+                                                   :arguments (:arguments block)
+                                                   :result text
+                                                   :is-error (:is-error result)
+                                                   :finished true})
+                                       :tool-result nil ;; rendered inline with tool-use
+                                       nil))
+                                   msgs))))
 
     :command-result
-    (when-let [text (:text event)]
-      (append-msg! {:type :status :text text}))
+    (case (:command event)
+      "resume-list"
+      ;; Only open overlay from live interaction, not history replay
+      (when-not @replaying-history?
+        (swap! state/app-state assoc :resume-sessions (:sessions event)))
+
+      ;; Default — show text if present
+      (when-let [text (:text event)]
+        (append-msg! {:type :status :text text})))
 
     :command-error
     (append-msg! {:type :error :text (:text event)})
@@ -178,8 +218,10 @@
     :history
     (do
       (swap! state/app-state assoc :messages [])
+      (reset! replaying-history? true)
       (doseq [evt (:events event)]
-        (handle-event (update evt :type keyword))))
+        (handle-event (update evt :type keyword)))
+      (reset! replaying-history? false))
 
     :quit
     (swap! state/app-state assoc :view :home :room-id nil)
@@ -276,4 +318,5 @@
   "Leave the current room and return to the room list."
   []
   (when-let [ws @ws-conn]
+    (swap! state/app-state assoc :room-id nil)
     (.send ws (js/JSON.stringify (clj->js {:type :leave})))))

@@ -174,6 +174,35 @@
       (icon/icon {:icon-name :arrow-up :size :sm})]]))
 
 ;; ---------------------------------------------------------------------------
+;; Resume session picker
+;; ---------------------------------------------------------------------------
+
+(defn- resume-overlay []
+  (when-let [sessions (:resume-sessions @state/app-state)]
+    [:div {:class ["resume-overlay"]
+           :on {:click (fn [_] (swap! state/app-state assoc :resume-sessions nil))}}
+     [:div {:class ["resume-panel"]
+            :on {:click (fn [e] (.stopPropagation e))}}
+      [:div {:class ["resume-panel-header"]}
+       [:span {:style {:font-weight "600"}} "Load Session"]
+       [:button {:class ["icon-btn"]
+                 :on {:click (fn [_] (swap! state/app-state assoc :resume-sessions nil))}}
+        (icon/icon {:icon-name :x :size :sm})]]
+      (if (empty? sessions)
+        [:div {:class ["resume-empty"]} "No saved sessions."]
+        [:div {:class ["resume-list"]}
+         (for [s sessions]
+           [:button {:class ["resume-item"]
+                     :on {:click (fn [_]
+                                  (swap! state/app-state assoc :resume-sessions nil)
+                                  (ws/dispatch! (str "/resume " (:index s))))}}
+            [:div {:class ["resume-item-name"]} (:name s)]
+            [:div {:class ["resume-item-meta"]}
+             (str (:timestamp s)
+                  (when (:user-messages s)
+                    (str " · " (:user-messages s) " msgs")))]])])]]))
+
+;; ---------------------------------------------------------------------------
 ;; Chat view
 ;; ---------------------------------------------------------------------------
 
@@ -182,12 +211,16 @@
    (topbar {:title "Xi"
             :subtitle model
             :actions [[:button {:class ["icon-btn"]
+                                :on {:click (fn [_] (ws/dispatch! "/resume"))}}
+                       (icon/icon {:icon-name :chevron-down :size :sm})]
+                      [:button {:class ["icon-btn"]
                                 :on {:click (fn [_] (ws/leave-room!))}}
                        (icon/icon {:icon-name :terminal :size :sm})]
                       [:button {:class ["icon-btn"]
                                 :on {:click (fn [_] (ws/dispatch! "/new"))}}
                        (icon/icon {:icon-name :plus :size :sm})]]})
    (working-indicator)
+   (resume-overlay)
    [:div {:class ["timeline"]}
     [:div {:class ["timeline-content"]}
      (map-indexed

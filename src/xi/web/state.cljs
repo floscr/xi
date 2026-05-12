@@ -11,4 +11,5 @@
          :compose-text     ""
          :model            nil
          :cwd              nil
-         :collapsed-blocks #{}}))
+         :collapsed-blocks #{}
+         :resume-sessions  nil}))          ;; nil = hidden, [] = loading, [...] = show picker

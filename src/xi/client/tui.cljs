@@ -215,6 +215,9 @@
         ;; Queued prompt — submitted while busy (e.g. right after abort)
         queued-prompt (atom nil)
 
+        ;; Whether we explicitly asked to switch rooms (vs initial connect)
+        switching-rooms (atom false)
+
         ;; Prompt buffer content
         prompt-content (atom nil)
 
@@ -404,7 +407,8 @@
              :show-busy true
              :handler (fn [_ctx]
                         (if-let [leave! (:leave! transport)]
-                          (leave!)
+                          (do (reset! switching-rooms true)
+                              (leave!))
                           (add-status-message!
                            (ansi/fg :error "Room switching not available (standalone mode)")))
                         nil)}
@@ -831,26 +835,27 @@
             (shutdown!)
 
             :waiting-for-join
-            ;; Server sent us back to room selection (after /join or initial connect)
-            (let [rooms (:rooms event)
-                  join! (:join! transport)]
-              (if (and join! (seq rooms))
-                ;; Show room picker with existing rooms + "New Room"
-                (let [items (into [{:label "New Room"
-                                    :description "Create a fresh room"
-                                    :value "new"}]
-                                  (map (fn [r]
-                                         {:label (:id r)
-                                          :description (str (:clients r) " client(s)")
-                                          :value (:id r)})
-                                       rooms))]
-                  (show-completion-menu!
-                   {:items items
-                    :prompt "room> "
-                    :on-select (fn [item] (join! (:value item)))
-                    :on-cancel (fn [] (join! (or (:id (first rooms)) "new")))}))
-                ;; No rooms or no join! — just create new
-                (when join! (join! "new"))))
+            ;; Only show room picker if user explicitly asked (via /join)
+            (when @switching-rooms
+              (reset! switching-rooms false)
+              (let [rooms (:rooms event)
+                    join! (:join! transport)]
+                (if (and join! (seq rooms))
+                  (let [items (into [{:label "New Room"
+                                      :description "Create a fresh room"
+                                      :value "new"}]
+                                    (map (fn [r]
+                                           {:label (:id r)
+                                            :description (str (:clients r) " client(s)")
+                                            :value (:id r)})
+                                         rooms))]
+                    (show-completion-menu!
+                     {:items items
+                      :prompt "room> "
+                      :on-select (fn [item] (join! (:value item)))
+                      :on-cancel (fn [] (join! (or (:id (first rooms)) "new")))}))
+                  ;; No rooms — just create new
+                  (when join! (join! "new")))))
 
             :room-joined
             ;; Switched to a new room — clear chat and reset turn state
