@@ -181,34 +181,66 @@
                     (recur (inc i) nv false))
                 (recur (inc i) nv (or in-hl (= vcol from)))))))))))
 
+(defn- trailing-sgr
+  "Extract active SGR state at end of a string.
+   Returns a string of ANSI codes to prepend to the next line,
+   or empty string if state is reset/default."
+  [s]
+  (let [matches (re-seq #"\033\[([^m]*)m" s)]
+    (if (empty? matches)
+      ""
+      (loop [active []
+             [[_ params] & more] matches]
+        (if (nil? params)
+          (if (empty? active) "" (str/join active))
+          (if (or (= params "0") (= params ""))
+            (recur [] more)
+            (recur (conj active (str "\033[" params "m")) more)))))))
+
+(defn- propagate-sgr
+  "Ensure each line carries forward the ANSI SGR state from previous lines.
+   This makes each line self-contained so viewport-based renderers can
+   display any subset of lines correctly."
+  [lines]
+  (loop [result []
+         sgr ""
+         [line & more] lines]
+    (if (nil? line)
+      result
+      (let [prefixed (if (seq sgr) (str sgr line) line)
+            new-sgr (trailing-sgr prefixed)]
+        (recur (conj result prefixed) new-sgr more)))))
+
 (defn wrap-text
   "Word-wrap text to fit within max-width columns.
-   Returns vector of lines."
+   Returns vector of lines. ANSI SGR state is propagated across line
+   boundaries so each output line is independently renderable."
   [text max-width]
   (if (or (empty? text) (<= max-width 0))
     [""]
-    (let [lines (str/split-lines text)]
-      (into []
-            (mapcat
-             (fn [line]
-               (if (<= (visible-width line) max-width)
-                 [line]
-                 ;; Simple word-wrap: split on spaces
-                 (let [words (str/split line #" ")]
-                   (loop [result []
-                          current ""
-                          [w & more] words]
-                     (if-not w
-                       (if (seq current)
-                         (conj result current)
-                         result)
-                       (let [candidate (if (seq current)
-                                         (str current " " w)
-                                         w)]
-                         (if (> (visible-width candidate) max-width)
-                           (if (seq current)
-                             (recur (conj result current) w more)
-                             ;; Single word longer than width — force it on its own line
-                             (recur (conj result w) "" more))
-                           (recur result candidate more))))))))
-            lines)))))
+    (let [lines (str/split-lines text)
+          raw (into []
+                    (mapcat
+                     (fn [line]
+                       (if (<= (visible-width line) max-width)
+                         [line]
+                         ;; Simple word-wrap: split on spaces
+                         (let [words (str/split line #" ")]
+                           (loop [result []
+                                  current ""
+                                  [w & more] words]
+                             (if-not w
+                               (if (seq current)
+                                 (conj result current)
+                                 result)
+                               (let [candidate (if (seq current)
+                                                 (str current " " w)
+                                                 w)]
+                                 (if (> (visible-width candidate) max-width)
+                                   (if (seq current)
+                                     (recur (conj result current) w more)
+                                     ;; Single word longer than width — force it on its own line
+                                     (recur (conj result w) "" more))
+                                   (recur result candidate more))))))))
+                    lines))]
+      (propagate-sgr raw))))
