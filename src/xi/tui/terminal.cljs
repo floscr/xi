@@ -2,7 +2,8 @@
   "Raw mode terminal abstraction.
    Handles raw mode, cursor visibility, dimensions, input routing.
    Provides stdout/stderr interception to capture stray external writes."
-  (:require [xi.tui.ansi :as ansi]))
+  (:require [clojure.string :as str]
+            [xi.tui.ansi :as ansi]))
 
 ;; ── Stdout Interception ───────────────────────────────────────────────────────
 ;;
@@ -172,10 +173,40 @@
   (let [stdin js/process.stdin
         stdout js/process.stdout
         was-raw (boolean (.-isRaw stdin))
-        ;; Wrap on-input to split batched input
+        ;; Paste buffering — assemble multi-chunk bracketed pastes
+        paste-buf (atom nil)
+        paste-start (str (char ESC-CODE) "[200~")
+        paste-end (str (char ESC-CODE) "[201~")
+
+        flush-paste! (fn [complete-data]
+                       (reset! paste-buf nil)
+                       (on-input complete-data))
+
+        ;; Wrap on-input to split batched input and buffer pastes
         split-handler (fn [data]
-                        (doseq [seq (split-input data)]
-                          (on-input seq)))]
+                        (if-let [buf @paste-buf]
+                          ;; Currently buffering a paste
+                          (let [combined (str buf data)]
+                            (if-let [end-idx (str/index-of combined paste-end)]
+                              ;; Found paste-end — flush complete paste, process remainder
+                              (let [paste-data (subs combined 0 (+ end-idx (count paste-end)))
+                                    remainder (subs combined (+ end-idx (count paste-end)))]
+                                (flush-paste! paste-data)
+                                (when (seq remainder)
+                                  (doseq [s (split-input remainder)]
+                                    (on-input s))))
+                              ;; No end marker yet — keep buffering
+                              (reset! paste-buf combined)))
+                          ;; Not buffering — check if this chunk starts a paste
+                          (if (str/starts-with? data paste-start)
+                            (if (str/includes? data paste-end)
+                              ;; Complete paste in one chunk
+                              (on-input data)
+                              ;; Incomplete paste — start buffering
+                              (reset! paste-buf data))
+                            ;; Regular input — split as before
+                            (doseq [s (split-input data)]
+                              (on-input s)))))]
     (swap! terminal assoc
            :started true
            :was-raw was-raw
