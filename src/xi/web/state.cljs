@@ -11,4 +11,4 @@
          :compose-text     ""
          :model            nil
          :cwd              nil
-         :expanded-blocks  #{}}))
+         :collapsed-blocks #{}}))

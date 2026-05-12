@@ -46,10 +46,12 @@
 (defn- handle-event [event]
   (case (:type event)
     :waiting-for-join
-    (do (swap! state/app-state assoc :sessions (or (:sessions event) []))
-        ;; Auto-join latest session
-        (when-let [ws @ws-conn]
-          (.send ws (js/JSON.stringify (clj->js {:type :join :session "latest"})))))
+    (swap! state/app-state assoc
+           :sessions (or (:sessions event) [])
+           :view :home
+           :session-id nil
+           :messages []
+           :busy? false)
 
     :session-joined
     (swap! state/app-state assoc
@@ -269,3 +271,9 @@
   [session-mode]
   (when-let [ws @ws-conn]
     (.send ws (js/JSON.stringify (clj->js {:type :join :session session-mode})))))
+
+(defn leave-session!
+  "Leave the current session and return to the session list."
+  []
+  (when-let [ws @ws-conn]
+    (.send ws (js/JSON.stringify (clj->js {:type :leave})))))

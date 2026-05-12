@@ -50,14 +50,14 @@
 
 (defn- tool-message [{:keys [title result is-error finished]} idx]
   (let [block-id (str "tool-" idx)
-        expanded? (contains? (:expanded-blocks @state/app-state) block-id)]
+        expanded? (not (contains? (:collapsed-blocks @state/app-state) block-id))]
     [:div {:class ["tool-call-block"]}
      [:button {:class ["tool-call-toggle"]
                :on {:click (fn [_]
-                             (swap! state/app-state update :expanded-blocks
+                             (swap! state/app-state update :collapsed-blocks
                                     (fn [s] (if (contains? s block-id)
                                               (disj s block-id)
-                                              (conj s block-id)))))}}
+                                              (conj (or s #{}) block-id)))))}}
       [:span {:class ["tool-call-toggle-icon"]}
        (icon/icon {:icon-name (if expanded? :chevron-down :chevron-right) :size :sm})]
       [:span {:class ["tool-call-toggle-label"]} (or title "tool")]
@@ -72,14 +72,14 @@
 
 (defn- thinking-message [text idx]
   (let [block-id (str "thinking-" idx)
-        expanded? (contains? (:expanded-blocks @state/app-state) block-id)]
+        expanded? (not (contains? (:collapsed-blocks @state/app-state) block-id))]
     [:div {:class ["thinking-block"]}
      [:button {:class ["thinking-toggle"]
                :on {:click (fn [_]
-                             (swap! state/app-state update :expanded-blocks
+                             (swap! state/app-state update :collapsed-blocks
                                     (fn [s] (if (contains? s block-id)
                                               (disj s block-id)
-                                              (conj s block-id)))))}}
+                                              (conj (or s #{}) block-id)))))}}
       (icon/icon {:icon-name (if expanded? :chevron-down :chevron-right) :size :sm})
       [:span {:style {:font-weight "500" :margin-left "var(--size-1)"}} "Thinking"]]
      (when expanded?
@@ -182,6 +182,9 @@
    (topbar {:title "Xi"
             :subtitle model
             :actions [[:button {:class ["icon-btn"]
+                                :on {:click (fn [_] (ws/leave-session!))}}
+                       (icon/icon {:icon-name :terminal :size :sm})]
+                      [:button {:class ["icon-btn"]
                                 :on {:click (fn [_] (ws/dispatch! "/new"))}}
                        (icon/icon {:icon-name :plus :size :sm})]]})
    (working-indicator)
@@ -204,19 +207,22 @@
       ;; Connected but not yet in a session
       [:div {:class ["section"]}
        [:div {:class ["section-title"]} "Sessions"]
-       (if (seq sessions)
-         [:div {:class ["project-list"]}
-          (for [s sessions]
-            [:div {:class ["project-card"]
-                   :on {:click (fn [_] (ws/join-session! (:id s)))}}
-             [:div {:class ["project-card-icon"]}
-              (icon/icon {:icon-name :terminal})]
-             [:div {:class ["project-card-info"]}
-              [:span {:class ["project-card-name"]} (:id s)]
-              [:span {:class ["project-card-path"]}
-               (str (:clients s) " client(s)")]]])]
-         [:div {:class ["empty-state"]}
-          "No active sessions. Start xi server first."])]
+       [:div {:class ["project-list"]}
+        [:div {:class ["project-card"]
+               :on {:click (fn [_] (ws/join-session! "new"))}}
+         [:div {:class ["project-card-icon"]}
+          (icon/icon {:icon-name :plus})]
+         [:div {:class ["project-card-info"]}
+          [:span {:class ["project-card-name"]} "New Session"]]]
+        (for [s sessions]
+          [:div {:class ["project-card"]
+                 :on {:click (fn [_] (ws/join-session! (:id s)))}}
+           [:div {:class ["project-card-icon"]}
+            (icon/icon {:icon-name :terminal})]
+           [:div {:class ["project-card-info"]}
+            [:span {:class ["project-card-name"]} (:id s)]
+            [:span {:class ["project-card-path"]}
+             (str (:clients s) " client(s)")]]])]]
       ;; Not connected
       [:div {:class ["empty-state"]}
        [:div

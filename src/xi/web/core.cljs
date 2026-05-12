@@ -6,13 +6,47 @@
             [replicant.dom :as r]))
 
 ;; ---------------------------------------------------------------------------
+;; Auto-scroll
+;; ---------------------------------------------------------------------------
+
+(defonce ^:private auto-scroll? (atom true))
+(defonce ^:private tracked-timeline (atom nil))
+
+(defn- at-bottom?
+  "Check if the timeline is scrolled to (or near) the bottom."
+  [^js el]
+  (<= (- (.-scrollHeight el) (.-scrollTop el) (.-clientHeight el)) 40))
+
+(defn- attach-scroll-listener!
+  "Attach a scroll listener to .timeline to track whether the user scrolled away.
+   Re-attaches when the element changes (e.g. home → chat transition)."
+  []
+  (when-let [timeline (.querySelector js/document ".timeline")]
+    (when-not (identical? timeline @tracked-timeline)
+      (reset! tracked-timeline timeline)
+      (reset! auto-scroll? true)
+      (.addEventListener timeline "scroll"
+        (fn [] (reset! auto-scroll? (at-bottom? timeline)))))))
+
+(defn- scroll-to-bottom!
+  "Scroll .timeline to the bottom if auto-scroll is active."
+  []
+  (when @auto-scroll?
+    (when-let [timeline (.querySelector js/document ".timeline")]
+      (set! (.-scrollTop timeline) (.-scrollHeight timeline)))))
+
+;; ---------------------------------------------------------------------------
 ;; Render
 ;; ---------------------------------------------------------------------------
 
 (defn- el [id] (js/document.getElementById id))
 
 (defn- render! [app-state]
-  (r/render (el "app") (views/root-view app-state)))
+  (r/render (el "app") (views/root-view app-state))
+  ;; Attach scroll listener if timeline appeared (home → chat transition)
+  (attach-scroll-listener!)
+  ;; Scroll to bottom after DOM update
+  (js/requestAnimationFrame scroll-to-bottom!))
 
 ;; ---------------------------------------------------------------------------
 ;; iOS keyboard handling

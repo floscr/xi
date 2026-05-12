@@ -54,11 +54,22 @@
                        (let [raw (js->clj (js/JSON.parse data) :keywordize-keys true)
                              msg (update raw :type keyword)]
                          (if-let [state (get @conn-state ws)]
-                           ;; Already joined — dispatch command to runtime
-                           (let [{:keys [session-id]} state
-                                 session (sm/get-session manager session-id)]
-                             (when session
-                               (runtime/dispatch! (:runtime session) msg)))
+                           ;; Already joined
+                           (if (= :leave (:type msg))
+                             ;; Leave current session, go back to session list
+                             (let [{:keys [session-id rt-client]} state]
+                               (when-let [session (sm/get-session manager session-id)]
+                                 (runtime/disconnect! (:runtime session) rt-client))
+                               (sm/remove-client! manager session-id ws)
+                               (swap! conn-state dissoc ws)
+                               (.send ws (js/JSON.stringify
+                                          (clj->js {:type :waiting-for-join
+                                                    :sessions (sm/list-sessions manager)}))))
+                             ;; Normal command — dispatch to runtime
+                             (let [{:keys [session-id]} state
+                                   session (sm/get-session manager session-id)]
+                               (when session
+                                 (runtime/dispatch! (:runtime session) msg))))
 
                            ;; Not yet joined — expect a :join message
                            (if (= :join (:type msg))
