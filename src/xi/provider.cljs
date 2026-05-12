@@ -114,7 +114,7 @@
                                    (let [args (js->clj args :keywordize-keys true)
                                          tool-call {:name tool-name :arguments args}
                                          gated (ext/dispatch-hook-transform
-                                                :tool-call tool-call {:cwd cwd})]
+                                                :tool-call tool-call)]
                                      (if (nil? gated)
                                        ;; Blocked by permission gate
                                        (js/Promise.resolve

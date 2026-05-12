@@ -67,10 +67,35 @@ src/xi/
   loop.cljs            — agent loop (wraps provider/SDK)
   provider.cljs        — Claude Agent SDK integration, MCP tool bridge
   session.cljs         — session persistence (Xi, Claude CLI, Pi formats)
+  state/
+    session.cljs       — accessor fns for hook state (session-title, cwd, model, etc.)
   tools/*.cljs         — built-in tools (read, write, edit, bash, grep, ls)
-  ext/                 — extensions (plan-mode, kb, commit, permission-gate, etc.)
+  ext/
+    core.cljs          — extension registry, hook dispatch, hook state management
+    done_notify.cljs   — desktop notification on agent finish (Ctrl+Shift+N toggle)
+    permission_gate.cljs — blocks writes to sensitive paths
+    plan_mode.cljs     — read-only exploration mode (/plan)
+    terminal_title.cljs — sets terminal title from session name
+    parmezan.cljs      — auto-fix Clojure delimiters after writes
+    kb.cljs            — knowledge base tools
+    commit.cljs        — git commit workflow tools
+    web.cljs           — URL fetch tool
   tui/                 — terminal UI rendering primitives
 ```
+
+## Extensions
+
+See [docs/extensions.md](docs/extensions.md) for full details.
+
+- All hooks receive a **state map** auto-injected by `ext/core`. Use accessor fns from `xi.state.session`:
+  ```clojure
+  (state.session/session-title state)  ;; session name or nil
+  (state.session/cwd state)            ;; working directory
+  (state.session/model state)          ;; active model
+  ```
+- The runtime calls `sync-hook-state!` at startup and after each turn to keep hook state current
+- Transform hooks (`:tool-call`, `:context`) receive `(value, state)` — return `nil` to block
+- Prompt badge hooks return a string shown after `xi>` in the prompt
 
 ## Conventions
 

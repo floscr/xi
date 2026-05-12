@@ -8,6 +8,8 @@
      :busy?     (fn [] -> bool)"
   (:require [clojure.string :as str]
             [xi.command-registry :as cmd-registry]
+            [xi.ext.core :as ext]
+            [xi.ext.done-notify :as ext-done-notify]
             [xi.tui.ansi :as ansi]
             [xi.tui.buffers :as buffers]
             [xi.tui.command-palette :as palette]
@@ -514,7 +516,11 @@
           :on-interrupt (fn [] (shutdown!))
 
           :on-palette open-palette!
-          :on-git open-git!})
+          :on-git open-git!
+          :on-notify-toggle (fn []
+                              (ext-done-notify/toggle!)
+                              (tui/request-render!))
+          :prompt-suffix-fn (fn [] (ext/collect-prompt-badges))})
 
         ;; Wire up forward reference
         _ (reset! editor-comp-ref editor-comp)
@@ -676,6 +682,7 @@
             :turn-end
             (do ((:stop loader))
                 ((:remove-child chat-container) loader)
+                (ext/dispatch-hook :agent-end)
                 (tui/render-now!))
 
             :aborted

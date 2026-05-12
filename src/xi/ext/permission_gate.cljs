@@ -24,7 +24,7 @@
 (defn- permission-gate-tool-call
   "Tool call hook: block dangerous operations.
    Tool names may be PascalCase (from SDK) or lowercase."
-  [tool-call _ctx]
+  [tool-call _state]
   (let [{:keys [name arguments]} tool-call
         lname (str/lower-case (or name ""))]
     (case lname

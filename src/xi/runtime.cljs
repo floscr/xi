@@ -49,6 +49,17 @@
                ext-terminal-title/extension]]
     (ext/register-extension! ext)))
 
+(defn- sync-hook-state!
+  "Snapshot runtime state into the ext hook-state atom."
+  [rt]
+  (let [{:keys [model effort cwd]} @(:state rt)
+        sess @(:sess rt)]
+    (ext/set-state!
+     {:session (dissoc sess :_dir)
+      :model   model
+      :effort  effort
+      :cwd     cwd})))
+
 ;; ── Agent Turn ───────────────────────────────────────────────────────────────
 
 (defn- run-agent-turn
@@ -103,6 +114,8 @@
                    (when-not (:name @sess)
                      (swap! sess assoc :name (subs prompt 0 (min 60 (count prompt)))))
                    (session/save-session! @sess))
+                 ;; Sync hook state so extensions see updated session
+                 (sync-hook-state! rt)
                  (emit! {:type :turn-end
                          :session-id (:session-id result)
                          :usage (:usage result)
@@ -153,6 +166,9 @@
            (reset! event-history [])
            (when-not (#{:ready :quit} t)
              (swap! event-history conj event))))))
+
+    ;; Seed the hook state so extensions can read it immediately
+    (sync-hook-state! rt)
 
     ((:emit! bus) {:type :ready
                    :model model

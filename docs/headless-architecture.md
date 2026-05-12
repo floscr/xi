@@ -53,6 +53,7 @@ Structured maps with a :type keyword, emitted during agent operation.
 {:type :tool-start    :id "toolu_abc" :name "bash" :arguments {:command "ls"}}
 {:type :tool-result   :id "toolu_abc" :content [...] :is-error false}
 {:type :turn-end      :session-id "..." :usage {...} :cost 0.03}
+;; Note: session name is available via ext/hook-state, not on the event
 {:type :error         :error {:type "rate_limit" ...}}
 {:type :aborted}
 ```

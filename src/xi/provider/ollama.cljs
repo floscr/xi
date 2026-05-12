@@ -40,7 +40,7 @@
         args (try (js->clj (js/JSON.parse args-str) :keywordize-keys true)
                   (catch :default _ {}))
         gated (ext/dispatch-hook-transform
-               :tool-call {:name tool-name :arguments args} {:cwd cwd})]
+               :tool-call {:name tool-name :arguments args})]
     (if (nil? gated)
       (js/Promise.resolve
        {:role "tool"

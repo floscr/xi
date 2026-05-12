@@ -92,6 +92,12 @@
 (defn- is-ctrl-shift-g? [data]
   (= data (str ESC "[103;6u")))
 
+(defn- is-ctrl-shift-z? [data]
+  (= data (str ESC "[122;6u")))
+
+(defn- is-ctrl-shift-n? [data]
+  (= data (str ESC "[110;6u")))
+
 ;; ── Word Boundary Helpers ─────────────────────────────────────────────────────
 
 (defn- word-char? [ch]
@@ -153,13 +159,18 @@
                       :saved-text nil
                       :paste-buffer nil
                       :cached-width nil
-                      :cached-lines nil})
+                      :cached-lines nil
+                      :undo-stack []
+                      :redo-stack []
+                      :last-action nil})
         prompt (or (:prompt opts) "xi> ")
+        prompt-suffix-fn (:prompt-suffix-fn opts)
         on-submit (:on-submit opts)
         on-interrupt (:on-interrupt opts)
         on-escape (:on-escape opts)
         on-palette (:on-palette opts)
         on-git (:on-git opts)
+        on-notify-toggle (:on-notify-toggle opts)
 
         get-text (fn []
                    (str/join "\n" (:lines @state)))
@@ -170,7 +181,8 @@
                             :lines (vec lines)
                             :cursor-line (dec (count lines))
                             :cursor-col (count (last lines))
-                            :cached-width nil :cached-lines nil))
+                            :cached-width nil :cached-lines nil
+                            :undo-stack [] :redo-stack [] :last-action nil))
                    (tui/request-render!))
 
         add-history (fn [text]
@@ -179,7 +191,22 @@
                                (fn [h] (vec (take 100 (cons text h)))))
                         (swap! state assoc :history-index -1)))
 
+        push-undo! (fn [action-type]
+                     (swap! state (fn [s]
+                                    (if (= action-type (:last-action s))
+                                      s
+                                      (let [snapshot (select-keys s [:lines :cursor-line :cursor-col])
+                                            stack (conj (:undo-stack s) snapshot)
+                                            stack (if (> (count stack) 100)
+                                                    (subvec stack (- (count stack) 100))
+                                                    stack)]
+                                        (assoc s
+                                               :undo-stack stack
+                                               :redo-stack []
+                                               :last-action action-type))))))
+
         insert-char (fn [ch]
+                      (push-undo! :typing)
                       (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
                                      (let [line (nth lines cursor-line)
                                            new-line (str (subs line 0 cursor-col) ch (subs line cursor-col))]
@@ -191,6 +218,7 @@
                       (tui/request-render!))
 
         insert-newline (fn []
+                         (push-undo! :newline)
                          (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
                                         (let [line (nth lines cursor-line)
                                               before (subs line 0 cursor-col)
@@ -207,6 +235,7 @@
                          (tui/request-render!))
 
         delete-back (fn []
+                      (push-undo! :delete-back)
                       (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
                                      (cond
                                        ;; Middle of line — delete char before cursor
@@ -237,6 +266,7 @@
                       (tui/request-render!))
 
         delete-forward (fn []
+                         (push-undo! :delete-forward)
                          (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
                                         (let [line (nth lines cursor-line)]
                                           (cond
@@ -273,7 +303,7 @@
                                                      (max 0 (min line-len (+ cursor-col dcol))))]
                                        (-> s
                                            (assoc :cursor-line new-line :cursor-col new-col)
-                                           (assoc :cached-width nil :cached-lines nil)))))
+                                           (assoc :cached-width nil :cached-lines nil :last-action nil)))))
                       (tui/request-render!))
 
         browse-history (fn [direction]
@@ -295,6 +325,7 @@
                                        (swap! state assoc :history-index new-idx))))))))
 
         delete-word-back (fn []
+                           (push-undo! :delete-back)
                            (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
                                           (let [line (nth lines cursor-line)]
                                             (if (pos? cursor-col)
@@ -322,6 +353,7 @@
                            (tui/request-render!))
 
         delete-word-forward (fn []
+                              (push-undo! :delete-forward)
                               (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
                                              (let [line (nth lines cursor-line)
                                                    len (count line)]
@@ -352,14 +384,14 @@
                                                 target (find-word-start-backward line cursor-col)]
                                             (-> s
                                                 (assoc :cursor-col target)
-                                                (assoc :cached-width nil :cached-lines nil)))
+                                                (assoc :cached-width nil :cached-lines nil :last-action nil)))
                                           ;; At start of line — jump to end of previous line
                                           (if (pos? cursor-line)
                                             (let [prev-line (nth lines (dec cursor-line))]
                                               (-> s
                                                   (assoc :cursor-line (dec cursor-line))
                                                   (assoc :cursor-col (count prev-line))
-                                                  (assoc :cached-width nil :cached-lines nil)))
+                                                  (assoc :cached-width nil :cached-lines nil :last-action nil)))
                                             s))))
                          (tui/request-render!))
 
@@ -371,17 +403,18 @@
                                                (let [target (find-word-end-forward line cursor-col)]
                                                  (-> s
                                                      (assoc :cursor-col target)
-                                                     (assoc :cached-width nil :cached-lines nil)))
+                                                     (assoc :cached-width nil :cached-lines nil :last-action nil)))
                                                ;; At end of line — jump to start of next line
                                                (if (< cursor-line (dec (count lines)))
                                                  (-> s
                                                      (assoc :cursor-line (inc cursor-line))
                                                      (assoc :cursor-col 0)
-                                                     (assoc :cached-width nil :cached-lines nil))
+                                                     (assoc :cached-width nil :cached-lines nil :last-action nil))
                                                  s)))))
                             (tui/request-render!))
 
         transpose-chars (fn []
+                          (push-undo! :transpose)
                           (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
                                          (let [line (nth lines cursor-line)
                                                len (count line)]
@@ -408,6 +441,55 @@
 
                                              :else s))))
                           (tui/request-render!))
+
+        insert-text-bulk (fn [text]
+                           (push-undo! :paste)
+                           (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                          (let [current-line (nth lines cursor-line)
+                                                before (subs current-line 0 cursor-col)
+                                                after (subs current-line cursor-col)
+                                                combined (str before text after)
+                                                new-lines (vec (str/split combined #"\n" -1))
+                                                text-parts (str/split (str before text) #"\n" -1)
+                                                new-cursor-line (+ cursor-line (dec (count text-parts)))
+                                                new-cursor-col (count (last text-parts))
+                                                result-lines (vec (concat
+                                                                    (subvec lines 0 cursor-line)
+                                                                    new-lines
+                                                                    (subvec lines (inc cursor-line))))]
+                                            (-> s
+                                                (assoc :lines result-lines
+                                                       :cursor-line new-cursor-line
+                                                       :cursor-col new-cursor-col
+                                                       :cached-width nil :cached-lines nil
+                                                       :history-index -1)))))
+                           (tui/request-render!))
+
+        do-undo (fn []
+                  (swap! state (fn [{:keys [undo-stack] :as s}]
+                                 (if (seq undo-stack)
+                                   (let [snapshot (peek undo-stack)]
+                                     (-> s
+                                         (update :undo-stack pop)
+                                         (update :redo-stack conj (select-keys s [:lines :cursor-line :cursor-col]))
+                                         (merge snapshot)
+                                         (assoc :last-action nil
+                                                :cached-width nil :cached-lines nil)))
+                                   s)))
+                  (tui/request-render!))
+
+        do-redo (fn []
+                  (swap! state (fn [{:keys [redo-stack] :as s}]
+                                 (if (seq redo-stack)
+                                   (let [snapshot (peek redo-stack)]
+                                     (-> s
+                                         (update :redo-stack pop)
+                                         (update :undo-stack conj (select-keys s [:lines :cursor-line :cursor-col]))
+                                         (merge snapshot)
+                                         (assoc :last-action nil
+                                                :cached-width nil :cached-lines nil)))
+                                   s)))
+                  (tui/request-render!))
 
         handle-submit (fn []
                         (let [text (get-text)]
@@ -475,33 +557,35 @@
                          (swap! state (fn [s]
                                         (-> s
                                             (assoc :cursor-col 0)
-                                            (assoc :cached-width nil :cached-lines nil))))
+                                            (assoc :cached-width nil :cached-lines nil :last-action nil))))
 
                          ;; End / Ctrl+E
                          (is-end? data)
                          (swap! state (fn [{:keys [lines cursor-line] :as s}]
                                         (-> s
                                             (assoc :cursor-col (count (nth lines cursor-line)))
-                                            (assoc :cached-width nil :cached-lines nil))))
+                                            (assoc :cached-width nil :cached-lines nil :last-action nil))))
 
                          ;; Ctrl+U — kill line
                          (ctrl? data "U")
-                         (swap! state (fn [{:keys [lines cursor-line] :as s}]
-                                        (let [line (nth lines cursor-line)
-                                              after (subs line (:cursor-col s))]
-                                          (-> s
-                                              (assoc-in [:lines cursor-line] after)
-                                              (assoc :cursor-col 0)
-                                              (assoc :cached-width nil :cached-lines nil)))))
+                         (do (push-undo! :kill)
+                             (swap! state (fn [{:keys [lines cursor-line] :as s}]
+                                            (let [line (nth lines cursor-line)
+                                                  after (subs line (:cursor-col s))]
+                                              (-> s
+                                                  (assoc-in [:lines cursor-line] after)
+                                                  (assoc :cursor-col 0)
+                                                  (assoc :cached-width nil :cached-lines nil))))))
 
                          ;; Ctrl+K — kill to end of line
                          (ctrl? data "K")
-                         (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
-                                        (let [line (nth lines cursor-line)
-                                              before (subs line 0 cursor-col)]
-                                          (-> s
-                                              (assoc-in [:lines cursor-line] before)
-                                              (assoc :cached-width nil :cached-lines nil)))))
+                         (do (push-undo! :kill)
+                             (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                            (let [line (nth lines cursor-line)
+                                                  before (subs line 0 cursor-col)]
+                                              (-> s
+                                                  (assoc-in [:lines cursor-line] before)
+                                                  (assoc :cached-width nil :cached-lines nil))))))
 
                          ;; Ctrl+B — backward char
                          (ctrl? data "B")
@@ -529,9 +613,21 @@
                          (ctrl? data "T")
                          (transpose-chars)
 
+                         ;; Ctrl+Z — undo
+                         (ctrl? data "Z")
+                         (do-undo)
+
+                         ;; Ctrl+Shift+Z / Ctrl+Y — redo
+                         (or (is-ctrl-shift-z? data) (ctrl? data "Y"))
+                         (do-redo)
+
                          ;; Ctrl+Shift+G — open git status
                          (is-ctrl-shift-g? data)
                          (when on-git (on-git))
+
+                         ;; Ctrl+Shift+N — toggle notification
+                         (is-ctrl-shift-n? data)
+                         (when on-notify-toggle (on-notify-toggle))
 
                          ;; Alt+B — backward word
                          (is-alt-b? data)
@@ -556,10 +652,7 @@
                                content (-> data
                                            (str/replace paste-start-seq "")
                                            (str/replace paste-end-seq ""))]
-                           (doseq [ch content]
-                             (if (= ch \newline)
-                               (insert-newline)
-                               (insert-char (str ch)))))
+                           (insert-text-bulk content))
 
                          ;; "/" on empty editor — open command palette
                          (and (= data "/") on-palette (empty? (str/trim (get-text))))
@@ -585,9 +678,10 @@
      :handle-input handle-input
      :render (fn [width]
                (let [{:keys [lines cursor-line cursor-col]} @state
-                     prompt-w (ansi/visible-width prompt)
-                     content-w (max 1 (- width prompt-w))
-                     prompt-pad (apply str (repeat prompt-w " "))
+                     suffix (if prompt-suffix-fn (or (prompt-suffix-fn) "") "")
+                     full-prompt-w (+ (ansi/visible-width prompt) (ansi/visible-width suffix))
+                     content-w (max 1 (- width full-prompt-w))
+                     prompt-pad (apply str (repeat full-prompt-w " "))
                      border (ansi/fg :dim (apply str (repeat width "─")))
                      editor-lines
                      (into []
@@ -611,7 +705,7 @@
                                 (map-indexed
                                  (fn [vi vline]
                                    (let [pfx (if (and (zero? i) (zero? vi))
-                                               (ansi/fg :accent prompt)
+                                               (str (ansi/fg :accent prompt) suffix)
                                                prompt-pad)]
                                      (str pfx vline)))
                                  wrapped)))

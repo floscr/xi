@@ -46,12 +46,12 @@ An existing plan file is at `tasks/todo.md`. Read it first, then update or repla
 
 (defn- plan-mode-context
   "Context hook: inject plan mode prompt when enabled."
-  [messages _ctx]
+  [messages _state]
   messages)
 
 (defn- plan-mode-tool-call
   "Tool call hook: block write/edit tools and dangerous bash when plan mode is on."
-  [tool-call _ctx]
+  [tool-call _state]
   (if-not (:enabled @state)
     tool-call
     (let [{:keys [name arguments]} tool-call]
