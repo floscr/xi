@@ -1,9 +1,9 @@
 (ns xi.client.ws-transport
   "WebSocket transport — connects a TUI client to a remote Xi runtime.
    Implements the transport protocol {:dispatch! fn, :busy? fn}.
-   
+
    On connect, sends a :join message to enter a session.
-   Waits for :session-joined before forwarding events."
+   Forwards all server events (including session lifecycle) to the client."
   (:require [xi.runtime.commands :as commands]))
 
 (defn create!
@@ -28,11 +28,11 @@
 
     (.addEventListener ws "open"
                        (fn [_]
-                         (js/console.error (str "[ws] Connected to " url ", joining session (" session-mode ")..."))
+                         (js/console.error (str "[ws] Connected to " url ", joining room (" session-mode ")..."))
                          ;; Send join handshake with client's cwd
                          (.send ws (js/JSON.stringify
                                     (clj->js {:type :join
-                                              :session session-mode
+                                              :room session-mode
                                               :cwd (.cwd js/process)})))))
 
     (.addEventListener ws "close"
@@ -51,15 +51,17 @@
                            (let [raw (js->clj (js/JSON.parse (.-data e)) :keywordize-keys true)
                                  event (update raw :type keyword)]
                              (case (:type event)
-                               ;; Handshake: waiting for join (server acknowledges connection)
+                               ;; Room lifecycle — forward to client AND update local state
                                :waiting-for-join
-                               nil ;; We already sent join in on-open
+                               (do (reset! joined false)
+                                   (reset! busy false)
+                                   (when on-event (on-event event)))
 
-                               ;; Handshake complete
-                               :session-joined
+                               :room-joined
                                (do (reset! joined true)
-                                   (js/console.error (str "[ws] Joined session " (:session-id event)))
-                                   (when-let [f (:on-open opts)] (f)))
+                                   (reset! busy false)
+                                   (js/console.error (str "[ws] Joined room " (:room-id event)))
+                                   (when on-event (on-event event)))
 
                                ;; Normal event flow
                                (do
@@ -70,7 +72,7 @@
                                    (doseq [evt (:events event)]
                                      (when (= "busy-changed" (:type evt))
                                        (reset! busy (:busy evt)))))
-                                 ;; Forward to TUI
+                                 ;; Forward to client
                                  (when on-event
                                    (on-event event)))))
                            (catch :default err
@@ -87,6 +89,18 @@
 
      :busy?
      (fn [] @busy)
+
+     :leave!
+     (fn []
+       (when @joined
+         (.send ws (js/JSON.stringify (clj->js {:type :leave})))))
+
+     :join!
+     (fn [room-mode]
+       (.send ws (js/JSON.stringify
+                  (clj->js {:type :join
+                            :room room-mode
+                            :cwd (.cwd js/process)}))))
 
      :close!
      (fn [] (.close ws))}))

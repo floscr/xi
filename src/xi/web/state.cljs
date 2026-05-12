@@ -3,8 +3,8 @@
 
 (defonce app-state
   (atom {:view             :home          ;; :home | :chat
-         :sessions         []             ;; from server handshake
-         :session-id       nil            ;; joined session id
+         :rooms            []             ;; from server handshake
+         :room-id          nil            ;; joined room id
          :connected?       false
          :busy?            false
          :messages         []             ;; [{:type :user/:assistant/:tool/:thinking/:status :text ...}]

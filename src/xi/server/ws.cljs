@@ -1,22 +1,22 @@
 (ns xi.server.ws
   "WebSocket server for remote clients.
    Protocol: JSON messages over WebSocket.
-   
+
    Handshake:
      1. Client connects
-     2. Client sends {:type :join :session \"latest\"|\"new\"|<session-id>}
-     3. Server responds {:type :session-joined :session-id <id>}
+     2. Client sends {:type :join :room \"latest\"|\"new\"|<room-id>}
+     3. Server responds {:type :room-joined :room-id <id>}
      4. Normal event/command flow begins
-   
+
    Events flow out, commands flow in.
    Works from browsers, CLI tools, any WebSocket client."
   (:require [xi.runtime :as runtime]
-            [xi.server.session-manager :as sm]))
+            [xi.server.room-manager :as rm]))
 
 (def ^:private DEFAULT_PORT 7474)
 
 (defn start!
-  "Start a WebSocket server attached to a session manager.
+  "Start a WebSocket server attached to a room manager.
    opts:
      :port - port number (default: 7474, or XI_PORT env var)
    Returns a map with :server, :port, :stop!, :manager."
@@ -25,7 +25,7 @@
                  (some-> (aget js/process.env "XI_PORT") js/parseInt)
                  DEFAULT_PORT)
 
-        ;; Track WS → {session-id, runtime-client} mapping
+        ;; Track WS → {room-id, runtime-client} mapping
         conn-state (atom {})
 
         server
@@ -42,11 +42,11 @@
               :websocket
               #js {:open
                    (fn [^js ws]
-                     ;; Client connected but not yet joined a session.
+                     ;; Client connected but not yet joined a room.
                      ;; Send a prompt to join.
                      (.send ws (js/JSON.stringify
                                 (clj->js {:type :waiting-for-join
-                                          :sessions (sm/list-sessions manager)}))))
+                                          :rooms (rm/list-rooms manager)}))))
 
                    :message
                    (fn [^js ws ^js data]
@@ -56,31 +56,32 @@
                          (if-let [state (get @conn-state ws)]
                            ;; Already joined
                            (if (= :leave (:type msg))
-                             ;; Leave current session, go back to session list
-                             (let [{:keys [session-id rt-client]} state]
-                               (when-let [session (sm/get-session manager session-id)]
-                                 (runtime/disconnect! (:runtime session) rt-client))
-                               (sm/remove-client! manager session-id ws)
+                             ;; Leave current room, go back to room list
+                             (let [{:keys [room-id rt-client]} state]
+                               (when-let [room (rm/get-room manager room-id)]
+                                 (runtime/disconnect! (:runtime room) rt-client))
+                               (rm/remove-client! manager room-id ws)
                                (swap! conn-state dissoc ws)
                                (.send ws (js/JSON.stringify
                                           (clj->js {:type :waiting-for-join
-                                                    :sessions (sm/list-sessions manager)}))))
+                                                    :rooms (rm/list-rooms manager)}))))
                              ;; Normal command — dispatch to runtime
-                             (let [{:keys [session-id]} state
-                                   session (sm/get-session manager session-id)]
-                               (when session
-                                 (runtime/dispatch! (:runtime session) msg))))
+                             (let [{:keys [room-id]} state
+                                   room (rm/get-room manager room-id)]
+                               (when room
+                                 (runtime/dispatch! (:runtime room) msg))))
 
                            ;; Not yet joined — expect a :join message
                            (if (= :join (:type msg))
-                             (let [mode (case (:session msg)
+                             (let [target (or (:room msg) (:session msg))
+                                   mode (case target
                                           "new" :new
                                           "latest" :latest
-                                          (or (:session msg) :latest))
-                                   session-opts (when-let [cwd (:cwd msg)] {:cwd cwd})
-                                   session-id (sm/join-session! manager mode session-opts)
-                                   session (sm/get-session manager session-id)
-                                   rt (:runtime session)
+                                          (or target :latest))
+                                   room-opts (when-let [cwd (:cwd msg)] {:cwd cwd})
+                                   room-id (rm/join-room! manager mode room-opts)
+                                   room (rm/get-room manager room-id)
+                                   rt (:runtime room)
 
                                    ;; Create a runtime client for this WS
                                    rt-client
@@ -95,20 +96,20 @@
                                    connected (runtime/connect! rt rt-client)]
 
                                ;; Track this connection
-                               (sm/add-client! manager session-id ws)
+                               (rm/add-client! manager room-id ws)
                                (swap! conn-state assoc ws
-                                      {:session-id session-id
+                                      {:room-id room-id
                                        :rt-client connected})
 
                                ;; Confirm join
                                (.send ws (js/JSON.stringify
-                                          (clj->js {:type :session-joined
-                                                    :session-id session-id}))))
+                                          (clj->js {:type :room-joined
+                                                    :room-id room-id}))))
 
                              ;; Unknown pre-join message
                              (.send ws (js/JSON.stringify
                                         #js {:type "error"
-                                             :text "Send {\"type\":\"join\",\"session\":\"latest\"} first"})))))
+                                             :text "Send {\"type\":\"join\",\"room\":\"latest\"} first"})))))
                        (catch :default e
                          (.send ws (js/JSON.stringify
                                     #js {:type "error"
@@ -116,10 +117,10 @@
 
                    :close
                    (fn [^js ws _code _reason]
-                     (when-let [{:keys [session-id rt-client]} (get @conn-state ws)]
-                       (when-let [session (sm/get-session manager session-id)]
-                         (runtime/disconnect! (:runtime session) rt-client))
-                       (sm/remove-client! manager session-id ws)
+                     (when-let [{:keys [room-id rt-client]} (get @conn-state ws)]
+                       (when-let [room (rm/get-room manager room-id)]
+                         (runtime/disconnect! (:runtime room) rt-client))
+                       (rm/remove-client! manager room-id ws)
                        (swap! conn-state dissoc ws)))}})]
 
     (js/console.error (str "[ws] Listening on ws://localhost:" port))

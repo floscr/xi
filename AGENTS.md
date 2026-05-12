@@ -39,15 +39,16 @@ When adding new tests:
 
 ### Server / Client
 
-- `xi` — standalone TUI + runtime (no WS server; can `/join` later)
-- `xi server` — start WS server + create session + attach local TUI
+- `xi` — standalone TUI + runtime (no WS server)
+- `xi server` — start WS server + connect local TUI via WS (can switch rooms)
 - `xi server --headless` — start headless server (no TUI, clients attach remotely)
-- `xi join` — connect TUI client to latest session on a running server
-- `xi create` — connect TUI client to a new session on a running server
-- `xi sessions` — list active sessions on a running server (print & exit)
+- `xi join` — connect TUI client to latest room on a running server
+- `xi create` — connect TUI client to a new room on a running server
+- `xi rooms` — list active rooms on a running server (print & exit)
 - `--port N` — override default port (7474)
-- Server hosts multiple sessions; each session is an independent runtime
-- When the last client disconnects from a session, the session is destroyed
+- Server hosts multiple rooms; each room is an independent runtime
+- Rooms persist for the lifetime of the server
+- "Sessions" refers to saved-to-disk conversation history, loaded via `/resume`
 
 ## Source layout
 
@@ -59,8 +60,8 @@ src/xi/
     events.cljs        — event bus (pub/sub)
     commands.cljs      — command parsing & dispatch
   server/
-    ws.cljs            — WS server (session-aware, join handshake)
-    session_manager.cljs — manages multiple runtime sessions
+    ws.cljs            — WS server (room-aware, join handshake)
+    room_manager.cljs  — manages multiple runtime rooms
   client/
     tui.cljs           — TUI client (event → component mutations)
     ws_transport.cljs  — WS client transport (sends join handshake)

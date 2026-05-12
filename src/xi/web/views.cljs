@@ -182,7 +182,7 @@
    (topbar {:title "Xi"
             :subtitle model
             :actions [[:button {:class ["icon-btn"]
-                                :on {:click (fn [_] (ws/leave-session!))}}
+                                :on {:click (fn [_] (ws/leave-room!))}}
                        (icon/icon {:icon-name :terminal :size :sm})]
                       [:button {:class ["icon-btn"]
                                 :on {:click (fn [_] (ws/dispatch! "/new"))}}
@@ -196,33 +196,33 @@
    (compose-box)])
 
 ;; ---------------------------------------------------------------------------
-;; Home view (disconnected / session selection)
+;; Home view (disconnected / room selection)
 ;; ---------------------------------------------------------------------------
 
-(defn- home-view [{:keys [connected? sessions]}]
+(defn- home-view [{:keys [connected? rooms]}]
   [:div {:class ["container"]}
    (topbar {:title "Xi"})
    [:div {:class ["home"]}
     (if connected?
-      ;; Connected but not yet in a session
+      ;; Connected but not yet in a room
       [:div {:class ["section"]}
-       [:div {:class ["section-title"]} "Sessions"]
+       [:div {:class ["section-title"]} "Rooms"]
        [:div {:class ["project-list"]}
         [:div {:class ["project-card"]
-               :on {:click (fn [_] (ws/join-session! "new"))}}
+               :on {:click (fn [_] (ws/join-room! "new"))}}
          [:div {:class ["project-card-icon"]}
           (icon/icon {:icon-name :plus})]
          [:div {:class ["project-card-info"]}
-          [:span {:class ["project-card-name"]} "New Session"]]]
-        (for [s sessions]
+          [:span {:class ["project-card-name"]} "New Room"]]]
+        (for [r rooms]
           [:div {:class ["project-card"]
-                 :on {:click (fn [_] (ws/join-session! (:id s)))}}
+                 :on {:click (fn [_] (ws/join-room! (:id r)))}}
            [:div {:class ["project-card-icon"]}
             (icon/icon {:icon-name :terminal})]
            [:div {:class ["project-card-info"]}
-            [:span {:class ["project-card-name"]} (:id s)]
+            [:span {:class ["project-card-name"]} (:id r)]
             [:span {:class ["project-card-path"]}
-             (str (:clients s) " client(s)")]]])]]
+             (str (:clients r) " client(s)")]]])]]
       ;; Not connected
       [:div {:class ["empty-state"]}
        [:div
@@ -235,6 +235,6 @@
 ;; ---------------------------------------------------------------------------
 
 (defn root-view [app-state]
-  (if (and (:connected? app-state) (:session-id app-state))
+  (if (and (:connected? app-state) (:room-id app-state))
     (chat-view app-state)
     (home-view app-state)))

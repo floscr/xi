@@ -189,17 +189,6 @@
     :pi     (ansi/fg :dim " [pi]")
     ""))
 
-(defn- format-session-list-text [sessions]
-  (if (empty? sessions)
-    "  (no previous sessions)"
-    (str/join "\n"
-              (map (fn [s]
-                     (str "  " (:index s) ". "
-                          (:name s)
-                          " — " (:timestamp s)
-                          (when (:user-messages s) (str " (" (:user-messages s) " msgs)"))
-                          (format-session-source s)))
-                   sessions))))
 
 ;; ── TUI Client ───────────────────────────────────────────────────────────────
 
@@ -408,6 +397,29 @@
                                              (ansi/fg :error "Could not fetch Ollama models (is ollama running?)"))
                                             (tui/render-now!))))
                               nil)))}
+
+            {:name "join"
+             :description "Join an existing room"
+             :scope :client
+             :show-busy true
+             :handler (fn [_ctx]
+                        (if-let [leave! (:leave! transport)]
+                          (leave!)
+                          (add-status-message!
+                           (ansi/fg :error "Room switching not available (standalone mode)")))
+                        nil)}
+
+            {:name "create"
+             :description "Create a new room"
+             :scope :client
+             :show-busy true
+             :handler (fn [_ctx]
+                        (if-let [join! (:join! transport)]
+                          (do (when-let [leave! (:leave! transport)] (leave!))
+                              (join! "new"))
+                          (add-status-message!
+                           (ansi/fg :error "Room creation not available (standalone mode)")))
+                        nil)}
 
             {:name "buffers"
              :description "Switch buffer view"
@@ -760,11 +772,6 @@
 
             :command-result
             (case (:command event)
-              "sessions"
-              (add-status-message!
-               (str (ansi/fg :bold "Recent sessions:\n")
-                    (format-session-list-text (:sessions event))))
-
               "resume-list"
               (if (empty? (:sessions event))
                 (add-status-message! "  (no previous sessions)")
@@ -822,6 +829,50 @@
 
             :quit
             (shutdown!)
+
+            :waiting-for-join
+            ;; Server sent us back to room selection (after /join or initial connect)
+            (let [rooms (:rooms event)
+                  join! (:join! transport)]
+              (if (and join! (seq rooms))
+                ;; Show room picker with existing rooms + "New Room"
+                (let [items (into [{:label "New Room"
+                                    :description "Create a fresh room"
+                                    :value "new"}]
+                                  (map (fn [r]
+                                         {:label (:id r)
+                                          :description (str (:clients r) " client(s)")
+                                          :value (:id r)})
+                                       rooms))]
+                  (show-completion-menu!
+                   {:items items
+                    :prompt "room> "
+                    :on-select (fn [item] (join! (:value item)))
+                    :on-cancel (fn [] (join! (or (:id (first rooms)) "new")))}))
+                ;; No rooms or no join! — just create new
+                (when join! (join! "new"))))
+
+            :room-joined
+            ;; Switched to a new room — clear chat and reset turn state
+            (do ((:clear chat-container))
+                (reset! text-started false)
+                (reset! current-md nil)
+                (reset! current-tool nil)
+                (reset! thinking-text "")
+                (reset! current-thinking-comp nil)
+                ;; Add header for new room
+                ((:add-child chat-container)
+                 (comp/make-text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent"))))
+                ((:add-child chat-container)
+                 (comp/make-text (str (ansi/fg :dim "Room: ")
+                                     (ansi/fg :accent (:room-id event)))))
+                ((:add-child chat-container)
+                 (comp/make-text (ansi/fg :dim "Type /quit to exit, /help for commands.")))
+                ((:add-child chat-container) (comp/make-spacer 1))
+                ;; Switch to Chat view if we were on another buffer
+                (when (not= @active-view "Chat")
+                  (switch-to-buffer! "Chat"))
+                (tui/render-now!))
 
             :history
             (doseq [evt (:events event)]

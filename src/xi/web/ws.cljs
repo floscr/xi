@@ -47,15 +47,15 @@
   (case (:type event)
     :waiting-for-join
     (swap! state/app-state assoc
-           :sessions (or (:sessions event) [])
+           :rooms (or (:rooms event) [])
            :view :home
-           :session-id nil
+           :room-id nil
            :messages []
            :busy? false)
 
-    :session-joined
+    :room-joined
     (swap! state/app-state assoc
-           :session-id (:session-id event)
+           :room-id (:room-id event)
            :view :chat)
 
     :ready
@@ -182,7 +182,7 @@
         (handle-event (update evt :type keyword))))
 
     :quit
-    (swap! state/app-state assoc :view :home :session-id nil)
+    (swap! state/app-state assoc :view :home :room-id nil)
 
     ;; default — ignore
     nil))
@@ -266,14 +266,14 @@
                      command)]
         (.send ws (js/JSON.stringify (clj->js parsed)))))))
 
-(defn join-session!
-  "Join a specific session by id, or \"new\" / \"latest\"."
-  [session-mode]
+(defn join-room!
+  "Join a specific room by id, or \"new\" / \"latest\"."
+  [room-mode]
   (when-let [ws @ws-conn]
-    (.send ws (js/JSON.stringify (clj->js {:type :join :session session-mode})))))
+    (.send ws (js/JSON.stringify (clj->js {:type :join :room room-mode})))))
 
-(defn leave-session!
-  "Leave the current session and return to the session list."
+(defn leave-room!
+  "Leave the current room and return to the room list."
   []
   (when-let [ws @ws-conn]
     (.send ws (js/JSON.stringify (clj->js {:type :leave})))))

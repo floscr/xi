@@ -1,20 +1,21 @@
-# CLI Revision: Simplify Subcommands
+# Server/Client: Sessions → Rooms
 
-## New CLI shape
-
-| Command        | Behavior                                                           |
-|----------------|--------------------------------------------------------------------|
-| `xi`           | Standalone TUI + runtime (no WS). Can `/join` later from inside.   |
-| `xi server`    | Start WS server + create session + attach TUI                      |
-| `xi join`      | Connect TUI to latest session on running server                    |
-| `xi create`    | Connect TUI to a **new** session on running server                 |
-| `xi sessions`  | List sessions on a running server (print & exit)                   |
+## Naming
+- Disk sessions = "sessions" (loaded via `/resume`)
+- Server live instances = "rooms" (via `/join`, `/create`)
+- Removed runtime `/sessions` command
+- No auto-close — rooms persist for server lifetime
 
 ## Tasks
-
-- [x] 1. Update `cli.cljs` — new `parse-args`, add `:standalone`/`:create`/`:sessions` commands, remove `:auto` and `--new-session`
-- [x] 2. Implement `start-standalone!` — create runtime + TUI directly (no WS)
-- [x] 3. Implement `list-sessions!` — WS connect, read session list from handshake, print, exit
-- [x] 4. Implement `start-create!` — same as `start-join!` but with `session "new"`
-- [x] 5. Update `AGENTS.md` to reflect new CLI commands
-- [x] 6. Compile — 0 warnings, 0 errors
+- [x] Create `room_manager.cljs`, delete `session_manager.cljs`
+- [x] Update `ws.cljs` — imports, protocol events (`:room-joined`, `:rooms` payload)
+- [x] Update `ws_transport.cljs` — new event names, `:room` in join msg
+- [x] Update `tui.cljs` — `/join` + `/create` commands, handle `:room-joined`
+- [x] Update `cli.cljs` — imports, docstring, `xi rooms` subcommand
+- [x] Update `runtime/commands.cljs` — remove `/sessions` + `/ls`
+- [x] Update `web/ws.cljs` — event names, `join-room!`/`leave-room!`
+- [x] Update `web/state.cljs` — `:rooms`, `:room-id`
+- [x] Update `web/views.cljs` — labels, function refs
+- [x] Compile main + web — 0 warnings
+- [x] Tests — 114 tests, 0 failures
+- [x] Update AGENTS.md

@@ -102,13 +102,6 @@
 (defn- cmd-quit [_ctx]
   [{:type :quit}])
 
-(defn- cmd-sessions [{:keys [cwd]}]
-  (let [sessions (session/list-sessions cwd)]
-    [{:type :command-result
-      :command "sessions"
-      :sessions (format-session-list sessions)
-      :raw-sessions sessions}]))
-
 (defn- cmd-help [_ctx]
   (let [all-cmds (registry/list-commands)
         builtin (remove #(= "ext" (:source %)) all-cmds)
@@ -205,17 +198,6 @@
      :description "Exit Xi"
      :handler cmd-quit
      :scope :runtime}
-
-    {:name "sessions"
-     :description "List recent sessions"
-     :handler cmd-sessions
-     :scope :runtime}
-
-    {:name "ls"
-     :description "List recent sessions"
-     :handler cmd-sessions
-     :scope :runtime
-     :hidden true}
 
     {:name "help"
      :description "Show available commands"

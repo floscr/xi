@@ -3,10 +3,10 @@
 
    Subcommands:
      xi              → standalone TUI + runtime (no WS server)
-     xi server       → start WS server + create session + attach TUI
-     xi join         → connect TUI to latest session on running server
-     xi create       → connect TUI to a new session on running server
-     xi sessions     → list sessions on running server (print & exit)
+     xi server       → start WS server + connect local TUI via WS
+     xi join         → connect TUI to latest room on running server
+     xi create       → connect TUI to a new room on running server
+     xi rooms        → list active rooms on running server (print & exit)
 
    Flags:
      --port N         → override port (default 7474)
@@ -15,7 +15,7 @@
             [xi.client.tui :as tui-client]
             [xi.client.ws-transport :as ws-transport]
             [xi.server.ws :as ws]
-            [xi.server.session-manager :as sm]
+            [xi.server.room-manager :as rm]
             [xi.tui.buffers :as buffers]
             [xi.tui.terminal :as term]))
 
@@ -43,8 +43,8 @@
             (and (nil? cmd) (= "create" arg))
             (recur (inc i) :create opts)
 
-            (and (nil? cmd) (= "sessions" arg))
-            (recur (inc i) :sessions opts)
+            (and (nil? cmd) (= "rooms" arg))
+            (recur (inc i) :rooms opts)
 
             ;; Flags
             (= "--headless" arg)
@@ -72,16 +72,16 @@
     (runtime/connect! rt client)))
 
 (defn- start-server!
-  "Start server with session manager. Optionally attach a local TUI."
+  "Start server with room manager. Optionally attach a local TUI."
   [{:keys [headless port]}]
-  (let [;; Set up interception early so server/session logs reach the Logs buffer
+  (let [;; Set up interception early so server/room logs reach the Logs buffer
         buffer-mgr (when-not headless
                      (let [mgr (buffers/create-manager ["Logs"])]
                        (term/intercept-stdout!
                         (fn [_stream text]
                           (buffers/append! mgr "Logs" text)))
                        mgr))
-        manager (sm/create-manager {})
+        manager (rm/create-manager {})
         server (ws/start! manager {:port port})
         actual-port (:port server)]
 
@@ -89,19 +89,23 @@
       (do (js/console.error (str "[xi] Headless server running on ws://localhost:" actual-port))
           (js/console.error "[xi] Clients can connect with: xi join"))
 
-      ;; Interactive — create a session and attach a local TUI
-      (let [session-id (sm/create-session! manager)
-            session (sm/get-session manager session-id)
-            rt (:runtime session)
-            transport {:dispatch! (fn [cmd] (runtime/dispatch! rt cmd))
-                       :busy? (fn [] (runtime/busy? rt))}
+      ;; Interactive — connect local TUI via WS (same path as join/create)
+      (let [event-handler (atom nil)
+
+            transport (ws-transport/create!
+                       {:port actual-port
+                        :session "new"
+                        :on-event (fn [event] (when-let [f @event-handler] (f event)))
+                        :on-close (fn []
+                                    (js/console.error "\nLocal TUI disconnected from server")
+                                    (js/process.exit 1))})
+
             client (tui-client/create! {:transport transport
                                         :buffer-mgr buffer-mgr})]
-        (sm/add-client! manager session-id :local-tui)
-        (runtime/connect! rt client)))))
+        (reset! event-handler (:on-event client))))))
 
 (defn- start-join!
-  "Connect TUI to an existing server's latest session."
+  "Connect TUI to the latest room on a running server."
   [{:keys [port]}]
   (let [port (or port DEFAULT_PORT)
         event-handler (atom nil)
@@ -110,7 +114,6 @@
                    {:port port
                     :session "latest"
                     :on-event (fn [event] (when-let [f @event-handler] (f event)))
-                    :on-open (fn [] nil)
                     :on-close (fn []
                                 (js/console.error
                                  (str "\nDisconnected from ws://localhost:" port))
@@ -118,11 +121,10 @@
 
         client (tui-client/create! {:transport transport})]
 
-    (reset! event-handler (:on-event client))
-    ((:on-connect client) {:model nil})))
+    (reset! event-handler (:on-event client))))
 
 (defn- start-create!
-  "Connect TUI to an existing server with a new session."
+  "Connect TUI to a new room on a running server."
   [{:keys [port]}]
   (let [port (or port DEFAULT_PORT)
         event-handler (atom nil)
@@ -131,7 +133,6 @@
                    {:port port
                     :session "new"
                     :on-event (fn [event] (when-let [f @event-handler] (f event)))
-                    :on-open (fn [] nil)
                     :on-close (fn []
                                 (js/console.error
                                  (str "\nDisconnected from ws://localhost:" port))
@@ -139,11 +140,10 @@
 
         client (tui-client/create! {:transport transport})]
 
-    (reset! event-handler (:on-event client))
-    ((:on-connect client) {:model nil})))
+    (reset! event-handler (:on-event client))))
 
-(defn- list-sessions!
-  "Fetch and print sessions from a running server, then exit."
+(defn- list-rooms!
+  "Fetch and print rooms from a running server, then exit."
   [{:keys [port]}]
   (let [port (or port DEFAULT_PORT)
         url (str "ws://localhost:" port)
@@ -162,14 +162,14 @@
                            (let [raw (js->clj (js/JSON.parse (.-data e)) :keywordize-keys true)
                                  msg (update raw :type keyword)]
                              (when (= :waiting-for-join (:type msg))
-                               (let [sessions (:sessions msg)]
-                                 (if (empty? sessions)
-                                   (println "No active sessions.")
-                                   (do (println "Active sessions:")
-                                       (doseq [s sessions]
-                                         (println (str "  " (:id s)
-                                                       " — " (:clients s) " client(s)"
-                                                       " (created " (js/Date. (:created s)) ")")))))
+                               (let [rooms (:rooms msg)]
+                                 (if (empty? rooms)
+                                   (println "No active rooms.")
+                                   (do (println "Active rooms:")
+                                       (doseq [r rooms]
+                                         (println (str "  " (:id r)
+                                                       " — " (:clients r) " client(s)"
+                                                       " (created " (js/Date. (:created r)) ")")))))
                                  (.close ws)
                                  (js/process.exit 0))))
                            (catch :default err
@@ -184,4 +184,4 @@
       :server     (start-server! opts)
       :join       (start-join! opts)
       :create     (start-create! opts)
-      :sessions   (list-sessions! opts))))
+      :rooms      (list-rooms! opts))))
