@@ -184,8 +184,8 @@
      :render
      (fn [width]
        (let [{:keys [query selected filtered]} @state
-             border-top (ansi/fg :dim (apply str (repeat width "─")))
-             border-bot (ansi/fg :dim (apply str (repeat width "─")))
+             border-top (ansi/fg :border (apply str (repeat width "─")))
+             border-bot (ansi/fg :border (apply str (repeat width "─")))
              prompt-w (ansi/visible-width prompt)
              ;; Render the query input with cursor
              cursor-ch (str ansi/ESC "7m" " " ansi/ESC "27m")

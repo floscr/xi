@@ -20,7 +20,9 @@
 (def cyan      (str ESC "36m"))
 (def white     (str ESC "37m"))
 (def default   (str ESC "39m"))
-(def dim-white (str ESC "90m"))
+(def dim-white (str ESC "38;2;131;144;169m"))
+
+(def border-gray (str ESC "90m"))
 
 (def bg-dark   (str ESC "48;5;236m"))
 
@@ -32,6 +34,7 @@
   (let [code (if (keyword? color)
                (case color
                  :dim     dim-white
+                 :border  border-gray
                  :accent  cyan
                  :error   red
                  :success green

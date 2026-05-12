@@ -711,7 +711,7 @@
                      full-prompt-w (+ (ansi/visible-width prompt) (ansi/visible-width suffix))
                      content-w (max 1 (- width full-prompt-w))
                      prompt-pad (apply str (repeat full-prompt-w " "))
-                     border (ansi/fg :dim (apply str (repeat width "─")))
+                     border (ansi/fg :border (apply str (repeat width "─")))
                      editor-lines
                      (into []
                            (mapcat

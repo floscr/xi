@@ -195,7 +195,7 @@
             ;; Status/separator line — shows scroll indicator when scrolled up
             status-line (if (pos? effective-offset)
                           (ansi/pad-to-width
-                           (ansi/fg :dim (str "── ↓ " effective-offset " more lines below ──"))
+                           (ansi/fg :border (str "── ↓ " effective-offset " more lines below ──"))
                            width)
                           "")
 
