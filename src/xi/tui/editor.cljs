@@ -4,7 +4,8 @@
    Handles character input, cursor movement, history, and paste."
   (:require [clojure.string :as str]
             [xi.tui.ansi :as ansi]
-            [xi.tui.core :as tui]))
+            [xi.tui.core :as tui]
+            [xi.tui.snippets :as snippets]))
 
 ;; ── Key Detection ─────────────────────────────────────────────────────────────
 
@@ -57,6 +58,9 @@
 
 (defn- is-paste-end? [data]
   (str/ends-with? data (str ESC "[201~")))
+
+(defn- is-tab? [data]
+  (= data "\t"))
 
 (defn- is-printable? [data]
   (let [code (.charCodeAt data 0)]
@@ -653,6 +657,31 @@
                                            (str/replace paste-start-seq "")
                                            (str/replace paste-end-seq ""))]
                            (insert-text-bulk content))
+
+                         ;; Tab — snippet expansion
+                         (is-tab? data)
+                         (let [{:keys [lines cursor-line cursor-col]} @state
+                               line (nth lines cursor-line)
+                               before (subs line 0 cursor-col)
+                               ;; Extract word before cursor (back to last space or start)
+                               word-start (loop [i (dec (count before))]
+                                            (cond
+                                              (neg? i) 0
+                                              (= " " (.charAt before i)) (inc i)
+                                              :else (recur (dec i))))
+                               trigger (subs before word-start (count before))]
+                           (when-let [expansion (and (seq trigger) (snippets/expand trigger))]
+                             (push-undo! :snippet)
+                             (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                            (let [line (nth lines cursor-line)
+                                                  new-line (str (subs line 0 word-start)
+                                                                expansion
+                                                                (subs line cursor-col))]
+                                              (-> s
+                                                  (assoc-in [:lines cursor-line] new-line)
+                                                  (assoc :cursor-col (+ word-start (count expansion)))
+                                                  (assoc :cached-width nil :cached-lines nil)))))
+                             (tui/request-render!)))
 
                          ;; "/" on empty editor — open command palette
                          (and (= data "/") on-palette (empty? (str/trim (get-text))))
