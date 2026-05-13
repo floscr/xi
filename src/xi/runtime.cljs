@@ -3,6 +3,7 @@
    No UI dependencies. Clients connect and receive events."
   (:require [xi.ext.core :as ext]
             [xi.ext.clipboard-image :as ext-clipboard-image]
+            [xi.image :as image]
             [xi.ext.commit :as ext-commit]
             [xi.ext.done-notify :as ext-done-notify]
             [xi.ext.kb :as ext-kb]
@@ -73,7 +74,8 @@
         cli-session-id (:cli-session-id @sess)
         abort-signal (:abort-signal rt)
         prompt (if (map? prompt-or-map) (:text prompt-or-map) prompt-or-map)
-        images (when (map? prompt-or-map) (:images prompt-or-map))]
+        raw-images (when (map? prompt-or-map) (:images prompt-or-map))
+        images (image/process-images raw-images)]
 
     (emit! {:type :turn-start})
 
