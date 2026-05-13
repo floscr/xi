@@ -50,6 +50,9 @@
             (= "--headless" arg)
             (recur (inc i) cmd (assoc opts :headless true))
 
+            (= "--personal-agent-only" arg)
+            (recur (inc i) cmd (assoc opts :personal-agent-only true))
+
             (= "--port" arg)
             (let [port (when (< (inc i) (count args))
                          (js/parseInt (nth args (inc i)) 10))]
@@ -73,7 +76,7 @@
 
 (defn- start-server!
   "Start server with room manager. Optionally attach a local TUI."
-  [{:keys [headless port]}]
+  [{:keys [headless port personal-agent-only]}]
   (let [;; Set up interception early so server/room logs reach the Logs buffer
         buffer-mgr (when-not headless
                      (let [mgr (buffers/create-manager ["Logs"])]
@@ -178,6 +181,13 @@
                              (js/process.exit 1)))))))
 
 (defn main []
+  ;; Ignore EPIPE errors from the SDK subprocess dying mid-write.
+  ;; These are benign — the agent turn has already ended or been aborted.
+  (.on js/process "uncaughtException"
+       (fn [err]
+         (if (= "EPIPE" (.-code err))
+           nil ;; swallow
+           (throw err))))
   (let [{:keys [command] :as opts} (parse-args)]
     (case command
       :standalone (start-standalone! opts)

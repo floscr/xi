@@ -10,6 +10,16 @@ npx shadow-cljs compile main   # compile CLJS → JS
 bun target/main.js       # run
 ```
 
+### SDK Version Constraint
+
+The `@anthropic-ai/claude-agent-sdk` must be pinned to **`0.2.110`** — the same version used by the Pi claude-bridge extension. Newer SDK versions (e.g. 0.2.140) produce exit code 127 at runtime because of incompatible Claude CLI resolution. Do not upgrade the SDK without first verifying it works with the installed Claude CLI and bridge.
+
+### Provider Notes
+
+- The SDK query must be explicitly closed after completion via `.close()` to avoid EPIPE errors from orphaned subprocess pipes
+- Abort uses `.interrupt()` (graceful) then `.close()` (cleanup), not `.return()`
+- Error paths must also close the query before resolving the promise
+
 ## Testing
 
 - **Do NOT run `xi` / `bun target/main.js` from the agent.** It's a TUI app that requires an interactive terminal and will not work inside the agent shell. Only compile; the user tests manually.
