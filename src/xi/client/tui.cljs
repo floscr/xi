@@ -682,6 +682,8 @@
               (do ;; Reset turn state for new turn
                 (reset! text-started false)
                 (reset! current-md nil)
+                (when-let [tool @current-tool]
+                  ((:finish tool) false))
                 (reset! current-tool nil)
                 (reset! thinking-text "")
                 (reset! current-thinking-comp nil))
@@ -786,6 +788,9 @@
                   msg (or (:message err) (pr-str err))]
               ;; Suppress spurious SDK errors during abort
               (when-not (and msg (str/includes? msg "null is not an object"))
+                (when-let [tool @current-tool]
+                  ((:finish tool) true)
+                  (reset! current-tool nil))
                 ((:stop loader))
                 ((:remove-child chat-container) loader)
                 ((:add-child chat-container)
@@ -796,13 +801,19 @@
                 (tui/render-now!)))
 
             :turn-end
-            (do ((:stop loader))
+            (do (when-let [tool @current-tool]
+                  ((:finish tool) false)
+                  (reset! current-tool nil))
+                ((:stop loader))
                 ((:remove-child chat-container) loader)
                 (ext/dispatch-hook :agent-end)
                 (tui/render-now!))
 
             :aborted
-            (do ((:stop loader))
+            (do (when-let [tool @current-tool]
+                  ((:finish tool) false)
+                  (reset! current-tool nil))
+                ((:stop loader))
                 ((:remove-child chat-container) loader)
                 (add-status-message! (ansi/fg :dim "Interrupted."))
                 (tui/render-now!))
