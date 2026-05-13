@@ -832,33 +832,42 @@
                       (when (= :pi (:source session))
                         (str "\n" (ansi/fg :dim "  (read-only — Pi sessions can't be continued)")))))
                 ;; Render full chat history
-                (doseq [block messages]
-                  (case (:type block)
-                    :text
-                    (case (:role block)
-                      "user"
-                      (do ((:add-child chat-container) (comp/make-spacer 1))
+                ;; Track pending image count to attach to user text messages
+                (let [pending-img-count (atom 0)]
+                  (doseq [block messages]
+                    (case (:type block)
+                      :text
+                      (case (:role block)
+                        "user"
+                        (let [n @pending-img-count
+                              img-suffix (when (pos? n)
+                                           (str " " (ansi/fg :dim (str "(📎 " n " image" (when (> n 1) "s") ")"))))]
+                          (reset! pending-img-count 0)
+                          ((:add-child chat-container) (comp/make-spacer 1))
                           ((:add-child chat-container)
-                           (comp/make-text (str (ansi/fg :bold "you") ": " (:text block))))
+                           (comp/make-text (str (ansi/fg :bold "you") ": " (:text block) img-suffix)))
                           ((:add-child chat-container) (comp/make-spacer 1)))
-                      "assistant"
-                      (do ((:add-child chat-container) (md/make-markdown (:text block)))
-                          ((:add-child chat-container) (comp/make-spacer 1)))
-                      nil)
+                        "assistant"
+                        (do ((:add-child chat-container) (md/make-markdown (:text block)))
+                            ((:add-child chat-container) (comp/make-spacer 1)))
+                        nil)
 
-                    :tool-use
-                    (let [short-name (shorten-tool-name (:name block))
-                          args-str (format-tool-args short-name (:arguments block))
-                          result (get results-by-id (:tool-use-id block))
-                          output (:content result)
-                          is-error (:is-error result)
-                          comp (make-static-tool-component
-                                (:name block) args-str output is-error)]
-                      ((:add-child chat-container) comp)
-                      ((:add-child chat-container) (comp/make-spacer 1)))
+                      :image
+                      (swap! pending-img-count inc)
 
-                    ;; Skip :tool-result (rendered inline with :tool-use)
-                    nil))
+                      :tool-use
+                      (let [short-name (shorten-tool-name (:name block))
+                            args-str (format-tool-args short-name (:arguments block))
+                            result (get results-by-id (:tool-use-id block))
+                            output (:content result)
+                            is-error (:is-error result)
+                            comp (make-static-tool-component
+                                  (:name block) args-str output is-error)]
+                        ((:add-child chat-container) comp)
+                        ((:add-child chat-container) (comp/make-spacer 1)))
+
+                      ;; Skip :tool-result (rendered inline with :tool-use)
+                      nil)))
                 (tui/render-now!)))
 
             :command-result

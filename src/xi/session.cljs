@@ -379,6 +379,14 @@
                                         "text"
                                         {:type :text :role role :text (:text block)}
 
+                                        "image"
+                                        (let [source (:source block)]
+                                          (when (and source (= "base64" (:type source)))
+                                            {:type :image
+                                             :role role
+                                             :media-type (:media_type source)
+                                             :data (:data source)}))
+
                                         "tool_use"
                                         {:type :tool-use
                                          :name (:name block)

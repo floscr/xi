@@ -170,37 +170,59 @@
                                     (map (fn [r] [(:tool-use-id r) r])))
                               msgs)
           session (:session event)
-          session-name (or (:name session) (:cli-session-id session) (:id session))]
+          session-name (or (:name session) (:cli-session-id session) (:id session))
+          ;; Group consecutive :image blocks with the preceding :text user block
+          grouped (reduce
+                   (fn [acc block]
+                     (case (keyword (:type block))
+                       :image
+                       (let [last-msg (peek acc)]
+                         (if (and last-msg (= :user (:type last-msg)))
+                           ;; Attach image to previous user message
+                           (conj (pop acc)
+                                 (update last-msg :images
+                                         (fnil conj [])
+                                         {:data (:data block)
+                                          :media-type (:media-type block)}))
+                           ;; Standalone image — make a user message
+                           (conj acc {:type :user :text "[image]"
+                                      :images [{:data (:data block)
+                                                 :media-type (:media-type block)}]})))
+
+                       :text
+                       (conj acc {:type (if (= "user" (:role block)) :user :assistant)
+                                  :text (:text block)})
+
+                       :tool-use
+                       (let [result (get results-by-id (:tool-use-id block))
+                             content (:content result)
+                             text (cond
+                                    (string? content) content
+                                    (sequential? content)
+                                    (->> content
+                                         (keep (fn [b]
+                                                 (cond
+                                                   (string? b) b
+                                                   (= "text" (:type b)) (:text b)
+                                                   :else nil)))
+                                         (str/join "\n"))
+                                    :else nil)]
+                         (conj acc {:type :tool
+                                    :tool-name (:name block)
+                                    :title (format-tool-title (:name block) (:arguments block))
+                                    :arguments (:arguments block)
+                                    :result text
+                                    :is-error (:is-error result)
+                                    :finished true}))
+
+                       :tool-result acc ;; rendered inline with tool-use
+                       acc))
+                   []
+                   msgs)]
       (swap! state/app-state assoc
              :messages (into [{:type :status
                                :text (str "Resumed: " (or session-name "session"))}]
-                             (keep (fn [block]
-                                     (case (keyword (:type block))
-                                       :text {:type (if (= "user" (:role block)) :user :assistant)
-                                              :text (:text block)}
-                                       :tool-use (let [result (get results-by-id (:tool-use-id block))
-                                                       content (:content result)
-                                                       text (cond
-                                                              (string? content) content
-                                                              (sequential? content)
-                                                              (->> content
-                                                                   (keep (fn [b]
-                                                                           (cond
-                                                                             (string? b) b
-                                                                             (= "text" (:type b)) (:text b)
-                                                                             :else nil)))
-                                                                   (str/join "\n"))
-                                                              :else nil)]
-                                                  {:type :tool
-                                                   :tool-name (:name block)
-                                                   :title (format-tool-title (:name block) (:arguments block))
-                                                   :arguments (:arguments block)
-                                                   :result text
-                                                   :is-error (:is-error result)
-                                                   :finished true})
-                                       :tool-result nil ;; rendered inline with tool-use
-                                       nil))
-                                   msgs))))
+                             grouped)))
 
     :command-result
     (case (:command event)
