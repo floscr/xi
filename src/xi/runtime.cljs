@@ -8,6 +8,7 @@
             [xi.ext.done-notify :as ext-done-notify]
             [xi.ext.kb :as ext-kb]
             [xi.ext.parmezan :as ext-parmezan]
+            [xi.ext.perplexity :as ext-perplexity]
             [xi.ext.permission-gate :as ext-permission-gate]
             [xi.ext.plan-mode :as ext-plan-mode]
             [xi.ext.terminal-title :as ext-terminal-title]
@@ -47,6 +48,7 @@
                ext-kb/extension
                ext-commit/extension
                ext-web/extension
+               ext-perplexity/extension
                ext-parmezan/extension
                ext-done-notify/extension
                ext-terminal-title/extension]]

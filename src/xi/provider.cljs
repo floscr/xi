@@ -99,8 +99,8 @@
 (defn- build-mcp-server
   "Build an MCP server exposing Xi's tools."
   [cwd]
-  (let [defs (tools/tool-definitions)
-        registry (tools/tool-registry)
+  (let [defs (into (tools/tool-definitions) (ext/get-ext-tool-definitions))
+        registry (merge (tools/tool-registry) (ext/get-ext-tool-registry))
         mcp-tools (into-array
                    (map (fn [tool-def]
                           (let [tool-name (:name tool-def)

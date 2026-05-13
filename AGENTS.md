@@ -90,7 +90,8 @@ src/xi/
     parmezan.cljs      — auto-fix Clojure delimiters after writes
     kb.cljs            — knowledge base tools
     commit.cljs        — git commit workflow tools
-    web.cljs           — URL fetch tool
+    web.cljs           — URL fetch tool (UA rotation, HTML→markdown, Jina Reader)
+    perplexity.cljs    — web search via Perplexity (web_search tool)
   tui/                 — terminal UI rendering primitives
 ```
 
