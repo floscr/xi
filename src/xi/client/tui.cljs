@@ -17,6 +17,7 @@
             [xi.tui.completion :as completion]
             [xi.tui.components :as comp]
             [xi.tui.editor :as editor]
+            [xi.tui.clipboard-image :as clip-image]
             [xi.tui.markdown :as md]
             [xi.tui.terminal :as term]))
 
@@ -214,6 +215,9 @@
 
         ;; Queued prompt — submitted while busy (e.g. right after abort)
         queued-prompt (atom nil)
+
+        ;; Pending clipboard images attached via Alt+V
+        pending-images (atom [])
 
         ;; Whether we explicitly asked to switch rooms (vs initial connect)
         switching-rooms (atom false)
@@ -485,6 +489,61 @@
 
                               :else
                               (add-status-message! (ansi/fg :error "Usage: /palette add|remove|list <command>")))))
+                        nil)}
+
+            {:name "attach-image"
+             :description "Attach an image file (or paste from clipboard with no args)"
+             :scope :client
+             :handler (fn [{:keys [args]}]
+                        (if (seq args)
+                          ;; Attach from file path
+                          (let [fs (js/require "node:fs")
+                                path (js/require "node:path")
+                                file-path (str/trim args)
+                                resolved (.resolve path file-path)]
+                            (if (.existsSync fs resolved)
+                              (let [buffer (.readFileSync fs resolved)
+                                    ext (-> (.extname path resolved) (subs 1) str/lower-case)
+                                    media-type (case ext
+                                                 "png" "image/png"
+                                                 "jpg" "image/jpeg"
+                                                 "jpeg" "image/jpeg"
+                                                 "webp" "image/webp"
+                                                 "gif" "image/gif"
+                                                 nil)]
+                                (if media-type
+                                  (do (swap! pending-images conj
+                                            {:data (.toString buffer "base64")
+                                             :media-type media-type})
+                                      (add-status-message!
+                                       (str (ansi/fg :accent "📎 ") file-path
+                                            (ansi/fg :dim (str " (" (count @pending-images) " total)")))))
+                                  (add-status-message!
+                                   (ansi/fg :error (str "Unsupported image format: ." ext)))))
+                              (add-status-message!
+                               (ansi/fg :error (str "File not found: " file-path)))))
+                          ;; No args — read from clipboard
+                          (if-let [img (clip-image/read-clipboard-image)]
+                            (do (swap! pending-images conj img)
+                                (add-status-message!
+                                 (str (ansi/fg :accent "📎 ") "clipboard"
+                                      (ansi/fg :dim (str " (" (count @pending-images) " total)")))))
+                            (add-status-message!
+                             (ansi/fg :dim "No image in clipboard"))))
+                        (tui/request-render!)
+                        nil)}
+
+            {:name "clear-images"
+             :description "Clear all pending image attachments"
+             :scope :client
+             :handler (fn [_]
+                        (let [n (count @pending-images)]
+                          (reset! pending-images [])
+                          (add-status-message!
+                           (if (pos? n)
+                             (ansi/fg :dim (str "Cleared " n " image(s)"))
+                             (ansi/fg :dim "No images to clear"))))
+                        (tui/request-render!)
                         nil)}])
 
         ;; ── Local Command Dispatch ──────────────────────────────────────────────
@@ -521,23 +580,44 @@
         (editor/make-editor
          {:prompt "xi> "
           :on-submit (fn [text]
-                       (let [text (str/trim text)]
-                         (when (seq text)
-                           (when (str/starts-with? text "/")
-                             (palette/record-use! text))
-                           ;; Try local commands first (work even when agent is busy)
-                           (when-not (handle-local-command! text)
-                             (if-not (busy?)
-                               (do
-                                 ;; Auto-switch to Chat if viewing another buffer
-                                 (when (not= @active-view "Chat")
-                                   (switch-to-buffer! "Chat"))
-                                 ;; Remember we sent this so :user-message doesn't double-render
-                                 (reset! last-local-prompt text)
-                                 ;; Dispatch via transport
-                                 (dispatch! text))
-                               ;; Busy — queue prompt so it dispatches when the turn ends
-                               (reset! queued-prompt text))))))
+                       (let [text (str/trim text)
+                             images @pending-images]
+                         (when (or (seq text) (seq images))
+                           (let [final-text (if (and (empty? text) (seq images))
+                                              (let [n (count images)]
+                                                (if (= 1 n) "[Attached image]" (str "[Attached " n " images]")))
+                                              text)]
+                             ;; Clear pending images
+                             (reset! pending-images [])
+                             (when (str/starts-with? final-text "/")
+                               (palette/record-use! final-text))
+                             ;; Try local commands first (work even when agent is busy)
+                             (when-not (handle-local-command! final-text)
+                               (let [payload (if (seq images)
+                                               {:type :prompt :text final-text :images images}
+                                               final-text)]
+                                 (if-not (busy?)
+                                   (do
+                                     ;; Auto-switch to Chat if viewing another buffer
+                                     (when (not= @active-view "Chat")
+                                       (switch-to-buffer! "Chat"))
+                                     ;; Remember we sent this so :user-message doesn't double-render
+                                     (reset! last-local-prompt final-text)
+                                     ;; Dispatch via transport
+                                     (dispatch! payload))
+                                   ;; Busy — queue prompt so it dispatches when the turn ends
+                                   (reset! queued-prompt payload))))))))
+
+          :on-paste-image
+          (fn []
+            (if-let [img (clip-image/read-clipboard-image)]
+              (do
+                (swap! pending-images conj img)
+                (add-status-message!
+                 (str (ansi/fg :accent "📎 ")
+                      (ansi/fg :dim (str (count @pending-images) " image(s) attached")))))
+              (add-status-message!
+               (ansi/fg :dim "No image in clipboard"))))
 
           :on-escape (fn []
                        (if (tui/scrolled-up?)
@@ -552,7 +632,12 @@
           :on-notify-toggle (fn []
                               (ext-done-notify/toggle!)
                               (tui/request-render!))
-          :prompt-suffix-fn (fn [] (ext/collect-prompt-badges))})
+          :prompt-suffix-fn (fn []
+                              (let [badges (ext/collect-prompt-badges)
+                                    n (count @pending-images)]
+                                (if (pos? n)
+                                  (str badges (ansi/fg :accent (str " 📎" n)))
+                                  badges)))})
 
         ;; Wire up forward reference
         _ (reset! editor-comp-ref editor-comp)
@@ -583,7 +668,9 @@
               ;; Always show the message — local or remote
               ((:add-child chat-container) (comp/make-spacer 1))
               ((:add-child chat-container)
-               (comp/make-text (str (ansi/fg :bold "you") ": " text)))
+               (comp/make-text (str (ansi/fg :bold "you") ": " text
+                                    (when (seq (:images event))
+                                      (str " " (ansi/fg :dim (str "(" (count (:images event)) " image(s))")))))))                                  
               ((:add-child chat-container) (comp/make-spacer 1))
               (tui/render-now!)
               ;; Clear after matching
@@ -777,19 +864,53 @@
             :command-result
             (case (:command event)
               "resume-list"
-              (if (empty? (:sessions event))
-                (add-status-message! "  (no previous sessions)")
-                (let [items (mapv (fn [s]
-                                   {:label (:name s)
-                                    :description (str (:timestamp s)
-                                                      (when (:user-messages s)
-                                                        (str " (" (:user-messages s) " msgs)"))
-                                                      (format-session-source s))
-                                    :value (:index s)})
-                                 (:sessions event))]
+              (let [home (aget js/process.env "HOME")
+                    shorten-cwd (fn [cwd]
+                                  (when cwd
+                                    (if (and home (str/starts-with? cwd home))
+                                      (str "~" (subs cwd (count home)))
+                                      cwd)))
+                    make-items (fn [sessions scope]
+                                 (mapv (fn [s]
+                                         {:label (:name s)
+                                          :description
+                                          (str (when-let [cwd (and (= scope :all) (:cwd s))]
+                                                 (str (ansi/fg :dim (shorten-cwd cwd)) " "))
+                                               (:timestamp s)
+                                               (when (:user-messages s)
+                                                 (str " (" (:user-messages s) " msgs)"))
+                                               (format-session-source s))
+                                          :value (if (= scope :all)
+                                                   (str "all:" (:index s))
+                                                   (str (:index s)))})
+                                       sessions))
+                    cwd-items (make-items (:sessions event) :cwd)
+                    all-items (make-items (:all-sessions event) :all)
+                    active-tab (atom :cwd)
+                    tab-header (fn []
+                                 (let [tab @active-tab]
+                                   (str "  "
+                                        (if (= tab :cwd)
+                                          (str (ansi/fg :accent "◉ Current Folder")
+                                               (ansi/fg :dim " | ")
+                                               (ansi/fg :dim "○ All"))
+                                          (str (ansi/fg :dim "○ Current Folder")
+                                               (ansi/fg :dim " | ")
+                                               (ansi/fg :accent "◉ All")))
+                                        (ansi/fg :dim "  (Tab to switch)"))))]
+                (if (and (empty? cwd-items) (empty? all-items))
+                  (add-status-message! "  (no previous sessions)")
                   (show-completion-menu!
-                   {:items items
+                   {:items cwd-items
                     :prompt "resume> "
+                    :header-fn tab-header
+                    :key-bindings
+                    [{:key-fn (fn [data] (= data "\t"))
+                      :handler
+                      (fn [state-atom update-items!]
+                        (let [new-tab (if (= @active-tab :cwd) :all :cwd)]
+                          (reset! active-tab new-tab)
+                          (update-items! (if (= new-tab :all) all-items cwd-items))))}]
                     :on-select (fn [item]
                                  (dispatch! (str "/resume " (:value item))))})))
 

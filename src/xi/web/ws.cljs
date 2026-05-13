@@ -70,7 +70,8 @@
            :cwd (:cwd event))
 
     :user-message
-    (append-msg! {:type :user :text (:text event)})
+    (append-msg! (cond-> {:type :user :text (:text event)}
+                   (seq (:images event)) (assoc :images (:images event))))
 
     :busy-changed
     (swap! state/app-state assoc :busy? (:busy event))
@@ -293,7 +294,8 @@
 
 (defn dispatch!
   "Send a command or prompt to the server.
-   Accepts a string (prompt or /command) or a map ({:type :abort})."
+   Accepts a string (prompt or /command), a map ({:type :abort}),
+   or a map with :text and :images for image attachments."
   [command]
   (when-let [ws @ws-conn]
     (when (= (.-OPEN js/WebSocket) (.-readyState ws))
@@ -307,6 +309,14 @@
                          {:type :prompt :text text}))
                      command)]
         (.send ws (js/JSON.stringify (clj->js parsed)))))))
+
+(defn dispatch-with-images!
+  "Send a prompt with attached images to the server.
+   images: [{:data base64-string :media-type mime-type} ...]"
+  [text images]
+  (dispatch! {:type :prompt
+              :text text
+              :images images}))
 
 (defn join-room!
   "Join a specific room by id, or \"new\" / \"latest\"."

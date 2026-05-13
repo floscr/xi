@@ -34,19 +34,20 @@
   (if (claude-model? (:model opts))
     ;; Claude models → SDK bridge
     (-> (bridge/stream-messages
-         {:model (:model opts)
-          :prompt (:prompt opts)
-          :cwd (:cwd opts)
-          :system (:system opts)
-          :effort (:effort opts)
-          :resume-session-id (:resume-session-id opts)
-          :abort-signal (:abort-signal opts)
-          :on-text (:on-text opts)
-          :on-thinking (:on-thinking opts)
-          :on-tool-start (:on-tool-start opts)
-          :on-tool-args (:on-tool-args opts)
-          :on-tool-result (:on-tool-result opts)
-          :on-error (:on-error opts)})
+         (cond-> {:model (:model opts)
+                  :prompt (:prompt opts)
+                  :cwd (:cwd opts)
+                  :system (:system opts)
+                  :effort (:effort opts)
+                  :resume-session-id (:resume-session-id opts)
+                  :abort-signal (:abort-signal opts)
+                  :on-text (:on-text opts)
+                  :on-thinking (:on-thinking opts)
+                  :on-tool-start (:on-tool-start opts)
+                  :on-tool-args (:on-tool-args opts)
+                  :on-tool-result (:on-tool-result opts)
+                  :on-error (:on-error opts)}
+           (:images opts) (assoc :images (:images opts))))
         (.then
          (fn [state]
            (let [assistant-msg (bridge/response->assistant-message state)]

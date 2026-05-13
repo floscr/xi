@@ -93,7 +93,8 @@
            :name (or (:name s) "(unnamed)")
            :timestamp (:timestamp s)
            :user-messages (:user-messages s)
-           :source (:source s)})
+           :source (:source s)
+           :cwd (:cwd s)})
         (range) sessions))
 
 ;; ── Built-in Command Handlers ─────────────────────────────────────────────────
@@ -166,14 +167,22 @@
 (defn- cmd-resume [{:keys [args sess cwd]}]
   (if (nil? args)
     ;; Show session list for resume
-    (let [sessions (session/list-sessions cwd)]
+    (let [cwd-sessions (session/list-sessions cwd)
+          all-sessions (session/list-all-sessions)]
       [{:type :command-result
         :command "resume-list"
-        :sessions (format-session-list sessions)
-        :raw-sessions sessions}])
-    ;; Resume specific session
-    (let [n (js/parseInt args 10)
-          sessions (session/list-sessions cwd)]
+        :sessions (format-session-list cwd-sessions)
+        :all-sessions (format-session-list all-sessions)
+        :raw-sessions cwd-sessions
+        :raw-all-sessions all-sessions}])
+    ;; Resume specific session — supports "N" (cwd) or "all:N" (all sessions)
+    (let [[scope idx-str] (if (str/starts-with? args "all:")
+                            [:all (subs args 4)]
+                            [:cwd args])
+          n (js/parseInt idx-str 10)
+          sessions (if (= :all scope)
+                     (session/list-all-sessions)
+                     (session/list-sessions cwd))]
       (if (and (not (js/isNaN n)) (<= 1 n) (<= n (count sessions)))
         (let [summary (nth sessions (dec n))
               loaded (session/load-session summary)
@@ -238,18 +247,21 @@
 
 (defn parse-input
   "Parse user input into a command map.
-   Returns {:type :prompt :text ...} or {:type :command :name ... :args ...}."
+   Returns {:type :prompt :text ...} or {:type :command :name ... :args ...}.
+   Input can be a string or a map with :text and optional :images."
   [input]
-  (let [input (str/trim input)]
+  (let [text (str/trim (if (map? input) (:text input "") input))
+        images (when (map? input) (:images input))]
     (cond
-      (empty? input)
+      (empty? text)
       nil
 
-      (not (str/starts-with? input "/"))
-      {:type :prompt :text input}
+      (not (str/starts-with? text "/"))
+      (cond-> {:type :prompt :text text}
+        (seq images) (assoc :images images))
 
       :else
-      (let [parts (str/split input #"\s+" 2)
+      (let [parts (str/split text #"\s+" 2)
             cmd-name (subs (first parts) 1)
             args (when (second parts) (str/trim (second parts)))]
         {:type :command :name cmd-name :args args}))))

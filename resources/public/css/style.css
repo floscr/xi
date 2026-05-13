@@ -180,6 +180,12 @@ body {
   padding: var(--size-2) var(--size-4);
   padding-bottom: calc(var(--size-2) + env(safe-area-inset-bottom, 0px));
   display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+.compose-input-row {
+  display: flex;
   gap: var(--size-2);
   align-items: flex-end;
 }
@@ -208,6 +214,67 @@ body {
 
 .compose-input-wrapper:focus-within {
   border-color: var(--accent);
+}
+
+.compose-attach-btn {
+  flex-shrink: 0;
+}
+
+/* ---- Image attachment previews ---- */
+.compose-images {
+  display: flex;
+  gap: var(--size-2);
+  overflow-x: auto;
+  padding: var(--size-1) 0;
+}
+
+.compose-image-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: var(--border-0);
+}
+
+.compose-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.compose-image-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: white;
+  padding: 0;
+}
+
+/* ---- User images in messages ---- */
+.user-images {
+  display: flex;
+  gap: var(--size-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--size-2);
+}
+
+.user-image {
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: var(--radius-md);
+  border: var(--border-0);
+  object-fit: contain;
 }
 
 /* ---- Buttons ---- */

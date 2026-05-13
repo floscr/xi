@@ -9,6 +9,7 @@
          :busy?            false
          :messages         []             ;; [{:type :user/:assistant/:tool/:thinking/:status :text ...}]
          :compose-text     ""
+         :compose-images   []             ;; [{:data base64 :media-type mime :preview-url blob-url}]
          :model            nil
          :cwd              nil
          :collapsed-blocks #{}

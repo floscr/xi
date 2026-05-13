@@ -14,12 +14,20 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- send-message! []
-  (let [text (str/trim (or (:compose-text @state/app-state) ""))]
-    (when (seq text)
-      (swap! state/app-state assoc :compose-text "")
-      (when-let [el (.querySelector js/document ".compose-editable")]
-        (set! (.-textContent el) ""))
-      (ws/dispatch! text))))
+  (let [text (str/trim (or (:compose-text @state/app-state) ""))
+        images (:compose-images @state/app-state)]
+    (when (or (seq text) (seq images))
+      (let [final-text (if (and (empty? text) (seq images))
+                         (let [n (count images)]
+                           (if (= 1 n) "[Attached image]" (str "[Attached " n " images]")))
+                         text)]
+        (swap! state/app-state assoc :compose-text "" :compose-images [])
+        (when-let [el (.querySelector js/document ".compose-editable")]
+          (set! (.-textContent el) ""))
+        (if (seq images)
+          (ws/dispatch-with-images! final-text
+                                    (mapv #(select-keys % [:data :media-type]) images))
+          (ws/dispatch! final-text))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Topbar
@@ -95,6 +103,15 @@
       [:div {:class ["post-meta"]}
        [:span {:class ["post-author"]} "You"]]
       [:div {:class ["post-content"]}
+       (when (seq (:images msg))
+         [:div {:class ["user-images"]}
+          (map-indexed
+           (fn [i img]
+             [:img {:key i
+                    :class ["user-image"]
+                    :src (str "data:" (:media-type img) ";base64," (:data img))
+                    :alt "attached image"}])
+           (:images msg))])
        [:p (:text msg)]]]]
 
     :assistant
@@ -154,24 +171,111 @@
 ;; Compose box
 ;; ---------------------------------------------------------------------------
 
+(defn- read-file-as-base64
+  "Read a File object as base64 data. Returns a promise of {:data :media-type}."
+  [^js file]
+  (js/Promise.
+   (fn [resolve _reject]
+     (let [reader (js/FileReader.)]
+       (set! (.-onload reader)
+             (fn [_]
+               (let [result (.-result reader)
+                     base64 (second (.split result ","))]
+                 (resolve {:data base64
+                           :media-type (.-type file)
+                           :preview-url (.createObjectURL js/URL file)}))))
+       (.readAsDataURL reader file)))))
+
+(defn- add-image-files!
+  "Read image files and add to compose-images."
+  [files]
+  (when (pos? (.-length files))
+    (-> (js/Promise.all
+         (.map (js/Array.from files)
+               (fn [file] (read-file-as-base64 file))))
+        (.then (fn [results]
+                 (swap! state/app-state update :compose-images
+                        into (js->clj results :keywordize-keys true))))
+        (.catch (fn [err]
+                  (js/console.error "[xi-web] Failed to read image:" err))))))
+
+(defn- handle-image-input!
+  "Process files from a file input or camera capture."
+  [^js event]
+  (add-image-files! (.. event -target -files))
+  (set! (.. event -target -value) ""))
+
+(defn- handle-paste!
+  "Handle paste events — extract images from clipboard."
+  [^js event]
+  (let [items (.. event -clipboardData -items)
+        image-files (atom [])]
+    (dotimes [i (.-length items)]
+      (let [^js item (aget items i)]
+        (when (str/starts-with? (.-type item) "image/")
+          (when-let [file (.getAsFile item)]
+            (swap! image-files conj file)))))
+    (when (seq @image-files)
+      (.preventDefault event)
+      (add-image-files! (clj->js @image-files)))))
+
+(defn- remove-compose-image! [idx]
+  (swap! state/app-state update :compose-images
+         (fn [imgs]
+           (into (subvec imgs 0 idx)
+                 (subvec imgs (inc idx))))))
+
+(defn- image-preview-strip
+  "Render thumbnail previews of pending image attachments."
+  [images]
+  (when (seq images)
+    [:div {:class ["compose-images"]}
+     (map-indexed
+      (fn [idx img]
+        [:div {:class ["compose-image-thumb"] :key idx}
+         [:img {:src (:preview-url img)
+                :alt "attachment"}]
+         [:button {:class ["compose-image-remove"]
+                   :on {:click (fn [_] (remove-compose-image! idx))}}
+          (icon/icon {:icon-name :x :size :sm})]])
+      images)]))
+
 (defn- compose-box []
-  (let [{:keys [compose-text busy?]} @state/app-state
-        can-send? (and (not busy?) (seq (str/trim (or compose-text ""))))]
+  (let [{:keys [compose-text compose-images busy?]} @state/app-state
+        can-send? (and (not busy?)
+                       (or (seq (str/trim (or compose-text "")))
+                           (seq compose-images)))]
     [:div {:class ["compose-box"]}
-     [:div {:class ["compose-input-wrapper"]}
-      (form/form-input {:type :text
-                         :placeholder "Message..."
-                         :value (or compose-text "")
-                         :attrs {:on {:input (fn [e]
-                                              (swap! state/app-state assoc :compose-text (.. e -target -value)))
-                                      :keydown (fn [e]
-                                                 (when (and (= (.-key e) "Enter") (not (.-shiftKey e)))
-                                                   (.preventDefault e)
-                                                   (send-message!)))}}})]
-     [:button {:class ["icon-btn"]
-               :disabled (not can-send?)
-               :on {:click (fn [_] (send-message!))}}
-      (icon/icon {:icon-name :arrow-up :size :sm})]]))
+     (image-preview-strip compose-images)
+     [:div {:class ["compose-input-row"]}
+      [:button {:class ["icon-btn" "compose-attach-btn"]
+                :title "Attach image"
+                :on {:click (fn [_]
+                              (when-let [input (.querySelector js/document "#image-file-input")]
+                                (.click input)))}}
+       (icon/icon {:icon-name :image :size :sm})]
+      [:input {:id "image-file-input"
+               :type "file"
+               :accept "image/*"
+               :multiple true
+               :style {:display "none"}
+               :on {:change handle-image-input!}}]
+      [:div {:class ["compose-input-wrapper"]}
+       (form/form-input {:type :text
+                          :placeholder "Message..."
+                          :value (or compose-text "")
+                          :attrs {:on {:input (fn [e]
+                                               (swap! state/app-state assoc :compose-text (.. e -target -value)))
+                                       :paste handle-paste!
+                                       :keydown (fn [e]
+                                                  (when (and (= (.-key e) "Enter") (not (.-shiftKey e)))
+                                                    (.preventDefault e)
+                                                    (send-message!)))}}})]
+      [:button {:class ["icon-btn"]
+                :disabled (not can-send?)
+                :on {:click (fn [_] (send-message!))}}
+       (icon/icon {:icon-name :arrow-up :size :sm})]]]))
+
 
 ;; ---------------------------------------------------------------------------
 ;; Resume session picker

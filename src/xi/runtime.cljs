@@ -2,6 +2,7 @@
   "Headless runtime — event bus, command dispatch, agent lifecycle.
    No UI dependencies. Clients connect and receive events."
   (:require [xi.ext.core :as ext]
+            [xi.ext.clipboard-image :as ext-clipboard-image]
             [xi.ext.commit :as ext-commit]
             [xi.ext.done-notify :as ext-done-notify]
             [xi.ext.kb :as ext-kb]
@@ -39,7 +40,8 @@
   ;; Register built-in commands first
   (commands/register-builtin-commands!)
   ;; Then extensions (their commands also feed into the central registry)
-  (doseq [ext [ext-plan-mode/extension
+  (doseq [ext [ext-clipboard-image/extension
+               ext-plan-mode/extension
                ext-permission-gate/extension
                ext-kb/extension
                ext-commit/extension
@@ -63,12 +65,15 @@
 ;; ── Agent Turn ───────────────────────────────────────────────────────────────
 
 (defn- run-agent-turn
-  "Run one agent turn. Bridges loop callbacks to event bus."
-  [rt prompt]
+  "Run one agent turn. Bridges loop callbacks to event bus.
+   prompt-or-map: string or {:text ... :images [...]}"
+  [rt prompt-or-map]
   (let [{:keys [emit!]} (:bus rt)
         {:keys [model effort sess cwd agents-md]} @(:state rt)
         cli-session-id (:cli-session-id @sess)
-        abort-signal (:abort-signal rt)]
+        abort-signal (:abort-signal rt)
+        prompt (if (map? prompt-or-map) (:text prompt-or-map) prompt-or-map)
+        images (when (map? prompt-or-map) (:images prompt-or-map))]
 
     (emit! {:type :turn-start})
 
@@ -102,6 +107,7 @@
                   :on-error
                   (fn [err]
                     (emit! {:type :error :error err}))}
+           (seq images) (assoc :images images)
            cli-session-id (assoc :resume-session-id cli-session-id)
            (and agents-md (nil? cli-session-id)) (assoc :system agents-md)))
 
@@ -231,15 +237,23 @@
     (when parsed
       (case (:type parsed)
         :prompt
+        ;; Run :input hook to allow extensions to transform (e.g. clipboard images)
+        (let [input-event (ext/dispatch-hook-transform
+                           :input
+                           {:text (:text parsed) :images (:images parsed)})
+              prompt-data (if (seq (:images input-event))
+                           {:text (:text input-event) :images (:images input-event)}
+                           (:text input-event))]
         (cond
           ;; Not busy — run immediately
           (not @(:busy rt))
           (do (reset! (:busy rt) true)
               (reset! (:abort-signal rt) false)
               (reset! (:pending-prompt rt) nil)
-              (emit! {:type :user-message :text (:text parsed)})
+              (emit! (cond-> {:type :user-message :text (:text input-event)}
+                       (seq (:images input-event)) (assoc :images (:images input-event))))
               (emit! {:type :busy-changed :busy true})
-              (-> (run-agent-turn rt (:text parsed))
+              (-> (run-agent-turn rt prompt-data)
                   (.then (fn [result]
                            (reset! (:busy rt) false)
                            (emit! {:type :busy-changed :busy false})
@@ -260,12 +274,12 @@
 
           ;; Busy but aborting — queue prompt for after turn settles
           @(:abort-signal rt)
-          (do (reset! (:pending-prompt rt) (:text parsed))
+          (do (reset! (:pending-prompt rt) prompt-data)
               (js/Promise.resolve nil))
 
           ;; Busy, not aborting — drop
           :else
-          (js/Promise.resolve nil))
+          (js/Promise.resolve nil)))
 
         :command
         (let [events (commands/handle-command parsed {:sess sess :cwd cwd :model model

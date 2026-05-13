@@ -311,26 +311,59 @@
                                     (js-obj MCP_SERVER_NAME mcp-server)))
 
         abort-signal (:abort-signal opts)
-        ^js sdk-query (sdk/query #js {:prompt (:prompt opts)
+        images (:images opts)
+        ;; When images are present, build an SDKUserMessage with multipart content
+        ;; instead of a plain string prompt
+        prompt-value
+        (if (seq images)
+          ;; Build content blocks matching Anthropic API format
+          (let [content (into-array
+                         (concat
+                          [#js {:type "text" :text (:prompt opts)}]
+                          (map (fn [img]
+                                 #js {:type "image"
+                                      :source #js {:type "base64"
+                                                   :media_type (:media-type img)
+                                                   :data (:data img)}})
+                               images)))
+                msg #js {:type "user"
+                         :message #js {:role "user"
+                                       :content content}
+                         :parent_tool_use_id nil}]
+            ;; Use a JS async generator (same pattern as pi's claude-bridge)
+            ((js* "(async function*(msg) { yield msg; })") msg))
+          ;; No images — plain string prompt
+          (:prompt opts))
+        ^js sdk-query (sdk/query #js {:prompt prompt-value
                                       :options query-opts})]
 
     (js/Promise.
      (fn [resolve _reject]
-       (let [consume
+       (let [close-query!
+             (fn []
+               (try (.close sdk-query)
+                    (catch :default _e nil)))
+
+             finish!
+             (fn []
+               (close-query!)
+               (resolve @state))
+
+             consume
              (fn consume []
                ;; Check abort signal before each iteration
                (if (and abort-signal @abort-signal)
                  (do
-                   ;; Signal the async iterator to stop
-                   (when (.-return sdk-query)
-                     (.return sdk-query))
+                   ;; interrupt() asks CLI to stop gracefully; close() kills it
+                   (-> (.interrupt sdk-query)
+                       (.catch (fn [_] (close-query!))))
                    (swap! state assoc :aborted true)
-                   (resolve @state))
+                   (finish!))
                  (-> (.next sdk-query)
                      (.then
                       (fn [^js result]
                         (if (.-done result)
-                          (resolve @state)
+                          (finish!)
                         (let [^js message (.-value result)
                               msg-type (.-type message)]
                           (case msg-type
@@ -376,12 +409,13 @@
 
                             nil)
                           (consume)))))
-                   (.catch
-                    (fn [err]
-                      (when (:on-error callbacks)
-                        ((:on-error callbacks)
-                         {:type "error" :message (.-message err)}))
-                      (resolve @state))))))]
+                     (.catch
+                      (fn [err]
+                        (js/console.error "[provider] Stream error:" (.-message err))
+                        (when (:on-error callbacks)
+                          ((:on-error callbacks)
+                           {:type "error" :message (.-message err)}))
+                        (finish!))))))]
          (consume))))))
 
 (defn response->assistant-message [state]

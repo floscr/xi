@@ -102,6 +102,10 @@
 (defn- is-ctrl-shift-n? [data]
   (= data (str ESC "[110;6u")))
 
+(defn- is-alt-v? [data]
+  (or (= data (str ESC "v"))
+      (= data (str ESC "[118;3u"))))
+
 ;; ── Word Boundary Helpers ─────────────────────────────────────────────────────
 
 (defn- word-char? [ch]
@@ -175,6 +179,7 @@
         on-palette (:on-palette opts)
         on-git (:on-git opts)
         on-notify-toggle (:on-notify-toggle opts)
+        on-paste-image (:on-paste-image opts)
 
         get-text (fn []
                    (str/join "\n" (:lines @state)))
@@ -648,6 +653,10 @@
                          ;; Alt+Backspace — delete word backward
                          (is-alt-backspace? data)
                          (delete-word-back)
+
+                         ;; Alt+V — paste clipboard image
+                         (is-alt-v? data)
+                         (when on-paste-image (on-paste-image))
 
                          ;; Bracketed paste
                          (is-paste-start? data)
