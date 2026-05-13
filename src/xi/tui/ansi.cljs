@@ -214,6 +214,24 @@
             new-sgr (trailing-sgr prefixed)]
         (recur (conj result prefixed) new-sgr more)))))
 
+(defn- break-long-word
+  "Break a single word into chunks of at most max-width visible characters.
+   ANSI escape sequences are preserved and don't count toward width."
+  [word max-width]
+  (let [len (count word)]
+    (loop [i 0, vcol 0, start 0, result []]
+      (if (>= i len)
+        (if (> i start)
+          (conj result (.substring word start i))
+          result)
+        (if (= (.charAt word i) "\033")
+          (let [end (skip-ansi-seq word i len)]
+            (recur end vcol start result))
+          (let [vcol' (inc vcol)]
+            (if (>= vcol' max-width)
+              (recur (inc i) 0 (inc i) (conj result (.substring word start (inc i))))
+              (recur (inc i) vcol' start result))))))))
+
 (defn wrap-text
   "Word-wrap text to fit within max-width columns.
    Returns vector of lines. ANSI SGR state is propagated across line
@@ -242,8 +260,8 @@
                                  (if (> (visible-width candidate) max-width)
                                    (if (seq current)
                                      (recur (conj result current) w more)
-                                     ;; Single word longer than width — force it on its own line
-                                     (recur (conj result w) "" more))
+                                     ;; Single word longer than width — hard-break it
+                                     (recur (into result (break-long-word w max-width)) "" more))
                                    (recur result candidate more))))))))
                     lines))]
       (propagate-sgr raw))))

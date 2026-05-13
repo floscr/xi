@@ -42,4 +42,16 @@
       (is (> (count result) 1))
       (doseq [line result]
         (is (clojure.string/starts-with? line dim)
-            (str "Wrapped line should start with dim: " (pr-str line)))))))
+            (str "Wrapped line should start with dim: " (pr-str line))))))
+
+  (testing "long word without spaces is hard-broken"
+    (let [text "abcdefghijklmnopqrstuvwxyz"
+          result (ansi/wrap-text text 10)]
+      (is (= ["abcdefghij" "klmnopqrst" "uvwxyz"] result))))
+
+  (testing "long base64-like string is broken at width boundary"
+    (let [text (apply str (repeat 50 "x"))
+          result (ansi/wrap-text text 20)]
+      (is (= 3 (count result)))
+      (is (every? #(<= (count %) 20) result))
+      (is (= text (apply str result))))))
