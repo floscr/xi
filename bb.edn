@@ -1,5 +1,25 @@
-{:tasks
- {clean
+{:deps {tmux-dev/tmux-dev {:git/url "https://git.example.com/floscr/tmux-dev"
+                            :git/sha "3d9e53bc38b818bfcee312065ded0aef83bdecf4"}}
+ :tasks
+ {:requires ([tmux-dev.core :as td])
+  :init (def config {:session "xi"
+                     :windows [["watch" "npx shadow-cljs watch main web"]]
+                     :print   ["Web: http://localhost:8100"]})
+
+  dev         {:doc "Start tmux dev session"
+               :task (td/start config)}
+  dev:stop    {:doc "Stop tmux dev session"
+               :task (td/stop config)}
+  dev:restart {:doc "Restart tmux dev session"
+               :task (td/restart config)}
+  dev:attach  {:doc "Attach to tmux dev session"
+               :task (td/attach config)}
+  dev:logs    {:doc "Show recent output from dev windows"
+               :task (td/logs config)}
+  dev:status  {:doc "Show dev session status"
+               :task (td/status config)}
+
+  clean
   {:doc "Clear shadow-cljs and classpath caches"
    :task (do (shell {:continue true} "find" ".shadow-cljs" "-type" "f" "-delete")
              (shell {:continue true} "find" ".cpcache" "-type" "f" "-delete")
