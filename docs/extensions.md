@@ -198,7 +198,47 @@ Add to `runtime.cljs`:
 | `parmezan` | `:tool-execution-end` | Runs parmezan CLI to fix unbalanced delimiters in Clojure files after writes. |
 | `kb` | (tools only) | Knowledge base search/get/store via `kb` CLI. |
 | `commit` | (tools+commands only) | Git commit workflow with hunk-level staging. |
-| `web` | (tools only) | Fetch URLs and return cleaned content. |
+| `web` | (tools only) | Fetch URLs with UA rotation, HTML→markdown, Jina Reader fallback, feed parsing. |
+| `perplexity` | (tools+commands) | Web search via Perplexity Pro/Max subscription. Token shared with Pi. |
+
+## Web Tools
+
+Xi exposes two web tools to the agent via MCP:
+
+### `web_search` (perplexity extension)
+
+Search the web using your Perplexity Pro/Max subscription. Returns an AI-generated answer with cited sources.
+
+```
+Parameters:
+  query    (string, required) — search query
+  recency  (string, optional) — "hour" | "day" | "week" | "month" | "year"
+  limit    (number, optional) — max sources to return (1-50)
+```
+
+**Authentication:** Uses OAuth token cached at `~/.config/pi-perplexity/auth.json` (shared with Pi). Falls back to macOS Perplexity desktop app token extraction. Run `/perplexity-login` to authenticate, `/perplexity-login --force` to re-authenticate.
+
+**Implementation:** Uses a Bun subprocess to make HTTP requests (Bun's fetch passes Cloudflare; Node's gets challenged). Parses Perplexity's SSE stream and merges incremental events into a final answer + sources.
+
+### `fetch` (web extension)
+
+Retrieve content from a URL and return it in clean, readable format.
+
+```
+Parameters:
+  url      (string, required) — URL to fetch
+  timeout  (number, optional) — timeout in seconds (default: 20, range: 5-60)
+  raw      (boolean, optional) — return raw HTML without transforms
+```
+
+**Features:**
+- **UA rotation** — cycles through 3 user agents (curl, TextBot, Chrome) to bypass bot detection
+- **HTML→Markdown** — converts headings, links, lists, code blocks, bold/italic
+- **Jina Reader fallback** — tries `r.jina.ai` for higher quality rendering before built-in conversion
+- **Bot-blocking detection** — retries with different UA on 403/503 with cloudflare/captcha responses
+- **RSS/Atom feed parsing** — extracts titles and links from feed items
+- **Low-quality detection** — detects JS-gated pages and navigation-heavy junk
+- **Output truncation** — 300 lines / 100k chars
 
 ## Prompt Badges
 
