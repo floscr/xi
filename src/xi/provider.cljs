@@ -346,8 +346,23 @@
 
              finish!
              (fn []
+               ;; Remove abort watcher so it doesn't fire after resolution
+               (when abort-signal
+                 (remove-watch abort-signal ::abort-watcher))
                (close-query!)
                (resolve @state))
+
+             ;; Watch abort signal for immediate kill — fires even while
+             ;; .next() is blocked waiting on the bridge subprocess
+             _ (when abort-signal
+                 (add-watch abort-signal ::abort-watcher
+                   (fn [_ _ old-val new-val]
+                     (when (and (not old-val) new-val)
+                       (remove-watch abort-signal ::abort-watcher)
+                       (swap! state assoc :aborted true)
+                       (-> (.interrupt sdk-query)
+                           (.catch (fn [_] nil)))
+                       (close-query!)))))
 
              consume
              (fn consume []
