@@ -300,7 +300,7 @@
             (js/Promise.resolve events)))
 
         :abort
-        (do (when @(:busy rt)
+        (do (when (and @(:busy rt) (not @(:abort-signal rt)))
               (reset! (:abort-signal rt) true)
               (emit! {:type :aborted}))
             (js/Promise.resolve nil))
