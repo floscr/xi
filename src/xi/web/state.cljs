@@ -13,4 +13,5 @@
          :model            nil
          :cwd              nil
          :collapsed-blocks #{}
-         :resume-sessions  nil}))          ;; nil = hidden, [] = loading, [...] = show picker
+         :resume-sessions  nil
+         :lightbox-image   nil}))          ;; nil = hidden, [] = loading, [...] = show picker

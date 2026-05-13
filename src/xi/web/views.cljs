@@ -5,9 +5,20 @@
             [xi.web.ws :as ws]
             [ui.icon :as icon]
             [ui.button :as button]
+            [ui.lightbox :as lightbox]
             [ui.spinner :as spinner]
             [ui.badge :as badge]
             [ui.form :as form]))
+
+;; ---------------------------------------------------------------------------
+;; Lightbox
+;; ---------------------------------------------------------------------------
+
+(defn- open-lightbox! [src]
+  (swap! state/app-state assoc :lightbox-image src))
+
+(defn- close-lightbox! []
+  (swap! state/app-state assoc :lightbox-image nil))
 
 ;; ---------------------------------------------------------------------------
 ;; Chat actions
@@ -107,10 +118,13 @@
          [:div {:class ["user-images"]}
           (map-indexed
            (fn [i img]
-             [:img {:key i
-                    :class ["user-image"]
-                    :src (str "data:" (:media-type img) ";base64," (:data img))
-                    :alt "attached image"}])
+             (let [src (str "data:" (:media-type img) ";base64," (:data img))]
+               (lightbox/image-thumbnail
+                {:key i
+                 :src src
+                 :class ["user-image"]
+                 :alt "attached image"
+                 :on-click #(open-lightbox! src)})))
            (:images msg))])
        [:p (:text msg)]]]]
 
@@ -233,8 +247,10 @@
      (map-indexed
       (fn [idx img]
         [:div {:class ["compose-image-thumb"] :key idx}
-         [:img {:src (:preview-url img)
-                :alt "attachment"}]
+         (lightbox/image-thumbnail
+          {:src (:preview-url img)
+           :alt "attachment"
+           :on-click #(open-lightbox! (:preview-url img))})
          [:button {:class ["compose-image-remove"]
                    :on {:click (fn [_] (remove-compose-image! idx))}}
           (icon/icon {:icon-name :x :size :sm})]])
@@ -325,6 +341,8 @@
                        (icon/icon {:icon-name :plus :size :sm})]]})
    (working-indicator)
    (resume-overlay)
+   (lightbox/lightbox {:src (:lightbox-image @state/app-state)
+                       :on-close close-lightbox!})
    [:div {:class ["timeline"]}
     [:div {:class ["timeline-content"]}
      (map-indexed

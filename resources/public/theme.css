@@ -1953,6 +1953,69 @@ a.btn-link {
 }
 
 
+/* ── Lightbox overlay ─────────────────────────────────────────────── */
+
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  animation: lightbox-in 0.15s ease;
+}
+
+@keyframes lightbox-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.lightbox-image {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: var(--radius-lg);
+  cursor: default;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: var(--size-4);
+  right: var(--size-4);
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: white;
+  padding: 0;
+  transition: background 0.15s;
+}
+
+.lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Thumbnail ───────────────────────────────────────────────────── */
+
+.lightbox-thumb {
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+
+.lightbox-thumb:hover {
+  opacity: 0.85;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+
 /* ── Markdown Docs ────────────────────────────────────────────────── */
 
 .md-docs {
@@ -2074,6 +2137,206 @@ a.btn-link {
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+
+/* ── Player Bar ─────────────────────────────────────────────── */
+
+.player-bar {
+  width: 100%;
+}
+
+/* Progress slider at top */
+.player-bar-progress {
+  width: 100%;
+  height: var(--size-1);
+  cursor: pointer;
+  position: relative;
+  transition: height 0.1s;
+}
+
+.player-bar-progress:hover {
+  height: 6px;
+}
+
+.player-bar-progress-track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.player-bar-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+
+/* Main row */
+.player-bar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-3);
+}
+
+/* Left section: artwork + info + favorite */
+.player-bar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.player-bar-artwork {
+  width: var(--size-10);
+  height: var(--size-10);
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-2);
+}
+
+.player-bar-info {
+  min-width: 0;
+}
+
+.player-bar-title {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: var(--size-5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-bar-subtitle {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Center section: transport controls */
+.player-bar-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: var(--size-1);
+}
+
+/* Right section: time + volume */
+.player-bar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1;
+  min-width: 0;
+  gap: var(--size-1);
+}
+
+.player-bar-time {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Icon buttons */
+.player-bar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-8);
+  height: var(--size-8);
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--fg-1);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, color 0.15s;
+}
+
+.player-bar-icon-btn:hover {
+  background: var(--bg-2);
+}
+
+.player-bar-icon-btn.active {
+  color: var(--accent);
+}
+
+.player-bar-icon-btn.player-bar-fav-active {
+  color: var(--danger);
+}
+
+.player-bar-icon-btn.player-bar-fav-active svg {
+  fill: currentColor;
+}
+
+.player-bar-icon-btn svg {
+  width: var(--size-4);
+  height: var(--size-4);
+}
+
+/* Play button (round, inverted) */
+.player-bar-play-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-9);
+  height: var(--size-9);
+  flex-shrink: 0;
+  background: var(--fg-0);
+  color: var(--bg-0);
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.player-bar-play-btn:hover {
+  filter: brightness(0.85);
+}
+
+.player-bar-play-btn svg {
+  width: var(--size-4);
+  height: var(--size-4);
+}
+
+/* Responsive: hide shuffle/repeat on small screens */
+.player-bar-hide-sm {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .player-bar-hide-sm {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 639px) {
+  .player-bar-time {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .player-bar-left {
+    width: 14rem;
+    flex: none;
+  }
+  .player-bar-right {
+    width: 14rem;
+    flex: none;
+  }
 }
 
 
