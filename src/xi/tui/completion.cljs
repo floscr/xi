@@ -106,25 +106,35 @@
      :prompt     — input prompt string (default: \"filter: \")
      :max-visible — max visible items (default: 10)
      :on-select  — (fn [item]) called when user confirms selection
-     :on-cancel  — (fn []) called when user presses Escape"
+     :on-cancel  — (fn []) called when user presses Escape
+     :header-fn  — (fn []) returns header string to render above items (optional)
+     :key-bindings — vec of {:key-fn (fn [data]) :handler (fn [state-atom])} for custom keys"
   [opts]
   (let [all-items (:items opts)
         prompt (or (:prompt opts) "filter: ")
         max-visible (or (:max-visible opts) 10)
         on-select (:on-select opts)
         on-cancel (:on-cancel opts)
+        header-fn (:header-fn opts)
+        key-bindings (or (:key-bindings opts) [])
 
         state (atom {:query ""
                      :selected 0
+                     :all-items all-items
                      :filtered all-items})
 
         refilter! (fn []
-                    (let [{:keys [query]} @state
+                    (let [{:keys [query all-items]} @state
                           filtered (filter-and-sort all-items query)]
                       (swap! state assoc
                              :filtered filtered
                              :selected (min (:selected @state)
                                             (max 0 (dec (count filtered)))))))
+
+        update-items! (fn [new-items]
+                        (swap! state assoc :all-items new-items)
+                        (refilter!)
+                        (tui/request-render!))
 
         move-selection (fn [delta]
                          (let [{:keys [filtered selected]} @state
@@ -154,16 +164,26 @@
         cancel (fn []
                  (when on-cancel (on-cancel)))
 
+        check-key-bindings
+        (fn [data]
+          (some (fn [{:keys [key-fn handler]}]
+                  (when (key-fn data)
+                    (handler state update-items!)
+                    true))
+                key-bindings))
+
         handle-input
         (fn [data]
           (cond
+            ;; Custom key-bindings take priority
+            (check-key-bindings data) nil
             (is-escape? data)          (cancel)
             (is-enter? data)           (confirm)
             (or (is-arrow-up? data)
                 (ctrl? data "P"))      (move-selection -1)
             (or (is-arrow-down? data)
-                (ctrl? data "N")
-                (is-tab? data))        (move-selection 1)
+                (ctrl? data "N"))      (move-selection 1)
+            (is-tab? data)             (move-selection 1)
             (is-backspace? data)       (delete-back)
             (ctrl? data "U")           (do (swap! state assoc :query "")
                                            (refilter!)
@@ -183,13 +203,16 @@
      :invalidate (fn [])
      :render
      (fn [width]
-       (let [{:keys [query selected filtered]} @state
+       (let [{:keys [query selected filtered all-items]} @state
              border-top (ansi/fg :border (apply str (repeat width "─")))
              border-bot (ansi/fg :border (apply str (repeat width "─")))
              prompt-w (ansi/visible-width prompt)
              ;; Render the query input with cursor
              cursor-ch (str ansi/ESC "7m" " " ansi/ESC "27m")
              query-line (str (ansi/fg :accent prompt) query cursor-ch)
+
+             ;; Optional header line
+             header-line (when header-fn (header-fn))
 
              ;; Visible window around selected item
              n (count filtered)
@@ -240,6 +263,7 @@
          (into []
                (concat
                 [border-top]
+                (when header-line [header-line])
                 [""]
                 item-lines
                 [""]

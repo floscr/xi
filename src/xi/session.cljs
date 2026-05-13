@@ -248,6 +248,17 @@
          (filter #(str/ends-with? % ext))
          (mapv #(.join node-path dir %)))))
 
+(defn- list-dir-subdirs
+  "List subdirectory names in a directory."
+  [dir]
+  (if-not (fs/existsSync dir)
+    []
+    (->> (fs/readdirSync dir)
+         (filter (fn [name]
+                   (let [full (.join node-path dir name)]
+                     (try (.isDirectory (fs/statSync full))
+                          (catch :default _ false))))))))
+
 (defn list-sessions
   "List all sessions for a CWD from all sources. Returns vec of session
    summaries, newest first. Sources: Xi metadata, Claude CLI, Pi sessions."
@@ -264,6 +275,36 @@
         ;; Merge, dedup by session-id (Xi meta takes priority), sort by timestamp
         xi-ids (set (keep :cli-session-id xi-sessions))
         ;; Don't show claude sessions that have Xi metadata (avoid duplicates)
+        claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
+    (->> (concat xi-sessions claude-filtered pi-sessions)
+         (sort-by #(or (:last-accessed %) (:timestamp %)))
+         reverse
+         vec)))
+
+(defn list-all-sessions
+  "List sessions across ALL CWDs from all sources. Returns vec of session
+   summaries, newest first. Each summary includes :cwd."
+  []
+  (let [;; Xi: each subdir under XI_SESSIONS_DIR is an encoded CWD
+        xi-sessions (->> (list-dir-subdirs XI_SESSIONS_DIR)
+                         (mapcat (fn [subdir]
+                                   (let [dir (.join node-path XI_SESSIONS_DIR subdir)]
+                                     (->> (list-dir-files dir ".json")
+                                          (keep read-xi-session-meta))))))
+        ;; Claude: each subdir under CLAUDE_PROJECTS_DIR is an encoded CWD
+        claude-sessions (->> (list-dir-subdirs CLAUDE_PROJECTS_DIR)
+                             (mapcat (fn [subdir]
+                                       (let [dir (.join node-path CLAUDE_PROJECTS_DIR subdir)]
+                                         (->> (list-dir-files dir ".jsonl")
+                                              (keep read-claude-session-summary))))))
+        ;; Pi: each subdir under PI_SESSIONS_DIR is an encoded CWD
+        pi-sessions (->> (list-dir-subdirs PI_SESSIONS_DIR)
+                         (mapcat (fn [subdir]
+                                   (let [dir (.join node-path PI_SESSIONS_DIR subdir)]
+                                     (->> (list-dir-files dir ".jsonl")
+                                          (keep read-pi-session-summary))))))
+        ;; Dedup: Xi meta takes priority over claude sessions with same session-id
+        xi-ids (set (keep :cli-session-id xi-sessions))
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
     (->> (concat xi-sessions claude-filtered pi-sessions)
          (sort-by #(or (:last-accessed %) (:timestamp %)))
