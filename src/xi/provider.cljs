@@ -281,34 +281,39 @@
         saw-stream-events? (atom false)
 
         cwd (or (:cwd opts) (.cwd js/process))
+        personal-agent? (:personal-agent? opts)
         resume-id (or (:resume-session-id opts) (get-session-id))
-        mcp-server (build-mcp-server cwd)
-        query-opts (doto (clj->js
-                          (cond-> {:cwd cwd
-                                   :permissionMode "bypassPermissions"
-                                   :allowDangerouslySkipPermissions true
-                                   :includePartialMessages true
-                                   :disallowedTools DISALLOWED_BUILTIN_TOOLS
-                                   :allowedTools [(str MCP_TOOL_PREFIX "*")]}
-                            claude-executable
-                            (assoc :pathToClaudeCodeExecutable claude-executable)
+        mcp-server (when-not personal-agent? (build-mcp-server cwd))
+        query-opts (let [base (clj->js
+                               (cond-> {:cwd cwd
+                                        :permissionMode "bypassPermissions"
+                                        :allowDangerouslySkipPermissions true
+                                        :includePartialMessages true
+                                        :disallowedTools DISALLOWED_BUILTIN_TOOLS
+                                        :allowedTools (if personal-agent?
+                                                        []
+                                                        [(str MCP_TOOL_PREFIX "*")])}
+                                 claude-executable
+                                 (assoc :pathToClaudeCodeExecutable claude-executable)
 
-                            (:model opts)
-                            (assoc :model (:model opts))
+                                 (:model opts)
+                                 (assoc :model (:model opts))
 
-                            (:system opts)
-                            (assoc :systemPrompt
-                                   #js {:type "preset"
-                                        :preset "claude_code"
-                                        :append (:system opts)})
+                                 (:system opts)
+                                 (assoc :systemPrompt
+                                        #js {:type "preset"
+                                             :preset "claude_code"
+                                             :append (:system opts)})
 
-                            (:effort opts)
-                            (assoc :effort (:effort opts))
+                                 (:effort opts)
+                                 (assoc :effort (:effort opts))
 
-                            resume-id
-                            (assoc :resume resume-id)))
-                     (unchecked-set "mcpServers"
-                                    (js-obj MCP_SERVER_NAME mcp-server)))
+                                 resume-id
+                                 (assoc :resume resume-id)))]
+                     (when mcp-server
+                       (unchecked-set base "mcpServers"
+                                      (js-obj MCP_SERVER_NAME mcp-server)))
+                     base)
 
         abort-signal (:abort-signal opts)
         images (:images opts)

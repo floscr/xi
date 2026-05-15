@@ -84,7 +84,9 @@
                         (fn [_stream text]
                           (buffers/append! mgr "Logs" text)))
                        mgr))
-        manager (rm/create-manager {})
+        manager (rm/create-manager
+                         (cond-> {}
+                           personal-agent-only (assoc :personal-agent? true)))
         server (ws/start! manager {:port port})
         actual-port (:port server)]
 

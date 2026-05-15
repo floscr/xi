@@ -41,6 +41,7 @@
                   :effort (:effort opts)
                   :resume-session-id (:resume-session-id opts)
                   :abort-signal (:abort-signal opts)
+                  :personal-agent? (:personal-agent? opts)
                   :on-text (:on-text opts)
                   :on-thinking (:on-thinking opts)
                   :on-tool-start (:on-tool-start opts)

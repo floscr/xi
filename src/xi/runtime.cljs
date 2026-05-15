@@ -72,7 +72,7 @@
    prompt-or-map: string or {:text ... :images [...]}"
   [rt prompt-or-map]
   (let [{:keys [emit!]} (:bus rt)
-        {:keys [model effort sess cwd agents-md]} @(:state rt)
+        {:keys [model effort sess cwd agents-md personal-agent?]} @(:state rt)
         cli-session-id (:cli-session-id @sess)
         abort-signal (:abort-signal rt)
         prompt (if (map? prompt-or-map) (:text prompt-or-map) prompt-or-map)
@@ -87,6 +87,7 @@
                   :cwd cwd
                   :effort effort
                   :abort-signal abort-signal
+                  :personal-agent? personal-agent?
 
                   :on-text
                   (fn [text]
@@ -138,10 +139,12 @@
   "Create a headless runtime. Returns runtime map.
    opts:
      :model - model id (default: claude-sonnet-4)
-     :cwd   - working directory (default: process.cwd)"
+     :cwd   - working directory (default: process.cwd)
+     :personal-agent? - personal assistant mode (no tools)"
   [opts]
   (register-extensions!)
   (let [settings (load-settings)
+        personal-agent? (:personal-agent? opts)
         model (or (:model opts)
                   (aget js/process.env "XI_MODEL")
                   (:defaultModel settings)
@@ -150,15 +153,18 @@
                    (get THINKING_TO_EFFORT (:defaultThinkingLevel settings))
                    "high")
         cwd (or (:cwd opts) (aget js/process.env "XI_CWD") (.cwd js/process))
-        agents-files (system-prompt/find-agents-md cwd)
-        agents-md (system-prompt/load-agents-md cwd)
+        agents-files (if personal-agent? [] (system-prompt/find-agents-md cwd))
+        agents-md (if personal-agent?
+                    system-prompt/PERSONAL_AGENT_PROMPT
+                    (system-prompt/load-agents-md cwd))
         bus (events/create-bus)
         sess (atom (session/create-session cwd))
         state (atom {:model model
                      :effort effort
                      :cwd cwd
                      :sess sess
-                     :agents-md agents-md})
+                     :agents-md agents-md
+                     :personal-agent? personal-agent?})
         event-history (atom [])
         rt {:bus bus
             :state state
