@@ -39,29 +39,53 @@
 
 Format as a structured summary. Be thorough but concise.")
 
+(def ^:private SUMMARIZE_CHAR_LIMIT
+  "Max chars to send to the summarizer (~150k tokens at 4 chars/token).
+   Keeps well within Claude's context window even with system prompt overhead."
+  600000)
+
+(defn- truncate-for-summarization
+  "Truncate text to fit summarizer context. Keeps the tail (most recent) and
+   a prefix from the start for orientation."
+  [text]
+  (if (<= (count text) SUMMARIZE_CHAR_LIMIT)
+    text
+    (let [prefix-size (quot SUMMARIZE_CHAR_LIMIT 5)  ;; 20% from start
+          suffix-size (- SUMMARIZE_CHAR_LIMIT prefix-size 200) ;; rest from end
+          prefix (subs text 0 prefix-size)
+          suffix (subs text (- (count text) suffix-size))]
+      (str prefix
+           "\n\n[... " (- (count text) SUMMARIZE_CHAR_LIMIT) " characters omitted ...]\n\n"
+           suffix))))
+
 (defn- summarize-via-claude
   "Use claude CLI to summarize messages. Returns promise of summary string."
   [messages-text]
-  (js/Promise.
-   (fn [resolve reject]
-     (let [proc (js/Bun.spawn
-                 #js ["claude" "-p" "--no-input"
-                      "--system-prompt" COMPACT_SYSTEM_PROMPT
-                      "--max-tokens" "4096"]
-                 #js {:stdout "pipe" :stderr "pipe"
-                      :stdin "pipe"
-                      :cwd (.cwd js/process)})]
-       ;; Write conversation to stdin
-       (.write (.-stdin proc) messages-text)
-       (.end (.-stdin proc))
-       (-> (js/Promise.all #js [(.text (.-stdout proc))
-                                 (.text (.-stderr proc))])
-           (.then (fn [results]
-                    (let [stdout (aget results 0)
-                          code (.-exitCode proc)]
-                      (if (= 0 code)
-                        (resolve stdout)
-                        (reject (js/Error. (str "Claude summarization failed: exit " code))))))))))))
+  (let [input (truncate-for-summarization messages-text)]
+    (js/Promise.
+     (fn [resolve reject]
+       (let [proc (js/Bun.spawn
+                   #js ["claude" "-p" "--no-input"
+                        "--system-prompt" COMPACT_SYSTEM_PROMPT
+                        "--max-tokens" "4096"]
+                   #js {:stdout "pipe" :stderr "pipe"
+                        :stdin "pipe"
+                        :cwd (.cwd js/process)})]
+         ;; Write conversation to stdin
+         (.write (.-stdin proc) input)
+         (.end (.-stdin proc))
+         (-> (js/Promise.all #js [(.text (.-stdout proc))
+                                   (.text (.-stderr proc))])
+             (.then (fn [results]
+                      (let [stdout (aget results 0)
+                            stderr (aget results 1)
+                            code (.-exitCode proc)]
+                        (if (= 0 code)
+                          (resolve stdout)
+                          (reject (js/Error.
+                                   (str "Claude summarization failed (exit " code "): "
+                                        (subs (str/trim stderr) 0 (min 200 (count stderr)))))))))))))))
+
 
 (defn- format-messages-for-summary
   "Format messages into readable text for the summarizer."
@@ -108,3 +132,4 @@ Format as a structured summary. Be thorough but concise.")
                                                   :text (str "<summary>\n" summary "\n</summary>\n\n"
                                                              "The conversation history before this point was compacted into the above summary.")}]}]
                    (into [compacted-msg] recent-messages)))))))
+)

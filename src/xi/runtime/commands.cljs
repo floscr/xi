@@ -48,12 +48,13 @@
           (when (seq @current-text)
             (swap! parts conj (str "### Assistant\n" @current-text))
             (reset! current-text ""))
-          (swap! parts conj
-                 (str "### Tool: " (:name event) "\n"
-                      "```json\n"
-                      (try (js/JSON.stringify (clj->js (:arguments event)) nil 2)
-                           (catch :default _ "{}"))
-                      "\n```")))
+          (let [json-str (try (js/JSON.stringify (clj->js (:arguments event)) nil 2)
+                              (catch :default _ "{}"))]
+            (swap! parts conj
+                   (str "### Tool: " (:name event) "\n"
+                        "```json\n"
+                        (truncate json-str 2000)
+                        "\n```"))))
 
         :tool-result
         (let [text (extract-text-content (:content event))]
