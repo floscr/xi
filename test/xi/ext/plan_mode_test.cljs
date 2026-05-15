@@ -79,6 +79,17 @@
     (with-plan-mode
       #(is (nil? (tool-hook {:name "bash" :arguments {:command "mv foo.txt bar.txt"}} hook-state))))))
 
+;; ── Toggle command returns data ────────────────────────────────────
+
+(deftest toggle-returns-command-result
+  (testing "toggle returns a command-result event, not nil"
+    (let [result (toggle-fn {})]
+      (is (= :command-result (:type result)))
+      (is (= "plan" (:command result)))
+      (is (string? (:text result)))
+      ;; Toggle back off
+      (toggle-fn {}))))
+
 ;; ── Read-only tools always allowed ─────────────────────────────────
 
 (deftest on-allows-read-tool

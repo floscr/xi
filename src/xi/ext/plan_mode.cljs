@@ -49,39 +49,32 @@ An existing plan file is at `tasks/todo.md`. Read it first, then update or repla
   [messages _state]
   messages)
 
+(defn- plan-file?
+  "Check if path is the plan file (allowed in plan mode)."
+  [path]
+  (= "tasks/todo.md" path))
+
 (defn- plan-mode-tool-call
-  "Tool call hook: block write/edit tools and dangerous bash when plan mode is on."
+  "Tool call hook: block write/edit tools and dangerous bash when plan mode is on.
+   Returns tool-call to allow, nil to block. No side effects."
   [tool-call _state]
   (if-not (:enabled @state)
     tool-call
     (let [{:keys [name arguments]} tool-call]
       (case name
-        "write"
-        (if (= "tasks/todo.md" (:path arguments))
-          tool-call ;; allow writing to plan file
-          (do (println (str "  [plan-mode] Blocked write to " (:path arguments)))
-              nil))
-
-        "edit"
-        (if (= "tasks/todo.md" (:path arguments))
-          tool-call
-          (do (println (str "  [plan-mode] Blocked edit to " (:path arguments)))
-              nil))
-
-        "bash"
-        (if (read-only-bash? (:command arguments))
-          tool-call
-          (do (println (str "  [plan-mode] Blocked non-read-only bash: " (:command arguments)))
-              nil))
-
-        ;; Allow all other tools
+        "write" (when (plan-file? (:path arguments)) tool-call)
+        "edit"  (when (plan-file? (:path arguments)) tool-call)
+        "bash"  (when (read-only-bash? (:command arguments)) tool-call)
+        ;; Allow all other tools (read, grep, find, ls, etc.)
         tool-call))))
 
 (defn- toggle-plan-mode
-  "Toggle plan mode on/off."
+  "Toggle plan mode on/off. Returns a command result event."
   [_ctx]
   (swap! state update :enabled not)
-  (println (str "\nPlan mode: " (if (:enabled @state) "ON" "OFF"))))
+  {:type :command-result
+   :command "plan"
+   :text (str "Plan mode: " (if (:enabled @state) "ON" "OFF"))})
 
 (def extension
   {:name "plan-mode"
