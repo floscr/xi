@@ -65,9 +65,8 @@ Format as a structured summary. Be thorough but concise.")
     (js/Promise.
      (fn [resolve reject]
        (let [proc (js/Bun.spawn
-                   #js ["claude" "-p" "--no-input"
-                        "--system-prompt" COMPACT_SYSTEM_PROMPT
-                        "--max-tokens" "4096"]
+                   #js ["claude" "-p"
+                        "--system-prompt" COMPACT_SYSTEM_PROMPT]
                    #js {:stdout "pipe" :stderr "pipe"
                         :stdin "pipe"
                         :cwd (.cwd js/process)})]
@@ -75,7 +74,7 @@ Format as a structured summary. Be thorough but concise.")
          (.write (.-stdin proc) input)
          (.end (.-stdin proc))
          (-> (js/Promise.all #js [(.text (.-stdout proc))
-                                   (.text (.-stderr proc))])
+                                  (.text (.-stderr proc))])
              (.then (fn [results]
                       (let [stdout (aget results 0)
                             stderr (aget results 1)
@@ -84,7 +83,7 @@ Format as a structured summary. Be thorough but concise.")
                           (resolve stdout)
                           (reject (js/Error.
                                    (str "Claude summarization failed (exit " code "): "
-                                        (subs (str/trim stderr) 0 (min 200 (count stderr)))))))))))))))
+                                        (subs (str/trim stderr) 0 (min 200 (count stderr))))))))))))))))
 
 
 (defn- format-messages-for-summary
@@ -108,28 +107,27 @@ Format as a structured summary. Be thorough but concise.")
                      (str "## " (str/upper-case role) "\n" text)))
                  messages)))
 
-(defn summarize
-  "Summarize conversation text via Claude CLI. Returns promise of summary string."
-  [text]
-  (summarize-via-claude text))
+ (defn summarize
+   "Summarize conversation text via Claude CLI. Returns promise of summary string."
+   [text]
+   (summarize-via-claude text))
 
 ;; ── Compaction ────────────────────────────────────────────────────────────────
 
-(defn compact-messages
-  "Compact older messages into a summary. Keeps the most recent messages intact.
+ (defn compact-messages
+   "Compact older messages into a summary. Keeps the most recent messages intact.
    Returns promise of new message vec with compacted prefix."
-  [messages]
-  (let [total (count messages)
-        ;; Keep last ~25% of messages intact
-        keep-count (max 4 (quot total 4))
-        old-messages (subvec (vec messages) 0 (- total keep-count))
-        recent-messages (subvec (vec messages) (- total keep-count))
-        summary-input (format-messages-for-summary old-messages)]
-    (-> (summarize-via-claude summary-input)
-        (.then (fn [summary]
-                 (let [compacted-msg {:role "user"
-                                      :content [{:type "text"
-                                                  :text (str "<summary>\n" summary "\n</summary>\n\n"
-                                                             "The conversation history before this point was compacted into the above summary.")}]}]
-                   (into [compacted-msg] recent-messages)))))))
-)
+   [messages]
+   (let [total (count messages)
+         ;; Keep last ~25% of messages intact
+         keep-count (max 4 (quot total 4))
+         old-messages (subvec (vec messages) 0 (- total keep-count))
+         recent-messages (subvec (vec messages) (- total keep-count))
+         summary-input (format-messages-for-summary old-messages)]
+     (-> (summarize-via-claude summary-input)
+         (.then (fn [summary]
+                  (let [compacted-msg {:role "user"
+                                       :content [{:type "text"
+                                                   :text (str "<summary>\n" summary "\n</summary>\n\n"
+                                                              "The conversation history before this point was compacted into the above summary.")}]}]
+                    (into [compacted-msg] recent-messages)))))))
