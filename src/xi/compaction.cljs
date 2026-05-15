@@ -84,6 +84,11 @@ Format as a structured summary. Be thorough but concise.")
                      (str "## " (str/upper-case role) "\n" text)))
                  messages)))
 
+(defn summarize
+  "Summarize conversation text via Claude CLI. Returns promise of summary string."
+  [text]
+  (summarize-via-claude text))
+
 ;; ── Compaction ────────────────────────────────────────────────────────────────
 
 (defn compact-messages

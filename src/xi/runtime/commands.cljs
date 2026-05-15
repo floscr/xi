@@ -28,7 +28,7 @@
          (str/join "\n"))
     :else (str content)))
 
-(defn- format-scrollback [events]
+(defn format-scrollback [events]
   (let [parts (atom [])
         current-text (atom "")]
     (doseq [event events]
@@ -152,6 +152,9 @@
     [{:type :command-result :command "model" :model model}]
     [{:type :model-changed :model args}]))
 
+(defn- cmd-compact [{:keys [args]}]
+  [{:type :compact-requested :focus args}])
+
 (defn- cmd-clear [{:keys [sess]}]
   (let [pa? (:personal-agent? @sess)]
     (reset! sess (session/create-session (:cwd @sess)
@@ -235,6 +238,11 @@
     {:name "model"
      :description "Show or set model"
      :handler cmd-model
+     :scope :runtime}
+
+    {:name "compact"
+     :description "Summarize conversation to reduce context"
+     :handler cmd-compact
      :scope :runtime}
 
     {:name "clear"

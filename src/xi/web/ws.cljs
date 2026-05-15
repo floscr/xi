@@ -164,6 +164,13 @@
     :session-cleared
     (swap! state/app-state assoc :messages [])
 
+    :compact-start
+    (append-msg! {:type :status :text "Compacting conversation..."})
+
+    :session-compacted
+    (swap! state/app-state assoc :messages
+           [{:type :status :text "Session compacted. Summary preserved as context."}])
+
     :session-resumed
     (let [msgs (:messages event)
           results-by-id (into {}

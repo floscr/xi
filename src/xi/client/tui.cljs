@@ -642,6 +642,12 @@
         ;; Wire up forward reference
         _ (reset! editor-comp-ref editor-comp)
 
+        ;; Wire TUI bridge so extensions can show completion menus and insert text
+        _ (ext/set-completion-handler! show-completion-menu!)
+        _ (ext/set-insert-text-handler!
+           (fn [text]
+             ((:insert-text @editor-comp-ref) text)))
+
         ;; Set up stdout/stderr interception — capture external writes to Logs buffer
         _ (term/intercept-stdout!
            (fn [_stream text]
@@ -824,6 +830,16 @@
                 (when (not= @active-view "Chat")
                   (switch-to-buffer! "Chat"))
                 (add-status-message! (ansi/fg :dim "New session started.")))
+
+            :compact-start
+            (add-status-message! (ansi/fg :dim "Compacting conversation..."))
+
+            :session-compacted
+            (do ((:clear chat-container))
+                (reset! buffer-mgr {"Logs" []})
+                (when (not= @active-view "Chat")
+                  (switch-to-buffer! "Chat"))
+                (add-status-message! (ansi/fg :dim "Session compacted. Summary preserved as context.")))
 
             :session-resumed
             (do

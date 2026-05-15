@@ -4,6 +4,7 @@
   (:require [xi.ext.core :as ext]
             [xi.ext.clipboard-image :as ext-clipboard-image]
             [xi.image :as image]
+            [xi.compaction :as compaction]
             [xi.ext.commit :as ext-commit]
             [xi.ext.done-notify :as ext-done-notify]
             [xi.ext.kb :as ext-kb]
@@ -81,6 +82,12 @@
 
     (emit! {:type :turn-start})
 
+    (let [compact-summary (:compact-summary @(:state rt))
+          system (when (nil? cli-session-id)
+                   (cond-> agents-md
+                     compact-summary
+                     (str "\n\n# Conversation Summary (from /compact)\n\n" compact-summary)))]
+
     (-> (loop/run-turn
          (cond-> {:model model
                   :prompt prompt
@@ -114,7 +121,7 @@
                     (emit! {:type :error :error err}))}
            (seq images) (assoc :images images)
            cli-session-id (assoc :resume-session-id cli-session-id)
-           (and agents-md (nil? cli-session-id)) (assoc :system agents-md)))
+           system (assoc :system system)))
 
         (.then (fn [result]
                  (when (:aborted result)
@@ -131,7 +138,36 @@
                          :session-id (:session-id result)
                          :usage (:usage result)
                          :cost (:cost result)})
-                 result)))))
+                 result))))))
+
+;; ── Compaction ────────────────────────────────────────────────────────────────
+
+(defn- perform-compaction!
+  "Run compaction: summarize event history, clear session, store summary.
+   Returns promise."
+  [rt focus]
+  (let [{:keys [emit!]} (:bus rt)
+        sess (:sess rt)
+        event-history @(:event-history rt)
+        scrollback (commands/format-scrollback event-history)
+        summary-input (if focus
+                        (str scrollback "\n\n[Focus the summary on: " focus "]")
+                        scrollback)
+        pa? (:personal-agent? @sess)]
+    (emit! {:type :compact-start})
+    (-> (compaction/summarize summary-input)
+        (.then (fn [summary]
+                 (reset! sess (session/create-session (:cwd @sess)
+                                (when pa? {:personal-agent? true})))
+                 (provider/clear-session!)
+                 (swap! (:state rt) assoc :compact-summary summary)
+                 (reset! (:event-history rt) [])
+                 (sync-hook-state! rt)
+                 (emit! {:type :session-compacted :summary summary})))
+        (.catch (fn [err]
+                  (emit! {:type :command-error
+                          :command "compact"
+                          :text (str "Compaction failed: " (.-message err))}))))))
 
 ;; ── Public API ───────────────────────────────────────────────────────────────
 
@@ -298,16 +334,18 @@
                                                         :busy @(:busy rt)
                                                         :event-history @(:event-history rt)
                                                         :personal-agent? personal-agent?})
+              compact-event (first (filter #(= :compact-requested (:type %)) events))
               prompt-event (first (filter #(= :dispatch-prompt (:type %)) events))
-              other-events (remove #(= :dispatch-prompt (:type %)) events)]
+              other-events (remove #(#{:dispatch-prompt :compact-requested} (:type %)) events)]
           (doseq [event other-events]
             (when (= :model-changed (:type event))
               (swap! (:state rt) assoc :model (:model event))
               (provider/clear-session!))
             (emit! event))
-          (if prompt-event
-            (dispatch! rt (:text prompt-event))
-            (js/Promise.resolve events)))
+          (cond
+            compact-event (perform-compaction! rt (:focus compact-event))
+            prompt-event  (dispatch! rt (:text prompt-event))
+            :else         (js/Promise.resolve events)))
 
         :abort
         (do (when (and @(:busy rt) (not @(:abort-signal rt)))
