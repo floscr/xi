@@ -18,7 +18,8 @@
      (fn [resolve _reject]
        (let [proc (js/Bun.spawn
                    #js ["bash" "-c" command]
-                   #js {:stdout "pipe"
+                   #js {:stdin "ignore"
+                        :stdout "pipe"
                         :stderr "pipe"
                         :env (unchecked-get js/process "env")
                         :cwd (or cwd (.cwd js/process))})
