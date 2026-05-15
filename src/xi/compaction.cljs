@@ -38,15 +38,18 @@
 
 ;; ── Summarization ─────────────────────────────────────────────────────────────
 
-(def ^:private COMPACT_SYSTEM_PROMPT
-  "You are summarizing a conversation for agent continuity. Produce a concise summary that preserves:
+(def ^:private COMPACT_INSTRUCTIONS
+  "Summarize the following conversation for agent continuity. Produce a concise summary that preserves:
 1. All file operations (which files were read, written, edited) — list these explicitly
 2. Key decisions made and their rationale
 3. Current state of the task (what's done, what's pending)
 4. Any errors encountered and how they were resolved
 5. Important context the agent will need to continue
 
-Format as a structured summary. Be thorough but concise.")
+Format as a structured summary. Be thorough but concise.
+
+---
+")
 
 (def ^:private SUMMARIZE_CHAR_LIMIT
   "Max chars to send to the summarizer."
@@ -68,9 +71,8 @@ Format as a structured summary. Be thorough but concise.")
 (defn summarize
   "Summarize conversation text via SDK. Returns promise of summary string."
   [text]
-  (let [input (truncate-for-summarization text)
-        opts (cond-> {:systemPrompt COMPACT_SYSTEM_PROMPT
-                      :model "claude-sonnet-4-20250514"
+  (let [input (str COMPACT_INSTRUCTIONS (truncate-for-summarization text))
+        opts (cond-> {:model "claude-sonnet-4-20250514"
                       :permissionMode "bypassPermissions"}
                claude-executable
                (assoc :pathToClaudeCodeExecutable claude-executable))
