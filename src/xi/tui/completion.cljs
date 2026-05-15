@@ -246,7 +246,7 @@
                             desc-str (when (seq desc)
                                        (str " " (ansi/fg :dim desc)))
                             line (str prefix label-str desc-str)]
-                        line))
+                        (ansi/truncate-to-width line width)))
                     (range scroll-start scroll-end)))
 
              ;; Empty state

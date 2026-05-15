@@ -132,9 +132,6 @@
          (str/replace padded (str ESC "0m") (str ESC "0m" bg-code))
          ESC "0m")))
 
-(def ^:private REVERSE_ON  (str ESC "7m"))
-(def ^:private REVERSE_OFF (str ESC "27m"))
-
 (defn- skip-ansi-seq
   "Return the end index of an ANSI escape sequence starting at i."
   [line i len]
@@ -149,6 +146,38 @@
             (recur (inc j))))))
     ;; Other esc: \033 + one char
     (min len (+ i 2))))
+
+(def ^:private REVERSE_ON  (str ESC "7m"))
+(def ^:private REVERSE_OFF (str ESC "27m"))
+
+(defn truncate-to-width
+  "Truncate an ANSI-formatted string to max visible columns.
+   Adds ellipsis if truncated. ANSI sequences are preserved/closed."
+  [line max-width]
+  (if (or (empty? line) (<= (visible-width line) max-width))
+    line
+    (let [ellipsis "…"
+          target (dec max-width)
+          len (count line)
+          out (js/Array.)]
+      (loop [i 0, vcol 0]
+        (cond
+          (>= i len)
+          (.join out "")
+
+          (= (.charAt line i) "\033")
+          (let [end (skip-ansi-seq line i len)]
+            (.push out (.substring line i end))
+            (recur end vcol))
+
+          (>= vcol target)
+          (do (.push out ellipsis)
+              (.push out (str "\033[" "0m"))
+              (.join out ""))
+
+          :else
+          (do (.push out (.charAt line i))
+              (recur (inc i) (inc vcol))))))))
 
 (defn highlight-range
   "Apply reverse-video highlight to visible columns [from, to) in a line.
