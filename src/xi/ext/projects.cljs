@@ -67,7 +67,7 @@
            ;; No git files — just insert the project path
            (ext/insert-text! project-path))))))
 
-(defn- show-project-menu! []
+(defn show-project-menu! []
   (-> (fetch-projects)
       (.then
        (fn [projects]

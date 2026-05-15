@@ -106,6 +106,10 @@
   (or (= data (str ESC "v"))
       (= data (str ESC "[118;3u"))))
 
+(defn- is-alt-p? [data]
+  (or (= data (str ESC "p"))
+      (= data (str ESC "[112;3u"))))
+
 ;; ── Word Boundary Helpers ─────────────────────────────────────────────────────
 
 (defn- word-char? [ch]
@@ -180,6 +184,7 @@
         on-git (:on-git opts)
         on-notify-toggle (:on-notify-toggle opts)
         on-paste-image (:on-paste-image opts)
+        on-project (:on-project opts)
 
         get-text (fn []
                    (str/join "\n" (:lines @state)))
@@ -657,6 +662,10 @@
                          ;; Alt+V — paste clipboard image
                          (is-alt-v? data)
                          (when on-paste-image (on-paste-image))
+
+                         ;; Alt+P — open project completion
+                         (is-alt-p? data)
+                         (when on-project (on-project))
 
                          ;; Bracketed paste
                          (is-paste-start? data)
