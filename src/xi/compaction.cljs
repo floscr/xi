@@ -1,7 +1,16 @@
 (ns xi.compaction
   "Context compaction — summarize conversation via the Claude SDK."
   (:require ["@anthropic-ai/claude-agent-sdk" :as sdk]
+            ["node:child_process" :as child-process]
+            ["node:fs" :as fs]
             [clojure.string :as str]))
+
+(defonce ^:private claude-executable
+  (try
+    (let [which-path (-> (child-process/execSync "which claude" #js {:encoding "utf8"}) .trim)
+          real-path (fs/realpathSync which-path)]
+      (when (.endsWith real-path ".js") real-path))
+    (catch :default _ nil)))
 
 ;; ── Token Estimation ──────────────────────────────────────────────────────────
 
@@ -60,9 +69,12 @@ Format as a structured summary. Be thorough but concise.")
   "Summarize conversation text via SDK. Returns promise of summary string."
   [text]
   (let [input (truncate-for-summarization text)
+        opts (cond-> {:systemPrompt COMPACT_SYSTEM_PROMPT
+                      :model "claude-sonnet-4-20250514"}
+                claude-executable
+                (assoc :pathToClaudeCodeExecutable claude-executable))
         ^js q (sdk/query #js {:prompt input
-                              :options #js {:systemPrompt COMPACT_SYSTEM_PROMPT
-                                            :model "claude-sonnet-4-20250514"}})]
+                              :options (clj->js opts)})]
     (-> (js/Promise.
          (fn [resolve _reject]
            (let [consume (fn consume []
