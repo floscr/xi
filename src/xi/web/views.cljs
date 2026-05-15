@@ -354,38 +354,73 @@
 ;; Home view (disconnected / room selection)
 ;; ---------------------------------------------------------------------------
 
-(defn- home-view [{:keys [connected? rooms]}]
+(defn- format-session-time
+  "Format an ISO timestamp to a short relative form."
+  [ts]
+  (when ts
+    (try
+      (let [d (js/Date. ts)
+            now (js/Date.)
+            diff-ms (- (.getTime now) (.getTime d))
+            diff-min (/ diff-ms 60000)
+            diff-hr (/ diff-min 60)
+            diff-day (/ diff-hr 24)]
+        (cond
+          (< diff-min 60) (str (js/Math.floor diff-min) "m ago")
+          (< diff-hr 24) (str (js/Math.floor diff-hr) "h ago")
+          (< diff-day 7) (str (js/Math.floor diff-day) "d ago")
+          :else (.toLocaleDateString d)))
+      (catch :default _ ts))))
+
+(defn- home-view [{:keys [connected? rooms home-sessions]}]
   [:div {:class ["container"]}
    (topbar {:title "Xi"})
    [:div {:class ["home"]}
     (if connected?
-      ;; Connected but not yet in a room
-      [:div {:class ["section"]}
-       [:div {:class ["section-title"]} "Rooms"]
-       [:div {:class ["project-list"]}
-        [:div {:class ["project-card"]
-               :on {:click (fn [_] (ws/join-room! "new"))}}
-         [:div {:class ["project-card-icon"]}
-          (icon/icon {:icon-name :plus})]
-         [:div {:class ["project-card-info"]}
-          [:span {:class ["project-card-name"]} "New Room"]]]
-        (for [r rooms]
-          [:div {:class ["project-card"]
-                 :on {:click (fn [_] (ws/join-room! (:id r)))}}
-           [:div {:class ["project-card-icon"]}
-            (icon/icon {:icon-name :terminal})]
-           [:div {:class ["project-card-info"]}
-            [:span {:class ["project-card-name"]} (:id r)]
-            [:span {:class ["project-card-path"]}
-             (str (:clients r) " client(s)")]]])]]
+      [:div
+       ;; Rooms
+       [:div {:class ["section"]}
+        [:div {:class ["section-title"]} "Rooms"]
+        [:div {:class ["project-list"]}
+         [:div {:class ["project-card"]
+                :on {:click (fn [_] (ws/join-room! "new"))}}
+          [:div {:class ["project-card-icon"]}
+           (icon/icon {:icon-name :plus})]
+          [:div {:class ["project-card-info"]}
+           [:span {:class ["project-card-name"]} "New Room"]]]
+         (for [r rooms]
+           [:div {:class ["project-card"]
+                  :on {:click (fn [_] (ws/join-room! (:id r)))}}
+            [:div {:class ["project-card-icon"]}
+             (icon/icon {:icon-name :terminal})]
+            [:div {:class ["project-card-info"]}
+             [:span {:class ["project-card-name"]} (:id r)]
+             [:span {:class ["project-card-path"]}
+              (str (:clients r) " client(s)")]]])]]
+       ;; Sessions
+       (when (seq home-sessions)
+         [:div {:class ["section"]}
+          [:div {:class ["section-title"]} "Sessions"]
+          [:div {:class ["project-list"]}
+           (map-indexed
+            (fn [idx s]
+              [:div {:class ["project-card"]
+                     :key (:session-id s)
+                     :on {:click (fn [_] (ws/join-and-resume! (inc idx)))}}
+               [:div {:class ["project-card-icon"]}
+                (icon/icon {:icon-name :message-square})]
+               [:div {:class ["project-card-info"]}
+                [:span {:class ["project-card-name"]}
+                 (or (:name s) "(unnamed)")]
+                [:span {:class ["project-card-path"]}
+                 (format-session-time (or (:last-accessed s) (:timestamp s)))]]])
+            home-sessions)]])]
       ;; Not connected
       [:div {:class ["empty-state"]}
        [:div
         [:p "Connecting to xi server..."]
         [:p {:class ["status-text"]}
          (str "ws://localhost:7474")]]])]])
-
-;; ---------------------------------------------------------------------------
 ;; Root
 ;; ---------------------------------------------------------------------------
 

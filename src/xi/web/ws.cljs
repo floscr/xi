@@ -52,7 +52,8 @@
     ;; Skip when this arrives during initial connect (join already in flight)
     (let [currently-in-room (:room-id @state/app-state)]
       (swap! state/app-state assoc
-             :rooms (or (:rooms event) []))
+             :rooms (or (:rooms event) [])
+             :home-sessions (or (:sessions event) []))
       (when-not currently-in-room
         (swap! state/app-state assoc
                :view :home
@@ -352,3 +353,11 @@
   (when-let [ws @ws-conn]
     (swap! state/app-state assoc :room-id nil)
     (.send ws (js/JSON.stringify (clj->js {:type :leave})))))
+
+(defn join-and-resume!
+  "Join a new room and immediately resume session at index n."
+  [n]
+  (when-let [ws @ws-conn]
+    ;; Send join + resume back-to-back. Server processes sequentially.
+    (.send ws (js/JSON.stringify (clj->js {:type :join :room "new"})))
+    (.send ws (js/JSON.stringify (clj->js {:type :command :name "resume" :args (str n)})))))

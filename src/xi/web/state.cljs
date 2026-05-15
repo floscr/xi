@@ -4,6 +4,7 @@
 (defonce app-state
   (atom {:view             :home          ;; :home | :chat
          :rooms            []             ;; from server handshake
+         :home-sessions    []             ;; personal-agent sessions from handshake
          :room-id          nil            ;; joined room id
          :connected?       false
          :busy?            false

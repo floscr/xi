@@ -11,9 +11,18 @@
    Events flow out, commands flow in.
    Works from browsers, CLI tools, any WebSocket client."
   (:require [xi.runtime :as runtime]
-            [xi.server.room-manager :as rm]))
+            [xi.server.room-manager :as rm]
+            [xi.session :as session]))
 
 (def ^:private DEFAULT_PORT 7474)
+
+(defn- waiting-for-join-msg
+  "Build the waiting-for-join handshake payload."
+  [manager personal-agent?]
+  (cond-> {:type :waiting-for-join
+           :rooms (rm/list-rooms manager)}
+    personal-agent?
+    (assoc :sessions (session/list-personal-agent-sessions))))
 
 (defn start!
   "Start a WebSocket server attached to a room manager.
@@ -24,6 +33,7 @@
   (let [port (or (:port opts)
                  (some-> (aget js/process.env "XI_PORT") js/parseInt)
                  DEFAULT_PORT)
+        personal-agent? (:personal-agent? (:opts manager))
 
         ;; Track WS → {room-id, runtime-client} mapping
         conn-state (atom {})
@@ -45,8 +55,7 @@
                      ;; Client connected but not yet joined a room.
                      ;; Send a prompt to join.
                      (.send ws (js/JSON.stringify
-                                (clj->js {:type :waiting-for-join
-                                          :rooms (rm/list-rooms manager)}))))
+                                (clj->js (waiting-for-join-msg manager personal-agent?)))))
 
                    :message
                    (fn [^js ws ^js data]
@@ -63,8 +72,7 @@
                                (rm/remove-client! manager room-id ws)
                                (swap! conn-state dissoc ws)
                                (.send ws (js/JSON.stringify
-                                          (clj->js {:type :waiting-for-join
-                                                    :rooms (rm/list-rooms manager)}))))
+                                          (clj->js (waiting-for-join-msg manager personal-agent?)))))
                              ;; Normal command — dispatch to runtime
                              (let [{:keys [room-id]} state
                                    room (rm/get-room manager room-id)]
