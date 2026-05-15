@@ -13,6 +13,7 @@
             [xi.ext.permission-gate :as ext-permission-gate]
             [xi.ext.plan-mode :as ext-plan-mode]
             [xi.ext.terminal-title :as ext-terminal-title]
+            [xi.ext.projects :as ext-projects]
             [xi.ext.web :as ext-web]
             [xi.loop :as loop]
             [xi.provider :as provider]
@@ -52,7 +53,8 @@
                ext-perplexity/extension
                ext-parmezan/extension
                ext-done-notify/extension
-               ext-terminal-title/extension]]
+               ext-terminal-title/extension
+               ext-projects/extension]]
     (ext/register-extension! ext)))
 
 (defn- sync-hook-state!
@@ -83,10 +85,11 @@
     (emit! {:type :turn-start})
 
     (let [compact-summary (:compact-summary @(:state rt))
-          system (when (nil? cli-session-id)
-                   (cond-> agents-md
-                     compact-summary
-                     (str "\n\n# Conversation Summary (from /compact)\n\n" compact-summary)))]
+          ;; Prepend summary to user prompt on first turn after compaction, then clear it
+          prompt (if (and compact-summary (nil? cli-session-id))
+                   (do (swap! (:state rt) dissoc :compact-summary)
+                       (str "<conversation-summary>\n" compact-summary "\n</conversation-summary>\n\n" prompt))
+                   prompt)]
 
     (-> (loop/run-turn
          (cond-> {:model model
@@ -121,7 +124,7 @@
                     (emit! {:type :error :error err}))}
            (seq images) (assoc :images images)
            cli-session-id (assoc :resume-session-id cli-session-id)
-           system (assoc :system system)))
+           (and agents-md (nil? cli-session-id)) (assoc :system agents-md)))
 
         (.then (fn [result]
                  (when (:aborted result)
