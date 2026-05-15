@@ -23,6 +23,8 @@
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]))
 
+(declare dispatch!)
+
 (def ^:private DEFAULT_MODEL "claude-sonnet-4-20250514")
 
 (def ^:private THINKING_TO_EFFORT
@@ -84,14 +86,6 @@
 
     (emit! {:type :turn-start})
 
-    (let [compact-summary (:compact-summary @(:state rt))
-          ;; Prepend summary to user prompt on first turn after compaction, then clear it
-          prompt (if (and compact-summary (nil? cli-session-id))
-                   (let [p (str "<conversation-summary>\n" compact-summary "\n</conversation-summary>\n\n" prompt)]
-                     (swap! (:state rt) dissoc :compact-summary)
-                     p)
-                   prompt)]
-
     (-> (loop/run-turn
          (cond-> {:model model
                   :prompt prompt
@@ -142,7 +136,7 @@
                          :session-id (:session-id result)
                          :usage (:usage result)
                          :cost (:cost result)})
-                 result))))))
+                 result)))))
 
 ;; ── Compaction ────────────────────────────────────────────────────────────────
 
@@ -160,13 +154,16 @@
     (emit! {:type :compact-start})
     (-> (compaction/summarize session-id)
         (.then (fn [summary]
+                 ;; Clear old session
                  (reset! sess (session/create-session (:cwd @sess)
                                 (when pa? {:personal-agent? true})))
                  (provider/clear-session!)
-                 (swap! (:state rt) assoc :compact-summary summary)
                  (reset! (:event-history rt) [])
                  (sync-hook-state! rt)
-                 (emit! {:type :session-compacted :summary summary})))
+                 (emit! {:type :session-compacted :summary summary})
+                 ;; Send summary into the new session to establish context
+                 (dispatch! rt (str "<conversation-summary>\n" summary "\n</conversation-summary>\n\n"
+                                    "Acknowledge this summary briefly and wait for my next instruction."))))
         (.catch (fn [err]
                   (emit! {:type :command-error
                           :command "compact"
