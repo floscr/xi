@@ -16,8 +16,8 @@
     (is (= "custom_tool" (provider/strip-mcp-prefix "custom_tool")))))
 
 (deftest strip-mcp-prefix-other-server
-  (testing "does not strip prefix from other MCP servers"
-    (is (= "mcp__other__bash" (provider/strip-mcp-prefix "mcp__other__bash")))))
+  (testing "strips prefix from any MCP server, not just xi-tools"
+    (is (= "bash" (provider/strip-mcp-prefix "mcp__other__bash")))))
 
 (deftest strip-mcp-prefix-nil
   (testing "handles nil"

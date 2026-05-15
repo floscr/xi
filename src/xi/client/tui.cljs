@@ -19,7 +19,8 @@
             [xi.tui.editor :as editor]
             [xi.tui.clipboard-image :as clip-image]
             [xi.tui.markdown :as md]
-            [xi.tui.terminal :as term]))
+            [xi.tui.terminal :as term]
+            [xi.util :as util]))
 
 (defn- shutdown!
   ([] (shutdown! nil))
@@ -64,18 +65,8 @@
     "ls"    (get-arg arguments :path)
     nil))
 
-(defn- shorten-tool-name
-  "Strip MCP prefix from tool names for display.
-   'mcp__xi-tools__read' → 'read', 'Bash' → 'Bash'"
-  [tool-name]
-  (if-let [[_ short] (re-matches #"mcp__[^_]+__(.+)" tool-name)]
-    short
-    tool-name))
-
-(defn- truncate [s max-len]
-  (if (> (count s) max-len)
-    (str (subs s 0 max-len) "...")
-    s))
+(def ^:private shorten-tool-name util/strip-mcp-prefix)
+(def ^:private truncate util/truncate)
 
 (defn- truncate-output
   "Truncate tool output to max lines."

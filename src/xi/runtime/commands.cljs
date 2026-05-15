@@ -6,27 +6,12 @@
             [xi.ext.core :as ext]
             [xi.provider :as provider]
             [xi.session :as session]
-            [xi.system-prompt :as system-prompt]))
+            [xi.system-prompt :as system-prompt]
+            [xi.util :as util]))
 
-(defn- truncate [s max-len]
-  (if (> (count s) max-len)
-    (str (subs s 0 max-len) "...")
-    s))
-
-(defn- claude-model? [model]
-  (when model
-    (or (str/starts-with? model "claude-")
-        (str/starts-with? model "anthropic/")
-        (contains? #{"sonnet" "opus" "haiku"} model))))
-
-(defn- extract-text-content [content]
-  (cond
-    (string? content) content
-    (sequential? content)
-    (->> content
-         (keep #(when (= "text" (:type %)) (:text %)))
-         (str/join "\n"))
-    :else (str content)))
+(def ^:private truncate util/truncate)
+(def ^:private claude-model? util/claude-model?)
+(def ^:private extract-text-content util/extract-text-content)
 
 (defn format-scrollback [events]
   (let [parts (atom [])

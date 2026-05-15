@@ -8,7 +8,8 @@
             ["node:fs" :as fs]
             ["zod" :as z]
             [xi.ext.core :as ext]
-            [xi.tools.registry :as tools]))
+            [xi.tools.registry :as tools]
+            [xi.util :as util]))
 
 ;; ── Claude Code Executable Resolution ─────────────────────────────────────────
 
@@ -167,12 +168,9 @@
     "end_turn"   "stop"
     "stop"))
 
-(defn strip-mcp-prefix
+(def strip-mcp-prefix
   "Strip MCP prefix: mcp__xi-tools__bash → bash"
-  [n]
-  (if (and n (.startsWith n MCP_TOOL_PREFIX))
-    (subs n (count MCP_TOOL_PREFIX))
-    n))
+  util/strip-mcp-prefix)
 
 (defn- process-stream-event
   [^js event callbacks state]

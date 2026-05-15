@@ -2,18 +2,13 @@
   "Agent loop — routes to the correct provider based on model.
    Claude models → SDK bridge (provider.cljs)
    Everything else → raw OpenAI-compatible API (provider/ollama.cljs)"
-  (:require [clojure.string :as str]
-            [xi.provider :as bridge]
-            [xi.provider.ollama :as ollama]))
+  (:require [xi.provider :as bridge]
+            [xi.provider.ollama :as ollama]
+            [xi.util :as util]))
 
-(defn claude-model?
+(def claude-model?
   "Returns true if model string looks like a Claude/Anthropic model."
-  [model]
-  (when model
-    (or (str/starts-with? model "claude-")
-        (str/starts-with? model "anthropic/")
-        ;; Bare aliases used by the SDK
-        (contains? #{"sonnet" "opus" "haiku"} model))))
+  util/claude-model?)
 
 (defn run-turn
   "Run one full agent turn. Routes to the right provider.
