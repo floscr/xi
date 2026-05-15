@@ -13,7 +13,9 @@
 
 ;; ── Claude Code Executable Resolution ─────────────────────────────────────────
 
-(defn- resolve-claude-executable []
+(defn resolve-claude-executable
+  "Resolve the claude CLI executable path. Returns path string or nil."
+  []
   (try
     (let [which-path (-> (child-process/execSync "which claude" #js {:encoding "utf8"})
                         (.trim))

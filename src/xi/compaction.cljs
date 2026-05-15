@@ -1,16 +1,10 @@
 (ns xi.compaction
   "Context compaction — summarize conversation via the Claude SDK."
   (:require ["@anthropic-ai/claude-agent-sdk" :as sdk]
-            ["node:child_process" :as child-process]
-            ["node:fs" :as fs]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [xi.provider :as provider]))
 
-(defonce ^:private claude-executable
-  (try
-    (let [which-path (-> (child-process/execSync "which claude" #js {:encoding "utf8"}) .trim)
-          real-path (fs/realpathSync which-path)]
-      (when (.endsWith real-path ".js") real-path))
-    (catch :default _ nil)))
+(def ^:private claude-executable (provider/resolve-claude-executable))
 
 ;; ── Summarization ─────────────────────────────────────────────────────────────
 
