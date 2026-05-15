@@ -13,7 +13,8 @@
 (defonce ^:private registry (atom {:extensions []
                                    :tools {}        ;; name → {:def :exec :ext-name}
                                    :commands {}      ;; name → {:desc :handler :ext-name}
-                                   :hooks {}}))      ;; event → [{:ext-name :handler}]
+                                   :hooks {}         ;; event → [{:ext-name :handler}]
+                                   :keybindings []})) ;; [{:key :handler :ext-name}]
 
 (def ^:private LIFECYCLE_EVENTS
   #{:session-start :session-shutdown
@@ -89,9 +90,48 @@
                        [{:type :dispatch-prompt :text (:text result)}]
                        [{:type :command-result :command (:name cmd) :text (str "Ran /" (:name cmd))}])))}))
 
+    ;; Register keybindings
+    (doseq [kb (:keybindings ext)]
+      (swap! registry update :keybindings conj
+             (assoc kb :ext-name ext-name)))
+
     ;; Track extension
     (swap! registry update :extensions conj ext)
     nil))
+
+;; ── Keybinding Helpers ─────────────────────────────────────────────────────────────
+
+(def ^:private ESC (str (char 27)))
+
+(defn- parse-key-descriptor
+  "Parse a key descriptor like \"alt+p\" into a match function (fn [data] -> bool).
+   Supports: alt+<char>, ctrl+shift+<char>."
+  [desc]
+  (let [parts (str/split (str/lower-case desc) #"\+")
+        key-char (last parts)
+        modifiers (butlast parts)]
+    (case (vec modifiers)
+      ["alt"]
+      (let [code (.charCodeAt key-char 0)]
+        (fn [data]
+          (or (= data (str ESC key-char))
+              (= data (str ESC "[" code ";3u")))))
+
+      ["ctrl" "shift"]
+      (let [code (.charCodeAt key-char 0)]
+        (fn [data]
+          (= data (str ESC "[" code ";6u"))))
+
+      ;; Fallback — exact match
+      (fn [data] (= data desc)))))
+
+(defn get-keybindings
+  "Return registered keybindings as [{:key-fn (fn [data]) :handler fn}]."
+  []
+  (mapv (fn [{:keys [key handler]}]
+          {:key-fn (parse-key-descriptor key)
+           :handler handler})
+        (:keybindings @registry)))
 
 ;; ── Hook Dispatch ─────────────────────────────────────────────────────────────
 

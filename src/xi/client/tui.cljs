@@ -632,6 +632,7 @@
           :on-notify-toggle (fn []
                               (ext-done-notify/toggle!)
                               (tui/request-render!))
+          :ext-keybindings (ext/get-keybindings)
           :prompt-suffix-fn (fn []
                               (let [badges (ext/collect-prompt-badges)
                                     n (count @pending-images)]

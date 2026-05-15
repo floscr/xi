@@ -67,7 +67,7 @@
            ;; No git files — just insert the project path
            (ext/insert-text! project-path))))))
 
-(defn show-project-menu! []
+(defn- show-project-menu! []
   (-> (fetch-projects)
       (.then
        (fn [projects]
@@ -97,4 +97,6 @@
                :description "Complete project paths and files"
                :handler (fn [_ctx]
                           (show-project-menu!)
-                          nil)}]})
+                          nil)}]
+   :keybindings [{:key "alt+p"
+                  :handler (fn [] (show-project-menu!))}]})
