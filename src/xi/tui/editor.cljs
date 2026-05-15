@@ -711,6 +711,7 @@
     {:type :editor
      :get-text get-text
      :set-text set-text
+     :insert-text insert-text-bulk
      :add-history add-history
      :invalidate (fn [] (swap! state assoc :cached-width nil :cached-lines nil))
      :handle-input handle-input

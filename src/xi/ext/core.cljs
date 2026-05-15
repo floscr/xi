@@ -182,6 +182,40 @@
     (handler message)
     (js/Promise.resolve false)))
 
+;; ── TUI Bridge ────────────────────────────────────────────────────────────────
+;; Extensions can show completion menus and insert text into the editor.
+;; The TUI (or other client) registers handlers at startup.
+
+(defonce ^:private completion-handler (atom nil))
+(defonce ^:private insert-text-handler (atom nil))
+
+(defn set-completion-handler!
+  "Set the completion menu handler. Called by TUI/client at startup.
+   handler-fn is (fn [opts]) where opts matches completion/make-completion-menu."
+  [handler-fn]
+  (reset! completion-handler handler-fn))
+
+(defn set-insert-text-handler!
+  "Set the editor insert-text handler. Called by TUI/client at startup.
+   handler-fn is (fn [text]) — inserts text at cursor in the editor."
+  [handler-fn]
+  (reset! insert-text-handler handler-fn))
+
+(defn show-completion!
+  "Show a completion menu from an extension.
+   opts: {:items [{:label :value :description}] :prompt :on-select :on-cancel :key-bindings :header-fn}
+   No-op if no TUI is connected."
+  [opts]
+  (when-let [handler @completion-handler]
+    (handler opts)))
+
+(defn insert-text!
+  "Insert text at the editor cursor from an extension.
+   No-op if no TUI is connected."
+  [text]
+  (when-let [handler @insert-text-handler]
+    (handler text)))
+
 ;; ── Async Transform Dispatch ─────────────────────────────────────────────────
 
 (defn dispatch-hook-transform-async
