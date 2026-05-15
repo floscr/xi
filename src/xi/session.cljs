@@ -16,6 +16,9 @@
 (def ^:private XI_SESSIONS_DIR
   (.join node-path HOME ".config" "xi" "sessions"))
 
+(def ^:private PERSONAL_AGENT_SESSIONS_DIR
+  (.join node-path HOME ".config" "xi" "personal-agent" "root"))
+
 (def ^:private PI_SESSIONS_DIR
   (.join node-path HOME ".pi" "agent" "sessions"))
 
@@ -79,9 +82,13 @@
 ;; }
 
 (defn create-session
-  "Create a new Xi session. Returns session state map."
-  [cwd]
-  (let [dir (xi-session-dir cwd)
+  "Create a new Xi session. Returns session state map.
+   opts:
+     :personal-agent? - store in personal-agent sessions dir"
+  [cwd & [opts]]
+  (let [dir (if (:personal-agent? opts)
+              PERSONAL_AGENT_SESSIONS_DIR
+              (xi-session-dir cwd))
         session-id (gen-uuid-v7)
         timestamp (iso-now)
         meta {:id session-id
@@ -89,7 +96,8 @@
               :cwd cwd
               :created timestamp
               :name nil
-              :model nil}]
+              :model nil
+              :personal-agent? (:personal-agent? opts)}]
     (when-not (fs/existsSync dir)
       (fs/mkdirSync dir #js {:recursive true}))
     (assoc meta :_dir dir)))
@@ -97,7 +105,10 @@
 (defn save-session!
   "Persist session metadata to disk."
   [session]
-  (let [dir (or (:_dir session) (xi-session-dir (:cwd session)))
+  (let [dir (or (:_dir session)
+                (if (:personal-agent? session)
+                  PERSONAL_AGENT_SESSIONS_DIR
+                  (xi-session-dir (:cwd session))))
         filepath (.join node-path dir (str (:id session) ".json"))
         data (dissoc session :_dir :source)]
     (when-not (fs/existsSync dir)
@@ -307,6 +318,17 @@
         xi-ids (set (keep :cli-session-id xi-sessions))
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
     (->> (concat xi-sessions claude-filtered pi-sessions)
+         (sort-by #(or (:last-accessed %) (:timestamp %)))
+         reverse
+         vec)))
+
+(defn list-personal-agent-sessions
+  "List sessions from the personal-agent sessions dir only.
+   Returns vec of session summaries, newest first."
+  []
+  (let [xi-sessions (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
+                         (keep read-xi-session-meta))]
+    (->> xi-sessions
          (sort-by #(or (:last-accessed %) (:timestamp %)))
          reverse
          vec)))

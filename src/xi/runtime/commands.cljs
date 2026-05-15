@@ -153,22 +153,29 @@
     [{:type :model-changed :model args}]))
 
 (defn- cmd-clear [{:keys [sess]}]
-  (reset! sess (session/create-session (:cwd @sess)))
-  (provider/clear-session!)
-  [{:type :session-cleared}])
+  (let [pa? (:personal-agent? @sess)]
+    (reset! sess (session/create-session (:cwd @sess)
+                   (when pa? {:personal-agent? true})))
+    (provider/clear-session!)
+    [{:type :session-cleared}]))
 
-(defn- cmd-new [{:keys [sess cwd]}]
+(defn- cmd-new [{:keys [sess cwd personal-agent?]}]
   (when (:cli-session-id @sess)
     (session/save-session! @sess))
-  (reset! sess (session/create-session cwd))
+  (reset! sess (session/create-session cwd
+                 (when personal-agent? {:personal-agent? true})))
   (provider/clear-session!)
   [{:type :session-cleared}])
 
-(defn- cmd-resume [{:keys [args sess cwd]}]
+(defn- cmd-resume [{:keys [args sess cwd personal-agent?]}]
   (if (nil? args)
     ;; Show session list for resume
-    (let [cwd-sessions (session/list-sessions cwd)
-          all-sessions (session/list-all-sessions)]
+    (let [cwd-sessions (if personal-agent?
+                         (session/list-personal-agent-sessions)
+                         (session/list-sessions cwd))
+          all-sessions (if personal-agent?
+                         cwd-sessions
+                         (session/list-all-sessions))]
       [{:type :command-result
         :command "resume-list"
         :sessions (format-session-list cwd-sessions)
@@ -180,9 +187,11 @@
                             [:all (subs args 4)]
                             [:cwd args])
           n (js/parseInt idx-str 10)
-          sessions (if (= :all scope)
-                     (session/list-all-sessions)
-                     (session/list-sessions cwd))]
+          sessions (if personal-agent?
+                     (session/list-personal-agent-sessions)
+                     (if (= :all scope)
+                       (session/list-all-sessions)
+                       (session/list-sessions cwd)))]
       (if (and (not (js/isNaN n)) (<= 1 n) (<= n (count sessions)))
         (let [summary (nth sessions (dec n))
               loaded (session/load-session summary)

@@ -158,7 +158,8 @@
                     system-prompt/PERSONAL_AGENT_PROMPT
                     (system-prompt/load-agents-md cwd))
         bus (events/create-bus)
-        sess (atom (session/create-session cwd))
+        sess (atom (session/create-session cwd
+                     (when personal-agent? {:personal-agent? true})))
         state (atom {:model model
                      :effort effort
                      :cwd cwd
@@ -239,7 +240,7 @@
   "Send a command to the runtime. Returns a promise."
   [rt command]
   (let [{:keys [emit!]} (:bus rt)
-        {:keys [model cwd effort]} @(:state rt)
+        {:keys [model cwd effort personal-agent?]} @(:state rt)
         sess (:sess rt)
         parsed (if (string? command)
                  (commands/parse-input command)
@@ -295,7 +296,8 @@
         (let [events (commands/handle-command parsed {:sess sess :cwd cwd :model model
                                                         :effort effort
                                                         :busy @(:busy rt)
-                                                        :event-history @(:event-history rt)})
+                                                        :event-history @(:event-history rt)
+                                                        :personal-agent? personal-agent?})
               prompt-event (first (filter #(= :dispatch-prompt (:type %)) events))
               other-events (remove #(= :dispatch-prompt (:type %)) events)]
           (doseq [event other-events]
