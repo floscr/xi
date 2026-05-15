@@ -66,13 +66,10 @@ Format as a structured summary. Be thorough but concise.")
      (fn [resolve reject]
        (let [proc (js/Bun.spawn
                    #js ["claude" "-p"
-                        "--system-prompt" COMPACT_SYSTEM_PROMPT]
+                        "--system-prompt" COMPACT_SYSTEM_PROMPT
+                        input]
                    #js {:stdout "pipe" :stderr "pipe"
-                        :stdin "pipe"
                         :cwd (.cwd js/process)})]
-         ;; Write conversation to stdin
-         (.write (.-stdin proc) input)
-         (.end (.-stdin proc))
          (-> (js/Promise.all #js [(.text (.-stdout proc))
                                   (.text (.-stderr proc))])
              (.then (fn [results]
