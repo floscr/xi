@@ -13,63 +13,77 @@
 (def ^:private claude-model? util/claude-model?)
 (def ^:private extract-text-content util/extract-text-content)
 
-(defn format-scrollback [events]
-  (let [parts (atom [])
-        current-text (atom "")]
-    (doseq [event events]
-      (case (:type event)
-        :user-message
-        (do
-          (when (seq @current-text)
-            (swap! parts conj (str "### Assistant\n" @current-text))
-            (reset! current-text ""))
-          (swap! parts conj (str "### User\n" (:text event))))
+(defn- flush-text
+  "If there's accumulated text, append it as an assistant block and clear."
+  [{:keys [parts current-text] :as acc}]
+  (if (seq current-text)
+    (assoc acc
+           :parts (conj parts (str "### Assistant\n" current-text))
+           :current-text "")
+    acc))
 
-        :text-delta
-        (swap! current-text str (:text event))
+(defn- scrollback-step
+  "Reduce step: process one event, return updated accumulator."
+  [acc event]
+  (case (:type event)
+    :user-message
+    (let [{:keys [parts]} (flush-text acc)]
+      (assoc acc
+             :parts (conj parts (str "### User\n" (:text event)))
+             :current-text ""))
 
-        :tool-args
-        (do
-          (when (seq @current-text)
-            (swap! parts conj (str "### Assistant\n" @current-text))
-            (reset! current-text ""))
-          (let [json-str (try (js/JSON.stringify (clj->js (:arguments event)) nil 2)
-                              (catch :default _ "{}"))]
-            (swap! parts conj
-                   (str "### Tool: " (:name event) "\n"
-                        "```json\n"
-                        (truncate json-str 2000)
-                        "\n```"))))
+    :text-delta
+    (update acc :current-text str (:text event))
 
-        :tool-result
-        (let [text (extract-text-content (:content event))]
-          (swap! parts conj
-                 (str "### Tool Result"
-                      (when (:is-error event) " (ERROR)")
-                      "\n"
-                      (truncate text 1000))))
+    :tool-args
+    (let [{:keys [parts]} (flush-text acc)
+          json-str (try (js/JSON.stringify (clj->js (:arguments event)) nil 2)
+                        (catch :default _ "{}"))]
+      (assoc acc
+             :parts (conj parts
+                          (str "### Tool: " (:name event) "\n"
+                               "```json\n"
+                               (truncate json-str 2000)
+                               "\n```"))
+             :current-text ""))
 
-        :turn-end
-        (do
-          (when (seq @current-text)
-            (swap! parts conj (str "### Assistant\n" @current-text))
-            (reset! current-text ""))
-          (swap! parts conj
-                 (str "---\n_Turn end"
-                      (when (:cost event) (str " | Cost: $" (:cost event)))
-                      (when (:usage event) (str " | Tokens: " (pr-str (:usage event))))
-                      "_")))
+    :tool-result
+    (let [text (extract-text-content (:content event))]
+      (update acc :parts conj
+              (str "### Tool Result"
+                   (when (:is-error event) " (ERROR)")
+                   "\n"
+                   (truncate text 1000))))
 
-        :error
-        (swap! parts conj (str "### Error\n" (pr-str (:error event))))
+    :turn-end
+    (let [{:keys [parts]} (flush-text acc)]
+      (assoc acc
+             :parts (conj parts
+                          (str "---\n_Turn end"
+                               (when (:cost event) (str " | Cost: $" (:cost event)))
+                               (when (:usage event) (str " | Tokens: " (pr-str (:usage event))))
+                               "_"))
+             :current-text ""))
 
-        :aborted
-        (swap! parts conj "_Aborted_")
+    :error
+    (update acc :parts conj (str "### Error\n" (pr-str (:error event))))
 
-        nil))
-    (when (seq @current-text)
-      (swap! parts conj (str "### Assistant\n" @current-text)))
-    (str/join "\n\n" @parts)))
+    :aborted
+    (update acc :parts conj "_Aborted_")
+
+    ;; Unknown event type — skip
+    acc))
+
+(defn format-scrollback
+  "Format event history into a markdown scrollback string.
+   Pure function — no atoms, no side effects."
+  [events]
+  (let [{:keys [parts current-text]}
+        (reduce scrollback-step {:parts [] :current-text ""} events)
+        final-parts (if (seq current-text)
+                      (conj parts (str "### Assistant\n" current-text))
+                      parts)]
+    (str/join "\n\n" final-parts)))
 
 (defn- format-session-list
   "Format session list as plain data."
