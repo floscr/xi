@@ -12,71 +12,28 @@
       (when (.endsWith real-path ".js") real-path))
     (catch :default _ nil)))
 
-;; ── Token Estimation ──────────────────────────────────────────────────────────
-
-(def ^:private CONTEXT_LIMIT 200000)
-(def ^:private COMPACTION_THRESHOLD 0.75)
-
-(defn- estimate-tokens
-  "Rough token estimate: ~4 chars per token."
-  [messages]
-  (reduce
-   (fn [total msg]
-     (let [content (:content msg)
-           text (cond
-                  (string? content) content
-                  (sequential? content) (str/join " " (map #(or (:text %) (:thinking %) "") content))
-                  :else "")]
-       (+ total (quot (count text) 4))))
-   0
-   messages))
-
-(defn needs-compaction?
-  "Check if messages need compaction."
-  [messages]
-  (> (estimate-tokens messages) (* CONTEXT_LIMIT COMPACTION_THRESHOLD)))
-
 ;; ── Summarization ─────────────────────────────────────────────────────────────
 
-(def ^:private COMPACT_INSTRUCTIONS
-  "Summarize the following conversation for agent continuity. Produce a concise summary that preserves:
-1. All file operations (which files were read, written, edited) — list these explicitly
-2. Key decisions made and their rationale
-3. Current state of the task (what's done, what's pending)
-4. Any errors encountered and how they were resolved
-5. Important context the agent will need to continue
+(def ^:private COMPACT_PROMPT
+  "Summarize this conversation for continuity. Produce a concise summary preserving:
+1. All file paths read, written, or edited
+2. Key decisions and their rationale
+3. Current task state (done vs pending)
+4. Errors encountered and resolutions
+5. Important context needed to continue
 
-Format as a structured summary. Be thorough but concise.
-
----
-")
-
-(def ^:private SUMMARIZE_CHAR_LIMIT
-  "Max chars to send to the summarizer."
-  600000)
-
-(defn- truncate-for-summarization
-  "Truncate text keeping tail (most recent) and a prefix for orientation."
-  [text]
-  (if (<= (count text) SUMMARIZE_CHAR_LIMIT)
-    text
-    (let [prefix-size (quot SUMMARIZE_CHAR_LIMIT 5)
-          suffix-size (- SUMMARIZE_CHAR_LIMIT prefix-size 200)
-          prefix (subs text 0 prefix-size)
-          suffix (subs text (- (count text) suffix-size))]
-      (str prefix
-           "\n\n[... " (- (count text) SUMMARIZE_CHAR_LIMIT) " characters omitted ...]\n\n"
-           suffix))))
+Be thorough but concise. Output only the summary, no preamble.")
 
 (defn summarize
-  "Summarize conversation text via SDK. Returns promise of summary string."
-  [text]
-  (let [input (str COMPACT_INSTRUCTIONS (truncate-for-summarization text))
-        opts (cond-> {:model "claude-sonnet-4-20250514"
-                      :permissionMode "bypassPermissions"}
+  "Resume the current SDK session and ask the model to summarize it.
+   Returns promise of summary string."
+  [session-id]
+  (let [opts (cond-> {:model "claude-sonnet-4-20250514"
+                      :permissionMode "bypassPermissions"
+                      :resume session-id}
                claude-executable
                (assoc :pathToClaudeCodeExecutable claude-executable))
-        ^js q (sdk/query #js {:prompt input
+        ^js q (sdk/query #js {:prompt COMPACT_PROMPT
                               :options (clj->js opts)})
         chunks (atom [])]
     (-> (js/Promise.

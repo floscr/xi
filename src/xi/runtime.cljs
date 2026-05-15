@@ -87,8 +87,9 @@
     (let [compact-summary (:compact-summary @(:state rt))
           ;; Prepend summary to user prompt on first turn after compaction, then clear it
           prompt (if (and compact-summary (nil? cli-session-id))
-                   (do (swap! (:state rt) dissoc :compact-summary)
-                       (str "<conversation-summary>\n" compact-summary "\n</conversation-summary>\n\n" prompt))
+                   (let [p (str "<conversation-summary>\n" compact-summary "\n</conversation-summary>\n\n" prompt)]
+                     (swap! (:state rt) dissoc :compact-summary)
+                     p)
                    prompt)]
 
     (-> (loop/run-turn
@@ -146,19 +147,18 @@
 ;; ── Compaction ────────────────────────────────────────────────────────────────
 
 (defn- perform-compaction!
-  "Run compaction: summarize event history, clear session, store summary.
+  "Run compaction: resume current SDK session to get a summary, then clear.
    Returns promise."
-  [rt focus]
+  [rt _focus]
   (let [{:keys [emit!]} (:bus rt)
         sess (:sess rt)
-        event-history @(:event-history rt)
-        scrollback (commands/format-scrollback event-history)
-        summary-input (if focus
-                        (str scrollback "\n\n[Focus the summary on: " focus "]")
-                        scrollback)
+        session-id (or (:cli-session-id @sess) (provider/get-session-id))
         pa? (:personal-agent? @sess)]
+    (when-not session-id
+      (emit! {:type :command-error :command "compact" :text "No active session to compact."})
+      (js/Promise.resolve nil))
     (emit! {:type :compact-start})
-    (-> (compaction/summarize summary-input)
+    (-> (compaction/summarize session-id)
         (.then (fn [summary]
                  (reset! sess (session/create-session (:cwd @sess)
                                 (when pa? {:personal-agent? true})))
