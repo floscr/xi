@@ -96,10 +96,18 @@
 
 (def ^:private MCP_TOOL_PREFIX (str "mcp__" MCP_SERVER_NAME "__"))
 
+(def ^:private PERSONAL_AGENT_TOOLS
+  "Tools available in personal-agent mode."
+  #{"web_search"})
+
 (defn- build-mcp-server
-  "Build an MCP server exposing Xi's tools."
-  [cwd]
-  (let [defs (into (tools/tool-definitions) (ext/get-ext-tool-definitions))
+  "Build an MCP server exposing Xi's tools.
+   When only-tools is non-nil, only those tool names are exposed."
+  [cwd & [{:keys [only-tools]}]]
+  (let [all-defs (into (tools/tool-definitions) (ext/get-ext-tool-definitions))
+        defs (if only-tools
+               (filterv #(contains? only-tools (:name %)) all-defs)
+               all-defs)
         registry (merge (tools/tool-registry) (ext/get-ext-tool-registry))
         mcp-tools (into-array
                    (map (fn [tool-def]
@@ -283,16 +291,16 @@
         cwd (or (:cwd opts) (.cwd js/process))
         personal-agent? (:personal-agent? opts)
         resume-id (or (:resume-session-id opts) (get-session-id))
-        mcp-server (when-not personal-agent? (build-mcp-server cwd))
+        mcp-server (if personal-agent?
+                     (build-mcp-server cwd {:only-tools PERSONAL_AGENT_TOOLS})
+                     (build-mcp-server cwd))
         query-opts (let [base (clj->js
                                (cond-> {:cwd cwd
                                         :permissionMode "bypassPermissions"
                                         :allowDangerouslySkipPermissions true
                                         :includePartialMessages true
                                         :disallowedTools DISALLOWED_BUILTIN_TOOLS
-                                        :allowedTools (if personal-agent?
-                                                        []
-                                                        [(str MCP_TOOL_PREFIX "*")])}
+                                        :allowedTools [(str MCP_TOOL_PREFIX "*")]}
                                  claude-executable
                                  (assoc :pathToClaudeCodeExecutable claude-executable)
 
@@ -310,9 +318,8 @@
 
                                  resume-id
                                  (assoc :resume resume-id)))]
-                     (when mcp-server
-                       (unchecked-set base "mcpServers"
-                                      (js-obj MCP_SERVER_NAME mcp-server)))
+                     (unchecked-set base "mcpServers"
+                                    (js-obj MCP_SERVER_NAME mcp-server))
                      base)
 
         abort-signal (:abort-signal opts)
