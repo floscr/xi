@@ -357,8 +357,11 @@
   (try
     (let [content (fs/readFileSync filepath "utf8")
           lines (str/split content #"\n")
-          parsed (into [] (comp (filter seq)
-                                (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
+          parsed (into [] (comp (filter #(not (str/blank? %)))
+                                (keep (fn [line]
+                                        (try
+                                          (js->clj (js/JSON.parse line) :keywordize-keys true)
+                                          (catch :default _e nil)))))
                        lines)]
       (->> parsed
            (filter #(contains? #{"user" "assistant"} (:type %)))
@@ -441,8 +444,11 @@
     (try
       (let [content (fs/readFileSync (:filepath summary) "utf8")
             lines (str/split content #"\n")
-            parsed (into [] (comp (filter seq)
-                                  (map #(js->clj (js/JSON.parse %) :keywordize-keys true)))
+            parsed (into [] (comp (filter #(not (str/blank? %)))
+                                  (keep (fn [line]
+                                          (try
+                                            (js->clj (js/JSON.parse line) :keywordize-keys true)
+                                            (catch :default _e nil)))))
                          lines)]
         (->> parsed
              (filter #(= "message" (:type %)))
