@@ -278,7 +278,7 @@
 (defn handle-command
   "Execute a slash command. Returns a vector of events to emit.
    Looks up command in the central registry, falls back to extension commands."
-  [{:keys [name args]} {:keys [sess cwd model effort busy event-history]}]
+  [{:keys [name args]} {:keys [sess cwd model effort busy event-history personal-agent?]}]
   (let [ctx {:name name
              :args args
              :sess sess
@@ -286,7 +286,8 @@
              :model model
              :effort effort
              :busy busy
-             :event-history event-history}]
+             :event-history event-history
+             :personal-agent? personal-agent?}]
     (if-let [cmd (registry/get-command name :runtime)]
       ;; Dispatch from central registry (runtime-scoped only)
       ((:handler cmd) ctx)
