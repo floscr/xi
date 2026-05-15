@@ -70,21 +70,43 @@ Format as a structured summary. Be thorough but concise.")
   [text]
   (let [input (truncate-for-summarization text)
         opts (cond-> {:systemPrompt COMPACT_SYSTEM_PROMPT
-                      :model "claude-sonnet-4-20250514"}
-                claude-executable
-                (assoc :pathToClaudeCodeExecutable claude-executable))
+                      :model "claude-sonnet-4-20250514"
+                      :permissionMode "bypassPermissions"}
+               claude-executable
+               (assoc :pathToClaudeCodeExecutable claude-executable))
         ^js q (sdk/query #js {:prompt input
-                              :options (clj->js opts)})]
+                              :options (clj->js opts)})
+        chunks (atom [])]
     (-> (js/Promise.
-         (fn [resolve _reject]
-           (let [consume (fn consume []
-                           (-> (.next q)
-                               (.then (fn [^js iter]
-                                        (if (.-done iter)
-                                          (resolve "")
-                                          (let [^js msg (.-value iter)]
-                                            (if (= "result" (.-type msg))
-                                              (resolve (or (.-result msg) ""))
-                                              (consume))))))))]
+         (fn [resolve reject]
+           (let [consume
+                 (fn consume []
+                   (-> (.next q)
+                       (.then
+                        (fn [^js iter]
+                          (if (.-done iter)
+                            (let [result (str/join @chunks)]
+                              (if (seq result)
+                                (resolve result)
+                                (reject (js/Error. "Compaction produced empty summary"))))
+                            (do
+                              (let [^js msg (.-value iter)
+                                    t (.-type msg)]
+                                (case t
+                                  "result"
+                                  (let [r (.-result msg)]
+                                    (when (seq r)
+                                      (swap! chunks conj r)))
+
+                                  "assistant"
+                                  (let [^js m (.-message msg)
+                                        content (when m (js->clj (.-content m) :keywordize-keys true))]
+                                    (doseq [block content]
+                                      (when (= "text" (:type block))
+                                        (swap! chunks conj (:text block)))))
+
+                                  nil))
+                              (consume)))))
+                       (.catch reject)))]
              (consume))))
         (.finally (fn [] (try (.close q) (catch :default _)))))))
