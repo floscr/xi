@@ -59,28 +59,35 @@ Format as a structured summary. Be thorough but concise.")
            suffix))))
 
 (defn- summarize-via-claude
-  "Use claude CLI to summarize messages. Returns promise of summary string."
+  "Use claude CLI to summarize messages. Returns promise of summary string.
+   Uses node child_process for reliable stdin piping."
   [messages-text]
-  (let [input (truncate-for-summarization messages-text)]
+  (let [input (truncate-for-summarization messages-text)
+        child-process (js/require "node:child_process")]
     (js/Promise.
      (fn [resolve reject]
-       (let [proc (js/Bun.spawn
-                   #js ["claude" "-p"
-                        "--system-prompt" COMPACT_SYSTEM_PROMPT
-                        input]
-                   #js {:stdout "pipe" :stderr "pipe"
-                        :cwd (.cwd js/process)})]
-         (-> (js/Promise.all #js [(.text (.-stdout proc))
-                                  (.text (.-stderr proc))])
-             (.then (fn [results]
-                      (let [stdout (aget results 0)
-                            stderr (aget results 1)
-                            code (.-exitCode proc)]
-                        (if (= 0 code)
-                          (resolve stdout)
-                          (reject (js/Error.
-                                   (str "Claude summarization failed (exit " code "): "
-                                        (subs (str/trim stderr) 0 (min 200 (count stderr))))))))))))))))
+       (let [proc (.spawn child-process
+                          "claude"
+                          #js ["-p" "--system-prompt" COMPACT_SYSTEM_PROMPT]
+                          #js {:cwd (.cwd js/process)
+                               :stdio #js ["pipe" "pipe" "pipe"]})
+             stdout-chunks #js []
+             stderr-chunks #js []]
+         (.on (.-stdout proc) "data" (fn [chunk] (.push stdout-chunks chunk)))
+         (.on (.-stderr proc) "data" (fn [chunk] (.push stderr-chunks chunk)))
+         (.on proc "close"
+              (fn [code]
+                (let [stdout (.toString (.concat js/Buffer stdout-chunks))
+                      stderr (.toString (.concat js/Buffer stderr-chunks))]
+                  (if (= 0 code)
+                    (resolve stdout)
+                    (reject (js/Error.
+                             (str "Claude summarization failed (exit " code "): "
+                                  (subs (str/trim stderr) 0 (min 200 (count stderr))))))))))
+         (.on proc "error"
+              (fn [err] (reject err)))
+         (.write (.-stdin proc) input)
+         (.end (.-stdin proc))))))
 
 
 (defn- format-messages-for-summary
@@ -128,3 +135,4 @@ Format as a structured summary. Be thorough but concise.")
                                                    :text (str "<summary>\n" summary "\n</summary>\n\n"
                                                               "The conversation history before this point was compacted into the above summary.")}]}]
                     (into [compacted-msg] recent-messages)))))))
+)
