@@ -348,6 +348,17 @@
         (cache/save-last-room! (:room-id @state/app-state) sid)
         (cache-current-messages!)))
 
+    :rooms-updated
+    ;; Live room state push from server (busy changes, new rooms, etc.)
+    (let [rooms (or (:rooms event) [])
+          active-sids (set (or (:active-sessions event) []))]
+      (swap! state/app-state assoc
+             :rooms rooms
+             :active-sessions active-sids)
+      (when-let [sessions (:sessions event)]
+        (swap! state/app-state assoc :home-sessions sessions)
+        (cache/save-sessions! sessions)))
+
     :command-result
     (case (:command event)
       "resume-list"

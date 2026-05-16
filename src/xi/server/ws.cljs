@@ -45,6 +45,29 @@
         ;; Track WS → {room-id, runtime-client} mapping
         conn-state (atom {})
 
+        ;; Lobby clients: connected WS not in any room (receive room updates)
+        lobby-clients (atom #{})
+
+        ;; Rooms already subscribed for lobby broadcasts (avoid duplicates)
+        subscribed-rooms (atom #{})
+
+        ;; Push current room state to all lobby clients
+        broadcast-lobby!
+        (fn broadcast-lobby! []
+          (when (seq @lobby-clients)
+            (let [rooms (rm/list-rooms manager)
+                  active-sids (into #{} (keep :session-id) rooms)
+                  payload (js/JSON.stringify
+                           (clj->js
+                            (cond-> {:type :rooms-updated
+                                     :rooms rooms
+                                     :active-sessions (vec active-sids)}
+                              personal-agent?
+                              (assoc :sessions (session/list-personal-agent-sessions)
+                                     :personal-agent? true))))]
+              (doseq [ws @lobby-clients]
+                (try (.send ws payload) (catch :default _ nil))))))
+
         server
         (js/Bun.serve
          #js {:port port
@@ -61,6 +84,7 @@
                    (fn [^js ws]
                      ;; Client connected but not yet joined a room.
                      ;; Send a prompt to join.
+                     (swap! lobby-clients conj ws)
                      (.send ws (js/JSON.stringify
                                 (clj->js (waiting-for-join-msg manager personal-agent?)))))
 
@@ -78,8 +102,11 @@
                                  (runtime/disconnect! (:runtime room) rt-client))
                                (rm/remove-client! manager room-id ws)
                                (swap! conn-state dissoc ws)
+                               (swap! lobby-clients conj ws)
                                (.send ws (js/JSON.stringify
-                                          (clj->js (waiting-for-join-msg manager personal-agent?)))))
+                                          (clj->js (waiting-for-join-msg manager personal-agent?))))
+                               ;; Notify other lobby clients about the room change
+                               (broadcast-lobby!))
                              ;; Normal command — dispatch to runtime
                              (let [{:keys [room-id]} state
                                    room (rm/get-room manager room-id)]
@@ -111,6 +138,7 @@
                                    connected (runtime/connect! rt rt-client)]
 
                                ;; Track this connection
+                               (swap! lobby-clients disj ws)
                                (rm/add-client! manager room-id ws)
                                (swap! conn-state assoc ws
                                       {:room-id room-id
@@ -128,12 +156,20 @@
                                    ;; Auto-cleanup: agent just finished, if no clients left, destroy
                                    (when-let [room (rm/get-room manager room-id)]
                                      (when (zero? (count @(:clients room)))
-                                       (rm/destroy-room! manager room-id)))))
+                                       (rm/destroy-room! manager room-id)
+                                       (broadcast-lobby!)))))
 
-                               ;; Confirm join
+                               ;; Per-room subscription: push busy state to lobby clients
+                               (when-not (contains? @subscribed-rooms room-id)
+                                 (swap! subscribed-rooms conj room-id)
+                                 (runtime/subscribe! rt :busy-changed
+                                   (fn [_] (broadcast-lobby!))))
+
+                               ;; Confirm join + notify lobby of room change
                                (.send ws (js/JSON.stringify
                                           (clj->js {:type :room-joined
-                                                    :room-id room-id}))))
+                                                    :room-id room-id})))
+                               (broadcast-lobby!))
 
                              ;; Unknown pre-join message
                              (.send ws (js/JSON.stringify
@@ -146,6 +182,7 @@
 
                    :close
                    (fn [^js ws _code _reason]
+                     (swap! lobby-clients disj ws)
                      (when-let [{:keys [room-id rt-client]} (get @conn-state ws)]
                        (when-let [room (rm/get-room manager room-id)]
                          (runtime/disconnect! (:runtime room) rt-client))
@@ -155,7 +192,8 @@
                        (when-let [room (rm/get-room manager room-id)]
                          (when (and (zero? (count @(:clients room)))
                                     (not (runtime/busy? (:runtime room))))
-                           (rm/destroy-room! manager room-id)))))}})]
+                           (rm/destroy-room! manager room-id)))
+                       (broadcast-lobby!)))}})]
 
     (js/console.error (str "[ws] Listening on ws://localhost:" port))
 

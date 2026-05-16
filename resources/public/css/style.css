@@ -546,6 +546,13 @@ body {
 
 .project-card-icon { flex-shrink: 0; color: var(--fg-1); }
 
+.active-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--accent);
+}
+
 .project-card-info {
   display: flex;
   flex-direction: column;

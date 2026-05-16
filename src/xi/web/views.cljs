@@ -392,6 +392,11 @@
                                     (when (:session-id r)
                                       [(:session-id r) (:id r)])))
                             rooms)
+        ;; Build session-id → busy? lookup
+        session-busy? (into #{}
+                            (comp (filter :busy?)
+                                  (keep :session-id))
+                            rooms)
         has-sessions? (seq home-sessions)]
     [:div {:class ["container"]}
      (topbar {:title "Xi"
@@ -413,6 +418,7 @@
             (fn [idx s]
               (let [sid (:session-id s)
                     active? (contains? active-sessions sid)
+                    busy? (contains? session-busy? sid)
                     room-id (get session->room sid)]
                 [:div {:class ["project-card"
                                (when active? "project-card--active")
@@ -428,15 +434,19 @@
                                        ;; Offline — open cached view
                                        (ws/open-cached-session! sid)))}}
                  [:div {:class ["project-card-icon"]}
-                  (if active?
-                    (spinner/spinner {:size :sm})
-                    (icon/icon {:icon-name :message-square}))]
+                  (cond
+                    busy?   (spinner/spinner {:size :sm})
+                    active? [:div {:class ["active-dot"]}]
+                    :else   (icon/icon {:icon-name :message-square}))]
                  [:div {:class ["project-card-info"]}
                   [:span {:class ["project-card-name"]}
                    (or (:name s) "(unnamed)")]
                   [:span {:class ["project-card-path"]}
                    (str (format-session-time (or (:last-accessed s) (:timestamp s)))
-                        (when active? " · active"))]]]))
+                        (cond
+                          busy?   " · working..."
+                          active? " · active"
+                          :else   ""))]]]))
             home-sessions)]]]
         ;; No sessions at all (no cache, not connected)
         [:div {:class ["empty-state"]}
