@@ -147,12 +147,16 @@
   (let [{:keys [emit!]} (:bus rt)
         sess (:sess rt)
         session-id (or (:cli-session-id @sess) (provider/get-session-id))
-        pa? (:personal-agent? @sess)]
+        pa? (:personal-agent? @sess)
+        abort-signal (:abort-signal rt)]
     (when-not session-id
       (emit! {:type :command-error :command "compact" :text "No active session to compact."})
       (js/Promise.resolve nil))
+    (reset! (:busy rt) true)
+    (reset! abort-signal false)
     (emit! {:type :compact-start})
-    (-> (compaction/summarize session-id)
+    (emit! {:type :busy-changed :busy true})
+    (-> (compaction/summarize session-id {:abort-signal abort-signal})
         (.then (fn [summary]
                  ;; Clear old session
                  (reset! sess (session/create-session (:cwd @sess)
@@ -165,9 +169,16 @@
                  (dispatch! rt (str "<conversation-summary>\n" summary "\n</conversation-summary>\n\n"
                                     "Acknowledge this summary briefly and wait for my next instruction."))))
         (.catch (fn [err]
-                  (emit! {:type :command-error
-                          :command "compact"
-                          :text (str "Compaction failed: " (.-message err))}))))))
+                  (if (= "Compaction aborted" (.-message err))
+                    (emit! {:type :command-error :command "compact" :text "Compaction aborted."})
+                    (emit! {:type :command-error
+                            :command "compact"
+                            :text (str "Compaction failed: " (.-message err))}))
+                  nil))
+        (.finally (fn []
+                    (reset! (:busy rt) false)
+                    (reset! abort-signal false)
+                    (emit! {:type :busy-changed :busy false}))))))
 
 ;; ── Public API ───────────────────────────────────────────────────────────────
 

@@ -20,46 +20,62 @@ Be thorough but concise. Output only the summary, no preamble.")
 
 (defn summarize
   "Resume the current SDK session and ask the model to summarize it.
+   opts: {:abort-signal atom} — when truthy, interrupt the query.
    Returns promise of summary string."
-  [session-id]
-  (let [opts (cond-> {:model "claude-sonnet-4-20250514"
-                      :permissionMode "bypassPermissions"
-                      :resume session-id}
-               claude-executable
-               (assoc :pathToClaudeCodeExecutable claude-executable))
+  [session-id opts]
+  (let [abort-signal (:abort-signal opts)
+        opts' (cond-> {:model "claude-sonnet-4-20250514"
+                       :permissionMode "bypassPermissions"
+                       :resume session-id}
+                claude-executable
+                (assoc :pathToClaudeCodeExecutable claude-executable))
         ^js q (sdk/query #js {:prompt COMPACT_PROMPT
-                              :options (clj->js opts)})
-        chunks (atom [])]
+                              :options (clj->js opts')})
+        chunks (atom [])
+        abort! (fn []
+                 (-> (.interrupt q)
+                     (.then #(.close q))
+                     (.catch #(.close q))))]
+    (when abort-signal
+      (add-watch abort-signal ::compaction-abort
+                 (fn [_ _ _ v]
+                   (when v (abort!)))))
     (-> (js/Promise.
          (fn [resolve reject]
            (let [consume
                  (fn consume []
-                   (-> (.next q)
-                       (.then
-                        (fn [^js iter]
-                          (if (.-done iter)
-                            (let [result (str/join @chunks)]
-                              (if (seq result)
-                                (resolve result)
-                                (reject (js/Error. "Compaction produced empty summary"))))
-                            (do
-                              (let [^js msg (.-value iter)
-                                    t (.-type msg)]
-                                (case t
-                                  "result"
-                                  (let [r (.-result msg)]
-                                    (when (seq r)
-                                      (swap! chunks conj r)))
+                   (if (and abort-signal @abort-signal)
+                     (do (abort!)
+                         (reject (js/Error. "Compaction aborted")))
+                     (-> (.next q)
+                         (.then
+                          (fn [^js iter]
+                            (if (.-done iter)
+                              (let [result (str/join @chunks)]
+                                (if (seq result)
+                                  (resolve result)
+                                  (reject (js/Error. "Compaction produced empty summary"))))
+                              (do
+                                (let [^js msg (.-value iter)
+                                      t (.-type msg)]
+                                  (case t
+                                    "result"
+                                    (let [r (.-result msg)]
+                                      (when (seq r)
+                                        (swap! chunks conj r)))
 
-                                  "assistant"
-                                  (let [^js m (.-message msg)
-                                        content (when m (js->clj (.-content m) :keywordize-keys true))]
-                                    (doseq [block content]
-                                      (when (= "text" (:type block))
-                                        (swap! chunks conj (:text block)))))
+                                    "assistant"
+                                    (let [^js m (.-message msg)
+                                          content (when m (js->clj (.-content m) :keywordize-keys true))]
+                                      (doseq [block content]
+                                        (when (= "text" (:type block))
+                                          (swap! chunks conj (:text block)))))
 
-                                  nil))
-                              (consume)))))
-                       (.catch reject)))]
+                                    nil))
+                                (consume)))))
+                         (.catch reject))))]
              (consume))))
-        (.finally (fn [] (try (.close q) (catch :default _)))))))
+        (.finally (fn []
+                    (when abort-signal
+                      (remove-watch abort-signal ::compaction-abort))
+                    (try (.close q) (catch :default _)))))))
