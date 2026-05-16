@@ -80,6 +80,9 @@ src/xi/
   loop.cljs            — agent loop (wraps provider/SDK)
   provider.cljs        — Claude Agent SDK integration, MCP tool bridge
   session.cljs         — session persistence (Xi, Claude CLI, Pi formats)
+  session/
+    format.cljc        — shared session data shapes & cache key construction (cljc)
+    sync.cljc          — sync manifest for rsync (cljc)
   state/
     session.cljs       — accessor fns for hook state (session-title, cwd, model, etc.)
   tools/*.cljs         — built-in tools (read, write, edit, bash, grep, ls)
@@ -99,7 +102,19 @@ src/xi/
   system_prompt.cljs   — system prompt construction (base + personal-agent)
   util.cljs            — shared pure utilities
   tui/                 — terminal UI rendering primitives
+  web/
+    core.cljs          — web client entry point (render loop, cache hydration)
+    state.cljs         — app-state atom
+    views.cljs         — Replicant view functions
+    ws.cljs            — WebSocket transport with offline queueing
+    cache.cljs         — localStorage session/message cache
 ```
+
+### Web Client
+
+Browser-based client built with shadow-cljs `:browser` target and [Replicant](https://github.com/cjohansen/replicant) for rendering. Connects to the WS server. Supports offline mode with localStorage caching.
+
+See [docs/web-offline.md](docs/web-offline.md) for offline architecture details.
 
 ## Extensions
 
