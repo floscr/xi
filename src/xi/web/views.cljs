@@ -387,7 +387,7 @@
 
 (defn- session-card
   "Render a single session/room card in the home list."
-  [{:keys [sid name timestamp active? busy? room-id connected? on-click]}]
+  [{:keys [sid name timestamp active? busy? unread? room-id connected? on-click]}]
   [:div {:class ["project-card"
                  (when active? "project-card--active")
                  (when-not connected? "project-card--offline")]
@@ -406,9 +406,12 @@
           (cond
             busy?   " · working..."
             active? " · active"
-            :else   ""))]]])
+            :else   ""))]]
+   (when unread?
+     [:div {:class ["unread-dot"]}])])
 
-(defn- home-view [{:keys [connected? rooms home-sessions active-sessions personal-agent?]}]
+(defn- home-view [{:keys [connected? rooms home-sessions active-sessions
+                          watched-sessions response-counts personal-agent?]}]
   (let [;; Build session-id → room-id lookup from rooms list
         session->room (into {}
                             (keep (fn [r]
@@ -461,13 +464,18 @@
               (let [sid (:session-id s)
                     active? (contains? active-sessions sid)
                     busy? (contains? session-busy? sid)
-                    room-id (get session->room sid)]
+                    room-id (get session->room sid)
+                    watched-count (get watched-sessions sid)
+                    server-count (get response-counts sid)
+                    unread? (and watched-count server-count
+                                 (> server-count watched-count))]
                 (session-card
                  {:sid sid
                   :name (:name s)
                   :timestamp (or (:last-accessed s) (:timestamp s))
                   :active? active?
                   :busy? busy?
+                  :unread? unread?
                   :room-id room-id
                   :connected? connected?
                   :on-click #(if connected?

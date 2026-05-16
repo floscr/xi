@@ -333,6 +333,40 @@
          reverse
          vec)))
 
+;; ── Response counting (for unread indicators) ────────────────────────────────
+
+(defn- count-assistant-turns-in-jsonl
+  "Count assistant message lines in a JSONL file. Fast — just checks type field."
+  [filepath]
+  (try
+    (let [content (fs/readFileSync filepath "utf8")
+          lines (str/split content #"\n")]
+      (reduce (fn [n line]
+                (if (and (not (str/blank? line))
+                         (str/includes? line "\"type\":\"assistant\""))
+                  (inc n)
+                  n))
+              0 lines))
+    (catch :default _ 0)))
+
+(defn count-session-responses
+  "Given a seq of xi session-ids, return {session-id response-count}.
+   Reads session metadata to find JSONL, counts assistant turns."
+  [session-ids]
+  (let [all-metas (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
+                       (keep read-xi-session-meta))
+        id->meta (into {} (map (fn [m] [(:session-id m) m])) all-metas)]
+    (into {}
+          (keep (fn [sid]
+                  (when-let [meta (get id->meta sid)]
+                    (when-let [cli-sid (:cli-session-id meta)]
+                      (let [cwd (or (:cwd meta) "/")
+                            filepath (.join node-path (claude-project-dir cwd)
+                                            (str cli-sid ".jsonl"))]
+                        (when (fs/existsSync filepath)
+                          [sid (count-assistant-turns-in-jsonl filepath)]))))))
+          session-ids)))
+
 ;; ── Resume Support ────────────────────────────────────────────────────────────
 
 (defn load-session

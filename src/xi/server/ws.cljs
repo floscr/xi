@@ -118,8 +118,17 @@
                                (when room
                                  (runtime/dispatch! (:runtime room) msg))))
 
-                           ;; Not yet joined — expect a :join message
-                           (if (= :join (:type msg))
+                           ;; Not yet joined — handle lobby messages
+                           (case (:type msg)
+                             :query-response-counts
+                             (let [sids (or (:sessions msg) [])
+                                   counts (when (seq sids)
+                                            (session/count-session-responses sids))]
+                               (.send ws (js/JSON.stringify
+                                          (clj->js {:type :response-counts
+                                                    :counts (or counts {})}))))
+
+                             :join
                              (let [target (or (:room msg) (:session msg))
                                    mode (case target
                                           "new" :new

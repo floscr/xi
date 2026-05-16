@@ -557,6 +557,15 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
+}
+
+.unread-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  flex-shrink: 0;
 }
 
 .project-card-name { font-weight: 600; }

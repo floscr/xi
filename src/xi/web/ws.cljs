@@ -51,6 +51,7 @@
 (declare flush-pending!)
 (declare join-and-resume!)
 (declare join-room!)
+(declare send-raw!)
 
 ;; ---------------------------------------------------------------------------
 ;; Cache helpers
@@ -130,7 +131,12 @@
             (router/navigate! {:page :home})
             (swap! state/app-state assoc
                    :messages []
-                   :busy? false)))))
+                   :busy? false))))
+      ;; Query response counts for watched sessions
+      (let [watched (:watched-sessions @state/app-state)]
+        (when (seq watched)
+          (send-raw! {:type :query-response-counts
+                      :sessions (vec (keys watched))}))))
 
     :room-joined
     (let [room-id (:room-id event)
@@ -140,6 +146,10 @@
              :session-id sid)
       (router/navigate! {:page :chat :session-id sid})
       (cache/save-last-room! room-id sid)
+      ;; Unwatch session — user is now viewing it
+      (when sid
+        (cache/unwatch-session! sid)
+        (swap! state/app-state update :watched-sessions dissoc sid))
       ;; Flush pending messages now that we're in a room
       (js/setTimeout flush-pending! 100))
 
@@ -353,6 +363,13 @@
         (cache/save-last-room! (:room-id @state/app-state) sid)
         (cache-current-messages!)))
 
+    :response-counts
+    ;; Server responded with response counts for watched sessions.
+    ;; Keys may be keywordized from JSON parse — convert back to strings.
+    (let [counts (into {} (map (fn [[k v]] [(name k) v]))
+                       (or (:counts event) {}))]
+      (swap! state/app-state assoc :response-counts counts))
+
     :rooms-updated
     ;; Live room state push from server (busy changes, new rooms, etc.)
     (let [rooms (or (:rooms event) [])
@@ -501,6 +518,14 @@
                   (parse-command command)
                   command)
         sent? (send-raw! payload)]
+    ;; Watch session for unread tracking when sending a prompt
+    (when (= :prompt (:type payload))
+      (when-let [sid (:session-id @state/app-state)]
+        (let [response-count (->> (:messages @state/app-state)
+                                  (filter #(= :assistant (:type %)))
+                                  count)]
+          (cache/watch-session! sid response-count)
+          (swap! state/app-state assoc-in [:watched-sessions sid] response-count))))
     (when (and (not sent?)
                ;; Only queue prompts, not control commands like :abort
                (contains? #{:prompt} (:type payload)))
@@ -594,6 +619,7 @@
   []
   (let [sessions (cache/load-sessions)
         pending (cache/load-pending)
+        watched (cache/load-watched-sessions)
         last-room (cache/load-last-room)
         route (router/current-route)
         url-sid (:session-id route)]
@@ -603,6 +629,9 @@
     ;; Restore pending messages
     (when (seq pending)
       (swap! state/app-state assoc :pending-messages pending))
+    ;; Restore watched sessions
+    (when (seq watched)
+      (swap! state/app-state assoc :watched-sessions watched))
     ;; If URL points to a chat session, try to hydrate from cache
     (if (and (= :chat (:page route)) url-sid)
       (let [cached-msgs (cache/load-messages url-sid)]

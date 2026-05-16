@@ -108,6 +108,39 @@
   []
   (store-remove! fmt/pending-messages-key))
 
+;; ── Watched sessions (unread tracking) ────────────────────────────────────────
+
+(def ^:private watched-key "xi/watched-sessions")
+
+(defn load-watched-sessions
+  "Load map of session-id → response-count-when-last-seen. Returns {}.
+   Keys are strings (session IDs)."
+  []
+  (or (try
+        (when-let [raw (.getItem js/localStorage watched-key)]
+          (js->clj (js/JSON.parse raw)))
+        (catch :default _ nil))
+      {}))
+
+(defn save-watched-sessions!
+  "Persist the full watched sessions map."
+  [watched]
+  (store-set! watched-key watched))
+
+(defn watch-session!
+  "Mark a session as watched with its current response count."
+  [session-id response-count]
+  (when session-id
+    (let [current (load-watched-sessions)]
+      (save-watched-sessions! (assoc current session-id response-count)))))
+
+(defn unwatch-session!
+  "Remove a session from watched (user has seen it)."
+  [session-id]
+  (when session-id
+    (let [current (load-watched-sessions)]
+      (save-watched-sessions! (dissoc current session-id)))))
+
 ;; ── Room / active session tracking ───────────────────────────────────────────
 
 (def ^:private last-room-key "xi/last-room")
