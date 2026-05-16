@@ -354,15 +354,12 @@ body {
 
 .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-/* ---- Agent status / working ---- */
-.agent-status {
+/* ---- Status bubble (inside timeline as assistant message) ---- */
+.status-bubble {
   display: flex;
   align-items: center;
   gap: var(--size-2);
-  padding: var(--size-2) var(--size-4);
-  background-color: var(--bg-1);
-  border-bottom: var(--border-0);
-  color: var(--fg-1);
+  color: var(--fg-2);
   font-size: var(--font-sm);
 }
 
@@ -378,20 +375,37 @@ body {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.agent-status-text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.icon-btn--sm {
+  width: 24px;
+  height: 24px;
+  padding: 2px;
 }
 
-.agent-status-cancel {
-  background: none;
-  border: none;
+.agent-status-spinner--sm {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--gray-300);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ---- Connection badge (offline) ---- */
+.connection-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  font-size: var(--font-xs);
   color: var(--fg-2);
-  cursor: pointer;
-  padding: var(--size-1);
+  padding: var(--size-1) var(--size-2);
   border-radius: 9999px;
+  background-color: var(--bg-2);
+}
+
+/* ---- Offline project card ---- */
+.project-card--offline {
+  opacity: 0.8;
 }
 
 /* ---- Tool call blocks ---- */

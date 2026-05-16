@@ -1,9 +1,12 @@
 (ns xi.web.ws
   "WebSocket transport for the web client.
    Connects to xi's WS server, handles the join handshake,
-   and bridges events into the app-state atom."
+   and bridges events into the app-state atom.
+   Supports offline: caches sessions/messages, queues pending sends."
   (:require [clojure.string :as str]
-            [xi.web.state :as state]))
+            [xi.web.state :as state]
+            [xi.web.cache :as cache]
+            [xi.session.format :as fmt]))
 
 (defonce ^:private ws-conn (atom nil))
 (defonce ^:private reconnect-timer (atom nil))
@@ -12,6 +15,10 @@
 ;; ---------------------------------------------------------------------------
 ;; Helpers
 ;; ---------------------------------------------------------------------------
+
+(defn- gen-id []
+  (str (.toString (js/Date.now) 36) "-"
+       (.toString (js/Math.floor (* (js/Math.random) 1000000)) 36)))
 
 (defn- get-arg
   "Get a tool argument by key, trying both string and keyword forms."
@@ -37,11 +44,36 @@
       tool-name)))
 
 ;; ---------------------------------------------------------------------------
+;; Forward declarations
+;; ---------------------------------------------------------------------------
+
+(declare flush-pending!)
+(declare join-and-resume!)
+(declare join-room!)
+
+;; ---------------------------------------------------------------------------
+;; Cache helpers
+;; ---------------------------------------------------------------------------
+
+(defn- cache-current-messages!
+  "Persist current messages to cache for the active session."
+  []
+  (when-let [sid (:session-id @state/app-state)]
+    (cache/save-messages! sid (:messages @state/app-state))))
+
+(defn- session-id-for-room
+  "Try to find the session-id associated with a room-id from room list."
+  [room-id]
+  (some (fn [r] (when (= room-id (:id r)) (:session-id r)))
+        (:rooms @state/app-state)))
+
+;; ---------------------------------------------------------------------------
 ;; Event handling
 ;; ---------------------------------------------------------------------------
 
 (defn- append-msg! [msg]
-  (swap! state/app-state update :messages conj msg))
+  (swap! state/app-state update :messages conj msg)
+  (cache-current-messages!))
 
 (defonce ^:private replaying-history? (atom false))
 
@@ -49,22 +81,60 @@
   (case (:type event)
     :waiting-for-join
     ;; Only show home screen if we explicitly left (room-id already nil)
-    ;; Skip when this arrives during initial connect (join already in flight)
-    (let [currently-in-room (:room-id @state/app-state)]
+    ;; When reconnecting with a cached session, auto-rejoin.
+    (let [currently-in-room (:room-id @state/app-state)
+          cached-session-id (:session-id @state/app-state)
+          sessions (or (:sessions event) [])
+          rooms (or (:rooms event) [])
+          active-sids (set (or (:active-sessions event) []))]
       (swap! state/app-state assoc
-             :rooms (or (:rooms event) [])
-             :home-sessions (or (:sessions event) [])
-             :active-sessions (set (or (:active-sessions event) [])))
-      (when-not currently-in-room
-        (swap! state/app-state assoc
-               :view :home
-               :messages []
-               :busy? false)))
+             :rooms rooms
+             :home-sessions sessions
+             :active-sessions active-sids)
+      ;; Cache sessions for offline
+      (cache/save-sessions! sessions)
+      (let [has-pending? (seq (:pending-messages @state/app-state))
+            in-chat? (or currently-in-room (= :chat (:view @state/app-state)))]
+        (if in-chat?
+          ;; We were in a chat (from cache, offline new session, or before disconnect).
+          ;; Try to rejoin: find if our session still has an active room.
+          (let [room-for-session (when cached-session-id
+                                   (some (fn [r] (when (= cached-session-id (:session-id r)) (:id r))) rooms))]
+            (cond
+              room-for-session
+              ;; Session still active — rejoin its room
+              (join-room! room-for-session)
+
+              cached-session-id
+              ;; Session not active — resume into a new room
+              (let [idx (some (fn [[i s]] (when (= cached-session-id (:session-id s)) (inc i)))
+                              (map-indexed vector sessions))]
+                (if idx
+                  (join-and-resume! idx)
+                  ;; Session not in list — stay on cached view
+                  nil))
+
+              has-pending?
+              ;; Offline new session with pending messages — join new room to flush
+              (join-room! "new")
+
+              :else nil))
+          ;; Not in a room — show home
+          (swap! state/app-state assoc
+                 :view :home
+                 :messages []
+                 :busy? false))))
 
     :room-joined
-    (swap! state/app-state assoc
-           :room-id (:room-id event)
-           :view :chat)
+    (let [room-id (:room-id event)
+          sid (session-id-for-room room-id)]
+      (swap! state/app-state assoc
+             :room-id room-id
+             :session-id sid
+             :view :chat)
+      (cache/save-last-room! room-id sid)
+      ;; Flush pending messages now that we're in a room
+      (js/setTimeout flush-pending! 100))
 
     :ready
     (swap! state/app-state assoc
@@ -72,8 +142,23 @@
            :cwd (:cwd event))
 
     :user-message
-    (append-msg! (cond-> {:type :user :text (:text event)}
-                   (seq (:images event)) (assoc :images (:images event))))
+    (do
+      ;; Server echoes user message back. Skip if we already showed it optimistically
+      ;; (the last message is already a :user with same text).
+      (let [last-msg (peek (:messages @state/app-state))]
+        (when-not (and last-msg
+                       (= :user (:type last-msg))
+                       (= (:text event) (:text last-msg)))
+          (append-msg! (cond-> {:type :user :text (:text event)}
+                         (seq (:images event)) (assoc :images (:images event))))))
+      ;; When server confirms our message, clear it from pending
+      ;; (pending messages match by payload text)
+      (let [pending (:pending-messages @state/app-state)]
+        (when (seq pending)
+          (let [matching (first (filter #(= (:text event) (get-in % [:payload :text])) pending))]
+            (when matching
+              (let [updated (cache/remove-pending! (:id matching))]
+                (swap! state/app-state assoc :pending-messages updated)))))))
 
     :busy-changed
     (swap! state/app-state assoc :busy? (:busy event))
@@ -82,26 +167,30 @@
     nil ;; busy-changed handles UI
 
     :text-delta
-    (swap! state/app-state
-           (fn [s]
-             (let [msgs (:messages s)
-                   last-msg (peek msgs)]
-               (if (and last-msg (= :assistant (:type last-msg)))
-                 ;; Append to current assistant message
-                 (assoc s :messages (conj (pop msgs)
-                                          (update last-msg :text str (:text event))))
-                 ;; Start new assistant message
-                 (update s :messages conj {:type :assistant :text (:text event)})))))
+    (do
+      (swap! state/app-state
+             (fn [s]
+               (let [msgs (:messages s)
+                     last-msg (peek msgs)]
+                 (if (and last-msg (= :assistant (:type last-msg)))
+                   ;; Append to current assistant message
+                   (assoc s :messages (conj (pop msgs)
+                                            (update last-msg :text str (:text event))))
+                   ;; Start new assistant message
+                   (update s :messages conj {:type :assistant :text (:text event)})))))
+      (cache-current-messages!))
 
     :thinking
-    (swap! state/app-state
-           (fn [s]
-             (let [msgs (:messages s)
-                   last-msg (peek msgs)]
-               (if (and last-msg (= :thinking (:type last-msg)))
-                 (assoc s :messages (conj (pop msgs)
-                                          (update last-msg :text str (:text event))))
-                 (update s :messages conj {:type :thinking :text (:text event)})))))
+    (do
+      (swap! state/app-state
+             (fn [s]
+               (let [msgs (:messages s)
+                     last-msg (peek msgs)]
+                 (if (and last-msg (= :thinking (:type last-msg)))
+                   (assoc s :messages (conj (pop msgs)
+                                            (update last-msg :text str (:text event))))
+                   (update s :messages conj {:type :thinking :text (:text event)})))))
+      (cache-current-messages!))
 
     :tool-start
     (let [title (format-tool-title (:name event) (:arguments event))]
@@ -114,42 +203,46 @@
                     :finished false}))
 
     :tool-args
-    (swap! state/app-state
-           (fn [s]
-             (let [msgs (:messages s)
-                   last-msg (peek msgs)]
-               (if (and last-msg (= :tool (:type last-msg)) (not (:finished last-msg)))
-                 (let [title (format-tool-title (:name event) (:arguments event))]
-                   (assoc s :messages (conj (pop msgs)
-                                            (assoc last-msg
-                                                   :title title
-                                                   :arguments (:arguments event)))))
-                 s))))
+    (do
+      (swap! state/app-state
+             (fn [s]
+               (let [msgs (:messages s)
+                     last-msg (peek msgs)]
+                 (if (and last-msg (= :tool (:type last-msg)) (not (:finished last-msg)))
+                   (let [title (format-tool-title (:name event) (:arguments event))]
+                     (assoc s :messages (conj (pop msgs)
+                                              (assoc last-msg
+                                                     :title title
+                                                     :arguments (:arguments event)))))
+                   s))))
+      (cache-current-messages!))
 
     :tool-result
-    (swap! state/app-state
-           (fn [s]
-             (let [msgs (:messages s)
-                   last-msg (peek msgs)]
-               (if (and last-msg (= :tool (:type last-msg)) (not (:finished last-msg)))
-                 (let [content (:content event)
-                       text (cond
-                              (string? content) content
-                              (sequential? content)
-                              (->> content
-                                   (keep (fn [b]
-                                           (cond
-                                             (string? b) b
-                                             (= "text" (:type b)) (:text b)
-                                             :else nil)))
-                                   (str/join "\n"))
-                              :else nil)]
-                   (assoc s :messages (conj (pop msgs)
-                                            (assoc last-msg
-                                                   :result text
-                                                   :is-error (:is-error event)
-                                                   :finished true))))
-                 s))))
+    (do
+      (swap! state/app-state
+             (fn [s]
+               (let [msgs (:messages s)
+                     last-msg (peek msgs)]
+                 (if (and last-msg (= :tool (:type last-msg)) (not (:finished last-msg)))
+                   (let [content (:content event)
+                         text (cond
+                                (string? content) content
+                                (sequential? content)
+                                (->> content
+                                     (keep (fn [b]
+                                             (cond
+                                               (string? b) b
+                                               (= "text" (:type b)) (:text b)
+                                               :else nil)))
+                                     (str/join "\n"))
+                                :else nil)]
+                     (assoc s :messages (conj (pop msgs)
+                                              (assoc last-msg
+                                                     :result text
+                                                     :is-error (:is-error event)
+                                                     :finished true))))
+                   s))))
+      (cache-current-messages!))
 
     :error
     (append-msg! {:type :error
@@ -157,20 +250,29 @@
                             (pr-str (:error event)))})
 
     :turn-end
-    nil ;; busy-changed handles UI
+    ;; Flush pending messages that were waiting for turn to end
+    ;; Also update session-id if server provides it
+    (when-let [sid (:session-id event)]
+      (swap! state/app-state assoc :session-id sid)
+      (cache/save-last-room! (:room-id @state/app-state) sid)
+      (cache-current-messages!))
 
     :aborted
     (append-msg! {:type :status :text "Interrupted."})
 
     :session-cleared
-    (swap! state/app-state assoc :messages [])
+    (do
+      (swap! state/app-state assoc :messages [])
+      (cache-current-messages!))
 
     :compact-start
     (append-msg! {:type :status :text "Compacting conversation..."})
 
     :session-compacted
-    (swap! state/app-state assoc :messages
-           [{:type :status :text "Session compacted. Summary preserved as context."}])
+    (do
+      (swap! state/app-state assoc :messages
+             [{:type :status :text "Session compacted. Summary preserved as context."}])
+      (cache-current-messages!))
 
     :session-resumed
     (let [msgs (:messages event)
@@ -180,6 +282,8 @@
                               msgs)
           session (:session event)
           session-name (or (:name session) (:cli-session-id session) (:id session))
+          ;; Update session-id from the resumed session
+          sid (:id session)
           ;; Group consecutive :image blocks with the preceding :text user block
           grouped (reduce
                    (fn [acc block]
@@ -231,7 +335,11 @@
       (swap! state/app-state assoc
              :messages (into [{:type :status
                                :text (str "Resumed: " (or session-name "session"))}]
-                             grouped)))
+                             grouped)
+             :session-id sid)
+      (when sid
+        (cache/save-last-room! (:room-id @state/app-state) sid)
+        (cache-current-messages!)))
 
     :command-result
     (case (:command event)
@@ -253,10 +361,13 @@
       (reset! replaying-history? true)
       (doseq [evt (:events event)]
         (handle-event (update evt :type keyword)))
-      (reset! replaying-history? false))
+      (reset! replaying-history? false)
+      (cache-current-messages!))
 
     :quit
-    (swap! state/app-state assoc :view :home :room-id nil)
+    (do
+      (cache/clear-last-room!)
+      (swap! state/app-state assoc :view :home :room-id nil :session-id nil))
 
     ;; default — ignore
     nil))
@@ -271,6 +382,25 @@
         port   (or (.get params "port") "7474")]
     (str "ws://" host ":" port)))
 
+(defn- send-raw!
+  "Send a raw clj map as JSON over the WS connection. Returns true if sent."
+  [msg]
+  (when-let [ws @ws-conn]
+    (when (= (.-OPEN js/WebSocket) (.-readyState ws))
+      (.send ws (js/JSON.stringify (clj->js msg)))
+      true)))
+
+(defn- flush-pending!
+  "Try to send all pending messages. Removes successfully acknowledged ones."
+  []
+  (let [pending (:pending-messages @state/app-state)]
+    (when (seq pending)
+      (doseq [pm pending]
+        (when (send-raw! (:payload pm))
+          ;; Mark as sent — remove from pending
+          (let [updated (cache/remove-pending! (:id pm))]
+            (swap! state/app-state assoc :pending-messages updated)))))))
+
 (defn connect! []
   (when-let [old @ws-conn]
     (.close old))
@@ -283,7 +413,10 @@
           (fn [_]
             (js/console.log (str "[ws] connected to " url))
             (reset! reconnect-delay 1000)
-            (swap! state/app-state assoc :connected? true)))
+            (swap! state/app-state assoc :connected? true)
+            ;; Flush any pending messages after a short delay
+            ;; (wait for join handshake to complete first)
+            (js/setTimeout flush-pending! 500)))
 
     (set! (.-onclose ws)
           (fn [_]
@@ -323,23 +456,38 @@
 ;; Dispatch (send commands to server)
 ;; ---------------------------------------------------------------------------
 
+(defn- parse-command
+  "Parse a user input string into a command map."
+  [text]
+  (let [text (str/trim text)]
+    (if (str/starts-with? text "/")
+      (let [parts (str/split text #"\s+" 2)
+            cmd-name (subs (first parts) 1)
+            args (when (second parts) (str/trim (second parts)))]
+        {:type :command :name cmd-name :args args})
+      {:type :prompt :text text})))
+
 (defn dispatch!
   "Send a command or prompt to the server.
+   If offline, queues as pending message.
    Accepts a string (prompt or /command), a map ({:type :abort}),
    or a map with :text and :images for image attachments."
   [command]
-  (when-let [ws @ws-conn]
-    (when (= (.-OPEN js/WebSocket) (.-readyState ws))
-      (let [parsed (if (string? command)
-                     (let [text (str/trim command)]
-                       (if (str/starts-with? text "/")
-                         (let [parts (str/split text #"\s+" 2)
-                               cmd-name (subs (first parts) 1)
-                               args (when (second parts) (str/trim (second parts)))]
-                           {:type :command :name cmd-name :args args})
-                         {:type :prompt :text text}))
-                     command)]
-        (.send ws (js/JSON.stringify (clj->js parsed)))))))
+  (let [payload (if (string? command)
+                  (parse-command command)
+                  command)
+        sent? (send-raw! payload)]
+    (when (and (not sent?)
+               ;; Only queue prompts, not control commands like :abort
+               (contains? #{:prompt} (:type payload)))
+      ;; Offline — queue as pending
+      (let [pm (fmt/make-pending-message
+                (gen-id)
+                (:session-id @state/app-state)
+                (:room-id @state/app-state)
+                payload)]
+        (cache/add-pending! pm)
+        (swap! state/app-state update :pending-messages conj pm)))))
 
 (defn dispatch-with-images!
   "Send a prompt with attached images to the server.
@@ -350,27 +498,76 @@
               :images images}))
 
 (defn join-room!
-  "Join a specific room by id, or \"new\" / \"latest\"."
+  "Join a specific room by id, or \"new\" / \"latest\".
+   If offline, transitions to chat view anyway (messages will be cached/pending)."
   [room-mode]
-  (when-let [ws @ws-conn]
-    (.send ws (js/JSON.stringify (clj->js {:type :join :room room-mode})))))
+  (let [sent? (send-raw! {:type :join :room room-mode})]
+    (when (and (not sent?) (= room-mode "new"))
+      ;; Offline new session — show chat view with empty timeline
+      (swap! state/app-state assoc
+             :view :chat
+             :room-id nil
+             :session-id nil
+             :messages []))))
 
 (defn leave-room!
   "Leave the current room and return to the room list."
   []
-  (when-let [ws @ws-conn]
-    (swap! state/app-state assoc :room-id nil)
-    (.send ws (js/JSON.stringify (clj->js {:type :leave})))))
+  (cache/clear-last-room!)
+  (swap! state/app-state assoc :room-id nil :session-id nil)
+  (send-raw! {:type :leave}))
 
 (defn join-and-resume!
   "Join a new room and immediately resume session at index n."
   [n]
-  (when-let [ws @ws-conn]
-    ;; Send join + resume back-to-back. Server processes sequentially.
-    (.send ws (js/JSON.stringify (clj->js {:type :join :room "new"})))
-    (.send ws (js/JSON.stringify (clj->js {:type :command :name "resume" :args (str n)})))))
+  (send-raw! {:type :join :room "new"})
+  ;; Small delay so join processes first
+  (js/setTimeout
+   #(send-raw! {:type :command :name "resume" :args (str n)})
+   100))
 
 (defn join-session-room!
   "Join the active room for a session (by matching room-id from rooms list)."
   [room-id]
   (join-room! room-id))
+
+;; ---------------------------------------------------------------------------
+;; Offline session viewing
+;; ---------------------------------------------------------------------------
+
+(defn open-cached-session!
+  "Open a cached session for offline viewing."
+  [session-id]
+  (let [msgs (cache/load-messages session-id)]
+    (swap! state/app-state assoc
+           :view :chat
+           :session-id session-id
+           :messages msgs)))
+
+;; ---------------------------------------------------------------------------
+;; Init — hydrate from cache
+;; ---------------------------------------------------------------------------
+
+(defn hydrate-from-cache!
+  "Load cached state into app-state on startup (before WS connects).
+   This makes the app usable immediately even if the server is down."
+  []
+  (let [sessions (cache/load-sessions)
+        pending (cache/load-pending)
+        last-room (cache/load-last-room)]
+    ;; Always hydrate home sessions so they show even offline
+    (when (seq sessions)
+      (swap! state/app-state assoc :home-sessions sessions))
+    ;; Restore pending messages
+    (when (seq pending)
+      (swap! state/app-state assoc :pending-messages pending))
+    ;; If we were in a chat, restore it from cache
+    (when last-room
+      (let [sid (:session-id last-room)
+            cached-msgs (when sid (cache/load-messages sid))]
+        (when (seq cached-msgs)
+          (swap! state/app-state assoc
+                 :view :chat
+                 :session-id sid
+                 :room-id (:room-id last-room)
+                 :messages cached-msgs))))))

@@ -77,12 +77,17 @@
 
   (r/set-dispatch! (fn [_ _]))
 
+  ;; Hydrate from localStorage cache first — shows content immediately
+  (ws/hydrate-from-cache!)
+
   (add-watch state/app-state ::render
              (fn [_ _ _ new-state]
                (render! new-state)))
 
   (render! @state/app-state)
   (setup-viewport!)
+
+  ;; Then connect WS — will refresh/override with live data
   (ws/connect!))
 
 (defn ^:export reload! []

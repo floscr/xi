@@ -36,6 +36,10 @@
         (swap! state/app-state assoc :compose-text "" :compose-images [])
         (when-let [el (.querySelector js/document ".compose-editable")]
           (set! (.-textContent el) ""))
+        ;; Optimistically show user message in timeline
+        (swap! state/app-state update :messages conj
+               (cond-> {:type :user :text final-text}
+                 (seq images) (assoc :images (mapv #(select-keys % [:data :media-type]) images))))
         (if (seq images)
           (ws/dispatch-with-images! final-text
                                     (mapv #(select-keys % [:data :media-type]) images))
@@ -158,17 +162,30 @@
     nil))
 
 ;; ---------------------------------------------------------------------------
-;; Working indicator
+;; Status indicators (rendered inline in timeline)
 ;; ---------------------------------------------------------------------------
 
+(defn- pending-indicator []
+  (let [pending (:pending-messages @state/app-state)]
+    (when (seq pending)
+      [:div {:class ["post" "post--assistant"]}
+       [:div {:class ["post-body"]}
+        [:div {:class ["post-content" "status-bubble"]}
+         [:div {:class ["agent-status-spinner"]}]
+         [:span
+          (str (count pending) " pending " (if (= 1 (count pending)) "message" "messages") " — waiting for connection...")]]]])))
+
 (defn- working-indicator []
-  (when (:busy? @state/app-state)
-    [:div {:class ["agent-status"]}
-     [:div {:class ["agent-status-spinner"]}]
-     [:span {:class ["agent-status-text"]} "Working..."]
-     [:button {:class ["agent-status-cancel"]
-               :on {:click (fn [_] (ws/dispatch! {:type :abort}))}}
-      (icon/icon {:icon-name :x :size :sm})]]))
+  (if (:busy? @state/app-state)
+    [:div {:class ["post" "post--assistant"]}
+     [:div {:class ["post-body"]}
+      [:div {:class ["post-content" "status-bubble"]}
+       [:div {:class ["agent-status-spinner"]}]
+       [:span "Working..."]
+       [:button {:class ["icon-btn" "icon-btn--sm"]
+                 :on {:click (fn [_] (ws/dispatch! {:type :abort}))}}
+        (icon/icon {:icon-name :x :size :sm})]]]]
+    (pending-indicator)))
 
 ;; ---------------------------------------------------------------------------
 ;; Compose box
@@ -328,7 +345,6 @@
                       [:button {:class ["icon-btn"]
                                 :on {:click (fn [_] (ws/dispatch! "/new"))}}
                        (icon/icon {:icon-name :plus :size :sm})]]})
-   (working-indicator)
    (resume-overlay)
    (lightbox/lightbox {:src (:lightbox-image @state/app-state)
                        :on-close close-lightbox!})
@@ -336,7 +352,8 @@
     [:div {:class ["timeline-content"]}
      (map-indexed
       (fn [idx msg] (message-view msg idx))
-      messages)]]
+      messages)
+     (working-indicator)]]
    (compose-box)])
 
 ;; ---------------------------------------------------------------------------
@@ -367,33 +384,45 @@
                             (keep (fn [r]
                                     (when (:session-id r)
                                       [(:session-id r) (:id r)])))
-                            rooms)]
+                            rooms)
+        has-sessions? (seq home-sessions)]
     [:div {:class ["container"]}
-     (topbar {:title "Xi"})
+     (topbar {:title "Xi"
+              :actions (when-not connected?
+                         [[:div {:class ["connection-badge"]}
+                           [:div {:class ["agent-status-spinner" "agent-status-spinner--sm"]}]
+                           [:span "Offline"]]])})
      [:div {:class ["home"]}
-      (if connected?
+      (if has-sessions?
+        ;; Show sessions (live or cached)
         [:div
          [:div {:class ["section"]}
           [:div {:class ["project-list"]}
-           [:div {:class ["project-card"]
-                  :on {:click (fn [_] (ws/join-room! "new"))}}
-            [:div {:class ["project-card-icon"]}
-             (icon/icon {:icon-name :plus})]
-            [:div {:class ["project-card-info"]}
-             [:span {:class ["project-card-name"]} "New Session"]]]
+           (when connected?
+             [:div {:class ["project-card"]
+                    :on {:click (fn [_] (ws/join-room! "new"))}}
+              [:div {:class ["project-card-icon"]}
+               (icon/icon {:icon-name :plus})]
+              [:div {:class ["project-card-info"]}
+               [:span {:class ["project-card-name"]} "New Session"]]])
            (map-indexed
             (fn [idx s]
               (let [sid (:session-id s)
                     active? (contains? active-sessions sid)
                     room-id (get session->room sid)]
-                [:div {:class ["project-card" (when active? "project-card--active")]
+                [:div {:class ["project-card"
+                               (when active? "project-card--active")
+                               (when-not connected? "project-card--offline")]
                        :key sid
                        :on {:click (fn [_]
-                                     (if room-id
-                                       ;; Session has a live room — rejoin it
-                                       (ws/join-session-room! room-id)
-                                       ;; No active room — create one and resume
-                                       (ws/join-and-resume! (inc idx))))}}
+                                     (if connected?
+                                       (if room-id
+                                         ;; Session has a live room — rejoin it
+                                         (ws/join-session-room! room-id)
+                                         ;; No active room — create one and resume
+                                         (ws/join-and-resume! (inc idx)))
+                                       ;; Offline — open cached view
+                                       (ws/open-cached-session! sid)))}}
                  [:div {:class ["project-card-icon"]}
                   (if active?
                     (spinner/spinner {:size :sm})
@@ -405,7 +434,7 @@
                    (str (format-session-time (or (:last-accessed s) (:timestamp s)))
                         (when active? " · active"))]]]))
             home-sessions)]]]
-        ;; Not connected
+        ;; No sessions at all (no cache, not connected)
         [:div {:class ["empty-state"]}
          [:div
           [:p "Connecting to xi server..."]
@@ -415,6 +444,6 @@
 ;; ---------------------------------------------------------------------------
 
 (defn root-view [app-state]
-  (if (and (:connected? app-state) (:room-id app-state))
+  (if (= :chat (:view app-state))
     (chat-view app-state)
     (home-view app-state)))
