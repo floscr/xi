@@ -146,10 +146,6 @@
              :session-id sid)
       (router/navigate! {:page :chat :session-id sid})
       (cache/save-last-room! room-id sid)
-      ;; Unwatch session — user is now viewing it
-      (when sid
-        (cache/unwatch-session! sid)
-        (swap! state/app-state update :watched-sessions dissoc sid))
       ;; Flush pending messages now that we're in a room
       (js/setTimeout flush-pending! 100))
 
@@ -558,6 +554,12 @@
              :session-id nil
              :messages [])
       (router/navigate! {:page :chat}))))
+
+(defn unwatch-session!
+  "Clear unread state for a session (user is viewing it)."
+  [sid]
+  (cache/unwatch-session! sid)
+  (swap! state/app-state update :watched-sessions dissoc sid))
 
 (defn leave-room!
   "Leave the current room and return to the room list."

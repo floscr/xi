@@ -478,11 +478,15 @@
                   :unread? unread?
                   :room-id room-id
                   :connected? connected?
-                  :on-click #(if connected?
-                               (if room-id
-                                 (ws/join-session-room! room-id)
-                                 (ws/join-and-resume! (inc idx)))
-                               (ws/open-cached-session! sid))})))
+                  :on-click #(do
+                               ;; Clear unread immediately on click
+                               (when sid
+                                 (ws/unwatch-session! sid))
+                               (if connected?
+                                 (if room-id
+                                   (ws/join-session-room! room-id)
+                                   (ws/join-and-resume! (inc idx)))
+                                 (ws/open-cached-session! sid)))})))
             home-sessions)]]]
         ;; No sessions at all (no cache, not connected)
         [:div {:class ["empty-state"]}
