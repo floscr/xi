@@ -3,12 +3,14 @@
    No UI dependencies. Clients connect and receive events."
   (:require [xi.ext.core :as ext]
             [xi.ext.clipboard-image :as ext-clipboard-image]
+            [xi.ext.clj-surgeon :as ext-clj-surgeon]
+            [xi.ext.skills :as ext-skills]
             [xi.image :as image]
             [xi.compaction :as compaction]
             [xi.ext.commit :as ext-commit]
             [xi.ext.done-notify :as ext-done-notify]
             [xi.ext.kb :as ext-kb]
-            [xi.ext.parmezan :as ext-parmezan]
+
             [xi.ext.perplexity :as ext-perplexity]
             [xi.ext.permission-gate :as ext-permission-gate]
             [xi.ext.plan-mode :as ext-plan-mode]
@@ -53,10 +55,11 @@
                ext-commit/extension
                ext-web/extension
                ext-perplexity/extension
-               ext-parmezan/extension
                ext-done-notify/extension
                ext-terminal-title/extension
-               ext-projects/extension]]
+               ext-projects/extension
+               ext-skills/extension
+               ext-clj-surgeon/extension]]
     (ext/register-extension! ext)))
 
 (defn- sync-hook-state!

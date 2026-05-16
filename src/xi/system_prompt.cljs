@@ -2,7 +2,8 @@
   "System prompt construction. Loads AGENTS.md from project root + parents."
   (:require [clojure.string :as str]
             ["node:fs" :as fs]
-            ["node:path" :as node-path]))
+            ["node:path" :as node-path]
+            [xi.ext.skills :as skills]))
 
 (def ^:private BASE_PROMPT
   "You are Xi, a coding assistant. You help users with software engineering tasks.
@@ -49,15 +50,24 @@ Be concise, direct, and friendly. When unsure, say so.")
         (recur parent found)))))
 
 (defn load-agents-md
-  "Load and concatenate all AGENTS.md files from cwd to root."
+  "Load and concatenate all AGENTS.md files from cwd to root.
+   Also appends any active skill prompts for the project."
   [cwd]
-  (let [files (find-agents-md cwd)]
-    (when (seq files)
-      (str/join "\n\n---\n\n"
-                (map (fn [f]
-                       (str "# " (.relative node-path cwd f) "\n\n"
-                            (fs/readFileSync f "utf8")))
-                     files)))))
+  (let [files (find-agents-md cwd)
+        agents-content (when (seq files)
+                         (str/join "\n\n---\n\n"
+                                   (map (fn [f]
+                                          (str "# " (.relative node-path cwd f) "\n\n"
+                                               (fs/readFileSync f "utf8")))
+                                        files)))
+        skill-content (skills/load-skill-prompts cwd)]
+    (cond
+      (and agents-content skill-content)
+      (str agents-content skill-content)
+
+      agents-content agents-content
+      skill-content  skill-content
+      :else          nil)))
 
 (defn- tool-descriptions
   "Format tool definitions into a system prompt section."
