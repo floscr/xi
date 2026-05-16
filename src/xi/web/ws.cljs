@@ -27,10 +27,18 @@
   (or (get arguments (name k))
       (get arguments k)))
 
+(def ^:private display-tool-names
+  {"git_overview"                  "git diff --stat"
+   "git_file_diff"                 "git diff"
+   "git_hunk"                      "git diff"
+   "git_stage_hunks"               "git add"
+   "git_commit_with_user_approval" "git commit"})
+
 (defn- format-tool-title
   "Create a short display title for a tool call."
   [tool-name arguments]
-  (let [detail (case tool-name
+  (let [nice-name (or (display-tool-names tool-name) tool-name)
+        detail (case tool-name
                  ("Bash" "bash")  (get-arg arguments :command)
                  ("Read" "read")  (or (get-arg arguments :file_path) (get-arg arguments :path))
                  ("Write" "write") (or (get-arg arguments :file_path) (get-arg arguments :path))
@@ -38,11 +46,16 @@
                  ("Grep" "grep")  (get-arg arguments :pattern)
                  ("Glob" "find")  (get-arg arguments :pattern)
                  ("ls")           (get-arg arguments :path)
+                 "git_overview"   (if (get-arg arguments :staged) "--staged" nil)
+                 "git_file_diff"  (str/join " " (get-arg arguments :files))
+                 "git_hunk"       (get-arg arguments :file)
+                 "git_stage_hunks" (str/join " " (get-arg arguments :files))
+                 "git_commit_with_user_approval" (get-arg arguments :message)
                  nil)]
     (if detail
       (let [short (first (str/split-lines detail))]
-        (str tool-name " " (if (> (count short) 80) (str (subs short 0 80) "…") short)))
-      tool-name)))
+        (str nice-name " " (if (> (count short) 80) (str (subs short 0 80) "…") short)))
+      nice-name)))
 
 ;; ---------------------------------------------------------------------------
 ;; Forward declarations

@@ -38,6 +38,19 @@
   (or (get arguments (name k))
       (get arguments k)))
 
+(def ^:private display-tool-name
+  "Map internal tool names to nicer display names."
+  {"git_overview"                  "git diff --stat"
+   "git_file_diff"                 "git diff"
+   "git_hunk"                      "git diff"
+   "git_stage_hunks"               "git add"
+   "git_commit_with_user_approval" "git commit"})
+
+(defn- tool-display-name
+  "Get display name for a tool, falling back to the raw name."
+  [tool-name]
+  (or (display-tool-name tool-name) tool-name))
+
 (defn- format-tool-args
   "Format tool arguments for display in the tool header."
   [tool-name arguments]
@@ -63,6 +76,12 @@
                    (str " --glob " g)))
     "find"  (get-arg arguments :pattern)
     "ls"    (get-arg arguments :path)
+    ;; Git tools
+    "git_overview"   (if (get-arg arguments :staged) "--staged" nil)
+    "git_file_diff"  (str/join " " (get-arg arguments :files))
+    "git_hunk"       (get-arg arguments :file)
+    "git_stage_hunks" (str/join " " (get-arg arguments :files))
+    "git_commit_with_user_approval" (get-arg arguments :message)
     nil))
 
 (def ^:private shorten-tool-name util/strip-mcp-prefix)
@@ -90,8 +109,9 @@
                     (let [lines (rest (str/split-lines args-summary))]
                       (when (seq lines)
                         (str/join "\n" (take 20 lines)))))
+        shown-name (tool-display-name tool-name)
         header-text (comp/make-text
-                     (str (ansi/fg :accent (str "$ " tool-name))
+                     (str (ansi/fg :accent (str "$ " shown-name))
                           (when first-line
                             (str " " first-line))
                           (when rest-lines
@@ -119,7 +139,7 @@
                                          (when (seq lines)
                                            (str/join "\n" (take 20 lines)))))]
                         ((:set-text header-text)
-                         (str (ansi/fg :accent (str "$ " new-tool-name))
+                         (str (ansi/fg :accent (str "$ " (tool-display-name new-tool-name)))
                               (when first-ln
                                 (str " " first-ln))
                               (when rest-lns
@@ -131,7 +151,7 @@
                ((:remove-child box) spinner)
                (let [elapsed (- (js/Date.now) start-time)
                      duration (str (.toFixed (/ elapsed 1000) 1) "s")
-                     color (if is-error :error :success)]
+                     color (if is-error :error :dim)]
                  ((:add-child box) (comp/make-spacer 1))
                  ((:add-child box)
                   (comp/make-text (ansi/fg color (str "Took " duration))))
@@ -143,7 +163,7 @@
   [tool-name args-summary output is-error]
   (let [bg-code "\033[48;2;38;44;55m"
         box (comp/make-box {:padding-x 1 :padding-y 0 :bg-code bg-code})
-        short-name (shorten-tool-name tool-name)
+        short-name (tool-display-name (shorten-tool-name tool-name))
         first-line (when (seq args-summary)
                      (truncate (first (str/split-lines args-summary)) 120))
         rest-lines (when (seq args-summary)

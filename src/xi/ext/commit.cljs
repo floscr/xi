@@ -1,6 +1,7 @@
 (ns xi.ext.commit
   "Git commit workflow extension — hunk-level staging and commit tools."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xi.ext.core :as ext]))
 
 (defn- build-commit-prompt [args]
   (str "Review the current git changes and create a commit.\n\n"
@@ -28,15 +29,16 @@
            (.then (fn [results]
                     (let [stdout (aget results 0)
                           stderr (aget results 1)
-                          code (.-exitCode proc)]
+                          code (.-exitCode proc)
+                          error? (and code (not= code 0))]
                       (resolve
                        {:content [{:type "text"
                                    :text (str (when (seq stdout) stdout)
-                                              (when (and (seq stderr) (not= 0 code))
+                                              (when (and (seq stderr) error?)
                                                 (str "\nSTDERR: " stderr))
-                                              (when (not= 0 code)
+                                              (when error?
                                                 (str "\nExit code: " code)))}]
-                        :is-error (not= 0 code)})))))))))
+                        :is-error error?})))))))))
 
 (def extension
   {:name "commit"
@@ -90,8 +92,14 @@
                                         :files {:type "array" :items {:type "string"} :description "Files to stage before commit"}}
                            :required ["message"]}
             :execute (fn [{:keys [message files]}]
-                       (-> (if (seq files)
-                             (run-git (concat ["add" "--"] files))
-                             (js/Promise.resolve {:content [{:type "text" :text ""}]}))
-                           (.then (fn [_]
-                                    (run-git ["commit" "-m" message])))))}]})
+                       (-> (ext/confirm! (str "Commit: " message))
+                           (.then (fn [approved?]
+                                    (if-not approved?
+                                      (js/Promise.resolve
+                                       {:content [{:type "text" :text "Commit cancelled by user."}]
+                                        :is-error false})
+                                      (-> (if (seq files)
+                                            (run-git (concat ["add" "--"] files))
+                                            (js/Promise.resolve {:content [{:type "text" :text ""}]}))
+                                          (.then (fn [_]
+                                                   (run-git ["commit" "-m" message])))))))))}]})
