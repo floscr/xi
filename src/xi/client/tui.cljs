@@ -1057,12 +1057,17 @@
      (fn [rt-or-info]
        ;; Add header — works with both runtime map and plain info map
        (let [model (or (:model rt-or-info)
-                       (some-> (:state rt-or-info) deref :model))]
+                       (some-> (:state rt-or-info) deref :model))
+             cwd (or (:cwd rt-or-info)
+                     (some-> (:state rt-or-info) deref :cwd))]
          ((:add-child chat-container)
           (comp/make-text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent"))))
          (when model
            ((:add-child chat-container)
             (comp/make-text (str (ansi/fg :dim "Model: ") (ansi/fg :accent model)))))
+         (when cwd
+           ((:add-child chat-container)
+            (comp/make-text (str (ansi/fg :dim "cwd: ") (ansi/fg :accent cwd)))))
          ((:add-child chat-container)
           (comp/make-text (ansi/fg :dim "Type /quit to exit, /help for commands.")))
          ((:add-child chat-container) (comp/make-spacer 1)))
