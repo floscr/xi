@@ -120,7 +120,11 @@
               ;; Offline new session with pending messages — join new room to flush
               (join-room! "new")
 
-              :else nil))
+              :else
+              ;; Nothing to rejoin — go home rather than stranding in empty chat
+              (do
+                (swap! state/app-state assoc :room-id nil :session-id nil :messages [])
+                (router/navigate! {:page :home}))))
           ;; Not in a room — show home
           (do
             (router/navigate! {:page :home})
@@ -250,6 +254,7 @@
     :error
     (append-msg! {:type :error
                   :text (or (some-> event :error :message)
+                            (:text event)
                             (pr-str (:error event)))})
 
     :turn-end
