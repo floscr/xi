@@ -136,6 +136,39 @@
                                                 (when (seq output) (str "\n" output)))}]
                           :is-error true}))))))))))
 
+(defn- run-replace
+  "Run clj-replace structural replacement. Returns promise of tool result."
+  [file old-str new-str cwd]
+  (let [script (.join node-path LIB_PATH "replace.clj")]
+    (js/Promise.
+     (fn [resolve _reject]
+       (let [proc (js/Bun.spawn
+                   #js ["bb" script file old-str new-str]
+                   #js {:stdout "pipe"
+                        :stderr "pipe"
+                        :cwd (or cwd (.cwd js/process))})
+             timer (js/setTimeout
+                    (fn []
+                      (.kill proc)
+                      (resolve {:content [{:type "text" :text "clj-replace timed out"}]
+                                :is-error true}))
+                    15000)]
+         (-> (js/Promise.all
+              #js [(.text (.-stdout proc))
+                   (.text (.-stderr proc))])
+             (.then (fn [results]
+                      (js/clearTimeout timer)
+                      (let [stdout (aget results 0)
+                            stderr (aget results 1)
+                            code (.-exitCode proc)
+                            output (str (when (seq stdout) stdout)
+                                        (when (seq stderr) stderr))]
+                        (resolve
+                         (if (= 0 code)
+                           {:content [{:type "text" :text (if (seq output) output "Replaced successfully")}]}
+                           {:content [{:type "text" :text (or output "clj-replace failed")}]
+                            :is-error true})))))))))))
+
 (defn- on-tool-execution-end
   "Auto-fix parens after write/edit to Clojure files."
   [{:keys [tool-name arguments]}]
@@ -244,6 +277,16 @@
                     :required ["file"]}
      :execute (fn [{:keys [file]} {:keys [cwd]}]
                 (run-clj-surgeon (build-args {:op ":topo" :file file}) cwd))}
+
+    {:name "clj_replace"
+     :description "Structural S-expression replacement in a Clojure file. Matches by code structure (ignoring whitespace/formatting), not text. Use when edit tool fails due to formatting differences."
+     :input_schema {:type "object"
+                    :properties {:file {:type "string" :description "Path to .clj/.cljs/.cljc file"}
+                                 :old_str {:type "string" :description "Clojure expression to find (matched structurally, not by text)"}
+                                 :new_str {:type "string" :description "Clojure expression to replace it with"}}
+                    :required ["file" "old_str" "new_str"]}
+     :execute (fn [{:keys [file old_str new_str]} {:keys [cwd]}]
+                (run-replace file old_str new_str cwd))}
 
     {:name "clj_fix_parens"
      :description "Fix unbalanced parentheses/brackets/braces in a Clojure file using parmezan. Automatically infers the correct delimiters from context."
