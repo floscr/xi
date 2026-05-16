@@ -88,11 +88,17 @@ body {
 
 /* ---- Post / Message ---- */
 .post {
-  padding: var(--size-2) var(--size-4);
-  display: flex;
-  gap: var(--size-3);
-  align-items: flex-start;
+  padding: var(--size-3) var(--size-4);
   animation: fadeSlideIn 0.2s ease-out;
+}
+
+.post--user {
+  padding: var(--size-4) var(--size-4);
+}
+
+.post--assistant {
+  background-color: var(--bg-1);
+  padding: var(--size-4) var(--size-4);
 }
 
 @keyframes fadeSlideIn {
@@ -100,48 +106,15 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.post-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
-  background-color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--fg-on-accent);
-  font-weight: 700;
-  font-size: var(--font-xs);
-  flex-shrink: 0;
-}
-
-.post-avatar.user-avatar { background-color: var(--gray-600); }
-.post-avatar.thinking-avatar { background-color: var(--warning); color: var(--fg-on-warning); }
-.post-avatar.tool-avatar { background-color: var(--gray-700); }
-.post-avatar.error-avatar { background-color: var(--danger); color: var(--fg-on-danger); }
-.post-avatar.status-avatar { background-color: transparent; color: var(--fg-2); }
-
 .post-body {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 
-.post-meta {
-  display: flex;
-  align-items: baseline;
-  gap: var(--size-2);
-}
-
-.post-author {
-  font-weight: 700;
-  font-size: var(--font-sm);
-}
-
 .post-content {
-  margin-top: var(--size-1);
   word-wrap: break-word;
   overflow-wrap: break-word;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .post-content p {

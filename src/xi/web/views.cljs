@@ -108,11 +108,8 @@
 (defn- message-view [msg idx]
   (case (:type msg)
     :user
-    [:div {:class ["post"]}
-     [:div {:class ["post-avatar" "user-avatar"]} "U"]
+    [:div {:class ["post" "post--user"]}
      [:div {:class ["post-body"]}
-      [:div {:class ["post-meta"]}
-       [:span {:class ["post-author"]} "You"]]
       [:div {:class ["post-content"]}
        (when (seq (:images msg))
          [:div {:class ["user-images"]}
@@ -129,38 +126,30 @@
        [:p (:text msg)]]]]
 
     :assistant
-    [:div {:class ["post"]}
-     [:div {:class ["post-avatar"]} "Xi"]
+    [:div {:class ["post" "post--assistant"]}
      [:div {:class ["post-body"]}
-      [:div {:class ["post-meta"]}
-       [:span {:class ["post-author"]} "Xi"]]
       [:div {:class ["post-content"]}
-       ;; Simple paragraph splitting
        (for [para (str/split (:text msg) #"\n\n+")]
          [:p para])]]]
 
     :thinking
     [:div {:class ["post"]}
-     [:div {:class ["post-avatar" "thinking-avatar"]} "·"]
      [:div {:class ["post-body"]}
       (thinking-message (:text msg) idx)]]
 
     :tool
-    [:div {:class ["post"]}
-     [:div {:class ["post-avatar" "tool-avatar"]} "$"]
+    [:div {:class ["post" "post--assistant"]}
      [:div {:class ["post-body"]}
       (tool-message msg idx)]]
 
     :error
     [:div {:class ["post"]}
-     [:div {:class ["post-avatar" "error-avatar"]} "!"]
      [:div {:class ["post-body"]}
       [:div {:class ["post-content" "error-text"]}
        [:p (:text msg)]]]]
 
     :status
     [:div {:class ["post"]}
-     [:div {:class ["post-avatar" "status-avatar"]} "·"]
      [:div {:class ["post-body"]}
       [:div {:class ["post-content" "status-text"]}
        [:p (:text msg)]]]]
