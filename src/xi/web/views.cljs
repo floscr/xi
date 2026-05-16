@@ -3,6 +3,7 @@
   (:require [clojure.string :as str]
             [xi.web.state :as state]
             [xi.web.ws :as ws]
+            [xi.markdown.hiccup :as md]
             [ui.icon :as icon]
             [ui.button :as button]
             [ui.lightbox :as lightbox]
@@ -129,8 +130,7 @@
     [:div {:class ["post" "post--assistant"]}
      [:div {:class ["post-body"]}
       [:div {:class ["post-content"]}
-       (for [para (str/split (:text msg) #"\n\n+")]
-         [:p para])]]]
+       (md/render (:text msg))]]]
 
     :thinking
     [:div {:class ["post"]}

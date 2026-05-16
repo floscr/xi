@@ -166,6 +166,67 @@ body {
 
 .post-content pre code { background: none; padding: 0; border: none; }
 
+/* ---- Markdown rendered content ---- */
+.markdown h1, .markdown h2, .markdown h3,
+.markdown h4, .markdown h5, .markdown h6 {
+  font-weight: 700;
+  margin: var(--size-3) 0 var(--size-2) 0;
+  line-height: 1.3;
+}
+
+.markdown h1 { font-size: 1.4em; }
+.markdown h2 { font-size: 1.25em; }
+.markdown h3 { font-size: 1.1em; }
+.markdown h4, .markdown h5, .markdown h6 { font-size: 1em; }
+
+.markdown h1:first-child, .markdown h2:first-child,
+.markdown h3:first-child { margin-top: 0; }
+
+.markdown ul, .markdown ol {
+  margin: var(--size-2) 0;
+  padding-left: var(--size-5);
+}
+
+.markdown li {
+  margin: var(--size-1) 0;
+}
+
+.markdown blockquote {
+  border-left: 3px solid var(--gray-300);
+  padding-left: var(--size-3);
+  margin: var(--size-2) 0;
+  color: var(--fg-2);
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--gray-200);
+  margin: var(--size-3) 0;
+}
+
+.markdown .checkbox-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown .checkbox-list li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2);
+}
+
+.markdown .checkbox-list .checkbox {
+  flex-shrink: 0;
+}
+
+.markdown .checkbox-list .checked .checkbox {
+  color: var(--success, #22c55e);
+}
+
+.markdown .checkbox-list .unchecked .checkbox {
+  color: var(--fg-2);
+}
+
 .error-text { color: var(--danger); }
 .status-text { color: var(--fg-2); font-style: italic; }
 
