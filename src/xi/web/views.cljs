@@ -138,7 +138,7 @@
       (thinking-message (:text msg) idx)]]
 
     :tool
-    [:div {:class ["post" "post--assistant"]}
+    [:div {:class ["post" "post--tool"]}
      [:div {:class ["post-body"]}
       (tool-message msg idx)]]
 

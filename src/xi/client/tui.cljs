@@ -351,7 +351,8 @@
                   (show-completion-menu!
                     {:items [{:label "Allow" :description "Execute the blocked operation" :value true}
                              {:label "Deny" :description "Block the operation" :value false}]
-                     :prompt (str "⚠ " message " ")
+                     :header-fn (fn [] (str "  " (ansi/fg :warning "⚠ ") message))
+                     :prompt "> "
                      :on-select (fn [item] (resolve (:value item)))
                      :on-cancel (fn [] (resolve false))})))))
 
