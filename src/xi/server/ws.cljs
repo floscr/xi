@@ -103,6 +103,11 @@
                                (rm/remove-client! manager room-id ws)
                                (swap! conn-state dissoc ws)
                                (swap! lobby-clients conj ws)
+                               ;; Cleanup: destroy idle room with no clients
+                               (when-let [room (rm/get-room manager room-id)]
+                                 (when (and (zero? (count @(:clients room)))
+                                            (not (runtime/busy? (:runtime room))))
+                                   (rm/destroy-room! manager room-id)))
                                (.send ws (js/JSON.stringify
                                           (clj->js (waiting-for-join-msg manager personal-agent?))))
                                ;; Notify other lobby clients about the room change
