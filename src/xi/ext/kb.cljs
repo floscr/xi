@@ -51,4 +51,4 @@
                                         :body {:type "string" :description "Entry body in org-mode format"}}
                            :required ["file" "title" "tags" "body"]}
             :execute (fn [{:keys [file title tags body]}]
-                       (run-kb ["store" "--file" file "--title" title "--tags" tags "--body" body]))}]})
+                       (run-kb ["add" "--file" file "--title" title "--tags" tags "--body" body]))}]})
