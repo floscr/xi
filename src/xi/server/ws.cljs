@@ -115,14 +115,19 @@
                                       {:room-id room-id
                                        :rt-client connected})
 
-                               ;; Track session-id on room when session is saved
+                               ;; Track session-id on room + cleanup idle rooms after turn
                                (runtime/subscribe! rt :turn-end
                                  (fn [event]
+                                   ;; Persist session-id on room
                                    (when-let [sid (:session-id event)]
                                      (let [sess @(:sess rt)
                                            xi-id (:id sess)]
                                        (when xi-id
-                                         (rm/set-room-session! manager room-id xi-id))))))
+                                         (rm/set-room-session! manager room-id xi-id))))
+                                   ;; Auto-cleanup: agent just finished, if no clients left, destroy
+                                   (when-let [room (rm/get-room manager room-id)]
+                                     (when (zero? (count @(:clients room)))
+                                       (rm/destroy-room! manager room-id)))))
 
                                ;; Confirm join
                                (.send ws (js/JSON.stringify
