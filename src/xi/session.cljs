@@ -128,6 +128,17 @@
   [session]
   (update-session! session {:last-accessed (iso-now)}))
 
+(defn delete-session!
+  "Delete a session by its summary map (must contain :filepath and :source).
+   For :xi sessions, also deletes associated JSONL data file if present.
+   Returns true if deleted, false if file not found."
+  [summary]
+  (let [filepath (:filepath summary)]
+    (if (and filepath (fs/existsSync filepath))
+      (do (fs/unlinkSync filepath)
+          true)
+      false)))
+
 ;; ── Claude CLI Session Reading ────────────────────────────────────────────────
 
 (defn- read-head-lines

@@ -408,7 +408,14 @@
             active? " · active"
             :else   ""))]]
    (when unread?
-     [:div {:class ["unread-dot"]}])])
+     [:div {:class ["unread-dot"]}])
+   (when (and sid connected? (not active?))
+     [:button {:class ["icon-btn" "icon-btn--sm" "session-delete-btn"]
+               :on {:click (fn [e]
+                             (.stopPropagation e)
+                             (when (js/confirm "Delete this session?")
+                               (ws/delete-session! sid)))}}
+      (icon/icon {:icon-name :trash :size :sm})])])
 
 (defn- home-view [{:keys [connected? rooms home-sessions active-sessions
                           watched-sessions response-counts personal-agent?]}]

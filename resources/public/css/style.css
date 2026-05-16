@@ -570,6 +570,21 @@ body {
 
 .project-card-name { font-weight: 600; }
 
+.session-delete-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--fg-2);
+}
+.session-delete-btn:hover { color: var(--danger, #e55); }
+@media (hover: hover) {
+  .project-card:hover .session-delete-btn { opacity: 1; }
+}
+/* Always show on touch devices */
+@media (hover: none) {
+  .session-delete-btn { opacity: 0.7; }
+}
+
 .project-card-path {
   font-size: var(--font-sm);
   color: var(--fg-2);

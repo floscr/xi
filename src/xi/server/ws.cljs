@@ -128,6 +128,20 @@
                                           (clj->js {:type :response-counts
                                                     :counts (or counts {})}))))
 
+                             :delete-session
+                             (let [session-id (:session-id msg)
+                                   sessions (if personal-agent?
+                                              (session/list-personal-agent-sessions)
+                                              (session/list-all-sessions))
+                                   target (some #(when (= session-id (:session-id %)) %) sessions)
+                                   deleted? (when target (session/delete-session! target))]
+                               (.send ws (js/JSON.stringify
+                                          (clj->js {:type :session-deleted
+                                                    :session-id session-id
+                                                    :success (boolean deleted?)})))
+                               ;; Broadcast updated session list to all lobby clients
+                               (broadcast-lobby!))
+
                              :join
                              (let [target (or (:room msg) (:session msg))
                                    mode (case target

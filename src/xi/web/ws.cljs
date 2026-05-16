@@ -395,6 +395,15 @@
         (swap! state/app-state assoc :home-sessions sessions)
         (cache/save-sessions! sessions)))
 
+    :session-deleted
+    (let [sid (:session-id event)]
+      (when (:success event)
+        ;; Remove from home-sessions and cache
+        (swap! state/app-state update :home-sessions
+               (fn [sessions] (vec (remove #(= sid (:session-id %)) sessions))))
+        (cache/clear-messages! sid)
+        (cache/save-sessions! (:home-sessions @state/app-state))))
+
     :command-result
     (case (:command event)
       "resume-list"
@@ -578,6 +587,11 @@
   [sid]
   (cache/unwatch-session! sid)
   (swap! state/app-state update :watched-sessions dissoc sid))
+
+(defn delete-session!
+  "Delete a session by ID. Sends delete request to server."
+  [sid]
+  (send-raw! {:type :delete-session :session-id sid}))
 
 (defn leave-room!
   "Leave the current room and return to the room list."
