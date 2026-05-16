@@ -114,6 +114,7 @@ src/xi/
 
 Browser-based client built with shadow-cljs `:browser` target and [Replicant](https://github.com/cjohansen/replicant) for rendering. Connects to the WS server. Supports offline mode with localStorage caching.
 
+See [docs/web-client.md](docs/web-client.md) for full documentation (features, protocol, architecture).
 See [docs/web-offline.md](docs/web-offline.md) for offline architecture details.
 
 ## Extensions
