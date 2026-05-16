@@ -3,17 +3,37 @@
   (:require [clojure.string :as str]
             [xi.ext.core :as ext]))
 
+(defn- git-sync
+  "Run a git command synchronously, return stdout string."
+  [& args]
+  (let [proc (js/Bun.spawnSync
+              (clj->js (cons "git" args))
+              #js {:stdout "pipe" :stderr "pipe"
+                   :cwd (.cwd js/process)})]
+    (str (.toString (.-stdout proc)))))
+
+(defn- git-overview-sync
+  "Get overview of both staged and unstaged changes."
+  []
+  (let [staged (git-sync "diff" "--cached" "--stat")
+        unstaged (git-sync "diff" "--stat")]
+    (str (when (seq (str/trim staged))
+           (str "Staged:\n" staged))
+         (when (seq (str/trim unstaged))
+           (str "Unstaged:\n" unstaged)))))
+
 (defn- build-commit-prompt [args]
-  (str "Review the current git changes and create a commit.\n\n"
-       "Steps:\n"
-       "1. Run git_overview to see what files changed\n"
-       "2. Review the actual diffs with git_file_diff to understand the changes\n"
-       "3. Stage the appropriate files with git_stage_hunks\n"
-       "4. Write a clear conventional commit message and commit with git_commit_with_user_approval\n\n"
-       "Use conventional commit format (feat:, fix:, refactor:, chore:, docs:, etc.).\n"
-       "Keep the commit message concise and descriptive. Do NOT add co-authored-by or generated-with lines.\n"
-       (when (seq args)
-         (str "\nContext from the user: " args))))
+  (let [overview (git-overview-sync)]
+    (str "Review the current git changes and create a commit.\n\n"
+         "Current changes:\n```\n" overview "```\n\n"
+         "Steps:\n"
+         "1. Review the actual diffs with git_file_diff to understand the changes\n"
+         "2. Stage the appropriate files with git_stage_hunks\n"
+         "3. Write a clear conventional commit message and commit with git_commit_with_user_approval\n\n"
+         "Use conventional commit format (feat:, fix:, refactor:, chore:, docs:, etc.).\n"
+         "Keep the commit message concise and descriptive. Do NOT add co-authored-by or generated-with lines.\n"
+         (when (seq args)
+           (str "\nContext from the user: " args)))))
 
 (defn- run-git
   "Run a git command, return promise of {:content [...] :is-error bool}."
@@ -31,14 +51,15 @@
                           stderr (aget results 1)
                           code (.-exitCode proc)
                           error? (and code (not= code 0))]
-                      (resolve
-                       {:content [{:type "text"
-                                   :text (str (when (seq stdout) stdout)
-                                              (when (and (seq stderr) error?)
-                                                (str "\nSTDERR: " stderr))
-                                              (when error?
-                                                (str "\nExit code: " code)))}]
-                        :is-error error?})))))))))
+                      (let [output (str (when (seq stdout) stdout)
+                                        (when (and (seq stderr) error?)
+                                          (str "\nSTDERR: " stderr))
+                                        (when error?
+                                          (str "\nExit code: " code)))]
+                        (resolve
+                         {:content [{:type "text"
+                                     :text (if (seq output) output "Done.")}]
+                          :is-error error?}))))))))))
 
 (def extension
   {:name "commit"
