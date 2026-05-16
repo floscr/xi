@@ -6,6 +6,7 @@
   (:require [clojure.string :as str]
             [xi.web.state :as state]
             [xi.web.cache :as cache]
+            [xi.web.router :as router]
             [xi.session.format :as fmt]))
 
 (defonce ^:private ws-conn (atom nil))
@@ -94,7 +95,7 @@
       ;; Cache sessions for offline
       (cache/save-sessions! sessions)
       (let [has-pending? (seq (:pending-messages @state/app-state))
-            in-chat? (or currently-in-room (= :chat (:view @state/app-state)))]
+            in-chat? (or currently-in-room (= :chat (get-in @state/app-state [:route :page])))]
         (if in-chat?
           ;; We were in a chat (from cache, offline new session, or before disconnect).
           ;; Try to rejoin: find if our session still has an active room.
@@ -120,18 +121,19 @@
 
               :else nil))
           ;; Not in a room — show home
-          (swap! state/app-state assoc
-                 :view :home
-                 :messages []
-                 :busy? false))))
+          (do
+            (router/navigate! {:page :home})
+            (swap! state/app-state assoc
+                   :messages []
+                   :busy? false)))))
 
     :room-joined
     (let [room-id (:room-id event)
           sid (session-id-for-room room-id)]
       (swap! state/app-state assoc
              :room-id room-id
-             :session-id sid
-             :view :chat)
+             :session-id sid)
+      (router/navigate! {:page :chat :session-id sid})
       (cache/save-last-room! room-id sid)
       ;; Flush pending messages now that we're in a room
       (js/setTimeout flush-pending! 100))
@@ -254,6 +256,7 @@
     ;; Also update session-id if server provides it
     (when-let [sid (:session-id event)]
       (swap! state/app-state assoc :session-id sid)
+      (router/replace! {:page :chat :session-id sid})
       (cache/save-last-room! (:room-id @state/app-state) sid)
       (cache-current-messages!))
 
@@ -338,6 +341,7 @@
                              grouped)
              :session-id sid)
       (when sid
+        (router/replace! {:page :chat :session-id sid})
         (cache/save-last-room! (:room-id @state/app-state) sid)
         (cache-current-messages!)))
 
@@ -367,7 +371,8 @@
     :quit
     (do
       (cache/clear-last-room!)
-      (swap! state/app-state assoc :view :home :room-id nil :session-id nil))
+      (swap! state/app-state assoc :room-id nil :session-id nil)
+      (router/navigate! {:page :home}))
 
     ;; default — ignore
     nil))
@@ -505,16 +510,17 @@
     (when (and (not sent?) (= room-mode "new"))
       ;; Offline new session — show chat view with empty timeline
       (swap! state/app-state assoc
-             :view :chat
              :room-id nil
              :session-id nil
-             :messages []))))
+             :messages [])
+      (router/navigate! {:page :chat}))))
 
 (defn leave-room!
   "Leave the current room and return to the room list."
   []
   (cache/clear-last-room!)
   (swap! state/app-state assoc :room-id nil :session-id nil)
+  (router/navigate! {:page :home})
   (send-raw! {:type :leave}))
 
 (defn join-and-resume!
@@ -540,9 +546,9 @@
   [session-id]
   (let [msgs (cache/load-messages session-id)]
     (swap! state/app-state assoc
-           :view :chat
            :session-id session-id
-           :messages msgs)))
+           :messages msgs)
+    (router/navigate! {:page :chat :session-id session-id})))
 
 ;; ---------------------------------------------------------------------------
 ;; Init — hydrate from cache
@@ -554,20 +560,48 @@
   []
   (let [sessions (cache/load-sessions)
         pending (cache/load-pending)
-        last-room (cache/load-last-room)]
+        last-room (cache/load-last-room)
+        route (router/current-route)
+        url-sid (:session-id route)]
     ;; Always hydrate home sessions so they show even offline
     (when (seq sessions)
       (swap! state/app-state assoc :home-sessions sessions))
     ;; Restore pending messages
     (when (seq pending)
       (swap! state/app-state assoc :pending-messages pending))
-    ;; If we were in a chat, restore it from cache
-    (when last-room
-      (let [sid (:session-id last-room)
-            cached-msgs (when sid (cache/load-messages sid))]
+    ;; If URL points to a chat session, try to hydrate from cache
+    (if (and (= :chat (:page route)) url-sid)
+      (let [cached-msgs (cache/load-messages url-sid)]
         (when (seq cached-msgs)
           (swap! state/app-state assoc
-                 :view :chat
-                 :session-id sid
-                 :room-id (:room-id last-room)
-                 :messages cached-msgs))))))
+                 :session-id url-sid
+                 :messages cached-msgs)))
+      ;; Otherwise fall back to last-room cache
+      (when last-room
+        (let [sid (:session-id last-room)
+              cached-msgs (when sid (cache/load-messages sid))]
+          (when (seq cached-msgs)
+            (swap! state/app-state assoc
+                   :session-id sid
+                   :room-id (:room-id last-room)
+                   :messages cached-msgs)
+            (router/replace! {:page :chat :session-id sid})))))
+)
+
+;; ---------------------------------------------------------------------------
+;; Router integration
+;; ---------------------------------------------------------------------------
+
+(router/set-on-navigate-home!
+ (fn []
+   (cache/clear-last-room!)
+   (send-raw! {:type :leave})))
+
+(router/set-on-navigate-chat!
+ (fn [{:keys [session-id]}]
+   (when session-id
+     (let [msgs (cache/load-messages session-id)]
+       (swap! state/app-state assoc
+              :session-id session-id
+              :messages (or msgs []))))))
+)

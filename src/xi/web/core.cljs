@@ -3,6 +3,7 @@
   (:require [xi.web.state :as state]
             [xi.web.views :as views]
             [xi.web.ws :as ws]
+            [xi.web.router :as router]
             [replicant.dom :as r]))
 
 ;; ---------------------------------------------------------------------------
@@ -76,6 +77,9 @@
   (js/console.log "[xi-web] starting")
 
   (r/set-dispatch! (fn [_ _]))
+
+  ;; Init router — sets initial route from URL
+  (router/init!)
 
   ;; Hydrate from localStorage cache first — shows content immediately
   (ws/hydrate-from-cache!)

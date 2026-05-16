@@ -444,6 +444,6 @@
 ;; ---------------------------------------------------------------------------
 
 (defn root-view [app-state]
-  (if (= :chat (:view app-state))
-    (chat-view app-state)
+  (case (get-in app-state [:route :page])
+    :chat (chat-view app-state)
     (home-view app-state)))

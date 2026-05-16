@@ -2,7 +2,7 @@
   "Global application state atom for the web client.")
 
 (defonce app-state
-  (atom {:view             :home          ;; :home | :chat
+  (atom {:route            {:page :home}  ;; {:page :home} | {:page :chat :session-id "..."}
          :rooms            []             ;; from server handshake
          :home-sessions    []             ;; personal-agent sessions from handshake
          :active-sessions  #{}            ;; set of session-ids with live rooms
