@@ -266,10 +266,15 @@
     :turn-end
     ;; Flush pending messages that were waiting for turn to end
     ;; Also update session-id if server provides it
-    (when-let [sid (:session-id event)]
-      (swap! state/app-state assoc :session-id sid)
-      (router/replace! {:page :chat :session-id sid})
-      (cache/save-last-room! (:room-id @state/app-state) sid)
+    (let [sid (or (:session-id event) (:session-id @state/app-state))]
+      (when (:session-id event)
+        (swap! state/app-state assoc :session-id sid)
+        (router/replace! {:page :chat :session-id sid})
+        (cache/save-last-room! (:room-id @state/app-state) sid))
+      ;; User saw the response — clear watched so no false unread
+      (when (and sid (contains? (:watched-sessions @state/app-state) sid))
+        (cache/unwatch-session! sid)
+        (swap! state/app-state update :watched-sessions dissoc sid))
       (cache-current-messages!))
 
     :aborted
