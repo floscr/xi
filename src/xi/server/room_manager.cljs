@@ -103,7 +103,7 @@
                              " (" remaining " clients remaining)")))))
 
 (defn list-rooms
-  "List all active rooms. Returns vec of {:id :clients :created :session-id :busy?}."
+  "List all active rooms. Returns vec of {:id :clients :created :session-id :busy? :session-name}."
   [manager]
   (->> @(:rooms manager)
        (mapv (fn [[rid room]]
@@ -111,6 +111,7 @@
                 :clients (count @(:clients room))
                 :created (:created room)
                 :session-id @(:session-id room)
+                :session-name (:name @(:sess (:runtime room)))
                 :busy? (runtime/busy? (:runtime room))}))
        (sort-by :created)
        reverse

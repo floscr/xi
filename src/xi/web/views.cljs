@@ -385,6 +385,29 @@
           :else (.toLocaleDateString d)))
       (catch :default _ ts))))
 
+(defn- session-card
+  "Render a single session/room card in the home list."
+  [{:keys [sid name timestamp active? busy? room-id connected? on-click]}]
+  [:div {:class ["project-card"
+                 (when active? "project-card--active")
+                 (when-not connected? "project-card--offline")]
+         :key (or sid room-id)
+         :on {:click (fn [_] (on-click))}}
+   [:div {:class ["project-card-icon"]}
+    (cond
+      busy?   (spinner/spinner {:size :sm})
+      active? [:div {:class ["active-dot"]}]
+      :else   (icon/icon {:icon-name :message-square}))]
+   [:div {:class ["project-card-info"]}
+    [:span {:class ["project-card-name"]}
+     (or name "New session")]
+    [:span {:class ["project-card-path"]}
+     (str (when timestamp (format-session-time timestamp))
+          (cond
+            busy?   " · working..."
+            active? " · active"
+            :else   ""))]]])
+
 (defn- home-view [{:keys [connected? rooms home-sessions active-sessions personal-agent?]}]
   (let [;; Build session-id → room-id lookup from rooms list
         session->room (into {}
@@ -397,7 +420,15 @@
                             (comp (filter :busy?)
                                   (keep :session-id))
                             rooms)
-        has-sessions? (seq home-sessions)]
+        ;; Active rooms without a matching home-session (e.g. first turn not done)
+        known-sids (into #{} (keep :session-id) home-sessions)
+        orphan-rooms (filterv (fn [r]
+                                (and (or (nil? (:session-id r))
+                                         (not (contains? known-sids (:session-id r))))
+                                     ;; Only show rooms that exist (have clients or are busy)
+                                     (or (pos? (:clients r)) (:busy? r))))
+                              rooms)
+        has-content? (or (seq home-sessions) (seq orphan-rooms))]
     [:div {:class ["container"]}
      (topbar {:title "Xi"
               :actions (into []
@@ -409,44 +440,41 @@
                                           :on {:click (fn [_] (ws/join-room! "new"))}}
                                  (icon/icon {:icon-name :plus :size :sm})])])})
      [:div {:class ["home"]}
-      (if has-sessions?
-        ;; Show sessions (live or cached)
+      (if has-content?
         [:div
          [:div {:class ["section"]}
           [:div {:class ["project-list"]}
+           ;; Orphan rooms first (active but no saved session yet)
+           (for [r orphan-rooms]
+             (session-card
+              {:sid nil
+               :name (:session-name r)
+               :timestamp nil
+               :active? true
+               :busy? (:busy? r)
+               :room-id (:id r)
+               :connected? connected?
+               :on-click #(ws/join-session-room! (:id r))}))
+           ;; Then saved sessions
            (map-indexed
             (fn [idx s]
               (let [sid (:session-id s)
                     active? (contains? active-sessions sid)
                     busy? (contains? session-busy? sid)
                     room-id (get session->room sid)]
-                [:div {:class ["project-card"
-                               (when active? "project-card--active")
-                               (when-not connected? "project-card--offline")]
-                       :key sid
-                       :on {:click (fn [_]
-                                     (if connected?
-                                       (if room-id
-                                         ;; Session has a live room — rejoin it
-                                         (ws/join-session-room! room-id)
-                                         ;; No active room — create one and resume
-                                         (ws/join-and-resume! (inc idx)))
-                                       ;; Offline — open cached view
-                                       (ws/open-cached-session! sid)))}}
-                 [:div {:class ["project-card-icon"]}
-                  (cond
-                    busy?   (spinner/spinner {:size :sm})
-                    active? [:div {:class ["active-dot"]}]
-                    :else   (icon/icon {:icon-name :message-square}))]
-                 [:div {:class ["project-card-info"]}
-                  [:span {:class ["project-card-name"]}
-                   (or (:name s) "(unnamed)")]
-                  [:span {:class ["project-card-path"]}
-                   (str (format-session-time (or (:last-accessed s) (:timestamp s)))
-                        (cond
-                          busy?   " · working..."
-                          active? " · active"
-                          :else   ""))]]]))
+                (session-card
+                 {:sid sid
+                  :name (:name s)
+                  :timestamp (or (:last-accessed s) (:timestamp s))
+                  :active? active?
+                  :busy? busy?
+                  :room-id room-id
+                  :connected? connected?
+                  :on-click #(if connected?
+                               (if room-id
+                                 (ws/join-session-room! room-id)
+                                 (ws/join-and-resume! (inc idx)))
+                               (ws/open-cached-session! sid))})))
             home-sessions)]]]
         ;; No sessions at all (no cache, not connected)
         [:div {:class ["empty-state"]}
