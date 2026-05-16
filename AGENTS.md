@@ -45,6 +45,7 @@ When adding new tests:
 - **Bun** runs the compiled output (provides HTTP, subprocess, file I/O, fetch)
 - **No npm runtime deps** — only shadow-cljs as a devDependency
 - Sessions stored in `~/.pi/agent/sessions/` (Pi-compatible JSONL format)
+- Personal agent sessions stored separately in `~/.pi/agent/personal-agent-sessions/`
 - Auth via `~/.pi/agent/auth.json` OAuth tokens or `ANTHROPIC_API_KEY` env var
 
 ### Server / Client
@@ -52,6 +53,7 @@ When adding new tests:
 - `xi` — standalone TUI + runtime (no WS server)
 - `xi server` — start WS server + connect local TUI via WS (can switch rooms)
 - `xi server --headless` — start headless server (no TUI, clients attach remotely)
+- `xi server --personal-agent-only` — personal assistant mode (no coding tools, web_search only)
 - `xi join` — connect TUI client to latest room on a running server
 - `xi create` — connect TUI client to a new room on a running server
 - `xi rooms` — list active rooms on a running server (print & exit)
@@ -92,6 +94,10 @@ src/xi/
     commit.cljs        — git commit workflow tools
     web.cljs           — URL fetch tool (UA rotation, HTML→markdown, Jina Reader)
     perplexity.cljs    — web search via Perplexity (web_search tool)
+    projects.cljs      — project picker with fuzzy completion (Alt+P)
+  compaction.cljs      — context compaction via Claude SDK summarization
+  system_prompt.cljs   — system prompt construction (base + personal-agent)
+  util.cljs            — shared pure utilities
   tui/                 — terminal UI rendering primitives
 ```
 

@@ -1,21 +1,39 @@
-# Server/Client: Sessions → Rooms
+# Plan: Functional Refactoring of Xi Codebase
 
-## Naming
-- Disk sessions = "sessions" (loaded via `/resume`)
-- Server live instances = "rooms" (via `/join`, `/create`)
-- Removed runtime `/sessions` command
-- No auto-close — rooms persist for server lifetime
+## Context
+Xi has accumulated global mutable state, duplicated utility functions, and imperative patterns that should be refactored toward idiomatic Clojure. Each step is a small, testable, independently committable change.
 
-## Tasks
-- [x] Create `room_manager.cljs`, delete `session_manager.cljs`
-- [x] Update `ws.cljs` — imports, protocol events (`:room-joined`, `:rooms` payload)
-- [x] Update `ws_transport.cljs` — new event names, `:room` in join msg
-- [x] Update `tui.cljs` — `/join` + `/create` commands, handle `:room-joined`
-- [x] Update `cli.cljs` — imports, docstring, `xi rooms` subcommand
-- [x] Update `runtime/commands.cljs` — remove `/sessions` + `/ls`
-- [x] Update `web/ws.cljs` — event names, `join-room!`/`leave-room!`
-- [x] Update `web/state.cljs` — `:rooms`, `:room-id`
-- [x] Update `web/views.cljs` — labels, function refs
-- [x] Compile main + web — 0 warnings
-- [x] Tests — 114 tests, 0 failures
-- [x] Update AGENTS.md
+## Steps
+
+### Phase 0: Housekeeping
+- [x] Remove stale `compaction_test.cljs` tests referencing deleted `needs-compaction?`
+
+### Phase 1: Extract shared utilities
+- [x] Create `xi.util` namespace with `truncate`, `claude-model?`, `extract-text-content`, `strip-mcp-prefix`
+- [x] Write tests for all extracted functions in `test/xi/util_test.cljs`
+- [x] Update `runtime/commands.cljs` to use `xi.util/truncate`, `xi.util/extract-text-content`
+- [x] Update `client/tui.cljs` to use `xi.util/truncate`, `xi.util/strip-mcp-prefix`
+- [x] Update `loop.cljs` to re-export from `xi.util/claude-model?`
+- [x] Remove private duplicate `claude-model?` from `runtime/commands.cljs`
+- [x] Deduplicate `claude-executable` resolution into a shared location
+
+### Phase 2: Make `format-scrollback` functional
+- [x] Rewrite `format-scrollback` using `reduce` instead of atoms
+- [x] Add tests for `format-scrollback` covering all event types
+
+### Phase 3: Remove println side-effects from hooks
+- [x] Remove `println` from `plan-mode` hook handlers, return data instead
+- [x] Update plan-mode tests
+
+## Results
+
+All phases completed. 5 commits:
+
+1. **fix(test)**: Remove stale compaction tests (4 errors eliminated)
+2. **refactor**: Extract `xi.util` with 18 tests for shared pure functions
+3. **refactor**: Wire 4 consumer files to use `xi.util`, removing ~40 lines of duplication
+4. **refactor**: Deduplicate `claude-executable` resolution between provider and compaction
+5. **refactor**: Rewrite `format-scrollback` as pure `reduce` (+11 tests)
+6. **refactor**: Remove `println` side-effects from plan-mode hooks
+
+Test suite: 114 → 144 tests, all passing, 0 warnings.

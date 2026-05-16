@@ -25,10 +25,33 @@
         rt (runtime/create! (merge (:opts manager) room-opts))
         room {:runtime rt
               :clients (atom #{})
+              :session-id (atom nil)
               :created (js/Date.now)}]
     (swap! (:rooms manager) assoc rid room)
     (js/console.error (str "[rooms] Created room " rid))
     rid))
+
+(defn set-room-session!
+  "Associate a session-id with a room."
+  [manager room-id session-id]
+  (when-let [room (get-room manager room-id)]
+    (reset! (:session-id room) session-id)))
+
+(defn room-for-session
+  "Find the room-id serving a given session-id, or nil."
+  [manager session-id]
+  (some (fn [[rid room]]
+          (when (= session-id @(:session-id room))
+            rid))
+        @(:rooms manager)))
+
+(defn destroy-room!
+  "Destroy a room — disconnect all clients, stop the runtime."
+  [manager room-id]
+  (when-let [room (get-room manager room-id)]
+    (reset! (:clients room) #{})
+    (swap! (:rooms manager) dissoc room-id)
+    (js/console.error (str "[rooms] Destroyed room " room-id))))
 
 (defn get-room
   "Get a room by id. Returns nil if not found."
@@ -80,13 +103,15 @@
                              " (" remaining " clients remaining)")))))
 
 (defn list-rooms
-  "List all active rooms. Returns vec of {:id :clients :created}."
+  "List all active rooms. Returns vec of {:id :clients :created :session-id :busy?}."
   [manager]
   (->> @(:rooms manager)
        (mapv (fn [[rid room]]
                {:id rid
                 :clients (count @(:clients room))
-                :created (:created room)}))
+                :created (:created room)
+                :session-id @(:session-id room)
+                :busy? (runtime/busy? (:runtime room))}))
        (sort-by :created)
        reverse
        vec))

@@ -28,9 +28,10 @@ runtime.cljs                          ext/core.cljs
 ```clojure
 (def extension
   {:name "my-ext"
-   :hooks    {<event-kw> handler-fn ...}
-   :tools    [{:name ... :description ... :input_schema ... :execute fn}]
-   :commands [{:name ... :description ... :handler fn}]})
+   :hooks       {<event-kw> handler-fn ...}
+   :tools       [{:name ... :description ... :input_schema ... :execute fn}]
+   :commands    [{:name ... :description ... :handler fn}]
+   :keybindings [{:key "alt+x" :handler (fn [] ...)}]})
 ```
 
 Register in `runtime.cljs`:
@@ -200,6 +201,7 @@ Add to `runtime.cljs`:
 | `commit` | (tools+commands only) | Git commit workflow with hunk-level staging. |
 | `web` | (tools only) | Fetch URLs with UA rotation, HTML→markdown, Jina Reader fallback, feed parsing. |
 | `perplexity` | (tools+commands) | Web search via Perplexity Pro/Max subscription. Token shared with Pi. |
+| `projects` | (commands+keybindings) | Fuzzy project picker with file drill-down. `/project` or Alt+P. |
 
 ## Web Tools
 
@@ -240,6 +242,35 @@ Parameters:
 - **Low-quality detection** — detects JS-gated pages and navigation-heavy junk
 - **Output truncation** — 300 lines / 100k chars
 
+## TUI Bridge
+
+Extensions can interact with the TUI editor through a bridge API. The TUI registers handlers at startup; extensions call them through `ext/core`.
+
+### Completion menus
+
+Show a fuzzy-filterable completion menu from any extension:
+
+```clojure
+(ext/show-completion!
+ {:items [{:label "Display text" :value "actual-value"}]
+  :prompt "pick> "
+  :on-select (fn [item] (ext/insert-text! (:value item)))
+  :key-bindings [{:key-fn (fn [data] (= data "\t"))
+                  :handler (fn [state-atom update-items!] ...)}]})
+```
+
+The `:key-bindings` option allows custom key handling within the menu (e.g. Tab to drill into a subdirectory).
+
+### Text insertion
+
+Insert text at the editor cursor:
+
+```clojure
+(ext/insert-text! "/path/to/file")
+```
+
+Both functions are no-ops when no TUI client is connected (e.g. headless server mode).
+
 ## Prompt Badges
 
 Extensions can display indicators in the input prompt line after `xi>`. The editor calls `collect-prompt-badges` on every render.
@@ -255,17 +286,41 @@ Badges support ANSI escape codes for coloring.
 
 ## Keybinding Integration
 
-The TUI editor supports extension-triggered keybindings via callbacks:
+Extensions can declare keybindings directly in their extension map using human-readable key descriptors. The system supports two mechanisms:
+
+### Declarative keybindings (extension-defined)
+
+Extensions declare `:keybindings` in their extension map:
+
+```clojure
+(def extension
+  {:name "my-ext"
+   :keybindings [{:key "alt+p"
+                  :handler (fn [] (do-something!))}]})
+```
+
+Supported key descriptors:
+- `alt+<char>` — e.g. `"alt+p"` (matches both ESC-prefix and kitty protocol)
+- `ctrl+shift+<char>` — e.g. `"ctrl+shift+n"` (kitty CSI u format)
+
+The `ext/core` module parses descriptors into terminal escape sequence matchers at registration time. The TUI editor checks extension keybindings after built-in bindings via `ext/get-keybindings`.
+
+### Hard-wired keybindings (TUI callbacks)
+
+Some keybindings are wired directly in the TUI via editor callbacks:
 
 | Keybinding | Callback | Used by |
 |------------|----------|---------|
 | Ctrl+Shift+N | `:on-notify-toggle` | done-notify (toggle 🔔) |
 | Ctrl+Shift+G | `:on-git` | git status |
 
-To add a new keybinding:
-1. Add key detection in `tui/editor.cljs` (CSI u format: `ESC[<codepoint>;6u` for Ctrl+Shift)
-2. Add callback option in `make-editor`
-3. Wire in `client/tui.cljs`
+### All keybindings
+
+| Keybinding | Source | Action |
+|------------|--------|--------|
+| Alt+P | projects extension | Open project picker |
+| Ctrl+Shift+N | TUI callback | Toggle desktop notifications |
+| Ctrl+Shift+G | TUI callback | Open git status |
 
 ## API Reference
 
@@ -290,6 +345,15 @@ To add a new keybinding:
 ;; Confirmation (for permission gates / interactive approval)
 (ext/set-confirm-handler! (fn [message] ...))  ;; called by TUI at startup
 (ext/confirm! "Allow this?")                    ;; returns Promise<boolean>
+
+;; TUI bridge (for extensions that show menus / insert text)
+(ext/set-completion-handler! (fn [opts] ...))  ;; called by TUI at startup
+(ext/set-insert-text-handler! (fn [text] ...)) ;; called by TUI at startup
+(ext/show-completion! {:items [...] :prompt "" :on-select fn})  ;; show menu
+(ext/insert-text! "text")                      ;; insert into editor
+
+;; Keybindings
+(ext/get-keybindings)  ;; [{:key-fn (fn [data]) :handler fn}]
 
 ;; Registration
 (ext/register-extension! ext-map)

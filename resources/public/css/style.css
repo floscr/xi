@@ -474,6 +474,10 @@ body {
   .project-card:hover { background-color: var(--bg-1); }
 }
 
+.project-card--active {
+  border-left: 3px solid var(--accent);
+}
+
 .project-card-icon { flex-shrink: 0; color: var(--fg-1); }
 
 .project-card-info {

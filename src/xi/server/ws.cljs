@@ -19,10 +19,16 @@
 (defn- waiting-for-join-msg
   "Build the waiting-for-join handshake payload."
   [manager personal-agent?]
-  (cond-> {:type :waiting-for-join
-           :rooms (rm/list-rooms manager)}
-    personal-agent?
-    (assoc :sessions (session/list-personal-agent-sessions))))
+  (let [rooms (rm/list-rooms manager)
+        ;; Build set of session-ids that have active rooms
+        active-sessions (into #{}
+                              (keep :session-id)
+                              rooms)]
+    (cond-> {:type :waiting-for-join
+             :rooms rooms
+             :active-sessions (vec active-sessions)}
+      personal-agent?
+      (assoc :sessions (session/list-personal-agent-sessions)))))
 
 (defn start!
   "Start a WebSocket server attached to a room manager.
@@ -109,6 +115,15 @@
                                       {:room-id room-id
                                        :rt-client connected})
 
+                               ;; Track session-id on room when session is saved
+                               (runtime/subscribe! rt :turn-end
+                                 (fn [event]
+                                   (when-let [sid (:session-id event)]
+                                     (let [sess @(:sess rt)
+                                           xi-id (:id sess)]
+                                       (when xi-id
+                                         (rm/set-room-session! manager room-id xi-id))))))
+
                                ;; Confirm join
                                (.send ws (js/JSON.stringify
                                           (clj->js {:type :room-joined
@@ -129,7 +144,12 @@
                        (when-let [room (rm/get-room manager room-id)]
                          (runtime/disconnect! (:runtime room) rt-client))
                        (rm/remove-client! manager room-id ws)
-                       (swap! conn-state dissoc ws)))}})]
+                       (swap! conn-state dissoc ws)
+                       ;; Auto-cleanup: if room has no clients and agent is idle, destroy it
+                       (when-let [room (rm/get-room manager room-id)]
+                         (when (and (zero? (count @(:clients room)))
+                                    (not (runtime/busy? (:runtime room))))
+                           (rm/destroy-room! manager room-id)))))}})]
 
     (js/console.error (str "[ws] Listening on ws://localhost:" port))
 

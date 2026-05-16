@@ -15,8 +15,9 @@ xi sessions     List active sessions on a running server (print & exit).
 ### Flags
 
 ```
---port N        Override the default port (7474). Applies to all server commands.
---headless      Server only: run without a local TUI. Clients attach remotely.
+--port N                Override the default port (7474). Applies to all server commands.
+--headless              Server only: run without a local TUI. Clients attach remotely.
+--personal-agent-only   Server only: run as a personal assistant with no coding tools.
 ```
 
 ### Environment
@@ -85,6 +86,24 @@ Exits with an error if the server is not running.
 
 Connects a TUI to a **new** session on a running server via WebSocket.
 The server creates a fresh runtime and the client attaches to it.
+
+### Personal Agent (`xi server --personal-agent-only`)
+
+Runs Xi as a conversational personal assistant with no coding tools. The runtime:
+
+- Skips MCP server creation entirely (no file, edit, bash, etc.)
+- Sets `allowedTools` to an empty array as a safety net
+- Replaces AGENTS.md with a custom system prompt for conversational use
+- Exposes only `web_search` (via Perplexity) for real-time information
+- Image attachments still work (processed in the prompt, not via tools)
+- Sessions are stored separately in `~/.pi/agent/personal-agent-sessions/`
+
+```bash
+xi server --headless --personal-agent-only   # start personal assistant
+xi join                                       # connect from another terminal
+```
+
+The home screen shows personal-agent sessions separately from coding sessions.
 
 ### Sessions (`xi sessions`)
 

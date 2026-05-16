@@ -53,7 +53,8 @@
     (let [currently-in-room (:room-id @state/app-state)]
       (swap! state/app-state assoc
              :rooms (or (:rooms event) [])
-             :home-sessions (or (:sessions event) []))
+             :home-sessions (or (:sessions event) [])
+             :active-sessions (set (or (:active-sessions event) [])))
       (when-not currently-in-room
         (swap! state/app-state assoc
                :view :home
@@ -368,3 +369,8 @@
     ;; Send join + resume back-to-back. Server processes sequentially.
     (.send ws (js/JSON.stringify (clj->js {:type :join :room "new"})))
     (.send ws (js/JSON.stringify (clj->js {:type :command :name "resume" :args (str n)})))))
+
+(defn join-session-room!
+  "Join the active room for a session (by matching room-id from rooms list)."
+  [room-id]
+  (join-room! room-id))
