@@ -28,7 +28,8 @@
              :rooms rooms
              :active-sessions (vec active-sessions)}
       personal-agent?
-      (assoc :sessions (session/list-personal-agent-sessions)))))
+      (-> (assoc :sessions (session/list-personal-agent-sessions))
+          (assoc :personal-agent? true)))))
 
 (defn start!
   "Start a WebSocket server attached to a room manager.

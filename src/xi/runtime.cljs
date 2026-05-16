@@ -133,7 +133,7 @@
                  ;; Sync hook state so extensions see updated session
                  (sync-hook-state! rt)
                  (emit! {:type :turn-end
-                         :session-id (:session-id result)
+                         :session-id (:id @sess)
                          :usage (:usage result)
                          :cost (:cost result)})
                  result)))))

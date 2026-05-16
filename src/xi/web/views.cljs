@@ -332,19 +332,26 @@
 ;; Chat view
 ;; ---------------------------------------------------------------------------
 
-(defn- chat-view [{:keys [messages model]}]
+(defn- chat-view [{:keys [messages model connected? personal-agent?]}]
   [:div {:class ["container"]}
-   (topbar {:title "Xi"
-            :subtitle model
-            :actions [[:button {:class ["icon-btn"]
-                                :on {:click (fn [_] (ws/dispatch! "/resume"))}}
-                       (icon/icon {:icon-name :chevron-down :size :sm})]
-                      [:button {:class ["icon-btn"]
-                                :on {:click (fn [_] (ws/leave-room!))}}
-                       (icon/icon {:icon-name :terminal :size :sm})]
-                      [:button {:class ["icon-btn"]
-                                :on {:click (fn [_] (ws/dispatch! "/new"))}}
-                       (icon/icon {:icon-name :plus :size :sm})]]})
+   (topbar {:title [:div {:style {:display "flex" :align-items "center" :gap "var(--size-2)"}}
+                    [:button {:class ["icon-btn"]
+                              :on {:click (fn [_] (ws/leave-room!))}}
+                     (icon/icon {:icon-name :arrow-left :size :sm})]
+                    (when model
+                      [:span {:class ["topbar-subtitle"]
+                              :style {:margin 0}} model])]
+            :actions (into []
+                          (remove nil?)
+                          [(when-not connected?
+                             [:span {:class ["offline-label"]} "Offline"])
+                           (when-not personal-agent?
+                             [:button {:class ["icon-btn"]
+                                       :on {:click (fn [_] (ws/dispatch! "/resume"))}}
+                              (icon/icon {:icon-name :chevron-down :size :sm})])
+                           [:button {:class ["icon-btn"]
+                                    :on {:click (fn [_] (ws/new-room!))}}
+                            (icon/icon {:icon-name :plus :size :sm})]])})
    (resume-overlay)
    (lightbox/lightbox {:src (:lightbox-image @state/app-state)
                        :on-close close-lightbox!})
@@ -378,7 +385,7 @@
           :else (.toLocaleDateString d)))
       (catch :default _ ts))))
 
-(defn- home-view [{:keys [connected? rooms home-sessions active-sessions]}]
+(defn- home-view [{:keys [connected? rooms home-sessions active-sessions personal-agent?]}]
   (let [;; Build session-id → room-id lookup from rooms list
         session->room (into {}
                             (keep (fn [r]
@@ -388,23 +395,20 @@
         has-sessions? (seq home-sessions)]
     [:div {:class ["container"]}
      (topbar {:title "Xi"
-              :actions (when-not connected?
-                         [[:div {:class ["connection-badge"]}
-                           [:div {:class ["agent-status-spinner" "agent-status-spinner--sm"]}]
-                           [:span "Offline"]]])})
+              :actions (into []
+                             (remove nil?)
+                             [(when-not connected?
+                                [:span {:class ["offline-label"]} "Offline"])
+                              (when connected?
+                                [:button {:class ["icon-btn"]
+                                          :on {:click (fn [_] (ws/join-room! "new"))}}
+                                 (icon/icon {:icon-name :plus :size :sm})])])})
      [:div {:class ["home"]}
       (if has-sessions?
         ;; Show sessions (live or cached)
         [:div
          [:div {:class ["section"]}
           [:div {:class ["project-list"]}
-           (when connected?
-             [:div {:class ["project-card"]
-                    :on {:click (fn [_] (ws/join-room! "new"))}}
-              [:div {:class ["project-card-icon"]}
-               (icon/icon {:icon-name :plus})]
-              [:div {:class ["project-card-info"]}
-               [:span {:class ["project-card-name"]} "New Session"]]])
            (map-indexed
             (fn [idx s]
               (let [sid (:session-id s)

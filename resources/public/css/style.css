@@ -391,16 +391,10 @@ body {
   flex-shrink: 0;
 }
 
-/* ---- Connection badge (offline) ---- */
-.connection-badge {
-  display: flex;
-  align-items: center;
-  gap: var(--size-1);
+/* ---- Offline label ---- */
+.offline-label {
   font-size: var(--font-xs);
   color: var(--fg-2);
-  padding: var(--size-1) var(--size-2);
-  border-radius: 9999px;
-  background-color: var(--bg-2);
 }
 
 /* ---- Offline project card ---- */

@@ -91,7 +91,8 @@
       (swap! state/app-state assoc
              :rooms rooms
              :home-sessions sessions
-             :active-sessions active-sids)
+             :active-sessions active-sids
+             :personal-agent? (boolean (:personal-agent? event)))
       ;; Cache sessions for offline
       (cache/save-sessions! sessions)
       (let [has-pending? (seq (:pending-messages @state/app-state))
@@ -265,8 +266,10 @@
 
     :session-cleared
     (do
-      (swap! state/app-state assoc :messages [])
-      (cache-current-messages!))
+      ;; Clear session-id first so cache-current-messages! is a no-op.
+      ;; This prevents corrupting the old session's cache with empty [].
+      ;; The new session-id arrives via :turn-end.
+      (swap! state/app-state assoc :messages [] :session-id nil))
 
     :compact-start
     (append-msg! {:type :status :text "Compacting conversation..."})
@@ -522,6 +525,21 @@
   (swap! state/app-state assoc :room-id nil :session-id nil)
   (router/navigate! {:page :home})
   (send-raw! {:type :leave}))
+
+(defn new-room!
+  "Leave current room (keeping its agent running) and join a fresh room."
+  []
+  (cache/clear-last-room!)
+  (swap! state/app-state assoc
+         :room-id nil
+         :session-id nil
+         :messages []
+         :busy? false)
+  ;; Leave current room on server (disconnects event subscription),
+  ;; then immediately join a new one. The server processes these in
+  ;; order: leave clears conn-state, join creates a fresh room.
+  (send-raw! {:type :leave})
+  (send-raw! {:type :join :room "new"}))
 
 (defn join-and-resume!
   "Join a new room and immediately resume session at index n."

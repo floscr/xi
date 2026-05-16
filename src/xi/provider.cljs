@@ -290,7 +290,7 @@
 
         cwd (or (:cwd opts) (.cwd js/process))
         personal-agent? (:personal-agent? opts)
-        resume-id (or (:resume-session-id opts) (get-session-id))
+        resume-id (:resume-session-id opts)
         mcp-server (if personal-agent?
                      (build-mcp-server cwd {:only-tools PERSONAL_AGENT_TOOLS})
                      (build-mcp-server cwd))

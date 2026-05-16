@@ -9,6 +9,7 @@
          :room-id          nil            ;; joined room id
          :session-id       nil            ;; xi session id for current room
          :connected?       false
+         :personal-agent?  false
          :busy?            false
          :messages         []             ;; [{:type :user/:assistant/:tool/:thinking/:status :text ...}]
          :pending-messages []             ;; [{:id :payload :timestamp :status}]
