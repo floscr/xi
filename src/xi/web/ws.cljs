@@ -266,7 +266,7 @@
 
 (defn- ws-url []
   (let [params (js/URLSearchParams. (.-search js/window.location))
-        host   (or (.get params "host") "localhost")
+        host   (or (.get params "host") (.-hostname js/window.location))
         port   (or (.get params "port") "7474")]
     (str "ws://" host ":" port)))
 

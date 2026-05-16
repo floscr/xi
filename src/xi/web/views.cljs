@@ -420,7 +420,7 @@
        [:div
         [:p "Connecting to xi server..."]
         [:p {:class ["status-text"]}
-         (str "ws://localhost:7474")]]])]])
+         (str "ws://" (.-hostname js/window.location) ":7474")]]])]])
 ;; Root
 ;; ---------------------------------------------------------------------------
 
