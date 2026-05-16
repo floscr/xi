@@ -31,6 +31,11 @@
     (js/console.error (str "[rooms] Created room " rid))
     rid))
 
+(defn get-room
+  "Get a room by id. Returns nil if not found."
+  [manager room-id]
+  (get @(:rooms manager) room-id))
+
 (defn set-room-session!
   "Associate a session-id with a room."
   [manager room-id session-id]
@@ -52,11 +57,6 @@
     (reset! (:clients room) #{})
     (swap! (:rooms manager) dissoc room-id)
     (js/console.error (str "[rooms] Destroyed room " room-id))))
-
-(defn get-room
-  "Get a room by id. Returns nil if not found."
-  [manager room-id]
-  (get @(:rooms manager) room-id))
 
 (defn latest-room-id
   "Return the id of the most recently created room, or nil."
