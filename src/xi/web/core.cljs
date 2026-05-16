@@ -42,12 +42,23 @@
 
 (defn- el [id] (js/document.getElementById id))
 
+(defn- focus-compose-input!
+  "Focus the compose input when entering a chat view."
+  []
+  (when-let [input (.querySelector js/document ".compose-input-wrapper input")]
+    (when-not (= input (.-activeElement js/document))
+      (.focus input))))
+
 (defn- render! [app-state]
   (r/render (el "app") (views/root-view app-state))
   ;; Attach scroll listener if timeline appeared (home → chat transition)
   (attach-scroll-listener!)
   ;; Scroll to bottom after DOM update
-  (js/requestAnimationFrame scroll-to-bottom!))
+  (js/requestAnimationFrame
+   (fn []
+     (scroll-to-bottom!)
+     (when (= :chat (get-in app-state [:route :page]))
+       (focus-compose-input!)))))
 
 ;; ---------------------------------------------------------------------------
 ;; iOS keyboard handling
