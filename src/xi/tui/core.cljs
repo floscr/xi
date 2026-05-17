@@ -204,6 +204,15 @@
                           (conj status-line)
                           (into bottom-lines))
 
+            ;; Safety net: truncate any line exceeding terminal width
+            ;; Components should wrap/truncate themselves, but if any line
+            ;; overflows, the terminal wraps it visually and corrupts layout
+            new-frame (mapv (fn [line]
+                              (if (> (ansi/visible-width line) width)
+                                (ansi/truncate-to-width line width)
+                                line))
+                            new-frame)
+
             ;; Ensure frame is exactly terminal height
             new-frame (let [n (count new-frame)]
                         (cond

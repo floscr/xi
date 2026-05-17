@@ -51,47 +51,83 @@
 
         :heading
         (let [[_ _ tokens] block
-              text (render-inline tokens)]
-          [{:text (ansi/fg :bold text) :code? false}])
+              text (render-inline tokens)
+              wrapped (ansi/wrap-text (ansi/fg :bold text) width)]
+          (mapv (fn [line] {:text line :code? false}) wrapped))
 
         :code-block
         (let [[_ _ code] block
               lines (str/split-lines (or code ""))]
           (into [{:text "" :code? true}]
                 (concat
-                 (mapv (fn [line] {:text (str "  " line) :code? true}) lines)
+                 (mapv (fn [line] {:text (ansi/truncate-to-width (str "  " line) width) :code? true}) lines)
                  [{:text "" :code? true}])))
 
         :ul
-        (let [[_ items] block]
-          (mapv (fn [tokens]
-                  {:text (str "  • " (render-inline tokens)) :code? false})
+        (let [[_ items] block
+              prefix "  • "
+              prefix-w (count prefix)
+              cont-pad (apply str (repeat prefix-w " "))
+              item-w (max 1 (- width prefix-w))]
+          (into []
+                (mapcat
+                 (fn [tokens]
+                   (let [text (render-inline tokens)
+                         wrapped (ansi/wrap-text text item-w)]
+                     (map-indexed
+                      (fn [i line]
+                        {:text (str (if (zero? i) prefix cont-pad) line) :code? false})
+                      wrapped))))
                 items))
 
         :ol
-        (let [[_ items] block]
-          (vec (map-indexed
-                (fn [i tokens]
-                  {:text (str "  " (inc i) ". " (render-inline tokens)) :code? false})
-                items)))
+        (let [[_ items] block
+              max-num (count items)]
+          (into []
+                (mapcat
+                 (fn [[i tokens]]
+                   (let [prefix (str "  " (inc i) ". ")
+                         prefix-w (ansi/visible-width prefix)
+                         cont-pad (apply str (repeat prefix-w " "))
+                         item-w (max 1 (- width prefix-w))
+                         text (render-inline tokens)
+                         wrapped (ansi/wrap-text text item-w)]
+                     (map-indexed
+                      (fn [vi line]
+                        {:text (str (if (zero? vi) prefix cont-pad) line) :code? false})
+                      wrapped))))
+                (map-indexed vector items)))
 
         :checkbox-list
-        (let [[_ items] block]
-          (mapv (fn [{:keys [checked? content]}]
-                  {:text (str (if checked?
-                                (str (ansi/fg :success "✓") " ")
-                                (str (ansi/fg :dim "○") " "))
-                              (render-inline content))
-                   :code? false})
+        (let [[_ items] block
+              ;; Checkbox prefix: "✓ " or "○ " = 2 visible chars
+              prefix-w 2
+              cont-pad (apply str (repeat prefix-w " "))
+              item-w (max 1 (- width prefix-w))]
+          (into []
+                (mapcat
+                 (fn [{:keys [checked? content]}]
+                   (let [prefix (if checked?
+                                  (str (ansi/fg :success "✓") " ")
+                                  (str (ansi/fg :dim "○") " "))
+                         text (render-inline content)
+                         wrapped (ansi/wrap-text text item-w)]
+                     (map-indexed
+                      (fn [i line]
+                        {:text (str (if (zero? i) prefix cont-pad) line) :code? false})
+                      wrapped))))
                 items))
 
         :blockquote
-        (let [[_ inner-blocks] block]
-          (mapv (fn [b]
-                  (let [lines (render-block b width)]
-                    (mapv (fn [{:keys [text code?]}]
-                            {:text (str (ansi/fg :dim "│ ") text) :code? code?})
-                          lines)))
+        (let [[_ inner-blocks] block
+              prefix-w 2  ;; "│ " = 2 visible chars
+              inner-w (max 1 (- width prefix-w))]
+          (into []
+                (mapcat (fn [b]
+                          (let [lines (render-block b inner-w)]
+                            (mapv (fn [{:keys [text code?]}]
+                                    {:text (str (ansi/fg :dim "│ ") text) :code? code?})
+                                  lines))))
                 inner-blocks))
 
         :hr
