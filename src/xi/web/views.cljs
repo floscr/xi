@@ -36,6 +36,7 @@
         (swap! state/app-state assoc :compose-text "" :compose-images [])
         (when-let [el (.querySelector js/document ".compose-editable")]
           (set! (.-textContent el) ""))
+
         ;; Optimistically show user message in timeline
         (swap! state/app-state update :messages conj
                (cond-> {:type :user :text final-text}
@@ -283,16 +284,16 @@
                :style {:display "none"}
                :on {:change handle-image-input!}}]
       [:div {:class ["compose-input-wrapper"]}
-       (form/form-input {:type :text
-                          :placeholder "Message..."
-                          :value (or compose-text "")
-                          :attrs {:on {:input (fn [e]
-                                               (swap! state/app-state assoc :compose-text (.. e -target -value)))
-                                       :paste handle-paste!
-                                       :keydown (fn [e]
-                                                  (when (and (= (.-key e) "Enter") (not (.-shiftKey e)))
-                                                    (.preventDefault e)
-                                                    (send-message!)))}}})]
+       (form/form-textarea-auto {:placeholder "Message..."
+                                  :value (or compose-text "")
+                                  :max-rows 3
+                                  :attrs {:on {:input (fn [e]
+                                                       (swap! state/app-state assoc :compose-text (.. e -target -value)))
+                                               :paste handle-paste!
+                                               :keydown (fn [e]
+                                                          (when (and (= (.-key e) "Enter") (not (.-shiftKey e)))
+                                                            (.preventDefault e)
+                                                            (send-message!)))}}})]
       [:button {:class ["icon-btn"]
                 :disabled (not can-send?)
                 :on {:click (fn [_] (send-message!))}}

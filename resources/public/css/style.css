@@ -247,7 +247,7 @@ body {
   align-items: flex-end;
 }
 
-.compose-box .form-input {
+.compose-box .form-textarea-auto {
   flex: 1;
   border: none;
   background: transparent;
@@ -255,7 +255,7 @@ body {
   font-size: var(--font-base);
 }
 
-.compose-box .form-input:focus {
+.compose-box .form-textarea-auto:focus {
   outline: none;
   box-shadow: none;
 }
@@ -263,7 +263,7 @@ body {
 .compose-input-wrapper {
   flex: 1;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   background-color: var(--bg-1);
   border: var(--border-0);
   border-radius: var(--radius-md);

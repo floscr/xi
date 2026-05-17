@@ -45,7 +45,7 @@
 (defn- focus-compose-input!
   "Focus the compose input when entering a chat view."
   []
-  (when-let [input (.querySelector js/document ".compose-input-wrapper input")]
+  (when-let [input (.querySelector js/document ".compose-input-wrapper textarea")]
     (when-not (= input (.-activeElement js/document))
       (.focus input))))
 

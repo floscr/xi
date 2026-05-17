@@ -116,6 +116,7 @@ Browser-based client built with shadow-cljs `:browser` target and [Replicant](ht
 
 See [docs/web-client.md](docs/web-client.md) for full documentation (features, protocol, architecture).
 See [docs/web-offline.md](docs/web-offline.md) for offline architecture details.
+See [docs/frontend.md](docs/frontend.md) for UI component library (clj-ui-framework) usage, theming, and update workflow.
 
 ## Extensions
 

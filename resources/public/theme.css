@@ -1577,6 +1577,16 @@ a.btn-link {
   resize: vertical;
 }
 
+/* ── Auto-growing Textarea ─────────────────────────────────── */
+
+.form-textarea-auto {
+  field-sizing: content;
+  min-height: unset;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
 /* ── Select ────────────────────────────────────────────────────── */
 
 .form-select {
@@ -2170,6 +2180,38 @@ a.btn-link {
   height: 100%;
   background: var(--accent);
   transition: width 0.1s linear;
+}
+
+/* Scrubber thumb — visible on hover.
+   Lives on the progress container (not the track) so overflow:hidden doesn't clip it.
+   Positioned via --progress custom property set inline on the element. */
+.player-bar-progress::after {
+  content: "";
+  position: absolute;
+  left: var(--progress, 0%);
+  top: 50%;
+  translate: -50% -50%;
+  width: var(--size-3);
+  height: var(--size-3);
+  border-radius: 9999px;
+  background: var(--accent);
+  box-shadow: var(--shadow-1);
+  opacity: 0;
+  scale: 0.5;
+  transition: opacity 0.15s, scale 0.15s;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.player-bar-progress:hover::after {
+  opacity: 1;
+  scale: 1;
+}
+
+/* Touch: always show scrubber */
+.clj-ui-touch .player-bar-progress::after {
+  opacity: 1;
+  scale: 1;
 }
 
 /* Main row */
