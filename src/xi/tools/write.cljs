@@ -1,20 +1,16 @@
 (ns xi.tools.write
   "Write file tool."
   (:require [clojure.string :as str]
+            [xi.tools.fs :as tfs]
             [xi.tools.util :as util]
-            ["node:fs" :as fs]
-            ["node:path" :as node-path]))
+            ["node:fs" :as fs]))
 
 (defn execute
   "Write content to a file. Creates parent directories if needed."
   [{:keys [path content]} {:keys [cwd]}]
   (try
-    (let [resolved (if cwd
-                     (.resolve node-path cwd path)
-                     (.resolve node-path path))
-          dir (.dirname node-path resolved)]
-      (when-not (fs/existsSync dir)
-        (fs/mkdirSync dir #js {:recursive true}))
+    (let [resolved (tfs/resolve-path path cwd)]
+      (tfs/ensure-parent-dirs resolved)
       (fs/writeFileSync resolved content "utf8")
       (let [display-path (util/display-path resolved path cwd)
             lines (str/split-lines content)

@@ -1,15 +1,13 @@
 (ns xi.tools.read
   "Read file tool."
-  (:require ["node:fs" :as fs]
-            ["node:path" :as node-path]))
+  (:require [xi.tools.fs :as tfs]
+            ["node:fs" :as fs]))
 
 (defn execute
   "Read a file's contents. Supports offset/limit for large files."
   [{:keys [path offset limit]} {:keys [cwd]}]
   (try
-    (let [resolved (if cwd
-                     (.resolve node-path cwd path)
-                     (.resolve node-path path))
+    (let [resolved (tfs/resolve-path path cwd)
           content (fs/readFileSync resolved "utf8")
           lines (.split content "\n")
           total (.-length lines)

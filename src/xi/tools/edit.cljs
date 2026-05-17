@@ -1,9 +1,9 @@
 (ns xi.tools.edit
   "Edit file tool — exact text replacement."
   (:require [clojure.string :as str]
+            [xi.tools.fs :as tfs]
             [xi.tools.util :as util]
-            ["node:fs" :as fs]
-            ["node:path" :as node-path]))
+            ["node:fs" :as fs]))
 
 (defn apply-edit
   "Apply a single oldText→newText replacement. Returns {:ok content} or {:error msg}."
@@ -27,9 +27,7 @@
    Accepts a vec of {:oldText :newText} edits applied against the original file."
   [{:keys [path edits]} {:keys [cwd]}]
   (try
-    (let [resolved (if cwd
-                     (.resolve node-path cwd path)
-                     (.resolve node-path path))
+    (let [resolved (tfs/resolve-path path cwd)
           original (fs/readFileSync resolved "utf8")]
       (loop [content original
              [edit & remaining] edits

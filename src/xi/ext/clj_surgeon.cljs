@@ -3,6 +3,7 @@
    Wraps the vendored babashka CLI as xi tools.
    Also includes parmezan (paren-fixing) as a tool and auto-hook."
   (:require [clojure.string :as str]
+            [xi.tools.fs :as tfs]
             ["node:path" :as node-path]
             ["node:fs" :as fs]))
 
@@ -190,7 +191,8 @@
                     :properties {:file {:type "string" :description "Path to .clj/.cljs/.cljc file"}}
                     :required ["file"]}
      :execute (fn [{:keys [file]} {:keys [cwd]}]
-                (run-clj-surgeon (build-args {:op ":ls" :file file}) cwd))}
+                (or (tfs/assert-file-exists file cwd)
+                    (run-clj-surgeon (build-args {:op ":ls" :file file}) cwd)))}
 
     {:name "clj_tree"
      :description "Map an entire project's namespace tree — discovers projects via deps.edn/project.clj/bb.edn, outlines every source file. With :grep, searches across repos in seconds."
@@ -211,7 +213,8 @@
                                  :form {:type "string" :description "Form name to analyze"}}
                     :required ["file" "form"]}
      :execute (fn [{:keys [file form]} {:keys [cwd]}]
-                (run-clj-surgeon (build-args {:op ":ls-deps" :file file :form form}) cwd))}
+                (or (tfs/assert-file-exists file cwd)
+                    (run-clj-surgeon (build-args {:op ":ls-deps" :file file :form form}) cwd)))}
 
     {:name "clj_extract"
      :description "Extract forms to a new namespace. Creates new file with forms in topological order, removes from source, adds require. Use dry-run first (default), then pass execute=true."
@@ -222,11 +225,12 @@
                                  :execute {:type "boolean" :description "If true, write changes. Default is dry-run."}}
                     :required ["file" "forms" "to"]}
      :execute (fn [{:keys [file forms to execute]} {:keys [cwd]}]
-                (run-clj-surgeon (build-args {:op (if execute ":extract!" ":extract")
-                                              :file file
-                                              :forms forms
-                                              :to to})
-                                 cwd))}
+                (or (tfs/assert-file-exists file cwd)
+                    (run-clj-surgeon (build-args {:op (if execute ":extract!" ":extract")
+                                                  :file file
+                                                  :forms forms
+                                                  :to to})
+                                     cwd)))}
 
     {:name "clj_fix_declares"
      :description "Eliminate unnecessary (declare ...) forms by reordering defns topologically. Use dry-run first (default), then pass execute=true."
@@ -235,9 +239,10 @@
                                  :execute {:type "boolean" :description "If true, write changes. Default is dry-run."}}
                     :required ["file"]}
      :execute (fn [{:keys [file execute]} {:keys [cwd]}]
-                (run-clj-surgeon (build-args {:op (if execute ":fix-declares!" ":fix-declares")
-                                              :file file})
-                                 cwd))}
+                (or (tfs/assert-file-exists file cwd)
+                    (run-clj-surgeon (build-args {:op (if execute ":fix-declares!" ":fix-declares")
+                                                  :file file})
+                                     cwd)))}
 
     {:name "clj_mv"
      :description "Reorder a form within a Clojure file — move a defn before another defn."
@@ -248,12 +253,13 @@
                                  :dry_run {:type "boolean" :description "If true, show plan without writing. Default false."}}
                     :required ["file" "form" "before"]}
      :execute (fn [{:keys [file form before dry_run]} {:keys [cwd]}]
-                (run-clj-surgeon (build-args {:op ":mv"
-                                              :file file
-                                              :form form
-                                              :before before
-                                              :dry-run (when dry_run "true")})
-                                 cwd))}
+                (or (tfs/assert-file-exists file cwd)
+                    (run-clj-surgeon (build-args {:op ":mv"
+                                                  :file file
+                                                  :form form
+                                                  :before before
+                                                  :dry-run (when dry_run "true")})
+                                     cwd)))}
 
     {:name "clj_rename_ns"
      :description "Rename a namespace prefix across all files — structural AST rename (not text replace). Dry-run by default."
@@ -276,7 +282,8 @@
                     :properties {:file {:type "string" :description "Path to .clj file"}}
                     :required ["file"]}
      :execute (fn [{:keys [file]} {:keys [cwd]}]
-                (run-clj-surgeon (build-args {:op ":topo" :file file}) cwd))}
+                (or (tfs/assert-file-exists file cwd)
+                    (run-clj-surgeon (build-args {:op ":topo" :file file}) cwd)))}
 
     {:name "clj_replace"
      :description "Structural S-expression replacement in a Clojure file. Matches by code structure (ignoring whitespace/formatting), not text. Use when edit tool fails due to formatting differences."
@@ -286,7 +293,8 @@
                                  :new_str {:type "string" :description "Clojure expression to replace it with"}}
                     :required ["file" "old_str" "new_str"]}
      :execute (fn [{:keys [file old_str new_str]} {:keys [cwd]}]
-                (run-replace file old_str new_str cwd))}
+                (or (tfs/assert-file-exists file cwd)
+                    (run-replace file old_str new_str cwd)))}
 
     {:name "clj_fix_parens"
      :description "Fix unbalanced parentheses/brackets/braces in a Clojure file using parmezan. Automatically infers the correct delimiters from context."
@@ -294,6 +302,7 @@
                     :properties {:file {:type "string" :description "Path to .clj/.cljs/.cljc/.edn file"}}
                     :required ["file"]}
      :execute (fn [{:keys [file]} {:keys [cwd]}]
-                (run-parmezan file cwd))}]
+                (or (tfs/assert-file-exists file cwd)
+                    (run-parmezan file cwd)))}]
 
    :hooks {:tool-execution-end on-tool-execution-end}})
