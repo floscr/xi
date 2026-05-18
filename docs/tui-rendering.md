@@ -7,7 +7,8 @@ Xi uses a retained-mode terminal UI with differential rendering, inspired by [Pi
 ```
 tui/ansi.cljs        ANSI escape codes, colors, visible-width, word-wrap
 tui/terminal.cljs    Raw mode, stdin splitting, cursor control, sync output
-tui/core.cljs        Component protocol, Container, TUI engine, diff rendering
+tui/grid.cljs        Cell grid: ANSI line parsing, cell-level diffing, minimal output
+tui/core.cljs        Component protocol, Container, TUI engine, render scheduling
 tui/components.cljs  Text, Spacer, Box, Loader
 tui/editor.cljs      Raw-mode multi-line input editor
 tui/markdown.cljs    Markdown → ANSI-formatted lines
@@ -52,20 +53,39 @@ root (Container)
 
 A Container renders by collecting lines from all children in order. The TUI engine calls `render` on the root container to get the full frame.
 
-## Differential rendering
+## Cell-level differential rendering
+
+Inspired by [comview](https://github.com/rockorager/comview) and its TUI library [vaxis](https://git.sr.ht/~rockorager/vaxis), which achieves fast rendering through cell-level diffing — comparing individual character cells between frames rather than whole lines. This means a spinner tick on a 200-column line writes ~15 bytes (cursor-move + 1 cell + reset) instead of rewriting the entire line.
+
+The implementation lives in `tui/grid.cljs` and is a drop-in optimization — components still return ANSI line strings, the grid layer parses and diffs them transparently.
+
+### Cell grid
+
+A **cell** is a JS array `[char, style]` — the visible character and its accumulated ANSI SGR prefix (e.g. `"\033[31m\033[1m"` for bold red, or `""` for default). A **grid** is `{:width W :height H :cells js/Array-of-rows}` where each row is a `js/Array` of cells.
+
+JS arrays are used throughout for performance — the hot path (parsing + diffing) avoids CLJS persistent data structures.
+
+### Render pass
 
 On each render pass (`do-render!` in `core.cljs`):
 
-1. Call `(:render root-container width)` to get the new frame as a vector of lines.
-2. Compare with `previous-lines` to find the first line that differs.
-3. If nothing changed, skip. Otherwise:
-   - Wrap output in synchronized output (`CSI ?2026h` / `CSI ?2026l`) so the terminal buffers all writes and flushes atomically — prevents flicker.
-   - Move the cursor up from its current position to the first changed line.
-   - Clear and rewrite each line from the diff point to the end.
-   - If the new frame is shorter than the previous one, clear the leftover lines.
-4. Store the new lines as `previous-lines` for the next pass.
+1. Call `(:render root-container width)` to get the new frame as a vector of ANSI line strings.
+2. Apply selection highlighting if active.
+3. Parse the display lines into a cell grid via `grid/frame->grid`. Each line is walked character-by-character, tracking SGR state across escape sequences. Non-SGR CSI sequences (cursor moves, etc.) are skipped.
+4. Diff the new grid against the previous grid cell-by-cell. Contiguous runs of changed cells with the same style are coalesced into a single write.
+5. Emit all changes in one `term/write!` call, wrapped in synchronized output (`CSI ?2026h` / `CSI ?2026l`).
+6. Store the new grid as `previous-grid` and the raw lines as `previous-frame` (for selection text extraction).
 
-On terminal resize, `previous-width` is reset to 0 which forces a full re-render (line 0 is always the first diff).
+On full repaint (resize, startup, resume from external command), `previous-grid` is nil. The renderer clears the screen first, then emits the full grid.
+
+### Run coalescing
+
+The diff emitter doesn't write cell-by-cell. It groups contiguous changed cells that share the same style into **runs**, emitting one cursor-move + style + character-sequence per run. For a typical frame where only the spinner changed, this produces a single short write. For a full repaint, runs span entire lines — roughly equivalent to the old line-by-line approach.
+
+### Limitations
+
+- **Wide characters (CJK/emoji)**: Fullwidth characters occupy 2 terminal columns but the parser treats each char as 1 cell. This matches the existing `visible-width` behavior.
+- **OSC sequences**: Inline OSC sequences (hyperlinks, etc.) are not handled. Xi doesn't embed these in rendered lines — OSC 52 clipboard writes go through `term/write!` directly.
 
 ## Render scheduling
 
