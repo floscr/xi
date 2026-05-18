@@ -1,6 +1,9 @@
 (ns xi.markdown.ansi
   "Renders markdown AST tokens to ANSI-formatted lines for TUI display."
   (:require [clojure.string :as str]
+            [xi.highlight.core :as hl]
+            [xi.highlight.grammars :as grammars]
+            [xi.highlight.theme :as hl-theme]
             [xi.markdown.parse :as parse]
             [xi.tui.ansi :as ansi]))
 
@@ -56,11 +59,21 @@
           (mapv (fn [line] {:text line :code? false}) wrapped))
 
         :code-block
-        (let [[_ _ code] block
-              lines (str/split-lines (or code ""))]
+        (let [[_ {:keys [lang]} code] block
+              code (or code "")
+              grammar (grammars/get-grammar lang)
+              lines (str/split-lines code)
+              highlighted-lines
+              (if grammar
+                (mapv (fn [line]
+                        (let [tokens (-> (hl/tokenize grammar line) hl/merge-adjacent)]
+                          (hl-theme/colorize tokens)))
+                      lines)
+                lines)]
           (into [{:text "" :code? true}]
                 (concat
-                 (mapv (fn [line] {:text (ansi/truncate-to-width (str "  " line) width) :code? true}) lines)
+                 (mapv (fn [line] {:text (ansi/truncate-to-width (str "  " line) width) :code? true})
+                       highlighted-lines)
                  [{:text "" :code? true}])))
 
         :ul

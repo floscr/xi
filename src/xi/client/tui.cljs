@@ -10,6 +10,9 @@
             [xi.command-registry :as cmd-registry]
             [xi.ext.core :as ext]
             [xi.ext.done-notify :as ext-done-notify]
+            [xi.highlight.core :as hl]
+            [xi.highlight.grammars :as hl-grammars]
+            [xi.highlight.theme :as hl-theme]
             [xi.tui.ansi :as ansi]
             [xi.tui.buffers :as buffers]
             [xi.tui.command-palette :as palette]
@@ -98,6 +101,34 @@
       text
       (str (str/join "\n" (take max-lines lines))
            "\n" (ansi/fg :dim (str "... (" (- (count lines) max-lines) " more lines)"))))))
+
+(defn- file-ext
+  "Extract file extension from a path, lowercased. Returns nil if none."
+  [path]
+  (when (and path (str/includes? path "."))
+    (-> path (str/split #"\.") last str/lower-case)))
+
+(defn- tool-output-lang
+  "Determine the highlighting language for a tool's output.
+   Returns a grammar or nil."
+  [tool-name arguments]
+  (let [path (case tool-name
+               ("Read" "Write" "Edit") (get-arg arguments :file_path)
+               ("read" "write" "edit") (get-arg arguments :path)
+               ("git_file_diff" "git_hunk") (get-arg arguments :file)
+               nil)]
+    (when path
+      (hl-grammars/get-grammar (file-ext path)))))
+
+(defn- highlight-text
+  "Apply syntax highlighting to text using a grammar.
+   Returns ANSI-colored string."
+  [grammar text]
+  (->> (str/split-lines text)
+       (mapv (fn [line]
+               (let [tokens (-> (hl/tokenize grammar line) hl/merge-adjacent)]
+                 (hl-theme/colorize tokens))))
+       (str/join "\n")))
 
 ;; ── Tool Execution Component ─────────────────────────────────────────────────
 
@@ -850,9 +881,11 @@
                 (reset! current-md nil)
                 ;; Create tool component
                 (let [args-str (format-tool-args (:name event) (:arguments event))
-                      tool-comp (make-tool-component (:name event) args-str)]
+                      tool-comp (make-tool-component (:name event) args-str)
+                      grammar (tool-output-lang (:name event) (:arguments event))]
                   ((:add-child chat-container) (:component tool-comp))
-                  (reset! current-tool tool-comp))
+                  (reset! current-tool (cond-> tool-comp
+                                         grammar (assoc :grammar grammar))))
                 (tui/render-now!))
 
             :tool-args
@@ -875,8 +908,10 @@
                                     (str/join "\n"))
                                :else nil)]
                     (when (seq text)
-                      ((:set-output tool)
-                       (truncate-output text 20))))
+                      (let [display-text (if-let [g (:grammar tool)]
+                                           (truncate-output (highlight-text g text) 20)
+                                           (truncate-output text 20))]
+                        ((:set-output tool) display-text))))
                   ((:finish tool) (:is-error event)))
                 (reset! current-tool nil)
                 ;; Empty line after block
@@ -1021,6 +1056,10 @@
                             result (get results-by-id (:tool-use-id block))
                             output (:content result)
                             is-error (:is-error result)
+                            grammar (tool-output-lang short-name (:arguments block))
+                            output (if (and grammar (seq output) (not is-error))
+                                     (highlight-text grammar output)
+                                     output)
                             comp (make-static-tool-component
                                   (:name block) args-str output is-error)]
                         (node/append-children! chat-container
