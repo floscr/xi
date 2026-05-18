@@ -377,6 +377,7 @@
                                        (when (zero? (.-exitCode proc))
                                          (str/trim (.toString (.-stdout proc) "utf-8"))))
                                      (catch :default _ nil)))
+        current-session (atom nil)          ;; session map from :session-resumed event
         session-files (atom #{})           ;; files the agent touched this session
         loader (comp/make-loader "thinking...")
 
@@ -821,8 +822,19 @@
                :handler
                (fn [{:keys [args]}]
                  ;; Default: session diff, or pass arg directly to git diff
-                 (let [git-args (if (nil? args)
-                                  (if-let [start @session-start-commit]
+                 (let [session-base (when-let [created (and (nil? args) (:created @current-session))]
+                                      ;; Resumed session: find commit that was HEAD at session start
+                                      (try
+                                        (let [proc (js/Bun.spawnSync
+                                                     #js ["git" "rev-list" "-1"
+                                                          (str "--before=" created) "HEAD"]
+                                                     #js {:cwd (.cwd js/process)})]
+                                          (when (zero? (.-exitCode proc))
+                                            (let [sha (str/trim (.toString (.-stdout proc) "utf-8"))]
+                                              (when (seq sha) sha))))
+                                        (catch :default _ nil)))
+                       git-args (if (nil? args)
+                                  (if-let [start (or session-base @session-start-commit)]
                                     ["diff" start]
                                     ["diff"])
                                   ["diff" args])
@@ -1192,6 +1204,17 @@
               (when (not= @active-view "Chat")
                 (switch-to-buffer! "Chat"))
               (let [{:keys [session summary messages]} event
+                    ;; Store session so /diff can derive the base commit from :created
+                    _ (reset! current-session session)
+                    ;; Populate session-files from replayed tool-use messages
+                    _ (doseq [block messages
+                              :when (= :tool-use (:type block))
+                              :let [tool-name (shorten-tool-name (:name block))
+                                    args (:arguments block)]
+                              :when (#{"edit" "write"} tool-name)
+                              :let [path (get-arg args :path)]
+                              :when path]
+                        (swap! session-files conj path))
                     ;; Build tool-use-id → tool-result lookup
                     results-by-id (into {}
                                         (comp (filter #(= :tool-result (:type %)))
