@@ -115,20 +115,77 @@
   (let [path (case tool-name
                ("Read" "Write" "Edit") (get-arg arguments :file_path)
                ("read" "write" "edit") (get-arg arguments :path)
-               ("git_file_diff" "git_hunk") (get-arg arguments :file)
+               "git_hunk" (get-arg arguments :file)
+               "git_file_diff" (let [files (get-arg arguments :files)]
+                                 (when (= 1 (count files)) (first files)))
                nil)]
     (when path
       (hl-grammars/get-grammar (file-ext path)))))
 
-(defn- highlight-text
-  "Apply syntax highlighting to text using a grammar.
-   Returns ANSI-colored string."
+;; Diff line background colors — blended with tool block bg (38,44,55)
+(def ^:private diff-add-bg "\033[48;2;35;60;45m")  ;; green-tinted
+(def ^:private diff-del-bg "\033[48;2;65;40;42m")  ;; red-tinted
+(def ^:private diff-hunk-fg "\033[38;2;129;161;193m") ;; blue (same as keyword)
+
+(defn- highlight-line
+  "Syntax-highlight a single line of code."
+  [grammar line]
+  (let [tokens (-> (hl/tokenize grammar line) hl/merge-adjacent)]
+    (hl-theme/colorize tokens)))
+
+(defn- highlight-diff-text
+  "Highlight text that contains a unified diff.
+   Strips +/- prefix before tokenizing, then applies diff bg colors.
+   The bg is set at line start and persists — the box's apply-bg-to-line
+   will handle reset at line boundaries. We re-apply the diff bg after
+   any reset sequences from syntax highlighting so the bg survives."
   [grammar text]
   (->> (str/split-lines text)
        (mapv (fn [line]
-               (let [tokens (-> (hl/tokenize grammar line) hl/merge-adjacent)]
-                 (hl-theme/colorize tokens))))
+               (cond
+                 ;; Added line: green bg, highlight code without prefix
+                 (str/starts-with? line "+ ")
+                 (let [code (highlight-line grammar (subs line 2))
+                       ;; Re-apply diff bg after any resets from syntax coloring
+                       patched (str/replace code ansi/reset (str ansi/reset diff-add-bg))]
+                   (str diff-add-bg "+ " patched))
+
+                 ;; Removed line: red bg, highlight code without prefix
+                 (str/starts-with? line "- ")
+                 (let [code (highlight-line grammar (subs line 2))
+                       patched (str/replace code ansi/reset (str ansi/reset diff-del-bg))]
+                   (str diff-del-bg "- " patched))
+
+                 ;; Context line: highlight code without prefix
+                 (str/starts-with? line "  ")
+                 (str "  " (highlight-line grammar (subs line 2)))
+
+                 ;; Hunk separator
+                 (= line "...")
+                 (ansi/fg :dim "...")
+
+                 ;; First line (filename) or other — pass through
+                 :else line)))
        (str/join "\n")))
+
+(defn- diff-output?
+  "Check if tool output looks like a unified diff (from edit tool)."
+  [text]
+  (let [lines (take 5 (str/split-lines text))]
+    (some #(or (str/starts-with? % "+ ")
+               (str/starts-with? % "- ")
+               (str/starts-with? % "  "))
+          (rest lines))))
+
+(defn- highlight-text
+  "Apply syntax highlighting to text using a grammar.
+   Auto-detects diff output and applies diff bg colors."
+  [grammar text]
+  (if (diff-output? text)
+    (highlight-diff-text grammar text)
+    (->> (str/split-lines text)
+         (mapv (fn [line] (highlight-line grammar line)))
+         (str/join "\n"))))
 
 ;; ── Tool Execution Component ─────────────────────────────────────────────────
 

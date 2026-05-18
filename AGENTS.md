@@ -88,6 +88,10 @@ src/xi/
   state/
     session.cljs       — accessor fns for hook state (session-title, cwd, model, etc.)
   tools/*.cljs         — built-in tools (read, write, edit, bash, grep, ls)
+  highlight/
+    core.cljc          — regex-walking tokenizer engine (~50 lines)
+    grammars.cljc      — 269 language grammars (auto-generated from chroma)
+    theme.cljc         — token type → ANSI true-color mapping
   ext/
     core.cljs          — extension registry, hook dispatch, hook state management
     done_notify.cljs   — desktop notification on agent finish (Ctrl+Shift+N toggle)
