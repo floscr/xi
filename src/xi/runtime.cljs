@@ -447,19 +447,26 @@
 
 (defn navigate-tree!
   "Navigate to a different point in the session tree.
-   If target is a user message, returns its text for the editor.
-   Forks the Claude session (copy JSONL) so we can resume from there.
+   mode :navigate (default) — go to that point, include response for user messages.
+   mode :edit — fork before the user message, put its text in the editor.
    Returns a promise of {:editor-text str-or-nil}."
-  [rt target-id]
+  [rt target-id & [mode]]
   (let [{:keys [emit!]} (:bus rt)
+        mode (or mode :navigate)
         sess (:sess rt)
         tree (get-session-tree rt)
         entry (session-tree/get-entry tree target-id)]
     (when entry
-      (let [;; Determine new leaf and editor text
-            is-user-msg (= "user-message" (:type entry))
-            new-leaf-id (if is-user-msg (:parentId entry) target-id)
-            editor-text (when is-user-msg (:text entry))]
+      (let [is-user-msg (= "user-message" (:type entry))
+            ;; :edit on user-message → fork before it, text goes to editor
+            ;; :navigate on user-message → include its response (walk to turn end)
+            ;; non-user-message → same for both modes
+            new-leaf-id (cond
+                          (and is-user-msg (= mode :edit))     (:parentId entry)
+                          (and is-user-msg (= mode :navigate)) (session-tree/find-turn-end tree target-id)
+                          :else                                target-id)
+            editor-text (when (and is-user-msg (= mode :edit))
+                          (:text entry))]
         ;; Branch the Xi session tree
         (if new-leaf-id
           (session-tree/branch! tree new-leaf-id)

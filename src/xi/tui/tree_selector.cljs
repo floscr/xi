@@ -16,6 +16,10 @@
 (defn- is-enter? [data]
   (or (= data "\r") (= data "\n")))
 
+(defn- is-ctrl-enter? [data]
+  ;; Kitty keyboard protocol: CSI 13;5u
+  (= data (str ESC "[13;5u")))
+
 (defn- is-arrow-up? [data]
   (= data (str ESC "[A")))
 
@@ -97,16 +101,15 @@
 
 ;; ── Filter ────────────────────────────────────────────────────────────────────
 
-(def ^:private filter-modes ["default" "user-only" "no-tools" "all"])
+(def ^:private filter-modes ["User" "User & Agent" "All"])
 
 (defn- passes-filter? [entry mode]
   (let [t (:type entry)]
     (case mode
-      "user-only"  (= t "user-message")
-      "no-tools"   (not (#{"tool-use" "tool-result"} t))
-      "all"        true
-      ;; default — hide turn-end, model-change
-      (not (#{"turn-end" "model-change" "compaction"} t)))))
+      "User"           (= t "user-message")
+      "User & Agent"   (#{ "user-message" "assistant-text"} t)
+      "All"            true
+      (= t "user-message"))))
 
 ;; ── Display Text ──────────────────────────────────────────────────────────────
 
@@ -172,7 +175,7 @@
         flat-nodes (flatten-tree tree-nodes leaf-id)
 
         state (atom {:selected 0
-                     :filter-mode "default"
+                     :filter-mode "User"
                      :search-query ""
                      :filtered []})
 
@@ -237,11 +240,13 @@
                   (tui/request-render!))
               (when on-cancel (on-cancel)))
 
-            (is-enter? data)
-            (let [{:keys [filtered selected]} @state]
+            (or (is-enter? data) (is-ctrl-enter? data))
+            (let [{:keys [filtered selected]} @state
+                  mode (if (is-ctrl-enter? data) :edit :navigate)]
               (when (and (seq filtered) on-select)
                 (on-select (get-in (nth filtered selected)
-                                   [:node :entry :id]))))
+                                   [:node :entry :id])
+                           mode)))
 
             (is-arrow-up? data)   (move-selection -1)
             (is-arrow-down? data) (move-selection 1)
@@ -330,7 +335,7 @@
                            (str "  " (ansi/fg :dim "type to search")))
 
              ;; Help
-             help (ansi/fg :dim "  ↑/↓: move  Enter: select  Tab: filter  Esc: close")
+             help (ansi/fg :dim "  ↑/↓: move  Enter: go  C-Enter: edit  Tab: filter  Esc: close")
 
              count-line (ansi/fg :dim (str "  (" (inc selected) "/" n ")"))]
 

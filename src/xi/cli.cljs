@@ -72,7 +72,7 @@
         transport {:dispatch! (fn [cmd] (runtime/dispatch! rt cmd))
                    :busy? (fn [] (runtime/busy? rt))
                    :get-session-tree (fn [] (runtime/get-session-tree rt))
-                   :navigate-tree! (fn [target-id] (runtime/navigate-tree! rt target-id))}
+                   :navigate-tree! (fn [target-id mode] (runtime/navigate-tree! rt target-id mode))}
         client (tui-client/create! {:transport transport})]
     (runtime/connect! rt client)))
 

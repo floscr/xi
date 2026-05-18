@@ -117,6 +117,19 @@
   [tree parent-id]
   (filterv #(= parent-id (:parentId %)) (:entries @tree)))
 
+(defn find-turn-end
+  "Walk forward from entry-id through linear children until hitting
+   another user-message or a branch point. Returns the id of the last
+   entry in the turn (the starting entry if it has no children)."
+  [tree entry-id]
+  (let [entries (:entries @tree)]
+    (loop [current-id entry-id]
+      (let [children (filterv #(= current-id (:parentId %)) entries)]
+        (cond
+          (not= 1 (count children)) current-id
+          (= "user-message" (:type (first children))) current-id
+          :else (recur (:id (first children))))))))
+
 ;; ── Tree Traversal ────────────────────────────────────────────────────────────
 
 (defn get-branch

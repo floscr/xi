@@ -91,6 +91,17 @@ To add a blocked pattern, add it to `GUARDED_PATTERNS` (for bash commands) or `B
 
 The SDK ships a native CC binary that can't run on NixOS (wrong `ld-linux`). `resolve-claude-executable` follows the `which claude` symlink to find the `.js` entrypoint and passes it as `pathToClaudeCodeExecutable`. The SDK detects the `.js` extension and runs it via bun/node.
 
+## Session management
+
+The provider tracks the current Claude session ID via an in-memory atom (`session-state`). Key functions:
+
+- **`get-session-id`** — returns the current Claude CLI session ID
+- **`clear-session!`** — resets session state, forcing the next `query()` to start a new session
+
+These are used by the [session tree](session-tree.md) during navigation: clearing the session ensures the next turn starts a fresh Claude conversation rather than resuming the old one.
+
+The `resume-session-id` option in `query()` lets Xi continue an existing Claude session across turns. When set to `nil` (after tree navigation), the SDK creates a new session with a new JSONL file.
+
 ## Stream processing
 
 The SDK's `query()` returns an async generator yielding messages:

@@ -81,6 +81,8 @@ src/xi/
   provider.cljs        — Claude Agent SDK integration, MCP tool bridge
   session.cljs         — session persistence (Xi, Claude CLI, Pi formats)
   session/
+    tree.cljs          — append-only session tree (branch/navigate support)
+    tree_recorder.cljs — maps runtime events → tree entries
     format.cljc        — shared session data shapes & cache key construction (cljc)
     sync.cljc          — sync manifest for rsync (cljc)
   state/
@@ -101,7 +103,9 @@ src/xi/
   compaction.cljs      — context compaction via Claude SDK summarization
   system_prompt.cljs   — system prompt construction (base + personal-agent)
   util.cljs            — shared pure utilities
-  tui/                 — terminal UI rendering primitives
+  tui/
+    tree_selector.cljs — interactive tree selector (filter, search, navigate)
+    ...                — other terminal UI rendering primitives
   web/
     core.cljs          — web client entry point (render loop, cache hydration)
     state.cljs         — app-state atom

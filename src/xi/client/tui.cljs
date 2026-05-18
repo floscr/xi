@@ -367,10 +367,10 @@
                           :leaf-id leaf-id
                           :max-visible (max 10 (- (term/rows) 10))
                           :on-select
-                          (fn [entry-id]
+                          (fn [entry-id mode]
                             (hide-completion-menu!)
                             (when-let [navigate! (:navigate-tree! transport)]
-                              (-> (navigate! entry-id)
+                              (-> (navigate! entry-id mode)
                                   (.then (fn [result]
                                            (when-let [text (:editor-text result)]
                                              (when-let [ed @editor-comp-ref]
