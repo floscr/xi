@@ -182,7 +182,50 @@
                        (reset! paste-buf nil)
                        (on-input complete-data))
 
-        ;; Wrap on-input to split batched input and buffer pastes
+        ;; Escape sequence buffering — reassemble CSI sequences split across
+        ;; stdin data events. Without this, a kitty keyboard protocol sequence
+        ;; like \033[103;6u arriving as two chunks (\033 then [103;6u) would
+        ;; have its body chars inserted as text into the editor.
+        esc-buf (atom nil)
+        esc-timer (atom nil)
+
+        partial-esc?
+        (fn [s]
+          (let [len (count s)]
+            (or
+             ;; Lone ESC — could be start of a sequence
+             (and (= len 1) (= (.charCodeAt s 0) ESC-CODE))
+             ;; ESC [ with no terminal byte yet (incomplete CSI)
+             (and (>= len 2)
+                  (= (.charCodeAt s 0) ESC-CODE)
+                  (= (.charAt s 1) "[")
+                  (let [last-code (.charCodeAt s (dec len))]
+                    (not (and (>= last-code 64) (<= last-code 126))))))))
+
+        deliver-splits!
+        (fn [data]
+          (let [items (split-input data)]
+            (if (and (seq items) (partial-esc? (peek items)))
+              ;; Last item is incomplete — deliver all but last, buffer last
+              (do (doseq [s (butlast items)]
+                    (on-input s))
+                  (reset! esc-buf (peek items))
+                  (reset! esc-timer
+                          (js/setTimeout
+                           (fn []
+                             (when (:started @terminal)
+                               (when-let [b @esc-buf]
+                                 (reset! esc-buf nil)
+                                 (reset! esc-timer nil)
+                                 ;; Timeout expired — deliver as-is (e.g. lone ESC = Escape key)
+                                 (doseq [s (split-input b)]
+                                   (on-input s)))))
+                           50)))
+              ;; All complete — deliver all
+              (doseq [s items]
+                (on-input s)))))
+
+        ;; Wrap on-input to split batched input and buffer pastes + partial escapes
         split-handler (fn [data]
                         (if-let [buf @paste-buf]
                           ;; Currently buffering a paste
@@ -193,25 +236,38 @@
                                     remainder (subs combined (+ end-idx (count paste-end)))]
                                 (flush-paste! paste-data)
                                 (when (seq remainder)
-                                  (doseq [s (split-input remainder)]
-                                    (on-input s))))
+                                  (deliver-splits! remainder)))
                               ;; No end marker yet — keep buffering
                               (reset! paste-buf combined)))
-                          ;; Not buffering — check if this chunk starts a paste
-                          (if (str/starts-with? data paste-start)
-                            (if (str/includes? data paste-end)
-                              ;; Complete paste in one chunk
-                              (on-input data)
-                              ;; Incomplete paste — start buffering
-                              (reset! paste-buf data))
-                            ;; Regular input — split as before
-                            (doseq [s (split-input data)]
-                              (on-input s)))))]
+                          ;; Not in a paste — prepend any buffered partial escape
+                          (let [effective-data (if-let [ebuf @esc-buf]
+                                                (do (reset! esc-buf nil)
+                                                    (when-let [t @esc-timer]
+                                                      (js/clearTimeout t)
+                                                      (reset! esc-timer nil))
+                                                    (str ebuf data))
+                                                data)]
+                            (if (str/starts-with? effective-data paste-start)
+                              (if (str/includes? effective-data paste-end)
+                                ;; Complete paste in one chunk
+                                (on-input effective-data)
+                                ;; Incomplete paste — start buffering
+                                (reset! paste-buf effective-data))
+                              ;; Regular input — split with partial-escape buffering
+                              (deliver-splits! effective-data)))))
+
+        ;; Store cleanup fn so stop!/suspend! can cancel pending timers
+        esc-cleanup! (fn []
+                       (when-let [t @esc-timer]
+                         (js/clearTimeout t)
+                         (reset! esc-timer nil))
+                       (reset! esc-buf nil))]
     (swap! terminal assoc
            :started true
            :was-raw was-raw
            :on-input split-handler
-           :on-resize on-resize)
+           :on-resize on-resize
+           :esc-cleanup esc-cleanup!)
 
     ;; Enter raw mode (only for TTY)
     (when (.-setRawMode stdin)
@@ -249,9 +305,12 @@
 (defn stop!
   "Leave raw mode, restore terminal state."
   [terminal]
-  (let [{:keys [on-input on-resize was-raw]} @terminal
+  (let [{:keys [on-input on-resize was-raw esc-cleanup]} @terminal
         stdin js/process.stdin
         stdout js/process.stdout]
+
+    ;; Cancel any pending escape sequence timer
+    (when esc-cleanup (esc-cleanup))
 
     ;; Disable mouse tracking
     (disable-mouse-tracking!)
@@ -282,6 +341,9 @@
   "Suspend terminal for fullscreen subprocess.
    Exits alt screen, raw mode, removes listeners so child process can own stdio."
   [terminal]
+  ;; Cancel any pending escape sequence timer
+  (when-let [esc-cleanup (:esc-cleanup @terminal)]
+    (esc-cleanup))
   (disable-mouse-tracking!)
   (write! "\033[<u")           ;; disable kitty keyboard protocol
   (write! "\033[?2004l")       ;; disable bracketed paste
