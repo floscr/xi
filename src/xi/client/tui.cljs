@@ -17,6 +17,7 @@
             [xi.tui.completion :as completion]
             [xi.tui.components :as comp]
             [xi.tui.editor :as editor]
+            [xi.tui.node :as node]
             [xi.tui.clipboard-image :as clip-image]
             [xi.tui.markdown :as md]
             [xi.tui.terminal :as term]
@@ -180,10 +181,11 @@
                             (str "\n" (ansi/fg :dim rest-lines)
                                  (when (> (count (str/split-lines args-summary)) 21)
                                    (str "\n" (ansi/fg :dim "...")))))))]
-    ((:add-child box) header-text)
-    (when (seq output)
-      ((:add-child box) (comp/make-spacer 1))
-      ((:add-child box) (comp/make-text (truncate-output output 20))))
+    (node/append-children! box
+      [header-text
+       (when (seq output)
+         [(node/spacer)
+          (node/text (truncate-output output 20))])])
     box))
 
 ;; ── Buffer Helpers ─────────────────────────────────────────────────────────
@@ -206,31 +208,31 @@
 
 ;; ── Launch Header ─────────────────────────────────────────────────────────────
 
-(defn- render-launch-header!
-  "Render the launch header into a chat container.
+(defn launch-header
+  "Build launch header nodes as a flat vector.
    opts may include :model, :cwd, :agents-files, and/or :details
    (vec of {:label :value} maps) for custom info lines (e.g. Room)."
-  [chat-container {:keys [model cwd agents-files details]}]
-  ((:add-child chat-container)
-   (comp/make-text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent"))))
-  (when model
-    ((:add-child chat-container)
-     (comp/make-text (str (ansi/fg :dim "Model: ") (ansi/fg :accent model)))))
-  (when cwd
-    ((:add-child chat-container)
-     (comp/make-text (str (ansi/fg :dim "cwd: ") (ansi/fg :accent cwd)))))
-  (doseq [{:keys [label value]} details]
-    ((:add-child chat-container)
-     (comp/make-text (str (ansi/fg :dim (str label ": ")) (ansi/fg :accent value)))))
-  ((:add-child chat-container)
-   (comp/make-text (ansi/fg :dim "Type /quit to exit, /help for commands.")))
-  ((:add-child chat-container) (comp/make-spacer 1))
-  (when-let [files (seq agents-files)]
-    ((:add-child chat-container)
-     (comp/make-text
-      (str (ansi/fg :dim "Loaded ") (ansi/fg :accent (str (count files) " AGENTS.md"))
-           (ansi/fg :dim (str " file" (when (> (count files) 1) "s"))))))
-    ((:add-child chat-container) (comp/make-spacer 1))))
+  [{:keys [model cwd agents-files details]}]
+  (node/children
+   [(node/text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent")))
+    (when model
+      (node/text (str (ansi/fg :dim "Model: ") (ansi/fg :accent model))))
+    (when cwd
+      (node/text (str (ansi/fg :dim "cwd: ") (ansi/fg :accent cwd))))
+    (for [{:keys [label value]} details]
+      (node/text (str (ansi/fg :dim (str label ": ")) (ansi/fg :accent value))))
+    (node/text (ansi/fg :dim "Type /quit to exit, /help for commands."))
+    (node/spacer)
+    (when-let [files (seq agents-files)]
+      [(node/text
+        (str (ansi/fg :dim "Loaded ") (ansi/fg :accent (str (count files) " AGENTS.md"))
+             (ansi/fg :dim (str " file" (when (> (count files) 1) "s")))))
+       (node/spacer)])]))
+
+(defn- render-launch-header!
+  "Render the launch header into a chat container."
+  [chat-container opts]
+  (node/append-children! chat-container (launch-header opts)))
 
 ;; ── TUI Client ───────────────────────────────────────────────────────────────
 
@@ -286,28 +288,27 @@
         (fn []
           (let [c (tui/make-container)
                 entries (buffers/get-entries buffer-mgr "Logs")]
-            ((:add-child c)
-             (comp/make-text (str (ansi/fg :bold "Logs")
-                                 (ansi/fg :dim (str " (" (count entries) " entries)")))))
-            ((:add-child c) (comp/make-spacer 1))
-            (if (empty? entries)
-              ((:add-child c) (comp/make-text (ansi/fg :dim "(empty)")))
-              (doseq [entry (take-last 100 entries)]
-                ((:add-child c)
-                 (comp/make-text (str (ansi/fg :dim (format-timestamp (:timestamp entry)))
-                                     " " (str/trim-newline (:text entry)))))))
-            ((:add-child c) (comp/make-spacer 1))
+            (node/append-children! c
+              [(node/text (str (ansi/fg :bold "Logs")
+                              (ansi/fg :dim (str " (" (count entries) " entries)"))))
+               (node/spacer)
+               (if (empty? entries)
+                 (node/text (ansi/fg :dim "(empty)"))
+                 (for [entry (take-last 100 entries)]
+                   (node/text (str (ansi/fg :dim (format-timestamp (:timestamp entry)))
+                                   " " (str/trim-newline (:text entry))))))
+               (node/spacer)])
             c))
 
         build-prompt-view!
         (fn []
           (let [c (tui/make-container)
                 content (or @prompt-content "(no prompt loaded)")]
-            ((:add-child c)
-             (comp/make-text (ansi/fg :bold "System Prompt")))
-            ((:add-child c) (comp/make-spacer 1))
-            ((:add-child c) (comp/make-text content))
-            ((:add-child c) (comp/make-spacer 1))
+            (node/append-children! c
+              [(node/text (ansi/fg :bold "System Prompt"))
+               (node/spacer)
+               (node/text content)
+               (node/spacer)])
             c))
 
         switch-to-buffer!
@@ -322,9 +323,8 @@
 
         add-status-message!
         (fn [text]
-          ((:add-child chat-container) (comp/make-spacer 1))
-          ((:add-child chat-container) (comp/make-text text))
-          ((:add-child chat-container) (comp/make-spacer 1))
+          (node/append-children! chat-container
+            [(node/spacer) (node/text text) (node/spacer)])
           ;; Only render if Chat is the active view
           (when (= @active-view "Chat")
             (tui/render-now!)))
@@ -762,23 +762,23 @@
             :ready
             ;; Show AGENTS.md status when loaded
             (when-let [agents-files (seq (:agents-files event))]
-              ((:add-child chat-container)
-               (comp/make-text
-                (str (ansi/fg :dim "Loaded ") (ansi/fg :accent (str (count agents-files) " AGENTS.md"))
-                     (ansi/fg :dim (str " file" (when (> (count agents-files) 1) "s"))))))
-              ((:add-child chat-container) (comp/make-spacer 1))
+              (node/append-children! chat-container
+                [(node/text
+                  (str (ansi/fg :dim "Loaded ") (ansi/fg :accent (str (count agents-files) " AGENTS.md"))
+                       (ansi/fg :dim (str " file" (when (> (count agents-files) 1) "s")))))
+                 (node/spacer)])
               (tui/render-now!))
 
             :user-message
             (let [text (:text event)
                   is-local (= text @last-local-prompt)]
               ;; Always show the message — local or remote
-              ((:add-child chat-container) (comp/make-spacer 1))
-              ((:add-child chat-container)
-               (comp/make-text (str (ansi/fg :bold "you") ": " text
-                                    (when (seq (:images event))
-                                      (str " " (ansi/fg :dim (str "(" (count (:images event)) " image(s))")))))))                                  
-              ((:add-child chat-container) (comp/make-spacer 1))
+              (node/append-children! chat-container
+                [(node/spacer)
+                 (node/text (str (ansi/fg :bold "you") ": " text
+                                 (when (seq (:images event))
+                                   (str " " (ansi/fg :dim (str "(" (count (:images event)) " image(s))"))))))
+                 (node/spacer)])
               (tui/render-now!)
               ;; Clear after matching
               (when is-local
@@ -900,11 +900,11 @@
                   (reset! current-tool nil))
                 ((:stop loader))
                 ((:remove-child chat-container) loader)
-                ((:add-child chat-container)
-                 (comp/make-text
-                  (str (ansi/fg :error "[Error]") " "
-                       (ansi/fg :dim msg))))
-                ((:add-child chat-container) (comp/make-spacer 1))
+                (node/append-children! chat-container
+                  [(node/text
+                    (str (ansi/fg :error "[Error]") " "
+                         (ansi/fg :dim msg)))
+                   (node/spacer)])
                 (tui/render-now!)))
 
             :turn-end
@@ -948,28 +948,26 @@
                 (when (not= @active-view "Chat")
                   (switch-to-buffer! "Chat"))
                 ;; Re-render from branch entries
-                (doseq [entry (:branch-entries event)]
-                  (case (:type entry)
-                    "user-message"
-                    (do ((:add-child chat-container) (comp/make-spacer 1))
-                        ((:add-child chat-container)
-                         (comp/make-text (str (ansi/fg :bold "you") ": " (:text entry))))
-                        ((:add-child chat-container) (comp/make-spacer 1)))
+                (node/append-children! chat-container
+                  (for [entry (:branch-entries event)]
+                    (case (:type entry)
+                      "user-message"
+                      [(node/spacer)
+                       (node/text (str (ansi/fg :bold "you") ": " (:text entry)))
+                       (node/spacer)]
 
-                    "assistant-text"
-                    (do ((:add-child chat-container) (md/make-markdown (:text entry)))
-                        ((:add-child chat-container) (comp/make-spacer 1)))
+                      "assistant-text"
+                      [(md/make-markdown (:text entry))
+                       (node/spacer)]
 
-                    "tool-use"
-                    (let [name (:name entry)
-                          args-str (str (or (:arguments entry) ""))
-                          short-args (subs args-str 0 (min 80 (count args-str)))]
-                      ((:add-child chat-container)
-                       (comp/make-text (ansi/fg :dim (str "[" name ": " short-args "]")))
-                       ))
+                      "tool-use"
+                      (let [name (:name entry)
+                            args-str (str (or (:arguments entry) ""))
+                            short-args (subs args-str 0 (min 80 (count args-str)))]
+                        (node/text (ansi/fg :dim (str "[" name ": " short-args "]"))))
 
-                    ;; Skip tool-result, turn-end, etc. in re-render
-                    nil))
+                      ;; Skip tool-result, turn-end, etc. in re-render
+                      nil)))
                 (add-status-message!
                  (ansi/fg :dim (str "Navigated to "
                                     (if (:editor-text event) "message (text in editor)" "branch point"))))
@@ -1004,13 +1002,14 @@
                               img-suffix (when (pos? n)
                                            (str " " (ansi/fg :dim (str "(📎 " n " image" (when (> n 1) "s") ")"))))]
                           (reset! pending-img-count 0)
-                          ((:add-child chat-container) (comp/make-spacer 1))
-                          ((:add-child chat-container)
-                           (comp/make-text (str (ansi/fg :bold "you") ": " (:text block) img-suffix)))
-                          ((:add-child chat-container) (comp/make-spacer 1)))
+                          (node/append-children! chat-container
+                            [(node/spacer)
+                             (node/text (str (ansi/fg :bold "you") ": " (:text block) img-suffix))
+                             (node/spacer)]))
                         "assistant"
-                        (do ((:add-child chat-container) (md/make-markdown (:text block)))
-                            ((:add-child chat-container) (comp/make-spacer 1)))
+                        (do (node/append-children! chat-container
+                              [(md/make-markdown (:text block))
+                               (node/spacer)]))
                         nil)
 
                       :image
@@ -1024,8 +1023,8 @@
                             is-error (:is-error result)
                             comp (make-static-tool-component
                                   (:name block) args-str output is-error)]
-                        ((:add-child chat-container) comp)
-                        ((:add-child chat-container) (comp/make-spacer 1)))
+                        (node/append-children! chat-container
+                          [comp (node/spacer)]))
 
                       ;; Skip :tool-result (rendered inline with :tool-use)
                       nil)))
