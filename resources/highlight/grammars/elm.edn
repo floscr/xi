@@ -1,0 +1,11 @@
+[   {:pattern "--.*" :token :comment}
+   {:pattern "\\s+" :token :text}
+   {:pattern "(import|module|alias|where|port|else|type|case|then|let|as|of|if|in)\\b" :token :keyword}
+   {:pattern "[A-Z]\\w*" :token :keyword-type}
+   {:pattern "^main " :token :keyword}
+   {:pattern "\\((<-|\\|\\||\\|>|&&|\\+\\+|->|\\.\\.|//|>>|>=|/=|==|::|<~|<\\||<=|<<|~|<|=|:|>|'|/|\\\\|\\.|\\^|-|`|\\+|\\*|\\||%)\\)" :token :name-fn}
+   {:pattern "(<-|\\|\\||\\|>|&&|\\+\\+|->|\\.\\.|//|>>|>=|/=|==|::|<~|<\\||<=|<<|~|<|=|:|>|'|/|\\\\|\\.|\\^|-|`|\\+|\\*|\\||%)" :token :name-fn}
+   {:pattern "[a-z_][a-zA-Z_\\']*" :token :name-var}
+   {:pattern "[,()\\[\\]{}]" :token :punctuation}
+   {:pattern "_?\\d+\\.(?=\\d+)" :token :number}
+   {:pattern "_?\\d+" :token :number}]

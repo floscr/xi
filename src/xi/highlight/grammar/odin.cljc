@@ -1,7 +1,0 @@
-(ns xi.highlight.grammar.odin)
-
-(def odin
-  [   {:pattern "[a-zA-Z_]\\w*" :token :text}
-   {:pattern "([a-zA-Z_]\\w*)(\\s*)(\\()" :token :name-fn}
-   {:pattern "[^\\W\\d]\\w*" :token :name-var}
-   {:pattern "[{}()\\[\\],.;]" :token :punctuation}])

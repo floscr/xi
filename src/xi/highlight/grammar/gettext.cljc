@@ -1,7 +1,0 @@
-(ns xi.highlight.grammar.gettext)
-
-(def gettext
-  [   {:pattern "^#,\\s.*?$" :token :keyword-type}
-   {:pattern "^#:\\s.*?$" :token :keyword-decl}
-   {:pattern "^(#|#\\.\\s|#\\|\\s|#~\\s|#\\s).*$" :token :comment}
-   {:pattern "^&quot;.*&quot;$" :token :string}])

@@ -1,0 +1,3 @@
+[   {:pattern "@comment" :token :comment}
+   {:pattern ".+" :token :comment}
+   {:pattern "\\s+" :token :text}]

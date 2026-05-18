@@ -28,9 +28,26 @@ source string
 ```
 highlight/
   core.cljc      Tokenizer engine — ~50 lines, the whole runtime
-  grammars.cljc  269 language grammars (auto-generated from chroma)
+  grammars.cljs  Lazy-loading registry + grammar loader
   theme.cljc     Token type → ANSI true-color mapping (Nord-inspired)
+
+resources/highlight/grammars/
+  registry.edn   Alias → filename mapping (722 entries)
+  clojure.edn    Grammar rules for Clojure
+  python.edn     Grammar rules for Python
+  ...            269 grammar EDN files total
 ```
+
+### Lazy Loading
+
+Grammars are **not** bundled into the compiled JS output. Instead, they live as individual EDN files in `resources/highlight/grammars/` and are loaded on demand:
+
+1. `get-grammar "clojure"` looks up `"clojure"` in `registry.edn` → filename `"clojure"`
+2. Reads `resources/highlight/grammars/clojure.edn` from disk via `node:fs`
+3. Parses the EDN with `cljs.reader/read-string`
+4. Caches the result in an atom — subsequent calls for the same grammar are instant
+
+This keeps the release build lean (only the tokenizer engine + registry loader are compiled) while supporting 269 languages. Each grammar EDN file is typically 2–15KB.
 
 ## Where It's Used
 
@@ -57,21 +74,20 @@ The bg colors are blended with the tool block bg (`rgb(38,44,55)`) for a subtle 
 
 ### Origin
 
-Grammars are ported from [chroma](https://github.com/alecthomas/chroma), a Go syntax highlighter based on [Pygments](https://pygments.org/). Chroma defines grammars as XML files with regex rules and token types organized into states. Our converter extracts the `root` state rules, inlines `<include>` directives, and outputs flat ClojureScript data.
+Grammars are ported from [chroma](https://github.com/alecthomas/chroma), a Go syntax highlighter based on [Pygments](https://pygments.org/). Chroma defines grammars as XML files with regex rules and token types organized into states. Our converter extracts the `root` state rules, inlines `<include>` directives, and outputs flat EDN data.
 
 ### Format
 
-Each grammar is a vector of `{:pattern :token}` maps — tried in order, first match wins:
+Each grammar EDN file is a vector of `{:pattern :token}` maps — tried in order, first match wins:
 
 ```clojure
-(def clojure
-  [{:pattern ";.*$"                  :token :comment}
-   {:pattern "[,\\s]+"               :token :text}
-   {:pattern "-?\\d+\\.\\d+"         :token :number}
-   {:pattern "\"(?:\\\\.|[^\"])*\""  :token :string}
-   {:pattern "::?[\\w!$%*+<=>?/.#-]+" :token :string-symbol}
-   {:pattern "(?<=\\()defn(?=\\s)"   :token :keyword-decl}
-   ...])
+[{:pattern ";.*$"                  :token :comment}
+ {:pattern "[,\\s]+"               :token :text}
+ {:pattern "-?\\d+\\.\\d+"         :token :number}
+ {:pattern "\"(?:\\\\.|[^\"])*\""  :token :string}
+ {:pattern "::?[\\w!$%*+<=>?/.#-]+" :token :string-symbol}
+ {:pattern "(?<=\\()defn(?=\\s)"   :token :keyword-decl}
+ ...]
 ```
 
 ### Token Types
@@ -104,7 +120,7 @@ Mapped from chroma/Pygments conventions:
 To sync with upstream chroma or regenerate after modifying the converter:
 
 ```bash
-bun scripts/convert-chroma-grammars.mjs > src/xi/highlight/grammars.cljc
+bun scripts/convert-chroma-grammars.mjs
 ```
 
 The script:
@@ -113,10 +129,10 @@ The script:
 3. Filters out rules using push/pop, bygroups, or lexer delegation (unsupported)
 4. Converts Python-style named groups `(?P<name>...)` to JS `(?<name>...)`
 5. Tests each regex for JS compatibility, skips incompatible ones
-6. Deduplicates def names and registry aliases
-7. Outputs the complete CLJS file with all grammars and a lookup registry
+6. Deduplicates names and registry aliases
+7. Writes individual EDN files to `resources/highlight/grammars/` + a `registry.edn`
 
-After regenerating, manually add any custom aliases (e.g. `cljs`, `cljc` → clojure) that chroma doesn't include.
+Custom aliases (e.g. `cljs`, `cljc` → clojure) are added automatically by the converter.
 
 ## Adding a New Grammar
 
@@ -126,24 +142,23 @@ If the language exists in chroma, just regenerate. New languages upstream will b
 
 ### Option 2: Write one by hand
 
-Add a def to `grammars.cljc` (or a separate file) and register it:
+Create an EDN file in `resources/highlight/grammars/my_lang.edn`:
 
 ```clojure
-(def my-lang
-  [{:pattern "#.*$"           :token :comment}
-   {:pattern "\"[^\"]*\""     :token :string}
-   {:pattern "\\b\\d+\\b"     :token :number}
-   {:pattern "\\b(?:if|else|fn)\\b" :token :keyword}
-   {:pattern "[{}()\\[\\]]"   :token :punctuation}
-   {:pattern "\\w+"           :token :name-var}
-   {:pattern "\\s+"           :token :text}])
+[{:pattern "#.*$"           :token :comment}
+ {:pattern "\"[^\"]*\""     :token :string}
+ {:pattern "\\b\\d+\\b"     :token :number}
+ {:pattern "\\b(?:if|else|fn)\\b" :token :keyword}
+ {:pattern "[{}()\\[\\]]"   :token :punctuation}
+ {:pattern "\\w+"           :token :name-var}
+ {:pattern "\\s+"           :token :text}]
 ```
 
-Then add entries to the `registry` map:
+Then add entries to `resources/highlight/grammars/registry.edn`:
 
 ```clojure
-"my-lang" my-lang
-"ml"      my-lang  ;; alias
+"my-lang" "my_lang"
+"ml"      "my_lang"
 ```
 
 Rules are tried in order — put specific patterns (keywords, builtins) before general ones (identifiers). Use `"y"` (sticky) regex semantics: patterns match at the current position only.

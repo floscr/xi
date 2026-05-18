@@ -1,8 +1,0 @@
-(ns xi.highlight.grammar.tex)
-
-(def tex
-  [   {:pattern "\\\\$" :token :keyword}
-   {:pattern "[^\\\\$%&_^{}]+" :token :text}
-   {:pattern "%.*?\\n" :token :comment}
-   {:pattern "[{}]" :token :name-builtin}
-   {:pattern "[&_^]" :token :name-builtin}])

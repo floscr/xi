@@ -1,0 +1,12 @@
+[   {:pattern "#.*$" :token :comment}
+   {:pattern "%(attr|defattr|dir|doc(?:dir)?|setup|config(?:ure)?|make(?:install)|ghost|patch[0-9]+|find_lang|exclude|verify)" :token :keyword}
+   {:pattern "&#x27;.*?&#x27;" :token :string}
+   {:pattern "\\s+" :token :text}
+   {:pattern "." :token :text}
+   {:pattern "%define.*$" :token :comment}
+   {:pattern "%\\{\\!\\?.*%define.*\\}" :token :comment}
+   {:pattern "%\\{?__[a-z_]+\\}?" :token :name-fn}
+   {:pattern "%\\{?_([a-z_]+dir|[a-z_]+path|prefix)\\}?" :token :keyword}
+   {:pattern "%\\{\\?\\w+\\}" :token :name-var}
+   {:pattern "\\$\\{?RPM_[A-Z0-9_]+\\}?" :token :name-var}
+   {:pattern "%\\{[a-zA-Z]\\w+\\}" :token :keyword}]

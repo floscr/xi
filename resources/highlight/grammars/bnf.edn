@@ -1,0 +1,3 @@
+[   {:pattern "::=" :token :operator}
+   {:pattern "[^<>:]+" :token :text}
+   {:pattern "." :token :text}]

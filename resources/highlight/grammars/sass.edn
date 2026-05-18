@@ -1,0 +1,1 @@
+[   {:pattern "[ \\t]*\\n" :token :text}]

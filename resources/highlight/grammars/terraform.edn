@@ -1,0 +1,17 @@
+[   {:pattern "[\\[\\](),.{}]" :token :punctuation}
+   {:pattern "-?[0-9]+" :token :number}
+   {:pattern "=>" :token :punctuation}
+   {:pattern "(false|true)\\b" :token :keyword}
+   {:pattern "\\s*(#|//).*\\n" :token :comment}
+   {:pattern "^(provisioner|variable|resource|provider|module|output|data)(?!\\.)\\b" :token :keyword}
+   {:pattern "(for|in)\\b" :token :keyword}
+   {:pattern "(module|count|data|each|var)\\b" :token :name-builtin}
+   {:pattern "(parseint|signum|floor|ceil|log|max|min|abs|pow)\\b" :token :name-builtin}
+   {:pattern "(templatefile|filebase64|fileexists|pathexpand|basename|abspath|fileset|dirname|file)\\b" :token :name-builtin}
+   {:pattern "(formatdate|timestamp|timeadd)\\b" :token :name-builtin}
+   {:pattern "(cidrnetmask|cidrsubnet|cidrhost)\\b" :token :name-builtin}
+   {:pattern "(tostring|tonumber|tobool|tolist|tomap|toset|can|try)\\b" :token :name-builtin}
+   {:pattern "(^|[^.\\w])(name|x|default|type|description|value)(_[a-zA-Z]\\w*)*" :token :name-var}
+   {:pattern "=(?!>)|\\+|-|\\*|\\/|:|!|%|>|<(?!<)|>=|<=|==|!=|&&|\\||\\?" :token :operator}
+   {:pattern "\\n|\\s+|\\\\\\n" :token :text}
+   {:pattern "[a-zA-Z]\\w*" :token :name-var}]

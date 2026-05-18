@@ -1,0 +1,11 @@
+[   {:pattern "\\b(case|class|data|default|using|do|else|if|in|infix[lr]?|instance|rewrite|auto|namespace|codata|mutual|private|public|abstract|total|partial|let|proof|of|then|static|where|_|with|pattern|term|syntax|prefix|postulate|parameters|record|dsl|impossible|implicit|tactics|intros|intro|compute|refine|exact|trivial)(?!\\')\\b" :token :keyword}
+   {:pattern "('')?[A-Z][\\w\\']*" :token :keyword-type}
+   {:pattern "[a-z][\\w\\']*" :token :text}
+   {:pattern "(<-|::|->|=>|=)" :token :operator}
+   {:pattern "([(){}\\[\\]:!#$%&*+.\\\\/<=>?@^|~-]+)" :token :operator}
+   {:pattern "\\d+[eE][+-]?\\d+" :token :number}
+   {:pattern "\\d+\\.\\d+([eE][+-]?\\d+)?" :token :number}
+   {:pattern "0[xX][\\da-fA-F]+" :token :number}
+   {:pattern "\\d+" :token :number}
+   {:pattern "[^\\s(){}]+" :token :text}
+   {:pattern "\\s+?" :token :text}]

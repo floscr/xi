@@ -1,0 +1,14 @@
+[   {:pattern "#.*?\\n" :token :comment}
+   {:pattern ":\\w+" :token :name-var}
+   {:pattern "<(?:cl)?init>" :token :name-fn}
+   {:pattern "(public|private|protected|static|final|synchronized|bridge|varargs|native|abstract|strictfp|synthetic|constructor|declared-synchronized|interface|enum|annotation|volatile|transient)" :token :keyword}
+   {:pattern "\\b[vp]\\d+\\b" :token :name-builtin}
+   {:pattern "&quot;.*&quot;" :token :string}
+   {:pattern "0x[0-9A-Fa-f]+t?" :token :number}
+   {:pattern "[0-9]*\\.[0-9]+([eE][0-9]+)?[fd]?" :token :number}
+   {:pattern "[0-9]+L?" :token :number}
+   {:pattern "->" :token :punctuation}
+   {:pattern "[{},():=.-]" :token :punctuation}
+   {:pattern "[ZBSCIJFDV\\[]+" :token :keyword-type}
+   {:pattern "\\n" :token :text}
+   {:pattern "\\s+" :token :text}]

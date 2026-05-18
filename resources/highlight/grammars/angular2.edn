@@ -1,0 +1,1 @@
+[   {:pattern "[^{([*#]+" :token :text}]

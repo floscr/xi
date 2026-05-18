@@ -1,0 +1,20 @@
+[   {:pattern "^\\s*\\[.*?\\]" :token :name-var}
+   {:pattern "[^\\S\\n]+" :token :text}
+   {:pattern "\\\\\\n" :token :text}
+   {:pattern "///[^\\n\\r]*" :token :comment}
+   {:pattern "//[^\\n\\r]*" :token :comment}
+   {:pattern "/[*].*?[*]/" :token :comment}
+   {:pattern "\\n" :token :text}
+   {:pattern "[~!%^&*()+=|\\[\\]:;,.<>/?-]" :token :punctuation}
+   {:pattern "[{}]" :token :punctuation}
+   {:pattern "@\"(\"\"|[^\"])*\"" :token :string}
+   {:pattern "\\$@?\"(\"\"|[^\"])*\"" :token :string}
+   {:pattern "\"(\\\\\\\\|\\\\\"|[^\"\\n])*[\"\\n]" :token :string}
+   {:pattern "'\\\\.'|'[^\\\\]'" :token :string-char}
+   {:pattern "0[xX][0-9a-fA-F]+[Ll]?|\\d[_\\d]*(\\.\\d*)?([eE][+-]?\\d+)?[flFLdD]?" :token :number}
+   {:pattern "#[ \\t]*(if|endif|else|elif|define|undef|line|error|warning|region|endregion|pragma|nullable)\\b" :token :comment}
+   {:pattern "(as|await|base|break|by|case|catch|checked|continue|default|delegate|else|event|finally|fixed|for|repeat|goto|if|in|init|is|let|lock|new|scope|on|out|params|readonly|ref|return|sizeof|stackalloc|switch|this|throw|try|typeof|unchecked|virtual|void|while|get|set|new|yield|add|remove|value|alias|ascending|descending|from|group|into|orderby|select|thenby|where|join|equals)\\b" :token :keyword}
+   {:pattern "(abstract|async|const|enum|explicit|extern|implicit|internal|operator|override|partial|extension|private|protected|public|static|sealed|unsafe|volatile)\\b" :token :keyword-decl}
+   {:pattern "(bool|byte|char8|char16|char32|decimal|double|float|int|int8|int16|int32|int64|long|object|sbyte|short|string|uint|uint8|uint16|uint32|uint64|uint|let|var)\\b\\??" :token :keyword-type}
+   {:pattern "(true|false|null)\\b" :token :keyword}
+   {:pattern "@?[_a-zA-Z]\\w*" :token :text}]

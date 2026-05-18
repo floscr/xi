@@ -90,7 +90,7 @@ src/xi/
   tools/*.cljs         — built-in tools (read, write, edit, bash, grep, ls)
   highlight/
     core.cljc          — regex-walking tokenizer engine (~50 lines)
-    grammars.cljc      — 269 language grammars (auto-generated from chroma)
+    grammars.cljs      — lazy-loading grammar registry (loads EDN from resources/)
     theme.cljc         — token type → ANSI true-color mapping
   ext/
     core.cljs          — extension registry, hook dispatch, hook state management

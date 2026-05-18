@@ -1,0 +1,15 @@
+[   {:pattern "\\n" :token :text}
+   {:pattern "\\s+" :token :text}
+   {:pattern "\\\\\\n" :token :text}
+   {:pattern "/[*](.|\\n)*?[*]/" :token :comment}
+   {:pattern "//.*?\\n" :token :comment}
+   {:pattern "(function|import|from|method|property|type|with|variant)\\b" :token :keyword-decl}
+   {:pattern "(assert|assume|all|break|case|continue|debug|default|do|else|ensures|export|fail|final|for|if|in|is|native|no|new|private|protected|public|return|requires|skip|some|switch|unsafe|where|while)\\b" :token :keyword}
+   {:pattern "(true|false|null)\\b" :token :keyword}
+   {:pattern "(bool|byte|int|void)\\b" :token :keyword-type}
+   {:pattern "0b(?:_?[01])+" :token :number}
+   {:pattern "0[xX][0-9a-fA-F]+" :token :number}
+   {:pattern "(0|[1-9][0-9]*)" :token :number}
+   {:pattern "[a-zA-Z_]\\w*" :token :text}
+   {:pattern "[+%=><|^!?/\\-*&~:]" :token :operator}
+   {:pattern "[{}()\\[\\],.;\\|]" :token :punctuation}]

@@ -1,0 +1,3 @@
+[   {:pattern "[^{]+" :token :text}
+   {:pattern "\\{\\#.*?\\#\\}" :token :comment}
+   {:pattern "\\{" :token :text}]

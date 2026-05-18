@@ -1,0 +1,2 @@
+[   {:pattern "\\*.*\\n" :token :comment}
+   {:pattern "-.*\\n" :token :comment}]

@@ -1,0 +1,4 @@
+[   {:pattern "\\)((?=\\()|(?=\\^?[\\t\\v\\f\\r ,;=\\xa0]|[&<>|\\n\\x1a]))(?:(?:[^\\n\\x1a^]|\\^[\\n\\x1a]?[\\w\\W])*)" :token :comment}
+   {:pattern "[\\n\\x1a]+" :token :text}
+   {:pattern "@+" :token :punctuation}
+   {:pattern "call(?=(?:\\^[\\n\\x1a]?)?[\\t\\v\\f\\r ,;=\\xa0+./:[\\\\\\]]|[\\n\\x1a&<>|(])" :token :keyword}]

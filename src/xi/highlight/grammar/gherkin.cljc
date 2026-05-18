@@ -1,8 +1,0 @@
-(ns xi.highlight.grammar.gherkin)
-
-(def gherkin
-  [   {:pattern "\\n" :token :name-fn}
-   {:pattern "(\\s|.)" :token :name-fn}
-   {:pattern "\\s*#.*$" :token :comment}
-   {:pattern "(<[^>]+>)" :token :name-var}
-   {:pattern "(\\d+\\.?\\d*|\\d*\\.\\d+)([eE][+-]?[0-9]+)?" :token :string}])

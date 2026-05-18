@@ -1,9 +1,0 @@
-(ns xi.highlight.grammar.hlb)
-
-(def hlb
-  [   {:pattern "(#.*)" :token :comment}
-   {:pattern "((\\b(0(b|B|o|O|x|X)[a-fA-F0-9]+)\\b)|(\\b(0|[1-9][0-9]*)\\b))" :token :number}
-   {:pattern "((\\b(true|false)\\b))" :token :name-builtin}
-   {:pattern "(\\bstring\\b|\\bint\\b|\\bbool\\b|\\bfs\\b|\\boption\\b)" :token :keyword-type}
-   {:pattern "(\\n|\\r|\\r\\n)" :token :text}
-   {:pattern "." :token :text}])

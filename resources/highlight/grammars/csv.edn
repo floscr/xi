@@ -1,0 +1,3 @@
+[   {:pattern "\\r?\\n" :token :punctuation}
+   {:pattern "," :token :punctuation}
+   {:pattern "[^\\r\\n,]+" :token :string}]

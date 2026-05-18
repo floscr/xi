@@ -1,0 +1,2 @@
+[   {:pattern "\\s+" :token :text}
+   {:pattern "([a-zA-Z][\\w \\-]*)" :token :keyword}]

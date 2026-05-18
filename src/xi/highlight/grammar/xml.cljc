@@ -1,9 +1,0 @@
-(ns xi.highlight.grammar.xml)
-
-(def xml
-  [   {:pattern "[^<&]+" :token :text}
-   {:pattern "&\\S*?;" :token :name-var}
-   {:pattern "\\<\\!\\[CDATA\\[.*?\\]\\]\\>" :token :comment}
-   {:pattern "<\\?.*?\\?>" :token :comment}
-   {:pattern "<![^>]*>" :token :comment}
-   {:pattern "<\\s*/\\s*[\\w:.-]+\\s*>" :token :keyword}])

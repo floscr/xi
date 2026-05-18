@@ -1,0 +1,11 @@
+[   {:pattern "--(?![!#$%&*+./<=>?@^|_~:\\\\]).*?$" :token :comment}
+   {:pattern "\\b(abstract|codata|coinductive|constructor|data|do|eta-equality|field|forall|hiding|in|inductive|infix|infixl|infixr|instance|interleaved|let|macro|mutual|no-eta-equality|open|overlap|pattern|postulate|primitive|private|quote|quoteTerm|record|renaming|rewrite|syntax|tactic|unquote|unquoteDecl|unquoteDef|using|variable|where|with)(?!\\&#x27;)\\b" :token :keyword}
+   {:pattern "\\b(Set|Prop)[\\u2080-\\u2089]*\\b" :token :keyword-type}
+   {:pattern "(\\(|\\)|\\{|\\})" :token :operator}
+   {:pattern "(\\.{1,3}|\\||\\u03BB|\\u2200|\\u2192|:|=|->)" :token :operator}
+   {:pattern "\\d+[eE][+-]?\\d+" :token :number}
+   {:pattern "\\d+\\.\\d+([eE][+-]?\\d+)?" :token :number}
+   {:pattern "0[xX][\\da-fA-F]+" :token :number}
+   {:pattern "\\d+" :token :number}
+   {:pattern "[^\\s(){}]+" :token :text}
+   {:pattern "\\s+?" :token :text}]

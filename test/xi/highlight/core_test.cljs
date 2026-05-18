@@ -78,5 +78,9 @@
 
 (deftest many-grammars-available
   (testing "registry has many languages"
-    (is (> (count grammars/registry) 200)
-        "should have 200+ language entries in registry")))
+    (is (some? (grammars/get-grammar "clojure"))
+        "can load at least one grammar")
+    (is (some? (grammars/get-grammar "rust"))
+        "can load grammars on demand")
+    (is (some? (grammars/get-grammar "typescript"))
+        "can load grammars on demand")))

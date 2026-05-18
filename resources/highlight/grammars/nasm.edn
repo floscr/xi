@@ -1,0 +1,5 @@
+[   {:pattern "[a-z$._?][\\w$.?#@~]*:" :token :name-var}
+   {:pattern "[\\r\\n]+" :token :text}
+   {:pattern "\\n" :token :text}
+   {:pattern "[ \\t]+" :token :text}
+   {:pattern ";.*" :token :comment}]
