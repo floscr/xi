@@ -1,0 +1,14 @@
+(ns xi.highlight.grammar.kdl)
+
+(def kdl
+  [   {:pattern "(#true|#false|#null|#nan|#inf|#-inf)\\b" :token :keyword}
+   {:pattern "[{}=;\\\\]" :token :operator}
+   {:pattern "(\\b([0-9-\\+]|-|\\+)[0-9_]*?\\.[0-9][0-9_]*?([eE][+-]?[0-9_]+)?\\b|\\b[0-9][0-9_]*?(\\.[0-9][0-9_]*?)?[eE][+-]?[0-9_]+\\b)" :token :number}
+   {:pattern "\\b[0-9\\-\\+][0-9_]*\\b" :token :number}
+   {:pattern "\\b0x[a-fA-F0-9][a-fA-F0-9_]*?\\b" :token :number}
+   {:pattern "\\b0o[0-7][0-7_]*\\b" :token :number}
+   {:pattern "\\b0b[01][01_]*?\\b" :token :number}
+   {:pattern "#+(\\&quot;&quot;&quot;|&quot;).*?(&quot;&quot;&quot;|&quot;)#+" :token :string}
+   {:pattern "(?<!^)\\s*/-\\s*(&quot;.*&quot;|.*?)?\\s" :token :comment}
+   {:pattern "(\\/\\/(.*?)\\n|(?<!^)\\s*/-\\s*?\\s)" :token :comment}
+   {:pattern "\\s" :token :text}])

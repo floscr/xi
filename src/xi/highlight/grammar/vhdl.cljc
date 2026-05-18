@@ -1,0 +1,22 @@
+(ns xi.highlight.grammar.vhdl)
+
+(def vhdl
+  [   {:pattern "\\n" :token :text}
+   {:pattern "\\s+" :token :text}
+   {:pattern "\\\\\\n" :token :text}
+   {:pattern "--.*?$" :token :comment}
+   {:pattern "'(U|X|0|1|Z|W|L|H|-)'" :token :string-char}
+   {:pattern "[~!%^&*+=|?:<>/-]" :token :operator}
+   {:pattern "'[a-z_]\\w*" :token :name-var}
+   {:pattern "[()\\[\\],.;\\']" :token :punctuation}
+   {:pattern "\"[^\\n\\\\\"]*\"" :token :string}
+   {:pattern "(ieee|work|std)\\b" :token :name-var}
+   {:pattern "[a-z_]\\w*" :token :text}
+   {:pattern "(std_ulogic_vector|file_open_status|std_logic_vector|severity_level|file_open_kind|delay_length|std_ulogic|bit_vector|character|std_logic|positive|unsigned|boolean|natural|integer|signed|string|time|bit)\\b" :token :keyword-type}
+   {:pattern "(configuration|architecture|disconnect|attribute|transport|postponed|procedure|component|function|variable|severity|constant|generate|register|inertial|package|library|guarded|linkage|generic|subtype|process|literal|record|entity|others|shared|signal|downto|access|assert|return|reject|buffer|impure|select|elsif|inout|until|label|range|group|units|begin|array|alias|after|block|while|null|next|file|when|wait|open|nand|exit|then|case|port|type|loop|else|pure|with|xnor|body|not|rem|bus|rol|ror|xor|abs|end|and|sla|sll|sra|srl|all|out|nor|mod|map|for|new|use|or|on|of|in|if|is|to)\\b" :token :keyword}
+   {:pattern "\\d{1,2}#[0-9a-f_]+#?" :token :number}
+   {:pattern "\\d+" :token :number}
+   {:pattern "(\\d+\\.\\d*|\\.\\d+|\\d+)E[+-]?\\d+" :token :number}
+   {:pattern "X\"[0-9a-f_]+\"" :token :number}
+   {:pattern "O\"[0-7_]+\"" :token :number}
+   {:pattern "B\"[01_]+\"" :token :number}])

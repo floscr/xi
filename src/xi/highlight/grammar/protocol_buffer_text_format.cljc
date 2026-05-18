@@ -1,0 +1,18 @@
+(ns xi.highlight.grammar.protocol-buffer-text-format)
+
+(def protocol-buffer-text-format
+  [   {:pattern "#.*\\n" :token :comment}
+   {:pattern "[ \\n\\t\\v\\f\\r]+" :token :text}
+   {:pattern "-" :token :operator}
+   {:pattern "(?:0|[1-9][0-9]*)[fF]" :token :number}
+   {:pattern "\\.[0-9]+(?:[eE][+-]?[0-9]+)?[fF]?" :token :number}
+   {:pattern "(?:0|[1-9][0-9]*)\\.[0-9]*(?:[eE][+-]?[0-9]+)?[fF]?" :token :number}
+   {:pattern "(?:0|[1-9][0-9]*)[eE][+-]?[0-9]+[fF]?" :token :number}
+   {:pattern "0[xX][0-9a-fA-F]+" :token :number}
+   {:pattern "0[0-7]+" :token :number}
+   {:pattern "(?:0|[1-9][0-9]*)" :token :number}
+   {:pattern "\\b(?:[Tt]rue|[Ff]alse|t|f)\\b" :token :keyword}
+   {:pattern "[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)+" :token :name-var}
+   {:pattern "[a-zA-Z_][a-zA-Z0-9_]*" :token :text}
+   {:pattern "/[a-zA-Z_][a-zA-Z0-9_/.]*" :token :name-var}
+   {:pattern "[:;,<>\\[\\]{}]" :token :punctuation}])

@@ -1,0 +1,9 @@
+(ns xi.highlight.grammar.tasm)
+
+(def tasm
+  [   {:pattern "[@a-z$._?][\\w$.?#@~]*:" :token :name-var}
+   {:pattern "[\\r\\n]+" :token :text}
+   {:pattern "[\\n\\r]" :token :text}
+   {:pattern "\\\\[\\n\\r]" :token :text}
+   {:pattern "[ \\t]+" :token :text}
+   {:pattern ";.*" :token :comment}])

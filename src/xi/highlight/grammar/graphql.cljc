@@ -1,0 +1,22 @@
+(ns xi.highlight.grammar.graphql)
+
+(def graphql
+  [   {:pattern "(on|extend|schema|directive|\\.\\.\\.)" :token :keyword-decl}
+   {:pattern "(QUERY|MUTATION|SUBSCRIPTION|FIELD|FRAGMENT_DEFINITION|FRAGMENT_SPREAD|INLINE_FRAGMENT|SCHEMA|SCALAR|OBJECT|FIELD_DEFINITION|ARGUMENT_DEFINITION|INTERFACE|UNION|ENUM|ENUM_VALUE|INPUT_OBJECT|INPUT_FIELD_DEFINITION)\\b" :token :keyword}
+   {:pattern "[^\\W\\d]\\w*" :token :name-var}
+   {:pattern "\\@\\w+" :token :name-builtin}
+   {:pattern "[\\(\\)\\{\\}\\[\\],!\\|=]" :token :punctuation}
+   {:pattern "\\$\\w+" :token :name-var}
+   {:pattern "\\d+i" :token :number}
+   {:pattern "\\d+\\.\\d*([Ee][-+]\\d+)?i" :token :number}
+   {:pattern "\\.\\d+([Ee][-+]\\d+)?i" :token :number}
+   {:pattern "\\d+[Ee][-+]\\d+i" :token :number}
+   {:pattern "\\d+(\\.\\d+[eE][+\\-]?\\d+|\\.\\d*|[eE][+\\-]?\\d+)" :token :number}
+   {:pattern "\\.\\d+([eE][+\\-]?\\d+)?" :token :number}
+   {:pattern "(0|[1-9][0-9]*)" :token :number}
+   {:pattern "\"\"\"[\\x00-\\x7F]*?\"\"\"" :token :string}
+   {:pattern "\"(\\\\[\"\\\\abfnrtv]|\\\\x[0-9a-fA-F]{2}|\\\\[0-7]{1,3}|\\\\u[0-9a-fA-F]{4}|\\\\U[0-9a-fA-F]{8}|[^\\\\])\"" :token :string-char}
+   {:pattern "\"(\\\\\\\\|\\\\\"|[^\"])*\"" :token :string}
+   {:pattern "\"(true|false|null)*\"" :token :string}
+   {:pattern "[\\r\\n\\s]+" :token :text}
+   {:pattern "#[^\\r\\n]*" :token :comment}])

@@ -1,0 +1,18 @@
+(ns xi.highlight.grammar.viml)
+
+(def viml
+  [   {:pattern "^\\s*\".*" :token :comment}
+   {:pattern "[ \\t]+" :token :text}
+   {:pattern "/(\\\\\\\\|\\\\/|[^\\n/])*/" :token :string}
+   {:pattern "\"(\\\\\\\\|\\\\\"|[^\\n\"])*\"" :token :string}
+   {:pattern "'(''|[^\\n'])*'" :token :string}
+   {:pattern "(?<=\\s)\"[^\\-:.%#=*].*" :token :comment}
+   {:pattern "-?\\d+" :token :number}
+   {:pattern "#[0-9a-f]{6}" :token :number}
+   {:pattern "^:" :token :punctuation}
+   {:pattern "[()<>+=!|,~-]" :token :punctuation}
+   {:pattern "\\b(let|if|else|endif|elseif|fun|function|endfunction|set|map|autocmd|filetype|hi(ghlight)?|execute|syntax|colorscheme)\\b" :token :keyword}
+   {:pattern "\\b(NONE|bold|italic|underline|dark|light)\\b" :token :name-builtin}
+   {:pattern "\\b\\w+\\b" :token :name-var}
+   {:pattern "\\n" :token :text}
+   {:pattern "." :token :text}])

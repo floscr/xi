@@ -1,0 +1,8 @@
+(ns xi.highlight.grammar.typoscripthtmldata)
+
+(def typoscripthtmldata
+  [   {:pattern "(INCLUDE_TYPOSCRIPT)" :token :name-class}
+   {:pattern "(EXT|FILE|LLL):[^}\\n\"]*" :token :string}
+   {:pattern "\\s+" :token :text}
+   {:pattern "[<>,:=.*%+|]" :token :string}
+   {:pattern "[\\w\"\\-!/&;(){}#]+" :token :string}])

@@ -1,0 +1,21 @@
+(ns xi.highlight.grammar.erlang)
+
+(def erlang
+  [   {:pattern "\\s+" :token :text}
+   {:pattern "%.*\\n" :token :comment}
+   {:pattern "(receive|after|begin|catch|query|case|cond|when|let|fun|end|try|of|if)\\b" :token :keyword}
+   {:pattern "(localtime_to_universaltime|universaltime_to_localtime|list_to_existing_atom|check_process_code|bitstring_to_list|list_to_bitstring|function_exported|is_process_alive|iolist_to_binary|bump_reductions|garbage_collect|process_display|suspend_process|list_to_integer|disconnect_node|integer_to_list|trace_delivered|send_nosuspend|list_to_binary|system_profile|binary_to_term|binary_to_list|resume_process|append_element|term_to_binary|system_monitor|list_to_tuple|spawn_monitor|delete_module|trace_pattern|tuple_to_list|list_to_float|float_to_list|module_loaded|port_connect|is_bitstring|port_to_list|monitor_node|process_info|port_control|split_binary|cancel_timer|purge_module|group_leader|list_to_atom|atom_to_list|port_command|is_reference|process_flag|pid_to_list|system_info|start_timer|iolist_size|fun_to_list|load_module|is_function|ref_to_list|list_to_pid|system_flag|make_tuple|is_builtin|unregister|is_boolean|set_cookie|md5_update|spawn_link|setelement|trace_info|read_timer|statistics|send_after|port_close|is_integer|tuple_size|spawn_opt|open_port|is_record|is_binary|md5_final|port_call|port_info|is_number|byte_size|demonitor|register|is_float|bit_size|fun_info|get_keys|is_tuple|is_atom|element|is_list|is_port|monitor|display|whereis|is_pid|memory|unlink|phash2|length|spawn|nodes|trace|round|apply|erase|phash|trunc|float|size|link|node|exit|hash|send|get|md5|put|abs|hd|tl)\\b" :token :name-builtin}
+   {:pattern "(andalso|orelse|bxor|band|bnot|and|bsr|bsl|div|not|rem|bor|xor|or)\\b" :token :operator}
+   {:pattern "(\\+\\+?|--?|\\*|/|<|>|/=|=:=|=/=|=<|>=|==?|<-|!|\\?)" :token :operator}
+   {:pattern "<<" :token :name-var}
+   {:pattern ">>" :token :name-var}
+   {:pattern "[+-]?(?:[2-9]|[12][0-9]|3[0-6])#[0-9a-zA-Z]+" :token :number}
+   {:pattern "[+-]?\\d+" :token :number}
+   {:pattern "[+-]?\\d+.\\d+" :token :number}
+   {:pattern "[]\\[:_@\\\".{}()|;,]" :token :punctuation}
+   {:pattern "(?:[A-Z_]\\w*)" :token :name-var}
+   {:pattern "(?:[a-z]\\w*|'[^\\n']*[^\\\\]')" :token :text}
+   {:pattern "\\?(?:(?:[A-Z_]\\w*)|(?:[a-z]\\w*|'[^\\n']*[^\\\\]'))" :token :name-var}
+   {:pattern "\\$(?:(?:\\\\(?:[bdefnrstv\\'\"\\\\]|[0-7][0-7]?[0-7]?|(?:x[0-9a-fA-F]{2}|x\\{[0-9a-fA-F]+\\})|\\^[a-zA-Z]))|\\\\[ %]|[^\\\\])" :token :string-char}
+   {:pattern "#(?:[a-z]\\w*|'[^\\n']*[^\\\\]')(:?\\.(?:[a-z]\\w*|'[^\\n']*[^\\\\]'))?" :token :name-var}
+   {:pattern "\\A#!.+\\n" :token :comment}])

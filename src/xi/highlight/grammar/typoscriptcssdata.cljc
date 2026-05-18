@@ -1,0 +1,8 @@
+(ns xi.highlight.grammar.typoscriptcssdata)
+
+(def typoscriptcssdata
+  [   {:pattern "\\s+" :token :text}
+   {:pattern "/\\*(?:(?!\\*/).)*\\*/" :token :comment}
+   {:pattern "(?<!(#|\\'|\"))(?:#(?!(?:[a-fA-F0-9]{6}|[a-fA-F0-9]{3}))[^\\n#]+|//[^\\n]*)" :token :comment}
+   {:pattern "[<>,:=.*%+|]" :token :string}
+   {:pattern "[\\w\"\\-!/&;(){}]+" :token :string}])

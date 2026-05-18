@@ -1,0 +1,16 @@
+(ns xi.highlight.grammar.lean4)
+
+(def lean4
+  [   {:pattern "\\b(import|unif_hint|renaming|inline|hiding|lemma|variable|theorem|axiom|inductive|structure|universe|alias|\\#help|precedence|postfix|prefix|infix|infixl|infixr|notation|\\#eval|\\#check|\\#reduce|\\#exit|end|private|using|namespace|instance|section|protected|export|set_option|extends|open|example|\\#print|opaque|def|macro|elab|syntax|macro_rules|\\#reduce|where|abbrev|noncomputable|class|attribute|\\#synth|mutual|scoped|local)\\b" :token :keyword}
+   {:pattern "\\b(forall|fun|obtain|from|have|show|assume|let|if|else|then|by|in|with|calc|match|nomatch|do|at)\\b" :token :keyword}
+   {:pattern "\\s+" :token :text}
+   {:pattern "--.*$" :token :comment}
+   {:pattern "\\b(Type|Prop|Sort)\\b" :token :keyword-type}
+   {:pattern "\\b(sorry|admit)\\b" :token :operator}
+   {:pattern "(!=|\\#|\\&|\\&\\&|\\*|\\+|\\-|/|@|!|\\-\\.|\\->|\\.|\\.\\.|\\.\\.\\.|::|:>|;|;;|<|<\\-|=|==|>|_|\\||\\|\\||\\~|=>|<=|>=|/\\\\|\\\\/|∀|Π|λ|↔|∧|∨|≠|≤|≥|¬|⁻¹|⬝|▸|→|∃|≈|×|⌞|⌟|≡|⟨|⟩|↦)" :token :name-builtin}
+   {:pattern "(\\(|\\)|:|\\{|\\}|\\[|\\]|⦃|⦄|:=|,)" :token :operator}
+   {:pattern "(?<=\\.)\\d+" :token :number}
+   {:pattern "(\\d+\\.\\d*)([eE][+-]?[0-9]+)?" :token :number}
+   {:pattern "\\d+" :token :number}
+   {:pattern "[~?][a-z][\\w\\&#x27;]*:" :token :name-var}
+   {:pattern "\\S" :token :name-builtin}])

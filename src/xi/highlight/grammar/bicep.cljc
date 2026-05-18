@@ -1,0 +1,15 @@
+(ns xi.highlight.grammar.bicep)
+
+(def bicep
+  [   {:pattern "'''.*?'''" :token :string}
+   {:pattern "#[\\w-]+\\b" :token :comment}
+   {:pattern "[\\w_]+(?=\\()" :token :name-fn}
+   {:pattern "\\b(metadata|targetScope|resource|module|param|var|output|for|in|if|existing|import|as|type|with|using|func|assert)\\b" :token :keyword-decl}
+   {:pattern "\\b(true|false|null)\\b" :token :keyword}
+   {:pattern "(>=|>|<=|<|==|!=|=~|!~|::|&&|\\?\\?|!|-|%|\\*|\\/|\\+)" :token :operator}
+   {:pattern "(\\(|\\)|\\[|\\]|\\.|:|\\?|{|}|@|,|\\||=>|=)" :token :punctuation}
+   {:pattern "[\\w_]+" :token :name-var}
+   {:pattern "[0-9]+" :token :number}
+   {:pattern "//[^\\n\\r]+" :token :comment}
+   {:pattern "/\\*.*?\\*/" :token :comment}
+   {:pattern "\\s+" :token :text}])

@@ -1,0 +1,35 @@
+(ns xi.highlight.grammar.zig)
+
+(def zig
+  [   {:pattern "\\n" :token :text}
+   {:pattern "\\s+" :token :text}
+   {:pattern "//!.*$" :token :comment}
+   {:pattern "///.*$" :token :comment}
+   {:pattern "//.*$" :token :comment}
+   {:pattern "(break|return|continue|asm|defer|errdefer|unreachable|try|catch|suspend|resume|nosuspend)\\b" :token :keyword}
+   {:pattern "(const|var|extern|packed|export|pub|noalias|inline|noinline|comptime|volatile|allowzero|align|addrspace|linksection|threadlocal|callconv)\\b" :token :keyword}
+   {:pattern "(struct|enum|union|error|opaque)\\b" :token :keyword}
+   {:pattern "(while|for)\\b" :token :keyword}
+   {:pattern "(bool|void|noreturn|type|anyerror|anyopaque|f16|f32|f64|f80|f128|i8|u8|i16|u16|i32|u32|i64|u64|i128|u128|isize|usize|comptime_int|comptime_float|c_char|c_short|c_ushort|c_int|c_uint|c_long|c_ulong|c_longlong|c_ulonglong|c_longdouble)\\b" :token :keyword-type}
+   {:pattern "(true|false|null|undefined)\\b" :token :keyword}
+   {:pattern "(if|else|switch|and|or|orelse)\\b" :token :keyword}
+   {:pattern "(fn|test|anyframe|anytype)\\b" :token :keyword}
+   {:pattern "0x[0-9a-fA-F][0-9a-fA-F_]*(?:\\.[0-9a-fA-F][0-9a-fA-F_]*(?:[pP][-+]?[0-9][0-9_]*)?|[pP][-+]?[0-9][0-9_]*)" :token :number}
+   {:pattern "[0-9][0-9_]*(?:\\.[0-9][0-9_]*(?:[eE][-+]?[0-9][0-9_]*)?|[eE][-+]?[0-9][0-9_]*)" :token :number}
+   {:pattern "0b[01][01_]*" :token :number}
+   {:pattern "0o[0-7][0-7_]*" :token :number}
+   {:pattern "0x[0-9a-fA-F][0-9a-fA-F_]*" :token :number}
+   {:pattern "[0-9][0-9_]*" :token :number}
+   {:pattern "@[a-zA-Z_][a-zA-Z0-9_]*" :token :name-builtin}
+   {:pattern "[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()" :token :name-fn}
+   {:pattern "[a-zA-Z_][a-zA-Z0-9_]*" :token :text}
+   {:pattern "'(?:\\\\x[0-9a-fA-F]{2}|\\\\u\\{[0-9a-fA-F]+\\}|\\\\[nrt'\"\\\\]|[^\\\\'\\n])'" :token :string-char}
+   {:pattern "\\\\\\\\[^\\n]*" :token :string}
+   {:pattern "<<\\|=" :token :operator}
+   {:pattern "(?:\\+%=|-%=|\\*%=|\\+\\|=|-\\|=|\\*\\|=|<<=|>>=|<<\\|)" :token :operator}
+   {:pattern "(?:\\+\\+|\\*\\*|\\|\\||<<|>>|\\+%|-%|\\*%|\\+\\||-\\||\\*\\||==|!=|<=|>=|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|\\.\\*|\\.\\?|\\.\\.)" :token :operator}
+   {:pattern "[+\\-*/%&|^~!<>=]" :token :operator}
+   {:pattern "\\.\\.\\." :token :punctuation}
+   {:pattern "=>" :token :punctuation}
+   {:pattern "->" :token :punctuation}
+   {:pattern "[{}()\\[\\],.;:?]" :token :punctuation}])

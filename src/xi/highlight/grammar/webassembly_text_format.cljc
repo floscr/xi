@@ -1,0 +1,16 @@
+(ns xi.highlight.grammar.webassembly-text-format)
+
+(def webassembly-text-format
+  [   {:pattern "(module|import|func|funcref|start|param|local|type|result|export|memory|global|mut|data|table|elem|if|then|else|end|block|loop)(?=[^a-z_\\.])" :token :keyword}
+   {:pattern "(i32|i64|f32|f64)" :token :keyword-type}
+   {:pattern "\\$[A-Za-z0-9!#$%&\\&#x27;*+./:<=>?@\\\\^_`|~-]+" :token :name-var}
+   {:pattern ";;.*?$" :token :comment}
+   {:pattern "[+-]?0x[\\dA-Fa-f](_?[\\dA-Fa-f])*(.([\\dA-Fa-f](_?[\\dA-Fa-f])*)?)?([pP][+-]?[\\dA-Fa-f](_?[\\dA-Fa-f])*)?" :token :number}
+   {:pattern "[+-]?\\d.\\d(_?\\d)*[eE][+-]?\\d(_?\\d)*" :token :number}
+   {:pattern "[+-]?\\d.\\d(_?\\d)*" :token :number}
+   {:pattern "[+-]?\\d.[eE][+-]?\\d(_?\\d)*" :token :number}
+   {:pattern "[+-]?(inf|nan:0x[\\dA-Fa-f](_?[\\dA-Fa-f])*|nan)" :token :number}
+   {:pattern "[+-]?0x[\\dA-Fa-f](_?[\\dA-Fa-f])*" :token :number}
+   {:pattern "[+-]?\\d(_?\\d)*" :token :number}
+   {:pattern "[\\(\\)]" :token :punctuation}
+   {:pattern "\\s+" :token :text}])

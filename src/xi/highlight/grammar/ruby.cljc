@@ -1,0 +1,36 @@
+(ns xi.highlight.grammar.ruby)
+
+(def ruby
+  [   {:pattern "\\A#!.+?$" :token :comment}
+   {:pattern "#.*?$" :token :comment}
+   {:pattern "=begin\\s.*?\\n=end.*?$" :token :comment}
+   {:pattern "(defined\\?|return|ensure|rescue|unless|undef|until|break|begin|elsif|super|alias|while|retry|BEGIN|raise|yield|redo|next|case|when|then|else|end|for|END|do|if|in)\\b" :token :keyword}
+   {:pattern "(module_function|attr_accessor|attr_reader|attr_writer|initialize|protected|include|private|extend|public|raise|false|catch|throw|attr|loop|true|new|nil)\\b" :token :keyword}
+   {:pattern "(not|and|or)\\b" :token :operator}
+   {:pattern "(protected_method_defined|private_method_defined|public_method_defined|method_defined|const_defined|block_given|instance_of|respond_to|iterator|autoload|kind_of|tainted|include|frozen|equal|is_a|nil|eql)\\?" :token :name-builtin}
+   {:pattern "(chomp|chop|exit|gsub|sub)!" :token :name-builtin}
+   {:pattern "(?<!\\.)(protected_instance_methods|private_instance_methods|public_instance_methods|instance_variable_set|instance_variable_get|private_class_method|public_class_method|instance_variables|protected_methods|singleton_methods|included_modules|instance_methods|global_variables|private_methods|local_variables|instance_method|class_variables|public_methods|const_defined\\?|set_trace_func|method_missing|const_missing|instance_eval|module_eval|untrace_var|class_eval|trace_var|const_get|readlines|ancestors|constants|const_set|object_id|readline|autoload|__send__|untaint|methods|display|Integer|sprintf|inspect|require|syscall|at_exit|binding|extend|printf|lambda|__id__|String|callcc|method|select|format|system|freeze|caller|raise|Float|print|throw|taint|clone|srand|Array|abort|split|catch|chomp|sleep|open|puts|putc|fork|fail|trap|exit|scan|getc|self|send|eval|gets|exec|gsub|proc|load|loop|chop|warn|hash|test|name|to_a|rand|to_s|sub|dup|id|p)\\b" :token :name-builtin}
+   {:pattern "__(FILE|LINE)__\\b" :token :name-builtin}
+   {:pattern "(?<!\\w)(<<-?)([\"`\\']?)([a-zA-Z_]\\w*)(\\2)(.*?\\n)" :token :string}
+   {:pattern "(<<-?)(\"|\\')()(\\2)(.*?\\n)" :token :string}
+   {:pattern "@@[a-zA-Z_]\\w*" :token :name-var}
+   {:pattern "@[a-zA-Z_]\\w*" :token :name-var}
+   {:pattern "\\$\\w+" :token :name-var}
+   {:pattern "\\$[!@&`\\'+~=/\\\\,;.<>_*$?:\"^-]" :token :name-var}
+   {:pattern "\\$-[0adFiIlpvw]" :token :name-var}
+   {:pattern "::" :token :operator}
+   {:pattern "\\?(\\\\[MC]-)*(\\\\([\\\\abefnrstv#\"\\']|x[a-fA-F0-9]{1,2}|[0-7]{1,3})|\\S)(?!\\w)" :token :string-char}
+   {:pattern "[A-Z]\\w+" :token :name-var}
+   {:pattern "[a-zA-Z_]\\w*[!?]?" :token :text}
+   {:pattern "(\\[|\\]|\\*\\*|<<?|>>?|>=|<=|<=>|=~|={3}|!~|&&?|\\|\\||\\.{1,3})" :token :operator}
+   {:pattern "[-+/*%=<>&!^|~]=?" :token :operator}
+   {:pattern "[(){};,/?:\\\\]" :token :punctuation}
+   {:pattern "\\s+" :token :text}
+   {:pattern "\\:@{0,2}[a-zA-Z_]\\w*[!?]?" :token :string-symbol}
+   {:pattern "\\:@{0,2}(===|\\[\\]=|<=>|\\*\\*|==|>=|\\+@|<>|>>|<<|-@|\\[\\]|~|`|\\^|\\||&|<|%|/|>|\\+|-|\\*)" :token :string-symbol}
+   {:pattern ":'(\\\\\\\\|\\\\'|[^'])*'" :token :string-symbol}
+   {:pattern "'(\\\\\\\\|\\\\'|[^'])*'" :token :string}
+   {:pattern "(%r([\\W_]))((?:\\\\\\2|(?!\\2).)*)(\\2[mixounse]*)" :token :string}
+   {:pattern "%[qsw]([\\W_])((?:\\\\\\1|(?!\\1).)*)\\1" :token :string}
+   {:pattern "(%[QWx]([\\W_]))((?:\\\\\\2|(?!\\2).)*)(\\2)" :token :string}
+   {:pattern "(%([^a-zA-Z0-9\\s]))((?:\\\\\\2|(?!\\2).)*)(\\2)" :token :string}])

@@ -1,0 +1,28 @@
+(ns xi.highlight.grammar.verilog)
+
+(def verilog
+  [   {:pattern "\\n" :token :text}
+   {:pattern "\\s+" :token :text}
+   {:pattern "\\\\\\n" :token :text}
+   {:pattern "/(\\\\\\n)?/(\\n|(.|\\n)*?[^\\\\]\\n)" :token :comment}
+   {:pattern "/(\\\\\\n)?[*](.|\\n)*?[*](\\\\\\n)?/" :token :comment}
+   {:pattern "[{}#@]" :token :punctuation}
+   {:pattern "L?'(\\\\.|\\\\[0-7]{1,3}|\\\\x[a-fA-F0-9]{1,2}|[^\\\\\\'\\n])'" :token :string-char}
+   {:pattern "(\\d+\\.\\d*|\\.\\d+|\\d+)[eE][+-]?\\d+[lL]?" :token :number}
+   {:pattern "(\\d+\\.\\d*|\\.\\d+|\\d+[fF])[fF]?" :token :number}
+   {:pattern "([0-9]+)|(\\'h)[0-9a-fA-F]+" :token :number}
+   {:pattern "([0-9]+)|(\\'b)[01]+" :token :number}
+   {:pattern "([0-9]+)|(\\'d)[0-9]+" :token :number}
+   {:pattern "([0-9]+)|(\\'o)[0-7]+" :token :number}
+   {:pattern "\\'[01xz]" :token :number}
+   {:pattern "\\d+[Ll]?" :token :number}
+   {:pattern "\\*/" :token :text}
+   {:pattern "[~!%^&*+=|?:<>/-]" :token :operator}
+   {:pattern "[()\\[\\],.;\\']" :token :punctuation}
+   {:pattern "`[a-zA-Z_]\\w*" :token :name-var}
+   {:pattern "(endprimitive|always_latch|macromodule|always_comb|endgenerate|endfunction|endpackage|endspecify|localparam|parameter|primitive|always_ff|automatic|specparam|endmodule|rtranif1|scalared|continue|deassign|endtable|defparam|function|strength|generate|pulldown|vectored|rtranif0|unsigned|specify|endcase|negedge|strong0|disable|default|endtask|posedge|strong1|typedef|tranif1|integer|forever|release|initial|tranif0|highz0|genvar|highz1|pullup|notif0|bufif1|bufif0|repeat|medium|return|struct|assign|signed|module|packed|string|output|notif1|always|final|casex|while|table|const|large|break|begin|input|pull0|pull1|inout|weak1|rcmos|weak0|casez|force|small|rnmos|rpmos|rtran|event|type|void|enum|wait|fork|join|else|edge|pmos|nand|cmos|nmos|task|xnor|case|tran|buf|ref|end|var|and|xor|for|nor|not|do|if|or)\\b" :token :keyword}
+   {:pattern "`(autoexpand_vectornets|nounconnected_drive|noexpand_vectornets|noremove_gatenames|unconnected_drive|noremove_netnames|expand_vectornets|remove_gatenames|default_nettype|remove_netnames|endcelldefine|noaccelerate|endprotected|accelerate|celldefine|endprotect|protected|timescale|resetall|protect|include|ifndef|ifdef|endif|elsif|undef|else)\\b" :token :comment}
+   {:pattern "\\$(shortrealtobits|bitstoshortreal|printtimescale|showvariables|countdrivers|reset_value|reset_count|getpattern|showscopes|realtobits|bitstoreal|monitoroff|timeformat|sreadmemh|monitoron|sreadmemb|fmonitor|showvars|fdisplay|realtime|readmemb|readmemh|monitor|history|fstrobe|display|restart|incsave|strobe|fwrite|finish|random|fclose|stime|nokey|fopen|floor|nolog|scale|scope|input|reset|write|rtoi|bits|list|stop|itor|time|save|key|log)\\b" :token :name-builtin}
+   {:pattern "(woshortreal|shortint|realtime|longint|integer|supply0|supply1|triand|trireg|uwire|logic|trior|byte|wand|tri0|tri1|time|real|wire|reg|bit|int|tri)\\b" :token :keyword-type}
+   {:pattern "[a-zA-Z_]\\w*:(?!:)" :token :name-var}
+   {:pattern "\\$?[a-zA-Z_]\\w*" :token :text}])

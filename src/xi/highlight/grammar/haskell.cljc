@@ -1,0 +1,27 @@
+(ns xi.highlight.grammar.haskell)
+
+(def haskell
+  [   {:pattern "\\s+" :token :text}
+   {:pattern "--(?![!#$%&*+./<=>?@^|_~:\\\\]).*?$" :token :comment}
+   {:pattern "\\berror\\b" :token :name-class}
+   {:pattern "\\b(case|class|data|default|deriving|do|else|family|if|in|infix[lr]?|instance|let|newtype|of|then|type|where|_)(?!\\')\\b" :token :keyword}
+   {:pattern "'[^\\\\]'" :token :string-char}
+   {:pattern "^[_\\p{Ll}][\\w\\']*" :token :name-fn}
+   {:pattern "'?[_\\p{Ll}][\\w']*" :token :text}
+   {:pattern "('')?[\\p{Lu}][\\w\\']*" :token :keyword-type}
+   {:pattern "(')[\\p{Lu}][\\w\\']*" :token :keyword-type}
+   {:pattern "(')\\[[^\\]]*\\]" :token :keyword-type}
+   {:pattern "(')\\([^)]*\\)" :token :keyword-type}
+   {:pattern "\\\\(?![:!#$%&*+.\\\\/<=>?@^|~-]+)" :token :name-fn}
+   {:pattern "(<-|::|->|=>|=|'([:!#$%&*+.\\\\/<=>?@^|~-]+))(?![:!#$%&*+.\\\\/<=>?@^|~-]+)" :token :operator}
+   {:pattern ":[:!#$%&*+.\\\\/<=>?@^|~-]*" :token :keyword-type}
+   {:pattern "[:!#$%&*+.\\\\/<=>?@^|~-]+" :token :operator}
+   {:pattern "\\d+_*[eE][+-]?\\d+" :token :number}
+   {:pattern "\\d+(_+[\\d]+)*\\.\\d+(_+[\\d]+)*([eE][+-]?\\d+)?" :token :number}
+   {:pattern "0[oO](_*[0-7])+" :token :number}
+   {:pattern "0[xX](_*[\\da-fA-F])+" :token :number}
+   {:pattern "0[bB](_*[01])+" :token :number}
+   {:pattern "\\d+(_*[\\d])*" :token :number}
+   {:pattern "\\[\\]" :token :keyword-type}
+   {:pattern "\\(\\)" :token :name-builtin}
+   {:pattern "[][(),;`{}]" :token :punctuation}])

@@ -1,0 +1,12 @@
+(ns xi.highlight.grammar.devicetree)
+
+(def devicetree
+  [   {:pattern "\\n" :token :text}
+   {:pattern "\\s+" :token :text}
+   {:pattern "\\\\\\n" :token :text}
+   {:pattern "//(\\n|[\\w\\W]*?[^\\\\]\\n)" :token :comment}
+   {:pattern "/(\\\\\\n)?[*][\\w\\W]*?[*](\\\\\\n)?/" :token :comment}
+   {:pattern "/dts-v1/" :token :comment}
+   {:pattern "/memreserve/" :token :comment}
+   {:pattern "/delete-node/" :token :comment}
+   {:pattern "/delete-property/" :token :comment}])

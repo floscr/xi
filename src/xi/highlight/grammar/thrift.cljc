@@ -1,0 +1,22 @@
+(ns xi.highlight.grammar.thrift)
+
+(def thrift
+  [   {:pattern "\"" :token :string}
+   {:pattern "\\'" :token :string}
+   {:pattern "[&=]" :token :operator}
+   {:pattern "[:;,{}()<>\\[\\]]" :token :punctuation}
+   {:pattern "[a-zA-Z_](\\.\\w|\\w)*" :token :text}
+   {:pattern "\\n" :token :text}
+   {:pattern "\\s+" :token :text}
+   {:pattern "#.*$" :token :comment}
+   {:pattern "//.*?\\n" :token :comment}
+   {:pattern "/\\*[\\w\\W]*?\\*/" :token :comment}
+   {:pattern "(async|oneway|extends|throws|required|optional)\\b" :token :keyword}
+   {:pattern "(true|false)\\b" :token :keyword}
+   {:pattern "(const|typedef)\\b" :token :keyword-decl}
+   {:pattern "(smalltalk_category|smalltalk_prefix|delphi_namespace|csharp_namespace|ruby_namespace|xsd_namespace|cpp_namespace|php_namespace|xsd_nillable|xsd_optional|java_package|cocoa_prefix|perl_package|cpp_include|py_module|xsd_attrs|cpp_type|xsd_all|include)\\b" :token :keyword}
+   {:pattern "(double|binary|string|slist|senum|bool|void|byte|list|i64|map|set|i32|i16)\\b" :token :keyword-type}
+   {:pattern "\\b(__NAMESPACE__|synchronized|__FUNCTION__|__METHOD__|endforeach|implements|enddeclare|instanceof|transient|endswitch|protected|interface|__CLASS__|continue|__FILE__|abstract|function|endwhile|unsigned|register|volatile|__LINE__|declare|foreach|default|__DIR__|private|finally|dynamic|virtual|lambda|elseif|inline|switch|unless|endfor|delete|import|return|module|ensure|native|rescue|assert|sizeof|static|global|except|public|float|BEGIN|super|endif|yield|elsif|throw|clone|class|catch|until|break|retry|begin|raise|alias|while|print|undef|exec|with|when|case|redo|args|elif|this|then|self|goto|else|pass|next|var|for|xor|END|not|try|del|and|def|new|use|nil|end|if|do|is|or|in|as)\\b" :token :keyword}
+   {:pattern "[+-]?(\\d+\\.\\d+([eE][+-]?\\d+)?|\\.?\\d+[eE][+-]?\\d+)" :token :number}
+   {:pattern "[+-]?0x[0-9A-Fa-f]+" :token :number}
+   {:pattern "[+-]?[0-9]+" :token :number}])
