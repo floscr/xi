@@ -1,7 +1,8 @@
 (ns xi.runtime
   "Headless runtime — event bus, command dispatch, agent lifecycle.
    No UI dependencies. Clients connect and receive events."
-  (:require [xi.ext.core :as ext]
+  (:require [clojure.string :as str]
+            [xi.ext.core :as ext]
             [xi.ext.clipboard-image :as ext-clipboard-image]
             [xi.ext.clj-surgeon :as ext-clj-surgeon]
             [xi.ext.skills :as ext-skills]
@@ -77,6 +78,20 @@
 
 ;; ── Agent Turn ───────────────────────────────────────────────────────────────
 
+(defn- build-branch-context-prompt
+  "Build a conversation history string from branch context messages."
+  [messages]
+  (when (seq messages)
+    (let [lines (mapv (fn [{:keys [role content]}]
+                        (str (if (= role "user") "User" "Assistant") ": " content))
+                      messages)]
+      (str "The following is the conversation history before this point:\n\n"
+           "<conversation_history>\n"
+           (str/join "\n\n" lines)
+           "\n</conversation_history>\n\n"
+           "Continue the conversation from this point. "
+           "The user may re-send or edit a previous message to take the conversation in a new direction."))))
+
 (defn- run-agent-turn
   "Run one agent turn. Bridges loop callbacks to event bus.
    prompt-or-map: string or {:text ... :images [...]}"
@@ -87,7 +102,11 @@
         abort-signal (:abort-signal rt)
         prompt (if (map? prompt-or-map) (:text prompt-or-map) prompt-or-map)
         raw-images (when (map? prompt-or-map) (:images prompt-or-map))
-        images (image/process-images raw-images)]
+        images (image/process-images raw-images)
+        ;; Consume branch context (one-shot: cleared after first use)
+        branch-ctx (when-let [ctx @(:branch-context rt)]
+                     (reset! (:branch-context rt) nil)
+                     ctx)]
 
     (emit! {:type :turn-start})
 
@@ -124,7 +143,12 @@
                     (emit! {:type :error :error err}))}
            (seq images) (assoc :images images)
            cli-session-id (assoc :resume-session-id cli-session-id)
-           (and agents-md (nil? cli-session-id)) (assoc :system agents-md)))
+           (and (or agents-md branch-ctx) (nil? cli-session-id))
+           (assoc :system (let [base (or agents-md "")
+                                ctx (build-branch-context-prompt branch-ctx)]
+                            (if ctx
+                              (str base "\n\n" ctx)
+                              base)))))
 
         (.then (fn [result]
                  (when (:aborted result)
@@ -229,6 +253,7 @@
             :sess sess
             :session-tree tree
             :tree-recorder recorder
+            :branch-context (atom nil) ;; conversation history to inject after tree nav
             :busy (atom false)
             :abort-signal (atom false)
             :pending-prompt (atom nil)
@@ -439,10 +464,13 @@
         (if new-leaf-id
           (session-tree/branch! tree new-leaf-id)
           (session-tree/reset-leaf! tree))
+        ;; Build branch context from the conversation up to the fork point
+        ;; so the new session has prior conversation history.
+        (let [branch-messages (session-tree/build-message-context tree)]
+          (reset! (:branch-context rt) branch-messages))
         ;; Start a fresh provider session from the fork point.
         ;; Clearing cli-session-id means the next turn won't resume from
         ;; the old Claude session (which has messages past the fork point).
-        ;; The AGENTS.md / system prompt will be re-injected on the first turn.
         (swap! sess assoc :cli-session-id nil)
         (provider/clear-session!)
         ;; Save updated session metadata
