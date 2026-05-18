@@ -23,6 +23,8 @@
             [xi.runtime.commands :as commands]
             [xi.runtime.events :as events]
             [xi.session :as session]
+            [xi.session.tree :as session-tree]
+            [xi.session.tree-recorder :as tree-recorder]
             [xi.system-prompt :as system-prompt]))
 
 (declare dispatch!)
@@ -217,9 +219,16 @@
                      :agents-md agents-md
                      :personal-agent? personal-agent?})
         event-history (atom [])
+        tree (session-tree/create
+              {:session-id (:id @sess)
+               :cwd cwd
+               :filepath (session/tree-filepath @sess)})
+        recorder (tree-recorder/create tree)
         rt {:bus bus
             :state state
             :sess sess
+            :session-tree tree
+            :tree-recorder recorder
             :busy (atom false)
             :abort-signal (atom false)
             :pending-prompt (atom nil)
@@ -233,6 +242,34 @@
            (reset! event-history [])
            (when-not (#{:ready :quit} t)
              (swap! event-history conj event))))))
+
+    ;; Record conversation events into session tree
+    ((:subscribe! bus) :*
+     (fn [event]
+       (case (:type event)
+         :session-cleared
+         ;; Reset tree for new session
+         ((:reset! recorder)
+          (session-tree/create
+           {:session-id (:id @sess)
+            :cwd cwd
+            :filepath (session/tree-filepath @sess)}))
+
+         :session-resumed
+         ;; Load existing tree or start fresh for resumed session
+         (let [fp (session/tree-filepath @sess)
+               loaded (session-tree/load-tree fp)]
+           ((:reset! recorder)
+            (or loaded
+                (session-tree/create
+                 {:session-id (:id @sess)
+                  :cwd (or (:cwd @sess) cwd)
+                  :filepath fp}))))
+
+         (:ready :quit :history) nil
+
+         ;; Everything else → record
+         ((:on-event recorder) event))))
 
     ;; Seed the hook state so extensions can read it immediately
     (sync-hook-state! rt)
@@ -377,3 +414,49 @@
   "Is the runtime currently running an agent turn?"
   [rt]
   @(:busy rt))
+
+(defn get-session-tree
+  "Get the current session tree atom."
+  [rt]
+  @(:tree-ref (:tree-recorder rt)))
+
+(defn navigate-tree!
+  "Navigate to a different point in the session tree.
+   If target is a user message, returns its text for the editor.
+   Forks the Claude session (copy JSONL) so we can resume from there.
+   Returns a promise of {:editor-text str-or-nil}."
+  [rt target-id]
+  (let [{:keys [emit!]} (:bus rt)
+        sess (:sess rt)
+        tree (get-session-tree rt)
+        entry (session-tree/get-entry tree target-id)]
+    (when entry
+      (let [;; Determine new leaf and editor text
+            is-user-msg (= "user-message" (:type entry))
+            new-leaf-id (if is-user-msg (:parentId entry) target-id)
+            editor-text (when is-user-msg (:text entry))]
+        ;; Branch the Xi session tree
+        (if new-leaf-id
+          (session-tree/branch! tree new-leaf-id)
+          (session-tree/reset-leaf! tree))
+        ;; Fork Claude session (copy JSONL)
+        (when-let [new-cli-sid (session/fork-claude-session! @sess)]
+          (swap! sess assoc :cli-session-id new-cli-sid))
+        ;; Clear the provider's in-memory session state so it uses the new session
+        (provider/clear-session!)
+        ;; Save updated session metadata
+        (session/save-session! @sess)
+        ;; Save updated tree (write full tree with new leaf)
+        (session-tree/save! tree)
+        ;; Sync hook state
+        (sync-hook-state! rt)
+        ;; Clear event history (the TUI will re-render from tree)
+        (reset! (:event-history rt) [])
+        ;; Emit event for TUI to re-render
+        (let [branch-entries (session-tree/get-branch tree)]
+          (emit! {:type :tree-navigated
+                  :target-id target-id
+                  :editor-text editor-text
+                  :branch-entries branch-entries}))
+        (js/Promise.resolve {:editor-text editor-text})))))
+

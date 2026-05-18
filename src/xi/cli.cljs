@@ -70,7 +70,9 @@
   [_opts]
   (let [rt (runtime/create! {})
         transport {:dispatch! (fn [cmd] (runtime/dispatch! rt cmd))
-                   :busy? (fn [] (runtime/busy? rt))}
+                   :busy? (fn [] (runtime/busy? rt))
+                   :get-session-tree (fn [] (runtime/get-session-tree rt))
+                   :navigate-tree! (fn [target-id] (runtime/navigate-tree! rt target-id))}
         client (tui-client/create! {:transport transport})]
     (runtime/connect! rt client)))
 

@@ -20,6 +20,8 @@
             [xi.tui.clipboard-image :as clip-image]
             [xi.tui.markdown :as md]
             [xi.tui.terminal :as term]
+            [xi.tui.tree-selector :as tree-selector]
+            [xi.session.tree :as session-tree]
             [xi.util :as util]))
 
 (defn- shutdown!
@@ -348,6 +350,49 @@
             (tui/set-focus! menu)
             (tui/render-now!)))
 
+        ;; ── Tree Selector ────────────────────────────────────────────────────
+
+        show-tree-selector!
+        (fn []
+          (when-let [get-tree (:get-session-tree transport)]
+            (when-let [tree (get-tree)]
+              (let [tree-nodes (session-tree/get-tree tree)
+                    leaf-id (session-tree/get-leaf-id tree)]
+                (when (seq tree-nodes)
+                  ;; Close any existing menu
+                  (when @active-menu (hide-completion-menu!))
+                  (let [selector
+                        (tree-selector/make-tree-selector
+                         {:tree-nodes tree-nodes
+                          :leaf-id leaf-id
+                          :max-visible (max 10 (- (term/rows) 10))
+                          :on-select
+                          (fn [entry-id]
+                            (hide-completion-menu!)
+                            (when-let [navigate! (:navigate-tree! transport)]
+                              (-> (navigate! entry-id)
+                                  (.then (fn [result]
+                                           (when-let [text (:editor-text result)]
+                                             (when-let [ed @editor-comp-ref]
+                                               ((:set-text ed) text)))
+                                           (tui/request-render!)))
+                                  (.catch (fn [err]
+                                            (add-status-message!
+                                             (str (ansi/fg :error "Navigate failed: ")
+                                                  (.-message err))))))))
+                          :on-cancel
+                          (fn []
+                            (hide-completion-menu!))})
+                        ms (comp/make-spacer 1)]
+                    (reset! active-menu selector)
+                    (reset! menu-spacer ms)
+                    (let [menu-panel (tui/make-container)]
+                      ((:add-child menu-panel) ms)
+                      ((:add-child menu-panel) selector)
+                      (tui/set-bottom-panel! menu-panel))
+                    (tui/set-focus! selector)
+                    (tui/render-now!)))))))
+
         ;; ── Git / External Process ───────────────────────────────────────────
 
         open-git!
@@ -556,6 +601,13 @@
                              (ansi/fg :dim (str "Cleared " n " image(s)"))
                              (ansi/fg :dim "No images to clear"))))
                         (tui/request-render!)
+                        nil)}
+
+            {:name "tree"
+             :description "Show session tree for navigation/forking"
+             :scope :client
+             :handler (fn [_]
+                        (show-tree-selector!)
                         nil)}])
 
         ;; ── Local Command Dispatch ──────────────────────────────────────────────
@@ -632,10 +684,18 @@
                (ansi/fg :dim "No image in clipboard"))))
 
           :on-escape (fn []
-                       (if (tui/scrolled-up?)
+                       (cond
+                         (tui/scrolled-up?)
                          (tui/scroll-to-bottom!)
-                         (when (busy?)
-                           (dispatch! {:type :abort}))))
+
+                         (busy?)
+                         (dispatch! {:type :abort})
+
+                         ;; Empty editor + not busy → show tree selector
+                         :else
+                         (when-let [ed @editor-comp-ref]
+                           (when (empty? (str/trim ((:get-text ed))))
+                             (show-tree-selector!)))))
 
           :on-interrupt (fn [] (shutdown!))
 
@@ -853,6 +913,38 @@
                 (when (not= @active-view "Chat")
                   (switch-to-buffer! "Chat"))
                 (add-status-message! (ansi/fg :dim "Session compacted. Summary preserved as context.")))
+
+            :tree-navigated
+            (do ((:clear chat-container))
+                (when (not= @active-view "Chat")
+                  (switch-to-buffer! "Chat"))
+                ;; Re-render from branch entries
+                (doseq [entry (:branch-entries event)]
+                  (case (:type entry)
+                    "user-message"
+                    (do ((:add-child chat-container) (comp/make-spacer 1))
+                        ((:add-child chat-container)
+                         (comp/make-text (str (ansi/fg :bold "you") ": " (:text entry))))
+                        ((:add-child chat-container) (comp/make-spacer 1)))
+
+                    "assistant-text"
+                    (do ((:add-child chat-container) (md/make-markdown (:text entry)))
+                        ((:add-child chat-container) (comp/make-spacer 1)))
+
+                    "tool-use"
+                    (let [name (:name entry)
+                          args-str (str (or (:arguments entry) ""))
+                          short-args (subs args-str 0 (min 80 (count args-str)))]
+                      ((:add-child chat-container)
+                       (comp/make-text (ansi/fg :dim (str "[" name ": " short-args "]")))
+                       ))
+
+                    ;; Skip tool-result, turn-end, etc. in re-render
+                    nil))
+                (add-status-message!
+                 (ansi/fg :dim (str "Navigated to "
+                                    (if (:editor-text event) "message (text in editor)" "branch point"))))
+                (tui/render-now!))
 
             :session-resumed
             (do

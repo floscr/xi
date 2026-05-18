@@ -1,39 +1,46 @@
-# Plan: Functional Refactoring of Xi Codebase
+# Session Tree View
 
-## Context
-Xi has accumulated global mutable state, duplicated utility functions, and imperative patterns that should be refactored toward idiomatic Clojure. Each step is a small, testable, independently committable change.
+## Overview
+Add Pi-style tree view to Xi. Press ESC when prompt is empty → view conversation tree → navigate to any node → fork/continue from there.
 
-## Steps
+## Plan
 
-### Phase 0: Housekeeping
-- [x] Remove stale `compaction_test.cljs` tests referencing deleted `needs-compaction?`
+### Phase 1: Session Tree Data Structure
+- [x] Create `src/xi/session/tree.cljs` — append-only tree with `id`/`parentId`
+  - Tree entry types: `session`, `user-message`, `assistant-text`, `tool-use`, `tool-result`, `turn-end`, `model-change`
+  - `append!` — add entry as child of current leaf, advance leaf
+  - `branch!` — move leaf pointer to an earlier entry
+  - `get-tree` — build tree nodes for visualization
+  - `get-branch` — walk from leaf to root, return path entries
+  - `persist!` / `load` — JSONL read/write
+- [x] Write tests for tree data structure
 
-### Phase 1: Extract shared utilities
-- [x] Create `xi.util` namespace with `truncate`, `claude-model?`, `extract-text-content`, `strip-mcp-prefix`
-- [x] Write tests for all extracted functions in `test/xi/util_test.cljs`
-- [x] Update `runtime/commands.cljs` to use `xi.util/truncate`, `xi.util/extract-text-content`
-- [x] Update `client/tui.cljs` to use `xi.util/truncate`, `xi.util/strip-mcp-prefix`
-- [x] Update `loop.cljs` to re-export from `xi.util/claude-model?`
-- [x] Remove private duplicate `claude-model?` from `runtime/commands.cljs`
-- [x] Deduplicate `claude-executable` resolution into a shared location
+### Phase 2: Instrument Runtime
+- [x] Wire runtime events to tree — on each emit, append matching entry to session tree
+- [x] Persist tree JSONL alongside session `.json` meta
+- [x] On session clear/new: reset tree
+- [x] On session resume: load tree from JSONL
 
-### Phase 2: Make `format-scrollback` functional
-- [x] Rewrite `format-scrollback` using `reduce` instead of atoms
-- [x] Add tests for `format-scrollback` covering all event types
+### Phase 3: Tree Selector TUI Component
+- [x] Create `src/xi/tui/tree_selector.cljs`
+  - Render tree with connectors (`├─`, `└─`)
+  - Active path markers (`•`)
+  - Filter modes: default, user-only
+  - Up/down navigation, Enter to select, ESC to cancel
+  - Type-to-search
+- [x] Wire ESC handler: when editor empty + not busy → show tree selector
+- [x] Wire `/tree` command
 
-### Phase 3: Remove println side-effects from hooks
-- [x] Remove `println` from `plan-mode` hook handlers, return data instead
-- [x] Update plan-mode tests
+### Phase 4: Fork / Navigate
+- [x] On tree node selection: branch the session tree
+  - User message: leaf=parent, text goes back to editor
+  - Other: leaf=selected node
+- [x] Provider fork adapters:
+  - Claude: copy JSONL → new `cli-session-id` (full copy for v1)
+  - Ollama/others: tree-based context rebuild ready (via `build-message-context`)
+- [x] Clear event history / re-render chat from tree branch
 
-## Results
-
-All phases completed. 5 commits:
-
-1. **fix(test)**: Remove stale compaction tests (4 errors eliminated)
-2. **refactor**: Extract `xi.util` with 18 tests for shared pure functions
-3. **refactor**: Wire 4 consumer files to use `xi.util`, removing ~40 lines of duplication
-4. **refactor**: Deduplicate `claude-executable` resolution between provider and compaction
-5. **refactor**: Rewrite `format-scrollback` as pure `reduce` (+11 tests)
-6. **refactor**: Remove `println` side-effects from plan-mode hooks
-
-Test suite: 114 → 144 tests, all passing, 0 warnings.
+### Phase 5: Polish
+- [ ] Branch summarization (optional LLM call)
+- [ ] Labels/bookmarks on nodes
+- [ ] Fold/unfold branches
