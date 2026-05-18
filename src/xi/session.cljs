@@ -111,20 +111,6 @@
                   (xi-session-dir (:cwd session))))]
     (.join node-path dir (str (:id session) ".tree.jsonl"))))
 
-(defn fork-claude-session!
-  "Copy a Claude CLI session JSONL file for forking.
-   Returns the new cli-session-id, or nil if no source file exists."
-  [session]
-  (when-let [cli-sid (:cli-session-id session)]
-    (let [cwd (or (:cwd session) (.cwd js/process))
-          src-dir (claude-project-dir cwd)
-          src-file (.join node-path src-dir (str cli-sid ".jsonl"))
-          new-id (gen-uuid-v7)
-          dst-file (.join node-path src-dir (str new-id ".jsonl"))]
-      (when (fs/existsSync src-file)
-        (fs/copyFileSync src-file dst-file)
-        new-id))))
-
 (defn save-session!
   "Persist session metadata to disk."
   [session]

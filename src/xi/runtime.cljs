@@ -439,10 +439,11 @@
         (if new-leaf-id
           (session-tree/branch! tree new-leaf-id)
           (session-tree/reset-leaf! tree))
-        ;; Fork Claude session (copy JSONL)
-        (when-let [new-cli-sid (session/fork-claude-session! @sess)]
-          (swap! sess assoc :cli-session-id new-cli-sid))
-        ;; Clear the provider's in-memory session state so it uses the new session
+        ;; Start a fresh provider session from the fork point.
+        ;; Clearing cli-session-id means the next turn won't resume from
+        ;; the old Claude session (which has messages past the fork point).
+        ;; The AGENTS.md / system prompt will be re-injected on the first turn.
+        (swap! sess assoc :cli-session-id nil)
         (provider/clear-session!)
         ;; Save updated session metadata
         (session/save-session! @sess)
