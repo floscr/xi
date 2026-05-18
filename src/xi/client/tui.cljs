@@ -1057,9 +1057,10 @@
                 (reset! text-started false)
                 (reset! current-md nil)
                 ;; Create tool component
-                (let [args-str (format-tool-args (:name event) (:arguments event))
-                      tool-comp (make-tool-component (:name event) args-str)
-                      grammar (tool-output-lang (:name event) (:arguments event))]
+                (let [short-name (shorten-tool-name (:name event))
+                      args-str (format-tool-args short-name (:arguments event))
+                      tool-comp (make-tool-component short-name args-str)
+                      grammar (tool-output-lang short-name (:arguments event))]
                   ((:add-child chat-container) (:component tool-comp))
                   (reset! current-tool (cond-> tool-comp
                                          grammar (assoc :grammar grammar))))
@@ -1067,8 +1068,9 @@
 
             :tool-args
             (when-let [tool @current-tool]
-              (let [args-str (format-tool-args (:name event) (:arguments event))]
-                ((:update-header tool) (:name event) args-str)))
+              (let [short-name (shorten-tool-name (:name event))
+                    args-str (format-tool-args short-name (:arguments event))]
+                ((:update-header tool) short-name args-str)))
 
             :tool-result
             (do (when-let [tool @current-tool]
