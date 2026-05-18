@@ -155,20 +155,22 @@
 (defn- cmd-compact [{:keys [args]}]
   [{:type :compact-requested :focus args}])
 
-(defn- cmd-clear [{:keys [sess]}]
-  (let [pa? (:personal-agent? @sess)]
+(defn- cmd-clear [{:keys [sess model cwd]}]
+  (let [pa? (:personal-agent? @sess)
+        agents-files (system-prompt/find-agents-md cwd)]
     (reset! sess (session/create-session (:cwd @sess)
                    (when pa? {:personal-agent? true})))
     (provider/clear-session!)
-    [{:type :session-cleared}]))
+    [{:type :session-cleared :model model :cwd cwd :agents-files agents-files}]))
 
-(defn- cmd-new [{:keys [sess cwd personal-agent?]}]
-  (when (:cli-session-id @sess)
-    (session/save-session! @sess))
-  (reset! sess (session/create-session cwd
-                 (when personal-agent? {:personal-agent? true})))
-  (provider/clear-session!)
-  [{:type :session-cleared}])
+(defn- cmd-new [{:keys [sess cwd model personal-agent?]}]
+  (let [agents-files (system-prompt/find-agents-md cwd)]
+    (when (:cli-session-id @sess)
+      (session/save-session! @sess))
+    (reset! sess (session/create-session cwd
+                   (when personal-agent? {:personal-agent? true})))
+    (provider/clear-session!)
+    [{:type :session-cleared :model model :cwd cwd :agents-files agents-files}]))
 
 (defn- cmd-resume [{:keys [args sess cwd personal-agent?]}]
   (if (nil? args)

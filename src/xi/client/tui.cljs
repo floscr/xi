@@ -204,6 +204,34 @@
     ""))
 
 
+;; ── Launch Header ─────────────────────────────────────────────────────────────
+
+(defn- render-launch-header!
+  "Render the launch header into a chat container.
+   opts may include :model, :cwd, :agents-files, and/or :details
+   (vec of {:label :value} maps) for custom info lines (e.g. Room)."
+  [chat-container {:keys [model cwd agents-files details]}]
+  ((:add-child chat-container)
+   (comp/make-text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent"))))
+  (when model
+    ((:add-child chat-container)
+     (comp/make-text (str (ansi/fg :dim "Model: ") (ansi/fg :accent model)))))
+  (when cwd
+    ((:add-child chat-container)
+     (comp/make-text (str (ansi/fg :dim "cwd: ") (ansi/fg :accent cwd)))))
+  (doseq [{:keys [label value]} details]
+    ((:add-child chat-container)
+     (comp/make-text (str (ansi/fg :dim (str label ": ")) (ansi/fg :accent value)))))
+  ((:add-child chat-container)
+   (comp/make-text (ansi/fg :dim "Type /quit to exit, /help for commands.")))
+  ((:add-child chat-container) (comp/make-spacer 1))
+  (when-let [files (seq agents-files)]
+    ((:add-child chat-container)
+     (comp/make-text
+      (str (ansi/fg :dim "Loaded ") (ansi/fg :accent (str (count files) " AGENTS.md"))
+           (ansi/fg :dim (str " file" (when (> (count files) 1) "s"))))))
+    ((:add-child chat-container) (comp/make-spacer 1))))
+
 ;; ── TUI Client ───────────────────────────────────────────────────────────────
 
 (defn create!
@@ -902,7 +930,8 @@
                 (reset! buffer-mgr {"Logs" []})
                 (when (not= @active-view "Chat")
                   (switch-to-buffer! "Chat"))
-                (add-status-message! (ansi/fg :dim "New session started.")))
+                (render-launch-header! chat-container event)
+                (tui/render-now!))
 
             :compact-start
             (add-status-message! (ansi/fg :dim "Compacting conversation..."))
@@ -1127,15 +1156,8 @@
                 (reset! current-tool nil)
                 (reset! thinking-text "")
                 (reset! current-thinking-comp nil)
-                ;; Add header for new room
-                ((:add-child chat-container)
-                 (comp/make-text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent"))))
-                ((:add-child chat-container)
-                 (comp/make-text (str (ansi/fg :dim "Room: ")
-                                     (ansi/fg :accent (:room-id event)))))
-                ((:add-child chat-container)
-                 (comp/make-text (ansi/fg :dim "Type /quit to exit, /help for commands.")))
-                ((:add-child chat-container) (comp/make-spacer 1))
+                (render-launch-header! chat-container
+                  {:details [{:label "Room" :value (:room-id event)}]})
                 ;; Switch to Chat view if we were on another buffer
                 (when (not= @active-view "Chat")
                   (switch-to-buffer! "Chat"))
@@ -1167,22 +1189,11 @@
 
      :on-connect
      (fn [rt-or-info]
-       ;; Add header — works with both runtime map and plain info map
        (let [model (or (:model rt-or-info)
                        (some-> (:state rt-or-info) deref :model))
              cwd (or (:cwd rt-or-info)
                      (some-> (:state rt-or-info) deref :cwd))]
-         ((:add-child chat-container)
-          (comp/make-text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent"))))
-         (when model
-           ((:add-child chat-container)
-            (comp/make-text (str (ansi/fg :dim "Model: ") (ansi/fg :accent model)))))
-         (when cwd
-           ((:add-child chat-container)
-            (comp/make-text (str (ansi/fg :dim "cwd: ") (ansi/fg :accent cwd)))))
-         ((:add-child chat-container)
-          (comp/make-text (ansi/fg :dim "Type /quit to exit, /help for commands.")))
-         ((:add-child chat-container) (comp/make-spacer 1)))
+         (render-launch-header! chat-container {:model model :cwd cwd}))
        (tui/render-now!))
 
 
