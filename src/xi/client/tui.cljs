@@ -748,55 +748,87 @@
                         nil)}
 
             {:name "diff"
-             :description "Show diff viewer (session / staged / unstaged)"
+             :description "Show diff viewer (session / staged / unstaged / git)"
              :scope :client
              :show-busy true
              :handler
              (fn [{:keys [args]}]
-               (let [cmd (cond
-                           (nil? args)
-                           (if-let [start @session-start-commit]
-                             #js ["git" "diff" start]
-                             #js ["git" "diff"])
+               (letfn [(open-diff-buffer! [diff-text title]
+                         (if (empty? (str/trim diff-text))
+                           (add-status-message! (ansi/fg :dim "No changes."))
+                           (let [buf (diff-buffer/make-diff-buffer
+                                       {:diff-text diff-text
+                                        :title title
+                                        :on-close (fn []
+                                                    (reset! active-modal-buffer nil)
+                                                    (tui/scroll-to-offset! 0)
+                                                    (switch-to-buffer! "Chat")
+                                                    (tui/set-focus! @editor-comp-ref))
+                                        :on-command-mode (fn []
+                                                           (tui/set-focus! @editor-comp-ref))})]
+                             (reset! active-modal-buffer buf)
+                             (switch-to-buffer! "Diff")
+                             (tui/set-focus! buf)
+                             (tui/scroll-to-offset! 999999)
+                             (tui/render-now!))))
+                       (run-git-diff [& git-args]
+                         (let [proc (js/Bun.spawnSync (into-array (cons "git" git-args))
+                                      #js {:cwd (.cwd js/process)})]
+                           (if (zero? (.-exitCode proc))
+                             (.toString (.-stdout proc) "utf-8")
+                             (do (add-status-message!
+                                   (ansi/fg :error (str "git diff failed: "
+                                                        (.toString (.-stderr proc) "utf-8"))))
+                                 nil))))
+                       (untracked-diff []
+                         (let [proc (js/Bun.spawnSync
+                                      #js ["git" "ls-files" "--others" "--exclude-standard"]
+                                      #js {:cwd (.cwd js/process)})
+                               files (when (zero? (.-exitCode proc))
+                                       (->> (.toString (.-stdout proc) "utf-8")
+                                            str/trim
+                                            str/split-lines
+                                            (remove empty?)))]
+                           (when (seq files)
+                             (->> files
+                                  (map (fn [f]
+                                         (let [p (js/Bun.spawnSync
+                                                    #js ["git" "diff" "--no-index" "--" "/dev/null" f]
+                                                    #js {:cwd (.cwd js/process)})]
+                                           ;; --no-index exits 1 when files differ, that's expected
+                                           (.toString (.-stdout p) "utf-8"))))
+                                  (str/join "\n")))))]
+                 (if (= args "git")
+                   ;; Combine unstaged + staged + untracked into one view
+                   (let [unstaged  (or (run-git-diff "diff") "")
+                         staged    (or (run-git-diff "diff" "--staged") "")
+                         untracked (or (untracked-diff) "")
+                         combined  (str/trim (str unstaged "\n" staged "\n" untracked))]
+                     (open-diff-buffer! combined "All Git Changes"))
+                   ;; Single-command modes
+                   (let [cmd (cond
+                               (nil? args)
+                               (if-let [start @session-start-commit]
+                                 #js ["git" "diff" start]
+                                 #js ["git" "diff"])
 
-                           (= args "staged")
-                           #js ["git" "diff" "--staged"]
+                               (= args "staged")
+                               #js ["git" "diff" "--staged"]
 
-                           (= args "unstaged")
-                           #js ["git" "diff"]
+                               (= args "unstaged")
+                               #js ["git" "diff"]
 
-                           ;; Anything else — pass as git diff arg (e.g. HEAD~3)
-                           :else
-                           #js ["git" "diff" args])
-                     title (cond
-                             (nil? args) "Session Changes"
-                             (= args "staged") "Staged Changes"
-                             (= args "unstaged") "Unstaged Changes"
-                             :else (str "Diff: " args))
-                     proc (js/Bun.spawnSync cmd #js {:cwd (.cwd js/process)})]
-                 (if (zero? (.-exitCode proc))
-                   (let [diff-text (.toString (.-stdout proc) "utf-8")]
-                     (if (empty? (str/trim diff-text))
-                       (add-status-message! (ansi/fg :dim "No changes."))
-                       (let [buf (diff-buffer/make-diff-buffer
-                                   {:diff-text diff-text
-                                    :title title
-                                    :on-close (fn []
-                                                (reset! active-modal-buffer nil)
-                                                (tui/scroll-to-offset! 0)
-                                                (switch-to-buffer! "Chat")
-                                                (tui/set-focus! @editor-comp-ref))
-                                    :on-command-mode (fn []
-                                                       (tui/set-focus! @editor-comp-ref))})]
-                         (reset! active-modal-buffer buf)
-                         (switch-to-buffer! "Diff")
-                         (tui/set-focus! buf)
-                         ;; Scroll to top of diff content
-                         (tui/scroll-to-offset! 999999)
-                         (tui/render-now!))))
-                   (add-status-message!
-                     (ansi/fg :error (str "git diff failed: "
-                                          (.toString (.-stderr proc) "utf-8"))))))
+                               ;; Anything else — pass as git diff arg (e.g. HEAD~3)
+                               :else
+                               #js ["git" "diff" args])
+                         title (cond
+                                 (nil? args) "Session Changes"
+                                 (= args "staged") "Staged Changes"
+                                 (= args "unstaged") "Unstaged Changes"
+                                 :else (str "Diff: " args))
+                         diff-text (apply run-git-diff (array-seq cmd 1))]
+                     (when diff-text
+                       (open-diff-buffer! diff-text title)))))
                nil)}])
 
         ;; ── Local Command Dispatch ──────────────────────────────────────────────

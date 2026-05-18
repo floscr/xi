@@ -244,8 +244,14 @@
 
 (defn- is-arrow-up? [data] (= data (str ESC "[A")))
 (defn- is-arrow-down? [data] (= data (str ESC "[B")))
-(defn- is-ctrl-d? [data] (= data (str (char 4))))
-(defn- is-ctrl-u? [data] (= data (str (char 21))))
+(defn- ctrl? [data ch]
+  (let [legacy-code (- (.charCodeAt ch 0) 64)
+        codepoint (.charCodeAt (.toLowerCase ch) 0)]
+    (or (= data (str (char legacy-code)))
+        (= data (str ESC "[" codepoint ";5u")))))
+
+(defn- is-ctrl-d? [data] (ctrl? data "D"))
+(defn- is-ctrl-u? [data] (ctrl? data "U"))
 (defn- is-page-up? [data] (= data (str ESC "[5~")))
 (defn- is-page-down? [data] (= data (str ESC "[6~")))
 
