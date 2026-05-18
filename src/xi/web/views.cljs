@@ -34,8 +34,8 @@
                            (if (= 1 n) "[Attached image]" (str "[Attached " n " images]")))
                          text)]
         (swap! state/app-state assoc :compose-text "" :compose-images [])
-        (when-let [el (.querySelector js/document ".compose-editable")]
-          (set! (.-textContent el) ""))
+        (when-let [el (.querySelector js/document ".compose-input-wrapper textarea")]
+          (set! (.-value el) ""))
 
         ;; Optimistically show user message in timeline
         (swap! state/app-state update :messages conj
