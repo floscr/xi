@@ -5,6 +5,7 @@
    Mouse text selection is handled in-app with OSC 52 clipboard copy."
   (:require [clojure.string :as str]
             [xi.tui.ansi :as ansi]
+            [xi.tui.grid :as grid]
             [xi.tui.terminal :as term]))
 
 ;; ── Component Protocol ────────────────────────────────────────────────────────
@@ -44,7 +45,8 @@
          :focused nil
          :scroll-offset 0       ;; 0 = at bottom, positive = lines from bottom
          :prev-content-height 0 ;; for scroll stabilization
-         :previous-frame []     ;; last rendered frame (exactly terminal height)
+         :previous-frame []     ;; last rendered frame lines (for selection text extraction)
+         :previous-grid nil      ;; last rendered cell grid (for cell-level diffing)
          :render-requested false
          :render-timer nil
          :stopped false
@@ -221,37 +223,25 @@
                           :else new-frame))
 
             ;; Apply selection highlighting (visual only — doesn't affect previous-frame diff)
-            display-frame (if (and selection (not (:selecting selection)))
-                            ;; Only show highlight for completed selections (not while dragging)
-                            ;; Actually, show during drag too for live feedback
+            display-frame (if selection
                             (apply-selection-to-frame new-frame selection)
-                            (if selection
-                              (apply-selection-to-frame new-frame selection)
-                              new-frame))
+                            new-frame)
 
-            ;; Find first difference for differential update
-            ;; Compare display-frame (with highlights) against what's on screen
-            first-diff (loop [i 0]
-                         (cond
-                           (>= i height) nil
-                           (>= i (count previous-frame)) i
-                           (not= (nth display-frame i) (nth previous-frame i nil)) i
-                           :else (recur (inc i))))]
+            ;; Cell-level diffing: parse display lines into a grid, diff against previous
+            new-grid (grid/frame->grid display-frame width height)
+            old-grid (:previous-grid @tui-state)
+            full-repaint? (nil? old-grid)]
 
-        (when (some? first-diff)
-          (term/sync-start!)
-          ;; Only write lines that actually changed
-          (doseq [i (range first-diff (count display-frame))]
-            (let [new-line (nth display-frame i)
-                  old-line (nth previous-frame i nil)]
-              (when (not= new-line old-line)
-                (term/cursor-to! (inc i) 1)
-                (term/write! ansi/CLEAR_LINE)
-                (term/write! new-line))))
-          (term/sync-end!))
+        ;; Emit changes
+        (term/sync-start!)
+        (when full-repaint?
+          (term/clear-screen!))
+        (grid/emit-diff! new-grid (or old-grid (grid/make-grid width height)))
+        (term/sync-end!)
 
         (swap! tui-state assoc
-               :previous-frame display-frame
+               :previous-frame new-frame  ;; keep raw lines for selection text extraction
+               :previous-grid new-grid
                :scroll-offset effective-offset
                :prev-content-height total-content
                :render-requested false)))))
@@ -405,8 +395,8 @@
       (inv)))
   ;; Clear selection
   (swap! tui-state assoc :selection nil)
-  ;; Force full re-render (clear previous frame)
-  (swap! tui-state assoc :previous-frame [])
+  ;; Force full re-render (clear previous frame/grid)
+  (swap! tui-state assoc :previous-frame [] :previous-grid nil)
   (request-render!))
 
 ;; ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -425,6 +415,7 @@
            :scroll-offset 0
            :prev-content-height 0
            :previous-frame []
+           :previous-grid nil
            :render-requested false
            :render-timer nil
            :stopped false
@@ -454,7 +445,7 @@
                      (term/resume! terminal)
                      (when-let [f (:on-resume opts)] (f))
                      ;; Force full re-render
-                     (swap! tui-state assoc :suspended false :previous-frame [])
+                     (swap! tui-state assoc :suspended false :previous-frame [] :previous-grid nil)
                      (render-now!))))))))
 
 (defn stop-tui!
