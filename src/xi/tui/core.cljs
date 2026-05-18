@@ -273,6 +273,17 @@
 
 ;; ── Bottom Panel ──────────────────────────────────────────────────────────────
 
+(defn scroll-to-offset!
+  "Set the scroll offset directly. Used by modal components for jumping."
+  [offset]
+  (swap! tui-state assoc :scroll-offset (max 0 offset))
+  (request-render!))
+
+(defn get-scroll-offset
+  "Get the current scroll offset."
+  []
+  (:scroll-offset @tui-state))
+
 (defn set-bottom-panel!
   "Set the component pinned at the bottom of the screen (editor, menu, etc.)."
   [component]
@@ -357,34 +368,52 @@
       :else nil)))
 
 (defn- handle-input [data]
-  (cond
-    ;; Page Up — scroll up one page
-    (is-page-up? data)
-    (scroll-up! (max 1 (- (term/rows) 5)))
+  (let [{:keys [focused]} @tui-state]
+    (if (:capture-all-input focused)
+      ;; Modal component (diff viewer, etc.) captures all input.
+      ;; No auto-snap to bottom, no selection clear. Scroll wheel → :handle-scroll.
+      (if-let [mouse (parse-mouse-event data)]
+        (cond
+          ;; Scroll wheel up → component scroll handler
+          (= 64 (:button mouse))
+          (when-let [hs (:handle-scroll focused)] (hs -3))
+          ;; Scroll wheel down → component scroll handler
+          (= 65 (:button mouse))
+          (when-let [hs (:handle-scroll focused)] (hs 3))
+          ;; Other mouse events — normal handling (text selection)
+          :else
+          (handle-mouse-event mouse))
+        ;; Keyboard → directly to component
+        (when (:handle-input focused)
+          ((:handle-input focused) data)))
+      ;; Normal mode — existing behavior
+      (cond
+        ;; Page Up — scroll up one page
+        (is-page-up? data)
+        (scroll-up! (max 1 (- (term/rows) 5)))
 
-    ;; Page Down — scroll down one page
-    (is-page-down? data)
-    (scroll-down! (max 1 (- (term/rows) 5)))
+        ;; Page Down — scroll down one page
+        (is-page-down? data)
+        (scroll-down! (max 1 (- (term/rows) 5)))
 
-    ;; Shift+Up — scroll up a few lines
-    (is-shift-up? data)
-    (scroll-up! 3)
+        ;; Shift+Up — scroll up a few lines
+        (is-shift-up? data)
+        (scroll-up! 3)
 
-    ;; Shift+Down — scroll down a few lines
-    (is-shift-down? data)
-    (scroll-down! 3)
+        ;; Shift+Down — scroll down a few lines
+        (is-shift-down? data)
+        (scroll-down! 3)
 
-    :else
-    (if-let [mouse (parse-mouse-event data)]
-      (handle-mouse-event mouse)
-      ;; Regular input — clear selection, snap to bottom, pass to focused component
-      (do
-        (clear-selection!)
-        (when (pos? (:scroll-offset @tui-state))
-          (scroll-to-bottom!))
-        (let [{:keys [focused]} @tui-state]
-          (when (and focused (:handle-input focused))
-            ((:handle-input focused) data)))))))
+        :else
+        (if-let [mouse (parse-mouse-event data)]
+          (handle-mouse-event mouse)
+          ;; Regular input — clear selection, snap to bottom, pass to focused component
+          (do
+            (clear-selection!)
+            (when (pos? (:scroll-offset @tui-state))
+              (scroll-to-bottom!))
+            (when (and focused (:handle-input focused))
+              ((:handle-input focused) data))))))))
 
 (defn- handle-resize []
   ;; Invalidate all components

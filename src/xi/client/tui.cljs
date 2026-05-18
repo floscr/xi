@@ -22,6 +22,7 @@
             [xi.tui.editor :as editor]
             [xi.tui.node :as node]
             [xi.tui.clipboard-image :as clip-image]
+            [xi.tui.diff-buffer :as diff-buffer]
             [xi.tui.markdown :as md]
             [xi.tui.terminal :as term]
             [xi.tui.tree-selector :as tree-selector]
@@ -368,6 +369,15 @@
         chat-container (tui/make-container)
         view-wrapper (tui/make-container)  ;; holds the active buffer view
         active-view (atom "Chat")          ;; "Chat" or "Logs"
+        active-modal-buffer (atom nil)     ;; diff/special buffer component when active
+        session-start-commit (atom (try
+                                     (let [proc (js/Bun.spawnSync
+                                                  #js ["git" "rev-parse" "HEAD"]
+                                                  #js {:cwd (.cwd js/process)})]
+                                       (when (zero? (.-exitCode proc))
+                                         (str/trim (.toString (.-stdout proc) "utf-8"))))
+                                     (catch :default _ nil)))
+        session-files (atom #{})           ;; files the agent touched this session
         loader (comp/make-loader "thinking...")
 
         ;; ── Buffer View Switching ───────────────────────────────────────────
@@ -406,7 +416,9 @@
           (case name
             "Chat" ((:add-child view-wrapper) chat-container)
             "Logs" ((:add-child view-wrapper) (build-logs-view!))
-            "Prompt" ((:add-child view-wrapper) (build-prompt-view!)))
+            "Prompt" ((:add-child view-wrapper) (build-prompt-view!))
+            "Diff" (when-let [buf @active-modal-buffer]
+                     ((:add-child view-wrapper) buf)))
           (tui/render-now!))
 
         add-status-message!
@@ -618,12 +630,21 @@
                                       @prompt-content
                                       (conj {:label "Prompt"
                                              :description (when (= @active-view "Prompt") "• active")
-                                             :value "Prompt"}))]
+                                             :value "Prompt"})
+                                      @active-modal-buffer
+                                      (conj {:label "Diff"
+                                             :description (when (= @active-view "Diff") "• active")
+                                             :value "Diff"}))]
                           (show-completion-menu!
                            {:items items
                             :prompt "buffer> "
                             :on-select (fn [item]
-                                         (switch-to-buffer! (:value item)))}))
+                                         (let [v (:value item)]
+                                           (switch-to-buffer! v)
+                                           (if (and (= v "Diff") @active-modal-buffer)
+                                             (do (tui/set-focus! @active-modal-buffer)
+                                                 (tui/scroll-to-offset! 999999))
+                                             (tui/set-focus! @editor-comp-ref))))}))
                         nil)}
 
             {:name "palette"
@@ -724,7 +745,59 @@
              :scope :client
              :handler (fn [_]
                         (show-tree-selector!)
-                        nil)}])
+                        nil)}
+
+            {:name "diff"
+             :description "Show diff viewer (session / staged / unstaged)"
+             :scope :client
+             :show-busy true
+             :handler
+             (fn [{:keys [args]}]
+               (let [cmd (cond
+                           (nil? args)
+                           (if-let [start @session-start-commit]
+                             #js ["git" "diff" start]
+                             #js ["git" "diff"])
+
+                           (= args "staged")
+                           #js ["git" "diff" "--staged"]
+
+                           (= args "unstaged")
+                           #js ["git" "diff"]
+
+                           ;; Anything else — pass as git diff arg (e.g. HEAD~3)
+                           :else
+                           #js ["git" "diff" args])
+                     title (cond
+                             (nil? args) "Session Changes"
+                             (= args "staged") "Staged Changes"
+                             (= args "unstaged") "Unstaged Changes"
+                             :else (str "Diff: " args))
+                     proc (js/Bun.spawnSync cmd #js {:cwd (.cwd js/process)})]
+                 (if (zero? (.-exitCode proc))
+                   (let [diff-text (.toString (.-stdout proc) "utf-8")]
+                     (if (empty? (str/trim diff-text))
+                       (add-status-message! (ansi/fg :dim "No changes."))
+                       (let [buf (diff-buffer/make-diff-buffer
+                                   {:diff-text diff-text
+                                    :title title
+                                    :on-close (fn []
+                                                (reset! active-modal-buffer nil)
+                                                (tui/scroll-to-offset! 0)
+                                                (switch-to-buffer! "Chat")
+                                                (tui/set-focus! @editor-comp-ref))
+                                    :on-command-mode (fn []
+                                                       (tui/set-focus! @editor-comp-ref))})]
+                         (reset! active-modal-buffer buf)
+                         (switch-to-buffer! "Diff")
+                         (tui/set-focus! buf)
+                         ;; Scroll to top of diff content
+                         (tui/scroll-to-offset! 999999)
+                         (tui/render-now!))))
+                   (add-status-message!
+                     (ansi/fg :error (str "git diff failed: "
+                                          (.toString (.-stderr proc) "utf-8"))))))
+               nil)}])
 
         ;; ── Local Command Dispatch ──────────────────────────────────────────────
         ;; Check the central registry for :client-scoped commands.
@@ -786,7 +859,12 @@
                                      ;; Dispatch via transport
                                      (dispatch! payload))
                                    ;; Busy — queue prompt so it dispatches when the turn ends
-                                   (reset! queued-prompt payload))))))))
+                                   (reset! queued-prompt payload))))))
+                         ;; Refocus modal buffer after commands (not regular prompts)
+                         (when (and @active-modal-buffer
+                                    (seq text)
+                                    (str/starts-with? text "/"))
+                           (tui/set-focus! @active-modal-buffer))))
 
           :on-paste-image
           (fn []
@@ -800,18 +878,21 @@
                (ansi/fg :dim "No image in clipboard"))))
 
           :on-escape (fn []
-                       (cond
-                         (tui/scrolled-up?)
-                         (tui/scroll-to-bottom!)
+                       (if @active-modal-buffer
+                         ;; Return focus to the modal buffer (diff viewer, etc.)
+                         (tui/set-focus! @active-modal-buffer)
+                         (cond
+                           (tui/scrolled-up?)
+                           (tui/scroll-to-bottom!)
 
-                         (busy?)
-                         (dispatch! {:type :abort})
+                           (busy?)
+                           (dispatch! {:type :abort})
 
-                         ;; Empty editor + not busy → show tree selector
-                         :else
-                         (when-let [ed @editor-comp-ref]
-                           (when (empty? (str/trim ((:get-text ed))))
-                             (show-tree-selector!)))))
+                           ;; Empty editor + not busy → show tree selector
+                           :else
+                           (when-let [ed @editor-comp-ref]
+                             (when (empty? (str/trim ((:get-text ed))))
+                               (show-tree-selector!))))))
 
           :on-interrupt (fn [] (shutdown!))
 
@@ -927,7 +1008,13 @@
                 ((:set-text tc) (ansi/fg :dim @thinking-text))))
 
             :tool-start
-            (do (when-not @text-started
+            (do ;; Track session files for /diff
+                (let [tool-name (:name event)
+                      args (:arguments event)]
+                  (when (#{"edit" "write" "mcp__xi-tools__edit" "mcp__xi-tools__write"} tool-name)
+                    (when-let [path (get-arg args :path)]
+                      (swap! session-files conj path))))
+                (when-not @text-started
                   ((:stop loader))
                   ((:remove-child chat-container) loader)
                   ;; Add spacer after thinking if it had content
