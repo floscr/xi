@@ -113,7 +113,7 @@
                                         :files {:type "array" :items {:type "string"} :description "Files to stage before commit"}}
                            :required ["message"]}
             :execute (fn [{:keys [message files]}]
-                       (-> (ext/confirm! (str "Commit: " message))
+                       (-> (ext/confirm! (str "Commit: " (first (str/split-lines message))))
                            (.then (fn [approved?]
                                     (if-not approved?
                                       (js/Promise.resolve
