@@ -1,35 +1,19 @@
-# Diff Buffer
+# Subcommand routing for command registry
+
+## Design
+
+Commands can declare `:subcommands` — named sub-handlers that:
+1. Appear as separate entries in the `/` palette (e.g. `/diff git`, `/diff staged`)
+2. Route automatically: dispatch splits args, matches first word against subcommands
+3. Fall through to the main `:handler` when no subcommand matches (default route)
 
 ## Tasks
 
-- [x] Create `xi.tui.diff-buffer` with core diff viewer component
-- [x] Add `capture-all-input` support to `tui/core` for modal components
-- [x] Add `scroll-to-offset!` and `get-scroll-offset` to `tui/core`
-- [x] Wire up diff buffer into `xi.client.tui` as new buffer type
-- [x] Register `/diff` command (session / staged / unstaged / arbitrary ref)
-- [x] Track session-touched files from tool events (edit/write)
-- [x] Capture git HEAD at session start for session diff baseline
-- [x] Implement diff parsing (unified diff → structured data)
-- [x] Implement diff rendering with syntax highlighting and line numbers
-- [x] Implement keybindings (j/k, gg/G, ]c/[c, ]f/[f, Ctrl-d/u, q, :)
-- [x] Implement `:` to temporarily activate editor prompt (Escape returns)
-- [x] Add Diff to `/buffers` menu with proper focus handling
-- [x] Compilation passes, all tests pass
-
-## Architecture
-
-### New concepts:
-- **`capture-all-input`** — flag on focused component; when set, tui/core routes
-  ALL keyboard input (including page keys) to the component, disables auto-snap-to-bottom,
-  and forwards mouse scroll to `:handle-scroll`.
-
-### Files changed:
-- `src/xi/tui/diff_buffer.cljs` — NEW: diff parsing, rendering, navigation component
-- `src/xi/tui/core.cljs` — Added: `scroll-to-offset!`, `get-scroll-offset`, `capture-all-input` handling
-- `src/xi/client/tui.cljs` — Added: `/diff` command, session tracking, modal buffer management
-
-### Commands:
-- `/diff` — session changes (git diff from HEAD at session start)
-- `/diff staged` — staged changes
-- `/diff unstaged` — unstaged changes
-- `/diff HEAD~3` (or any ref) — diff against arbitrary git ref
+- [x] `command_registry.cljs` — add subcommand support
+  - [x] Add `resolve-handler` fn: given cmd + args, return [handler remaining-args]
+  - [x] Add `expand-subcommands` + modify `list-commands` to expand them
+- [x] `command_palette.cljs` — no changes needed (already uses list-commands)
+- [x] `tui.cljs` — update dispatch + refactor diff
+  - [x] Update `handle-local-command!` to use `resolve-handler`
+  - [x] Refactor `/diff` to use `:subcommands` (git, staged, unstaged)
+- [x] Verify: compiles clean, 203 tests pass, 0 warnings
