@@ -451,7 +451,7 @@
                                           :on {:click (fn [_] (ws/join-room! "new"))}}
                                  (icon/icon {:icon-name :plus :size :sm})])])})
      [:div {:class ["home"]}
-      (if has-content?
+      (if (or has-content? connected?)
         [:div
          [:div {:class ["section"]}
           [:div {:class ["project-list"]}
@@ -496,7 +496,7 @@
                                    (ws/join-and-resume! (inc idx)))
                                  (ws/open-cached-session! sid)))})))
             home-sessions)]]]
-        ;; No sessions at all (no cache, not connected)
+        ;; Not connected and no cached sessions
         [:div {:class ["empty-state"]}
          [:div
           [:p "Connecting to xi server..."]
