@@ -51,4 +51,8 @@
 
   test:watch
   {:doc "Watch-compile and rerun tests on changes"
-   :task (shell "npx shadow-cljs watch test")}}}
+   :task (shell "npx shadow-cljs watch test")}
+
+  dev:personal
+  {:doc "Start headless server in personal agent mode"
+   :task (shell "bun target/main.js server --headless --personal-agent-only")}}}
