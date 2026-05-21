@@ -873,6 +873,27 @@
                                (dispatch! cmd))))})))
         _ (reset! open-palette-fn open-palette!)
 
+        handle-escape!
+        (fn []
+          (cond
+            ;; 1. Modal is open → dismiss
+            @active-modal-buffer
+            (tui/set-focus! @active-modal-buffer)
+
+            ;; 2. Scrolled up → scroll to bottom
+            (tui/scrolled-up?)
+            (tui/scroll-to-bottom!)
+
+            ;; 3. Not busy + empty editor → show tree selector
+            (and (not (busy?))
+                 (when-let [ed @editor-comp-ref]
+                   (empty? (str/trim ((:get-text ed))))))
+            (show-tree-selector!)
+
+            ;; 4. Agent busy → interrupt
+            (busy?)
+            (dispatch! {:type :abort})))
+
         ;; Editor at the bottom
         editor-comp
         (editor/make-editor
@@ -922,22 +943,7 @@
               (add-status-message!
                (ansi/fg :dim "No image in clipboard"))))
 
-          :on-escape (fn []
-                       (if @active-modal-buffer
-                         ;; Return focus to the modal buffer (diff viewer, etc.)
-                         (tui/set-focus! @active-modal-buffer)
-                         (cond
-                           (tui/scrolled-up?)
-                           (tui/scroll-to-bottom!)
-
-                           (busy?)
-                           (dispatch! {:type :abort})
-
-                           ;; Empty editor + not busy → show tree selector
-                           :else
-                           (when-let [ed @editor-comp-ref]
-                             (when (empty? (str/trim ((:get-text ed))))
-                               (show-tree-selector!))))))
+          :on-escape handle-escape!
 
           :on-interrupt (fn [] (shutdown!))
 
