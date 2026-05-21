@@ -213,9 +213,20 @@
                (let [msgs (:messages s)
                      last-msg (peek msgs)]
                  (if (and last-msg (= :thinking (:type last-msg)))
+                   ;; Consecutive thinking delta — append to current
                    (assoc s :messages (conj (pop msgs)
                                             (update last-msg :text str (:text event))))
-                   (update s :messages conj {:type :thinking :text (:text event)})))))
+                   ;; Find last thinking msg in this turn and merge into it
+                   (let [idx (loop [i (dec (count msgs))]
+                              (when-not (neg? i)
+                                (let [t (:type (nth msgs i))]
+                                  (cond
+                                    (= :thinking t) i
+                                    (= :user t) nil
+                                    :else (recur (dec i))))))]
+                     (if idx
+                       (assoc s :messages (update-in (vec msgs) [idx :text] str "\n\n" (:text event)))
+                       (update s :messages conj {:type :thinking :text (:text event)})))))))
       (cache-current-messages!))
 
     :tool-start
