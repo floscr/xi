@@ -1,9 +1,16 @@
 (ns xi.system-prompt
-  "System prompt construction. Loads AGENTS.md from project root + parents."
+  "System prompt construction. Loads AGENTS.md from project root + parents.
+   Supports profile-based agents prompts via `bb profile:agents-prompt`."
   (:require [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
             [xi.ext.skills :as skills]))
+
+(def ^:private BB_DIR
+  (str (aget js/process.env "HOME") "/.config/dotfiles/modules/scripts"))
+
+(def ^:private BB_EDN
+  (str BB_DIR "/bb.edn"))
 
 (def ^:private BASE_PROMPT
   "You are Xi, a coding assistant. You help users with software engineering tasks.
@@ -49,25 +56,62 @@ Be concise, direct, and friendly. When unsure, say so.")
         (vec (reverse found))
         (recur parent found)))))
 
+(defn- fetch-profile-agents-prompt
+  "Call bb profile:agents-prompt to check if a profile defines a custom
+   agents prompt for this cwd. Returns {:prompt <str> :replace <bool>} or nil."
+  [cwd]
+  (try
+    (let [proc (js/Bun.spawnSync
+                #js ["bb" "--config" BB_EDN "profile:agents-prompt" cwd]
+                #js {:stdout "pipe" :stderr "pipe"
+                     :timeout 10000})]
+      (when (zero? (.-exitCode proc))
+        (let [stdout (str (.toString (.-stdout proc)))
+              parsed (js->clj (js/JSON.parse stdout) :keywordize-keys true)]
+          (when (:prompt parsed)
+            parsed))))
+    (catch :default _e
+      nil)))
+
 (defn load-agents-md
   "Load and concatenate all AGENTS.md files from cwd to root.
+   If a profile defines :agents-prompt with :agents-replace true,
+   the project root AGENTS.md is replaced with the profile prompt.
    Also appends any active skill prompts for the project."
   [cwd]
   (let [files (find-agents-md cwd)
-        agents-content (when (seq files)
+        profile-prompt (fetch-profile-agents-prompt cwd)
+        ;; When profile says replace, swap out the root (cwd) AGENTS.md
+        ;; The root AGENTS.md is the last entry (innermost = closest to cwd)
+        effective-files (if (and profile-prompt (:replace profile-prompt) (seq files))
+                          ;; Drop the innermost (root project) AGENTS.md
+                          (let [root-agents (.join node-path (.resolve node-path cwd) "AGENTS.md")]
+                            (vec (remove #(= % root-agents) files)))
+                          files)
+        agents-content (when (seq effective-files)
                          (str/join "\n\n---\n\n"
                                    (map (fn [f]
                                           (str "# " (.relative node-path cwd f) "\n\n"
                                                (fs/readFileSync f "utf8")))
-                                        files)))
+                                        effective-files)))
+        profile-content (when profile-prompt
+                          (:prompt profile-prompt))
+        ;; Combine: parent AGENTS.md files + profile prompt + skills
+        combined-agents (cond
+                          (and agents-content profile-content)
+                          (str agents-content "\n\n---\n\n" profile-content)
+
+                          profile-content profile-content
+                          agents-content  agents-content
+                          :else           nil)
         skill-content (skills/load-skill-prompts cwd)]
     (cond
-      (and agents-content skill-content)
-      (str agents-content skill-content)
+      (and combined-agents skill-content)
+      (str combined-agents skill-content)
 
-      agents-content agents-content
-      skill-content  skill-content
-      :else          nil)))
+      combined-agents combined-agents
+      skill-content   skill-content
+      :else           nil)))
 
 (defn- tool-descriptions
   "Format tool definitions into a system prompt section."
