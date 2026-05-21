@@ -69,3 +69,32 @@
     (let [row (grid/line->row "\033[1m\033[31mx" 1)]
       (is (= "x" (aget (aget row 0) 0)))
       (is (= "\033[1m\033[31m" (aget (aget row 0) 1))))))
+
+(deftest line->row-tab-expansion
+  (testing "tabs expand to spaces at 4-column stops"
+    (let [row (grid/line->row "\ta" 10)]
+      ;; Tab at col 0 should expand to 4 spaces
+      (is (= " " (aget (aget row 0) 0)))
+      (is (= " " (aget (aget row 1) 0)))
+      (is (= " " (aget (aget row 2) 0)))
+      (is (= " " (aget (aget row 3) 0)))
+      ;; 'a' at col 4
+      (is (= "a" (aget (aget row 4) 0)))))
+  (testing "tab at non-zero column expands to next stop"
+    (let [row (grid/line->row "ab\tc" 10)]
+      ;; 'a' at 0, 'b' at 1, tab expands to col 4
+      (is (= "a" (aget (aget row 0) 0)))
+      (is (= "b" (aget (aget row 1) 0)))
+      (is (= " " (aget (aget row 2) 0)))
+      (is (= " " (aget (aget row 3) 0)))
+      (is (= "c" (aget (aget row 4) 0)))))
+  (testing "tab with ANSI preserves style"
+    (let [row (grid/line->row "\033[31m\tx" 10)]
+      ;; Tab spaces should carry the red style
+      (is (= " " (aget (aget row 0) 0)))
+      (is (= "\033[31m" (aget (aget row 0) 1)))
+      (is (= " " (aget (aget row 3) 0)))
+      (is (= "\033[31m" (aget (aget row 3) 1)))
+      ;; 'x' at col 4 with red style
+      (is (= "x" (aget (aget row 4) 0)))
+      (is (= "\033[31m" (aget (aget row 4) 1))))))

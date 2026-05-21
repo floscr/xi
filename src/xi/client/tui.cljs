@@ -1082,7 +1082,11 @@
             (when-let [tool @current-tool]
               (let [short-name (shorten-tool-name (:name event))
                     args-str (format-tool-args short-name (:arguments event))]
-                ((:update-header tool) short-name args-str)))
+                ((:update-header tool) short-name args-str)
+                ;; Resolve grammar now that arguments are available
+                (when-not (:grammar tool)
+                  (when-let [g (tool-output-lang short-name (:arguments event))]
+                    (reset! current-tool (assoc tool :grammar g))))))
 
             :tool-result
             (do (when-let [tool @current-tool]

@@ -55,3 +55,13 @@
       (is (= 3 (count result)))
       (is (every? #(<= (count %) 20) result))
       (is (= text (apply str result))))))
+
+(deftest visible-width-tabs
+  (testing "tab at start expands to 4"
+    (is (= 4 (ansi/visible-width "\t"))))
+  (testing "tab after chars expands to next stop"
+    (is (= 4 (ansi/visible-width "ab\t"))))
+  (testing "tab at stop boundary expands to next stop"
+    (is (= 8 (ansi/visible-width "abcd\t"))))
+  (testing "tabs with ANSI codes"
+    (is (= 4 (ansi/visible-width "\033[31m\t\033[0m")))))

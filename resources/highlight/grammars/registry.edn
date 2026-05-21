@@ -220,6 +220,8 @@
  "gnuplot" "gnuplot"
  "plot" "gnuplot"
  "plt" "gnuplot"
+ "go" "go"
+ "golang" "go"
  "go-template" "go_template"
  "gotmpl" "go_template"
  "graphql" "graphql"

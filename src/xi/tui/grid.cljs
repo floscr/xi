@@ -90,10 +90,18 @@
                   (recur seq-end col sgr)))
               ;; Other ESC sequence (2 chars) — skip
               (recur (min len (+ i 2)) col sgr))
-            ;; Visible character
-            (do
-              (aset row col (make-cell ch sgr))
-              (recur (inc i) (inc col) sgr))))))))
+            ;; Tab — expand to spaces until next tab stop
+            (if (= ch "\t")
+              (let [tab-w 4
+                    next-stop (min width (* tab-w (inc (quot col tab-w))))
+                    n (- next-stop col)]
+                (dotimes [j n]
+                  (aset row (+ col j) (make-cell " " sgr)))
+                (recur (inc i) next-stop sgr))
+              ;; Visible character
+              (do
+                (aset row col (make-cell ch sgr))
+                (recur (inc i) (inc col) sgr)))))))))
 
 (defn frame->grid
   "Convert a vector of ANSI line strings into a cell grid."

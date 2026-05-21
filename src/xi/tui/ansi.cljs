@@ -107,11 +107,18 @@
 
 (defn visible-width
   "Calculate visible terminal width of a string (stripping ANSI codes).
-   Handles basic ASCII correctly. CJK/emoji widths are approximated."
+   Handles basic ASCII correctly. Tabs expand to 4-column stops."
   [text]
   (if (empty? text)
     0
-    (count (strip-ansi text))))
+    (let [stripped (strip-ansi text)
+          len (count stripped)]
+      (loop [i 0 col 0]
+        (if (>= i len)
+          col
+          (if (= (.charAt stripped i) "\t")
+            (recur (inc i) (* 4 (inc (quot col 4))))
+            (recur (inc i) (inc col))))))))
 
 ;; ── Line Utilities ────────────────────────────────────────────────────────────
 
@@ -174,6 +181,20 @@
           (do (.push out ellipsis)
               (.push out (str "\033[" "0m"))
               (.join out ""))
+
+          ;; Tab — expand to spaces
+          (= (.charAt line i) "\t")
+          (let [tab-w 4
+                next-stop (* tab-w (inc (quot vcol tab-w)))
+                spaces (- next-stop vcol)]
+            (if (> next-stop target)
+              ;; Tab pushes past target — truncate
+              (do (dotimes [_ (- target vcol)] (.push out " "))
+                  (.push out ellipsis)
+                  (.push out (str "\033[" "0m"))
+                  (.join out ""))
+              (do (dotimes [_ spaces] (.push out " "))
+                  (recur (inc i) next-stop))))
 
           :else
           (do (.push out (.charAt line i))
