@@ -79,16 +79,25 @@
               :handler (:handler cmd)
               :ext-name ext-name})
       ;; Central registry — wrap handler to match the ctx shape extensions expect
-      (cmd-registry/register!
-       {:name (:name cmd)
-        :description (:description cmd)
-        :source "ext"
-        :scope :runtime
-        :handler (fn [{:keys [sess model cwd args]}]
-                   (let [result ((:handler cmd) {:session @sess :model model :cwd cwd :args args})]
-                     (if (and (map? result) (= :prompt (:type result)))
-                       [{:type :dispatch-prompt :text (:text result)}]
-                       [{:type :command-result :command (:name cmd) :text (str "Ran /" (:name cmd))}])))}))
+      (let [wrap-handler (fn [h cmd-name]
+                           (fn [{:keys [sess model cwd args]}]
+                             (let [result (h {:session @sess :model model :cwd cwd :args args})]
+                               (if (and (map? result) (= :prompt (:type result)))
+                                 [{:type :dispatch-prompt :text (:text result)}]
+                                 [{:type :command-result :command cmd-name :text (str "Ran /" cmd-name)}]))))
+            wrapped-subs (when (seq (:subcommands cmd))
+                           (mapv (fn [sub]
+                                   {:name (:name sub)
+                                    :description (:description sub)
+                                    :handler (wrap-handler (:handler sub) (str (:name cmd) " " (:name sub)))})
+                                 (:subcommands cmd)))]
+        (cmd-registry/register!
+         (cond-> {:name (:name cmd)
+                  :description (:description cmd)
+                  :source "ext"
+                  :scope :runtime
+                  :handler (wrap-handler (:handler cmd) (:name cmd))}
+           wrapped-subs (assoc :subcommands wrapped-subs)))))
 
     ;; Register keybindings
     (doseq [kb (:keybindings ext)]

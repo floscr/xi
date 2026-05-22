@@ -300,7 +300,9 @@
              :personal-agent? personal-agent?}]
     (if-let [cmd (registry/get-command name :runtime)]
       ;; Dispatch from central registry (runtime-scoped only)
-      ((:handler cmd) ctx)
+      ;; Use resolve-handler for subcommand routing
+      (let [[handler remaining-args] (registry/resolve-handler cmd args)]
+        (handler (assoc ctx :args remaining-args)))
       ;; Fallback: try extension commands (legacy path — extensions that
       ;; haven't migrated to the registry yet)
       (if-let [{:keys [handler]} (ext/get-command name)]

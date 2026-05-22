@@ -10,6 +10,7 @@
             [xi.command-registry :as cmd-registry]
             [xi.ext.core :as ext]
             [xi.ext.done-notify :as ext-done-notify]
+            [xi.ext.skills :as ext-skills]
             [xi.highlight.core :as hl]
             [xi.highlight.grammars :as hl-grammars]
             [xi.highlight.theme :as hl-theme]
@@ -170,23 +171,27 @@
        (str/join "\n")))
 
 (defn- diff-output?
-  "Check if tool output looks like a unified diff (from edit tool)."
+  "Check if tool output looks like a unified diff (from edit tool).
+   Requires at least one actual change marker (+ or -) to avoid
+   false positives on indented code."
   [text]
-  (let [lines (take 5 (str/split-lines text))]
+  (let [lines (take 10 (str/split-lines text))]
     (some #(or (str/starts-with? % "+ ")
-               (str/starts-with? % "- ")
-               (str/starts-with? % "  "))
+               (str/starts-with? % "- "))
           (rest lines))))
 
 (defn- highlight-text
   "Apply syntax highlighting to text using a grammar.
-   Auto-detects diff output and applies diff bg colors."
+   Auto-detects diff output and applies diff bg colors.
+   Tokenizes full text to correctly handle multi-line constructs (strings, docstrings)."
   [grammar text]
   (if (diff-output? text)
     (highlight-diff-text grammar text)
-    (->> (str/split-lines text)
-         (mapv (fn [line] (highlight-line grammar line)))
-         (str/join "\n"))))
+    (let [tokens (-> (hl/tokenize grammar text) hl/merge-adjacent)
+          lines (hl/split-tokens-by-line tokens)]
+      (->> lines
+           (mapv hl-theme/colorize)
+           (str/join "\n")))))
 
 ;; ── Tool Execution Component ─────────────────────────────────────────────────
 
@@ -841,7 +846,35 @@
                        title (if (nil? args) "Session Changes" (str "Diff: " args))]
                    (when-let [text (apply run-git-diff git-args)]
                      (open-diff! text title)))
-                 nil)})])
+                 nil)}
+
+            {:name "skill"
+             :description "List or load on-demand skills"
+             :scope :client
+             :show-busy true
+             :handler
+             (fn [{:keys [args]}]
+               (let [has-load-name (and args
+                                       (str/starts-with? args "load ")
+                                       (seq (str/trim (subs args 5))))]
+                 (if has-load-name
+                   ;; /skill load <name> with a specific name → pass to runtime
+                   :pass-through
+                   ;; /skill or /skill load (no name) → show picker
+                   (let [skills (ext-skills/scan-skills)
+                         items (mapv (fn [{:keys [name description]}]
+                                      {:label name
+                                       :description description
+                                       :value name})
+                                     skills)]
+                     (if (seq items)
+                       (show-completion-menu!
+                        {:items items
+                         :prompt "skill> "
+                         :on-select (fn [item]
+                                      (dispatch! (str "/skill load " (:value item))))})
+                       (add-status-message! "No skills found in ~/.config/xi/skills/"))
+                     nil))))})])
 
         ;; ── Local Command Dispatch ──────────────────────────────────────────────
         ;; Check the central registry for :client-scoped commands.
