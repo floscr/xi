@@ -65,10 +65,8 @@
               lines (str/split-lines code)
               highlighted-lines
               (if grammar
-                (mapv (fn [line]
-                        (let [tokens (-> (hl/tokenize grammar line) hl/merge-adjacent)]
-                          (hl-theme/colorize tokens)))
-                      lines)
+                (let [tokens (-> (hl/tokenize grammar code) hl/merge-adjacent)]
+                  (mapv hl-theme/colorize (hl/split-tokens-by-line tokens)))
                 lines)]
           (into [{:text "" :code? true}]
                 (concat

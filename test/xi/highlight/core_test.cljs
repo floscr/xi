@@ -76,6 +76,53 @@
     (is (nil? (grammars/get-grammar "this-definitely-does-not-exist-xyz")))
     (is (nil? (grammars/get-grammar nil)))))
 
+(deftest split-tokens-by-line-test
+  (testing "single line — no splitting"
+    (let [tokens [{:type :keyword :value "defn"} {:type :text :value " "} {:type :name-fn :value "foo"}]
+          result (hl/split-tokens-by-line tokens)]
+      (is (= 1 (count result)))
+      (is (= tokens (first result)))))
+
+  (testing "newline in text token splits into two lines"
+    (let [tokens [{:type :text :value "a\nb"}]
+          result (hl/split-tokens-by-line tokens)]
+      (is (= 2 (count result)))
+      (is (= [{:type :text :value "a"}] (first result)))
+      (is (= [{:type :text :value "b"}] (second result)))))
+
+  (testing "newline at token boundary"
+    (let [tokens [{:type :text :value "a"} {:type :text :value "\n"} {:type :text :value "b"}]
+          result (hl/split-tokens-by-line tokens)]
+      (is (= 2 (count result)))
+      (is (= [{:type :text :value "a"}] (first result)))
+      (is (= [{:type :text :value "b"}] (second result)))))
+
+  (testing "empty lines from consecutive newlines"
+    (let [tokens [{:type :text :value "a\n\nb"}]
+          result (hl/split-tokens-by-line tokens)]
+      (is (= 3 (count result)))
+      (is (= [{:type :text :value "a"}] (first result)))
+      (is (= [] (second result)))
+      (is (= [{:type :text :value "b"}] (nth result 2)))))
+
+  (testing "preserves token types across split"
+    (let [tokens [{:type :string :value "\"hello\nworld\""}]
+          result (hl/split-tokens-by-line tokens)]
+      (is (= 2 (count result)))
+      (is (= :string (:type (first (first result)))))
+      (is (= :string (:type (first (second result))))))))
+
+(deftest multiline-string-tokenization
+  (testing "multi-line Clojure docstring is tokenized as :string"
+    (let [grammar (grammars/get-grammar "clojure")
+          code "(defn foo\n  \"A docstring with map and for inside.\"\n  [x] x)"
+          tokens (hl/tokenize grammar code)
+          string-tokens (filter #(= :string (:type %)) tokens)]
+      (is (= 1 (count string-tokens))
+          "entire docstring should be a single :string token")
+      (is (= "\"A docstring with map and for inside.\""
+             (:value (first string-tokens)))))))
+
 (deftest many-grammars-available
   (testing "registry has many languages"
     (is (some? (grammars/get-grammar "clojure"))

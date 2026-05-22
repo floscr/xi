@@ -11,9 +11,11 @@
    Unmatched characters are emitted as :text tokens."
   [grammar source]
   (let [len (count source)
-        ;; Pre-compile regexes with sticky flag for positional matching
+        ;; Pre-compile regexes with sticky+multiline flags.
+        ;; Multiline makes $ match end-of-line (needed for comment patterns
+        ;; like ;.*$ when tokenizing full multi-line source text).
         compiled (mapv (fn [{:keys [pattern token]}]
-                         {:re (js/RegExp. pattern "y")
+                         {:re (js/RegExp. pattern "ym")
                           :token token})
                        grammar)]
     (loop [pos 0
@@ -47,3 +49,33 @@
            (conj acc tok))))
      []
      tokens)))
+
+(defn split-tokens-by-line
+  "Split tokens at newline boundaries into per-line groups.
+   Returns a vector of token vectors, one per source line."
+  [tokens]
+  (loop [remaining tokens
+         current []
+         result []]
+    (if-not (seq remaining)
+      (conj result current)
+      (let [{:keys [type value]} (first remaining)
+            idx (.indexOf value "\n")]
+        (if (neg? idx)
+          ;; No newline — add whole token to current line
+          (recur (next remaining)
+                 (conj current {:type type :value value})
+                 result)
+          ;; Split at first newline
+          (let [before (subs value 0 idx)
+                after (subs value (inc idx))
+                finished (if (pos? (count before))
+                           (conj current {:type type :value before})
+                           current)
+                rest-tok (when (pos? (count after))
+                           {:type type :value after})]
+            (recur (if rest-tok
+                     (cons rest-tok (next remaining))
+                     (next remaining))
+                   []
+                   (conj result finished))))))))
