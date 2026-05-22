@@ -193,7 +193,7 @@
                             :cursor-col (count (last lines))
                             :cached-width nil :cached-lines nil
                             :undo-stack [] :redo-stack [] :last-action nil))
-                   (tui/request-render!))
+                   (tui/request-panel-render!))
 
         add-history (fn [text]
                       (when (seq (str/trim text))
@@ -225,7 +225,7 @@
                                            (update :cursor-col + (count ch))
                                            (assoc :cached-width nil :cached-lines nil
                                                   :history-index -1)))))
-                      (tui/request-render!))
+                      (tui/request-panel-render!))
 
         insert-newline (fn []
                          (push-undo! :newline)
@@ -242,7 +242,7 @@
                                               (assoc :cursor-line (inc cursor-line))
                                               (assoc :cursor-col 0)
                                               (assoc :cached-width nil :cached-lines nil)))))
-                         (tui/request-render!))
+                         (tui/request-panel-render!))
 
         delete-back (fn []
                       (push-undo! :delete-back)
@@ -273,7 +273,7 @@
                                              (assoc :cached-width nil :cached-lines nil)))
 
                                        :else s)))
-                      (tui/request-render!))
+                      (tui/request-panel-render!))
 
         delete-forward (fn []
                          (push-undo! :delete-forward)
@@ -300,7 +300,7 @@
                                                   (assoc :cached-width nil :cached-lines nil)))
 
                                             :else s))))
-                         (tui/request-render!))
+                         (tui/request-panel-render!))
 
         move-cursor (fn [dline dcol]
                       (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
@@ -314,7 +314,7 @@
                                        (-> s
                                            (assoc :cursor-line new-line :cursor-col new-col)
                                            (assoc :cached-width nil :cached-lines nil :last-action nil)))))
-                      (tui/request-render!))
+                      (tui/request-panel-render!))
 
         browse-history (fn [direction]
                          (let [{:keys [history history-index]} @state
@@ -360,7 +360,7 @@
                                                       (assoc :cursor-col (count prev-line))
                                                       (assoc :cached-width nil :cached-lines nil)))
                                                 s)))))
-                           (tui/request-render!))
+                           (tui/request-panel-render!))
 
         delete-word-forward (fn []
                               (push-undo! :delete-forward)
@@ -385,7 +385,7 @@
                                                          (assoc :lines new-lines)
                                                          (assoc :cached-width nil :cached-lines nil)))
                                                    s)))))
-                              (tui/request-render!))
+                              (tui/request-panel-render!))
 
         move-word-back (fn []
                          (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
@@ -403,7 +403,7 @@
                                                   (assoc :cursor-col (count prev-line))
                                                   (assoc :cached-width nil :cached-lines nil :last-action nil)))
                                             s))))
-                         (tui/request-render!))
+                         (tui/request-panel-render!))
 
         move-word-forward (fn []
                             (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
@@ -421,7 +421,7 @@
                                                      (assoc :cursor-col 0)
                                                      (assoc :cached-width nil :cached-lines nil :last-action nil))
                                                  s)))))
-                            (tui/request-render!))
+                            (tui/request-panel-render!))
 
         transpose-chars (fn []
                           (push-undo! :transpose)
@@ -450,7 +450,7 @@
                                                    (assoc :cached-width nil :cached-lines nil)))
 
                                              :else s))))
-                          (tui/request-render!))
+                          (tui/request-panel-render!))
 
         insert-text-bulk (fn [text]
                            (push-undo! :paste)
@@ -473,7 +473,7 @@
                                                        :cursor-col new-cursor-col
                                                        :cached-width nil :cached-lines nil
                                                        :history-index -1)))))
-                           (tui/request-render!))
+                           (tui/request-panel-render!))
 
         do-undo (fn []
                   (swap! state (fn [{:keys [undo-stack] :as s}]
@@ -486,7 +486,7 @@
                                          (assoc :last-action nil
                                                 :cached-width nil :cached-lines nil)))
                                    s)))
-                  (tui/request-render!))
+                  (tui/request-panel-render!))
 
         do-redo (fn []
                   (swap! state (fn [{:keys [redo-stack] :as s}]
@@ -499,7 +499,7 @@
                                          (assoc :last-action nil
                                                 :cached-width nil :cached-lines nil)))
                                    s)))
-                  (tui/request-render!))
+                  (tui/request-panel-render!))
 
         handle-submit (fn []
                         (let [text (get-text)]
@@ -696,7 +696,7 @@
                                                   (assoc-in [:lines cursor-line] new-line)
                                                   (assoc :cursor-col (+ word-start (count expansion)))
                                                   (assoc :cached-width nil :cached-lines nil)))))
-                             (tui/request-render!)))
+                             (tui/request-panel-render!)))
 
                          ;; "/" on empty editor — open command palette
                          (and (= data "/") on-palette (empty? (str/trim (get-text))))
@@ -712,7 +712,7 @@
                          (insert-char data)
 
                          :else nil)
-                       (tui/request-render!))]
+                       (tui/request-panel-render!))]
 
     {:type :editor
      :get-text get-text

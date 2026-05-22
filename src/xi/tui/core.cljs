@@ -50,6 +50,9 @@
          :render-requested false
          :render-timer nil
          :stopped false
+         :content-dirty true     ;; content needs re-render (false = use cached lines)
+         :cached-content-lines nil ;; cached output of content render
+         :cached-content-width nil ;; width used for cached content
          ;; Mouse selection state
          ;; nil when no selection, map when selecting/selected:
          ;; {:start-row :start-col :end-row :end-col :selecting}
@@ -60,25 +63,25 @@
 
 ;; ── Scroll API ────────────────────────────────────────────────────────────────
 
-(declare request-render!)
+(declare request-render! request-panel-render!)
 
 (defn scroll-up!
   "Scroll content up by n lines."
   [n]
   (swap! tui-state update :scroll-offset + n)
-  (request-render!))
+  (request-panel-render!))
 
 (defn scroll-down!
   "Scroll content down by n lines (towards bottom)."
   [n]
   (swap! tui-state update :scroll-offset #(max 0 (- % n)))
-  (request-render!))
+  (request-panel-render!))
 
 (defn scroll-to-bottom!
   "Snap viewport to the bottom (latest content)."
   []
   (swap! tui-state assoc :scroll-offset 0)
-  (request-render!))
+  (request-panel-render!))
 
 (defn scrolled-up?
   "Returns true if the viewport is scrolled up from the bottom."
@@ -100,7 +103,7 @@
 (defn- clear-selection! []
   (when (:selection @tui-state)
     (swap! tui-state assoc :selection nil)
-    (request-render!)))
+    (request-panel-render!)))
 
 (defn- apply-selection-to-frame
   "Apply reverse-video highlighting to lines within the selection range."
@@ -170,8 +173,18 @@
             ;; Viewport height = terminal height - bottom panel - 1 (status/separator line)
             viewport-height (max 1 (- height bottom-height 1))
 
-            ;; Render all content
-            all-content (vec ((:render content) width))
+            ;; Render content (skip if clean and width unchanged)
+            {:keys [content-dirty cached-content-lines cached-content-width]} @tui-state
+            all-content (if (and (not content-dirty)
+                                cached-content-lines
+                                (= cached-content-width width))
+                          cached-content-lines
+                          (let [lines (vec ((:render content) width))]
+                            (swap! tui-state assoc
+                                   :content-dirty false
+                                   :cached-content-lines lines
+                                   :cached-content-width width)
+                            lines))
             total-content (count all-content)
 
             ;; Stabilize scroll when content grows while scrolled up
@@ -246,8 +259,8 @@
                :prev-content-height total-content
                :render-requested false)))))
 
-(defn request-render!
-  "Request a render pass. Debounced to MIN_RENDER_INTERVAL_MS."
+(defn- schedule-render!
+  "Schedule a debounced render pass."
   []
   (when-not (:render-requested @tui-state)
     (swap! tui-state assoc :render-requested true)
@@ -255,6 +268,19 @@
       (js/clearTimeout t))
     (let [timer (js/setTimeout do-render! MIN_RENDER_INTERVAL_MS)]
       (swap! tui-state assoc :render-timer timer))))
+
+(defn request-render!
+  "Request a render pass, marking content as dirty.
+   Use for content changes (chat messages, tool output, etc.)."
+  []
+  (swap! tui-state assoc :content-dirty true)
+  (schedule-render!))
+
+(defn request-panel-render!
+  "Request a render pass without marking content dirty.
+   Use for bottom-panel-only changes (editor typing, completion menu)."
+  []
+  (schedule-render!))
 
 (defn render-now!
   "Force an immediate render (bypass debounce)."
@@ -277,7 +303,7 @@
   "Set the scroll offset directly. Used by modal components for jumping."
   [offset]
   (swap! tui-state assoc :scroll-offset (max 0 offset))
-  (request-render!))
+  (request-panel-render!))
 
 (defn get-scroll-offset
   "Get the current scroll offset."
@@ -288,7 +314,7 @@
   "Set the component pinned at the bottom of the screen (editor, menu, etc.)."
   [component]
   (swap! tui-state assoc :bottom-panel component)
-  (request-render!))
+  (request-panel-render!))
 
 ;; ── Input Handling ────────────────────────────────────────────────────────────
 
@@ -338,14 +364,14 @@
                  {:start-row screen-row :start-col screen-col
                   :end-row screen-row :end-col screen-col
                   :selecting true})
-          (request-render!))
+          (request-panel-render!))
 
       ;; Left button drag (motion with button 0 = button code 32)
       (and (= 32 button) pressed)
       (when (:selection @tui-state)
         (swap! tui-state update :selection assoc
                :end-row screen-row :end-col screen-col)
-        (request-render!))
+        (request-panel-render!))
 
       ;; Left button release — finish selection
       (and (= 0 button) (not pressed))
@@ -362,7 +388,7 @@
               (copy-to-clipboard! text)
               ;; Keep highlight visible briefly, then clear
               (swap! tui-state update :selection assoc :selecting false)
-              (request-render!)
+              (request-panel-render!)
               (js/setTimeout clear-selection! 200)))))
 
       :else nil)))
@@ -448,6 +474,9 @@
            :render-requested false
            :render-timer nil
            :stopped false
+           :content-dirty true
+           :cached-content-lines nil
+           :cached-content-width nil
            :selection nil)
     (term/start! terminal handle-input handle-resize)
     content))

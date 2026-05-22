@@ -134,7 +134,7 @@
         update-items! (fn [new-items]
                         (swap! state assoc :all-items new-items)
                         (refilter!)
-                        (tui/request-render!))
+                        (tui/request-panel-render!))
 
         move-selection (fn [delta]
                          (let [{:keys [filtered selected]} @state
@@ -142,19 +142,19 @@
                            (when (pos? n)
                              (swap! state assoc :selected
                                     (mod (+ selected delta n) n))))
-                         (tui/request-render!))
+                         (tui/request-panel-render!))
 
         insert-char (fn [ch]
                       (swap! state update :query str ch)
                       (refilter!)
-                      (tui/request-render!))
+                      (tui/request-panel-render!))
 
         delete-back (fn []
                       (let [q (:query @state)]
                         (when (pos? (count q))
                           (swap! state assoc :query (subs q 0 (dec (count q))))
                           (refilter!)
-                          (tui/request-render!))))
+                          (tui/request-panel-render!))))
 
         confirm (fn []
                   (let [{:keys [filtered selected]} @state]
@@ -187,7 +187,7 @@
             (is-backspace? data)       (delete-back)
             (ctrl? data "U")           (do (swap! state assoc :query "")
                                            (refilter!)
-                                           (tui/request-render!))
+                                           (tui/request-panel-render!))
             (ctrl? data "C")           (cancel)
             (is-printable? data)       (insert-char data)
 

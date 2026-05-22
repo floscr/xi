@@ -219,7 +219,7 @@
                 n (count filtered)]
             (when (pos? n)
               (swap! state assoc :selected (mod (+ selected delta n) n))))
-          (tui/request-render!))
+          (tui/request-panel-render!))
 
         cycle-filter!
         (fn [direction]
@@ -228,7 +228,7 @@
                               (count filter-modes))]
             (swap! state assoc :filter-mode (nth filter-modes next-idx))
             (apply-filter!)
-            (tui/request-render!)))
+            (tui/request-panel-render!)))
 
         handle-input
         (fn [data]
@@ -237,7 +237,7 @@
             (if (seq (:search-query @state))
               (do (swap! state assoc :search-query "")
                   (apply-filter!)
-                  (tui/request-render!))
+                  (tui/request-panel-render!))
               (when on-cancel (on-cancel)))
 
             (or (is-enter? data) (is-ctrl-enter? data))
@@ -260,26 +260,26 @@
             (when (seq (:search-query @state))
               (swap! state update :search-query #(subs % 0 (dec (count %))))
               (apply-filter!)
-              (tui/request-render!))
+              (tui/request-panel-render!))
 
             ;; Ctrl+U clears search
             (ctrl? data "U")
             (do (swap! state assoc :search-query "")
                 (apply-filter!)
-                (tui/request-render!))
+                (tui/request-panel-render!))
 
             ;; Printable chars → search
             (is-printable? data)
             (do (swap! state update :search-query str data)
                 (apply-filter!)
-                (tui/request-render!))
+                (tui/request-panel-render!))
 
             ;; Multi-byte printable (unicode)
             (and (> (count data) 1)
                  (not (str/starts-with? data ESC)))
             (do (swap! state update :search-query str data)
                 (apply-filter!)
-                (tui/request-render!))
+                (tui/request-panel-render!))
 
             :else nil))]
 
