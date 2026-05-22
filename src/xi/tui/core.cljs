@@ -287,7 +287,7 @@
   []
   (when-let [t (:render-timer @tui-state)]
     (js/clearTimeout t))
-  (swap! tui-state assoc :render-timer nil)
+  (swap! tui-state assoc :render-timer nil :content-dirty true)
   (do-render!))
 
 ;; ── Focus ─────────────────────────────────────────────────────────────────────

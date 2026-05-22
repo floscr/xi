@@ -1058,6 +1058,7 @@
 
             :turn-start
             (do (reset! thinking-text "")
+              ((:clear-thinking loader))
               ((:add-child chat-container) loader)
               ((:start loader))
               (tui/render-now!))
@@ -1160,6 +1161,7 @@
                   ((:finish tool) true)
                   (reset! current-tool nil))
                 ((:stop loader))
+                ((:clear-thinking loader))
                 ((:remove-child chat-container) loader)
                 (node/append-children! chat-container
                   [(node/text
@@ -1173,6 +1175,7 @@
                   ((:finish tool) false)
                   (reset! current-tool nil))
                 ((:stop loader))
+                ((:clear-thinking loader))
                 ((:remove-child chat-container) loader)
                 (ext/dispatch-hook :agent-end)
                 (tui/render-now!))
@@ -1182,7 +1185,9 @@
                   ((:finish tool) false)
                   (reset! current-tool nil))
                 ((:stop loader))
+                ((:clear-thinking loader))
                 ((:remove-child chat-container) loader)
+                (reset! thinking-text "")
                 (add-status-message! (ansi/fg :dim "Interrupted."))
                 (tui/render-now!))
 
