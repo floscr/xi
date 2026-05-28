@@ -8,19 +8,22 @@
 (defn apply-edit
   "Apply a single oldText→newText replacement. Returns {:ok content} or {:error msg}."
   [content {:keys [oldText newText]}]
-  (let [idx (.indexOf content oldText)]
-    (cond
-      (= -1 idx)
-      {:error (str "Could not find the exact text to replace. "
-                   "First 60 chars of oldText: " (subs oldText 0 (min 60 (count oldText))))}
+  (if (empty? oldText)
+    ;; Empty oldText = prepend newText to content
+    {:ok (str newText content)}
+    (let [idx (.indexOf content oldText)]
+      (cond
+        (= -1 idx)
+        {:error (str "Could not find the exact text to replace. "
+                     "First 60 chars of oldText: " (subs oldText 0 (min 60 (count oldText))))}
 
-      ;; Check for multiple occurrences
-      (not= -1 (.indexOf content oldText (inc idx)))
-      {:error (str "Found multiple occurrences of the text. "
-                   "Please provide more context to make it unique.")}
+        ;; Check for multiple occurrences
+        (not= -1 (.indexOf content oldText (inc idx)))
+        {:error (str "Found multiple occurrences of the text. "
+                     "Please provide more context to make it unique.")}
 
-      :else
-      {:ok (str (subs content 0 idx) newText (subs content (+ idx (count oldText))))})))
+        :else
+        {:ok (str (subs content 0 idx) newText (subs content (+ idx (count oldText))))}))))
 
 (defn execute
   "Edit a file using exact text replacement.
