@@ -346,6 +346,7 @@
         current-md (atom nil)
         current-tool (atom nil)
         thinking-text (atom "")
+        current-thinking (atom nil)
 
         ;; Track last locally-submitted prompt to avoid double-rendering
         last-local-prompt (atom nil)
@@ -1045,7 +1046,8 @@
                 (when-let [tool @current-tool]
                   ((:finish tool) false))
                 (reset! current-tool nil)
-                (reset! thinking-text ""))
+                (reset! thinking-text "")
+                (reset! current-thinking nil))
               ;; No longer busy — dispatch queued prompt if any
               (let [text @queued-prompt]
                 (reset! queued-prompt nil)
@@ -1057,8 +1059,10 @@
                   (dispatch! text))))
 
             :turn-start
-            (do (reset! thinking-text "")
-              ((:clear-thinking loader))
+            (let [tc (comp/make-text "" {})]
+              (reset! thinking-text "")
+              (reset! current-thinking tc)
+              ((:add-child chat-container) tc)
               ((:add-child chat-container) loader)
               ((:start loader))
               (tui/render-now!))
@@ -1066,11 +1070,11 @@
             :text-delta
             (do (when-not @text-started
                   ((:stop loader))
-                  ((:clear-thinking loader))
                   ((:remove-child chat-container) loader)
                   ;; Add spacer after thinking if it had content
                   (when (seq @thinking-text)
                     ((:add-child chat-container) (comp/make-spacer 1)))
+                  (reset! current-thinking nil)
                   (let [m (md/make-markdown "")]
                     ((:add-child chat-container) m)
                     ((:add-child chat-container) (comp/make-spacer 1))
@@ -1085,7 +1089,8 @@
             :thinking
             (when-let [t (:text event)]
               (swap! thinking-text str t)
-              ((:set-thinking loader) @thinking-text))
+              (when-let [tc @current-thinking]
+                ((:set-text tc) (ansi/fg :dim @thinking-text))))
 
             :tool-start
             (do ;; Track session files for /diff
@@ -1096,11 +1101,11 @@
                       (swap! session-files conj path))))
                 (when-not @text-started
                   ((:stop loader))
-                  ((:clear-thinking loader))
                   ((:remove-child chat-container) loader)
                   ;; Add spacer after thinking if it had content
                   (when (seq @thinking-text)
-                    ((:add-child chat-container) (comp/make-spacer 1))))
+                    ((:add-child chat-container) (comp/make-spacer 1)))
+                  (reset! current-thinking nil))
                 (reset! text-started false)
                 (reset! current-md nil)
                 ;; Create tool component
@@ -1148,6 +1153,9 @@
                 ((:add-child chat-container) (comp/make-spacer 1))
                 ;; Show loader for next iteration
                 (reset! thinking-text "")
+                (let [tc (comp/make-text "" {})]
+                  (reset! current-thinking tc)
+                  ((:add-child chat-container) tc))
                 ((:add-child chat-container) loader)
                 ((:start loader))
                 (tui/render-now!))
@@ -1161,8 +1169,8 @@
                   ((:finish tool) true)
                   (reset! current-tool nil))
                 ((:stop loader))
-                ((:clear-thinking loader))
                 ((:remove-child chat-container) loader)
+                (reset! current-thinking nil)
                 (node/append-children! chat-container
                   [(node/text
                     (str (ansi/fg :error "[Error]") " "
@@ -1175,8 +1183,8 @@
                   ((:finish tool) false)
                   (reset! current-tool nil))
                 ((:stop loader))
-                ((:clear-thinking loader))
                 ((:remove-child chat-container) loader)
+                (reset! current-thinking nil)
                 (ext/dispatch-hook :agent-end)
                 (tui/render-now!))
 
@@ -1185,9 +1193,9 @@
                   ((:finish tool) false)
                   (reset! current-tool nil))
                 ((:stop loader))
-                ((:clear-thinking loader))
                 ((:remove-child chat-container) loader)
                 (reset! thinking-text "")
+                (reset! current-thinking nil)
                 (add-status-message! (ansi/fg :dim "Interrupted."))
                 (tui/render-now!))
 
@@ -1435,6 +1443,7 @@
                 (reset! current-md nil)
                 (reset! current-tool nil)
                 (reset! thinking-text "")
+                (reset! current-thinking nil)
                 (render-launch-header! chat-container
                   {:details [{:label "Room" :value (:room-id event)}]})
                 ;; Switch to Chat view if we were on another buffer
