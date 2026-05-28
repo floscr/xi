@@ -88,14 +88,12 @@
 
 (def ^:private MCP_SERVER_NAME "xi-tools")
 
-(def ^:private DISALLOWED_BUILTIN_TOOLS
-  ["Read" "Write" "Edit" "Glob" "Grep" "Bash" "Agent" "AskClaude"
-   "NotebookEdit" "EnterWorktree" "ExitWorktree"
-   "CronCreate" "CronDelete" "CronList" "TeamCreate" "TeamDelete"
-   "WebFetch" "WebSearch" "TodoRead" "TodoWrite"
-   "EnterPlanMode" "ExitPlanMode" "RemoteTrigger" "SendMessage"
-   "Skill" "TaskOutput" "TaskStop" "ToolSearch"
-   "AskUserQuestion" "TaskCreate" "TaskGet" "TaskList" "TaskUpdate"])
+;; Disable ALL CC built-in tools — Xi exposes its own via MCP.
+;; Using `tools: []` is a whitelist approach: nothing gets through
+;; unless explicitly provided as an MCP tool.
+(def ^:private BUILTIN_TOOLS_NONE
+  "Empty array disables all CC built-in tools (Read, Write, Bash, Monitor, etc.)."
+  [])
 
 (def ^:private MCP_TOOL_PREFIX (str "mcp__" MCP_SERVER_NAME "__"))
 
@@ -299,7 +297,7 @@
                                         :permissionMode "bypassPermissions"
                                         :allowDangerouslySkipPermissions true
                                         :includePartialMessages true
-                                        :disallowedTools DISALLOWED_BUILTIN_TOOLS
+                                        :tools BUILTIN_TOOLS_NONE
                                         :allowedTools [(str MCP_TOOL_PREFIX "*")]}
                                  claude-executable
                                  (assoc :pathToClaudeCodeExecutable claude-executable)
