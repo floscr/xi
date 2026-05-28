@@ -28,21 +28,26 @@
   [{:keys [path edits]} {:keys [cwd]}]
   (try
     (let [resolved (tfs/resolve-path path cwd)
+          created? (when-not (tfs/file-exists? resolved)
+                     (tfs/ensure-parent-dirs resolved)
+                     (fs/writeFileSync resolved "" "utf8")
+                     true)
           original (fs/readFileSync resolved "utf8")]
-      (loop [content original
-             [edit & remaining] edits
-             applied 0]
-        (if-not edit
-          (do (fs/writeFileSync resolved content "utf8")
-              (let [display-path (util/display-path resolved path cwd)
-                    diff (util/unified-diff original content)]
-                {:content [{:type "text"
-                            :text (str display-path "\n" diff)}]}))
-          (let [result (apply-edit content edit)]
-            (if (:error result)
-              {:content [{:type "text" :text (:error result)}]
-               :is-error true}
-              (recur (:ok result) remaining (inc applied)))))))
+        (loop [content original
+               [edit & remaining] edits
+               applied 0]
+          (if-not edit
+            (do (fs/writeFileSync resolved content "utf8")
+                (let [display-path (util/display-path resolved path cwd)
+                      diff (util/unified-diff original content)
+                      info (when created? (str "(created new file)\n"))]
+                  {:content [{:type "text"
+                              :text (str display-path "\n" info diff)}]}))
+            (let [result (apply-edit content edit)]
+              (if (:error result)
+                {:content [{:type "text" :text (:error result)}]
+                 :is-error true}
+                (recur (:ok result) remaining (inc applied)))))))
     (catch :default e
       {:content [{:type "text" :text (str "Error editing file: " (.-message e))}]
        :is-error true})))
