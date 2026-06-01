@@ -32,6 +32,7 @@
          "3. Write a clear conventional commit message and commit with git_commit_with_user_approval\n\n"
          "Use conventional commit format (feat:, fix:, refactor:, chore:, docs:, etc.).\n"
          "Keep the commit message concise and descriptive. Do NOT add co-authored-by or generated-with lines.\n"
+         "When writing commit messages for fixes consider the chat session history and make semantic commit why this was changed and not outline what was changed\n"
          (when (seq args)
            (str "\nContext from the user: " args)))))
 
@@ -45,7 +46,7 @@
                  #js {:stdout "pipe" :stderr "pipe"
                       :cwd (.cwd js/process)})]
        (-> (js/Promise.all #js [(.text (.-stdout proc))
-                                 (.text (.-stderr proc))])
+                                (.text (.-stderr proc))])
            (.then (fn [results]
                     (let [stdout (aget results 0)
                           stderr (aget results 1)
