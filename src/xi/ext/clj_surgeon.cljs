@@ -63,12 +63,13 @@
                     30000)]
          (-> (js/Promise.all
               #js [(.text (.-stdout proc))
-                   (.text (.-stderr proc))])
+                   (.text (.-stderr proc))
+                   (.-exited proc)])
              (.then (fn [results]
                       (js/clearTimeout timer)
                       (let [stdout (aget results 0)
                             stderr (aget results 1)
-                            code (.-exitCode proc)
+                            code (aget results 2)
                             output (cond-> ""
                                      (seq stdout) (str stdout)
                                      (and (seq stderr) (not= 0 code))
@@ -119,12 +120,13 @@
                   10000)]
        (-> (js/Promise.all
             #js [(.text (.-stdout proc))
-                 (.text (.-stderr proc))])
+                 (.text (.-stderr proc))
+                 (.-exited proc)])
            (.then (fn [results]
                     (js/clearTimeout timer)
                     (let [stdout (aget results 0)
                           stderr (aget results 1)
-                          code (.-exitCode proc)
+                          code (aget results 2)
                           output (str (when (seq stdout) stdout)
                                       (when (seq stderr) (str "\n" stderr)))]
                       (resolve
@@ -156,12 +158,13 @@
                     15000)]
          (-> (js/Promise.all
               #js [(.text (.-stdout proc))
-                   (.text (.-stderr proc))])
+                   (.text (.-stderr proc))
+                   (.-exited proc)])
              (.then (fn [results]
                       (js/clearTimeout timer)
                       (let [stdout (aget results 0)
                             stderr (aget results 1)
-                            code (.-exitCode proc)
+                            code (aget results 2)
                             output (str (when (seq stdout) stdout)
                                         (when (seq stderr) stderr))]
                         (resolve
