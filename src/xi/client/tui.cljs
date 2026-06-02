@@ -847,7 +847,7 @@
                        title (if (nil? args) "Session Changes" (str "Diff: " args))]
                    (when-let [text (apply run-git-diff git-args)]
                      (open-diff! text title)))
-                 nil)}
+                 nil)})
 
             {:name "skill"
              :description "List or load on-demand skills"
@@ -875,7 +875,7 @@
                          :on-select (fn [item]
                                       (dispatch! (str "/skill load " (:value item))))})
                        (add-status-message! "No skills found in ~/.config/xi/skills/"))
-                     nil))))})])
+                     nil))))}])
 
         ;; ── Local Command Dispatch ──────────────────────────────────────────────
         ;; Check the central registry for :client-scoped commands.
