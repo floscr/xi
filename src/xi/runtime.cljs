@@ -17,6 +17,7 @@
             [xi.ext.plan-mode :as ext-plan-mode]
             [xi.ext.terminal-title :as ext-terminal-title]
             [xi.ext.projects :as ext-projects]
+            [xi.ext.gtd :as ext-gtd]
             [xi.ext.web :as ext-web]
             [xi.loop :as loop]
             [xi.provider :as provider]
@@ -62,7 +63,8 @@
                ext-terminal-title/extension
                ext-projects/extension
                ext-skills/extension
-               ext-clj-surgeon/extension]]
+               ext-clj-surgeon/extension
+               ext-gtd/extension]]
     (ext/register-extension! ext)))
 
 (defn- sync-hook-state!
@@ -230,9 +232,14 @@
                    "high")
         cwd (or (:cwd opts) (aget js/process.env "XI_CWD") (.cwd js/process))
         agents-files (if personal-agent? [] (system-prompt/find-agents-md cwd))
-        agents-md (if personal-agent?
-                    system-prompt/PERSONAL_AGENT_PROMPT
-                    (system-prompt/load-agents-md cwd))
+        agents-md (let [base (if personal-agent?
+                              system-prompt/PERSONAL_AGENT_PROMPT
+                              (system-prompt/load-agents-md cwd))
+                       ext-prompts (ext/get-ext-system-prompts)]
+                   (cond
+                     (and base ext-prompts) (str base "\n\n" ext-prompts)
+                     ext-prompts ext-prompts
+                     :else base))
         bus (events/create-bus)
         sess (atom (session/create-session cwd
                      (when personal-agent? {:personal-agent? true})))
