@@ -293,6 +293,16 @@
 
 ;; ── Tool/Command Access ───────────────────────────────────────────────────────
 
+(defn get-ext-system-prompts
+  "Collect :system-prompt strings from all registered extensions.
+   Returns a single string or nil."
+  []
+  (let [prompts (->> (:extensions @registry)
+                     (keep :system-prompt)
+                     seq)]
+    (when prompts
+      (str/join "\n\n" prompts))))
+
 (defn get-ext-tool-definitions
   "Return vec of tool definitions from registered extensions."
   []

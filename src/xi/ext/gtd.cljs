@@ -39,8 +39,27 @@
          (when extra
            (str "\nContext: " extra)))))
 
+(def ^:private GTD_PROMPT
+  "# GTD Task Management
+
+You have access to a GTD (Getting Things Done) task management system backed by org-mode files.
+
+## Tools
+
+- **gtd_list** — List tasks. Filter by `:todo` state (TODO, DONE, WAITING, CANCELLED), `:file`, or use `:all true` for items without a todo state.
+- **gtd_capture** — Create a new task. Requires `:title`. Optional: `:file` (default inbox.org), `:body`, `:todo` (default TODO).
+- **gtd_change** — Modify a task by `:id` (UUID) or `:query` (title substring). Set `:todo` to change state, or `:archive true` to remove it.
+
+## Workflow
+
+1. When the user asks about tasks, use `gtd_list` to see current items
+2. To capture new work, use `gtd_capture` — prefer short, actionable titles
+3. When work is done, use `gtd_change` with `:todo \"DONE\"` to mark it complete
+4. Use the `/gtd` command to get a recommendation on what to work on next")
+
 (def extension
   {:name "gtd"
+   :system-prompt GTD_PROMPT
    :commands [{:name "gtd"
                :description "Review tasks and get a recommendation for what to work on"
                :handler (fn [{:keys [args]}]
