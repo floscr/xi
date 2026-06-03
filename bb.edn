@@ -53,6 +53,11 @@
   {:doc "Watch-compile and rerun tests on changes"
    :task (shell "npx shadow-cljs watch test")}
 
+  dev:url
+  {:doc "Print Tailscale IP with frontend port"
+   :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
+           (println (str "http://" ip ":8100")))}
+
   dev:personal
   {:doc "Start headless server in personal agent mode"
    :task (shell "bun target/main.js server --headless --personal-agent-only")}}}
