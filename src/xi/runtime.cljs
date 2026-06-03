@@ -181,7 +181,7 @@
         pa? (:personal-agent? @sess)
         abort-signal (:abort-signal rt)]
     (when-not session-id
-      (emit! {:type :command-error :command "compact" :text "No active session to compact."})
+      (emit! {:type :command-error :command "truncate" :text "No active session to compact."})
       (js/Promise.resolve nil))
     (reset! (:busy rt) true)
     (reset! abort-signal false)
@@ -201,9 +201,9 @@
                                     "Acknowledge this summary briefly and wait for my next instruction."))))
         (.catch (fn [err]
                   (if (= "Compaction aborted" (.-message err))
-                    (emit! {:type :command-error :command "compact" :text "Compaction aborted."})
+                    (emit! {:type :command-error :command "truncate" :text "Compaction aborted."})
                     (emit! {:type :command-error
-                            :command "compact"
+                            :command "truncate"
                             :text (str "Compaction failed: " (.-message err))}))
                   nil))
         (.finally (fn []

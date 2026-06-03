@@ -242,7 +242,7 @@
      :handler cmd-model
      :scope :runtime}
 
-    {:name "compact"
+    {:name "truncate"
      :description "Summarize conversation to reduce context"
      :handler cmd-compact
      :scope :runtime}
