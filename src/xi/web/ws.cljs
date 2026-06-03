@@ -34,6 +34,22 @@
    "git_stage_hunks"               "git add"
    "git_commit_with_user_approval" "git commit"})
 
+(defn- format-tool-args-default
+  "Fallback: show key=value pairs for the first few short arguments."
+  [arguments]
+  (when (and arguments (or (map? arguments) (object? arguments)))
+    (let [entries (if (object? arguments)
+                   (map (fn [k] [k (unchecked-get arguments k)])
+                        (js/Object.keys arguments))
+                   (seq arguments))
+          pairs (->> entries
+                     (keep (fn [[k v]]
+                             (when (and (some? v) (string? v) (<= (count v) 200))
+                               (str (name k) "=" (first (str/split-lines v))))))
+                     (take 3))]
+      (when (seq pairs)
+        (str/join " " pairs)))))
+
 (defn- format-tool-title
   "Create a short display title for a tool call."
   [tool-name arguments]
@@ -51,7 +67,8 @@
                  "git_hunk"       (get-arg arguments :file)
                  "git_stage_hunks" (str/join " " (get-arg arguments :files))
                  "git_commit_with_user_approval" (get-arg arguments :message)
-                 nil)]
+                 ;; Fallback for unknown/MCP tools
+                 (format-tool-args-default arguments))]
     (if detail
       (let [short (first (str/split-lines detail))]
         (str nice-name " " (if (> (count short) 80) (str (subs short 0 80) "…") short)))
