@@ -17,13 +17,14 @@
                  #js {:stdout "pipe" :stderr "pipe"
                       :cwd org-cli-dir})]
        (-> (js/Promise.all #js [(.text (.-stdout proc))
-                                (.text (.-stderr proc))])
+                                (.text (.-stderr proc))
+                                (.-exited proc)])
            (.then (fn [results]
                     (let [stdout (aget results 0)
                           stderr (aget results 1)
-                          code (.-exitCode proc)]
+                          code   (aget results 2)]
                       (resolve
-                       (if (= 0 code)
+                       (if (zero? code)
                          {:content [{:type "text" :text (if (seq stdout) stdout "(no output)")}]}
                          {:content [{:type "text" :text (str "gtd error: " (if (seq stderr) stderr stdout))}]
                           :is-error true}))))))))))
