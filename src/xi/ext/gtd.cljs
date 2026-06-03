@@ -110,6 +110,7 @@
                        (-> (activate-task! task-id session-id cwd)
                            (.then
                             (fn [_]
+                              (ext/set-session-name! title)
                               (ext/insert-text!
                                (str "I'm starting work on the GTD task: " title)))))))})))))))))
 

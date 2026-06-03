@@ -303,6 +303,12 @@
          ;; Everything else → record
          ((:on-event recorder) event))))
 
+    ;; Let extensions set the session name without direct atom access
+    (ext/set-session-name-handler!
+     (fn [name-str]
+       (swap! sess assoc :name name-str)
+       (sync-hook-state! rt)))
+
     ;; Seed the hook state so extensions can read it immediately
     (sync-hook-state! rt)
 

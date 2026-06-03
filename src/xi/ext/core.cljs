@@ -231,6 +231,25 @@
     (handler message)
     (js/Promise.resolve false)))
 
+;; ── Runtime Bridge ────────────────────────────────────────────────────────────
+;; Extensions can update session metadata.  The runtime registers handlers
+;; at startup so that extensions don't need direct access to atoms.
+
+(defonce ^:private session-name-handler (atom nil))
+
+(defn set-session-name-handler!
+  "Set the session-name handler. Called by the runtime at startup.
+   handler-fn is (fn [name-str]) — sets the session name."
+  [handler-fn]
+  (reset! session-name-handler handler-fn))
+
+(defn set-session-name!
+  "Set the session name from an extension.
+   No-op if no runtime is connected."
+  [name-str]
+  (when-let [handler @session-name-handler]
+    (handler name-str)))
+
 ;; ── TUI Bridge ────────────────────────────────────────────────────────────────
 ;; Extensions can show completion menus and insert text into the editor.
 ;; The TUI (or other client) registers handlers at startup.
