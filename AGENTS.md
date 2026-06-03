@@ -4,11 +4,16 @@ Personal coding agent in ClojureScript + Bun.
 
 ## Build
 
+**Always use `bb` tasks for building — never call `npx shadow-cljs` directly.**
+
 ```bash
-npm install              # one-time: install shadow-cljs
-npx shadow-cljs compile main   # compile CLJS → JS
-bun target/main.js       # run
+npm install    # one-time: install shadow-cljs
+bb build       # compile CLJS → JS
+bb test        # compile and run tests
+bb tasks       # list all available tasks
 ```
+
+Do NOT use `npx shadow-cljs compile ...` — it frequently times out in agent shells. The `bb` tasks handle everything correctly.
 
 ### SDK Version Constraint
 
@@ -27,9 +32,8 @@ The `@anthropic-ai/claude-agent-sdk` must be pinned to **`0.2.110`** — the sam
 ### Unit Tests
 
 ```bash
-npm test                       # compile + run tests once
-npm run test:watch             # recompile + rerun on file changes
-npx shadow-cljs compile test   # equivalent to npm test
+bb test          # compile + run tests once
+bb test:watch    # recompile + rerun on file changes
 ```
 
 Tests use `cljs.test` via the shadow-cljs `:node-test` target. Test files live in `test/` mirroring the `src/` layout (e.g. `test/xi/commands_test.cljs` tests `src/xi/runtime/commands.cljs`).
