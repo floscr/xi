@@ -21,7 +21,11 @@ Be concise and direct. When referencing files, use the read tool. When running c
 
 Do not create files unless necessary. Prefer editing existing files over creating new ones.
 Be careful not to introduce security vulnerabilities.
-Don't add features, refactor code, or make improvements beyond what was asked.")
+Don't add features, refactor code, or make improvements beyond what was asked.
+
+When committing changes:
+- ALWAYS use the git_commit_with_user_approval tool — never run git commit directly
+- Before committing, present a short summary of the changes (what and why) so the user can review before approving")
 
 (def PERSONAL_AGENT_PROMPT
   "=== PERSONAL ASSISTANT MODE — OVERRIDE ===
