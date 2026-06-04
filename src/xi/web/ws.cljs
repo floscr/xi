@@ -443,6 +443,12 @@
       (when-let [text (:text event)]
         (append-msg! {:type :status :text text})))
 
+    :dictation-result
+    (let [cbs (:dictation-callbacks @state/app-state)]
+      (when-let [cb (first cbs)]
+        (cb (:text event))
+        (swap! state/app-state update :dictation-callbacks subvec 1)))
+
     :command-error
     (append-msg! {:type :error :text (:text event)})
 
@@ -588,6 +594,14 @@
                 payload)]
         (cache/add-pending! pm)
         (swap! state/app-state update :pending-messages conj pm)))))
+
+(defn send-dictation!
+  "Send recorded audio (base64) to server for transcription.
+   Calls callback with transcribed text when result arrives.
+   Supports multiple in-flight requests via a callback queue."
+  [audio-b64 callback]
+  (swap! state/app-state update :dictation-callbacks (fnil conj []) callback)
+  (send-raw! {:type :dictate :audio audio-b64}))
 
 (defn dispatch-with-images!
   "Send a prompt with attached images to the server.

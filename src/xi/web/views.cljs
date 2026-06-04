@@ -263,8 +263,168 @@
           (icon/icon {:icon-name :x :size :sm})]])
       images)]))
 
+;; ---------------------------------------------------------------------------
+;; Dictation (voice recording)
+;; ---------------------------------------------------------------------------
+
+(defonce ^:private media-recorder (atom nil))
+
+(def ^:private SEGMENT_MS
+  "Duration of each recording segment in milliseconds."
+  4000)
+
+(defonce ^:private dictation-stream (atom nil))
+(defonce ^:private pending-transcriptions (atom 0))
+
+(defn- write-wav-header!
+  "Write a 44-byte PCM WAV header into a DataView."
+  [^js view sample-rate num-samples]
+  (let [data-bytes (* num-samples 2)]
+    (doseq [[i c] (map-indexed vector "RIFF")]
+      (.setUint8 view i (.charCodeAt c 0)))
+    (.setUint32 view 4 (+ 36 data-bytes) true)
+    (doseq [[i c] (map-indexed vector "WAVE")]
+      (.setUint8 view (+ 8 i) (.charCodeAt c 0)))
+    (doseq [[i c] (map-indexed vector "fmt ")]
+      (.setUint8 view (+ 12 i) (.charCodeAt c 0)))
+    (.setUint32 view 16 16 true)
+    (.setUint16 view 20 1 true)
+    (.setUint16 view 22 1 true)
+    (.setUint32 view 24 sample-rate true)
+    (.setUint32 view 28 (* sample-rate 2) true)
+    (.setUint16 view 32 2 true)
+    (.setUint16 view 34 16 true)
+    (doseq [[i c] (map-indexed vector "data")]
+      (.setUint8 view (+ 36 i) (.charCodeAt c 0)))
+    (.setUint32 view 40 data-bytes true)))
+
+(defn- encode-pcm-wav
+  "Encode a Float32Array of mono audio samples into a 16-bit PCM WAV ArrayBuffer."
+  [^js channel-data sample-rate]
+  (let [len (.-length channel-data)
+        wav-buf (js/ArrayBuffer. (+ 44 (* len 2)))
+        view (js/DataView. wav-buf)]
+    (write-wav-header! view sample-rate len)
+    (dotimes [i len]
+      (let [s (aget channel-data i)
+            v (js/Math.max -1 (js/Math.min 1 s))]
+        (.setInt16 view (+ 44 (* i 2))
+                   (if (< v 0) (* v 32768) (* v 32767))
+                   true)))
+    wav-buf))
+
+(defn- array-buffer->base64
+  "Convert an ArrayBuffer to a base64 string."
+  [^js buf]
+  (let [uint8 (js/Uint8Array. buf)
+        binary (apply str (map #(js/String.fromCharCode %) uint8))]
+    (js/btoa binary)))
+
+(defn- append-dictation-text!
+  "Append transcribed text to the compose box."
+  [text]
+  (swap! state/app-state update :compose-text
+         (fn [prev]
+           (let [prev (or prev "")]
+             (if (seq prev)
+               (str prev " " text)
+               text)))))
+
+(defn- send-segment-for-transcription!
+  "Convert a segment's audio chunks to WAV, send to server, append result."
+  [chunks]
+  (swap! pending-transcriptions inc)
+  (let [blob (js/Blob. (clj->js chunks))]
+    (-> (.arrayBuffer blob)
+        (.then (fn [buf]
+                 (let [audio-ctx (js/AudioContext. #js {:sampleRate 16000})]
+                   (-> (.decodeAudioData audio-ctx buf)
+                       (.then (fn [decoded]
+                                (let [wav-buf (encode-pcm-wav (.getChannelData decoded 0)
+                                                              (.-sampleRate decoded))
+                                      b64 (array-buffer->base64 wav-buf)]
+                                  (ws/send-dictation!
+                                   b64
+                                   (fn [text]
+                                     (swap! pending-transcriptions dec)
+                                     (when (seq text)
+                                       (append-dictation-text! text)))))))))))
+        (.catch (fn [err]
+                  (js/console.error "[dictation] segment transcription failed:" err)
+                  (swap! pending-transcriptions dec))))))
+
+(declare start-segment!)
+
+(defn- stop-segment!
+  "Stop the current MediaRecorder segment (triggers onstop → transcribe → next segment)."
+  []
+  (when-let [recorder @media-recorder]
+    (when (= "recording" (.-state recorder))
+      (.stop recorder))))
+
+(defn- start-segment!
+  "Start a new recording segment on the given mic stream.
+   After SEGMENT_MS, auto-stops and starts the next segment."
+  [^js stream]
+  (when @dictation-stream
+    (let [chunks (atom [])
+          recorder (js/MediaRecorder. stream #js {:mimeType "audio/webm;codecs=opus"})]
+      (set! (.-ondataavailable recorder)
+            (fn [e]
+              (when (pos? (.-size (.-data e)))
+                (swap! chunks conj (.-data e)))))
+      (set! (.-onstop recorder)
+            (fn [_]
+              (when (seq @chunks)
+                (send-segment-for-transcription! @chunks))
+              ;; Start next segment if still recording
+              (when @dictation-stream
+                (start-segment! stream))))
+      (.start recorder)
+      (reset! media-recorder recorder)
+      ;; Auto-stop after SEGMENT_MS to trigger next segment
+      (js/setTimeout
+       (fn []
+         (when (and @dictation-stream
+                    (= "recording" (.-state recorder)))
+           (.stop recorder)))
+       SEGMENT_MS))))
+
+(defn- start-dictation! []
+  (-> (.getUserMedia js/navigator.mediaDevices
+                     #js {:audio #js {:sampleRate 16000 :channelCount 1}})
+      (.then (fn [stream]
+               (reset! dictation-stream stream)
+               (reset! pending-transcriptions 0)
+               (swap! state/app-state assoc :recording? true)
+               (start-segment! stream)))
+      (.catch (fn [err]
+                (js/console.error "[dictation] mic access denied:" err)))))
+
+(defn- stop-dictation! []
+  (when-let [stream @dictation-stream]
+    ;; Clear stream first so onstop won't start another segment
+    (reset! dictation-stream nil)
+    ;; Stop current recorder (will trigger final transcription)
+    (stop-segment!)
+    ;; Release mic
+    (doseq [track (.getTracks stream)]
+      (.stop track))
+    (reset! media-recorder nil)
+    (swap! state/app-state dissoc :recording?)))
+
+(defn- toggle-dictation! []
+  (if @dictation-stream
+    (stop-dictation!)
+    (start-dictation!)))
+
+;; ---------------------------------------------------------------------------
+;; Compose box
+;; ---------------------------------------------------------------------------
+
 (defn- compose-box []
-  (let [{:keys [compose-text compose-images busy?]} @state/app-state
+  (let [{:keys [compose-text compose-images busy? recording?]} @state/app-state
+        transcribing? (and (not recording?) (pos? @pending-transcriptions))
         can-send? (and (not busy?)
                        (or (seq (str/trim (or compose-text "")))
                            (seq compose-images)))]
@@ -294,6 +454,17 @@
                                                           (when (and (= (.-key e) "Enter") (not (.-shiftKey e)))
                                                             (.preventDefault e)
                                                             (send-message!)))}}})]
+      [:button {:class ["icon-btn" (when recording? "recording-active")]
+                :title (cond
+                         transcribing? "Transcribing..."
+                         recording? "Stop recording"
+                         :else "Voice input")
+                :disabled transcribing?
+                :on {:click (fn [_] (toggle-dictation!))}}
+       (cond
+         transcribing? (spinner/spinner {:size :sm})
+         recording? [:span {:style {:font-size "16px"}} "⏹"]
+         :else [:span {:style {:font-size "16px"}} "🎤"])]
       [:button {:class ["icon-btn"]
                 :disabled (not can-send?)
                 :on {:click (fn [_] (send-message!))}}

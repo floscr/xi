@@ -353,6 +353,7 @@ body {
 }
 
 .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.icon-btn.recording-active { color: var(--danger, #ef4444); }
 
 /* ---- Status bubble (inside timeline as assistant message) ---- */
 .status-bubble {

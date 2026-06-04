@@ -10,11 +10,50 @@
 
    Events flow out, commands flow in.
    Works from browsers, CLI tools, any WebSocket client."
-  (:require [xi.runtime :as runtime]
+  (:require [clojure.string :as str]
+            [xi.runtime :as runtime]
             [xi.server.room-manager :as rm]
             [xi.session :as session]))
 
 (def ^:private DEFAULT_PORT 7474)
+
+(def ^:private models-dir
+  (str (aget js/process.env "HOME") "/.local/share/whisper-models"))
+
+(def ^:private default-model "base.en")
+
+(defn- transcribe-audio!
+  "Transcribe base64-encoded WAV audio with whisper-cli.
+   Returns a promise of the transcribed text string."
+  [audio-b64]
+  (let [model-path (str models-dir "/ggml-" default-model ".bin")
+        tmp-path (str "/tmp/xi-dictate-" (.now js/Date) ".wav")
+        buf (js/Buffer.from audio-b64 "base64")]
+    (-> (.write (js/Bun.file tmp-path) buf)
+        (.then
+         (fn [_]
+           (let [proc (js/Bun.spawn
+                        #js ["whisper-cli"
+                             "--model" model-path
+                             "--no-timestamps"
+                             "--no-prints"
+                             "--language" "en"
+                             "--prompt" "Technical dictation. Code terms, function names, and programming concepts may appear."
+                             "--file" tmp-path]
+                        #js {:stdout "pipe" :stderr "pipe"})]
+             (-> (.text (.-stdout proc))
+                 (.then (fn [stdout]
+                          (try (.unlinkSync (js/require "node:fs") tmp-path)
+                               (catch :default _ nil))
+                          (-> stdout
+                              str/trim
+                              (str/replace #"(?m)^\[.*\]$" "")
+                              (str/replace #"\.{2,}" "")
+                              str/trim)))))))
+        (.catch (fn [err]
+                  (try (.unlinkSync (js/require "node:fs") tmp-path)
+                       (catch :default _ nil))
+                  (throw err))))))
 
 (defn- waiting-for-join-msg
   "Build the waiting-for-join handshake payload."
@@ -95,7 +134,8 @@
                              msg (update raw :type keyword)]
                          (if-let [state (get @conn-state ws)]
                            ;; Already joined
-                           (if (= :leave (:type msg))
+                           (case (:type msg)
+                             :leave
                              ;; Leave current room, go back to room list
                              (let [{:keys [room-id rt-client]} state]
                                (when-let [room (rm/get-room manager room-id)]
@@ -112,7 +152,21 @@
                                           (clj->js (waiting-for-join-msg manager personal-agent?))))
                                ;; Notify other lobby clients about the room change
                                (broadcast-lobby!))
-                             ;; Normal command — dispatch to runtime
+
+                             :dictate
+                             ;; Transcribe audio from browser via whisper-cli
+                             (-> (transcribe-audio! (:audio msg))
+                                 (.then (fn [text]
+                                          (.send ws (js/JSON.stringify
+                                                     (clj->js {:type :dictation-result
+                                                               :text text})))))
+                                 (.catch (fn [err]
+                                           (.send ws (js/JSON.stringify
+                                                      (clj->js {:type :dictation-result
+                                                                :text ""
+                                                                :error (.-message err)}))))))
+
+                             ;; default — dispatch to runtime
                              (let [{:keys [room-id]} state
                                    room (rm/get-room manager room-id)]
                                (when room
