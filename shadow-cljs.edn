@@ -1,5 +1,5 @@
 {:deps true
- :dev-http {8100 "resources/public"}
+ :dev-http {8100 {:root "resources/public" :host "0.0.0.0"}}
  :builds
  {:main
   {:target :node-script

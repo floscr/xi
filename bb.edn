@@ -2,9 +2,13 @@
                             :git/sha "3d9e53bc38b818bfcee312065ded0aef83bdecf4"}}
  :tasks
  {:requires ([tmux-dev.core :as td])
-  :init (def config {:session "xi"
-                     :windows [["watch" "npx shadow-cljs watch main web"]]
-                     :print   ["Web: http://localhost:8100"]})
+  :init (do
+          (def config {:session "xi"
+                       :windows [["watch" "npx shadow-cljs watch main web"]]
+                       :print   ["Web: http://localhost:8100"]})
+          (def serve-config {:session "xi-serve"
+                             :windows [["watch" "npx shadow-cljs watch main web"]
+                                       ["server" "bun target/main.js server --headless"]]}))
 
   dev         {:doc "Start tmux dev session"
                :task (td/start config)}
@@ -60,4 +64,19 @@
 
   dev:personal
   {:doc "Start headless server in personal agent mode"
-   :task (shell "bun target/main.js server --headless --personal-agent-only")}}}
+   :task (shell "bun target/main.js server --headless --personal-agent-only")}
+
+  serve
+  {:doc "Start tmux serve session with Tailscale URL"
+   :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
+           (td/start (assoc serve-config :print [(str "Web: http://" ip ":8100")]))
+           (td/attach serve-config))}
+
+  serve:stop
+  {:doc "Stop tmux serve session"
+   :task (td/stop serve-config)}
+
+  serve:restart
+  {:doc "Restart tmux serve session"
+   :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
+           (td/restart (assoc serve-config :print [(str "Web: http://" ip ":8100")])))}}}
