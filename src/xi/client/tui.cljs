@@ -1048,13 +1048,23 @@
 
             :user-message
             (let [text (:text event)
-                  is-local (= text @last-local-prompt)]
+                  is-local (= text @last-local-prompt)
+                  has-code-fence (str/includes? text "```")
+                  image-suffix (when (seq (:images event))
+                                 (str " " (ansi/fg :dim (str "(" (count (:images event)) " image(s))"))))]
               ;; Always show the message — local or remote
               (node/append-children! chat-container
                 [(node/spacer)
-                 (node/text (str (ansi/fg :bold "you") ": " text
-                                 (when (seq (:images event))
-                                   (str " " (ansi/fg :dim (str "(" (count (:images event)) " image(s))"))))))
+                 (if has-code-fence
+                   ;; Render through markdown for syntax-highlighted code blocks
+                   (let [first-nl (str/index-of text "\n")
+                         first-line (if first-nl (subs text 0 first-nl) text)
+                         rest-text (when first-nl (subs text (inc first-nl)))]
+                     [(node/text (str (ansi/fg :bold "you") ": " first-line image-suffix))
+                      (when rest-text
+                        (md/make-markdown rest-text))])
+                   ;; Plain text for simple messages
+                   (node/text (str (ansi/fg :bold "you") ": " text image-suffix)))
                  (node/spacer)])
               (tui/render-now!)
               ;; Clear after matching
@@ -1249,9 +1259,17 @@
                   (for [entry (:branch-entries event)]
                     (case (:type entry)
                       "user-message"
-                      [(node/spacer)
-                       (node/text (str (ansi/fg :bold "you") ": " (:text entry)))
-                       (node/spacer)]
+                      (let [text (:text entry)]
+                        [(node/spacer)
+                         (if (str/includes? text "```")
+                           (let [first-nl (str/index-of text "\n")
+                                 first-line (if first-nl (subs text 0 first-nl) text)
+                                 rest-text (when first-nl (subs text (inc first-nl)))]
+                             [(node/text (str (ansi/fg :bold "you") ": " first-line))
+                              (when rest-text
+                                (md/make-markdown rest-text))])
+                           (node/text (str (ansi/fg :bold "you") ": " text)))
+                         (node/spacer)])
 
                       "assistant-text"
                       [(md/make-markdown (:text entry))
@@ -1308,11 +1326,19 @@
                         "user"
                         (let [n @pending-img-count
                               img-suffix (when (pos? n)
-                                           (str " " (ansi/fg :dim (str "(📎 " n " image" (when (> n 1) "s") ")"))))]
+                                           (str " " (ansi/fg :dim (str "(📎 " n " image" (when (> n 1) "s") ")"))))
+                              text (:text block)]
                           (reset! pending-img-count 0)
                           (node/append-children! chat-container
                             [(node/spacer)
-                             (node/text (str (ansi/fg :bold "you") ": " (:text block) img-suffix))
+                             (if (str/includes? text "```")
+                               (let [first-nl (str/index-of text "\n")
+                                     first-line (if first-nl (subs text 0 first-nl) text)
+                                     rest-text (when first-nl (subs text (inc first-nl)))]
+                                 [(node/text (str (ansi/fg :bold "you") ": " first-line img-suffix))
+                                  (when rest-text
+                                    (md/make-markdown rest-text))])
+                               (node/text (str (ansi/fg :bold "you") ": " text img-suffix)))
                              (node/spacer)]))
                         "assistant"
                         (do (node/append-children! chat-container
