@@ -267,6 +267,7 @@
 (defonce ^:private render-handler (atom nil))
 (defonce ^:private completion-handler (atom nil))
 (defonce ^:private insert-text-handler (atom nil))
+(defonce ^:private delete-chars-handler (atom nil))
 (defonce ^:private submit-text-handler (atom nil))
 
 (defn set-render-handler!
@@ -308,6 +309,19 @@
   [text]
   (when-let [handler @insert-text-handler]
     (handler text)))
+
+(defn set-delete-chars-handler!
+  "Set the delete-chars-back handler. Called by TUI/client at startup.
+   handler-fn is (fn [n]) — deletes n chars before cursor."
+  [handler-fn]
+  (reset! delete-chars-handler handler-fn))
+
+(defn delete-chars-before-cursor!
+  "Delete n characters before the editor cursor from an extension.
+   No-op if no TUI is connected."
+  [n]
+  (when-let [handler @delete-chars-handler]
+    (handler n)))
 
 (defn set-submit-text-handler!
   "Set the submit-text handler. Called by TUI/client at startup.

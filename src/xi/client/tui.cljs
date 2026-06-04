@@ -1034,6 +1034,9 @@
         _ (ext/set-insert-text-handler!
            (fn [text]
              ((:insert-text @editor-comp-ref) text)))
+        _ (ext/set-delete-chars-handler!
+           (fn [n]
+             ((:delete-chars-back @editor-comp-ref) n)))
         _ (ext/set-submit-text-handler!
            (fn [text]
              (when (not= @active-view "Chat")

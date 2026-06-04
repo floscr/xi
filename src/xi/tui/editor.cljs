@@ -475,6 +475,32 @@
                                                        :history-index -1)))))
                            (tui/request-panel-render!))
 
+        delete-chars-back
+        (fn [n]
+          (when (pos? n)
+            (push-undo! :delete-back)
+            (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                           ;; Flatten all text, compute absolute cursor pos, delete n chars before it
+                           (let [full-text (str/join "\n" lines)
+                                 abs-pos (+ cursor-col
+                                            (reduce + 0 (map #(inc (count (nth lines %)))
+                                                             (range cursor-line))))
+                                 del-start (max 0 (- abs-pos n))
+                                 new-text (str (subs full-text 0 del-start)
+                                               (subs full-text abs-pos))
+                                 new-lines (vec (str/split new-text #"\n" -1))
+                                 ;; Compute new cursor position from del-start
+                                 before-cursor (subs new-text 0 del-start)
+                                 before-parts (str/split before-cursor #"\n" -1)
+                                 new-cursor-line (dec (count before-parts))
+                                 new-cursor-col (count (last before-parts))]
+                             (-> s
+                                 (assoc :lines new-lines
+                                        :cursor-line new-cursor-line
+                                        :cursor-col new-cursor-col
+                                        :cached-width nil :cached-lines nil)))))
+            (tui/request-panel-render!)))
+
         do-undo (fn []
                   (swap! state (fn [{:keys [undo-stack] :as s}]
                                  (if (seq undo-stack)
@@ -718,6 +744,7 @@
      :get-text get-text
      :set-text set-text
      :insert-text insert-text-bulk
+     :delete-chars-back delete-chars-back
      :add-history add-history
      :invalidate (fn [] (swap! state assoc :cached-width nil :cached-lines nil))
      :handle-input handle-input
