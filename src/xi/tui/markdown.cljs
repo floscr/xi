@@ -5,7 +5,7 @@
             [xi.tui.core :as tui]
             [xi.markdown.ansi :as md-ansi]))
 
-(def ^:private code-bg "\033[48;2;67;76;94m")
+(def ^:private code-bg "\033[48;2;38;44;55m")
 (def ^:private code-fg "\033[38;2;255;255;255m")
 
 (defn- render-md-text
