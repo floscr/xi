@@ -114,7 +114,7 @@
 
 (defn- parse-key-descriptor
   "Parse a key descriptor like \"alt+p\" into a match function (fn [data] -> bool).
-   Supports: alt+<char>, ctrl+shift+<char>."
+   Supports: alt+<char>, ctrl+<char>, ctrl+shift+<char>."
   [desc]
   (let [parts (str/split (str/lower-case desc) #"\+")
         key-char (last parts)
@@ -125,6 +125,13 @@
         (fn [data]
           (or (= data (str ESC key-char))
               (= data (str ESC "[" code ";3u")))))
+
+      ["ctrl"]
+      (let [legacy-code (- (.charCodeAt (.toUpperCase key-char) 0) 64)
+            codepoint (.charCodeAt key-char 0)]
+        (fn [data]
+          (or (= data (str (char legacy-code)))
+              (= data (str ESC "[" codepoint ";5u")))))
 
       ["ctrl" "shift"]
       (let [code (.charCodeAt key-char 0)]
@@ -137,9 +144,12 @@
 (defn get-keybindings
   "Return registered keybindings as [{:key-fn (fn [data]) :handler fn}]."
   []
-  (mapv (fn [{:keys [key handler]}]
-          {:key-fn (parse-key-descriptor key)
-           :handler handler})
+  (mapv (fn [{:keys [key handler when-fn]}]
+          (cond-> {:key-fn (if when-fn
+                             (let [base-fn (parse-key-descriptor key)]
+                               (fn [data] (and (when-fn) (base-fn data))))
+                             (parse-key-descriptor key))
+                   :handler handler}))
         (:keybindings @registry)))
 
 ;; ── Hook Dispatch ─────────────────────────────────────────────────────────────
@@ -254,9 +264,23 @@
 ;; Extensions can show completion menus and insert text into the editor.
 ;; The TUI (or other client) registers handlers at startup.
 
+(defonce ^:private render-handler (atom nil))
 (defonce ^:private completion-handler (atom nil))
 (defonce ^:private insert-text-handler (atom nil))
 (defonce ^:private submit-text-handler (atom nil))
+
+(defn set-render-handler!
+  "Set the render-request handler. Called by TUI/client at startup.
+   handler-fn is (fn []) — triggers a TUI re-render."
+  [handler-fn]
+  (reset! render-handler handler-fn))
+
+(defn request-render!
+  "Request a TUI re-render from an extension.
+   No-op if no TUI is connected."
+  []
+  (when-let [handler @render-handler]
+    (handler)))
 
 (defn set-completion-handler!
   "Set the completion menu handler. Called by TUI/client at startup.

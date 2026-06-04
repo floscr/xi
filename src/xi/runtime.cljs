@@ -17,6 +17,7 @@
             [xi.ext.plan-mode :as ext-plan-mode]
             [xi.ext.terminal-title :as ext-terminal-title]
             [xi.ext.projects :as ext-projects]
+            [xi.ext.dictation :as ext-dictation]
             [xi.ext.gtd :as ext-gtd]
             [xi.ext.web :as ext-web]
             [xi.loop :as loop]
@@ -64,6 +65,7 @@
                ext-projects/extension
                ext-skills/extension
                ext-clj-surgeon/extension
+               ext-dictation/extension
                ext-gtd/extension]]
     (ext/register-extension! ext)))
 

@@ -511,6 +511,11 @@
 
         handle-input (fn [data]
                        (cond
+                         ;; Extension keybindings (checked first so they can intercept Ctrl+C etc.)
+                         (some (fn [{:keys [key-fn]}] (key-fn data)) ext-keybindings)
+                         (let [{:keys [handler]} (first (filter #((:key-fn %) data) ext-keybindings))]
+                           (handler))
+
                          ;; Ctrl+C
                          (ctrl? data "C")
                          (if (seq (str/trim (get-text)))
@@ -658,11 +663,6 @@
                          ;; Alt+V — paste clipboard image
                          (is-alt-v? data)
                          (when on-paste-image (on-paste-image))
-
-                         ;; Extension keybindings
-                         (some (fn [{:keys [key-fn]}] (key-fn data)) ext-keybindings)
-                         (let [{:keys [handler]} (first (filter #((:key-fn %) data) ext-keybindings))]
-                           (handler))
 
                          ;; Bracketed paste
                          (is-paste-start? data)
