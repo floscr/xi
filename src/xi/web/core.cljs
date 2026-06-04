@@ -84,6 +84,17 @@
 ;; Init
 ;; ---------------------------------------------------------------------------
 
+(defn- setup-visibility-listener!
+  "Reconnect WS when returning from background (iOS locks, tab switches).
+   Mobile browsers kill WS connections aggressively when backgrounded."
+  []
+  (.addEventListener js/document "visibilitychange"
+    (fn []
+      (when (= "visible" (.-visibilityState js/document))
+        (when-not (:connected? @state/app-state)
+          (js/console.log "[ws] page visible, forcing reconnect")
+          (ws/connect!))))))
+
 (defn ^:export init! []
   (js/console.log "[xi-web] starting")
 
@@ -101,6 +112,7 @@
 
   (render! @state/app-state)
   (setup-viewport!)
+  (setup-visibility-listener!)
 
   ;; Then connect WS — will refresh/override with live data
   (ws/connect!))

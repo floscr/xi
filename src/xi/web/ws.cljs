@@ -12,6 +12,7 @@
 (defonce ^:private ws-conn (atom nil))
 (defonce ^:private reconnect-timer (atom nil))
 (defonce ^:private reconnect-delay (atom 1000))
+(defonce ^:private joined? (atom false))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
@@ -144,8 +145,12 @@
                               (map-indexed vector sessions))]
                 (if idx
                   (join-and-resume! idx)
-                  ;; Session not in list — stay on cached view
-                  nil))
+                  ;; Session gone from server — join latest or go home
+                  (if (seq rooms)
+                    (join-room! (:id (first rooms)))
+                    (do
+                      (swap! state/app-state assoc :room-id nil :session-id nil :messages [])
+                      (router/navigate! {:page :home})))))
 
               has-pending?
               ;; Offline new session with pending messages — join new room to flush
@@ -171,6 +176,7 @@
     :room-joined
     (let [room-id (:room-id event)
           sid (session-id-for-room room-id)]
+      (reset! joined? true)
       (swap! state/app-state assoc
              :room-id room-id
              :session-id sid)
@@ -182,7 +188,8 @@
     :ready
     (swap! state/app-state assoc
            :model (:model event)
-           :cwd (:cwd event))
+           :cwd (:cwd event)
+           :commands (or (:commands event) []))
 
     :user-message
     (do
@@ -511,15 +518,14 @@
           (fn [_]
             (js/console.log (str "[ws] connected to " url))
             (reset! reconnect-delay 1000)
-            (swap! state/app-state assoc :connected? true)
-            ;; Flush any pending messages after a short delay
-            ;; (wait for join handshake to complete first)
-            (js/setTimeout flush-pending! 500)))
+            (reset! joined? false)
+            (swap! state/app-state assoc :connected? true)))
 
     (set! (.-onclose ws)
           (fn [_]
             (js/console.log "[ws] disconnected, reconnecting...")
-            (swap! state/app-state assoc :connected? false)
+            (reset! joined? false)
+            (swap! state/app-state assoc :connected? false :busy? false)
             (when-let [t @reconnect-timer]
               (js/clearTimeout t))
             (reset! reconnect-timer
@@ -543,6 +549,7 @@
                 (js/console.error "[ws] parse error:" err)))))))
 
 (defn disconnect! []
+  (reset! joined? false)
   (when-let [ws @ws-conn]
     (.close ws)
     (reset! ws-conn nil))
@@ -567,14 +574,14 @@
 
 (defn dispatch!
   "Send a command or prompt to the server.
-   If offline, queues as pending message.
+   If offline or not yet joined, queues as pending message.
    Accepts a string (prompt or /command), a map ({:type :abort}),
    or a map with :text and :images for image attachments."
   [command]
   (let [payload (if (string? command)
                   (parse-command command)
                   command)
-        sent? (send-raw! payload)]
+        sent? (and @joined? (send-raw! payload))]
     ;; Watch session for unread tracking when sending a prompt
     (when (= :prompt (:type payload))
       (when-let [sid (:session-id @state/app-state)]
@@ -638,6 +645,7 @@
 (defn leave-room!
   "Leave the current room and return to the room list."
   []
+  (reset! joined? false)
   (cache/clear-last-room!)
   (swap! state/app-state assoc :room-id nil :session-id nil)
   (router/navigate! {:page :home})
