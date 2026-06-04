@@ -1,4 +1,34 @@
-[   {:pattern "^# .*$" :token :comment}
-   {:pattern "[{]{3}[^}]+[}]{3}" :token :name-builtin}
+[  ;; Headings with TODO keywords (consume full line)
+   {:pattern "^\\*+\\s+(TODO|DONE|WAITING|CANCELLED|ACTIVE|NEXT|SOMEDAY|HOLD)\\b.*$" :token :keyword-decl}
+   ;; Heading stars and title (plain headings)
+   {:pattern "^\\*+\\s+.*$" :token :keyword}
+
+   ;; Property drawer boundaries
+   {:pattern "^\\s*:(PROPERTIES|END):" :token :comment}
+   ;; Property key-value lines (consume full line)
+   {:pattern "^\\s*:[A-Z][A-Z_]*:.*$" :token :name-builtin}
+
+   ;; Block keywords (#+BEGIN, #+END, etc.)
+   {:pattern "^\\s*#\\+[A-Za-z_]+.*$" :token :keyword-special}
+
+   ;; Inactive timestamps [2026-06-03 Wed 10:54]
+   {:pattern "\\[\\d{4}-\\d{2}-\\d{2}[^\\]]*\\]" :token :string}
+   ;; Active timestamps <2026-06-03 Wed>
+   {:pattern "<\\d{4}-\\d{2}-\\d{2}[^>]*>" :token :string}
+
+   ;; Links [[target][desc]] or [[target]]
+   {:pattern "\\[\\[[^\\]]+\\]\\]" :token :name-builtin}
+
+   ;; Tags :tag1:tag2:
+   {:pattern ":[A-Za-z0-9_@]+:" :token :string-symbol}
+
+   ;; Inline code ~code~ and =verbatim=
+   {:pattern "~[^~\\n]+~" :token :name-fn}
+   {:pattern "=[^=\\n]+=" :token :name-fn}
+
+   ;; Comments
+   {:pattern "^\\s*#\\s.*$" :token :comment}
+
+   ;; Fallback
    {:pattern "\\n" :token :text}
    {:pattern "." :token :text}]

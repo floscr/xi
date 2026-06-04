@@ -68,11 +68,15 @@
                 (let [tokens (-> (hl/tokenize grammar code) hl/merge-adjacent)]
                   (mapv hl-theme/colorize (hl/split-tokens-by-line tokens)))
                 lines)]
-          (into [{:text "" :code? true}]
-                (concat
-                 (mapv (fn [line] {:text (ansi/truncate-to-width (str "  " line) width) :code? true})
-                       highlighted-lines)
-                 [{:text "" :code? true}])))
+          (let [fence-open (str "  " (ansi/fg :dim (str "```" (or lang ""))))
+                fence-close (str "  " (ansi/fg :dim "```"))]
+            (into [{:text "" :code? true}
+                   {:text (ansi/truncate-to-width fence-open width) :code? true}]
+                  (concat
+                   (mapv (fn [line] {:text (ansi/truncate-to-width (str "  " line) width) :code? true})
+                         highlighted-lines)
+                   [{:text (ansi/truncate-to-width fence-close width) :code? true}
+                    {:text "" :code? true}]))))
 
         :ul
         (let [[_ items] block
