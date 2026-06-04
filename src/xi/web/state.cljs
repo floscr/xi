@@ -19,6 +19,8 @@
          :compose-images   []             ;; [{:data base64 :media-type mime :preview-url blob-url}]
          :model            nil
          :cwd              nil
+         :commands         []              ;; [{:name :description}] from server
+         :slash-selected   0               ;; selected index in slash command dropdown
          :collapsed-blocks #{}
          :resume-sessions  nil
          :lightbox-image   nil}))          ;; nil = hidden, [] = loading, [...] = show picker

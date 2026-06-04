@@ -318,7 +318,9 @@
                    :model model
                    :cwd cwd
                    :agents-files agents-files
-                   :extensions (ext/list-extensions)})
+                   :extensions (ext/list-extensions)
+                   :commands (mapv (fn [c] {:name (:name c) :description (:description c)})
+                                  (cmd-registry/list-commands {:scope :runtime}))})
     rt))
 
 (defn subscribe!
@@ -347,7 +349,9 @@
                              :model model
                              :cwd cwd
                              :agents-files agents-files
-                             :extensions (ext/list-extensions)}))
+                             :extensions (ext/list-extensions)
+                             :commands (mapv (fn [c] {:name (:name c) :description (:description c)})
+                                            (cmd-registry/list-commands {:scope :runtime}))}))
       ;; Replay event history for late-joining clients
       (let [history @(:event-history rt)]
         (when (seq history)

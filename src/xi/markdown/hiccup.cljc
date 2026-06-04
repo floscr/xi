@@ -1,6 +1,9 @@
 (ns xi.markdown.hiccup
   "Renders markdown AST tokens to Replicant-compatible hiccup."
-  (:require [xi.markdown.parse :as parse]))
+  (:require [xi.markdown.parse :as parse]
+            [xi.highlight.core :as hl]
+            [xi.highlight.bundle :as grammars]
+            [xi.highlight.theme-css :as theme]))
 
 ;; ---------------------------------------------------------------------------
 ;; Inline rendering
@@ -48,10 +51,19 @@
           (into [htag] (render-inline tokens)))
 
         :code-block
-        (let [[_ {:keys [lang]} code] block]
-          [:pre (if lang
-                  [:code {:class (str "language-" lang)} code]
-                  [:code code])])
+        (let [[_ {:keys [lang]} code] block
+              grammar (when lang (grammars/get-grammar lang))
+              tokens (when grammar
+                       (hl/merge-adjacent (hl/tokenize grammar code)))]
+          [:pre {:class (when lang (str "language-" lang))}
+           (if tokens
+             (into [:code]
+                   (mapv (fn [{:keys [type value]}]
+                           (if-let [cls (theme/token-class type)]
+                             [:span {:class cls} value]
+                             value))
+                         tokens))
+             [:code code])])
 
         :ul
         (let [[_ items] block]

@@ -4,6 +4,9 @@
             [xi.web.state :as state]
             [xi.web.ws :as ws]
             [xi.markdown.hiccup :as md]
+            [xi.highlight.core :as hl]
+            [xi.highlight.bundle :as grammars]
+            [xi.highlight.theme-css :as theme]
             [ui.icon :as icon]
             [ui.button :as button]
             [ui.lightbox :as lightbox]
@@ -73,9 +76,52 @@
       (str (str/join "\n" (take n lines))
            "\n... (" (- (count lines) n) " more lines)"))))
 
-(defn- tool-message [{:keys [title result is-error finished]} idx]
+(defn- file-extension
+  "Extract file extension from a path (without dot), or nil."
+  [path]
+  (when (string? path)
+    (let [idx (str/last-index-of path ".")]
+      (when (and idx (pos? idx))
+        (subs path (inc idx))))))
+
+(defn- tool-language
+  "Detect language for a tool result based on tool name and arguments."
+  [tool-name arguments]
+  (case tool-name
+    ("Bash" "bash") "bash"
+    ("Read" "read") (file-extension (or (get arguments "file_path")
+                                         (get arguments "path")
+                                         (get arguments :file_path)
+                                         (get arguments :path)))
+    ("Write" "write") (file-extension (or (get arguments "file_path")
+                                           (get arguments "path")
+                                           (get arguments :file_path)
+                                           (get arguments :path)))
+    ("Edit" "edit") (file-extension (or (get arguments "file_path")
+                                         (get arguments "path")
+                                         (get arguments :file_path)
+                                         (get arguments :path)))
+    nil))
+
+(defn- highlight-text
+  "Syntax-highlight a text string with the given language.
+   Returns hiccup nodes, or the plain text string if no grammar found."
+  [text lang]
+  (if-let [grammar (when lang (grammars/get-grammar lang))]
+    (let [tokens (hl/merge-adjacent (hl/tokenize grammar text))]
+      (into [:code]
+            (mapv (fn [{:keys [type value]}]
+                    (if-let [cls (theme/token-class type)]
+                      [:span {:class cls} value]
+                      value))
+                  tokens)))
+    text))
+
+(defn- tool-message [{:keys [title tool-name arguments result is-error finished]} idx]
   (let [block-id (str "tool-" idx)
-        expanded? (not (contains? (:collapsed-blocks @state/app-state) block-id))]
+        expanded? (not (contains? (:collapsed-blocks @state/app-state) block-id))
+        lang (when (and result (not is-error))
+               (tool-language tool-name arguments))]
     [:div {:class ["tool-call-block"]}
      [:button {:class ["tool-call-toggle"]
                :on {:click (fn [_]
@@ -91,9 +137,10 @@
           (badge/badge {:variant :danger} "error")
           (badge/badge {:variant :success} "done")))]
      (when (and expanded? result)
-       [:div {:class ["tool-call-content"]}
-        [:pre {:class ["tool-call-code"]}
-         (truncate-lines result 30)]])]))
+       (let [truncated (truncate-lines result 30)]
+         [:div {:class ["tool-call-content"]}
+          [:pre {:class ["tool-call-code"]}
+           (highlight-text truncated lang)]]))]))
 
 (defn- thinking-message [text idx]
   (let [block-id (str "thinking-" idx)
@@ -419,16 +466,65 @@
     (start-dictation!)))
 
 ;; ---------------------------------------------------------------------------
+;; Slash command autocomplete
+;; ---------------------------------------------------------------------------
+
+(def ^:private web-hidden-commands
+  "Commands that don't make sense in the web client."
+  #{"quit" "dictate" "project" "join"})
+
+(defn- slash-command-matches
+  "Filter commands matching the current slash input."
+  [commands compose-text]
+  (when (and (string? compose-text)
+             (str/starts-with? compose-text "/")
+             (not (str/includes? compose-text " ")))
+    (let [query (subs compose-text 1)]
+      (->> commands
+           (remove #(contains? web-hidden-commands (:name %)))
+           (filter #(str/starts-with? (:name %) query))
+           vec))))
+
+(defn- select-slash-command! [cmd-name]
+  (let [text (str "/" cmd-name)]
+    (swap! state/app-state assoc :compose-text "" :slash-selected 0)
+    (when-let [el (.querySelector js/document ".compose-input-wrapper textarea")]
+      (set! (.-value el) ""))
+    (ws/dispatch! text)))
+
+(defn- slash-command-dropdown [matches selected-idx]
+  (when (seq matches)
+    [:div {:class ["slash-dropdown"]}
+     (map-indexed
+      (fn [idx {:keys [name description]}]
+        [:button {:class ["slash-item" (when (= idx selected-idx) "slash-item--selected")]
+                  :key name
+                  :on {:click (fn [e]
+                                (.preventDefault e)
+                                (select-slash-command! name))
+                       :mousedown (fn [e]
+                                    ;; Prevent textarea blur
+                                    (.preventDefault e))}}
+         [:span {:class ["slash-item-name"]} (str "/" name)]
+         (when description
+           [:span {:class ["slash-item-desc"]} description])])
+      matches)]))
+
+;; ---------------------------------------------------------------------------
 ;; Compose box
 ;; ---------------------------------------------------------------------------
 
 (defn- compose-box []
-  (let [{:keys [compose-text compose-images busy? recording?]} @state/app-state
+  (let [{:keys [compose-text compose-images busy? recording? commands personal-agent?]} @state/app-state
+        slash-matches (when-not personal-agent?
+                        (slash-command-matches commands compose-text))
+        selected-idx (or (:slash-selected @state/app-state) 0)
         transcribing? (and (not recording?) (pos? @pending-transcriptions))
         can-send? (and (not busy?)
                        (or (seq (str/trim (or compose-text "")))
                            (seq compose-images)))]
     [:div {:class ["compose-box"]}
+     (slash-command-dropdown slash-matches selected-idx)
      (image-preview-strip compose-images)
      [:div {:class ["compose-input-row"]}
       [:button {:class ["icon-btn" "compose-attach-btn"]
@@ -448,12 +544,43 @@
                                   :value (or compose-text "")
                                   :max-rows 3
                                   :attrs {:on {:input (fn [e]
-                                                       (swap! state/app-state assoc :compose-text (.. e -target -value)))
+                                                       (let [v (.. e -target -value)]
+                                                         (swap! state/app-state assoc
+                                                                :compose-text v
+                                                                :slash-selected 0)))
                                                :paste handle-paste!
                                                :keydown (fn [e]
-                                                          (when (and (= (.-key e) "Enter") (not (.-shiftKey e)))
-                                                            (.preventDefault e)
-                                                            (send-message!)))}}})]
+                                                          (if (seq slash-matches)
+                                                            (case (.-key e)
+                                                              "ArrowUp"
+                                                              (do (.preventDefault e)
+                                                                  (swap! state/app-state update :slash-selected
+                                                                         (fn [i] (mod (dec (or i 0)) (count slash-matches)))))
+                                                              "ArrowDown"
+                                                              (do (.preventDefault e)
+                                                                  (swap! state/app-state update :slash-selected
+                                                                         (fn [i] (mod (inc (or i 0)) (count slash-matches)))))
+                                                              "Tab"
+                                                              (do (.preventDefault e)
+                                                                  (let [cmd (:name (nth slash-matches (or selected-idx 0)))]
+                                                                    (swap! state/app-state assoc :compose-text (str "/" cmd))
+                                                                    (when-let [el (.-target e)]
+                                                                      (set! (.-value el) (str "/" cmd)))))
+                                                              "Enter"
+                                                              (do (.preventDefault e)
+                                                                  (let [cmd (:name (nth slash-matches (or selected-idx 0)))]
+                                                                    (select-slash-command! cmd)))
+                                                              "Escape"
+                                                              (do (.preventDefault e)
+                                                                  (swap! state/app-state assoc :compose-text "" :slash-selected 0)
+                                                                  (when-let [el (.-target e)]
+                                                                    (set! (.-value el) "")))
+                                                              ;; default — let it through
+                                                              nil)
+                                                            ;; No slash matches — normal behavior
+                                                            (when (and (= (.-key e) "Enter") (not (.-shiftKey e)))
+                                                              (.preventDefault e)
+                                                              (send-message!))))}}})]
       [:button {:class ["icon-btn" (when recording? "recording-active")]
                 :title (cond
                          transcribing? "Transcribing..."

@@ -230,6 +230,68 @@ body {
 .error-text { color: var(--danger); }
 .status-text { color: var(--fg-2); font-style: italic; }
 
+/* ---- Syntax highlighting (Nord-inspired) ---- */
+.hl-comment  { color: rgb(106, 115, 141); font-style: italic; }
+.hl-string   { color: rgb(163, 190, 140); }
+.hl-symbol   { color: rgb(180, 142, 173); }
+.hl-number   { color: rgb(180, 142, 173); }
+.hl-keyword  { color: rgb(129, 161, 193); }
+.hl-builtin  { color: rgb(136, 192, 208); }
+.hl-fn       { color: rgb(136, 192, 208); }
+.hl-var      { color: rgb(216, 222, 233); }
+.hl-operator { color: rgb(129, 161, 193); }
+.hl-punct    { color: rgb(216, 222, 233); }
+
+/* ---- Slash command dropdown ---- */
+.slash-dropdown {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  max-height: 14rem;
+  overflow-y: auto;
+  margin-bottom: var(--size-1);
+}
+
+.slash-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-3);
+  padding: var(--size-2) var(--size-3);
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.slash-item + .slash-item {
+  border-top: 1px solid var(--bg-2, var(--border-color, rgba(128,128,128,0.15)));
+}
+
+.slash-item--selected,
+.slash-item:hover {
+  background-color: var(--bg-2, rgba(128,128,128,0.1));
+}
+
+.slash-item-name {
+  font-weight: 600;
+  font-size: var(--font-sm);
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.slash-item-desc {
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- Compose box ---- */
 .compose-box {
   flex-shrink: 0;
@@ -676,4 +738,9 @@ body {
 .resume-item-meta {
   font-size: var(--font-sm);
   color: var(--fg-2);
+}
+
+/* Hide shadow-cljs dev overlay on mobile */
+@media (max-width: 768px) {
+  #shadow-cljs-devtools-floating-root { display: none !important; }
 }
