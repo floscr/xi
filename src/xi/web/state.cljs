@@ -23,4 +23,5 @@
          :slash-selected   0               ;; selected index in slash command dropdown
          :collapsed-blocks #{}
          :resume-sessions  nil
+         :confirm-request  nil             ;; {:confirm-id :message} — pending confirmation dialog
          :lightbox-image   nil}))          ;; nil = hidden, [] = loading, [...] = show picker

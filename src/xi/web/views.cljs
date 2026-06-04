@@ -628,6 +628,25 @@
                     (str " · " (:user-messages s) " msgs")))]])])]]))
 
 ;; ---------------------------------------------------------------------------
+;; Confirm dialog
+;; ---------------------------------------------------------------------------
+
+(defn- confirm-dialog []
+  (when-let [{:keys [confirm-id message]} (:confirm-request @state/app-state)]
+    [:div {:class ["confirm-overlay"]
+           :on {:click (fn [_] (ws/respond-confirm! confirm-id false))}}
+     [:div {:class ["confirm-panel"]
+            :on {:click (fn [e] (.stopPropagation e))}}
+      [:div {:class ["confirm-message"]} message]
+      [:div {:class ["confirm-actions"]}
+       [:button {:class ["confirm-btn" "confirm-btn--deny"]
+                 :on {:click (fn [_] (ws/respond-confirm! confirm-id false))}}
+        "Deny"]
+       [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                 :on {:click (fn [_] (ws/respond-confirm! confirm-id true))}}
+        "Allow"]]]]))
+
+;; ---------------------------------------------------------------------------
 ;; Chat view
 ;; ---------------------------------------------------------------------------
 
@@ -652,6 +671,7 @@
                                     :on {:click (fn [_] (ws/new-room!))}}
                             (icon/icon {:icon-name :plus :size :sm})]])})
    (resume-overlay)
+   (confirm-dialog)
    (lightbox/lightbox {:src (:lightbox-image @state/app-state)
                        :on-close close-lightbox!})
    [:div {:class ["timeline"]}

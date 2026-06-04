@@ -257,6 +257,7 @@
                :cwd cwd
                :filepath (session/tree-filepath @sess)})
         recorder (tree-recorder/create tree)
+        pending-confirms (atom {}) ;; confirm-id → resolve-fn
         rt {:bus bus
             :state state
             :sess sess
@@ -267,6 +268,7 @@
             :abort-signal (atom false)
             :pending-prompt (atom nil)
             :clients (atom #{})
+            :pending-confirms pending-confirms
             :event-history event-history}]
 
     ((:subscribe! bus) :*
@@ -274,7 +276,7 @@
        (let [t (:type event)]
          (if (= t :session-cleared)
            (reset! event-history [])
-           (when-not (#{:ready :quit} t)
+           (when-not (#{:ready :quit :confirm-request} t)
              (swap! event-history conj event))))))
 
     ;; Record conversation events into session tree
@@ -304,6 +306,25 @@
 
          ;; Everything else → record
          ((:on-event recorder) event))))
+
+    ;; Set confirm handler — emits event to connected clients (web/TUI)
+    ;; and waits for a response. Falls back to deny after 60s timeout.
+    (ext/set-confirm-handler!
+     (fn [message]
+       (let [confirm-id (str "confirm-" (.now js/Date) "-" (js/Math.random))]
+         (js/Promise.
+          (fn [resolve]
+            (swap! pending-confirms assoc confirm-id resolve)
+            ;; Auto-deny after 60 seconds
+            (js/setTimeout
+             (fn []
+               (when (get @pending-confirms confirm-id)
+                 (swap! pending-confirms dissoc confirm-id)
+                 (resolve false)))
+             60000)
+            ((:emit! bus) {:type :confirm-request
+                           :confirm-id confirm-id
+                           :message message}))))))
 
     ;; Let extensions set the session name without direct atom access
     (ext/set-session-name-handler!
@@ -441,6 +462,13 @@
             compact-event (perform-compaction! rt (:focus compact-event))
             prompt-event  (dispatch! rt (:text prompt-event))
             :else         (js/Promise.resolve events)))
+
+        :confirm-response
+        (let [{:keys [confirm-id approved]} parsed]
+          (when-let [resolve-fn (get @(:pending-confirms rt) confirm-id)]
+            (swap! (:pending-confirms rt) dissoc confirm-id)
+            (resolve-fn (boolean approved)))
+          (js/Promise.resolve nil))
 
         :abort
         (do (when (and @(:busy rt) (not @(:abort-signal rt)))

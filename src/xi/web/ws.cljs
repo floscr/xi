@@ -456,6 +456,11 @@
         (cb (:text event))
         (swap! state/app-state update :dictation-callbacks subvec 1)))
 
+    :confirm-request
+    (swap! state/app-state assoc :confirm-request
+           {:confirm-id (:confirm-id event)
+            :message (:message event)})
+
     :command-error
     (append-msg! {:type :error :text (:text event)})
 
@@ -636,6 +641,14 @@
   [sid]
   (cache/unwatch-session! sid)
   (swap! state/app-state update :watched-sessions dissoc sid))
+
+(defn respond-confirm!
+  "Respond to a confirm-request from the server."
+  [confirm-id approved?]
+  (swap! state/app-state dissoc :confirm-request)
+  (send-raw! {:type :confirm-response
+              :confirm-id confirm-id
+              :approved approved?}))
 
 (defn delete-session!
   "Delete a session by ID. Sends delete request to server."

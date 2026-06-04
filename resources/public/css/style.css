@@ -668,6 +668,70 @@ body {
   gap: var(--size-2);
 }
 
+/* ---- Confirm dialog ---- */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: var(--size-4);
+}
+
+.confirm-panel {
+  background: var(--bg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-2);
+  width: min(24rem, calc(100vw - var(--size-8)));
+  padding: var(--size-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4);
+}
+
+.confirm-message {
+  font-size: var(--font-base);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: var(--size-2);
+  justify-content: flex-end;
+}
+
+.confirm-btn {
+  padding: var(--size-2) var(--size-4);
+  border-radius: var(--radius-md);
+  border: var(--border-0);
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.confirm-btn--deny {
+  background: var(--bg-1);
+  color: var(--fg-1);
+}
+
+.confirm-btn--deny:hover {
+  background: var(--bg-2, rgba(128,128,128,0.2));
+}
+
+.confirm-btn--allow {
+  background: var(--accent);
+  color: var(--bg-0);
+}
+
+.confirm-btn--allow:hover {
+  filter: brightness(1.1);
+}
+
 /* Resume session overlay */
 
 .resume-overlay {
@@ -738,9 +802,4 @@ body {
 .resume-item-meta {
   font-size: var(--font-sm);
   color: var(--fg-2);
-}
-
-/* Hide shadow-cljs dev overlay on mobile */
-@media (max-width: 768px) {
-  #shadow-cljs-devtools-floating-root { display: none !important; }
 }
