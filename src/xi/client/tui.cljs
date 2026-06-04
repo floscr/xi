@@ -1019,6 +1019,12 @@
         _ (ext/set-insert-text-handler!
            (fn [text]
              ((:insert-text @editor-comp-ref) text)))
+        _ (ext/set-submit-text-handler!
+           (fn [text]
+             (when (not= @active-view "Chat")
+               (switch-to-buffer! "Chat"))
+             (reset! last-local-prompt text)
+             (dispatch! text)))
 
         ;; Set up stdout/stderr interception — capture external writes to Logs buffer
         _ (term/intercept-stdout!

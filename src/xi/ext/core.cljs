@@ -84,7 +84,7 @@
                              (let [result (h {:session @sess :model model :cwd cwd :args args})]
                                (if (and (map? result) (= :prompt (:type result)))
                                  [{:type :dispatch-prompt :text (:text result)}]
-                                 [{:type :command-result :command cmd-name :text (str "Ran /" cmd-name)}]))))
+                                 [{:type :command-result :command cmd-name}]))))
             wrapped-subs (when (seq (:subcommands cmd))
                            (mapv (fn [sub]
                                    {:name (:name sub)
@@ -256,6 +256,7 @@
 
 (defonce ^:private completion-handler (atom nil))
 (defonce ^:private insert-text-handler (atom nil))
+(defonce ^:private submit-text-handler (atom nil))
 
 (defn set-completion-handler!
   "Set the completion menu handler. Called by TUI/client at startup.
@@ -282,6 +283,20 @@
    No-op if no TUI is connected."
   [text]
   (when-let [handler @insert-text-handler]
+    (handler text)))
+
+(defn set-submit-text-handler!
+  "Set the submit-text handler. Called by TUI/client at startup.
+   handler-fn is (fn [text]) — submits text as a user prompt."
+  [handler-fn]
+  (reset! submit-text-handler handler-fn))
+
+(defn submit-text!
+  "Submit text as a user prompt from an extension.
+   The text is sent directly as if the user typed and pressed Enter.
+   No-op if no TUI is connected."
+  [text]
+  (when-let [handler @submit-text-handler]
     (handler text)))
 
 ;; ── Async Transform Dispatch ─────────────────────────────────────────────────

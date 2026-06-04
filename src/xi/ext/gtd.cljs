@@ -106,13 +106,23 @@
                      (let [task (:value item)
                            task-id (:id task)
                            title (:title task)]
-                       ;; Set task to ACTIVE + XI_SESSION
+                       ;; Set task to ACTIVE, then fetch full org content and submit
                        (-> (activate-task! task-id session-id cwd)
                            (.then
                             (fn [_]
+                              (run-gtd-raw
+                               (cond-> ["view"]
+                                 task-id (conj "--id" task-id)
+                                 (and (not task-id) title) (conj "--query" title))
+                               {:project-cwd cwd})))
+                           (.then
+                            (fn [org-content]
                               (ext/set-session-name! title)
-                              (ext/insert-text!
-                               (str "I'm starting work on the GTD task: " title)))))))})))))))))
+                              (ext/submit-text!
+                               (str "I'm starting work on the GTD task: " title "\n\n"
+                                    "```org\n"
+                                    (str/trim org-content) "\n"
+                                    "```")))))))})))))))))
 
 ;; ── Prompt Builders ───────────────────────────────────────────────────────────
 
