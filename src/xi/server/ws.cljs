@@ -239,10 +239,12 @@
                                        (when xi-id
                                          (rm/set-room-session! manager room-id xi-id))))
                                    ;; Auto-cleanup: agent just finished, if no clients left, destroy
-                                   (when-let [room (rm/get-room manager room-id)]
-                                     (when (zero? (count @(:clients room)))
-                                       (rm/destroy-room! manager room-id)
-                                       (broadcast-lobby!)))))
+                                   ;; Only in personal-agent mode — coding rooms stay alive for reconnect
+                                   (when personal-agent?
+                                     (when-let [room (rm/get-room manager room-id)]
+                                       (when (zero? (count @(:clients room)))
+                                         (rm/destroy-room! manager room-id)
+                                         (broadcast-lobby!))))))
 
                                ;; Per-room subscription: push busy state to lobby clients
                                (when-not (contains? @subscribed-rooms room-id)
@@ -274,10 +276,12 @@
                        (rm/remove-client! manager room-id ws)
                        (swap! conn-state dissoc ws)
                        ;; Auto-cleanup: if room has no clients and agent is idle, destroy it
-                       (when-let [room (rm/get-room manager room-id)]
-                         (when (and (zero? (count @(:clients room)))
-                                    (not (runtime/busy? (:runtime room))))
-                           (rm/destroy-room! manager room-id)))
+                       ;; Only in personal-agent mode — coding rooms stay alive for reconnect
+                       (when personal-agent?
+                         (when-let [room (rm/get-room manager room-id)]
+                           (when (and (zero? (count @(:clients room)))
+                                      (not (runtime/busy? (:runtime room))))
+                             (rm/destroy-room! manager room-id))))
                        (broadcast-lobby!)))}})]
 
     (js/console.error (str "[ws] Listening on ws://localhost:" port))
