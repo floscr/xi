@@ -38,6 +38,21 @@
    (when message (println message))
    (when exit? (js/process.exit 0))))
 
+(defn- reload!
+  "Restart the process with the same argv, picking up recompiled code.
+   Passes session-id via env so the new process auto-resumes."
+  [session-id]
+  (let [execv (js/require "child_process")
+        argv (vec (js->clj js/process.argv))
+        env (js/Object.assign #js {} js/process.env)]
+    (when session-id
+      (aset env "XI_RELOAD_SESSION" session-id))
+    (term/restore-stdout!)
+    (tui/stop-tui!)
+    (.execFileSync execv (first argv) (clj->js (rest argv))
+                   #js {:stdio "inherit" :env env})
+    (js/process.exit 0)))
+
 ;; ── Tool Call Formatting ──────────────────────────────────────────────────────
 
 (defn- get-arg
@@ -1452,6 +1467,9 @@
 
             :quit
             (shutdown!)
+
+            :reload
+            (reload! (:session-id event))
 
             :waiting-for-join
             ;; Only show room picker if user explicitly asked (via /join)

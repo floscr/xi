@@ -199,10 +199,8 @@
       [:span {:class ["tool-call-toggle-icon"]}
        (icon/icon {:icon-name (if expanded? :chevron-down :chevron-right) :size :sm})]
       [:span {:class ["tool-call-toggle-label"]} (or title "tool")]
-      (when finished
-        (if is-error
-          (badge/badge {:variant :danger} "error")
-          (badge/badge {:variant :success} "done")))]
+      (when (and finished is-error)
+        (badge/badge {:variant :danger} "error"))]
      (when (and expanded? result)
        (let [truncated (truncate-lines result 30)]
          [:div {:class ["tool-call-content"]}

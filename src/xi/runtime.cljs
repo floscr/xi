@@ -278,7 +278,7 @@
        (let [t (:type event)]
          (if (= t :session-cleared)
            (reset! event-history [])
-           (when-not (#{:ready :quit :confirm-request} t)
+           (when-not (#{:ready :quit :reload :confirm-request} t)
              (swap! event-history conj event))))))
 
     ;; Record conversation events into session tree
@@ -304,7 +304,7 @@
                   :cwd (or (:cwd @sess) cwd)
                   :filepath fp}))))
 
-         (:ready :quit :history) nil
+         (:ready :quit :reload :history) nil
 
          ;; Everything else → record
          ((:on-event recorder) event))))
@@ -344,6 +344,22 @@
                    :extensions (ext/list-extensions)
                    :commands (mapv (fn [c] {:name (:name c) :description (:description c)})
                                   (cmd-registry/list-commands {:scope :runtime}))})
+
+    ;; Auto-resume session on reload (env var set by /reload command)
+    (when-let [reload-sid (aget js/process.env "XI_RELOAD_SESSION")]
+      (js-delete js/process.env "XI_RELOAD_SESSION")
+      (when-let [summary (session/find-session-by-id reload-sid)]
+        (let [loaded (session/load-session summary)
+              loaded (if (and (= :xi (:source loaded)) (:cwd loaded))
+                       (session/touch-session! loaded)
+                       loaded)
+              messages (session/read-session-messages summary)]
+          (reset! sess loaded)
+          ((:emit! bus) {:type :session-resumed
+                         :session loaded
+                         :summary summary
+                         :messages messages}))))
+
     rt))
 
 (defn subscribe!
@@ -480,6 +496,10 @@
 
         :quit
         (do (emit! {:type :quit})
+            (js/Promise.resolve nil))
+
+        :reload
+        (do (emit! {:type :reload})
             (js/Promise.resolve nil))
 
         (js/Promise.resolve nil)))))

@@ -103,6 +103,9 @@
 (defn- cmd-quit [_ctx]
   [{:type :quit}])
 
+(defn- cmd-reload [{:keys [sess]}]
+  [{:type :reload :session-id (:id @sess)}])
+
 (defn- cmd-help [_ctx]
   (let [all-cmds (registry/list-commands)
         builtin (remove #(= "ext" (:source %)) all-cmds)
@@ -260,6 +263,11 @@
     {:name "resume"
      :description "Resume a previous session"
      :handler cmd-resume
+     :scope :runtime}
+
+    {:name "reload"
+     :description "Restart Xi process (picks up recompiled code)"
+     :handler cmd-reload
      :scope :runtime}]))
 
 ;; ── Parsing ───────────────────────────────────────────────────────────────────

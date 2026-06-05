@@ -353,6 +353,11 @@
          reverse
          vec)))
 
+(defn find-session-by-id
+  "Find a session summary by its ID across all sources."
+  [session-id]
+  (first (filter #(= session-id (:session-id %)) (list-all-sessions))))
+
 ;; ── Response counting (for unread indicators) ────────────────────────────────
 
 (defn- count-assistant-turns-in-jsonl
