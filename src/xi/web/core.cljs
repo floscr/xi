@@ -95,6 +95,16 @@
           (js/console.log "[ws] page visible, forcing reconnect")
           (ws/connect!))))))
 
+(defn- hide-shadow-cljs-overlay!
+  "Remove the shadow-cljs floating dev UI on mobile — it covers content."
+  []
+  (when (< (.-width js/screen) 768)
+    (js/setTimeout
+     (fn []
+       (when-let [el (js/document.getElementById "shadow-cljs-devtools-floating-root")]
+         (.remove el)))
+     1000)))
+
 (defn ^:export init! []
   (js/console.log "[xi-web] starting")
 
@@ -102,6 +112,7 @@
 
   ;; Init router — sets initial route from URL
   (router/init!)
+  (hide-shadow-cljs-overlay!)
 
   ;; Hydrate from localStorage cache first — shows content immediately
   (ws/hydrate-from-cache!)
