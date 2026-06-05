@@ -122,15 +122,23 @@
                                  (fn [^js args _extra]
                                    (let [args (js->clj args :keywordize-keys true)
                                          tool-call {:name tool-name :arguments args}]
-                                     (-> (ext/dispatch-hook-transform-async
-                                          :tool-call tool-call)
+                                     (-> (ext/dispatch-hook-transform-async :tool-call tool-call)
                                          (.then
                                           (fn [gated]
-                                            (if (nil? gated)
+                                            (cond
+                                              (nil? gated)
                                               ;; Blocked by permission gate
                                               #js {:content #js [#js {:type "text"
                                                                       :text "Blocked by Xi permission gate"}]
                                                    :isError true}
+
+                                              (:intercepted gated)
+                                              ;; Intercepted — return custom result
+                                              (let [result (:result gated)]
+                                                #js {:content (clj->js (:content result))
+                                                     :isError (boolean (:is-error result))})
+
+                                              :else
                                               ;; Execute the tool
                                               (-> (let [result (exec-fn args {:cwd cwd})]
                                                     (if (instance? js/Promise result)

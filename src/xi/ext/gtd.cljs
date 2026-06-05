@@ -157,6 +157,8 @@
 (def ^:private GTD_PROMPT
   "# GTD Task Management
 
+**NEVER write to `tasks/todo.md` or any local task files — use GTD tools instead.**
+
 You have access to a GTD (Getting Things Done) task management system backed by org-mode files.
 
 ## Tools

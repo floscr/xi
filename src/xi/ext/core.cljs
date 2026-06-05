@@ -350,8 +350,10 @@
       (fn [chain {:keys [handler]}]
         (.then chain
                (fn [value]
-                 (if (nil? value)
-                   nil
+                 (cond
+                   (nil? value) nil
+                   (:intercepted value) value
+                   :else
                    (try
                      (let [result (handler value state)]
                        (if (instance? js/Promise result)

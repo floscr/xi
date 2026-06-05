@@ -19,6 +19,7 @@
             [xi.ext.projects :as ext-projects]
             [xi.ext.dictation :as ext-dictation]
             [xi.ext.gtd :as ext-gtd]
+            [xi.ext.todo-intercept :as ext-todo-intercept]
             [xi.ext.web :as ext-web]
             [xi.loop :as loop]
             [xi.provider :as provider]
@@ -66,7 +67,8 @@
                ext-skills/extension
                ext-clj-surgeon/extension
                ext-dictation/extension
-               ext-gtd/extension]]
+               ext-gtd/extension
+               ext-todo-intercept/extension]]
     (ext/register-extension! ext)))
 
 (defn- sync-hook-state!
