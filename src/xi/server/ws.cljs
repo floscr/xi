@@ -119,7 +119,10 @@
                     (js/Response. "Xi WebSocket server. Connect via ws://." #js {:status 200}))))
 
               :websocket
-              #js {:open
+              #js {;; 100MB — accommodate multiple base64-encoded images
+                   :maxPayloadLength (* 100 1024 1024)
+
+                   :open
                    (fn [^js ws]
                      ;; Client connected but not yet joined a room.
                      ;; Send a prompt to join.

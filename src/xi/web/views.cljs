@@ -15,6 +15,73 @@
             [ui.form :as form]))
 
 ;; ---------------------------------------------------------------------------
+;; Image utilities
+;; ---------------------------------------------------------------------------
+
+(def ^:private MAX_IMAGE_DIMENSION
+  "Maximum width or height in pixels before resizing (matches server-side limit)."
+  1568)
+
+(defn- resize-image-if-needed
+  "Resize an image file in the browser if it exceeds MAX_IMAGE_DIMENSION.
+   Returns a promise of {:data base64 :media-type mime :preview-url blob-url}."
+  [^js file]
+  (js/Promise.
+   (fn [resolve _reject]
+     (let [img (js/Image.)
+           preview-url (.createObjectURL js/URL file)]
+       (set! (.-onload img)
+             (fn [_]
+               (let [w (.-naturalWidth img)
+                     h (.-naturalHeight img)]
+                 (if (or (> w MAX_IMAGE_DIMENSION) (> h MAX_IMAGE_DIMENSION))
+                   ;; Resize using canvas
+                   (let [scale (min (/ MAX_IMAGE_DIMENSION w) (/ MAX_IMAGE_DIMENSION h))
+                         nw (js/Math.round (* w scale))
+                         nh (js/Math.round (* h scale))
+                         canvas (js/document.createElement "canvas")
+                         ctx (.getContext canvas "2d")]
+                     (set! (.-width canvas) nw)
+                     (set! (.-height canvas) nh)
+                     (.drawImage ctx img 0 0 nw nh)
+                     (let [data-url (.toDataURL canvas "image/jpeg" 0.85)
+                           base64 (second (.split data-url ","))]
+                       (resolve {:data base64
+                                 :media-type "image/jpeg"
+                                 :preview-url preview-url})))
+                   ;; No resize needed — read original
+                   (let [reader (js/FileReader.)]
+                     (set! (.-onload reader)
+                           (fn [_]
+                             (let [result (.-result reader)
+                                   base64 (second (.split result ","))]
+                               (resolve {:data base64
+                                         :media-type (.-type file)
+                                         :preview-url preview-url}))))
+                     (set! (.-onerror reader)
+                           (fn [err]
+                             (js/console.error "[xi-web] Failed to read image:" err)
+                             (resolve nil)))
+                     (.readAsDataURL reader file))))))
+       (set! (.-onerror img)
+             (fn [_]
+               ;; Can't load as image — fall back to raw file read
+               (let [reader (js/FileReader.)]
+                 (set! (.-onload reader)
+                       (fn [_]
+                         (let [result (.-result reader)
+                               base64 (second (.split result ","))]
+                           (resolve {:data base64
+                                     :media-type (.-type file)
+                                     :preview-url preview-url}))))
+                 (set! (.-onerror reader)
+                       (fn [err]
+                         (js/console.error "[xi-web] Failed to read image:" err)
+                         (resolve nil)))
+                 (.readAsDataURL reader file))))
+       (set! (.-src img) preview-url)))))
+
+;; ---------------------------------------------------------------------------
 ;; Lightbox
 ;; ---------------------------------------------------------------------------
 
@@ -239,31 +306,16 @@
 ;; Compose box
 ;; ---------------------------------------------------------------------------
 
-(defn- read-file-as-base64
-  "Read a File object as base64 data. Returns a promise of {:data :media-type}."
-  [^js file]
-  (js/Promise.
-   (fn [resolve _reject]
-     (let [reader (js/FileReader.)]
-       (set! (.-onload reader)
-             (fn [_]
-               (let [result (.-result reader)
-                     base64 (second (.split result ","))]
-                 (resolve {:data base64
-                           :media-type (.-type file)
-                           :preview-url (.createObjectURL js/URL file)}))))
-       (.readAsDataURL reader file)))))
-
 (defn- add-image-files!
-  "Read image files and add to compose-images."
+  "Read and resize image files, then add to compose-images."
   [files]
   (when (pos? (.-length files))
     (-> (js/Promise.all
          (.map (js/Array.from files)
-               (fn [file] (read-file-as-base64 file))))
+               (fn [file] (resize-image-if-needed file))))
         (.then (fn [results]
-                 (swap! state/app-state update :compose-images
-                        into (js->clj results :keywordize-keys true))))
+                 (let [valid (remove nil? (js->clj results :keywordize-keys true))]
+                   (swap! state/app-state update :compose-images into valid))))
         (.catch (fn [err]
                   (js/console.error "[xi-web] Failed to read image:" err))))))
 

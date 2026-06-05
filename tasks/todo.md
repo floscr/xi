@@ -1,20 +1,19 @@
-# GTD Extension Enhancements
+# Fix: Web agent crash when multiple photos are attached
 
-## Changes
+## Root Cause
 
-### org-mode-agenda-cli (2 files)
-- [x] `src/gtd/change.clj` — Add `properties` option to `change-task!` (map of key→value, applied via `a.props/set-property`)
-- [x] `src/gtd/core.clj` — Add `--property KEY=VALUE` CLI flag (repeatable) to `change-cmd`
-- [x] `test/gtd/change_test.clj` — Add test for property-setting
+When multiple photos are attached in the web client, they're sent as a single
+WebSocket message containing all images as base64 strings. Bun's WebSocket
+`maxPayloadLength` defaults to 16MB. Multiple unresized photos easily exceed
+this, causing Bun to silently close the connection. The server's close handler
+then destroys the room (no clients + not busy), and the reconnecting client
+finds no room → falls back to the home/listing page.
 
-### xi extension (1 file)
-- [x] `src/xi/ext/gtd.cljs` — Add `properties` param to `gtd_change` tool (passes `--property K=V` to CLI)
-- [x] Rework `/gtd` command with subcommands:
-  - `/gtd` (bare) → completion menu of non-done tasks → on select: set ACTIVE + XI_SESSION property, insert prompt
-  - `/gtd recommend` → current prompt-based recommendation behavior
-  - `/gtd cleanup` → prompt asking agent to review/cleanup tasks
-- [x] Update system prompt to document ACTIVE state and `/gtd` subcommands
+## Fix (two-pronged)
 
-### Verification
-- [x] Compile xi (`npx shadow-cljs compile main`) — 0 warnings
-- [x] Run org-mode-agenda-cli tests — 405 tests, 1341 assertions, 0 failures
+- [x] 1. **Server**: Increase `maxPayloadLength` to 100MB in Bun WS config (`src/xi/server/ws.cljs`)
+- [x] 2. **Client**: Resize images in the browser before sending using Canvas API (`src/xi/web/views.cljs`)
+      - Mirrors the server-side 1568px max from `src/xi/image.cljs`
+      - Reduces payload from potentially 50MB+ to ~1-2MB total
+      - Removed dead `read-file-as-base64` function
+- [x] 3. **Build & verify**: `bb build` — both `:main` and `:web` compile cleanly (0 new warnings)
