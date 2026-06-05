@@ -36,6 +36,19 @@
     (is (= {:type :command :name "model" :args "sonnet"}
            (commands/parse-input "/model  sonnet ")))))
 
+(deftest parse-input-absolute-path
+  (testing "absolute path is treated as prompt, not command"
+    (is (= {:type :prompt :text "/home/floscr/Code/Projects/xi"}
+           (commands/parse-input "/home/floscr/Code/Projects/xi"))))
+
+  (testing "absolute path with surrounding text"
+    (is (= {:type :prompt :text "/usr/local/bin/thing"}
+           (commands/parse-input "/usr/local/bin/thing"))))
+
+  (testing "single slash command is still a command"
+    (is (= {:type :command :name "help" :args nil}
+           (commands/parse-input "/help")))))
+
 ;; ── format-scrollback ─────────────────────────────────────────────────────────
 
 (deftest format-scrollback-empty

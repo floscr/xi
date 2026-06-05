@@ -279,6 +279,11 @@
       (cond-> {:type :prompt :text text}
         (seq images) (assoc :images images))
 
+      ;; Starts with / but the first word contains another / → absolute path, not a command
+      (str/includes? (subs (first (str/split text #"\s" 2)) 1) "/")
+      (cond-> {:type :prompt :text text}
+        (seq images) (assoc :images images))
+
       :else
       (let [parts (str/split text #"\s+" 2)
             cmd-name (subs (first parts) 1)
