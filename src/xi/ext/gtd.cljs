@@ -83,7 +83,7 @@
   "Fetch non-done tasks and show a completion menu. On select, set ACTIVE + XI_SESSION."
   [{:keys [session cwd]}]
   (let [session-id (:id session)]
-    (-> (run-gtd-raw ["agenda" "--output" "edn"] {:project-cwd cwd})
+    (-> (run-gtd-raw ["agenda" "--output" "edn" "--auto-file"] {:project-cwd cwd})
         (.then
          (fn [edn-str]
            (let [tasks (parse-edn-tasks edn-str)
@@ -184,10 +184,9 @@ You have access to a GTD (Getting Things Done) task management system backed by 
 
 ## Project Auto-Detection
 
-GTD tools automatically detect the current project from the session's working directory.
-When a project has a linked GTD file (via dotfiles profiles), `gtd_list` and `gtd_capture`
-default to that file. You don't need to pass `:file` manually — it just works.
-Explicit `:file` always overrides the auto-detection.")
+Pass `--auto-file` (or set `:auto-file true` in tool calls) to auto-detect the project's GTD file
+from the session's working directory via dotfiles profiles. Without it, all GTD files are shown.
+Explicit `:file` always overrides auto-detection.")
 
 ;; ── Extension ─────────────────────────────────────────────────────────────────
 
@@ -220,7 +219,7 @@ Explicit `:file` always overrides the auto-detection.")
                                               :description "Include items without todo state"}}
                            :required []}
             :execute (fn [{:keys [todo file all]} {:keys [cwd]}]
-                       (run-gtd (cond-> ["agenda" "--output" "edn"]
+                       (run-gtd (cond-> ["agenda" "--output" "edn" "--auto-file"]
                                   todo (conj "--todo" todo)
                                   file (conj "--file" file)
                                   all  (conj "--all"))
@@ -239,7 +238,7 @@ Explicit `:file` always overrides the auto-detection.")
                                                :description "Todo state (default: TODO)"}}
                            :required ["title"]}
             :execute (fn [{:keys [title file body todo]} {:keys [cwd]}]
-                       (run-gtd (cond-> ["capture" title]
+                       (run-gtd (cond-> ["capture" title "--auto-file"]
                                   file (conj "--file" file)
                                   body (conj "--body" body)
                                   todo (conj "--todo" todo))
