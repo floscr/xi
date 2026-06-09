@@ -173,6 +173,7 @@
                       :last-action nil})
         prompt (or (:prompt opts) "xi> ")
         prompt-suffix-fn (:prompt-suffix-fn opts)
+        prompt-right-fn (:prompt-right-fn opts)
         on-submit (:on-submit opts)
         on-interrupt (:on-interrupt opts)
         on-escape (:on-escape opts)
@@ -754,7 +755,16 @@
                      full-prompt-w (+ (ansi/visible-width prompt) (ansi/visible-width suffix))
                      content-w (max 1 (- width full-prompt-w))
                      prompt-pad (apply str (repeat full-prompt-w " "))
-                     border (ansi/fg :border (apply str (repeat width "─")))
+                     right-text (when prompt-right-fn (prompt-right-fn))
+                     right-w (if right-text (ansi/visible-width right-text) 0)
+                     ;; border with optional right-aligned label
+                     border (if (and right-text (pos? right-w) (>= width (+ right-w 4)))
+                              (let [pad 1
+                                    bar-w (- width right-w pad)]
+                                (str (ansi/fg :border (apply str (repeat bar-w "─")))
+                                     (apply str (repeat pad " "))
+                                     right-text))
+                              (ansi/fg :border (apply str (repeat width "─"))))
                      editor-lines
                      (into []
                            (mapcat

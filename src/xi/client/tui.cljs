@@ -1043,7 +1043,14 @@
                                     n (count @pending-images)]
                                 (if (pos? n)
                                   (str badges (ansi/fg :accent (str " 📎" n)))
-                                  badges)))})
+                                  badges)))
+          :prompt-right-fn (fn []
+                              (when-let [cwd (:cwd (ext/get-state))]
+                                (let [home (aget js/process.env "HOME")
+                                      short (if (and home (str/starts-with? cwd home))
+                                              (str "~" (subs cwd (count home)))
+                                              cwd)]
+                                  (ansi/fg :dim short))))})
 
         ;; Wire up forward reference
         _ (reset! editor-comp-ref editor-comp)
