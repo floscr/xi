@@ -17,7 +17,11 @@
     (js/Promise.
      (fn [resolve _reject]
        (let [proc (js/Bun.spawn
-                   #js ["bash" "-c" command]
+                   ;; setsid creates a new session with no controlling terminal,
+                   ;; preventing child processes (e.g. ssh) from opening /dev/tty
+                   ;; and writing interactive prompts directly to the terminal,
+                   ;; which would corrupt the TUI.
+                   #js ["setsid" "bash" "-c" command]
                    #js {:stdin "ignore"
                         :stdout "pipe"
                         :stderr "pipe"
