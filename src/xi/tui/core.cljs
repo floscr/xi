@@ -332,6 +332,10 @@
 (defn- is-shift-down? [data]
   (= data (str ESC-STR "[1;2B")))
 
+(defn- is-escape? [data]
+  (or (= data ESC-STR)
+      (= data (str ESC-STR "[27u"))))
+
 (defn- parse-mouse-event
   "Parse SGR mouse event. Returns {:button :col :row :pressed} or nil."
   [data]
@@ -434,12 +438,15 @@
         (if-let [mouse (parse-mouse-event data)]
           (handle-mouse-event mouse)
           ;; Regular input — clear selection, snap to bottom, pass to focused component
-          (do
+          (let [was-scrolled (pos? (:scroll-offset @tui-state))]
             (clear-selection!)
-            (when (pos? (:scroll-offset @tui-state))
+            (when was-scrolled
               (scroll-to-bottom!))
-            (when (and focused (:handle-input focused))
-              ((:handle-input focused) data))))))))
+            ;; Escape while scrolled is consumed — scroll-to-bottom is the action.
+            ;; Don't forward to the editor, which would misinterpret it as "abort" or "tree view".
+            (when-not (and was-scrolled (is-escape? data))
+              (when (and focused (:handle-input focused))
+                ((:handle-input focused) data)))))))))
 
 (defn- handle-resize []
   ;; Invalidate all components

@@ -111,6 +111,45 @@ Components call `request-render!` when their state changes (e.g., `(:set-text te
 | **Markdown** | `make-markdown` | Renders markdown text with ANSI formatting — headers bold, `code` cyan, code blocks dimmed, checkboxes ✓/○. |
 | **Editor** | `make-editor` | Multi-line raw-mode input. Cursor movement, history, kill-line, bracketed paste. Renders a `───` border above the prompt. |
 
+## Input handling
+
+`core.cljs` receives raw stdin from the terminal layer and dispatches it. Modal components (diff viewer, etc.) with `:capture-all-input true` receive all keyboard input directly. In normal mode, core handles scroll keys (Page Up/Down, Shift+Up/Down) itself, then forwards everything else to the focused component (typically the editor).
+
+For non-scroll keys, core auto-snaps the viewport to the bottom before forwarding — so typing while scrolled brings you back to the latest content. **Escape is the exception**: when scrolled, escape is consumed by core (scroll-to-bottom) and not forwarded. This prevents the editor's escape handler from misinterpreting it.
+
+### Escape key state machine
+
+The escape key has a priority-ordered state machine split across two layers:
+
+```
+┌─────────────┐     ┌──────────────────────────────────┐
+│  tui/core    │     │  client/tui  (handle-escape!)    │
+│              │     │                                  │
+│  Scrolled?  ─┼─yes─▶  scroll to bottom (consumed)    │
+│      │ no    │     │                                  │
+│      ▼       │     │  Modal open? ──yes──▶ dismiss    │
+│  forward to  │     │      │ no                        │
+│  editor      │     │      ▼                           │
+│              │     │  Agent busy? ──yes──▶ abort       │
+│              │     │      │ no                        │
+│              │     │      ▼                           │
+│              │     │  Editor empty? ─yes─▶ tree view  │
+│              │     │      │ no                        │
+│              │     │      ▼                           │
+│              │     │    no-op                         │
+└──────────────┘     └──────────────────────────────────┘
+```
+
+| State | Escape action | File |
+|-------|---------------|------|
+| Viewport scrolled up | Scroll to bottom | `tui/core.cljs` (consumed, not forwarded) |
+| Modal buffer open | Dismiss / refocus modal | `client/tui.cljs` |
+| Agent running | Abort agent turn | `client/tui.cljs` |
+| Idle + editor empty | Show tree selector | `client/tui.cljs` |
+| Idle + editor has text | No-op | `client/tui.cljs` |
+
+The "scrolled" state is handled at the core layer because core already manages scroll state and auto-snap. All other states are handled in the client's `handle-escape!` function. This separation means the editor's escape handler can assume the viewport is always at the bottom.
+
 ## Agent turn flow
 
 When the user submits a prompt:

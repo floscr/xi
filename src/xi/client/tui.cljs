@@ -953,26 +953,31 @@
                                (dispatch! cmd))))})))
         _ (reset! open-palette-fn open-palette!)
 
+        ;; Escape state machine — priority-ordered transitions.
+        ;; Note: "scrolled" state is handled upstream in tui/core (escape is
+        ;; consumed there to scroll-to-bottom without forwarding here).
+        ;; By the time we reach handle-escape!, we are guaranteed to be at the bottom.
+        ;;
+        ;; States (checked in order):
+        ;;   :modal-open   → dismiss modal
+        ;;   :agent-busy   → abort agent
+        ;;   :idle-empty   → show tree selector
+        ;;   :idle-editing → no-op (escape clears nothing when text is present)
         handle-escape!
         (fn []
           (cond
-            ;; 1. Modal is open → dismiss
+            ;; Modal is open → dismiss
             @active-modal-buffer
             (tui/set-focus! @active-modal-buffer)
 
-            ;; 2. Scrolled up → scroll to bottom
-            (tui/scrolled-up?)
-            (tui/scroll-to-bottom!)
-
-            ;; 3. Not busy + empty editor → show tree selector
-            (and (not (busy?))
-                 (when-let [ed @editor-comp-ref]
-                   (empty? (str/trim ((:get-text ed))))))
-            (show-tree-selector!)
-
-            ;; 4. Agent busy → interrupt
+            ;; Agent busy → interrupt
             (busy?)
-            (dispatch! {:type :abort})))
+            (dispatch! {:type :abort})
+
+            ;; Not busy + empty editor → show tree selector
+            (when-let [ed @editor-comp-ref]
+              (empty? (str/trim ((:get-text ed)))))
+            (show-tree-selector!)))
 
         ;; Editor at the bottom
         editor-comp
