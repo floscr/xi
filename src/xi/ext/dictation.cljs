@@ -95,7 +95,7 @@
     proc))
 
 (defn- start-recording! []
-  (if-let [{:keys [proc]} @process]
+  (if-let [{:keys [^js proc]} @process]
     ;; Resume existing process — no model load delay
     (do
       (.kill proc "SIGCONT")
@@ -116,7 +116,7 @@
   []
   (when @active?
     (reset! active? false)
-    (when-let [{:keys [proc]} @process]
+    (when-let [{:keys [^js proc]} @process]
       (.kill proc "SIGSTOP"))
     (ext/request-render!)))
 
@@ -124,7 +124,7 @@
   "Terminate the process. Used on session shutdown."
   []
   (reset! active? false)
-  (when-let [{:keys [proc]} @process]
+  (when-let [{:keys [^js proc]} @process]
     (reset! process nil)
     (.kill proc "SIGTERM"))
   (ext/request-render!))
