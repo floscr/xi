@@ -16,11 +16,14 @@
   "Get overview of both staged and unstaged changes."
   []
   (let [staged (git-sync "diff" "--cached" "--stat")
-        unstaged (git-sync "diff" "--stat")]
+        unstaged (git-sync "diff" "--stat")
+        untracked (git-sync "ls-files" "--others" "--exclude-standard")]
     (str (when (seq (str/trim staged))
            (str "Staged:\n" staged))
          (when (seq (str/trim unstaged))
-           (str "Unstaged:\n" unstaged)))))
+           (str "Unstaged:\n" unstaged))
+         (when (seq (str/trim untracked))
+           (str "Untracked:\n" untracked)))))
 
 (defn- build-commit-prompt [args]
   (let [overview (git-overview-sync)]
@@ -75,9 +78,17 @@
                            :properties {:staged {:type "boolean" :description "Show staged changes instead"}}
                            :required []}
             :execute (fn [{:keys [staged]}]
-                       (run-git (if staged
-                                  ["diff" "--cached" "--stat"]
-                                  ["diff" "--stat"])))}
+                       (-> (run-git (if staged
+                                     ["diff" "--cached" "--stat"]
+                                     ["diff" "--stat"]))
+                           (.then (fn [result]
+                                    (if staged
+                                      result
+                                      (let [untracked (str/trim (git-sync "ls-files" "--others" "--exclude-standard"))]
+                                        (if (seq untracked)
+                                          (update-in result [:content 0 :text]
+                                                     #(str % "\nUntracked:\n" untracked))
+                                          result)))))))}
 
            {:name "git_file_diff"
             :description "Show diff for specific files."
