@@ -1,6 +1,52 @@
 # Xi Rebuild Plan
 
-Status: **approved** — work happens on branch `rebuild` in this worktree (`xi-next`).
+Status: **in progress** — work happens on branch `rebuild` in this worktree (`xi-next`).
+
+## Phase status
+
+| # | Phase | Status | Commit |
+|---|-------|--------|--------|
+| 1 | Scaffold (strip rewrite targets, green builds) | ✅ done | `aa94896` |
+| 2 | Pure core (state/events/app/log/jsonl) | ✅ done | `96ea08a` |
+| 3 | Provider layer (agent orchestration, claude, ollama) | ✅ done | `2e00b5d` |
+| 4 | Standalone TUI (render-from-state, commands, sessions, compaction) | ⬜ next | |
+| 5 | Connection layer (WS transports, rooms) | ⬜ | |
+| 6 | Extensions (new hook API, port all 18) | ⬜ | |
+| 7 | Web client (rebuild on new core) | ⬜ | |
+| 8 | Cutover (parity checklist, merge) | ⬜ | |
+
+### Implementation notes (phases 2–3, for continuity)
+
+- **Namespaces**: `xi.core.state` (schema/constructors), `xi.core.events`
+  (pure reducer, `core-handlers`), `xi.core.app` (`create-app` — the one
+  impure shell: single atom, FIFO dispatch queue, effect interpreter, taps,
+  change-gated microtask-coalesced render), `xi.core.log` (ring buffer,
+  elision, delta coalescing — browser-safe), `xi.core.jsonl` (node-only
+  debug writer), `xi.agent` (turn lifecycle handlers + `create-fx`),
+  `xi.provider.claude`, `xi.provider.ollama`.
+- **Handler contract**: `(fn [state event]) → {:state :effects} | nil`.
+  Effects are data `[[:fx/type payload] …]`; fx handlers get
+  `{:dispatch! :state}`. Built-in `:app/dispatch` effect re-dispatches an
+  event (used to drain queued prompts through the normal code path).
+- **History entries** (room `:history`): `{:kind :user|:text|:thinking
+  |:tool-call|:error|:aborted …}` — deltas fold into the trailing open
+  entry; `:agent/turn-end` finalizes (`:done? true`), clears busy, stores
+  `:last-usage`/`:last-cost`, sets `[:session :provider-session-id]`
+  (used as `:resume-session-id` on the next turn).
+- **Providers**: `{:id kw :start-turn! (fn [opts] {:promise :abort!})}`.
+  Routing: explicit `:provider` key wins, else `util/claude-model?`
+  heuristic. Extension hooks inject via `:tool-gate` (async transform;
+  nil blocks, `{:intercepted …}` short-circuits) — ext/core is NOT a
+  provider dependency anymore. The claude session-state atom is gone.
+- **In-flight turn handles** live in the `agent/create-fx` closure
+  (runtime resources, not app state). Abort: `:agent/abort` event →
+  `:provider/abort` effect → handle's `abort!`.
+- **Deferred to phase 4**: `compaction.cljs` (deleted in phase 1; restore
+  from master against the provider layer), `tui/command_palette.cljs`
+  (rebuild on the new command/event system), image processing before
+  `:prompt/submit` (client-side, `xi.image` is kept), AGENTS.md loading
+  into room `:agent :system`.
+- **Old implementation reference**: `../xi` worktree (master).
 
 ## Why
 
