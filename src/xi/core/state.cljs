@@ -18,9 +18,10 @@
   "A room: independent conversation with its own history, session and UI."
   ([id] (make-room id nil))
   ([id {:keys [provider model cwd session system effort agents-files
-               personal-agent?]}]
+               personal-agent? created]}]
    {:id      id
     :cwd     cwd
+    :created created                  ;; ms timestamp (servers resolve "latest" by it)
     :history []                       ;; event-sourced chat history (local cache)
     :session session                  ;; current session map (+ :provider-session-id)
     :agent   {:busy?           false

@@ -9,13 +9,13 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
 | 1 | Scaffold (strip rewrite targets, green builds) | ✅ done | `aa94896` |
 | 2 | Pure core (state/events/app/log/jsonl) | ✅ done | `96ea08a` |
 | 3 | Provider layer (agent orchestration, claude, ollama) | ✅ done | `2e00b5d` |
-| 4 | Standalone TUI (render-from-state, commands, sessions, compaction) | ⬜ next | |
-| 5 | Connection layer (WS transports, rooms) | ⬜ | |
-| 6 | Extensions (new hook API, port all 18) | ⬜ | |
+| 4 | Standalone TUI (render-from-state, commands, sessions, compaction) | ✅ done | `f0aed74` |
+| 5 | Connection layer (WS transports, rooms) | ✅ done | |
+| 6 | Extensions (new hook API, port all 18) | ⬜ next | |
 | 7 | Web client (rebuild on new core) | ⬜ | |
 | 8 | Cutover (parity checklist, merge) | ⬜ | |
 
-### Implementation notes (phases 2–3, for continuity)
+### Implementation notes (phases 2–5, for continuity)
 
 - **Namespaces**: `xi.core.state` (schema/constructors), `xi.core.events`
   (pure reducer, `core-handlers`), `xi.core.app` (`create-app` — the one
@@ -41,11 +41,82 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
 - **In-flight turn handles** live in the `agent/create-fx` closure
   (runtime resources, not app state). Abort: `:agent/abort` event →
   `:provider/abort` effect → handle's `abort!`.
-- **Deferred to phase 4**: `compaction.cljs` (deleted in phase 1; restore
-  from master against the provider layer), `tui/command_palette.cljs`
-  (rebuild on the new command/event system), image processing before
-  `:prompt/submit` (client-side, `xi.image` is kept), AGENTS.md loading
-  into room `:agent :system`.
+- **Phase 4 — TUI + commands + sessions + compaction** (4 commits:
+  `94a3a2e` commands, `41ef344` compaction, `f0aed74` TUI+CLI wiring):
+  - `xi.commands` — 12 slash commands as pure handlers + effects.
+    `parse-input` routes editor text to `:prompt/submit` or
+    `:command/run`; `messages->history` rebuilds history from session
+    JSONL for `/resume`.
+  - `xi.fx` — effect handlers for sessions (new/sync/list/load),
+    `image/process` (client-side resize via `xi.image`), `models/fetch`
+    (Claude + Ollama picker).
+  - `xi.compaction` — pure handlers (`compact/request → done/failed`) +
+    `create-fx` that runs a summary turn through the claude provider,
+    resuming the room's provider session. Abort chained onto
+    `:agent/abort`.
+  - `xi.client.tui` — renderer + input layer. `create!` returns
+    `{:render :effects}`. `render` is a fn of `(state dispatch!)` —
+    syncs history blocks (memoized per entry via `identical?`), loader,
+    active buffer (chat/logs/prompt), and completion menus. Zero
+    component-local atoms; `ctx` is a JS object holding runtime
+    resources (terminal refs, block cache) that mirrors app state.
+    Emits `:render/start` / `:render/done` with timing. Effects:
+    `:app/quit`, `:app/reload`, `:clipboard/copy`.
+  - `xi.client.view` — entry→block builders for all 7 history kinds.
+    Tool blocks: syntax/diff highlighting, live spinner+timer, streamed
+    arg/result updates. `launch-header`, `logs-view`, `buffer-view`.
+  - `xi.cli` — the assembly point. Merges handler maps
+    (core+agent+commands+compaction) with chained `:agent/turn-end`
+    (session sync) and `:agent/abort` (compaction cancel). Wires
+    effects from 4 sources (providers, fx, compaction, TUI). Loads
+    `~/.pi/agent/settings.json`, AGENTS.md, `--model`/`--debug-events`.
+    Auto-resume after `/reload` via `XI_RELOAD_SESSION` env var.
+  - **Not wired yet**: session tree recorder (tree branching/navigation
+    deferred — basic session persistence works via provider session id).
+- **Phase 5 — connection layer** (WS server/client, rooms):
+  - **Wire protocol** (`xi.wire`): events as EDN strings (`pr-str`/
+    `read-string`) — the protocol IS the event maps; both peers are cljs
+    so keywords/nesting survive (master used JSON). `:remote?` is
+    transport-local and never sent.
+  - `xi.server.room-manager` — rooms as pure event handlers over the
+    same state shape: membership = `[:connection :clients cid :room-id]`.
+    `:room/join {:target "new"|"latest"|id}` resolves to `:room/attach`
+    (existing) or a `[:room/setup]` effect (provision session + AGENTS.md,
+    then `:room/create` + `:room/attach`). `:room/attach` replies with a
+    `:room/joined` **room snapshot**; `:room/leave`, `:room/list`
+    (responds `:lobby/state`). Auto-destroy: room closes when its last
+    client leaves/disconnects while idle, or a turn ends with no clients
+    (chains: `client-disconnect-cleanup` *before* core disconnect,
+    `turn-end-room-cleanup` after turn-end). Room ids derive from the
+    event stamp (pure); `make-room` gained `:created` for "latest".
+  - `xi.server.ws` — Bun WS server. `create-server` returns `{:fx :start!}`
+    (sockets + effects share a closure; the app wires in via `start!`).
+    **Broadcast is a tap**: every processed event with a `:room-id` is
+    echoed to that room's clients (sender included — clients never apply
+    their own input locally); lobby (roomless) clients get `:lobby/state`
+    refreshes. Incoming room events get `:room-id` forced to the sender's
+    joined room. Server-side stubs for TUI-owned effects
+    (`:app/quit`/`:app/reload`/`:clipboard/copy`).
+  - `xi.client.ws-transport` — client mode = forward + mirror.
+    `make-handlers` wraps the standalone pure handler map: local events →
+    `[:ws/send event]` (no local state change); `:remote?`-tagged
+    broadcasts → same reducers with effects stripped (whitelist:
+    `:clipboard/copy` still runs client-side, so `/debug` works).
+    `/quit` + `/reload` are intercepted locally (act on the client
+    process). Client-only handlers: `:room/joined` installs the snapshot
+    + sets `:active-room`, `:room/left`, `:lobby/state` (stored under
+    `:lobby`). The mirror is exact because both sides run the same pure
+    reducers in the same (server) order, seeded by the snapshot.
+  - `xi.cli` — `xi server [--headless --port N]` (server app: standalone
+    handlers + rm handlers + cleanup chains, provider/session/WS effects,
+    no renderer; non-headless additionally boots a local TUI client app
+    in the same process joining `"new"` via WS — same code path as any
+    remote client), `xi join [url]` (target `"latest"`), `xi create
+    [url]` (target `"new"`). The TUI client itself is **unchanged** from
+    phase 4 — it renders mirrored state and dispatches the same events.
+  - **Deferred**: `:visibility` tracking, dictation, session lists in the
+    lobby payload (web client, phase 7); personal-agent room policies
+    (extensions, phase 6); `xi rooms` CLI listing.
 - **Old implementation reference**: `../xi` worktree (master).
 
 ## Why
