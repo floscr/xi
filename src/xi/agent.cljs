@@ -192,15 +192,37 @@
 
 (defn create-fx
   "Provider effects. `providers` is a map of provider-id → provider.
-   In-flight turn handles live here — runtime resources, not app state."
-  [providers]
+   In-flight turn handles live here — runtime resources, not app state.
+
+   Second arity threads extension tooling into every turn:
+     :tool-gate              composed 2-arg gate (fn [tool-call ctx] → Promise);
+                             wrapped here into the provider's single-arg gate,
+                             closing over a per-turn ctx so extensions can
+                             dispatch, read state, confirm via dialogs, etc.
+     :extra-tool-definitions extra tool defs exposed to the provider
+     :extra-tool-registry    name → exec-fn for those extra tools
+     :ask!                   dialog ask! (carried into the gate ctx)"
+  ([providers] (create-fx providers nil))
+  ([providers {:keys [tool-gate extra-tool-definitions extra-tool-registry ask!]}]
   (let [inflight (js/Map.)]
     {:provider/start-turn
-     (fn [{:keys [dispatch!]} {:keys [room-id] :as payload}]
+     (fn [{:keys [dispatch! get-state]} {:keys [room-id cwd] :as payload}]
        (let [provider (resolve-provider providers payload)
+             ;; Per-turn context handed to extension tool gates: lets a gate
+             ;; read live state, dispatch events, and raise confirm dialogs.
+             gate-ctx {:dispatch! dispatch!
+                       :get-state get-state
+                       :room-id   room-id
+                       :cwd       cwd
+                       :ask!      ask!}
+             gate1 (when tool-gate
+                     (fn [tool-call] (tool-gate tool-call gate-ctx)))
              {:keys [promise abort!]}
              ((:start-turn! provider)
-              (merge payload (event-callbacks dispatch! room-id)))]
+              (cond-> (merge payload (event-callbacks dispatch! room-id))
+                gate1                  (assoc :tool-gate gate1)
+                extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
+                extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)))]
          (.set inflight room-id {:abort! abort!})
          (-> promise
              (.then
@@ -222,4 +244,4 @@
      :provider/abort
      (fn [_ {:keys [room-id]}]
        (when-let [handle (.get inflight room-id)]
-         ((:abort! handle))))}))
+         ((:abort! handle))))})))

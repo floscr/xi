@@ -52,10 +52,15 @@
    the app).
 
    opts:
-     :server-opts {:model :effort} — defaults for rooms provisioned here.
+     :server-opts        {:model :effort} — defaults for rooms provisioned here.
+     :ext-system-prompt  (fn [cwd] → str|nil) — extension system prompt,
+                         appended to the room's AGENTS.md prompt.
+     :room-ext-init      map of ext-id → initial room-scoped state, seeded
+                         into each provisioned room's [:ext] (mirrors to
+                         clients via the :room/joined snapshot).
 
    Returns {:fx {…} :start! (fn [app {:keys [port]}] → {:port :stop!})}."
-  [{:keys [server-opts]}]
+  [{:keys [server-opts ext-system-prompt room-ext-init]}]
   (let [sockets (js/Map.)
         send!   (fn [client-id payload]
                   (when-let [ws (.get sockets client-id)]
@@ -69,15 +74,19 @@
       ;; re-enter the pure path via :room/create + :room/attach.
       :room/setup
       (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd]}]
-        (let [cwd (or cwd (.cwd js/process))]
+        (let [cwd (or cwd (.cwd js/process))
+              system (system-prompt/combine
+                      (system-prompt/load-agents-md cwd)
+                      (when ext-system-prompt (ext-system-prompt cwd)))]
           (dispatch! {:type :room/create
                       :room-id room-id
                       :room {:model        (:model server-opts)
                              :effort       (:effort server-opts)
                              :cwd          cwd
-                             :system       (system-prompt/load-agents-md cwd)
+                             :system       system
                              :agents-files (system-prompt/find-agents-md cwd)
                              :session      (session/create-session cwd)
+                             :ext          room-ext-init
                              :created      (js/Date.now)}})
           (dispatch! {:type :room/attach :client-id client-id :room-id room-id})))
 

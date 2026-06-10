@@ -106,16 +106,18 @@
 
 ;; ── Command handlers ─────────────────────────────────────────────────────────
 
-(declare registry)
-
-(defn- cmd-help [st {:keys [room-id]}]
+(defn- cmd-help
+  "Lists every command available in this assembly. The merged command
+   vector (built-ins + extension commands) is threaded in via ctx :commands
+   so /help reflects whatever extensions were composed at startup."
+  [st {:keys [room-id commands]}]
   (status st room-id
           (str "Commands:\n"
                (str/join "\n"
                          (map (fn [{:keys [name description]}]
                                 (str "  /" name
                                      (when description (str " — " description))))
-                              registry)))))
+                              commands)))))
 
 (defn- cmd-quit [_st _ctx]
   {:effects [[:app/quit {}]]})
@@ -195,7 +197,7 @@
     {:state   (:state (status st room-id "Debug info copied to clipboard."))
      :effects [[:clipboard/copy {:text text}]]}))
 
-(def registry
+(def built-in-commands
   "Built-in commands. Each :handler is (fn [state {:keys [room-id args]}])."
   [{:name "help"     :description "Show available commands"            :handler cmd-help}
    {:name "model"    :description "Show or set model"                  :handler cmd-model}
@@ -209,9 +211,6 @@
    {:name "debug"    :description "Copy debug info to clipboard"       :handler cmd-debug}
    {:name "reload"   :description "Restart Xi (picks up recompiled code)" :handler cmd-reload}
    {:name "quit"     :description "Exit Xi"                            :handler cmd-quit}])
-
-(def ^:private by-name
-  (into {} (map (juxt :name identity)) registry))
 
 ;; ── Event handlers ───────────────────────────────────────────────────────────
 
@@ -242,11 +241,19 @@
 
         :else nil))))
 
-(defn- command-run [st {:keys [room-id name args]}]
-  (when (state/get-room st room-id)
-    (if-let [cmd (get by-name name)]
-      ((:handler cmd) st {:room-id room-id :args (when (seq args) args)})
-      (status st room-id (str "Unknown command: /" name)))))
+(defn- make-command-run
+  "Build a :command/run handler closed over the merged command vector
+   (built-ins + extension commands). Each command handler is invoked with
+   the full :commands list in its ctx so e.g. /help can enumerate them."
+  [commands]
+  (let [by-name (into {} (map (juxt :name identity)) commands)]
+    (fn command-run [st {:keys [room-id name args]}]
+      (when (state/get-room st room-id)
+        (if-let [cmd (get by-name name)]
+          ((:handler cmd) st {:room-id  room-id
+                              :args     (when (seq args) args)
+                              :commands commands})
+          (status st room-id (str "Unknown command: /" name)))))))
 
 (defn- ui-status [st {:keys [room-id text]}]
   (when (state/get-room st room-id)
@@ -326,14 +333,31 @@
   (when (get-in st [:rooms room-id :session :provider-session-id])
     {:effects [[:session/sync {:room-id room-id}]]}))
 
+(defn all-commands
+  "Merge built-in commands with the extension-provided ones. Extension
+   commands are appended so built-ins take precedence on name clashes
+   (first match wins in make-command-run's by-name map)."
+  ([] (all-commands nil))
+  ([extra-commands] (into built-in-commands (or extra-commands []))))
+
+(defn command-handlers
+  "Build the command/event handler map for an assembly. extra-commands are
+   extension-provided commands that join the built-ins for dispatch, /help
+   and TUI completion."
+  ([] (command-handlers nil))
+  ([extra-commands]
+   {:input/submit    input-submit
+    :command/run     (make-command-run (all-commands extra-commands))
+    :ui/status       ui-status
+    :ui/menu-open    menu-open
+    :ui/menu-close   menu-close
+    :ui/attach-image attach-image
+    :ui/clear-images clear-images
+    :session/created session-created
+    :session/resumed session-resumed
+    :session/updated session-updated}))
+
 (def handlers
-  {:input/submit    input-submit
-   :command/run     command-run
-   :ui/status       ui-status
-   :ui/menu-open    menu-open
-   :ui/menu-close   menu-close
-   :ui/attach-image attach-image
-   :ui/clear-images clear-images
-   :session/created session-created
-   :session/resumed session-resumed
-   :session/updated session-updated})
+  "Built-in-only command handlers (no extensions). Back-compat default;
+   assemblies that compose extensions call (command-handlers extra)."
+  (command-handlers))

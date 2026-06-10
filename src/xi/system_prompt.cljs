@@ -154,6 +154,14 @@ Be concise, direct, and friendly. When unsure, say so.")
       skill-content   skill-content
       :else           nil)))
 
+(defn combine
+  "Join system-prompt parts (nils/empties dropped) with the standard
+   separator. Used to append extension system prompts to AGENTS.md."
+  [& parts]
+  (let [parts (filter seq parts)]
+    (when (seq parts)
+      (str/join "\n\n" parts))))
+
 (defn- tool-descriptions
   "Format tool definitions into a system prompt section."
   [tool-defs]

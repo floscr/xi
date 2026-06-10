@@ -744,6 +744,7 @@
     {:type :editor
      :get-text get-text
      :set-text set-text
+     :submit handle-submit
      :insert-text insert-text-bulk
      :delete-chars-back delete-chars-back
      :add-history add-history

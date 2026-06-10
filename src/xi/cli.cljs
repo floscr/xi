@@ -35,6 +35,7 @@
             [xi.core.jsonl :as core-jsonl]
             [xi.core.log :as log]
             [xi.core.state :as state]
+            [xi.ext.core :as ext]
             [xi.fx :as fx]
             [xi.provider.claude :as claude]
             [xi.provider.ollama :as ollama]
@@ -48,6 +49,40 @@
 (def providers
   {:claude claude/provider
    :ollama ollama/provider})
+
+;; ── Extensions (per mode) ─────────────────────────────────────────────────────
+;;
+;; Extensions are composed at assembly time into the seams the core, the
+;; provider effects and the TUI consume. The lists are empty until session
+;; 6b populates them — every seam below degrades to a no-op with no
+;; extensions, so behaviour is identical to phase 5.
+;;
+;; Two groups, because state lives in two places:
+;;   server-extensions — state + provider/tool hooks run server-side
+;;                       (plan-mode, done-notify, pushover). In client mode
+;;                       their room-state handlers are mirrored and their
+;;                       badges/keybindings/commands are presented.
+;;   client-extensions — process-local, run in the TUI client process
+;;                       (dictation): handlers installed unwrapped, fx local.
+
+(defn- server-extensions
+  "Extensions whose state + provider hooks live server-side."
+  []
+  [])
+
+(defn- client-extensions
+  "Process-local extensions that run in the TUI client process."
+  []
+  [])
+
+(defn- tooling-opts
+  "Provider-effect tooling threaded into agent/create-fx from a composed
+   extension set + the dialog ask!."
+  [composed ask!]
+  {:tool-gate              (ext/tool-gate composed)
+   :extra-tool-definitions (:tool-definitions composed)
+   :extra-tool-registry    (:tool-registry composed)
+   :ask!                   ask!})
 
 (def ^:private DEFAULT_MODEL "claude-sonnet-4-20250514")
 
@@ -95,17 +130,21 @@
                (get THINKING_TO_EFFORT (:defaultThinkingLevel settings))
                "high")})
 
-(defn- make-handlers []
-  (-> (merge events/core-handlers
-             agent/handlers
-             commands/handlers
-             compaction/handlers)
-      ;; Persist the session once the provider reports a session id
-      (assoc :agent/turn-end (events/chain (:agent/turn-end agent/handlers)
-                                           commands/turn-end-session-sync)
-             ;; Escape also stops an in-flight compaction
-             :agent/abort (events/chain (:agent/abort agent/handlers)
-                                        compaction/abort-handler))))
+(defn- make-handlers
+  "Base pure handler map shared by every mode. extra-commands are extension
+   commands that join the built-ins for dispatch + /help."
+  ([] (make-handlers nil))
+  ([extra-commands]
+   (-> (merge events/core-handlers
+              agent/handlers
+              (commands/command-handlers extra-commands)
+              compaction/handlers)
+       ;; Persist the session once the provider reports a session id
+       (assoc :agent/turn-end (events/chain (:agent/turn-end agent/handlers)
+                                            commands/turn-end-session-sync)
+              ;; Escape also stops an in-flight compaction
+              :agent/abort (events/chain (:agent/abort agent/handlers)
+                                         compaction/abort-handler)))))
 
 ;; ── Standalone (phase 4, unchanged) ──────────────────────────────────────────
 
@@ -113,8 +152,12 @@
   (let [settings (load-settings)
         {:keys [model effort]} (resolve-model-opts opts settings)
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
+        ;; Standalone runs everything locally — server + client extensions.
+        composed (ext/compose (into (server-extensions) (client-extensions)))
+        dialogs  (ext/create-dialogs)
         agents-files (system-prompt/find-agents-md cwd)
-        system (system-prompt/load-agents-md cwd)
+        system (system-prompt/combine (system-prompt/load-agents-md cwd)
+                                      (ext/system-prompt composed cwd))
         sess (session/create-session cwd)
         ring (log/create-ring)
         jsonl-writer (when debug-events?
@@ -123,13 +166,28 @@
                              "/.pi/agent/logs/" (:id sess) ".events.jsonl")))
         client (client-tui/create!
                 {:ring ring
-                 :on-exit (fn [] (when jsonl-writer ((:flush! jsonl-writer))))})
+                 :on-exit (fn []
+                            (ext/on-shutdown! composed)
+                            (when jsonl-writer ((:flush! jsonl-writer))))
+                 :commands (commands/all-commands (:commands composed))
+                 :prompt-badge (fn [st] (ext/prompt-badges composed st))
+                 :keybindings (:keybindings composed)})
+        handlers (-> (make-handlers (:commands composed))
+                     (ext/merge-handlers composed)
+                     (merge (:handlers dialogs)))
         {:keys [dispatch!]}
-        (app/create-app {:initial-state (state/initial-state {:mode :standalone})
-                         :handlers      (make-handlers)
-                         :effects       (merge (agent/create-fx providers)
+        (app/create-app {:initial-state (state/initial-state
+                                         {:mode :standalone
+                                          :ext (:process-ext-init composed)})
+                         :handlers      handlers
+                         :transform-event (ext/transform-event composed)
+                         :effects       (merge (agent/create-fx
+                                                providers
+                                                (tooling-opts composed (:ask! dialogs)))
                                                (fx/create-fx)
                                                (compaction/create-fx providers)
+                                               (:fx composed)
+                                               (:fx dialogs)
                                                (:effects client))
                          :on-render     (:render client)
                          :ring          ring
@@ -143,6 +201,7 @@
                        :effort effort
                        :system system
                        :agents-files agents-files
+                       :ext (:room-ext-init composed)
                        :session sess}})
     ;; Auto-resume after /reload (env var set by the :app/reload effect)
     (when-let [reload-sid (aget js/process.env "XI_RELOAD_SESSION")]
@@ -160,10 +219,24 @@
   (or url (str "ws://localhost:" (or port ws/DEFAULT_PORT))))
 
 (defn- start-client!
-  "Connect a TUI to a running server: forward input, mirror broadcasts."
+  "Connect a TUI to a running server: forward input, mirror broadcasts.
+
+   Two composed sets:
+     mirror — server-side extensions; their room-state handlers are chained
+              onto the mirrored base so replayed broadcasts stay in sync,
+              and their commands/badges/keybindings are presented locally.
+     local  — process-local client extensions; handlers installed unwrapped
+              (never forwarded), fx + process state run on this client."
   [{:keys [target] :as opts}]
   (let [url (client-url opts)
         ring (log/create-ring)
+        mirror (ext/compose (server-extensions))
+        local  (ext/compose (client-extensions))
+        commands (into (commands/all-commands (:commands mirror))
+                       (:commands local))
+        prompt-badge (fn [st] (str (ext/prompt-badges mirror st)
+                                   (ext/prompt-badges local st)))
+        keybindings (into (:keybindings mirror) (:keybindings local))
         transport (ws-transport/create!
                    {:url url
                     :target target
@@ -175,11 +248,24 @@
                                 (js/process.exit 1))})
         client (client-tui/create!
                 {:ring ring
-                 :on-exit (fn [] ((:close! transport)))})
+                 :on-exit (fn [] (ext/on-shutdown! local) ((:close! transport)))
+                 :commands commands
+                 :prompt-badge prompt-badge
+                 :keybindings keybindings})
+        base (-> (make-handlers (:commands mirror))
+                 (ext/merge-handlers mirror))
         {:keys [dispatch!]}
-        (app/create-app {:initial-state (state/initial-state {:mode :client})
-                         :handlers      (ws-transport/make-handlers (make-handlers))
+        (app/create-app {:initial-state (state/initial-state
+                                         {:mode :client
+                                          :ext (:process-ext-init local)})
+                         :handlers      (ws-transport/make-handlers
+                                         base
+                                         {:local-handlers (:handlers local)})
+                         ;; Only client-local hooks run here; server hooks
+                         ;; ran server-side and mirrored events bypass them.
+                         :transform-event (ext/transform-event local)
                          :effects       (merge (:effects transport)
+                                               (:fx local)
                                                (:effects client))
                          :on-render     (:render client)
                          :ring          ring})]
@@ -195,8 +281,15 @@
   (let [settings (load-settings)
         server-opts (resolve-model-opts opts settings)
         ring (log/create-ring)
-        server (ws/create-server {:server-opts server-opts})
-        handlers (-> (make-handlers)
+        composed (ext/compose (server-extensions))
+        dialogs  (ext/create-dialogs)
+        server (ws/create-server
+                {:server-opts server-opts
+                 :ext-system-prompt (fn [cwd] (ext/system-prompt composed cwd))
+                 :room-ext-init (:room-ext-init composed)})
+        handlers (-> (make-handlers (:commands composed))
+                     (ext/merge-handlers composed)
+                     (merge (:handlers dialogs))
                      (merge rm/handlers)
                      ;; Auto-destroy: turn finished with nobody attached /
                      ;; last client dropped while idle
@@ -204,11 +297,18 @@
                      (assoc :client/disconnect
                             (events/chain rm/client-disconnect-cleanup
                                           (:client/disconnect events/core-handlers))))
-        app (app/create-app {:initial-state (state/initial-state {:mode :server})
+        app (app/create-app {:initial-state (state/initial-state
+                                             {:mode :server
+                                              :ext (:process-ext-init composed)})
                              :handlers handlers
-                             :effects  (merge (agent/create-fx providers)
+                             :transform-event (ext/transform-event composed)
+                             :effects  (merge (agent/create-fx
+                                               providers
+                                               (tooling-opts composed (:ask! dialogs)))
                                               (fx/create-fx)
                                               (compaction/create-fx providers)
+                                              (:fx composed)
+                                              (:fx dialogs)
                                               (:fx server))
                              :ring ring})
         {actual-port :port} ((:start! server) app {:port port})]

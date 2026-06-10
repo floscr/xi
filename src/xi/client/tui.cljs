@@ -20,7 +20,6 @@
    Effects owned by the TUI: :app/quit, :app/reload, :clipboard/copy."
   (:require [clojure.string :as str]
             [xi.client.view :as view]
-            [xi.commands :as commands]
             [xi.core.log :as log]
             [xi.core.state :as state]
             [xi.tui.ansi :as ansi]
@@ -30,6 +29,34 @@
             [xi.tui.core :as tui]
             [xi.tui.editor :as editor]
             [xi.tui.terminal :as term]))
+
+;; ── Key detection (for dialogs / ext keybindings) ────────────────────────────
+
+(def ^:private ESC (str (char 27)))
+
+(defn- enter? [d] (or (= d "\r") (= d "\n")))
+(defn- escape? [d] (or (= d ESC) (= d (str ESC "[27u"))))
+
+(def ^:private key-sequences
+  "Named ext keybindings → the raw input sequences that trigger them
+   (legacy + kitty CSI-u encodings). Extend as extensions need keys."
+  {"alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
+   "ctrl+shift+n" #{(str ESC "[110;6u")}})
+
+(defn- ->editor-keybindings
+  "Translate ext keybindings ({:key :event :when}) into editor bindings
+   ({:key-fn :handler}). :when (if present) gates on full app state;
+   :event is dispatched with the active room's :room-id added."
+  [keybindings get-state dispatch!]
+  (vec (keep (fn [{:keys [key event] pred :when}]
+               (when-let [seqs (key-sequences key)]
+                 {:key-fn  (fn [data] (contains? seqs data))
+                  :handler (fn []
+                             (let [st (get-state)
+                                   room (state/active-room st)]
+                               (when (and room (or (nil? pred) (pred st)))
+                                 (dispatch! (assoc event :room-id (:id room))))))}))
+             keybindings)))
 
 ;; ── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -102,15 +129,41 @@
     (completion/make-completion-menu opts)))
 
 (defn- palette-menu
-  "Command palette: the command registry as a menu."
-  [room-id]
+  "Command palette: the assembly's command list as a menu."
+  [room-id commands]
   {:id :palette
    :prompt "palette> "
    :items (mapv (fn [{:keys [name description]}]
                   {:label (str "/" name)
                    :description description
                    :event {:type :command/run :room-id room-id :name name}})
-                commands/registry)})
+                commands)})
+
+;; ── Dialogs (room :ui :dialogs → focused bottom-panel component) ──────────────
+
+(defn- build-dialog
+  "A focused component for the active dialog. :confirm answers y/n (Enter =
+   yes, Esc = no); the answer dispatches :ui/dialog-response, which the
+   dialog owner (xi.ext.core/create-dialogs) resolves."
+  [{:keys [id message prompt] :as dialog} room-id dispatch!]
+  (let [respond! (fn [value]
+                   (dispatch! {:type :ui/dialog-response
+                               :room-id room-id :dialog-id id :value value}))
+        text (or message prompt "Confirm?")]
+    {:type :dialog
+     :render (fn [width]
+               [(ansi/fg :border (apply str (repeat width "─")))
+                (str "  " text)
+                (str "  " (ansi/fg :accent "[y]") "es   "
+                     (ansi/fg :accent "[n]") "o   "
+                     (ansi/fg :dim "(Enter=yes, Esc=no)"))])
+     :handle-input (fn [data]
+                     (cond
+                       (#{"y" "Y"} data) (respond! true)
+                       (#{"n" "N"} data) (respond! false)
+                       (enter? data)     (respond! true)
+                       (escape? data)    (respond! false)
+                       :else nil))}))
 
 ;; ── Render sync helpers ──────────────────────────────────────────────────────
 
@@ -181,19 +234,30 @@
                          (view/buffer-view buf)
                          (.-chat ctx)))]))))
 
-(defn- sync-menu! [^js ctx room dispatch!]
-  (let [menu (get-in room [:ui :menu])]
-    (when-not (identical? menu (.-menuVal ctx))
-      (set! (.-menuVal ctx) menu)
-      (if menu
-        (let [menu-comp (build-menu menu (:id room) dispatch!)
-              panel (tui/make-container)]
-          ((:add-child panel) (comp/make-spacer 1))
-          ((:add-child panel) menu-comp)
-          (tui/set-bottom-panel! panel)
-          (tui/set-focus! menu-comp))
-        (do (tui/set-bottom-panel! (.-editor ctx))
-            (tui/set-focus! (.-editor ctx)))))))
+(defn- focus-panel!
+  "Wrap a focused component in a spacer'd container and install it as the
+   bottom panel."
+  [comp]
+  (let [panel (tui/make-container)]
+    ((:add-child panel) (comp/make-spacer 1))
+    ((:add-child panel) comp)
+    (tui/set-bottom-panel! panel)
+    (tui/set-focus! comp)))
+
+(defn- sync-bottom-panel!
+  "Bottom-panel priority: an active dialog preempts a menu, which preempts
+   the editor. Rebuilds only when the selected target identity changes."
+  [^js ctx room dispatch!]
+  (let [dialog (first (get-in room [:ui :dialogs]))
+        menu   (get-in room [:ui :menu])
+        target (or dialog menu)]
+    (when-not (identical? target (.-panelVal ctx))
+      (set! (.-panelVal ctx) target)
+      (cond
+        dialog (focus-panel! (build-dialog dialog (:id room) dispatch!))
+        menu   (focus-panel! (build-menu menu (:id room) dispatch!))
+        :else  (do (tui/set-bottom-panel! (.-editor ctx))
+                   (tui/set-focus! (.-editor ctx)))))))
 
 ;; ── Client ───────────────────────────────────────────────────────────────────
 
@@ -209,9 +273,14 @@
       :effects {...}}                   ;; TUI-owned effect handlers
 
    opts:
-     :ring    event ring buffer (feeds the logs buffer)
-     :on-exit (fn []) — flush hooks before process exit (quit/reload)"
-  [{:keys [ring on-exit]}]
+     :ring         event ring buffer (feeds the logs buffer)
+     :on-exit      (fn []) — flush hooks before process exit (quit/reload)
+     :commands     command list for the palette (built-ins + ext commands;
+                   defaults to nil → empty palette source)
+     :prompt-badge (fn [state] → str) — extra prompt badge (ext indicators)
+     :keybindings  ext keybindings ([{:key :event :when}]) wired into the
+                   editor; :event dispatched with the active :room-id"
+  [{:keys [ring on-exit commands prompt-badge keybindings]}]
   (let [content (tui/create-tui!)
         chat (tui/make-container)
         view-wrapper (tui/make-container)
@@ -219,12 +288,14 @@
         ctx #js {:dispatch nil :state nil
                  :chat chat :viewWrapper view-wrapper :editor nil
                  :roomId nil :blocks #js [] :header [] :chatDirty true
-                 :menuVal nil :activeBuffer :chat
+                 :panelVal nil :activeBuffer :chat
                  :loaderShown false}
         dispatch! (fn [event] (when-let [d (.-dispatch ctx)] (d event)))
+        get-state (fn [] (.-state ctx))
         current-room (fn [] (some-> (.-state ctx) state/active-room))
         room-event (fn [event] (when-let [room (current-room)]
                                  (dispatch! (assoc event :room-id (:id room)))))
+        ext-keybindings (->editor-keybindings keybindings get-state dispatch!)
 
         editor-comp
         (editor/make-editor
@@ -237,7 +308,8 @@
           :on-palette (fn []
                         (when-let [room (current-room)]
                           (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                      :menu (palette-menu (:id room))})))
+                                      :menu (palette-menu (:id room) commands)})))
+          :ext-keybindings ext-keybindings
           :on-git (fn [] (tui/run-external! ["ngit"] {}))
           :on-paste-image
           (fn []
@@ -246,9 +318,10 @@
               (room-event {:type :ui/status :text "No image in clipboard"})))
           :prompt-suffix-fn
           (fn []
-            (let [n (count (get-in (current-room) [:ui :pending-images]))]
-              (when (pos? n)
-                (ansi/fg :accent (str " 📎" n)))))
+            (let [n (count (get-in (current-room) [:ui :pending-images]))
+                  badge (when prompt-badge (prompt-badge (.-state ctx)))]
+              (str (when (pos? n) (ansi/fg :accent (str " 📎" n)))
+                   (when (seq badge) badge))))
           :prompt-right-fn
           (fn []
             (when-let [cwd (:cwd (current-room))]
@@ -273,7 +346,7 @@
                 (set! (.-activeBuffer ctx) nil))
               (sync-chat! ctx room loader)
               (sync-view! ctx room ring)
-              (sync-menu! ctx room dispatch!)
+              (sync-bottom-panel! ctx room dispatch!)
               (tui/request-render!))
             (dispatch! {:type :render/done
                         :duration-ms (- (js/Date.now) t0)})))]
@@ -303,4 +376,15 @@
                (fn [_ {:keys [session-id]}] (reload! session-id on-exit))
 
                :clipboard/copy
-               (fn [_ {:keys [text]}] (copy-to-clipboard! text))}}))
+               (fn [_ {:keys [text]}] (copy-to-clipboard! text))
+
+               ;; Editor seams for extensions (e.g. dictation inserting a
+               ;; transcript, then optionally submitting).
+               :editor/insert-text
+               (fn [_ {:keys [text]}] (when (seq text) ((:insert-text editor-comp) text)))
+
+               :editor/delete-before-cursor
+               (fn [_ {:keys [n]}] ((:delete-chars-back editor-comp) (or n 0)))
+
+               :editor/submit
+               (fn [_ _] ((:submit editor-comp)))}}))

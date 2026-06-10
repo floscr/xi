@@ -21,8 +21,10 @@
 
 ;; ── Handler wrapping (pure) ──────────────────────────────────────────────────
 
-(def ^:private client-side-fx
-  "Effects from mirrored events that should still run on the client."
+(def ^:private default-client-side-fx
+  "Effects from mirrored events that should still run on the client.
+   Extensions extend this (e.g. :terminal/set-title for done-notify) via
+   make-handlers :client-fx."
   #{:clipboard/copy})
 
 (def ^:private local-commands
@@ -33,7 +35,7 @@
 (defn- mirror
   "Apply a remote event with the base reducer, dropping all effects except
    the client-side whitelist."
-  [handler]
+  [client-side-fx handler]
   (fn [st ev]
     (when-let [res (handler st ev)]
       {:state   (:state res)
@@ -45,15 +47,15 @@
 
 (defn- wrap
   "remote? → mirror; local → forward to the server."
-  [handler]
-  (let [m (mirror handler)]
+  [client-side-fx handler]
+  (let [m (mirror client-side-fx handler)]
     (fn [st ev]
       (if (:remote? ev) (m st ev) (forward st ev)))))
 
 (defn- wrap-input-submit
   "Like wrap, but intercept client-local commands before forwarding."
-  [handler]
-  (let [m (mirror handler)]
+  [client-side-fx handler]
+  (let [m (mirror client-side-fx handler)]
     (fn [st ev]
       (if (:remote? ev)
         (m st ev)
@@ -65,8 +67,8 @@
 
 (defn- wrap-command-run
   "Like wrap-input-submit for direct :command/run (palette items)."
-  [handler]
-  (let [m (mirror handler)]
+  [client-side-fx handler]
+  (let [m (mirror client-side-fx handler)]
     (fn [st ev]
       (if (:remote? ev)
         (m st ev)
@@ -93,14 +95,28 @@
 (defn make-handlers
   "Client-mode handler map from the server-equivalent pure handlers:
    every base type forwards locally / mirrors remotely, plus the
-   connection-level handlers only a client has."
-  [base-handlers]
-  (-> (into {} (map (fn [[t handler]] [t (wrap handler)])) base-handlers)
-      (assoc :input/submit (wrap-input-submit (get base-handlers :input/submit))
-             :command/run  (wrap-command-run (get base-handlers :command/run))
-             :room/joined  room-joined
-             :room/left    room-left
-             :lobby/state  lobby-state)))
+   connection-level handlers only a client has.
+
+   Second arity threads extension seams:
+     :client-fx       extra mirrored-effect types allowed to run locally
+                      (joined to the clipboard default whitelist)
+     :local-handlers  process-local extension handlers (e.g. dictation)
+                      installed UNWRAPPED — they act on the client process
+                      and never forward/mirror. Dialog answers still
+                      forward to the server, which owns the resolver."
+  ([base-handlers] (make-handlers base-handlers nil))
+  ([base-handlers {:keys [client-fx local-handlers]}]
+   (let [client-side-fx (into default-client-side-fx client-fx)]
+     (-> (into {} (map (fn [[t handler]] [t (wrap client-side-fx handler)])) base-handlers)
+         (assoc :input/submit (wrap-input-submit client-side-fx (get base-handlers :input/submit))
+                :command/run  (wrap-command-run client-side-fx (get base-handlers :command/run))
+                ;; Dialog answers must reach the server (it holds the
+                ;; pending resolver); removal mirrors back via room state.
+                :ui/dialog-response forward
+                :room/joined  room-joined
+                :room/left    room-left
+                :lobby/state  lobby-state)
+         (merge local-handlers)))))
 
 ;; ── Transport (contained impure edge) ────────────────────────────────────────
 

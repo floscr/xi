@@ -45,13 +45,15 @@
 
 (defn initial-state
   ([] (initial-state nil))
-  ([{:keys [mode connection-id]}]
+  ([{:keys [mode connection-id ext]}]
    {:connection {:id      (or connection-id (random-uuid))
                  :mode    (or mode :standalone)
                  :clients {}}
     :rooms       {}
     :active-room nil
-    :ext         {}}))
+    ;; process-local extension state, keyed by extension id (seeded from
+    ;; the composed :process-ext-init); never crosses the wire
+    :ext         (or ext {})}))
 
 ;; ── Accessors ────────────────────────────────────────────────────────────────
 
