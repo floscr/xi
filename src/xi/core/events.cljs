@@ -101,6 +101,19 @@
    :ui/buffer-set     buffer-set
    :ui/buffer-switch  buffer-switch})
 
+(defn chain
+  "Compose handlers left→right into one. Each handler sees the state
+   accumulated so far; effects concatenate. nil results are skipped."
+  [& handlers]
+  (fn [st event]
+    (reduce (fn [acc handler]
+              (if-let [result (handler (:state acc) event)]
+                {:state   (or (:state result) (:state acc))
+                 :effects (into (:effects acc) (:effects result))}
+                acc))
+            {:state st :effects []}
+            handlers)))
+
 (defn handle-event
   "Apply one event to state via the handler registry. Pure.
    Returns {:state state' :effects [...]} — state unchanged when no handler

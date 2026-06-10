@@ -17,16 +17,21 @@
 (defn make-room
   "A room: independent conversation with its own history, session and UI."
   ([id] (make-room id nil))
-  ([id {:keys [provider model cwd]}]
+  ([id {:keys [provider model cwd session system effort agents-files
+               personal-agent?]}]
    {:id      id
     :cwd     cwd
     :history []                       ;; event-sourced chat history (local cache)
-    :session nil                      ;; current session ref (set on resume/save)
-    :agent   {:busy?    false
-              :provider (or provider :claude)
-              :model    model}
+    :session session                  ;; current session map (+ :provider-session-id)
+    :agent   {:busy?           false
+              :provider        (or provider :claude)
+              :model           model
+              :system          system          ;; AGENTS.md / system prompt append
+              :effort          effort
+              :agents-files    agents-files    ;; paths shown in launch header
+              :personal-agent? personal-agent?}
     :ui      {:dialogs       []       ;; pending dialogs, FIFO
-              :buffers       {}       ;; buffer-id → {:title :lines ...}
+              :buffers       {}       ;; buffer-id → {:title :text ...}
               :active-buffer :chat}}))
 
 (defn initial-state
