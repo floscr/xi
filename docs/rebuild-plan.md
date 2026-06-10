@@ -10,7 +10,7 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
 | 2 | Pure core (state/events/app/log/jsonl) | ✅ done | `96ea08a` |
 | 3 | Provider layer (agent orchestration, claude, ollama) | ✅ done | `2e00b5d` |
 | 4 | Standalone TUI (render-from-state, commands, sessions, compaction) | ✅ done | `f0aed74` |
-| 5 | Connection layer (WS transports, rooms) | ✅ done | |
+| 5 | Connection layer (WS transports, rooms) | ✅ done | `289f0c7` |
 | 6 | Extensions (new hook API, port all 18) | ⬜ next | |
 | 7 | Web client (rebuild on new core) | ⬜ | |
 | 8 | Cutover (parity checklist, merge) | ⬜ | |
