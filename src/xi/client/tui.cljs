@@ -41,20 +41,28 @@
   "Named ext keybindings → the raw input sequences that trigger them
    (legacy + kitty CSI-u encodings). Extend as extensions need keys."
   {"alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
-   "ctrl+shift+n" #{(str ESC "[110;6u")}})
+   "ctrl+shift+n" #{(str ESC "[110;6u")}
+   "ctrl+c"       #{(str (char 3))}})
 
 (defn- ->editor-keybindings
   "Translate ext keybindings ({:key :event :when}) into editor bindings
-   ({:key-fn :handler}). :when (if present) gates on full app state;
-   :event is dispatched with the active room's :room-id added."
+   ({:key-fn :handler}). :when (if present) gates on full app state and is
+   folded into :key-fn so a guarded binding (e.g. dictation's Ctrl+C, only
+   active while recording) lets the key fall through to the editor's own
+   handler when the guard fails. :event is dispatched with the active
+   room's :room-id added."
   [keybindings get-state dispatch!]
   (vec (keep (fn [{:keys [key event] pred :when}]
                (when-let [seqs (key-sequences key)]
-                 {:key-fn  (fn [data] (contains? seqs data))
+                 {:key-fn  (fn [data]
+                            (and (contains? seqs data)
+                                 (let [st (get-state)]
+                                   (and (state/active-room st)
+                                        (or (nil? pred) (pred st))))))
                   :handler (fn []
                              (let [st (get-state)
                                    room (state/active-room st)]
-                               (when (and room (or (nil? pred) (pred st)))
+                               (when room
                                  (dispatch! (assoc event :room-id (:id room))))))}))
              keybindings)))
 

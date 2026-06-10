@@ -36,6 +36,10 @@
             [xi.core.log :as log]
             [xi.core.state :as state]
             [xi.ext.core :as ext]
+            [xi.ext.dictation :as ext.dictation]
+            [xi.ext.done-notify :as ext.done-notify]
+            [xi.ext.plan-mode :as ext.plan-mode]
+            [xi.ext.pushover :as ext.pushover]
             [xi.fx :as fx]
             [xi.provider.claude :as claude]
             [xi.provider.ollama :as ollama]
@@ -66,14 +70,17 @@
 ;;                       (dictation): handlers installed unwrapped, fx local.
 
 (defn- server-extensions
-  "Extensions whose state + provider hooks live server-side."
+  "Extensions whose state + provider hooks live server-side. nils (e.g.
+   an unconfigured pushover) are dropped by ext/compose."
   []
-  [])
+  [ext.plan-mode/extension
+   ext.done-notify/extension
+   (ext.pushover/extension)])
 
 (defn- client-extensions
   "Process-local extensions that run in the TUI client process."
   []
-  [])
+  [(ext.dictation/create)])
 
 (defn- tooling-opts
   "Provider-effect tooling threaded into agent/create-fx from a composed
