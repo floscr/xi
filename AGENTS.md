@@ -2,6 +2,13 @@
 
 Personal coding agent in ClojureScript + Bun.
 
+> **⚠ Rebuild branch.** This branch (`rebuild`) is a ground-up rebuild — see
+> [docs/rebuild-plan.md](docs/rebuild-plan.md) for architecture and phase status.
+> The runtime/server/client/provider/extension/web layers described below were
+> **stripped in Phase 1** and are being rewritten; only leaf namespaces
+> (session, tools, highlight, markdown, TUI primitives, util) were kept.
+> The old implementation lives in the `xi` worktree (master) for reference.
+
 ## Build
 
 **Always use `bb` tasks for building — never call `npx shadow-cljs` directly.**
