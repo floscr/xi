@@ -158,6 +158,61 @@ Interactive smoke test of phase 5 — extensions hook into this event stream:
 bell toggle shows badge on a joined client and notifies; pushover fires
 from a headless server with no client; dictation records in standalone.
 
+### 6a status — done; notes/deviations for 6b
+
+Steps 1–3 are committed (`git log` since the phase-5 tip). The seams in
+`xi.cli` are generic: populating `server-extensions`/`client-extensions`
+is all 6b needs to do — every other wire (handlers, fx, commands,
+transform-event, tool-gate, badges, keybindings, on-shutdown) is already
+threaded. Specifics 6b should reuse rather than rediscover:
+
+- **Notification fx are ext-owned**, not core. done-notify carries
+  `:fx {:notify/desktop …}` and pushover `:fx {:notify/pushover …}` in
+  their own maps; compose merges them. Follow this for any ext that needs
+  a new effect — don't add to `xi.fx`.
+- **`:agent/turn-end` is a chained handler** and runs *after* the base
+  handler, so it sees the post-base state: the base has already flipped
+  `:busy?` off and dropped one queued prompt. Guard notify handlers on
+  `(not aborted?)` (from the event) **and** `(empty? (get-in room [:agent
+  :queued]))` so they don't fire mid-drain. (todo-intercept / parmezan
+  result hooks should assume the same post-base ordering.)
+- **`:visible?` flag** already defaults `true` for clients in
+  `events.cljs` `client-connect`; pushover counts clients whose
+  `:room-id` matches and `:visible?` is truthy. Web client refines this
+  in phase 7. This is the cheap-prerequisite for the 6b personal-agent
+  batch.
+- **No `session-title` helper** in xi-next (master had
+  `state.session/session-title`). Notification titles derive from
+  `(get-in room [:session :name])` with a fallback string.
+- **ext keybinding `:when` is folded into `key-fn`** in `xi.client.tui`
+  `->editor-keybindings`: a guarded binding only *intercepts* the key when
+  the guard passes, otherwise it falls through to the editor's own handler
+  (this is why dictation's Ctrl+C doesn't break the editor interrupt).
+  `projects`' alt+p (6b) gets the same semantics for free; add the raw
+  sequence to `key-sequences` when a new key is needed.
+- **editor fx payload keys**: `:editor/insert-text {:text}`,
+  `:editor/delete-before-cursor {:n}`, `:editor/submit` (no payload).
+- **Streaming-into-editor template** (dictation): the child process +
+  diff bookkeeping live in the factory closure (`create` returns the ext
+  map); the read loop dispatches `:ext.dictation/transcript {:delete :text}`
+  *events* whose handler emits the editor effects — `dispatch!` only takes
+  events, so a streaming ext must round-trip through an event, not emit
+  effects directly from the closure. Process-local state holds only the
+  `:recording?` badge flag.
+- **Factory extensions** (return nil to opt out): pushover is
+  `(pushover/extension)` and yields nil when unconfigured; dictation is
+  `(dictation/create)` (closure resources). `ext/compose` drops nils, so
+  conditional extensions are just nil-returning factories in the list.
+- **plan-mode dropped the `:context` hook** (master's was a no-op); plan
+  enforcement is entirely the tool-gate. Blocked tools surface "Blocked by
+  Xi permission gate" to the model.
+- **In server mode done-notify's desktop notification fires on the server
+  host** (it's a server-side ext). Intended per the per-mode table; the
+  client-facing signal is the mirrored 🔔 badge. pushover is the
+  client-reaching channel for server mode.
+- `skills.cljs` is still master-shaped (`:name`/`:hooks`) — untouched,
+  deferred to 6b Batch 3 as planned.
+
 ## Session 6b — remaining 14 ports
 
 Start by reading this doc + `git log` since 6a.
