@@ -22,20 +22,23 @@
   "Options:
      :initial-state   required — see xi.core.state
      :handlers        event-type → pure handler (see xi.core.events)
-     :effects         fx-type → (fn [{:keys [dispatch! state]} payload])
+     :transform-event optional (fn [state event] → event'|nil) — pre-dispatch
+                      transform (extension event hooks); nil blocks the event
+     :effects         fx-type → (fn [{:keys [dispatch! state get-state]} payload])
      :on-render       (fn [state dispatch!]) — called after state changes
      :schedule-render (fn [thunk]) — defaults to queueMicrotask (sync in tests)
      :ring            log ring buffer (xi.core.log/create-ring)
      :jsonl-writer    optional debug writer (xi.core.log/create-jsonl-writer)
 
    Returns {:state :dispatch! :add-tap! :ring}."
-  [{:keys [initial-state handlers effects on-render schedule-render ring jsonl-writer]}]
+  [{:keys [initial-state handlers transform-event effects on-render schedule-render ring jsonl-writer]}]
   (let [;; Built-in effect: re-dispatch an event (lets handlers chain flows,
         ;; e.g. draining a queued prompt by re-entering the normal code path).
         effects  (merge {:app/dispatch (fn [{:keys [dispatch!]} event] (dispatch! event))}
                         effects)
-        !state   (atom initial-state)
-        schedule (or schedule-render (fn [thunk] (js/queueMicrotask thunk)))
+        !state    (atom initial-state)
+        get-state (fn [] @!state)
+        schedule  (or schedule-render (fn [thunk] (js/queueMicrotask thunk)))
         ;; Contained mutation: dispatch queue + bookkeeping, all local to
         ;; this closure. Not application state.
         ctx      #js {:queue #js [] :processing false :renderScheduled false
@@ -43,12 +46,28 @@
     (letfn [(run-effect! [dispatch! [fx-type payload :as effect]]
               (if-let [fx-handler (get effects fx-type)]
                 (try
-                  (fx-handler {:dispatch! dispatch! :state @!state} payload)
+                  (fx-handler {:dispatch! dispatch! :state @!state :get-state get-state} payload)
                   (catch :default e
                     (js/console.error "[app] effect failed:" (str fx-type) e)))
                 (js/console.warn "[app] unknown effect:" (str fx-type))))
 
-            (process-one! [dispatch! event]
+            (process-one! [dispatch! orig-event]
+              (let [event (if transform-event
+                            (try
+                              (transform-event @!state orig-event)
+                              (catch :default e
+                                (js/console.error "[app] transform-event failed:"
+                                                  (str (:type orig-event)) e)
+                                orig-event))
+                            orig-event)]
+                (if (nil? event)
+                  ;; Blocked by an event hook — log only.
+                  (when ring
+                    (log/append! ring (log/prepare-entry
+                                       (assoc orig-event :ext/blocked? true) [])))
+                  (process-event! dispatch! event))))
+
+            (process-event! [dispatch! event]
               (let [{state' :state fx :effects}
                     (try
                       (events/handle-event handlers @!state event)

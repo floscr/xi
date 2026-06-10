@@ -7,9 +7,15 @@
    {:connection {:id      uuid
                  :mode    :standalone | :server | :client
                  :clients {client-id {:kind :tui|:web :visible? bool}}}
-    :rooms      {room-id {:id :history :session :agent :ui}}
+    :rooms      {room-id {:id :history :session :agent :ext :ui}}
     :active-room room-id | nil
-    :ext        {}}   ;; extension-owned state, keyed by extension id
+    :ext        {}}   ;; process-local extension state, keyed by extension id
+
+   Extension state is scoped two ways:
+   - room-scoped  [:rooms rid :ext <id>] — rides in :room/joined snapshots,
+                  mirrors to clients (e.g. plan-mode :enabled?)
+   - process-local [:ext <id>]           — never crosses the wire
+                  (e.g. dictation :recording? on a client process)
 
    Standalone = one local room, connected to nothing. Server hosts N rooms.
    Client mirrors remote rooms into the same shape.")
@@ -18,7 +24,7 @@
   "A room: independent conversation with its own history, session and UI."
   ([id] (make-room id nil))
   ([id {:keys [provider model cwd session system effort agents-files
-               personal-agent? created]}]
+               personal-agent? created ext]}]
    {:id      id
     :cwd     cwd
     :created created                  ;; ms timestamp (servers resolve "latest" by it)
@@ -31,6 +37,8 @@
               :effort          effort
               :agents-files    agents-files    ;; paths shown in launch header
               :personal-agent? personal-agent?}
+    :ext     (or ext {})              ;; room-scoped extension state, keyed by ext id
+                                      ;; (rides in :room/joined snapshots → mirrors)
     :ui      {:dialogs       []       ;; pending dialogs, FIFO
               :buffers       {}       ;; buffer-id → {:title :text ...}
               :active-buffer :chat}}))
@@ -58,3 +66,13 @@
 
 (defn mode [state]
   (get-in state [:connection :mode]))
+
+(defn room-ext
+  "Room-scoped extension state for ext-id (mirrors to clients)."
+  [state room-id ext-id]
+  (get-in state [:rooms room-id :ext ext-id]))
+
+(defn process-ext
+  "Process-local extension state for ext-id (never crosses the wire)."
+  [state ext-id]
+  (get-in state [:ext ext-id]))
