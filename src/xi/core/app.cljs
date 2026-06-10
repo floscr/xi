@@ -30,7 +30,11 @@
 
    Returns {:state :dispatch! :add-tap! :ring}."
   [{:keys [initial-state handlers effects on-render schedule-render ring jsonl-writer]}]
-  (let [!state   (atom initial-state)
+  (let [;; Built-in effect: re-dispatch an event (lets handlers chain flows,
+        ;; e.g. draining a queued prompt by re-entering the normal code path).
+        effects  (merge {:app/dispatch (fn [{:keys [dispatch!]} event] (dispatch! event))}
+                        effects)
+        !state   (atom initial-state)
         schedule (or schedule-render (fn [thunk] (js/queueMicrotask thunk)))
         ;; Contained mutation: dispatch queue + bookkeeping, all local to
         ;; this closure. Not application state.
