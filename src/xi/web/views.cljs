@@ -204,19 +204,32 @@
 
 ;; ── Chat view ────────────────────────────────────────────────────────────────
 
+(defn- offline-badge [state]
+  (when (false? (:web/connected? state))
+    [:span {:class ["offline-label"]} "Offline"]))
+
 (defn- chat-view [state dispatch!]
   (let [room    (state/active-room state)
-        history (:history room)
+        sid     (get-in state [:web/route :session-id])
+        cached  (get-in state [:web/cache sid])
+        history (or (:history room) (:history cached))
         busy?   (get-in room [:agent :busy?])
-        model   (get-in room [:agent :model])]
+        model   (or (get-in room [:agent :model]) (:model cached))
+        ready?  (or room (seq history))]
     [:div {:class ["container"] :replicant/key "chat"}
      [:div {:class ["topbar"]}
+      [:button {:class ["icon-btn" "icon-btn--sm"]
+                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]}
        "Xi"
-       (when model [:span {:class ["topbar-subtitle"]} (str " · " model)])]]
+       (when model [:span {:class ["topbar-subtitle"]} (str " · " model)])]
+      (offline-badge state)]
      [:div {:class ["timeline"]}
       [:div {:class ["timeline-content"]}
-       (keep entry->post history)
+       (if ready?
+         (keep entry->post history)
+         [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])
        (when busy?
          [:div {:class ["post" "post--assistant"]}
           [:div {:class ["status-bubble"]}
@@ -224,18 +237,84 @@
      (dialog-overlay dispatch! room)
      (compose-box dispatch! room busy?)]))
 
-(defn- connecting-view []
-  [:div {:class ["container"] :replicant/key "connecting"}
-   [:div {:class ["empty-state"]}
-    (spinner)
-    [:p "Connecting to server…"]]])
+;; ── Home view ────────────────────────────────────────────────────────────────
+
+(defn- format-relative-time [t]
+  (let [ms (cond (number? t) t
+                 (string? t) (let [n (.getTime (js/Date. t))] (when-not (js/isNaN n) n))
+                 :else nil)]
+    (when ms
+      (let [m (/ (- (js/Date.now) ms) 60000)]
+        (cond (< m 1)    "just now"
+              (< m 60)   (str (js/Math.floor m) "m ago")
+              (< m 1440) (str (js/Math.floor (/ m 60)) "h ago")
+              :else      (str (js/Math.floor (/ m 1440)) "d ago"))))))
+
+(defn- session-card [dispatch! {:keys [session-id name timestamp active? busy? unread?]}]
+  [:div {:class ["project-card" (when active? "project-card--active")]
+         :replicant/key (or session-id (str "card-" name))
+         :on {:click (fn [_] (dispatch! {:type :route/navigate
+                                         :page :chat :session-id session-id}))}}
+   [:div {:class ["project-card-icon"]}
+    (cond
+      busy?   (spinner)
+      active? [:div {:class ["active-dot"]}]
+      :else   (icon/icon {:icon-name :message-circle :size :sm}))]
+   [:div {:class ["project-card-info"]}
+    [:span {:class ["project-card-name"]} (or name "New session")]
+    [:span {:class ["project-card-path"]}
+     (str (or (format-relative-time timestamp) "")
+          (cond busy? " · working…" active? " · active" :else ""))]]
+   (when unread? [:div {:class ["unread-dot"]}])])
+
+(defn- home-view [state dispatch!]
+  (let [sessions   (get-in state [:lobby :sessions])
+        rooms      (get-in state [:lobby :rooms])
+        counts     (:web/response-counts state)
+        watched    (:web/watched state)
+        connected? (:web/connected? state)
+        room-by-sid (into {} (keep (fn [r] (when (:session-id r) [(:session-id r) r])) rooms))
+        known-sids  (set (keep :session-id sessions))
+        orphans     (filter (fn [r] (and (:session-id r)
+                                         (not (known-sids (:session-id r)))))
+                            rooms)
+        unread?     (fn [sid] (when-let [w (get watched sid)]
+                               (> (get counts sid 0) w)))
+        has-content? (or (seq sessions) (seq orphans))]
+    [:div {:class ["container"] :replicant/key "home"}
+     [:div {:class ["topbar"]}
+      [:div {:class ["topbar-title"]} "Xi"]
+      (offline-badge state)
+      (when connected?
+        [:button {:class ["icon-btn"]
+                  :on {:click (fn [_] (dispatch! {:type :room/new}))}}
+         (icon/icon {:icon-name :plus :size :md})])]
+     [:div {:class ["home"]}
+      (if (or has-content? connected?)
+        [:div {:class ["project-list"]}
+         (for [r orphans]
+           (session-card dispatch! {:session-id (:session-id r)
+                                    :name (or (:session-name r) "New session")
+                                    :active? true :busy? (:busy? r)}))
+         (for [s sessions]
+           (let [sid (:session-id s)
+                 room (get room-by-sid sid)]
+             (session-card dispatch!
+                           {:session-id sid
+                            :name (:name s)
+                            :timestamp (or (:last-accessed s) (:timestamp s))
+                            :active? (boolean room)
+                            :busy? (boolean (:busy? room))
+                            :unread? (unread? sid)})))]
+        [:div {:class ["empty-state"]}
+         (spinner)
+         [:p "Connecting to server…"]])]]))
 
 ;; ── Root ─────────────────────────────────────────────────────────────────────
 
 (defn root-view
-  "Top-level view. Phase 7a: chat once a room is joined, else a connecting
-   placeholder. Router + home view arrive in 7b."
+  "Top-level view, route-driven: the session list at /, a room at /chat/:id."
   [state dispatch!]
-  (if (state/active-room state)
-    (chat-view state dispatch!)
-    (connecting-view)))
+  (case (get-in state [:web/route :page])
+    :chat (chat-view state dispatch!)
+    (home-view state dispatch!)))

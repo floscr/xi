@@ -6,9 +6,10 @@
    :remote? broadcasts mirror into the local room cache with effects
    stripped. The browser only renders and collects input.
 
-   Phase 7a: online-only chat. Connects to the hosting server over WS,
-   joins the latest room, renders the chat view with Replicant. Home view,
-   router and offline cache arrive in 7b."
+   Phase 7b: home/session list + deep-link routing + offline cache. The
+   router lives in the single atom (:web/route); the cache hydrates state
+   before the WS connects and persists via an app tap. Saved sessions, live
+   rooms, unread dots and reconnect come from the lobby mirror + transport."
   (:require [replicant.dom :as r]
             [xi.agent :as agent]
             [xi.client.ws-transport :as ws-transport]
@@ -17,6 +18,8 @@
             [xi.core.app :as app]
             [xi.core.events :as events]
             [xi.core.state :as state]
+            [xi.web.cache :as cache]
+            [xi.web.router :as router]
             [xi.web.views :as views]))
 
 ;; ── Base handlers (browser-safe merge) ───────────────────────────────────────
@@ -30,6 +33,74 @@
          agent/handlers
          (commands/command-handlers)
          compaction/handlers))
+
+;; ── Web-local handlers (installed unwrapped; never mirrored) ──────────────────
+
+(defn- forward
+  "Forward an originating client event to the server."
+  [_st ev]
+  {:effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
+
+(defn- room-new
+  "Start a fresh room and switch to the chat view; the real session id fills
+   the URL once :room/joined arrives."
+  [st _]
+  {:state   (assoc st :web/route {:page :chat :session-id nil})
+   :effects [[:history/push {:route {:page :chat}}]
+             [:ws/send {:type :room/join :target "new"}]]})
+
+(defn- counts-result
+  "Store per-session response counts from a :session/counts reply."
+  [st {:keys [counts]}]
+  {:state (assoc st :web/response-counts (or counts {}))})
+
+(defn- mark-read
+  "Mark a session read at its current response count (clears the unread dot)."
+  [st {:keys [session-id]}]
+  (let [cnt (get-in st [:web/response-counts session-id] 0)]
+    {:state   (assoc-in st [:web/watched session-id] cnt)
+     :effects [[:cache/watch {:session-id session-id :count cnt}]]}))
+
+(defn- connection-status [st {:keys [connected?]}]
+  {:state (assoc st :web/connected? connected?)})
+
+(defn- web-handlers []
+  (merge router/handlers
+         {:room/new              room-new
+          :room/join             forward
+          :room/leave            forward
+          :session/counts        forward
+          :session/counts-result counts-result
+          :session/mark-read     mark-read
+          :connection/status     connection-status}))
+
+(defn- web-effects []
+  {:history/push router/history-effect
+   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))})
+
+;; ── Taps (cache persistence + unread polling + post-join URL) ─────────────────
+
+(defn- request-counts-tap
+  "On a fresh lobby, ask the server for response counts of the saved
+   sessions so the home view can flag unread ones."
+  [dispatch!]
+  (fn [event state]
+    (when (= :lobby/state (:type event))
+      (when-let [sids (seq (keep :session-id (get-in state [:lobby :sessions])))]
+        (dispatch! {:type :session/counts :session-ids (vec sids)})))))
+
+(defn- fill-url-tap
+  "After joining a fresh room (URL has no session id yet), replace the URL
+   with the real session id so reload resumes the same session."
+  [dispatch!]
+  (fn [event state]
+    (when (= :room/joined (:type event))
+      (let [sid (get-in event [:room :session :id])]
+        (when (and sid
+                   (= :chat (get-in state [:web/route :page]))
+                   (nil? (get-in state [:web/route :session-id])))
+          (dispatch! {:type :route/navigate :page :chat
+                      :session-id sid :replace? true}))))))
 
 ;; ── Auto-scroll ──────────────────────────────────────────────────────────────
 
@@ -64,24 +135,44 @@
 ;; ── Init ─────────────────────────────────────────────────────────────────────
 
 (defonce ^:private app-ref (atom nil))
+(defonce ^:private dispatch-ref (atom nil))
+
+(defn- ws-url []
+  (str (if (= "https:" js/location.protocol) "wss://" "ws://") js/location.host))
 
 (defn ^:export init! []
   (js/console.log "[xi-web] starting")
   (r/set-dispatch! (fn [_ _]))
-  (let [transport (ws-transport/create!
-                   {:url    (str (if (= "https:" js/location.protocol) "wss://" "ws://")
-                                 js/location.host)
-                    :target "latest"
-                    :on-close (fn [] (js/console.error "[xi-web] disconnected"))})
-        {:keys [dispatch!] :as app}
-        (app/create-app {:initial-state (state/initial-state {:mode :client})
-                         :handlers      (ws-transport/make-handlers (base-handlers))
-                         :effects       (:effects transport)
+  (let [route     (router/parse-path (.-pathname js/window.location))
+        initial   (cache/hydrate (state/initial-state {:mode :client}) route)
+        transport (ws-transport/create!
+                   {:url        (ws-url)
+                    ;; nil → the router drives joins; reconnect replays them.
+                    :target     nil
+                    :reconnect? true
+                    :on-status  (fn [connected?]
+                                  (when-let [d @dispatch-ref]
+                                    (d {:type :connection/status
+                                        :connected? connected?})))})
+        {:keys [dispatch! state add-tap!] :as app}
+        (app/create-app {:initial-state initial
+                         :handlers      (ws-transport/make-handlers
+                                         (base-handlers)
+                                         {:local-handlers (web-handlers)})
+                         :effects       (merge (:effects transport) (web-effects))
                          :on-render     render!})]
-    ((:set-dispatch! transport) dispatch!)
+    (reset! dispatch-ref dispatch!)
     (reset! app-ref app)
-    ;; First paint (connecting placeholder until :room/joined arrives).
-    (render! @(:state app) dispatch!)))
+    ((:set-dispatch! transport) dispatch!)
+    (add-tap! cache/persist-tap)
+    (add-tap! (request-counts-tap dispatch!))
+    (add-tap! (fill-url-tap dispatch!))
+    (router/init! dispatch!)
+    (.addEventListener js/document "visibilitychange"
+                       (fn [_]
+                         (dispatch! {:type :client/update
+                                     :visible? (= "visible" (.-visibilityState js/document))})))
+    (render! @state dispatch!)))
 
 (defn ^:export reload! []
   (js/console.log "[xi-web] reloaded")

@@ -139,9 +139,10 @@
    Returns {:effects {:ws/send …} :set-dispatch! :close!}."
   [{:keys [url target cwd reconnect? on-status on-close]}]
   (let [ctx #js {:dispatch nil :ws nil :closed false :pending #js [] :backoff 1000
-                 :lastJoin (wire/encode {:type :room/join
-                                         :target (or target "latest")
-                                         :cwd cwd})}]
+                 ;; nil target → no auto-join (the web router drives joins via
+                 ;; forwarded :room/join, which updates lastJoin for reconnect)
+                 :lastJoin (when target
+                             (wire/encode {:type :room/join :target target :cwd cwd}))}]
     (letfn [(open? []
               (let [ws (.-ws ctx)] (and ws (= 1 (.-readyState ws)))))
             (flush-pending! [ws]
@@ -166,7 +167,7 @@
                  ws "open"
                  (fn [_]
                    (set! (.-backoff ctx) 1000)
-                   (.send ws (.-lastJoin ctx))
+                   (when-let [j (.-lastJoin ctx)] (.send ws j))
                    (flush-pending! ws)
                    (when on-status (on-status true))))
                 (.addEventListener
@@ -180,9 +181,12 @@
                                    (fn [_] (try (.close ws) (catch :default _ nil))))))
             (send! [event]
               (let [msg (wire/encode event)]
-                ;; Remember the active room so reconnect re-joins it.
+                ;; Remember the active room so reconnect re-joins it; forget
+                ;; it on leave so we reconnect into the lobby, not the room.
                 (when (= :room/join (:type event))
                   (set! (.-lastJoin ctx) msg))
+                (when (= :room/leave (:type event))
+                  (set! (.-lastJoin ctx) nil))
                 (if (open?)
                   (try (.send (.-ws ctx) msg)
                        (catch :default err
