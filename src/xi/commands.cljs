@@ -220,7 +220,7 @@
    {:name "sessions" :description "List previous sessions"             :handler cmd-sessions}
    {:name "new"      :description "Start a new session"                :handler cmd-new}
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
-   {:name "compact"  :description "Summarize conversation to reduce context" :handler cmd-compact}
+   {:name "truncate" :description "Summarize conversation to reduce context" :handler cmd-compact}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
    {:name "diff"     :description "Show diff viewer (git|staged|unstaged|<ref>)" :handler cmd-diff}
    {:name "tree"     :description "Navigate session history"             :handler cmd-tree}

@@ -1,6 +1,6 @@
 # Context Compaction
 
-Xi supports in-session context compaction via `/compact`. This summarizes
+Xi supports in-session context compaction via `/truncate`. This summarizes
 the current conversation into a condensed form and starts a fresh session
 with the summary injected, preserving continuity without the full token
 cost.
@@ -8,8 +8,8 @@ cost.
 ## Usage
 
 ```
-/compact              Summarize the entire conversation
-/compact auth flow    Summarize with focus on "auth flow"
+/truncate              Summarize the entire conversation
+/truncate auth flow    Summarize with focus on "auth flow"
 ```
 
 The optional focus argument guides the summarizer to emphasize specific topics.
@@ -17,7 +17,7 @@ The optional focus argument guides the summarizer to emphasize specific topics.
 ## How it works
 
 ```
- /compact [focus]
+ /truncate [focus]
       │  :compact/request  (refused while busy / no provider session)
       ▼
  busy? = true, status "Compacting conversation..."
@@ -61,7 +61,7 @@ The summarizer preserves:
 ## Implementation
 
 - **Source:** `src/xi/compaction.cljs`
-- **Command:** `/compact` in `xi.commands/built-in-commands` dispatches
+- **Command:** `/truncate` in `xi.commands/built-in-commands` dispatches
   `:compact/request`
 - **Model:** always `claude-sonnet-4-20250514` (`COMPACT_MODEL`) for cost
   efficiency

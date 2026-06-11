@@ -163,7 +163,7 @@
                                 {:type :command/run :room-id "r" :name "help"})
         text (:text (peek (history state)))]
     (is (str/includes? text "/resume"))
-    (is (str/includes? text "/compact"))))
+    (is (str/includes? text "/truncate"))))
 
 (deftest clear-and-new-emit-session-new
   (is (= [[:session/new {:room-id "r"}]]

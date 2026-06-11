@@ -53,7 +53,7 @@ Defined in `xi.commands/built-in-commands`:
 | `/sessions` | List previous sessions |
 | `/new` | Start a new session |
 | `/clear` | Clear current session |
-| `/compact` | Summarize conversation to reduce context ([compaction.md](compaction.md)) |
+| `/truncate` | Summarize conversation to reduce context ([compaction.md](compaction.md)) |
 | `/prompt` | Show system prompt |
 | `/diff` | Diff viewer (`git` \| `staged` \| `unstaged` \| `<ref>`; no args → session diff) |
 | `/tree` | Navigate session history ([session-tree.md](session-tree.md)) |
