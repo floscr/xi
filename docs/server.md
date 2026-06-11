@@ -89,14 +89,17 @@ The server creates a fresh runtime and the client attaches to it.
 
 ### Personal Agent (`xi server --personal-agent-only`)
 
-Runs Xi as a conversational personal assistant with no coding tools. The runtime:
+Runs Xi as a conversational personal assistant with no coding tools. Rooms
+provisioned by the server carry `[:agent :personal-agent?]`, which drives
+everything downstream:
 
-- Skips MCP server creation entirely (no file, edit, bash, etc.)
-- Sets `allowedTools` to an empty array as a safety net
-- Replaces AGENTS.md with a custom system prompt for conversational use
-- Exposes only `web_search` (via Perplexity) for real-time information
+- The provider restricts the MCP tool bridge to `web_search` only (no file,
+  edit, bash, etc.)
+- AGENTS.md is replaced with a conversational system prompt
+  (`system-prompt/PERSONAL_AGENT_PROMPT`)
 - Image attachments still work (processed in the prompt, not via tools)
-- Sessions are stored separately in `~/.pi/agent/personal-agent-sessions/`
+- Sessions are stored separately in `~/.config/xi/personal-agent/root/`;
+  the lobby, `/new`, and `/resume` list only those sessions
 
 ```bash
 xi server --headless --personal-agent-only   # start personal assistant

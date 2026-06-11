@@ -8,7 +8,9 @@
                        :print   ["Web: http://localhost:8100"]})
           (def serve-config {:session "xi-serve"
                              :windows [["watch" "npx shadow-cljs watch main web"]
-                                       ["server" "bun target/main.js server --headless"]]}))
+                                       ["server" "bun target/main.js server --headless"]]})
+          (def pa-serve-config {:session "xi-pa"
+                                :windows [["server" "bun target/main.js server --headless --personal-agent-only --port 7475"]]}))
 
   dev         {:doc "Start tmux dev session"
                :task (td/start config)}
@@ -63,8 +65,23 @@
            (println (str "http://" ip ":8100")))}
 
   dev:personal
-  {:doc "Start headless server in personal agent mode"
+  {:doc "Start headless server in personal agent mode (foreground)"
    :task (shell "bun target/main.js server --headless --personal-agent-only")}
+
+  serve:personal
+  {:doc "Start tmux personal-agent serve session (port 7475)"
+   :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
+           (td/start (assoc pa-serve-config :print [(str "Web: http://" ip ":7475")]))
+           (td/attach pa-serve-config))}
+
+  serve:personal:stop
+  {:doc "Stop tmux personal-agent serve session"
+   :task (td/stop pa-serve-config)}
+
+  serve:personal:restart
+  {:doc "Restart tmux personal-agent serve session"
+   :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
+           (td/restart (assoc pa-serve-config :print [(str "Web: http://" ip ":7475")])))}
 
   serve
   {:doc "Start tmux serve session with Tailscale URL"

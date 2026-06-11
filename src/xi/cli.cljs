@@ -143,6 +143,7 @@
           "join"           (recur (next args) (assoc opts :command :join))
           "create"         (recur (next args) (assoc opts :command :create))
           "--headless"     (recur (next args) (assoc opts :headless? true))
+          "--personal-agent-only" (recur (next args) (assoc opts :personal-agent? true))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
           "--model"        (recur (nnext args) (assoc opts :model (second args)))
           "--port"         (recur (nnext args) (assoc opts :port (js/parseInt (second args) 10)))
@@ -309,7 +310,7 @@
   "Host rooms over WS. The server app runs providers + sessions and has no
    renderer; unless --headless, a local TUI joins through the same WS path
    as any remote client."
-  [{:keys [port headless?] :as opts}]
+  [{:keys [port headless? personal-agent?] :as opts}]
   (let [settings (load-settings)
         server-opts (resolve-model-opts opts settings)
         ring (log/create-ring)
@@ -317,6 +318,7 @@
         dialogs  (ext/create-dialogs)
         server (ws/create-server
                 {:server-opts server-opts
+                 :personal-agent? personal-agent?
                  :ext-system-prompt (fn [cwd] (ext/system-prompt composed cwd))
                  :room-ext-init (:room-ext-init composed)})
         handlers (-> (make-handlers (:commands composed))

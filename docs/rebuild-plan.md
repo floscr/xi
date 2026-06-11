@@ -115,8 +115,10 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
     [url]` (target `"new"`). The TUI client itself is **unchanged** from
     phase 4 — it renders mirrored state and dispatches the same events.
   - **Deferred**: `:visibility` tracking, dictation, session lists in the
-    lobby payload (web client, phase 7); personal-agent room policies
-    (extensions, phase 6); `xi rooms` CLI listing.
+    lobby payload (web client, phase 7); `xi rooms` CLI listing.
+    Personal-agent room policy landed post-phase-7: `--personal-agent-only`
+    makes `:room/setup` provision PA rooms (PA prompt, PA session dir,
+    `[:agent :personal-agent?]` flag drives provider tool restriction).
 - **Old implementation reference**: `../xi` worktree (master).
 - **Phase 6 — extensions** (6a: `62419b0`–`df7c79c`; 6b: `b701298`–`ce33f7f`):
   - **Extension = data map**: `:id :init :handlers :fx :event-hooks
@@ -145,8 +147,8 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
     - 6a (stateful): plan-mode, done-notify, pushover, dictation
   - **Deviations**: `parmezan` absorbed into clj-surgeon's auto-lint;
     `sub-project` dropped (stub with no behavior); personal-agent room
-    policy deferred (core plumbing already in place, policy enforcement
-    not needed yet); `projects` drill-down (Tab→files) deferred (needs
+    policy landed later (see phase 5 note — core plumbing was already in
+    place, only the provisioning edge was missing); `projects` drill-down (Tab→files) deferred (needs
     callback-based menus); `set-session-name!` dropped from gtd picker
     (no equivalent event in xi-next).
 - **Phase 7a — web client (online chat)**:

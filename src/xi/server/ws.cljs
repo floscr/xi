@@ -18,9 +18,7 @@
    clients can't address rooms they're not in. Sockets live in the
    create-server closure (runtime resources, not app state).
 
-   Deferred to later phases: :visibility tracking, dictation, session
-   lists in the lobby payload (web client, phase 7); personal-agent mode
-   (extensions, phase 6)."
+   Deferred to later phases: :visibility tracking, dictation."
   (:require [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
@@ -55,16 +53,19 @@
 (defn- lobby-sessions
   "Saved sessions from disk for the lobby/home view — a curated subset of
    the full summaries (id, name, cwd, mtime, source)."
-  []
-  (->> (session/list-all-sessions)
+  [personal-agent?]
+  (->> (if personal-agent?
+         (session/list-personal-agent-sessions)
+         (session/list-all-sessions))
        (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source]))))
 
 (defn- lobby-payload
   "The :lobby/state wire payload: live rooms + saved sessions."
-  [st]
-  (wire/encode {:type     :lobby/state
-                :rooms    (rm/room-summaries st)
-                :sessions (lobby-sessions)}))
+  [st personal-agent?]
+  (wire/encode (cond-> {:type     :lobby/state
+                        :rooms    (rm/room-summaries st)
+                        :sessions (lobby-sessions personal-agent?)}
+                 personal-agent? (assoc :personal-agent? true))))
 
 ;; ── Static file serving (resources/public, SPA fallback) ──────────────────────
 
@@ -112,6 +113,10 @@
 
    opts:
      :server-opts        {:model :effort} — defaults for rooms provisioned here.
+     :personal-agent?    provision personal-assistant rooms: PA system prompt
+                         instead of AGENTS.md, sessions in the PA dir, and the
+                         provider restricted to web_search (the room's
+                         [:agent :personal-agent?] flag drives the rest).
      :ext-system-prompt  (fn [cwd] → str|nil) — extension system prompt,
                          appended to the room's AGENTS.md prompt.
      :room-ext-init      map of ext-id → initial room-scoped state, seeded
@@ -119,7 +124,7 @@
                          clients via the :room/joined snapshot).
 
    Returns {:fx {…} :start! (fn [app {:keys [port]}] → {:port :stop!})}."
-  [{:keys [server-opts ext-system-prompt room-ext-init]}]
+  [{:keys [server-opts personal-agent? ext-system-prompt room-ext-init]}]
   (let [sockets (js/Map.)
         send!   (fn [client-id payload]
                   (when-let [ws (.get sockets client-id)]
@@ -136,23 +141,31 @@
       ;; mirror right after the empty :room/joined snapshot).
       :room/setup
       (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd session-id]}]
-        (let [summary (when session-id (session/find-session-by-id session-id))
+        (let [summary (when session-id
+                        (if personal-agent?
+                          (session/find-personal-agent-session-by-id session-id)
+                          (session/find-session-by-id session-id)))
               cwd (or (:cwd summary) cwd (.cwd js/process))
-              system (system-prompt/combine
-                      (system-prompt/load-agents-md cwd)
-                      (when ext-system-prompt (ext-system-prompt cwd)))
+              system (if personal-agent?
+                       system-prompt/PERSONAL_AGENT_PROMPT
+                       (system-prompt/combine
+                        (system-prompt/load-agents-md cwd)
+                        (when ext-system-prompt (ext-system-prompt cwd))))
               session (if summary
                         (session/load-session summary)
-                        (session/create-session cwd))]
+                        (session/create-session
+                         cwd (when personal-agent? {:personal-agent? true})))]
           (dispatch! {:type :room/create
                       :room-id room-id
                       :room {:model        (:model server-opts)
                              :effort       (:effort server-opts)
                              :cwd          cwd
                              :system       system
-                             :agents-files (system-prompt/find-agents-md cwd)
+                             :agents-files (when-not personal-agent?
+                                             (system-prompt/find-agents-md cwd))
                              :session      session
                              :ext          room-ext-init
+                             :personal-agent? personal-agent?
                              :created      (js/Date.now)}})
           (dispatch! {:type :room/attach :client-id client-id :room-id room-id})
           (when summary
@@ -163,7 +176,7 @@
       ;; Send the full lobby payload (rooms + saved sessions) to one client.
       :lobby/send
       (fn [{:keys [state]} {:keys [client-id]}]
-        (send! client-id (lobby-payload state)))
+        (send! client-id (lobby-payload state personal-agent?)))
 
       ;; Reply to an unread-count query: assistant-turn counts per session.
       :session/counts-reply
@@ -193,7 +206,7 @@
                                         (when-not (:room-id client) cid))
                                       (get-in st [:connection :clients]))]
                  (when (seq lobby-cids)
-                   (let [payload (lobby-payload st)]
+                   (let [payload (lobby-payload st personal-agent?)]
                      (doseq [cid lobby-cids] (send! cid payload))))))
              server
              (js/Bun.serve
@@ -213,7 +226,7 @@
                             (.set sockets cid ws)
                             (dispatch! {:type :client/connect :client-id cid
                                         :client {:kind :remote}})
-                            (send! cid (lobby-payload @state))))
+                            (send! cid (lobby-payload @state personal-agent?))))
 
                         :message
                         (fn [^js ws data]

@@ -353,15 +353,23 @@
          reverse
          vec)))
 
+(defn- summary-matches-id? [session-id summary]
+  (or (= session-id (:session-id summary))
+      (= session-id (:cli-session-id summary))))
+
 (defn find-session-by-id
   "Find a session summary by its ID across all sources. Matches the summary
    id or, for Xi metadata summaries, the underlying CLI session id (Claude
    sessions are deduped out of the listing once Xi metadata references them,
    so a CLI id must resolve through the Xi summary)."
   [session-id]
-  (first (filter #(or (= session-id (:session-id %))
-                      (= session-id (:cli-session-id %)))
-                 (list-all-sessions))))
+  (first (filter (partial summary-matches-id? session-id) (list-all-sessions))))
+
+(defn find-personal-agent-session-by-id
+  "Find a session summary by its ID in the personal-agent sessions dir."
+  [session-id]
+  (first (filter (partial summary-matches-id? session-id)
+                 (list-personal-agent-sessions))))
 
 ;; ── Response counting (for unread indicators) ────────────────────────────────
 
@@ -407,14 +415,16 @@
     :xi
     (let [content (fs/readFileSync (:filepath summary) "utf8")
           data (js->clj (js/JSON.parse content) :keywordize-keys true)]
-      {:id (:id data)
-       :cli-session-id (:cli-session-id data)
-       :cwd (:cwd data)
-       :created (:created data)
-       :last-accessed (:last-accessed data)
-       :name (:name data)
-       :model (:model data)
-       :source :xi})
+      (cond-> {:id (:id data)
+               :cli-session-id (:cli-session-id data)
+               :cwd (:cwd data)
+               :created (:created data)
+               :last-accessed (:last-accessed data)
+               :name (:name data)
+               :model (:model data)
+               :source :xi}
+        ;; Keep the flag so resumed sessions save back to the PA dir
+        (:personal-agent? data) (assoc :personal-agent? true)))
 
     :claude
     {:id (:session-id summary)

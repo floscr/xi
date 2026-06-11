@@ -56,7 +56,7 @@ When adding new tests:
 - **Bun** runs the compiled output (provides HTTP, subprocess, file I/O, fetch)
 - **No npm runtime deps** — only shadow-cljs as a devDependency
 - Sessions stored in `~/.pi/agent/sessions/` (Pi-compatible JSONL format)
-- Personal agent sessions stored separately in `~/.pi/agent/personal-agent-sessions/`
+- Personal agent sessions stored separately in `~/.config/xi/personal-agent/root/`
 - Auth via `~/.pi/agent/auth.json` OAuth tokens or `ANTHROPIC_API_KEY` env var
 
 ### Server / Client

@@ -16,10 +16,10 @@
      :room/leave  ─► clears membership, confirms with :room/left
      :room/list   ─► sends :lobby/state to the requesting client
 
-   Auto-destroy (vs master: no personal-agent special case yet — that
-   returns with extensions in phase 6): a room is closed when its last
-   client leaves or disconnects while the agent is idle, or when a turn
-   ends with no clients attached."
+   Auto-destroy (vs master: no personal-agent special case — the generic
+   policy subsumes it): a room is closed when its last client leaves or
+   disconnects while the agent is idle, or when a turn ends with no
+   clients attached."
   (:require [xi.core.state :as state]))
 
 ;; ── Queries (pure) ───────────────────────────────────────────────────────────
