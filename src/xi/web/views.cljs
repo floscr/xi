@@ -130,7 +130,8 @@
         (when-let [n (:image-count entry)]
           (when (pos? n)
             [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
-      [:div {:class ["post-content"]} (:text entry)]]]
+      (when (seq (:text entry))
+        [:div {:class ["post-content"]} (:text entry)])]]
 
     :text
     [:div {:class ["post" "post--assistant"]}
@@ -244,7 +245,7 @@
           (icon/icon {:icon-name :x :size :sm})]])
       images)]))
 
-(defn- submit-compose! [dispatch! room-id images draft-key draft]
+(defn- submit-compose! [dispatch! room-id session-id images draft-key draft]
   (let [text (str/trim (or draft ""))]
     (when (or (seq text) (seq images))
       (when-let [^js el (compose-textarea-el)]
@@ -252,10 +253,15 @@
       (dispatch! {:type :compose/clear-draft :draft-key draft-key})
       (when (seq images)
         (dispatch! {:type :compose/clear-images}))
-      (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
-                   (seq images) (assoc :images (vec images)))))))
+      (if room-id
+        (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
+                     (seq images) (assoc :images (vec images))))
+        ;; No active room yet (cached session view) — stash the message and
+        ;; let the pending-submit tap fire it once :room/joined arrives.
+        (dispatch! (cond-> {:type :submit/pending :session-id session-id :text text}
+                     (seq images) (assoc :images (vec images))))))))
 
-(defn- compose-box [dispatch! room busy? images draft-key draft]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id]
   (let [room-id (:id room)]
     [:div {:class ["compose-box"]}
      (compose-image-strip dispatch! images)
@@ -286,14 +292,16 @@
                         (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)))
                           (.preventDefault e)
                           (when-not busy?
-                            (submit-compose! dispatch! room-id images draft-key
+                            (submit-compose! dispatch! room-id session-id
+                                             images draft-key
                                              (.. e -target -value)))))}}})]
       (if busy?
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
          (icon/icon {:icon-name :circle-x :size :md})]
         [:button {:class ["icon-btn"]
-                  :on {:click (fn [_] (submit-compose! dispatch! room-id images draft-key draft))}}
+                  :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
+                                                       images draft-key draft))}}
          (icon/icon {:icon-name :arrow-up :size :md})])]]))
 
 ;; ── Permission dialog ────────────────────────────────────────────────────────
@@ -364,16 +372,15 @@
                 (str "Show " (min window-step start) " earlier messages"
                      " (" start " hidden)"))])
             (keep (partial entry->post dispatch!) (subvec entries start total))))
-         [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])
-       (when busy?
-         [:div {:class ["post" "post--assistant"]}
-          [:div {:class ["status-bubble"]}
-           (spinner) [:span "Working…"]]])]]
+         [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
+     (when busy?
+       [:div {:class ["working-indicator"]}
+        (spinner) [:span "Working…"]])
      (dialog-overlay dispatch! room)
      (lightbox/lightbox {:src (:web/lightbox state)
                          :on-close (fn [] (dispatch! {:type :lightbox/close}))})
      (compose-box dispatch! room busy? (:web/compose-images state)
-                  draft-key (get-in state [:web/drafts draft-key]))]))
+                  draft-key (get-in state [:web/drafts draft-key]) sid)]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 

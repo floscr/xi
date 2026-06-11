@@ -245,12 +245,10 @@
         {:effects [[:app/dispatch {:type :command/run :room-id room-id
                                    :name (:name parsed) :args (:args parsed)}]]}
 
-        ;; Prompt — possibly images-only (placeholder text)
+        ;; Prompt — possibly images-only (nil text → provider omits the
+        ;; empty text content block; only image blocks are sent).
         (or parsed (seq images))
-        (let [prompt-text (or (:text parsed)
-                              (if (= 1 (count images))
-                                "[Attached image]"
-                                (str "[Attached " (count images) " images]")))]
+        (let [prompt-text (:text parsed)]
           (if (seq images)
             {:state   (assoc-in st [:rooms room-id :ui :pending-images] [])
              :effects [[:image/process {:room-id room-id :text prompt-text

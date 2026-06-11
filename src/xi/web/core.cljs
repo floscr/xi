@@ -98,6 +98,17 @@
 (defn- lightbox-close [st _]
   {:state (dissoc st :web/lightbox)})
 
+(defn- submit-pending
+  "Stash a message when the user submits before the room exists (cached
+   session view). The pending-submit-tap fires it after :room/joined."
+  [st {:keys [session-id text images]}]
+  {:state (assoc st :web/pending-submit
+                 (cond-> {:session-id session-id :text text}
+                   (seq images) (assoc :images images)))})
+
+(defn- submit-clear-pending [st _]
+  {:state (dissoc st :web/pending-submit)})
+
 (defn- web-handlers []
   (merge router/handlers
          {:room/new              room-new
@@ -114,7 +125,9 @@
           :compose/clear-draft   compose-clear-draft
           :timeline/set-window   timeline-set-window
           :lightbox/open         lightbox-open
-          :lightbox/close        lightbox-close}))
+          :lightbox/close        lightbox-close
+          :submit/pending        submit-pending
+          :submit/clear-pending  submit-clear-pending}))
 
 (defn- web-effects []
   {:history/push router/history-effect
@@ -143,6 +156,22 @@
                    (nil? (get-in state [:web/route :session-id])))
           (dispatch! {:type :route/navigate :page :chat
                       :session-id sid :replace? true}))))))
+
+(defn- pending-submit-tap
+  "Fire a stashed message after the room it was aimed at finishes joining.
+   Guards against session-id mismatch so a navigation race can't send a
+   message into the wrong room."
+  [dispatch!]
+  (fn [event state]
+    (when (and (= :room/joined (:type event))
+               (:web/pending-submit state))
+      (let [{:keys [session-id text images]} (:web/pending-submit state)
+            joined-sid (get-in event [:room :session :id])
+            room-id    (:active-room state)]
+        (when (or (nil? session-id) (= session-id joined-sid))
+          (dispatch! {:type :submit/clear-pending})
+          (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
+                       (seq images) (assoc :images (vec images)))))))))
 
 ;; ── Auto-scroll ──────────────────────────────────────────────────────────────
 
@@ -219,7 +248,20 @@
     (add-tap! cache/persist-tap)
     (add-tap! (request-counts-tap dispatch!))
     (add-tap! (fill-url-tap dispatch!))
+    (add-tap! (pending-submit-tap dispatch!))
     (router/init! dispatch!)
+    ;; Track visual viewport height so the mobile keyboard doesn't push
+    ;; the compose box off-screen.  Falls back to window.innerHeight.
+    (let [set-vh! (fn []
+                    (let [h (if js/window.visualViewport
+                              (.-height js/window.visualViewport)
+                              js/window.innerHeight)]
+                      (.setProperty (.-style js/document.documentElement)
+                                    "--app-height" (str h "px"))))]
+      (set-vh!)
+      (if js/window.visualViewport
+        (.addEventListener js/window.visualViewport "resize" (fn [_] (set-vh!)))
+        (.addEventListener js/window "resize" (fn [_] (set-vh!)))))
     (.addEventListener js/document "visibilitychange"
                        (fn [_]
                          (dispatch! {:type :client/update

@@ -83,8 +83,11 @@
       cached       (assoc-in [:web/cache sid] cached))))
 
 (def ^:private persist-on
-  "Event types after which the cache is worth refreshing."
-  #{:lobby/state :room/joined :agent/turn-end :history/append :agent/abort})
+  "Event types after which the cache is worth refreshing.
+   :history/append is intentionally excluded — it fires on every streaming
+   delta and would thrash localStorage during long turns. :agent/tool-result
+   gives a mid-turn checkpoint; :agent/turn-end persists the final state."
+  #{:lobby/state :room/joined :agent/turn-end :agent/tool-result :agent/abort})
 
 (defn persist-tap
   "App tap that mirrors lobby + the active room into the cache. Gated to a

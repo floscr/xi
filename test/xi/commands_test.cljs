@@ -61,13 +61,15 @@
     (is (empty? (get-in state [:rooms "r" :ui :pending-images]))
         "pending images consumed")))
 
-(deftest input-submit-images-only-uses-placeholder
+(deftest input-submit-images-only-sends-nil-text
   (let [st (apply-events (with-room)
                          {:type :ui/attach-image :room-id "r" :image {:data "x"}})
         {:keys [effects]} (handle st {:type :input/submit :room-id "r" :text ""})
         [[fx-type payload]] effects]
     (is (= :image/process fx-type))
-    (is (= "[Attached image]" (:text payload)))))
+    (is (nil? (:text payload))
+        "no placeholder text — provider sends only the image blocks")
+    (is (= [{:data "x"}] (:images payload)))))
 
 (deftest input-submit-empty-noop
   (let [{:keys [state effects]} (handle (with-room)
