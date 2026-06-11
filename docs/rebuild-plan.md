@@ -12,7 +12,7 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
 | 4 | Standalone TUI (render-from-state, commands, sessions, compaction) | ✅ done | `f0aed74` |
 | 5 | Connection layer (WS transports, rooms) | ✅ done | `289f0c7` |
 | 6 | Extensions (new hook API, port all 18) | ✅ done | `62419b0`–`ce33f7f` |
-| 7 | Web client (rebuild on new core) | 🟡 7a done (online chat); 7b next — plan: [phase-7-web-client.md](phase-7-web-client.md) | |
+| 7 | Web client (rebuild on new core) | ✅ 7a (online chat) + 7b (home/router/offline/unread) — plan: [phase-7-web-client.md](phase-7-web-client.md) | |
 | 8 | Cutover (parity checklist, merge) | ⬜ | |
 
 ### Implementation notes (phases 2–5, for continuity)
@@ -174,9 +174,42 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
     (Replicant only writes changed attrs, so manual toggles survive
     re-render) and the compose box is an uncontrolled textarea read on
     submit. Entry kinds map to `.post--{user,assistant,tool}`.
-  - **Deferred to 7b**: router + `/chat/:id` deep links, home/session
-    list view, offline localStorage cache, unread dots, image
-    paste/thumbnails, client-side `visibilitychange` → `:client/update`.
+- **Phase 7b — web client (home, router, offline, unread)**:
+  - **Router as events** (`xi.web.router`): route lives in the single app
+    atom under `:web/route` (web-only key, no separate router atom);
+    `:route/navigate` is a pure handler that sets the route and emits
+    `[:history/push …]` plus room join/leave dispatches. `/` → home,
+    `/chat/:session-id` → chat. `popstate` re-dispatches navigate with
+    `:replace? true`. An `already?` guard skips re-join when the target
+    session is already active.
+  - **Home view** (`xi.web.views/home-view`): route-driven `root-view`
+    switches home vs chat. Lists orphan rooms + saved sessions from
+    `:lobby` as `.project-card`s (icon spinner/active-dot, relative
+    timestamps, `.unread-dot`), with a new-session button dispatching
+    `:room/new` (sets route to chat with a nil session id; a tap replaces
+    the URL with the real id once `:room/joined` arrives).
+  - **Offline cache** (`xi.web.cache`): localStorage EDN (pr-str /
+    read-string). `hydrate` seeds `:web/route`, `:web/watched`, `:lobby`
+    and `:web/cache` for a deep-linked session before the socket opens;
+    an app tap persists lobby + active room (keyed by session id) on a
+    whitelist of event types; the backend wins on `:room/joined` /
+    `:lobby/state`. Chat falls back to cached history while a room rejoins.
+  - **Reconnect** (`ws-transport`): opt-in `:reconnect?` with 1s→30s
+    backoff and an in-memory pending-send queue. Transport joins with a
+    nil target so the router drives joins; `lastJoin` is set per
+    `:room/join`, cleared on `:room/leave`, and replayed on reopen so a
+    dropped connection restores the correct room. The TUI keeps
+    exit-on-disconnect by not opting into `:reconnect?`.
+  - **Unread**: server `:session/counts` → `:session/counts-result`
+    round-trip (roomless-typed); client compares `:web/response-counts`
+    against `:web/watched` (localStorage), marking read on view via
+    `:session/mark-read` + `:cache/watch`.
+  - **Visibility**: client `visibilitychange` listener dispatches
+    `:client/update {:visible?}` so the server suppresses notifications
+    while a visible client is attached.
+  - **Deferred from 7b**: per-session compose drafts, image
+    paste/thumbnails, `xi rooms` CLI, rewrite of stale
+    `docs/web-client.md` / `docs/web-offline.md` protocol notes.
 
 ## Why
 

@@ -107,21 +107,27 @@ streaming agent — text deltas, thinking, tool-call blocks, abort.
 
 Milestone: full parity with master's web client per `docs/web-client.md`.
 
-1. **Router** (`xi.web.router`) — history routing, `/` home,
-   `/chat/:session-id`; navigation as events.
-2. **Home view** — session list from `:lobby` (active dot, busy spinner,
-   relative timestamps, offline badge), new-session button, leave/switch.
-3. **Offline cache** (`xi.web.cache`) — hydrate-before-connect, pending
-   queue + flush, backend-wins replacement, reconnect backoff.
-4. **Unread indicators** — watched-session counts in localStorage,
-   `:session/counts` round-trip on reconnect, clear on view.
-5. **Compose drafts** per session (save on navigate, restore on enter).
-6. **Visibility wiring** — `visibilitychange` → `:client/update`;
-   confirm pushover/done-notify suppress when a visible client is attached.
+1. **Router** (`xi.web.router`) — ✅ history routing, `/` home,
+   `/chat/:session-id`; navigation is a pure `:route/navigate` handler
+   that emits history-push + room join/leave effects; route lives in the
+   single app atom under `:web/route` (no separate router atom).
+2. **Home view** — ✅ session list from `:lobby` (active dot, busy
+   spinner, relative timestamps, offline badge, unread dots),
+   new-session button (`:room/new`), back/switch via router.
+3. **Offline cache** (`xi.web.cache`) — ✅ localStorage EDN,
+   hydrate-before-connect, pending queue + flush, backend-wins on
+   `:room/joined`/`:lobby/state`, reconnect backoff with `lastJoin` replay.
+4. **Unread indicators** — ✅ watched counts in localStorage,
+   `:session/counts` → `:session/counts-result` round-trip, clear on view.
+5. **Compose drafts** per session — deferred (not yet implemented; the
+   compose textarea is uncontrolled and read on submit).
+6. **Visibility wiring** — ✅ `visibilitychange` → `:client/update`
+   `{:visible?}`; server suppresses notifications when a visible client
+   is attached.
 7. Optional: `xi rooms` CLI; delete stale master-protocol notes from
    `docs/web-client.md` / `docs/web-offline.md` and rewrite for the new
-   protocol.
-8. **Verify in browser**, update `docs/rebuild-plan.md` phase row + notes.
+   protocol. (deferred)
+8. **Verify in browser**, update `docs/rebuild-plan.md` phase row + notes. ✅
 
 ## Verification checklist (agent-runnable)
 
@@ -131,5 +137,8 @@ Milestone: full parity with master's web client per `docs/web-client.md`.
 - [x] Abort mid-turn from the web UI
 - [ ] Two clients (TUI mirror logic already proves this, but: two browser
       tabs) see the same room state
-- [ ] Kill server → offline badge, send queues; restart → flush (7b)
-- [ ] Reload page mid-session → cache paints instantly, then live state (7b)
+- [x] Kill server → offline badge shows; restart → auto-reconnect with
+      backoff and `lastJoin` room replay (history intact)
+- [x] Reload page mid-session → cache hydrates instantly, then live state
+- [x] Home lists saved sessions; deep-link `/chat/:id` resumes history;
+      back button + popstate navigation work
