@@ -13,7 +13,7 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
 | 5 | Connection layer (WS transports, rooms) | ✅ done | `289f0c7` |
 | 6 | Extensions (new hook API, port all 18) | ✅ done | `62419b0`–`ce33f7f` |
 | 7 | Web client (rebuild on new core) | ✅ 7a (online chat) + 7b (home/router/offline/unread) — plan: [phase-7-web-client.md](phase-7-web-client.md) | |
-| 8 | Cutover (parity checklist, merge) | 🟡 in progress — parity audit vs `ui-refactor`: [phase-8-cutover.md](phase-8-cutover.md) | |
+| 8 | Cutover (parity checklist, merge) | ✅ done 2026-06-11 — merged to `master`, `ui-refactor` retired (tag `archive/ui-refactor`), old worktree removed: [phase-8-cutover.md](phase-8-cutover.md) | |
 
 ### Implementation notes (phases 2–5, for continuity)
 
