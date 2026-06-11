@@ -285,12 +285,13 @@
                   (when spinner
                     ((:stop spinner))
                     ((:remove-child box) spinner)
-                    (let [elapsed (- (js/Date.now) start-time)
-                          duration (str (.toFixed (/ elapsed 1000) 1) "s")]
-                      ((:add-child box) (comp/make-spacer 1))
-                      ((:add-child box)
-                       (comp/make-text (ansi/fg (if is-error :error :dim)
-                                                (str "Took " duration))))))
+                    (let [elapsed (- (js/Date.now) start-time)]
+                      (when (and (= short-name "bash") (>= elapsed 3000))
+                        (let [duration (str (.toFixed (/ elapsed 1000) 1) "s")]
+                          ((:add-child box) (comp/make-spacer 1))
+                          ((:add-child box)
+                           (comp/make-text (ansi/fg (if is-error :error :dim)
+                                                    (str "Took " duration))))))))
                   (set! (.-finished st) true))]
     ((:add-child box) header-text)
     (if live?
