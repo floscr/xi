@@ -386,7 +386,9 @@
     (let [room-id (:id room)
           answer! (fn [value]
                     (dispatch! {:type :ui/dialog-response
-                                :room-id room-id :dialog-id id :value value}))]
+                                :room-id room-id :dialog-id id :value value})
+                    (dispatch! {:type :ui/dialog-close
+                                :room-id room-id :dialog-id id}))]
       [:div {:class ["confirm-overlay"]}
        [:div {:class ["confirm-panel"]}
         [:div {:class ["confirm-message"]} (or message text)]
