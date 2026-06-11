@@ -153,11 +153,17 @@
 (defonce ^:private app-ref (atom nil))
 (defonce ^:private dispatch-ref (atom nil))
 
-(defn- ws-url []
+(defn- ws-url
+  "WS server URL. Served by the Bun server itself → same port as the page;
+   shadow dev-http (8100) isn't the WS server → default 7474. ?host/?port
+   query params override."
+  []
   (let [params (js/URLSearchParams. (.-search js/window.location))
         proto  (if (= "https:" js/location.protocol) "wss://" "ws://")
         host   (or (.get params "host") js/location.hostname)
-        port   (or (.get params "port") "7474")]
+        page-port (let [p js/location.port]
+                    (when-not (or (= p "") (= p "8100")) p))
+        port   (or (.get params "port") page-port "7474")]
     (str proto host ":" port)))
 
 (defn ^:export init! []
