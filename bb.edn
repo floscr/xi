@@ -5,7 +5,7 @@
   :init (do
           (def config {:session "xi"
                        :windows [["watch" "npx shadow-cljs watch main web"]]
-                       :print   ["Web: http://localhost:8100"]})
+                       :print   ["Web: http://localhost:7474"]})
           (def serve-config {:session "xi-serve"
                              :windows [["watch" "npx shadow-cljs watch main web"]
                                        ["server" "bun target/main.js server --headless"]]})
@@ -86,7 +86,7 @@
   serve
   {:doc "Start tmux serve session with Tailscale URL"
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
-           (td/start (assoc serve-config :print [(str "Web: http://" ip ":8100")]))
+           (td/start (assoc serve-config :print [(str "Web: http://" ip ":7474")]))
            (td/attach serve-config))}
 
   serve:stop
@@ -96,4 +96,4 @@
   serve:restart
   {:doc "Restart tmux serve session"
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
-           (td/restart (assoc serve-config :print [(str "Web: http://" ip ":8100")])))}}}
+           (td/restart (assoc serve-config :print [(str "Web: http://" ip ":7474")])))}}}
