@@ -257,10 +257,16 @@
                               (.-height js/window.visualViewport)
                               js/window.innerHeight)]
                       (.setProperty (.-style js/document.documentElement)
-                                    "--app-height" (str h "px"))))]
+                                    "--app-height" (str h "px"))
+                      ;; iOS Safari scrolls the page when the keyboard opens,
+                      ;; creating a gap between compose box and keyboard.
+                      ;; Force scroll back to origin so the fixed layout stays
+                      ;; pinned to the top of the visual viewport.
+                      (.scrollTo js/window 0 0)))]
       (set-vh!)
       (if js/window.visualViewport
-        (.addEventListener js/window.visualViewport "resize" (fn [_] (set-vh!)))
+        (do (.addEventListener js/window.visualViewport "resize" (fn [_] (set-vh!)))
+            (.addEventListener js/window.visualViewport "scroll" (fn [_] (set-vh!))))
         (.addEventListener js/window "resize" (fn [_] (set-vh!)))))
     (.addEventListener js/document "visibilitychange"
                        (fn [_]
