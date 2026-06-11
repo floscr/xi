@@ -133,5 +133,9 @@ an ancestor of `rebuild` — they share only the base. Plan:
    the new `master`, then delete the branch. Do **not** merge `ui-refactor`
    into `master` — it would drag the old architecture back in.
 5. Point the `../xi` worktree at the new `master`.
-6. Update `docs/rebuild-plan.md` phase-8 row → done; rewrite stale
-   `docs/web-client.md` / `docs/web-offline.md` for the new protocol.
+6. Update `docs/rebuild-plan.md` phase-8 row → done. ~~Rewrite stale
+   docs~~ — done 2026-06-11: `AGENTS.md`, `web-client.md`, `web-offline.md`,
+   `architecture.md` (was `headless-architecture.md`), `commands.md` (was
+   `command-registry.md`), `mcp-tool-bridge.md`, `compaction.md`,
+   `session-tree.md`, `syntax-highlighting.md` all rewritten/updated for
+   the new core.

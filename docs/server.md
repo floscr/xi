@@ -1,15 +1,15 @@
-# Server & Multi-Session Architecture
+# Server & Rooms
 
-Xi supports two modes of operation: **standalone** and **server**.
+Xi runs the same event-driven core in every mode ([architecture.md](architecture.md));
+the server mode adds a WS transport and a room manager on top of it.
 
 ## CLI Commands
 
 ```
-xi              Standalone TUI + runtime. No server, no WebSocket.
-xi server       Start a WS server, create a session, attach TUI.
-xi join         Connect TUI to the latest session on a running server.
-xi create       Connect TUI to a new session on a running server.
-xi sessions     List active sessions on a running server (print & exit).
+xi              Standalone TUI. One local room, connected to nothing.
+xi server       Start a WS server + a local TUI client in the same process.
+xi join [url]   Connect a TUI client to the latest room on a running server.
+xi create [url] Connect a TUI client to a new room on a running server.
 ```
 
 ### Flags
@@ -18,6 +18,8 @@ xi sessions     List active sessions on a running server (print & exit).
 --port N                Override the default port (7474). Applies to all server commands.
 --headless              Server only: run without a local TUI. Clients attach remotely.
 --personal-agent-only   Server only: run as a personal assistant with no coding tools.
+--model NAME            Override the default model.
+--debug-events          Write the full event stream as JSONL (see architecture.md).
 ```
 
 ### Environment
@@ -28,64 +30,57 @@ xi sessions     List active sessions on a running server (print & exit).
 
 ### Standalone (`xi`)
 
-Creates a runtime and TUI in the same process, wired directly — no networking.
-This is the simplest mode: one runtime, one TUI, no server.
-
-```
-┌─────────────────────┐
-│  Process             │
-│                      │
-│  Runtime ←→ TUI      │
-│  (dispatch!/events)  │
-└─────────────────────┘
-```
-
-The TUI transport calls `runtime/dispatch!` directly and checks `runtime/busy?` for state.
-No WebSocket server is started. Useful for quick single-user sessions.
+One process, one app, one room — the standard assembly with a local TUI
+renderer. No networking. Standalone is not a special case: it's the same
+state shape and code paths as server/client, just "not connected".
 
 ### Server (`xi server`)
 
-Starts a WebSocket server with a session manager, creates an initial session,
-and attaches a local TUI to it.
-
 ```
-┌──────────────────────────────────────────┐
-│  Server Process                           │
-│                                           │
-│  ┌─────────────────┐                      │
-│  │ Session Manager  │   WS Server (:7474) │
-│  │                  │        ↑             │
-│  │  Session A ←→ TUI│        │             │
-│  │  Session B       │←───────┘             │
-│  │  ...             │   remote clients     │
-│  └─────────────────┘                      │
-└──────────────────────────────────────────┘
+┌────────────────────────────────────────────────┐
+│  Server Process                                 │
+│                                                 │
+│  one app atom                                   │
+│  ├── :rooms {room-A {...} room-B {...}}         │
+│  └── :connection :clients {cid {:room-id …}}    │
+│                                                 │
+│  WS server (:7474)  ── broadcast tap            │
+│   ├── remote TUI / web clients                  │
+│   └── local TUI client (non-headless; joins     │
+│       via WS like any remote client)            │
+│                                                 │
+│  HTTP (:7474) — serves the web client from      │
+│  resources/public (SPA fallback to index.html)  │
+└────────────────────────────────────────────────┘
 ```
 
-The local TUI connects to the session directly (same transport as standalone).
-Remote clients connect over WebSocket and go through the join handshake.
+- Rooms live in the **same single app atom** under `:rooms` — each has its
+  own history, session, agent state, and UI state.
+- **Broadcast is a tap**: every processed event carrying a `:room-id` is
+  echoed (as EDN, `xi.wire`) to that room's clients — sender included.
+  Clients never apply their own input locally; they mirror the server's
+  event order.
+- Roomless (lobby) clients receive `:lobby/state` refreshes — live rooms
+  plus the saved sessions list (read lazily, only when lobby clients
+  exist).
+- Incoming room events get `:room-id` forced to the sender's joined room.
 
 #### Headless (`xi server --headless`)
 
-Same as above but no local TUI is created. The server runs in the background
-waiting for remote clients.
+Same, minus the local TUI client.
 
 ```bash
 xi server --headless           # start
 xi join                        # from another terminal
-xi create                      # or start a new session
+# or open http://localhost:7474 in a browser
 ```
 
-### Join (`xi join`)
+### Join / Create (`xi join`, `xi create`)
 
-Connects a TUI to the **latest** session on a running server via WebSocket.
-If the server has multiple sessions, you get the most recently created one.
-Exits with an error if the server is not running.
-
-### Create (`xi create`)
-
-Connects a TUI to a **new** session on a running server via WebSocket.
-The server creates a fresh runtime and the client attaches to it.
+A TUI client over `xi.client.ws-transport` (forward + mirror — see
+[architecture.md](architecture.md)). `join` targets `"latest"`, `create`
+targets `"new"`. Exits with an error if the server isn't running (the TUI
+does not opt into reconnect; the web client does).
 
 ### Personal Agent (`xi server --personal-agent-only`)
 
@@ -106,80 +101,55 @@ xi server --headless --personal-agent-only   # start personal assistant
 xi join                                       # connect from another terminal
 ```
 
-The home screen shows personal-agent sessions separately from coding sessions.
+## Wire protocol
 
-### Sessions (`xi sessions`)
+There is no separate message schema — **the protocol is the event maps**,
+serialized as EDN strings (`xi.wire/encode` / `decode`). Both peers are
+ClojureScript, so keywords and nesting survive. `:remote?` is
+transport-local and never sent.
 
-Queries a running server for its active sessions and prints them:
+### Join flow
 
-```
-Active sessions:
-  s-abc123-def  — 2 client(s) (created Fri May 08 2026 ...)
-  s-xyz789-ghi  — 0 client(s) (created Fri May 08 2026 ...)
-```
+1. Client connects and sends `{:type :room/join :target …}` where target is
+   `"latest"`, `"new"`, an explicit room id, or `{:session-id sid}` (resume
+   a saved session into a new room).
+2. The room manager resolves it to `:room/attach` (existing room) or
+   provisions a room first (session + AGENTS.md), then attaches.
+3. The server replies with `:room/joined` carrying a **room snapshot** —
+   the client installs it and mirrors all subsequent broadcasts through
+   the same pure reducers.
+4. Roomless clients get `:lobby/state` instead.
 
-Connects briefly over WebSocket, reads the session list from the server handshake,
-then disconnects and exits.
+After joining, everything is ordinary events both ways: `:input/submit`,
+`:prompt/submit`, `:command/run`, `:agent/text-delta`, `:agent/turn-end`,
+`:ui/dialog-open`, …
 
-## WebSocket Protocol
+### Other connection-level events
 
-Default port: **7474** (`ws://localhost:7474`).
+- `:room/leave` — back to the lobby
+- `:room/list` — request a `:lobby/state` refresh
+- `:session/counts` → `:session/counts-result` — unread tracking (web)
+- `:client/update {:visible? bool}` — per-client visibility (suppresses
+  notifications while a visible client is attached; never broadcast)
 
-### Handshake
+## Room lifecycle
 
-1. Client connects via WebSocket.
-2. Server sends `waiting-for-join` with the current session list:
-   ```json
-   {"type": "waiting-for-join", "sessions": [{"id": "s-...", "clients": 1, "created": 1715...}]}
-   ```
-3. Client sends a `join` message:
-   ```json
-   {"type": "join", "session": "latest"}
-   ```
-   `session` can be `"latest"`, `"new"`, or an explicit session ID.
-4. Server responds with confirmation:
-   ```json
-   {"type": "session-joined", "session-id": "s-abc123-def"}
-   ```
-5. Normal event/command flow begins.
+- Rooms are created on demand by `:room/join` targets (`"new"`, a
+  session-id resume, or the first join on a fresh server).
+- Multiple clients can attach to one room — they all mirror the same
+  events.
+- **Auto-destroy**: a room closes when its last client leaves/disconnects
+  while the agent is idle, or when a turn ends with no clients attached.
 
-### Message Flow (after join)
-
-**Server → Client** (events): same structured maps as the runtime event bus.
-
-```json
-{"type": "turn-start"}
-{"type": "text-delta", "text": "partial..."}
-{"type": "tool-start", "id": "toolu_abc", "name": "bash", "arguments": {"command": "ls"}}
-{"type": "tool-result", "id": "toolu_abc", "content": [...], "is-error": false}
-{"type": "turn-end", "session-id": "...", "usage": {...}, "cost": 0.03}
-{"type": "busy-changed", "busy": true}
-```
-
-**Client → Server** (commands): parsed by the runtime's command system.
-
-```json
-{"type": "prompt", "text": "refactor the auth module"}
-{"type": "command", "name": "clear"}
-{"type": "abort"}
-```
-
-## Session Lifecycle
-
-- Sessions are created by `xi server` (initial session), `xi create`, or when a client joins and no session exists yet.
-- Each session is an independent runtime with its own agent loop, event bus, and state.
-- Multiple clients can connect to the same session — they all see the same events.
-- When the last client disconnects from a session, the session is destroyed.
-
-## Source Files
+## Source files
 
 ```
 src/xi/
-  cli.cljs                    — entry point, subcommand routing
+  cli.cljs                 — entry point, subcommand routing, per-mode assembly
+  wire.cljs                — EDN encode/decode
   server/
-    ws.cljs                   — WS server (Bun.serve, handshake, message routing)
-    session_manager.cljs      — session CRUD (create, join, list, client tracking)
+    ws.cljs                — Bun WS server, broadcast tap, static file serving
+    room_manager.cljs      — rooms as pure event handlers (join/attach/cleanup)
   client/
-    ws_transport.cljs         — WS client transport (join handshake, event forwarding)
-    tui.cljs                  — TUI client (events → terminal rendering)
+    ws_transport.cljs      — client transport (forward + mirror, reconnect opt-in)
 ```

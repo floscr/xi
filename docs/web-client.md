@@ -1,230 +1,153 @@
 # Web Client
 
-Browser-based client for xi. Connects to the WS server via WebSocket, renders a chat interface with [Replicant](https://github.com/cjohansen/replicant), and supports offline usage via localStorage caching.
+Browser-based client for xi. It is **the same pure core as every other
+mode** — `xi.core.app` in `:client` mode, wired through
+`xi.client.ws-transport` — with [Replicant](https://github.com/cjohansen/replicant)
+as the renderer. The browser only renders state and collects input.
 
 ## Quick Start
 
-Start the server, then open `http://localhost:7474` in a browser:
-
 ```bash
-xi server --headless        # or `xi server` for headless + TUI
+bb web:build                # compile the :web (browser) build
+xi server --headless        # or `xi server` for server + local TUI
 ```
 
-The client auto-connects and shows the home view with available sessions.
-
-## Features
-
-### Multi-session Home View
-
-The home screen lists all saved sessions with real-time status:
-
-- **Active indicator** — green dot for sessions with a live room
-- **Busy spinner** — animated spinner when the agent is working
-- **Unread dot** — accent-colored dot when new responses arrived since you last viewed
-- **Relative timestamps** — "5m ago", "2h ago", "3d ago"
-- **Offline badge** — shown when disconnected from server
-
-Click a session to rejoin its active room (if running) or resume it in a new room.
-
-### Streaming Chat
-
-Messages stream in real-time as the agent works:
-
-- **Text deltas** — assistant responses appear character-by-character
-- **Thinking blocks** — collapsible extended thinking display
-- **Tool calls** — collapsible blocks showing tool name, arguments, and result
-- **Image attachments** — paste or attach images, shown as thumbnails with lightbox
-- **Markdown rendering** — assistant text rendered as formatted markdown
-- **Auto-scroll** — timeline stays pinned to bottom unless you scroll up
-
-### Session Management
-
-- **New session** — (+) button creates a fresh room
-- **Resume** — click any saved session to resume it
-- **Leave** — back arrow returns to home (agent keeps running in background)
-- **Switch** — (+) from chat creates a new session without stopping the current one
-- **Load** — dropdown button opens the resume picker overlay
-
-### Unread Indicators
-
-Client-only tracking for new agent responses:
-
-1. When you send a message, the current assistant response count is stored in localStorage
-2. On reconnect, the client asks the server for current response counts
-3. Sessions where the server count exceeds the stored count show an unread dot
-4. Clicking a session or viewing a response clears the indicator
-
-### Offline Support
-
-Full offline support — see [web-offline.md](web-offline.md) for architecture details.
-
-- **Instant startup** — UI hydrates from localStorage cache before WS connects
-- **Cached sessions** — browse and read sessions while offline
-- **Pending messages** — messages sent offline queue and flush on reconnect
-- **Auto-reconnect** — exponential backoff reconnection (1s → 30s max)
-
-### Image Attachments
-
-- **Paste** — Ctrl+V / Cmd+V images from clipboard
-- **File picker** — camera/gallery button for file upload
-- **Preview strip** — thumbnails shown before send, removable
-- **Lightbox** — click any image (sent or received) for full-size view
-
-### URL Routing
-
-History-based routing with shareable URLs:
-
-| Path | View |
-|------|------|
-| `/` | Home (session list) |
-| `/chat/:session-id` | Chat for a specific session |
-
-Browser back/forward navigation works correctly. Refreshing a chat URL hydrates from cache then reconnects.
-
-### Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `Enter` | Send message |
-| `Shift+Enter` | Newline in compose |
-| `Ctrl+V` / `Cmd+V` | Paste image from clipboard |
+Open `http://localhost:7474` — the same Bun server that hosts the WS
+endpoint serves the compiled client from `resources/public` (SPA fallback
+to `index.html`).
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Browser                                             │
-│                                                      │
-│  ┌──────────┐   ┌──────────┐   ┌──────────────────┐ │
-│  │ app-state│←──│  ws.cljs │──→│  WS Server       │ │
-│  │  (atom)  │   │          │   │  (:7474)          │ │
-│  └────┬─────┘   └────┬─────┘   └──────────────────┘ │
-│       │              │                                │
-│       │    ┌─────────┼──────────┐                     │
-│       │    │ router.cljs        │                     │
-│       │    │ (History API)      │                     │
-│       │    └────────────────────┘                     │
-│       │              │                                │
-│       │         ┌────┴─────┐                          │
-│       │         │cache.cljs│                          │
-│       │         └────┬─────┘                          │
-│       │              │                                │
-│       │         ┌────┴──────────┐                     │
-│       │         │  localStorage │                     │
-│       │         └───────────────┘                     │
-│  ┌────┴─────┐                                         │
-│  │ views.cljs│  (Replicant rendering)                 │
-│  └──────────┘                                         │
-└─────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│ Browser                                                     │
+│                                                             │
+│   xi.core.app/create-app (:mode :client)                    │
+│   one atom · pure handlers · effect interpreter · taps      │
+│        ▲                                  │                 │
+│        │ mirror (:remote? events,         │ render          │
+│        │ effects stripped)                ▼                 │
+│   xi.client.ws-transport            Replicant ← views.cljs  │
+│        │ forward (local events            (pure state →     │
+│        ▼  → [:ws/send])                    hiccup)          │
+│   WebSocket (EDN event maps, xi.wire)                       │
+└────────┼───────────────────────────────────────────────────┘
+         ▼
+   xi server (:7474) — rooms, agent, sessions
 ```
 
-### Data Flow
+- **Handlers**: the browser merges the same pure handler maps the server
+  uses (`core-handlers` + `agent` + `commands` + `compaction`) — no
+  node-coupled chains, since effects are stripped on mirror anyway — plus
+  web-local handlers (router, compose, lightbox, unread).
+- **Forward + mirror**: locally-originated events are sent to the server;
+  the server broadcasts every room event (sender included) and the client
+  applies them through the same reducers, seeded by the `:room/joined`
+  snapshot. See [architecture.md](architecture.md).
+- **Wire protocol**: there is no separate web protocol — the EDN-serialized
+  event maps (`xi.wire`) *are* the protocol, identical to the TUI client.
 
-1. **Render loop** — `app-state` atom triggers re-render on every change
-2. **Events in** — WebSocket messages parsed and applied to `app-state`
-3. **Commands out** — user actions dispatched as JSON messages over WS
-4. **Cache layer** — reads/writes localStorage alongside state mutations
-5. **Router** — syncs URL ↔ app-state `:route`, handles popstate
+## Features
 
-### State Shape
+### Home view (`/`)
 
-```clojure
-{:route            {:page :home|:chat, :session-id "..."}
- :rooms            [...]           ;; live rooms from server
- :home-sessions    [...]           ;; saved session list
- :active-sessions  #{"sid" ...}    ;; sessions with live rooms
- :watched-sessions {"sid" count}   ;; unread tracking
- :response-counts  {"sid" count}   ;; from server query
- :room-id          "room-123"      ;; joined room
- :session-id       "sess-abc"      ;; current session
- :connected?       true/false
- :personal-agent?  true/false
- :busy?            true/false
- :messages         [{:type :user/:assistant/:tool/:thinking/:status ...}]
- :pending-messages [{:id :payload :timestamp :status}]
- :compose-text     ""
- :compose-images   [{:data :media-type :preview-url}]
- :model            "claude-..."
- :collapsed-blocks #{"tool-0" ...}
- :resume-sessions  nil|[...]
- :lightbox-image   nil|"data:..."}
-```
+Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
 
-## WebSocket Protocol
+- busy spinner / active-dot for sessions with a live room
+- unread dot when the server's response count exceeds the watched count
+- relative timestamps; offline badge when disconnected
+- new-session button (`:room/new` — joins target `"new"`, the URL is
+  back-filled with the real session id once `:room/joined` arrives)
 
-All messages are JSON. The client and server exchange typed messages:
+### Chat view (`/chat/:session-id`)
 
-### Client → Server
+- Streaming text/thinking/tool entries rendered from room `:history` —
+  the same entry maps the TUI renders
+- Thinking blocks and interesting tool blocks expanded by default
+  (`<details>` — Replicant only writes changed attrs, so manual toggles
+  survive re-renders)
+- **Timeline virtualization**: only the last 60 entries render; "Show
+  earlier" expands by 40 (`:web/timeline-window`, reset on navigation)
+- **Per-session compose drafts** (`:web/drafts`, keyed by session id;
+  `:new` before the first join) — unsent text survives navigation
+- **Images**: paste / file-picker attachments (client-side resize via
+  `xi.image`), thumbnail strip, fullscreen lightbox (`:web/lightbox`)
+- Markdown via `xi.markdown.hiccup`; code blocks highlighted with the
+  bundled browser grammars ([syntax-highlighting.md](syntax-highlighting.md))
+- Auto-scroll pinned to bottom unless you scroll up
+- Sending from a cached (not-yet-joined) session stashes the message
+  (`:web/pending-submit`) and fires it after `:room/joined`
 
-| Type | Fields | Description |
-|------|--------|-------------|
-| `join` | `room`: "new"\|"latest"\|room-id | Join/create a room |
-| `leave` | — | Leave current room, return to lobby |
-| `prompt` | `text`, `images?` | Send user message |
-| `command` | `name`, `args` | Run a slash command (e.g. "resume") |
-| `abort` | — | Interrupt the agent |
-| `query-response-counts` | `sessions`: [sid...] | Ask for response counts (lobby only) |
+### Routing
 
-### Server → Client
+The router lives **in the app atom** (`:web/route`) — `:route/navigate` is
+a pure handler that sets the route and emits `[:history/push]` plus room
+join/leave dispatches (`xi.web.router`). `popstate` re-dispatches navigate
+with `:replace? true`. Deep-linking `/chat/:sid` hydrates from cache, then
+joins/resumes the session over WS.
 
-| Type | Fields | Description |
-|------|--------|-------------|
-| `waiting-for-join` | `rooms`, `sessions`, `active-sessions` | Lobby handshake |
-| `room-joined` | `room-id` | Confirm room entry |
-| `rooms-updated` | `rooms`, `active-sessions`, `sessions?` | Live lobby push |
-| `ready` | `model`, `cwd` | Room ready state |
-| `user-message` | `text`, `images?` | Echo of user message |
-| `text-delta` | `text` | Streaming assistant text |
-| `thinking` | `text` | Extended thinking content |
-| `tool-start` | `name`, `arguments` | Tool invocation began |
-| `tool-args` | `name`, `arguments` | Updated tool arguments |
-| `tool-result` | `content`, `is-error` | Tool completed |
-| `turn-start` | — | Agent turn began |
-| `turn-end` | `session-id?` | Agent turn completed |
-| `busy-changed` | `busy` | Agent busy state changed |
-| `error` | `error`\|`text` | Error occurred |
-| `aborted` | — | Agent interrupted |
-| `history` | `events` | Full message history replay |
-| `session-resumed` | `messages`, `session` | Resumed session data |
-| `session-cleared` | — | Session was cleared |
-| `session-compacted` | — | Session was compacted |
-| `compact-start` | — | Compaction starting |
-| `command-result` | `command`, `text?`, `sessions?` | Command output |
-| `command-error` | `text` | Command failed |
-| `response-counts` | `counts`: {sid: n} | Response counts for unread |
-| `quit` | — | Server shutting down room |
+### Unread tracking
 
-## Source Files
+Server round-trip `:session/counts` → `:session/counts-result`
+(`:web/response-counts`), compared against `:web/watched` (localStorage).
+Viewing a session marks it read (`:session/mark-read` + `:cache/watch`).
+The home lobby tap requests counts whenever `:lobby/state` arrives.
+
+### Visibility
+
+A `visibilitychange` listener dispatches `:client/update {:visible? …}` so
+the server suppresses notifications (e.g. Pushover) while a visible client
+is attached.
+
+### Offline & reconnect
+
+See [web-offline.md](web-offline.md): localStorage cache hydrates before
+the socket opens; the transport reconnects with 1s→30s backoff and replays
+the last room join.
+
+## Web-only state keys
+
+All under the same app atom, never sent over the wire:
+
+| Key | Contents |
+|---|---|
+| `:web/route` | `{:page :home/:chat :session-id …}` |
+| `:web/drafts` | `{draft-key text}` compose drafts per session |
+| `:web/compose-images` | staged image attachments |
+| `:web/timeline-window` | virtualization window size |
+| `:web/lightbox` | open image src or absent |
+| `:web/watched` | `{session-id count-when-last-seen}` |
+| `:web/response-counts` | `{session-id count}` from the server |
+| `:web/cache` | hydrated per-session history for deep links |
+| `:web/pending-submit` | message stashed until `:room/joined` |
+| `:web/connected?` | transport status |
+| `:lobby` | rooms + sessions mirror (shared shape with TUI client) |
+
+## Source files
 
 ```
 src/xi/web/
-  core.cljs     — entry point (render loop, viewport handling, WS init)
-  state.cljs    — app-state atom definition
-  views.cljs    — Replicant view functions (home, chat, compose, lightbox)
-  ws.cljs       — WebSocket transport (connect, dispatch, offline queue, unread)
-  cache.cljs    — localStorage persistence (sessions, messages, pending, watched)
-  router.cljs   — History API routing (navigate, replace, popstate)
+  core.cljs    — entry: assembly (handlers/effects/taps), Replicant render,
+                 auto-scroll, visibility listener
+  views.cljs   — pure views (state → hiccup): home, chat, compose, lightbox
+  router.cljs  — route parsing, :route/navigate handler, History API effect
+  cache.cljs   — localStorage offline cache (hydrate + persist tap)
 
-src/xi/web/ (UI components)
-  markdown/hiccup.cljs — markdown → hiccup rendering
+src/xi/client/ws_transport.cljs — shared WS transport (forward+mirror,
+                                  reconnect, pending sends)
+src/xi/server/ws.cljs           — WS server + static file serving
 
 resources/public/
-  css/style.css — all styles
-  index.html    — shell HTML (loads compiled JS)
+  index.html      — shell (loads compiled JS)
+  css/style.css   — app styles
+  theme.css       — built clj-ui-framework theme (see frontend.md)
 ```
 
-## localStorage Keys
+UI components come from [clj-ui-framework](frontend.md) (`ui.button`,
+`ui.icon`, `ui.spinner`, `ui.lightbox`, `ui.form`, …).
 
-| Key | Contents |
-|-----|----------|
-| `xi/sessions-list` | Array of session summaries |
-| `xi/messages/{session-id}` | Message array for a session |
-| `xi/pending-messages` | Offline send queue |
-| `xi/last-room` | `{room-id, session-id}` for reconnect |
-| `xi/watched-sessions` | `{session-id: response-count}` for unread tracking |
+## Known issues
 
-## Mobile Support
-
-- **Viewport handling** — uses `visualViewport` API to handle iOS keyboard resize
-- **Touch-friendly** — large tap targets, no hover-dependent interactions
-- **PWA-ready** — works as home screen app (no service worker yet)
+- Deep-link *reload* into a chat URL can occasionally join a room whose
+  resumed history is empty (server-side room-resume race — tracked in
+  [phase-8-cutover.md](phase-8-cutover.md)).

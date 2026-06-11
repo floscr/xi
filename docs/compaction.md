@@ -1,6 +1,9 @@
 # Context Compaction
 
-Xi supports in-session context compaction via `/compact`. This summarizes the current conversation into a condensed form and starts a fresh session with the summary injected, preserving continuity without the full token cost.
+Xi supports in-session context compaction via `/compact`. This summarizes
+the current conversation into a condensed form and starts a fresh session
+with the summary injected, preserving continuity without the full token
+cost.
 
 ## Usage
 
@@ -11,34 +14,42 @@ Xi supports in-session context compaction via `/compact`. This summarizes the cu
 
 The optional focus argument guides the summarizer to emphasize specific topics.
 
-## How It Works
+## How it works
 
 ```
  /compact [focus]
+      │  :compact/request  (refused while busy / no provider session)
+      ▼
+ busy? = true, status "Compacting conversation..."
+ [:compact/start] effect
       │
       ▼
- Resume current SDK session
+ Summary turn through the claude provider,
+ resuming the room's provider session
+ (model: claude-sonnet-4, COMPACT_MODEL)
       │
-      ▼
- Claude Sonnet summarizes the conversation
- (preserves: file paths, decisions, task state, errors)
+      ├─ success → :compact/done {:summary …}
+      │     │
+      │     ▼
+      │  [:session/new] effect with :after-prompt —
+      │  fresh session, summary dispatched as the first
+      │  user message wrapped in <conversation-summary>
       │
-      ▼
- Clear session + event history
-      │
-      ▼
- Dispatch summary into new session as first turn
- (wrapped in <conversation-summary> tags)
+      └─ failure → :compact/failed (busy cleared, error status)
 ```
 
-1. The runtime emits `:compact-start` (TUI/web show a spinner)
-2. `compaction/summarize` resumes the current Claude SDK session and asks Sonnet to produce a summary
-3. The current session is cleared (`session/create-session`, `provider/clear-session!`)
-4. Event history is reset
-5. The summary is dispatched as a user message into the fresh session
-6. The model acknowledges the summary and waits for the next instruction
+Everything follows the standard handler/effect split
+([architecture.md](architecture.md)):
 
-## Summary Prompt
+- **Pure handlers** (`xi.compaction/handlers`): `:compact/request`,
+  `:compact/done`, `:compact/failed`.
+- **Effects** (`create-fx`): `:compact/start` runs the summary turn via the
+  claude provider's `:start-turn!`, collecting text deltas; `:compact/abort`
+  cancels the in-flight handle.
+- **Abort chaining**: `abort-handler` is chained onto `:agent/abort` at
+  assembly, so Escape also stops an in-flight compaction.
+
+## Summary prompt
 
 The summarizer preserves:
 - All file paths read, written, or edited
@@ -49,7 +60,11 @@ The summarizer preserves:
 
 ## Implementation
 
-- **Source:** `xi.compaction` — SDK-based summarization
-- **Command:** registered as `/compact` in `runtime/commands.cljs`
-- **Model:** always uses `claude-sonnet-4-20250514` for cost efficiency
-- **Events:** `:compact-start`, `:session-compacted`, `:command-error`
+- **Source:** `src/xi/compaction.cljs`
+- **Command:** `/compact` in `xi.commands/built-in-commands` dispatches
+  `:compact/request`
+- **Model:** always `claude-sonnet-4-20250514` (`COMPACT_MODEL`) for cost
+  efficiency
+- **Assembly:** `xi.cli` merges `compaction/handlers` and chains
+  `compaction/abort-handler` onto `:agent/abort`; `create-fx` receives the
+  provider map

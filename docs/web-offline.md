@@ -1,136 +1,95 @@
 # Web Client Offline Support
 
-The web client works without a live WebSocket connection. Sessions and messages are cached in `localStorage` so they're available immediately on page load, even when the backend is down.
+The web client works without a live WebSocket connection. The lobby and
+per-session history are cached in `localStorage` so they're available
+immediately on page load, even when the backend is down.
 
-## Design Principles
+## Design principles
 
-- **Messages are never lost.** Sends while offline are queued as pending messages and flushed on reconnect.
-- **Backend wins.** When the server sends fresh data (history replay, handshake), it replaces the local cache.
-- **Instant startup.** The UI hydrates from cache before the WebSocket connects, so you see content immediately.
+- **Backend wins.** The cache only fills the gap before the WS connects
+  (and while offline). `:room/joined` and `:lobby/state` overwrite it.
+- **Instant startup.** State is hydrated from cache *before* the socket
+  opens — home paints from the cached lobby, a deep-linked chat paints
+  from the cached history.
+- **EDN, not JSON.** Values are stored with `pr-str`/`read-string` — the
+  same format as the wire — so keywords and nesting survive without shims.
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│  Browser                                             │
-│                                                      │
-│  ┌──────────┐   ┌──────────┐   ┌──────────────────┐ │
-│  │ app-state│←──│  ws.cljs │──→│  WS Server       │ │
-│  │  (atom)  │   │          │   │  (:7474)          │ │
-│  └────┬─────┘   └────┬─────┘   └──────────────────┘ │
-│       │              │                                │
-│       │         ┌────┴─────┐                          │
-│       │         │cache.cljs│                          │
-│       │         │          │                          │
-│       │         └────┬─────┘                          │
-│       │              │                                │
-│       │         ┌────┴──────────┐                     │
-│       │         │  localStorage │                     │
-│       │         │               │                     │
-│       │         │  xi/sessions  │                     │
-│       │         │  xi/messages  │                     │
-│       │         │  xi/pending   │                     │
-│       │         │  xi/last-room │                     │
-│       │         └───────────────┘                     │
-│  ┌────┴─────┐                                         │
-│  │ views.cljs│  (Replicant rendering)                 │
-│  └──────────┘                                         │
-└─────────────────────────────────────────────────────┘
-```
-
-## Storage Layout
-
-Cache keys mirror the filesystem session path pattern (paths → JSON blobs), defined in `xi.session.format` (cljc):
+## Storage layout (`xi.web.cache`)
 
 | Key | Contents |
 |---|---|
-| `xi/sessions-list` | Array of session summaries from server handshake |
-| `xi/messages/{session-id}` | Array of rendered messages for a session |
-| `xi/pending-messages` | Queue of messages to send on reconnect |
-| `xi/last-room` | `{room-id, session-id}` of the last joined room |
+| `xi/lobby` | last `{:rooms :sessions}` for an instant home paint |
+| `xi/room/<session-id>` | last `{:history :model}` per session for chat paint |
+| `xi/watched` | `{session-id response-count-when-last-seen}` (unread) |
 
-All values are JSON. Keywords survive the round-trip via `keywordize-msg-type` on read.
+## Hydrate
+
+On boot, `cache/hydrate` seeds the initial app state from the cache before
+`create-app` starts:
+
+- `:web/route` — parsed from the URL
+- `:lobby` — cached lobby, if any
+- `:web/cache {sid {:history :model}}` — the deep-linked session's cached
+  history (the chat view falls back to this while the room rejoins)
+- `:web/watched` — the unread watermark map
+
+## Persist
+
+A single **app tap** (`cache/persist-tap`) mirrors the lobby and the
+active room into localStorage. It is gated to a whitelist of event types
+so streaming doesn't thrash storage:
+
+```clojure
+#{:lobby/state :room/joined :agent/turn-end :agent/tool-result :agent/abort}
+```
+
+`:history/append`-style per-delta writes are intentionally excluded;
+`:agent/tool-result` gives a mid-turn checkpoint and `:agent/turn-end`
+persists the final state.
+
+## Reconnect (`xi.client.ws-transport`)
+
+The web client opts into `:reconnect?`:
+
+- exponential backoff, 1s → 30s max
+- an in-memory **pending-send queue** — events dispatched while the socket
+  is closed are flushed on reopen
+- the last `:room/join` is remembered (per join, cleared on `:room/leave`)
+  and **replayed on reopen**, so a dropped connection restores the room
+- `:connection/status` events drive the offline badge
+  (`:web/connected?`)
+
+The TUI client does *not* opt in — it keeps exit-on-disconnect.
 
 ## Flows
 
-### Startup (page load)
+### Page load (online)
 
 ```
-1. hydrate-from-cache!
-   ├── Load cached sessions → show home view immediately
-   ├── Load pending messages → restore queue
-   └── If last-room exists → restore chat view with cached messages
-2. ws/connect!
-   ├── On connect → server sends :waiting-for-join
-   ├── If was in chat → auto-rejoin room (or resume session)
-   └── If was on home → show home with fresh data (replaces cache)
+hydrate (cache)  →  instant paint
+ws connects      →  :lobby/state / :room/joined replace cached state
 ```
 
-### Sending a message while online
+### Page load (backend down)
 
 ```
-1. User submits text
-2. Message added to timeline optimistically (before server echo)
-3. ws/dispatch! sends via WebSocket
-4. Server echoes :user-message → deduplicated (skip if already shown)
-5. Messages cached to localStorage
+hydrate (cache)  →  home shows cached sessions + offline badge
+                    deep-linked chat renders cached history read-only
+ws retries with backoff; on success the normal flows resume
 ```
 
-### Sending a message while offline
+### Sending while a room isn't joined yet
 
-```
-1. User submits text
-2. Message added to timeline optimistically
-3. ws/dispatch! detects WS is closed → queues as pending message
-4. Pending message saved to localStorage
-5. Pending indicator shown at bottom of timeline (spinner + count)
-6. On reconnect:
-   a. Server sends :waiting-for-join
-   b. Client auto-joins room (new or existing)
-   c. flush-pending! sends queued messages
-   d. Server echoes confirm → pending entries removed
-```
-
-### Viewing a cached session offline
-
-```
-1. Home view shows cached sessions with "Offline" badge
-2. "New Session" button hidden (can't create rooms offline)
-3. Click a session → open-cached-session! loads messages from localStorage
-4. Chat view renders cached messages (read-only)
-5. User can type → message queued as pending
-6. On reconnect → session resumed, pending messages flushed
-```
-
-### Reconnecting after disconnect
-
-```
-1. WS onclose fires → connected? = false, exponential backoff retry
-2. WS reconnects → server sends :waiting-for-join
-3. Client checks if it was in a chat:
-   a. Session has active room → rejoin that room
-   b. Session exists but no room → join-and-resume! (new room + /resume N)
-   c. No session but pending messages → join new room, flush pending
-   d. Not in chat → show home view
-4. Server sends :history → replaces cached messages (backend wins)
-```
-
-## Source Files
-
-```
-src/xi/
-  session/
-    format.cljc       — shared data shapes, key construction, pending message records
-  web/
-    cache.cljs        — localStorage read/write (mirrors session.cljs path→JSON pattern)
-    ws.cljs           — WebSocket transport with offline queueing and auto-rejoin
-    state.cljs        — app-state atom (includes :pending-messages, :session-id)
-    core.cljs         — entry point (hydrates from cache before WS connect)
-    views.cljs        — UI rendering (inline status bubbles, offline indicators)
-```
+Submitting from a cached chat view stashes the message as
+`:web/pending-submit`; a tap fires it through the normal `:input/submit`
+path once `:room/joined` for that session arrives (guarded against
+session-id mismatch so a navigation race can't send into the wrong room).
 
 ## Caveats
 
-- **No service worker.** If the page itself can't load (full network down), the app won't start. Offline support covers "page loaded but WS backend is down."
-- **localStorage limits.** Large sessions with many tool results may hit the ~5MB limit. Messages with base64 images are particularly heavy.
-- **Session list is server-authoritative.** The cached list may be stale — sessions created from other clients won't appear until the next handshake.
+- **No service worker.** If the page itself can't load, the app won't
+  start. Offline support covers "page loaded but WS backend is down."
+- **localStorage limits.** Long sessions with heavy tool results can
+  approach the ~5MB quota; writes fail safe (warn + continue).
+- **Lobby may be stale offline.** Sessions created elsewhere appear on the
+  next `:lobby/state`.

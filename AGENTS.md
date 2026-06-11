@@ -2,20 +2,14 @@
 
 Personal coding agent in ClojureScript + Bun.
 
-> **⚠ Rebuild branch.** This branch (`rebuild`) is a ground-up rebuild — see
-> [docs/rebuild-plan.md](docs/rebuild-plan.md) for architecture and phase status.
-> The runtime/server/client/provider/extension/web layers described below were
-> **stripped in Phase 1** and are being rewritten; only leaf namespaces
-> (session, tools, highlight, markdown, TUI primitives, util) were kept.
-> The old implementation lives in the `xi` worktree (master) for reference.
-
 ## Build
 
 **Always use `bb` tasks for building — never call `npx shadow-cljs` directly.**
 
 ```bash
-npm install    # one-time: install shadow-cljs
-bb build       # compile CLJS → JS
+npm install    # one-time: install shadow-cljs + SDK
+bb build       # compile CLJS → JS (node TUI/server)
+bb web:build   # compile the browser web client
 bb test        # compile and run tests
 bb tasks       # list all available tasks
 ```
@@ -35,6 +29,7 @@ The `@anthropic-ai/claude-agent-sdk` must be pinned to **`0.2.110`** — the sam
 ## Testing
 
 - **Do NOT run `xi` / `bun target/main.js` from the agent.** It's a TUI app that requires an interactive terminal and will not work inside the agent shell. Only compile; the user tests manually.
+- The **web client** CAN be agent-tested: run `bun target/main.js server --headless &` and drive a browser via the chrome-devtools tools at `http://localhost:7474`.
 
 ### Unit Tests
 
@@ -43,7 +38,7 @@ bb test          # compile + run tests once
 bb test:watch    # recompile + rerun on file changes
 ```
 
-Tests use `cljs.test` via the shadow-cljs `:node-test` target. Test files live in `test/` mirroring the `src/` layout (e.g. `test/xi/commands_test.cljs` tests `src/xi/runtime/commands.cljs`).
+Tests use `cljs.test` via the shadow-cljs `:node-test` target. Test files live in `test/` mirroring the `src/` layout (e.g. `test/xi/commands_test.cljs` tests `src/xi/commands.cljs`).
 
 When adding new tests:
 1. Create `test/xi/<namespace>_test.cljs` with `(:require [cljs.test :refer [deftest is testing]])`
@@ -52,86 +47,93 @@ When adding new tests:
 
 ## Architecture
 
-- **shadow-cljs** compiles ClojureScript to a single node-script JS file
-- **Bun** runs the compiled output (provides HTTP, subprocess, file I/O, fetch)
-- **No npm runtime deps** — only shadow-cljs as a devDependency
+See [docs/architecture.md](docs/architecture.md) for the full picture. The short version:
+
+- **One state atom per process.** All logic is pure handlers
+  `(fn [state event]) → {:state :effects} | nil`; side effects run only in
+  the effect interpreter (`xi.core.app/create-app`).
+- **Everything is an event** — prompts, agent output, commands, dialogs,
+  room switches, renders. The WS wire protocol is the same event maps as
+  EDN strings (`xi.wire`).
+- **Standalone = not connected.** Server, client, and standalone modes share
+  the same state shape and code paths; transports just forward events.
+- **Providers are pluggable** (`xi.provider.claude`, `xi.provider.ollama`).
+- **shadow-cljs** compiles to a single node script run by **Bun**; the web
+  client is a separate `:browser` build served by the same Bun server.
+- Runtime npm deps: only `@anthropic-ai/claude-agent-sdk` (pinned, see above).
 - Sessions stored in `~/.pi/agent/sessions/` (Pi-compatible JSONL format)
 - Personal agent sessions stored separately in `~/.config/xi/personal-agent/root/`
 - Auth via `~/.pi/agent/auth.json` OAuth tokens or `ANTHROPIC_API_KEY` env var
 
 ### Server / Client
 
-- `xi` — standalone TUI + runtime (no WS server)
-- `xi server` — start WS server + connect local TUI via WS (can switch rooms)
-- `xi server --headless` — start headless server (no TUI, clients attach remotely)
+- `xi` — standalone TUI (one local room, connected to nothing)
+- `xi server` — WS server + local TUI client in the same process
+- `xi server --headless` — headless server (no TUI, clients attach remotely)
 - `xi server --personal-agent-only` — personal assistant mode (no coding tools, web_search only)
-- `xi join` — connect TUI client to latest room on a running server
-- `xi create` — connect TUI client to a new room on a running server
-- `xi rooms` — list active rooms on a running server (print & exit)
+- `xi join [url]` — connect TUI client to the latest room on a running server
+- `xi create [url]` — connect TUI client to a new room on a running server
 - `--port N` — override default port (7474)
-- Server hosts multiple rooms; each room is an independent runtime
-- Rooms persist for the lifetime of the server
+- The web client is served by the same server at `http://localhost:7474`
+- Server hosts multiple rooms; rooms auto-destroy when their last client
+  leaves while idle (or a turn ends with no clients attached)
 - "Sessions" refers to saved-to-disk conversation history, loaded via `/resume`
 
 ## Source layout
 
 ```
 src/xi/
-  cli.cljs             — entry point (subcommand parsing: server, join, create, sessions)
-  runtime.cljs         — headless core (event bus, commands, agent lifecycle)
-  runtime/
-    events.cljs        — event bus (pub/sub)
-    commands.cljs      — command parsing & dispatch
+  cli.cljs             — entry point + assembly (subcommands: server, join, create)
+  core/
+    state.cljs         — state schema + constructors
+    events.cljs        — pure core event handlers (reducer)
+    app.cljs           — create-app: dispatch queue, effect interpreter, taps, render scheduling
+    log.cljs           — in-memory event ring buffer (elision, delta coalescing)
+    jsonl.cljs         — opt-in --debug-events JSONL writer (node-only)
+  agent.cljs           — agent turn lifecycle handlers + provider effects
+  commands.cljs        — slash commands as pure handlers; input parsing
+  compaction.cljs      — /compact (pure handlers + summary-turn effect)
+  fx.cljs              — effect handlers (sessions, image processing, model list)
+  wire.cljs            — EDN wire protocol (the events ARE the protocol)
+  provider/
+    claude.cljs        — Claude Agent SDK provider (MCP tool bridge, streaming)
+    ollama.cljs        — Ollama provider
   server/
-    ws.cljs            — WS server (room-aware, join handshake)
-    room_manager.cljs  — manages multiple runtime rooms
+    ws.cljs            — Bun WS server + static serving for the web client
+    room_manager.cljs  — rooms as pure event handlers (join/attach/auto-destroy)
   client/
-    tui.cljs           — TUI client (event → component mutations)
-    ws_transport.cljs  — WS client transport (sends join handshake)
-  loop.cljs            — agent loop (wraps provider/SDK)
-  provider.cljs        — Claude Agent SDK integration, MCP tool bridge
+    tui.cljs           — TUI renderer + input layer (render-from-state)
+    view.cljs          — history entry → TUI block builders
+    ws_transport.cljs  — WS client transport (forward + mirror, reconnect)
   session.cljs         — session persistence (Xi, Claude CLI, Pi formats)
   session/
-    tree.cljs          — append-only session tree (branch/navigate support)
-    tree_recorder.cljs — maps runtime events → tree entries
-    format.cljc        — shared session data shapes & cache key construction (cljc)
+    format.cljc        — shared session data shapes (cljc)
     sync.cljc          — sync manifest for rsync (cljc)
-  state/
-    session.cljs       — accessor fns for hook state (session-title, cwd, model, etc.)
-  tools/*.cljs         — built-in tools (read, write, edit, bash, grep, ls)
-  highlight/
-    core.cljc          — regex-walking tokenizer engine (~50 lines)
-    grammars.cljs      — lazy-loading grammar registry (loads EDN from resources/)
-    theme.cljc         — token type → ANSI true-color mapping
-  ext/
-    core.cljs          — extension registry, hook dispatch, hook state management
-    done_notify.cljs   — desktop notification on agent finish (Ctrl+Shift+N toggle)
-    permission_gate.cljs — blocks writes to sensitive paths
-    plan_mode.cljs     — read-only exploration mode (/plan)
-    terminal_title.cljs — sets terminal title from session name
-    parmezan.cljs      — auto-fix Clojure delimiters after writes
-    kb.cljs            — knowledge base tools
-    commit.cljs        — git commit workflow tools
-    web.cljs           — URL fetch tool (UA rotation, HTML→markdown, Jina Reader)
-    perplexity.cljs    — web search via Perplexity (web_search tool)
-    projects.cljs      — project picker with fuzzy completion (Alt+P)
-  compaction.cljs      — context compaction via Claude SDK summarization
+    tree.cljs          — append-only session tree (currently unwired, see docs/session-tree.md)
+    tree_recorder.cljs — event → tree entry mapping (currently unwired)
   system_prompt.cljs   — system prompt construction (base + personal-agent)
-  util.cljs            — shared pure utilities
-  tui/
-    tree_selector.cljs — interactive tree selector (filter, search, navigate)
-    ...                — other terminal UI rendering primitives
+  tools/*.cljs         — built-in tools (bash, read, write, edit, grep, find, ls) + registry
+  ext/
+    core.cljs          — extension composition API (compose, dialogs, tool-gate chain)
+    *.cljs             — extensions: kb, web, perplexity, commit, clj_surgeon, gtd,
+                         permission_gate, todo_intercept, plan_mode, done_notify,
+                         pushover, dictation, terminal_title, clipboard_image,
+                         projects, skills, events
+  highlight/           — syntax highlighting (engine, grammars, ANSI + CSS themes)
+  markdown/            — markdown parsing + ANSI / hiccup rendering
+  tui/                 — terminal UI primitives (editor, grid, render, components, …)
   web/
-    core.cljs          — web client entry point (render loop, cache hydration)
-    state.cljs         — app-state atom
-    views.cljs         — Replicant view functions
-    ws.cljs            — WebSocket transport with offline queueing
-    cache.cljs         — localStorage session/message cache
+    core.cljs          — browser entry (app assembly, taps, Replicant render)
+    views.cljs         — pure views (state → hiccup)
+    router.cljs        — routing as events (History API)
+    cache.cljs         — localStorage offline cache
+  image.cljs           — image resize/processing
+  util.cljs            — shared pure utilities
 ```
 
 ### Web Client
 
-Browser-based client built with shadow-cljs `:browser` target and [Replicant](https://github.com/cjohansen/replicant) for rendering. Connects to the WS server. Supports offline mode with localStorage caching.
+Browser-based client built with shadow-cljs `:browser` target and [Replicant](https://github.com/cjohansen/replicant) for rendering. Runs the same pure handlers as the TUI over the WS transport; supports offline mode with localStorage caching.
 
 See [docs/web-client.md](docs/web-client.md) for full documentation (features, protocol, architecture).
 See [docs/web-offline.md](docs/web-offline.md) for offline architecture details.
@@ -141,15 +143,19 @@ See [docs/frontend.md](docs/frontend.md) for UI component library (clj-ui-framew
 
 See [docs/extensions.md](docs/extensions.md) for full details.
 
-- All hooks receive a **state map** auto-injected by `ext/core`. Use accessor fns from `xi.state.session`:
-  ```clojure
-  (state.session/session-title state)  ;; session name or nil
-  (state.session/cwd state)            ;; working directory
-  (state.session/model state)          ;; active model
-  ```
-- The runtime calls `sync-hook-state!` at startup and after each turn to keep hook state current
-- Transform hooks (`:tool-call`, `:context`) receive `(value, state)` — return `nil` to block
-- Prompt badge hooks return a string shown after `xi>` in the prompt
+- An extension is a **plain data map** — `:id :init :handlers :fx
+  :event-hooks :tool-gate :tool-definitions :tool-registry :commands
+  :system-prompt :keybindings :prompt-badge :on-shutdown`. No registration
+  atoms; extensions are composed at assembly time in `xi.cli` via
+  `ext/compose`.
+- Extension state lives in app state: room-scoped under
+  `[:rooms room-id :ext <id>]` (mirrors to clients via `:room/joined`
+  snapshots) or process-local under `[:ext <id>]` (never crosses the wire).
+- `:tool-gate` is an async transform chain `(fn [tool-call ctx])` →
+  tool-call (allow/modify), `nil` (block), or `{:intercepted true :result …}`
+  (short-circuit with a result).
+- Dialogs: `ext/create-dialogs` returns `ask!` — pushes into room
+  `[:ui :dialogs]`, rendered by the TUI/web, resolves a promise on response.
 
 ## Conventions
 

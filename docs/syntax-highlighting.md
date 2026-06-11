@@ -27,9 +27,12 @@ source string
 
 ```
 highlight/
-  core.cljc      Tokenizer engine — ~50 lines, the whole runtime
-  grammars.cljs  Lazy-loading registry + grammar loader
-  theme.cljc     Token type → ANSI true-color mapping (Nord-inspired)
+  core.cljc       Tokenizer engine — ~50 lines, the whole runtime
+  grammars.cljs   Lazy-loading registry + grammar loader (node, via fs)
+  bundle.cljc     Compile-time inlined grammars for the browser (~29 common
+                  languages, ~35KB) — no filesystem access needed
+  theme.cljc      Token type → ANSI true-color mapping (Nord-inspired, TUI)
+  theme_css.cljc  Token type → CSS class mapping (web client)
 
 resources/highlight/grammars/
   registry.edn   Alias → filename mapping (722 entries)
@@ -38,9 +41,9 @@ resources/highlight/grammars/
   ...            269 grammar EDN files total
 ```
 
-### Lazy Loading
+### Lazy Loading (node)
 
-Grammars are **not** bundled into the compiled JS output. Instead, they live as individual EDN files in `resources/highlight/grammars/` and are loaded on demand:
+In the node build (TUI/server), grammars are **not** bundled into the compiled JS output. Instead, they live as individual EDN files in `resources/highlight/grammars/` and are loaded on demand:
 
 1. `get-grammar "clojure"` looks up `"clojure"` in `registry.edn` → filename `"clojure"`
 2. Reads `resources/highlight/grammars/clojure.edn` from disk via `node:fs`
@@ -48,6 +51,10 @@ Grammars are **not** bundled into the compiled JS output. Instead, they live as 
 4. Caches the result in an atom — subsequent calls for the same grammar are instant
 
 This keeps the release build lean (only the tokenizer engine + registry loader are compiled) while supporting 269 languages. Each grammar EDN file is typically 2–15KB.
+
+### Bundled grammars (browser)
+
+The web client can't read grammar files from disk, so `bundle.cljc` inlines a curated set of ~29 common languages (bash, clojure, python, typescript, rust, …) at compile time via macros. `bundle/get-grammar` is the browser-side equivalent of `grammars/get-grammar`; unknown languages render unhighlighted. The web theme maps token types to CSS classes (`theme_css.cljc`, `hl-*` classes styled in `resources/public/css/style.css`) instead of ANSI codes.
 
 ## Where It's Used
 
@@ -58,6 +65,7 @@ This keeps the release build lean (only the tokenizer engine + registry loader a
 | **Tool output (history)** | Same tools when replaying sessions via `/resume` |
 | **Diff views** | `edit` output gets green/red bg for added/removed lines |
 | **Git diffs** | `git_file_diff`, `git_hunk` — highlighted by file extension |
+| **Web client** | markdown code blocks in chat, via bundled grammars + CSS classes |
 
 ### Diff Highlighting
 

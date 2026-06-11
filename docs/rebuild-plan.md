@@ -209,9 +209,10 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
   - **Visibility**: client `visibilitychange` listener dispatches
     `:client/update {:visible?}` so the server suppresses notifications
     while a visible client is attached.
-  - **Deferred from 7b**: per-session compose drafts, image
-    paste/thumbnails, `xi rooms` CLI, rewrite of stale
-    `docs/web-client.md` / `docs/web-offline.md` protocol notes.
+  - **Deferred from 7b**: per-session compose drafts (landed in phase 8,
+    `c025be0`), image paste/thumbnails (landed, `1ec0bdb`), `xi rooms` CLI
+    (still open), stale doc rewrite (done during phase 8 — see
+    [phase-8-cutover.md](phase-8-cutover.md)).
 
 ## Why
 
