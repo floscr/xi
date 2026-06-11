@@ -120,10 +120,15 @@
                   (aset row (+ col j) (make-cell " " sgr)))
                 (recur (inc i) next-stop sgr 0))
               ;; Visible character (code-point aware)
-              (let [cp (.codePointAt line i)
-                    n (if (> cp 0xFFFF) 2 1)
-                    ch-str (.substring line i (+ i n))]
-                (cond
+              (if (< (.charCodeAt line i) 0x0300)
+                ;; Fast path: plain narrow char (ASCII/Latin-1) — no
+                ;; code-point machinery needed
+                (do (aset row col (make-cell ch sgr))
+                    (recur (inc i) (inc col) sgr 1))
+                (let [cp (.codePointAt line i)
+                      n (if (> cp 0xFFFF) 2 1)
+                      ch-str (.substring line i (+ i n))]
+                  (cond
                   ;; VS16 — upgrades preceding narrow glyph to wide (emoji)
                   (= cp ansi/VS16)
                   (cond
@@ -161,18 +166,18 @@
                           (aset prev 0 (str (aget prev 0) ch-str)))))
                     (recur (+ i n) col sgr prev-w))
 
-                  :else
-                  (let [w (ansi/char-width cp)]
-                    (if (= w 2)
-                      (if (< (inc col) width)
+                    :else
+                    (let [w (ansi/char-width cp)]
+                      (if (= w 2)
+                        (if (< (inc col) width)
+                          (do (aset row col (make-cell ch-str sgr))
+                              (aset row (inc col) (make-cont-cell ch-str sgr))
+                              (recur (+ i n) (+ col 2) sgr 2))
+                          ;; Wide glyph can't fit in the last column — blank it
+                          (do (aset row col (make-cell " " sgr))
+                              (recur (+ i n) (inc col) sgr 1)))
                         (do (aset row col (make-cell ch-str sgr))
-                            (aset row (inc col) (make-cont-cell ch-str sgr))
-                            (recur (+ i n) (+ col 2) sgr 2))
-                        ;; Wide glyph can't fit in the last column — blank it
-                        (do (aset row col (make-cell " " sgr))
-                            (recur (+ i n) (inc col) sgr 1)))
-                      (do (aset row col (make-cell ch-str sgr))
-                          (recur (+ i n) (inc col) sgr 1)))))))))))))
+                            (recur (+ i n) (inc col) sgr 1))))))))))))))
 
 (defn frame->grid
   "Convert a vector of ANSI line strings into a cell grid."

@@ -189,6 +189,8 @@
   "Terminal column width of a code point: 0, 1 or 2."
   [cp]
   (cond
+    ;; Fast path: everything below U+0300 (ASCII/Latin-1) is narrow.
+    (< cp 0x0300) 1
     (zero-width? cp) 0
     (wide? cp) 2
     :else 1))
@@ -206,23 +208,30 @@
       (loop [i 0 col 0 prev-w 0]
         (if (>= i len)
           col
-          (let [cp (.codePointAt stripped i)
-                n (if (> cp 0xFFFF) 2 1)]
+          (let [cu (.charCodeAt stripped i)]
             (cond
-              (= cp 9)
-              (recur (+ i n) (* 4 (inc (quot col 4))) 0)
+              ;; Fast path: plain narrow char — no code-point machinery needed
+              (and (< cu 0x0300) (not= cu 9))
+              (recur (inc i) (inc col) 1)
 
-              (= cp VS16)
-              (if (= prev-w 1)
-                (recur (+ i n) (inc col) 2)
-                (recur (+ i n) col prev-w))
-
-              (zero-width? cp)
-              (recur (+ i n) col prev-w)
+              (= cu 9)
+              (recur (inc i) (* 4 (inc (quot col 4))) 0)
 
               :else
-              (let [w (char-width cp)]
-                (recur (+ i n) (+ col w) w)))))))))
+              (let [cp (.codePointAt stripped i)
+                    n (if (> cp 0xFFFF) 2 1)]
+                (cond
+                  (= cp VS16)
+                  (if (= prev-w 1)
+                    (recur (+ i n) (inc col) 2)
+                    (recur (+ i n) col prev-w))
+
+                  (zero-width? cp)
+                  (recur (+ i n) col prev-w)
+
+                  :else
+                  (let [w (char-width cp)]
+                    (recur (+ i n) (+ col w) w)))))))))))
 
 ;; ── Line Utilities ────────────────────────────────────────────────────────────
 
@@ -301,30 +310,35 @@
                   (recur (inc i) next-stop 0))))
 
           :else
-          (let [cp (.codePointAt line i)
-                n (if (> cp 0xFFFF) 2 1)]
-            (cond
-              ;; VS16 — upgrades a preceding narrow char to wide
-              (= cp VS16)
-              (if (and (= prev-w 1) (< vcol target))
-                (do (.push out (.substring line i (+ i n)))
-                    (recur (+ i n) (inc vcol) 2))
-                ;; would overflow or nothing to upgrade — drop it
-                (recur (+ i n) vcol prev-w))
+          (let [cu (.charCodeAt line i)]
+            (if (< cu 0x0300)
+              ;; Fast path: plain narrow char
+              (do (.push out (.charAt line i))
+                  (recur (inc i) (inc vcol) 1))
+              (let [cp (.codePointAt line i)
+                    n (if (> cp 0xFFFF) 2 1)]
+                (cond
+                  ;; VS16 — upgrades a preceding narrow char to wide
+                  (= cp VS16)
+                  (if (and (= prev-w 1) (< vcol target))
+                    (do (.push out (.substring line i (+ i n)))
+                        (recur (+ i n) (inc vcol) 2))
+                    ;; would overflow or nothing to upgrade — drop it
+                    (recur (+ i n) vcol prev-w))
 
-              (zero-width? cp)
-              (do (.push out (.substring line i (+ i n)))
-                  (recur (+ i n) vcol prev-w))
-
-              :else
-              (let [w (char-width cp)]
-                (if (> (+ vcol w) target)
-                  ;; wide char won't fit before the ellipsis
-                  (do (.push out ellipsis)
-                      (.push out (str "\033[" "0m"))
-                      (.join out ""))
+                  (zero-width? cp)
                   (do (.push out (.substring line i (+ i n)))
-                      (recur (+ i n) (+ vcol w) w)))))))))))
+                      (recur (+ i n) vcol prev-w))
+
+                  :else
+                  (let [w (char-width cp)]
+                    (if (> (+ vcol w) target)
+                      ;; wide char won't fit before the ellipsis
+                      (do (.push out ellipsis)
+                          (.push out (str "\033[" "0m"))
+                          (.join out ""))
+                      (do (.push out (.substring line i (+ i n)))
+                          (recur (+ i n) (+ vcol w) w)))))))))))))
 
 (defn highlight-range
   "Apply reverse-video highlight to visible columns [from, to) in a line.
@@ -349,12 +363,16 @@
 
           ;; Visible character
           :else
-          (let [cp (.codePointAt line i)
+          (let [cu (.charCodeAt line i)
+                fast? (< cu 0x0300)
+                cp (if fast? cu (.codePointAt line i))
                 n (if (> cp 0xFFFF) 2 1)
-                w (if (= cp VS16)
-                    (if (= prev-w 1) 1 0)
-                    (char-width cp))
+                w (cond
+                    fast? 1
+                    (= cp VS16) (if (= prev-w 1) 1 0)
+                    :else (char-width cp))
                 next-prev (cond
+                            fast? 1
                             (= cp VS16) (if (= prev-w 1) 2 prev-w)
                             (zero? w) prev-w
                             :else w)
@@ -412,9 +430,11 @@
         (if (= (.charAt word i) "\033")
           (let [end (skip-ansi-seq word i len)]
             (recur end vcol start result))
-          (let [cp (.codePointAt word i)
+          (let [cu (.charCodeAt word i)
+                fast? (< cu 0x0300)
+                cp (if fast? cu (.codePointAt word i))
                 n (if (> cp 0xFFFF) 2 1)
-                w (char-width cp)
+                w (if fast? 1 (char-width cp))
                 vcol' (+ vcol w)]
             (cond
               ;; Wide char would overflow this chunk — break before it
