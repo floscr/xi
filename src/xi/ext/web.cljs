@@ -134,6 +134,36 @@
                   str/trim)
      :truncated truncated?}))
 
+;; ── GitHub ──────────────────────────────────────────────────────────────────
+
+(defn- github-repo-url?
+  "Return [owner repo] if url is a GitHub repo root, else nil."
+  [url]
+  (when-let [[_ owner repo] (re-matches #"https?://github\.com/([^/]+)/([^/?#]+)/?(?:[?#].*)?"
+                                         url)]
+    (when-not (contains? #{"issues" "pulls" "actions" "settings" "wiki" "discussions"}
+                         repo)
+      [owner repo])))
+
+(defn- fetch-github-readme
+  "Fetch raw README via GitHub API. Returns promise of content string or nil."
+  [owner repo timeout-ms]
+  (let [api-url (str "https://api.github.com/repos/" owner "/" repo "/readme")
+        controller (js/AbortController.)
+        timer (js/setTimeout #(.abort controller) timeout-ms)]
+    (-> (js/fetch api-url
+                  #js {:signal (.-signal controller)
+                       :headers #js {"Accept" "application/vnd.github.raw+json"
+                                     "User-Agent" "xi-fetch/1.0"}})
+        (.then (fn [resp]
+                 (js/clearTimeout timer)
+                 (if (.-ok resp)
+                   (.text resp)
+                   nil)))
+        (.catch (fn [_]
+                  (js/clearTimeout timer)
+                  nil)))))
+
 ;; ── Page Loading ──────────────────────────────────────────────────────────────
 
 (defn- load-page
@@ -227,8 +257,22 @@
   "Fetch and process a URL. Returns promise of result map."
   [url timeout-ms raw?]
   (let [url (normalize-url url)
-        notes (atom [])]
-    (-> (load-page url timeout-ms)
+        notes (atom [])
+        gh-match (github-repo-url? url)]
+    (if (and gh-match (not raw?))
+      ;; GitHub repo root — fetch README directly
+      (let [[owner repo] gh-match]
+        (-> (fetch-github-readme owner repo timeout-ms)
+            (.then (fn [readme-content]
+                     (if readme-content
+                       (let [{:keys [content truncated]} (truncate-output readme-content)]
+                         {:url url :final-url url :content-type "text/markdown"
+                          :method "github-readme" :content content :truncated truncated
+                          :notes ["Fetched raw README from GitHub API"]})
+                       ;; API failed — fall through to normal HTML fetch
+                       (render-url url timeout-ms true))))))
+      ;; Normal path
+      (-> (load-page url timeout-ms)
         (.then
          (fn [{:keys [content content-type final-url ok status]}]
            (if-not ok
@@ -293,7 +337,7 @@
                  :else
                  (let [{:keys [content truncated]} (truncate-output content)]
                    {:url url :final-url final-url :content-type mime :method "raw"
-                    :content content :truncated truncated :notes @notes})))))))))
+                    :content content :truncated truncated :notes @notes}))))))))))
 
 ;; ── Extension ─────────────────────────────────────────────────────────────────
 
