@@ -138,7 +138,11 @@
 (defonce ^:private dispatch-ref (atom nil))
 
 (defn- ws-url []
-  (str (if (= "https:" js/location.protocol) "wss://" "ws://") js/location.host))
+  (let [params (js/URLSearchParams. (.-search js/window.location))
+        proto  (if (= "https:" js/location.protocol) "wss://" "ws://")
+        host   (or (.get params "host") js/location.hostname)
+        port   (or (.get params "port") "7474")]
+    (str proto host ":" port)))
 
 (defn ^:export init! []
   (js/console.log "[xi-web] starting")

@@ -354,9 +354,14 @@
          vec)))
 
 (defn find-session-by-id
-  "Find a session summary by its ID across all sources."
+  "Find a session summary by its ID across all sources. Matches the summary
+   id or, for Xi metadata summaries, the underlying CLI session id (Claude
+   sessions are deduped out of the listing once Xi metadata references them,
+   so a CLI id must resolve through the Xi summary)."
   [session-id]
-  (first (filter #(= session-id (:session-id %)) (list-all-sessions))))
+  (first (filter #(or (= session-id (:session-id %))
+                      (= session-id (:cli-session-id %)))
+                 (list-all-sessions))))
 
 ;; ── Response counting (for unread indicators) ────────────────────────────────
 
