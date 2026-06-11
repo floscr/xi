@@ -163,10 +163,17 @@
   [room-id commands]
   {:id :palette
    :prompt "palette> "
-   :items (mapv (fn [{:keys [name description]}]
-                  {:label (str "/" name)
-                   :description description
-                   :event {:type :command/run :room-id room-id :name name}})
+   :items (into []
+                (mapcat (fn [{:keys [name description subcommands]}]
+                          (cons {:label (str "/" name)
+                                 :description description
+                                 :event {:type :command/run :room-id room-id :name name}}
+                                (map (fn [{sub-name :name sub-desc :description}]
+                                       {:label (str "/" name " " sub-name)
+                                        :description sub-desc
+                                        :event {:type :command/run :room-id room-id
+                                                :name name :args sub-name}})
+                                     subcommands))))
                 commands)})
 
 ;; ── Dialogs (room :ui :dialogs → focused bottom-panel component) ──────────────

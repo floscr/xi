@@ -177,6 +177,8 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
    :system-prompt load-skill-prompts
    :commands      [{:name "skill"
                     :description "List or load on-demand skills"
-                    :handler skill-command}]
+                    :handler skill-command
+                    :subcommands [{:name "list" :description "List available skills"}
+                                  {:name "load" :description "Load a skill and auto-post it"}]}]
    :fx            {:skill/list skill-list-fx
                    :skill/load skill-load-fx}})

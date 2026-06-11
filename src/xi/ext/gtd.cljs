@@ -282,7 +282,9 @@ Explicit `:file` always overrides auto-detection.")
    :system-prompt    GTD_PROMPT
    :commands         [{:name "gtd"
                        :description "Pick a task to work on, get recommendations, or cleanup"
-                       :handler gtd-command}]
+                       :handler gtd-command
+                       :subcommands [{:name "recommend" :description "Get an AI recommendation for what to work on"}
+                                     {:name "cleanup" :description "Review tasks for cleanup"}]}]
    :handlers         {:gtd/start-task gtd-start-task}
    :fx               {:gtd/open-picker gtd-open-picker-fx
                       :gtd/start-task  gtd-start-task-fx}

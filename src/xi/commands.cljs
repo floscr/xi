@@ -114,10 +114,14 @@
   (status st room-id
           (str "Commands:\n"
                (str/join "\n"
-                         (map (fn [{:keys [name description]}]
-                                (str "  /" name
-                                     (when description (str " — " description))))
-                              commands)))))
+                         (mapcat (fn [{:keys [name description subcommands]}]
+                                   (cons (str "  /" name
+                                               (when description (str " — " description)))
+                                         (map (fn [{sub-name :name sub-desc :description}]
+                                                (str "    " name " " sub-name
+                                                     (when sub-desc (str " — " sub-desc))))
+                                              subcommands)))
+                                 commands)))))
 
 (defn- cmd-quit [_st _ctx]
   {:effects [[:app/quit {}]]})
