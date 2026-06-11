@@ -95,6 +95,10 @@
 (def ^:private shorten-tool-name util/strip-mcp-prefix)
 (def ^:private truncate util/truncate)
 
+(def ^:private collapsed-tools
+  "Tools whose output is hidden by default in the TUI."
+  #{"read" "clj_outline"})
+
 (defn- truncate-output
   "Truncate tool output to max lines."
   [text max-lines]
@@ -263,6 +267,7 @@
         live? (= :running (:status entry))
         spinner (when live? (comp/make-spinner))
         start-time (js/Date.now)
+        collapsed? (collapsed-tools short-name)
         st #js {:outputSet false :finished false
                 :grammar (tool-output-lang short-name (:arguments entry))}
         ensure-grammar! (fn [arguments]
@@ -292,7 +297,7 @@
       (do ((:add-child box) spinner)
           ((:start spinner)))
       ;; Already settled (resumed session) — render result statically
-      (do (when (:result entry)
+      (do (when (and (:result entry) (not collapsed?))
             (set-output! (:result entry) (:is-error entry)))
           (set! (.-finished st) true)))
     {:nodes [box (comp/make-spacer 1)]
@@ -303,7 +308,7 @@
                     ((:set-text header-text)
                      (tool-header-str short-name
                                       (format-tool-args short-name (:arguments new)))))
-                  (when (and (:result new) (not (.-outputSet st)))
+                  (when (and (:result new) (not (.-outputSet st)) (not collapsed?))
                     (set-output! (:result new) (:is-error new)))
                   (when (and (not= :running (:status new)) (not (.-finished st)))
                     (finish! (= :error (:status new))))
