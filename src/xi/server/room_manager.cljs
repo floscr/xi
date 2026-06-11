@@ -59,20 +59,27 @@
 
 (defn- room-join
   "Resolve a join target to an existing room (→ attach) or a new one
-   (→ :room/setup effect, which creates then attaches)."
+   (→ :room/setup effect, which creates then attaches).
+
+   Targets: \"new\" | \"latest\" | room-id | {:session-id sid} (resume a
+   saved session into a fresh room)."
   [st {:keys [client-id target cwd] :as ev}]
-  (let [target   (or target "latest")
-        existing (cond
-                   (= "new" target)    nil
-                   (= "latest" target) (latest-room-id st)
-                   :else               (when (state/get-room st target) target))]
-    (if existing
-      {:effects [[:app/dispatch {:type :room/attach
-                                 :client-id client-id
-                                 :room-id existing}]]}
-      {:effects [[:room/setup {:client-id client-id
-                               :room-id (gen-room-id ev)
-                               :cwd cwd}]]})))
+  (let [target (or target "latest")]
+    (if (map? target)
+      {:effects [[:room/setup {:client-id  client-id
+                               :room-id    (gen-room-id ev)
+                               :session-id (:session-id target)}]]}
+      (let [existing (cond
+                       (= "new" target)    nil
+                       (= "latest" target) (latest-room-id st)
+                       :else               (when (state/get-room st target) target))]
+        (if existing
+          {:effects [[:app/dispatch {:type :room/attach
+                                     :client-id client-id
+                                     :room-id existing}]]}
+          {:effects [[:room/setup {:client-id client-id
+                                   :room-id (gen-room-id ev)
+                                   :cwd cwd}]]})))))
 
 (defn- room-attach [st {:keys [client-id room-id]}]
   (when (state/get-room st room-id)
@@ -93,10 +100,10 @@
         (and empty? idle?)
         (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])))))
 
-(defn- room-list [st {:keys [client-id]}]
-  {:effects [[:ws/send-to {:client-id client-id
-                           :event {:type :lobby/state
-                                   :rooms (room-summaries st)}}]]})
+(defn- room-list [_st {:keys [client-id]}]
+  ;; The full payload (rooms + saved sessions) is built impurely in the WS
+  ;; layer, which can read sessions from disk.
+  {:effects [[:lobby/send {:client-id client-id}]]})
 
 (def handlers
   {:room/join   room-join

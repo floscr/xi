@@ -43,6 +43,15 @@
 (defn- client-disconnect [st {:keys [client-id]}]
   {:state (update-in st [:connection :clients] dissoc client-id)})
 
+(defn- client-update
+  "Per-client metadata update (e.g. visibility). Connection-level: keyed by
+   client-id, no room state, never broadcast."
+  [st {:keys [client-id visible?]}]
+  (when (get-in st [:connection :clients client-id])
+    {:state (cond-> st
+              (some? visible?)
+              (assoc-in [:connection :clients client-id :visible?] visible?))}))
+
 ;; ── History ──────────────────────────────────────────────────────────────────
 
 (defn- history-append [st {:keys [room-id entry]}]
@@ -93,6 +102,7 @@
    :room/close        room-close
    :client/connect    client-connect
    :client/disconnect client-disconnect
+   :client/update     client-update
    :history/append    history-append
    :agent/busy        agent-busy
    :agent/set-model   agent-set-model

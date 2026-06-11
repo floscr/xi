@@ -11,8 +11,8 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
 | 3 | Provider layer (agent orchestration, claude, ollama) | ✅ done | `2e00b5d` |
 | 4 | Standalone TUI (render-from-state, commands, sessions, compaction) | ✅ done | `f0aed74` |
 | 5 | Connection layer (WS transports, rooms) | ✅ done | `289f0c7` |
-| 6 | Extensions (new hook API, port all 18) | ✅ done | `62419b0`… |
-| 7 | Web client (rebuild on new core) | ⬜ next | |
+| 6 | Extensions (new hook API, port all 18) | ✅ done | `62419b0`–`ce33f7f` |
+| 7 | Web client (rebuild on new core) | 🟡 7a done (online chat); 7b next — plan: [phase-7-web-client.md](phase-7-web-client.md) | |
 | 8 | Cutover (parity checklist, merge) | ⬜ | |
 
 ### Implementation notes (phases 2–5, for continuity)
@@ -118,7 +118,7 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
     lobby payload (web client, phase 7); personal-agent room policies
     (extensions, phase 6); `xi rooms` CLI listing.
 - **Old implementation reference**: `../xi` worktree (master).
-- **Phase 6 — extensions** (6a: `62419b0`–`df7c79c`; 6b: uncommitted):
+- **Phase 6 — extensions** (6a: `62419b0`–`df7c79c`; 6b: `b701298`–`ce33f7f`):
   - **Extension = data map**: `:id :init :handlers :fx :event-hooks
     :tool-gate :tool-definitions :tool-registry :commands :system-prompt
     :keybindings :prompt-badge :on-shutdown`. No registration atoms or
@@ -149,6 +149,34 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
     not needed yet); `projects` drill-down (Tab→files) deferred (needs
     callback-based menus); `set-session-name!` dropped from gtd picker
     (no equivalent event in xi-next).
+- **Phase 7a — web client (online chat)**:
+  - **Same core, browser mode**: `xi.web.core/init!` wires
+    `app/create-app` (`:mode :client`) + `ws-transport/make-handlers`
+    over `events/core-handlers + agent/handlers + commands/command-handlers
+    + compaction/handlers` (no node-coupled turn-end/abort chains — effects
+    are stripped on mirror, so the bare merge suffices for a forward/mirror
+    client). Connects to `ws://location.host`, joins target `"latest"`.
+  - **Static serving**: `xi.server.ws` `:fetch` serves `resources/public`
+    (Bun.file content-types), resolves the public dir relative to the
+    compiled script (`__dirname/../resources/public`), SPA-falls back to
+    `index.html` for extension-less paths, 403 on traversal. Same Bun
+    server as the WS upgrade — web client lives at `:7474`.
+  - **Lobby/resume gaps** (deferred from phase 5): lobby payload gains
+    `:sessions` (read lazily, only when roomless clients exist);
+    `:room/list` routes through a `:lobby/send` effect (pure handlers
+    can't read fs); `:room/join` accepts `{:session-id sid}` →
+    `:room/setup` creates the room then dispatches `:session/resumed`;
+    `:client/update {:visible?}` sets per-client visibility (added to
+    `roomless-types` — connection-level, never broadcast).
+  - **Views** (`xi.web.views`): pure `(state → hiccup)` with `dispatch!`
+    threaded through closures, rendered by Replicant. No view-local
+    atoms — collapsible tool/thinking blocks use `<details>`/`<summary>`
+    (Replicant only writes changed attrs, so manual toggles survive
+    re-render) and the compose box is an uncontrolled textarea read on
+    submit. Entry kinds map to `.post--{user,assistant,tool}`.
+  - **Deferred to 7b**: router + `/chat/:id` deep links, home/session
+    list view, offline localStorage cache, unread dots, image
+    paste/thumbnails, client-side `visibilitychange` → `:client/update`.
 
 ## Why
 
