@@ -26,18 +26,32 @@ no parallel data structure to keep in sync.
      (:edit — exclusive: drop the message being edited;
       :navigate on a user message — inclusive +1: keep the response)
    • clear [:session :provider-session-id]
+   • flag [:session :inject-history?]
    • clear busy/queued, close the selector
       │
       ▼
- next prompt starts a FRESH provider session
- (no resume — the truncated history is display state;
-  prior conversation context is not carried over)
+ next prompt starts a FRESH provider session with the
+ truncated conversation injected into the system prompt
+ (xi.agent/history->context renders user/assistant text
+  exchanges as a <conversation_history> block)
 ```
 
 Because everything is pure state, the truncation mirrors to all connected
 clients like any other event, and nothing on disk is modified — the
 provider's old session JSONL stays intact; navigation just detaches from
 it.
+
+### Context carry-over
+
+The fresh provider session knows nothing about the conversation, so
+`start-turn-effect` (xi.agent) checks the session flags: when
+`:inject-history?` is set and there is no `provider-session-id` to
+resume, it renders the truncated history (user prompts and assistant
+text; thinking and tool calls are skipped) and appends it to the base
+system prompt. Once a turn completes and a new provider session id
+lands, resume takes over and injection stops — no flag bookkeeping
+needed. `/clear` and `/new` rebuild the session map, so the flag
+vanishes naturally.
 
 ## Selector UI
 
@@ -71,6 +85,6 @@ into the system prompt. That code survives as **unwired leaf namespaces**:
 - `src/xi/tui/tree_selector.cljs` — the tree-shaped selector UI
 
 Nothing constructs or records into them in the rebuild. If branch
-preservation or context re-injection is wanted again, these are the
-starting point; until then `/tree` is intentionally simpler: truncate and
-start fresh.
+preservation is wanted again, these are the starting point; until then
+`/tree` is intentionally simpler: truncate, carry the context, start a
+fresh provider session.

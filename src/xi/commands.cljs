@@ -292,15 +292,19 @@
 
 (defn- tree-navigate
   "Truncate history to `index` (exclusive for :edit, inclusive + 1 for
-   :navigate on user messages to include the response). Clears the
-   provider session so the next turn starts fresh from context."
+   :navigate on user messages to include the response). Clears the provider
+   session and flags :inject-history? so the next turn starts a fresh
+   provider session with the truncated conversation injected as context
+   (see xi.agent/history->context)."
   [st {:keys [room-id index mode editor-text]}]
   (when-let [room (state/get-room st room-id)]
     (let [history (:history room)
           new-history (subvec (vec history) 0 index)]
       (cond-> {:state (-> st
                           (assoc-in [:rooms room-id :history] new-history)
-                          (assoc-in [:rooms room-id :session :provider-session-id] nil)
+                          (update-in [:rooms room-id :session] assoc
+                                     :provider-session-id nil
+                                     :inject-history? true)
                           (update-in [:rooms room-id :ui] dissoc :tree-open?)
                           (update-in [:rooms room-id :agent] assoc :busy? false :queued []))}
         editor-text

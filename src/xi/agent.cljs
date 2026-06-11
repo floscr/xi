@@ -20,7 +20,8 @@
    using the callback opts built here — they never touch app state.
    All handlers are pure; `create-fx` is the contained impure edge (holds
    in-flight turn handles, which are runtime resources, not app state)."
-  (:require [xi.core.state :as state]
+  (:require [clojure.string :as str]
+            [xi.core.state :as state]
             [xi.util :as util]))
 
 ;; ── History folding (pure) ───────────────────────────────────────────────────
@@ -54,10 +55,42 @@
 
 ;; ── Turn construction (pure) ─────────────────────────────────────────────────
 
+(defn history->context
+  "Render history's user/assistant text exchanges as a <conversation_history>
+   block for system-prompt injection, or nil when there is nothing to carry.
+   Used after /tree navigation: the provider session is fresh, so the
+   truncated conversation rides along as context."
+  [history]
+  (let [msgs (keep (fn [{:keys [kind text]}]
+                     (when (seq text)
+                       (case kind
+                         :user (str "user: " text)
+                         :text (str "assistant: " text)
+                         nil)))
+                   history)]
+    (when (seq msgs)
+      (str "<conversation_history>\n"
+           "The user rewound this conversation to an earlier point. "
+           "Everything below already happened; continue from here.\n\n"
+           (str/join "\n\n" msgs)
+           "\n</conversation_history>"))))
+
 (defn- start-turn-effect
-  "Build the :provider/start-turn effect payload from room state + prompt."
+  "Build the :provider/start-turn effect payload from room state + prompt.
+   When the session is flagged :inject-history? and has no provider session
+   to resume (i.e. after /tree navigation), the truncated history is rendered
+   into the system prompt so the fresh provider session keeps the context."
   [room {:keys [text images]}]
-  (let [agent (:agent room)]
+  (let [agent     (:agent room)
+        resume-id (get-in room [:session :provider-session-id])
+        context   (when (and (nil? resume-id)
+                             (get-in room [:session :inject-history?]))
+                    (history->context (:history room)))
+        system    (if context
+                    (if-let [base (:system agent)]
+                      (str base "\n\n" context)
+                      context)
+                    (:system agent))]
     [:provider/start-turn
      (cond-> {:room-id  (:id room)
               :prompt   text
@@ -65,13 +98,10 @@
               :provider (:provider agent)
               :cwd      (:cwd room)
               :effort   (:effort agent)
-              :system   (:system agent)
+              :system   system
               :personal-agent? (:personal-agent? agent)}
-       (seq images)
-       (assoc :images images)
-
-       (get-in room [:session :provider-session-id])
-       (assoc :resume-session-id (get-in room [:session :provider-session-id])))]))
+       (seq images) (assoc :images images)
+       resume-id    (assoc :resume-session-id resume-id))]))
 
 (defn- begin-turn [st room prompt]
   {:state   (-> st

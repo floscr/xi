@@ -146,6 +146,8 @@
         {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 2})]
     (is (= 2 (count (history state))))
     (is (nil? (get-in state [:rooms "r" :session :provider-session-id])))
+    (is (true? (get-in state [:rooms "r" :session :inject-history?]))
+        "flags the session so the next turn injects the truncated history")
     (is (nil? (get-in state [:rooms "r" :ui :tree-open?])))))
 
 (deftest tree-close-clears-flag

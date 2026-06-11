@@ -1,5 +1,6 @@
 (ns xi.agent-test
   (:require [cljs.test :refer [deftest is testing async]]
+            [clojure.string :as str]
             [xi.agent :as agent]
             [xi.core.app :as app]
             [xi.core.events :as events]
@@ -88,13 +89,63 @@
         {:keys [effects]}
         (events/handle-event all-handlers st {:type :prompt/submit :room-id "r" :text "b"})]
     (is (= "sid-9" (:resume-session-id (second (first effects)))))))
+(deftest history->context-renders-exchanges
+  (is (nil? (agent/history->context [])))
+  (is (nil? (agent/history->context [{:kind :tool-call :id "t1" :tool "bash"}]))
+      "non-text entries carry nothing")
+  (let [ctx (agent/history->context
+             [{:kind :user :text "hi"}
+              {:kind :thinking :text "hmm"}
+              {:kind :text :text "hello!"}
+              {:kind :tool-call :id "t1" :tool "bash" :result "out"}
+              {:kind :user :text "next"}])]
+    (is (str/includes? ctx "<conversation_history>"))
+    (is (str/includes? ctx "user: hi"))
+    (is (str/includes? ctx "assistant: hello!"))
+    (is (str/includes? ctx "user: next"))
+    (is (not (str/includes? ctx "hmm")) "thinking is not carried")
+    (is (not (str/includes? ctx "out")) "tool results are not carried")))
+
+(deftest inject-history-flag-injects-context-into-system
+  (let [st (-> (with-room)
+               (assoc-in [:rooms "r" :agent :system] "base prompt")
+               (update-in [:rooms "r" :history] into
+                          [{:kind :user :text "old question"}
+                           {:kind :text :text "old answer" :done? true}])
+               (update-in [:rooms "r" :session] assoc
+                          :provider-session-id nil
+                          :inject-history? true))
+        {:keys [effects]}
+        (events/handle-event all-handlers st {:type :prompt/submit :room-id "r" :text "new"})
+        payload (second (first effects))]
+    (is (nil? (:resume-session-id payload)))
+    (is (str/starts-with? (:system payload) "base prompt")
+        "base system prompt is preserved")
+    (is (str/includes? (:system payload) "user: old question"))
+    (is (str/includes? (:system payload) "assistant: old answer"))
+    (is (not (str/includes? (:system payload) "user: new"))
+        "the new prompt itself is not duplicated into the context")))
+
+(deftest inject-history-flag-ignored-once-session-resumes
+  (let [st (-> (with-room)
+               (update-in [:rooms "r" :history] into
+                          [{:kind :user :text "old question"}
+                           {:kind :text :text "old answer" :done? true}])
+               (update-in [:rooms "r" :session] assoc
+                          :provider-session-id "sid-5"
+                          :inject-history? true))
+        {:keys [effects]}
+        (events/handle-event all-handlers st {:type :prompt/submit :room-id "r" :text "new"})
+        payload (second (first effects))]
+    (is (= "sid-5" (:resume-session-id payload)))
+    (is (nil? (:system payload)) "no history injection when resuming")))
 
 (deftest abort-only-when-busy
   (let [busy (apply-events (with-room) {:type :prompt/submit :room-id "r" :text "x"})]
     (is (= [[:provider/abort {:room-id "r"}]]
            (:effects (events/handle-event all-handlers busy {:type :agent/abort :room-id "r"}))))
     (is (= [] (:effects (events/handle-event all-handlers (with-room)
-                                             {:type :agent/abort :room-id "r"}))))))
+                                             {:type :agent/abort :room-id "r"})))))
 
 (deftest provider-routing
   (let [providers {:claude {:id :claude} :ollama {:id :ollama}}]
@@ -142,4 +193,4 @@
            (is (= "fake-sid" (get-in room [:session :provider-session-id])))
            (is (false? @!aborted))
            (done)))
-       10))))
+       10)))))
