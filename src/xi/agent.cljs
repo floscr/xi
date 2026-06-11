@@ -201,7 +201,8 @@
                              dispatch, read state, confirm via dialogs, etc.
      :extra-tool-definitions extra tool defs exposed to the provider
      :extra-tool-registry    name → exec-fn for those extra tools
-     :ask!                   dialog ask! (carried into the gate ctx)"
+     :ask!                   dialog ask! — partially applied into the gate
+                             ctx as :confirm! (fn [message] → Promise<bool>)"
   ([providers] (create-fx providers nil))
   ([providers {:keys [tool-gate extra-tool-definitions extra-tool-registry ask!]}]
   (let [inflight (js/Map.)]
@@ -214,7 +215,14 @@
                        :get-state get-state
                        :room-id   room-id
                        :cwd       cwd
-                       :ask!      ask!}
+                       ;; Raise a confirm dialog and resolve to the answer.
+                       ;; ask! resolves to a safe default (false) when no
+                       ;; client is attached (see xi.ext.core/create-dialogs).
+                       :confirm!  (when ask!
+                                    (fn [message]
+                                      (ask! {:dispatch! dispatch! :state (get-state)}
+                                            {:room-id room-id
+                                             :dialog  {:type :confirm :message message}})))}
              gate1 (when tool-gate
                      (fn [tool-call] (tool-gate tool-call gate-ctx)))
              {:keys [promise abort!]}
