@@ -105,11 +105,20 @@
   ;; layer, which can read sessions from disk.
   {:effects [[:lobby/send {:client-id client-id}]]})
 
+(defn- session-counts
+  "Unread-count query: assistant-turn counts per saved session. Reading
+   sessions hits disk, so the pure handler just emits an effect the WS
+   layer fulfils."
+  [_st {:keys [client-id session-ids]}]
+  {:effects [[:session/counts-reply {:client-id client-id
+                                     :session-ids session-ids}]]})
+
 (def handlers
   {:room/join   room-join
    :room/attach room-attach
    :room/leave  room-leave
-   :room/list   room-list})
+   :room/list   room-list
+   :session/counts session-counts})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
 

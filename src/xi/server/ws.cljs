@@ -44,7 +44,7 @@
 (def ^:private roomless-types
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id)."
-  #{:client/update})
+  #{:client/update :session/counts})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -164,6 +164,13 @@
       :lobby/send
       (fn [{:keys [state]} {:keys [client-id]}]
         (send! client-id (lobby-payload state)))
+
+      ;; Reply to an unread-count query: assistant-turn counts per session.
+      :session/counts-reply
+      (fn [_ {:keys [client-id session-ids]}]
+        (send! client-id (wire/encode {:type   :session/counts-result
+                                       :counts (session/count-session-responses
+                                                session-ids)})))
 
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally

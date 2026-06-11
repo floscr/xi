@@ -90,7 +90,7 @@
             (= room-id (:active-room st)) (assoc :active-room nil))})
 
 (defn- lobby-state [st ev]
-  {:state (assoc st :lobby (select-keys ev [:rooms]))})
+  {:state (assoc st :lobby (select-keys ev [:rooms :sessions]))})
 
 (defn make-handlers
   "Client-mode handler map from the server-equivalent pure handlers:
@@ -125,46 +125,76 @@
    :set-dispatch! after creation (the app needs :effects first).
 
    opts:
-     :url      ws:// URL
-     :target   \"latest\" | \"new\" | room-id — joined on open
-     :cwd      working directory sent with the join request
-     :on-close (fn []) — connection ended (error or server gone); not
-               called after an intentional close!
+     :url        ws:// URL
+     :target     \"latest\" | \"new\" | room-id | {:session-id sid} — joined on
+                 open, and replayed on every reconnect
+     :cwd        working directory sent with the join request
+     :reconnect? auto-reconnect with backoff (1s → 30s) on drop, queuing
+                 sends until the socket reopens (web client; the TUI opts out
+                 and exits via :on-close instead)
+     :on-status  (fn [connected?]) — socket opened / dropped (offline badge)
+     :on-close   (fn []) — only without :reconnect?: connection ended and we
+                 are giving up; not called after an intentional close!
 
    Returns {:effects {:ws/send …} :set-dispatch! :close!}."
-  [{:keys [url target cwd on-close]}]
-  (let [ctx #js {:dispatch nil :closed false}
-        ws (js/WebSocket. url)
-        handle-close!
-        (fn [reason]
-          (when-not (.-closed ctx)
-            (set! (.-closed ctx) true)
-            (js/console.error (str "[ws] " reason))
-            (when on-close (on-close))))]
-
-    (.addEventListener ws "open"
-                       (fn [_]
-                         (.send ws (wire/encode {:type :room/join
-                                                 :target (or target "latest")
-                                                 :cwd cwd}))))
-    (.addEventListener ws "message"
-                       (fn [^js e]
-                         (when-let [ev (wire/decode (.-data e))]
-                           (when-let [dispatch! (.-dispatch ctx)]
-                             (dispatch! (assoc ev :remote? true))))))
-    (.addEventListener ws "close"
-                       (fn [_] (handle-close! (str "Disconnected from " url))))
-    (.addEventListener ws "error"
-                       (fn [^js e]
-                         (handle-close! (str "Connection error: " url
-                                             (when-let [m (.-message e)] (str " — " m))))))
-
-    {:effects {:ws/send (fn [_ event]
-                          (try
-                            (.send ws (wire/encode event))
-                            (catch :default err
-                              (js/console.error "[ws] send failed:" err))))}
-     :set-dispatch! (fn [dispatch!] (set! (.-dispatch ctx) dispatch!))
-     :close!        (fn []
-                      (set! (.-closed ctx) true)
-                      (try (.close ws) (catch :default _ nil)))}))
+  [{:keys [url target cwd reconnect? on-status on-close]}]
+  (let [ctx #js {:dispatch nil :ws nil :closed false :pending #js [] :backoff 1000
+                 :lastJoin (wire/encode {:type :room/join
+                                         :target (or target "latest")
+                                         :cwd cwd})}]
+    (letfn [(open? []
+              (let [ws (.-ws ctx)] (and ws (= 1 (.-readyState ws)))))
+            (flush-pending! [ws]
+              (let [p (.-pending ctx)]
+                (set! (.-pending ctx) #js [])
+                (doseq [msg (array-seq p)]
+                  (try (.send ws msg) (catch :default _ nil)))))
+            (handle-drop! []
+              (when-not (.-closed ctx)
+                (when on-status (on-status false))
+                (if reconnect?
+                  (let [delay (.-backoff ctx)]
+                    (set! (.-backoff ctx) (min 30000 (* 2 delay)))
+                    (js/setTimeout #(when-not (.-closed ctx) (connect!)) delay))
+                  (do (set! (.-closed ctx) true)
+                      (js/console.error (str "[ws] disconnected from " url))
+                      (when on-close (on-close))))))
+            (connect! []
+              (let [ws (js/WebSocket. url)]
+                (set! (.-ws ctx) ws)
+                (.addEventListener
+                 ws "open"
+                 (fn [_]
+                   (set! (.-backoff ctx) 1000)
+                   (.send ws (.-lastJoin ctx))
+                   (flush-pending! ws)
+                   (when on-status (on-status true))))
+                (.addEventListener
+                 ws "message"
+                 (fn [^js e]
+                   (when-let [ev (wire/decode (.-data e))]
+                     (when-let [dispatch! (.-dispatch ctx)]
+                       (dispatch! (assoc ev :remote? true))))))
+                (.addEventListener ws "close" (fn [_] (handle-drop!)))
+                (.addEventListener ws "error"
+                                   (fn [_] (try (.close ws) (catch :default _ nil))))))
+            (send! [event]
+              (let [msg (wire/encode event)]
+                ;; Remember the active room so reconnect re-joins it.
+                (when (= :room/join (:type event))
+                  (set! (.-lastJoin ctx) msg))
+                (if (open?)
+                  (try (.send (.-ws ctx) msg)
+                       (catch :default err
+                         (js/console.error "[ws] send failed:" err)
+                         (.push (.-pending ctx) msg)))
+                  ;; Offline: queue everything but joins (replayed via
+                  ;; lastJoin) so we don't double-join on reconnect.
+                  (when-not (= :room/join (:type event))
+                    (.push (.-pending ctx) msg)))))]
+      (connect!)
+      {:effects       {:ws/send (fn [_ event] (send! event))}
+       :set-dispatch! (fn [dispatch!] (set! (.-dispatch ctx) dispatch!))
+       :close!        (fn []
+                        (set! (.-closed ctx) true)
+                        (try (.close (.-ws ctx)) (catch :default _ nil)))})))
