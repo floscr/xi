@@ -163,6 +163,10 @@
                           {:title "System Prompt" :text text})
                 (assoc-in [:rooms room-id :ui :active-buffer] :prompt))}))
 
+(defn- cmd-tree [st {:keys [room-id]}]
+  (when (state/get-room st room-id)
+    {:state (assoc-in st [:rooms room-id :ui :tree-open?] true)}))
+
 (defn- cmd-events [_st {:keys [room-id]}]
   {:effects [[:events/load {:room-id room-id}]]})
 
@@ -219,6 +223,7 @@
    {:name "compact"  :description "Summarize conversation to reduce context" :handler cmd-compact}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
    {:name "diff"     :description "Show diff viewer (git|staged|unstaged|<ref>)" :handler cmd-diff}
+   {:name "tree"     :description "Navigate session history"             :handler cmd-tree}
    {:name "events"   :description "Show event log for this session"     :handler cmd-events}
    {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers}
    {:name "debug"    :description "Copy debug info to clipboard"       :handler cmd-debug}
@@ -280,6 +285,26 @@
 (defn- menu-close [st {:keys [room-id]}]
   (when (get-in st [:rooms room-id :ui :menu])
     {:state (update-in st [:rooms room-id :ui] dissoc :menu)}))
+
+(defn- tree-close [st {:keys [room-id]}]
+  (when (state/get-room st room-id)
+    {:state (update-in st [:rooms room-id :ui] dissoc :tree-open?)}))
+
+(defn- tree-navigate
+  "Truncate history to `index` (exclusive for :edit, inclusive + 1 for
+   :navigate on user messages to include the response). Clears the
+   provider session so the next turn starts fresh from context."
+  [st {:keys [room-id index mode editor-text]}]
+  (when-let [room (state/get-room st room-id)]
+    (let [history (:history room)
+          new-history (subvec (vec history) 0 index)]
+      (cond-> {:state (-> st
+                          (assoc-in [:rooms room-id :history] new-history)
+                          (assoc-in [:rooms room-id :session :provider-session-id] nil)
+                          (update-in [:rooms room-id :ui] dissoc :tree-open?)
+                          (update-in [:rooms room-id :agent] assoc :busy? false :queued []))}
+        editor-text
+        (assoc :effects [[:editor/insert-text {:text editor-text}]])))))
 
 (defn- buffer-open
   "Generic buffer open — install a named buffer and switch to it."
@@ -382,6 +407,8 @@
     :ui/menu-close   menu-close
     :ui/buffer-open  buffer-open
     :ui/diff-open    diff-open
+    :tree/close      tree-close
+    :tree/navigate   tree-navigate
     :ui/attach-image attach-image
     :ui/clear-images clear-images
     :session/created session-created

@@ -130,6 +130,30 @@
            (get-in state [:rooms "r" :ui :buffers :diff])))
     (is (= :diff (get-in state [:rooms "r" :ui :active-buffer])))))
 
+(deftest tree-command-sets-flag
+  (let [{:keys [state]} (handle (with-room)
+                                {:type :command/run :room-id "r" :name "tree"})]
+    (is (true? (get-in state [:rooms "r" :ui :tree-open?])))))
+
+(deftest tree-navigate-truncates-history
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "hello"}
+                         {:type :agent/text-delta :room-id "r" :text "world"}
+                         {:type :agent/turn-end :room-id "r"}
+                         {:type :prompt/submit :room-id "r" :text "again"}
+                         {:type :agent/text-delta :room-id "r" :text "reply"})
+        ;; Navigate to index 2 (keep first 2 entries)
+        {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 2})]
+    (is (= 2 (count (history state))))
+    (is (nil? (get-in state [:rooms "r" :session :provider-session-id])))
+    (is (nil? (get-in state [:rooms "r" :ui :tree-open?])))))
+
+(deftest tree-close-clears-flag
+  (let [st (apply-events (with-room)
+                         {:type :command/run :room-id "r" :name "tree"})
+        {:keys [state]} (handle st {:type :tree/close :room-id "r"})]
+    (is (nil? (get-in state [:rooms "r" :ui :tree-open?])))))
+
 (deftest help-command-lists-commands
   (let [{:keys [state]} (handle (with-room)
                                 {:type :command/run :room-id "r" :name "help"})

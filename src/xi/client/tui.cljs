@@ -29,6 +29,7 @@
             [xi.tui.core :as tui]
             [xi.tui.diff-buffer :as diff-buffer]
             [xi.tui.editor :as editor]
+            [xi.tui.history-selector :as history-selector]
             [xi.tui.terminal :as term]))
 
 ;; ── Key detection (for dialogs / ext keybindings) ────────────────────────────
@@ -296,19 +297,50 @@
           (key "q") (dim ":close  ")
           (key ":") (dim ":command")))))
 
+(defn- build-history-selector
+  "Instantiate the interactive history selector for /tree."
+  [room dispatch!]
+  (history-selector/make-history-selector
+   {:history (:history room)
+    :max-visible (max 10 (- (term/rows) 10))
+    :on-select
+    (fn [index mode]
+      (let [history (:history room)
+            entry (nth history index)
+            is-user? (= :user (:kind entry))
+            ;; :edit on a user msg → fork before it, text goes to editor
+            ;; :navigate on a user msg → include everything up to next user or end
+            nav-index (cond
+                        (and is-user? (= mode :edit))     index
+                        (and is-user? (= mode :navigate))
+                        (let [next-user (first (keep-indexed
+                                                (fn [i e] (when (and (> i index)
+                                                                     (= :user (:kind e)))
+                                                            i))
+                                                history))]
+                          (or next-user (count history)))
+                        :else (inc index))
+            editor-text (when (and is-user? (= mode :edit)) (:text entry))]
+        (dispatch! {:type :tree/navigate :room-id (:id room)
+                    :index nav-index :mode mode :editor-text editor-text})))
+    :on-cancel
+    (fn [] (dispatch! {:type :tree/close :room-id (:id room)}))}))
+
 (defn- sync-bottom-panel!
-  "Bottom-panel priority: dialog > menu > diff-help-bar > editor.
+  "Bottom-panel priority: dialog > menu > tree > diff-help-bar > editor.
    Rebuilds only when the selected target identity changes."
   [^js ctx room dispatch!]
   (let [dialog (first (get-in room [:ui :dialogs]))
         menu   (get-in room [:ui :menu])
+        tree?  (boolean (get-in room [:ui :tree-open?]))
         diff?  (boolean (get-in room [:ui :buffers (get-in room [:ui :active-buffer]) :diff?]))
-        target (or dialog menu (when diff? :diff))]
+        target (or dialog menu (when tree? :tree) (when diff? :diff))]
     (when-not (identical? target (.-panelVal ctx))
       (set! (.-panelVal ctx) target)
       (cond
         dialog (focus-panel! (build-dialog dialog (:id room) dispatch!))
         menu   (focus-panel! (build-menu menu (:id room) dispatch!))
+        tree?  (focus-panel! (build-history-selector room dispatch!))
         diff?  (tui/set-bottom-panel! (diff-help-bar))
         :else  (do (tui/set-bottom-panel! (.-editor ctx))
                    (tui/set-focus! (.-editor ctx)))))))
