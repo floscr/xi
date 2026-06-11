@@ -17,6 +17,14 @@
             [ui.lightbox :as lightbox]
             [ui.theme-toggle :as theme-toggle]))
 
+;; ── Standalone (homescreen) detection ────────────────────────────────────────
+
+(def standalone?
+  "True when running as an installed PWA / homescreen app (no browser chrome)."
+  (or (some-> js/navigator .-standalone)  ;; iOS Safari
+      (and (exists? js/window.matchMedia)
+           (.-matches (.matchMedia js/window "(display-mode: standalone)")))))
+
 ;; ── Timeline virtualization ──────────────────────────────────────────────────
 
 (def ^:private initial-window-size
@@ -436,6 +444,10 @@
        {:mode (or (:web/theme-mode state) "auto")
         :size :sm
         :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
+      (when standalone?
+        [:button {:class ["icon-btn" "icon-btn--sm"]
+                  :on {:click (fn [_] (.reload js/location))}}
+         (icon/icon {:icon-name :refresh :size :md})])
       (offline-badge state)]
      [:div {:class ["timeline"]}
       [:div {:class ["timeline-content"]}
@@ -516,6 +528,10 @@
        {:mode (or (:web/theme-mode state) "auto")
         :size :sm
         :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
+      (when standalone?
+        [:button {:class ["icon-btn" "icon-btn--sm"]
+                  :on {:click (fn [_] (.reload js/location))}}
+         (icon/icon {:icon-name :refresh :size :md})])
       (offline-badge state)
       (when connected?
         [:button {:class ["icon-btn"]
