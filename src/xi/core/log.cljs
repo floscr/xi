@@ -9,7 +9,8 @@
       xi.core.jsonl so this namespace stays browser-safe for the web client.
 
    `prepare-entry` is pure; the ring buffer is the contained impure edge
-   (a single JS object, no atoms).")
+   (a single JS object, no atoms)."
+  (:require [clojure.string :as str]))
 
 ;; ── Elision (pure) ───────────────────────────────────────────────────────────
 
@@ -91,3 +92,26 @@
         n        (.-count ring)
         start    (if (< n capacity) 0 (.-head ring))]
     (mapv #(aget (.-buf ring) (mod (+ start %) capacity)) (range n))))
+
+;; ── Formatting (pure) ────────────────────────────────────────────────────────
+
+(defn format-entry-line
+  "One-line text summary of a prepared ring entry."
+  [{:keys [type event/ts log/chars log/coalesced log/effects] :as entry}]
+  (let [ts (when ts
+             (let [d (js/Date. ts)]
+               (str (.padStart (str (.getHours d)) 2 "0") ":"
+                    (.padStart (str (.getMinutes d)) 2 "0") ":"
+                    (.padStart (str (.getSeconds d)) 2 "0") "."
+                    (.padStart (str (.getMilliseconds d)) 3 "0"))))
+        extras (-> entry
+                   (dissoc :type :event/id :event/ts :room-id
+                           :log/effects :log/chars :log/coalesced)
+                   (->> (filter (fn [[_ v]] (some? v))) (into {})))]
+    (str (or ts "??:??:??") " " (str type)
+         (when chars (str " (" chars " chars)"))
+         (when coalesced (str " ×" coalesced))
+         (when (seq extras)
+           (str " " (elide-string (pr-str extras))))
+         (when (seq effects)
+           (str " → " (str/join " " (map str effects)))))))

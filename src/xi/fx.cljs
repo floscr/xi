@@ -8,6 +8,7 @@
    :provider-session-id mirroring :cli-session-id in memory. The mirror key
    is stripped before writes so the on-disk format stays unchanged."
   (:require [clojure.string :as str]
+            [xi.core.log :as log]
             [xi.image :as image]
             [xi.session :as session]))
 
@@ -84,7 +85,8 @@
    :event {:type :command/run :room-id room-id :name "resume"
            :args (if (= scope :all) (str "all:" (inc i)) (str (inc i)))}})
 
-(defn create-fx []
+
+(defn create-fx [ring]
   {:session/new
    (fn [{:keys [dispatch! state]} {:keys [room-id save-current? after-prompt]}]
      (let [room (room-of state room-id)
@@ -177,6 +179,19 @@
            (run! "Session Changes" (if base ["diff" base] ["diff"])))
 
          (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+"))))))
+
+   :events/load
+   (fn [{:keys [dispatch! state]} {:keys [room-id]}]
+     (let [room (room-of state room-id)
+           entries (when ring
+                     (->> (log/entries ring)
+                          (filter #(or (nil? (:room-id %)) (= room-id (:room-id %))))))
+           text (if (seq entries)
+                  (str/join "\n" (map log/format-entry-line entries))
+                  "(no events)")]
+       (dispatch! {:type :ui/buffer-open :room-id room-id
+                   :buffer-id :events
+                   :buffer {:title "Events" :text text}})))
 
    :image/process
    (fn [{:keys [dispatch!]} {:keys [room-id text images]}]

@@ -163,6 +163,9 @@
                           {:title "System Prompt" :text text})
                 (assoc-in [:rooms room-id :ui :active-buffer] :prompt))}))
 
+(defn- cmd-events [_st {:keys [room-id]}]
+  {:effects [[:events/load {:room-id room-id}]]})
+
 (defn- cmd-diff
   "Open the diff viewer. Subcommands ride in args: git | staged | unstaged;
    nil → session diff; anything else is passed to git diff directly."
@@ -216,6 +219,7 @@
    {:name "compact"  :description "Summarize conversation to reduce context" :handler cmd-compact}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
    {:name "diff"     :description "Show diff viewer (git|staged|unstaged|<ref>)" :handler cmd-diff}
+   {:name "events"   :description "Show event log for this session"     :handler cmd-events}
    {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers}
    {:name "debug"    :description "Copy debug info to clipboard"       :handler cmd-debug}
    {:name "reload"   :description "Restart Xi (picks up recompiled code)" :handler cmd-reload}
@@ -277,15 +281,20 @@
   (when (get-in st [:rooms room-id :ui :menu])
     {:state (update-in st [:rooms room-id :ui] dissoc :menu)}))
 
+(defn- buffer-open
+  "Generic buffer open — install a named buffer and switch to it."
+  [st {:keys [room-id buffer-id buffer]}]
+  (when (state/get-room st room-id)
+    {:state (-> st
+                (assoc-in [:rooms room-id :ui :buffers buffer-id] buffer)
+                (assoc-in [:rooms room-id :ui :active-buffer] buffer-id))}))
+
 (defn- diff-open
   "Diff text came back from :diff/load — install it as the :diff buffer
    and switch to it. :diff? marks it for the TUI's interactive viewer."
   [st {:keys [room-id title text]}]
-  (when (state/get-room st room-id)
-    {:state (-> st
-                (assoc-in [:rooms room-id :ui :buffers :diff]
-                          {:title title :text text :diff? true})
-                (assoc-in [:rooms room-id :ui :active-buffer] :diff))}))
+  (buffer-open st {:room-id room-id :buffer-id :diff
+                   :buffer {:title title :text text :diff? true}}))
 
 (defn- attach-image [st {:keys [room-id image label]}]
   (when (state/get-room st room-id)
@@ -371,6 +380,7 @@
     :ui/status       ui-status
     :ui/menu-open    menu-open
     :ui/menu-close   menu-close
+    :ui/buffer-open  buffer-open
     :ui/diff-open    diff-open
     :ui/attach-image attach-image
     :ui/clear-images clear-images

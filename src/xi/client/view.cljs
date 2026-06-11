@@ -386,8 +386,11 @@
    (entries without a :room-id are connection-level — always shown)."
   [entries room-id]
   (let [c (tui/make-container)
+        log? (fn [{:keys [type]}]
+               (and (keyword? type) (= "log" (namespace type))))
         visible (->> entries
-                     (filter #(or (nil? (:room-id %)) (= room-id (:room-id %))))
+                     (filter #(and (log? %)
+                                   (or (nil? (:room-id %)) (= room-id (:room-id %)))))
                      (take-last 200))]
     (node/append-children! c
       [(node/text (str (ansi/fg :bold "Logs")

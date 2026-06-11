@@ -357,8 +357,15 @@
          {:prompt "xi> "
           :on-submit (fn [text] (room-event {:type :input/submit :text text}))
           :on-escape (fn []
-                       (when (get-in (current-room) [:agent :busy?])
-                         (room-event {:type :agent/abort})))
+                       (let [room (current-room)
+                             active (get-in room [:ui :active-buffer] :chat)]
+                         (if (not= active :chat)
+                           ;; Non-chat buffer open → return to chat
+                           (dispatch! {:type :ui/buffer-switch
+                                       :room-id (:id room) :buffer-id :chat})
+                           ;; Chat → abort agent if busy
+                           (when (get-in room [:agent :busy?])
+                             (room-event {:type :agent/abort})))))
           :on-interrupt (fn [] (shutdown! on-exit))
           :on-palette (fn []
                         (when-let [room (current-room)]

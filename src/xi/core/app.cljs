@@ -76,8 +76,9 @@
                         {:state @!state :effects []}))]
                 (when-not (identical? state' @!state)
                   (reset! !state state'))
-                (when jsonl-writer
-                  ((:write! jsonl-writer) (log/prepare-entry event fx)))
+                (let [entry (log/prepare-entry event fx)]
+                  (when ring (log/append! ring entry))
+                  (when jsonl-writer ((:write! jsonl-writer) entry)))
                 (doseq [tap (vec (.-taps ctx))]
                   (try (tap event @!state)
                        (catch :default e (js/console.error "[app] tap failed:" e))))

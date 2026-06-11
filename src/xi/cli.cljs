@@ -41,6 +41,7 @@
             [xi.ext.core :as ext]
             [xi.ext.dictation :as ext.dictation]
             [xi.ext.done-notify :as ext.done-notify]
+            [xi.ext.events :as ext.events]
             [xi.ext.gtd :as ext.gtd]
             [xi.ext.kb :as ext.kb]
             [xi.ext.perplexity :as ext.perplexity]
@@ -83,7 +84,7 @@
 (defn- server-extensions
   "Extensions whose state + provider hooks live server-side. nils (e.g.
    an unconfigured pushover) are dropped by ext/compose."
-  []
+  [ring]
   [ext.plan-mode/extension
    ext.done-notify/extension
    (ext.pushover/extension)
@@ -98,7 +99,8 @@
    ext.terminal-title/extension
    ext.clipboard-image/extension
    ext.projects/extension
-   ext.skills/extension])
+   ext.skills/extension
+   (ext.events/create ring)])
 
 (defn- client-extensions
   "Process-local extensions that run in the TUI client process."
@@ -182,14 +184,14 @@
   (let [settings (load-settings)
         {:keys [model effort]} (resolve-model-opts opts settings)
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
+        ring (log/create-ring)
         ;; Standalone runs everything locally — server + client extensions.
-        composed (ext/compose (into (server-extensions) (client-extensions)))
+        composed (ext/compose (into (server-extensions ring) (client-extensions)))
         dialogs  (ext/create-dialogs)
         agents-files (system-prompt/find-agents-md cwd)
         system (system-prompt/combine (system-prompt/load-agents-md cwd)
                                       (ext/system-prompt composed cwd))
         sess (session/create-session cwd)
-        ring (log/create-ring)
         jsonl-writer (when debug-events?
                        (core-jsonl/create-writer
                         (str (aget js/process.env "HOME")
@@ -214,7 +216,7 @@
                          :effects       (merge (agent/create-fx
                                                 providers
                                                 (tooling-opts composed (:ask! dialogs)))
-                                               (fx/create-fx)
+                                               (fx/create-fx ring)
                                                (compaction/create-fx providers)
                                                (:fx composed)
                                                (:fx dialogs)
@@ -260,7 +262,7 @@
   [{:keys [target] :as opts}]
   (let [url (client-url opts)
         ring (log/create-ring)
-        mirror (ext/compose (server-extensions))
+        mirror (ext/compose (server-extensions nil))
         local  (ext/compose (client-extensions))
         commands (into (commands/all-commands (:commands mirror))
                        (:commands local))
@@ -311,7 +313,7 @@
   (let [settings (load-settings)
         server-opts (resolve-model-opts opts settings)
         ring (log/create-ring)
-        composed (ext/compose (server-extensions))
+        composed (ext/compose (server-extensions ring))
         dialogs  (ext/create-dialogs)
         server (ws/create-server
                 {:server-opts server-opts
@@ -335,7 +337,7 @@
                              :effects  (merge (agent/create-fx
                                                providers
                                                (tooling-opts composed (:ask! dialogs)))
-                                              (fx/create-fx)
+                                              (fx/create-fx ring)
                                               (compaction/create-fx providers)
                                               (:fx composed)
                                               (:fx dialogs)
