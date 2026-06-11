@@ -3,13 +3,18 @@
    Parses ANSI-formatted line strings into a 2D grid of cells,
    then diffs against the previous grid to emit minimal terminal writes.
 
-   Cell: a JS array [char-string, style-string]
+   Cell: a JS array [char-string, style-string, continuation?]
      char-string: single visible character (or \" \")
      style-string: accumulated ANSI SGR prefix (e.g. \"\\033[31m\\033[1m\") or \"\"
+     continuation?: true for the second column of a wide (2-col) glyph.
+       Continuation cells copy the base glyph into char-string so that
+       cell equality ties them to their base, but emit-diff! never writes
+       their char — the wide glyph itself covers both columns.
 
    Grid: {:width W :height H :cells js/Array-of-rows}
      Each row is a js/Array of cells, length = width."
-  (:require [xi.tui.terminal :as term]))
+  (:require [xi.tui.ansi :as ansi]
+            [xi.tui.terminal :as term]))
 
 ;; ── Cell Constructors ─────────────────────────────────────────────────────────
 
@@ -21,13 +26,25 @@
     (aset a 1 style)
     a))
 
+(defn- make-cont-cell
+  "Continuation cell for the second column of a wide glyph."
+  [glyph style]
+  (let [a (js/Array. 3)]
+    (aset a 0 glyph)
+    (aset a 1 style)
+    (aset a 2 true)
+    a))
+
 (def ^:private SPACE_CELL (make-cell " " ""))
 
 (defn- cell-eq?
-  "Fast cell equality — compare char and style strings."
+  "Fast cell equality — compare char, style, and continuation marker.
+   The marker matters: a wide glyph's base and its continuation share
+   char+style, but shifting a glyph by one column must register as a change."
   [^js a ^js b]
   (and (= (aget a 0) (aget b 0))
-       (= (aget a 1) (aget b 1))))
+       (= (aget a 1) (aget b 1))
+       (= (boolean (aget a 2)) (boolean (aget b 2)))))
 
 ;; ── Grid ──────────────────────────────────────────────────────────────────────
 
@@ -58,16 +75,20 @@
 
 (defn line->row
   "Parse an ANSI-formatted line string into a js/Array of cells.
-   The row is padded/truncated to exactly `width` cells."
+   The row is padded/truncated to exactly `width` cells.
+   Code-point aware: wide glyphs (emoji, CJK) occupy a base cell plus a
+   continuation cell; zero-width chars (combining marks, VS16, ZWJ) attach
+   to the preceding glyph's cell."
   [^js line width]
   (let [row (js/Array. width)
         len (.-length line)]
     ;; Fill with spaces first
     (dotimes [c width]
       (aset row c (make-cell " " "")))
-    (loop [i 0      ;; index into line string
-           col 0    ;; current visible column
-           sgr ""]  ;; accumulated SGR state
+    (loop [i 0       ;; index into line string
+           col 0     ;; current visible column
+           sgr ""    ;; accumulated SGR state
+           prev-w 0] ;; width of the previously written glyph (for VS16)
       (if (or (>= i len) (>= col width))
         row
         (let [ch (.charAt line i)]
@@ -85,11 +106,11 @@
                         new-sgr (if (or (= params "0") (= params ""))
                                   ""  ;; reset
                                   (str sgr seq-str))]
-                    (recur seq-end col new-sgr))
+                    (recur seq-end col new-sgr prev-w))
                   ;; Non-SGR CSI — skip it, don't change style
-                  (recur seq-end col sgr)))
+                  (recur seq-end col sgr prev-w)))
               ;; Other ESC sequence (2 chars) — skip
-              (recur (min len (+ i 2)) col sgr))
+              (recur (min len (+ i 2)) col sgr prev-w))
             ;; Tab — expand to spaces until next tab stop
             (if (= ch "\t")
               (let [tab-w 4
@@ -97,11 +118,61 @@
                     n (- next-stop col)]
                 (dotimes [j n]
                   (aset row (+ col j) (make-cell " " sgr)))
-                (recur (inc i) next-stop sgr))
-              ;; Visible character
-              (do
-                (aset row col (make-cell ch sgr))
-                (recur (inc i) (inc col) sgr)))))))))
+                (recur (inc i) next-stop sgr 0))
+              ;; Visible character (code-point aware)
+              (let [cp (.codePointAt line i)
+                    n (if (> cp 0xFFFF) 2 1)
+                    ch-str (.substring line i (+ i n))]
+                (cond
+                  ;; VS16 — upgrades preceding narrow glyph to wide (emoji)
+                  (= cp ansi/VS16)
+                  (cond
+                    (and (= prev-w 1) (pos? col))
+                    (let [base (aget row (dec col))
+                          new-ch (str (aget base 0) ch-str)]
+                      (aset base 0 new-ch)
+                      (aset row col (make-cont-cell new-ch (aget base 1)))
+                      (recur (+ i n) (inc col) sgr 2))
+
+                    ;; Already wide — attach to base glyph
+                    (and (= prev-w 2) (>= col 2))
+                    (let [base (aget row (- col 2))
+                          cont (aget row (dec col))
+                          new-ch (str (aget base 0) ch-str)]
+                      (aset base 0 new-ch)
+                      (aset cont 0 new-ch)
+                      (recur (+ i n) col sgr prev-w))
+
+                    :else
+                    (recur (+ i n) col sgr prev-w))
+
+                  ;; Other zero-width — attach to preceding glyph's cell
+                  (ansi/zero-width? cp)
+                  (do
+                    (when (pos? col)
+                      (let [prev (aget row (dec col))]
+                        (if (aget prev 2)
+                          ;; Continuation cell — attach to its base
+                          (when (>= col 2)
+                            (let [base (aget row (- col 2))
+                                  new-ch (str (aget base 0) ch-str)]
+                              (aset base 0 new-ch)
+                              (aset prev 0 new-ch)))
+                          (aset prev 0 (str (aget prev 0) ch-str)))))
+                    (recur (+ i n) col sgr prev-w))
+
+                  :else
+                  (let [w (ansi/char-width cp)]
+                    (if (= w 2)
+                      (if (< (inc col) width)
+                        (do (aset row col (make-cell ch-str sgr))
+                            (aset row (inc col) (make-cont-cell ch-str sgr))
+                            (recur (+ i n) (+ col 2) sgr 2))
+                        ;; Wide glyph can't fit in the last column — blank it
+                        (do (aset row col (make-cell " " sgr))
+                            (recur (+ i n) (inc col) sgr 1)))
+                      (do (aset row col (make-cell ch-str sgr))
+                          (recur (+ i n) (inc col) sgr 1)))))))))))))
 
 (defn frame->grid
   "Convert a vector of ANSI line strings into a cell grid."
@@ -152,7 +223,9 @@
             (let [new-cell (aget new-row c)
                   old-cell (when (and old-row (< c old-width)) (aget old-row c))
                   changed? (or (nil? old-cell) (not (cell-eq? new-cell old-cell)))
-                  new-ch (aget new-cell 0)
+                  ;; Continuation cells emit nothing — the wide glyph in the
+                  ;; base cell already covers this column.
+                  new-ch (if (aget new-cell 2) "" (aget new-cell 0))
                   new-style (aget new-cell 1)]
               (if changed?
                 ;; Cell changed — extend or start a run

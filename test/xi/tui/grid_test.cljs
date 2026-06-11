@@ -70,6 +70,42 @@
       (is (= "x" (aget (aget row 0) 0)))
       (is (= "\033[1m\033[31m" (aget (aget row 0) 1))))))
 
+(deftest line->row-wide-chars
+  (testing "wide emoji occupies base cell plus continuation cell"
+    (let [row (grid/line->row "✅x" 5)]
+      ;; base cell holds the glyph
+      (is (= "✅" (aget (aget row 0) 0)))
+      (is (not (aget (aget row 0) 2)))
+      ;; continuation cell mirrors the glyph, marked as continuation
+      (is (= "✅" (aget (aget row 1) 0)))
+      (is (true? (aget (aget row 1) 2)))
+      ;; next char lands at column 2
+      (is (= "x" (aget (aget row 2) 0)))))
+  (testing "surrogate-pair emoji is kept whole"
+    (let [row (grid/line->row "📎a" 5)]
+      (is (= "📎" (aget (aget row 0) 0)))
+      (is (true? (aget (aget row 1) 2)))
+      (is (= "a" (aget (aget row 2) 0)))))
+  (testing "VS16 upgrades preceding narrow char to wide"
+    ;; ⚠️ = U+26A0 + U+FE0F
+    (let [row (grid/line->row "⚠️a" 5)]
+      (is (= "⚠️" (aget (aget row 0) 0)))
+      (is (true? (aget (aget row 1) 2)))
+      (is (= "⚠️" (aget (aget row 1) 0)) "continuation mirrors full glyph")
+      (is (= "a" (aget (aget row 2) 0)))))
+  (testing "wide char carries style into both cells"
+    (let [row (grid/line->row "\033[32m✅\033[0m" 4)]
+      (is (= "\033[32m" (aget (aget row 0) 1)))
+      (is (= "\033[32m" (aget (aget row 1) 1)))))
+  (testing "wide char that cannot fit in the last column is blanked"
+    (let [row (grid/line->row "a✅" 2)]
+      (is (= "a" (aget (aget row 0) 0)))
+      (is (= " " (aget (aget row 1) 0)))))
+  (testing "combining mark attaches to preceding cell"
+    (let [row (grid/line->row "e\u0301x" 4)]
+      (is (= "e\u0301" (aget (aget row 0) 0)))
+      (is (= "x" (aget (aget row 1) 0))))))
+
 (deftest line->row-tab-expansion
   (testing "tabs expand to spaces at 4-column stops"
     (let [row (grid/line->row "\ta" 10)]

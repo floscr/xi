@@ -56,6 +56,49 @@
       (is (every? #(<= (count %) 20) result))
       (is (= text (apply str result))))))
 
+(deftest visible-width-wide-chars
+  (testing "BMP wide emoji counts as 2 columns"
+    (is (= 2 (ansi/visible-width "✅")))
+    (is (= 2 (ansi/visible-width "❌"))))
+  (testing "surrogate-pair emoji counts as 2 columns"
+    (is (= 2 (ansi/visible-width "📎")))
+    (is (= 2 (ansi/visible-width "😀"))))
+  (testing "CJK counts as 2 columns"
+    (is (= 2 (ansi/visible-width "日")))
+    (is (= 4 (ansi/visible-width "日本"))))
+  (testing "VS16 upgrades narrow char to wide"
+    ;; ⚠️ = U+26A0 (narrow) + U+FE0F (VS16)
+    (is (= 2 (ansi/visible-width "⚠️")))
+    (is (= 1 (ansi/visible-width "⚠"))))
+  (testing "combining marks are zero-width"
+    ;; e + U+0301 combining acute accent
+    (is (= 1 (ansi/visible-width "e\u0301"))))
+  (testing "zero-width joiner is zero-width"
+    (is (= 2 (ansi/visible-width "a\u200dz")) "a + ZWJ + z counts ZWJ as 0"))
+  (testing "mixed narrow and wide"
+    (is (= 5 (ansi/visible-width "✅ ok")))
+    (is (= 7 (ansi/visible-width "\033[31m✅ ok⚠️\033[0m")))))
+
+(deftest truncate-to-width-wide-chars
+  (testing "wide chars are not split mid-glyph"
+    (let [result (ansi/truncate-to-width "✅✅✅" 5)]
+      ;; target is 4 cols + ellipsis: two emoji fit, third does not
+      (is (= 5 (ansi/visible-width result)))
+      (is (clojure.string/includes? result "…"))
+      (is (= 2 (count (re-seq #"✅" result))))))
+  (testing "wide char straddling the boundary is replaced by ellipsis"
+    (let [result (ansi/truncate-to-width "a✅✅✅" 6)]
+      ;; target 5: a(1) + ✅(2) = 3, next ✅ ends at 5 = target — fits, then ellipsis
+      (is (<= (ansi/visible-width result) 6))))
+  (testing "short lines with wide chars pass through unchanged"
+    (is (= "✅ ok" (ansi/truncate-to-width "✅ ok" 10)))))
+
+(deftest wrap-text-wide-chars
+  (testing "hard break never exceeds width with wide chars"
+    (let [result (ansi/wrap-text (apply str (repeat 10 "✅")) 6)]
+      (is (every? #(<= (ansi/visible-width %) 6) result))
+      (is (= 10 (count (re-seq #"✅" (apply str result))))))))
+
 (deftest visible-width-tabs
   (testing "tab at start expands to 4"
     (is (= 4 (ansi/visible-width "\t"))))
