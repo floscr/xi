@@ -32,6 +32,40 @@
 (defn- source-suffix [s]
   (case (:source s) :claude " [claude]" :pi " [pi]" ""))
 
+;; ── Git (for :diff/load) ─────────────────────────────────────────────────────────
+
+(defn- git-out
+  "Run git synchronously in cwd. Returns {:ok stdout} or {:err message}."
+  [cwd args]
+  (try
+    (let [proc (js/Bun.spawnSync (into-array (cons "git" args)) #js {:cwd cwd})]
+      (if (zero? (.-exitCode proc))
+        {:ok (.toString (.-stdout proc) "utf-8")}
+        {:err (str/trim (.toString (.-stderr proc) "utf-8"))}))
+    (catch :default e {:err (str e)})))
+
+(defn- untracked-diff
+  "Synthesize a unified diff for untracked files via diff --no-index.
+   stdout is read regardless of exit code — --no-index exits 1 on diffs."
+  [cwd]
+  (when-let [files (some->> (:ok (git-out cwd ["ls-files" "--others" "--exclude-standard"]))
+                            str/trim str/split-lines (remove empty?) seq)]
+    (->> files
+         (map (fn [f]
+                (let [p (js/Bun.spawnSync
+                         #js ["git" "diff" "--no-index" "--" "/dev/null" f]
+                         #js {:cwd cwd})]
+                  (.toString (.-stdout p) "utf-8"))))
+         (str/join "\n"))))
+
+(defn- session-base-commit
+  "The commit that was HEAD when the session started (works for resumed
+   sessions too — derived from the session's :created timestamp)."
+  [cwd created]
+  (when created
+    (some-> (:ok (git-out cwd ["rev-list" "-1" (str "--before=" created) "HEAD"]))
+            str/trim not-empty)))
+
 (defn- list-room-sessions [room scope]
   (let [pa? (get-in room [:agent :personal-agent?])]
     (cond
@@ -109,6 +143,40 @@
                        :summary summary
                        :messages (session/read-session-messages summary)}))
          (dispatch! {:type :ui/status :room-id room-id :text "Session not found."}))))
+
+   :diff/load
+   (fn [{:keys [dispatch! state]} {:keys [room-id args]}]
+     (let [room (room-of state room-id)
+           cwd (or (:cwd room) (.cwd js/process))
+           open! (fn [title text]
+                   (if (str/blank? text)
+                     (dispatch! {:type :ui/status :room-id room-id :text "No changes."})
+                     (dispatch! {:type :ui/diff-open :room-id room-id
+                                 :title title :text text})))
+           run! (fn [title git-args]
+                  (let [{:keys [ok err]} (git-out cwd git-args)]
+                    (if err
+                      (dispatch! {:type :ui/status :room-id room-id
+                                  :text (str "git diff failed: " err)})
+                      (open! title ok))))]
+       (case args
+         "git"
+         (open! "All Git Changes"
+                (->> [(:ok (git-out cwd ["diff"]))
+                      (:ok (git-out cwd ["diff" "--staged"]))
+                      (untracked-diff cwd)]
+                     (remove str/blank?)
+                     (str/join "\n")
+                     str/trim))
+
+         "staged"   (run! "Staged Changes" ["diff" "--staged"])
+         "unstaged" (run! "Unstaged Changes" ["diff"])
+
+         nil
+         (let [base (session-base-commit cwd (get-in room [:session :created]))]
+           (run! "Session Changes" (if base ["diff" base] ["diff"])))
+
+         (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+"))))))
 
    :image/process
    (fn [{:keys [dispatch!]} {:keys [room-id text images]}]

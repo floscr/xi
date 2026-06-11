@@ -27,6 +27,7 @@
             [xi.tui.completion :as completion]
             [xi.tui.components :as comp]
             [xi.tui.core :as tui]
+            [xi.tui.diff-buffer :as diff-buffer]
             [xi.tui.editor :as editor]
             [xi.tui.terminal :as term]))
 
@@ -227,20 +228,50 @@
                   (into (mapcat #(:nodes (.-block ^js %))) (vec (.-blocks ctx)))
                   (cond-> show-loader? (conj loader)))))))
 
+(defn- diff-view!
+  "Interactive diff viewer component, cached on the buffer value's identity
+   (a /diff with new output replaces it; reopening via /buffers reuses it).
+   Building a fresh component grabs focus and scrolls to the top."
+  [^js ctx buf room-id dispatch!]
+  (when-not (identical? buf (.-diffVal ctx))
+    (let [c (diff-buffer/make-diff-buffer
+             {:diff-text (:text buf)
+              :title (:title buf)
+              :on-close (fn [] (dispatch! {:type :ui/buffer-switch
+                                           :room-id room-id :buffer-id :chat}))
+              :on-command-mode (fn [] (tui/set-focus! (.-editor ctx)))})]
+      (set! (.-diffVal ctx) buf)
+      (set! (.-diffComp ctx) c)
+      (tui/set-focus! c)
+      (tui/scroll-to-offset! 999999)))
+  (.-diffComp ctx))
+
 (defn- sync-view!
   "Point the view wrapper at the active buffer (:chat is the persistent
-   chat container; logs/other buffers are rebuilt from state each pass)."
-  [^js ctx room ring]
-  (let [active (get-in room [:ui :active-buffer] :chat)]
-    (when (or (not= active (.-activeBuffer ctx)) (not= active :chat))
-      (set! (.-activeBuffer ctx) active)
-      (reset! (:children (.-viewWrapper ctx))
-              [(cond
-                 (= active :chat) (.-chat ctx)
-                 (= active :logs) (view/logs-view (log/entries ring) (:id room))
-                 :else (if-let [buf (get-in room [:ui :buffers active])]
-                         (view/buffer-view buf)
-                         (.-chat ctx)))]))))
+   chat container; logs/other buffers are rebuilt from state each pass).
+   Diff buffers get the interactive viewer, which takes focus while open."
+  [^js ctx room ring dispatch!]
+  (let [active (get-in room [:ui :active-buffer] :chat)
+        switched? (not= active (.-activeBuffer ctx))]
+    (when (or switched? (not= active :chat))
+      (let [buf (get-in room [:ui :buffers active])
+            diff? (boolean (:diff? buf))
+            target (cond
+                     (= active :chat) (.-chat ctx)
+                     (= active :logs) (view/logs-view (log/entries ring) (:id room))
+                     diff? (diff-view! ctx buf (:id room) dispatch!)
+                     buf (view/buffer-view buf)
+                     :else (.-chat ctx))]
+        (set! (.-activeBuffer ctx) active)
+        (reset! (:children (.-viewWrapper ctx)) [target])
+        ;; Focus/scroll transitions in and out of the interactive viewer
+        (when switched?
+          (cond
+            diff? (do (tui/set-focus! target)
+                      (tui/scroll-to-offset! 999999))
+            (.-wasDiff ctx) (do (tui/set-focus! (.-editor ctx))
+                                (tui/scroll-to-offset! 0)))
+          (set! (.-wasDiff ctx) diff?))))))
 
 (defn- focus-panel!
   "Wrap a focused component in a spacer'd container and install it as the
@@ -252,18 +283,33 @@
     (tui/set-bottom-panel! panel)
     (tui/set-focus! comp)))
 
+(defn- diff-help-bar
+  "Single-line help bar shown at the bottom while the diff viewer is open."
+  []
+  (let [dim  (partial ansi/fg :dim)
+        key  (partial ansi/fg :accent)]
+    (comp/make-text
+     (str (key "j") "/" (key "k") (dim ":scroll  ")
+          (key "]c") "/" (key "[c") (dim ":changes  ")
+          (key "]f") "/" (key "[f") (dim ":files  ")
+          (key "gg") "/" (key "G") (dim ":top/bottom  ")
+          (key "q") (dim ":close  ")
+          (key ":") (dim ":command")))))
+
 (defn- sync-bottom-panel!
-  "Bottom-panel priority: an active dialog preempts a menu, which preempts
-   the editor. Rebuilds only when the selected target identity changes."
+  "Bottom-panel priority: dialog > menu > diff-help-bar > editor.
+   Rebuilds only when the selected target identity changes."
   [^js ctx room dispatch!]
   (let [dialog (first (get-in room [:ui :dialogs]))
         menu   (get-in room [:ui :menu])
-        target (or dialog menu)]
+        diff?  (boolean (get-in room [:ui :buffers (get-in room [:ui :active-buffer]) :diff?]))
+        target (or dialog menu (when diff? :diff))]
     (when-not (identical? target (.-panelVal ctx))
       (set! (.-panelVal ctx) target)
       (cond
         dialog (focus-panel! (build-dialog dialog (:id room) dispatch!))
         menu   (focus-panel! (build-menu menu (:id room) dispatch!))
+        diff?  (tui/set-bottom-panel! (diff-help-bar))
         :else  (do (tui/set-bottom-panel! (.-editor ctx))
                    (tui/set-focus! (.-editor ctx)))))))
 
@@ -297,6 +343,7 @@
                  :chat chat :viewWrapper view-wrapper :editor nil
                  :roomId nil :blocks #js [] :header [] :chatDirty true
                  :panelVal nil :activeBuffer :chat
+                 :diffVal nil :diffComp nil :wasDiff false
                  :loaderShown false}
         dispatch! (fn [event] (when-let [d (.-dispatch ctx)] (d event)))
         get-state (fn [] (.-state ctx))
@@ -353,7 +400,7 @@
                 (set! (.-chatDirty ctx) true)
                 (set! (.-activeBuffer ctx) nil))
               (sync-chat! ctx room loader)
-              (sync-view! ctx room ring)
+              (sync-view! ctx room ring dispatch!)
               (sync-bottom-panel! ctx room dispatch!)
               (tui/request-render!))
             (dispatch! {:type :render/done

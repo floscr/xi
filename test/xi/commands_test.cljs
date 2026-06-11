@@ -115,6 +115,21 @@
     (is (= "AGENTS content" (get-in state [:rooms "r" :ui :buffers :prompt :text])))
     (is (= :prompt (get-in state [:rooms "r" :ui :active-buffer])))))
 
+(deftest diff-command-emits-diff-load
+  (is (= [[:diff/load {:room-id "r" :args nil}]]
+         (:effects (handle (with-room) {:type :command/run :room-id "r" :name "diff"}))))
+  (is (= [[:diff/load {:room-id "r" :args "staged"}]]
+         (:effects (handle (with-room) {:type :command/run :room-id "r"
+                                        :name "diff" :args "staged"})))))
+
+(deftest diff-open-installs-buffer
+  (let [{:keys [state]} (handle (with-room)
+                                {:type :ui/diff-open :room-id "r"
+                                 :title "Session Changes" :text "diff --git a/x b/x"})]
+    (is (= {:title "Session Changes" :text "diff --git a/x b/x" :diff? true}
+           (get-in state [:rooms "r" :ui :buffers :diff])))
+    (is (= :diff (get-in state [:rooms "r" :ui :active-buffer])))))
+
 (deftest help-command-lists-commands
   (let [{:keys [state]} (handle (with-room)
                                 {:type :command/run :room-id "r" :name "help"})

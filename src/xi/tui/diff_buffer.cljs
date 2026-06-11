@@ -393,9 +393,7 @@
                                 (str "  " file-count " file"
                                      (when (not= 1 file-count) "s")
                                      "  " (ansi/fg :green (str "+" add-count))
-                                     "  " (ansi/fg :red (str "-" del-count))
-                                     "  │  "
-                                     "j/k:scroll  ]c/[c:changes  ]f/[f:files  gg/G:top/bottom  q:close  ::command"))
+                                     "  " (ansi/fg :red (str "-" del-count))))
                        ""]
                header-len (count header)
                ;; Adjust positions to account for header

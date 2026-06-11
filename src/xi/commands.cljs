@@ -12,8 +12,8 @@
 
    Everything here is pure — filesystem/network work happens in effects
    (see xi.fx): :session/list, :session/load, :session/new, :session/sync,
-   :image/process, :models/fetch, plus the TUI-owned :app/quit, :app/reload
-   and :clipboard/copy.
+   :image/process, :models/fetch, :diff/load, plus the TUI-owned :app/quit,
+   :app/reload and :clipboard/copy.
 
    History gets a new entry kind here: {:kind :status :text ...} — command
    output and status lines, rendered dim by the TUI."
@@ -163,6 +163,12 @@
                           {:title "System Prompt" :text text})
                 (assoc-in [:rooms room-id :ui :active-buffer] :prompt))}))
 
+(defn- cmd-diff
+  "Open the diff viewer. Subcommands ride in args: git | staged | unstaged;
+   nil → session diff; anything else is passed to git diff directly."
+  [_st {:keys [room-id args]}]
+  {:effects [[:diff/load {:room-id room-id :args args}]]})
+
 (defn- cmd-buffers [st {:keys [room-id]}]
   (let [room (state/get-room st room-id)
         active (get-in room [:ui :active-buffer])
@@ -173,7 +179,9 @@
         items (cond-> [(item "Chat" :chat)
                        (item "Logs" :logs)]
                 (get-in room [:ui :buffers :prompt])
-                (conj (item "Prompt" :prompt)))]
+                (conj (item "Prompt" :prompt))
+                (get-in room [:ui :buffers :diff])
+                (conj (item "Diff" :diff)))]
     {:state (assoc-in st [:rooms room-id :ui :menu]
                       {:id :buffers :prompt "buffer> " :items items})}))
 
@@ -207,6 +215,7 @@
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
    {:name "compact"  :description "Summarize conversation to reduce context" :handler cmd-compact}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
+   {:name "diff"     :description "Show diff viewer (git|staged|unstaged|<ref>)" :handler cmd-diff}
    {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers}
    {:name "debug"    :description "Copy debug info to clipboard"       :handler cmd-debug}
    {:name "reload"   :description "Restart Xi (picks up recompiled code)" :handler cmd-reload}
@@ -267,6 +276,16 @@
 (defn- menu-close [st {:keys [room-id]}]
   (when (get-in st [:rooms room-id :ui :menu])
     {:state (update-in st [:rooms room-id :ui] dissoc :menu)}))
+
+(defn- diff-open
+  "Diff text came back from :diff/load — install it as the :diff buffer
+   and switch to it. :diff? marks it for the TUI's interactive viewer."
+  [st {:keys [room-id title text]}]
+  (when (state/get-room st room-id)
+    {:state (-> st
+                (assoc-in [:rooms room-id :ui :buffers :diff]
+                          {:title title :text text :diff? true})
+                (assoc-in [:rooms room-id :ui :active-buffer] :diff))}))
 
 (defn- attach-image [st {:keys [room-id image label]}]
   (when (state/get-room st room-id)
@@ -352,6 +371,7 @@
     :ui/status       ui-status
     :ui/menu-open    menu-open
     :ui/menu-close   menu-close
+    :ui/diff-open    diff-open
     :ui/attach-image attach-image
     :ui/clear-images clear-images
     :session/created session-created
