@@ -64,6 +64,19 @@
 (defn- connection-status [st {:keys [connected?]}]
   {:state (assoc st :web/connected? connected?)})
 
+(defn- compose-add-images
+  "Stage client-resized images ({:data b64 :media-type mime}) for the next
+   prompt; they ride along on :input/submit and clear on send."
+  [st {:keys [images]}]
+  {:state (update st :web/compose-images (fnil into []) images)})
+
+(defn- compose-remove-image [st {:keys [idx]}]
+  {:state (update st :web/compose-images
+                  (fn [imgs] (into (subvec imgs 0 idx) (subvec imgs (inc idx)))))})
+
+(defn- compose-clear-images [st _]
+  {:state (assoc st :web/compose-images [])})
+
 (defn- web-handlers []
   (merge router/handlers
          {:room/new              room-new
@@ -72,7 +85,10 @@
           :session/counts        forward
           :session/counts-result counts-result
           :session/mark-read     mark-read
-          :connection/status     connection-status}))
+          :connection/status     connection-status
+          :compose/add-images    compose-add-images
+          :compose/remove-image  compose-remove-image
+          :compose/clear-images  compose-clear-images}))
 
 (defn- web-effects []
   {:history/push router/history-effect

@@ -103,9 +103,18 @@
     :user
     [:div {:class ["post" "post--user"]}
      [:div {:class ["post-body"]}
-      (when-let [n (:image-count entry)]
-        (when (pos? n)
-          [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))]))
+      (if-let [imgs (seq (:images entry))]
+        [:div {:class ["user-images"]}
+         (map-indexed
+          (fn [i {:keys [data media-type]}]
+            [:img {:replicant/key i
+                   :class ["user-image"]
+                   :src (str "data:" media-type ";base64," data)
+                   :alt "attached"}])
+          imgs)]
+        (when-let [n (:image-count entry)]
+          (when (pos? n)
+            [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
       [:div {:class ["post-content"]} (:text entry)]]]
 
     :text
@@ -146,33 +155,121 @@
 (defn- compose-textarea-el []
   (.querySelector js/document ".compose-input-wrapper textarea"))
 
-(defn- submit-compose! [dispatch! room-id]
+;; ── Image attachments ────────────────────────────────────────────────────────
+
+(def ^:private MAX_IMAGE_DIMENSION
+  "Max width/height before we downscale on the client."
+  1568)
+
+(defn- resize-image-file
+  "Read a File, downscale if > MAX_IMAGE_DIMENSION; promise of
+   {:data base64 :media-type mime} or nil on failure."
+  [^js file]
+  (js/Promise.
+   (fn [resolve _]
+     (let [reader (js/FileReader.)]
+       (set! (.-onload reader)
+             (fn [_]
+               (let [img (js/Image.)]
+                 (set! (.-onload img)
+                       (fn [_]
+                         (let [w (.-naturalWidth img)
+                               h (.-naturalHeight img)
+                               scale (if (or (> w MAX_IMAGE_DIMENSION) (> h MAX_IMAGE_DIMENSION))
+                                       (/ MAX_IMAGE_DIMENSION (max w h))
+                                       1)
+                               nw (js/Math.round (* w scale))
+                               nh (js/Math.round (* h scale))
+                               canvas (js/document.createElement "canvas")
+                               ctx (.getContext canvas "2d")]
+                           (set! (.-width canvas) nw)
+                           (set! (.-height canvas) nh)
+                           (.drawImage ctx img 0 0 nw nh)
+                           (let [data-url (.toDataURL canvas "image/jpeg" 0.85)
+                                 [_ media-type b64] (re-matches #"data:([^;]+);base64,(.*)" data-url)]
+                             (resolve {:data b64
+                                       :media-type (or media-type "image/jpeg")})))))
+                 (set! (.-onerror img) (fn [_] (resolve nil)))
+                 (set! (.-src img) (.-result reader)))))
+       (set! (.-onerror reader) (fn [_] (resolve nil)))
+       (.readAsDataURL reader file)))))
+
+(defn- add-image-files!
+  "Resize a seq of Files and stage them as compose attachments."
+  [dispatch! files]
+  (when (seq files)
+    (-> (js/Promise.all (to-array (map resize-image-file files)))
+        (.then (fn [results]
+                 (when-let [valid (seq (remove nil? (array-seq results)))]
+                   (dispatch! {:type :compose/add-images :images (vec valid)}))))
+        (.catch (fn [err] (js/console.error "[xi-web] image read failed:" err))))))
+
+(defn- handle-compose-paste! [dispatch! ^js e]
+  (let [items (.. e -clipboardData -items)
+        files (->> (range (.-length items))
+                   (keep (fn [i]
+                           (let [^js item (aget items i)]
+                             (when (str/starts-with? (.-type item) "image/")
+                               (.getAsFile item))))))]
+    (when (seq files)
+      (.preventDefault e)
+      (add-image-files! dispatch! files))))
+
+(defn- compose-image-strip [dispatch! images]
+  (when (seq images)
+    [:div {:class ["compose-images"]}
+     (map-indexed
+      (fn [idx {:keys [data media-type]}]
+        [:div {:replicant/key idx :class ["compose-image-thumb"]}
+         [:img {:src (str "data:" media-type ";base64," data) :alt "attachment"}]
+         [:button {:class ["compose-image-remove"]
+                   :on {:click (fn [_] (dispatch! {:type :compose/remove-image :idx idx}))}}
+          (icon/icon {:icon-name :x :size :sm})]])
+      images)]))
+
+(defn- submit-compose! [dispatch! room-id images]
   (when-let [^js el (compose-textarea-el)]
     (let [text (str/trim (or (.-value el) ""))]
-      (when (seq text)
+      (when (or (seq text) (seq images))
         (set! (.-value el) "")
-        (dispatch! {:type :input/submit :room-id room-id :text text})))))
+        (when (seq images)
+          (dispatch! {:type :compose/clear-images}))
+        (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
+                     (seq images) (assoc :images (vec images))))))))
 
-(defn- compose-box [dispatch! room busy?]
+(defn- compose-box [dispatch! room busy? images]
   (let [room-id (:id room)]
     [:div {:class ["compose-box"]}
+     (compose-image-strip dispatch! images)
      [:div {:class ["compose-input-row"]}
+      [:button {:class ["icon-btn" "compose-attach-btn"]
+                :on {:click (fn [_]
+                              (some-> (.getElementById js/document "compose-image-input")
+                                      (.click)))}}
+       (icon/icon {:icon-name :image :size :md})]
+      [:input {:id "compose-image-input" :type "file"
+               :accept "image/*" :multiple true
+               :style {:display "none"}
+               :on {:change (fn [^js e]
+                              (add-image-files! dispatch! (array-seq (.. e -target -files)))
+                              (set! (.. e -target -value) ""))}}]
       [:div {:class ["compose-input-wrapper"]}
        (form/form-textarea-auto
         {:placeholder (if busy? "Working…" "Message…")
          :max-rows 6
-         :attrs {:on {:keydown
+         :attrs {:on {:paste (fn [^js e] (handle-compose-paste! dispatch! e))
+                      :keydown
                       (fn [^js e]
                         (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)))
                           (.preventDefault e)
                           (when-not busy?
-                            (submit-compose! dispatch! room-id))))}}})]
+                            (submit-compose! dispatch! room-id images))))}}})]
       (if busy?
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
          (icon/icon {:icon-name :circle-x :size :md})]
         [:button {:class ["icon-btn"]
-                  :on {:click (fn [_] (submit-compose! dispatch! room-id))}}
+                  :on {:click (fn [_] (submit-compose! dispatch! room-id images))}}
          (icon/icon {:icon-name :arrow-up :size :md})])]]))
 
 ;; ── Permission dialog ────────────────────────────────────────────────────────
@@ -235,7 +332,7 @@
           [:div {:class ["status-bubble"]}
            (spinner) [:span "Working…"]]])]]
      (dialog-overlay dispatch! room)
-     (compose-box dispatch! room busy?)]))
+     (compose-box dispatch! room busy? (:web/compose-images state))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
