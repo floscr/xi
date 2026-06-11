@@ -48,7 +48,7 @@ body {
   display: flex;
   align-items: center;
   padding: var(--size-2) var(--size-4);
-  padding-top: env(safe-area-inset-top, var(--size-2));
+  padding-top: max(var(--size-2), env(safe-area-inset-top));
   border-bottom: var(--border-0);
   gap: var(--size-2);
 }
@@ -812,4 +812,54 @@ body {
 .resume-item-meta {
   font-size: var(--font-sm);
   color: var(--fg-2);
+}
+
+/* ---- Theme Toggle ---- */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  padding: var(--size-1);
+  background: var(--bg-1);
+  border-radius: var(--radius-md);
+  border: var(--border-0);
+}
+
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+  font-family: inherit;
+  padding: 0;
+}
+
+.theme-toggle-btn:hover:not(.theme-toggle-btn-active) {
+  color: var(--fg-1);
+  background: var(--bg-2);
+}
+
+.theme-toggle-btn-active {
+  background: var(--bg-0);
+  color: var(--fg-0);
+  box-shadow: var(--shadow-0);
+}
+
+.theme-toggle-sm {
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.theme-toggle-sm .theme-toggle-btn {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: calc(var(--radius-xs));
 }

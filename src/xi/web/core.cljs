@@ -114,6 +114,11 @@
 (defn- cmd-select [st {:keys [index]}]
   {:state (assoc st :web/cmd-selected (or index 0))})
 
+(defn- theme-set-mode [st {:keys [mode]}]
+  (let [m (if (#{"auto" "light" "dark"} mode) mode "auto")]
+    {:state   (assoc st :web/theme-mode m)
+     :effects [[:theme/apply m]]}))
+
 (defn- web-handlers []
   (merge router/handlers
          {:room/new              room-new
@@ -133,11 +138,31 @@
           :lightbox/close        lightbox-close
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
-          :cmd/select            cmd-select}))
+          :cmd/select            cmd-select
+          :theme/set-mode        theme-set-mode}))
 
 (defn- web-effects []
   {:history/push router/history-effect
-   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))})
+   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
+   :theme/apply  (fn [_ mode]
+                   (let [el js/document.documentElement]
+                     ;; Suppress transitions during switch
+                     (.setAttribute el "data-no-transitions" "")
+                     (.-offsetHeight el)
+                     (js/requestAnimationFrame
+                      (fn [] (js/requestAnimationFrame
+                              (fn [] (.removeAttribute el "data-no-transitions")))))
+                     ;; Apply data-theme
+                     (case mode
+                       "light" (.setAttribute el "data-theme" "light")
+                       "dark"  (.setAttribute el "data-theme" "dark")
+                       (.removeAttribute el "data-theme"))
+                     ;; Persist
+                     (try
+                       (if (= mode "auto")
+                         (.removeItem js/localStorage "ui-theme")
+                         (.setItem js/localStorage "ui-theme" mode))
+                       (catch :default _))))})
 
 ;; ── Taps (cache persistence + unread polling + post-join URL) ─────────────────
 
@@ -230,8 +255,12 @@
 (defn ^:export init! []
   (js/console.log "[xi-web] starting")
   (r/set-dispatch! (fn [_ _]))
-  (let [route     (router/parse-path (.-pathname js/window.location))
-        initial   (cache/hydrate (state/initial-state {:mode :client}) route)
+  (let [stored-theme (or (try (.getItem js/localStorage "ui-theme") (catch :default _ nil))
+                        "auto")
+        route     (router/parse-path (.-pathname js/window.location))
+        initial   (-> (state/initial-state {:mode :client})
+                      (assoc :web/theme-mode stored-theme)
+                      (cache/hydrate route))
         transport (ws-transport/create!
                    {:url        (ws-url)
                     ;; nil → the router drives joins; reconnect replays them.
@@ -256,6 +285,8 @@
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
     (router/init! dispatch!)
+    ;; Apply stored theme immediately (before first render)
+    (dispatch! {:type :theme/set-mode :mode stored-theme})
     ;; Track visual viewport height so the mobile keyboard doesn't push
     ;; the compose box off-screen.  Falls back to window.innerHeight.
     (let [set-vh! (fn []

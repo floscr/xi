@@ -14,7 +14,8 @@
             [ui.icon :as icon]
             [ui.form :as form]
             [ui.button :as button]
-            [ui.lightbox :as lightbox]))
+            [ui.lightbox :as lightbox]
+            [ui.theme-toggle :as theme-toggle]))
 
 ;; ── Timeline virtualization ──────────────────────────────────────────────────
 
@@ -431,6 +432,10 @@
       [:div {:class ["topbar-title"]}
        "Xi"
        (when model [:span {:class ["topbar-subtitle"]} (str " · " model)])]
+      (theme-toggle/theme-toggle
+       {:mode (or (:web/theme-mode state) "auto")
+        :size :sm
+        :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
       (offline-badge state)]
      [:div {:class ["timeline"]}
       [:div {:class ["timeline-content"]}
@@ -507,6 +512,10 @@
     [:div {:class ["container"] :replicant/key "home"}
      [:div {:class ["topbar"]}
       [:div {:class ["topbar-title"]} "Xi"]
+      (theme-toggle/theme-toggle
+       {:mode (or (:web/theme-mode state) "auto")
+        :size :sm
+        :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
       (offline-badge state)
       (when connected?
         [:button {:class ["icon-btn"]
