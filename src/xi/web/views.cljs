@@ -245,6 +245,46 @@
           (icon/icon {:icon-name :x :size :sm})]])
       images)]))
 
+;; ── Command suggestions ───────────────────────────────────────────────────────
+
+(def ^:private web-commands
+  "Commands shown in the web suggestion popup. Excludes TUI-only commands
+   (quit, reload, diff, tree, events, buffers, debug, prompt)."
+  [{:name "help"     :description "Show available commands"}
+   {:name "model"    :description "Show or set model"}
+   {:name "resume"   :description "Resume a previous session"}
+   {:name "sessions" :description "List previous sessions"}
+   {:name "new"      :description "Start a new session"}
+   {:name "clear"    :description "Clear current session"}
+   {:name "truncate" :description "Summarize conversation to reduce context"}])
+
+(defn- match-commands
+  "Filter commands by prefix query (text after the /)."
+  [query]
+  (let [q (str/lower-case (or query ""))]
+    (filterv #(str/starts-with? (:name %) q) web-commands)))
+
+(defn- command-suggestions
+  "Popup list of matching slash commands above the compose box."
+  [dispatch! room-id draft-key commands selected-index]
+  (when (seq commands)
+    [:div {:class ["slash-dropdown"]}
+     (map-indexed
+      (fn [i {:keys [name description]}]
+        [:button {:class ["slash-item"
+                          (when (= i selected-index) "slash-item--selected")]
+                  :on {:click (fn [_]
+                                (dispatch! {:type :input/submit :room-id room-id
+                                            :text (str "/" name)})
+                                (when-let [^js el (compose-textarea-el)]
+                                  (set! (.-value el) ""))
+                                (dispatch! {:type :compose/clear-draft :draft-key draft-key}))
+                       :mouseenter (fn [_]
+                                     (dispatch! {:type :cmd/select :index i}))}}
+         [:span {:class ["slash-item-name"]} (str "/" name)]
+         [:span {:class ["slash-item-desc"]} description]])
+      commands)]))
+
 (defn- submit-compose! [dispatch! room-id session-id images draft-key draft]
   (let [text (str/trim (or draft ""))]
     (when (or (seq text) (seq images))
@@ -261,10 +301,17 @@
         (dispatch! (cond-> {:type :submit/pending :session-id session-id :text text}
                      (seq images) (assoc :images (vec images))))))))
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id]
-  (let [room-id (:id room)]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected]
+  (let [room-id  (:id room)
+        cmd-query (when (and (string? draft) (str/starts-with? draft "/"))
+                    (subs draft 1))
+        cmd-matches (when (some? cmd-query) (match-commands cmd-query))
+        cmd-open?   (seq cmd-matches)]
     [:div {:class ["compose-box"]}
      (compose-image-strip dispatch! images)
+     (when cmd-open?
+       (command-suggestions dispatch! room-id draft-key cmd-matches
+                            (min (or cmd-selected 0) (dec (count cmd-matches)))))
      [:div {:class ["compose-input-row"]}
       [:button {:class ["icon-btn" "compose-attach-btn"]
                 :on {:click (fn [_]
@@ -289,12 +336,39 @@
                       :paste (fn [^js e] (handle-compose-paste! dispatch! e))
                       :keydown
                       (fn [^js e]
-                        (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)))
-                          (.preventDefault e)
-                          (when-not busy?
-                            (submit-compose! dispatch! room-id session-id
-                                             images draft-key
-                                             (.. e -target -value)))))}}})]
+                        (if cmd-open?
+                          (let [sel (min (or cmd-selected 0) (dec (count cmd-matches)))]
+                            (case (.-key e)
+                              "ArrowUp"
+                              (do (.preventDefault e)
+                                  (dispatch! {:type :cmd/select
+                                              :index (mod (dec sel) (count cmd-matches))}))
+                              "ArrowDown"
+                              (do (.preventDefault e)
+                                  (dispatch! {:type :cmd/select
+                                              :index (mod (inc sel) (count cmd-matches))}))
+                              ("Enter" "Tab")
+                              (do (.preventDefault e)
+                                  (let [cmd-name (:name (nth cmd-matches sel))]
+                                    (dispatch! {:type :input/submit :room-id room-id
+                                                :text (str "/" cmd-name)})
+                                    (when-let [^js el (compose-textarea-el)]
+                                      (set! (.-value el) ""))
+                                    (dispatch! {:type :compose/clear-draft
+                                                :draft-key draft-key})))
+                              "Escape"
+                              (do (.preventDefault e)
+                                  (when-let [^js el (compose-textarea-el)]
+                                    (set! (.-value el) ""))
+                                  (dispatch! {:type :compose/clear-draft
+                                              :draft-key draft-key}))
+                              nil))
+                          (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)))
+                            (.preventDefault e)
+                            (when-not busy?
+                              (submit-compose! dispatch! room-id session-id
+                                               images draft-key
+                                               (.. e -target -value))))))}}})]
       (if busy?
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
@@ -380,7 +454,8 @@
      (lightbox/lightbox {:src (:web/lightbox state)
                          :on-close (fn [] (dispatch! {:type :lightbox/close}))})
      (compose-box dispatch! room busy? (:web/compose-images state)
-                  draft-key (get-in state [:web/drafts draft-key]) sid)]))
+                  draft-key (get-in state [:web/drafts draft-key]) sid
+                  (:web/cmd-selected state))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 

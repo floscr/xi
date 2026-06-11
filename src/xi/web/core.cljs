@@ -80,9 +80,11 @@
 (defn- compose-set-draft
   "Track the compose text per session so drafts survive navigation."
   [st {:keys [draft-key text]}]
-  {:state (if (seq text)
-            (assoc-in st [:web/drafts draft-key] text)
-            (update st :web/drafts dissoc draft-key))})
+  {:state (-> (if (seq text)
+                (assoc-in st [:web/drafts draft-key] text)
+                (update st :web/drafts dissoc draft-key))
+              ;; Reset command suggestion selection when the input changes
+              (assoc :web/cmd-selected 0))})
 
 (defn- compose-clear-draft [st {:keys [draft-key]}]
   {:state (update st :web/drafts dissoc draft-key)})
@@ -109,6 +111,9 @@
 (defn- submit-clear-pending [st _]
   {:state (dissoc st :web/pending-submit)})
 
+(defn- cmd-select [st {:keys [index]}]
+  {:state (assoc st :web/cmd-selected (or index 0))})
+
 (defn- web-handlers []
   (merge router/handlers
          {:room/new              room-new
@@ -127,7 +132,8 @@
           :lightbox/open         lightbox-open
           :lightbox/close        lightbox-close
           :submit/pending        submit-pending
-          :submit/clear-pending  submit-clear-pending}))
+          :submit/clear-pending  submit-clear-pending
+          :cmd/select            cmd-select}))
 
 (defn- web-effects []
   {:history/push router/history-effect
