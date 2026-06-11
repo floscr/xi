@@ -1,367 +1,248 @@
 # Extensions
 
-Xi extensions add behaviour via hooks, tools, and commands. They are registered at startup in `runtime.cljs` and dispatched through `ext/core.cljs`.
-
-## Architecture
-
-```
-runtime.cljs                          ext/core.cljs
-┌──────────────────────┐              ┌─────────────────────────────┐
-│  sync-hook-state!    │──set-state!─→│  hook-state atom            │
-│  (session, model,    │              │  {:session {:name ...}      │
-│   cwd, effort)       │              │   :model  :cwd  :effort}   │
-└──────────────────────┘              └──────────┬──────────────────┘
-                                                 │ auto-injected
-                                    ┌────────────┴──────────────┐
-                                    ↓            ↓              ↓
-                              dispatch-hook  dispatch-hook   collect-
-                                             -transform     prompt-badges
-                                    ↓            ↓              ↓
-                              ┌──────────────────────────────────────┐
-                              │          Extension Hooks             │
-                              │  done-notify  permission-gate  ...   │
-                              └──────────────────────────────────────┘
-```
+Xi extensions add behaviour via data maps composed at assembly time. There
+are no registration atoms or global state — extensions are plain
+ClojureScript maps wired through `xi.cli` into the core event loop,
+provider effects, and TUI.
 
 ## Extension Shape
 
 ```clojure
 (def extension
-  {:name "my-ext"
-   :hooks       {<event-kw> handler-fn ...}
-   :tools       [{:name ... :description ... :input_schema ... :execute fn}]
-   :commands    [{:name ... :description ... :handler fn}]
-   :keybindings [{:key "alt+x" :handler (fn [] ...)}]})
+  {:id               :my-ext           ; keyword (required)
+   :init             {:room    {...}    ; template merged into each room's [:ext :my-ext]
+                      :process {...}}   ; installed at top-level [:ext :my-ext]
+   :handlers         {event-type handler-fn}  ; chained AFTER base handlers
+   :fx               {fx-type (fn [ctx payload])}
+   :event-hooks      {event-type (fn [event state] → event'|nil)}
+   :tool-gate        (fn [tool-call ctx] → tool-call|nil|{:intercepted ...})
+   :tool-definitions [{:name :description :input_schema}]
+   :tool-registry    {name (fn [args ctx] → result|Promise)}
+   :commands         [{:name :description :handler}]
+   :system-prompt    str | (fn [cwd] → str|nil)
+   :keybindings      [{:key "alt+r" :event {...} :when (fn [state])}]
+   :prompt-badge     (fn [state] → str|nil)
+   :on-shutdown      (fn [])})
 ```
 
-Register in `runtime.cljs`:
+## Architecture
+
+```
+xi.cli (assembly)
+├── server-extensions  →  ext/compose  →  composed map
+│     plan-mode, done-notify, pushover,     │
+│     kb, web, perplexity, commit,          │  merge into
+│     clj-surgeon, gtd, permission-gate,    │  app handlers,
+│     todo-intercept, terminal-title,       │  fx, commands,
+│     clipboard-image, projects, skills     │  tool-gate, etc.
+├── client-extensions  →  ext/compose       │
+│     dictation                             │
+└── create-app ←────────────────────────────┘
+      ↕ events      ↕ effects
+    handlers        fx handlers
+```
+
+### Per-mode assembly
+
+| Mode | Extensions |
+|------|-----------|
+| **Standalone** | server + client composed together |
+| **Server** | server extensions only; state mirrors to clients |
+| **Client** | client extensions local; server ext state mirrored |
+
+## State Scoping
+
+Extension state lives in two places:
+
+- **Room-scoped** `[:rooms rid :ext <id>]` — rides in the `:room/joined`
+  snapshot, mirrors to clients. Used for: plan-mode `:enabled?`,
+  done-notify `:enabled?`.
+- **Process-local** `[:ext <id>]` — never crosses the wire. Used for:
+  dictation `:recording?`.
+
+Declare initial state via `:init`:
 
 ```clojure
-(ext/register-extension! my-ext/extension)
+{:init {:room    {:enabled? false}   ; per-room, mirrored
+        :process {:recording? false}}} ; per-process, local
 ```
 
-## Hook State
+## Handler Contract
 
-All hooks receive a **state map** as their argument. The runtime populates this state automatically — extensions never need to assemble it themselves.
+Handlers are pure: `(fn [state event]) → {:state :effects} | nil`.
 
-### State shape
+Effects are data `[[:fx/type payload] …]`. Effect handlers receive
+`{:dispatch! :get-state …}` — they perform side effects and may dispatch
+new events.
+
+Extension handlers chain AFTER the base handler for each event type:
 
 ```clojure
-{:session {:name "refactor auth module"
-           :id   "019abc-..."
-           :cli-session-id "sess_xyz"
-           :cwd  "/home/user/project"
-           :created "2026-05-12T..."}
- :model   "claude-sonnet-4-20250514"
- :effort  "high"
- :cwd     "/home/user/project"}
+;; Chained onto :agent/turn-end (base handler has already updated state)
+(defn- on-turn-end [st {:keys [room-id aborted?]}]
+  (when (and (not aborted?) (enabled? st room-id))
+    {:effects [[:notify/desktop {:title "Turn complete"}]]}))
 ```
 
-### Accessor functions (`xi.state.session`)
+## Tool-Gate
 
-Use these instead of reaching into the map directly:
+A 2-arg function that intercepts tool execution:
 
 ```clojure
-(require '[xi.state.session :as state.session])
-
-(state.session/session-title state)   ;; "refactor auth module" or nil
-(state.session/session-id state)      ;; "019abc-..."
-(state.session/cli-session-id state)  ;; "sess_xyz"
-(state.session/cwd state)             ;; "/home/user/project"
-(state.session/model state)           ;; "claude-sonnet-4-20250514"
+(fn [tool-call ctx] → tool-call | nil | {:intercepted true :result …})
 ```
 
-### When state is synced
+- Return `tool-call` to allow.
+- Return `nil` to block (surfaces "Blocked by Xi permission gate").
+- Return `{:intercepted true :result {:content [...] :is-error bool}}`
+  to short-circuit with a custom result.
+- May return a Promise for async operations (e.g., confirmation dialogs).
 
-The runtime calls `sync-hook-state!` at two points:
-1. **Startup** — after `runtime/create!` initialises session, model, cwd
-2. **After each turn** — session name and cli-session-id may have been updated
+The gate ctx: `{:dispatch! :get-state :room-id :cwd :confirm!}`.
+`:confirm!` is `(fn [message] → Promise<bool>)` — raises a TUI dialog;
+resolves to `false` (safe default) when no client is attached.
 
-Event-specific context can be merged on top via the second arg to `dispatch-hook`:
+Tool exec-fns only receive `{:cwd}` — they have no access to dispatch,
+state, or dialogs. Approval/interception must happen in the gate.
+
+## Event Hooks
+
+Pre-dispatch transforms: `(fn [event state] → event' | nil)`. Returning
+`nil` blocks the event. Never run on `:remote?` (mirrored) events.
 
 ```clojure
-(ext/dispatch-hook :agent-end)                     ;; just hook state
-(ext/dispatch-hook :agent-end {:extra "context"})  ;; merged on top
+;; clipboard-image: transform input text, attach decoded images
+{:event-hooks {:input/submit transform-input}}
 ```
 
-## Hook Types
+## Commands
 
-### Lifecycle hooks — `dispatch-hook`
+Pure handlers: `(fn [state {:keys [room-id args commands]}]) → {:state :effects} | nil`.
 
-Called at lifecycle points. Receive `state`. Return value is ignored.
+Defer I/O to effects:
 
 ```clojure
-(defn- on-agent-end [state]
-  (let [title (state.session/session-title state)]
-    (notify! title)))
+(defn- commit-command [_st {:keys [room-id args]}]
+  {:effects [[:commit/start {:room-id room-id :args args}]]})
 ```
 
-**Events:** `:session-start` `:session-shutdown` `:turn-start` `:turn-end` `:before-agent-start` `:agent-end` `:tool-result` `:tool-execution-end`
+## System Prompt
 
-### Transform hooks — `dispatch-hook-transform`
-
-Called in a chain. Each handler receives `(value, state)` and returns the (possibly modified) value. Return `nil` to block the chain.
+Static string or a function of `cwd`:
 
 ```clojure
-(defn- gate-tool [tool-call state]
-  (if (dangerous? tool-call)
-    nil          ;; block
-    tool-call))  ;; pass through
+;; Conditional on project markers
+:system-prompt (fn [cwd]
+                 (when (marker-files-present? cwd)
+                   "# Clojure tools available..."))
 ```
 
-**Events:** `:tool-call` `:context` `:input`
+## Keybindings
 
-### Async transform hooks — `dispatch-hook-transform-async`
-
-Like `dispatch-hook-transform` but supports handlers that return Promises. Always returns a Promise. Used for `:tool-call` gating where confirmation dialogs need async user input.
+Declarative key → event dispatch:
 
 ```clojure
-(defn- gate-tool [tool-call state]
-  (if (dangerous? tool-call)
-    (-> (ext/confirm! "Allow dangerous operation?")
-        (.then (fn [allowed?] (if allowed? tool-call nil))))
-    tool-call))  ;; sync return also works
+:keybindings [{:key   "ctrl+shift+n"
+               :event {:type :ext.done-notify/toggle}
+               :when  (fn [state] ...)}]  ; optional guard
 ```
 
-### Prompt badge hooks — `collect-prompt-badges`
+The TUI folds `:when` into the key detection function — a guarded binding
+falls through to the editor's own handler when the guard fails. Events are
+dispatched with `:room-id` added automatically.
 
-Special query hook. Each handler receives `state` and returns a string (or nil). All non-nil results are concatenated and displayed after the `xi>` prompt.
+## Prompt Badges
 
 ```clojure
-(defn- prompt-badge [_state]
-  (when @enabled "🔔"))
+:prompt-badge (fn [state]
+                (when (enabled? state) " 🔔"))
 ```
 
-### Async hooks — `dispatch-hook-async`
+Rendered after `xi>` on every draw.
 
-Like `dispatch-hook` but handlers may return promises. Returns a single promise that resolves when all handlers complete.
+## Factory Extensions
 
-## Writing an Extension
+Extensions that need runtime configuration return nil when unconfigured:
+
+```clojure
+;; pushover: nil when env vars missing → ext/compose drops it
+(defn extension []
+  (when (and user-key app-token)
+    {:id :pushover ...}))
+```
+
+## Writing a New Extension
+
+1. Create `src/xi/ext/my_ext.cljs`
+2. Define the extension map with an `:id`
+3. Add to `server-extensions` or `client-extensions` in `xi.cli`
+4. Build: `bb build` — shadow-cljs compiles it in
 
 ### Minimal example
 
 ```clojure
 (ns xi.ext.my-ext)
 
-(defn- on-agent-end [state]
-  (println "Turn done for:" (:cwd state)))
+(defn- my-tool [{:keys [query]} {:keys [cwd]}]
+  (js/Promise.resolve
+   {:content [{:type "text" :text (str "Hello from " cwd)}]}))
 
 (def extension
-  {:name "my-ext"
-   :hooks {:agent-end on-agent-end}})
+  {:id               :my-ext
+   :tool-definitions [{:name "my_tool"
+                       :description "A sample tool"
+                       :input_schema {:type "object"
+                                      :properties {:query {:type "string"}}
+                                      :required ["query"]}}]
+   :tool-registry    {"my_tool" my-tool}})
 ```
 
-### Extension with tools, commands, and badges
+### Extension with state, commands, and badges
 
 ```clojure
 (ns xi.ext.my-ext
-  (:require [xi.state.session :as state.session]))
+  (:require [xi.core.state :as state]))
 
-(defonce ^:private active (atom false))
+(def ^:private ext-id :my-ext)
 
-(defn toggle! [] (swap! active not))
+(defn- enabled? [st room-id]
+  (boolean (:enabled? (state/room-ext st room-id ext-id))))
 
-(defn- on-agent-end [state]
-  (when @active
-    (println "Done:" (state.session/session-title state))))
-
-(defn- badge [_state]
-  (when @active "⚡"))
+(defn- toggle [st {:keys [room-id]}]
+  (when (state/get-room st room-id)
+    (let [st' (update-in st [:rooms room-id :ext ext-id :enabled?] not)
+          on? (get-in st' [:rooms room-id :ext ext-id :enabled?])]
+      {:state (update-in st' [:rooms room-id :history] conj
+                         {:kind :status :text (str "My ext: " (if on? "ON" "OFF"))})})))
 
 (def extension
-  {:name "my-ext"
-   :hooks {:agent-end on-agent-end
-           :prompt-badge badge}
-   :commands [{:name "myext"
-               :description "Toggle my extension"
-               :handler (fn [_ctx] (toggle!) nil)}]})
-```
-
-### Registering
-
-Add to `runtime.cljs`:
-
-```clojure
-(:require [xi.ext.my-ext :as ext-my-ext])
-
-;; In register-extensions!
-(ext/register-extension! ext-my-ext/extension)
+  {:id           ext-id
+   :init         {:room {:enabled? false}}
+   :commands     [{:name "myext"
+                   :description "Toggle my extension"
+                   :handler toggle}]
+   :prompt-badge (fn [state]
+                   (when-let [room (state/active-room state)]
+                     (when (enabled? state (:id room)) " ⚡")))})
 ```
 
 ## Built-in Extensions
 
-| Extension | Hooks | Description |
-|-----------|-------|-------------|
-| `done-notify` | `:agent-end` `:prompt-badge` | Desktop notification via dunstify on turn end. Toggle with Ctrl+Shift+N, shows 🔔 badge. Middle-click notification to focus terminal. |
-| `permission-gate` | `:tool-call` | Guards writes to sensitive paths (.ssh, .env, .git), dangerous bash commands, and `git push` with user confirmation. |
-| `plan-mode` | `:context` `:tool-call` | Read-only exploration mode. `/plan` toggles. Blocks writes except `tasks/todo.md`. |
-| `terminal-title` | `:session-start` `:turn-end` | Sets terminal title to session name via ANSI escape. |
-| `parmezan` | `:tool-execution-end` | Runs parmezan CLI to fix unbalanced delimiters in Clojure files after writes. |
-| `kb` | (tools only) | Knowledge base search/get/store via `kb` CLI. |
-| `commit` | (tools+commands only) | Git commit workflow with hunk-level staging. |
-| `web` | (tools only) | Fetch URLs with UA rotation, HTML→markdown, Jina Reader fallback, feed parsing. |
-| `perplexity` | (tools+commands) | Web search via Perplexity Pro/Max subscription. Token shared with Pi. |
-| `projects` | (commands+keybindings) | Fuzzy project picker with file drill-down. `/project` or Alt+P. |
-
-## Web Tools
-
-Xi exposes two web tools to the agent via MCP:
-
-### `web_search` (perplexity extension)
-
-Search the web using your Perplexity Pro/Max subscription. Returns an AI-generated answer with cited sources.
-
-```
-Parameters:
-  query    (string, required) — search query
-  recency  (string, optional) — "hour" | "day" | "week" | "month" | "year"
-  limit    (number, optional) — max sources to return (1-50)
-```
-
-**Authentication:** Uses OAuth token cached at `~/.config/pi-perplexity/auth.json` (shared with Pi). Falls back to macOS Perplexity desktop app token extraction. Run `/perplexity-login` to authenticate, `/perplexity-login --force` to re-authenticate.
-
-**Implementation:** Uses a Bun subprocess to make HTTP requests (Bun's fetch passes Cloudflare; Node's gets challenged). Parses Perplexity's SSE stream and merges incremental events into a final answer + sources.
-
-### `fetch` (web extension)
-
-Retrieve content from a URL and return it in clean, readable format.
-
-```
-Parameters:
-  url      (string, required) — URL to fetch
-  timeout  (number, optional) — timeout in seconds (default: 20, range: 5-60)
-  raw      (boolean, optional) — return raw HTML without transforms
-```
-
-**Features:**
-- **UA rotation** — cycles through 3 user agents (curl, TextBot, Chrome) to bypass bot detection
-- **HTML→Markdown** — converts headings, links, lists, code blocks, bold/italic
-- **Jina Reader fallback** — tries `r.jina.ai` for higher quality rendering before built-in conversion
-- **Bot-blocking detection** — retries with different UA on 403/503 with cloudflare/captcha responses
-- **RSS/Atom feed parsing** — extracts titles and links from feed items
-- **Low-quality detection** — detects JS-gated pages and navigation-heavy junk
-- **Output truncation** — 300 lines / 100k chars
-
-## TUI Bridge
-
-Extensions can interact with the TUI editor through a bridge API. The TUI registers handlers at startup; extensions call them through `ext/core`.
-
-### Completion menus
-
-Show a fuzzy-filterable completion menu from any extension:
-
-```clojure
-(ext/show-completion!
- {:items [{:label "Display text" :value "actual-value"}]
-  :prompt "pick> "
-  :on-select (fn [item] (ext/insert-text! (:value item)))
-  :key-bindings [{:key-fn (fn [data] (= data "\t"))
-                  :handler (fn [state-atom update-items!] ...)}]})
-```
-
-The `:key-bindings` option allows custom key handling within the menu (e.g. Tab to drill into a subdirectory).
-
-### Text insertion
-
-Insert text at the editor cursor:
-
-```clojure
-(ext/insert-text! "/path/to/file")
-```
-
-Both functions are no-ops when no TUI client is connected (e.g. headless server mode).
-
-## Prompt Badges
-
-Extensions can display indicators in the input prompt line after `xi>`. The editor calls `collect-prompt-badges` on every render.
-
-The editor accepts `:prompt-suffix-fn` — a zero-arg function returning the badge string. The TUI wires this to `ext/collect-prompt-badges`.
-
-```
-xi> 🔔 _                  ← notification enabled
-xi> _                      ← no badges
-```
-
-Badges support ANSI escape codes for coloring.
-
-## Keybinding Integration
-
-Extensions can declare keybindings directly in their extension map using human-readable key descriptors. The system supports two mechanisms:
-
-### Declarative keybindings (extension-defined)
-
-Extensions declare `:keybindings` in their extension map:
-
-```clojure
-(def extension
-  {:name "my-ext"
-   :keybindings [{:key "alt+p"
-                  :handler (fn [] (do-something!))}]})
-```
-
-Supported key descriptors:
-- `alt+<char>` — e.g. `"alt+p"` (matches both ESC-prefix and kitty protocol)
-- `ctrl+shift+<char>` — e.g. `"ctrl+shift+n"` (kitty CSI u format)
-
-The `ext/core` module parses descriptors into terminal escape sequence matchers at registration time. The TUI editor checks extension keybindings after built-in bindings via `ext/get-keybindings`.
-
-### Hard-wired keybindings (TUI callbacks)
-
-Some keybindings are wired directly in the TUI via editor callbacks:
-
-| Keybinding | Callback | Used by |
-|------------|----------|---------|
-| Ctrl+Shift+N | `:on-notify-toggle` | done-notify (toggle 🔔) |
-| Ctrl+Shift+G | `:on-git` | git status |
-
-### All keybindings
-
-| Keybinding | Source | Action |
-|------------|--------|--------|
-| Alt+P | projects extension | Open project picker |
-| Ctrl+Shift+N | TUI callback | Toggle desktop notifications |
-| Ctrl+Shift+G | TUI callback | Open git status |
-
-## API Reference
-
-```clojure
-(require '[xi.ext.core :as ext])
-
-;; State management (called by runtime)
-(ext/set-state! state-map)
-(ext/update-state! partial-map)
-(ext/get-state)
-
-;; Hook dispatch
-(ext/dispatch-hook :event)
-(ext/dispatch-hook :event {:extra "ctx"})
-(ext/dispatch-hook-transform :event initial-value)
-(ext/dispatch-hook-transform :event initial-value {:extra "ctx"})
-(ext/dispatch-hook-transform-async :event initial-value)  ;; Promise-aware
-(ext/dispatch-hook-transform-async :event initial-value {:extra "ctx"})
-(ext/dispatch-hook-async :event)
-(ext/collect-prompt-badges)
-
-;; Confirmation (for permission gates / interactive approval)
-(ext/set-confirm-handler! (fn [message] ...))  ;; called by TUI at startup
-(ext/confirm! "Allow this?")                    ;; returns Promise<boolean>
-
-;; TUI bridge (for extensions that show menus / insert text)
-(ext/set-completion-handler! (fn [opts] ...))  ;; called by TUI at startup
-(ext/set-insert-text-handler! (fn [text] ...)) ;; called by TUI at startup
-(ext/show-completion! {:items [...] :prompt "" :on-select fn})  ;; show menu
-(ext/insert-text! "text")                      ;; insert into editor
-
-;; Keybindings
-(ext/get-keybindings)  ;; [{:key-fn (fn [data]) :handler fn}]
-
-;; Registration
-(ext/register-extension! ext-map)
-(ext/list-extensions)
-(ext/list-commands)
-(ext/get-command "name")
-
-;; Tool access
-(ext/get-ext-tool-definitions)
-(ext/get-ext-tool-registry)
-```
+| Extension | Type | Description |
+|-----------|------|-------------|
+| plan-mode | tool-gate, command, badge | Read-only exploration mode (`/plan`). Blocks writes except tasks/todo.md. |
+| done-notify | handler, keybinding, badge | Desktop notification on turn end. Ctrl+Shift+N toggle, 🔔 badge. |
+| pushover | handler (factory) | Pushover notification when no visible client attached. |
+| dictation | handler, keybinding, badge (factory, client-only) | Voice input via sox/whisper. Alt+R to record. |
+| permission-gate | tool-gate | Confirms writes to sensitive paths and dangerous bash commands. |
+| todo-intercept | tool-gate | Intercepts writes to tasks/todo.md → GTD captures. |
+| kb | tools | Knowledge base search/get/store via `kb` CLI. |
+| web | tools | Fetch URLs with HTML→markdown, Jina fallback, feed parsing. |
+| perplexity | tools, command | Web search via Perplexity; `/perplexity-login` to authenticate. |
+| commit | tools, command, tool-gate | Git workflow; `/commit` builds a prompt from live overview. Commit requires user confirmation via tool-gate. |
+| clj-surgeon | tools, handler | Structural Clojure refactoring. Auto-fixes parens after write/edit to .clj files. |
+| gtd | tools, command, handler, system-prompt | GTD task management. `/gtd` picker, `/gtd recommend`, `/gtd cleanup`. |
+| terminal-title | handler | Sets terminal title from session name/cwd via ANSI escape. |
+| clipboard-image | event-hook | Converts pasted clipboard image paths to inline base64. |
+| projects | command, handler, keybinding | Project path picker. `/project` or Alt+P. |
+| skills | system-prompt, command | Injects tool knowledge based on project markers; `/skill list\|load`. |

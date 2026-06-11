@@ -35,11 +35,23 @@
             [xi.core.jsonl :as core-jsonl]
             [xi.core.log :as log]
             [xi.core.state :as state]
+            [xi.ext.clipboard-image :as ext.clipboard-image]
+            [xi.ext.clj-surgeon :as ext.clj-surgeon]
+            [xi.ext.commit :as ext.commit]
             [xi.ext.core :as ext]
             [xi.ext.dictation :as ext.dictation]
             [xi.ext.done-notify :as ext.done-notify]
+            [xi.ext.gtd :as ext.gtd]
+            [xi.ext.kb :as ext.kb]
+            [xi.ext.perplexity :as ext.perplexity]
+            [xi.ext.permission-gate :as ext.permission-gate]
             [xi.ext.plan-mode :as ext.plan-mode]
+            [xi.ext.projects :as ext.projects]
             [xi.ext.pushover :as ext.pushover]
+            [xi.ext.skills :as ext.skills]
+            [xi.ext.terminal-title :as ext.terminal-title]
+            [xi.ext.todo-intercept :as ext.todo-intercept]
+            [xi.ext.web :as ext.web]
             [xi.fx :as fx]
             [xi.provider.claude :as claude]
             [xi.provider.ollama :as ollama]
@@ -57,15 +69,14 @@
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────
 ;;
 ;; Extensions are composed at assembly time into the seams the core, the
-;; provider effects and the TUI consume. The lists are empty until session
-;; 6b populates them — every seam below degrades to a no-op with no
-;; extensions, so behaviour is identical to phase 5.
+;; provider effects and the TUI consume. Every seam degrades to a no-op
+;; when no extensions are present.
 ;;
 ;; Two groups, because state lives in two places:
-;;   server-extensions — state + provider/tool hooks run server-side
-;;                       (plan-mode, done-notify, pushover). In client mode
-;;                       their room-state handlers are mirrored and their
-;;                       badges/keybindings/commands are presented.
+;;   server-extensions — state + provider/tool hooks that run server-side.
+;;                       In client mode their room-state handlers are
+;;                       mirrored and their badges/keybindings/commands
+;;                       are presented locally.
 ;;   client-extensions — process-local, run in the TUI client process
 ;;                       (dictation): handlers installed unwrapped, fx local.
 
@@ -75,7 +86,19 @@
   []
   [ext.plan-mode/extension
    ext.done-notify/extension
-   (ext.pushover/extension)])
+   (ext.pushover/extension)
+   ext.kb/extension
+   ext.web/extension
+   ext.perplexity/extension
+   ext.commit/extension
+   ext.clj-surgeon/extension
+   ext.gtd/extension
+   ext.permission-gate/extension
+   ext.todo-intercept/extension
+   ext.terminal-title/extension
+   ext.clipboard-image/extension
+   ext.projects/extension
+   ext.skills/extension])
 
 (defn- client-extensions
   "Process-local extensions that run in the TUI client process."

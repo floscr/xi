@@ -1,4 +1,4 @@
-# Phase 6 Plan — Extension Layer
+# Phase 6 Plan — Extension Layer (DONE)
 
 Working plan for rebuild phase 6: new ext API + all 18 extensions ported,
 working in all three connection modes (standalone / server / client).

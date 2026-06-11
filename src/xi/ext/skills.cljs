@@ -1,20 +1,13 @@
 (ns xi.ext.skills
-  "Skills extension — detects project type and injects tool knowledge into context.
-   Skills are conditionally loaded based on marker files in the project.
-   Also provides on-demand skills loaded from ~/.config/xi/skills/*/SKILL.md."
+  "Skills extension — detects project type and injects tool knowledge into
+   the system prompt. Also provides on-demand skills loaded from
+   ~/.config/xi/skills/*/SKILL.md via /skill list|load commands."
   (:require [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]))
 
-;; ── Skill Definitions ─────────────────────────────────────────────────────────
-;;
-;; Each skill has:
-;;   :name     — identifier
-;;   :markers  — set of filenames that trigger this skill
-;;   :content  — the skill prompt text (inline)
-;;   :load-when — (optional) custom predicate (fn [cwd] -> bool)
-;;               defaults to checking :markers
+;; ── Skill Registry ────────────────────────────────────────────────────────────
 
 (defn- file-exists-in-cwd?
   "Check if any of the given filenames exist in cwd."
@@ -68,14 +61,7 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
     (custom-pred cwd)
     (file-exists-in-cwd? cwd (:markers skill))))
 
-(defn active-skills
-  "Return vec of skill names active for the given cwd."
-  [cwd]
-  (->> skill-registry
-       (filter #(should-load? % cwd))
-       (mapv :name)))
-
-(defn load-skill-prompts
+(defn- load-skill-prompts
   "Load and concatenate all active skill prompts for cwd.
    Returns nil if no skills match."
   [cwd]
@@ -86,10 +72,7 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
       (str "\n\n# Active Skills\n\n"
            (str/join "\n\n---\n\n" active)))))
 
-;; ── On-Demand Skills ──────────────────────────────────────────────────────────
-;;
-;; Skills loaded from ~/.config/xi/skills/*/SKILL.md
-;; Format: markdown with YAML-ish frontmatter (name, description)
+;; ── On-Demand Skills (~/.config/xi/skills/*/SKILL.md) ─────────────────────────
 
 (def ^:private SKILLS_DIR
   (.join node-path (os/homedir) ".config" "xi" "skills"))
@@ -116,7 +99,7 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
         {:frontmatter {} :body content}))
     {:frontmatter {} :body content}))
 
-(defn scan-skills
+(defn- scan-skills
   "Scan SKILLS_DIR for available skill directories.
    Returns vec of {:name :description :path}."
   []
@@ -137,7 +120,7 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
            vec))
     []))
 
-(defn- load-skill
+(defn- load-skill-by-name
   "Load a skill by name. Returns the full content (body after frontmatter) or nil."
   [skill-name]
   (let [skills (scan-skills)]
@@ -146,59 +129,54 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
             {:keys [body]} (parse-frontmatter content)]
         body))))
 
-;; ── Skill Commands ────────────────────────────────────────────────────────────
+;; ── Commands ──────────────────────────────────────────────────────────────────
 
-(defn- cmd-skill-list
-  "List all available on-demand skills."
-  [_opts]
+(defn- skill-command
+  "/skill [list|load <name>] — list defers to an effect (fs scan); load
+   defers to an effect (fs read + prompt submit)."
+  [_st {:keys [room-id args]}]
+  (let [[sub rest-args] (str/split (str/trim (or args "")) #"\s+" 2)]
+    (case sub
+      "load" {:effects [[:skill/load {:room-id room-id :name (or rest-args "")}]]}
+      ;; default: list
+      {:effects [[:skill/list {:room-id room-id}]]})))
+
+(defn- skill-list-fx
+  "Scan on-demand skills and report them as a status line."
+  [{:keys [dispatch!]} {:keys [room-id]}]
   (let [skills (scan-skills)]
-    (if (seq skills)
-      (let [max-name (apply max (map #(count (:name %)) skills))
-            lines (map (fn [{:keys [name description]}]
-                         (let [padded (str name (apply str (repeat (- (+ max-name 2) (count name)) " ")))]
-                           (str "  " padded description)))
-                       skills)]
-        {:type :prompt
-         :text (str "Available skills:\n" (str/join "\n" lines))})
-      {:type :prompt
-       :text (str "No skills found in " SKILLS_DIR)})))
+    (dispatch!
+     {:type :history/append :room-id room-id
+      :entry {:kind :status
+              :text (if (seq skills)
+                      (let [max-name (apply max (map #(count (:name %)) skills))
+                            lines (map (fn [{:keys [name description]}]
+                                         (let [pad (apply str (repeat (- (+ max-name 2) (count name)) " "))]
+                                           (str "  " name pad description)))
+                                       skills)]
+                        (str "Available skills:\n" (str/join "\n" lines)))
+                      (str "No skills found in " SKILLS_DIR))}})))
 
-(defn- cmd-skill-load
-  "Load a skill and auto-post its content."
-  [opts]
-  (let [skill-name (:args opts)]
-    (if (str/blank? skill-name)
-      {:type :prompt
-       :text "Usage: /skill load <name>\nUse /skill list to see available skills."}
-      (if-let [content (load-skill (str/trim skill-name))]
-        {:type :prompt :text content}
-        {:type :prompt
-         :text (str "Skill '" (str/trim skill-name) "' not found. Use /skill list to see available skills.")}))))
+(defn- skill-load-fx
+  "Load a skill's content and submit it as a prompt."
+  [{:keys [dispatch!]} {:keys [room-id name]}]
+  (if (str/blank? name)
+    (dispatch! {:type :history/append :room-id room-id
+                :entry {:kind :status
+                        :text "Usage: /skill load <name>\nUse /skill list to see available skills."}})
+    (if-let [content (load-skill-by-name (str/trim name))]
+      (dispatch! {:type :prompt/submit :room-id room-id :text content})
+      (dispatch! {:type :history/append :room-id room-id
+                  :entry {:kind :status
+                          :text (str "Skill '" (str/trim name) "' not found. Use /skill list to see available skills.")}}))))
 
-(defn- cmd-skill
-  "Skill command dispatcher — defaults to list."
-  [opts]
-  (cmd-skill-list opts))
-
-;; ── Extension Hooks ───────────────────────────────────────────────────────────
-
-(defn- session-start-hook
-  "On session start, log which skills are active."
-  [state]
-  (let [cwd (:cwd state)
-        skills (when cwd (active-skills cwd))]
-    (when (seq skills)
-      nil)))
+;; ── Extension ─────────────────────────────────────────────────────────────────
 
 (def extension
-  {:name "skills"
-   :hooks {:session-start session-start-hook}
-   :commands [{:name "skill"
-               :description "List or load on-demand skills"
-               :handler cmd-skill
-               :subcommands [{:name "list"
-                              :description "List available skills"
-                              :handler cmd-skill-list}
-                             {:name "load"
-                              :description "Load a skill and auto-post it"
-                              :handler cmd-skill-load}]}]})
+  {:id            :skills
+   :system-prompt load-skill-prompts
+   :commands      [{:name "skill"
+                    :description "List or load on-demand skills"
+                    :handler skill-command}]
+   :fx            {:skill/list skill-list-fx
+                   :skill/load skill-load-fx}})

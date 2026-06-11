@@ -11,8 +11,8 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
 | 3 | Provider layer (agent orchestration, claude, ollama) | ✅ done | `2e00b5d` |
 | 4 | Standalone TUI (render-from-state, commands, sessions, compaction) | ✅ done | `f0aed74` |
 | 5 | Connection layer (WS transports, rooms) | ✅ done | `289f0c7` |
-| 6 | Extensions (new hook API, port all 18) | ⬜ next | |
-| 7 | Web client (rebuild on new core) | ⬜ | |
+| 6 | Extensions (new hook API, port all 18) | ✅ done | `62419b0`… |
+| 7 | Web client (rebuild on new core) | ⬜ next | |
 | 8 | Cutover (parity checklist, merge) | ⬜ | |
 
 ### Implementation notes (phases 2–5, for continuity)
@@ -118,6 +118,37 @@ Status: **in progress** — work happens on branch `rebuild` in this worktree (`
     lobby payload (web client, phase 7); personal-agent room policies
     (extensions, phase 6); `xi rooms` CLI listing.
 - **Old implementation reference**: `../xi` worktree (master).
+- **Phase 6 — extensions** (6a: `62419b0`–`df7c79c`; 6b: uncommitted):
+  - **Extension = data map**: `:id :init :handlers :fx :event-hooks
+    :tool-gate :tool-definitions :tool-registry :commands :system-prompt
+    :keybindings :prompt-badge :on-shutdown`. No registration atoms or
+    global state — compose at assembly time.
+  - **State scoping**: room-scoped `[:rooms rid :ext <id>]` (mirrors via
+    `:room/joined`); process-local `[:ext <id>]` (never crosses the wire).
+  - **Composition** (`ext/compose`): merges extensions into one assembly
+    map; `ext/merge-handlers` chains extension handlers after the base
+    handler for each event type.
+  - **Tool-gate**: async chain `(fn [tool-call ctx])` → tool-call | nil |
+    `{:intercepted true :result …}`. Gate ctx:
+    `{:dispatch! :get-state :room-id :cwd :confirm!}`. Tool exec-fns
+    receive only `{:cwd}` — no app concerns.
+  - **Dialogs**: `ext/create-dialogs` returns `ask!`; pushes data into
+    room `:ui :dialogs`, rendered by TUI; response resolves promise.
+    Headless/server safe-defaults (false for :confirm).
+  - **Per-mode assembly** (xi.cli): `server-extensions` (all tool/gate/
+    state extensions), `client-extensions` (dictation); standalone
+    composes both. 16 extensions ported:
+    - Batch 1 (tools): kb, web, perplexity, commit, clj-surgeon, gtd
+    - Batch 2 (gates): permission-gate, todo-intercept
+    - Batch 3 (client-side): terminal-title, clipboard-image, projects,
+      skills
+    - 6a (stateful): plan-mode, done-notify, pushover, dictation
+  - **Deviations**: `parmezan` absorbed into clj-surgeon's auto-lint;
+    `sub-project` dropped (stub with no behavior); personal-agent room
+    policy deferred (core plumbing already in place, policy enforcement
+    not needed yet); `projects` drill-down (Tab→files) deferred (needs
+    callback-based menus); `set-session-name!` dropped from gtd picker
+    (no equivalent event in xi-next).
 
 ## Why
 

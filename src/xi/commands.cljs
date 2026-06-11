@@ -216,11 +216,12 @@
 
 (defn- input-submit
   "Raw editor submission — route to a command or a prompt. Pending images
-   (room :ui :pending-images) ride along on prompts via :image/process."
-  [st {:keys [room-id text]}]
+   (room :ui :pending-images) ride along on prompts via :image/process.
+   Event-level :images (from clipboard-image hook) merge with pending."
+  [st {:keys [room-id text images]}]
   (when-let [room (state/get-room st room-id)]
     (let [parsed (parse-input text)
-          images (get-in room [:ui :pending-images])]
+          images (into (vec (get-in room [:ui :pending-images])) images)]
       (cond
         (= :command (:type parsed))
         {:effects [[:app/dispatch {:type :command/run :room-id room-id
