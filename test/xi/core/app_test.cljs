@@ -22,14 +22,16 @@
     (is (= "a" (:active-room @state)))
     (is (= 1 (count (:history (state/active-room @state)))))))
 
-(deftest events-are-stamped-and-logged
-  (let [{:keys [dispatch! ring]} (test-app)]
+(deftest events-are-stamped
+  (let [seen (atom [])
+        {:keys [dispatch! add-tap!]} (test-app)]
+    (add-tap! (fn [event _state] (swap! seen conj event)))
     (dispatch! {:type :room/create :room-id "a"})
     (dispatch! {:type :custom/thing})
-    (let [[e1 e2] (log/entries ring)]
-      (is (= [1 2] [(:event/id e1) (:event/id e2)]))
-      (is (number? (:event/ts e1)))
-      (is (= :custom/thing (:type e2))))))
+    (is (= 2 (count @seen)))
+    (is (= [1 2] (mapv :event/id @seen)))
+    (is (number? (:event/ts (first @seen))))
+    (is (= :custom/thing (:type (second @seen))))))
 
 (deftest effects-run-and-dispatch-fifo
   ;; Handler for :ping returns an effect; the effect dispatches :pong.

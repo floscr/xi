@@ -391,7 +391,7 @@
                      (take-last 200))]
     (node/append-children! c
       [(node/text (str (ansi/fg :bold "Logs")
-                       (ansi/fg :dim (str " (" (count visible) " events)"))))
+                       (ansi/fg :dim (str " (" (count visible) ")"))))
        (node/spacer)
        (if (empty? visible)
          (node/text (ansi/fg :dim "(empty)"))

@@ -61,10 +61,10 @@
                                 orig-event))
                             orig-event)]
                 (if (nil? event)
-                  ;; Blocked by an event hook — log only.
-                  (when ring
-                    (log/append! ring (log/prepare-entry
-                                       (assoc orig-event :ext/blocked? true) [])))
+                  ;; Blocked by an event hook — JSONL debug log only.
+                  (when jsonl-writer
+                    ((:write! jsonl-writer) (log/prepare-entry
+                                             (assoc orig-event :ext/blocked? true) [])))
                   (process-event! dispatch! event))))
 
             (process-event! [dispatch! event]
@@ -76,8 +76,6 @@
                         {:state @!state :effects []}))]
                 (when-not (identical? state' @!state)
                   (reset! !state state'))
-                (when ring
-                  (log/append! ring (log/prepare-entry event fx)))
                 (when jsonl-writer
                   ((:write! jsonl-writer) (log/prepare-entry event fx)))
                 (doseq [tap (vec (.-taps ctx))]
