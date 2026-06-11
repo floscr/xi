@@ -43,6 +43,7 @@
   "Named ext keybindings → the raw input sequences that trigger them
    (legacy + kitty CSI-u encodings). Extend as extensions need keys."
   {"alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
+   "alt+p"        #{(str ESC "p") (str ESC "[112;3u")}
    "ctrl+shift+n" #{(str ESC "[110;6u")}
    "ctrl+c"       #{(str (char 3))}})
 
@@ -106,12 +107,34 @@
      {:id kw :prompt str :items [...] :alt-items [...] :tab-labels [...]}
    Items carry {:label :description :event} — selecting dispatches the
    event (after closing the menu). :alt-items adds a Tab-switched second
-   item set (e.g. /resume current-folder vs all)."
-  [{:keys [prompt items alt-items tab-labels]} room-id dispatch!]
+   item set (e.g. /resume current-folder vs all).
+   :key-bindings — vec of {:key str :event map :selected? bool}. When :key
+   matches, closes the menu and dispatches the event (with :room-id merged).
+   When :selected? is true, the currently selected item is merged into the
+   event under :selected."
+  [{:keys [prompt items alt-items tab-labels key-bindings]} room-id dispatch!]
   (let [;; Tab state is interaction-local (like the menu's filter query) —
         ;; it lives in the component, not in app state.
         tab #js {:alt false}
         close! (fn [] (dispatch! {:type :ui/menu-close :room-id room-id}))
+        ;; Event-dispatching key-bindings from menu descriptor
+        menu-kbs (mapv (fn [{:keys [key event selected?]}]
+                         {:key-fn  (fn [data] (= data key))
+                          :handler (fn [state _update-items!]
+                                     (let [evt (cond-> (assoc event :room-id room-id)
+                                                 selected?
+                                                 (merge (let [{:keys [filtered selected]} @state]
+                                                          (when (seq filtered)
+                                                            {:selected (nth filtered selected)}))))]
+                                       (close!)
+                                       (dispatch! evt)))}) key-bindings)
+        ;; Alt-items tab-switch key-bindings
+        alt-kbs (when (seq alt-items)
+                  [{:key-fn (fn [data] (= data "	"))
+                    :handler (fn [_state update-items!]
+                               (set! (.-alt tab) (not (.-alt tab)))
+                               (update-items! (if (.-alt tab) alt-items items)))}])
+        all-kbs (into (vec menu-kbs) alt-kbs)
         opts (cond-> {:items items
                       :prompt (or prompt "> ")
                       :on-select (fn [item]
@@ -130,12 +153,9 @@
                                       (ansi/fg :accent (str "◉ " b)))
                                  (str (ansi/fg :accent (str "◉ " a)) (ansi/fg :dim " | ")
                                       (ansi/fg :dim (str "○ " b))))
-                               (ansi/fg :dim "  (Tab to switch)"))))
-                      :key-bindings
-                      [{:key-fn (fn [data] (= data "\t"))
-                        :handler (fn [_state update-items!]
-                                   (set! (.-alt tab) (not (.-alt tab)))
-                                   (update-items! (if (.-alt tab) alt-items items)))}]))]
+                               (ansi/fg :dim "  (Tab to switch)")))))
+               (seq all-kbs)
+               (assoc :key-bindings all-kbs))]
     (completion/make-completion-menu opts)))
 
 (defn- palette-menu
