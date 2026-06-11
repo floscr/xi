@@ -12,6 +12,10 @@
   "Paths that should never be written to without confirmation."
   ["/Mail/" "/.ssh/" "/.gnupg/" "/.password-store/"])
 
+(def ^:private BLOCKED_COMMANDS
+  "Bash patterns that are always blocked."
+  ["ssh " "scp " "rsync " "sftp "])
+
 (def ^:private GUARDED_PATTERNS
   "Bash patterns that require extra caution."
   ["rm -rf" "rm -r" "sudo " "chmod -R" "chown -R"
@@ -56,9 +60,16 @@
 
       "bash"
       (let [cmd (or (:command arguments) "")]
-        (if (some #(str/includes? cmd %) GUARDED_PATTERNS)
+        (cond
+          (some #(str/includes? cmd %) BLOCKED_COMMANDS)
+          {:intercepted true
+           :result {:content [{:type "text" :text "Blocked: remote shell commands (ssh, scp, rsync, sftp) are not allowed."}]
+                    :is-error true}}
+
+          (some #(str/includes? cmd %) GUARDED_PATTERNS)
           (ask-confirmation tool-call confirm! (str "Guarded command: " cmd))
-          tool-call))
+
+          :else tool-call))
 
       ;; Everything else: allowed
       tool-call)))
