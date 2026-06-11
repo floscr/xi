@@ -1992,8 +1992,8 @@ a.btn-link {
 
 .lightbox-close {
   position: absolute;
-  top: var(--size-4);
-  right: var(--size-4);
+  top: calc(var(--size-4) + env(safe-area-inset-top, 0px));
+  right: calc(var(--size-4) + env(safe-area-inset-right, 0px));
   background: rgba(0, 0, 0, 0.5);
   border: none;
   border-radius: 50%;

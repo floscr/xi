@@ -68,13 +68,13 @@ Legend: ✅ covered by the rebuild already · ⚠️ present but unverified ·
 ### Web client — gaps to decide on
 | Commit | Behaviour | Status |
 |--------|-----------|--------|
-| `339c2f6` | thinking blocks expanded by default | ❌ rebuild renders `:open false` |
-| `73fdda3` | thinking blocks full height (not scrollable) | ⚠️ CSS |
-| `1666755` | virtualize chat timeline (long-session perf) | ❌ not implemented |
+| `339c2f6` | thinking blocks expanded by default | ✅ `:open true` (same `<details>` mechanism as tool blocks, browser-verified) |
+| `73fdda3` | thinking blocks full height (not scrollable) | ✅ max-height/overflow removed from `.thinking-text` |
+| `1666755` | virtualize chat timeline (long-session perf) | ✅ 60-entry window + "Show earlier" (+40); resets on navigate (browser-verified on a 742-entry session) |
 | `7cd8138` | mobile compose fixes (keyboard padding, clearing) | ⚠️ verify on mobile viewport |
-| `ba2b906` | safe-area insets for lightbox close | ❌ images deferred in 7b |
-| `23d8394` | omit empty text block for image-only messages | ⚠️ images deferred; verify when added |
-| `fe2ced4` | join-mode command palette + compose drafts | ❌ compose drafts deferred in 7b; ⚠️ verify commands in join mode |
+| `ba2b906` | safe-area insets for lightbox close | ✅ lightbox ported (timeline + compose thumbs, browser-verified) incl. safe-area CSS |
+| `23d8394` | omit empty text block for image-only messages | ⚠️ verify with live image sends |
+| `fe2ced4` | join-mode command palette + compose drafts | ✅ per-session drafts (`:web/drafts`, browser-verified); ⚠️ verify commands in join mode |
 
 ### TUI
 | Commit | Behaviour | Status |
@@ -83,17 +83,27 @@ Legend: ✅ covered by the rebuild already · ⚠️ present but unverified ·
 
 ## Confirmed gaps (carry-over backlog)
 
-These are behaviours on `ui-refactor` the rebuild does **not** have yet:
+All four confirmed gaps were ported (2026-06-11, browser-verified against a
+headless server):
 
-1. **Thinking blocks expanded by default** (`339c2f6`) — one-line change in
-   `web/views.cljs` (`:open true`) + CSS for full-height.
-2. **Timeline virtualization** (`1666755`) — perf for very long sessions;
-   the rebuild renders the whole timeline. Decide: port now, or defer
-   (only matters on huge histories).
-3. **Per-session compose drafts** (`fe2ced4`, deferred in 7b) — save on
-   navigate, restore on enter.
-4. **Image paste / thumbnails / lightbox** (`ba2b906`, `23d8394`, deferred
-   in 7b) — whole image feature is deferred.
+1. **Thinking blocks expanded by default** (`339c2f6`, `73fdda3`) —
+   `:open true` + full-height CSS. ✅
+2. **Timeline virtualization** (`1666755`) — last 60 entries rendered,
+   "Show earlier" expands by 40, `:web/timeline-window` resets on every
+   `:route/navigate`. ✅
+3. **Per-session compose drafts** — the compose textarea is now controlled
+   via `:web/drafts {draft-key text}` keyed by session id (`:new` before
+   the first join), so drafts survive navigation for free; cleared on
+   send. ✅
+4. **Image lightbox** (`ba2b906`) — click any timeline/compose image →
+   `ui.lightbox` overlay (`:web/lightbox`); safe-area insets for the close
+   button. Composer image attachments had already landed (`1ec0bdb`). ✅
+
+**New observation during verification**: deep-link *reload* into a chat URL
+sometimes joins a server room whose resumed history is empty (client state
+shows `:history []` with no follow-up events; a later reload that creates a
+fresh room works). Server-side room-resume race, pre-existing — the server
+binary was unchanged during the test. Add to the verification checklist.
 
 ## Pre-merge verification checklist
 
@@ -107,7 +117,9 @@ These are behaviours on `ui-refactor` the rebuild does **not** have yet:
       omits link; suppressed when a visible web client is attached; no
       dup notifications; not fired on abort; env reaches a tmux server
 - [ ] Permission gate / commit confirm raise dialogs in TUI **and** web
-- [ ] Decide each "confirmed gap" → port-before-cutover or backlog-after
+- [x] Decide each "confirmed gap" → all four ported (see above)
+- [ ] Investigate deep-link reload race: rejoining a just-created room can
+      yield a room with empty resumed history (see observation above)
 
 ## Merge mechanics
 

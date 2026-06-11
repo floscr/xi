@@ -77,6 +77,27 @@
 (defn- compose-clear-images [st _]
   {:state (assoc st :web/compose-images [])})
 
+(defn- compose-set-draft
+  "Track the compose text per session so drafts survive navigation."
+  [st {:keys [draft-key text]}]
+  {:state (if (seq text)
+            (assoc-in st [:web/drafts draft-key] text)
+            (update st :web/drafts dissoc draft-key))})
+
+(defn- compose-clear-draft [st {:keys [draft-key]}]
+  {:state (update st :web/drafts dissoc draft-key)})
+
+(defn- timeline-set-window
+  "Widen the virtualized timeline window (\"Show earlier messages\")."
+  [st {:keys [window]}]
+  {:state (assoc st :web/timeline-window window)})
+
+(defn- lightbox-open [st {:keys [src]}]
+  {:state (assoc st :web/lightbox src)})
+
+(defn- lightbox-close [st _]
+  {:state (dissoc st :web/lightbox)})
+
 (defn- web-handlers []
   (merge router/handlers
          {:room/new              room-new
@@ -88,7 +109,12 @@
           :connection/status     connection-status
           :compose/add-images    compose-add-images
           :compose/remove-image  compose-remove-image
-          :compose/clear-images  compose-clear-images}))
+          :compose/clear-images  compose-clear-images
+          :compose/set-draft     compose-set-draft
+          :compose/clear-draft   compose-clear-draft
+          :timeline/set-window   timeline-set-window
+          :lightbox/open         lightbox-open
+          :lightbox/close        lightbox-close}))
 
 (defn- web-effects []
   {:history/push router/history-effect

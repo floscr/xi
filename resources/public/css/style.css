@@ -90,6 +90,12 @@ body {
   padding: 0 var(--size-4);
 }
 
+.load-earlier {
+  display: flex;
+  justify-content: center;
+  padding: var(--size-2) 0;
+}
+
 /* ---- Post / Message ---- */
 .post {
   padding: var(--size-2) 0;
@@ -555,8 +561,6 @@ body {
   font-size: var(--font-sm);
   line-height: 1.4;
   color: var(--fg-2);
-  max-height: 40vh;
-  overflow-y: auto;
   background-color: var(--bg-1);
   padding: var(--size-3);
   border-radius: var(--radius-md);

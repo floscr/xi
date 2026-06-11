@@ -62,7 +62,10 @@
 
                   (= page :home)
                   (conj [:app/dispatch {:type :room/leave}]))]
-    {:state   (assoc st :web/route route)
+    {:state   (assoc st :web/route route
+                     ;; reset the virtualized timeline window on every
+                     ;; navigation so a new session starts compact
+                     :web/timeline-window nil)
      :effects effects}))
 
 (def handlers

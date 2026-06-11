@@ -12,7 +12,20 @@
             [xi.highlight.theme-css :as theme]
             [xi.util :as util]
             [ui.icon :as icon]
-            [ui.form :as form]))
+            [ui.form :as form]
+            [ui.button :as button]
+            [ui.lightbox :as lightbox]))
+
+;; ── Timeline virtualization ──────────────────────────────────────────────────
+
+(def ^:private initial-window-size
+  "Number of history entries rendered initially; keeps the DOM light on
+   long sessions."
+  60)
+
+(def ^:private window-step
+  "How many more entries \"Show earlier\" reveals per click."
+  40)
 
 ;; ── Spinner ──────────────────────────────────────────────────────────────────
 
@@ -98,7 +111,7 @@
 
 ;; ── History entry → post ─────────────────────────────────────────────────────
 
-(defn- entry->post [entry]
+(defn- entry->post [dispatch! entry]
   (case (:kind entry)
     :user
     [:div {:class ["post" "post--user"]}
@@ -107,10 +120,12 @@
         [:div {:class ["user-images"]}
          (map-indexed
           (fn [i {:keys [data media-type]}]
-            [:img {:replicant/key i
-                   :class ["user-image"]
-                   :src (str "data:" media-type ";base64," data)
-                   :alt "attached"}])
+            (let [src (str "data:" media-type ";base64," data)]
+              [:img {:replicant/key i
+                     :class ["user-image" "lightbox-thumb"]
+                     :src src
+                     :alt "attached"
+                     :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}]))
           imgs)]
         (when-let [n (:image-count entry)]
           (when (pos? n)
@@ -124,7 +139,7 @@
 
     :thinking
     [:div {:class ["post" "post--assistant"]}
-     [:details {:class ["thinking-block"] :open false}
+     [:details {:class ["thinking-block"] :open true}
       [:summary {:class ["thinking-toggle"]}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
@@ -221,23 +236,26 @@
      (map-indexed
       (fn [idx {:keys [data media-type]}]
         [:div {:replicant/key idx :class ["compose-image-thumb"]}
-         [:img {:src (str "data:" media-type ";base64," data) :alt "attachment"}]
+         (let [src (str "data:" media-type ";base64," data)]
+           [:img {:src src :alt "attachment" :class ["lightbox-thumb"]
+                  :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}])
          [:button {:class ["compose-image-remove"]
                    :on {:click (fn [_] (dispatch! {:type :compose/remove-image :idx idx}))}}
           (icon/icon {:icon-name :x :size :sm})]])
       images)]))
 
-(defn- submit-compose! [dispatch! room-id images]
-  (when-let [^js el (compose-textarea-el)]
-    (let [text (str/trim (or (.-value el) ""))]
-      (when (or (seq text) (seq images))
-        (set! (.-value el) "")
-        (when (seq images)
-          (dispatch! {:type :compose/clear-images}))
-        (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
-                     (seq images) (assoc :images (vec images))))))))
+(defn- submit-compose! [dispatch! room-id images draft-key draft]
+  (let [text (str/trim (or draft ""))]
+    (when (or (seq text) (seq images))
+      (when-let [^js el (compose-textarea-el)]
+        (set! (.-value el) ""))
+      (dispatch! {:type :compose/clear-draft :draft-key draft-key})
+      (when (seq images)
+        (dispatch! {:type :compose/clear-images}))
+      (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
+                   (seq images) (assoc :images (vec images)))))))
 
-(defn- compose-box [dispatch! room busy? images]
+(defn- compose-box [dispatch! room busy? images draft-key draft]
   (let [room-id (:id room)]
     [:div {:class ["compose-box"]}
      (compose-image-strip dispatch! images)
@@ -256,20 +274,26 @@
       [:div {:class ["compose-input-wrapper"]}
        (form/form-textarea-auto
         {:placeholder (if busy? "Working…" "Message…")
+         :value (or draft "")
          :max-rows 6
-         :attrs {:on {:paste (fn [^js e] (handle-compose-paste! dispatch! e))
+         :attrs {:on {:input (fn [^js e]
+                               (dispatch! {:type :compose/set-draft
+                                           :draft-key draft-key
+                                           :text (.. e -target -value)}))
+                      :paste (fn [^js e] (handle-compose-paste! dispatch! e))
                       :keydown
                       (fn [^js e]
                         (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)))
                           (.preventDefault e)
                           (when-not busy?
-                            (submit-compose! dispatch! room-id images))))}}})]
+                            (submit-compose! dispatch! room-id images draft-key
+                                             (.. e -target -value)))))}}})]
       (if busy?
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
          (icon/icon {:icon-name :circle-x :size :md})]
         [:button {:class ["icon-btn"]
-                  :on {:click (fn [_] (submit-compose! dispatch! room-id images))}}
+                  :on {:click (fn [_] (submit-compose! dispatch! room-id images draft-key draft))}}
          (icon/icon {:icon-name :arrow-up :size :md})])]]))
 
 ;; ── Permission dialog ────────────────────────────────────────────────────────
@@ -312,7 +336,8 @@
         history (or (:history room) (:history cached))
         busy?   (get-in room [:agent :busy?])
         model   (or (get-in room [:agent :model]) (:model cached))
-        ready?  (or room (seq history))]
+        ready?  (or room (seq history))
+        draft-key (or (get-in room [:session :id]) sid :new)]
     [:div {:class ["container"] :replicant/key "chat"}
      [:div {:class ["topbar"]}
       [:button {:class ["icon-btn" "icon-btn--sm"]
@@ -325,14 +350,30 @@
      [:div {:class ["timeline"]}
       [:div {:class ["timeline-content"]}
        (if ready?
-         (keep entry->post history)
+         (let [entries (vec history)
+               total   (count entries)
+               win     (or (:web/timeline-window state) initial-window-size)
+               start   (max 0 (- total win))]
+           (list
+            (when (pos? start)
+              [:div {:class ["load-earlier"]}
+               (button/button
+                {:variant :ghost :size :sm
+                 :on-click (fn [_] (dispatch! {:type :timeline/set-window
+                                               :window (+ win window-step)}))}
+                (str "Show " (min window-step start) " earlier messages"
+                     " (" start " hidden)"))])
+            (keep (partial entry->post dispatch!) (subvec entries start total))))
          [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])
        (when busy?
          [:div {:class ["post" "post--assistant"]}
           [:div {:class ["status-bubble"]}
            (spinner) [:span "Working…"]]])]]
      (dialog-overlay dispatch! room)
-     (compose-box dispatch! room busy? (:web/compose-images state))]))
+     (lightbox/lightbox {:src (:web/lightbox state)
+                         :on-close (fn [] (dispatch! {:type :lightbox/close}))})
+     (compose-box dispatch! room busy? (:web/compose-images state)
+                  draft-key (get-in state [:web/drafts draft-key]))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
