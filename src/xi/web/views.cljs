@@ -256,7 +256,8 @@
    {:name "sessions" :description "List previous sessions"}
    {:name "new"      :description "Start a new session"}
    {:name "clear"    :description "Clear current session"}
-   {:name "truncate" :description "Summarize conversation to reduce context"}])
+   {:name "truncate" :description "Summarize conversation to reduce context"}
+   {:name "commit"   :description "Review changes and create a git commit"}])
 
 (defn- match-commands
   "Filter commands by prefix query (text after the /)."
@@ -399,11 +400,11 @@
            [:button {:class ["confirm-btn" "confirm-btn--allow"]
                      :on {:click (fn [_] (answer! nil))}} "OK"]
            ;; :confirm (default)
-           [:<>
+           (list
             [:button {:class ["confirm-btn" "confirm-btn--deny"]
                       :on {:click (fn [_] (answer! false))}} "Deny"]
             [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                      :on {:click (fn [_] (answer! true))}} "Allow"]])]]])))
+                      :on {:click (fn [_] (answer! true))}} "Allow"]))]]])))
 
 ;; ── Chat view ────────────────────────────────────────────────────────────────
 
