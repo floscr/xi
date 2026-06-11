@@ -77,9 +77,10 @@
           {:effects [[:app/dispatch {:type :room/attach
                                      :client-id client-id
                                      :room-id existing}]]}
-          {:effects [[:room/setup {:client-id client-id
-                                   :room-id (gen-room-id ev)
-                                   :cwd cwd}]]})))))
+          {:effects [[:room/setup (cond-> {:client-id client-id
+                                           :room-id   (gen-room-id ev)
+                                           :cwd       cwd}
+                                    (:session-id ev) (assoc :session-id (:session-id ev)))]]})))))
 
 (defn- room-attach [st {:keys [client-id room-id]}]
   (when (state/get-room st room-id)

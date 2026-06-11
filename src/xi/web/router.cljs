@@ -54,9 +54,13 @@
         effects (cond-> [[:history/push {:route route :replace? replace?}]]
                   (and (= page :chat) session-id (not already?))
                   (conj [:app/dispatch
-                         {:type   :room/join
-                          :target (or (session->room-id st session-id)
-                                      {:session-id session-id})}]
+                         ;; Always carry :session-id so the server can resume
+                         ;; even when the lobby cache has a stale room-id that
+                         ;; no longer exists on a restarted server.
+                         (cond-> {:type   :room/join
+                                  :target (or (session->room-id st session-id)
+                                              {:session-id session-id})}
+                           session-id (assoc :session-id session-id))]
                         [:app/dispatch {:type :session/mark-read
                                         :session-id session-id}])
 

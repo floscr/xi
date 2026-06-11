@@ -107,19 +107,26 @@ binary was unchanged during the test. Add to the verification checklist.
 
 ## Pre-merge verification checklist
 
-- [ ] `bb build` + `bb web:build` + `bb test` green
+- [x] `bb build` + `bb web:build` + `bb test` green (2026-06-11)
 - [ ] Standalone TUI: prompt → stream → tools → abort; `/model` lists
-      Claude models; `/commit`, `/compact`, sessions work
+      Claude models; `/commit`, `/truncate`, sessions work
 - [ ] `xi server` + `xi join` (TUI): room create/join/list, mirror state
-- [ ] Two web clients in the same room mirror state (the one unticked 7b
-      item)
+- [x] Two web clients in the same room mirror state (the one unticked 7b
+      item) — browser-verified 2026-06-11: second tab on the same chat URL
+      attaches to the existing room; `/help` output from one tab appears in
+      the other without interaction. Also confirms commands work in join
+      mode (`fe2ced4` ⚠️ item).
 - [ ] Pushover: server-mode notify fires, deep link present; standalone
       omits link; suppressed when a visible web client is attached; no
       dup notifications; not fired on abort; env reaches a tmux server
 - [ ] Permission gate / commit confirm raise dialogs in TUI **and** web
 - [x] Decide each "confirmed gap" → all four ported (see above)
-- [ ] Investigate deep-link reload race: rejoining a just-created room can
-      yield a room with empty resumed history (see observation above)
+- [x] Deep-link reload race — fixed + browser-verified 2026-06-11: the
+      client now always carries `:session-id` on `:room/join`, and the
+      room manager forwards it to `:room/setup` when the cached room-id
+      no longer exists. Verified by restarting the server (stale cached
+      room mapping) and reloading the chat URL: session resumes with full
+      history into a fresh room.
 
 ## Merge mechanics
 
