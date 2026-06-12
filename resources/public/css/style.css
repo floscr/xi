@@ -430,11 +430,16 @@ body {
 .compose-input-wrapper {
   flex: 1;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  gap: var(--size-2);
   background-color: var(--bg-1);
   border: var(--border-0);
   border-radius: var(--radius-md);
   padding: var(--size-1) var(--size-2);
+}
+
+.compose-input-wrapper .agent-status-spinner {
+  flex-shrink: 0;
 }
 
 .compose-input-wrapper:focus-within {

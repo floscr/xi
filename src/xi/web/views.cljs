@@ -378,7 +378,8 @@
                             (when-not busy?
                               (submit-compose! dispatch! room-id session-id
                                                images draft-key
-                                               (.. e -target -value))))))}}})]
+                                               (.. e -target -value))))))}}})
+       (when busy? (spinner))]
       (if busy?
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
@@ -486,9 +487,6 @@
                      " (" start " hidden)"))])
             (keep (partial entry->post dispatch!) (subvec entries start total))))
          [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
-     (when busy?
-       [:div {:class ["working-indicator"]}
-        (spinner) [:span "Working…"]])
      (dialog-overlay dispatch! room)
      (lightbox/lightbox {:src (:web/lightbox state)
                          :on-close (fn [] (dispatch! {:type :lightbox/close}))})
