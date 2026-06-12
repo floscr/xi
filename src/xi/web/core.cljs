@@ -167,12 +167,21 @@
           :gtd/context-menu      (fn [st {:keys [task x y]}]
                                     {:state (assoc st :web/gtd-context-menu {:task task :x x :y y})})
           :gtd/context-menu-close (fn [st _] {:state (dissoc st :web/gtd-context-menu)})
-          :gtd/web-task-action   (fn [st ev]
-                                    {:state (-> st
-                                                (dissoc :web/gtd-context-menu)
-                                                (assoc :web/gtd-loading? true))
-                                     :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
-          :gtd/web-task-action-error (fn [st _] {:state (assoc st :web/gtd-loading? false)})
+          :gtd/web-task-action   (fn [st {:keys [task-id action] :as ev}]
+                                    (let [tasks (:web/gtd-tasks st)
+                                          tasks' (case action
+                                                   ;; Both done and archive remove from visible list
+                                                   ("done" "archive")
+                                                   (vec (remove #(= (:id %) task-id) tasks))
+                                                   tasks)]
+                                      {:state (-> st
+                                                  (dissoc :web/gtd-context-menu)
+                                                  (assoc :web/gtd-tasks tasks'))
+                                       :effects [[:ws/send (dissoc ev :event/id :event/ts)]]}))
+          :gtd/web-task-action-error (fn [st _]
+                                       ;; Server failed — re-fetch authoritative list
+                                       {:state st
+                                        :effects [[:ws/send {:type :gtd/web-list}]]})
           :gtd/start-task        forward
           :gtd/clear-pending     (fn [st _] {:state (dissoc st :web/pending-gtd)})
           :models/web-list       forward
