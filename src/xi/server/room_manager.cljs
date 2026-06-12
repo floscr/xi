@@ -115,12 +115,17 @@
   {:effects [[:session/counts-reply {:client-id client-id
                                      :session-ids session-ids}]]})
 
+(defn- models-web-list
+  [_st {:keys [client-id]}]
+  {:effects [[:models/web-list-reply {:client-id client-id}]]})
+
 (def handlers
   {:room/join   room-join
    :room/attach room-attach
    :room/leave  room-leave
    :room/list   room-list
-   :session/counts session-counts})
+   :session/counts  session-counts
+   :models/web-list models-web-list})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
 

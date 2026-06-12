@@ -20,6 +20,7 @@
 
    Deferred to later phases: :visibility tracking, dictation."
   (:require [xi.ext.gtd :as gtd]
+            [xi.fx :as fx]
             [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
@@ -44,7 +45,7 @@
 (def ^:private roomless-types
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id)."
-  #{:client/update :session/counts :gtd/web-list :gtd/web-task-action})
+  #{:client/update :session/counts :gtd/web-list :gtd/web-task-action :models/web-list})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -191,6 +192,12 @@
       :gtd/web-list-reply
       (fn [_ {:keys [client-id]}]
         (gtd/web-list-reply-fx
+         (fn [event] (send! client-id (wire/encode event)))))
+
+      ;; Model list for web clients.
+      :models/web-list-reply
+      (fn [_ {:keys [client-id]}]
+        (fx/web-model-list-reply-fx
          (fn [event] (send! client-id (wire/encode event)))))
 
       ;; GTD web task action: archive/done a task, then refresh list.

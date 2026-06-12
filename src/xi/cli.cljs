@@ -116,7 +116,7 @@
    :extra-tool-registry    (:tool-registry composed)
    :ask!                   ask!})
 
-(def ^:private DEFAULT_MODEL "claude-opus-4-6")
+(def ^:private DEFAULT_MODEL "claude-opus-4-8")
 
 (def ^:private THINKING_TO_EFFORT
   "Map Pi thinking levels → Claude SDK effort levels."

@@ -423,6 +423,19 @@
   (when (false? (:web/connected? state))
     [:span {:class ["offline-label"]} "Offline"]))
 
+(defn- model-selector [dispatch! room-id models current-model]
+  [:div {:class ["model-selector-backdrop"]
+         :on {:click (fn [_] (dispatch! {:type :models/close}))}}
+   [:div {:class ["model-selector"]}
+    (for [m models]
+      [:button {:class ["model-selector-item"
+                        (when (= m current-model) "model-selector-item--active")]
+                :replicant/key m
+                :on {:click (fn [e]
+                              (.stopPropagation e)
+                              (dispatch! {:type :models/select :model m :room-id room-id}))}}
+       m])]])
+
 (defn- chat-view [state dispatch!]
   (let [room    (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -431,7 +444,8 @@
         busy?   (get-in room [:agent :busy?])
         model   (or (get-in room [:agent :model]) (:model cached))
         ready?  (or room (seq history))
-        draft-key (or (get-in room [:session :id]) sid :new)]
+        draft-key (or (get-in room [:session :id]) sid :new)
+        model-list (:web/model-list state)]
     [:div {:class ["container"] :replicant/key "chat"}
      [:div {:class ["topbar"]}
       [:button {:class ["icon-btn" "icon-btn--sm"]
@@ -439,7 +453,12 @@
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]}
        "Xi"
-       (when model [:span {:class ["topbar-subtitle"]} (str " · " model)])]
+       (when model
+         [:span {:class ["topbar-subtitle" "topbar-subtitle--clickable"]
+                 :on {:click (fn [_] (dispatch! {:type :models/web-list}))}}
+          (str " · " model)])]
+      (when model-list
+        (model-selector dispatch! (:id room) model-list model))
       (theme-toggle/theme-toggle
        {:mode (or (:web/theme-mode state) "auto")
         :size :sm

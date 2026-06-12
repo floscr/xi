@@ -86,6 +86,27 @@
            :args (if (= scope :all) (str "all:" (inc i)) (str (inc i)))}})
 
 
+(def ^:private claude-model-ids
+  ["claude-opus-4-8" "claude-fable-5" "claude-opus-4-6"
+   "claude-sonnet-4-6" "claude-haiku-4-5-20251001"])
+
+(defn- fetch-all-model-ids
+  "Fetch Ollama model names, combine with Claude IDs, call cb.
+   Falls back to Claude-only on error."
+  [cb]
+  (-> (js/fetch "http://localhost:11434/api/tags")
+      (.then (fn [res] (.json res)))
+      (.then (fn [^js data]
+               (let [models (js->clj (.-models data) :keywordize-keys true)]
+                 (cb (into claude-model-ids (mapv :name models))))))
+      (.catch (fn [_err] (cb claude-model-ids)))))
+
+(defn web-model-list-reply-fx
+  "Build the full model list and send it to the requesting client."
+  [send-fn]
+  (fetch-all-model-ids
+   (fn [models] (send-fn {:type :models/web-list-result :models models}))))
+
 (defn create-fx [ring]
   {:session/new
    (fn [{:keys [dispatch! state]} {:keys [room-id save-current? after-prompt]}]
@@ -200,27 +221,13 @@
 
    :models/fetch
    (fn [{:keys [dispatch!]} {:keys [room-id]}]
-     (let [->item (fn [label description value]
-                    {:label label
-                     :description description
-                     :event {:type :command/run :room-id room-id
-                             :name "model" :args value}})
-           claude-items [(->item "claude-fable-5"    "Most capable model" "claude-fable-5")
-                         (->item "claude-opus-4-8"   "Latest Opus"        "claude-opus-4-8")
-                         (->item "claude-opus-4-6"   "Opus 4.6"           "claude-opus-4-6")
-                         (->item "claude-sonnet-4-6" "Fast + intelligent" "claude-sonnet-4-6")
-                         (->item "claude-haiku-4-5"  "Fastest"            "claude-haiku-4-5-20251001")]
-           open! (fn [items]
-                   (dispatch! {:type :ui/menu-open :room-id room-id
-                               :menu {:id :model :prompt "model> " :items items}}))]
-       (-> (js/fetch "http://localhost:11434/api/tags")
-           (.then (fn [res] (.json res)))
-           (.then (fn [^js data]
-                    (let [models (js->clj (.-models data) :keywordize-keys true)
-                          ollama-items (mapv (fn [m]
-                                               (->item (:name m)
-                                                       (get-in m [:details :parameter_size])
-                                                       (:name m)))
-                                             models)]
-                      (open! (into claude-items ollama-items)))))
-           (.catch (fn [_err] (open! claude-items))))))})
+     (fetch-all-model-ids
+      (fn [ids]
+        (let [items (mapv (fn [id]
+                            {:label id
+                             :event {:type :command/run :room-id room-id
+                                     :name "model" :args id}})
+                          ids)]
+          (dispatch! {:type :ui/menu-open :room-id room-id
+                      :menu {:id :model :prompt "model> " :items items}})))))})
+

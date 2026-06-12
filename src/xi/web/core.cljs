@@ -174,7 +174,16 @@
                                      :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
           :gtd/web-task-action-error (fn [st _] {:state (assoc st :web/gtd-loading? false)})
           :gtd/start-task        forward
-          :gtd/clear-pending     (fn [st _] {:state (dissoc st :web/pending-gtd)})}))
+          :gtd/clear-pending     (fn [st _] {:state (dissoc st :web/pending-gtd)})
+          :models/web-list       forward
+          :models/web-list-result (fn [st {:keys [models]}]
+                                    {:state (assoc st :web/model-list models)})
+          :models/select         (fn [st {:keys [model room-id]}]
+                                    {:state (dissoc st :web/model-list)
+                                     :effects [[:ws/send {:type :input/submit
+                                                          :room-id room-id
+                                                          :text (str "/model " model)}]]})
+          :models/close          (fn [st _] {:state (dissoc st :web/model-list)})}))
 
 (defn- web-effects []
   {:history/push router/history-effect
