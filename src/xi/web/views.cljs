@@ -490,21 +490,26 @@
               (< m 1440) (str (js/Math.floor (/ m 60)) "h ago")
               :else      (str (js/Math.floor (/ m 1440)) "d ago"))))))
 
-(defn- session-card [dispatch! {:keys [session-id name timestamp active? busy? unread?]}]
-  [:div {:class ["project-card" (when active? "project-card--active")]
+(defn- session-card [dispatch! {:keys [session-id name timestamp active? busy? has-dialog? unread?]}]
+  [:div {:class ["project-card" (when active? "project-card--active")
+                 (when has-dialog? "project-card--dialog")]
          :replicant/key (or session-id (str "card-" name))
          :on {:click (fn [_] (dispatch! {:type :route/navigate
                                          :page :chat :session-id session-id}))}}
    [:div {:class ["project-card-icon"]}
     (cond
-      busy?   (spinner)
-      active? [:div {:class ["active-dot"]}]
-      :else   (icon/icon {:icon-name :message-circle :size :sm}))]
+      has-dialog? (icon/icon {:icon-name :alert-circle :size :sm})
+      busy?       (spinner)
+      active?     [:div {:class ["active-dot"]}]
+      :else       (icon/icon {:icon-name :message-circle :size :sm}))]
    [:div {:class ["project-card-info"]}
     [:span {:class ["project-card-name"]} (or name "New session")]
     [:span {:class ["project-card-path"]}
      (str (or (format-relative-time timestamp) "")
-          (cond busy? " · working…" active? " · active" :else ""))]]
+          (cond has-dialog? " · needs response"
+                busy? " · working…"
+                active? " · active"
+                :else ""))]]
    (when unread? [:div {:class ["unread-dot"]}])])
 
 (defn- home-view [state dispatch!]
@@ -548,7 +553,8 @@
          (for [r orphans]
            (session-card dispatch! {:session-id (:session-id r)
                                     :name (or (:session-name r) "New session")
-                                    :active? true :busy? (:busy? r)}))
+                                    :active? true :busy? (:busy? r)
+                                    :has-dialog? (:has-dialog? r)}))
          (for [s sessions]
            (let [sid (:session-id s)
                  room (get room-by-sid sid)]
@@ -558,7 +564,9 @@
                             :timestamp (or (:last-accessed s) (:timestamp s))
                             :active? (boolean room)
                             :busy? (boolean (:busy? room))
+                            :has-dialog? (boolean (:has-dialog? room))
                             :unread? (unread? sid)})))]
+
         [:div {:class ["empty-state"]}
          (spinner)
          [:p "Connecting to server…"]])]]))

@@ -658,6 +658,11 @@ body {
   border-left: 3px solid var(--accent);
 }
 
+.project-card--dialog {
+  border-left: 3px solid var(--warning);
+}
+.project-card--dialog .project-card-icon { color: var(--warning); }
+
 .project-card-icon { flex-shrink: 0; color: var(--fg-1); }
 
 .active-dot {

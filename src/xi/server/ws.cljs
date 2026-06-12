@@ -34,7 +34,8 @@
 (def ^:private lobby-relevant
   "Events after which lobby (roomless) clients get a fresh :lobby/state."
   #{:room/create :room/close :room/attach :room/leave
-    :prompt/submit :agent/turn-end :client/disconnect})
+    :prompt/submit :agent/turn-end :client/disconnect
+    :ui/dialog-open :ui/dialog-response})
 
 (def ^:private pre-join-types
   "Event types a client may send before joining a room."

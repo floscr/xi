@@ -173,15 +173,16 @@
 ;; resolvers are runtime resources living in this closure — in client mode
 ;; the response is forwarded and resolved server-side.
 
-(defn- clients-in-room [st room-id]
-  (filter (fn [[_ client]] (= room-id (:room-id client)))
-          (get-in st [:connection :clients])))
+(defn- any-clients? [st]
+  (seq (get-in st [:connection :clients])))
 
 (defn create-dialogs
   "Returns {:handlers {…} :fx {…} :ask! (fn [fx-ctx {:keys [room-id dialog]}])}.
    ask! resolves to the selected value (boolean for :confirm). In server
-   mode with no clients attached to the room it resolves to a safe default
-   immediately (false/nil) instead of blocking forever."
+   mode with no clients connected at all (truly headless) it resolves to a
+   safe default immediately (false/nil). Otherwise the dialog stays open
+   in the room until a user responds — even if no client is currently
+   viewing that room."
   []
   (let [pending (js/Map.)
         counter #js {:n 0}
@@ -190,7 +191,7 @@
     {:ask!
      (fn [{:keys [dispatch! state]} {:keys [room-id dialog]}]
        (if (and (= :server (get-in state [:connection :mode]))
-                (empty? (clients-in-room state room-id)))
+                (not (any-clients? state)))
          (js/Promise.resolve (safe-default dialog))
          (js/Promise.
           (fn [resolve _reject]
