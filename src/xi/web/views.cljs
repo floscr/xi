@@ -591,19 +591,36 @@
           (when cwd (str " \u00B7 " (shorten-path cwd)))
           (when (and (string? tags) (seq tags)) (str " \u00B7 " tags)))]]])
 
+(defn- gtd-file-card [dispatch! file-name task-count]
+  [:div {:class ["project-card"]
+         :replicant/key (str "gtd-file-" file-name)
+         :on {:click (fn [_] (dispatch! {:type :gtd/select-file :file file-name}))}}
+   [:div {:class ["project-card-icon"]}
+    (icon/icon {:icon-name :folder :size :sm})]
+   [:div {:class ["project-card-info"]}
+    [:span {:class ["project-card-name"]} (or file-name "Uncategorized")]
+    [:span {:class ["project-card-path"]} (str task-count " tasks")]]])
+
 (defn- gtd-view [state dispatch!]
-  (let [tasks    (:web/gtd-tasks state)
-        loading? (:web/gtd-loading? state)
-        grouped  (when tasks
-                   (->> tasks
-                        (group-by :file)
-                        (sort-by key)))]
+  (let [tasks        (:web/gtd-tasks state)
+        loading?     (:web/gtd-loading? state)
+        selected-file (:web/gtd-file state)
+        grouped      (when tasks
+                       (->> tasks
+                            (group-by :file)
+                            (sort-by key)))]
     [:div {:class ["container"] :replicant/key "gtd"}
      [:div {:class ["topbar"]}
       [:button {:class ["icon-btn"]
-                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
+                :on {:click (fn [_]
+                              (if selected-file
+                                (dispatch! {:type :gtd/back-to-files})
+                                (dispatch! {:type :route/navigate :page :home})))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
-      [:div {:class ["topbar-title"]} "Tasks"]
+      [:div {:class ["topbar-title"]}
+       (if selected-file
+         selected-file
+         "Tasks")]
       [:button {:class ["icon-btn"]
                 :on {:click (fn [_] (dispatch! {:type :gtd/web-list}))}}
        (icon/icon {:icon-name :refresh :size :md})]]
@@ -615,14 +632,17 @@
         (empty? tasks)
         [:div {:class ["empty-state"]} [:p "No open tasks."]]
 
+        selected-file
+        (let [file-tasks (get (into {} grouped) selected-file)]
+          [:div {:class ["project-list"]}
+           (for [t file-tasks]
+             (gtd-task-card dispatch! t))])
+
         :else
         [:div {:class ["project-list"]}
          (for [[file-name file-tasks] grouped]
-           (list
-            [:div {:class ["section-title"] :replicant/key (str "sec-" file-name)}
-             (or file-name "Uncategorized")]
-            (for [t file-tasks]
-              (gtd-task-card dispatch! t))))])]]))
+           (gtd-file-card dispatch! file-name (count file-tasks)))])]]))
+
 
 ;; ── Root ─────────────────────────────────────────────────────────────────────
 

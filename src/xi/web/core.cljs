@@ -162,6 +162,8 @@
                                      :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
           :gtd/web-list-result   gtd-web-list-result
           :gtd/web-start-task    gtd-web-start-task
+          :gtd/select-file       (fn [st {:keys [file]}] {:state (assoc st :web/gtd-file file)})
+          :gtd/back-to-files     (fn [st _] {:state (dissoc st :web/gtd-file)})
           :gtd/start-task        forward
           :gtd/clear-pending     (fn [st _] {:state (dissoc st :web/pending-gtd)})}))
 

@@ -71,10 +71,12 @@
 
                   (= page :gtd)
                   (conj [:app/dispatch {:type :gtd/web-list}]))]
-    {:state   (assoc st :web/route route
-                     ;; reset the virtualized timeline window on every
-                     ;; navigation so a new session starts compact
-                     :web/timeline-window nil)
+    {:state   (cond-> (assoc st :web/route route
+                            ;; reset the virtualized timeline window on every
+                            ;; navigation so a new session starts compact
+                            :web/timeline-window nil)
+                ;; Reset file drill-down when entering GTD
+                (= page :gtd) (dissoc :web/gtd-file))
      :effects effects}))
 
 (def handlers
