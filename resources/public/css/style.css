@@ -236,17 +236,58 @@ body {
 .error-text { color: var(--danger); }
 .status-text { color: var(--fg-2); font-style: italic; }
 
-/* ---- Syntax highlighting (Nord-inspired) ---- */
-.hl-comment  { color: rgb(106, 115, 141); font-style: italic; }
-.hl-string   { color: rgb(163, 190, 140); }
-.hl-symbol   { color: rgb(180, 142, 173); }
-.hl-number   { color: rgb(180, 142, 173); }
-.hl-keyword  { color: rgb(129, 161, 193); }
-.hl-builtin  { color: rgb(136, 192, 208); }
-.hl-fn       { color: rgb(136, 192, 208); }
-.hl-var      { color: rgb(216, 222, 233); }
-.hl-operator { color: rgb(129, 161, 193); }
-.hl-punct    { color: rgb(216, 222, 233); }
+/* ---- Syntax highlighting ---- */
+:root {
+  --hl-comment:  #6a737d;
+  --hl-string:   #22863a;
+  --hl-symbol:   #6f42c1;
+  --hl-number:   #6f42c1;
+  --hl-keyword:  #d73a49;
+  --hl-builtin:  #005cc5;
+  --hl-fn:       #005cc5;
+  --hl-var:      #24292e;
+  --hl-operator: #d73a49;
+  --hl-punct:    #586069;
+}
+
+[data-theme="dark"] {
+  --hl-comment:  rgb(106, 115, 141);
+  --hl-string:   rgb(163, 190, 140);
+  --hl-symbol:   rgb(180, 142, 173);
+  --hl-number:   rgb(180, 142, 173);
+  --hl-keyword:  rgb(129, 161, 193);
+  --hl-builtin:  rgb(136, 192, 208);
+  --hl-fn:       rgb(136, 192, 208);
+  --hl-var:      rgb(216, 222, 233);
+  --hl-operator: rgb(129, 161, 193);
+  --hl-punct:    rgb(216, 222, 233);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --hl-comment:  rgb(106, 115, 141);
+    --hl-string:   rgb(163, 190, 140);
+    --hl-symbol:   rgb(180, 142, 173);
+    --hl-number:   rgb(180, 142, 173);
+    --hl-keyword:  rgb(129, 161, 193);
+    --hl-builtin:  rgb(136, 192, 208);
+    --hl-fn:       rgb(136, 192, 208);
+    --hl-var:      rgb(216, 222, 233);
+    --hl-operator: rgb(129, 161, 193);
+    --hl-punct:    rgb(216, 222, 233);
+  }
+}
+
+.hl-comment  { color: var(--hl-comment); font-style: italic; }
+.hl-string   { color: var(--hl-string); }
+.hl-symbol   { color: var(--hl-symbol); }
+.hl-number   { color: var(--hl-number); }
+.hl-keyword  { color: var(--hl-keyword); }
+.hl-builtin  { color: var(--hl-builtin); }
+.hl-fn       { color: var(--hl-fn); }
+.hl-var      { color: var(--hl-var); }
+.hl-operator { color: var(--hl-operator); }
+.hl-punct    { color: var(--hl-punct); }
 
 /* ---- Slash command dropdown ---- */
 .slash-dropdown {
