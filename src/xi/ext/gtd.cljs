@@ -9,7 +9,8 @@
    reads its org body, and submits it as a prompt.
 
    `/gtd recommend` and `/gtd cleanup` are pure prompt builders."
-  (:require [clojure.string :as str]
+  (:require [cljs.reader :as reader]
+            [clojure.string :as str]
             [xi.core.state :as state]))
 
 (def ^:private org-cli-dir
@@ -105,16 +106,11 @@
 ;; ── Task parsing ──────────────────────────────────────────────────────────────
 
 (defn- parse-edn-tasks
-  "Parse the agenda EDN (a vector of maps) into task maps. Uses a tolerant
-   regex extraction rather than the EDN reader, since the output may carry
-   reader tags the cljs reader can't handle."
+  "Parse the agenda EDN (a vector of maps) into task maps."
   [edn-str]
   (try
-    (->> (re-seq #"\{[^}]+\}" edn-str)
-         (mapv (fn [item-str]
-                 (into {}
-                       (map (fn [[_ k v1 v2]] [(keyword k) (or v1 v2)]))
-                       (re-seq #":(\S+)\s+(?:\"([^\"]*)\"|(\S+))" item-str)))))
+    (let [data (reader/read-string edn-str)]
+      (if (vector? data) data []))
     (catch :default _ [])))
 
 (defn- activate-task!
@@ -306,10 +302,9 @@
                              (remove #(#{"DONE" "CANCELLED"} (:todo-state %))))
                  enriched (mapv (fn [t]
                                   (let [f (:file t)
-                                        tags-raw (:tags t)
-                                        tags (when (and tags-raw (not= "[]" tags-raw))
-                                               (str/replace tags-raw #"[\[\]\"\s,]" ""))]
-                                    (cond-> (-> (select-keys t [:id :title :todo-state :file])
+                                        tags (when (seq (:tags t))
+                                               (str/join " " (:tags t)))]
+                                    (cond-> (-> (select-keys t [:id :title :todo-state :file :html-body])
                                                 (assoc :tags tags))
                                       (get cwd-map f)
                                       (assoc :cwd (get cwd-map f)))))

@@ -652,9 +652,8 @@
          :replicant/key (str "gtd-" id)
          :on {:click (fn [_]
                        (when-not (= :fired @long-press-state)
-                         (dispatch! {:type :gtd/web-start-task
-                                     :task-id id :title title
-                                     :cwd cwd})))
+                         (dispatch! {:type :gtd/select-task
+                                     :file file :task-id id})))
               :contextmenu (fn [e]
                              (.preventDefault e)
                              (dispatch! {:type :gtd/context-menu
@@ -686,52 +685,107 @@
     [:span {:class ["project-card-name"]} (or file-name "Uncategorized")]
     [:span {:class ["project-card-path"]} (str task-count " tasks")]]])
 
+(defn- render-org-body
+  "Render pre-built HTML body from the server."
+  [html-str]
+  (when (and (string? html-str) (seq html-str))
+    [:div {:class ["org-body"] :innerHTML html-str}]))
+
+(defn- gtd-task-detail [dispatch! task]
+  (let [{:keys [title todo-state html-body file cwd tags]} task]
+    [:div {:class ["container"] :replicant/key "gtd-detail"}
+     [:div {:class ["topbar"]}
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_]
+                              (dispatch! {:type :gtd/back-to-tasks :file file}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} "Task"]]
+     [:div {:class ["gtd-detail-scroll"]}
+      [:div {:class ["gtd-detail"]}
+       [:h2 {:class ["gtd-detail-title"]} title]
+       [:div {:class ["gtd-detail-meta"]}
+        (when todo-state
+          [:span {:class ["gtd-detail-badge"
+                          (case todo-state
+                            "ACTIVE" "gtd-detail-badge--active"
+                            "WAITING" "gtd-detail-badge--waiting"
+                            "gtd-detail-badge--default")]}
+           todo-state])
+        (when file [:span {:class ["gtd-detail-file"]} file])
+        (when (and (string? tags) (seq tags))
+          (for [tag (.split tags " ")]
+            [:span {:class ["gtd-detail-tag"]} tag]))]
+       (when html-body
+         (render-org-body html-body))
+       (when cwd
+         [:div {:class ["gtd-detail-actions"]}
+          [:button {:class ["btn" "btn-primary"]
+                    :on {:click (fn [_]
+                                  (dispatch! {:type :gtd/web-start-task
+                                              :task-id (:id task)
+                                              :title title
+                                              :cwd cwd}))}}
+           (icon/icon {:icon-name :play :size :sm})
+           [:span "Launch Agent"]]])]]]))
+
+
 (defn- gtd-view [state dispatch!]
   (let [tasks        (:web/gtd-tasks state)
         loading?     (:web/gtd-loading? state)
         selected-file (:web/gtd-file state)
+        task-id      (:web/gtd-task-id state)
         ctx-menu     (:web/gtd-context-menu state)
+        ;; Look up selected task by id
+        selected-task (when task-id
+                        (some #(when (= (:id %) task-id) %) tasks))
         grouped      (when tasks
                        (->> tasks
                             (group-by :file)
                             (sort-by key)))]
-    [:div {:class ["container"] :replicant/key "gtd"}
-     [:div {:class ["topbar"]}
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_]
-                              (if selected-file
-                                (dispatch! {:type :gtd/back-to-files})
-                                (dispatch! {:type :route/navigate :page :home})))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
-      [:div {:class ["topbar-title"]}
-       (if selected-file
-         selected-file
-         "Tasks")]
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_] (dispatch! {:type :gtd/web-list}))}}
-       (icon/icon {:icon-name :refresh :size :md})]]
-     [:div {:class ["home"]}
-      (cond
-        loading?
-        [:div {:class ["empty-state"]} (spinner) [:p "Loading tasks..."]]
+    (cond
+      ;; Task detail view
+      selected-task
+      (gtd-task-detail dispatch! selected-task)
 
-        (empty? tasks)
-        [:div {:class ["empty-state"]} [:p "No open tasks."]]
+      ;; Task list / file list
+      :else
+      [:div {:class ["container"] :replicant/key "gtd"}
+       [:div {:class ["topbar"]}
+        [:button {:class ["icon-btn"]
+                  :on {:click (fn [_]
+                                (if selected-file
+                                  (dispatch! {:type :gtd/back-to-files})
+                                  (dispatch! {:type :route/navigate :page :home})))}}
+         (icon/icon {:icon-name :arrow-left :size :md})]
+        [:div {:class ["topbar-title"]}
+         (if selected-file
+           selected-file
+           "Tasks")]
+        [:button {:class ["icon-btn"]
+                  :on {:click (fn [_] (dispatch! {:type :gtd/web-list}))}}
+         (icon/icon {:icon-name :refresh :size :md})]]
+       [:div {:class ["home"]}
+        (cond
+          loading?
+          [:div {:class ["empty-state"]} (spinner) [:p "Loading tasks..."]]
 
-        selected-file
-        (let [file-tasks (get (into {} grouped) selected-file)]
-          (if (seq file-tasks)
-            [:div {:class ["project-list"]}
-             (for [t file-tasks]
-               (gtd-task-card dispatch! t))]
-            [:div {:class ["empty-state"]} [:p (str "No tasks in " selected-file)]]))
+          (empty? tasks)
+          [:div {:class ["empty-state"]} [:p "No open tasks."]]
 
-        :else
-        [:div {:class ["project-list"]}
-         (for [[file-name file-tasks] grouped]
-           (gtd-file-card dispatch! file-name (count file-tasks)))])]
-     (when ctx-menu
-       (gtd-context-menu dispatch! ctx-menu))]))
+          selected-file
+          (let [file-tasks (get (into {} grouped) selected-file)]
+            (if (seq file-tasks)
+              [:div {:class ["project-list"]}
+               (for [t file-tasks]
+                 (gtd-task-card dispatch! t))]
+              [:div {:class ["empty-state"]} [:p (str "No tasks in " selected-file)]]))
+
+          :else
+          [:div {:class ["project-list"]}
+           (for [[file-name file-tasks] grouped]
+             (gtd-file-card dispatch! file-name (count file-tasks)))])]
+       (when ctx-menu
+         (gtd-context-menu dispatch! ctx-menu))])))
 
 
 ;; ── Root ─────────────────────────────────────────────────────────────────────

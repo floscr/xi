@@ -22,17 +22,27 @@
   (let [segments (filterv seq (str/split (or path "/") #"/"))]
     (case (first segments)
       "chat" {:page :chat :session-id (second segments)}
-      "gtd"  (cond-> {:page :gtd}
-               (second segments)
-               (assoc :file (js/decodeURIComponent (str/join "/" (rest segments)))))
+      "gtd"  (let [rest-segs (rest segments)
+                   ;; Last segment that looks like a UUID is a task-id
+                   last-seg  (last rest-segs)
+                   task-id?  (and last-seg (re-find #"^[0-9a-f]{8}-" last-seg))
+                   task-id   (when task-id? last-seg)
+                   file-segs (if task-id? (butlast rest-segs) rest-segs)
+                   file      (when (seq file-segs)
+                               (js/decodeURIComponent (str/join "/" file-segs)))]
+               (cond-> {:page :gtd}
+                 file    (assoc :file file)
+                 task-id (assoc :task-id task-id)))
       {:page :home})))
 
 (defn route->path
   "Route map → URL path."
-  [{:keys [page session-id file]}]
+  [{:keys [page session-id file task-id]}]
   (case page
     :chat (if session-id (str "/chat/" session-id) "/chat")
-    :gtd  (if file (str "/gtd/" (js/encodeURIComponent file)) "/gtd")
+    :gtd  (cond-> "/gtd"
+             file    (str "/" (js/encodeURIComponent file))
+             task-id (str "/" task-id))
     "/"))
 
 ;; ── Navigation (pure handler) ────────────────────────────────────────────────
@@ -49,9 +59,10 @@
      :page       :home | :chat
      :session-id (chat only)
      :replace?   true for popstate / initial load (no new history entry)"
-  [st {:keys [page session-id file replace?]}]
+  [st {:keys [page session-id file task-id replace?]}]
   (let [route      (cond-> {:page page :session-id session-id}
-                     file (assoc :file file))
+                     file    (assoc :file file)
+                     task-id (assoc :task-id task-id))
         active-sid (get-in (state/active-room st) [:session :id])
         ;; Already viewing this session (e.g. the post-join URL fix) → don't
         ;; re-join or re-mark.
@@ -79,8 +90,9 @@
                             ;; reset the virtualized timeline window on every
                             ;; navigation so a new session starts compact
                             :web/timeline-window nil)
-                ;; Sync file drill-down from the route
-                (= page :gtd) (assoc :web/gtd-file file))
+                ;; Sync file/task drill-down from the route
+                (= page :gtd) (-> (assoc :web/gtd-file file)
+                                  (assoc :web/gtd-task-id task-id)))
      :effects effects}))
 
 (def handlers

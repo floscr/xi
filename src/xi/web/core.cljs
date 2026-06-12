@@ -166,6 +166,10 @@
                                     {:effects [[:app/dispatch {:type :route/navigate :page :gtd :file file}]]})
           :gtd/back-to-files     (fn [_st _]
                                     {:effects [[:app/dispatch {:type :route/navigate :page :gtd}]]})
+          :gtd/select-task       (fn [_st {:keys [file task-id]}]
+                                    {:effects [[:app/dispatch {:type :route/navigate :page :gtd :file file :task-id task-id}]]})
+          :gtd/back-to-tasks     (fn [_st {:keys [file]}]
+                                    {:effects [[:app/dispatch {:type :route/navigate :page :gtd :file file}]]})
           :gtd/context-menu      (fn [st {:keys [task x y]}]
                                     {:state (assoc st :web/gtd-context-menu {:task task :x x :y y})})
           :gtd/context-menu-close (fn [st _] {:state (dissoc st :web/gtd-context-menu)})
