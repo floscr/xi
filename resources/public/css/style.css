@@ -351,11 +351,9 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--bg-1);
-  border: var(--border-0);
-  border-radius: var(--radius-md);
+  border-top: var(--border-0);
   max-height: 14rem;
   overflow-y: auto;
-  margin-bottom: var(--size-1);
 }
 
 .slash-item {
@@ -399,18 +397,18 @@ body {
 /* ---- Compose box ---- */
 .compose-box {
   flex-shrink: 0;
-  border-top: var(--border-0);
-  padding: var(--size-2) var(--size-4);
-  padding-bottom: max(var(--size-2), env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  gap: var(--size-2);
 }
 
 .compose-input-row {
   display: flex;
   gap: var(--size-2);
-  align-items: flex-end;
+  align-items: center;
+  border-top: var(--border-0);
+  border-bottom: var(--border-0);
+  padding: var(--size-2) var(--size-3);
+  padding-bottom: max(var(--size-2), env(safe-area-inset-bottom));
 }
 
 .compose-box .form-textarea-auto {
@@ -432,18 +430,11 @@ body {
   display: flex;
   align-items: center;
   gap: var(--size-2);
-  background-color: var(--bg-1);
-  border: var(--border-0);
-  border-radius: var(--radius-md);
-  padding: var(--size-1) var(--size-2);
+  min-width: 0;
 }
 
 .compose-input-wrapper .agent-status-spinner {
   flex-shrink: 0;
-}
-
-.compose-input-wrapper:focus-within {
-  border-color: var(--accent);
 }
 
 .compose-attach-btn {
@@ -455,7 +446,8 @@ body {
   display: flex;
   gap: var(--size-2);
   overflow-x: auto;
-  padding: var(--size-1) 0;
+  padding: var(--size-2) var(--size-3);
+  border-top: var(--border-0);
 }
 
 .compose-image-thumb {
