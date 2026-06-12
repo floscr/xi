@@ -16,6 +16,20 @@ bb tasks       # list all available tasks
 
 Do NOT use `npx shadow-cljs compile ...` — it frequently times out in agent shells. The `bb` tasks handle everything correctly.
 
+### Dev Server (shadow-cljs watch) is Usually Already Running
+
+The user typically has a **shadow-cljs watch** process running via `bb dev` or `bb serve` (tmux sessions). This watch process **auto-compiles both the `main` and `web` targets on every file save** — you do NOT need to run `bb build` or `bb web:build` manually.
+
+**Before compiling, always check if shadow-cljs is already running:**
+
+```bash
+pgrep -f 'shadow-cljs' && echo 'shadow-cljs watch is running — skip bb build/web:build' || echo 'not running'
+```
+
+- If shadow-cljs watch IS running: **do not run `bb build` or `bb web:build`**. Your code changes are compiled automatically within seconds of saving.
+- If shadow-cljs watch is NOT running: use `bb build` / `bb web:build` as needed.
+- Running `bb build` while watch is active is harmless but wasteful; running `bb web:build` may conflict with the watch process.
+
 ### SDK Version Constraint
 
 The `@anthropic-ai/claude-agent-sdk` must be pinned to **`0.2.110`** — the same version used by the Pi claude-bridge extension. Newer SDK versions (e.g. 0.2.140) produce exit code 127 at runtime because of incompatible Claude CLI resolution. Do not upgrade the SDK without first verifying it works with the installed Claude CLI and bridge.
@@ -29,7 +43,20 @@ The `@anthropic-ai/claude-agent-sdk` must be pinned to **`0.2.110`** — the sam
 ## Testing
 
 - **Do NOT run `xi` / `bun target/main.js` from the agent.** It's a TUI app that requires an interactive terminal and will not work inside the agent shell. Only compile; the user tests manually.
-- The **web client** CAN be agent-tested: run `bun target/main.js server --headless &` and drive a browser via the chrome-devtools tools at `http://localhost:7474`.
+- The **web client** CAN be agent-tested via the chrome-devtools tools at `http://localhost:7474`.
+
+### IMPORTANT: Check for Running Server Before Starting One
+
+The user usually has a headless server already running on port 7474 (via `bb serve` tmux session). **Always check before starting a new server:**
+
+```bash
+lsof -ti:7474 && echo 'Server already running on 7474 — just use it' || echo 'Port free'
+```
+
+- If port 7474 IS in use: **do not start a new server.** Navigate directly to `http://localhost:7474` and test.
+- If port 7474 is NOT in use: start the server with `bun target/main.js server --headless &`.
+- If you need the server to pick up new code and shadow-cljs watch is running, the code is already hot-reloaded — just refresh the browser page. You do NOT need to restart the server for code changes when watch is active.
+- **Never kill an existing server process** to restart it. If you believe a restart is needed, ask the user to do it.
 
 ### Unit Tests
 
