@@ -720,9 +720,11 @@
 
         selected-file
         (let [file-tasks (get (into {} grouped) selected-file)]
-          [:div {:class ["project-list"]}
-           (for [t file-tasks]
-             (gtd-task-card dispatch! t))])
+          (if (seq file-tasks)
+            [:div {:class ["project-list"]}
+             (for [t file-tasks]
+               (gtd-task-card dispatch! t))]
+            [:div {:class ["empty-state"]} [:p (str "No tasks in " selected-file)]]))
 
         :else
         [:div {:class ["project-list"]}

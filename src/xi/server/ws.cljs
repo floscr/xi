@@ -97,6 +97,8 @@
         full (.normalize path (.join path public-dir rel))
         index (.join path public-dir "index.html")
         has-ext? (re-find #"\.[a-zA-Z0-9]+$" rel)
+        ;; SPA route prefixes — always fall back to index.html
+        spa-route? (re-find #"^(chat|gtd)(/|$)" rel)
         serve (fn [file status]
                 (js/Response. (js/Bun.file file) #js {:status status}))]
     (if-not (.startsWith full public-dir)
@@ -104,9 +106,10 @@
       (-> (.exists (js/Bun.file full))
           (.then (fn [exists?]
                    (cond
-                     exists?  (serve full 200)
-                     has-ext? (js/Response. "Not found" #js {:status 404})
-                     :else    (serve index 200))))))))
+                     exists?              (serve full 200)
+                     (or spa-route?
+                         (not has-ext?))  (serve index 200)
+                     :else               (js/Response. "Not found" #js {:status 404}))))))))
 
 (defn create-server
   "Build the WS server's effect handlers and starter. Sockets and effects

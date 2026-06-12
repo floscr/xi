@@ -22,15 +22,17 @@
   (let [segments (filterv seq (str/split (or path "/") #"/"))]
     (case (first segments)
       "chat" {:page :chat :session-id (second segments)}
-      "gtd"  {:page :gtd}
+      "gtd"  (cond-> {:page :gtd}
+               (second segments)
+               (assoc :file (js/decodeURIComponent (str/join "/" (rest segments)))))
       {:page :home})))
 
 (defn route->path
   "Route map → URL path."
-  [{:keys [page session-id]}]
+  [{:keys [page session-id file]}]
   (case page
     :chat (if session-id (str "/chat/" session-id) "/chat")
-    :gtd  "/gtd"
+    :gtd  (if file (str "/gtd/" (js/encodeURIComponent file)) "/gtd")
     "/"))
 
 ;; ── Navigation (pure handler) ────────────────────────────────────────────────
@@ -47,8 +49,9 @@
      :page       :home | :chat
      :session-id (chat only)
      :replace?   true for popstate / initial load (no new history entry)"
-  [st {:keys [page session-id replace?]}]
-  (let [route      {:page page :session-id session-id}
+  [st {:keys [page session-id file replace?]}]
+  (let [route      (cond-> {:page page :session-id session-id}
+                     file (assoc :file file))
         active-sid (get-in (state/active-room st) [:session :id])
         ;; Already viewing this session (e.g. the post-join URL fix) → don't
         ;; re-join or re-mark.
@@ -69,14 +72,15 @@
                   (#{:home :gtd} page)
                   (conj [:app/dispatch {:type :room/leave}])
 
-                  (= page :gtd)
+                  ;; Fetch task list when entering GTD without cached data
+                  (and (= page :gtd) (empty? (:web/gtd-tasks st)))
                   (conj [:app/dispatch {:type :gtd/web-list}]))]
     {:state   (cond-> (assoc st :web/route route
                             ;; reset the virtualized timeline window on every
                             ;; navigation so a new session starts compact
                             :web/timeline-window nil)
-                ;; Reset file drill-down when entering GTD
-                (= page :gtd) (dissoc :web/gtd-file))
+                ;; Sync file drill-down from the route
+                (= page :gtd) (assoc :web/gtd-file file))
      :effects effects}))
 
 (def handlers

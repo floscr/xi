@@ -162,8 +162,10 @@
                                      :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
           :gtd/web-list-result   gtd-web-list-result
           :gtd/web-start-task    gtd-web-start-task
-          :gtd/select-file       (fn [st {:keys [file]}] {:state (assoc st :web/gtd-file file)})
-          :gtd/back-to-files     (fn [st _] {:state (dissoc st :web/gtd-file)})
+          :gtd/select-file       (fn [_st {:keys [file]}]
+                                    {:effects [[:app/dispatch {:type :route/navigate :page :gtd :file file}]]})
+          :gtd/back-to-files     (fn [_st _]
+                                    {:effects [[:app/dispatch {:type :route/navigate :page :gtd}]]})
           :gtd/context-menu      (fn [st {:keys [task x y]}]
                                     {:state (assoc st :web/gtd-context-menu {:task task :x x :y y})})
           :gtd/context-menu-close (fn [st _] {:state (dissoc st :web/gtd-context-menu)})
