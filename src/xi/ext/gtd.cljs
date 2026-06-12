@@ -62,6 +62,46 @@
        (-> (.text (.-stdout proc))
            (.then (fn [stdout] (resolve stdout))))))))
 
+;; ── Profile → CWD mapping ────────────────────────────────────────────────────
+
+(def ^:private profiles-dir
+  (str (aget js/process.env "HOME") "/.config/dotfiles/modules/scripts/profiles"))
+
+(defn- parse-profile-edn
+  "Parse a single profile EDN string. Uses regex extraction since cljs
+   reader may choke on some profile features (shell forms etc)."
+  [s]
+  (let [dir-m  (re-find #":dir\s+\"([^\"]*)\"" s)
+        gtd-m  (re-find #":gtd-file\s+\"([^\"]*)\"" s)]
+    (when (and dir-m gtd-m)
+      {:dir (second dir-m) :gtd-file (second gtd-m)})))
+
+(defn- load-gtd-profiles
+  "Load profiles and build a gtd-file → cwd map."
+  []
+  (try
+    (let [fs   (js/require "node:fs")
+          home (aget js/process.env "HOME")
+          files (.readdirSync fs profiles-dir)]
+      (->> (js->clj files)
+           (filter #(str/ends-with? % ".edn"))
+           (keep (fn [f]
+                   (try
+                     (let [content (.readFileSync fs (str profiles-dir "/" f) "utf8")]
+                       (parse-profile-edn content))
+                     (catch :default _ nil))))
+           (filter :gtd-file)
+           (reduce (fn [m {:keys [dir gtd-file]}]
+                     (let [expanded (if (str/starts-with? dir "~")
+                                      (str home (subs dir 1))
+                                      dir)]
+                       ;; First profile for a gtd-file wins
+                       (if (contains? m gtd-file)
+                         m
+                         (assoc m gtd-file expanded))))
+                   {})))
+    (catch :default _ {})))
+
 ;; ── Task parsing ──────────────────────────────────────────────────────────────
 
 (defn- parse-edn-tasks
@@ -239,6 +279,40 @@
                 (dispatch! {:type :history/append :room-id room-id
                             :entry {:kind :status :text (str "GTD error: " (.-message err))}})))))
 
+
+;; ── Web GTD list ──────────────────────────────────────────────────────────────
+
+(defn- gtd-web-list
+  "Roomless handler: forward to the effect that fetches tasks."
+  [_st {:keys [client-id]}]
+  {:effects [[:gtd/web-list-reply {:client-id client-id}]]})
+
+(defn web-list-reply-fx
+  "Fetch all open GTD tasks with profile->cwd mapping and send the result
+   using the provided send-fn. Public so the WS server can call it."
+  [send-fn]
+  (let [cwd-map (load-gtd-profiles)]
+    (-> (run-gtd-raw ["agenda" "--output" "edn"])
+        (.then
+         (fn [edn-str]
+           (let [tasks  (parse-edn-tasks edn-str)
+                 active (->> tasks
+                             (filter #(and (:id %) (:title %)))
+                             (remove #(#{"DONE" "CANCELLED"} (:todo-state %))))
+                 enriched (mapv (fn [t]
+                                  (let [f (:file t)
+                                        tags-raw (:tags t)
+                                        tags (when (and tags-raw (not= "[]" tags-raw))
+                                               (str/replace tags-raw #"[\[\]\"\s,]" ""))]
+                                    (cond-> (-> (select-keys t [:id :title :todo-state :file])
+                                                (assoc :tags tags))
+                                      (get cwd-map f)
+                                      (assoc :cwd (get cwd-map f)))))
+                                active)]
+             (send-fn {:type :gtd/web-list-result :tasks enriched}))))
+        (.catch (fn [_]
+                  (send-fn {:type :gtd/web-list-result :tasks []}))))))
+
 ;; ── System Prompt ─────────────────────────────────────────────────────────────
 
 (def ^:private GTD_PROMPT
@@ -285,7 +359,8 @@ Explicit `:file` always overrides auto-detection.")
                        :handler gtd-command
                        :subcommands [{:name "recommend" :description "Get an AI recommendation for what to work on"}
                                      {:name "cleanup" :description "Review tasks for cleanup"}]}]
-   :handlers         {:gtd/start-task gtd-start-task}
+   :handlers         {:gtd/start-task  gtd-start-task
+                      :gtd/web-list    gtd-web-list}
    :fx               {:gtd/open-picker gtd-open-picker-fx
                       :gtd/start-task  gtd-start-task-fx}
    :tool-definitions tool-defs

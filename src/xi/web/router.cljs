@@ -20,8 +20,9 @@
   "URL path → route map."
   [path]
   (let [segments (filterv seq (str/split (or path "/") #"/"))]
-    (if (= "chat" (first segments))
-      {:page :chat :session-id (second segments)}
+    (case (first segments)
+      "chat" {:page :chat :session-id (second segments)}
+      "gtd"  {:page :gtd}
       {:page :home})))
 
 (defn route->path
@@ -29,6 +30,7 @@
   [{:keys [page session-id]}]
   (case page
     :chat (if session-id (str "/chat/" session-id) "/chat")
+    :gtd  "/gtd"
     "/"))
 
 ;; ── Navigation (pure handler) ────────────────────────────────────────────────
@@ -64,8 +66,11 @@
                         [:app/dispatch {:type :session/mark-read
                                         :session-id session-id}])
 
-                  (= page :home)
-                  (conj [:app/dispatch {:type :room/leave}]))]
+                  (#{:home :gtd} page)
+                  (conj [:app/dispatch {:type :room/leave}])
+
+                  (= page :gtd)
+                  (conj [:app/dispatch {:type :gtd/web-list}]))]
     {:state   (assoc st :web/route route
                      ;; reset the virtualized timeline window on every
                      ;; navigation so a new session starts compact

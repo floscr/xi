@@ -535,6 +535,11 @@
       (offline-badge state)
       (when connected?
         [:button {:class ["icon-btn"]
+                  :title "GTD Tasks"
+                  :on {:click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}}
+         (icon/icon {:icon-name :list :size :md})])
+      (when connected?
+        [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :room/new}))}}
          (icon/icon {:icon-name :plus :size :md})])]
      [:div {:class ["home"]}
@@ -558,6 +563,67 @@
          (spinner)
          [:p "Connecting to server…"]])]]))
 
+;; ── GTD View ─────────────────────────────────────────────────────────────────
+
+(defn- shorten-path
+  "~/Code/Projects/xi → xi, ~/Code/Work/Hyma/studio → studio"
+  [path]
+  (when path
+    (let [parts (str/split path #"/")]
+      (last parts))))
+
+(defn- gtd-task-card [dispatch! {:keys [id title todo-state file cwd tags]}]
+  [:div {:class ["project-card" "gtd-task-card"]
+         :replicant/key (str "gtd-" id)
+         :on {:click (fn [_]
+                       (dispatch! {:type :gtd/web-start-task
+                                   :task-id id :title title
+                                   :cwd cwd}))}}
+   [:div {:class ["project-card-icon"]}
+    (case todo-state
+      "ACTIVE"  [:div {:class ["active-dot"]}]
+      "WAITING" (icon/icon {:icon-name :pause :size :sm})
+      (icon/icon {:icon-name :circle-check :size :sm}))]
+   [:div {:class ["project-card-info"]}
+    [:span {:class ["project-card-name"]} title]
+    [:span {:class ["project-card-path"]}
+     (str (or todo-state "TODO")
+          (when cwd (str " \u00B7 " (shorten-path cwd)))
+          (when (and (string? tags) (seq tags)) (str " \u00B7 " tags)))]]])
+
+(defn- gtd-view [state dispatch!]
+  (let [tasks    (:web/gtd-tasks state)
+        loading? (:web/gtd-loading? state)
+        grouped  (when tasks
+                   (->> tasks
+                        (group-by :file)
+                        (sort-by key)))]
+    [:div {:class ["container"] :replicant/key "gtd"}
+     [:div {:class ["topbar"]}
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} "Tasks"]
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_] (dispatch! {:type :gtd/web-list}))}}
+       (icon/icon {:icon-name :refresh :size :md})]]
+     [:div {:class ["home"]}
+      (cond
+        loading?
+        [:div {:class ["empty-state"]} (spinner) [:p "Loading tasks..."]]
+
+        (empty? tasks)
+        [:div {:class ["empty-state"]} [:p "No open tasks."]]
+
+        :else
+        [:div {:class ["project-list"]}
+         (for [[file-name file-tasks] grouped]
+           (list
+            [:div {:class ["section-title"] :replicant/key (str "sec-" file-name)}
+             (or file-name "Uncategorized")]
+            (for [t file-tasks]
+              (gtd-task-card dispatch! t))))])]]))
+
 ;; ── Root ─────────────────────────────────────────────────────────────────────
 
 (defn root-view
@@ -565,4 +631,5 @@
   [state dispatch!]
   (case (get-in state [:web/route :page])
     :chat (chat-view state dispatch!)
+    :gtd  (gtd-view state dispatch!)
     (home-view state dispatch!)))

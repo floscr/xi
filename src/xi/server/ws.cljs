@@ -19,7 +19,8 @@
    create-server closure (runtime resources, not app state).
 
    Deferred to later phases: :visibility tracking, dictation."
-  (:require [xi.server.room-manager :as rm]
+  (:require [xi.ext.gtd :as gtd]
+            [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
             [xi.wire :as wire]))
@@ -42,7 +43,7 @@
 (def ^:private roomless-types
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id)."
-  #{:client/update :session/counts})
+  #{:client/update :session/counts :gtd/web-list})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -184,6 +185,12 @@
         (send! client-id (wire/encode {:type   :session/counts-result
                                        :counts (session/count-session-responses
                                                 session-ids)})))
+
+      ;; GTD web list: fetch tasks + profile->cwd and reply to client.
+      :gtd/web-list-reply
+      (fn [_ {:keys [client-id]}]
+        (gtd/web-list-reply-fx
+         (fn [event] (send! client-id (wire/encode event)))))
 
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally

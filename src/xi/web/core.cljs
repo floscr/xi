@@ -119,6 +119,23 @@
     {:state   (assoc st :web/theme-mode m)
      :effects [[:theme/apply m]]}))
 
+;; ── GTD ──────────────────────────────────────────────────────────────────────
+
+(defn- gtd-web-list-result
+  "Store the GTD task list returned by the server."
+  [st {:keys [tasks]}]
+  {:state (assoc st :web/gtd-tasks tasks :web/gtd-loading? false)})
+
+(defn- gtd-web-start-task
+  "Click a GTD task: create a new room with the task's cwd, stash the
+   task as pending-gtd so it fires :gtd/start-task after :room/joined."
+  [st {:keys [task-id title cwd]}]
+  {:state   (-> st
+                (assoc :web/route {:page :chat})
+                (assoc :web/pending-gtd {:task-id task-id :title title :cwd cwd})
+                (assoc :web/timeline-window nil))
+   :effects [[:ws/send {:type :room/join :target "new" :cwd cwd}]]})
+
 (defn- web-handlers []
   (merge router/handlers
          {:room/new              room-new
@@ -139,7 +156,14 @@
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
           :cmd/select            cmd-select
-          :theme/set-mode        theme-set-mode}))
+          :theme/set-mode        theme-set-mode
+          :gtd/web-list          (fn [st ev]
+                                    {:state (assoc st :web/gtd-loading? true)
+                                     :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
+          :gtd/web-list-result   gtd-web-list-result
+          :gtd/web-start-task    gtd-web-start-task
+          :gtd/start-task        forward
+          :gtd/clear-pending     (fn [st _] {:state (dissoc st :web/pending-gtd)})}))
 
 (defn- web-effects []
   {:history/push router/history-effect
@@ -203,6 +227,19 @@
           (dispatch! {:type :submit/clear-pending})
           (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
                        (seq images) (assoc :images (vec images)))))))))
+
+(defn- pending-gtd-tap
+  "After room join, if there's a pending GTD task, dispatch :gtd/start-task
+   to the server which handles activation + prompt submission."
+  [dispatch!]
+  (fn [event state]
+    (when (and (= :room/joined (:type event))
+               (:web/pending-gtd state))
+      (let [{:keys [task-id title]} (:web/pending-gtd state)
+            room-id (:active-room state)]
+        (dispatch! {:type :gtd/start-task :room-id room-id
+                    :task-id task-id :title title})
+        (dispatch! {:type :gtd/clear-pending})))))
 
 ;; ── Auto-scroll ──────────────────────────────────────────────────────────────
 
@@ -284,6 +321,7 @@
     (add-tap! (request-counts-tap dispatch!))
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
+    (add-tap! (pending-gtd-tap dispatch!))
     (router/init! dispatch!)
     ;; Apply stored theme immediately (before first render)
     (dispatch! {:type :theme/set-mode :mode stored-theme})
