@@ -135,7 +135,7 @@ body {
   flex-direction: column;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding: var(--size-4) 0;
+  padding: var(--size-2) 0;
 }
 
 .timeline-content {
@@ -163,7 +163,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  margin-top: var(--size-6);
+  margin-top: var(--size-3);
 }
 
 .post--user .post-body {
@@ -174,11 +174,11 @@ body {
 }
 
 .post--assistant {
-  padding: var(--size-3) var(--size-1);
+  padding: var(--size-1) var(--size-1);
 }
 
 .post--tool {
-  padding: var(--size-1) var(--size-1);
+  padding: 0 var(--size-1);
 }
 
 @keyframes fadeSlideIn {
