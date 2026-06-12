@@ -43,7 +43,7 @@
 (def ^:private roomless-types
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id)."
-  #{:client/update :session/counts :gtd/web-list})
+  #{:client/update :session/counts :gtd/web-list :gtd/web-task-action})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -191,6 +191,13 @@
       (fn [_ {:keys [client-id]}]
         (gtd/web-list-reply-fx
          (fn [event] (send! client-id (wire/encode event)))))
+
+      ;; GTD web task action: archive/done a task, then refresh list.
+      :gtd/web-task-action-reply
+      (fn [_ {:keys [client-id task-id action]}]
+        (gtd/web-task-action-fx
+         (fn [event] (send! client-id (wire/encode event)))
+         task-id action))
 
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally

@@ -164,6 +164,15 @@
           :gtd/web-start-task    gtd-web-start-task
           :gtd/select-file       (fn [st {:keys [file]}] {:state (assoc st :web/gtd-file file)})
           :gtd/back-to-files     (fn [st _] {:state (dissoc st :web/gtd-file)})
+          :gtd/context-menu      (fn [st {:keys [task x y]}]
+                                    {:state (assoc st :web/gtd-context-menu {:task task :x x :y y})})
+          :gtd/context-menu-close (fn [st _] {:state (dissoc st :web/gtd-context-menu)})
+          :gtd/web-task-action   (fn [st ev]
+                                    {:state (-> st
+                                                (dissoc :web/gtd-context-menu)
+                                                (assoc :web/gtd-loading? true))
+                                     :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
+          :gtd/web-task-action-error (fn [st _] {:state (assoc st :web/gtd-loading? false)})
           :gtd/start-task        forward
           :gtd/clear-pending     (fn [st _] {:state (dissoc st :web/pending-gtd)})}))
 

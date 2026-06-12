@@ -572,13 +572,71 @@
     (let [parts (str/split path #"/")]
       (last parts))))
 
-(defn- gtd-task-card [dispatch! {:keys [id title todo-state file cwd tags]}]
+(defn- gtd-context-menu [dispatch! {:keys [task x y]}]
+  [:div {:class ["gtd-context-backdrop"]
+         :on {:click (fn [_] (dispatch! {:type :gtd/context-menu-close}))}}
+   [:div {:class ["gtd-context-menu"]
+          :style {:top (str y "px") :left (str x "px")}}
+    [:button {:class ["gtd-context-item"]
+              :on {:click (fn [e]
+                            (.stopPropagation e)
+                            (dispatch! {:type :gtd/web-task-action
+                                        :task-id (:id task) :action "done"}))}}
+     (icon/icon {:icon-name :circle-check :size :sm})
+     [:span "Mark Done"]]
+    [:button {:class ["gtd-context-item" "gtd-context-item--danger"]
+              :on {:click (fn [e]
+                            (.stopPropagation e)
+                            (dispatch! {:type :gtd/web-task-action
+                                        :task-id (:id task) :action "archive"}))}}
+     (icon/icon {:icon-name :trash :size :sm})
+     [:span "Archive"]]]])
+
+(def ^:private long-press-state (atom nil))
+
+(defn- touch-start [dispatch! task e]
+  (let [touch (aget (.-touches e) 0)
+        x     (.-clientX touch)
+        y     (.-clientY touch)
+        timer (js/setTimeout
+               (fn []
+                 (reset! long-press-state :fired)
+                 (dispatch! {:type :gtd/context-menu
+                             :task task :x x :y y}))
+               500)]
+    (reset! long-press-state {:timer timer})))
+
+(defn- touch-end [_e]
+  (when-let [st @long-press-state]
+    (when (map? st) (js/clearTimeout (:timer st))))
+  ;; If long-press fired, keep :fired so the subsequent click is suppressed.
+  ;; Clear it on next tick after click has been processed.
+  (if (= :fired @long-press-state)
+    (js/setTimeout #(reset! long-press-state nil) 0)
+    (reset! long-press-state nil)))
+
+(defn- touch-move [_e]
+  (when-let [st @long-press-state]
+    (when (map? st) (js/clearTimeout (:timer st))))
+  (reset! long-press-state nil))
+
+(defn- gtd-task-card [dispatch! {:keys [id title todo-state file cwd tags] :as task}]
   [:div {:class ["project-card" "gtd-task-card"]
          :replicant/key (str "gtd-" id)
          :on {:click (fn [_]
-                       (dispatch! {:type :gtd/web-start-task
-                                   :task-id id :title title
-                                   :cwd cwd}))}}
+                       (when-not (= :fired @long-press-state)
+                         (dispatch! {:type :gtd/web-start-task
+                                     :task-id id :title title
+                                     :cwd cwd})))
+              :contextmenu (fn [e]
+                             (.preventDefault e)
+                             (dispatch! {:type :gtd/context-menu
+                                         :task task
+                                         :x (.-clientX e)
+                                         :y (.-clientY e)}))
+              :touchstart (fn [e] (touch-start dispatch! task e))
+              :touchend touch-end
+              :touchmove touch-move}}
    [:div {:class ["project-card-icon"]}
     (case todo-state
       "ACTIVE"  [:div {:class ["active-dot"]}]
@@ -605,6 +663,7 @@
   (let [tasks        (:web/gtd-tasks state)
         loading?     (:web/gtd-loading? state)
         selected-file (:web/gtd-file state)
+        ctx-menu     (:web/gtd-context-menu state)
         grouped      (when tasks
                        (->> tasks
                             (group-by :file)
@@ -641,7 +700,9 @@
         :else
         [:div {:class ["project-list"]}
          (for [[file-name file-tasks] grouped]
-           (gtd-file-card dispatch! file-name (count file-tasks)))])]]))
+           (gtd-file-card dispatch! file-name (count file-tasks)))])]
+     (when ctx-menu
+       (gtd-context-menu dispatch! ctx-menu))]))
 
 
 ;; ── Root ─────────────────────────────────────────────────────────────────────

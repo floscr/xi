@@ -287,6 +287,11 @@
   [_st {:keys [client-id]}]
   {:effects [[:gtd/web-list-reply {:client-id client-id}]]})
 
+(defn- gtd-web-task-action
+  "Roomless handler: forward to the effect that performs archive/done."
+  [_st {:keys [client-id task-id action]}]
+  {:effects [[:gtd/web-task-action-reply {:client-id client-id :task-id task-id :action action}]]})
+
 (defn web-list-reply-fx
   "Fetch all open GTD tasks with profile->cwd mapping and send the result
    using the provided send-fn. Public so the WS server can call it."
@@ -312,6 +317,25 @@
              (send-fn {:type :gtd/web-list-result :tasks enriched}))))
         (.catch (fn [_]
                   (send-fn {:type :gtd/web-list-result :tasks []}))))))
+
+(defn web-task-action-fx
+  "Run archive or done on a GTD task, then send updated task list.
+   Public so the WS server can call it."
+  [send-fn task-id action]
+  (let [args (case action
+               "archive" ["change" "--id" task-id "--archive"]
+               "done"    ["change" "--id" task-id "--todo" "DONE"]
+               nil)]
+    (if args
+      (-> (run-gtd-raw args)
+          (.then (fn [_] (web-list-reply-fx send-fn)))
+          (.catch (fn [_]
+                    (send-fn {:type :gtd/web-task-action-error
+                              :task-id task-id
+                              :message (str "Failed to " action " task")}))))
+      (send-fn {:type :gtd/web-task-action-error
+                :task-id task-id
+                :message (str "Unknown action: " action)}))))
 
 ;; ── System Prompt ─────────────────────────────────────────────────────────────
 
@@ -359,8 +383,9 @@ Explicit `:file` always overrides auto-detection.")
                        :handler gtd-command
                        :subcommands [{:name "recommend" :description "Get an AI recommendation for what to work on"}
                                      {:name "cleanup" :description "Review tasks for cleanup"}]}]
-   :handlers         {:gtd/start-task  gtd-start-task
-                      :gtd/web-list    gtd-web-list}
+   :handlers         {:gtd/start-task       gtd-start-task
+                      :gtd/web-list         gtd-web-list
+                      :gtd/web-task-action  gtd-web-task-action}
    :fx               {:gtd/open-picker gtd-open-picker-fx
                       :gtd/start-task  gtd-start-task-fx}
    :tool-definitions tool-defs
