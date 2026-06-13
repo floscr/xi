@@ -47,6 +47,7 @@
             [xi.ext.perplexity :as ext.perplexity]
             [xi.ext.permission-gate :as ext.permission-gate]
             [xi.ext.plan-mode :as ext.plan-mode]
+            [xi.ext.process-manager :as ext.process-manager]
             [xi.ext.projects :as ext.projects]
             [xi.ext.pushover :as ext.pushover]
             [xi.ext.skills :as ext.skills]
@@ -98,6 +99,7 @@
    ext.todo-intercept/extension
    ext.terminal-title/extension
    ext.clipboard-image/extension
+   ext.process-manager/extension
    ext.projects/extension
    ext.skills/extension
    (ext.events/create ring)])
@@ -190,8 +192,9 @@
         composed (ext/compose (into (server-extensions ring) (client-extensions)))
         dialogs  (ext/create-dialogs)
         agents-files (system-prompt/find-agents-md cwd)
-        system (system-prompt/combine (system-prompt/load-agents-md cwd)
-                                      (ext/system-prompt composed cwd))
+        system-parts (into (system-prompt/load-agents-parts cwd)
+                           (ext/system-prompt-parts composed cwd))
+        system (system-prompt/parts->system system-parts)
         sess (session/create-session cwd)
         jsonl-writer (when debug-events?
                        (core-jsonl/create-writer
@@ -217,7 +220,13 @@
                          :effects       (merge (agent/create-fx
                                                 providers
                                                 (tooling-opts composed (:ask! dialogs)))
-                                               (fx/create-fx ring)
+                                               (fx/create-fx ring
+                                                 {:system-prompt-fn
+                                                  (fn [cwd]
+                                                    (let [parts (into (system-prompt/load-agents-parts cwd)
+                                                                      (ext/system-prompt-parts composed cwd))]
+                                                      {:system       (system-prompt/parts->system parts)
+                                                       :system-parts parts}))})
                                                (compaction/create-fx providers)
                                                (:fx composed)
                                                (:fx dialogs)
@@ -233,6 +242,7 @@
                        :cwd cwd
                        :effort effort
                        :system system
+                       :system-parts system-parts
                        :agents-files agents-files
                        :ext (:room-ext-init composed)
                        :session sess}})
@@ -319,7 +329,7 @@
         server (ws/create-server
                 {:server-opts server-opts
                  :personal-agent? personal-agent?
-                 :ext-system-prompt (fn [cwd] (ext/system-prompt composed cwd))
+                 :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts composed cwd))
                  :room-ext-init (:room-ext-init composed)})
         handlers (-> (make-handlers (:commands composed))
                      (ext/merge-handlers composed)
@@ -339,7 +349,13 @@
                              :effects  (merge (agent/create-fx
                                                providers
                                                (tooling-opts composed (:ask! dialogs)))
-                                              (fx/create-fx ring)
+                                              (fx/create-fx ring
+                                                {:system-prompt-fn
+                                                 (fn [cwd]
+                                                   (let [parts (into (system-prompt/load-agents-parts cwd)
+                                                                     (ext/system-prompt-parts composed cwd))]
+                                                     {:system       (system-prompt/parts->system parts)
+                                                      :system-parts parts}))})
                                               (compaction/create-fx providers)
                                               (:fx composed)
                                               (:fx dialogs)
