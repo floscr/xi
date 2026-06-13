@@ -30,7 +30,8 @@
 
 (def ^:private no-broadcast
   "Room-scoped event types that are connection bookkeeping, not room state."
-  #{:room/join :room/attach :room/leave :room/list :agent/session-init})
+  #{:room/join :room/attach :room/leave :room/list :agent/session-init
+    :gtd/start-task})
 
 (def ^:private lobby-relevant
   "Events after which lobby (roomless) clients get a fresh :lobby/state."
@@ -135,14 +136,14 @@
                          instead of AGENTS.md, sessions in the PA dir, and the
                          provider restricted to web_search (the room's
                          [:agent :personal-agent?] flag drives the rest).
-     :ext-system-prompt  (fn [cwd] → str|nil) — extension system prompt,
-                         appended to the room's AGENTS.md prompt.
+     :ext-system-prompt-parts  (fn [cwd] → [{:source :text}]) — extension
+                         system prompt parts with source attribution.
      :room-ext-init      map of ext-id → initial room-scoped state, seeded
                          into each provisioned room's [:ext] (mirrors to
                          clients via the :room/joined snapshot).
 
    Returns {:fx {…} :start! (fn [app {:keys [port]}] → {:port :stop!})}."
-  [{:keys [server-opts personal-agent? ext-system-prompt room-ext-init]}]
+  [{:keys [server-opts personal-agent? ext-system-prompt-parts room-ext-init]}]
   (let [sockets (js/Map.)
         send!   (fn [client-id payload]
                   (when-let [ws (.get sockets client-id)]
@@ -164,11 +165,13 @@
                           (session/find-personal-agent-session-by-id session-id)
                           (session/find-session-by-id session-id)))
               cwd (or (:cwd summary) cwd (.cwd js/process))
-              system (if personal-agent?
-                       system-prompt/PERSONAL_AGENT_PROMPT
-                       (system-prompt/combine
-                        (system-prompt/load-agents-md cwd)
-                        (when ext-system-prompt (ext-system-prompt cwd))))
+              system-parts (if personal-agent?
+                             [{:source "personal-agent"
+                               :text   system-prompt/PERSONAL_AGENT_PROMPT}]
+                             (into (system-prompt/load-agents-parts cwd)
+                                   (when ext-system-prompt-parts
+                                     (ext-system-prompt-parts cwd))))
+              system (system-prompt/parts->system system-parts)
               session (if summary
                         (session/load-session summary)
                         (session/create-session
@@ -179,6 +182,7 @@
                              :effort       (:effort server-opts)
                              :cwd          cwd
                              :system       system
+                             :system-parts system-parts
                              :agents-files (when-not personal-agent?
                                              (system-prompt/find-agents-md cwd))
                              :session      session

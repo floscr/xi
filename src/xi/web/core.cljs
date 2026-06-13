@@ -202,7 +202,9 @@
                                        ;; Server failed — re-fetch authoritative list
                                        {:state st
                                         :effects [[:ws/send {:type :gtd/web-list}]]})
-          :gtd/start-task        forward
+          :gtd/start-task        (fn [_st {:keys [remote?] :as ev}]
+                                    (when-not remote?
+                                      {:effects [[:ws/send (dissoc ev :event/id :event/ts)]]}))
           :gtd/clear-pending     (fn [st _] {:state (dissoc st :web/pending-gtd)})
           :models/web-list       forward
           :models/web-list-result (fn [st {:keys [models]}]
