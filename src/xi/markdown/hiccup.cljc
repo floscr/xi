@@ -55,7 +55,7 @@
               grammar (when lang (grammars/get-grammar lang))
               tokens (when grammar
                        (hl/merge-adjacent (hl/tokenize grammar code)))]
-          [:pre {:class (when lang (str "language-" lang))}
+          [:pre {:class (str "md-code-block" (when lang (str " language-" lang)))}
            (if tokens
              (into [:code]
                    (mapv (fn [{:keys [type value]}]

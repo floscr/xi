@@ -2071,7 +2071,8 @@ a.btn-link {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: var(--font-xs);
   line-height: 1.5;
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .md-table {
