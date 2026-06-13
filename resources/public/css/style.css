@@ -748,11 +748,11 @@ body {
 }
 
 .project-card--active {
-  border-left: 3px solid var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .project-card--dialog {
-  border-left: 3px solid var(--warning);
+  box-shadow: inset 3px 0 0 var(--warning);
 }
 .project-card--dialog .project-card-icon { color: var(--warning); }
 

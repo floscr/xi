@@ -636,8 +636,6 @@
    [:div {:class ["project-card-icon"]}
     (cond
       has-dialog? (icon/icon {:icon-name :alert-circle :size :sm})
-      busy?       (spinner)
-      active?     [:div {:class ["active-dot"]}]
       :else       (icon/icon {:icon-name :message-circle :size :sm}))]
    [:div {:class ["project-card-info"]}
     [:span {:class ["project-card-name"]} (or name "New session")]
@@ -647,7 +645,10 @@
                 busy? " · working…"
                 active? " · active"
                 :else ""))]]
-   (when unread? [:div {:class ["unread-dot"]}])])
+   (cond
+     busy?   (spinner)
+     unread? [:div {:class ["unread-dot"]}]
+     active? [:div {:class ["active-dot"]}])])
 
 (defn- home-view [state dispatch!]
   (let [sessions   (get-in state [:lobby :sessions])

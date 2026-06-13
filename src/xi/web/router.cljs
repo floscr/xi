@@ -90,6 +90,12 @@
                             ;; reset the virtualized timeline window on every
                             ;; navigation so a new session starts compact
                             :web/timeline-window nil)
+                ;; Leaving a chat we were viewing: remember the session so the
+                ;; next fresh count marks it read (the user saw responses that
+                ;; landed while attached, before counts refreshed). See
+                ;; counts-result.
+                (and (#{:home :gtd} page) active-sid)
+                (assoc :web/pending-read active-sid)
                 ;; Sync file/task drill-down from the route
                 (= page :gtd) (-> (assoc :web/gtd-file file)
                                   (assoc :web/gtd-task-id task-id)))

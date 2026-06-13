@@ -50,9 +50,23 @@
              [:ws/send {:type :room/join :target "new"}]]})
 
 (defn- counts-result
-  "Store per-session response counts from a :session/counts reply."
+  "Store per-session response counts from a :session/counts reply.
+
+   If a session was just left (`:web/pending-read`), mark it read at this
+   fresh count: the user saw whatever landed while they were attached, but
+   the count couldn't refresh until they returned to the lobby. Without this
+   the dot reappears for a room the user already visited."
   [st {:keys [counts]}]
-  {:state (assoc st :web/response-counts (or counts {}))})
+  (let [counts (or counts {})
+        sid    (:web/pending-read st)
+        cnt    (get counts sid)]
+    (if (and sid cnt)
+      {:state   (-> st
+                    (assoc :web/response-counts counts)
+                    (assoc-in [:web/watched sid] cnt)
+                    (dissoc :web/pending-read))
+       :effects [[:cache/watch {:session-id sid :count cnt}]]}
+      {:state (assoc st :web/response-counts counts)})))
 
 (defn- mark-read
   "Mark a session read at its current response count (clears the unread dot)."
