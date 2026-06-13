@@ -88,7 +88,7 @@ body {
 
 .model-selector {
   position: absolute;
-  top: var(--topbar-h);
+  top: calc(var(--size-8) + env(safe-area-inset-top, 0px));
   left: var(--size-4);
   z-index: 1000;
   display: flex;
@@ -890,7 +890,7 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: calc(var(--topbar-h) + var(--size-8));
+  padding-top: calc(var(--size-12) + env(safe-area-inset-top, 0px));
   z-index: 100;
 }
 
@@ -1293,6 +1293,7 @@ body {
   font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
   font-size: var(--font-xs);
   line-height: 1.5;
+  overflow-x: auto;
 }
 
 .diff-hunk-header {
@@ -1301,6 +1302,11 @@ body {
   background: var(--bg-1);
   font-style: italic;
   border-top: 1px solid var(--border-0);
+}
+
+.diff-hunk-body {
+  width: max-content;
+  min-width: 100%;
 }
 
 .diff-line {
@@ -1347,6 +1353,5 @@ body {
 .diff-text {
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
   padding-right: var(--size-2);
 }

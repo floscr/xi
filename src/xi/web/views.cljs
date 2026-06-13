@@ -500,7 +500,8 @@
           (for [hunk hunks]
             [:div {:class ["diff-hunk"] :replicant/key (:header hunk)}
              [:div {:class ["diff-hunk-header"]} (:header hunk)]
-             (map (partial diff-line-view grammar) (:lines hunk))])]))
+             [:div {:class ["diff-hunk-body"]}
+              (map (partial diff-line-view grammar) (:lines hunk))]])]))
      [:div {:class ["empty-state"]} "No changes."])])
 
 (defn- diff-tab-view
