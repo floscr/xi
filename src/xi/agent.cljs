@@ -174,6 +174,14 @@
         (assoc :effects [[:app/dispatch (merge {:type :prompt/submit :room-id room-id}
                                                next-prompt)]])))))
 
+(defn- session-init
+  "Provider reported its session id early (e.g. Claude system/init).
+   Store it so lobby-payload can filter duplicate external sessions."
+  [st {:keys [room-id provider-session-id]}]
+  (when (and (state/get-room st room-id) provider-session-id)
+    {:state (assoc-in st [:rooms room-id :session :provider-session-id]
+                      provider-session-id)}))
+
 (defn- agent-abort [st {:keys [room-id]}]
   (when (get-in st [:rooms room-id :agent :busy?])
     {:effects [[:provider/abort {:room-id room-id}]]}))
@@ -186,6 +194,7 @@
    :agent/tool-args      tool-args
    :agent/tool-result    tool-result
    :agent/error          agent-error
+   :agent/session-init   session-init
    :agent/turn-end       turn-end
    :agent/abort          agent-abort})
 
@@ -217,8 +226,12 @@
    :on-tool-result (fn [{:keys [id content is-error]}]
                      (dispatch! {:type :agent/tool-result :room-id room-id
                                  :id id :content content :is-error is-error}))
+   :on-session     (fn [session-id]
+                     (dispatch! {:type :agent/session-init :room-id room-id
+                                 :provider-session-id session-id}))
    :on-error       (fn [error]
                      (dispatch! {:type :agent/error :room-id room-id :error error}))})
+
 
 (defn create-fx
   "Provider effects. `providers` is a map of provider-id → provider.

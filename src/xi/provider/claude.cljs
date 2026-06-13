@@ -261,7 +261,8 @@
    map; abort! interrupts gracefully then closes (state gets :aborted)."
   [opts]
   (let [callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
-                                     :on-tool-args :on-tool-result :on-error])
+                                     :on-tool-args :on-tool-result :on-session
+                                     :on-error])
         ;; Per-turn stream accumulation — contained to this turn.
         state (atom {:content [] :usage {} :stop-reason nil
                      :model (:model opts) :session-id nil
@@ -379,7 +380,9 @@
                                     "system"
                                     (when (= "init" (.-subtype message))
                                       (when-let [sid (.-session_id message)]
-                                        (swap! state assoc :session-id sid)))
+                                        (swap! state assoc :session-id sid)
+                                        (when-let [f (:on-session callbacks)]
+                                          (f sid))))
 
                                     "rate_limit_event"
                                     (let [^js info (.-rate_limit_info message)]

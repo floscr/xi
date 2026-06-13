@@ -30,7 +30,7 @@
 
 (def ^:private no-broadcast
   "Room-scoped event types that are connection bookkeeping, not room state."
-  #{:room/join :room/attach :room/leave :room/list})
+  #{:room/join :room/attach :room/leave :room/list :agent/session-init})
 
 (def ^:private lobby-relevant
   "Events after which lobby (roomless) clients get a fresh :lobby/state."
@@ -63,12 +63,24 @@
        (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source]))))
 
 (defn- lobby-payload
-  "The :lobby/state wire payload: live rooms + saved sessions."
+  "The :lobby/state wire payload: live rooms + saved sessions.
+   Filters out external (Claude/Pi) sessions whose id matches a live room's
+   provider-session-id — prevents a duplicate card during the first agent
+   turn before Xi's own :session/sync has run."
   [st personal-agent?]
-  (wire/encode (cond-> {:type     :lobby/state
-                        :rooms    (rm/room-summaries st)
-                        :sessions (lobby-sessions personal-agent?)}
-                 personal-agent? (assoc :personal-agent? true))))
+  (let [rooms    (rm/room-summaries st)
+        ;; Provider session ids currently held by live rooms (Claude CLI ids)
+        live-pids (into #{}
+                        (keep (fn [[_ room]]
+                                (get-in room [:session :provider-session-id])))
+                        (:rooms st))
+        sessions (cond->> (lobby-sessions personal-agent?)
+                   (seq live-pids)
+                   (filterv #(not (contains? live-pids (:session-id %)))))]
+    (wire/encode (cond-> {:type     :lobby/state
+                          :rooms    rooms
+                          :sessions sessions}
+                   personal-agent? (assoc :personal-agent? true)))))
 
 ;; ── Static file serving (resources/public, SPA fallback) ──────────────────────
 
