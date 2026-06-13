@@ -317,7 +317,7 @@
   "Commands shown in the quick-access bar above the compose input."
   [{:name "diff"     :label "/diff"}
    {:name "commit"   :label "/commit"}
-   {:name "compact"  :label "/compact"}
+   {:name "truncate" :label "/truncate"}
    {:name "resume"   :label "/resume"}
    {:name "new"      :label "/new"}
    {:name "clear"    :label "/clear"}])
