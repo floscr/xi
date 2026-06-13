@@ -1254,7 +1254,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: var(--size-2) 0;
+  padding: 0;
 }
 
 .diff-file {
