@@ -394,6 +394,44 @@ body {
   white-space: nowrap;
 }
 
+/* ---- Quick command bar ---- */
+.quick-commands {
+  display: flex;
+  gap: var(--size-2);
+  overflow-x: auto;
+  padding: var(--size-2) var(--size-3);
+  border-top: var(--border-0);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.quick-commands::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-cmd {
+  flex-shrink: 0;
+  padding: var(--size-1) var(--size-3);
+  border-radius: var(--radius-full, 9999px);
+  border: var(--border-0);
+  background: var(--bg-1);
+  color: var(--fg-2);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.1s;
+}
+
+.quick-cmd:hover {
+  background: var(--bg-2, rgba(128,128,128,0.1));
+  color: var(--fg-0);
+}
+
+.quick-cmd:active {
+  background: var(--bg-2, rgba(128,128,128,0.15));
+}
+
 /* ---- Compose box ---- */
 .compose-box {
   flex-shrink: 0;
@@ -1177,4 +1215,138 @@ body {
   font-weight: 600;
   font-size: var(--font-sm);
   color: var(--fg-2);
+}
+
+/* ---- Tab bar ---- */
+.tab-bar {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-0);
+  padding: 0 var(--size-4);
+  background: var(--bg-0);
+}
+
+.tab-bar-item {
+  all: unset;
+  cursor: pointer;
+  padding: var(--size-2) var(--size-4);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--fg-2);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-bar-item:hover {
+  color: var(--fg-0);
+}
+
+.tab-bar-item--active {
+  color: var(--fg-0);
+  border-bottom-color: var(--accent);
+}
+
+/* ---- Diff view ---- */
+.diff-view {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--size-2) 0;
+}
+
+.diff-file {
+  margin-bottom: var(--size-3);
+}
+
+.diff-file-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-4);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border-0);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-0);
+}
+
+.diff-file-status {
+  font-weight: 500;
+  font-size: var(--font-xs);
+  padding: 1px var(--size-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--fg-2);
+}
+
+.diff-file-status--added   { color: var(--hl-string); }
+.diff-file-status--deleted { color: var(--danger); }
+.diff-file-status--renamed { color: var(--hl-keyword); }
+
+.diff-hunk {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+
+.diff-hunk-header {
+  padding: var(--size-1) var(--size-4);
+  color: var(--fg-2);
+  background: var(--bg-1);
+  font-style: italic;
+  border-top: 1px solid var(--border-0);
+}
+
+.diff-line {
+  display: flex;
+  min-height: 1.5em;
+  white-space: pre;
+}
+
+.diff-line--add {
+  background: color-mix(in srgb, var(--hl-string) 12%, transparent);
+}
+
+.diff-line--del {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.diff-line--meta {
+  color: var(--fg-2);
+  font-style: italic;
+}
+
+.diff-ln {
+  display: inline-block;
+  width: 4ch;
+  text-align: right;
+  padding-right: var(--size-1);
+  color: var(--fg-2);
+  opacity: 0.5;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.diff-sign {
+  display: inline-block;
+  width: 2ch;
+  text-align: center;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.diff-line--add .diff-sign { color: var(--hl-string); }
+.diff-line--del .diff-sign { color: var(--danger); }
+
+.diff-text {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  padding-right: var(--size-2);
 }

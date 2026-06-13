@@ -198,7 +198,9 @@
                                      :effects [[:ws/send {:type :input/submit
                                                           :room-id room-id
                                                           :text (str "/model " model)}]]})
-          :models/close          (fn [st _] {:state (dissoc st :web/model-list)})}))
+          :models/close          (fn [st _] {:state (dissoc st :web/model-list)})
+          :scroll/at-bottom      (fn [st {:keys [at-bottom?]}]
+                                    {:state (assoc st :web/at-bottom? at-bottom?)})}))
 
 (defn- web-effects []
   {:history/push router/history-effect
@@ -284,13 +286,18 @@
 (defn- at-bottom? [^js el]
   (<= (- (.-scrollHeight el) (.-scrollTop el) (.-clientHeight el)) 40))
 
-(defn- attach-scroll-listener! []
+(defn- attach-scroll-listener! [dispatch!]
   (when-let [timeline (.querySelector js/document ".timeline")]
     (when-not (identical? timeline @tracked-timeline)
       (reset! tracked-timeline timeline)
       (reset! auto-scroll? true)
       (.addEventListener timeline "scroll"
-                         (fn [] (reset! auto-scroll? (at-bottom? timeline)))))))
+                         (fn []
+                           (let [prev @auto-scroll?
+                                 now  (at-bottom? timeline)]
+                             (reset! auto-scroll? now)
+                             (when (not= prev now)
+                               (dispatch! {:type :scroll/at-bottom :at-bottom? now}))))))))
 
 (defn- scroll-to-bottom! []
   (when @auto-scroll?
@@ -303,7 +310,7 @@
 
 (defn- render! [app-state dispatch!]
   (r/render (el "app") (views/root-view app-state dispatch!))
-  (attach-scroll-listener!)
+  (attach-scroll-listener! dispatch!)
   (js/requestAnimationFrame scroll-to-bottom!))
 
 ;; ── Init ─────────────────────────────────────────────────────────────────────

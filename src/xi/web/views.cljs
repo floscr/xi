@@ -10,6 +10,7 @@
             [xi.highlight.core :as hl]
             [xi.highlight.bundle :as grammars]
             [xi.highlight.theme-css :as theme]
+            [xi.diff :as diff]
             [xi.util :as util]
             [ui.icon :as icon]
             [ui.form :as form]
@@ -266,6 +267,7 @@
    {:name "new"      :description "Start a new session"}
    {:name "clear"    :description "Clear current session"}
    {:name "truncate" :description "Summarize conversation to reduce context"}
+   {:name "diff"     :description "Show diff viewer (git|staged|unstaged)"}
    {:name "commit"   :description "Review changes and create a git commit"}])
 
 (defn- match-commands
@@ -311,14 +313,37 @@
         (dispatch! (cond-> {:type :submit/pending :session-id session-id :text text}
                      (seq images) (assoc :images (vec images))))))))
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected]
+(def ^:private quick-commands
+  "Commands shown in the quick-access bar above the compose input."
+  [{:name "diff"     :label "/diff"}
+   {:name "commit"   :label "/commit"}
+   {:name "compact"  :label "/compact"}
+   {:name "resume"   :label "/resume"}
+   {:name "new"      :label "/new"}
+   {:name "clear"    :label "/clear"}])
+
+(defn- quick-command-bar [dispatch! room-id]
+  [:div {:class ["quick-commands"]}
+   (map (fn [{:keys [name label]}]
+          [:button {:class ["quick-cmd"]
+                    :on {:click (fn [_]
+                                 (dispatch! {:type :input/submit :room-id room-id
+                                             :text (str "/" name)}))}}
+           label])
+        quick-commands)])
+
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected at-bottom?]
   (let [room-id  (:id room)
         cmd-query (when (and (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
         cmd-matches (when (some? cmd-query) (match-commands cmd-query))
-        cmd-open?   (seq cmd-matches)]
+        cmd-open?   (seq cmd-matches)
+        has-input?  (seq (str/trim (or draft "")))
+        show-quick? (and at-bottom? (not has-input?) (empty? images) (not cmd-open?))]
     [:div {:class ["compose-box"]}
      (compose-image-strip dispatch! images)
+     (when show-quick?
+       (quick-command-bar dispatch! room-id))
      (when cmd-open?
        (command-suggestions dispatch! room-id draft-key cmd-matches
                             (min (or cmd-selected 0) (dec (count cmd-matches)))))
@@ -418,6 +443,88 @@
             [:button {:class ["confirm-btn" "confirm-btn--allow"]
                       :on {:click (fn [_] (answer! true))}} "Allow"]))]]])))
 
+;; ── Diff view ────────────────────────────────────────────────────────────────
+
+(defn- diff-file-grammar
+  "Highlight grammar for a filename, or nil."
+  [filename]
+  (when filename
+    (when-let [ext (file-ext filename)]
+      (grammars/get-grammar ext))))
+
+(defn- diff-line-view
+  "Render a single diff line with syntax highlighting."
+  [grammar {:keys [type text old-line new-line]}]
+  (let [cls (case type
+              :add     ["diff-line" "diff-line--add"]
+              :delete  ["diff-line" "diff-line--del"]
+              :context ["diff-line"]
+              :meta    ["diff-line" "diff-line--meta"]
+              ["diff-line"])
+        old-nr (case type
+                 (:delete :context) (str old-line)
+                 "")
+        new-nr (case type
+                 (:add :context) (str new-line)
+                 "")
+        sign   (case type :add "+" :delete "-" " ")]
+    [:div {:class cls}
+     [:span {:class ["diff-ln"]} old-nr]
+     [:span {:class ["diff-ln"]} new-nr]
+     [:span {:class ["diff-sign"]} sign]
+     [:span {:class ["diff-text"]}
+      (if grammar
+        (highlight-code grammar (or text ""))
+        (or text ""))]]))
+
+(defn- diff-content
+  "Render parsed diff files as a scrollable view."
+  [parsed]
+  [:div {:class ["diff-view"]}
+   (if (seq parsed)
+     (for [{:keys [filename status hunks]} parsed]
+       (let [grammar (diff-file-grammar filename)
+             status-label (case status
+                            :added   "added"
+                            :deleted "deleted"
+                            :renamed "renamed"
+                            :binary  "binary"
+                            nil)]
+         [:div {:class ["diff-file"] :replicant/key filename}
+          [:div {:class ["diff-file-header"]}
+           [:span {:class ["diff-file-name"]} filename]
+           (when status-label
+             [:span {:class ["diff-file-status"
+                             (str "diff-file-status--" (name status))]}
+              status-label])]
+          (for [hunk hunks]
+            [:div {:class ["diff-hunk"] :replicant/key (:header hunk)}
+             [:div {:class ["diff-hunk-header"]} (:header hunk)]
+             (map (partial diff-line-view grammar) (:lines hunk))])]))
+     [:div {:class ["empty-state"]} "No changes."])])
+
+(defn- diff-tab-view
+  "Full diff buffer view rendered as the active tab."
+  [diff-buffer]
+  (let [parsed (diff/parse-diff-text (:text diff-buffer))]
+    (diff-content parsed)))
+
+;; ── Tab bar ──────────────────────────────────────────────────────────────────
+
+(defn- tab-bar
+  "Tab bar for switching between chat and buffer views."
+  [dispatch! room-id active-buffer buffers]
+  [:div {:class ["tab-bar"]}
+   [:button {:class ["tab-bar-item" (when (= active-buffer :chat) "tab-bar-item--active")]
+             :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
+                                             :room-id room-id :buffer-id :chat}))}}
+    "Chat"]
+   (when (:diff buffers)
+     [:button {:class ["tab-bar-item" (when (= active-buffer :diff) "tab-bar-item--active")]
+               :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
+                                               :room-id room-id :buffer-id :diff}))}}
+      "Diff"])])
+
 ;; ── Chat view ────────────────────────────────────────────────────────────────
 
 (defn- offline-badge [state]
@@ -446,7 +553,10 @@
         model   (or (get-in room [:agent :model]) (:model cached))
         ready?  (or room (seq history))
         draft-key (or (get-in room [:session :id]) sid :new)
-        model-list (:web/model-list state)]
+        model-list (:web/model-list state)
+        buffers    (get-in room [:ui :buffers])
+        active-buf (get-in room [:ui :active-buffer] :chat)
+        has-tabs?  (boolean (:diff buffers))]
     [:div {:class ["container"] :replicant/key "chat"}
      [:div {:class ["topbar"]}
       [:button {:class ["icon-btn" "icon-btn--sm"]
@@ -469,30 +579,39 @@
                   :on {:click (fn [_] (.reload js/location))}}
          (icon/icon {:icon-name :refresh :size :md})])
       (offline-badge state)]
-     [:div {:class ["timeline"]}
-      [:div {:class ["timeline-content"]}
-       (if ready?
-         (let [entries (vec history)
-               total   (count entries)
-               win     (or (:web/timeline-window state) initial-window-size)
-               start   (max 0 (- total win))]
-           (list
-            (when (pos? start)
-              [:div {:class ["load-earlier"]}
-               (button/button
-                {:variant :ghost :size :sm
-                 :on-click (fn [_] (dispatch! {:type :timeline/set-window
-                                               :window (+ win window-step)}))}
-                (str "Show " (min window-step start) " earlier messages"
-                     " (" start " hidden)"))])
-            (keep (partial entry->post dispatch!) (subvec entries start total))))
-         [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
-     (dialog-overlay dispatch! room)
-     (lightbox/lightbox {:src (:web/lightbox state)
-                         :on-close (fn [] (dispatch! {:type :lightbox/close}))})
-     (compose-box dispatch! room busy? (:web/compose-images state)
-                  draft-key (get-in state [:web/drafts draft-key]) sid
-                  (:web/cmd-selected state))]))
+     (when has-tabs?
+       (tab-bar dispatch! (:id room) active-buf buffers))
+     (case active-buf
+       :diff
+       (diff-tab-view (:diff buffers))
+
+       ;; default: :chat
+       (list
+        [:div {:class ["timeline"]}
+         [:div {:class ["timeline-content"]}
+          (if ready?
+            (let [entries (vec history)
+                  total   (count entries)
+                  win     (or (:web/timeline-window state) initial-window-size)
+                  start   (max 0 (- total win))]
+              (list
+               (when (pos? start)
+                 [:div {:class ["load-earlier"]}
+                  (button/button
+                   {:variant :ghost :size :sm
+                    :on-click (fn [_] (dispatch! {:type :timeline/set-window
+                                                  :window (+ win window-step)}))}
+                   (str "Show " (min window-step start) " earlier messages"
+                        " (" start " hidden)"))])
+               (keep (partial entry->post dispatch!) (subvec entries start total))))
+            [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
+        (dialog-overlay dispatch! room)
+        (lightbox/lightbox {:src (:web/lightbox state)
+                            :on-close (fn [] (dispatch! {:type :lightbox/close}))})
+        (compose-box dispatch! room busy? (:web/compose-images state)
+                     draft-key (get-in state [:web/drafts draft-key]) sid
+                     (:web/cmd-selected state)
+                     (get state :web/at-bottom? true))))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
