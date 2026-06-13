@@ -23,7 +23,7 @@
 (defn make-room
   "A room: independent conversation with its own history, session and UI."
   ([id] (make-room id nil))
-  ([id {:keys [provider model cwd session system effort agents-files
+  ([id {:keys [provider model cwd session system system-parts effort agents-files
                personal-agent? created ext]}]
    {:id      id
     :cwd     cwd
@@ -33,7 +33,8 @@
     :agent   {:busy?           false
               :provider        (or provider :claude)
               :model           model
-              :system          system          ;; AGENTS.md / system prompt append
+              :system          system          ;; concatenated system prompt string
+              :system-parts    (or system-parts []) ;; [{:source :text}] with attribution
               :effort          effort
               :agents-files    agents-files    ;; paths shown in launch header
               :personal-agent? personal-agent?}

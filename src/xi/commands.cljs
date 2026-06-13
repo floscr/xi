@@ -160,8 +160,17 @@
   {:effects [[:app/dispatch {:type :compact/request :room-id room-id :focus args}]]})
 
 (defn- cmd-prompt [st {:keys [room-id]}]
-  (let [text (or (get-in st [:rooms room-id :agent :system])
-                 "(no AGENTS.md found)")]
+  (let [parts (get-in st [:rooms room-id :agent :system-parts])
+        text  (if (seq parts)
+                (str/join "\n\n---\n\n"
+                          (map (fn [{:keys [source text]}]
+                                 (let [lines (count (re-seq #"\n" (or text "")))
+                                       preview (let [s (subs text 0 (min 200 (count text)))]
+                                                 (if (< (count text) 200) s (str s "...")))]
+                                   (str "## [" source "] (" lines " lines)\n\n" preview)))
+                               parts))
+                (or (get-in st [:rooms room-id :agent :system])
+                    "(no system prompt)"))]
     {:state (-> st
                 (assoc-in [:rooms room-id :ui :buffers :prompt]
                           {:title "System Prompt" :text text})
@@ -195,6 +204,12 @@
                 (conj (item "Diff" :diff)))]
     {:state (assoc-in st [:rooms room-id :ui :menu]
                       {:id :buffers :prompt "buffer> " :items items})}))
+
+(defn- cmd-cd [st {:keys [room-id args]}]
+  (let [cwd (get-in st [:rooms room-id :cwd])]
+    (if (nil? args)
+      (status st room-id (str "CWD: " cwd))
+      {:effects [[:cwd/change {:room-id room-id :path args}]]})))
 
 (defn- cmd-debug [st {:keys [room-id]}]
   (let [room (state/get-room st room-id)
@@ -230,6 +245,7 @@
    {:name "tree"     :description "Navigate session history"             :handler cmd-tree}
    {:name "events"   :description "Show event log for this session"     :handler cmd-events}
    {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers}
+   {:name "cd"       :description "Change working directory"            :handler cmd-cd}
    {:name "debug"    :description "Copy debug info to clipboard"       :handler cmd-debug}
    {:name "reload"   :description "Restart Xi (picks up recompiled code)" :handler cmd-reload}
    {:name "quit"     :description "Exit Xi"                            :handler cmd-quit}])
@@ -386,6 +402,18 @@
 
 ;; ── Session sync on turn end (chained after xi.agent's handler) ──────────────
 
+(defn- cwd-changed
+  "Applied after the :cwd/change effect validates the path. Updates the
+   room's cwd and, when provided, the system prompt."
+  [st {:keys [room-id cwd system system-parts agents-files]}]
+  (when (state/get-room st room-id)
+    {:state (cond-> (assoc-in st [:rooms room-id :cwd] cwd)
+              system       (assoc-in [:rooms room-id :agent :system] system)
+              system-parts (assoc-in [:rooms room-id :agent :system-parts] system-parts)
+              agents-files (assoc-in [:rooms room-id :agent :agents-files] agents-files))
+     :effects [[:app/dispatch {:type :ui/status :room-id room-id
+                               :text (str "CWD changed to: " cwd)}]]}))
+
 (defn turn-end-session-sync
   "Chained onto :agent/turn-end — persist the session once the provider
    reports a session id (xi.agent has already stored it on the room)."
@@ -419,7 +447,8 @@
     :ui/clear-images clear-images
     :session/created session-created
     :session/resumed session-resumed
-    :session/updated session-updated}))
+    :session/updated session-updated
+    :cwd/changed    cwd-changed}))
 
 (def handlers
   "Built-in-only command handlers (no extensions). Back-compat default;

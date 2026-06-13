@@ -149,6 +149,20 @@
     (when (seq parts)
       (str/join "\n\n" parts))))
 
+(defn system-prompt-parts
+  "Collect extension system prompts as source-attributed parts.
+   Returns a vector of {:source :text} maps (may be empty)."
+  [composed cwd]
+  (let [exts (:extensions composed)]
+    (into []
+          (keep (fn [ext]
+                  (when-let [sp (:system-prompt ext)]
+                    (let [s (if (fn? sp) (sp cwd) sp)]
+                      (when (seq s)
+                        {:source (str "ext/" (name (:id ext)))
+                         :text   s})))))
+          exts)))
+
 (defn prompt-badges
   "Concatenated prompt badge string for the current state ('' when none)."
   [composed state]

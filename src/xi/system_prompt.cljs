@@ -154,6 +154,34 @@ Be concise, direct, and friendly. When unsure, say so.")
       skill-content   skill-content
       :else           nil)))
 
+(defn load-agents-parts
+  "Load AGENTS.md and related prompts as source-attributed parts.
+   Returns a vector of {:source :text} maps (may be empty)."
+  [cwd]
+  (let [files (find-agents-md cwd)
+        profile-prompt (fetch-profile-agents-prompt cwd)
+        effective-files (if (and profile-prompt (:replace profile-prompt) (seq files))
+                          (let [root-agents (.join node-path (.resolve node-path cwd) "AGENTS.md")]
+                            (vec (remove #(= % root-agents) files)))
+                          files)
+        parts (into []
+                    (keep (fn [f]
+                            (let [content (str (fs/readFileSync f "utf8"))]
+                              (when (seq content)
+                                {:source (.relative node-path cwd f)
+                                 :text   (str "# " (.relative node-path cwd f) "\n\n" content)}))))
+                    effective-files)
+        parts (if-let [pc (:prompt profile-prompt)]
+                (conj parts {:source "profile" :text pc})
+                parts)
+        parts (if-let [sub (sub-agents-prompt cwd)]
+                (conj parts {:source "sub-agents" :text sub})
+                parts)
+        parts (if-let [sk (skills/load-skill-prompts cwd)]
+                (conj parts {:source "skills" :text sk})
+                parts)]
+    parts))
+
 (defn combine
   "Join system-prompt parts (nils/empties dropped) with the standard
    separator. Used to append extension system prompts to AGENTS.md."
@@ -161,6 +189,13 @@ Be concise, direct, and friendly. When unsure, say so.")
   (let [parts (filter seq parts)]
     (when (seq parts)
       (str/join "\n\n" parts))))
+
+(defn parts->system
+  "Concatenate a vector of {:source :text} parts into a single system prompt string.
+   Returns nil when parts is empty."
+  [parts]
+  (when (seq parts)
+    (str/join "\n\n" (map :text parts))))
 
 (defn- tool-descriptions
   "Format tool definitions into a system prompt section."

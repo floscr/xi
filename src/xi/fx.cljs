@@ -8,9 +8,12 @@
    :provider-session-id mirroring :cli-session-id in memory. The mirror key
    is stripped before writes so the on-disk format stays unchanged."
   (:require [clojure.string :as str]
+            ["node:fs" :as fs]
+            ["node:path" :as node-path]
             [xi.core.log :as log]
             [xi.image :as image]
-            [xi.session :as session]))
+            [xi.session :as session]
+            [xi.system-prompt :as system-prompt]))
 
 (defn- room-of [state room-id]
   (get-in state [:rooms room-id]))
@@ -107,7 +110,11 @@
   (fetch-all-model-ids
    (fn [models] (send-fn {:type :models/web-list-result :models models}))))
 
-(defn create-fx [ring]
+(defn create-fx
+  "Build effect handlers. opts:
+     :system-prompt-fn  (fn [cwd] → {:system str :system-parts [{:source :text}]})
+                        — called on /cd to rebuild the system prompt."
+  [ring & [{:keys [system-prompt-fn]}]]
   {:session/new
    (fn [{:keys [dispatch! state]} {:keys [room-id save-current? after-prompt]}]
      (let [room (room-of state room-id)
@@ -229,5 +236,26 @@
                                      :name "model" :args id}})
                           ids)]
           (dispatch! {:type :ui/menu-open :room-id room-id
-                      :menu {:id :model :prompt "model> " :items items}})))))})
+                      :menu {:id :model :prompt "model> " :items items}})))))
 
+   :cwd/change
+   (fn [{:keys [dispatch! state]} {:keys [room-id path]}]
+     (let [room     (room-of state room-id)
+           cur-cwd  (or (:cwd room) (.cwd js/process))
+           resolved (.resolve node-path cur-cwd path)]
+       (if-not (.existsSync fs resolved)
+         (dispatch! {:type :ui/status :room-id room-id
+                     :text (str "Directory not found: " resolved)})
+         (if-not (.isDirectory (.statSync fs resolved))
+           (dispatch! {:type :ui/status :room-id room-id
+                       :text (str "Not a directory: " resolved)})
+           (let [pa?    (get-in room [:agent :personal-agent?])
+                 result (when (and system-prompt-fn (not pa?))
+                          (system-prompt-fn resolved))
+                 agents (when (and system-prompt-fn (not pa?))
+                          (system-prompt/find-agents-md resolved))]
+             (dispatch! (cond-> {:type :cwd/changed :room-id room-id :cwd resolved}
+                          (:system result) (assoc :system (:system result))
+                          (:system-parts result) (assoc :system-parts (:system-parts result))
+                          agents (assoc :agents-files agents))))))))}
+)
