@@ -241,7 +241,8 @@
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
    {:name "truncate" :description "Summarize conversation to reduce context" :handler cmd-compact}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
-   {:name "diff"     :description "Show diff viewer (git|staged|unstaged|<ref>)" :handler cmd-diff}
+   {:name "diff"     :description "Show diff viewer (git|staged|unstaged|<ref>)" :handler cmd-diff
+    :subcommands [{:name "git" :description "All git changes (staged + unstaged + untracked)"}]}
    {:name "tree"     :description "Navigate session history"             :handler cmd-tree}
    {:name "events"   :description "Show event log for this session"     :handler cmd-events}
    {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers}
