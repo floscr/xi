@@ -116,7 +116,7 @@
       (when (seq text)
         [:div {:class ["tool-call-content"]}
          [:pre {:class ["tool-call-code"]}
-          (let [shown (truncate-lines text 30)]
+          (let [shown (truncate-lines text 100)]
             (if grammar (highlight-code grammar shown) shown))]])]]))
 
 ;; ── History entry → post ─────────────────────────────────────────────────────
