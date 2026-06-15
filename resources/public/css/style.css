@@ -1248,6 +1248,14 @@ body {
 }
 
 /* ---- Diff view ---- */
+.diff-tab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .diff-view {
   flex: 1;
   min-height: 0;
@@ -1255,10 +1263,19 @@ body {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 0;
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-size: var(--font-xs);
+  line-height: 1.5;
 }
 
 .diff-file {
   margin-bottom: var(--size-3);
+}
+
+.diff-file-body {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  display: grid;
 }
 
 .diff-file-header {
@@ -1315,6 +1332,23 @@ body {
   white-space: pre;
 }
 
+.diff-line--selectable {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.diff-line--selected {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.diff-line--selected.diff-line--add,
+.diff-line--selected.diff-line--del {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.diff-line--selected .diff-sign,
+.diff-line--selected .diff-ln { color: var(--fg-0); opacity: 0.9; }
+
 .diff-line--add {
   background: color-mix(in srgb, var(--hl-string) 12%, transparent);
 }
@@ -1354,4 +1388,45 @@ body {
   flex: 1;
   min-width: 0;
   padding-right: var(--size-2);
+}
+
+/* ---- Diff action bar (selection actions) ---- */
+.diff-action-bar {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-0);
+  background: var(--bg-1);
+  padding: var(--size-2) var(--size-3);
+  padding-bottom: max(var(--size-2), env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+.diff-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-2);
+}
+
+.diff-sel-count {
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+}
+
+.diff-action-buttons {
+  display: flex;
+  gap: var(--size-2);
+}
+
+.diff-modify-row {
+  display: flex;
+  gap: var(--size-2);
+  align-items: flex-end;
+}
+
+.diff-modify-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
 }

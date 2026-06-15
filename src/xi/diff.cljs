@@ -97,3 +97,55 @@
       (flush-file!)
       @result)))
 
+(defn diff-rows
+  "Flatten parsed diff files into an ordered vector of render rows, assigning
+   a stable :sel-idx (selection index) to each code line (add/delete/context).
+   File and hunk headers carry :sel-idx nil. Used by both the renderer and the
+   selection/prompt logic so indices stay in sync.
+
+   Row shapes:
+     {:row :file :filename str :status kw :sel-idx nil}
+     {:row :hunk :header str :sel-idx nil}
+     {:row :line :filename str :line {..diff line..} :sel-idx int}"
+  [parsed]
+  (let [rows (atom [])
+        n (atom 0)]
+    (doseq [{:keys [filename status hunks]} parsed]
+      (swap! rows conj {:row :file :filename filename :status status :sel-idx nil})
+      (doseq [hunk hunks]
+        (swap! rows conj {:row :hunk :header (:header hunk) :sel-idx nil})
+        (doseq [l (:lines hunk)]
+          (if (= :meta (:type l))
+            (swap! rows conj {:row :line :filename filename :line l :sel-idx nil})
+            (let [idx @n]
+              (swap! n inc)
+              (swap! rows conj {:row :line :filename filename :line l :sel-idx idx}))))))
+    @rows))
+
+(defn selection-range
+  "Normalize a {:anchor :head} selection into [lo hi] inclusive, or nil."
+  [{:keys [anchor head]}]
+  (when (and anchor head)
+    [(min anchor head) (max anchor head)]))
+
+(defn selected-snippet
+  "Build a readable diff snippet from the rows whose :sel-idx falls within the
+   inclusive [lo hi] selection range. Groups consecutive lines by file and
+   prefixes +/-/space signs so an LLM can read it as a diff fragment."
+  [rows [lo hi]]
+  (let [sel (filter (fn [{:keys [row sel-idx]}]
+                      (and (= :line row) sel-idx (<= lo sel-idx hi)))
+                    rows)
+        by-file (partition-by :filename sel)]
+    (->> by-file
+         (map (fn [group]
+                (let [fname (:filename (first group))
+                      body (->> group
+                                (map (fn [{:keys [line]}]
+                                       (let [sign (case (:type line)
+                                                    :add "+" :delete "-" " ")]
+                                         (str sign (:text line)))))
+                                (str/join "\n"))]
+                  (str fname "\n" body))))
+         (str/join "\n\n"))))
+

@@ -453,14 +453,15 @@
       (grammars/get-grammar ext))))
 
 (defn- diff-line-view
-  "Render a single diff line with syntax highlighting."
-  [grammar {:keys [type text old-line new-line]}]
-  (let [cls (case type
-              :add     ["diff-line" "diff-line--add"]
-              :delete  ["diff-line" "diff-line--del"]
-              :context ["diff-line"]
-              :meta    ["diff-line" "diff-line--meta"]
-              ["diff-line"])
+  "Render a single selectable diff line with syntax highlighting. Tapping a
+   code line dispatches :diff/select-line with its selection index."
+  [dispatch! grammar selected? {:keys [type text old-line new-line]} sel-idx row-key]
+  (let [cls (cond-> ["diff-line"]
+              (= type :add)     (conj "diff-line--add")
+              (= type :delete)  (conj "diff-line--del")
+              (= type :meta)    (conj "diff-line--meta")
+              sel-idx           (conj "diff-line--selectable")
+              selected?         (conj "diff-line--selected"))
         old-nr (case type
                  (:delete :context) (str old-line)
                  "")
@@ -468,7 +469,9 @@
                  (:add :context) (str new-line)
                  "")
         sign   (case type :add "+" :delete "-" " ")]
-    [:div {:class cls}
+    [:div (cond-> {:class cls :replicant/key row-key}
+            sel-idx (assoc :on {:click (fn [_] (dispatch! {:type :diff/select-line
+                                                           :idx sel-idx}))}))
      [:span {:class ["diff-ln"]} old-nr]
      [:span {:class ["diff-ln"]} new-nr]
      [:span {:class ["diff-sign"]} sign]
@@ -477,38 +480,106 @@
         (highlight-code grammar (or text ""))
         (or text ""))]]))
 
-(defn- diff-content
-  "Render parsed diff files as a scrollable view."
-  [parsed]
-  [:div {:class ["diff-view"]}
-   (if (seq parsed)
-     (for [{:keys [filename status hunks]} parsed]
-       (let [grammar (diff-file-grammar filename)
-             status-label (case status
-                            :added   "added"
-                            :deleted "deleted"
-                            :renamed "renamed"
-                            :binary  "binary"
-                            nil)]
-         [:div {:class ["diff-file"] :replicant/key filename}
-          [:div {:class ["diff-file-header"]}
-           [:span {:class ["diff-file-name"]} filename]
-           (when status-label
-             [:span {:class ["diff-file-status"
-                             (str "diff-file-status--" (name status))]}
-              status-label])]
-          (for [hunk hunks]
-            [:div {:class ["diff-hunk"] :replicant/key (:header hunk)}
-             [:div {:class ["diff-hunk-header"]} (:header hunk)]
-             [:div {:class ["diff-hunk-body"]}
-              (map (partial diff-line-view grammar) (:lines hunk))]])]))
-     [:div {:class ["empty-state"]} "No changes."])])
+(defn- diff-rows-view
+  "Render flattened diff rows as a scrollable view with selection highlight.
+   Rows are grouped by file: each file gets a sticky header and a horizontally
+   scrollable body so long lines don't push the whole view."
+  [dispatch! rows range]
+  (let [grammar-cache (atom {})
+        grammar-for (fn [f] (or (@grammar-cache f)
+                                (let [g (diff-file-grammar f)]
+                                  (swap! grammar-cache assoc f g) g)))
+        ;; Partition rows into per-file groups (each starting with a :file row)
+        file-groups (when (seq rows)
+                      (reduce (fn [groups r]
+                                (if (= :file (:row r))
+                                  (conj groups [r])
+                                  (update groups (dec (count groups)) conj r)))
+                              [] rows))]
+    [:div {:class ["diff-view"]}
+     (if (seq file-groups)
+       (map-indexed
+        (fn [fi group]
+          (let [{:keys [filename status]} (first group)
+                status-label (case status
+                               :added "added" :deleted "deleted"
+                               :renamed "renamed" :binary "binary" nil)
+                body-rows (rest group)]
+            [:div {:class ["diff-file"] :replicant/key filename}
+             [:div {:class ["diff-file-header"]}
+              [:span {:class ["diff-file-name"]} filename]
+              (when status-label
+                [:span {:class ["diff-file-status"
+                                (str "diff-file-status--" (name status))]}
+                 status-label])]
+             [:div {:class ["diff-file-body"]}
+              (map-indexed
+               (fn [ri {:keys [row header line sel-idx] :as r}]
+                 (let [k (str fi "-" ri)]
+                   (case row
+                     :hunk
+                     [:div {:class ["diff-hunk-header"] :replicant/key (str "h" k)} header]
+                     :line
+                     (let [selected? (boolean (and range sel-idx
+                                                   (<= (first range) sel-idx (second range))))]
+                       (diff-line-view dispatch! (grammar-for (:filename r))
+                                       selected? line sel-idx (str "l" k)))
+                     nil)))
+               body-rows)]]))
+        file-groups)
+       [:div {:class ["empty-state"]} "No changes."])]))
+
+(defn- diff-action-bar
+  "Bottom action bar shown when diff lines are selected: Explain / Modify /
+   Clear, plus an inline prompt input for Modify."
+  [dispatch! room-id range modify?]
+  (let [n (when range (inc (- (second range) (first range))))
+        submit-modify!
+        (fn [_]
+          (when-let [el (.getElementById js/document "diff-modify-input")]
+            (dispatch! {:type :diff/modify-submit
+                        :room-id room-id :text (.-value el)})))]
+    [:div {:class ["diff-action-bar"]}
+     (when modify?
+       [:div {:class ["diff-modify-row"]}
+        [:textarea {:id "diff-modify-input"
+                    :class ["form-textarea" "diff-modify-input"]
+                    :placeholder "Describe the change to make to the selected code…"
+                    :rows 2
+                    :on {:keydown (fn [^js e]
+                                    (when (and (= "Enter" (.-key e)) (.-metaKey e))
+                                      (.preventDefault e) (submit-modify! e)))}}]
+        (button/button
+         {:variant :primary :size :sm
+          :on-click submit-modify!}
+         "Send")])
+     [:div {:class ["diff-action-row"]}
+      [:span {:class ["diff-sel-count"]}
+       (str n " line" (when (not= 1 n) "s") " selected")]
+      [:div {:class ["diff-action-buttons"]}
+       (button/button
+        {:variant :ghost :size :sm
+         :on-click (fn [_] (dispatch! {:type :diff/clear-selection}))}
+        "Clear")
+       (button/button
+        {:variant :ghost :size :sm
+         :on-click (fn [_] (dispatch! {:type :diff/modify-toggle}))}
+        "Modify")
+       (button/button
+        {:variant :primary :size :sm
+         :on-click (fn [_] (dispatch! {:type :diff/explain :room-id room-id}))}
+        "Explain")]]]))
 
 (defn- diff-tab-view
-  "Full diff buffer view rendered as the active tab."
-  [diff-buffer]
-  (let [parsed (diff/parse-diff-text (:text diff-buffer))]
-    (diff-content parsed)))
+  "Full diff buffer view rendered as the active tab, with line selection and
+   an action bar for Explain / Modify."
+  [dispatch! room-id diff-buffer sel modify?]
+  (let [rows  (diff/diff-rows (diff/parse-diff-text (:text diff-buffer)))
+        range (diff/selection-range sel)]
+    [:div {:class ["diff-tab"]}
+     (diff-rows-view dispatch! rows range)
+     (when range
+       (diff-action-bar dispatch! room-id range modify?))]))
 
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 
@@ -584,7 +655,9 @@
        (tab-bar dispatch! (:id room) active-buf buffers))
      (case active-buf
        :diff
-       (diff-tab-view (:diff buffers))
+       (diff-tab-view dispatch! (:id room) (:diff buffers)
+                      (:web/diff-sel state)
+                      (:web/diff-modify? state))
 
        ;; default: :chat
        (list

@@ -10,7 +10,8 @@
    router lives in the single atom (:web/route); the cache hydrates state
    before the WS connects and persists via an app tap. Saved sessions, live
    rooms, unread dots and reconnect come from the lobby mirror + transport."
-  (:require [replicant.dom :as r]
+  (:require [clojure.string :as str]
+            [replicant.dom :as r]
             [xi.agent :as agent]
             [xi.client.ws-transport :as ws-transport]
             [xi.commands :as commands]
@@ -18,6 +19,7 @@
             [xi.core.app :as app]
             [xi.core.events :as events]
             [xi.core.state :as state]
+            [xi.diff :as diff]
             [xi.web.cache :as cache]
             [xi.web.router :as router]
             [xi.web.views :as views]))
@@ -133,6 +135,57 @@
     {:state   (assoc st :web/theme-mode m)
      :effects [[:theme/apply m]]}))
 
+;; ── Interactive diff selection / actions ──────────────────────────────────────
+
+(defn- diff-select-line
+  "Tap a diff line. First tap selects a single line; a second tap extends the
+   range from the anchor; tapping again (range active) restarts at one line."
+  [st {:keys [idx]}]
+  (let [{:keys [anchor head] :as sel} (:web/diff-sel st)]
+    {:state (cond
+              (nil? sel)        (assoc st :web/diff-sel {:anchor idx :head idx})
+              (= anchor head)   (assoc-in st [:web/diff-sel :head] idx)
+              :else             (assoc st :web/diff-sel {:anchor idx :head idx}))}))
+
+(defn- diff-clear-selection [st _]
+  {:state (dissoc st :web/diff-sel :web/diff-modify?)})
+
+(defn- diff-modify-toggle [st _]
+  {:state (update st :web/diff-modify? not)})
+
+(defn- selected-diff-snippet
+  "Pull the diff buffer for room-id, flatten it, and return the snippet text
+   for the current selection range (or nil)."
+  [st room-id]
+  (let [text  (get-in st [:rooms room-id :ui :buffers :diff :text])
+        range (diff/selection-range (:web/diff-sel st))]
+    (when (and text range)
+      (diff/selected-snippet (diff/diff-rows (diff/parse-diff-text text)) range))))
+
+(defn- diff-submit
+  "Submit a prompt built from the selected diff region into the room, switch
+   back to the chat view, and clear the selection."
+  [st room-id prompt]
+  {:state   (dissoc st :web/diff-sel :web/diff-modify?)
+   :effects [[:ws/send {:type :input/submit :room-id room-id :text prompt}]
+             [:app/dispatch {:type :ui/buffer-switch :room-id room-id
+                             :buffer-id :chat}]]})
+
+(defn- diff-explain [st {:keys [room-id]}]
+  (when-let [snippet (selected-diff-snippet st room-id)]
+    (diff-submit st room-id
+                 (str "Explain the following changes from our session "
+                      "in plain language — what they do and why:\n\n"
+                      "```diff\n" snippet "\n```"))))
+
+(defn- diff-modify-submit [st {:keys [room-id text]}]
+  (let [instr (some-> text str/trim)]
+    (when (and (seq instr))
+      (when-let [snippet (selected-diff-snippet st room-id)]
+        (diff-submit st room-id
+                     (str instr "\n\nApply this to the following code from the diff:\n\n"
+                          "```diff\n" snippet "\n```"))))))
+
 ;; ── GTD ──────────────────────────────────────────────────────────────────────
 
 (defn- gtd-web-list-result
@@ -216,7 +269,12 @@
                                                           :text (str "/model " model)}]]})
           :models/close          (fn [st _] {:state (dissoc st :web/model-list)})
           :scroll/at-bottom      (fn [st {:keys [at-bottom?]}]
-                                    {:state (assoc st :web/at-bottom? at-bottom?)})}))
+                                    {:state (assoc st :web/at-bottom? at-bottom?)})
+          :diff/select-line      diff-select-line
+          :diff/clear-selection  diff-clear-selection
+          :diff/modify-toggle    diff-modify-toggle
+          :diff/explain          diff-explain
+          :diff/modify-submit    diff-modify-submit}))
 
 (defn- web-effects []
   {:history/push router/history-effect
