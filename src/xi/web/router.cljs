@@ -5,6 +5,8 @@
    Routes:
      /                  → {:page :home}
      /chat/:session-id  → {:page :chat :session-id sid}
+     /projects           → {:page :home} (project list)
+     /projects/:cwd      → {:page :home :dir <decoded-cwd>}
 
    `:route/navigate` is a pure handler: it sets `:web/route` and emits a
    `[:history/push …]` effect plus the room event the destination implies
@@ -33,17 +35,28 @@
                (cond-> {:page :gtd}
                  file    (assoc :file file)
                  task-id (assoc :task-id task-id)))
+      "projects" (let [seg2 (second segments)
+                       dir  (cond
+                              (nil? seg2) nil
+                              (= seg2 "all") :all
+                              :else (js/decodeURIComponent seg2))]
+                   (cond-> {:page :home}
+                     dir (assoc :dir dir)))
       {:page :home})))
 
 (defn route->path
   "Route map → URL path."
-  [{:keys [page session-id file task-id]}]
+  [{:keys [page session-id file task-id dir]}]
   (case page
     :chat (if session-id (str "/chat/" session-id) "/chat")
     :gtd  (cond-> "/gtd"
              file    (str "/" (js/encodeURIComponent file))
              task-id (str "/" task-id))
-    "/"))
+    ;; :home — use /projects/:cwd when drilling into a directory
+    (cond
+      (= dir :all) "/projects/all"
+      dir          (str "/projects/" (js/encodeURIComponent dir))
+      :else        "/")))
 
 ;; ── Navigation (pure handler) ────────────────────────────────────────────────
 
@@ -59,10 +72,11 @@
      :page       :home | :chat
      :session-id (chat only)
      :replace?   true for popstate / initial load (no new history entry)"
-  [st {:keys [page session-id file task-id replace?]}]
+  [st {:keys [page session-id file task-id dir replace?]}]
   (let [route      (cond-> {:page page :session-id session-id}
                      file    (assoc :file file)
-                     task-id (assoc :task-id task-id))
+                     task-id (assoc :task-id task-id)
+                     dir     (assoc :dir dir))
         active-sid (get-in (state/active-room st) [:session :id])
         ;; Already viewing this session (e.g. the post-join URL fix) → don't
         ;; re-join or re-mark.
@@ -85,7 +99,11 @@
 
                   ;; Fetch task list when entering GTD without cached data
                   (and (= page :gtd) (empty? (:web/gtd-tasks st)))
-                  (conj [:app/dispatch {:type :gtd/web-list}]))]
+                  (conj [:app/dispatch {:type :gtd/web-list}])
+
+                  ;; Fetch sessions when drilling into a project directory
+                  (and (= page :home) dir (not= dir :all))
+                  (conj [:app/dispatch {:type :projects/web-sessions :cwd dir}]))]
     {:state   (cond-> (assoc st :web/route route
                             ;; reset the virtualized timeline window on every
                             ;; navigation so a new session starts compact
@@ -98,13 +116,22 @@
                 (assoc :web/pending-read active-sid)
                 ;; Sync file/task drill-down from the route
                 (= page :gtd) (-> (assoc :web/gtd-file file)
-                                  (assoc :web/gtd-task-id task-id)))
+                                  (assoc :web/gtd-task-id task-id))
+                ;; Sync project dir drill-down from the route
+                (= page :home) (-> (assoc :web/selected-project-dir dir)
+                                   ;; Clear stale sessions when navigating away
+                                   (cond-> (nil? dir) (dissoc :web/project-sessions
+                                                              :web/project-sessions-cwd))))
      :effects effects}))
 
 (def handlers
   {:route/navigate navigate})
 
 ;; ── History effect + init (impure edge) ──────────────────────────────────────
+
+;; How many pushState entries the app owns. Used by :nav/back to decide
+;; whether history.back() has somewhere to go or needs a fallback route.
+(defonce nav-depth (atom 0))
 
 (defn history-effect
   "The `:history/push` effect — pushState/replaceState the route's path."
@@ -113,7 +140,16 @@
     (if replace?
       (.replaceState js/window.history nil "" path)
       (when (not= path (.-pathname js/window.location))
-        (.pushState js/window.history nil "" path)))))
+        (.pushState js/window.history nil "" path)
+        (swap! nav-depth inc)))))
+
+(defn back-effect
+  "The `:nav/back` effect — go back in browser history when the app owns
+   entries, otherwise dispatch the fallback route."
+  [{:keys [dispatch!]} {:keys [fallback]}]
+  (if (pos? @nav-depth)
+    (.back js/history)
+    (dispatch! (assoc fallback :type :route/navigate :replace? true))))
 
 (defn init!
   "Seed the initial route from the URL and forward popstate as navigate.
@@ -122,4 +158,7 @@
   (let [route->ev (fn [] (assoc (parse-path (.-pathname js/window.location))
                                 :type :route/navigate :replace? true))]
     (dispatch! (route->ev))
-    (.addEventListener js/window "popstate" (fn [_] (dispatch! (route->ev))))))
+    (.addEventListener js/window "popstate"
+                       (fn [_]
+                         (swap! nav-depth #(max 0 (dec %)))
+                         (dispatch! (route->ev))))))

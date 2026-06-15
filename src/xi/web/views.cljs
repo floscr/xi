@@ -566,6 +566,10 @@
          :on-click (fn [_] (dispatch! {:type :diff/modify-toggle}))}
         "Modify")
        (button/button
+        {:variant :ghost :size :sm
+         :on-click (fn [_] (dispatch! {:type :diff/goto :room-id room-id}))}
+        "Goto")
+       (button/button
         {:variant :primary :size :sm
          :on-click (fn [_] (dispatch! {:type :diff/explain :room-id room-id}))}
         "Explain")]]]))
@@ -632,7 +636,7 @@
     [:div {:class ["container"] :replicant/key "chat"}
      [:div {:class ["topbar"]}
       [:button {:class ["icon-btn" "icon-btn--sm"]
-                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
+                :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]}
        "Xi"
@@ -760,7 +764,7 @@
     [:div {:class ["container"] :replicant/key "project-sessions"}
      [:div {:class ["topbar"]}
       [:button {:class ["icon-btn"]
-                :on {:click (fn [_] (dispatch! {:type :projects/back}))}}
+                :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]} (shorten-path cwd)]
       [:button {:class ["icon-btn"]
@@ -793,10 +797,62 @@
                            :has-dialog? (boolean (:has-dialog? room))
                            :unread? (unread? sid)})))])]]))  
 
+(defn- all-sessions-view
+  "Flat list of all sessions (the old home view)."
+  [state dispatch!]
+  (let [sessions   (get-in state [:lobby :sessions])
+        rooms      (get-in state [:lobby :rooms])
+        counts     (:web/response-counts state)
+        watched    (:web/watched state)
+        connected? (:web/connected? state)
+        room-by-sid (into {} (keep (fn [r] (when (:session-id r) [(:session-id r) r])) rooms))
+        known-sids  (set (keep :session-id sessions))
+        orphans     (filter (fn [r] (and (:session-id r)
+                                         (not (known-sids (:session-id r)))))
+                            rooms)
+        unread?     (fn [sid] (when-let [w (get watched sid)]
+                               (> (get counts sid 0) w)))]
+    [:div {:class ["container"] :replicant/key "all-sessions"}
+     [:div {:class ["topbar"]}
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} "All sessions"]
+      (when connected?
+        [:button {:class ["icon-btn"]
+                  :on {:click (fn [_] (dispatch! {:type :room/new}))}}
+         (icon/icon {:icon-name :plus :size :md})])]
+     [:div {:class ["home"]}
+      (if (or (seq sessions) (seq orphans))
+        [:div {:class ["project-list"]}
+         (for [r orphans]
+           (session-card dispatch! {:session-id (:session-id r)
+                                    :name (or (:session-name r) "New session")
+                                    :active? true :busy? (:busy? r)
+                                    :has-dialog? (:has-dialog? r)}))
+         (for [s sessions]
+           (let [sid (:session-id s)
+                 room (get room-by-sid sid)]
+             (session-card dispatch!
+                          {:session-id sid
+                           :name (:name s)
+                           :timestamp (or (:last-accessed s) (:timestamp s))
+                           :active? (boolean room)
+                           :busy? (boolean (:busy? room))
+                           :has-dialog? (boolean (:has-dialog? room))
+                           :unread? (unread? sid)})))]
+        [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
+
 (defn- home-view [state dispatch!]
   (let [selected-dir (:web/selected-project-dir state)]
-    (if selected-dir
+    (cond
+      (= selected-dir :all)
+      (all-sessions-view state dispatch!)
+
+      selected-dir
       (project-sessions-view state dispatch!)
+
+      :else
       (let [dirs       (:web/project-dirs state)
             loading?   (:web/projects-loading? state)
             rooms      (get-in state [:lobby :rooms])
@@ -844,6 +900,16 @@
                                         :name (or (:session-name r) "New session")
                                         :active? true :busy? (:busy? r)
                                         :has-dialog? (:has-dialog? r)}))
+             ;; All sessions link
+             [:div {:class ["project-card"]
+                    :replicant/key "all-sessions"
+                    :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :all}))}}
+              [:div {:class ["project-card-icon"]}
+               (icon/icon {:icon-name :message-circle :size :sm})]
+              [:div {:class ["project-card-info"]}
+               [:span {:class ["project-card-name"]} "All sessions"]]
+              [:div {:class ["project-card-chevron"]}
+               (icon/icon {:icon-name :chevron-right :size :sm})]]
              ;; Project directories
              (for [d dirs]
                (project-dir-card dispatch! d))])]]))))
@@ -949,7 +1015,7 @@
      [:div {:class ["topbar"]}
       [:button {:class ["icon-btn"]
                 :on {:click (fn [_]
-                              (dispatch! {:type :gtd/back-to-tasks :file file}))}}
+                              (dispatch! {:type :nav/back :fallback {:page :gtd :file file}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]} "Task"]]
      [:div {:class ["gtd-detail-scroll"]}
@@ -1005,9 +1071,10 @@
        [:div {:class ["topbar"]}
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_]
-                                (if selected-file
-                                  (dispatch! {:type :gtd/back-to-files})
-                                  (dispatch! {:type :route/navigate :page :home})))}}
+                                (dispatch! {:type :nav/back
+                                            :fallback (if selected-file
+                                                        {:page :gtd}
+                                                        {:page :home})}))}}
          (icon/icon {:icon-name :arrow-left :size :md})]
         [:div {:class ["topbar-title"]}
          (if selected-file
