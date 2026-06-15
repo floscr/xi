@@ -167,7 +167,8 @@ body {
 }
 
 .post--user .post-body {
-  background-color: var(--bg-1);
+  background-color: #7c3aed;
+  color: #fff;
   border-radius: var(--radius-lg);
   padding: var(--size-3) var(--size-4);
   max-width: 85%;
@@ -213,7 +214,9 @@ body {
 }
 
 .post--user .post-content code {
-  background-color: var(--bg-0);
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .post-content pre {

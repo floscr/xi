@@ -5,6 +5,7 @@
    Phase 7a: the online chat view (topbar, timeline of history entries,
    compose input, abort, permission dialogs). Home view + router land in 7b."
   (:require [clojure.string :as str]
+            [xi.commands :as commands]
             [xi.core.state :as state]
             [xi.markdown.hiccup :as md]
             [xi.highlight.core :as hl]
@@ -259,7 +260,7 @@
 
 (def ^:private web-commands
   "Commands shown in the web suggestion popup. Excludes TUI-only commands
-   (quit, reload, diff, tree, events, buffers, debug, prompt)."
+   (quit, reload, diff, tree, events, buffers, prompt)."
   [{:name "help"     :description "Show available commands"}
    {:name "model"    :description "Show or set model"}
    {:name "resume"   :description "Resume a previous session"}
@@ -268,7 +269,8 @@
    {:name "clear"    :description "Clear current session"}
    {:name "truncate" :description "Summarize conversation to reduce context"}
    {:name "diff"     :description "Show diff viewer (git|staged|unstaged)"}
-   {:name "commit"   :description "Review changes and create a git commit"}])
+   {:name "commit"   :description "Review changes and create a git commit"}
+   {:name "debug"    :description "Copy debug info to clipboard"}])
 
 (defn- match-commands
   "Filter commands by prefix query (text after the /)."
@@ -646,6 +648,22 @@
           (str " · " model)])]
       (when model-list
         (model-selector dispatch! (:id room) model-list model))
+      (when room
+        [:button {:class ["icon-btn" "icon-btn--sm"]
+                  :on {:click (fn [_]
+                                (let [text (commands/debug-text room)]
+                                  (-> (.writeText js/navigator.clipboard text)
+                                      (.catch (fn [_]
+                                                (let [el (.createElement js/document "textarea")]
+                                                  (set! (.-value el) text)
+                                                  (set! (.-style.position el) "fixed")
+                                                  (set! (.-style.opacity el) "0")
+                                                  (.appendChild js/document.body el)
+                                                  (.focus el)
+                                                  (.select el)
+                                                  (.execCommand js/document "copy")
+                                                  (.removeChild js/document.body el)))))))}}
+         (icon/icon {:icon-name :copy :size :md})])
       (theme-toggle/theme-toggle
        {:mode (or (:web/theme-mode state) "auto")
         :size :sm

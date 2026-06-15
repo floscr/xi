@@ -211,23 +211,29 @@
       (status st room-id (str "CWD: " cwd))
       {:effects [[:cwd/change {:room-id room-id :path args}]]})))
 
+(defn debug-text
+  "Build the debug info string from a room map."
+  [room]
+  (let [{:keys [model effort busy?]} (:agent room)
+        sess (:session room)]
+    (str "Session ID: " (or (:id sess) "(none)") "\n"
+         "Use `xi_events` tool to look up the event log for this session.\n\n"
+         "## Runtime\n"
+         "- Model: " (or model "(none)") "\n"
+         "- Effort: " (or effort "(default)") "\n"
+         "- CWD: " (:cwd room) "\n"
+         "- Busy: " (boolean busy?) "\n"
+         "- Provider: " (str (get-in room [:agent :provider])) "\n"
+         "\n## Session\n"
+         "- Xi ID: " (or (:id sess) "(none)") "\n"
+         "- Provider Session ID: " (or (:provider-session-id sess) "(none)") "\n"
+         "- Name: " (or (:name sess) "(unnamed)") "\n"
+         "\n## History\n"
+         "- Entries: " (count (:history room)))))
+
 (defn- cmd-debug [st {:keys [room-id]}]
   (let [room (state/get-room st room-id)
-        {:keys [model effort busy?]} (:agent room)
-        sess (:session room)
-        text (str "# Xi Debug Info\n\n"
-                  "## Runtime\n"
-                  "- Model: " (or model "(none)") "\n"
-                  "- Effort: " (or effort "(default)") "\n"
-                  "- CWD: " (:cwd room) "\n"
-                  "- Busy: " (boolean busy?) "\n"
-                  "- Provider: " (str (get-in room [:agent :provider])) "\n"
-                  "\n## Session\n"
-                  "- Xi ID: " (or (:id sess) "(none)") "\n"
-                  "- Provider Session ID: " (or (:provider-session-id sess) "(none)") "\n"
-                  "- Name: " (or (:name sess) "(unnamed)") "\n"
-                  "\n## History\n"
-                  "- Entries: " (count (:history room)))]
+        text (debug-text room)]
     {:state   (:state (status st room-id "Debug info copied to clipboard."))
      :effects [[:clipboard/copy {:text text}]]}))
 
