@@ -55,6 +55,22 @@
                                      :event/ts 1 :event/id 1})]
       (is (= :room/setup (ffirst effects))))))
 
+(deftest join-session-id-reuses-existing-room
+  (testing "map target {:session-id sid} attaches to live room hosting that session"
+    (let [st (assoc-in (server-state-with-room)
+                       [:rooms "r1" :session] {:id "sess-abc" :cwd "/x"})
+          {:keys [effects]} (handle st {:type :room/join :client-id "c1"
+                                        :target {:session-id "sess-abc"}
+                                        :event/ts 999 :event/id 1})]
+      (is (= [[:app/dispatch {:type :room/attach :client-id "c1" :room-id "r1"}]]
+             effects))))
+  (testing "map target with unknown session-id provisions a new room"
+    (let [{:keys [effects]} (handle (server-state-with-room)
+                                    {:type :room/join :client-id "c1"
+                                     :target {:session-id "no-such-session"}
+                                     :event/ts 999 :event/id 1})]
+      (is (= :room/setup (ffirst effects))))))
+
 ;; ── :room/attach ─────────────────────────────────────────────────────────────
 
 (deftest attach-marks-membership-and-sends-snapshot

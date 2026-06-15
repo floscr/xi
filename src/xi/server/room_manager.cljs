@@ -58,6 +58,14 @@
 
 ;; ── Handlers (pure) ──────────────────────────────────────────────────────────
 
+(defn- room-for-session
+  "Find an existing room hosting this session-id, if any."
+  [st session-id]
+  (some (fn [[_ room]]
+          (when (= session-id (get-in room [:session :id]))
+            (:id room)))
+        (:rooms st)))
+
 (defn- room-join
   "Resolve a join target to an existing room (→ attach) or a new one
    (→ :room/setup effect, which creates then attaches).
@@ -67,9 +75,15 @@
   [st {:keys [client-id target cwd] :as ev}]
   (let [target (or target "latest")]
     (if (map? target)
-      {:effects [[:room/setup {:client-id  client-id
-                               :room-id    (gen-room-id ev)
-                               :session-id (:session-id target)}]]}
+      ;; Map target {:session-id sid} — check for a live room first (e.g.
+      ;; mobile reconnects) before creating a new one.
+      (if-let [existing (room-for-session st (:session-id target))]
+        {:effects [[:app/dispatch {:type :room/attach
+                                   :client-id client-id
+                                   :room-id existing}]]}
+        {:effects [[:room/setup {:client-id  client-id
+                                 :room-id    (gen-room-id ev)
+                                 :session-id (:session-id target)}]]})
       (let [existing (cond
                        (= "new" target)    nil
                        (= "latest" target) (latest-room-id st)
