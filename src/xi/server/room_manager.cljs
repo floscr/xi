@@ -114,7 +114,11 @@
                :effects [[:ws/send-to {:client-id client-id
                                        :event {:type :room/left :room-id room-id}}]]}
         (and empty? idle?)
-        (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])))))
+        (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])
+        ;; Last client left a busy room — abort the agent so the turn ends
+        ;; and turn-end-room-cleanup can close it (prevents stale rooms).
+        (and empty? (not idle?))
+        (update :effects conj [:app/dispatch {:type :agent/abort :room-id room-id}])))))
 
 (defn- room-list [_st {:keys [client-id]}]
   ;; The full payload (rooms + saved sessions) is built impurely in the WS
@@ -158,13 +162,15 @@
 (defn client-disconnect-cleanup
   "Chain BEFORE the core :client/disconnect handler (needs the client's
    room while it's still recorded): close the room when this was its last
-   client and the agent is idle."
+   client. Idle rooms close immediately; busy rooms get their agent
+   aborted so the turn-end chain can clean up (prevents stale rooms)."
   [st {:keys [client-id]}]
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
     (let [others (remove #{client-id} (clients-in-room st room-id))]
-      (when (and (empty? others)
-                 (not (get-in st [:rooms room-id :agent :busy?])))
-        {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]}))))
+      (when (empty? others)
+        (if (get-in st [:rooms room-id :agent :busy?])
+          {:effects [[:app/dispatch {:type :agent/abort :room-id room-id}]]}
+          {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]})))))
 
 (defn turn-end-room-cleanup
   "Chain onto :agent/turn-end: a turn just finished in a room nobody is
