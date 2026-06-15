@@ -723,66 +723,6 @@
      unread? [:div {:class ["unread-dot"]}]
      active? [:div {:class ["active-dot"]}])])
 
-(defn- home-view [state dispatch!]
-  (let [sessions   (get-in state [:lobby :sessions])
-        rooms      (get-in state [:lobby :rooms])
-        counts     (:web/response-counts state)
-        watched    (:web/watched state)
-        connected? (:web/connected? state)
-        room-by-sid (into {} (keep (fn [r] (when (:session-id r) [(:session-id r) r])) rooms))
-        known-sids  (set (keep :session-id sessions))
-        orphans     (filter (fn [r] (and (:session-id r)
-                                         (not (known-sids (:session-id r)))))
-                            rooms)
-        unread?     (fn [sid] (when-let [w (get watched sid)]
-                               (> (get counts sid 0) w)))
-        has-content? (or (seq sessions) (seq orphans))]
-    [:div {:class ["container"] :replicant/key "home"}
-     [:div {:class ["topbar"]}
-      [:div {:class ["topbar-title"]} "Xi"]
-      (theme-toggle/theme-toggle
-       {:mode (or (:web/theme-mode state) "auto")
-        :size :sm
-        :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
-      (when standalone?
-        [:button {:class ["icon-btn" "icon-btn--sm"]
-                  :on {:click (fn [_] (.reload js/location))}}
-         (icon/icon {:icon-name :refresh :size :md})])
-      (offline-badge state)
-      (when connected?
-        [:button {:class ["icon-btn"]
-                  :title "GTD Tasks"
-                  :on {:click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}}
-         (icon/icon {:icon-name :list :size :md})])
-      (when connected?
-        [:button {:class ["icon-btn"]
-                  :on {:click (fn [_] (dispatch! {:type :room/new}))}}
-         (icon/icon {:icon-name :plus :size :md})])]
-     [:div {:class ["home"]}
-      (if (or has-content? connected?)
-        [:div {:class ["project-list"]}
-         (for [r orphans]
-           (session-card dispatch! {:session-id (:session-id r)
-                                    :name (or (:session-name r) "New session")
-                                    :active? true :busy? (:busy? r)
-                                    :has-dialog? (:has-dialog? r)}))
-         (for [s sessions]
-           (let [sid (:session-id s)
-                 room (get room-by-sid sid)]
-             (session-card dispatch!
-                           {:session-id sid
-                            :name (:name s)
-                            :timestamp (or (:last-accessed s) (:timestamp s))
-                            :active? (boolean room)
-                            :busy? (boolean (:busy? room))
-                            :has-dialog? (boolean (:has-dialog? room))
-                            :unread? (unread? sid)})))]
-
-        [:div {:class ["empty-state"]}
-         (spinner)
-         [:p "Connecting to server…"]])]]))
-
-;; ── GTD View ─────────────────────────────────────────────────────────────────
 
 (defn- shorten-path
   "~/Code/Projects/xi → xi, ~/Code/Work/Hyma/studio → studio"
@@ -790,6 +730,126 @@
   (when path
     (let [parts (str/split path #"/")]
       (last parts))))
+
+(defn- project-dir-card
+  "Card for a project directory in the home view."
+  [dispatch! path]
+  [:div {:class ["project-card"]
+         :replicant/key (str "dir-" path)
+         :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}}
+   [:div {:class ["project-card-icon"]}
+    (icon/icon {:icon-name :folder :size :sm})]
+   [:div {:class ["project-card-info"]}
+    [:span {:class ["project-card-name"]} (shorten-path path)]
+    [:span {:class ["project-card-path"]} path]]
+   [:div {:class ["project-card-chevron"]}
+    (icon/icon {:icon-name :chevron-right :size :sm})]])
+
+(defn- project-sessions-view
+  "Drill-down: sessions for a selected project directory."
+  [state dispatch!]
+  (let [cwd       (:web/selected-project-dir state)
+        sessions  (:web/project-sessions state)
+        loading?  (:web/project-sessions-loading? state)
+        rooms     (get-in state [:lobby :rooms])
+        counts    (:web/response-counts state)
+        watched   (:web/watched state)
+        room-by-sid (into {} (keep (fn [r] (when (:session-id r) [(:session-id r) r])) rooms))
+        unread?   (fn [sid] (when-let [w (get watched sid)]
+                              (> (get counts sid 0) w)))]
+    [:div {:class ["container"] :replicant/key "project-sessions"}
+     [:div {:class ["topbar"]}
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_] (dispatch! {:type :projects/back}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} (shorten-path cwd)]
+      [:button {:class ["icon-btn"]
+                :title "New session"
+                :on {:click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}}
+       (icon/icon {:icon-name :plus :size :md})]]
+     [:div {:class ["home"]}
+      (cond
+        loading?
+        [:div {:class ["empty-state"]} (spinner) [:p "Loading sessions…"]]
+
+        (empty? sessions)
+        [:div {:class ["empty-state"]}
+         [:p "No sessions yet."]
+         [:button {:class ["btn" "btn--primary"]
+                   :on {:click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}}
+          "Start new session"]]
+
+        :else
+        [:div {:class ["project-list"]}
+         (for [s sessions]
+           (let [sid  (:session-id s)
+                 room (get room-by-sid sid)]
+             (session-card dispatch!
+                          {:session-id sid
+                           :name (:name s)
+                           :timestamp (or (:last-accessed s) (:timestamp s))
+                           :active? (boolean room)
+                           :busy? (boolean (:busy? room))
+                           :has-dialog? (boolean (:has-dialog? room))
+                           :unread? (unread? sid)})))])]]))  
+
+(defn- home-view [state dispatch!]
+  (let [selected-dir (:web/selected-project-dir state)]
+    (if selected-dir
+      (project-sessions-view state dispatch!)
+      (let [dirs       (:web/project-dirs state)
+            loading?   (:web/projects-loading? state)
+            rooms      (get-in state [:lobby :rooms])
+            connected? (:web/connected? state)
+            ;; Active rooms without a known project
+            orphans    (filter (fn [r] (:session-id r)) rooms)]
+        [:div {:class ["container"] :replicant/key "home"}
+         [:div {:class ["topbar"]}
+          [:div {:class ["topbar-title"]} "Xi"]
+          (theme-toggle/theme-toggle
+           {:mode (or (:web/theme-mode state) "auto")
+            :size :sm
+            :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
+          (when standalone?
+            [:button {:class ["icon-btn" "icon-btn--sm"]
+                      :on {:click (fn [_] (.reload js/location))}}
+             (icon/icon {:icon-name :refresh :size :md})])
+          (offline-badge state)
+          (when connected?
+            [:button {:class ["icon-btn"]
+                      :title "GTD Tasks"
+                      :on {:click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}}
+             (icon/icon {:icon-name :list :size :md})])
+          (when connected?
+            [:button {:class ["icon-btn"]
+                      :on {:click (fn [_] (dispatch! {:type :room/new}))}}
+             (icon/icon {:icon-name :plus :size :md})])]
+         [:div {:class ["home"]}
+          (cond
+            (not connected?)
+            [:div {:class ["empty-state"]}
+             (spinner)
+             [:p "Connecting to server…"]]
+
+            loading?
+            [:div {:class ["empty-state"]}
+             (spinner)
+             [:p "Loading projects…"]]
+
+            :else
+            [:div {:class ["project-list"]}
+             ;; Active orphan rooms first
+             (for [r orphans]
+               (session-card dispatch! {:session-id (:session-id r)
+                                        :name (or (:session-name r) "New session")
+                                        :active? true :busy? (:busy? r)
+                                        :has-dialog? (:has-dialog? r)}))
+             ;; Project directories
+             (for [d dirs]
+               (project-dir-card dispatch! d))])]]))))
+
+;; ── GTD View ─────────────────────────────────────────────────────────────────
+
 
 (defn- gtd-context-menu [dispatch! {:keys [task x y]}]
   [:div {:class ["gtd-context-backdrop"]

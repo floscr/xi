@@ -19,7 +19,8 @@
    create-server closure (runtime resources, not app state).
 
    Deferred to later phases: :visibility tracking, dictation."
-  (:require [xi.ext.gtd :as gtd]
+  (:require [clojure.string :as str]
+            [xi.ext.gtd :as gtd]
             [xi.fx :as fx]
             [xi.server.room-manager :as rm]
             [xi.session :as session]
@@ -46,7 +47,8 @@
 (def ^:private roomless-types
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id)."
-  #{:client/update :session/counts :gtd/web-list :gtd/web-task-action :models/web-list})
+  #{:client/update :session/counts :gtd/web-list :gtd/web-task-action :models/web-list
+    :projects/web-list :projects/web-sessions})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -225,6 +227,32 @@
         (gtd/web-task-action-fx
          (fn [event] (send! client-id (wire/encode event)))
          task-id action))
+
+      ;; Project list: run `project select --raw` and return dirs.
+      :projects/web-list-reply
+      (fn [_ {:keys [client-id]}]
+        (let [proc (js/Bun.spawn #js ["project" "select" "--raw"]
+                                  #js {:stdout "pipe" :stderr "pipe"})]
+          (-> (.text (.-stdout proc))
+              (.then (fn [stdout]
+                       (let [dirs (->> (str/split-lines (str/trim stdout))
+                                       (remove empty?)
+                                       vec)]
+                         (send! client-id (wire/encode {:type :projects/web-list-result
+                                                       :dirs dirs})))))
+              (.catch (fn [_]
+                        (send! client-id (wire/encode {:type :projects/web-list-result
+                                                      :dirs []})))))))
+
+      ;; Sessions for a specific project CWD.
+      :projects/web-sessions-reply
+      (fn [_ {:keys [client-id cwd]}]
+        (let [sessions (->> (session/list-sessions cwd)
+                            (mapv #(select-keys % [:session-id :name :cwd
+                                                   :last-accessed :timestamp :source])))]
+          (send! client-id (wire/encode {:type :projects/web-sessions-result
+                                         :cwd cwd
+                                         :sessions sessions}))))
 
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally

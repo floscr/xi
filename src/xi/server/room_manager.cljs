@@ -133,13 +133,25 @@
   [_st {:keys [client-id]}]
   {:effects [[:models/web-list-reply {:client-id client-id}]]})
 
+(defn- projects-web-list
+  "Roomless: return the list of project directories."
+  [_st {:keys [client-id]}]
+  {:effects [[:projects/web-list-reply {:client-id client-id}]]})
+
+(defn- projects-web-sessions
+  "Roomless: return sessions for a specific CWD."
+  [_st {:keys [client-id cwd]}]
+  {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd}]]})
+
 (def handlers
-  {:room/join   room-join
-   :room/attach room-attach
-   :room/leave  room-leave
-   :room/list   room-list
-   :session/counts  session-counts
-   :models/web-list models-web-list})
+  {:room/join              room-join
+   :room/attach            room-attach
+   :room/leave             room-leave
+   :room/list              room-list
+   :session/counts         session-counts
+   :models/web-list        models-web-list
+   :projects/web-list      projects-web-list
+   :projects/web-sessions  projects-web-sessions})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
 
