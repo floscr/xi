@@ -74,6 +74,14 @@
 (defn- special-char? [ch]
   (or (= ch \`) (= ch \*) (= ch \_) (= ch \~) (= ch \[)))
 
+(defn- word-char?
+  "True if ch is alphanumeric or underscore — i.e. a word character."
+  [ch]
+  (or (<= (int \a) (int ch) (int \z))
+      (<= (int \A) (int ch) (int \Z))
+      (<= (int \0) (int ch) (int \9))
+      (= ch \_)))
+
 (defn- try-parse-at
   "Try to parse an inline token at position idx."
   [^String s idx]
@@ -83,8 +91,11 @@
       \` (parse-code-span s idx)
       \* (or (parse-delimited s idx "**" :bold)
              (parse-delimited s idx "*" :italic))
-      \_ (or (parse-delimited s idx "__" :bold)
-             (parse-delimited s idx "_" :italic))
+      ;; Per CommonMark: underscores don't open emphasis when preceded by
+      ;; a word character (e.g. git_file_diff stays literal).
+      \_ (when-not (and (pos? idx) (word-char? (.charAt s (dec idx))))
+           (or (parse-delimited s idx "__" :bold)
+               (parse-delimited s idx "_" :italic)))
       \~ (parse-delimited s idx "~~" :strike)
       \[ (parse-link s idx)
       nil)))
