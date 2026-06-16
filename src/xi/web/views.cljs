@@ -861,9 +861,69 @@
                            :unread? (unread? sid)})))]
         [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
 
+(defn- personal-agent-home-view
+  "Home view for personal-agent mode: a flat session list with no project
+   navigation (the personal agent has no projects)."
+  [state dispatch!]
+  (let [sessions    (get-in state [:lobby :sessions])
+        rooms       (get-in state [:lobby :rooms])
+        counts      (:web/response-counts state)
+        watched     (:web/watched state)
+        connected?  (:web/connected? state)
+        room-by-sid (into {} (keep (fn [r] (when (:session-id r) [(:session-id r) r])) rooms))
+        known-sids  (set (keep :session-id sessions))
+        orphans     (filter (fn [r] (and (:session-id r)
+                                         (not (known-sids (:session-id r)))))
+                            rooms)
+        unread?     (fn [sid] (when-let [w (get watched sid)]
+                               (> (get counts sid 0) w)))]
+    [:div {:class ["container"] :replicant/key "home"}
+     [:div {:class ["topbar"]}
+      [:div {:class ["topbar-title"]} "Xi"]
+      (theme-toggle/theme-toggle
+       {:mode (or (:web/theme-mode state) "auto")
+        :size :sm
+        :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
+      (offline-badge state)
+      (when connected?
+        [:button {:class ["icon-btn"]
+                  :on {:click (fn [_] (dispatch! {:type :room/new}))}}
+         (icon/icon {:icon-name :plus :size :md})])]
+     [:div {:class ["home"]}
+      (cond
+        (not connected?)
+        [:div {:class ["empty-state"]}
+         (spinner)
+         [:p "Connecting to server…"]]
+
+        (or (seq sessions) (seq orphans))
+        [:div {:class ["project-list"]}
+         (for [r orphans]
+           (session-card dispatch! {:session-id (:session-id r)
+                                    :name (or (:session-name r) "New session")
+                                    :active? true :busy? (:busy? r)
+                                    :has-dialog? (:has-dialog? r)}))
+         (for [s sessions]
+           (let [sid (:session-id s)
+                 room (get room-by-sid sid)]
+             (session-card dispatch!
+                          {:session-id sid
+                           :name (:name s)
+                           :timestamp (or (:last-accessed s) (:timestamp s))
+                           :active? (boolean room)
+                           :busy? (boolean (:busy? room))
+                           :has-dialog? (boolean (:has-dialog? room))
+                           :unread? (unread? sid)})))]
+
+        :else
+        [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
+
 (defn- home-view [state dispatch!]
   (let [selected-dir (:web/selected-project-dir state)]
     (cond
+      (get-in state [:lobby :personal-agent?])
+      (personal-agent-home-view state dispatch!)
+
       (= selected-dir :all)
       (all-sessions-view state dispatch!)
 

@@ -279,6 +279,7 @@
   [dispatch!]
   (fn [event state]
     (when (and (= :lobby/state (:type event))
+               (not (get-in state [:lobby :personal-agent?]))
                (nil? (:web/project-dirs state)))
       (dispatch! {:type :projects/web-list}))))
 

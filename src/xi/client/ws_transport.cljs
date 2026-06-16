@@ -90,7 +90,7 @@
             (= room-id (:active-room st)) (assoc :active-room nil))})
 
 (defn- lobby-state [st ev]
-  {:state (assoc st :lobby (select-keys ev [:rooms :sessions]))})
+  {:state (assoc st :lobby (select-keys ev [:rooms :sessions :personal-agent?]))})
 
 (defn make-handlers
   "Client-mode handler map from the server-equivalent pure handlers:
