@@ -139,7 +139,45 @@ After joining, everything is ordinary events both ways: `:input/submit`,
 - Multiple clients can attach to one room — they all mirror the same
   events.
 - **Auto-destroy**: a room closes when its last client leaves/disconnects
-  while the agent is idle, or when a turn ends with no clients attached.
+  while the agent is **idle**, or when a turn ends with no clients attached.
+
+### Busy rooms keep running — never abort on disconnect
+
+A room with a **running** (`:agent :busy?`) turn is **never** closed or
+aborted when its last client leaves or disconnects. Background agents are
+the entire point of a headless server, so a busy orphaned room keeps
+running; `turn-end-room-cleanup` reaps it the moment its turn ends with no
+clients attached. That is the single reaping path for busy rooms.
+
+> ⚠️ **Recurring pitfall — do not reintroduce "reap stale busy rooms".**
+>
+> It is tempting to abort the agent in a busy room once its last client
+> leaves, to avoid "stale" rooms. This is wrong and has bitten this
+> codebase repeatedly (`50ac3fe` → `a74a7b5` → `cb88424` → `c5141fa` →
+> `cd027c2`). Every variant kills legitimately-running agents and surfaces
+> as *"agents get aborted even though they're running."*
+>
+> **Why it keeps coming back:** a client disconnect is indistinguishable
+> from "the user navigated to another chat." You cannot tell them apart, so
+> any abort-on-disconnect (even behind a timeout) eventually kills a live
+> agent.
+>
+> **The iOS/Safari trigger:** iOS Safari drops the WebSocket when you
+> navigate (e.g. opening a chat from the sidebar). The server sees
+> `:client/disconnect` on the busy room you navigated *away* from. A
+> *"grace period before abort"* does **not** help: it only no-ops if a
+> client reconnects to the **same** room, but navigation reconnects you to a
+> **different** room, so the original busy room is found clientless and
+> aborted. Chrome SPA navigation keeps the socket open, so the bug is
+> invisible on desktop — making it look iOS-specific when it is really *any*
+> real disconnect.
+>
+> **The rule:** `room-leave` and `client-disconnect-cleanup` may close a
+> room only when it is **idle** and has no clients. Never schedule a
+> delayed `:agent/abort` / orphan-check, and never add a timeout to decide
+> whether the user "really left." Leaking a rare genuinely-hung SDK turn is
+> far cheaper than aborting every running agent on every navigation (and an
+> abort may not even resolve a hung SDK).
 
 ## Source files
 

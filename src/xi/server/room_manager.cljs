@@ -105,6 +105,14 @@
                                      :room-id room-id
                                      :room (state/get-room st room-id)}}]]}))
 
+;; ── Client departure / cleanup ───────────────────────────────────────────────
+;; RECURRING PITFALL: never abort a BUSY room when its last client leaves or
+;; disconnects. A disconnect is indistinguishable from "user switched chats"
+;; (iOS Safari drops the socket on navigation), so any abort-on-disconnect —
+;; even behind a grace period — eventually kills a live agent. Busy orphaned
+;; rooms keep running; turn-end-room-cleanup reaps them. Only IDLE clientless
+;; rooms are closed here. See docs/server.md "Busy rooms keep running".
+
 (defn- room-leave [st {:keys [client-id]}]
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
     (let [st'    (update-in st [:connection :clients client-id] dissoc :room-id)
