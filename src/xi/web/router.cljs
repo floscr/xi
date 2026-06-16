@@ -77,11 +77,28 @@
                      file    (assoc :file file)
                      task-id (assoc :task-id task-id)
                      dir     (assoc :dir dir))
-        active-sid (get-in (state/active-room st) [:session :id])
+        active-room (state/active-room st)
+        active-sid (get-in active-room [:session :id])
         ;; Already viewing this session (e.g. the post-join URL fix) → don't
         ;; re-join or re-mark.
         already?   (and (= page :chat) session-id (= session-id active-sid))
+        ;; The room we're leaving is a brand-new session the user never sent
+        ;; a message in (no history) and left an empty prompt for. Switching
+        ;; straight to another chat would orphan it as an idle "active" room
+        ;; in the lobby, so close it on the way out. (The :home/:gtd branch
+        ;; below already leaves the room, so we only need this for chat→chat.)
+        leaving-empty-new?
+        (and active-room (not already?)
+             (empty? (:history active-room))
+             (not (get-in active-room [:agent :busy?]))
+             (str/blank? (get-in st [:web/drafts (or active-sid :new)])))
         effects (cond-> [[:history/push {:route route :replace? replace?}]]
+                  ;; Leave (→ server-side close) the empty room BEFORE joining
+                  ;; the next one, so the server frees it instead of orphaning
+                  ;; it (room/leave acts on the client's current membership).
+                  (and leaving-empty-new? (not (#{:home :gtd} page)))
+                  (conj [:app/dispatch {:type :room/leave}])
+
                   (and (= page :chat) session-id (not already?))
                   (conj [:app/dispatch
                          ;; Always carry :session-id so the server can resume

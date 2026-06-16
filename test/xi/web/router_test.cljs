@@ -148,3 +148,47 @@
                  (assoc :active-room "r1"))
           {:keys [state]} (router/navigate st {:page :home})]
       (is (= "old-sid" (:web/pending-read state))))))
+
+(defn- effect-order
+  "Indices (into the effect vector) of the first :app/dispatch matching each
+   given event type. Returns a map {type idx}."
+  [effects types]
+  (into {}
+        (keep (fn [t]
+                (when-let [idx (->> (map-indexed vector effects)
+                                    (some (fn [[i [eff-type ev]]]
+                                            (when (and (= :app/dispatch eff-type)
+                                                       (= t (:type ev)))
+                                              i))))]
+                  [t idx])))
+        types))
+
+(deftest navigate-empty-new-room-closed-on-chat-switch
+  (testing "switching from an untouched new session to another chat leaves it"
+    (let [st (-> (state/initial-state)
+                 (assoc-in [:rooms "r1" :session :id] "new-sid")
+                 (assoc :active-room "r1"))
+          {:keys [effects]} (router/navigate st {:page :chat :session-id "other-sid"})]
+      (is (has-dispatch? effects :room/leave)
+          "emits room/leave for the orphaned empty room")
+      (is (has-dispatch? effects :room/join)
+          "still joins the destination chat")
+      (let [{:keys [:room/leave :room/join]} (effect-order effects [:room/leave :room/join])]
+        (is (< leave join)
+            "leaves the old room BEFORE joining the new one"))))
+  (testing "a room with history is NOT closed on chat switch"
+    (let [st (-> (state/initial-state)
+                 (assoc-in [:rooms "r1" :session :id] "real-sid")
+                 (assoc-in [:rooms "r1" :history] [{:kind :user :text "hi"}])
+                 (assoc :active-room "r1"))
+          {:keys [effects]} (router/navigate st {:page :chat :session-id "other-sid"})]
+      (is (not (has-dispatch? effects :room/leave))
+          "does not leave a session the user actually used")))
+  (testing "a non-empty draft keeps the new room open"
+    (let [st (-> (state/initial-state)
+                 (assoc-in [:rooms "r1" :session :id] "new-sid")
+                 (assoc-in [:web/drafts "new-sid"] "half-typed")
+                 (assoc :active-room "r1"))
+          {:keys [effects]} (router/navigate st {:page :chat :session-id "other-sid"})]
+      (is (not (has-dispatch? effects :room/leave))
+          "a drafted prompt means the room isn't truly empty"))))
