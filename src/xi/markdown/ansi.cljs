@@ -145,6 +145,36 @@
                                   lines))))
                 inner-blocks))
 
+        :table
+        (let [[_ {:keys [align]} {:keys [header rows]}] block
+              ncols (apply max (count header) (map count rows))
+              norm (fn [r] (vec (concat (mapv render-inline r)
+                                        (repeat (- ncols (count r)) ""))))
+              hdr (mapv #(ansi/fg :bold %) (norm header))
+              body (mapv norm rows)
+              col-w (mapv (fn [i]
+                            (apply max 0 (map #(ansi/visible-width (nth % i ""))
+                                              (cons hdr body))))
+                          (range ncols))
+              align-of (fn [i] (nth align i :none))
+              pad-cell (fn [i s]
+                         (let [w (nth col-w i)
+                               deficit (max 0 (- w (ansi/visible-width s)))
+                               sp #(apply str (repeat % " "))]
+                           (case (align-of i)
+                             :right (str (sp deficit) s)
+                             :center (let [l (quot deficit 2)]
+                                       (str (sp l) s (sp (- deficit l))))
+                             (str s (sp deficit)))))
+              ;; Two spaces between columns; no box-drawing borders (they copy
+              ;; badly) — cells are aligned with spaces only.
+              render-row (fn [r] (str/trimr (str/join "  " (map-indexed pad-cell r))))
+              sep (str/trimr
+                   (str/join "  "
+                             (map #(ansi/fg :dim (apply str (repeat % "-"))) col-w)))
+              lines (into [(render-row hdr) sep] (map render-row body))]
+          (mapv (fn [l] {:text (ansi/truncate-to-width l width) :code? false}) lines))
+
         :hr
         [{:text (ansi/fg :dim (apply str (repeat (min width 40) "─"))) :code? false}]
 

@@ -106,6 +106,39 @@
     (testing "all lines fit within width"
       (is (every? #(<= % 30) (visible-widths result))))))
 
+;; ── Tables ───────────────────────────────────────────────────────────────────
+
+(deftest table-aligns-columns-with-spaces
+  (let [text (str "| Name | Age |\n"
+                  "| --- | --- |\n"
+                  "| Alice | 30 |\n"
+                  "| Bob | 5 |")
+        result (md-ansi/render text 80)
+        lines (mapv #(ansi/strip-ansi (:text %)) result)]
+    (testing "header + separator + two body rows"
+      (is (= 4 (count lines))))
+    (testing "no box-drawing border characters"
+      (doseq [l lines]
+        (is (not (re-find #"[│─┼┌┐└┘├┤┬┴╪═]" l)))))
+    (testing "columns are space-aligned to a common width"
+      ;; "Name" / "Alice" / "Bob" → col width 5; cell padded with spaces
+      (is (re-find #"^Name " (first lines)))
+      (is (re-find #"^Bob   " (nth lines 3))))
+    (testing "separator uses ascii dashes, not box drawing"
+      (is (re-find #"-" (second lines))))))
+
+(deftest table-right-alignment-pads-left
+  (let [text (str "| n |\n| --: |\n| 1 |\n| 1000 |")
+        result (md-ansi/render text 80)
+        lines (mapv #(ansi/strip-ansi (:text %)) result)]
+    (testing "right-aligned cell has leading spaces"
+      (is (re-find #"^   1$" (nth lines 2))))))
+
+(deftest table-respects-width
+  (let [text (str "| aaaa | bbbb | cccc |\n| - | - | - |\n| 1111 | 2222 | 3333 |")
+        result (md-ansi/render text 12)]
+    (is (every? #(<= % 12) (visible-widths result)))))
+
 ;; ── Mixed content ────────────────────────────────────────────────────────────
 
 (deftest all-block-types-respect-width

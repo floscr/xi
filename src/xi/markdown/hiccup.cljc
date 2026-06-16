@@ -90,6 +90,24 @@
         (let [[_ inner-blocks] block]
           (into [:blockquote] (mapv render-block inner-blocks)))
 
+        :table
+        (let [[_ {:keys [align]} {:keys [header rows]}] block
+              cell-attrs (fn [i]
+                           (case (nth align i :none)
+                             :right {:style {:text-align "right"}}
+                             :center {:style {:text-align "center"}}
+                             {}))]
+          [:table {:class "md-table"}
+           [:thead
+            (into [:tr]
+                  (map-indexed (fn [i c] (into [:th (cell-attrs i)] (render-inline c)))
+                               header))]
+           (into [:tbody]
+                 (for [r rows]
+                   (into [:tr]
+                         (map-indexed (fn [i c] (into [:td (cell-attrs i)] (render-inline c)))
+                                      r))))])
+
         :hr
         [:hr]
 

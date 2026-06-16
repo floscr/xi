@@ -182,6 +182,45 @@
         (recur (rest lines) (conj items text))
         [items lines]))))
 
+(defn- table-row-line?
+  "Loose check: a non-blank line containing a pipe is a candidate table row."
+  [line]
+  (boolean (and line (not (blank-line? line)) (str/includes? line "|"))))
+
+(defn- split-table-cells
+  "Split a GFM table row into trimmed cell strings, stripping one
+   leading/trailing pipe."
+  [line]
+  (let [t (str/trim line)
+        t (if (str/starts-with? t "|") (subs t 1) t)
+        t (if (str/ends-with? t "|") (subs t 0 (dec (count t))) t)]
+    (mapv str/trim (str/split t #"\|" -1))))
+
+(defn- table-separator-line?
+  "True if line is a GFM table separator row, e.g. | --- | :--: |."
+  [line]
+  (when (table-row-line? line)
+    (let [cells (split-table-cells line)]
+      (boolean (and (seq cells)
+                    (every? #(re-matches #":?-+:?" %) cells))))))
+
+(defn- table-start?
+  "True if lines begins a GFM table: a row line followed by a separator row."
+  [lines]
+  (and (table-row-line? (first lines))
+       (table-separator-line? (second lines))))
+
+(defn- cell-alignment
+  "Alignment keyword for a separator cell: :left :right :center or :none."
+  [c]
+  (let [l? (str/starts-with? c ":")
+        r? (str/ends-with? c ":")]
+    (cond
+      (and l? r?) :center
+      r? :right
+      l? :left
+      :else :none)))
+
 (defn parse
   "Parse markdown text into block tokens.
    Returns a vector of block tokens."
@@ -266,6 +305,21 @@
                        (conj! blocks [:blockquote
                                       (parse (str/join "\n" quote-lines))])))
 
+              ;; GFM pipe table — header row + separator row + body rows
+              (table-start? lines)
+              (let [header (split-table-cells line)
+                    align (mapv cell-alignment (split-table-cells (second lines)))
+                    [rows remaining]
+                    (loop [ls (nnext lines)
+                           acc []]
+                      (if (and (seq ls) (table-row-line? (first ls)))
+                        (recur (rest ls) (conj acc (split-table-cells (first ls))))
+                        [acc ls]))]
+                (recur remaining
+                       (conj! blocks [:table {:align align}
+                                      {:header (mapv parse-inline header)
+                                       :rows (mapv #(mapv parse-inline %) rows)}])))
+
               ;; Paragraph — collect consecutive non-special lines
               :else
               (let [[para-lines remaining]
@@ -278,6 +332,7 @@
                                   (heading-line? l)
                                   (hr-line? l)
                                   (code-fence? l)
+                                  (table-start? ls)
                                   (and (ul-item-line? l) (seq acc))
                                   (and (ol-item-line? l) (seq acc))
                                   (and (blockquote-line? l) (seq acc)))

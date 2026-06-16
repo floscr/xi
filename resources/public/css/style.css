@@ -375,6 +375,31 @@ body {
   color: var(--fg-2);
 }
 
+.markdown .md-table {
+  /* display:block + overflow-x lets a wide table scroll horizontally on narrow
+     screens instead of squishing columns into unreadable tall stacks. */
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-collapse: collapse;
+  margin: var(--size-2) 0;
+  font-size: 0.95em;
+}
+
+.markdown .md-table th,
+.markdown .md-table td {
+  border: var(--border-0);
+  padding: var(--size-1) var(--size-2);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.markdown .md-table th {
+  background: var(--bg-2);
+  font-weight: 600;
+}
+
 .error-text { color: var(--danger); }
 .status-text { color: var(--fg-2); font-style: italic; }
 
