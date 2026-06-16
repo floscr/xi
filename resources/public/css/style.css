@@ -908,6 +908,16 @@ body {
   flex-shrink: 0;
 }
 
+/* Always-present trailing indicator slot (keeps each card's child structure
+   invariant so Replicant never duplicates the spinner). Collapses to nothing
+   when it holds no spinner/dot. */
+.project-card-status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.project-card-status:empty { display: none; }
+
 .project-card-name { font-weight: 600; }
 
 .session-delete-btn {

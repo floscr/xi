@@ -893,9 +893,16 @@
                 busy? " · working…"
                 active? " · active"
                 :else ""))]]
-   (cond
-     busy?   (spinner)
-     unread? [:div {:class ["unread-dot"]}])])
+   ;; Keep the trailing indicator slot ALWAYS present (hidden via CSS when
+   ;; empty). A bare conditional here is an unkeyed child that flips between an
+   ;; element and nil; as the keyed card list churns/reorders, Replicant can
+   ;; mis-reconcile that slot and append a second spinner. A stable wrapper
+   ;; keeps each card's child structure invariant so the indicator only ever
+   ;; swaps content inside a node that never moves on its own.
+   [:div {:class ["project-card-status"]}
+    (cond
+      busy?   (spinner)
+      unread? [:div {:class ["unread-dot"]}])]])
 
 
 
