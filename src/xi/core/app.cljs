@@ -34,7 +34,9 @@
   [{:keys [initial-state handlers transform-event effects on-render schedule-render ring jsonl-writer]}]
   (let [;; Built-in effect: re-dispatch an event (lets handlers chain flows,
         ;; e.g. draining a queued prompt by re-entering the normal code path).
-        effects  (merge {:app/dispatch (fn [{:keys [dispatch!]} event] (dispatch! event))}
+        effects  (merge {:app/dispatch       (fn [{:keys [dispatch!]} event] (dispatch! event))
+                         :app/dispatch-after (fn [{:keys [dispatch!]} {:keys [ms event]}]
+                                               (js/setTimeout #(dispatch! event) ms))}
                         effects)
         !state    (atom initial-state)
         get-state (fn [] @!state)
