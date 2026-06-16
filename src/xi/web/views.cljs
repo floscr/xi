@@ -1215,11 +1215,16 @@
       :else 0)))
 
 (defn- recent-sessions
-  "Sessions from the lobby mirror sorted by most-recently visited."
+  "Sessions from the lobby mirror: rooms with a running agent pinned to the
+   top, then by most-recently visited."
   [state]
-  (->> (get-in state [:lobby :sessions])
-       (sort-by session-time >)
-       (take 25)))
+  (let [rooms  (get-in state [:lobby :rooms])
+        busy?  (fn [s] (boolean (some (fn [r] (and (= (:session-id r) (:session-id s))
+                                                   (:busy? r)))
+                                      rooms)))]
+    (->> (get-in state [:lobby :sessions])
+         (sort-by (juxt busy? session-time) #(compare %2 %1))
+         (take 25))))
 
 (defn- recent-sidebar
   "The drawer panel: framework sidebar listing recent sessions sorted by last
