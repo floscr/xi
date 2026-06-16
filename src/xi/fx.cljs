@@ -48,19 +48,21 @@
         {:err (str/trim (.toString (.-stderr proc) "utf-8"))}))
     (catch :default e {:err (str e)})))
 
-(defn- untracked-diff
-  "Synthesize a unified diff for untracked files via diff --no-index.
+(defn- no-index-diff
+  "Synthesize a unified diff for a single untracked file via diff --no-index.
    stdout is read regardless of exit code — --no-index exits 1 on diffs."
+  [cwd f]
+  (let [p (js/Bun.spawnSync
+           #js ["git" "diff" "--no-index" "--" "/dev/null" f]
+           #js {:cwd cwd})]
+    (.toString (.-stdout p) "utf-8")))
+
+(defn- untracked-diff
+  "Synthesize a unified diff for all untracked files in cwd."
   [cwd]
   (when-let [files (some->> (:ok (git-out cwd ["ls-files" "--others" "--exclude-standard"]))
                             str/trim str/split-lines (remove empty?) seq)]
-    (->> files
-         (map (fn [f]
-                (let [p (js/Bun.spawnSync
-                         #js ["git" "diff" "--no-index" "--" "/dev/null" f]
-                         #js {:cwd cwd})]
-                  (.toString (.-stdout p) "utf-8"))))
-         (str/join "\n"))))
+    (str/join "\n" (map (partial no-index-diff cwd) files))))
 
 (defn- session-base-commit
   "The commit that was HEAD when the session started (works for resumed
@@ -69,6 +71,37 @@
   (when created
     (some-> (:ok (git-out cwd ["rev-list" "-1" (str "--before=" created) "HEAD"]))
             str/trim not-empty)))
+
+(defn- session-edited-files
+  "Paths (relative to cwd) of files touched via edit/write tool calls in the
+   room's history. Used to scope the session diff to files the agent changed,
+   rather than every dirty file in the working tree."
+  [room cwd]
+  (->> (:history room)
+       (filter #(and (= :tool-call (:kind %))
+                     (#{"edit" "write" "Edit" "Write"} (:tool %))))
+       (keep (fn [{:keys [arguments]}]
+               (or (:path arguments) (:file_path arguments))))
+       (map #(.relative node-path cwd (.resolve node-path cwd %)))
+       distinct
+       vec))
+
+(defn- session-diff-text
+  "Unified diff of the session-edited files vs the session base commit.
+   Tracked files diff against base; untracked (newly written) files are
+   synthesized via --no-index so freshly created files still show."
+  [cwd base files]
+  (let [{tracked false untracked true}
+        (group-by #(some? (:err (git-out cwd ["ls-files" "--error-unmatch" "--" %])))
+                  files)
+        tracked-diff   (when (seq tracked)
+                         (:ok (git-out cwd (concat (if base ["diff" base] ["diff"])
+                                                   ["--"] tracked))))
+        untracked-diff (when (seq untracked)
+                         (str/join "\n" (map (partial no-index-diff cwd) untracked)))]
+    (->> [tracked-diff untracked-diff]
+         (remove str/blank?)
+         (str/join "\n"))))
 
 (defn- list-room-sessions [room scope]
   (let [pa? (get-in room [:agent :personal-agent?])]
@@ -203,8 +236,12 @@
          "unstaged" (run! "Unstaged Changes" ["diff"])
 
          nil
-         (let [base (session-base-commit cwd (get-in room [:session :created]))]
-           (run! "Session Changes" (if base ["diff" base] ["diff"])))
+         (let [base  (session-base-commit cwd (get-in room [:session :created]))
+               files (session-edited-files room cwd)]
+           (if (empty? files)
+             (dispatch! {:type :ui/status :room-id room-id
+                         :text "No files edited this session."})
+             (open! "Session Changes" (session-diff-text cwd base files))))
 
          (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+"))))))
 
