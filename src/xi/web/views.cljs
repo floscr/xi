@@ -1286,19 +1286,31 @@
    same way as the home listings (navigation auto-closes the drawer)."
   [state dispatch!]
   (let [sessions (recent-sessions state)
-        orphans  (orphan-rooms state sessions)]
+        orphans  (orphan-rooms state sessions)
+        ;; Render one card per session-id from a single keyed sequence.
+        ;; Replicant renders BOTH siblings when two share a :replicant/key
+        ;; (it does not dedupe), so any duplicate stacks cards on top of each
+        ;; other — surfacing as doubled spinners. Drop junk entries with no
+        ;; id (their key collapses to a constant) and keep the first card seen
+        ;; per id so every key is unique.
+        cards    (->> (concat orphans (map #(session-status state %) sessions))
+                      (filter :session-id)
+                      (reduce (fn [{:keys [seen acc]} c]
+                                (if (seen (:session-id c))
+                                  {:seen seen :acc acc}
+                                  {:seen (conj seen (:session-id c))
+                                   :acc  (conj acc c)}))
+                              {:seen #{} :acc []})
+                      :acc)]
     (sidebar/sidebar
      {}
      (sidebar/sidebar-header {}
        [:div {:class ["sidebar-group-label"]} "Recent"])
      (sidebar/sidebar-content
       {:attrs {:style {:padding 0}}}
-      (if (or (seq orphans) (seq sessions))
-        (list
-         (for [o orphans]
-           (session-card dispatch! o))
-         (for [s sessions]
-           (session-card dispatch! (session-status state s))))
+      (if (seq cards)
+        (for [c cards]
+          (session-card dispatch! c))
         [:div {:class ["sidebar-group-label"]} "No recent sessions"]))
      (sidebar/sidebar-footer {}
        (theme-toggle/theme-toggle
