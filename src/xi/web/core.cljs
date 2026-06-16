@@ -20,6 +20,7 @@
             [xi.core.events :as events]
             [xi.core.state :as state]
             [xi.diff :as diff]
+            [xi.naming :as naming]
             [xi.web.cache :as cache]
             [xi.web.router :as router]
             [xi.web.views :as views]))
@@ -34,7 +35,8 @@
   (merge events/core-handlers
          agent/handlers
          (commands/command-handlers)
-         compaction/handlers))
+         compaction/handlers
+         naming/handlers))
 
 ;; ── Web-local handlers (installed unwrapped; never mirrored) ──────────────────
 

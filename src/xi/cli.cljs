@@ -55,6 +55,7 @@
             [xi.ext.todo-intercept :as ext.todo-intercept]
             [xi.ext.web :as ext.web]
             [xi.fx :as fx]
+            [xi.naming :as naming]
             [xi.provider.claude :as claude]
             [xi.provider.ollama :as ollama]
             [xi.server.room-manager :as rm]
@@ -158,13 +159,17 @@
    (-> (merge events/core-handlers
               agent/handlers
               (commands/command-handlers extra-commands)
-              compaction/handlers)
+              compaction/handlers
+              naming/handlers)
        ;; Persist the session once the provider reports a session id
        (assoc :agent/turn-end (events/chain (:agent/turn-end agent/handlers)
                                             commands/turn-end-session-sync)
               ;; Escape also stops an in-flight compaction
               :agent/abort (events/chain (:agent/abort agent/handlers)
-                                         compaction/abort-handler)))))
+                                         compaction/abort-handler)
+              ;; First message of an unnamed session → kick off auto-titling
+              :prompt/submit (events/chain (:prompt/submit agent/handlers)
+                                           naming/maybe-generate-title)))))
 
 ;; ── Standalone (phase 4, unchanged) ──────────────────────────────────────────
 
@@ -212,6 +217,7 @@
                                                       {:system       (system-prompt/parts->system parts)
                                                        :system-parts parts}))})
                                                (compaction/create-fx providers)
+                                               (naming/create-fx providers)
                                                (:fx composed)
                                                (:fx dialogs)
                                                (:effects client))
@@ -340,6 +346,7 @@
                                                      {:system       (system-prompt/parts->system parts)
                                                       :system-parts parts}))})
                                               (compaction/create-fx providers)
+                                              (naming/create-fx providers)
                                               (:fx composed)
                                               (:fx dialogs)
                                               (:fx server))
