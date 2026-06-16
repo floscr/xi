@@ -125,6 +125,77 @@ body {
   font-weight: 600;
 }
 
+/* ---- Project picker ---- */
+.project-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.project-picker {
+  position: absolute;
+  bottom: calc(var(--size-12, 3rem) + env(safe-area-inset-bottom, 0px));
+  left: var(--size-4);
+  right: var(--size-4);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.project-picker-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-3);
+  border: none;
+  background: none;
+  color: var(--fg-0);
+  font: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-picker-item + .project-picker-item {
+  border-top: 1px solid var(--bg-2, rgba(128,128,128,0.15));
+}
+
+.project-picker-item:hover {
+  background: var(--bg-2);
+}
+
+.project-picker-icon {
+  flex-shrink: 0;
+  color: var(--fg-2);
+}
+
+.project-picker-path {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.project-picker-full {
+  color: var(--fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.project-picker-empty {
+  padding: var(--size-3);
+  text-align: center;
+  color: var(--fg-2);
+  font-size: var(--font-sm);
+}
+
 /* ---- Timeline ---- */
 .timeline {
   flex: 1;
@@ -425,6 +496,9 @@ body {
 
 .quick-cmd {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
   padding: var(--size-1) var(--size-3);
   border-radius: var(--radius-full, 9999px);
   border: var(--border-0);

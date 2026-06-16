@@ -326,6 +326,10 @@
 
 (defn- quick-command-bar [dispatch! room-id]
   [:div {:class ["quick-commands"]}
+   [:button {:class ["quick-cmd"]
+             :on {:click (fn [_] (dispatch! {:type :projects/picker-open}))}}
+    (icon/icon {:icon-name :folder :size :sm})
+    " Projects"]
    (map (fn [{:keys [name label]}]
           [:button {:class ["quick-cmd"]
                     :on {:click (fn [_]
@@ -622,6 +626,32 @@
                               (dispatch! {:type :models/select :model m :room-id room-id}))}}
        m])]])
 
+
+(defn- shorten-path
+  "~/Code/Projects/xi → xi, ~/Code/Work/Hyma/studio → studio"
+  [path]
+  (when path
+    (let [parts (str/split path #"/")]
+      (last parts))))
+
+(defn- project-picker [dispatch! dirs draft-key]
+  [:div {:class ["project-picker-backdrop"]
+         :on {:click (fn [_] (dispatch! {:type :projects/picker-close}))}}
+   [:div {:class ["project-picker"]}
+    (if (seq dirs)
+      (for [path dirs]
+        [:button {:class ["project-picker-item"]
+                  :replicant/key path
+                  :on {:click (fn [e]
+                                (.stopPropagation e)
+                                (dispatch! {:type :projects/picker-insert
+                                            :path path :draft-key draft-key}))}}
+         [:span {:class ["project-picker-icon"]}
+          (icon/icon {:icon-name :folder :size :sm})]
+         [:span {:class ["project-picker-path"]} (shorten-path path)]
+         [:span {:class ["project-picker-full"]} path]])
+      [:div {:class ["project-picker-empty"]} "Loading…"])]])
+
 (defn- chat-view [state dispatch!]
   (let [room    (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -704,6 +734,8 @@
         (dialog-overlay dispatch! room)
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
+        (when (:web/project-picker? state)
+          (project-picker dispatch! (:web/project-dirs state) draft-key))
         (compose-box dispatch! room busy? (:web/compose-images state)
                      draft-key (get-in state [:web/drafts draft-key]) sid
                      (:web/cmd-selected state)
@@ -747,12 +779,6 @@
      active? [:div {:class ["active-dot"]}])])
 
 
-(defn- shorten-path
-  "~/Code/Projects/xi → xi, ~/Code/Work/Hyma/studio → studio"
-  [path]
-  (when path
-    (let [parts (str/split path #"/")]
-      (last parts))))
 
 (defn- project-dir-card
   "Card for a project directory in the home view."

@@ -240,6 +240,22 @@
                                     {:state (dissoc st :web/selected-project-dir
                                                       :web/project-sessions
                                                       :web/project-sessions-cwd)})
+          ;; Project path picker (insert into compose)
+          :projects/picker-open  (fn [st _]
+                                    ;; Reuse already-loaded dirs, or fetch them
+                                    (cond-> {:state (assoc st :web/project-picker? true)}
+                                      (empty? (:web/project-dirs st))
+                                      (assoc :effects [[:ws/send {:type :projects/web-list}]])))
+          :projects/picker-close (fn [st _]
+                                    {:state (dissoc st :web/project-picker?)})
+          :projects/picker-insert (fn [st {:keys [path draft-key]}]
+                                     (let [cur (get-in st [:web/drafts draft-key] "")
+                                           sep (if (and (seq cur) (not (str/ends-with? cur " "))) " " "")
+                                           new-text (str cur sep path)]
+                                       {:state (-> st
+                                                   (assoc-in [:web/drafts draft-key] new-text)
+                                                   (dissoc :web/project-picker?))
+                                        :effects [[:projects/sync-textarea {:text new-text}]]}))
           :projects/new-session   (fn [st {:keys [cwd]}]
                                     {:state (-> st
                                                 (assoc :web/route {:page :chat :session-id nil})
@@ -251,6 +267,11 @@
 (defn- web-effects []
   {:history/push router/history-effect
    :nav/back     router/back-effect
+   :projects/sync-textarea
+   (fn [_ {:keys [text]}]
+     (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
+       (set! (.-value el) text)
+       (.focus el)))
    :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :theme/apply  (fn [_ mode]
                    (let [el js/document.documentElement]
