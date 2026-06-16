@@ -120,20 +120,7 @@
 
 (def ^:private DEFAULT_MODEL "claude-opus-4-8")
 
-(def ^:private THINKING_TO_EFFORT
-  "Map Pi thinking levels → Claude SDK effort levels."
-  {"minimal" "low"
-   "low"     "low"
-   "medium"  "medium"
-   "high"    "high"
-   "xhigh"   "max"})
 
-(defn- load-settings []
-  (try
-    (let [path (str (aget js/process.env "HOME") "/.pi/agent/settings.json")
-          content (.readFileSync (js/require "node:fs") path "utf8")]
-      (js->clj (js/JSON.parse content) :keywordize-keys true))
-    (catch :default _e {})))
 
 (defn- parse-args [args]
   (loop [args (seq args) opts {:command :standalone}]
@@ -156,13 +143,11 @@
                    (assoc opts :url (if (.startsWith arg "ws") arg (str "ws://" arg)))
                    opts)))))))
 
-(defn- resolve-model-opts [{:keys [model]} settings]
+(defn- resolve-model-opts [{:keys [model]}]
   {:model  (or model
                (aget js/process.env "XI_MODEL")
-               (:defaultModel settings)
                DEFAULT_MODEL)
    :effort (or (aget js/process.env "XI_EFFORT")
-               (get THINKING_TO_EFFORT (:defaultThinkingLevel settings))
                "high")})
 
 (defn- make-handlers
@@ -184,8 +169,7 @@
 ;; ── Standalone (phase 4, unchanged) ──────────────────────────────────────────
 
 (defn- start-standalone! [{:keys [debug-events?] :as opts}]
-  (let [settings (load-settings)
-        {:keys [model effort]} (resolve-model-opts opts settings)
+  (let [{:keys [model effort]} (resolve-model-opts opts)
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
         ring (log/create-ring)
         ;; Standalone runs everything locally — server + client extensions.
@@ -321,8 +305,7 @@
    renderer; unless --headless, a local TUI joins through the same WS path
    as any remote client."
   [{:keys [port headless? personal-agent?] :as opts}]
-  (let [settings (load-settings)
-        server-opts (resolve-model-opts opts settings)
+  (let [server-opts (resolve-model-opts opts)
         ring (log/create-ring)
         composed (ext/compose (server-extensions ring))
         dialogs  (ext/create-dialogs)
