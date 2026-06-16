@@ -844,11 +844,17 @@
           (filter (fn [r] (and (:session-id r)
                                (not (known-sids (:session-id r)))
                                (or (nil? cwd) (= cwd (:cwd r))))))
-          (mapv (fn [r] {:session-id  (:session-id r)
-                         :name        (or (:session-name r) "New session")
-                         :active?     true
-                         :busy?       (:busy? r)
-                         :has-dialog? (:has-dialog? r)}))))))
+          ;; Several rooms can share one session-id (e.g. a lingering
+          ;; clients:0 room plus a freshly reopened one). Collapse them to a
+          ;; single card so the list shows one row — and one spinner — per
+          ;; session instead of colliding on :replicant/key.
+          (group-by :session-id)
+          (mapv (fn [[sid rooms]]
+                  {:session-id  sid
+                   :name        (or (some :session-name rooms) "New session")
+                   :active?     true
+                   :busy?       (boolean (some :busy? rooms))
+                   :has-dialog? (boolean (some :has-dialog? rooms))}))))))
 
 (defn- session-card [dispatch! {:keys [session-id name timestamp current? active? busy? has-dialog? unread?]}]
   [:div {:class ["project-card" (when active? "project-card--active")
