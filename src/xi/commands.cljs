@@ -18,7 +18,8 @@
    History gets a new entry kind here: {:kind :status :text ...} — command
    output and status lines, rendered dim by the TUI."
   (:require [clojure.string :as str]
-            [xi.core.state :as state]))
+            [xi.core.state :as state]
+            [xi.util :as util]))
 
 ;; ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -131,9 +132,11 @@
 
 (defn- cmd-model [st {:keys [room-id args]}]
   (if (seq args)
-    {:state (-> st
-                (assoc-in [:rooms room-id :agent :model] args)
-                (append-history room-id (status-entry (str "Model set to: " args))))}
+    (let [provider (if (util/claude-model? args) :claude :ollama)]
+      {:state (-> st
+                  (assoc-in [:rooms room-id :agent :model] args)
+                  (assoc-in [:rooms room-id :agent :provider] provider)
+                  (append-history room-id (status-entry (str "Model set to: " args))))})
     {:effects [[:models/fetch {:room-id room-id}]]}))
 
 (defn- cmd-resume [st {:keys [room-id args]}]
