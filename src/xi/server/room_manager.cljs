@@ -105,12 +105,6 @@
                                      :room-id room-id
                                      :room (state/get-room st room-id)}}]]}))
 
-(def ^:private orphan-grace-ms
-  "Grace period before aborting a busy room whose last client left.
-   Allows the agent to finish normally (turn-end-room-cleanup fires first),
-   while preventing indefinitely stale rooms when the SDK hangs."
-  15000)
-
 (defn- room-leave [st {:keys [client-id]}]
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
     (let [st'    (update-in st [:connection :clients client-id] dissoc :room-id)
@@ -120,17 +114,11 @@
                :effects [[:ws/send-to {:client-id client-id
                                        :event {:type :room/left :room-id room-id}}]]}
         ;; Last client navigated away from an idle room — close it now.
+        ;; Busy rooms keep running with no client attached (background
+        ;; agents are the point of a headless server); turn-end-room-cleanup
+        ;; reaps them once the turn ends.
         (and empty? idle?)
-        (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])
-        ;; Last client left a busy room — schedule a grace-period check.
-        ;; If the agent finishes normally, turn-end-room-cleanup closes
-        ;; the room first and the orphan-check is a no-op. If the agent
-        ;; hangs, the check aborts it so the room doesn't live forever.
-        (and empty? (not idle?))
-        (update :effects conj [:app/dispatch-after
-                               {:ms    orphan-grace-ms
-                                :event {:type :room/orphan-check
-                                        :room-id room-id}}])))))
+        (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])))))
 
 (defn- room-list [_st {:keys [client-id]}]
   ;; The full payload (rooms + saved sessions) is built impurely in the WS
@@ -160,22 +148,11 @@
   {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd}]]})
 
 
-(defn orphan-check
-  "Delayed check after a busy room's last client disconnected. If the room
-   still exists and has no clients, abort the agent so turn-end-room-cleanup
-   can reap it. No-op if a client reconnected or the room was already closed."
-  [st {:keys [room-id]}]
-  (when (and (state/get-room st room-id)
-             (empty? (clients-in-room st room-id))
-             (get-in st [:rooms room-id :agent :busy?]))
-    {:effects [[:app/dispatch {:type :agent/abort :room-id room-id}]]}))
-
 (def handlers
   {:room/join              room-join
    :room/attach            room-attach
    :room/leave             room-leave
    :room/list              room-list
-   :room/orphan-check      orphan-check
    :session/counts         session-counts
    :models/web-list        models-web-list
    :projects/web-list      projects-web-list
@@ -186,18 +163,16 @@
 (defn client-disconnect-cleanup
   "Chain BEFORE the core :client/disconnect handler (needs the client's
    room while it's still recorded): close the room when this was its last
-   client. Idle rooms close immediately; busy rooms get a grace period
-   before abort — if no client re-attaches within that window, the
-   delayed :room/orphan-check aborts the agent."
+   client AND it's idle. Busy rooms keep running with no client attached —
+   a disconnect (including iOS/Safari dropping the socket on navigation)
+   must never abort a running agent; turn-end-room-cleanup reaps the room
+   when the turn ends."
   [st {:keys [client-id]}]
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
     (let [others (remove #{client-id} (clients-in-room st room-id))]
-      (when (empty? others)
-        (if (get-in st [:rooms room-id :agent :busy?])
-          {:effects [[:app/dispatch-after
-                      {:ms    orphan-grace-ms
-                       :event {:type :room/orphan-check :room-id room-id}}]]}
-          {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]})))))
+      (when (and (empty? others)
+                 (not (get-in st [:rooms room-id :agent :busy?])))
+        {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]}))))
 
 
 (defn turn-end-room-cleanup
