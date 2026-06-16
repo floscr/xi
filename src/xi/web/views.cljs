@@ -709,6 +709,24 @@
       (when (and for-this? (not confirmed?))
         (entry->post dispatch! {:kind :user :text text :images images})))))
 
+(defn- chat-back-route
+  "Where the chat-view back arrow should land: the listing the session belongs
+   to, regardless of how the chat was reached (drill-down or a sidebar jump).
+   Personal-agent mode has no projects → the root home. Otherwise the project's
+   session listing (/projects/:cwd) when the cwd is known, falling back to the
+   projects root."
+  [state]
+  (if (get-in state [:lobby :personal-agent?])
+    {:type :route/navigate :page :home}
+    (let [sid (get-in state [:web/route :session-id])
+          cwd (or (:cwd (state/active-room state))
+                  (some (fn [s] (when (= sid (:session-id s)) (:cwd s)))
+                        (get-in state [:lobby :sessions]))
+                  (some (fn [r] (when (= sid (:session-id r)) (:cwd r)))
+                        (get-in state [:lobby :rooms])))]
+      (cond-> {:type :route/navigate :page :home}
+        cwd (assoc :dir cwd)))))
+
 (defn- chat-view [state dispatch!]
   (let [room    (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -726,7 +744,7 @@
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
       [:button {:class ["icon-btn" "icon-btn--sm"]
-                :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
+                :on {:click (fn [_] (dispatch! (chat-back-route state)))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]}
        (when model
@@ -906,7 +924,7 @@
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
       [:button {:class ["icon-btn"]
-                :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
+                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]} (shorten-path cwd)]
       [:button {:class ["icon-btn"]
@@ -942,7 +960,7 @@
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
       [:button {:class ["icon-btn"]
-                :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
+                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]} "All sessions"]
       (when connected?
