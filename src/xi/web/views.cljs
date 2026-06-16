@@ -276,6 +276,15 @@
    {:name "commit"   :description "Review changes and create a git commit"}
    {:name "debug"    :description "Copy debug info to clipboard"}])
 
+(def ^:private web-command-names
+  (into #{} (map :name) web-commands))
+
+(defn known-command?
+  "True if `name` is a recognized web slash command. Used to decide whether a
+   submission is worth recording into the recently-executed list."
+  [name]
+  (contains? web-command-names name))
+
 (defn- expand-commands
   "Flatten commands + their subcommands into a single suggestion list, where
    each subcommand becomes a `parent sub` entry (e.g. \"diff staged\")."
@@ -330,30 +339,39 @@
         (dispatch! (cond-> {:type :submit/pending :session-id session-id :text text}
                      (seq images) (assoc :images (vec images))))))))
 
-(def ^:private quick-commands
-  "Commands shown in the quick-access bar above the compose input."
-  [{:name "diff"     :label "/diff"}
-   {:name "commit"   :label "/commit"}
-   {:name "truncate" :label "/truncate"}
-   {:name "resume"   :label "/resume"}
-   {:name "new"      :label "/new"}
-   {:name "clear"    :label "/clear"}])
+(def ^:private max-quick-commands 6)
 
-(defn- quick-command-bar [dispatch! room-id]
+(def ^:private default-quick-commands
+  "Fallback commands shown in the quick-access bar before (and alongside) the
+   user's recently-executed ones."
+  ["diff" "commit" "truncate" "resume" "new" "clear"])
+
+(defn- quick-command-list
+  "Most-recently-executed commands first, then the defaults not already shown,
+   capped at `max-quick-commands`."
+  [recents]
+  (let [recent-set (set recents)]
+    (->> (concat recents (remove recent-set default-quick-commands))
+         distinct
+         (take max-quick-commands)
+         vec)))
+
+(defn- quick-command-bar [dispatch! room-id recents]
   [:div {:class ["quick-commands"]}
    [:button {:class ["quick-cmd"]
              :on {:click (fn [_] (dispatch! {:type :projects/picker-open}))}}
     (icon/icon {:icon-name :folder :size :sm})
     " Projects"]
-   (map (fn [{:keys [name label]}]
+   (map (fn [name]
           [:button {:class ["quick-cmd"]
+                    :replicant/key name
                     :on {:click (fn [_]
                                  (dispatch! {:type :input/submit :room-id room-id
                                              :text (str "/" name)}))}}
-           label])
-        quick-commands)])
+           (str "/" name)])
+        (quick-command-list recents))])
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected at-bottom? pa?]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected at-bottom? pa? recents]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
@@ -364,7 +382,7 @@
     [:div {:class ["compose-box"]}
      (compose-image-strip dispatch! images)
      (when show-quick?
-       (quick-command-bar dispatch! room-id))
+       (quick-command-bar dispatch! room-id recents))
      (when cmd-open?
        (command-suggestions dispatch! room-id draft-key cmd-matches
                             (min (or cmd-selected 0) (dec (count cmd-matches)))))
@@ -763,7 +781,8 @@
                      draft-key (get-in state [:web/drafts draft-key]) sid
                      (:web/cmd-selected state)
                      (get state :web/at-bottom? true)
-                     (get-in state [:lobby :personal-agent?]))))]))
+                     (get-in state [:lobby :personal-agent?])
+                     (:web/recent-commands state))))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 

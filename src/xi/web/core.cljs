@@ -130,6 +130,19 @@
 (defn- cmd-select [st {:keys [index]}]
   {:state (assoc st :web/cmd-selected (or index 0))})
 
+(def ^:private max-recent-commands 6)
+
+(defn- record-command
+  "Push a just-executed command name to the front of the recents list
+   (deduped, capped) and persist it so the quick-command bar reflects the
+   user's actual usage across reloads."
+  [st {:keys [name]}]
+  (let [recents (->> (cons name (remove #(= % name) (:web/recent-commands st)))
+                     (take max-recent-commands)
+                     vec)]
+    {:state   (assoc st :web/recent-commands recents)
+     :effects [[:cache/recent-commands {:commands recents}]]}))
+
 (defn- theme-set-mode [st {:keys [mode]}]
   (let [m (if (#{"auto" "light" "dark"} mode) mode "auto")]
     {:state   (assoc st :web/theme-mode m)
@@ -231,6 +244,7 @@
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
           :cmd/select            cmd-select
+          :web/record-command    record-command
           :theme/set-mode        theme-set-mode
           :sidebar/toggle        (fn [st _] {:state (update st :web/sidebar-open? not)})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
@@ -333,6 +347,7 @@
        (set! (.-value el) text)
        (.focus el)))
    :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
+   :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :theme/apply  (fn [_ mode]
                    (let [el js/document.documentElement]
                      ;; Suppress transitions during switch
@@ -401,6 +416,19 @@
           (dispatch! {:type :submit/clear-pending})
           (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
                        (seq images) (assoc :images (vec images)))))))))
+
+(defn- record-command-tap
+  "Record originating slash-command submissions into the recently-executed
+   list that feeds the quick-command bar (skips mirrored/remote events and
+   plain prompts)."
+  [dispatch!]
+  (fn [event _state]
+    (when (and (= :input/submit (:type event))
+               (not (:remote? event)))
+      (let [parsed (commands/parse-input (:text event))]
+        (when (and (= :command (:type parsed))
+                   (views/known-command? (:name parsed)))
+          (dispatch! {:type :web/record-command :name (:name parsed)}))))))
 
 (defn- pending-gtd-tap
   "After room join, if there's a pending GTD task, dispatch :gtd/start-task
@@ -502,22 +530,33 @@
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
     (add-tap! (pending-gtd-tap dispatch!))
+    (add-tap! (record-command-tap dispatch!))
     (router/init! dispatch!)
     ;; Apply stored theme immediately (before first render)
     (dispatch! {:type :theme/set-mode :mode stored-theme})
     ;; Track visual viewport height so the mobile keyboard doesn't push
     ;; the compose box off-screen.  Falls back to window.innerHeight.
     (let [set-vh! (fn []
-                    (let [h (if js/window.visualViewport
-                              (.-height js/window.visualViewport)
-                              js/window.innerHeight)]
-                      (.setProperty (.-style js/document.documentElement)
-                                    "--app-height" (str h "px"))
-                      ;; iOS Safari scrolls the page when the keyboard opens,
-                      ;; creating a gap between compose box and keyboard.
-                      ;; Force scroll back to origin so the fixed layout stays
-                      ;; pinned to the top of the visual viewport.
-                      (.scrollTo js/window 0 0)))]
+                    (let [vv       js/window.visualViewport
+                          ;; Layout viewport — on iOS this does NOT shrink
+                          ;; when the soft keyboard overlays the page, so the
+                          ;; gap between it and the visual viewport tells us
+                          ;; whether the keyboard is open.
+                          layout-h (.-clientHeight js/document.documentElement)
+                          visual-h (if vv (.-height vv) js/window.innerHeight)
+                          style    (.-style js/document.documentElement)]
+                      (if (> (- layout-h visual-h) 100)
+                        ;; Keyboard is open: iOS overlays it without resizing
+                        ;; the layout viewport, so pin the layout to the
+                        ;; (smaller) visual viewport and scroll back to origin
+                        ;; to keep the compose box pinned above the keyboard.
+                        (do (.setProperty style "--app-height" (str visual-h "px"))
+                            (.scrollTo js/window 0 0))
+                        ;; At rest: fall back to the CSS dynamic viewport unit.
+                        ;; iOS standalone PWAs report a stale innerHeight /
+                        ;; visualViewport.height (as if a URL bar were present),
+                        ;; which is the bottom gap; 100dvh is computed correctly.
+                        (.setProperty style "--app-height" "100dvh"))))]
       (set-vh!)
       (if js/window.visualViewport
         (do (.addEventListener js/window.visualViewport "resize" (fn [_] (set-vh!)))

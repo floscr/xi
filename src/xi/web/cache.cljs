@@ -68,6 +68,15 @@
   (when session-id
     (store-set! watched-key (dissoc (load-watched) session-id))))
 
+;; ── Recently-executed commands (quick-command bar) ───────────────────────────
+
+(def ^:private recent-commands-key "xi/recent-commands")
+
+(defn load-recent-commands [] (or (store-get recent-commands-key) []))
+
+(defn save-recent-commands! [commands]
+  (store-set! recent-commands-key (vec commands)))
+
 ;; ── Hydrate + persist ────────────────────────────────────────────────────────
 
 (defn hydrate
@@ -78,7 +87,8 @@
   (let [sid    (:session-id route)
         cached (load-room sid)]
     (cond-> (assoc base :web/route route
-                        :web/watched (load-watched))
+                        :web/watched (load-watched)
+                        :web/recent-commands (load-recent-commands))
       (load-lobby) (assoc :lobby (load-lobby))
       cached       (assoc-in [:web/cache sid] cached))))
 
