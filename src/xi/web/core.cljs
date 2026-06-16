@@ -443,6 +443,10 @@
         (do (.addEventListener js/window.visualViewport "resize" (fn [_] (set-vh!)))
             (.addEventListener js/window.visualViewport "scroll" (fn [_] (set-vh!))))
         (.addEventListener js/window "resize" (fn [_] (set-vh!)))))
+    ;; Prevent iOS Safari smart-zoom (double-tap & pinch)
+    (.addEventListener js/document "gesturestart" (fn [e] (.preventDefault e)))
+    (.addEventListener js/document "gesturechange" (fn [e] (.preventDefault e)))
+    (.addEventListener js/document "gestureend" (fn [e] (.preventDefault e)))
     (.addEventListener js/document "visibilitychange"
                        (fn [_]
                          (dispatch! {:type :client/update
