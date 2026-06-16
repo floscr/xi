@@ -735,10 +735,6 @@
                                                   (.execCommand js/document "copy")
                                                   (.removeChild js/document.body el)))))))}}
          (icon/icon {:icon-name :copy :size :md})])
-      (theme-toggle/theme-toggle
-       {:mode (or (:web/theme-mode state) "auto")
-        :size :sm
-        :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
       (when standalone?
         [:button {:class ["icon-btn" "icon-btn--sm"]
                   :on {:click (fn [_] (.reload js/location))}}
@@ -940,10 +936,6 @@
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
       [:div {:class ["topbar-title"]} "Xi"]
-      (theme-toggle/theme-toggle
-       {:mode (or (:web/theme-mode state) "auto")
-        :size :sm
-        :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
       (offline-badge state)
       (when connected?
         [:button {:class ["icon-btn"]
@@ -992,10 +984,6 @@
          [:div {:class ["topbar"]}
           (menu-button dispatch!)
           [:div {:class ["topbar-title"]} "Xi"]
-          (theme-toggle/theme-toggle
-           {:mode (or (:web/theme-mode state) "auto")
-            :size :sm
-            :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
           (when standalone?
             [:button {:class ["icon-btn" "icon-btn--sm"]
                       :on {:click (fn [_] (.reload js/location))}}
@@ -1277,7 +1265,12 @@
       (if (seq sessions)
         (for [s sessions]
           (session-card dispatch! (session-status state s)))
-        [:div {:class ["sidebar-group-label"]} "No recent sessions"])))))
+        [:div {:class ["sidebar-group-label"]} "No recent sessions"]))
+     (sidebar/sidebar-footer {}
+       (theme-toggle/theme-toggle
+        {:mode (or (:web/theme-mode state) "auto")
+         :size :sm
+         :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})))))
 
 (defn root-view
   "Top-level view, route-driven: the session list at /, a room at /chat/:id.
