@@ -142,7 +142,7 @@
           (when (pos? n)
             [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
       (when (seq (:text entry))
-        [:div {:class ["post-content"]} (:text entry)])]]
+        [:div {:class ["post-content"]} (md/render (:text entry))])]]
 
     :text
     [:div {:class ["post" "post--assistant"]}
