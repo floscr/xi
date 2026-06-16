@@ -234,11 +234,8 @@
                                     {:state (assoc st :web/project-sessions-loading? true)
                                      :effects [[:ws/send {:type :projects/web-sessions :cwd cwd}]]})
           :projects/web-sessions-result projects-web-sessions-result
-          :projects/select-dir   (fn [st {:keys [cwd]}]
-                                    {:state (assoc st :web/selected-project-dir cwd
-                                                      :web/project-sessions nil
-                                                      :web/project-sessions-loading? true)
-                                     :effects [[:ws/send {:type :projects/web-sessions :cwd cwd}]]})
+          :projects/select-dir   (fn [_st {:keys [cwd]}]
+                                    {:effects [[:app/dispatch {:type :route/navigate :page :home :dir cwd}]]})
           :projects/back          (fn [st _]
                                     {:state (dissoc st :web/selected-project-dir
                                                       :web/project-sessions
@@ -253,6 +250,7 @@
 
 (defn- web-effects []
   {:history/push router/history-effect
+   :nav/back     router/back-effect
    :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :theme/apply  (fn [_ mode]
                    (let [el js/document.documentElement]

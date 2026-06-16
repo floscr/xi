@@ -119,13 +119,24 @@
                                   (assoc :web/gtd-task-id task-id))
                 ;; Sync project dir drill-down from the route
                 (= page :home) (-> (assoc :web/selected-project-dir dir)
-                                   ;; Clear stale sessions when navigating away
-                                   (cond-> (nil? dir) (dissoc :web/project-sessions
-                                                              :web/project-sessions-cwd))))
+                                   (cond->
+                                     ;; Clear stale sessions when navigating away
+                                     (nil? dir) (dissoc :web/project-sessions
+                                                        :web/project-sessions-cwd)
+                                     ;; Clear old data when drilling into a new dir
+                                     (and dir (not= dir :all))
+                                     (-> (dissoc :web/project-sessions)
+                                         (assoc :web/project-sessions-loading? true)))))
      :effects effects}))
 
+(defn nav-back
+  "Pure handler for :nav/back — emits the :nav/back effect."
+  [_st {:keys [fallback]}]
+  {:effects [[:nav/back {:fallback fallback}]]})
+
 (def handlers
-  {:route/navigate navigate})
+  {:route/navigate navigate
+   :nav/back       nav-back})
 
 ;; ── History effect + init (impure edge) ──────────────────────────────────────
 
@@ -138,10 +149,10 @@
   [_ctx {:keys [route replace?]}]
   (let [path (route->path route)]
     (if replace?
-      (.replaceState js/window.history nil "" path)
+      (.replaceState js/window.history #js {:navDepth @nav-depth} "" path)
       (when (not= path (.-pathname js/window.location))
-        (.pushState js/window.history nil "" path)
-        (swap! nav-depth inc)))))
+        (let [d (swap! nav-depth inc)]
+          (.pushState js/window.history #js {:navDepth d} "" path))))))
 
 (defn back-effect
   "The `:nav/back` effect — go back in browser history when the app owns
@@ -155,6 +166,9 @@
   "Seed the initial route from the URL and forward popstate as navigate.
    Called once after the app is created."
   [dispatch!]
+  ;; Restore nav-depth from history.state (survives page reloads)
+  (when-let [d (some-> js/history.state (.-navDepth))]
+    (reset! nav-depth d))
   (let [route->ev (fn [] (assoc (parse-path (.-pathname js/window.location))
                                 :type :route/navigate :replace? true))]
     (dispatch! (route->ev))
