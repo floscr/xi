@@ -127,6 +127,17 @@
 (defn- submit-clear-pending [st _]
   {:state (dissoc st :web/pending-submit)})
 
+(defn- optimistic-set
+  "Stash the just-submitted prompt so the timeline can show it instantly,
+   before the server round-trips a :user history entry back."
+  [st {:keys [room-id session-id text images]}]
+  {:state (assoc st :web/optimistic
+                 (cond-> {:room-id room-id :session-id session-id :text text}
+                   (seq images) (assoc :images (vec images))))})
+
+(defn- optimistic-clear [st _]
+  {:state (dissoc st :web/optimistic)})
+
 (defn- cmd-select [st {:keys [index]}]
   {:state (assoc st :web/cmd-selected (or index 0))})
 
@@ -243,6 +254,8 @@
           :lightbox/close        lightbox-close
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
+          :web/optimistic-set    optimistic-set
+          :web/optimistic-clear  optimistic-clear
           :cmd/select            cmd-select
           :web/record-command    record-command
           :theme/set-mode        theme-set-mode
@@ -430,6 +443,28 @@
                    (views/known-command? (:name parsed)))
           (dispatch! {:type :web/record-command :name (:name parsed)}))))))
 
+(defn- optimistic-tap
+  "Show the user's prompt in the timeline the instant they submit it,
+   before the server round-trips a :user history entry back. Cleared when
+   the real entry mirrors back (remote :prompt/submit)."
+  [dispatch!]
+  (fn [event state]
+    (cond
+      (and (= :input/submit (:type event))
+           (not (:remote? event))
+           (let [parsed (commands/parse-input (:text event))]
+             (or (= :prompt (:type parsed))
+                 (seq (:images event)))))
+      (dispatch! {:type :web/optimistic-set
+                  :room-id (:room-id event)
+                  :session-id (get-in state [:web/route :session-id])
+                  :text (:text event)
+                  :images (:images event)})
+
+      (and (:remote? event)
+           (= :prompt/submit (:type event)))
+      (dispatch! {:type :web/optimistic-clear}))))
+
 (defn- pending-gtd-tap
   "After room join, if there's a pending GTD task, dispatch :gtd/start-task
    to the server which handles activation + prompt submission."
@@ -529,6 +564,7 @@
     (add-tap! (request-projects-tap dispatch!))
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
+    (add-tap! (optimistic-tap dispatch!))
     (add-tap! (pending-gtd-tap dispatch!))
     (add-tap! (record-command-tap dispatch!))
     (router/init! dispatch!)

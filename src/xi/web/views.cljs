@@ -692,6 +692,23 @@
   (sidebar/sidebar-mobile-toggle
    {:on-click (fn [_] (dispatch! {:type :sidebar/toggle}))}))
 
+(defn- optimistic-post
+  "An optimistic user bubble rendered at the tail of the timeline the instant a
+   prompt is sent, before the server echoes the real :user entry back (instant
+   feedback on slow/mobile links). Suppressed once the matching entry lands in
+   history so it never duplicates the authoritative message."
+  [dispatch! state room sid history]
+  (when-let [{:keys [room-id session-id text images]} (:web/optimistic state)]
+    (let [for-this? (or (and room-id (= room-id (:id room)))
+                        (and session-id sid (= session-id sid)))
+          last-user (->> history (filter #(= :user (:kind %))) last)
+          confirmed? (and last-user
+                          (= (not-empty (some-> text str/trim))
+                             (not-empty (some-> (:text last-user) str/trim)))
+                          (= (count images) (count (:images last-user))))]
+      (when (and for-this? (not confirmed?))
+        (entry->post dispatch! {:kind :user :text text :images images})))))
+
 (defn- chat-view [state dispatch!]
   (let [room    (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -712,11 +729,10 @@
                 :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]}
-       "Xi"
        (when model
          [:span {:class ["topbar-subtitle" "topbar-subtitle--clickable"]
                  :on {:click (fn [_] (dispatch! {:type :models/web-list}))}}
-          (str " · " model)])]
+          model])]
       (when model-list
         (model-selector dispatch! (:id room) model-list model))
       (when room
@@ -766,7 +782,8 @@
                                                   :window (+ win window-step)}))}
                    (str "Show " (min window-step start) " earlier messages"
                         " (" start " hidden)"))])
-               (keep (partial entry->post dispatch!) (subvec entries start total))))
+               (keep (partial entry->post dispatch!) (subvec entries start total))
+               (optimistic-post dispatch! state room sid history)))
             [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
         (dialog-overlay dispatch! room)
         (lightbox/lightbox {:src (:web/lightbox state)
@@ -814,6 +831,25 @@
      :has-dialog? (boolean (:has-dialog? room))
      :unread?     (boolean (and w (> (get counts sid 0) w)))}))
 
+(defn- orphan-rooms
+  "Live rooms from the lobby mirror that have no matching disk session in
+   `sessions`. These are freshly created rooms whose session hasn't been
+   persisted to disk yet, so the disk-session-first listings would otherwise
+   miss them entirely. Optionally restrict to a single `cwd`. Returns
+   session-card-ready data maps, newest first (room-summaries is pre-sorted)."
+  ([state sessions] (orphan-rooms state sessions nil))
+  ([state sessions cwd]
+   (let [known-sids (set (keep :session-id sessions))]
+     (->> (get-in state [:lobby :rooms])
+          (filter (fn [r] (and (:session-id r)
+                               (not (known-sids (:session-id r)))
+                               (or (nil? cwd) (= cwd (:cwd r))))))
+          (mapv (fn [r] {:session-id  (:session-id r)
+                         :name        (or (:session-name r) "New session")
+                         :active?     true
+                         :busy?       (:busy? r)
+                         :has-dialog? (:has-dialog? r)}))))))
+
 (defn- session-card [dispatch! {:keys [session-id name timestamp current? active? busy? has-dialog? unread?]}]
   [:div {:class ["project-card" (when active? "project-card--active")
                  (when has-dialog? "project-card--dialog")
@@ -858,6 +894,7 @@
   [state dispatch!]
   (let [cwd       (:web/selected-project-dir state)
         sessions  (:web/project-sessions state)
+        orphans   (orphan-rooms state sessions cwd)
         loading?  (:web/project-sessions-loading? state)]
     [:div {:class ["container"] :replicant/key "project-sessions"}
      [:div {:class ["topbar"]}
@@ -875,7 +912,7 @@
         loading?
         [:div {:class ["empty-state"]} (spinner) [:p "Loading sessions…"]]
 
-        (empty? sessions)
+        (and (empty? sessions) (empty? orphans))
         [:div {:class ["empty-state"]}
          [:p "No sessions yet."]
          [:button {:class ["btn" "btn--primary"]
@@ -884,6 +921,8 @@
 
         :else
         [:div {:class ["project-list"]}
+         (for [o orphans]
+           (session-card dispatch! o))
          (for [s sessions]
            (session-card dispatch! (session-status state s)))])]]))
 
@@ -891,12 +930,8 @@
   "Flat list of all sessions (the old home view)."
   [state dispatch!]
   (let [sessions   (get-in state [:lobby :sessions])
-        rooms      (get-in state [:lobby :rooms])
         connected? (:web/connected? state)
-        known-sids  (set (keep :session-id sessions))
-        orphans     (filter (fn [r] (and (:session-id r)
-                                         (not (known-sids (:session-id r)))))
-                            rooms)]
+        orphans    (orphan-rooms state sessions)]
     [:div {:class ["container"] :replicant/key "all-sessions"}
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
@@ -911,11 +946,8 @@
      [:div {:class ["home"]}
       (if (or (seq sessions) (seq orphans))
         [:div {:class ["project-list"]}
-         (for [r orphans]
-           (session-card dispatch! {:session-id (:session-id r)
-                                    :name (or (:session-name r) "New session")
-                                    :active? true :busy? (:busy? r)
-                                    :has-dialog? (:has-dialog? r)}))
+         (for [o orphans]
+           (session-card dispatch! o))
          (for [s sessions]
            (session-card dispatch! (session-status state s)))]
         [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
@@ -925,12 +957,8 @@
    navigation (the personal agent has no projects)."
   [state dispatch!]
   (let [sessions    (get-in state [:lobby :sessions])
-        rooms       (get-in state [:lobby :rooms])
         connected?  (:web/connected? state)
-        known-sids  (set (keep :session-id sessions))
-        orphans     (filter (fn [r] (and (:session-id r)
-                                         (not (known-sids (:session-id r)))))
-                            rooms)]
+        orphans     (orphan-rooms state sessions)]
     [:div {:class ["container"] :replicant/key "home"}
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
@@ -949,11 +977,8 @@
 
         (or (seq sessions) (seq orphans))
         [:div {:class ["project-list"]}
-         (for [r orphans]
-           (session-card dispatch! {:session-id (:session-id r)
-                                    :name (or (:session-name r) "New session")
-                                    :active? true :busy? (:busy? r)
-                                    :has-dialog? (:has-dialog? r)}))
+         (for [o orphans]
+           (session-card dispatch! o))
          (for [s sessions]
            (session-card dispatch! (session-status state s)))]
 
@@ -1254,16 +1279,20 @@
    Reuses session-card so active/warning/notification indicators render the
    same way as the home listings (navigation auto-closes the drawer)."
   [state dispatch!]
-  (let [sessions (recent-sessions state)]
+  (let [sessions (recent-sessions state)
+        orphans  (orphan-rooms state sessions)]
     (sidebar/sidebar
      {}
      (sidebar/sidebar-header {}
        [:div {:class ["sidebar-group-label"]} "Recent"])
      (sidebar/sidebar-content
       {:attrs {:style {:padding 0}}}
-      (if (seq sessions)
-        (for [s sessions]
-          (session-card dispatch! (session-status state s)))
+      (if (or (seq orphans) (seq sessions))
+        (list
+         (for [o orphans]
+           (session-card dispatch! o))
+         (for [s sessions]
+           (session-card dispatch! (session-status state s))))
         [:div {:class ["sidebar-group-label"]} "No recent sessions"]))
      (sidebar/sidebar-footer {}
        (theme-toggle/theme-toggle

@@ -42,6 +42,7 @@
                :created      (:created room)
                :session-id   (get-in room [:session :id])
                :session-name (get-in room [:session :name])
+               :cwd          (:cwd room)
                :busy?        (boolean (get-in room [:agent :busy?]))
                :has-dialog?  (boolean (seq (get-in room [:ui :dialogs])))}))
        (sort-by :created)
