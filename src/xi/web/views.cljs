@@ -334,14 +334,14 @@
            label])
         quick-commands)])
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected at-bottom?]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected at-bottom? pa?]
   (let [room-id  (:id room)
-        cmd-query (when (and (string? draft) (str/starts-with? draft "/"))
+        cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
         cmd-matches (when (some? cmd-query) (match-commands cmd-query))
         cmd-open?   (seq cmd-matches)
         has-input?  (seq (str/trim (or draft "")))
-        show-quick? (and at-bottom? (not has-input?) (empty? images) (not cmd-open?))]
+        show-quick? (and (not pa?) at-bottom? (not has-input?) (empty? images) (not cmd-open?))]
     [:div {:class ["compose-box"]}
      (compose-image-strip dispatch! images)
      (when show-quick?
@@ -707,7 +707,8 @@
         (compose-box dispatch! room busy? (:web/compose-images state)
                      draft-key (get-in state [:web/drafts draft-key]) sid
                      (:web/cmd-selected state)
-                     (get state :web/at-bottom? true))))]))
+                     (get state :web/at-bottom? true)
+                     (get-in state [:lobby :personal-agent?]))))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
