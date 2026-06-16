@@ -844,6 +844,9 @@ body {
 }
 .project-card--dialog .project-card-icon { color: var(--warning); }
 
+/* Currently-open chat in the recent-sessions drawer */
+.project-card--current { background-color: var(--bg-1); }
+
 .project-card-icon { flex-shrink: 0; color: var(--fg-1); }
 
 .active-dot {

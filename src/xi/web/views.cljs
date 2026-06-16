@@ -812,14 +812,16 @@
     {:session-id  sid
      :name        (:name s)
      :timestamp   (or (:last-accessed s) (:timestamp s))
+     :current?    (and sid (= sid (get-in state [:web/route :session-id])))
      :active?     (boolean room)
      :busy?       (boolean (:busy? room))
      :has-dialog? (boolean (:has-dialog? room))
      :unread?     (boolean (and w (> (get counts sid 0) w)))}))
 
-(defn- session-card [dispatch! {:keys [session-id name timestamp active? busy? has-dialog? unread?]}]
+(defn- session-card [dispatch! {:keys [session-id name timestamp current? active? busy? has-dialog? unread?]}]
   [:div {:class ["project-card" (when active? "project-card--active")
-                 (when has-dialog? "project-card--dialog")]
+                 (when has-dialog? "project-card--dialog")
+                 (when current? "project-card--current")]
          :replicant/key (or session-id (str "card-" name))
          :on {:click (fn [_] (dispatch! {:type :route/navigate
                                          :page :chat :session-id session-id}))}}
