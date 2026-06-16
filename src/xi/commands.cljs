@@ -387,8 +387,13 @@
                                        :text after-prompt}]]))))
 
 (defn- session-resumed [st {:keys [room-id session summary messages]}]
-  (when (state/get-room st room-id)
-    (let [session' (assoc session :provider-session-id (:cli-session-id session))
+  (when-let [room (state/get-room st room-id)]
+    (let [;; Claude/Pi sessions load with :cwd nil (load-session can't know it);
+          ;; backfill from the room so :session/sync can persist them without
+          ;; crashing in xi-session-dir on a nil cwd.
+          session (cond-> session
+                    (nil? (:cwd session)) (assoc :cwd (:cwd room)))
+          session' (assoc session :provider-session-id (:cli-session-id session))
           label (str "Resumed: "
                      (or (:name session) (:cli-session-id session) (:id session))
                      (case (:source summary) :claude " [claude]" :pi " [pi]" "")
