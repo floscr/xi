@@ -118,9 +118,12 @@
     (is (= [[:app/dispatch {:type :room/close :room-id "r1"}]]
            (:effects (rm/client-disconnect-cleanup (joined-state)
                                                    {:client-id "c1"})))))
-  (testing "busy room → keep"
+  (testing "busy room → schedule grace-period orphan-check"
     (let [st (apply-events (joined-state) {:type :agent/busy :room-id "r1" :busy? true})]
-      (is (nil? (rm/client-disconnect-cleanup st {:client-id "c1"})))))
+      (is (= [[:app/dispatch-after
+               {:ms    rm/orphan-grace-ms
+                :event {:type :room/orphan-check :room-id "r1"}}]]
+             (:effects (rm/client-disconnect-cleanup st {:client-id "c1"}))))))
   (testing "client without a room → no-op"
     (is (nil? (rm/client-disconnect-cleanup (server-state-with-room) {:client-id "c1"})))))
 
