@@ -105,6 +105,12 @@
                                      :room-id room-id
                                      :room (state/get-room st room-id)}}]]}))
 
+(def ^:private orphan-grace-ms
+  "Grace period before aborting a busy room whose last client left.
+   Allows the agent to finish normally (turn-end-room-cleanup fires first),
+   while preventing indefinitely stale rooms when the SDK hangs."
+  15000)
+
 (defn- room-leave [st {:keys [client-id]}]
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
     (let [st'    (update-in st [:connection :clients client-id] dissoc :room-id)
@@ -114,12 +120,17 @@
                :effects [[:ws/send-to {:client-id client-id
                                        :event {:type :room/left :room-id room-id}}]]}
         ;; Last client navigated away from an idle room — close it now.
-        ;; Busy rooms stay alive: the agent keeps running and
-        ;; turn-end-room-cleanup will reap the room once the turn ends.
-        ;; (Actual disconnects are handled by client-disconnect-cleanup,
-        ;; which DOES abort busy orphans.)
         (and empty? idle?)
-        (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])))))
+        (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])
+        ;; Last client left a busy room — schedule a grace-period check.
+        ;; If the agent finishes normally, turn-end-room-cleanup closes
+        ;; the room first and the orphan-check is a no-op. If the agent
+        ;; hangs, the check aborts it so the room doesn't live forever.
+        (and empty? (not idle?))
+        (update :effects conj [:app/dispatch-after
+                               {:ms    orphan-grace-ms
+                                :event {:type :room/orphan-check
+                                        :room-id room-id}}])))))
 
 (defn- room-list [_st {:keys [client-id]}]
   ;; The full payload (rooms + saved sessions) is built impurely in the WS
@@ -171,12 +182,6 @@
    :projects/web-sessions  projects-web-sessions})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
-
-(def ^:private orphan-grace-ms
-  "Grace period before aborting a busy room whose last client disconnected.
-   Allows transient disconnects (e.g. chrome MCP navigating the page) to
-   reconnect without killing the running agent."
-  15000)
 
 (defn client-disconnect-cleanup
   "Chain BEFORE the core :client/disconnect handler (needs the client's
