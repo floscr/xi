@@ -269,15 +269,29 @@
    {:name "new"      :description "Start a new session"}
    {:name "clear"    :description "Clear current session"}
    {:name "truncate" :description "Summarize conversation to reduce context"}
-   {:name "diff"     :description "Show diff viewer (git|staged|unstaged)"}
+   {:name "diff"     :description "Show changes from this session"
+    :subcommands [{:name "git"      :description "All git changes (staged + unstaged + untracked)"}
+                  {:name "staged"   :description "Staged changes"}
+                  {:name "unstaged" :description "Unstaged changes"}]}
    {:name "commit"   :description "Review changes and create a git commit"}
    {:name "debug"    :description "Copy debug info to clipboard"}])
 
+(defn- expand-commands
+  "Flatten commands + their subcommands into a single suggestion list, where
+   each subcommand becomes a `parent sub` entry (e.g. \"diff staged\")."
+  [commands]
+  (mapcat (fn [{:keys [name description subcommands]}]
+            (cons {:name name :description description}
+                  (map (fn [{sub-name :name sub-desc :description}]
+                         {:name (str name " " sub-name) :description sub-desc})
+                       subcommands)))
+          commands))
+
 (defn- match-commands
-  "Filter commands by prefix query (text after the /)."
+  "Filter commands (and their subcommands) by prefix query (text after the /)."
   [query]
   (let [q (str/lower-case (or query ""))]
-    (filterv #(str/starts-with? (:name %) q) web-commands)))
+    (filterv #(str/starts-with? (:name %) q) (expand-commands web-commands))))
 
 (defn- command-suggestions
   "Popup list of matching slash commands above the compose box."
