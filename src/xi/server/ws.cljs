@@ -269,14 +269,14 @@
              public-dir (resolve-public-dir)
              broadcast-lobby!
              (fn [st]
-               ;; Only touch the disk (lobby-payload reads sessions) when a
-               ;; roomless client is actually listening.
-               (let [lobby-cids (keep (fn [[cid client]]
-                                        (when-not (:room-id client) cid))
-                                      (get-in st [:connection :clients]))]
-                 (when (seq lobby-cids)
+               ;; Push to every connected client, not just roomless ones: the
+               ;; recent-sessions drawer lives on every page, so clients
+               ;; attached to a room still need fresh lobby state to keep its
+               ;; list and unread/active/dialog markers live.
+               (let [cids (keys (get-in st [:connection :clients]))]
+                 (when (seq cids)
                    (let [payload (lobby-payload st personal-agent?)]
-                     (doseq [cid lobby-cids] (send! cid payload))))))
+                     (doseq [cid cids] (send! cid payload))))))
              server
              (js/Bun.serve
               #js {:port port
