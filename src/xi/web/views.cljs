@@ -835,8 +835,7 @@
                 :else ""))]]
    (cond
      busy?   (spinner)
-     unread? [:div {:class ["unread-dot"]}]
-     active? [:div {:class ["active-dot"]}])])
+     unread? [:div {:class ["unread-dot"]}])])
 
 
 
