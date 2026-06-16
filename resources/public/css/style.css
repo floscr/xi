@@ -219,6 +219,17 @@ body {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
+.post--user .post-content pre {
+  background-color: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.post--user .post-content pre code {
+  background: none;
+  color: #fff;
+}
+
 .post-content pre {
   background-color: var(--bg-1);
   padding: var(--size-3);
