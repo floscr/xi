@@ -113,12 +113,13 @@
       (cond-> {:state   st'
                :effects [[:ws/send-to {:client-id client-id
                                        :event {:type :room/left :room-id room-id}}]]}
+        ;; Last client navigated away from an idle room — close it now.
+        ;; Busy rooms stay alive: the agent keeps running and
+        ;; turn-end-room-cleanup will reap the room once the turn ends.
+        ;; (Actual disconnects are handled by client-disconnect-cleanup,
+        ;; which DOES abort busy orphans.)
         (and empty? idle?)
-        (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])
-        ;; Last client left a busy room — abort the agent so the turn ends
-        ;; and turn-end-room-cleanup can close it (prevents stale rooms).
-        (and empty? (not idle?))
-        (update :effects conj [:app/dispatch {:type :agent/abort :room-id room-id}])))))
+        (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])))))
 
 (defn- room-list [_st {:keys [client-id]}]
   ;; The full payload (rooms + saved sessions) is built impurely in the WS
