@@ -1518,3 +1518,8 @@ body {
   min-width: 0;
   resize: none;
 }
+
+/* Recent-sessions drawer: 80% of the viewport, capped at 560px */
+.sidebar-layout--floating > .sidebar {
+  width: min(80%, 560px);
+}

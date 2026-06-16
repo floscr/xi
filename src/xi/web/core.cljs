@@ -179,6 +179,8 @@
           :submit/clear-pending  submit-clear-pending
           :cmd/select            cmd-select
           :theme/set-mode        theme-set-mode
+          :sidebar/toggle        (fn [st _] {:state (update st :web/sidebar-open? not)})
+          :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
           :gtd/web-list          (fn [st ev]
                                     {:state (assoc st :web/gtd-loading? true)
                                      :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})

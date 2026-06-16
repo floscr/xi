@@ -17,6 +17,7 @@
             [ui.form :as form]
             [ui.button :as button]
             [ui.lightbox :as lightbox]
+            [ui.sidebar :as sidebar]
             [ui.theme-toggle :as theme-toggle]))
 
 ;; ── Standalone (homescreen) detection ────────────────────────────────────────
@@ -652,6 +653,13 @@
          [:span {:class ["project-picker-full"]} path]])
       [:div {:class ["project-picker-empty"]} "Loading…"])]])
 
+(defn- menu-button
+  "Framework hamburger toggle that opens the recent-sessions drawer. Lives on
+   every topbar; toggles the :web/sidebar-open? app state."
+  [dispatch!]
+  (sidebar/sidebar-mobile-toggle
+   {:on-click (fn [_] (dispatch! {:type :sidebar/toggle}))}))
+
 (defn- chat-view [state dispatch!]
   (let [room    (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -667,6 +675,7 @@
         has-tabs?  (boolean (:diff buffers))]
     [:div {:class ["container"] :replicant/key "chat"}
      [:div {:class ["topbar"]}
+      (menu-button dispatch!)
       [:button {:class ["icon-btn" "icon-btn--sm"]
                 :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
@@ -755,6 +764,26 @@
               (< m 1440) (str (js/Math.floor (/ m 60)) "h ago")
               :else      (str (js/Math.floor (/ m 1440)) "d ago"))))))
 
+(defn- session-status
+  "Enrich a session map with live indicator flags derived from app state:
+   :active? (has a live room), :busy?, :has-dialog? (needs response),
+   :unread? (more responses than last watched). Centralizes the logic shared
+   by every session listing so indicators aren't computed twice."
+  [state s]
+  (let [sid     (:session-id s)
+        rooms   (get-in state [:lobby :rooms])
+        counts  (:web/response-counts state)
+        watched (:web/watched state)
+        room    (some (fn [r] (when (= (:session-id r) sid) r)) rooms)
+        w       (get watched sid)]
+    {:session-id  sid
+     :name        (:name s)
+     :timestamp   (or (:last-accessed s) (:timestamp s))
+     :active?     (boolean room)
+     :busy?       (boolean (:busy? room))
+     :has-dialog? (boolean (:has-dialog? room))
+     :unread?     (boolean (and w (> (get counts sid 0) w)))}))
+
 (defn- session-card [dispatch! {:keys [session-id name timestamp active? busy? has-dialog? unread?]}]
   [:div {:class ["project-card" (when active? "project-card--active")
                  (when has-dialog? "project-card--dialog")]
@@ -799,15 +828,10 @@
   [state dispatch!]
   (let [cwd       (:web/selected-project-dir state)
         sessions  (:web/project-sessions state)
-        loading?  (:web/project-sessions-loading? state)
-        rooms     (get-in state [:lobby :rooms])
-        counts    (:web/response-counts state)
-        watched   (:web/watched state)
-        room-by-sid (into {} (keep (fn [r] (when (:session-id r) [(:session-id r) r])) rooms))
-        unread?   (fn [sid] (when-let [w (get watched sid)]
-                              (> (get counts sid 0) w)))]
+        loading?  (:web/project-sessions-loading? state)]
     [:div {:class ["container"] :replicant/key "project-sessions"}
      [:div {:class ["topbar"]}
+      (menu-button dispatch!)
       [:button {:class ["icon-btn"]
                 :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
@@ -831,34 +855,21 @@
         :else
         [:div {:class ["project-list"]}
          (for [s sessions]
-           (let [sid  (:session-id s)
-                 room (get room-by-sid sid)]
-             (session-card dispatch!
-                          {:session-id sid
-                           :name (:name s)
-                           :timestamp (or (:last-accessed s) (:timestamp s))
-                           :active? (boolean room)
-                           :busy? (boolean (:busy? room))
-                           :has-dialog? (boolean (:has-dialog? room))
-                           :unread? (unread? sid)})))])]]))  
+           (session-card dispatch! (session-status state s)))])]]))
 
 (defn- all-sessions-view
   "Flat list of all sessions (the old home view)."
   [state dispatch!]
   (let [sessions   (get-in state [:lobby :sessions])
         rooms      (get-in state [:lobby :rooms])
-        counts     (:web/response-counts state)
-        watched    (:web/watched state)
         connected? (:web/connected? state)
-        room-by-sid (into {} (keep (fn [r] (when (:session-id r) [(:session-id r) r])) rooms))
         known-sids  (set (keep :session-id sessions))
         orphans     (filter (fn [r] (and (:session-id r)
                                          (not (known-sids (:session-id r)))))
-                            rooms)
-        unread?     (fn [sid] (when-let [w (get watched sid)]
-                               (> (get counts sid 0) w)))]
+                            rooms)]
     [:div {:class ["container"] :replicant/key "all-sessions"}
      [:div {:class ["topbar"]}
+      (menu-button dispatch!)
       [:button {:class ["icon-btn"]
                 :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :home}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
@@ -876,16 +887,7 @@
                                     :active? true :busy? (:busy? r)
                                     :has-dialog? (:has-dialog? r)}))
          (for [s sessions]
-           (let [sid (:session-id s)
-                 room (get room-by-sid sid)]
-             (session-card dispatch!
-                          {:session-id sid
-                           :name (:name s)
-                           :timestamp (or (:last-accessed s) (:timestamp s))
-                           :active? (boolean room)
-                           :busy? (boolean (:busy? room))
-                           :has-dialog? (boolean (:has-dialog? room))
-                           :unread? (unread? sid)})))]
+           (session-card dispatch! (session-status state s)))]
         [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
 
 (defn- personal-agent-home-view
@@ -894,18 +896,14 @@
   [state dispatch!]
   (let [sessions    (get-in state [:lobby :sessions])
         rooms       (get-in state [:lobby :rooms])
-        counts      (:web/response-counts state)
-        watched     (:web/watched state)
         connected?  (:web/connected? state)
-        room-by-sid (into {} (keep (fn [r] (when (:session-id r) [(:session-id r) r])) rooms))
         known-sids  (set (keep :session-id sessions))
         orphans     (filter (fn [r] (and (:session-id r)
                                          (not (known-sids (:session-id r)))))
-                            rooms)
-        unread?     (fn [sid] (when-let [w (get watched sid)]
-                               (> (get counts sid 0) w)))]
+                            rooms)]
     [:div {:class ["container"] :replicant/key "home"}
      [:div {:class ["topbar"]}
+      (menu-button dispatch!)
       [:div {:class ["topbar-title"]} "Xi"]
       (theme-toggle/theme-toggle
        {:mode (or (:web/theme-mode state) "auto")
@@ -931,16 +929,7 @@
                                     :active? true :busy? (:busy? r)
                                     :has-dialog? (:has-dialog? r)}))
          (for [s sessions]
-           (let [sid (:session-id s)
-                 room (get room-by-sid sid)]
-             (session-card dispatch!
-                          {:session-id sid
-                           :name (:name s)
-                           :timestamp (or (:last-accessed s) (:timestamp s))
-                           :active? (boolean room)
-                           :busy? (boolean (:busy? room))
-                           :has-dialog? (boolean (:has-dialog? room))
-                           :unread? (unread? sid)})))]
+           (session-card dispatch! (session-status state s)))]
 
         :else
         [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
@@ -966,6 +955,7 @@
             orphans    (filter (fn [r] (:session-id r)) rooms)]
         [:div {:class ["container"] :replicant/key "home"}
          [:div {:class ["topbar"]}
+          (menu-button dispatch!)
           [:div {:class ["topbar-title"]} "Xi"]
           (theme-toggle/theme-toggle
            {:mode (or (:web/theme-mode state) "auto")
@@ -1174,6 +1164,7 @@
       :else
       [:div {:class ["container"] :replicant/key "gtd"}
        [:div {:class ["topbar"]}
+        (menu-button dispatch!)
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_]
                                 (dispatch! {:type :nav/back
@@ -1214,10 +1205,55 @@
 
 ;; ── Root ─────────────────────────────────────────────────────────────────────
 
-(defn root-view
-  "Top-level view, route-driven: the session list at /, a room at /chat/:id."
+(defn- session-time
+  "Numeric last-visited timestamp for a session, for sorting."
+  [s]
+  (let [t (or (:last-accessed s) (:timestamp s))]
+    (cond
+      (number? t) t
+      (string? t) (let [n (.getTime (js/Date. t))] (if (js/isNaN n) 0 n))
+      :else 0)))
+
+(defn- recent-sessions
+  "Sessions from the lobby mirror sorted by most-recently visited."
+  [state]
+  (->> (get-in state [:lobby :sessions])
+       (sort-by session-time >)
+       (take 25)))
+
+(defn- recent-sidebar
+  "The drawer panel: framework sidebar listing recent sessions sorted by last
+   visited. Slid in/out by the floating layout's data-sidebar-open attribute.
+   Reuses session-card so active/warning/notification indicators render the
+   same way as the home listings (navigation auto-closes the drawer)."
   [state dispatch!]
-  (case (get-in state [:web/route :page])
-    :chat (chat-view state dispatch!)
-    :gtd  (gtd-view state dispatch!)
-    (home-view state dispatch!)))
+  (let [sessions (recent-sessions state)]
+    (sidebar/sidebar
+     {}
+     (sidebar/sidebar-header {}
+       [:div {:class ["sidebar-group-label"]} "Recent"])
+     (sidebar/sidebar-content
+      {:attrs {:style {:padding 0}}}
+      (if (seq sessions)
+        (for [s sessions]
+          (session-card dispatch! (session-status state s)))
+        [:div {:class ["sidebar-group-label"]} "No recent sessions"])))))
+
+(defn root-view
+  "Top-level view, route-driven: the session list at /, a room at /chat/:id.
+   Wrapped in a floating sidebar layout so every topbar's hamburger reveals
+   the recent-sessions drawer over the content."
+  [state dispatch!]
+  (let [open? (boolean (:web/sidebar-open? state))]
+    (sidebar/sidebar-layout
+     {:class "sidebar-layout--floating"
+      :attrs (cond-> {:style {:height "100%"}}
+               open? (assoc :data-sidebar-open true))}
+     (recent-sidebar state dispatch!)
+     (sidebar/sidebar-overlay {:on-click (fn [_] (dispatch! {:type :sidebar/close}))})
+     (sidebar/sidebar-layout-main
+      {:attrs {:style {:min-height "0"}}}
+      (case (get-in state [:web/route :page])
+        :chat (chat-view state dispatch!)
+        :gtd  (gtd-view state dispatch!)
+        (home-view state dispatch!))))))

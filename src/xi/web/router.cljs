@@ -107,7 +107,9 @@
     {:state   (cond-> (assoc st :web/route route
                             ;; reset the virtualized timeline window on every
                             ;; navigation so a new session starts compact
-                            :web/timeline-window nil)
+                            :web/timeline-window nil
+                            ;; close the recent-sessions drawer on navigation
+                            :web/sidebar-open? false)
                 ;; Leaving a chat we were viewing: remember the session so the
                 ;; next fresh count marks it read (the user saw responses that
                 ;; landed while attached, before counts refreshed). See

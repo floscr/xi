@@ -3054,6 +3054,59 @@ a.sidebar-menu-item {
   }
 }
 
+/* ── Floating Variant ────────────────────────────── */
+
+/* Forces the off-canvas drawer behavior at any viewport size, positioned
+   relative to the layout container instead of the viewport. Use for
+   embedded shells, phone-frame demos, or compact app panes where the
+   sidebar should always slide over the content. */
+
+.sidebar-layout--floating {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+}
+
+.sidebar-layout--floating .sidebar-mobile-toggle {
+  display: flex;
+}
+
+.sidebar-layout--floating > .sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  height: 100%;
+  transform: translateX(-100%);
+  transition: transform 250ms ease;
+  box-shadow: none;
+}
+
+.sidebar-layout--floating > .sidebar-overlay {
+  display: block;
+  position: absolute;
+  pointer-events: none;
+}
+
+.sidebar-layout--floating[data-sidebar-open] > .sidebar {
+  transform: translateX(0);
+  box-shadow: var(--shadow-3);
+}
+
+.sidebar-layout--floating[data-sidebar-open] > .sidebar-overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-layout--floating[data-sidebar-open] .sidebar-mobile-toggle .sidebar-toggle-icon-open {
+  display: none;
+}
+
+.sidebar-layout--floating[data-sidebar-open] .sidebar-mobile-toggle .sidebar-toggle-icon-close {
+  display: flex;
+}
+
 
 .skeleton {
   background: var(--bg-2);
