@@ -58,3 +58,16 @@
   (let [st (:state (handle (with-room {:id "s1" :name "Resumed Session"})
                            {:type :session/title-generated :room-id "r" :title "Generated"}))]
     (is (= "Resumed Session" (get-in st [:rooms "r" :session :name])))))
+
+(deftest title-turn-marker-lifecycle
+  (let [started (:state (handle (with-room)
+                                {:type :session/title-turn-started
+                                 :room-id "r" :session-id "throwaway-cli-id"}))]
+    (testing "in-flight title session id is recorded for lobby hiding"
+      (is (= "throwaway-cli-id" (get-in started [:rooms "r" :title-session-id]))))
+    (testing "title-generated clears the marker"
+      (let [done (:state (handle started
+                                 {:type :session/title-generated
+                                  :room-id "r" :title "Some Title"}))]
+        (is (nil? (get-in done [:rooms "r" :title-session-id])))
+        (is (= "Some Title" (get-in done [:rooms "r" :session :name])))))))

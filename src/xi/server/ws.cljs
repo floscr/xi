@@ -72,10 +72,14 @@
    turn before Xi's own :session/sync has run."
   [st personal-agent?]
   (let [rooms    (rm/room-summaries st)
-        ;; Provider session ids currently held by live rooms (Claude CLI ids)
+        ;; Provider session ids currently held by live rooms (Claude CLI ids),
+        ;; plus throwaway auto-title turns still in flight — both must be
+        ;; hidden from the saved-session list.
         live-pids (into #{}
-                        (keep (fn [[_ room]]
-                                (get-in room [:session :provider-session-id])))
+                        (comp (mapcat (fn [[_ room]]
+                                        [(get-in room [:session :provider-session-id])
+                                         (:title-session-id room)]))
+                              (remove nil?))
                         (:rooms st))
         sessions (cond->> (lobby-sessions personal-agent?)
                    (seq live-pids)

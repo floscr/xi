@@ -148,6 +148,17 @@
           true)
       false)))
 
+(defn delete-claude-session-file!
+  "Delete the Claude CLI session JSONL for `cli-session-id` under `cwd`.
+   Used to discard throwaway turns (e.g. auto-titling) that the CLI persists
+   but Xi must never surface. Returns true when a file was removed."
+  [cwd cli-session-id]
+  (when (and cwd cli-session-id)
+    (let [filepath (.join node-path (claude-project-dir cwd) (str cli-session-id ".jsonl"))]
+      (if (fs/existsSync filepath)
+        (do (fs/unlinkSync filepath) true)
+        false))))
+
 ;; ── Claude CLI Session Reading ────────────────────────────────────────────────
 
 (defn- read-head-lines

@@ -217,7 +217,8 @@
                                                       {:system       (system-prompt/parts->system parts)
                                                        :system-parts parts}))})
                                                (compaction/create-fx providers)
-                                               (naming/create-fx providers)
+                                               (naming/create-fx providers
+                                                {:delete-session-file! session/delete-claude-session-file!})
                                                (:fx composed)
                                                (:fx dialogs)
                                                (:effects client))
@@ -346,7 +347,8 @@
                                                      {:system       (system-prompt/parts->system parts)
                                                       :system-parts parts}))})
                                               (compaction/create-fx providers)
-                                              (naming/create-fx providers)
+                                              (naming/create-fx providers
+                                               {:delete-session-file! session/delete-claude-session-file!})
                                               (:fx composed)
                                               (:fx dialogs)
                                               (:fx server))

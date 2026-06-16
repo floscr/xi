@@ -2,19 +2,24 @@
   "Auto-titling — generate a short session name from the first user message
    so the UI never lingers on \"New session\".
 
+   The title turn runs a cheap model through the claude provider. The SDK/CLI
+   always persists that turn as its own session file, which Xi would otherwise
+   surface in the session list — so we treat it as throwaway:
+     - its session id is recorded on the room while in flight, and the lobby
+       filters it out (see xi.server.ws/lobby-payload), and
+     - the CLI session file is deleted the moment the turn ends.
+   Nothing about the title turn is ever kept.
+
    Flow:
      :prompt/submit (first msg, unnamed)
-       ─► maybe-generate-title chains on, sets :agent :title-pending? and
-          emits [:session/generate-title …]
-     :session/generate-title
-       ─► one-shot turn against a cheap model, fire-and-forget; on success
-          dispatches :session/title-generated
+       ─► maybe-generate-title sets :agent :title-pending? + emits
+          [:session/generate-title …]
+     :session/generate-title (effect)
+       ─► one-shot turn; on session id, dispatch :session/title-turn-started
+          (marks it hidden); on end, delete the file + dispatch
+          :session/title-generated
      :session/title-generated
-       ─► sets [:session :name] when still unnamed (broadcast to clients;
-          :session/sync later persists it to disk)
-
-   The title turn is NOT an Xi session — it resumes nothing and is never
-   saved. It's a throwaway provider call, like compaction's summary turn."
+       ─► clears the marker and sets [:session :name] when still unnamed."
   (:require [clojure.string :as str]
             [xi.core.state :as state]))
 
@@ -60,37 +65,58 @@
       {:state    (assoc-in st [:rooms room-id :agent :title-pending?] true)
        :effects  [[:session/generate-title {:room-id room-id :text text}]]})))
 
+(defn- title-turn-started
+  "Record the throwaway title turn's provider session id so the lobby hides
+   it for its brief lifetime."
+  [st {:keys [room-id session-id]}]
+  (when (state/get-room st room-id)
+    {:state (assoc-in st [:rooms room-id :title-session-id] session-id)}))
+
 (defn- title-generated
-  "Apply a generated title — only while the session is still unnamed, so a
-   /resume that landed first always wins."
+  "Clear the hidden-session marker and apply the title — only while the
+   session is still unnamed, so a /resume that landed first always wins."
   [st {:keys [room-id title]}]
   (when-let [room (state/get-room st room-id)]
-    (when (and title (nil? (get-in room [:session :name])))
-      {:state (assoc-in st [:rooms room-id :session :name] title)})))
+    {:state (cond-> (update-in st [:rooms room-id] dissoc :title-session-id)
+              (and title (nil? (get-in room [:session :name])))
+              (assoc-in [:rooms room-id :session :name] title))}))
 
 (def handlers
-  {:session/title-generated title-generated})
+  {:session/title-turn-started title-turn-started
+   :session/title-generated    title-generated})
 
 ;; ── Effects (contained impure edge) ──────────────────────────────────────────
 
 (defn create-fx
   "Title-generation effect. Runs a throwaway one-shot turn against a cheap
-   model through the claude provider — no resume, never persisted."
-  [providers]
+   model through the claude provider, then discards the CLI session it leaves
+   behind via the injected `delete-session-file!` (cwd, cli-session-id)."
+  [providers {:keys [delete-session-file!]}]
   {:session/generate-title
    (fn [{:keys [dispatch! state]} {:keys [room-id text]}]
      (when-let [provider (get providers :claude)]
-       (let [chunks (atom [])
+       (let [cwd    (get-in state [:rooms room-id :cwd])
+             chunks (atom [])
+             sid    (atom nil)
              input  (subs text 0 (min MAX_INPUT (count text)))
+             discard! (fn []
+                        (when (and delete-session-file! @sid)
+                          (delete-session-file! cwd @sid)))
              {:keys [promise]}
              ((:start-turn! provider)
-              {:model   TITLE_MODEL
-               :prompt  (str TITLE_PROMPT_PREFIX input)
-               :cwd     (get-in state [:rooms room-id :cwd])
-               :on-text (fn [t] (swap! chunks conj t))})]
+              {:model      TITLE_MODEL
+               :prompt     (str TITLE_PROMPT_PREFIX input)
+               :cwd        cwd
+               :on-session (fn [s]
+                             (reset! sid s)
+                             (dispatch! {:type :session/title-turn-started
+                                         :room-id room-id :session-id s}))
+               :on-text    (fn [t] (swap! chunks conj t))})]
          (-> promise
              (.then
               (fn [result]
+                (when-not @sid (reset! sid (:session-id result)))
+                (discard!)
                 (when-not (:aborted result)
                   (let [raw   (or (not-empty (:result-text result))
                                   (not-empty (str/join @chunks)))
@@ -98,4 +124,8 @@
                     (when title
                       (dispatch! {:type :session/title-generated
                                   :room-id room-id :title title}))))))
-             (.catch (fn [_err] nil))))))})
+             (.catch (fn [_err]
+                       (discard!)
+                       (dispatch! {:type :session/title-generated
+                                   :room-id room-id :title nil})
+                       nil))))))})
