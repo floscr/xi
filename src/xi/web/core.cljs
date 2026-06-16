@@ -10,7 +10,8 @@
    router lives in the single atom (:web/route); the cache hydrates state
    before the WS connects and persists via an app tap. Saved sessions, live
    rooms, unread dots and reconnect come from the lobby mirror + transport."
-  (:require [replicant.dom :as r]
+  (:require [clojure.string :as str]
+            [replicant.dom :as r]
             [xi.agent :as agent]
             [xi.client.ws-transport :as ws-transport]
             [xi.commands :as commands]
