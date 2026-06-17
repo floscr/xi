@@ -1304,13 +1304,29 @@
          (sort-by (juxt busy? session-time) #(compare %2 %1))
          (take 25))))
 
+(defn- recent-projects
+  "Distinct project directories ordered by most-recently used, derived from
+   live rooms (active now) followed by saved sessions sorted by last visited.
+   Personal-agent sessions carry no cwd, so the list collapses to empty there."
+  [state]
+  (let [room-cwds (->> (get-in state [:lobby :rooms]) (keep :cwd))
+        sess-cwds (->> (get-in state [:lobby :sessions])
+                       (filter :cwd)
+                       (sort-by session-time #(compare %2 %1))
+                       (map :cwd))]
+    (->> (concat room-cwds sess-cwds)
+         distinct
+         (take 5))))
+
 (defn- recent-sidebar
-  "The drawer panel: framework sidebar listing recent sessions sorted by last
-   visited. Slid in/out by the floating layout's data-sidebar-open attribute.
-   Reuses session-card so active/warning/notification indicators render the
-   same way as the home listings (navigation auto-closes the drawer)."
+  "The drawer panel: framework sidebar listing recently-used projects above
+   recent sessions, both sorted by last visited. Slid in/out by the floating
+   layout's data-sidebar-open attribute. Reuses session-card/project-dir-card
+   so indicators render the same way as the home listings (navigation
+   auto-closes the drawer)."
   [state dispatch!]
-  (let [sessions (recent-sessions state)
+  (let [projects (recent-projects state)
+        sessions (recent-sessions state)
         orphans  (orphan-rooms state sessions)
         ;; Render one card per session-id from a single keyed sequence.
         ;; Replicant renders BOTH siblings when two share a :replicant/key
@@ -1329,14 +1345,17 @@
                       :acc)]
     (sidebar/sidebar
      {}
-     (sidebar/sidebar-header {}
-       [:div {:class ["sidebar-group-label"]} "Recent"])
      (sidebar/sidebar-content
       {:attrs {:style {:padding 0}}}
-      (if (seq cards)
-        (for [c cards]
-          (session-card dispatch! c))
-        [:div {:class ["sidebar-group-label"]} "No recent sessions"]))
+      (when (seq projects)
+        (sidebar/sidebar-group {:label "Projects"}
+          (for [p projects]
+            (project-dir-card dispatch! p))))
+      (sidebar/sidebar-group {:label "Recent"}
+        (if (seq cards)
+          (for [c cards]
+            (session-card dispatch! c))
+          [:div {:class ["sidebar-group-label"]} "No recent sessions"])))
      (sidebar/sidebar-footer {}
        (theme-toggle/theme-toggle
         {:mode (or (:web/theme-mode state) "auto")
