@@ -5,10 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#000000">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- No status-bar-style: black-translucent shifts the whole view up ~59px
+       (a WebKit bug), so no height value lands right — too short leaves a
+       bottom chin gap, too tall cuts off the compose box. Omitting it lets
+       iOS standalone reserve the status bar and handle safe areas itself. -->
+  <meta name="apple-mobile-web-app-title" content="Xi">
+  <link rel="manifest" href="/manifest.webmanifest">
   <title>Xi</title>
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=2">
   <script>try{var t=localStorage.getItem('ui-theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 </head>
 <body>

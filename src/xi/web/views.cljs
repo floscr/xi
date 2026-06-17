@@ -1346,7 +1346,7 @@
     (sidebar/sidebar
      {}
      (sidebar/sidebar-content
-      {:attrs {:style {:padding 0}}}
+      {:attrs {:style {:padding "env(safe-area-inset-top) 0 0 0"}}}
       (when (seq projects)
         (sidebar/sidebar-group {:label "Projects"}
           (for [p projects]

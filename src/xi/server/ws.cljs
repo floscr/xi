@@ -118,8 +118,13 @@
         has-ext? (re-find #"\.[a-zA-Z0-9]+$" rel)
         ;; SPA route prefixes — always fall back to index.html
         spa-route? (re-find #"^(chat|gtd)(/|$)" rel)
+        ;; No Cache-Control means iOS/WebKit applies aggressive heuristic
+        ;; caching, so edited CSS/JS can stay stale for a long time. Force
+        ;; revalidation on every request to keep the PWA in sync with builds.
         serve (fn [file status]
-                (js/Response. (js/Bun.file file) #js {:status status}))]
+                (js/Response. (js/Bun.file file)
+                              #js {:status status
+                                   :headers #js {"Cache-Control" "no-cache"}}))]
     (if-not (.startsWith full public-dir)
       (js/Promise.resolve (js/Response. "Forbidden" #js {:status 403}))
       (-> (.exists (js/Bun.file full))

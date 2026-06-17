@@ -4,12 +4,15 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation; }
 
-:root { --app-height: 100vh; --app-height: 100dvh; }
+/* Static fallback before JS measures the viewport. xi.web.core sets
+   --app-height to 100dvh at rest (the real standalone window height) and to
+   the pixel-accurate visual viewport height while the keyboard is open. */
+:root { --app-height: 100vh; }
 
 html, body {
   margin: 0; padding: 0;
   overflow: hidden; position: fixed;
-  width: 100%; height: 100%;
+  width: 100%; height: 100vh;
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
 }
@@ -871,6 +874,13 @@ body {
 
 /* Currently-open chat in the recent-sessions drawer */
 .project-card--current { background-color: var(--bg-1); }
+
+/* Keep the sidebar drawer's footer clear of the home indicator when it
+   slides out edge-to-edge behind the translucent iOS chrome (the top inset
+   is applied inline on .sidebar-content, which carries a padding override) */
+.sidebar-footer {
+  padding-bottom: max(var(--size-3), env(safe-area-inset-bottom));
+}
 
 /* Compact session cards inside the sidebar drawer */
 .sidebar .project-card {

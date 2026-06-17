@@ -590,10 +590,12 @@
                         ;; to keep the compose box pinned above the keyboard.
                         (do (.setProperty style "--app-height" (str visual-h "px"))
                             (.scrollTo js/window 0 0))
-                        ;; At rest: fall back to the CSS dynamic viewport unit.
-                        ;; iOS standalone PWAs report a stale innerHeight /
-                        ;; visualViewport.height (as if a URL bar were present),
-                        ;; which is the bottom gap; 100dvh is computed correctly.
+                        ;; At rest: use 100dvh, which reports the real
+                        ;; standalone window height (screen minus the status
+                        ;; bar iOS reserves at the top). 100vh reports the full
+                        ;; physical screen, making the app taller than the
+                        ;; window and pushing the footer/compose box off the
+                        ;; bottom.
                         (.setProperty style "--app-height" "100dvh"))))]
       (set-vh!)
       (if js/window.visualViewport
