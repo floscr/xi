@@ -1360,6 +1360,7 @@
        (theme-toggle/theme-toggle
         {:mode (or (:web/theme-mode state) "auto")
          :size :sm
+         :attrs {:style {:align-self "flex-start"}}
          :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})))))
 
 (defn root-view
