@@ -163,25 +163,33 @@
   {:effects [[:app/dispatch {:type :compact/request :room-id room-id :focus args}]]})
 
 (defn- render-system-prompt
-  "Render a room's system-parts into buffer text. When expanded? is false,
-   each part's body is clipped to a 200-char preview."
+  "Render a room's system prompt for the buffer. Expanded? true shows the
+   verbatim string that is actually inserted (the room's :agent :system);
+   false shows a per-part overview clipped to a 200-char preview each."
   [st room-id expanded?]
-  (let [parts (get-in st [:rooms room-id :agent :system-parts])]
-    (if (seq parts)
+  (let [parts  (get-in st [:rooms room-id :agent :system-parts])
+        system (get-in st [:rooms room-id :agent :system])]
+    (cond
+      expanded?
+      (or system
+          (when (seq parts) (str/join "\n\n" (map :text parts)))
+          "(no system prompt)")
+
+      (seq parts)
       (str/join "\n\n---\n\n"
                 (map (fn [{:keys [source text]}]
-                       (let [lines (count (re-seq #"\n" (or text "")))
-                             body (if expanded?
-                                    text
-                                    (let [s (subs text 0 (min 200 (count text)))]
-                                      (if (< (count text) 200) s (str s "..."))))]
-                         (str "## [" source "] (" lines " lines)\n\n" body)))
+                       (let [lines   (count (re-seq #"\n" (or text "")))
+                             preview (let [s (subs text 0 (min 200 (count text)))]
+                                       (if (< (count text) 200) s (str s "...")))]
+                         (str "## [" source "] (" lines " lines)\n\n" preview)))
                      parts))
-      (or (get-in st [:rooms room-id :agent :system])
-          "(no system prompt)"))))
+
+      :else
+      (or system "(no system prompt)"))))
 
 (defn- prompt-buffer [st room-id expanded?]
-  {:title     (str "System Prompt — ctrl+o to " (if expanded? "collapse" "expand"))
+  {:title     (str "System Prompt — " (if expanded? "full (ctrl+o for overview)"
+                                         "overview (ctrl+o for full)"))
    :text      (render-system-prompt st room-id expanded?)
    :expanded? expanded?})
 

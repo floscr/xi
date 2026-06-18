@@ -61,6 +61,24 @@ Be concise, direct, and friendly. When unsure, say so.")
         (vec (reverse found))
         (recur parent found)))))
 
+
+(defn- fetch-profile-agents-prompt
+  "Call bb profile:agents-prompt to check if a profile defines a custom
+   agents prompt for this cwd. Returns {:prompt <str> :replace <bool>} or nil."
+  [cwd]
+  (try
+    (let [proc (js/Bun.spawnSync
+                #js ["bb" "--config" BB_EDN "profile:agents-prompt" cwd]
+                #js {:stdout "pipe" :stderr "pipe"
+                     :timeout 10000})]
+      (when (zero? (.-exitCode proc))
+        (let [stdout (str (.toString (.-stdout proc)))
+              parsed (js->clj (js/JSON.parse stdout) :keywordize-keys true)]
+          (when (:prompt parsed)
+            parsed))))
+    (catch :default _e
+      nil)))
+
 (defn- find-all-agents-md
   "List every AGENTS.md in the repo (tracked or untracked, but respecting
    .gitignore) as repo-root-relative paths with a leading slash, e.g.
@@ -89,29 +107,23 @@ Be concise, direct, and friendly. When unsure, say so.")
 
 (defn- agents-md-prompt
   "Build a prompt section listing every AGENTS.md in the repo, instructing
-   the agent to read each one when editing related files. nil when none."
-  [cwd]
-  (when-let [files (seq (find-all-agents-md cwd))]
-    (str "These AGENTS.md files have been found, read them automatically "
-         "when editing files related to them:\n"
-         (str/join "\n" (map #(str "[" % "]") files)))))
-
-(defn- fetch-profile-agents-prompt
-  "Call bb profile:agents-prompt to check if a profile defines a custom
-   agents prompt for this cwd. Returns {:prompt <str> :replace <bool>} or nil."
-  [cwd]
-  (try
-    (let [proc (js/Bun.spawnSync
-                #js ["bb" "--config" BB_EDN "profile:agents-prompt" cwd]
-                #js {:stdout "pipe" :stderr "pipe"
-                     :timeout 10000})]
-      (when (zero? (.-exitCode proc))
-        (let [stdout (str (.toString (.-stdout proc)))
-              parsed (js->clj (js/JSON.parse stdout) :keywordize-keys true)]
-          (when (:prompt parsed)
-            parsed))))
-    (catch :default _e
-      nil)))
+   the agent to read each one when editing related files. When a profile
+   replaces the cwd AGENTS.md (:replace), that file is omitted so the list
+   matches the prompt actually inserted. nil when none."
+  ([cwd] (agents-md-prompt cwd (fetch-profile-agents-prompt cwd)))
+  ([cwd profile-prompt]
+   (let [replaced (when (:replace profile-prompt)
+                    (when-let [root (tools-util/git-root cwd)]
+                      (str "/" (.relative node-path root
+                                          (.join node-path (.resolve node-path cwd)
+                                                 "AGENTS.md")))))
+         files (cond->> (find-all-agents-md cwd)
+                 replaced (remove #(= % replaced))
+                 true     seq)]
+     (when files
+       (str "These AGENTS.md files have been found, read them automatically "
+            "when editing files related to them:\n"
+            (str/join "\n" (map #(str "[" % "]") files)))))))
 
 (defn load-agents-md
   "Load and concatenate all AGENTS.md files from cwd to root.
@@ -173,7 +185,7 @@ Be concise, direct, and friendly. When unsure, say so.")
         parts (if-let [pc (:prompt profile-prompt)]
                 (conj parts {:source "profile" :text pc})
                 parts)
-        parts (if-let [sub (agents-md-prompt cwd)]
+        parts (if-let [sub (agents-md-prompt cwd profile-prompt)]
                 (conj parts {:source "agents-md" :text sub})
                 parts)
         parts (if-let [sk (skills/load-skill-prompts cwd)]
