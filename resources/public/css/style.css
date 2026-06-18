@@ -1560,11 +1560,11 @@ body {
 }
 
 /* ---- Diff selection toolbar (anchored to the bottom of the range) ----
-   Anchors the selection toolbar/popover to the bottom of the selected range.
-   Surface styling comes from the clj-ui .toolbar pill (actions) or
-   .popover-content panel (modify); this only handles placement. The exact top
-   is set in JS (position-sel-toolbar!); .popover-content's fixed positioning is
-   overridden here since the panel tracks a text range, not a trigger button. */
+   Anchors the actions toolbar to the bottom of the selected range. Surface
+   styling comes from the clj-ui .toolbar pill (actions) or .popover-content
+   panel (modify); this only handles placement. The actions toolbar's top is
+   set in JS (position-sel-toolbar!); .popover-content's fixed positioning is
+   overridden here since the toolbar tracks a text range, not a trigger. */
 .diff-sel-anchor {
   position: absolute;
   top: 0;
@@ -1573,14 +1573,60 @@ body {
   transform: translateX(-50%);
   z-index: 30;
   margin-top: var(--size-1);
+  /* Sit inside the monospace .diff-view, but this is UI chrome — use the UI font. */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+/* The modify panel is pinned above the on-screen keyboard instead of the
+   range (its `top` is set in JS by position-modify-panel! via the
+   VisualViewport), so focusing the textarea doesn't trigger the iOS scroll. */
 .diff-sel-anchor--modify {
+  position: fixed;
+  top: auto;
+  /* Pin the panel's bottom edge just above the keyboard. --vv-bottom is the
+     visual-viewport bottom in layout coords, published in JS
+     (position-modify-panel!); without a keyboard it equals the window height
+     so the panel sits at the bottom of the screen. */
+  bottom: calc(100% - var(--vv-bottom, 100%));
+  margin-top: 0;
+  left: 0;
+  right: 0;
+  transform: none;
+  width: 100%;
+  max-width: none;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: var(--size-2);
-  width: min(92vw, 560px);
-  max-width: min(92vw, 560px);
+}
+
+/* Selected-region preview: only shown in the small-screen full-screen dialog. */
+.diff-region {
+  display: none;
+}
+
+/* Small screens (iPhone): the modify panel fills the visible area above the
+   keyboard and shows a scrollable, syntax-highlighted preview of the selected
+   lines above the textarea. */
+@media (max-width: 480px) {
+  .diff-sel-anchor--modify {
+    top: var(--vv-top, 0px);
+    bottom: auto;
+    height: var(--vv-height, 100dvh);
+  }
+
+  .diff-region {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    border-top: var(--border-0);
+    border-bottom: var(--border-0);
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  }
 }
 
 .diff-modify-head {
@@ -1597,6 +1643,7 @@ body {
 }
 
 .diff-modify-input {
+  font-family: inherit;
   width: 100%;
   min-width: 0;
   resize: none;

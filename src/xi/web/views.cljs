@@ -684,13 +684,68 @@
               top     (+ (- (.-bottom lr) (.-top vr)) (.-scrollTop view))]
           (set! (.. node -style -top) (str top "px")))))))
 
+(defn- pin-above-keyboard!
+  "Publish the VisualViewport metrics as CSS custom properties on the modify
+   panel so the stylesheet can pin it just above the on-screen keyboard and,
+   on small screens, size it to fill the visible area. The visual viewport
+   shrinks when the keyboard opens (iOS); its bottom in layout coords is
+   offsetTop + height (the top edge of the keyboard)."
+  [^js node]
+  (when-let [vv (.-visualViewport js/window)]
+    (let [^js st (.-style node)]
+      (.setProperty st "--vv-top" (str (.-offsetTop vv) "px"))
+      (.setProperty st "--vv-height" (str (.-height vv) "px"))
+      (.setProperty st "--vv-bottom" (str (+ (.-offsetTop vv) (.-height vv)) "px")))))
+
+(defn- position-modify-panel!
+  "Keep the modify panel pinned above the keyboard instead of anchored to the
+   diff range, so focusing the textarea doesn't cause the weird iOS scroll.
+   Repositions on mount/update and tracks the VisualViewport so it follows the
+   keyboard as it animates open/closed and as the page scrolls; the listeners
+   are torn down on unmount."
+  [{:replicant/keys [^js node life-cycle]}]
+  (let [vv (.-visualViewport js/window)]
+    (if (= life-cycle :replicant.life-cycle/unmount)
+      (when-let [h (.-_xiVvHandler node)]
+        (some-> vv (.removeEventListener "resize" h))
+        (some-> vv (.removeEventListener "scroll" h))
+        (set! (.-_xiVvHandler node) nil))
+      (do
+        (pin-above-keyboard! node)
+        (when (and vv (not (.-_xiVvHandler node)))
+          (let [h (fn [_] (pin-above-keyboard! node))]
+            (set! (.-_xiVvHandler node) h)
+            (.addEventListener vv "resize" h)
+            (.addEventListener vv "scroll" h)))))))
+
+(defn- diff-region-view
+  "Read-only, syntax-highlighted preview of the selected diff lines, shown
+   above the textarea in the full-screen modify dialog on small screens."
+  [rows range]
+  (let [grammar-cache (atom {})
+        grammar-for (fn [f] (or (@grammar-cache f)
+                                (let [g (diff-file-grammar f)]
+                                  (swap! grammar-cache assoc f g) g)))
+        sel-rows (filter (fn [{:keys [row sel-idx]}]
+                           (and (= :line row) sel-idx
+                                (<= (first range) sel-idx (second range))))
+                         rows)]
+    [:div {:class ["diff-region"]}
+     (map-indexed
+      (fn [i {:keys [line filename]}]
+        (diff-line-view (fn [_]) (grammar-for filename)
+                        false line nil (str "region-" i)))
+      sel-rows)]))
+
 (defn- diff-action-bar
   "Toolbar shown when diff lines are selected, anchored to the bottom of the
    selected range. By default it's a segmented pill (clj-ui toolbar) with the
    selection actions (Clear / Modify / Goto / Explain); toggling Modify swaps it
    for a popover panel (clj-ui popover-content surface) that sends an
-   instruction for the selected region."
-  [dispatch! room-id range modify?]
+   instruction for the selected region. On small screens the modify panel
+   becomes a full-screen dialog with a scrollable preview of the selection
+   above the textarea."
+  [dispatch! room-id rows range modify?]
   (let [n (when range (inc (- (second range) (first range))))
         anchor-attrs {:replicant/key "diff-sel-toolbar"
                       :replicant/on-mount position-sel-toolbar!
@@ -701,9 +756,10 @@
             (dispatch! {:type :diff/modify-submit
                         :room-id room-id :text (.-value el)})))]
     (if modify?
-      [:div (assoc anchor-attrs
-                   :class ["diff-sel-anchor" "diff-sel-anchor--modify"
-                           "popover-content" "popover-content--bottom"])
+      [:div {:replicant/key "diff-modify-panel"
+             :replicant/on-render position-modify-panel!
+             :class ["diff-sel-anchor" "diff-sel-anchor--modify"
+                     "popover-content" "popover-content--bottom"]}
        [:div {:class ["diff-modify-head"]}
         [:span {:class ["popover-title"]}
          (str "Modify " n " line" (when (not= 1 n) "s"))]
@@ -711,11 +767,13 @@
          {:variant :ghost :size :sm
           :on-click (fn [_] (dispatch! {:type :diff/modify-toggle}))}
          "Cancel")]
+       (diff-region-view rows range)
        [:textarea {:id "diff-modify-input"
                    :class ["form-textarea" "diff-modify-input"]
                    :placeholder "Describe the change to make to the selected code…"
                    :rows 3
-                   :replicant/on-mount (fn [{:replicant/keys [^js node]}] (.focus node))
+                   :replicant/on-mount (fn [{:replicant/keys [^js node]}]
+                                         (.focus node #js {:preventScroll true}))
                    :on {:keydown (fn [^js e]
                                    (when (and (= "Enter" (.-key e)) (.-metaKey e))
                                      (.preventDefault e) (submit-modify! e)))}}]
@@ -729,8 +787,9 @@
         {}
         (button/button
          {:variant :ghost :size :sm
+          :aria-label "Clear selection"
           :on-click (fn [_] (dispatch! {:type :diff/clear-selection}))}
-         "Clear")
+         (icon/icon {:icon-name :x :size :sm}))
         (button/button
          {:variant :ghost :size :sm
           :on-click (fn [_] (dispatch! {:type :diff/modify-toggle}))}
@@ -784,7 +843,7 @@
      (diff-method-bar dispatch! room-id (:title diff-buffer))
      (diff-rows-view dispatch! rows range
                      (when range
-                       (diff-action-bar dispatch! room-id range modify?)))]))
+                       (diff-action-bar dispatch! room-id rows range modify?)))]))
 
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 
