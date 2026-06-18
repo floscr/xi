@@ -711,6 +711,32 @@
          :on-click (fn [_] (dispatch! {:type :diff/explain :room-id room-id}))}
         "Explain")]]]))
 
+(def ^:private diff-methods
+  "Selectable diff sources. :title is the buffer title :diff/load assigns for
+   each, used to reflect the active method back into the select."
+  [{:value "session-edits"   :label "Session edits"   :title "Session Edits"}
+   {:value "session-commits" :label "Session commits" :title "Session Commits"}
+   {:value "git"             :label "All git changes" :title "All Git Changes"}
+   {:value "staged"          :label "Staged"          :title "Staged Changes"}
+   {:value "unstaged"        :label "Unstaged"        :title "Unstaged Changes"}])
+
+(def ^:private diff-title->method
+  (into {} (map (juxt :title :value)) diff-methods))
+
+(defn- diff-method-bar
+  "Select above the diff to switch which diff is shown. Re-runs /diff <method>
+   on the server, which reopens the buffer with the chosen source."
+  [dispatch! room-id title]
+  (let [current (get diff-title->method title "session-edits")]
+    [:div {:class ["diff-method-bar"]}
+     (form/form-select
+      {:options   diff-methods
+       :value     current
+       :attrs     {:value current}
+       :on-change (fn [^js e]
+                    (dispatch! {:type :input/submit :room-id room-id
+                                :text (str "/diff " (.. e -target -value))}))})]))
+
 (defn- diff-tab-view
   "Full diff buffer view rendered as the active tab, with line selection and
    an action bar for Explain / Modify."
@@ -718,6 +744,7 @@
   (let [rows  (diff/diff-rows (diff/parse-diff-text (:text diff-buffer)))
         range (diff/selection-range sel)]
     [:div {:class ["diff-tab"]}
+     (diff-method-bar dispatch! room-id (:title diff-buffer))
      (diff-rows-view dispatch! rows range)
      (when range
        (diff-action-bar dispatch! room-id range modify?))]))

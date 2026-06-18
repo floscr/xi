@@ -166,6 +166,23 @@ See [docs/web-client.md](docs/web-client.md) for full documentation (features, p
 See [docs/web-offline.md](docs/web-offline.md) for offline architecture details.
 See [docs/frontend.md](docs/frontend.md) for UI component library (clj-ui-framework) usage, theming, and update workflow.
 
+**Always use clj-ui-framework components for web UI — never hand-roll raw HTML
+elements (`[:select]`, `[:input]`, `[:button]`, etc.) when a component exists.**
+The components carry the project's styling, theming, and accessibility, so a raw
+element looks off and drifts from the design system.
+
+- Components live in the `ui.*` namespaces (e.g. `ui.form`, `ui.button`,
+  `ui.icon`, `ui.lightbox`, `ui.sidebar`, `ui.theme-toggle`), provided by the
+  `clj-ui-framework` git dep (see `deps.edn`).
+- `ui.form` covers form controls: `form-input`, `form-textarea`,
+  `form-textarea-auto`, `form-select`, `form-checkbox`, `form-radio-group`,
+  `form-range`, `form-file`, `form-field`, `form-group`.
+- The full component table, props, theming tokens, and the dep-update workflow
+  are in [docs/frontend.md](docs/frontend.md). Check it before building any new
+  web view, and read the component's source under the gitlibs cache
+  (`~/.cache/gitlibs/libs/.../clj-ui-framework/.../src/ui/`) when you need its
+  exact prop shape.
+
 ## Extensions
 
 See [docs/extensions.md](docs/extensions.md) for full details.

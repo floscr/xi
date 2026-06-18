@@ -1599,6 +1599,17 @@ body {
   resize: none;
 }
 
+/* Diff method selector: header bar above the diff with a source <select> */
+.diff-method-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-4);
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+
 /* Recent-sessions drawer: 80% of the viewport, capped at 560px */
 .sidebar-layout--floating > .sidebar {
   width: min(80%, 560px);
