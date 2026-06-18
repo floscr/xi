@@ -96,4 +96,29 @@
   serve:restart
   {:doc "Restart tmux serve session"
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
-           (td/restart (assoc serve-config :print [(str "Web: http://" ip ":7474")])))}}}
+           (td/restart (assoc serve-config :print [(str "Web: http://" ip ":7474")])))}
+
+  check
+  {:doc "Inspect all Xi processes: listening ports, server + shadow-cljs procs, and recent tmux pane logs (dev/serve/personal)"
+   :task (do
+           (println "── Listening ports (7474 main · 7475 personal · 8100 dev-http · 9630 shadow) ──")
+           (shell {:continue true} "bash" "-c"
+                  "ss -tlnp 2>/dev/null | grep -E ':(7474|7475|8100|9630)\\b' || echo '  none listening'")
+           (println)
+           (println "── Headless server processes (bun) ──")
+           (shell {:continue true} "bash" "-c"
+                  "pgrep -af '[b]un .*target/main.js server' || echo '  none'")
+           (println)
+           (println "── shadow-cljs watch processes (java classpath line elided) ──")
+           (shell {:continue true} "bash" "-c"
+                  "pgrep -af '[s]hadow-cljs' | grep -E 'watch' | grep -v 'clojure.main' || echo '  none'")
+           (println)
+           (println "=== xi session (bb dev — standalone watch) ===")
+           (td/status config)
+           (td/logs config {:lines 40})
+           (println "=== xi-serve session (bb serve — watch + headless server) ===")
+           (td/status serve-config)
+           (td/logs serve-config {:lines 40})
+           (println "=== xi-pa session (bb serve:personal — personal agent) ===")
+           (td/status pa-serve-config)
+           (td/logs pa-serve-config {:lines 40}))}}}

@@ -16,19 +16,34 @@ bb tasks       # list all available tasks
 
 Do NOT use `npx shadow-cljs compile ...` — it frequently times out in agent shells. The `bb` tasks handle everything correctly.
 
+### ALWAYS Run `bb check` First
+
+**Before starting, stopping, restarting, or debugging ANY process** (compiles,
+servers, watches, or chasing a "stuck"/crashed server), run `bb check` first. It
+is the single source of truth for what's already running and saves you from
+spawning duplicates or killing the wrong thing:
+
+```bash
+bb check
+```
+
+It reports: listening ports (7474 main · 7475 personal · 8100 dev-http · 9630
+shadow), headless bun server processes, shadow-cljs watch processes, and the
+status + recent pane logs of all three tmux sessions — `xi` (`bb dev`,
+standalone watch / compile targets), `xi-serve` (`bb serve`), and `xi-pa`
+(`bb serve:personal`). Read its output before deciding to start/stop anything.
+
 ### Dev Server (shadow-cljs watch) is Usually Already Running
 
 The user typically has a **shadow-cljs watch** process running via `bb dev` or `bb serve` (tmux sessions). This watch process **auto-compiles both the `main` and `web` targets on every file save** — you do NOT need to run `bb build` or `bb web:build` manually.
 
-**Before compiling, always check if shadow-cljs is already running:**
-
-```bash
-pgrep -f 'shadow-cljs' && echo 'shadow-cljs watch is running — skip bb build/web:build' || echo 'not running'
-```
+**Before compiling, run `bb check`** (see above) to see if a watch is already
+running.
 
 - If shadow-cljs watch IS running: **do not run `bb build` or `bb web:build`**. Your code changes are compiled automatically within seconds of saving.
-- If shadow-cljs watch is NOT running: use `bb build` / `bb web:build` as needed.
+- If shadow-cljs watch is NOT running: use `bb build` / `bb web:build` as needed, or start a watch with `bb dev` (standalone) / `bb serve` (with server).
 - Running `bb build` while watch is active is harmless but wasteful; running `bb web:build` may conflict with the watch process.
+- Never `kill` watch/server processes by PID to clean up — use the matching tmux tasks (`bb dev:stop` / `bb serve:stop`) so sessions stay consistent.
 
 ### SDK Version Constraint
 
@@ -45,18 +60,28 @@ The `@anthropic-ai/claude-agent-sdk` must be pinned to **`0.2.110`** — the sam
 - **Do NOT run `xi` / `bun target/main.js` from the agent.** It's a TUI app that requires an interactive terminal and will not work inside the agent shell. Only compile; the user tests manually.
 - The **web client** CAN be agent-tested via the chrome-devtools tools at `http://localhost:7474`.
 
-### IMPORTANT: Check for Running Server Before Starting One
+### IMPORTANT: Always Manage the Server via the `bb serve` Tasks
 
-The user usually has a headless server already running on port 7474 (via `bb serve` tmux session). **Always check before starting a new server:**
+The server runs in the `xi-serve` tmux session (watch + headless server). **Never launch the server by hand** with `bun target/main.js server --headless &` — a hand-started bun process is orphaned (not in the tmux session), is invisible to `bb serve:stop`/`bb serve:restart`, and has bitten us before (a stray/hung process kept port 7474 occupied with a blocked event loop, so clients got stuck "connecting to server"). Only the `bb serve` tasks start, stop, or restart the server:
 
 ```bash
-lsof -ti:7474 && echo 'Server already running on 7474 — just use it' || echo 'Port free'
+bb serve          # start the xi-serve tmux session (watch + headless server on 7474)
+bb serve:restart  # restart it (use this to pick up server-side code changes)
+bb serve:stop     # stop it
+```
+
+**Always check what's running before starting a new server** — `bb check` reports
+the listening ports (7474/7475), any headless bun server processes, and recent
+output from the `xi-serve`/`xi-pa` tmux panes:
+
+```bash
+bb check
 ```
 
 - If port 7474 IS in use: **do not start a new server.** Navigate directly to `http://localhost:7474` and test.
-- If port 7474 is NOT in use: start the server with `bun target/main.js server --headless &`.
-- If you need the server to pick up new code and shadow-cljs watch is running, the code is already hot-reloaded — just refresh the browser page. You do NOT need to restart the server for code changes when watch is active.
-- **Never kill an existing server process** to restart it. If you believe a restart is needed, ask the user to do it.
+- If port 7474 is NOT in use: start it with **`bb serve`** (never raw `bun …`).
+- The server is a long-lived bun process and does **not** hot-reload server-side code, even when shadow-cljs watch is running. The browser web client *does* hot-reload — just refresh the page. But for changes to server-side namespaces (`xi.server.*`, `xi.core.*`, `xi.agent`, extensions, providers, etc.) the server must be restarted with **`bb serve:restart`**.
+- **Never kill an existing server process** to restart it, and never `kill` a stray bun server by PID — use `bb serve:restart` / `bb serve:stop` so the tmux session stays consistent. If a restart seems risky, ask the user first.
 
 ### Unit Tests
 
