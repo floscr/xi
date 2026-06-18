@@ -13,7 +13,8 @@
             [xi.core.log :as log]
             [xi.image :as image]
             [xi.session :as session]
-            [xi.system-prompt :as system-prompt]))
+            [xi.system-prompt :as system-prompt]
+            [xi.util :as util]))
 
 (defn- room-of [state room-id]
   (get-in state [:rooms room-id]))
@@ -72,16 +73,30 @@
     (some-> (:ok (git-out cwd ["rev-list" "-1" (str "--before=" created) "HEAD"]))
             str/trim not-empty)))
 
+(def ^:private edit-tool-names
+  "Stripped, lower-cased tool names that mutate files on disk. Includes the
+   structural-edit (clj-surgeon) tools so MCP-driven edits still register."
+  #{"edit" "write" "multiedit" "notebookedit"
+    "clj_replace" "clj_extract" "clj_fix_declares"
+    "clj_mv" "clj_fix_parens" "clj_rename_ns"})
+
+(defn- edit-tool-call?
+  "True when a history entry is a file-mutating tool call. Tolerant of an
+   un-stripped mcp__ prefix and of casing so edits register regardless of how
+   the provider recorded the tool name."
+  [{:keys [kind tool]}]
+  (and (= :tool-call kind)
+       (boolean (edit-tool-names (some-> tool util/strip-mcp-prefix str/lower-case)))))
+
 (defn- session-edited-files
   "Paths (relative to cwd) of files touched via edit/write tool calls in the
    room's history. Used to scope the session diff to files the agent changed,
    rather than every dirty file in the working tree."
   [room cwd]
   (->> (:history room)
-       (filter #(and (= :tool-call (:kind %))
-                     (#{"edit" "write" "Edit" "Write"} (:tool %))))
+       (filter edit-tool-call?)
        (keep (fn [{:keys [arguments]}]
-               (or (:path arguments) (:file_path arguments))))
+               (or (:path arguments) (:file_path arguments) (:file arguments))))
        (map #(.relative node-path cwd (.resolve node-path cwd %)))
        distinct
        vec))
@@ -102,6 +117,12 @@
     (->> [tracked-diff untracked-diff]
          (remove str/blank?)
          (str/join "\n"))))
+
+(defn- session-commits-text
+  "Unified diff of every commit made during the session (base..HEAD)."
+  [cwd base]
+  (when base
+    (some-> (:ok (git-out cwd ["diff" base "HEAD"])) str/trim not-empty)))
 
 (defn- list-room-sessions [room scope]
   (let [pa? (get-in room [:agent :personal-agent?])]
@@ -235,13 +256,20 @@
          "staged"   (run! "Staged Changes" ["diff" "--staged"])
          "unstaged" (run! "Unstaged Changes" ["diff"])
 
-         nil
+         "session-commits"
+         (let [base (session-base-commit cwd (get-in room [:session :created]))]
+           (if (nil? base)
+             (dispatch! {:type :ui/status :room-id room-id
+                         :text "Could not determine session base commit."})
+             (open! "Session Commits" (session-commits-text cwd base))))
+
+         ("session-edits" nil)
          (let [base  (session-base-commit cwd (get-in room [:session :created]))
                files (session-edited-files room cwd)]
            (if (empty? files)
              (dispatch! {:type :ui/status :room-id room-id
                          :text "No files edited this session."})
-             (open! "Session Changes" (session-diff-text cwd base files))))
+             (open! "Session Edits" (session-diff-text cwd base files))))
 
          (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+"))))))
 

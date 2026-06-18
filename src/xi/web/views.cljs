@@ -351,9 +351,11 @@
    {:name "clear"    :description "Clear current session"}
    {:name "truncate" :description "Summarize conversation to reduce context"}
    {:name "diff"     :description "Show changes from this session"
-    :subcommands [{:name "git"      :description "All git changes (staged + unstaged + untracked)"}
-                  {:name "staged"   :description "Staged changes"}
-                  {:name "unstaged" :description "Unstaged changes"}]}
+    :subcommands [{:name "git"             :description "All git changes (staged + unstaged + untracked)"}
+                  {:name "staged"          :description "Staged changes"}
+                  {:name "unstaged"        :description "Unstaged changes"}
+                  {:name "session-edits"   :description "Diff of files edited this session"}
+                  {:name "session-commits" :description "Diff of commits made this session"}]}
    {:name "commit"   :description "Review changes and create a git commit"}
    {:name "debug"    :description "Copy debug info to clipboard"}])
 
