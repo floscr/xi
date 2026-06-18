@@ -32,6 +32,16 @@
                 (when (= room-id (:room-id client)) cid)))
         (get-in st [:connection :clients])))
 
+(defn keep-alive?
+  "A room must survive client departure / idle reaping while its agent is
+   running OR a dialog is awaiting a response. Closing a room discards its
+   :ui :dialogs, which would strand the pending question and the turn
+   suspended on it (a dialog stays open even with no client viewing — see
+   ext/create-dialogs)."
+  [room]
+  (or (boolean (get-in room [:agent :busy?]))
+      (boolean (seq (get-in room [:ui :dialogs])))))
+
 (defn room-summaries
   "Lobby-facing room list, newest first."
   [st]
@@ -118,15 +128,15 @@
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
     (let [st'    (update-in st [:connection :clients client-id] dissoc :room-id)
           empty? (empty? (clients-in-room st' room-id))
-          idle?  (not (get-in st' [:rooms room-id :agent :busy?]))]
+          keep?  (keep-alive? (get-in st' [:rooms room-id]))]
       (cond-> {:state   st'
                :effects [[:ws/send-to {:client-id client-id
                                        :event {:type :room/left :room-id room-id}}]]}
         ;; Last client navigated away from an idle room — close it now.
-        ;; Busy rooms keep running with no client attached (background
-        ;; agents are the point of a headless server); turn-end-room-cleanup
-        ;; reaps them once the turn ends.
-        (and empty? idle?)
+        ;; Busy rooms (and rooms with a pending dialog) keep running with no
+        ;; client attached (background agents are the point of a headless
+        ;; server); turn-end-room-cleanup reaps them once the turn ends.
+        (and empty? (not keep?))
         (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])))))
 
 (defn- room-list [_st {:keys [client-id]}]
@@ -172,24 +182,27 @@
 (defn client-disconnect-cleanup
   "Chain BEFORE the core :client/disconnect handler (needs the client's
    room while it's still recorded): close the room when this was its last
-   client AND it's idle. Busy rooms keep running with no client attached —
-   a disconnect (including iOS/Safari dropping the socket on navigation)
-   must never abort a running agent; turn-end-room-cleanup reaps the room
-   when the turn ends."
+   client AND it's idle. Busy rooms (and rooms with a pending dialog) keep
+   running with no client attached — a disconnect (including iOS/Safari
+   dropping the socket on navigation) must never abort a running agent or
+   strand a pending question; turn-end-room-cleanup reaps the room when the
+   turn ends."
   [st {:keys [client-id]}]
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
     (let [others (remove #{client-id} (clients-in-room st room-id))]
       (when (and (empty? others)
-                 (not (get-in st [:rooms room-id :agent :busy?])))
+                 (not (keep-alive? (get-in st [:rooms room-id]))))
         {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]}))))
 
 
 (defn turn-end-room-cleanup
   "Chain onto :agent/turn-end: a turn just finished in a room nobody is
-   attached to — close it (the session is already persisted on disk)."
+   attached to — close it (the session is already persisted on disk). A room
+   still holding a pending dialog is spared (its question outlives the turn)."
   [st {:keys [room-id]}]
   (when (and (state/get-room st room-id)
-             (empty? (clients-in-room st room-id)))
+             (empty? (clients-in-room st room-id))
+             (not (keep-alive? (state/get-room st room-id))))
     {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]}))
 
 (defn reap-idle-clientless-rooms
@@ -198,12 +211,13 @@
    turn-end-room-cleanup) miss one case: a client switching directly between
    rooms only re-attaches (:room/attach), so the room it left is never sent a
    :room/leave and lingers idle + clientless. Chained onto :room/attach this
-   sweeps those orphans. Busy rooms are always spared — turn-end-room-cleanup
-   reaps them once the turn ends (see the pitfall note above)."
+   sweeps those orphans. Busy rooms and rooms with a pending dialog are
+   always spared — turn-end-room-cleanup reaps them once the turn ends (see
+   the pitfall note above)."
   [st _ev]
   (let [closes (for [[room-id room] (:rooms st)
                      :when (and (empty? (clients-in-room st room-id))
-                                (not (get-in room [:agent :busy?])))]
+                                (not (keep-alive? room)))]
                  [:app/dispatch {:type :room/close :room-id room-id}])]
     (when (seq closes)
       {:effects (vec closes)})))
