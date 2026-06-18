@@ -124,6 +124,30 @@
   (when base
     (some-> (:ok (git-out cwd ["diff" base "HEAD"])) str/trim not-empty)))
 
+(defn- git-ref?
+  "True when ref resolves to a commit in cwd."
+  [cwd ref]
+  (boolean (:ok (git-out cwd ["rev-parse" "--verify" "--quiet" (str ref "^{commit}")]))))
+
+(defn- upstream-default-ref
+  "Auto-detect the upstream branch to diff against: origin's default branch.
+   Prefers origin/HEAD when set (e.g. set by clone), else the first of
+   origin/main / origin/master that exists. nil when none is found."
+  [cwd]
+  (or (some-> (:ok (git-out cwd ["symbolic-ref" "--short" "refs/remotes/origin/HEAD"]))
+              str/trim not-empty)
+      (some (fn [ref] (when (git-ref? cwd ref) ref))
+            ["origin/main" "origin/master"])))
+
+(defn- diff-against-ref
+  "Unified diff of the working tree against the merge-base with ref — the
+   changes this branch introduced since it diverged from ref (committed +
+   uncommitted), PR-style. Falls back to a plain ref diff when there is no
+   common ancestor. Returns {:ok ...} | {:err ...}."
+  [cwd ref]
+  (let [base (some-> (:ok (git-out cwd ["merge-base" ref "HEAD"])) str/trim not-empty)]
+    (git-out cwd ["diff" (or base ref)])))
+
 (defn- list-room-sessions [room scope]
   (let [pa? (get-in room [:agent :personal-agent?])]
     (cond
@@ -253,6 +277,16 @@
                      (str/join "\n")
                      str/trim))
 
+         "git-upstream"
+         (if-let [ref (upstream-default-ref cwd)]
+           (let [{:keys [ok err]} (diff-against-ref cwd ref)]
+             (if err
+               (dispatch! {:type :ui/status :room-id room-id
+                           :text (str "git diff failed: " err)})
+               (open! (str "Upstream (" ref ")") ok)))
+           (dispatch! {:type :ui/status :room-id room-id
+                       :text "Could not detect an upstream branch (origin/main or origin/master)."}))
+
          "staged"   (run! "Staged Changes" ["diff" "--staged"])
          "unstaged" (run! "Unstaged Changes" ["diff"])
 
@@ -271,7 +305,16 @@
                          :text "No files edited this session."})
              (open! "Session Edits" (session-diff-text cwd base files))))
 
-         (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+"))))))
+         ;; A single token that resolves to a branch/commit → diff against it
+         ;; (PR-style, vs the merge-base). Anything else is passed straight to
+         ;; git diff (e.g. "HEAD~3", "--stat", "A..B").
+         (if (and args (not (re-find #"\s" args)) (git-ref? cwd args))
+           (let [{:keys [ok err]} (diff-against-ref cwd args)]
+             (if err
+               (dispatch! {:type :ui/status :room-id room-id
+                           :text (str "git diff failed: " err)})
+               (open! (str "Diff: " args) ok)))
+           (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+")))))))
 
    :events/load
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]

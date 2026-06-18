@@ -250,8 +250,9 @@
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
    {:name "truncate" :description "Summarize conversation to reduce context" :handler cmd-compact}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
-   {:name "diff"     :description "Show diff viewer (git|staged|unstaged|<ref>)" :handler cmd-diff
+   {:name "diff"     :description "Show diff viewer (git|git-upstream|staged|unstaged|<branch>)" :handler cmd-diff
     :subcommands [{:name "git"             :description "All git changes (staged + unstaged + untracked)"}
+                  {:name "git-upstream"    :description "Diff against the upstream default branch (origin/main|master)"}
                   {:name "staged"          :description "Staged changes"}
                   {:name "unstaged"        :description "Unstaged changes"}
                   {:name "session-edits"   :description "Diff of files edited this session"}

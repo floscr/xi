@@ -750,6 +750,7 @@
   [{:value "session-edits"   :label "Session edits"   :title "Session Edits"}
    {:value "session-commits" :label "Session commits" :title "Session Commits"}
    {:value "git"             :label "All git changes" :title "All Git Changes"}
+   {:value "git-upstream"    :label "Upstream"        :title "Upstream"}
    {:value "staged"          :label "Staged"          :title "Staged Changes"}
    {:value "unstaged"        :label "Unstaged"        :title "Unstaged Changes"}])
 
@@ -760,7 +761,10 @@
   "Select above the diff to switch which diff is shown. Re-runs /diff <method>
    on the server, which reopens the buffer with the chosen source."
   [dispatch! room-id title]
-  (let [current (get diff-title->method title "session-edits")]
+  (let [current (or (get diff-title->method title)
+                    ;; git-upstream's title carries the ref, e.g. "Upstream (origin/main)"
+                    (when (str/starts-with? (or title "") "Upstream") "git-upstream")
+                    "session-edits")]
     [:div {:class ["diff-method-bar"]}
      (form/form-select
       {:options   diff-methods
