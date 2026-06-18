@@ -261,6 +261,8 @@
           :cmd/select            cmd-select
           :web/record-command    record-command
           :theme/set-mode        theme-set-mode
+          :web/session-search    (fn [st {:keys [key query]}]
+                                    {:state (assoc-in st [:web/search key] query)})
           :sidebar/toggle        (fn [st _] {:state (update st :web/sidebar-open? not)})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
           :gtd/web-list          (fn [st ev]

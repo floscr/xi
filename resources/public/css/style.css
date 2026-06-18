@@ -849,6 +849,11 @@ body {
   flex-direction: column;
 }
 
+.sessions-search {
+  padding: var(--size-3) var(--size-4);
+  border-bottom: var(--border-0);
+}
+
 .project-card {
   display: flex;
   align-items: center;

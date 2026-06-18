@@ -920,12 +920,42 @@
    [:div {:class ["project-card-chevron"]}
     (icon/icon {:icon-name :chevron-right :size :sm})]])
 
+
+(defn- session-matches?
+  "Case-insensitive substring match of `query` against a session/orphan name."
+  [query name]
+  (str/includes? (str/lower-case (or name "")) query))
+
+
+(defn- search-box
+  "Generic search input. `search-key` is the state key for the query string."
+  [dispatch! search-key placeholder query]
+  [:div {:class ["sessions-search"]}
+   [:div {:class ["sidebar-search"]}
+    [:span {:class ["sidebar-search-icon"]}]
+    [:input {:class ["sidebar-search-input"]
+             :type "text"
+             :placeholder placeholder
+             :value (or query "")
+             :on {:input (fn [^js e]
+                           (dispatch! {:type :web/session-search
+                                       :key search-key
+                                       :query (.. e -target -value)}))}}]]])
+
 (defn- project-sessions-view
   "Drill-down: sessions for a selected project directory."
   [state dispatch!]
   (let [cwd       (:web/selected-project-dir state)
+        raw-query (get-in state [:web/search :project-sessions])
+        query     (str/lower-case (str/trim (or raw-query "")))
         sessions  (:web/project-sessions state)
         orphans   (orphan-rooms state sessions cwd)
+        sessions  (if (seq query)
+                    (filter #(session-matches? query (:name %)) sessions)
+                    sessions)
+        orphans   (if (seq query)
+                    (filter #(session-matches? query (:name %)) orphans)
+                    orphans)
         loading?  (:web/project-sessions-loading? state)]
     [:div {:class ["container"] :replicant/key "project-sessions"}
      [:div {:class ["topbar"]}
@@ -939,16 +969,20 @@
                 :on {:click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}}
        (icon/icon {:icon-name :plus :size :md})]]
      [:div {:class ["home"]}
+      (when-not loading?
+        (search-box dispatch! :project-sessions "Search sessions…" raw-query))
       (cond
         loading?
         [:div {:class ["empty-state"]} (spinner) [:p "Loading sessions…"]]
 
         (and (empty? sessions) (empty? orphans))
-        [:div {:class ["empty-state"]}
-         [:p "No sessions yet."]
-         [:button {:class ["btn" "btn--primary"]
-                   :on {:click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}}
-          "Start new session"]]
+        (if (seq query)
+          [:div {:class ["empty-state"]} [:p "No matching sessions."]]
+          [:div {:class ["empty-state"]}
+           [:p "No sessions yet."]
+           [:button {:class ["btn" "btn--primary"]
+                     :on {:click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}}
+            "Start new session"]])
 
         :else
         [:div {:class ["project-list"]}
@@ -957,12 +991,22 @@
          (for [s sessions]
            (session-card dispatch! (session-status state s)))])]]))
 
+
+
 (defn- all-sessions-view
   "Flat list of all sessions (the old home view)."
   [state dispatch!]
-  (let [sessions   (get-in state [:lobby :sessions])
+  (let [raw-query  (get-in state [:web/search :all-sessions])
+        query      (str/lower-case (str/trim (or raw-query "")))
+        sessions   (get-in state [:lobby :sessions])
         connected? (:web/connected? state)
-        orphans    (orphan-rooms state sessions)]
+        orphans    (orphan-rooms state sessions)
+        sessions   (if (seq query)
+                     (filter #(session-matches? query (:name %)) sessions)
+                     sessions)
+        orphans    (if (seq query)
+                     (filter #(session-matches? query (:name %)) orphans)
+                     orphans)]
     [:div {:class ["container"] :replicant/key "all-sessions"}
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
@@ -975,12 +1019,19 @@
                   :on {:click (fn [_] (dispatch! {:type :room/new}))}}
          (icon/icon {:icon-name :plus :size :md})])]
      [:div {:class ["home"]}
-      (if (or (seq sessions) (seq orphans))
+      (search-box dispatch! :all-sessions "Search sessions\u2026" raw-query)
+      (cond
+        (or (seq sessions) (seq orphans))
         [:div {:class ["project-list"]}
          (for [o orphans]
            (session-card dispatch! o))
          (for [s sessions]
            (session-card dispatch! (session-status state s)))]
+
+        (seq query)
+        [:div {:class ["empty-state"]} [:p "No matching sessions."]]
+
+        :else
         [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
 
 (defn- personal-agent-home-view
@@ -1030,6 +1081,11 @@
 
       :else
       (let [dirs       (:web/project-dirs state)
+            raw-query  (get-in state [:web/search :home])
+            query      (str/lower-case (str/trim (or raw-query "")))
+            dirs       (if (seq query)
+                         (filter #(str/includes? (str/lower-case %) query) dirs)
+                         dirs)
             loading?   (:web/projects-loading? state)
             rooms      (get-in state [:lobby :rooms])
             connected? (:web/connected? state)
@@ -1066,26 +1122,32 @@
              [:p "Loading projects…"]]
 
             :else
-            [:div {:class ["project-list"]}
-             ;; Active orphan rooms first
-             (for [r orphans]
-               (session-card dispatch! {:session-id (:session-id r)
-                                        :name (or (:session-name r) "New session")
-                                        :active? true :busy? (:busy? r)
-                                        :has-dialog? (:has-dialog? r)}))
-             ;; All sessions link
-             [:div {:class ["project-card"]
-                    :replicant/key "all-sessions"
-                    :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :all}))}}
-              [:div {:class ["project-card-icon"]}
-               (icon/icon {:icon-name :message-circle :size :sm})]
-              [:div {:class ["project-card-info"]}
-               [:span {:class ["project-card-name"]} "All sessions"]]
-              [:div {:class ["project-card-chevron"]}
-               (icon/icon {:icon-name :chevron-right :size :sm})]]
-             ;; Project directories
-             (for [d dirs]
-               (project-dir-card dispatch! d))])]]))))
+            [:div
+             (search-box dispatch! :home "Search projects…" raw-query)
+             [:div {:class ["project-list"]}
+              ;; Active orphan rooms first (hide when filtering)
+              (when-not (seq query)
+                (for [r orphans]
+                  (session-card dispatch! {:session-id (:session-id r)
+                                          :name (or (:session-name r) "New session")
+                                          :active? true :busy? (:busy? r)
+                                          :has-dialog? (:has-dialog? r)})))
+              ;; All sessions link (hide when filtering)
+              (when-not (seq query)
+                [:div {:class ["project-card"]
+                       :replicant/key "all-sessions"
+                       :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :all}))}}
+                 [:div {:class ["project-card-icon"]}
+                  (icon/icon {:icon-name :message-circle :size :sm})]
+                 [:div {:class ["project-card-info"]}
+                  [:span {:class ["project-card-name"]} "All sessions"]]
+                 [:div {:class ["project-card-chevron"]}
+                  (icon/icon {:icon-name :chevron-right :size :sm})]])
+              ;; Project directories
+              (if (and (seq query) (empty? dirs))
+                [:div {:class ["empty-state"]} [:p "No matching projects."]]
+                (for [d dirs]
+                  (project-dir-card dispatch! d)))]])]]))))
 
 ;; ── GTD View ─────────────────────────────────────────────────────────────────
 
@@ -1325,7 +1387,8 @@
    so indicators render the same way as the home listings (navigation
    auto-closes the drawer)."
   [state dispatch!]
-  (let [projects (recent-projects state)
+  (let [pa?      (get-in state [:lobby :personal-agent?])
+        projects (when-not pa? (recent-projects state))
         sessions (recent-sessions state)
         orphans  (orphan-rooms state sessions)
         ;; Render one card per session-id from a single keyed sequence.
