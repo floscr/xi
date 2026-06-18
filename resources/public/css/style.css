@@ -1005,6 +1005,21 @@ body {
   justify-content: flex-end;
 }
 
+.copy-dialog-textarea {
+  width: 100%;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  padding: var(--size-2);
+  resize: none;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
 .confirm-btn {
   padding: var(--size-2) var(--size-4);
   border-radius: var(--radius-md);

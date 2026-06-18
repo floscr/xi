@@ -254,6 +254,8 @@
           :timeline/set-window   timeline-set-window
           :lightbox/open         lightbox-open
           :lightbox/close        lightbox-close
+          :copy/open             (fn [st {:keys [text]}] {:state (assoc st :web/copy-text text)})
+          :copy/close            (fn [st _] {:state (dissoc st :web/copy-text)})
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
           :web/optimistic-set    optimistic-set

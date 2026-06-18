@@ -39,6 +39,87 @@
   "How many more entries \"Show earlier\" reveals per click."
   40)
 
+;; ── Clipboard ─────────────────────────────────────────────────────────────────
+
+(defn- fallback-copy!
+  "Synchronous textarea-based clipboard copy. Works on iOS Safari (including
+   non-secure LAN/HTTP contexts where navigator.clipboard is unavailable).
+
+   iOS quirks (mirrors clipboard.js): the textarea must be `readonly` (stops the
+   on-screen keyboard from popping up and is required for a reliable selection),
+   positioned within the viewport at the current scroll offset (off-screen
+   `display:none`/negative-top elements cannot be selected on iOS), use a
+   non-zooming font-size, and select via `.select()` + `setSelectionRange`
+   rather than `.select()` alone (which is a no-op on iOS)."
+  [text]
+  (let [el      (.createElement js/document "textarea")
+        scroll-y (or (.-pageYOffset js/window)
+                     (.. js/document -documentElement -scrollTop)
+                     0)]
+    (set! (.-value el) text)
+    (.setAttribute el "readonly" "")
+    (set! (.. el -style -position) "absolute")
+    (set! (.. el -style -left) "-9999px")
+    (set! (.. el -style -top) (str scroll-y "px"))
+    (set! (.. el -style -fontSize) "12pt")    ;; prevent iOS auto-zoom
+    (.appendChild js/document.body el)
+    (.focus el)
+    (.select el)
+    (.setSelectionRange el 0 (.. el -value -length))
+    (.execCommand js/document "copy")
+    (.removeChild js/document.body el)))
+
+(defn- copy-to-clipboard!
+  "Copy text to the clipboard, falling back to a synchronous textarea when the
+   async Clipboard API is unavailable (e.g. iOS over non-secure HTTP). Calling
+   navigator.clipboard.writeText directly when navigator.clipboard is undefined
+   throws synchronously, bypassing any .catch — so guard on it explicitly."
+  [text]
+  (if (and (some? js/navigator.clipboard) js/window.isSecureContext)
+    (-> (.writeText js/navigator.clipboard text)
+        (.catch (fn [_] (fallback-copy! text))))
+    (fallback-copy! text)))
+
+(def ios?
+  "True on iOS/iPadOS, where programmatic clipboard writes are unavailable over
+   plain HTTP (no secure context) and unreliable in a standalone PWA. iPadOS 13+
+   reports as \"Macintosh\", so also treat a touch-capable Mac as iOS."
+  (let [ua       (or (some-> js/navigator .-userAgent) "")
+        platform (or (some-> js/navigator .-platform) "")
+        touch    (or (some-> js/navigator .-maxTouchPoints) 0)]
+    (boolean
+     (or (re-find #"iPad|iPhone|iPod" ua)
+         (and (re-find #"Mac" platform) (> touch 1))))))
+
+(defn- copy-dialog-overlay
+  "iOS manual-copy fallback. Shows the text in a pre-selected, read-only
+   textarea so the user can copy it via the native long-press menu, since the
+   programmatic Clipboard API is unavailable over plain HTTP on iOS. Tracked for
+   a proper HTTPS fix in GTD."
+  [dispatch! text]
+  (when text
+    (let [close! (fn [] (dispatch! {:type :copy/close}))]
+      [:div {:class ["confirm-overlay"]
+             :on {:click (fn [_] (close!))}}
+       [:div {:class ["confirm-panel"]
+              :on {:click (fn [e] (.stopPropagation e))}}
+        [:div {:class ["confirm-message"]} "Long-press the selected text to copy:"]
+        [:textarea
+         {:class ["copy-dialog-textarea"]
+          :readonly true
+          :rows 8
+          :replicant/on-mount
+          (fn [e]
+            (let [node (:replicant/node e)]
+              (set! (.-value node) text)
+              (.focus node)
+              (.select node)
+              (.setSelectionRange node 0 (.. node -value -length))))}
+         text]
+        [:div {:class ["confirm-actions"]}
+         [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                   :on {:click (fn [_] (close!))}} "Done"]]]])))
+
 ;; ── Spinner ──────────────────────────────────────────────────────────────────
 
 (defn- spinner [] [:div {:class ["agent-status-spinner"]}])
@@ -757,17 +838,9 @@
         [:button {:class ["icon-btn" "icon-btn--sm"]
                   :on {:click (fn [_]
                                 (let [text (commands/debug-text room)]
-                                  (-> (.writeText js/navigator.clipboard text)
-                                      (.catch (fn [_]
-                                                (let [el (.createElement js/document "textarea")]
-                                                  (set! (.-value el) text)
-                                                  (set! (.-style.position el) "fixed")
-                                                  (set! (.-style.opacity el) "0")
-                                                  (.appendChild js/document.body el)
-                                                  (.focus el)
-                                                  (.select el)
-                                                  (.execCommand js/document "copy")
-                                                  (.removeChild js/document.body el)))))))}}
+                                  (if ios?
+                                    (dispatch! {:type :copy/open :text text})
+                                    (copy-to-clipboard! text))))}}
          (icon/icon {:icon-name :copy :size :md})])
       (when standalone?
         [:button {:class ["icon-btn" "icon-btn--sm"]
@@ -804,6 +877,7 @@
                (optimistic-post dispatch! state room sid history)))
             [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
         (dialog-overlay dispatch! room)
+        (copy-dialog-overlay dispatch! (:web/copy-text state))
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         (when (:web/project-picker? state)
