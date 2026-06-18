@@ -191,3 +191,19 @@
   (when (and (state/get-room st room-id)
              (empty? (clients-in-room st room-id)))
     {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]}))
+
+(defn reap-idle-clientless-rooms
+  "Close every room whose agent isn't running and which has no client
+   attached. The per-event cleanups (room-leave, client-disconnect-cleanup,
+   turn-end-room-cleanup) miss one case: a client switching directly between
+   rooms only re-attaches (:room/attach), so the room it left is never sent a
+   :room/leave and lingers idle + clientless. Chained onto :room/attach this
+   sweeps those orphans. Busy rooms are always spared — turn-end-room-cleanup
+   reaps them once the turn ends (see the pitfall note above)."
+  [st _ev]
+  (let [closes (for [[room-id room] (:rooms st)
+                     :when (and (empty? (clients-in-room st room-id))
+                                (not (get-in room [:agent :busy?])))]
+                 [:app/dispatch {:type :room/close :room-id room-id}])]
+    (when (seq closes)
+      {:effects (vec closes)})))

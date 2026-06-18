@@ -326,7 +326,10 @@
                      (merge (:handlers dialogs))
                      (merge rm/handlers)
                      ;; Auto-destroy: turn finished with nobody attached /
-                     ;; last client dropped while idle
+                     ;; last client dropped while idle. Reaping on :room/attach
+                     ;; catches the room a client just left by switching chats
+                     ;; (a re-attach sends no :room/leave).
+                     (update :room/attach events/chain rm/reap-idle-clientless-rooms)
                      (update :agent/turn-end events/chain rm/turn-end-room-cleanup)
                      (assoc :client/disconnect
                             (events/chain rm/client-disconnect-cleanup
