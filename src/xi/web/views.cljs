@@ -341,23 +341,25 @@
 ;; ── Command suggestions ───────────────────────────────────────────────────────
 
 (def ^:private web-commands
-  "Commands shown in the web suggestion popup. Excludes TUI-only commands
-   (quit, reload, diff, tree, events, buffers, prompt)."
-  [{:name "help"     :description "Show available commands"}
+  "Commands shown in the web suggestion popup. `:while-busy?` marks
+   non-interrupting commands — read-only views that neither mutate session
+   state nor interrupt the running turn, so they may be submitted while the
+   agent is busy."
+  [{:name "help"     :description "Show available commands" :while-busy? true}
    {:name "model"    :description "Show or set model"}
    {:name "resume"   :description "Resume a previous session"}
    {:name "sessions" :description "List previous sessions"}
    {:name "new"      :description "Start a new session"}
    {:name "clear"    :description "Clear current session"}
    {:name "truncate" :description "Summarize conversation to reduce context"}
-   {:name "diff"     :description "Show changes from this session"
+   {:name "diff"     :description "Show changes from this session" :while-busy? true
     :subcommands [{:name "git"             :description "All git changes (staged + unstaged + untracked)"}
                   {:name "staged"          :description "Staged changes"}
                   {:name "unstaged"        :description "Unstaged changes"}
                   {:name "session-edits"   :description "Diff of files edited this session"}
                   {:name "session-commits" :description "Diff of commits made this session"}]}
    {:name "commit"   :description "Review changes and create a git commit"}
-   {:name "debug"    :description "Copy debug info to clipboard"}])
+   {:name "debug"    :description "Copy debug info to clipboard" :while-busy? true}])
 
 (def ^:private web-command-names
   (into #{} (map :name) web-commands))
@@ -367,6 +369,19 @@
    submission is worth recording into the recently-executed list."
   [name]
   (contains? web-command-names name))
+
+(def ^:private while-busy-command-names
+  (into #{} (comp (filter :while-busy?) (map :name)) web-commands))
+
+(defn command-while-busy?
+  "True when `text` is a slash command flagged :while-busy? — safe to submit
+   while the agent is busy (read-only, non-interrupting). The leading token
+   after the / is matched, so subcommands like \"/diff staged\" qualify too."
+  [text]
+  (let [t (str/trim (or text ""))]
+    (and (str/starts-with? t "/")
+         (contains? while-busy-command-names
+                    (-> t (subs 1) (str/split #"\s+") first)))))
 
 (defn- expand-commands
   "Flatten commands + their subcommands into a single suggestion list, where
@@ -522,12 +537,12 @@
                               nil))
                           (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)))
                             (.preventDefault e)
-                            (when-not busy?
-                              (submit-compose! dispatch! room-id session-id
-                                               images draft-key
-                                               (.. e -target -value))))))}}})
+                            (let [v (.. e -target -value)]
+                              (when (or (not busy?) (command-while-busy? v))
+                                (submit-compose! dispatch! room-id session-id
+                                                 images draft-key v))))))}}})
        (when busy? (spinner))]
-      (if busy?
+      (if (and busy? (not (command-while-busy? draft)))
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
          (icon/icon {:icon-name :circle-x :size :md})]
