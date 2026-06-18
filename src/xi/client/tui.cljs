@@ -45,7 +45,17 @@
   {"alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
    "alt+p"        #{(str ESC "p") (str ESC "[112;3u")}
    "ctrl+shift+n" #{(str ESC "[110;6u")}
+   "ctrl+o"       #{(str (char 15)) (str ESC "[111;5u")}
    "ctrl+c"       #{(str (char 3))}})
+
+(def ^:private builtin-keybindings
+  "Core (non-extension) editor keybindings, wired the same way as ext
+   keybindings. ctrl+o toggles full/preview rendering of the system-prompt
+   buffer, gated so the key falls through to the editor elsewhere."
+  [{:key   "ctrl+o"
+    :event {:type :ui/prompt-toggle}
+    :when  (fn [st] (= :prompt (get-in (state/active-room st)
+                                       [:ui :active-buffer])))}])
 
 (defn- ->editor-keybindings
   "Translate ext keybindings ({:key :event :when}) into editor bindings
@@ -409,7 +419,8 @@
         current-room (fn [] (some-> (.-state ctx) state/active-room))
         room-event (fn [event] (when-let [room (current-room)]
                                  (dispatch! (assoc event :room-id (:id room)))))
-        ext-keybindings (->editor-keybindings keybindings get-state dispatch!)
+        ext-keybindings (->editor-keybindings (into builtin-keybindings (vec keybindings))
+                                              get-state dispatch!)
 
         editor-comp
         (editor/make-editor

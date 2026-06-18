@@ -4,7 +4,8 @@
   (:require [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
-            [xi.ext.skills :as skills]))
+            [xi.ext.skills :as skills]
+            [xi.tools.util :as tools-util]))
 
 (def ^:private BB_DIR
   (str (aget js/process.env "HOME") "/.config/dotfiles/modules/scripts"))
@@ -60,42 +61,40 @@ Be concise, direct, and friendly. When unsure, say so.")
         (vec (reverse found))
         (recur parent found)))))
 
-(defn- find-sub-agents-md
-  "Find AGENTS.md files in subdirectories of cwd (not cwd itself).
-   Uses `find` to discover them. Returns vec of relative paths."
+(defn- find-all-agents-md
+  "List every AGENTS.md in the repo (tracked or untracked, but respecting
+   .gitignore) as repo-root-relative paths with a leading slash, e.g.
+   \"/AGENTS.md\", \"/sub/AGENTS.md\". Returns a sorted vec; nil outside a
+   git repo."
   [cwd]
   (try
-    (let [resolved (.resolve node-path cwd)
-          proc (js/Bun.spawnSync
-                #js ["find" resolved "-mindepth" "2" "-name" "AGENTS.md"
-                     "-not" "-path" "*/node_modules/*"
-                     "-not" "-path" "*/.git/*"
-                     "-not" "-path" "*/target/*"
-                     "-not" "-path" "*/.clj-kondo/*"]
-                #js {:stdout "pipe" :stderr "pipe"
-                     :timeout 5000})]
-      (when (zero? (.-exitCode proc))
-        (let [stdout (str (.toString (.-stdout proc)))
-              lines (remove str/blank? (str/split stdout #"\n"))]
-          (->> lines
-               (mapv #(.relative node-path resolved %))
-               sort
-               vec))))
+    (when-let [root (tools-util/git-root cwd)]
+      (let [proc (js/Bun.spawnSync
+                  #js ["git" "-C" root "ls-files"
+                       "--cached" "--others" "--exclude-standard"
+                       "*AGENTS.md"]
+                  #js {:stdout "pipe" :stderr "pipe"
+                       :timeout 5000})]
+        (when (zero? (.-exitCode proc))
+          (let [stdout (str (.toString (.-stdout proc)))
+                lines (remove str/blank? (str/split stdout #"\n"))]
+            (->> lines
+                 (filter #(= "AGENTS.md" (.basename node-path %)))
+                 (map #(str "/" %))
+                 distinct
+                 sort
+                 vec)))))
     (catch :default _e
       nil)))
 
-(defn- sub-agents-prompt
-  "Build a prompt section listing subdirectory AGENTS.md files.
-   Instructs the LLM to read them when editing files in those directories."
+(defn- agents-md-prompt
+  "Build a prompt section listing every AGENTS.md in the repo, instructing
+   the agent to read each one when editing related files. nil when none."
   [cwd]
-  (when-let [sub-files (seq (find-sub-agents-md cwd))]
-    (str "# Subdirectory AGENTS.md Files\n\n"
-         "The following subdirectories contain their own AGENTS.md with directory-specific instructions:\n"
-         (str/join "\n" (map (fn [f]
-                               (let [dir (.dirname node-path f)]
-                                 (str "- `" f "` — applies to files under `" dir "/`")))
-                             sub-files))
-         "\n\nWhen editing or creating files within these directories, read the relevant AGENTS.md first.")))
+  (when-let [files (seq (find-all-agents-md cwd))]
+    (str "These AGENTS.md files have been found, read them automatically "
+         "when editing files related to them:\n"
+         (str/join "\n" (map #(str "[" % "]") files)))))
 
 (defn- fetch-profile-agents-prompt
   "Call bb profile:agents-prompt to check if a profile defines a custom
@@ -174,8 +173,8 @@ Be concise, direct, and friendly. When unsure, say so.")
         parts (if-let [pc (:prompt profile-prompt)]
                 (conj parts {:source "profile" :text pc})
                 parts)
-        parts (if-let [sub (sub-agents-prompt cwd)]
-                (conj parts {:source "sub-agents" :text sub})
+        parts (if-let [sub (agents-md-prompt cwd)]
+                (conj parts {:source "agents-md" :text sub})
                 parts)
         parts (if-let [sk (skills/load-skill-prompts cwd)]
                 (conj parts {:source "skills" :text sk})
@@ -214,5 +213,5 @@ Be concise, direct, and friendly. When unsure, say so.")
                (str "Current working directory: " cwd)
                (tool-descriptions tool-defs)
                (load-agents-md cwd)
-               (sub-agents-prompt cwd)]]
+               (agents-md-prompt cwd)]]
     (str/join "\n\n" (filter some? parts))))

@@ -162,22 +162,42 @@
 (defn- cmd-compact [_st {:keys [room-id args]}]
   {:effects [[:app/dispatch {:type :compact/request :room-id room-id :focus args}]]})
 
+(defn- render-system-prompt
+  "Render a room's system-parts into buffer text. When expanded? is false,
+   each part's body is clipped to a 200-char preview."
+  [st room-id expanded?]
+  (let [parts (get-in st [:rooms room-id :agent :system-parts])]
+    (if (seq parts)
+      (str/join "\n\n---\n\n"
+                (map (fn [{:keys [source text]}]
+                       (let [lines (count (re-seq #"\n" (or text "")))
+                             body (if expanded?
+                                    text
+                                    (let [s (subs text 0 (min 200 (count text)))]
+                                      (if (< (count text) 200) s (str s "..."))))]
+                         (str "## [" source "] (" lines " lines)\n\n" body)))
+                     parts))
+      (or (get-in st [:rooms room-id :agent :system])
+          "(no system prompt)"))))
+
+(defn- prompt-buffer [st room-id expanded?]
+  {:title     (str "System Prompt — ctrl+o to " (if expanded? "collapse" "expand"))
+   :text      (render-system-prompt st room-id expanded?)
+   :expanded? expanded?})
+
 (defn- cmd-prompt [st {:keys [room-id]}]
-  (let [parts (get-in st [:rooms room-id :agent :system-parts])
-        text  (if (seq parts)
-                (str/join "\n\n---\n\n"
-                          (map (fn [{:keys [source text]}]
-                                 (let [lines (count (re-seq #"\n" (or text "")))
-                                       preview (let [s (subs text 0 (min 200 (count text)))]
-                                                 (if (< (count text) 200) s (str s "...")))]
-                                   (str "## [" source "] (" lines " lines)\n\n" preview)))
-                               parts))
-                (or (get-in st [:rooms room-id :agent :system])
-                    "(no system prompt)"))]
-    {:state (-> st
-                (assoc-in [:rooms room-id :ui :buffers :prompt]
-                          {:title "System Prompt" :text text})
-                (assoc-in [:rooms room-id :ui :active-buffer] :prompt))}))
+  {:state (-> st
+              (assoc-in [:rooms room-id :ui :buffers :prompt]
+                        (prompt-buffer st room-id false))
+              (assoc-in [:rooms room-id :ui :active-buffer] :prompt))})
+
+(defn- prompt-toggle
+  "Toggle full/preview rendering of the system-prompt buffer (ctrl+o)."
+  [st {:keys [room-id]}]
+  (when (get-in st [:rooms room-id :ui :buffers :prompt])
+    (let [expanded? (not (get-in st [:rooms room-id :ui :buffers :prompt :expanded?]))]
+      {:state (assoc-in st [:rooms room-id :ui :buffers :prompt]
+                        (prompt-buffer st room-id expanded?))})))
 
 (defn- cmd-tree [st {:keys [room-id]}]
   (when (state/get-room st room-id)
@@ -460,6 +480,7 @@
     :ui/menu-open    menu-open
     :ui/menu-close   menu-close
     :ui/buffer-open  buffer-open
+    :ui/prompt-toggle prompt-toggle
     :ui/diff-open    diff-open
     :tree/close      tree-close
     :tree/navigate   tree-navigate
