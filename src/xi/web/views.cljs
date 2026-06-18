@@ -16,6 +16,7 @@
             [ui.icon :as icon]
             [ui.form :as form]
             [ui.button :as button]
+            [ui.toolbar :as toolbar]
             [ui.lightbox :as lightbox]
             [ui.sidebar :as sidebar]
             [ui.theme-toggle :as theme-toggle]))
@@ -620,8 +621,9 @@
 (defn- diff-rows-view
   "Render flattened diff rows as a scrollable view with selection highlight.
    Rows are grouped by file: each file gets a sticky header and a horizontally
-   scrollable body so long lines don't push the whole view."
-  [dispatch! rows range]
+   scrollable body so long lines don't push the whole view. The selection
+   toolbar, when present, is anchored to the bottom of the selected range."
+  [dispatch! rows range toolbar]
   (let [grammar-cache (atom {})
         grammar-for (fn [f] (or (@grammar-cache f)
                                 (let [g (diff-file-grammar f)]
@@ -664,52 +666,83 @@
                      nil)))
                body-rows)]]))
         file-groups)
-       [:div {:class ["empty-state"]} "No changes."])]))
+       [:div {:class ["empty-state"]} "No changes."])
+     toolbar]))
+
+(defn- position-sel-toolbar!
+  "Anchor the selection toolbar to the bottom edge of the last selected diff
+   line, within the scrollable diff view. Runs on mount and on every update so
+   the toolbar follows the range as the selection changes."
+  [{:replicant/keys [^js node]}]
+  (when-let [view (some-> node (.closest ".diff-view"))]
+    (let [sels (.querySelectorAll view ".diff-line--selected")
+          n    (.-length sels)]
+      (when (pos? n)
+        (let [last-el (.item sels (dec n))
+              vr      (.getBoundingClientRect view)
+              lr      (.getBoundingClientRect last-el)
+              top     (+ (- (.-bottom lr) (.-top vr)) (.-scrollTop view))]
+          (set! (.. node -style -top) (str top "px")))))))
 
 (defn- diff-action-bar
-  "Bottom action bar shown when diff lines are selected: Explain / Modify /
-   Clear, plus an inline prompt input for Modify."
+  "Toolbar shown when diff lines are selected, anchored to the bottom of the
+   selected range. By default it's a segmented pill (clj-ui toolbar) with the
+   selection actions (Clear / Modify / Goto / Explain); toggling Modify swaps it
+   for a popover panel (clj-ui popover-content surface) that sends an
+   instruction for the selected region."
   [dispatch! room-id range modify?]
   (let [n (when range (inc (- (second range) (first range))))
+        anchor-attrs {:replicant/key "diff-sel-toolbar"
+                      :replicant/on-mount position-sel-toolbar!
+                      :replicant/on-update position-sel-toolbar!}
         submit-modify!
         (fn [_]
           (when-let [el (.getElementById js/document "diff-modify-input")]
             (dispatch! {:type :diff/modify-submit
                         :room-id room-id :text (.-value el)})))]
-    [:div {:class ["diff-action-bar"]}
-     (when modify?
-       [:div {:class ["diff-modify-row"]}
-        [:textarea {:id "diff-modify-input"
-                    :class ["form-textarea" "diff-modify-input"]
-                    :placeholder "Describe the change to make to the selected code…"
-                    :rows 2
-                    :on {:keydown (fn [^js e]
-                                    (when (and (= "Enter" (.-key e)) (.-metaKey e))
-                                      (.preventDefault e) (submit-modify! e)))}}]
+    (if modify?
+      [:div (assoc anchor-attrs
+                   :class ["diff-sel-anchor" "diff-sel-anchor--modify"
+                           "popover-content" "popover-content--bottom"])
+       [:div {:class ["diff-modify-head"]}
+        [:span {:class ["popover-title"]}
+         (str "Modify " n " line" (when (not= 1 n) "s"))]
+        (button/button
+         {:variant :ghost :size :sm
+          :on-click (fn [_] (dispatch! {:type :diff/modify-toggle}))}
+         "Cancel")]
+       [:textarea {:id "diff-modify-input"
+                   :class ["form-textarea" "diff-modify-input"]
+                   :placeholder "Describe the change to make to the selected code…"
+                   :rows 3
+                   :replicant/on-mount (fn [{:replicant/keys [^js node]}] (.focus node))
+                   :on {:keydown (fn [^js e]
+                                   (when (and (= "Enter" (.-key e)) (.-metaKey e))
+                                     (.preventDefault e) (submit-modify! e)))}}]
+       [:div {:class ["diff-modify-foot"]}
         (button/button
          {:variant :primary :size :sm
           :on-click submit-modify!}
-         "Send")])
-     [:div {:class ["diff-action-row"]}
-      [:span {:class ["diff-sel-count"]}
-       (str n " line" (when (not= 1 n) "s") " selected")]
-      [:div {:class ["diff-action-buttons"]}
-       (button/button
-        {:variant :ghost :size :sm
-         :on-click (fn [_] (dispatch! {:type :diff/clear-selection}))}
-        "Clear")
-       (button/button
-        {:variant :ghost :size :sm
-         :on-click (fn [_] (dispatch! {:type :diff/modify-toggle}))}
-        "Modify")
-       (button/button
-        {:variant :ghost :size :sm
-         :on-click (fn [_] (dispatch! {:type :diff/goto :room-id room-id}))}
-        "Goto")
-       (button/button
-        {:variant :primary :size :sm
-         :on-click (fn [_] (dispatch! {:type :diff/explain :room-id room-id}))}
-        "Explain")]]]))
+         "Send")]]
+      [:div (assoc anchor-attrs :class ["diff-sel-anchor"])
+       (toolbar/toolbar
+        {}
+        (button/button
+         {:variant :ghost :size :sm
+          :on-click (fn [_] (dispatch! {:type :diff/clear-selection}))}
+         "Clear")
+        (button/button
+         {:variant :ghost :size :sm
+          :on-click (fn [_] (dispatch! {:type :diff/modify-toggle}))}
+         "Modify")
+        (button/button
+         {:variant :ghost :size :sm
+          :on-click (fn [_] (dispatch! {:type :diff/goto :room-id room-id}))}
+         "Goto")
+        (button/button
+         {:variant :primary :size :sm
+          :on-click (fn [_] (dispatch! {:type :diff/explain :room-id room-id}))}
+         "Explain"))])))
 
 (def ^:private diff-methods
   "Selectable diff sources. :title is the buffer title :diff/load assigns for
@@ -745,9 +778,9 @@
         range (diff/selection-range sel)]
     [:div {:class ["diff-tab"]}
      (diff-method-bar dispatch! room-id (:title diff-buffer))
-     (diff-rows-view dispatch! rows range)
-     (when range
-       (diff-action-bar dispatch! room-id range modify?))]))
+     (diff-rows-view dispatch! rows range
+                     (when range
+                       (diff-action-bar dispatch! room-id range modify?)))]))
 
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 

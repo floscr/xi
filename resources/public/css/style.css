@@ -1425,6 +1425,7 @@ body {
 }
 
 .diff-view {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -1558,43 +1559,45 @@ body {
   padding-right: var(--size-2);
 }
 
-/* ---- Diff action bar (selection actions) ---- */
-.diff-action-bar {
-  flex-shrink: 0;
-  border-top: 1px solid var(--border-0);
-  background: var(--bg-1);
-  padding: var(--size-2) var(--size-3);
-  padding-bottom: max(var(--size-2), env(safe-area-inset-bottom));
+/* ---- Diff selection toolbar (anchored to the bottom of the range) ----
+   Anchors the selection toolbar/popover to the bottom of the selected range.
+   Surface styling comes from the clj-ui .toolbar pill (actions) or
+   .popover-content panel (modify); this only handles placement. The exact top
+   is set in JS (position-sel-toolbar!); .popover-content's fixed positioning is
+   overridden here since the panel tracks a text range, not a trigger button. */
+.diff-sel-anchor {
+  position: absolute;
+  top: 0;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  margin-top: var(--size-1);
+}
+
+.diff-sel-anchor--modify {
   display: flex;
   flex-direction: column;
   gap: var(--size-2);
+  width: min(92vw, 560px);
+  max-width: min(92vw, 560px);
 }
 
-.diff-action-row {
+.diff-modify-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--size-2);
 }
 
-.diff-sel-count {
-  font-size: var(--font-sm);
-  color: var(--fg-2);
-}
-
-.diff-action-buttons {
+.diff-modify-foot {
   display: flex;
+  justify-content: flex-end;
   gap: var(--size-2);
-}
-
-.diff-modify-row {
-  display: flex;
-  gap: var(--size-2);
-  align-items: flex-end;
 }
 
 .diff-modify-input {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   resize: none;
 }

@@ -9,7 +9,7 @@
   --danger: var(--danger-500);
   --fg-0: var(--gray-950);
   --fg-1: var(--gray-600);
-  --fg-2: var(--gray-500);
+  --fg-2: var(--gray-400);
   --fg-on-accent: #ffffff;
   --fg-on-danger: #ffffff;
   --fg-on-success: #ffffff;
@@ -1313,6 +1313,125 @@ a.btn-link {
 }
 
 
+/* ── Context Menu ────────────────────────────────────────────────── */
+/* Floating menu triggered by right-click. Shared across all targets. */
+
+.context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 10rem;
+  padding: 0;
+  background: var(--bg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  animation: context-menu-in 0.12s ease;
+  list-style: none;
+  margin: 0;
+}
+
+@keyframes context-menu-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Item ────────────────────────────────────────────────────────── */
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  width: 100%;
+  padding: var(--size-2) var(--size-3);
+  font-size: var(--font-sm);
+  line-height: 1.25;
+  color: var(--fg-0);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.context-menu-item:hover,
+.context-menu-item:focus-visible {
+  background: var(--bg-2);
+  outline: none;
+}
+
+.context-menu-item--danger {
+  color: var(--danger-600);
+}
+
+.context-menu-item--danger:hover,
+.context-menu-item--danger:focus-visible {
+  background: var(--danger-50);
+  color: var(--danger-700);
+}
+
+/* ── Confirm ─────────────────────────────────────────────────────── */
+
+.context-menu-confirm-message {
+  padding: var(--size-2) var(--size-3);
+  font-size: var(--font-sm);
+  line-height: 1.25;
+  color: var(--fg-1);
+  white-space: nowrap;
+}
+
+.context-menu-confirm-actions {
+  display: flex;
+  gap: 0;
+}
+
+.context-menu-confirm-actions .context-menu-item {
+  flex: 1;
+  justify-content: center;
+}
+
+/* ── Separator ───────────────────────────────────────────────────── */
+
+.context-menu-separator {
+  height: 1px;
+  margin: var(--size-1) 0;
+  background: var(--gray-200);
+}
+
+/* ── Dark mode ───────────────────────────────────────────────────── */
+
+[data-theme="dark"] .context-menu-item--danger {
+  color: var(--danger-400);
+}
+
+[data-theme="dark"] .context-menu-item--danger:hover,
+[data-theme="dark"] .context-menu-item--danger:focus-visible {
+  background: var(--danger-950);
+  color: var(--danger-300);
+}
+
+[data-theme="dark"] .context-menu-separator {
+  background: var(--gray-800);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .context-menu-item--danger {
+    color: var(--danger-400);
+  }
+
+  :root:not([data-theme="light"]) .context-menu-item--danger:hover,
+  :root:not([data-theme="light"]) .context-menu-item--danger:focus-visible {
+    background: var(--danger-950);
+    color: var(--danger-300);
+  }
+
+  :root:not([data-theme="light"]) .context-menu-separator {
+    background: var(--gray-800);
+  }
+}
+
+
 /* ── Shared dialog inner styles ───────────────────────────────────── */
 /* Used by both native <dialog> and overlay-based .dialog-panel       */
 
@@ -1445,6 +1564,525 @@ a.btn-link {
     max-width: none;
     padding: var(--size-4);
   }
+}
+
+
+/* ── File Browser ─────────────────────────────────────────────────── */
+
+/* Grid container */
+.fb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--size-4);
+}
+
+/* List container */
+.fb-list {
+  display: flex;
+  flex-direction: column;
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.fb-list > * + * {
+  border-top: var(--border-0);
+}
+
+/* ── Base Item ────────────────────────────────────────────────────── */
+
+.fb-item {
+  cursor: pointer;
+}
+
+.fb-item:hover {
+  background: var(--bg-1);
+}
+
+.fb-item-selected,
+.fb-item-selected:hover {
+  background: var(--bg-2);
+}
+
+/* ── Grid Tile ────────────────────────────────────────────────────── */
+
+.fb-item-grid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-4) var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  text-align: center;
+  height: 100%;
+}
+
+.fb-item-grid.fb-item-selected {
+  border-color: var(--accent);
+}
+
+/* ── List Row ─────────────────────────────────────────────────────── */
+
+.fb-item-list {
+  display: grid;
+  grid-template-columns: 1fr 90px 130px 100px;
+  align-items: center;
+  padding: var(--size-2) var(--size-3);
+  gap: var(--size-3);
+}
+
+/* ── List Header ──────────────────────────────────────────────────── */
+
+.fb-list-header {
+  display: grid;
+  grid-template-columns: 1fr 90px 130px 100px;
+  align-items: center;
+  padding: var(--size-2) var(--size-3);
+  gap: var(--size-3);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--bg-1);
+}
+
+.fb-list-header-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  user-select: none;
+}
+
+.fb-list-header-cell-sortable {
+  cursor: pointer;
+}
+
+.fb-list-header-cell-sortable:hover {
+  color: var(--fg-0);
+}
+
+.fb-list-header-cell-active {
+  color: var(--fg-0);
+}
+
+/* ── Item Icon ────────────────────────────────────────────────────── */
+
+.fb-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.fb-item-grid .fb-item-icon {
+  width: 64px;
+  height: 64px;
+}
+
+/* ── Item Name ────────────────────────────────────────────────────── */
+
+.fb-item-name {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--fg-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.fb-item-grid .fb-item-name {
+  max-width: 100%;
+}
+
+/* ── Item Metadata ────────────────────────────────────────────────── */
+
+.fb-item-meta {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  white-space: nowrap;
+}
+
+/* ── Name Cell (list view: icon + name) ──────────────────────────── */
+
+.fb-item-name-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  min-width: 0;
+}
+
+.fb-item-name-cell .fb-item-icon {
+  width: 32px;
+  height: 32px;
+}
+
+/* Name-column header: offset by icon (32px) + gap (--size-2) so the
+   label aligns with the file name text, not the icon. */
+.fb-table-th.fb-table-namecol {
+  padding-left: calc(var(--size-3) + 32px + var(--size-2));
+}
+
+/* ── File Type Colors ─────────────────────────────────────────────── */
+
+.fb-item-icon {
+  color: var(--fg-2);
+}
+
+/* ── View Toggle ──────────────────────────────────────────────────── */
+
+.fb-view-toggle {
+  display: inline-flex;
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.fb-view-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--size-1) var(--size-2);
+  background: none;
+  border: none;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.fb-view-toggle-btn:hover {
+  background: var(--bg-1);
+  color: var(--fg-0);
+}
+
+.fb-view-toggle-btn-active {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+.fb-view-toggle-btn + .fb-view-toggle-btn {
+  border-left: var(--border-0);
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────── */
+
+.fb-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-3);
+  margin-bottom: var(--size-4);
+}
+
+/* ── Drop Zone ────────────────────────────────────────────────────── */
+
+.fb-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--size-8) var(--size-4);
+  border: 2px dashed var(--fg-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 200ms ease, background-color 200ms ease;
+  position: relative;
+}
+
+.fb-dropzone:hover {
+  border-color: var(--fg-2);
+  background: var(--bg-1);
+}
+
+.fb-dropzone-active,
+.fb-dropzone-active:hover {
+  border-color: var(--accent);
+  background: var(--bg-1);
+}
+
+.fb-dropzone-disabled,
+.fb-dropzone-disabled:hover {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: var(--fg-2);
+  background: none;
+}
+
+/* Hidden file input */
+.fb-dropzone-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.fb-dropzone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-2);
+  pointer-events: none;
+}
+
+.fb-dropzone-icon {
+  color: var(--fg-2);
+}
+
+.fb-dropzone-text {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--fg-0);
+}
+
+.fb-dropzone-subtext {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+/* ── Drop Zone Overlay (full-page) ────────────────────────────────── */
+
+.fb-dropzone-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.fb-dropzone-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-0);
+  opacity: 0.85;
+}
+
+.fb-dropzone-overlay-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-3);
+  padding: var(--size-10) var(--size-8);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-lg, var(--radius-md));
+  background: var(--bg-0);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.fb-dropzone-overlay-content .fb-dropzone-icon {
+  color: var(--accent);
+}
+
+.fb-dropzone-overlay-content .fb-dropzone-text {
+  font-size: var(--font-md, 1rem);
+  font-weight: 600;
+}
+
+.fb-dropzone-overlay-content .fb-dropzone-subtext {
+  font-size: var(--font-sm);
+}
+
+/* ── File Table (CSS Grid + display:contents) ────────────────────── */
+
+.fb-table-wrapper {
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.fb-table {
+  display: grid;
+  width: 100%;
+}
+
+/* Context-menu wrappers become layout-transparent inside the grid */
+.fb-table > .context-menu-trigger {
+  display: contents;
+}
+
+/* Header group: display:contents so th cells are direct grid items */
+.fb-table-header {
+  display: contents;
+}
+
+.fb-table-th {
+  padding: var(--size-2) var(--size-3);
+  text-align: left;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  user-select: none;
+  white-space: nowrap;
+  background: var(--bg-1);
+}
+
+.fb-table-th > * {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  vertical-align: middle;
+}
+
+.fb-table-th-sortable {
+  cursor: pointer;
+}
+
+.fb-table-th-sortable:hover {
+  color: var(--fg-0);
+}
+
+.fb-table-th-active {
+  color: var(--fg-0);
+}
+
+/* Row: display:contents so cells participate in the parent grid */
+.fb-table-row {
+  display: contents;
+}
+
+/* Cells */
+.fb-table-cell {
+  display: flex;
+  align-items: center;
+  padding: var(--size-2) var(--size-3);
+  font-size: var(--font-sm);
+  color: var(--fg-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-top: var(--border-0);
+}
+
+/* Meta-style cells (not the first in a row) */
+.fb-table-row > .fb-table-cell ~ .fb-table-cell {
+  color: var(--fg-2);
+  font-size: var(--font-xs);
+}
+
+/* Row hover */
+.fb-table-row:hover > .fb-table-cell {
+  background: var(--bg-1);
+}
+
+/* Selected row */
+.fb-table-row-selected > .fb-table-cell {
+  background: var(--bg-2);
+}
+
+.fb-table-row-selected:hover > .fb-table-cell {
+  background: var(--bg-2);
+}
+
+/* Clickable row */
+.fb-table-row-clickable > .fb-table-cell {
+  cursor: pointer;
+}
+
+/* Mobile: full bleed table */
+@media (max-width: 768px) {
+  .fb-table-wrapper {
+    margin-inline: calc(var(--body-padding-inline, 0px) * -1);
+    border-inline: none;
+    border-radius: 0;
+  }
+}
+
+
+/* ── File Progress ─────────────────────────────────────────────────── */
+
+.fp-list {
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-top: var(--size-4);
+}
+
+.fp-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-3);
+  padding: var(--size-3);
+  background: var(--bg-0);
+}
+
+.fp-item + .fp-item {
+  border-top: var(--border-0);
+}
+
+.fp-item-error {
+  background: color-mix(in srgb, var(--danger) 6%, var(--bg-0));
+}
+
+.fp-item-complete {
+  opacity: 0.6;
+}
+
+.fp-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  color: var(--fg-2);
+}
+
+.fp-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+}
+
+.fp-item-name {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--fg-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-item-size {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+.fp-item .progress {
+  height: 4px;
+  margin-top: var(--size-1);
+}
+
+.fp-item-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--size-1);
+  background: none;
+  border: none;
+  color: var(--fg-2);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color 150ms ease, background-color 150ms ease;
+  flex-shrink: 0;
+}
+
+.fp-item-remove:hover {
+  color: var(--fg-0);
+  background: var(--bg-1);
 }
 
 
@@ -2071,8 +2709,7 @@ a.btn-link {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: var(--font-xs);
   line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
 }
 
 .md-table {
@@ -2395,6 +3032,76 @@ a.btn-link {
 .popover-bl { bottom: var(--size-4); left: var(--size-4); }
 .popover-tr { top: var(--size-4); right: var(--size-4); }
 .popover-tl { top: var(--size-4); left: var(--size-4); }
+
+/* ── Popover (anchored content panel) ─────────────────────────────── */
+/* Native Popover API panel, positioned relative to its trigger by the */
+/* JS runtime (__uiPopover) via :side / :align.                        */
+
+.popover-content {
+  position: fixed;
+  margin: 0;
+  inset: auto;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(20rem, calc(100vw - var(--size-4)));
+  padding: var(--size-4);
+  background: var(--bg-0);
+  color: var(--fg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  font-size: var(--font-sm);
+}
+
+.popover-content:popover-open {
+  animation: popover-in 0.12s ease;
+}
+
+@keyframes popover-in {
+  from { opacity: 0; transform: scale(0.97) translateY(var(--size-1)); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.popover-content--top    { transform-origin: bottom center; }
+.popover-content--bottom { transform-origin: top center; }
+.popover-content--left   { transform-origin: center right; }
+.popover-content--right  { transform-origin: center left; }
+
+/* Flush: strip the panel chrome so inner content (e.g. a toolbar) defines
+   its own surface. Used for popover-triggered toolbars/menus. */
+.popover-content--flush {
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  max-width: none;
+}
+
+/* ── Sections ────────────────────────────────────────────────────── */
+
+.popover-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  margin-bottom: var(--size-3);
+}
+
+.popover-header:last-child { margin-bottom: 0; }
+
+.popover-title {
+  margin: 0;
+  font-size: var(--font-base);
+  font-weight: 600;
+  line-height: var(--size-5);
+}
+
+.popover-description {
+  margin: 0;
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+  line-height: var(--size-5);
+}
 
 
 .progress {
@@ -3054,7 +3761,7 @@ a.sidebar-menu-item {
   }
 }
 
-/* ── Floating Variant ────────────────────────────── */
+/* ── Floating Variant ──────────────────────────────────────────── */
 
 /* Forces the off-canvas drawer behavior at any viewport size, positioned
    relative to the layout container instead of the viewport. Use for
@@ -3481,6 +4188,116 @@ a.sidebar-menu-item {
 }
 
 
+/* ── Theme Toggle ────────────────────────────────────────────────── */
+/* Segmented control: light / auto / dark                           */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  padding: var(--size-1);
+  background: var(--bg-1);
+  border-radius: var(--radius-md);
+  border: var(--border-0);
+}
+
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+  font-family: inherit;
+  padding: 0;
+}
+
+.theme-toggle-btn:hover:not(.theme-toggle-btn-active) {
+  color: var(--fg-1);
+  background: var(--bg-2);
+}
+
+.theme-toggle-btn-active {
+  background: var(--bg-0);
+  color: var(--fg-0);
+  box-shadow: var(--shadow-0);
+}
+
+/* ── Small variant ──────────────────────────────────────────────── */
+
+.theme-toggle-sm {
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.theme-toggle-sm .theme-toggle-btn {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: calc(var(--radius-xs));
+}
+
+
+/* ── Toolbar ──────────────────────────────────────────────────────── */
+/* Rounded container grouping buttons (typically icon buttons) with     */
+/* optional separators. Works standalone or inside a flush popover.     */
+
+.toolbar {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--bg-1);
+  border: var(--border-0);
+  /* Fully-rounded pill: a large radius is clamped to half the height.
+     overflow:hidden clips the square button corners to the pill shape. */
+  border-radius: 9999px;
+  overflow: hidden;
+  box-shadow: var(--shadow-0);
+}
+
+.toolbar-vertical {
+  flex-direction: column;
+}
+
+/* Buttons fill the toolbar edge to edge with square corners; the pill
+   shape comes from the container clipping the ends. */
+.toolbar > .btn {
+  border-radius: 0;
+}
+
+/* ── Separator ────────────────────────────────────────────────────── */
+
+.toolbar-separator {
+  flex: none;
+  background: var(--gray-200);
+}
+
+.toolbar-horizontal > .toolbar-separator {
+  width: 1px;
+  align-self: stretch;
+}
+
+.toolbar-vertical > .toolbar-separator {
+  height: 1px;
+}
+
+/* Dark mode: lighter divider shade, matching the separator component */
+[data-theme="dark"] .toolbar-separator {
+  background: var(--gray-800);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .toolbar-separator {
+    background: var(--gray-800);
+  }
+}
+
+
 .tooltip {
   position: relative;
   display: inline-block;
@@ -3615,6 +4432,29 @@ a.sidebar-menu-item {
 .hit-area-3 { --hit-area: var(--size-3); }
 .hit-area-4 { --hit-area: var(--size-4); }
 .hit-area-6 { --hit-area: var(--size-6); }
+
+/* ── Body padding & full bleed ────────────────────────────────── */
+/* Consumer sets --body-padding-inline on :root, body, or a layout */
+/* wrapper. full-bleed classes break out of that padding.           */
+/*                                                                  */
+/* Usage:                                                           */
+/*   body { --body-padding-inline: var(--size-4); padding-inline: var(--size-4); } */
+/*   <div class="full-bleed-flush">edge-to-edge table</div>        */
+
+.full-bleed {
+  margin-inline: calc(var(--body-padding-inline, 0px) * -1);
+}
+
+.full-bleed-padded {
+  margin-inline: calc(var(--body-padding-inline, 0px) * -1);
+  padding-inline: var(--body-padding-inline, 0px);
+}
+
+.full-bleed-flush {
+  margin-inline: calc(var(--body-padding-inline, 0px) * -1);
+  border-inline: none;
+  border-radius: 0;
+}
 
 /* ── Scrollbars ────────────────────────────────────────────────── */
 /* Thin, subtle scrollbars everywhere.                             */
