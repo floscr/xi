@@ -164,30 +164,42 @@
 (defn- cmd-compact [_st {:keys [room-id args]}]
   {:effects [[:app/dispatch {:type :compact/request :room-id room-id :focus args}]]})
 
+(def ^:private claude-preset-note
+  (str "## [CLAUDE_SYSTEM_PROMPT]\n\n"
+       "The Claude Code \"claude_code\" preset is injected by the Agent SDK "
+       "ahead of everything below. Its text is supplied by the SDK and is not "
+       "visible here; the parts that follow are appended after it."))
+
 (defn- render-system-prompt
   "Render a room's system prompt for the buffer. Expanded? true shows the
    verbatim string that is actually inserted (the room's :agent :system);
-   false shows a per-part overview clipped to a 200-char preview each."
+   false shows a per-part overview clipped to a 200-char preview each.
+   For Claude rooms a [CLAUDE_SYSTEM_PROMPT] header is prepended to surface
+   the SDK-injected preset that precedes the appended parts."
   [st room-id expanded?]
-  (let [parts  (get-in st [:rooms room-id :agent :system-parts])
-        system (get-in st [:rooms room-id :agent :system])]
-    (cond
-      expanded?
-      (or system
-          (when (seq parts) (str/join "\n\n" (map :text parts)))
-          "(no system prompt)")
+  (let [parts   (get-in st [:rooms room-id :agent :system-parts])
+        system  (get-in st [:rooms room-id :agent :system])
+        claude? (= :claude (get-in st [:rooms room-id :agent :provider]))
+        body    (cond
+                  expanded?
+                  (or system
+                      (when (seq parts) (str/join "\n\n" (map :text parts)))
+                      "(no system prompt)")
 
-      (seq parts)
-      (str/join "\n\n---\n\n"
-                (map (fn [{:keys [source text]}]
-                       (let [lines   (count (re-seq #"\n" (or text "")))
-                             preview (let [s (subs text 0 (min 200 (count text)))]
-                                       (if (< (count text) 200) s (str s "...")))]
-                         (str "## [" source "] (" lines " lines)\n\n" preview)))
-                     parts))
+                  (seq parts)
+                  (str/join "\n\n---\n\n"
+                            (map (fn [{:keys [source text]}]
+                                   (let [lines   (count (re-seq #"\n" (or text "")))
+                                         preview (let [s (subs text 0 (min 200 (count text)))]
+                                                   (if (< (count text) 200) s (str s "...")))]
+                                     (str "## [" source "] (" lines " lines)\n\n" preview)))
+                                 parts))
 
-      :else
-      (or system "(no system prompt)"))))
+                  :else
+                  (or system "(no system prompt)"))]
+    (if claude?
+      (str claude-preset-note "\n\n---\n\n" body)
+      body)))
 
 (defn- prompt-buffer [st room-id expanded?]
   {:title     (str "System Prompt — " (if expanded? "full (ctrl+o for overview)"
