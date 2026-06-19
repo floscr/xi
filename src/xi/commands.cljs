@@ -132,11 +132,13 @@
 
 (defn- cmd-model [st {:keys [room-id args]}]
   (if (seq args)
-    (let [provider (if (util/claude-model? args) :claude :ollama)]
-      {:state (-> st
-                  (assoc-in [:rooms room-id :agent :model] args)
-                  (assoc-in [:rooms room-id :agent :provider] provider)
-                  (append-history room-id (status-entry (str "Model set to: " args))))})
+    (let [provider (if (util/claude-model? args) :claude :ollama)
+          has-session? (get-in st [:rooms room-id :session :provider-session-id])]
+      (cond-> {:state (-> st
+                          (assoc-in [:rooms room-id :agent :model] args)
+                          (assoc-in [:rooms room-id :agent :provider] provider)
+                          (append-history room-id (status-entry (str "Model set to: " args))))}
+        has-session? (assoc :effects [[:session/sync {:room-id room-id}]])))
     {:effects [[:models/fetch {:room-id room-id}]]}))
 
 (defn- cmd-resume [st {:keys [room-id args]}]
@@ -430,6 +432,7 @@
           session (cond-> session
                     (nil? (:cwd session)) (assoc :cwd (:cwd room)))
           session' (assoc session :provider-session-id (:cli-session-id session))
+          model (:model session)
           label (str "Resumed: "
                      (or (:name session) (:cli-session-id session) (:id session))
                      (case (:source summary) :claude " [claude]" :pi " [pi]" "")
@@ -440,7 +443,12 @@
                   (assoc-in [:rooms room-id :session] session')
                   (assoc-in [:rooms room-id :history]
                             (into [(status-entry label)] (messages->history messages)))
-                  (update-in [:rooms room-id :agent] assoc :busy? false :queued []))})))
+                  (update-in [:rooms room-id :agent] assoc :busy? false :queued [])
+                  (cond-> model
+                    (->
+                     (assoc-in [:rooms room-id :agent :model] model)
+                     (assoc-in [:rooms room-id :agent :provider]
+                               (if (util/claude-model? model) :claude :ollama)))))})))
 
 (defn- session-updated
   "Persisted session came back from a save/touch effect — merge metadata."

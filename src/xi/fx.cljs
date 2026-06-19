@@ -216,8 +216,10 @@
        (when (:provider-session-id sess)
          (let [title (when-let [t (first-user-text room)]
                        (subs t 0 (min 60 (count t))))
+               model (get-in room [:agent :model])
                named (cond-> sess
-                       (and (nil? (:name sess)) title) (assoc :name title))
+                       (and (nil? (:name sess)) title) (assoc :name title)
+                       model (assoc :model model))
                touched (session/touch-session! (->disk-session named))]
            (dispatch! {:type :session/updated :room-id room-id
                        :session (-> touched
