@@ -365,6 +365,15 @@
 (def ^:private web-command-names
   (into #{} (map :name) web-commands))
 
+(defn draft-key
+  "Per-chat identity key for state that should be scoped to a single chat
+   (drafts, scroll position, …). The room's session id once joined, else the
+   route's session id, else `:new` for a freshly-created chat."
+  [state]
+  (or (get-in (state/active-room state) [:session :id])
+      (get-in state [:web/route :session-id])
+      :new))
+
 (defn known-command?
   "True if `name` is a recognized web slash command. Used to decide whether a
    submission is worth recording into the recently-executed list."
@@ -956,7 +965,7 @@
         busy?   (get-in room [:agent :busy?])
         model   (or (get-in room [:agent :model]) (:model cached))
         ready?  (or room (seq history))
-        draft-key (or (get-in room [:session :id]) sid :new)
+        dkey    (draft-key state)
         model-list (:web/model-list state)
         buffers    (get-in room [:ui :buffers])
         active-buf (get-in room [:ui :active-buffer] :chat)
@@ -1021,11 +1030,11 @@
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         (when (:web/project-picker? state)
-          (project-picker dispatch! (:web/project-dirs state) draft-key))
+          (project-picker dispatch! (:web/project-dirs state) dkey))
         (compose-box dispatch! room busy? (:web/compose-images state)
-                     draft-key (get-in state [:web/drafts draft-key]) sid
+                     dkey (get-in state [:web/drafts dkey]) sid
                      (:web/cmd-selected state)
-                     (get state :web/at-bottom? true)
+                     (get-in state [:web/at-bottom dkey] true)
                      (get-in state [:lobby :personal-agent?])
                      (:web/recent-commands state))))]))
 

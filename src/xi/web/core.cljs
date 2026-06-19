@@ -312,7 +312,8 @@
                                                           :text (str "/model " model)}]]})
           :models/close          (fn [st _] {:state (dissoc st :web/model-list)})
           :scroll/at-bottom      (fn [st {:keys [at-bottom?]}]
-                                    {:state (assoc st :web/at-bottom? at-bottom?)})
+                                    {:state (assoc-in st [:web/at-bottom (views/draft-key st)]
+                                                      at-bottom?)})
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
           :diff/modify-toggle    diff-modify-toggle
