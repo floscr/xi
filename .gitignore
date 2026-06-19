@@ -6,3 +6,4 @@ node_modules/
 resources/public/js/
 .clj-kondo/
 .deploy
+.env

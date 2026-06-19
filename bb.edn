@@ -1,5 +1,5 @@
 {:deps {tmux-dev/tmux-dev {:git/url "https://git.example.com/floscr/tmux-dev"
-                            :git/sha "3d9e53bc38b818bfcee312065ded0aef83bdecf4"}}
+                            :git/sha "78a82846116d13f05c3ddd9c5d1c4639b6c3538a"}}
  :tasks
  {:requires ([tmux-dev.core :as td])
   :init (do
@@ -8,7 +8,8 @@
                        :print   ["Web: http://localhost:7474"]})
           (def serve-config {:session "xi-serve"
                              :windows [["watch" "npx shadow-cljs watch main web"]
-                                       ["server" "bun target/main.js server --headless"]]})
+                                       ["server" "bun target/main.js server --headless"]]
+                             :env-file ".env"})
           (def pa-serve-config {:session "xi-pa"
                                 :windows [["server" "bun target/main.js server --headless --personal-agent-only --port 7475"]]}))
 
