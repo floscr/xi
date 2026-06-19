@@ -218,7 +218,8 @@
                                                        :system-parts parts}))})
                                                (compaction/create-fx providers)
                                                (naming/create-fx providers
-                                                {:delete-session-file! session/delete-claude-session-file!})
+                                               {:make-config-dir!   session/make-throwaway-config-dir!
+                                                :remove-config-dir! session/remove-config-dir!})
                                                (:fx composed)
                                                (:fx dialogs)
                                                (:effects client))
@@ -351,7 +352,8 @@
                                                       :system-parts parts}))})
                                               (compaction/create-fx providers)
                                               (naming/create-fx providers
-                                               {:delete-session-file! session/delete-claude-session-file!})
+                                               {:make-config-dir!   session/make-throwaway-config-dir!
+                                                :remove-config-dir! session/remove-config-dir!})
                                               (:fx composed)
                                               (:fx dialogs)
                                               (:fx server))

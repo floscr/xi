@@ -6,6 +6,7 @@
   (:require [clojure.string :as str]
             [xi.session.sync :as sync]
             ["node:fs" :as fs]
+            ["node:os" :as os]
             ["node:path" :as node-path]
             ["node:crypto" :as crypto]))
 
@@ -148,16 +149,39 @@
           true)
       false)))
 
-(defn delete-claude-session-file!
-  "Delete the Claude CLI session JSONL for `cli-session-id` under `cwd`.
-   Used to discard throwaway turns (e.g. auto-titling) that the CLI persists
-   but Xi must never surface. Returns true when a file was removed."
-  [cwd cli-session-id]
-  (when (and cwd cli-session-id)
-    (let [filepath (.join node-path (claude-project-dir cwd) (str cli-session-id ".jsonl"))]
-      (if (fs/existsSync filepath)
-        (do (fs/unlinkSync filepath) true)
-        false))))
+(defn- claude-config-dir
+  "The Claude CLI config dir the SDK reads — CLAUDE_CONFIG_DIR or ~/.claude."
+  []
+  (or (aget js/process.env "CLAUDE_CONFIG_DIR")
+      (.join node-path HOME ".claude")))
+
+(defn make-throwaway-config-dir!
+  "Create a temp CLAUDE_CONFIG_DIR mirroring the real Claude config via
+   symlinks but with a fresh, empty `projects/` dir. Used for throwaway turns
+   (e.g. auto-titling): pointing the SDK here makes the CLI persist that turn's
+   session JSONL under the temp dir instead of polluting ~/.claude/projects,
+   so it never reaches the session list. Auth/settings keep working because
+   every entry except `projects` is symlinked to the live config.
+   Returns the temp dir path, or nil on failure."
+  []
+  (try
+    (let [src  (claude-config-dir)
+          base (fs/mkdtempSync (.join node-path (os/tmpdir) "xi-title-"))]
+      (doseq [entry (fs/readdirSync src)]
+        (when-not (= entry "projects")
+          (fs/symlinkSync (.join node-path src entry)
+                          (.join node-path base entry))))
+      (fs/mkdirSync (.join node-path base "projects"))
+      base)
+    (catch :default _e nil)))
+
+(defn remove-config-dir!
+  "Recursively remove a throwaway dir from make-throwaway-config-dir!.
+   Symlinks are unlinked; their targets (the live config) are untouched."
+  [dir]
+  (when (and dir (fs/existsSync dir))
+    (try (fs/rmSync dir #js {:recursive true :force true})
+         (catch :default _e nil))))
 
 ;; ── Claude CLI Session Reading ────────────────────────────────────────────────
 

@@ -300,6 +300,13 @@
                                  (:effort opts)
                                  (assoc :effort (:effort opts))
 
+                                 ;; Per-turn env override, merged over
+                                 ;; process.env (the SDK replaces env wholesale,
+                                 ;; so we must keep PATH/auth/etc).
+                                 (:env opts)
+                                 (assoc :env (merge (js->clj js/process.env)
+                                                    (:env opts)))
+
                                  resume-id
                                  (assoc :resume resume-id)))]
                      (unchecked-set base "mcpServers"
