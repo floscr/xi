@@ -274,14 +274,13 @@
      (let [room (room-of state room-id)
            cwd-sessions (list-room-sessions room :cwd)
            all-sessions (list-room-sessions room :all)
-           enrich (fn [items summaries]
-                    (mapv (fn [item s]
-                            (assoc item :search-text (session/build-search-text s)))
-                          items summaries))
-           cwd-items (enrich (vec (map-indexed (partial session-item room-id :cwd) cwd-sessions))
-                             cwd-sessions)
-           all-items (enrich (vec (map-indexed (partial session-item room-id :all) all-sessions))
-                             all-sessions)]
+           tag-summary (fn [items summaries]
+                         (mapv (fn [item s] (assoc item :summary s))
+                               items summaries))
+           cwd-items (tag-summary (vec (map-indexed (partial session-item room-id :cwd) cwd-sessions))
+                                  cwd-sessions)
+           all-items (tag-summary (vec (map-indexed (partial session-item room-id :all) all-sessions))
+                                  all-sessions)]
        (if (and (empty? cwd-items) (empty? all-items))
          (dispatch! {:type :ui/status :room-id room-id :text "(no previous sessions)"})
          (dispatch! {:type :ui/menu-open :room-id room-id

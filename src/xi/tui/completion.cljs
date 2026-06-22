@@ -137,6 +137,8 @@
      :header-fn  — (fn []) returns header string to render above items (optional)
      :search-field — kw (e.g. :search-text). When set, Ctrl+S toggles between
                      fuzzy-on-:label and substring-on-this-field.
+     :search-enrich-fn — (fn [items]) → items with search-field populated.
+                     Called lazily on first Ctrl+S toggle when items lack the field.
      :key-bindings — vec of {:key-fn (fn [data]) :handler (fn [state-atom])} for custom keys"
   [opts]
   (let [all-items (:items opts)
@@ -146,6 +148,8 @@
         on-cancel (:on-cancel opts)
         header-fn (:header-fn opts)
         search-field (:search-field opts)
+        search-enrich-fn (:search-enrich-fn opts)
+        search-enriched? (atom false)
         key-bindings (or (:key-bindings opts) [])
 
         state (atom {:query ""
@@ -164,9 +168,14 @@
                                             (max 0 (dec (count filtered)))))))
 
         update-items! (fn [new-items]
-                        (swap! state assoc :all-items new-items)
-                        (refilter!)
-                        (tui/request-panel-render!))
+                        (let [items (if (and search-enrich-fn
+                                            @search-enriched?
+                                            (not (get (first new-items) search-field)))
+                                     (search-enrich-fn new-items)
+                                     new-items)]
+                          (swap! state assoc :all-items items)
+                          (refilter!)
+                          (tui/request-panel-render!)))
 
         move-selection (fn [delta]
                          (let [{:keys [filtered selected]} @state
@@ -205,6 +214,13 @@
                 key-bindings))
 
         toggle-search! (fn []
+                         ;; Lazy enrich: compute search text on first toggle
+                         (when (and search-enrich-fn
+                                    (not @search-enriched?)
+                                    (not (:search-mode @state)))
+                           (reset! search-enriched? true)
+                           (let [enriched (search-enrich-fn (:all-items @state))]
+                             (swap! state assoc :all-items enriched)))
                          (swap! state update :search-mode not)
                          (refilter!)
                          (tui/request-panel-render!))

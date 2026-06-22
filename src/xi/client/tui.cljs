@@ -22,6 +22,7 @@
             [xi.client.view :as view]
             [xi.core.log :as log]
             [xi.core.state :as state]
+            [xi.session :as session]
             [xi.tui.ansi :as ansi]
             [xi.tui.clipboard-image :as clip-image]
             [xi.tui.completion :as completion]
@@ -153,7 +154,15 @@
                                      (dispatch! event)))
                       :on-cancel close!}
                search-field
-               (assoc :search-field search-field)
+               (assoc :search-field search-field
+                      :search-enrich-fn
+                      (fn [items]
+                        (mapv (fn [item]
+                                (if (:search-text item)
+                                  item
+                                  (assoc item :search-text
+                                         (session/build-search-text (:summary item)))))
+                              items)))
                (seq alt-items)
                (assoc :header-fn
                       (fn []
