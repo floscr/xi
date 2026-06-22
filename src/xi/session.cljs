@@ -606,3 +606,15 @@
       (catch :default _e []))
 
     []))
+
+(defn build-search-text
+  "Extract concatenated user+assistant text from a session for content search.
+   Returns a single string, capped to 16KB."
+  [summary]
+  (try
+    (let [msgs (read-session-messages summary)]
+      (->> msgs
+           (keep (fn [{:keys [type text]}] (when (= :text type) text)))
+           (str/join "\n")
+           (#(if (> (count %) 16384) (subs % 0 16384) %))))
+    (catch :default _ "")))

@@ -50,14 +50,41 @@
           :else
           (recur qi (inc ti) score last-match))))))
 
+(defn- extract-snippet
+  "Build a ±30-char snippet around the first match of query in text."
+  [text query]
+  (let [tl (str/lower-case text)
+        ql (str/lower-case query)
+        idx (str/index-of tl ql)]
+    (when idx
+      (let [start (max 0 (- idx 30))
+            end   (min (count text) (+ idx (count query) 30))
+            prefix (if (pos? start) "…" "")
+            suffix (if (< end (count text)) "…" "")]
+        (-> (str prefix (subs text start end) suffix)
+            (str/replace #"[\n\r]+" " "))))))
+
 (defn- filter-and-sort
-  "Filter items by fuzzy query, sort by score."
-  [items query]
+  "Filter items by fuzzy query, sort by score.
+   search-field — when non-nil, use substring match on that field instead of
+   fuzzy match on :label. Matched items get a :snippet in :description."
+  [items query search-field]
   (if (empty? query)
     items
-    (->> items
-         (filter #(fuzzy-match? query (:label %)))
-         (sort-by #(fuzzy-score query (:label %))))))
+    (if search-field
+      (->> items
+           (keep (fn [item]
+                   (let [text (get item search-field)]
+                     (when (and (seq text)
+                                (str/includes? (str/lower-case text)
+                                               (str/lower-case query)))
+                       (if-let [snip (extract-snippet text query)]
+                         (assoc item :description snip)
+                         item)))))
+           vec)
+      (->> items
+           (filter #(fuzzy-match? query (:label %)))
+           (sort-by #(fuzzy-score query (:label %)))))))
 
 ;; ── Key Detection (subset — reuse from editor) ───────────────────────────────
 
@@ -108,6 +135,8 @@
      :on-select  — (fn [item]) called when user confirms selection
      :on-cancel  — (fn []) called when user presses Escape
      :header-fn  — (fn []) returns header string to render above items (optional)
+     :search-field — kw (e.g. :search-text). When set, Ctrl+S toggles between
+                     fuzzy-on-:label and substring-on-this-field.
      :key-bindings — vec of {:key-fn (fn [data]) :handler (fn [state-atom])} for custom keys"
   [opts]
   (let [all-items (:items opts)
@@ -116,16 +145,19 @@
         on-select (:on-select opts)
         on-cancel (:on-cancel opts)
         header-fn (:header-fn opts)
+        search-field (:search-field opts)
         key-bindings (or (:key-bindings opts) [])
 
         state (atom {:query ""
                      :selected 0
                      :all-items all-items
-                     :filtered all-items})
+                     :filtered all-items
+                     :search-mode false})
 
         refilter! (fn []
-                    (let [{:keys [query all-items]} @state
-                          filtered (filter-and-sort all-items query)]
+                    (let [{:keys [query all-items search-mode]} @state
+                          sf (when search-mode search-field)
+                          filtered (filter-and-sort all-items query sf)]
                       (swap! state assoc
                              :filtered filtered
                              :selected (min (:selected @state)
@@ -172,6 +204,11 @@
                     true))
                 key-bindings))
 
+        toggle-search! (fn []
+                         (swap! state update :search-mode not)
+                         (refilter!)
+                         (tui/request-panel-render!))
+
         handle-input
         (fn [data]
           (cond
@@ -189,6 +226,9 @@
                                            (refilter!)
                                            (tui/request-panel-render!))
             (ctrl? data "C")           (cancel)
+            ;; Ctrl+S toggles full-text search when search-field is configured
+            (and search-field
+                 (ctrl? data "S"))     (toggle-search!)
             (is-printable? data)       (insert-char data)
 
             ;; Multi-byte printable (unicode)
@@ -203,7 +243,7 @@
      :invalidate (fn [])
      :render
      (fn [width]
-       (let [{:keys [query selected filtered all-items]} @state
+       (let [{:keys [query selected filtered all-items search-mode]} @state
              border-top (ansi/fg :border (apply str (repeat width "─")))
              border-bot (ansi/fg :border (apply str (repeat width "─")))
              prompt-w (ansi/visible-width prompt)
@@ -213,6 +253,16 @@
 
              ;; Optional header line
              header-line (when header-fn (header-fn))
+
+             ;; Search mode indicator (only when search-field is configured)
+             search-line (when search-field
+                           (str "  "
+                                (if search-mode
+                                  (str (ansi/fg :dim "○ Title") (ansi/fg :dim " | ")
+                                       (ansi/fg :accent "◉ Content"))
+                                  (str (ansi/fg :accent "◉ Title") (ansi/fg :dim " | ")
+                                       (ansi/fg :dim "○ Content")))
+                                (ansi/fg :dim "  (Ctrl+S)")))
 
              ;; Visible window around selected item
              n (count filtered)
@@ -264,6 +314,7 @@
                (concat
                 [border-top]
                 (when header-line [header-line])
+                (when search-line [search-line])
                 [""]
                 item-lines
                 [""]

@@ -122,7 +122,7 @@
    matches, closes the menu and dispatches the event (with :room-id merged).
    When :selected? is true, the currently selected item is merged into the
    event under :selected."
-  [{:keys [prompt items alt-items tab-labels key-bindings]} room-id dispatch!]
+  [{:keys [prompt items alt-items tab-labels key-bindings search-field]} room-id dispatch!]
   (let [;; Tab state is interaction-local (like the menu's filter query) —
         ;; it lives in the component, not in app state.
         tab #js {:alt false}
@@ -152,6 +152,8 @@
                                    (when-let [event (:event item)]
                                      (dispatch! event)))
                       :on-cancel close!}
+               search-field
+               (assoc :search-field search-field)
                (seq alt-items)
                (assoc :header-fn
                       (fn []
