@@ -118,17 +118,23 @@
     (is (= :prompt (get-in state [:rooms "r" :ui :active-buffer])))))
 
 (deftest diff-command-emits-diff-load
-  (is (= [[:diff/load {:room-id "r" :args nil}]]
+  (is (= [[:diff/load {:room-id "r" :args nil :engine :git}]]
          (:effects (handle (with-room) {:type :command/run :room-id "r" :name "diff"}))))
-  (is (= [[:diff/load {:room-id "r" :args "staged"}]]
+  (is (= [[:diff/load {:room-id "r" :args "staged" :engine :git}]]
          (:effects (handle (with-room) {:type :command/run :room-id "r"
-                                        :name "diff" :args "staged"})))))
+                                        :name "diff" :args "staged"}))))
+  (is (= [[:diff/load {:room-id "r" :args "staged" :engine :difft}]]
+         (:effects (handle (with-room) {:type :command/run :room-id "r"
+                                        :name "diff" :args "difft staged"}))))
+  (is (= [[:diff/load {:room-id "r" :args "staged" :engine :difft :cols 120}]]
+         (:effects (handle (with-room) {:type :command/run :room-id "r"
+                                        :name "diff" :args "difft:120 staged"})))))
 
 (deftest diff-open-installs-buffer
   (let [{:keys [state]} (handle (with-room)
                                 {:type :ui/diff-open :room-id "r"
                                  :title "Session Changes" :text "diff --git a/x b/x"})]
-    (is (= {:title "Session Changes" :text "diff --git a/x b/x" :diff? true}
+    (is (= {:title "Session Changes" :text "diff --git a/x b/x" :engine :git :diff? true}
            (get-in state [:rooms "r" :ui :buffers :diff])))
     (is (= :diff (get-in state [:rooms "r" :ui :active-buffer])))))
 

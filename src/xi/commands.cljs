@@ -230,9 +230,19 @@
 
 (defn- cmd-diff
   "Open the diff viewer. Subcommands ride in args: git | staged | unstaged;
-   nil → session diff; anything else is passed to git diff directly."
+   nil → session diff; anything else is passed to git diff directly. A leading
+   `difft` token selects difftastic as the renderer (structural side-by-side)
+   instead of git's unified diff; the remaining tokens are the source method.
+   An optional `:N` suffix on the token (e.g. `difft:120`) sets difftastic's
+   wrap width — the web client measures it from its viewport so the output
+   fills the browser width."
   [_st {:keys [room-id args]}]
-  {:effects [[:diff/load {:room-id room-id :args args}]]})
+  (let [[engine cols method]
+        (if-let [[_ cols rest] (re-matches #"difft(?::(\d+))?(?:\s+(.*))?" (or args ""))]
+          [:difft (some-> cols js/parseInt) (some-> rest str/trim not-empty)]
+          [:git nil args])]
+    {:effects [[:diff/load (cond-> {:room-id room-id :args method :engine engine}
+                             cols (assoc :cols cols))]]}))
 
 (defn- cmd-buffers [st {:keys [room-id]}]
   (let [room (state/get-room st room-id)
@@ -292,13 +302,14 @@
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
    {:name "truncate" :description "Summarize conversation to reduce context" :handler cmd-compact}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
-   {:name "diff"     :description "Show diff viewer (git|git-upstream|staged|unstaged|<branch>)" :handler cmd-diff
+   {:name "diff"     :description "Show diff viewer (git|git-upstream|staged|unstaged|<branch>); prefix with difft for difftastic" :handler cmd-diff
     :subcommands [{:name "git"             :description "All git changes (staged + unstaged + untracked)"}
                   {:name "git-upstream"    :description "Diff against the upstream default branch (origin/main|master)"}
                   {:name "staged"          :description "Staged changes"}
                   {:name "unstaged"        :description "Unstaged changes"}
                   {:name "session-edits"   :description "Diff of files edited this session"}
-                  {:name "session-commits" :description "Diff of commits made this session"}]}
+                  {:name "session-commits" :description "Diff of commits made this session"}
+                  {:name "difft"           :description "Render with difftastic (append a source, e.g. difft staged)"}]}
    {:name "tree"     :description "Navigate session history"             :handler cmd-tree}
    {:name "events"   :description "Show event log for this session"     :handler cmd-events}
    {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers}
@@ -394,11 +405,15 @@
                 (assoc-in [:rooms room-id :ui :active-buffer] buffer-id))}))
 
 (defn- diff-open
-  "Diff text came back from :diff/load — install it as the :diff buffer
-   and switch to it. :diff? marks it for the TUI's interactive viewer."
-  [st {:keys [room-id title text]}]
-  (buffer-open st {:room-id room-id :buffer-id :diff
-                   :buffer {:title title :text text :diff? true}}))
+  "Diff text came back from :diff/load — install it as the :diff buffer and
+   switch to it. :engine records the renderer; only :git diffs are unified and
+   get :diff? true (the interactive viewer). :difft output is ANSI structural
+   text shown as a plain buffer."
+  [st {:keys [room-id title text engine]}]
+  (let [engine (or engine :git)]
+    (buffer-open st {:room-id room-id :buffer-id :diff
+                     :buffer {:title title :text text :engine engine
+                              :diff? (= engine :git)}})))
 
 (defn- attach-image [st {:keys [room-id image label]}]
   (when (state/get-room st room-id)

@@ -39,6 +39,32 @@
 
 ;; ── Git (for :diff/load) ─────────────────────────────────────────────────────────
 
+(def ^:dynamic *diff-engine*
+  "The diff renderer for the current :diff/load run. :git → native unified
+   diff (interactive viewer); :difft → difftastic structural output (ANSI).
+   Bound for the whole effect body; read only by the git-diff helpers below."
+  :git)
+
+(def ^:dynamic *diff-width*
+  "Column width difftastic wraps at, requested by the client whose viewport
+   the diff is for (the web client measures it from its browser width). nil →
+   let difftastic pick (no tty headless → its 80-col default)."
+  nil)
+
+(defn- difft-env
+  "process.env extended so `git diff` routes through difftastic with color.
+   Syntax highlighting is off so the only colors are the diff signal itself:
+   red for removed, green for added — not a syntax rainbow. DFT_WIDTH carries
+   the requesting client's column width so the output fills its viewport."
+  []
+  (js/Object.assign #js {} js/process.env
+                     #js {"GIT_EXTERNAL_DIFF" "difft"
+                          "DFT_COLOR" "always"
+                          "DFT_SYNTAX_HIGHLIGHT" "off"}
+                     (if *diff-width*
+                       #js {"DFT_WIDTH" (str *diff-width*)}
+                       #js {})))
+
 (defn- git-out
   "Run git synchronously in cwd. Returns {:ok stdout} or {:err message}."
   [cwd args]
@@ -49,13 +75,31 @@
         {:err (str/trim (.toString (.-stderr proc) "utf-8"))}))
     (catch :default e {:err (str e)})))
 
+(defn- git-diff-out
+  "Like git-out, but for diff-producing invocations: when *diff-engine* is
+   :difft the diff is rendered by difftastic (ANSI structural output) via
+   GIT_EXTERNAL_DIFF instead of git's native unified diff."
+  [cwd args]
+  (if (= *diff-engine* :difft)
+    (try
+      (let [proc (js/Bun.spawnSync (into-array (cons "git" args))
+                                   #js {:cwd cwd :env (difft-env)})]
+        (if (zero? (.-exitCode proc))
+          {:ok (.toString (.-stdout proc) "utf-8")}
+          {:err (str/trim (.toString (.-stderr proc) "utf-8"))}))
+      (catch :default e {:err (str e)}))
+    (git-out cwd args)))
+
 (defn- no-index-diff
-  "Synthesize a unified diff for a single untracked file via diff --no-index.
-   stdout is read regardless of exit code — --no-index exits 1 on diffs."
+  "Synthesize a diff for a single untracked file via diff --no-index. stdout
+   is read regardless of exit code — --no-index exits 1 on diffs. Honors
+   *diff-engine* so untracked files render with the chosen renderer too."
   [cwd f]
-  (let [p (js/Bun.spawnSync
+  (let [opts (cond-> #js {:cwd cwd}
+               (= *diff-engine* :difft) (doto (aset "env" (difft-env))))
+        p (js/Bun.spawnSync
            #js ["git" "diff" "--no-index" "--" "/dev/null" f]
-           #js {:cwd cwd})]
+           opts)]
     (.toString (.-stdout p) "utf-8")))
 
 (defn- untracked-diff
@@ -110,8 +154,8 @@
         (group-by #(some? (:err (git-out cwd ["ls-files" "--error-unmatch" "--" %])))
                   files)
         tracked-diff   (when (seq tracked)
-                         (:ok (git-out cwd (concat (if base ["diff" base] ["diff"])
-                                                   ["--"] tracked))))
+                         (:ok (git-diff-out cwd (concat (if base ["diff" base] ["diff"])
+                                                        ["--"] tracked))))
         untracked-diff (when (seq untracked)
                          (str/join "\n" (map (partial no-index-diff cwd) untracked)))]
     (->> [tracked-diff untracked-diff]
@@ -122,7 +166,7 @@
   "Unified diff of every commit made during the session (base..HEAD)."
   [cwd base]
   (when base
-    (some-> (:ok (git-out cwd ["diff" base "HEAD"])) str/trim not-empty)))
+    (some-> (:ok (git-diff-out cwd ["diff" base "HEAD"])) str/trim not-empty)))
 
 (defn- git-ref?
   "True when ref resolves to a commit in cwd."
@@ -146,7 +190,7 @@
    common ancestor. Returns {:ok ...} | {:err ...}."
   [cwd ref]
   (let [base (some-> (:ok (git-out cwd ["merge-base" ref "HEAD"])) str/trim not-empty)]
-    (git-out cwd ["diff" (or base ref)])))
+    (git-diff-out cwd ["diff" (or base ref)])))
 
 (defn- list-room-sessions [room scope]
   (let [pa? (get-in room [:agent :personal-agent?])]
@@ -255,16 +299,18 @@
          (dispatch! {:type :ui/status :room-id room-id :text "Session not found."}))))
 
    :diff/load
-   (fn [{:keys [dispatch! state]} {:keys [room-id args]}]
-     (let [room (room-of state room-id)
+   (fn [{:keys [dispatch! state]} {:keys [room-id args engine cols]}]
+     (binding [*diff-engine* (or engine :git)
+               *diff-width*  (when (= engine :difft) cols)]
+      (let [room (room-of state room-id)
            cwd (or (:cwd room) (.cwd js/process))
            open! (fn [title text]
                    (if (str/blank? text)
                      (dispatch! {:type :ui/status :room-id room-id :text "No changes."})
                      (dispatch! {:type :ui/diff-open :room-id room-id
-                                 :title title :text text})))
+                                 :title title :text text :engine *diff-engine*})))
            run! (fn [title git-args]
-                  (let [{:keys [ok err]} (git-out cwd git-args)]
+                  (let [{:keys [ok err]} (git-diff-out cwd git-args)]
                     (if err
                       (dispatch! {:type :ui/status :room-id room-id
                                   :text (str "git diff failed: " err)})
@@ -272,8 +318,8 @@
        (case args
          "git"
          (open! "All Git Changes"
-                (->> [(:ok (git-out cwd ["diff"]))
-                      (:ok (git-out cwd ["diff" "--staged"]))
+                (->> [(:ok (git-diff-out cwd ["diff"]))
+                      (:ok (git-diff-out cwd ["diff" "--staged"]))
                       (untracked-diff cwd)]
                      (remove str/blank?)
                      (str/join "\n")
@@ -316,7 +362,7 @@
                (dispatch! {:type :ui/status :room-id room-id
                            :text (str "git diff failed: " err)})
                (open! (str "Diff: " args) ok)))
-           (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+")))))))
+           (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+"))))))))
 
    :events/load
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]

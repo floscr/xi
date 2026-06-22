@@ -825,34 +825,109 @@
 (def ^:private diff-title->method
   (into {} (map (juxt :title :value)) diff-methods))
 
+(def ^:private diff-engines
+  "Selectable diff renderers. :git → native unified diff (interactive viewer);
+   :difft → difftastic structural output (read-only)."
+  [{:value "git"   :label "git"}
+   {:value "difft" :label "difftastic"}])
+
+(defn- diff-method-for-title [title]
+  (or (get diff-title->method title)
+      ;; git-upstream's title carries the ref, e.g. "Upstream (origin/main)"
+      (when (str/starts-with? (or title "") "Upstream") "git-upstream")
+      "session-edits"))
+
+(defn- select-value-hook
+  "Replicant on-render hook that forces a <select>'s value. Replicant does not
+   reliably bind a select's value on initial mount (the value is set before the
+   option children exist), so we set it after the node + options are in place."
+  [v]
+  (fn [{:replicant/keys [^js node]}]
+    (set! (.-value node) v)))
+
 (defn- diff-method-bar
-  "Select above the diff to switch which diff is shown. Re-runs /diff <method>
-   on the server, which reopens the buffer with the chosen source."
-  [dispatch! room-id title]
-  (let [current (or (get diff-title->method title)
-                    ;; git-upstream's title carries the ref, e.g. "Upstream (origin/main)"
-                    (when (str/starts-with? (or title "") "Upstream") "git-upstream")
-                    "session-edits")]
+  "Selects above the diff to switch the source and the renderer. Each fires
+   :diff/reopen, which re-runs /diff on the server (measuring the difftastic
+   column width from the browser viewport first, so it fills the page)."
+  [dispatch! room-id title engine]
+  (let [method (diff-method-for-title title)
+        engine (or engine :git)]
     [:div {:class ["diff-method-bar"]}
      (form/form-select
       {:options   diff-methods
-       :value     current
-       :attrs     {:value current}
+       :value     method
+       :attrs     {:value method :replicant/on-render (select-value-hook method)}
        :on-change (fn [^js e]
-                    (dispatch! {:type :input/submit :room-id room-id
-                                :text (str "/diff " (.. e -target -value))}))})]))
+                    (dispatch! {:type :diff/reopen :room-id room-id
+                                :method (.. e -target -value) :engine engine}))})
+     (form/form-select
+      {:options   diff-engines
+       :value     (name engine)
+       :attrs     {:value (name engine) :replicant/on-render (select-value-hook (name engine))}
+       :on-change (fn [^js e]
+                    (dispatch! {:type :diff/reopen :room-id room-id
+                                :method method :engine (keyword (.. e -target -value))}))})]))
+
+(defn- ansi-sgr-state
+  "Fold one SGR escape's `;`-separated codes into the running style state.
+   Only the codes difftastic emits (syntax-highlight off) are meaningful:
+   reset, bold, dim, red (removed), green (added), yellow (header)."
+  [state codes]
+  (reduce (fn [st code]
+            (case code
+              ("" "0")     {}
+              "1"          (assoc st :bold true)
+              "2"          (assoc st :dim true)
+              "22"         (dissoc st :bold :dim)
+              ("31" "91")  (assoc st :fg :red)
+              ("32" "92")  (assoc st :fg :green)
+              ("33" "93")  (assoc st :fg :yellow)
+              "39"         (dissoc st :fg)
+              st))
+          state
+          (str/split (or codes "") #";")))
+
+(defn- ansi-span [{:keys [fg bold dim]} text]
+  [:span {:class (cond-> []
+                   (= fg :red)    (conj "difft-del")
+                   (= fg :green)  (conj "difft-add")
+                   (= fg :yellow) (conj "difft-hdr")
+                   dim            (conj "difft-dim")
+                   bold           (conj "difft-bold"))}
+   text])
+
+(defn- difft-spans
+  "Parse difftastic's ANSI-colored output into styled hiccup spans, so the web
+   shows the same red (removed) / green (added) signal as the terminal."
+  [text]
+  (let [re (js/RegExp. "\\u001b\\[([0-9;]*)m" "g")]
+    (loop [pos 0 state {} out []]
+      (if-let [m (.exec re text)]
+        (let [idx   (.-index m)
+              chunk (subs text pos idx)
+              out'  (cond-> out (seq chunk) (conj (ansi-span state chunk)))]
+          (recur (+ idx (.-length (aget m 0)))
+                 (ansi-sgr-state state (aget m 1))
+                 out'))
+        (let [chunk (subs text pos)]
+          (cond-> out (seq chunk) (conj (ansi-span state chunk))))))))
 
 (defn- diff-tab-view
-  "Full diff buffer view rendered as the active tab, with line selection and
-   an action bar for Explain / Modify."
+  "Full diff buffer view rendered as the active tab. Git diffs use the
+   interactive unified-diff viewer (line selection, Explain / Modify);
+   difftastic diffs are read-only structural text colored from their ANSI
+   (red = removed, green = added)."
   [dispatch! room-id diff-buffer sel modify?]
-  (let [rows  (diff/diff-rows (diff/parse-diff-text (:text diff-buffer)))
-        range (diff/selection-range sel)]
+  (let [engine (or (:engine diff-buffer) :git)]
     [:div {:class ["diff-tab"]}
-     (diff-method-bar dispatch! room-id (:title diff-buffer))
-     (diff-rows-view dispatch! rows range
-                     (when range
-                       (diff-action-bar dispatch! room-id rows range modify?)))]))
+     (diff-method-bar dispatch! room-id (:title diff-buffer) engine)
+     (if (= engine :difft)
+       (into [:pre {:class ["diff-difft"]}] (difft-spans (:text diff-buffer)))
+       (let [rows  (diff/diff-rows (diff/parse-diff-text (:text diff-buffer)))
+             range (diff/selection-range sel)]
+         (diff-rows-view dispatch! rows range
+                         (when range
+                           (diff-action-bar dispatch! room-id rows range modify?)))))]))
 
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 

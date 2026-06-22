@@ -10,7 +10,8 @@
    router lives in the single atom (:web/route); the cache hydrates state
    before the WS connects and persists via an app tap. Saved sessions, live
    rooms, unread dots and reconnect come from the lobby mirror + transport."
-  (:require [clojure.string :as str]
+  (:require ["@chenglou/pretext" :as pretext]
+            [clojure.string :as str]
             [replicant.dom :as r]
             [xi.agent :as agent]
             [xi.client.ws-transport :as ws-transport]
@@ -212,6 +213,73 @@
                      (str instr "\n\nApply this to the following code from the diff:\n\n"
                           "```diff\n" snippet "\n```"))))))
 
+;; ── difftastic column width (measured from the viewport) ─────────────────────
+
+(defonce ^:private mono-probe
+  ;; Offscreen <pre.diff-difft> kept around so we can read the difft pane's
+  ;; resolved monospace font even before a difft buffer has ever mounted.
+  (atom nil))
+
+(defn- mono-font-string
+  "Canvas-format font shorthand ('12px \"SF Mono\", monospace') for the difft
+   <pre>, read from an offscreen probe carrying the same class."
+  []
+  (let [^js p (or @mono-probe
+                  (let [el (.createElement js/document "pre")
+                        st (.-style el)]
+                    (set! (.-className el) "diff-difft")
+                    (set! (.-position st) "absolute")
+                    (set! (.-visibility st) "hidden")
+                    (set! (.-left st) "-9999px")
+                    (set! (.-top st) "0")
+                    (.appendChild js/document.body el)
+                    (reset! mono-probe el)
+                    el))
+        cs (js/getComputedStyle p)]
+    (str (.-fontSize cs) " " (.-fontFamily cs))))
+
+(def ^:private diff-scrollbar-px
+  "Width reserved for the difft pane's vertical scrollbar, so a full-width
+   diff doesn't also spill into a horizontal scrollbar."
+  16)
+
+(defn- diff-content-px
+  "Pixel width available to the difft <pre>: the diff tab's inner width minus
+   the pre's horizontal padding (which equals the method bar's, both var(--size-4))
+   and the vertical scrollbar. Falls back to the window width before the diff
+   view has mounted."
+  []
+  (let [^js tab (.querySelector js/document ".diff-tab")
+        ^js bar (.querySelector js/document ".diff-method-bar")]
+    (if tab
+      (let [pad (if bar (js/parseFloat (.-paddingLeft (js/getComputedStyle bar))) 0)]
+        (max 0 (- (.-clientWidth tab) (* 2 pad) diff-scrollbar-px)))
+      (.-innerWidth js/window))))
+
+(defn- measure-diff-cols
+  "How many monospace columns fit the diff pane right now. Uses pretext to
+   measure the character width (canvas, no DOM reflow) against the live
+   content width. Clamped so a too-narrow or unmeasurable pane still works."
+  []
+  (let [font     (mono-font-string)
+        prepared (pretext/prepareWithSegments "0000000000" font)
+        char-px  (/ (pretext/measureNaturalWidth prepared) 10)
+        px       (diff-content-px)]
+    (if (and (pos? char-px) (pos? px))
+      (max 40 (js/Math.floor (/ px char-px)))
+      120)))
+
+(defn- diff-reopen
+  "Re-run /diff for the chosen source + renderer. difftastic is routed through
+   the :diff/measure-cols effect, which reads the viewport width and re-issues
+   the command as `difft:<cols>` so the output fills the browser width instead
+   of difftastic's headless 80-col default."
+  [_st {:keys [room-id method engine]}]
+  (if (= engine :difft)
+    {:effects [[:diff/measure-cols {:room-id room-id :method method}]]}
+    {:effects [[:ws/send {:type :input/submit :room-id room-id
+                          :text (str "/diff " method)}]]}))
+
 ;; ── GTD ──────────────────────────────────────────────────────────────────────
 
 (defn- gtd-web-list-result
@@ -314,6 +382,7 @@
           :scroll/at-bottom      (fn [st {:keys [at-bottom?]}]
                                     {:state (assoc-in st [:web/at-bottom (views/draft-key st)]
                                                       at-bottom?)})
+          :diff/reopen           diff-reopen
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
           :diff/modify-toggle    diff-modify-toggle
@@ -366,6 +435,10 @@
      (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
        (set! (.-value el) text)
        (.focus el)))
+   :diff/measure-cols
+   (fn [{:keys [dispatch!]} {:keys [room-id method]}]
+     (dispatch! {:type :input/submit :room-id room-id
+                 :text (str "/diff difft:" (measure-diff-cols) " " method)}))
    :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :theme/apply  (fn [_ mode]

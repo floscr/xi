@@ -10,6 +10,7 @@
     "shadow-cljs": "3.4.9"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.2.110"
+    "@anthropic-ai/claude-agent-sdk": "0.2.110",
+    "@chenglou/pretext": "0.0.8"
   }
 }
