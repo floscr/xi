@@ -1711,10 +1711,11 @@
    so indicators render the same way as the home listings (navigation
    auto-closes the drawer)."
   [state dispatch!]
-  (let [pa?      (get-in state [:lobby :personal-agent?])
-        projects (when-not pa? (recent-projects state))
-        sessions (recent-sessions state)
-        orphans  (orphan-rooms state sessions)
+  (let [open?    (boolean (:web/sidebar-open? state))
+        pa?      (get-in state [:lobby :personal-agent?])
+        projects (when (and open? (not pa?)) (recent-projects state))
+        sessions (when open? (recent-sessions state))
+        orphans  (when open? (orphan-rooms state sessions))
         ;; Render one card per session-id from a single keyed sequence.
         ;; Replicant renders BOTH siblings when two share a :replicant/key
         ;; (it does not dedupe), so any duplicate stacks cards on top of each
@@ -1732,17 +1733,29 @@
                       :acc)]
     (sidebar/sidebar
      {}
+     ;; Keep the card list out of the DOM while the drawer is closed and
+     ;; remount it fresh on each open. The drawer is persistently mounted in
+     ;; root-view (outside the route case), so while hidden it keeps receiving
+     ;; incremental renders as sessions churn (busy toggling + auto-titling) —
+     ;; accumulating stale spinner nodes that mis-reconcile into the doubled/
+     ;; multiplied spinners seen on open. The home/listing views never show
+     ;; this because they are rebuilt fresh on navigation. Keying the content
+     ;; by open? makes Replicant discard the whole stale subtree and build it
+     ;; anew the moment the drawer opens.
      (sidebar/sidebar-content
-      {:attrs {:style {:padding "env(safe-area-inset-top) 0 0 0"}}}
-      (when (seq projects)
-        (sidebar/sidebar-group {:label "Projects"}
-          (for [p projects]
-            (project-dir-card dispatch! p))))
-      (sidebar/sidebar-group {:label "Recent"}
-        (if (seq cards)
-          (for [c cards]
-            (session-card dispatch! c))
-          [:div {:class ["sidebar-group-label"]} "No recent sessions"])))
+      {:attrs {:style {:padding "env(safe-area-inset-top) 0 0 0"}
+               :replicant/key (str "sidebar-content-" open?)}}
+      (when open?
+        (list
+         (when (seq projects)
+           (sidebar/sidebar-group {:label "Projects"}
+             (for [p projects]
+               (project-dir-card dispatch! p))))
+         (sidebar/sidebar-group {:label "Recent"}
+           (if (seq cards)
+             (for [c cards]
+               (session-card dispatch! c))
+             [:div {:class ["sidebar-group-label"]} "No recent sessions"])))))
      (sidebar/sidebar-footer {}
        (theme-toggle/theme-toggle
         {:mode (or (:web/theme-mode state) "auto")
