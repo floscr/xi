@@ -181,6 +181,26 @@
   "Tools whose output is shown expanded by default."
   #{"Bash" "bash" "Edit" "edit" "Write" "write" "web_search" "fetch"})
 
+(defn- edit-diff-code
+  "Render an edit tool's unified-diff result with per-line tinting: + lines get
+   a subtle green wash, - lines a subtle red one, over the code box. The
+   path/context/gap lines stay neutral. Code is still syntax-highlighted."
+  [grammar text]
+  (into [:pre {:class ["tool-call-code" "tool-call-diff"]}]
+        (map (fn [line]
+               (let [add? (str/starts-with? line "+ ")
+                     del? (str/starts-with? line "- ")
+                     ctx? (str/starts-with? line "  ")
+                     cls  (cond add? "tool-diff-line--add" del? "tool-diff-line--del")
+                     body (if (or add? del? ctx?) (subs line 2) line)]
+                 (if (or add? del? ctx?)
+                   [:span {:class (cond-> ["tool-diff-line"] cls (conj cls))}
+                    [:span {:class ["tool-diff-sign"]}
+                     (cond add? "+" del? "-" :else " ")]
+                    (if grammar (highlight-code grammar body) body)]
+                   [:span {:class ["tool-diff-line"]} line]))))
+        (str/split-lines text)))
+
 (defn- tool-post [{:keys [tool arguments result is-error status]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments)
@@ -199,9 +219,11 @@
          is-error [:span {:class ["error-text"]} " error"])]
       (when (seq text)
         [:div {:class ["tool-call-content"]}
-         [:pre {:class ["tool-call-code"]}
-          (let [shown (truncate-lines text 100)]
-            (if grammar (highlight-code grammar shown) shown))]])]]))
+         (let [shown (truncate-lines text 100)]
+           (if (and (contains? #{"Edit" "edit"} name) (not is-error))
+             (edit-diff-code grammar shown)
+             [:pre {:class ["tool-call-code"]}
+              (if grammar (highlight-code grammar shown) shown)]))])]]))
 
 ;; ── History entry → post ─────────────────────────────────────────────────────
 

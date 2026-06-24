@@ -787,6 +787,26 @@ body {
   overflow-y: auto;
 }
 
+/* ---- Edit tool diff: per-line +/- tint over the code box ---- */
+.tool-call-diff .tool-diff-line {
+  display: block;
+}
+
+.tool-call-diff .tool-diff-sign {
+  display: inline-block;
+  width: 1.5ch;
+  opacity: 0.6;
+  user-select: none;
+}
+
+.tool-call-diff .tool-diff-line--add {
+  background: color-mix(in srgb, var(--hl-string) 7%, transparent);
+}
+
+.tool-call-diff .tool-diff-line--del {
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+
 /* ---- Thinking blocks ---- */
 .thinking-block { margin: var(--size-1) 0; }
 
