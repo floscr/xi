@@ -754,6 +754,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.15s ease;
+}
+
+.tool-call-block[open] > .tool-call-toggle .tool-call-toggle-icon,
+.thinking-block[open] > .thinking-toggle .tool-call-toggle-icon {
+  transform: rotate(90deg);
 }
 
 .tool-call-toggle-label {
