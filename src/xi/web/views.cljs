@@ -207,13 +207,17 @@
         running?  (= :running status)
         text      (util/extract-text-content result)
         grammar   (when (and text (not is-error)) (tool-grammar name arguments))
-        label     (str name (when (seq summary) (str " " (util/truncate (first (str/split-lines (str summary))) 80))))]
+        bash?     (contains? #{"Bash" "bash"} name)
+        label     (str name (when (seq summary)
+                              (str " " (if bash?
+                                         (str summary)
+                                         (util/truncate (first (str/split-lines (str summary))) 80)))))]
     [:div {:class ["post" "post--tool"]}
      [:details {:class ["tool-call-block"] :open (boolean (expanded-tools name))}
-      [:summary {:class ["tool-call-toggle"]}
+      [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
-       [:span {:class ["tool-call-toggle-label"]} label]
+       [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))} label]
        (cond
          running? (spinner)
          is-error [:span {:class ["error-text"]} " error"])]

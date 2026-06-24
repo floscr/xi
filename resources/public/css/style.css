@@ -766,6 +766,18 @@ body {
   flex: 1;
 }
 
+/* Bash: show the full command instead of clipping it to one line. */
+.tool-call-toggle--wrap {
+  align-items: flex-start;
+}
+
+.tool-call-toggle-label--wrap {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .tool-call-content {
   padding: 0 0 var(--size-2);
   animation: fadeSlideIn 0.15s ease-out;
