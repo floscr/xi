@@ -4464,6 +4464,11 @@ a.sidebar-menu-item {
   scrollbar-color: var(--bg-2) transparent;
 }
 
+/* Suppress shadow-cljs dev HUD "Stale Output" / connection-error banner. */
+#shadow-connection-error {
+  display: none !important;
+}
+
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
