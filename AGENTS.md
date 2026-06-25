@@ -2,6 +2,13 @@
 
 Personal coding agent in ClojureScript + Bun.
 
+> **STOP — before you start, stop, restart, or debug ANY process (server,
+> shadow-cljs watch, compile), run `bb check` FIRST.** It prints what's running,
+> where (which tmux session + port), and exactly which `bb` task to use. **Never
+> start services by hand** (`bun target/main.js ...`, `npx shadow-cljs ...`) and
+> never `kill` them by PID — that orphans processes outside the tmux sessions
+> and has caused stuck servers before. Always use the `bb` tasks below.
+
 ## Build
 
 **Always use `bb` tasks for building — never call `npx shadow-cljs` directly.**
@@ -31,7 +38,10 @@ It reports: listening ports (7474 main · 7475 personal · 8100 dev-http · 9630
 shadow), headless bun server processes, shadow-cljs watch processes, and the
 status + recent pane logs of all three tmux sessions — `xi` (`bb dev`,
 standalone watch / compile targets), `xi-serve` (`bb serve`), and `xi-pa`
-(`bb serve:personal`). Read its output before deciding to start/stop anything.
+(`bb serve:personal`). It then prints a **guidance block** mapping what runs
+where to the exact `bb` task that manages it (start/restart/stop/logs), plus the
+rules for when to restart vs. refresh. Read its output before deciding to
+start/stop anything.
 
 ### Dev Server (shadow-cljs watch) is Usually Already Running
 

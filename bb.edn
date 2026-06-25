@@ -100,7 +100,7 @@
            (td/restart (assoc serve-config :print [(str "Web: http://" ip ":7474")])))}
 
   check
-  {:doc "Inspect all Xi processes: listening ports, server + shadow-cljs procs, and recent tmux pane logs (dev/serve/personal)"
+  {:doc "Inspect all Xi processes (ports, server + shadow procs, tmux pane logs) AND print agent guidance: what runs where + which bb task to use. Run before starting/stopping anything."
    :task (do
            (println "── Listening ports (7474 main · 7475 personal · 8100 dev-http · 9630 shadow) ──")
            (shell {:continue true} "bash" "-c"
@@ -122,4 +122,20 @@
            (td/logs serve-config {:lines 40})
            (println "=== xi-pa session (bb serve:personal — personal agent) ===")
            (td/status pa-serve-config)
-           (td/logs pa-serve-config {:lines 40}))}}}
+           (td/logs pa-serve-config {:lines 40})
+           (println)
+           (println "── How to act on this (agents: read before starting/stopping anything) ──")
+           (println "  Never start services by hand (no raw `bun target/main.js ...`,")
+           (println "  no `npx shadow-cljs ...`). Only the bb tasks manage processes so the")
+           (println "  tmux sessions stay consistent. Map of what runs where:")
+           (println)
+           (println "  port 7474  main server      session xi-serve  bb serve   / serve:restart / serve:stop")
+           (println "  port 7475  personal agent   session xi-pa     bb serve:personal[:restart|:stop]")
+           (println "  shadow watch (main+web)     session xi-serve  auto-compiles on save; no manual build")
+           (println "  standalone watch (no srv)   session xi        bb dev / dev:restart / dev:stop")
+           (println)
+           (println "  - port 7474 already listening? Don't start a server — use http://localhost:7474.")
+           (println "  - changed server-side cljs (xi.server/core/agent/ext/provider)? bb serve:restart.")
+           (println "  - changed web client cljs? Just refresh the browser (hot-reload).")
+           (println "  - need logs? bb dev:logs / bb serve:* panes above, or `bb check` again.")
+           (println "  - never `kill <pid>` a watch/server — use the matching bb *:stop / *:restart task."))}}}
