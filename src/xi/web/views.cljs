@@ -1747,10 +1747,19 @@
                :replicant/key (str "sidebar-content-" open?)}}
       (when open?
         (list
-         (when (seq projects)
+         (when (not pa?)
            (sidebar/sidebar-group {:label "Projects"}
              (for [p projects]
-               (project-dir-card dispatch! p))))
+               (project-dir-card dispatch! p))
+             [:div {:class ["project-card"]
+                    :replicant/key "all-projects"
+                    :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
+              [:div {:class ["project-card-icon"]}
+               (icon/icon {:icon-name :layout-dashboard :size :sm})]
+              [:div {:class ["project-card-info"]}
+               [:span {:class ["project-card-name"]} "All projects"]]
+              [:div {:class ["project-card-chevron"]}
+               (icon/icon {:icon-name :chevron-right :size :sm})]]))
          (sidebar/sidebar-group {:label "Recent"}
            (if (seq cards)
              (for [c cards]
