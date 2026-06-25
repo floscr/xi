@@ -971,6 +971,27 @@ body {
 }
 .project-card-status:empty { display: none; }
 
+/* Trailing "new chat" button on project-directory cards (replaces the old
+   chevron): clicking the card navigates into the project, this button starts
+   a fresh chat. stopPropagation keeps the two actions separate. */
+.project-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: var(--size-1);
+  border-radius: var(--radius-1, 6px);
+  color: var(--fg-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.project-card-action:hover {
+  background-color: var(--bg-2);
+  color: var(--fg-0);
+}
+
 .project-card-name { font-weight: 600; }
 
 .session-delete-btn {

@@ -1241,8 +1241,12 @@
    [:div {:class ["project-card-info"]}
     [:span {:class ["project-card-name"]} (shorten-path path)]
     [:span {:class ["project-card-path"]} path]]
-   [:div {:class ["project-card-chevron"]}
-    (icon/icon {:icon-name :chevron-right :size :sm})]])
+   [:button {:class ["project-card-action"]
+             :title "New chat"
+             :on {:click (fn [^js e]
+                           (.stopPropagation e)
+                           (dispatch! {:type :projects/new-session :cwd path}))}}
+    (icon/icon {:icon-name :plus :size :sm})]])
 
 
 (defn- session-matches?

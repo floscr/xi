@@ -422,7 +422,8 @@
           :projects/new-session   (fn [st {:keys [cwd]}]
                                     {:state (-> st
                                                 (assoc :web/route {:page :chat :session-id nil})
-                                                (assoc :web/timeline-window nil))
+                                                (assoc :web/timeline-window nil)
+                                                (assoc :web/sidebar-open? false))
                                      :effects [[:history/push {:route {:page :chat}}]
                                                [:ws/send {:type :room/join :target "new" :cwd cwd}]]})}))
 
