@@ -47,12 +47,16 @@
   {:effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
 
 (defn- room-new
-  "Start a fresh room and switch to the chat view; the real session id fills
-   the URL once :room/joined arrives."
+  "Open a fresh *virtual* chat: switch to the chat view but create no server
+   room yet. The room stays client-only (launch header, no spinner, nothing to
+   clean up) until the first prompt, which fires :room/join + submits via
+   submit-pending / pending-submit-tap."
   [st _]
-  {:state   (assoc st :web/route {:page :chat :session-id nil})
-   :effects [[:history/push {:route {:page :chat}}]
-             [:ws/send {:type :room/join :target "new"}]]})
+  {:state   (-> st
+                (assoc :web/route {:page :chat :session-id nil})
+                (assoc :web/pending-room {:cwd nil})
+                (assoc :web/timeline-window nil))
+   :effects [[:history/push {:route {:page :chat}}]]})
 
 (defn- counts-result
   "Store per-session response counts from a :session/counts reply.
@@ -120,12 +124,23 @@
   {:state (dissoc st :web/lightbox)})
 
 (defn- submit-pending
-  "Stash a message when the user submits before the room exists (cached
-   session view). The pending-submit-tap fires it after :room/joined."
+  "Stash a message submitted before its room exists; pending-submit-tap fires
+   it once :room/joined arrives. Two cases:
+   - virtual new room (no session-id, no live room): create the server room
+     now via :room/join \"new\" (carrying the stashed cwd).
+   - cached session view (session-id set): the join is already in flight from
+     navigation, so just stash and wait."
   [st {:keys [session-id text images]}]
-  {:state (assoc st :web/pending-submit
-                 (cond-> {:session-id session-id :text text}
-                   (seq images) (assoc :images images)))})
+  (let [virtual? (and (nil? session-id) (nil? (state/active-room st)))
+        cwd      (get-in st [:web/pending-room :cwd])]
+    (cond-> {:state (-> st
+                        (assoc :web/pending-submit
+                               (cond-> {:session-id session-id :text text}
+                                 (seq images) (assoc :images images)))
+                        (dissoc :web/pending-room))}
+      virtual?
+      (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new"}
+                                   cwd (assoc :cwd cwd))]]))))
 
 (defn- submit-clear-pending [st _]
   {:state (dissoc st :web/pending-submit)})
@@ -422,10 +437,10 @@
           :projects/new-session   (fn [st {:keys [cwd]}]
                                     {:state (-> st
                                                 (assoc :web/route {:page :chat :session-id nil})
+                                                (assoc :web/pending-room {:cwd cwd})
                                                 (assoc :web/timeline-window nil)
                                                 (assoc :web/sidebar-open? false))
-                                     :effects [[:history/push {:route {:page :chat}}]
-                                               [:ws/send {:type :room/join :target "new" :cwd cwd}]]})}))
+                                     :effects [[:history/push {:route {:page :chat}}]]})}))
 
 
 (defn- web-effects []
