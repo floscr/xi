@@ -145,6 +145,7 @@
                                      ;; Clear old data when drilling into a new dir
                                      (and dir (not= dir :all))
                                      (-> (dissoc :web/project-sessions)
+                                         (update :web/search dissoc :project-sessions)
                                          (assoc :web/project-sessions-loading? true)))))
      :effects effects}))
 
