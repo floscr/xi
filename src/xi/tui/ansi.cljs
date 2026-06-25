@@ -242,15 +242,26 @@
         padding (max 0 (- width vis))]
     (str line (apply str (repeat padding " ")))))
 
+;; Light default foreground paired with dark block backgrounds. Without it,
+;; untokenized (:text) characters — and any text after an ANSI reset — fall
+;; back to the terminal's default fg, which is dark on light terminals and so
+;; becomes invisible on the dark code/tool-block background. Matches the
+;; syntax theme's default fg (:name-var / :punctuation).
+(def code-default-fg (str ESC "38;2;216;222;233m"))
+
 (defn apply-bg-to-line
-  "Apply background color to a full-width line.
+  "Apply background (and a default foreground) to a full-width line.
    bg-code is the ANSI escape sequence to set the background (e.g. \"\\033[48;5;236m\").
-   Handles internal resets by re-applying the bg after each \\033[0m."
-  [line width bg-code]
-  (let [padded (pad-to-width line width)]
-    (str bg-code
-         (str/replace padded (str ESC "0m") (str ESC "0m" bg-code))
-         ESC "0m")))
+   fg-code is the default foreground for untokenized text (defaults to
+   code-default-fg so plain text stays readable on light terminals).
+   Handles internal resets by re-applying both bg and fg after each \\033[0m."
+  ([line width bg-code] (apply-bg-to-line line width bg-code code-default-fg))
+  ([line width bg-code fg-code]
+   (let [padded (pad-to-width line width)
+         open   (str bg-code fg-code)]
+     (str open
+          (str/replace padded (str ESC "0m") (str ESC "0m" open))
+          ESC "0m"))))
 
 (defn- skip-ansi-seq
   "Return the end index of an ANSI escape sequence starting at i."

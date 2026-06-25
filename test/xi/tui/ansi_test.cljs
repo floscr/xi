@@ -1,5 +1,6 @@
 (ns xi.tui.ansi-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.tui.ansi :as ansi]))
 
 (deftest wrap-text-propagates-sgr
@@ -108,3 +109,33 @@
     (is (= 8 (ansi/visible-width "abcd\t"))))
   (testing "tabs with ANSI codes"
     (is (= 4 (ansi/visible-width "\033[31m\t\033[0m")))))
+
+;; ── apply-bg-to-line: readable default foreground on dark blocks ─────────────
+
+(def ^:private ESC "\033[")
+(def ^:private reset (str ESC "0m"))
+(def ^:private code-bg (str ESC "48;2;38;44;55m"))
+
+(deftest apply-bg-to-line-sets-default-fg
+  (testing "opens the line with both bg and the light default fg so untokenized
+            text stays readable on light terminals"
+    (let [out (ansi/apply-bg-to-line "plain" 10 code-bg)]
+      (is (str/starts-with? out (str code-bg ansi/code-default-fg))
+          "line begins with bg + default fg")
+      (is (str/ends-with? out reset)))))
+
+(deftest apply-bg-to-line-reapplies-fg-after-reset
+  (testing "after a syntax token's reset, both bg AND the default fg are
+            re-applied so trailing plain text is not dropped to terminal default"
+    (let [kw   (str ESC "38;2;129;161;193m")
+          line (str kw "if" reset " plain")
+          out  (ansi/apply-bg-to-line line 20 code-bg)]
+      (is (str/includes? out (str reset code-bg ansi/code-default-fg))
+          "bg + default fg re-applied immediately after the inner reset"))))
+
+(deftest apply-bg-to-line-respects-explicit-fg
+  (testing "an explicit fg-code overrides the default"
+    (let [fg  (str ESC "38;2;1;2;3m")
+          out (ansi/apply-bg-to-line "x" 5 code-bg fg)]
+      (is (str/starts-with? out (str code-bg fg)))
+      (is (not (str/includes? out ansi/code-default-fg))))))

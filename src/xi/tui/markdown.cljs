@@ -6,7 +6,6 @@
             [xi.markdown.ansi :as md-ansi]))
 
 (def ^:private code-bg "\033[48;2;38;44;55m")
-(def ^:private code-fg "\033[38;2;255;255;255m")
 
 (defn- render-md-text
   "Render markdown text to ANSI-formatted lines.
@@ -42,8 +41,7 @@
                           lines (mapv (fn [{:keys [text code?]}]
                                         (let [padded (str left-pad text)]
                                           (if code?
-                                            (ansi/apply-bg-to-line
-                                             (str code-fg padded) width code-bg)
+                                            (ansi/apply-bg-to-line padded width code-bg)
                                             padded)))
                                       entries)
                           result (if (empty? lines) [""] lines)]
