@@ -1058,6 +1058,33 @@
       (cond-> {:type :route/navigate :page :home}
         cwd (assoc :dir cwd)))))
 
+(defn- launch-header
+  "Welcome/info block shown at the top of an empty chat — mirrors the TUI
+   launch header (Xi banner, model, cwd, AGENTS.md files)."
+  [room model pa?]
+  (let [cwd          (:cwd room)
+        agents-files (get-in room [:agent :agents-files])]
+    [:div {:class ["launch-header"]}
+     [:div {:class ["launch-title"]}
+      [:span {:class ["launch-brand"]} "Xi"]
+      [:span {:class ["launch-tagline"]}
+       (if pa? " — personal agent" " — coding agent")]]
+     (when model
+       [:div {:class ["launch-meta"]}
+        [:span {:class ["launch-label"]} "Model: "]
+        [:span {:class ["launch-value"]} model]])
+     (when cwd
+       [:div {:class ["launch-meta"]}
+        [:span {:class ["launch-label"]} "cwd: "]
+        [:span {:class ["launch-value"]} (shorten-path cwd)]])
+     [:div {:class ["launch-hint"]} "Type /help for commands."]
+     (when-let [files (seq agents-files)]
+       [:div {:class ["launch-meta"]}
+        [:span {:class ["launch-label"]} "Loaded "]
+        [:span {:class ["launch-value"]} (str (count files) " AGENTS.md")]
+        [:span {:class ["launch-label"]}
+         (str " file" (when (> (count files) 1) "s"))]])]))
+
 (defn- chat-view [state dispatch!]
   (let [room    (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -1065,7 +1092,9 @@
         history (or (:history room) (:history cached))
         busy?   (get-in room [:agent :busy?])
         model   (or (get-in room [:agent :model]) (:model cached))
-        ready?  (or room (seq history))
+        new?    (nil? sid)
+        ready?  (or room (seq history) new?)
+        pa?     (get-in state [:lobby :personal-agent?])
         dkey    (draft-key state)
         model-list (:web/model-list state)
         buffers    (get-in room [:ui :buffers])
@@ -1115,6 +1144,8 @@
                   win     (or (:web/timeline-window state) initial-window-size)
                   start   (max 0 (- total win))]
               (list
+               (when (and (zero? total) (not (:web/optimistic state)))
+                 (launch-header room model pa?))
                (when (pos? start)
                  [:div {:class ["load-earlier"]}
                   (button/button
