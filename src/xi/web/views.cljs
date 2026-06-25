@@ -394,10 +394,11 @@
 (defn draft-key
   "Per-chat identity key for state that should be scoped to a single chat
    (drafts, scroll position, …). The room's session id once joined, else the
-   route's session id, else `:new` for a freshly-created chat."
+   route's session id, else the virtual room's id, else `:new`."
   [state]
   (or (get-in (state/active-room state) [:session :id])
       (get-in state [:web/route :session-id])
+      (get-in state [:web/pending-room :id])
       :new))
 
 (defn known-command?

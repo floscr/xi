@@ -54,7 +54,7 @@
   [st _]
   {:state   (-> st
                 (assoc :web/route {:page :chat :session-id nil})
-                (assoc :web/pending-room {:cwd nil})
+                (assoc :web/pending-room {:id (random-uuid) :cwd nil})
                 (assoc :web/timeline-window nil))
    :effects [[:history/push {:route {:page :chat}}]]})
 
@@ -437,7 +437,7 @@
           :projects/new-session   (fn [st {:keys [cwd]}]
                                     {:state (-> st
                                                 (assoc :web/route {:page :chat :session-id nil})
-                                                (assoc :web/pending-room {:cwd cwd})
+                                                (assoc :web/pending-room {:id (random-uuid) :cwd cwd})
                                                 (assoc :web/timeline-window nil)
                                                 (assoc :web/sidebar-open? false))
                                      :effects [[:history/push {:route {:page :chat}}]]})}))

@@ -133,6 +133,12 @@
                 ;; counts-result.
                 (and (#{:home :gtd} page) active-sid)
                 (assoc :web/pending-read active-sid)
+                ;; Leaving the virtual new chat for a real destination (a
+                ;; session, home, or gtd): drop its pending-room so its draft
+                ;; can't resurface in another chat. A fresh virtual chat gets a
+                ;; new pending-room (with a new id) via :room/new.
+                (or (not= page :chat) session-id)
+                (dissoc :web/pending-room)
                 ;; Sync file/task drill-down from the route
                 (= page :gtd) (-> (assoc :web/gtd-file file)
                                   (assoc :web/gtd-task-id task-id))
