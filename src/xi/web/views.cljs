@@ -1087,14 +1087,31 @@
        (str " file" (when (> (count files) 1) "s"))]])])
 
 (defn- chat-view [state dispatch!]
-  (let [room    (state/active-room state)
+  (let [active  (state/active-room state)
         sid     (get-in state [:web/route :session-id])
+        ;; Mid-switch the client stays attached to the previous room until
+        ;; :room/joined for the target arrives. Only treat the active room as
+        ;; the one being viewed when its session id matches the route — a new
+        ;; chat (sid nil) only adopts a not-yet-saved room (session id nil),
+        ;; never the previous large room we're still attached to. Otherwise
+        ;; we'd render the old room's history instead of a spinner / launch
+        ;; header / the target's cached history.
+        room    (when (= (get-in active [:session :id]) sid)
+                  active)
         cached  (get-in state [:web/cache sid])
         history (or (:history room) (:history cached))
         busy?   (get-in room [:agent :busy?])
         model   (or (get-in room [:agent :model]) (:model cached))
         new?    (nil? sid)
-        ready?  (or room (seq history) new?)
+        ;; An existing session whose history hasn't streamed in yet (and that
+        ;; has no optimistic/pending content to show) is still loading — keep
+        ;; the spinner up instead of flashing the empty-room launch header for
+        ;; a frame before the messages render.
+        loading? (and (not new?)
+                      (empty? history)
+                      (not (:web/optimistic state))
+                      (not (:web/pending-submit state)))
+        ready?  (not loading?)
         pa?     (get-in state [:lobby :personal-agent?])
         dkey    (draft-key state)
         model-list (:web/model-list state)
