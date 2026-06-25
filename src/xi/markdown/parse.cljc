@@ -1,7 +1,8 @@
 (ns xi.markdown.parse
   "Markdown parser — produces an AST of block and inline tokens.
    Works in both Clojure and ClojureScript."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xi.url :as url]))
 
 ;; ---------------------------------------------------------------------------
 ;; Inline parsing
@@ -75,12 +76,30 @@
   (or (= ch \`) (= ch \*) (= ch \_) (= ch \~) (= ch \[)))
 
 (defn- word-char?
-  "True if ch is alphanumeric or underscore — i.e. a word character."
+  "True if ch is alphanumeric or underscore — i.e. a word character.
+   Uses a regex so it works in both Clojure (char) and ClojureScript
+   (single-char string), where `(int ch)` is unreliable."
   [ch]
-  (or (<= (int \a) (int ch) (int \z))
-      (<= (int \A) (int ch) (int \Z))
-      (<= (int \0) (int ch) (int \9))
-      (= ch \_)))
+  (boolean (re-matches #"[A-Za-z0-9_]" (str ch))))
+
+;; ---------------------------------------------------------------------------
+;; Bare URL autolinks (http://… / https://…)
+;; ---------------------------------------------------------------------------
+
+(defn- autolink-start?
+  "True if a bare-URL autolink begins at idx: a scheme matches and the scheme
+   isn't embedded in a surrounding word (e.g. \"xhttp://…\" is not a link)."
+  [^String s idx]
+  (boolean
+   (and (url/scheme-at s idx)
+        (not (and (pos? idx) (word-char? (.charAt s (dec idx))))))))
+
+(defn- parse-autolink
+  "Parse a bare URL (http:// or https://) starting at idx into a :link token."
+  [^String s idx]
+  (when (autolink-start? s idx)
+    (when-let [[url end] (url/url-at s idx)]
+      [[:link {:url url :text url}] end])))
 
 (defn- try-parse-at
   "Try to parse an inline token at position idx."
@@ -98,6 +117,7 @@
                (parse-delimited s idx "_" :italic)))
       \~ (parse-delimited s idx "~~" :strike)
       \[ (parse-link s idx)
+      \h (parse-autolink s idx)
       nil)))
 
 (defn parse-inline
@@ -113,13 +133,17 @@
           (if result
             (let [[token next-idx] result]
               (recur (long next-idx) (conj! acc token)))
-            ;; Collect plain text until next special char
+            ;; Collect plain text until the next special char or bare URL.
             (let [end (loop [i (inc idx)]
                         (if (>= i len)
                           i
-                          (if (special-char? (.charAt s i))
-                            i
-                            (recur (inc i)))))]
+                          (let [ch (.charAt s i)]
+                            (if (or (special-char? ch)
+                                    ;; Stop before a bare URL autolink so the
+                                    ;; next iteration parses it as a :link.
+                                    (and (= ch \h) (autolink-start? s i)))
+                              i
+                              (recur (inc i))))))]
               (recur end (conj! acc (subs s idx end))))))))))
 
 ;; ---------------------------------------------------------------------------

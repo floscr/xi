@@ -35,3 +35,40 @@
 (deftest non-table-pipes-stay-paragraph
   (let [blocks (parse/parse "this | has | pipes but no separator")]
     (is (= [:paragraph] (mapv first blocks)))))
+
+(deftest markdown-link-test
+  (testing "[text](url) still parses to a :link token"
+    (is (= [[:link {:url "https://example.com" :text "site"}]]
+           (parse/parse-inline "[site](https://example.com)")))))
+
+(deftest bare-url-autolink-test
+  (testing "a standalone bare URL becomes a :link token (text == url)"
+    (is (= [[:link {:url "https://example.com" :text "https://example.com"}]]
+           (parse/parse-inline "https://example.com"))))
+
+  (testing "http (not just https) is supported"
+    (is (= [[:link {:url "http://example.com" :text "http://example.com"}]]
+           (parse/parse-inline "http://example.com"))))
+
+  (testing "a URL embedded mid-sentence is split out from surrounding text"
+    (is (= ["see " [:link {:url "https://x.com" :text "https://x.com"}] " now"]
+           (parse/parse-inline "see https://x.com now"))))
+
+  (testing "trailing sentence punctuation is not part of the URL"
+    (is (= [[:link {:url "https://x.com" :text "https://x.com"}] "."]
+           (parse/parse-inline "https://x.com.")))
+    (is (= ["(" [:link {:url "https://x.com" :text "https://x.com"}] ")"]
+           (parse/parse-inline "(https://x.com)"))))
+
+  (testing "balanced parens inside a URL are preserved"
+    (is (= [[:link {:url "https://en.wikipedia.org/wiki/Foo_(bar)"
+                    :text "https://en.wikipedia.org/wiki/Foo_(bar)"}]]
+           (parse/parse-inline "https://en.wikipedia.org/wiki/Foo_(bar)"))))
+
+  (testing "a scheme embedded in a word is not treated as a URL"
+    (is (= ["xhttps://example.com"]
+           (parse/parse-inline "xhttps://example.com"))))
+
+  (testing "non-URL words starting with h are left as plain text"
+    (is (= ["hello there"]
+           (parse/parse-inline "hello there")))))

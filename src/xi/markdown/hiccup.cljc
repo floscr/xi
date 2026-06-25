@@ -21,7 +21,7 @@
         :italic (into [:em] (map render-inline-token content))
         :strike (into [:del] (map render-inline-token content))
         :code [:code content]
-        :link [:a {:href (:url content)} (:text content)]
+        :link [:a {:href (:url content) :target "_blank" :rel "noopener noreferrer"} (:text content)]
         ;; fallback
         (str token)))
     :else (str token)))

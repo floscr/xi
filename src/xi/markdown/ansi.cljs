@@ -24,7 +24,11 @@
         :strike (apply str (map render-inline-token content))
         :code (ansi/fg :accent content)
         :link (let [{:keys [text url]} content]
-                (str text " " (ansi/fg :dim url)))
+                ;; Bare URL (text == url): render once in accent so terminals
+                ;; that auto-detect URLs can make it clickable.
+                (if (= text url)
+                  (ansi/fg :accent url)
+                  (str text " " (ansi/fg :dim url))))
         (str token)))
     :else (str token)))
 
