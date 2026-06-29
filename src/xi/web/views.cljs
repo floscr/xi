@@ -1051,7 +1051,10 @@
   (if (get-in state [:lobby :personal-agent?])
     {:type :route/navigate :page :home}
     (let [sid (get-in state [:web/route :session-id])
-          cwd (or (:cwd (state/active-room state))
+          ;; A virtual new chat started from a project listing carries that
+          ;; folder in :web/pending-room — go back to it instead of the root.
+          cwd (or (get-in state [:web/pending-room :cwd])
+                  (:cwd (state/active-room state))
                   (some (fn [s] (when (= sid (:session-id s)) (:cwd s)))
                         (get-in state [:lobby :sessions]))
                   (some (fn [r] (when (= sid (:session-id r)) (:cwd r)))
