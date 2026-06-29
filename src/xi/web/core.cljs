@@ -126,13 +126,17 @@
 (defn- submit-pending
   "Stash a message submitted before its room exists; pending-submit-tap fires
    it once :room/joined arrives. Two cases:
-   - virtual new room (no session-id, no live room): create the server room
-     now via :room/join \"new\" (carrying the stashed cwd).
+   - virtual new room (a :web/pending-room is set): create the server room now
+     via :room/join \"new\" (carrying the stashed cwd). We detect this by the
+     pending-room, not by a missing active-room — a new chat is opened while
+     still attached to the previous room, so active-room is usually non-nil;
+     keying off it would fire the prompt into that previous room.
    - cached session view (session-id set): the join is already in flight from
      navigation, so just stash and wait."
   [st {:keys [session-id text images]}]
-  (let [virtual? (and (nil? session-id) (nil? (state/active-room st)))
-        cwd      (get-in st [:web/pending-room :cwd])]
+  (let [pending  (:web/pending-room st)
+        virtual? (and (nil? session-id) (some? pending))
+        cwd      (:cwd pending)]
     (cond-> {:state (-> st
                         (assoc :web/pending-submit
                                (cond-> {:session-id session-id :text text}
