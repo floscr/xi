@@ -1024,6 +1024,56 @@
   (sidebar/sidebar-mobile-toggle
    {:on-click (fn [_] (dispatch! {:type :sidebar/toggle}))}))
 
+(defn- more-vertical-icon
+  "Inline three-dots (vertical ellipsis) SVG — there is no ellipsis icon in the
+   shared icon set, so we render a Lucide-compatible one matching the icon
+   component's stroke style and sizing."
+  []
+  [:svg {:class ["icon"]
+         :xmlns "http://www.w3.org/2000/svg"
+         :viewBox "0 0 24 24"
+         :fill "none"
+         :stroke "currentColor"
+         :stroke-width "2"
+         :stroke-linecap "round"
+         :stroke-linejoin "round"
+         :aria-hidden "true"}
+   [:circle {:cx "12" :cy "5" :r "1"}]
+   [:circle {:cx "12" :cy "12" :r "1"}]
+   [:circle {:cx "12" :cy "19" :r "1"}]])
+
+(defn- overflow-menu
+  "Three-dots overflow menu shown on the right of every topbar. Holds the
+   debug-copy action (which used to be a standalone topbar button). Toggles the
+   :web/overflow-menu? app state; a backdrop closes it on outside click."
+  [dispatch! state]
+  (let [open? (:web/overflow-menu? state)
+        room  (state/active-room state)]
+    [:div {:class ["overflow-menu-wrap"]}
+     [:button {:class ["icon-btn" "icon-btn--sm"]
+               :title "More"
+               :on {:click (fn [e]
+                             (.stopPropagation e)
+                             (dispatch! {:type :overflow/toggle}))}}
+      (more-vertical-icon)]
+     (when open?
+       (list
+        [:div {:class ["overflow-menu-backdrop"]
+               :replicant/key "overflow-backdrop"
+               :on {:click (fn [_] (dispatch! {:type :overflow/close}))}}]
+        [:div {:class ["overflow-menu"]
+               :replicant/key "overflow-menu"}
+         [:button {:class ["overflow-menu-item"]
+                   :on {:click (fn [e]
+                                 (.stopPropagation e)
+                                 (dispatch! {:type :overflow/close})
+                                 (let [text (commands/debug-text room)]
+                                   (if ios?
+                                     (dispatch! {:type :copy/open :text text})
+                                     (copy-to-clipboard! text))))}}
+          (icon/icon {:icon-name :copy :size :sm})
+          [:span "Copy debug info"]]]))]))
+
 (defn- optimistic-post
   "An optimistic user bubble rendered at the tail of the timeline the instant a
    prompt is sent, before the server echoes the real :user entry back (instant
@@ -1134,19 +1184,12 @@
           model])]
       (when model-list
         (model-selector dispatch! (:id room) model-list model))
-      (when room
-        [:button {:class ["icon-btn" "icon-btn--sm"]
-                  :on {:click (fn [_]
-                                (let [text (commands/debug-text room)]
-                                  (if ios?
-                                    (dispatch! {:type :copy/open :text text})
-                                    (copy-to-clipboard! text))))}}
-         (icon/icon {:icon-name :copy :size :md})])
       (when standalone?
         [:button {:class ["icon-btn" "icon-btn--sm"]
                   :on {:click (fn [_] (.reload js/location))}}
          (icon/icon {:icon-name :refresh :size :md})])
-      (offline-badge state)]
+      (offline-badge state)
+      (overflow-menu dispatch! state)]
      (when has-tabs?
        (tab-bar dispatch! (:id room) active-buf buffers))
      (case active-buf
@@ -1353,7 +1396,8 @@
       [:button {:class ["icon-btn"]
                 :title "New session"
                 :on {:click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}}
-       (icon/icon {:icon-name :plus :size :md})]]
+       (icon/icon {:icon-name :plus :size :md})]
+      (overflow-menu dispatch! state)]
      [:div {:class ["home"]}
       (when-not loading?
         (search-box dispatch! :project-sessions "Search sessions…" raw-query))
@@ -1403,7 +1447,8 @@
       (when connected?
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :room/new}))}}
-         (icon/icon {:icon-name :plus :size :md})])]
+         (icon/icon {:icon-name :plus :size :md})])
+      (overflow-menu dispatch! state)]
      [:div {:class ["home"]}
       (search-box dispatch! :all-sessions "Search sessions\u2026" raw-query)
       (cond
@@ -1435,7 +1480,8 @@
       (when connected?
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :room/new}))}}
-         (icon/icon {:icon-name :plus :size :md})])]
+         (icon/icon {:icon-name :plus :size :md})])
+      (overflow-menu dispatch! state)]
      [:div {:class ["home"]}
       (cond
         (not connected?)
@@ -1494,7 +1540,8 @@
           (when connected?
             [:button {:class ["icon-btn"]
                       :on {:click (fn [_] (dispatch! {:type :room/new}))}}
-             (icon/icon {:icon-name :plus :size :md})])]
+             (icon/icon {:icon-name :plus :size :md})])
+          (overflow-menu dispatch! state)]
          [:div {:class ["home"]}
           (cond
             (not connected?)
@@ -1630,7 +1677,7 @@
   (when (and (string? html-str) (seq html-str))
     [:div {:class ["org-body"] :innerHTML html-str}]))
 
-(defn- gtd-task-detail [dispatch! task]
+(defn- gtd-task-detail [dispatch! state task]
   (let [{:keys [title todo-state html-body file cwd tags]} task]
     [:div {:class ["container"] :replicant/key "gtd-detail"}
      [:div {:class ["topbar"]}
@@ -1638,7 +1685,8 @@
                 :on {:click (fn [_]
                               (dispatch! {:type :nav/back :fallback {:page :gtd :file file}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
-      [:div {:class ["topbar-title"]} "Task"]]
+      [:div {:class ["topbar-title"]} "Task"]
+      (overflow-menu dispatch! state)]
      [:div {:class ["gtd-detail-scroll"]}
       [:div {:class ["gtd-detail"]}
        [:h2 {:class ["gtd-detail-title"]} title]
@@ -1684,7 +1732,7 @@
     (cond
       ;; Task detail view
       selected-task
-      (gtd-task-detail dispatch! selected-task)
+      (gtd-task-detail dispatch! state selected-task)
 
       ;; Task list / file list
       :else
@@ -1704,7 +1752,8 @@
            "Tasks")]
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :gtd/web-list}))}}
-         (icon/icon {:icon-name :refresh :size :md})]]
+         (icon/icon {:icon-name :refresh :size :md})]
+        (overflow-menu dispatch! state)]
        [:div {:class ["home"]}
         (cond
           loading?

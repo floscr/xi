@@ -354,6 +354,8 @@
                                     {:state (assoc-in st [:web/search key] query)})
           :sidebar/toggle        (fn [st _] {:state (update st :web/sidebar-open? not)})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
+          :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
+          :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
           :gtd/web-list          (fn [st ev]
                                     {:state (assoc st :web/gtd-loading? true)
                                      :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
