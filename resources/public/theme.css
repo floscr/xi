@@ -4461,7 +4461,7 @@ a.sidebar-menu-item {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--bg-2) transparent;
+  scrollbar-color: var(--fg-2) transparent;
 }
 
 /* Suppress shadow-cljs dev HUD "Stale Output" / connection-error banner. */
@@ -4470,8 +4470,8 @@ a.sidebar-menu-item {
 }
 
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -4479,12 +4479,12 @@ a.sidebar-menu-item {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-2);
+  background: var(--fg-2);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--fg-2);
+  background: var(--fg-1);
 }
 
 
