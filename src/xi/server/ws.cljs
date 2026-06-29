@@ -37,7 +37,7 @@
 (def ^:private lobby-relevant
   "Events after which lobby (roomless) clients get a fresh :lobby/state."
   #{:room/create :room/close :room/attach :room/leave
-    :prompt/submit :agent/turn-end :client/disconnect
+    :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
     :ui/dialog-open :ui/dialog-response})
 
 (def ^:private pre-join-types
@@ -252,10 +252,20 @@
 
       ;; Sessions for a specific project CWD.
       :projects/web-sessions-reply
-      (fn [_ {:keys [client-id cwd]}]
-        (let [sessions (->> (session/list-sessions cwd)
-                            (mapv #(select-keys % [:session-id :name :cwd
-                                                   :last-accessed :timestamp :source])))]
+      (fn [{:keys [state]} {:keys [client-id cwd]}]
+        (let [;; Provider session ids held by live rooms must be hidden from
+              ;; the saved-session list to avoid a duplicate card during the
+              ;; first agent turn before Xi's own :session/sync has run.
+              live-pids (into #{}
+                              (keep (fn [[_ room]]
+                                      (get-in room [:session :provider-session-id])))
+                              (:rooms state))
+              sessions (cond->> (session/list-sessions cwd)
+                         (seq live-pids)
+                         (filterv #(not (contains? live-pids (:session-id %))))
+                         :always
+                         (mapv #(select-keys % [:session-id :name :cwd
+                                                :last-accessed :timestamp :source])))]
           (send! client-id (wire/encode {:type :projects/web-sessions-result
                                          :cwd cwd
                                          :sessions sessions}))))
