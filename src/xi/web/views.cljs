@@ -1067,6 +1067,13 @@
                    :on {:click (fn [e]
                                  (.stopPropagation e)
                                  (dispatch! {:type :overflow/close})
+                                 (dispatch! {:type :room/new}))}}
+          (icon/icon {:icon-name :plus :size :sm})
+          [:span "New chat"]]
+         [:button {:class ["overflow-menu-item"]
+                   :on {:click (fn [e]
+                                 (.stopPropagation e)
+                                 (dispatch! {:type :overflow/close})
                                  (let [text (commands/debug-text room)]
                                    (if ios?
                                      (dispatch! {:type :copy/open :text text})
