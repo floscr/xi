@@ -132,7 +132,7 @@
   (and (= :tool-call kind)
        (boolean (edit-tool-names (some-> tool util/strip-mcp-prefix str/lower-case)))))
 
-(defn- session-edited-files
+(defn session-edited-files
   "Paths (relative to cwd) of files touched via edit/write tool calls in the
    room's history. Used to scope the session diff to files the agent changed,
    rather than every dirty file in the working tree."

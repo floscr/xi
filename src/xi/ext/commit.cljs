@@ -8,7 +8,8 @@
    The commit tool needs user approval, but tool exec-fns can't raise
    dialogs (they only get {:cwd}). So approval is enforced by a tool-gate
    intercept that confirms via the gate ctx before the tool runs."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xi.fx :as fx]))
 
 ;; ── Git plumbing (impure edge) ────────────────────────────────────────────────
 
@@ -21,15 +22,31 @@
                    :cwd (or cwd (.cwd js/process))})]
     (str (.toString (.-stdout proc)))))
 
-(defn- git-overview-sync
-  "Overview of both staged and unstaged changes."
+(defn- changed-entries
+  "[[status path] …] for every changed file (staged, unstaged, untracked),
+   via porcelain status. `status` is the trimmed XY code (M, A, D, ??, …),
+   `path` is relative to cwd."
   [cwd]
-  (let [staged    (git-sync cwd "diff" "--cached" "--stat")
-        unstaged  (git-sync cwd "diff" "--stat")
-        untracked (git-sync cwd "ls-files" "--others" "--exclude-standard")]
-    (str (when (seq (str/trim staged))    (str "Staged:\n" staged))
-         (when (seq (str/trim unstaged))  (str "Unstaged:\n" unstaged))
-         (when (seq (str/trim untracked)) (str "Untracked:\n" untracked)))))
+  (->> (str/split-lines (git-sync cwd "status" "--porcelain"))
+       (remove str/blank?)
+       (map (fn [line] [(str/trim (subs line 0 2)) (subs line 3)]))))
+
+(defn- group-block [label entries]
+  (when (seq entries)
+    (str label "\n"
+         (str/join "\n" (map (fn [[status path]] (str "  " status "\t" path)) entries))
+         "\n")))
+
+(defn- git-overview-sync
+  "Overview of all changes, grouped into files the agent edited this session
+   and everything else."
+  [cwd edited-files]
+  (let [edited?  (set edited-files)
+        entries  (changed-entries cwd)
+        session  (filter (fn [[_ path]] (edited? path)) entries)
+        other    (remove (fn [[_ path]] (edited? path)) entries)]
+    (str (group-block "Edited during this session:" session)
+         (group-block "Other changes:" other))))
 
 (defn- run-git
   "Run a git command, return promise of {:content [...] :is-error bool}."
@@ -83,8 +100,10 @@
 (defn- commit-start-fx
   "Gather a git overview for the room's cwd and submit the commit prompt."
   [{:keys [dispatch! get-state]} {:keys [room-id args]}]
-  (let [cwd      (get-in (get-state) [:rooms room-id :cwd])
-        overview (git-overview-sync cwd)]
+  (let [room     (get-in (get-state) [:rooms room-id])
+        cwd      (:cwd room)
+        edited   (fx/session-edited-files room cwd)
+        overview (git-overview-sync cwd edited)]
     (dispatch! {:type :prompt/submit :room-id room-id
                 :text (build-commit-prompt args overview)})))
 
