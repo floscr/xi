@@ -1826,3 +1826,109 @@ body {
 .sidebar-layout--floating > .sidebar {
   width: min(80%, 560px);
 }
+
+/* ---- Pull requests ---- */
+.pr-filters {
+  display: flex;
+  gap: var(--size-4);
+  padding: var(--size-3) var(--size-4);
+  border-bottom: var(--border-0);
+  flex-wrap: wrap;
+}
+
+.pr-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.pr-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  width: 100%;
+  text-align: left;
+  padding: var(--size-3) var(--size-4);
+  border: none;
+  border-bottom: var(--border-0);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  transition: background-color 0.15s;
+}
+
+@media (hover: hover) {
+  .pr-row:hover { background-color: var(--bg-1); }
+}
+
+.pr-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+}
+
+.pr-row-title {
+  font-weight: 600;
+  color: var(--fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-row-meta {
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-error {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 100%;
+  font-size: var(--font-xs);
+  color: var(--danger);
+  padding: var(--size-2) var(--size-4);
+}
+
+.pr-detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+}
+
+.pr-detail-head {
+  padding: var(--size-4);
+  border-bottom: var(--border-0);
+}
+
+.pr-detail-title {
+  margin: 0 0 var(--size-2);
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--fg-1);
+}
+
+.pr-detail-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--size-2);
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+}
+
+.pr-detail-stat--add { color: var(--hl-string); }
+.pr-detail-stat--del { color: var(--danger); }
+
+.pr-detail-body {
+  padding: var(--size-4);
+  border-bottom: var(--border-0);
+}

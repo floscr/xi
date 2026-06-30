@@ -24,6 +24,20 @@
   (let [segments (filterv seq (str/split (or path "/") #"/"))]
     (case (first segments)
       "chat" {:page :chat :session-id (second segments)}
+      "git-status" (cond-> {:page :git-status}
+                     (second segments)
+                     (assoc :cwd (js/decodeURIComponent (str/join "/" (rest segments)))))
+      "pulls" (let [seg2 (second segments)]
+                (if (and seg2 (re-matches #"\d+" seg2))
+                  (if (= "diff" (nth segments 2 nil))
+                    {:page :pr-diff
+                     :number (js/parseInt seg2)
+                     :cwd (js/decodeURIComponent (str/join "/" (drop 3 segments)))}
+                    {:page :pr-detail
+                     :number (js/parseInt seg2)
+                     :cwd (js/decodeURIComponent (str/join "/" (drop 2 segments)))})
+                  (cond-> {:page :pr-list}
+                    seg2 (assoc :cwd (js/decodeURIComponent (str/join "/" (rest segments)))))))
       "gtd"  (let [rest-segs (rest segments)
                    ;; Last segment that looks like a UUID is a task-id
                    last-seg  (last rest-segs)
@@ -46,9 +60,13 @@
 
 (defn route->path
   "Route map → URL path."
-  [{:keys [page session-id file task-id dir]}]
+  [{:keys [page session-id file task-id dir cwd number]}]
   (case page
     :chat (if session-id (str "/chat/" session-id) "/chat")
+    :git-status (if cwd (str "/git-status/" (js/encodeURIComponent cwd)) "/git-status")
+    :pr-list (if cwd (str "/pulls/" (js/encodeURIComponent cwd)) "/pulls")
+    :pr-detail (str "/pulls/" number "/" (js/encodeURIComponent cwd))
+    :pr-diff (str "/pulls/" number "/diff/" (js/encodeURIComponent cwd))
     :gtd  (cond-> "/gtd"
              file    (str "/" (js/encodeURIComponent file))
              task-id (str "/" task-id))
@@ -72,11 +90,13 @@
      :page       :home | :chat
      :session-id (chat only)
      :replace?   true for popstate / initial load (no new history entry)"
-  [st {:keys [page session-id file task-id dir replace?]}]
+  [st {:keys [page session-id file task-id dir cwd number replace?]}]
   (let [route      (cond-> {:page page :session-id session-id}
                      file    (assoc :file file)
                      task-id (assoc :task-id task-id)
-                     dir     (assoc :dir dir))
+                     dir     (assoc :dir dir)
+                     cwd     (assoc :cwd cwd)
+                     number  (assoc :number number))
         active-room (state/active-room st)
         active-sid (get-in active-room [:session :id])
         ;; Already viewing this session (e.g. the post-join URL fix) → don't
@@ -120,7 +140,25 @@
 
                   ;; Fetch sessions when drilling into a project directory
                   (and (= page :home) dir (not= dir :all))
-                  (conj [:app/dispatch {:type :projects/web-sessions :cwd dir}]))]
+                  (conj [:app/dispatch {:type :projects/web-sessions :cwd dir}])
+
+                  ;; Fetch the working-tree diff when entering the git-status page
+                  (and (= page :git-status) cwd)
+                  (conj [:app/dispatch {:type :git-status/load :cwd cwd}])
+
+                  ;; Fetch the PR list when entering the pull-requests page
+                  (and (= page :pr-list) cwd)
+                  (conj [:app/dispatch {:type :pr/load :cwd cwd}])
+
+                  ;; Fetch one PR's detail when entering the PR detail page
+                  (and (= page :pr-detail) cwd number)
+                  (conj [:app/dispatch {:type :pr/detail-load :cwd cwd :number number}])
+
+                  ;; Fetch detail for the focused PR diff page, unless we already
+                  ;; loaded this PR (e.g. arriving from its detail page).
+                  (and (= page :pr-diff) cwd number
+                       (not= (:web/pr-detail-number st) number))
+                  (conj [:app/dispatch {:type :pr/detail-load :cwd cwd :number number}]))]
     {:state   (cond-> (assoc st :web/route route
                             ;; reset the virtualized timeline window on every
                             ;; navigation so a new session starts compact
@@ -142,6 +180,12 @@
                 ;; Sync file/task drill-down from the route
                 (= page :gtd) (-> (assoc :web/gtd-file file)
                                   (assoc :web/gtd-task-id task-id))
+                ;; Sync the git-status cwd from the route
+                (= page :git-status) (assoc :web/git-status-cwd cwd)
+                ;; Sync the pull-requests cwd from the route
+                (= page :pr-list) (assoc :web/prs-cwd cwd)
+                (#{:pr-detail :pr-diff} page) (-> (assoc :web/pr-detail-cwd cwd)
+                                                  (assoc :web/pr-detail-number number))
                 ;; Sync project dir drill-down from the route
                 (= page :home) (-> (assoc :web/selected-project-dir dir)
                                    (cond->

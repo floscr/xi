@@ -409,6 +409,67 @@
           :diff/modify-toggle    diff-modify-toggle
           :diff/explain          diff-explain
           :diff/modify-submit    diff-modify-submit
+          ;; Git status (roomless working-tree diff page)
+          :git-status/open       (fn [_st {:keys [cwd]}]
+                                   {:effects [[:app/dispatch {:type :route/navigate
+                                                              :page :git-status :cwd cwd}]]})
+          :git-status/load       (fn [st {:keys [cwd]}]
+                                   {:state (assoc st :web/git-status-loading? true
+                                                     :web/git-status-cwd cwd
+                                                     :web/git-status-text nil)
+                                    :effects [[:ws/send {:type :diff/web-load :cwd cwd}]]})
+          :git-status/refresh    (fn [st _]
+                                   (let [cwd (:web/git-status-cwd st)]
+                                     {:state (assoc st :web/git-status-loading? true)
+                                      :effects [[:ws/send {:type :diff/web-load :cwd cwd}]]}))
+          :diff/web-load-result  (fn [st {:keys [cwd text]}]
+                                   {:state (assoc st :web/git-status-text text
+                                                     :web/git-status-cwd cwd
+                                                     :web/git-status-loading? false)})
+          ;; Pull requests (roomless, per-project via gh)
+          :pr/open               (fn [_st {:keys [cwd]}]
+                                   {:effects [[:app/dispatch {:type :route/navigate
+                                                              :page :pr-list :cwd cwd}]]})
+          :pr/load               (fn [st {:keys [cwd]}]
+                                   {:state (assoc st :web/prs-loading? true
+                                                     :web/prs-cwd cwd
+                                                     :web/prs nil
+                                                     :web/prs-error nil)
+                                    :effects [[:ws/send {:type :pr/web-list :cwd cwd}]]})
+          :pr/refresh            (fn [st _]
+                                   (let [cwd (:web/prs-cwd st)]
+                                     {:state (assoc st :web/prs-loading? true)
+                                      :effects [[:ws/send {:type :pr/web-list :cwd cwd}]]}))
+          :pr/web-list-result    (fn [st {:keys [cwd prs me error]}]
+                                   {:state (assoc st :web/prs prs
+                                                     :web/prs-me me
+                                                     :web/prs-error error
+                                                     :web/prs-cwd cwd
+                                                     :web/prs-loading? false)})
+          :pr/set-filter         (fn [st {:keys [key]}]
+                                   {:state (update-in st [:web/pr-filters key] not)})
+          :pr/select             (fn [_st {:keys [cwd number]}]
+                                   {:effects [[:app/dispatch {:type :route/navigate
+                                                              :page :pr-detail
+                                                              :cwd cwd :number number}]]})
+          :pr/diff-open          (fn [_st {:keys [cwd number]}]
+                                   {:effects [[:app/dispatch {:type :route/navigate
+                                                              :page :pr-diff
+                                                              :cwd cwd :number number}]]})
+          :pr/detail-load        (fn [st {:keys [cwd number]}]
+                                   {:state (assoc st :web/pr-detail-loading? true
+                                                     :web/pr-detail-cwd cwd
+                                                     :web/pr-detail-number number
+                                                     :web/pr-detail nil
+                                                     :web/pr-detail-error nil)
+                                    :effects [[:ws/send {:type :pr/web-detail
+                                                         :cwd cwd :number number}]]})
+          :pr/web-detail-result  (fn [st {:keys [cwd number pr diff error]}]
+                                   {:state (assoc st :web/pr-detail (when pr {:pr pr :diff diff})
+                                                     :web/pr-detail-error error
+                                                     :web/pr-detail-cwd cwd
+                                                     :web/pr-detail-number number
+                                                     :web/pr-detail-loading? false)})
           ;; Projects
           :projects/web-list     (fn [st _ev]
                                     {:state (assoc st :web/projects-loading? true)

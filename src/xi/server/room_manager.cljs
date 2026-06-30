@@ -166,6 +166,22 @@
   [_st {:keys [client-id cwd]}]
   {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd}]]})
 
+(defn- diff-web-load
+  "Roomless: return the combined working-tree diff for a CWD (the git-status
+   view, which has no room to attach a :diff buffer to)."
+  [_st {:keys [client-id cwd]}]
+  {:effects [[:diff/web-load-reply {:client-id client-id :cwd cwd}]]})
+
+(defn- pr-web-list
+  "Roomless: return the open pull requests for a CWD."
+  [_st {:keys [client-id cwd]}]
+  {:effects [[:pr/web-list-reply {:client-id client-id :cwd cwd}]]})
+
+(defn- pr-web-detail
+  "Roomless: return one pull request's metadata + diff."
+  [_st {:keys [client-id cwd number]}]
+  {:effects [[:pr/web-detail-reply {:client-id client-id :cwd cwd :number number}]]})
+
 
 (def handlers
   {:room/join              room-join
@@ -175,7 +191,10 @@
    :session/counts         session-counts
    :models/web-list        models-web-list
    :projects/web-list      projects-web-list
-   :projects/web-sessions  projects-web-sessions})
+   :projects/web-sessions  projects-web-sessions
+   :diff/web-load          diff-web-load
+   :pr/web-list            pr-web-list
+   :pr/web-detail          pr-web-detail})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
 

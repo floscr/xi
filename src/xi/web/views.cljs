@@ -15,6 +15,7 @@
             [xi.util :as util]
             [ui.icon :as icon]
             [ui.form :as form]
+            [ui.badge :as badge]
             [ui.button :as button]
             [ui.toolbar :as toolbar]
             [ui.lightbox :as lightbox]
@@ -1045,10 +1046,15 @@
 (defn- overflow-menu
   "Three-dots overflow menu shown on the right of every topbar. Holds the
    debug-copy action (which used to be a standalone topbar button). Toggles the
-   :web/overflow-menu? app state; a backdrop closes it on outside click."
-  [dispatch! state]
-  (let [open? (:web/overflow-menu? state)
-        room  (state/active-room state)]
+   :web/overflow-menu? app state; a backdrop closes it on outside click.
+
+   `git-ctx` enables the \"Git status\" item: {:mode :room :room-id …} opens the
+   working-tree diff in the room's :diff buffer (via /diff git); {:mode :project
+   :cwd …} navigates to the roomless git-status page. nil hides the item."
+  ([dispatch! state] (overflow-menu dispatch! state nil))
+  ([dispatch! state git-ctx]
+   (let [open? (:web/overflow-menu? state)
+         room  (state/active-room state)]
     [:div {:class ["overflow-menu-wrap"]}
      [:button {:class ["icon-btn" "icon-btn--sm"]
                :title "More"
@@ -1070,6 +1076,37 @@
                                  (dispatch! {:type :room/new}))}}
           (icon/icon {:icon-name :plus :size :sm})
           [:span "New chat"]]
+         (when (#{:room :project} (:mode git-ctx))
+           [:button {:class ["overflow-menu-item"]
+                     :on {:click (fn [e]
+                                   (.stopPropagation e)
+                                   (dispatch! {:type :overflow/close})
+                                   (case (:mode git-ctx)
+                                     :room    (dispatch! {:type :diff/reopen
+                                                          :room-id (:room-id git-ctx)
+                                                          :method "git" :engine :git})
+                                     :project (dispatch! {:type :git-status/open
+                                                          :cwd (:cwd git-ctx)})))}}
+            (icon/icon {:icon-name :code :size :sm})
+            [:span "Git status"]])
+         (when (= :project (:mode git-ctx))
+           [:button {:class ["overflow-menu-item"]
+                     :on {:click (fn [e]
+                                   (.stopPropagation e)
+                                   (dispatch! {:type :overflow/close})
+                                   (dispatch! {:type :pr/open :cwd (:cwd git-ctx)}))}}
+            (icon/icon {:icon-name :message-circle :size :sm})
+            [:span "Pull requests"]])
+         (when (= :pr-detail (:mode git-ctx))
+           [:button {:class ["overflow-menu-item"]
+                     :on {:click (fn [e]
+                                   (.stopPropagation e)
+                                   (dispatch! {:type :overflow/close})
+                                   (dispatch! {:type :pr/diff-open
+                                               :cwd (:cwd git-ctx)
+                                               :number (:number git-ctx)}))}}
+            (icon/icon {:icon-name :file-text :size :sm})
+            [:span "Diff"]])
          [:button {:class ["overflow-menu-item"]
                    :on {:click (fn [e]
                                  (.stopPropagation e)
@@ -1079,7 +1116,7 @@
                                      (dispatch! {:type :copy/open :text text})
                                      (copy-to-clipboard! text))))}}
           (icon/icon {:icon-name :copy :size :sm})
-          [:span "Copy debug info"]]]))]))
+          [:span "Copy debug info"]]]))])))
 
 (defn- optimistic-post
   "An optimistic user bubble rendered at the tail of the timeline the instant a
@@ -1196,7 +1233,7 @@
                   :on {:click (fn [_] (.reload js/location))}}
          (icon/icon {:icon-name :refresh :size :md})])
       (offline-badge state)
-      (overflow-menu dispatch! state)]
+      (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
      (when has-tabs?
        (tab-bar dispatch! (:id room) active-buf buffers))
      (case active-buf
@@ -1404,7 +1441,7 @@
                 :title "New session"
                 :on {:click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}}
        (icon/icon {:icon-name :plus :size :md})]
-      (overflow-menu dispatch! state)]
+      (overflow-menu dispatch! state {:mode :project :cwd cwd})]
      [:div {:class ["home"]}
       (when-not loading?
         (search-box dispatch! :project-sessions "Search sessions…" raw-query))
@@ -1890,6 +1927,221 @@
          :attrs {:style {:align-self "flex-start"}}
          :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})))))
 
+(defn- git-status-view
+  "Roomless working-tree diff page (reached from the project view's overflow
+   menu). Reuses the read-only diff renderer — same +/- line coloring and
+   per-file syntax highlighting as the chat :diff buffer, minus the selection /
+   explain / modify actions (those need a room)."
+  [state dispatch!]
+  (let [cwd      (:web/git-status-cwd state)
+        text     (:web/git-status-text state)
+        loading? (:web/git-status-loading? state)]
+    [:div {:class ["container"] :replicant/key "git-status"}
+     [:div {:class ["topbar"]}
+      (menu-button dispatch!)
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_]
+                              (dispatch! {:type :nav/back
+                                          :fallback {:page :home :dir cwd}}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} "Git status · " (shorten-path cwd)]
+      [:button {:class ["icon-btn"]
+                :title "Refresh"
+                :on {:click (fn [_] (dispatch! {:type :git-status/refresh}))}}
+       (icon/icon {:icon-name :refresh :size :md})]
+      (overflow-menu dispatch! state)]
+     [:div {:class ["diff-tab"]}
+      (cond
+        (and loading? (nil? text))
+        [:div {:class ["empty-state"]} (spinner) [:p "Loading changes…"]]
+
+        (str/blank? text)
+        [:div {:class ["empty-state"]} "No changes."]
+
+        :else
+        (diff-rows-view dispatch!
+                        (diff/diff-rows (diff/parse-diff-text text))
+                        nil nil))]]))
+
+(defn- pr-state-badge
+  "Colored badge for a PR's state (and draft marker)."
+  [state draft?]
+  (let [open? (= state "OPEN")]
+    (badge/badge {:variant (cond
+                             (and open? draft?) :secondary
+                             open?              :success
+                             (= state "MERGED") :secondary
+                             (= state "CLOSED") :danger
+                             :else              :outline)
+                  :size :sm}
+                 (if (and open? draft?)
+                   "Draft"
+                   (str/capitalize (str/lower-case (or state "")))))))
+
+(defn- pr-filtered
+  "Apply the assigned/created toggles. With neither set, show everything; with
+   both, show the union (created-by-me OR assigned-to-me)."
+  [prs me {:keys [assigned? created?]}]
+  (if (and (not assigned?) (not created?))
+    prs
+    (filterv (fn [pr]
+               (or (and created? (= me (:author pr)))
+                   (and assigned? (some #(= me %) (:assignees pr)))))
+             prs)))
+
+(defn- pr-list-view
+  "Roomless pull-requests list for a project (reached from the project view's
+   overflow menu). Lists open PRs from `gh`, with toggles to narrow to the
+   viewer's own / assigned PRs; a row opens the detail page."
+  [state dispatch!]
+  (let [cwd      (:web/prs-cwd state)
+        prs      (:web/prs state)
+        me       (:web/prs-me state)
+        error    (:web/prs-error state)
+        loading? (:web/prs-loading? state)
+        filters  (:web/pr-filters state)
+        shown    (pr-filtered prs me filters)]
+    [:div {:class ["container"] :replicant/key "pr-list"}
+     [:div {:class ["topbar"]}
+      (menu-button dispatch!)
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_]
+                              (dispatch! {:type :nav/back
+                                          :fallback {:page :home :dir cwd}}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} "Pull requests · " (shorten-path cwd)]
+      [:button {:class ["icon-btn"]
+                :title "Refresh"
+                :on {:click (fn [_] (dispatch! {:type :pr/refresh}))}}
+       (icon/icon {:icon-name :refresh :size :md})]
+      (overflow-menu dispatch! state)]
+     [:div {:class ["home"]}
+      [:div {:class ["pr-filters"]}
+       (form/form-checkbox
+        {:label "Created by me"
+         :checked (boolean (:created? filters))
+         :on-change (fn [_] (dispatch! {:type :pr/set-filter :key :created?}))})
+       (form/form-checkbox
+        {:label "Assigned to me"
+         :checked (boolean (:assigned? filters))
+         :on-change (fn [_] (dispatch! {:type :pr/set-filter :key :assigned?}))})]
+      (cond
+        (and loading? (nil? prs))
+        [:div {:class ["empty-state"]} (spinner) [:p "Loading pull requests…"]]
+
+        error
+        [:div {:class ["empty-state"]}
+         [:p "Could not load pull requests."]
+         [:pre {:class ["pr-error"]} error]]
+
+        (empty? shown)
+        [:div {:class ["empty-state"]}
+         (if (seq prs) "No matching pull requests." "No open pull requests.")]
+
+        :else
+        [:div {:class ["pr-list"]}
+         (for [pr shown]
+           [:button {:class ["pr-row"] :replicant/key (:number pr)
+                     :on {:click (fn [_] (dispatch! {:type :pr/select
+                                                     :cwd cwd :number (:number pr)}))}}
+            [:div {:class ["pr-row-main"]}
+             [:span {:class ["pr-row-title"]} (:title pr)]
+             [:span {:class ["pr-row-meta"]}
+              "#" (:number pr) " · " (:author pr)
+              " · " (:head pr) " → " (:base pr)]]
+            (pr-state-badge (:state pr) (:draft? pr))])])]]))
+
+(defn- pr-detail-view
+  "Roomless PR detail page: metadata header, markdown body, and the unified
+   diff rendered read-only with the same +/- coloring + syntax highlighting as
+   the chat :diff buffer."
+  [state dispatch!]
+  (let [cwd      (:web/pr-detail-cwd state)
+        number   (:web/pr-detail-number state)
+        detail   (:web/pr-detail state)
+        error    (:web/pr-detail-error state)
+        loading? (:web/pr-detail-loading? state)
+        {:keys [pr diff]} detail]
+    [:div {:class ["container"] :replicant/key "pr-detail"}
+     [:div {:class ["topbar"]}
+      (menu-button dispatch!)
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_]
+                              (dispatch! {:type :nav/back
+                                          :fallback {:page :pr-list :cwd cwd}}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} "PR #" number]
+      (overflow-menu dispatch! state {:mode :pr-detail :cwd cwd :number number})]
+     [:div {:class ["pr-detail-scroll"]}
+      (cond
+        (and loading? (nil? detail))
+        [:div {:class ["empty-state"]} (spinner) [:p "Loading pull request…"]]
+
+        error
+        [:div {:class ["empty-state"]}
+         [:p "Could not load pull request."]
+         [:pre {:class ["pr-error"]} error]]
+
+        pr
+        (list
+         [:div {:class ["pr-detail-head"]}
+          [:h2 {:class ["pr-detail-title"]} (:title pr)]
+          [:div {:class ["pr-detail-meta"]}
+           (pr-state-badge (:state pr) (:draft? pr))
+           [:span "#" (:number pr)]
+           [:span (:author pr)]
+           [:span (:head pr) " → " (:base pr)]
+           [:span {:class ["pr-detail-stat" "pr-detail-stat--add"]} "+" (:additions pr)]
+           [:span {:class ["pr-detail-stat" "pr-detail-stat--del"]} "−" (:deletions pr)]]]
+         (when (seq (:body pr))
+           [:div {:class ["post-content" "pr-detail-body"]} (md/render (:body pr))])
+         [:div {:class ["diff-tab"]}
+          (if (str/blank? diff)
+            [:div {:class ["empty-state"]} "No diff."]
+            (diff-rows-view dispatch!
+                            (diff/diff-rows (diff/parse-diff-text diff))
+                            nil nil))]))]]))
+
+(defn- pr-diff-view
+  "Focused full-screen unified diff for one PR — reached from the PR detail
+   page's overflow menu. Reuses the already-fetched :web/pr-detail diff so big
+   PRs can be reviewed without scrolling past the metadata + markdown body."
+  [state dispatch!]
+  (let [cwd      (:web/pr-detail-cwd state)
+        number   (:web/pr-detail-number state)
+        detail   (:web/pr-detail state)
+        error    (:web/pr-detail-error state)
+        loading? (:web/pr-detail-loading? state)
+        diff     (:diff detail)]
+    [:div {:class ["container"] :replicant/key "pr-diff"}
+     [:div {:class ["topbar"]}
+      (menu-button dispatch!)
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_]
+                              (dispatch! {:type :nav/back
+                                          :fallback {:page :pr-detail
+                                                     :cwd cwd :number number}}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} "PR #" number " diff"]
+      (overflow-menu dispatch! state)]
+     [:div {:class ["diff-tab"]}
+      (cond
+        (and loading? (nil? detail))
+        [:div {:class ["empty-state"]} (spinner) [:p "Loading diff…"]]
+
+        error
+        [:div {:class ["empty-state"]}
+         [:p "Could not load pull request."]
+         [:pre {:class ["pr-error"]} error]]
+
+        (str/blank? diff)
+        [:div {:class ["empty-state"]} "No diff."]
+
+        :else
+        (diff-rows-view dispatch!
+                        (diff/diff-rows (diff/parse-diff-text diff))
+                        nil nil))]]))
+
 (defn root-view
   "Top-level view, route-driven: the session list at /, a room at /chat/:id.
    Wrapped in a floating sidebar layout so every topbar's hamburger reveals
@@ -1907,4 +2159,8 @@
       (case (get-in state [:web/route :page])
         :chat (chat-view state dispatch!)
         :gtd  (gtd-view state dispatch!)
+        :git-status (git-status-view state dispatch!)
+        :pr-list (pr-list-view state dispatch!)
+        :pr-detail (pr-detail-view state dispatch!)
+        :pr-diff (pr-diff-view state dispatch!)
         (home-view state dispatch!))))))

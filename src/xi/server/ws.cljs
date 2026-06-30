@@ -22,6 +22,7 @@
   (:require [clojure.string :as str]
             [xi.ext.gtd :as gtd]
             [xi.fx :as fx]
+            [xi.github :as github]
             [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
@@ -48,7 +49,8 @@
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id)."
   #{:client/update :session/counts :gtd/web-list :gtd/web-task-action :models/web-list
-    :projects/web-list :projects/web-sessions})
+    :projects/web-list :projects/web-sessions :diff/web-load
+    :pr/web-list :pr/web-detail})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -269,6 +271,32 @@
           (send! client-id (wire/encode {:type :projects/web-sessions-result
                                          :cwd cwd
                                          :sessions sessions}))))
+
+      ;; Combined working-tree diff for a CWD (roomless git-status view).
+      :diff/web-load-reply
+      (fn [_ {:keys [client-id cwd]}]
+        (send! client-id (wire/encode {:type :diff/web-load-result
+                                       :cwd  cwd
+                                       :text (fx/all-git-changes-text cwd)})))
+
+      ;; Open PRs for a CWD (roomless pull-requests list view).
+      :pr/web-list-reply
+      (fn [_ {:keys [client-id cwd]}]
+        (-> (github/pr-list cwd)
+            (.then (fn [res]
+                     (send! client-id
+                            (wire/encode (merge {:type :pr/web-list-result :cwd cwd}
+                                                res)))))))
+
+      ;; One PR's metadata + diff (roomless PR detail view).
+      :pr/web-detail-reply
+      (fn [_ {:keys [client-id cwd number]}]
+        (-> (github/pr-detail cwd number)
+            (.then (fn [res]
+                     (send! client-id
+                            (wire/encode (merge {:type :pr/web-detail-result
+                                                 :cwd cwd :number number}
+                                                res)))))))
 
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally

@@ -109,6 +109,18 @@
                             str/trim str/split-lines (remove empty?) seq)]
     (str/join "\n" (map (partial no-index-diff cwd) files))))
 
+(defn all-git-changes-text
+  "Combined unified diff of every working-tree change in cwd — unstaged,
+   staged, and untracked files. Honors *diff-engine*. Public so the roomless
+   web git-status view can read it without a room."
+  [cwd]
+  (->> [(:ok (git-diff-out cwd ["diff"]))
+        (:ok (git-diff-out cwd ["diff" "--staged"]))
+        (untracked-diff cwd)]
+       (remove str/blank?)
+       (str/join "\n")
+       str/trim))
+
 (defn- session-base-commit
   "The commit that was HEAD when the session started (works for resumed
    sessions too — derived from the session's :created timestamp)."
@@ -323,13 +335,7 @@
                       (open! title ok))))]
        (case args
          "git"
-         (open! "All Git Changes"
-                (->> [(:ok (git-diff-out cwd ["diff"]))
-                      (:ok (git-diff-out cwd ["diff" "--staged"]))
-                      (untracked-diff cwd)]
-                     (remove str/blank?)
-                     (str/join "\n")
-                     str/trim))
+         (open! "All Git Changes" (all-git-changes-text cwd))
 
          "git-upstream"
          (if-let [ref (upstream-default-ref cwd)]
