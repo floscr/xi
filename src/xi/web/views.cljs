@@ -2092,7 +2092,14 @@
            [:span (:author pr)]
            [:span (:head pr) " → " (:base pr)]
            [:span {:class ["pr-detail-stat" "pr-detail-stat--add"]} "+" (:additions pr)]
-           [:span {:class ["pr-detail-stat" "pr-detail-stat--del"]} "−" (:deletions pr)]]]
+           [:span {:class ["pr-detail-stat" "pr-detail-stat--del"]} "−" (:deletions pr)]]
+          [:div {:class ["pr-detail-actions"]}
+           (button/button
+            {:variant :primary :size :sm :icon-left :zap
+             :on-click (fn [_] (dispatch! {:type :pr/review
+                                          :cwd cwd :number number
+                                          :title (:title pr)}))}
+            "Review with agent")]]
          (when (seq (:body pr))
            [:div {:class ["post-content" "pr-detail-body"]} (md/render (:body pr))])
          [:div {:class ["diff-tab"]}

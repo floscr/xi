@@ -324,6 +324,36 @@
                     :web/project-sessions-cwd cwd
                     :web/project-sessions-loading? false)})
 
+(defn- pr-review-prompt
+  "The prompt seeded into a fresh agent room to review a PR. The agent runs in
+   the PR's project cwd, so it fetches the PR itself rather than us shipping a
+   (possibly huge) diff through app state."
+  [number title]
+  (str "Please review pull request #" number
+       (when (seq title) (str " (\"" title "\")"))
+       " in this repository.\n\n"
+       "Run `gh pr view " number "` and `gh pr diff " number "` to load the "
+       "description and full diff, then give a thorough code review:\n"
+       "- a short summary of what the PR does\n"
+       "- correctness bugs and edge cases\n"
+       "- security or performance concerns\n"
+       "- style / consistency with the surrounding code\n"
+       "- concrete suggestions with file:line references\n\n"
+       "Prioritise the most important findings first."))
+
+(defn- pr-review
+  "Open a fresh agent room in the PR's project and seed a review prompt; the
+   pending-submit tap fires it once :room/joined arrives (mirrors
+   gtd-web-start-task)."
+  [st {:keys [cwd number title]}]
+  {:state   (-> st
+                (assoc :web/route {:page :chat})
+                (assoc :web/timeline-window nil)
+                (assoc :web/pending-submit {:session-id nil
+                                            :text (pr-review-prompt number title)})
+                (dissoc :web/pending-room :web/overflow-menu?))
+   :effects [[:ws/send {:type :room/join :target "new" :cwd cwd}]]})
+
 (defn- web-handlers []
   (merge router/handlers
          {:room/new              room-new
@@ -456,6 +486,7 @@
                                    {:effects [[:app/dispatch {:type :route/navigate
                                                               :page :pr-diff
                                                               :cwd cwd :number number}]]})
+          :pr/review             pr-review
           :pr/detail-load        (fn [st {:keys [cwd number]}]
                                    {:state (assoc st :web/pr-detail-loading? true
                                                      :web/pr-detail-cwd cwd
