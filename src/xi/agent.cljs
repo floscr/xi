@@ -75,25 +75,22 @@
            (str/join "\n\n" msgs)
            "\n</conversation_history>"))))
 
-(defn- start-turn-effect
-  "Build the :provider/start-turn effect payload from room state + prompt.
-   When the session is flagged :inject-history? and has no provider session
-   to resume (i.e. after /tree navigation), the truncated history is rendered
-   into the system prompt so the fresh provider session keeps the context."
-  [room {:keys [text images]}]
-  (let [agent     (:agent room)
-        resume-id (get-in room [:session :provider-session-id])
-        context   (when (and (nil? resume-id)
-                             (get-in room [:session :inject-history?]))
-                    (history->context (:history room)))
-        system    (if context
-                    (if-let [base (:system agent)]
-                      (str base "\n\n" context)
-                      context)
-                    (:system agent))]
+(defn- build-turn-effect
+  "Build the :provider/start-turn effect payload. When :resume-id is nil and
+   :context-history is supplied, the prior conversation is rendered into the
+   system prompt so the fresh provider session keeps the context."
+  [{:keys [room resume-id prompt images context-history]}]
+  (let [agent   (:agent room)
+        context (when (and (nil? resume-id) context-history)
+                  (history->context context-history))
+        system  (if context
+                  (if-let [base (:system agent)]
+                    (str base "\n\n" context)
+                    context)
+                  (:system agent))]
     [:provider/start-turn
      (cond-> {:room-id  (:id room)
-              :prompt   text
+              :prompt   prompt
               :model    (:model agent)
               :provider (:provider agent)
               :cwd      (:cwd room)
@@ -102,6 +99,22 @@
               :personal-agent? (:personal-agent? agent)}
        (seq images) (assoc :images images)
        resume-id    (assoc :resume-session-id resume-id))]))
+
+(defn- start-turn-effect
+  "Build the :provider/start-turn effect payload from room state + prompt.
+   When the session is flagged :inject-history? and has no provider session
+   to resume (i.e. after /tree navigation), the truncated history is rendered
+   into the system prompt so the fresh provider session keeps the context."
+  [room {:keys [text images]}]
+  (let [resume-id (get-in room [:session :provider-session-id])]
+    (build-turn-effect
+     {:room room
+      :resume-id resume-id
+      :prompt text
+      :images images
+      :context-history (when (and (nil? resume-id)
+                                  (get-in room [:session :inject-history?]))
+                         (:history room))})))
 
 (defn- begin-turn [st room prompt]
   {:state   (-> st
@@ -174,6 +187,27 @@
         (assoc :effects [[:app/dispatch (merge {:type :prompt/submit :room-id room-id}
                                                next-prompt)]])))))
 
+(defn- retry-fresh
+  "The provider could not resume the stored session — its transcript is gone
+   from disk. Drop the dead id and re-run the pending turn as a fresh session,
+   carrying the in-memory history as context so nothing is lost. The pending
+   prompt is still the trailing :user history entry (no assistant output was
+   produced before the resume failed), so we replay it as the fresh prompt and
+   inject everything before it as context."
+  [st {:keys [room-id]}]
+  (when-let [room (state/get-room st room-id)]
+    (let [history  (:history room)
+          user-ent (peek history)]
+      (when (= :user (:kind user-ent))
+        (let [room' (assoc-in room [:session :provider-session-id] nil)]
+          {:state   (assoc-in st [:rooms room-id :session :provider-session-id] nil)
+           :effects [(build-turn-effect
+                      {:room room'
+                       :resume-id nil
+                       :prompt (:text user-ent)
+                       :images (:images user-ent)
+                       :context-history (pop history)})]})))))
+
 (defn- session-init
   "Provider reported its session id early (e.g. Claude system/init).
    Store it so lobby-payload can filter duplicate external sessions."
@@ -196,6 +230,7 @@
    :agent/error          agent-error
    :agent/session-init   session-init
    :agent/turn-end       turn-end
+   :agent/retry-fresh    retry-fresh
    :agent/abort          agent-abort})
 
 ;; ── Provider routing (pure) ──────────────────────────────────────────────────
@@ -279,12 +314,16 @@
              (.then
               (fn [result]
                 (.delete inflight room-id)
-                (dispatch! {:type :agent/turn-end
-                            :room-id room-id
-                            :usage (:usage result)
-                            :cost (:cost result)
-                            :provider-session-id (:session-id result)
-                            :aborted? (boolean (:aborted result))})))
+                (if (:resume-failed result)
+                  ;; Stored provider session was gone; re-run this turn fresh
+                  ;; instead of ending it with a dead-end error.
+                  (dispatch! {:type :agent/retry-fresh :room-id room-id})
+                  (dispatch! {:type :agent/turn-end
+                              :room-id room-id
+                              :usage (:usage result)
+                              :cost (:cost result)
+                              :provider-session-id (:session-id result)
+                              :aborted? (boolean (:aborted result))}))))
              (.catch
               (fn [err]
                 (.delete inflight room-id)

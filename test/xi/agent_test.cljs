@@ -140,6 +140,28 @@
     (is (= "sid-5" (:resume-session-id payload)))
     (is (nil? (:system payload)) "no history injection when resuming")))
 
+(deftest retry-fresh-drops-dead-session-and-replays-prompt
+  (let [st (-> (with-room)
+               (assoc-in [:rooms "r" :agent :system] "base prompt")
+               (update-in [:rooms "r" :history] into
+                          [{:kind :user :text "old question"}
+                           {:kind :text :text "old answer" :done? true}
+                           {:kind :user :text "new prompt" :images nil}])
+               (assoc-in [:rooms "r" :session :provider-session-id] "dead-sid"))
+        {:keys [state effects]}
+        (events/handle-event all-handlers st {:type :agent/retry-fresh :room-id "r"})
+        [[fx-type payload]] effects]
+    (is (nil? (get-in state [:rooms "r" :session :provider-session-id]))
+        "the dead session id is cleared")
+    (is (= :provider/start-turn fx-type))
+    (is (= "new prompt" (:prompt payload)) "the pending prompt is replayed")
+    (is (nil? (:resume-session-id payload)) "no resume on the fresh turn")
+    (is (str/starts-with? (:system payload) "base prompt"))
+    (is (str/includes? (:system payload) "user: old question"))
+    (is (str/includes? (:system payload) "assistant: old answer"))
+    (is (not (str/includes? (:system payload) "user: new prompt"))
+        "the replayed prompt is not duplicated into the injected context")))
+
 (deftest abort-only-when-busy
   (let [busy (apply-events (with-room) {:type :prompt/submit :room-id "r" :text "x"})]
     (is (= [[:provider/abort {:room-id "r"}]]

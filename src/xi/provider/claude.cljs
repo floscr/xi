@@ -403,11 +403,20 @@
                                   (consume)))))
                            (.catch
                             (fn [err]
-                              (js/console.error "[claude] stream error:" (.-message err))
-                              (when (:on-error callbacks)
-                                ((:on-error callbacks)
-                                 {:type "error" :message (.-message err)}))
-                              (finish!))))))]
+                              (let [msg (str (.-message err))]
+                                (if (and resume-id
+                                         (re-find #"No conversation found" msg))
+                                  ;; The session we tried to resume is gone from
+                                  ;; disk. Signal the agent to retry fresh rather
+                                  ;; than surfacing a dead-end error to the user.
+                                  (do (swap! state assoc :resume-failed true)
+                                      (finish!))
+                                  (do
+                                    (js/console.error "[claude] stream error:" msg)
+                                    (when (:on-error callbacks)
+                                      ((:on-error callbacks)
+                                       {:type "error" :message msg}))
+                                    (finish!)))))))))]
              (consume))))]
 
     {:promise promise
