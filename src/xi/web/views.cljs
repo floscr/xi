@@ -1318,6 +1318,17 @@
      :has-dialog? (boolean (:has-dialog? room))
      :unread?     (boolean (and w (> (get counts sid 0) w)))}))
 
+(defn- active-first
+  "Enrich disk sessions with live indicators (via session-status) and pin the
+   ones backed by a live room to the top, preserving the incoming
+   (last-visited) order within each group. Keeps working/active rooms visible
+   at the top of every session listing instead of buried by newer sessions."
+  [state sessions]
+  (let [{active true inactive false}
+        (group-by (comp boolean :active?)
+                  (map #(session-status state %) sessions))]
+    (concat active inactive)))
+
 (defn- orphan-rooms
   "Live rooms from the lobby mirror that have no matching disk session in
    `sessions`. These are freshly created rooms whose session hasn't been
@@ -1462,8 +1473,8 @@
         [:div {:class ["project-list"]}
          (for [o orphans]
            (session-card dispatch! o))
-         (for [s sessions]
-           (session-card dispatch! (session-status state s)))])]]))
+         (for [s (active-first state sessions)]
+           (session-card dispatch! s))])]]))
 
 
 
@@ -1500,8 +1511,8 @@
         [:div {:class ["project-list"]}
          (for [o orphans]
            (session-card dispatch! o))
-         (for [s sessions]
-           (session-card dispatch! (session-status state s)))]
+         (for [s (active-first state sessions)]
+           (session-card dispatch! s))]
 
         (seq query)
         [:div {:class ["empty-state"]} [:p "No matching sessions."]]
@@ -1537,8 +1548,8 @@
         [:div {:class ["project-list"]}
          (for [o orphans]
            (session-card dispatch! o))
-         (for [s sessions]
-           (session-card dispatch! (session-status state s)))]
+         (for [s (active-first state sessions)]
+           (session-card dispatch! s))]
 
         :else
         [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
