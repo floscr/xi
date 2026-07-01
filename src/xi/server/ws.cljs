@@ -37,7 +37,7 @@
 
 (def ^:private lobby-relevant
   "Events after which lobby (roomless) clients get a fresh :lobby/state."
-  #{:room/create :room/close :room/attach :room/leave
+  #{:room/create :room/close :room/attach :room/leave :favorites/changed
     :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
     :ui/dialog-open :ui/dialog-response})
 
@@ -50,7 +50,7 @@
    bookkeeping that uses :client-id, not :room-id)."
   #{:client/update :session/counts :gtd/web-list :gtd/web-task-action :models/web-list
     :projects/web-list :projects/web-sessions :diff/web-load
-    :pr/web-list :pr/web-detail})
+    :pr/web-list :pr/web-detail :favorites/toggle})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -65,7 +65,7 @@
   (->> (if personal-agent?
          (session/list-personal-agent-sessions)
          (session/list-all-sessions))
-       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source]))))
+       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite?]))))
 
 (defn- lobby-payload
   "The :lobby/state wire payload: live rooms + saved sessions.
@@ -267,10 +267,18 @@
                          (filterv #(not (contains? live-pids (:session-id %))))
                          :always
                          (mapv #(select-keys % [:session-id :name :cwd
-                                                :last-accessed :timestamp :source])))]
+                                                :last-accessed :timestamp :source :favorite?])))]
           (send! client-id (wire/encode {:type :projects/web-sessions-result
                                          :cwd cwd
                                          :sessions sessions}))))
+
+      ;; Toggle a session bookmark, then fan a fresh lobby out to every client
+      ;; (the :favorites/changed dispatch is lobby-relevant, so the tap
+      ;; rebroadcasts with updated :favorite? flags).
+      :favorites/toggle-reply
+      (fn [{:keys [dispatch!]} {:keys [session-id]}]
+        (session/toggle-favorite! session-id)
+        (dispatch! {:type :favorites/changed}))
 
       ;; Combined working-tree diff for a CWD (roomless git-status view).
       :diff/web-load-reply

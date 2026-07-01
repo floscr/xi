@@ -53,6 +53,7 @@
                        dir  (cond
                               (nil? seg2) nil
                               (= seg2 "all") :all
+                              (= seg2 "favorites") :favorites
                               :else (js/decodeURIComponent seg2))]
                    (cond-> {:page :home}
                      dir (assoc :dir dir)))
@@ -73,6 +74,7 @@
     ;; :home — use /projects/:cwd when drilling into a directory
     (cond
       (= dir :all) "/projects/all"
+      (= dir :favorites) "/projects/favorites"
       dir          (str "/projects/" (js/encodeURIComponent dir))
       :else        "/")))
 
@@ -139,7 +141,7 @@
                   (conj [:app/dispatch {:type :gtd/web-list}])
 
                   ;; Fetch sessions when drilling into a project directory
-                  (and (= page :home) dir (not= dir :all))
+                  (and (= page :home) dir (not= dir :all) (not= dir :favorites))
                   (conj [:app/dispatch {:type :projects/web-sessions :cwd dir}])
 
                   ;; Fetch the working-tree diff when entering the git-status page
@@ -193,7 +195,7 @@
                                      (nil? dir) (dissoc :web/project-sessions
                                                         :web/project-sessions-cwd)
                                      ;; Clear old data when drilling into a new dir
-                                     (and dir (not= dir :all))
+                                     (and dir (not= dir :all) (not= dir :favorites))
                                      (-> (dissoc :web/project-sessions)
                                          (update :web/search dissoc :project-sessions)
                                          (assoc :web/project-sessions-loading? true)))))

@@ -212,7 +212,7 @@
       :else          (session/list-sessions (:cwd room)))))
 
 (defn- session-item [room-id scope i s]
-  {:label (or (:name s) "(unnamed)")
+  {:label (str (when (:favorite? s) "★ ") (or (:name s) "(unnamed)"))
    :description (str (when (= scope :all)
                        (some-> (:cwd s) shorten-home (str " ")))
                      (:timestamp s)
@@ -301,7 +301,45 @@
                             :items cwd-items
                             :alt-items all-items
                             :tab-labels ["Current Folder" "All"]
-                            :search-field :search-text}}))))
+                            :search-field :search-text
+                            :key-bindings [{:key "*" :selected? true
+                                            :event {:type :session/toggle-favorite
+                                                    :room-id room-id :reopen "sessions"}}]}}))))
+
+   :session/list-favorites
+   (fn [{:keys [dispatch! state]} {:keys [room-id]}]
+     (let [room (room-of state room-id)
+           all  (list-room-sessions room :all)
+           ;; Resume works by index into the full :all list, so keep each
+           ;; favorite's original index even after filtering.
+           items (->> (map-indexed vector all)
+                      (filter (fn [[_ s]] (:favorite? s)))
+                      (mapv (fn [[i s]]
+                              (assoc (session-item room-id :all i s) :summary s))))]
+       (if (empty? items)
+         (dispatch! {:type :ui/status :room-id room-id
+                     :text "(no favorites yet — press * on a session in /resume)"})
+         (dispatch! {:type :ui/menu-open :room-id room-id
+                     :menu {:id :favorites
+                            :prompt "favorite> "
+                            :items items
+                            :search-field :search-text
+                            :key-bindings [{:key "*" :selected? true
+                                            :event {:type :session/toggle-favorite
+                                                    :room-id room-id :reopen "favorites"}}]}}))))
+
+   :session/favorite-toggle
+   (fn [{:keys [dispatch!]} {:keys [room-id session-id reopen]}]
+     (when session-id
+       (let [fav? (session/toggle-favorite! session-id)]
+         (dispatch! {:type :ui/status :room-id room-id
+                     :text (if fav? "★ Added to favorites" "☆ Removed from favorites")})
+         ;; Lobby-relevant: refresh any attached web clients' session lists.
+         (dispatch! {:type :favorites/changed})
+         ;; From a picker keybinding, reopen it so the star flips live; the
+         ;; /favorite command passes no :reopen and stays where it is.
+         (when reopen
+           (dispatch! {:type :command/run :room-id room-id :name reopen})))))
 
    :session/load
    (fn [{:keys [dispatch! state]} {:keys [room-id scope index]}]

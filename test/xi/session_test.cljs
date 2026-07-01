@@ -68,3 +68,51 @@
   (testing "empty file returns empty vec"
     (let [filepath (write-tmp-jsonl [""])]
       (is (= [] (session/read-session-messages (claude-summary filepath)))))))
+
+;; ── Favorites ─────────────────────────────────────────────────────────────────
+
+(deftest annotate-favorites-tags-matching-ids
+  (testing "summaries whose session-id is in the set get :favorite? true"
+    (let [summaries [{:session-id "a" :name "one"}
+                     {:session-id "b" :name "two"}
+                     {:session-id "c" :name "three"}]
+          tagged (session/annotate-favorites summaries #{"a" "c"})]
+      (is (= [true false true] (mapv :favorite? tagged)))
+      (is (= ["one" "two" "three"] (mapv :name tagged))
+          "other keys are preserved"))))
+
+(deftest annotate-favorites-empty-set
+  (testing "empty favorites set tags everything false"
+    (is (= [false false]
+           (mapv :favorite?
+                 (session/annotate-favorites
+                  [{:session-id "x"} {:session-id "y"}] #{}))))))
+
+(def ^:private favorites-file
+  (.join path (or (aget js/process.env "HOME") (os/homedir)) ".config" "xi" "favorites.json"))
+
+(defn- with-favorites-backup
+  "Run f with the real favorites file snapshotted and restored afterwards, so
+   the round-trip test can't clobber the user's bookmarks."
+  [f]
+  (let [existed? (fs/existsSync favorites-file)
+        backup   (when existed? (fs/readFileSync favorites-file "utf8"))]
+    (try
+      (f)
+      (finally
+        (if existed?
+          (fs/writeFileSync favorites-file backup "utf8")
+          (when (fs/existsSync favorites-file)
+            (fs/rmSync favorites-file)))))))
+
+(deftest toggle-favorite-round-trip
+  (testing "toggle adds then removes a session-id, load/favorite? reflect it"
+    (with-favorites-backup
+      (fn []
+        (let [id (str "test-fav-" (js/Date.now))]
+          (is (false? (session/favorite? id)) "not favorited initially")
+          (is (true? (session/toggle-favorite! id)) "toggle on returns true")
+          (is (true? (session/favorite? id)) "now favorited")
+          (is (contains? (session/load-favorites) id) "present in the set")
+          (is (false? (session/toggle-favorite! id)) "toggle off returns false")
+          (is (false? (session/favorite? id)) "no longer favorited"))))))

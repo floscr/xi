@@ -1312,6 +1312,7 @@
     {:session-id  sid
      :name        (:name s)
      :timestamp   (or (:last-accessed s) (:timestamp s))
+     :favorite?   (boolean (:favorite? s))
      :current?    (and sid (= sid (get-in state [:web/route :session-id])))
      :active?     (boolean room)
      :busy?       (boolean (:busy? room))
@@ -1354,7 +1355,7 @@
                    :busy?       (boolean (some :busy? rooms))
                    :has-dialog? (boolean (some :has-dialog? rooms))}))))))
 
-(defn- session-card [dispatch! {:keys [session-id name timestamp current? active? busy? has-dialog? unread?]}]
+(defn- session-card [dispatch! {:keys [session-id name timestamp current? active? busy? has-dialog? unread? favorite?]}]
   [:div {:class ["project-card" (when active? "project-card--active")
                  (when has-dialog? "project-card--dialog")
                  (when current? "project-card--current")]
@@ -1379,6 +1380,14 @@
    ;; mis-reconcile that slot and append a second spinner. A stable wrapper
    ;; keeps each card's child structure invariant so the indicator only ever
    ;; swaps content inside a node that never moves on its own.
+   (when session-id
+     [:button {:class ["project-card-action" "project-card-favorite"
+                       (when favorite? "project-card-favorite--on")]
+               :title (if favorite? "Remove bookmark" "Bookmark session")
+               :on {:click (fn [^js e]
+                             (.stopPropagation e)
+                             (dispatch! {:type :favorites/toggle :session-id session-id}))}}
+      (icon/icon {:icon-name :star :size :sm})])
    [:div {:class ["project-card-status"]}
     (cond
       busy?   (spinner)
@@ -1520,6 +1529,40 @@
         :else
         [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
 
+(defn- favorites-view
+  "Flat list of bookmarked sessions (filtered from the lobby sessions)."
+  [state dispatch!]
+  (let [raw-query  (get-in state [:web/search :favorites])
+        query      (str/lower-case (str/trim (or raw-query "")))
+        sessions   (->> (get-in state [:lobby :sessions])
+                        (filter :favorite?))
+        sessions   (if (seq query)
+                     (filter #(session-matches? query (:name %)) sessions)
+                     sessions)]
+    [:div {:class ["container"] :replicant/key "favorites"}
+     [:div {:class ["topbar"]}
+      (menu-button dispatch!)
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} "Favorites"]
+      (overflow-menu dispatch! state)]
+     [:div {:class ["home"]}
+      (search-box dispatch! :favorites "Search favorites\u2026" raw-query)
+      (cond
+        (seq sessions)
+        [:div {:class ["project-list"]}
+         (for [s (active-first state sessions)]
+           (session-card dispatch! s))]
+
+        (seq query)
+        [:div {:class ["empty-state"]} [:p "No matching favorites."]]
+
+        :else
+        [:div {:class ["empty-state"]}
+         [:p "No favorites yet."]
+         [:p {:class ["empty-state-hint"]} "Tap the star on a session to bookmark it."]])]]))
+
 (defn- personal-agent-home-view
   "Home view for personal-agent mode: a flat session list with no project
    navigation (the personal agent has no projects)."
@@ -1563,6 +1606,9 @@
       (= selected-dir :all)
       (all-sessions-view state dispatch!)
 
+      (= selected-dir :favorites)
+      (favorites-view state dispatch!)
+
       selected-dir
       (project-sessions-view state dispatch!)
 
@@ -1576,6 +1622,13 @@
             loading?   (:web/projects-loading? state)
             rooms      (get-in state [:lobby :rooms])
             connected? (:web/connected? state)
+            ;; Session-ids the user has favorited (from disk sessions in the
+            ;; lobby); used to light up the star on live/orphan room cards,
+            ;; which are built from :rooms and don't carry :favorite? directly.
+            fav-ids    (->> (get-in state [:lobby :sessions])
+                            (filter :favorite?)
+                            (map :session-id)
+                            set)
             ;; Active rooms without a known project
             orphans    (filter (fn [r] (:session-id r)) rooms)]
         [:div {:class ["container"] :replicant/key "home"}
@@ -1619,7 +1672,8 @@
                   (session-card dispatch! {:session-id (:session-id r)
                                           :name (or (:session-name r) "New session")
                                           :active? true :busy? (:busy? r)
-                                          :has-dialog? (:has-dialog? r)})))
+                                          :has-dialog? (:has-dialog? r)
+                                          :favorite? (contains? fav-ids (:session-id r))})))
               ;; All sessions link (hide when filtering)
               (when-not (seq query)
                 [:div {:class ["project-card"]
@@ -1629,6 +1683,17 @@
                   (icon/icon {:icon-name :message-circle :size :sm})]
                  [:div {:class ["project-card-info"]}
                   [:span {:class ["project-card-name"]} "All sessions"]]
+                 [:div {:class ["project-card-chevron"]}
+                  (icon/icon {:icon-name :chevron-right :size :sm})]])
+              ;; Favorites link (hide when filtering)
+              (when-not (seq query)
+                [:div {:class ["project-card"]
+                       :replicant/key "favorites"
+                       :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :favorites}))}}
+                 [:div {:class ["project-card-icon"]}
+                  (icon/icon {:icon-name :star :size :sm})]
+                 [:div {:class ["project-card-info"]}
+                  [:span {:class ["project-card-name"]} "Favorites"]]
                  [:div {:class ["project-card-chevron"]}
                   (icon/icon {:icon-name :chevron-right :size :sm})]])
               ;; Project directories

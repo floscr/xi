@@ -501,6 +501,21 @@
                                                      :web/pr-detail-cwd cwd
                                                      :web/pr-detail-number number
                                                      :web/pr-detail-loading? false)})
+          ;; Session bookmarks. Flip locally for a snappy star, then forward:
+          ;; the server persists and rebroadcasts an authoritative :lobby/state.
+          ;; Project-session listings aren't rebroadcast, so the local flip is
+          ;; what keeps that view in sync until it's re-fetched.
+          :favorites/toggle      (fn [st {:keys [session-id]}]
+                                   (let [flip (fn [ss]
+                                                (mapv #(if (= (:session-id %) session-id)
+                                                         (update % :favorite? not)
+                                                         %)
+                                                      ss))]
+                                     {:state (-> st
+                                                 (update-in [:lobby :sessions] flip)
+                                                 (update :web/project-sessions flip))
+                                      :effects [[:ws/send {:type :favorites/toggle
+                                                           :session-id session-id}]]}))
           ;; Projects
           :projects/web-list     (fn [st _ev]
                                     {:state (assoc st :web/projects-loading? true)

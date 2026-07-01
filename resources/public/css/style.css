@@ -1040,6 +1040,23 @@ body {
   color: var(--fg-0);
 }
 
+/* Bookmark star on session cards. Muted/outline when off, gold + filled when
+   on. Always visible (touch-friendly) rather than hover-only. */
+.project-card-favorite {
+  color: var(--fg-3, var(--fg-2));
+  opacity: 0.55;
+}
+.project-card-favorite:hover {
+  color: var(--fg-0);
+  opacity: 1;
+}
+.project-card-favorite--on {
+  color: var(--warning, #f5a623);
+  opacity: 1;
+}
+.project-card-favorite--on svg { fill: currentColor; }
+.project-card-favorite--on:hover { color: var(--warning, #f5a623); }
+
 .project-card-name { font-weight: 600; }
 
 .session-delete-btn {

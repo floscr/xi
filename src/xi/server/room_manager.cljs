@@ -182,6 +182,12 @@
   [_st {:keys [client-id cwd number]}]
   {:effects [[:pr/web-detail-reply {:client-id client-id :cwd cwd :number number}]]})
 
+(defn- favorites-toggle
+  "Roomless: star/unstar a session by id. The write + lobby rebroadcast happen
+   in the :favorites/toggle-reply effect (needs disk access)."
+  [_st {:keys [session-id]}]
+  {:effects [[:favorites/toggle-reply {:session-id session-id}]]})
+
 
 (def handlers
   {:room/join              room-join
@@ -194,7 +200,8 @@
    :projects/web-sessions  projects-web-sessions
    :diff/web-load          diff-web-load
    :pr/web-list            pr-web-list
-   :pr/web-detail          pr-web-detail})
+   :pr/web-detail          pr-web-detail
+   :favorites/toggle       favorites-toggle})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
 

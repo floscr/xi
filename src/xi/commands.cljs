@@ -155,6 +155,16 @@
 (defn- cmd-sessions [_st {:keys [room-id]}]
   {:effects [[:session/list {:room-id room-id}]]})
 
+(defn- cmd-favorites [_st {:keys [room-id]}]
+  {:effects [[:session/list-favorites {:room-id room-id}]]})
+
+(defn- cmd-favorite
+  "Toggle the favorite star on the current session (no picker)."
+  [st {:keys [room-id]}]
+  (if-let [sid (get-in st [:rooms room-id :session :id])]
+    {:effects [[:session/favorite-toggle {:room-id room-id :session-id sid}]]}
+    (status st room-id "No active session to favorite.")))
+
 (defn- cmd-new [_st {:keys [room-id]}]
   {:effects [[:session/new {:room-id room-id :save-current? true}]]})
 
@@ -298,6 +308,8 @@
    {:name "model"    :description "Show or set model"                  :handler cmd-model}
    {:name "resume"   :description "Resume a previous session"          :handler cmd-resume}
    {:name "sessions" :description "List previous sessions"             :handler cmd-sessions}
+   {:name "favorites" :description "List favorited sessions"           :handler cmd-favorites}
+   {:name "favorite"  :description "Toggle favorite on the current session" :handler cmd-favorite}
    {:name "new"      :description "Start a new session"                :handler cmd-new}
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
    {:name "truncate" :description "Summarize conversation to reduce context" :handler cmd-compact}
@@ -451,6 +463,15 @@
       (assoc :effects [[:app/dispatch {:type :prompt/submit :room-id room-id
                                        :text after-prompt}]]))))
 
+(defn- session-toggle-favorite
+  "Menu keybinding (* in /resume or /favorites) toggled a star. Defers the
+   disk write to the :session/favorite-toggle effect, keyed by the selected
+   summary's :session-id."
+  [st {:keys [room-id selected reopen]}]
+  (if-let [sid (get-in selected [:summary :session-id])]
+    {:effects [[:session/favorite-toggle {:room-id room-id :session-id sid :reopen reopen}]]}
+    (status st room-id "No session selected.")))
+
 (defn- session-resumed [st {:keys [room-id session summary messages]}]
   (when-let [room (state/get-room st room-id)]
     (let [;; Claude/Pi sessions load with :cwd nil (load-session can't know it);
@@ -531,6 +552,7 @@
     :ui/clear-images clear-images
     :session/created session-created
     :session/resumed session-resumed
+    :session/toggle-favorite session-toggle-favorite
     :session/updated session-updated
     :cwd/changed    cwd-changed}))
 

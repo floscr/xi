@@ -26,6 +26,9 @@
 (def ^:private CLAUDE_PROJECTS_DIR
   (.join node-path HOME ".claude" "projects"))
 
+(def ^:private FAVORITES_FILE
+  (.join node-path HOME ".config" "xi" "favorites.json"))
+
 ;; ── Helpers ───────────────────────────────────────────────────────────────────
 
 (defn- gen-uuid-v7
@@ -325,6 +328,46 @@
                      (try (.isDirectory (fs/statSync full))
                           (catch :default _ false))))))))
 
+;; ── Favorites (source-agnostic bookmarks) ─────────────────────────────────────
+;; Favorites live in one JSON file keyed by the summary's :session-id, so
+;; Xi/Claude/Pi sessions can all be starred without editing their own files.
+
+(defn load-favorites
+  "Set of favorited session-ids from ~/.config/xi/favorites.json (or #{})."
+  []
+  (try
+    (if (fs/existsSync FAVORITES_FILE)
+      (->> (js/JSON.parse (fs/readFileSync FAVORITES_FILE "utf8"))
+           (js->clj)
+           (set))
+      #{})
+    (catch :default _e #{})))
+
+(defn annotate-favorites
+  "Tag each summary with :favorite? using a favorites set. The 1-arity reads
+   the set from disk once; the 2-arity is pure (for tests / batch use)."
+  ([summaries] (annotate-favorites summaries (load-favorites)))
+  ([summaries favs]
+   (mapv #(assoc % :favorite? (contains? favs (:session-id %))) summaries)))
+
+(defn favorite?
+  "True when session-id is currently favorited."
+  [session-id]
+  (contains? (load-favorites) session-id))
+
+(defn toggle-favorite!
+  "Add/remove session-id from favorites. Returns the new favorite? state."
+  [session-id]
+  (let [favs  (load-favorites)
+        fav?  (contains? favs session-id)
+        favs' (if fav? (disj favs session-id) (conj favs session-id))]
+    (try
+      (fs/mkdirSync (.dirname node-path FAVORITES_FILE) #js {:recursive true})
+      (fs/writeFileSync FAVORITES_FILE (js/JSON.stringify (clj->js (vec favs'))))
+      (catch :default e
+        (js/console.error "[session] favorites write failed:" e)))
+    (not fav?)))
+
 (defn list-sessions
   "List all sessions for a CWD from all sources. Returns vec of session
    summaries, newest first. Sources: Xi metadata, Claude CLI, Pi sessions."
@@ -342,10 +385,11 @@
         xi-ids (set (keep :cli-session-id xi-sessions))
         ;; Don't show claude sessions that have Xi metadata (avoid duplicates)
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
-    (->> (concat xi-sessions claude-filtered pi-sessions)
-         (sort-by #(or (:last-accessed %) (:timestamp %)))
-         reverse
-         vec)))
+    (annotate-favorites
+     (->> (concat xi-sessions claude-filtered pi-sessions)
+          (sort-by #(or (:last-accessed %) (:timestamp %)))
+          reverse
+          vec))))
 
 (defn list-all-sessions
   "List sessions across ALL CWDs from all sources. Returns vec of session
@@ -372,10 +416,11 @@
         ;; Dedup: Xi meta takes priority over claude sessions with same session-id
         xi-ids (set (keep :cli-session-id xi-sessions))
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
-    (->> (concat xi-sessions claude-filtered pi-sessions)
-         (sort-by #(or (:last-accessed %) (:timestamp %)))
-         reverse
-         vec)))
+    (annotate-favorites
+     (->> (concat xi-sessions claude-filtered pi-sessions)
+          (sort-by #(or (:last-accessed %) (:timestamp %)))
+          reverse
+          vec))))
 
 (defn list-personal-agent-sessions
   "List sessions from the personal-agent sessions dir only.
@@ -383,10 +428,11 @@
   []
   (let [xi-sessions (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
                          (keep read-xi-session-meta))]
-    (->> xi-sessions
-         (sort-by #(or (:last-accessed %) (:timestamp %)))
-         reverse
-         vec)))
+    (annotate-favorites
+     (->> xi-sessions
+          (sort-by #(or (:last-accessed %) (:timestamp %)))
+          reverse
+          vec))))
 
 (defn- summary-matches-id? [session-id summary]
   (or (= session-id (:session-id summary))
