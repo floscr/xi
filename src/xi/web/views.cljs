@@ -240,13 +240,17 @@
       (if-let [imgs (seq (:images entry))]
         [:div {:class ["user-images"]}
          (map-indexed
-          (fn [i {:keys [data media-type]}]
-            (let [src (str "data:" media-type ";base64," data)]
-              [:img {:replicant/key i
-                     :class ["user-image" "lightbox-thumb"]
-                     :src src
-                     :alt "attached"
-                     :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}]))
+          (fn [i {:keys [data media-type name]}]
+            (if (= media-type "application/pdf")
+              [:div {:replicant/key i :class ["user-attachment-chip"]}
+               (icon/icon {:icon-name :file-text :size :md})
+               [:span {:class ["user-attachment-name"]} (or name "document.pdf")]]
+              (let [src (str "data:" media-type ";base64," data)]
+                [:img {:replicant/key i
+                       :class ["user-image" "lightbox-thumb"]
+                       :src src
+                       :alt "attached"
+                       :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}])))
           imgs)]
         (when-let [n (:image-count entry)]
           (when (pos? n)
@@ -331,15 +335,39 @@
        (set! (.-onerror reader) (fn [_] (resolve nil)))
        (.readAsDataURL reader file)))))
 
-(defn- add-image-files!
-  "Resize a seq of Files and stage them as compose attachments."
+(defn- read-pdf-file
+  "Read a PDF File as base64; promise of
+   {:data base64 :media-type \"application/pdf\" :name filename} or nil on failure."
+  [^js file]
+  (js/Promise.
+   (fn [resolve _]
+     (let [reader (js/FileReader.)]
+       (set! (.-onload reader)
+             (fn [_]
+               (let [[_ media-type b64] (re-matches #"data:([^;]+);base64,(.*)"
+                                                    (.-result reader))]
+                 (resolve {:data b64
+                           :media-type (or media-type "application/pdf")
+                           :name (.-name file)}))))
+       (set! (.-onerror reader) (fn [_] (resolve nil)))
+       (.readAsDataURL reader file)))))
+
+(defn- add-files!
+  "Stage a seq of Files as compose attachments: images are downscaled, PDFs are
+   read as-is."
   [dispatch! files]
   (when (seq files)
-    (-> (js/Promise.all (to-array (map resize-image-file files)))
+    (-> (js/Promise.all
+         (to-array
+          (map (fn [^js f]
+                 (if (= "application/pdf" (.-type f))
+                   (read-pdf-file f)
+                   (resize-image-file f)))
+               files)))
         (.then (fn [results]
                  (when-let [valid (seq (remove nil? (array-seq results)))]
                    (dispatch! {:type :compose/add-images :images (vec valid)}))))
-        (.catch (fn [err] (js/console.error "[xi-web] image read failed:" err))))))
+        (.catch (fn [err] (js/console.error "[xi-web] attachment read failed:" err))))))
 
 (defn- handle-compose-paste! [dispatch! ^js e]
   (let [items (.. e -clipboardData -items)
@@ -350,20 +378,27 @@
                                (.getAsFile item))))))]
     (when (seq files)
       (.preventDefault e)
-      (add-image-files! dispatch! files))))
+      (add-files! dispatch! files))))
 
 (defn- compose-image-strip [dispatch! images]
   (when (seq images)
     [:div {:class ["compose-images"]}
      (map-indexed
-      (fn [idx {:keys [data media-type]}]
-        [:div {:replicant/key idx :class ["compose-image-thumb"]}
-         (let [src (str "data:" media-type ";base64," data)]
-           [:img {:src src :alt "attachment" :class ["lightbox-thumb"]
-                  :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}])
-         [:button {:class ["compose-image-remove"]
-                   :on {:click (fn [_] (dispatch! {:type :compose/remove-image :idx idx}))}}
-          (icon/icon {:icon-name :x :size :sm})]])
+      (fn [idx {:keys [data media-type name]}]
+        (if (= media-type "application/pdf")
+          [:div {:replicant/key idx :class ["compose-attachment-chip"]}
+           (icon/icon {:icon-name :file-text :size :md})
+           [:span {:class ["compose-attachment-name"]} (or name "document.pdf")]
+           [:button {:class ["compose-attachment-remove"]
+                     :on {:click (fn [_] (dispatch! {:type :compose/remove-image :idx idx}))}}
+            (icon/icon {:icon-name :x :size :sm})]]
+          [:div {:replicant/key idx :class ["compose-image-thumb"]}
+           (let [src (str "data:" media-type ";base64," data)]
+             [:img {:src src :alt "attachment" :class ["lightbox-thumb"]
+                    :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}])
+           [:button {:class ["compose-image-remove"]
+                     :on {:click (fn [_] (dispatch! {:type :compose/remove-image :idx idx}))}}
+            (icon/icon {:icon-name :x :size :sm})]]))
       images)]))
 
 ;; ── Command suggestions ───────────────────────────────────────────────────────
@@ -529,10 +564,10 @@
                                       (.click)))}}
        (icon/icon {:icon-name :image :size :md})]
       [:input {:id "compose-image-input" :type "file"
-               :accept "image/*" :multiple true
+               :accept "image/*,application/pdf" :multiple true
                :style {:display "none"}
                :on {:change (fn [^js e]
-                              (add-image-files! dispatch! (array-seq (.. e -target -files)))
+                              (add-files! dispatch! (array-seq (.. e -target -files)))
                               (set! (.. e -target -value) ""))}}]
       [:div {:class ["compose-input-wrapper"]}
        (form/form-textarea-auto

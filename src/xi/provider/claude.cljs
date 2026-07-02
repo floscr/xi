@@ -323,11 +323,16 @@
                 content (into-array
                          (concat
                           text-blocks
-                          (map (fn [img]
-                                 #js {:type "image"
-                                      :source #js {:type "base64"
-                                                   :media_type (:media-type img)
-                                                   :data (:data img)}})
+                          (map (fn [{:keys [media-type data]}]
+                                 (if (= media-type "application/pdf")
+                                   #js {:type "document"
+                                        :source #js {:type "base64"
+                                                     :media_type media-type
+                                                     :data data}}
+                                   #js {:type "image"
+                                        :source #js {:type "base64"
+                                                     :media_type media-type
+                                                     :data data}}))
                                images)))
                 msg #js {:type "user"
                          :message #js {:role "user" :content content}
