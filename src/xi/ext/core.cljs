@@ -34,6 +34,18 @@
                    the provider tool ctx merged with the gate ctx above
      :commands     [{:name :description :handler}] — same contract as
                    xi.commands: (fn [state {:keys [room-id args commands]}])
+     :roomless-events #{event-type} — event types clients may send without
+                   joining a room (connection-level, keyed by :client-id).
+                   Unioned into the WS server's roomless whitelist.
+     :no-broadcast #{event-type} — room-scoped event types the WS server
+                   must NOT echo back to the room's clients.
+     :lobby-relevant #{event-type} — event types after which the WS server
+                   pushes fresh :lobby/state to every client.
+     :server-fx    (fn [{:keys [send!]}] → {fx-type (fn [ctx payload])})
+                   fx that reply directly to a WS client. Instantiated by
+                   the WS server with send! = (fn [client-id event]) —
+                   event is a data map, encoding is the server's job.
+                   Only exists in server mode (no-op elsewhere).
      :system-prompt str | (fn [cwd] → str|nil) — appended to room system
      :keybindings  [{:key \"alt+r\" :event {…} :when (fn [state])}] — TUI
                    client; :event is dispatched with :room-id added
@@ -76,6 +88,10 @@
                                          (:event-hooks e)))
                                {} exts)
      :tool-gates       (vec (keep :tool-gate exts))
+     :roomless-events  (into #{} (mapcat :roomless-events) exts)
+     :no-broadcast     (into #{} (mapcat :no-broadcast) exts)
+     :lobby-relevant   (into #{} (mapcat :lobby-relevant) exts)
+     :server-fx-fns    (vec (keep :server-fx exts))
      :keybindings      (vec (mapcat :keybindings exts))
      :badges           (vec (keep :prompt-badge exts))
      :system-prompts   (vec (keep :system-prompt exts))

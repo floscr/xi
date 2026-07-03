@@ -42,6 +42,7 @@
             [xi.ext.dictation :as ext.dictation]
             [xi.ext.done-notify :as ext.done-notify]
             [xi.ext.events :as ext.events]
+            [xi.ext.github :as ext.github]
             [xi.ext.gtd :as ext.gtd]
             [xi.ext.kb :as ext.kb]
             [xi.ext.perplexity :as ext.perplexity]
@@ -95,6 +96,7 @@
    ext.perplexity/extension
    ext.commit/extension
    ext.clj-surgeon/extension
+   ext.github/extension
    ext.gtd/extension
    ext.permission-gate/extension
    ext.todo-intercept/extension
@@ -321,7 +323,8 @@
                 {:server-opts server-opts
                  :personal-agent? personal-agent?
                  :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts composed cwd))
-                 :room-ext-init (:room-ext-init composed)})
+                 :room-ext-init (:room-ext-init composed)
+                 :ext composed})
         handlers (-> (make-handlers (:commands composed))
                      (ext/merge-handlers composed)
                      (merge (:handlers dialogs))

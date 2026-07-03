@@ -19,10 +19,7 @@
    create-server closure (runtime resources, not app state).
 
    Deferred to later phases: :visibility tracking, dictation."
-  (:require [clojure.string :as str]
-            [xi.ext.gtd :as gtd]
-            [xi.fx :as fx]
-            [xi.github :as github]
+  (:require [xi.fx :as fx]
             [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
@@ -30,13 +27,14 @@
 
 (def DEFAULT_PORT 7474)
 
-(def ^:private no-broadcast
-  "Room-scoped event types that are connection bookkeeping, not room state."
-  #{:room/join :room/attach :room/leave :room/list :agent/session-init
-    :gtd/start-task})
+(def ^:private base-no-broadcast
+  "Room-scoped event types that are connection bookkeeping, not room state.
+   Extensions add theirs via :no-broadcast."
+  #{:room/join :room/attach :room/leave :room/list :agent/session-init})
 
-(def ^:private lobby-relevant
-  "Events after which lobby (roomless) clients get a fresh :lobby/state."
+(def ^:private base-lobby-relevant
+  "Events after which lobby (roomless) clients get a fresh :lobby/state.
+   Extensions add theirs via :lobby-relevant."
   #{:room/create :room/close :room/attach :room/leave :favorites/changed
     :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
     :ui/dialog-open :ui/dialog-response})
@@ -45,12 +43,12 @@
   "Event types a client may send before joining a room."
   #{:room/join :room/leave :room/list})
 
-(def ^:private roomless-types
+(def ^:private base-roomless-types
   "Event types processed regardless of room membership (connection-level
-   bookkeeping that uses :client-id, not :room-id)."
-  #{:client/update :session/counts :gtd/web-list :gtd/web-task-action :models/web-list
-    :projects/web-list :projects/web-sessions :session/content-search :diff/web-load
-    :pr/web-list :pr/web-detail :favorites/toggle})
+   bookkeeping that uses :client-id, not :room-id). Extensions add theirs
+   via :roomless-events."
+  #{:client/update :session/counts :models/web-list :session/content-search
+    :diff/web-load :favorites/toggle})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -151,14 +149,27 @@
      :room-ext-init      map of ext-id → initial room-scoped state, seeded
                          into each provisioned room's [:ext] (mirrors to
                          clients via the :room/joined snapshot).
+     :ext                the composed extension map (ext/compose) — the
+                         server consumes :roomless-events, :no-broadcast,
+                         :lobby-relevant (unioned onto its base sets) and
+                         :server-fx-fns (instantiated with a send! that
+                         encodes + delivers an event map to one client).
 
    Returns {:fx {…} :start! (fn [app {:keys [port]}] → {:port :stop!})}."
-  [{:keys [server-opts personal-agent? ext-system-prompt-parts room-ext-init]}]
+  [{:keys [server-opts personal-agent? ext-system-prompt-parts room-ext-init ext]}]
   (let [sockets (js/Map.)
         send!   (fn [client-id payload]
                   (when-let [ws (.get sockets client-id)]
-                    (try (.send ws payload) (catch :default _ nil))))]
+                    (try (.send ws payload) (catch :default _ nil))))
+        send-event!    (fn [client-id event] (send! client-id (wire/encode event)))
+        no-broadcast   (into base-no-broadcast (:no-broadcast ext))
+        lobby-relevant (into base-lobby-relevant (:lobby-relevant ext))
+        roomless-types (into base-roomless-types (:roomless-events ext))
+        ext-fx         (apply merge {}
+                              (map (fn [f] (f {:send! send-event!}))
+                                   (:server-fx-fns ext)))]
     {:fx
+     (merge
      {:ws/send-to
       (fn [_ {:keys [client-id event]}]
         (send! client-id (wire/encode event)))
@@ -217,60 +228,11 @@
                                        :counts (session/count-session-responses
                                                 session-ids)})))
 
-      ;; GTD web list: fetch tasks + profile->cwd and reply to client.
-      :gtd/web-list-reply
-      (fn [_ {:keys [client-id]}]
-        (gtd/web-list-reply-fx
-         (fn [event] (send! client-id (wire/encode event)))))
-
       ;; Model list for web clients.
       :models/web-list-reply
       (fn [_ {:keys [client-id]}]
         (fx/web-model-list-reply-fx
          (fn [event] (send! client-id (wire/encode event)))))
-
-      ;; GTD web task action: archive/done a task, then refresh list.
-      :gtd/web-task-action-reply
-      (fn [_ {:keys [client-id task-id action]}]
-        (gtd/web-task-action-fx
-         (fn [event] (send! client-id (wire/encode event)))
-         task-id action))
-
-      ;; Project list: run `project select --raw` and return dirs.
-      :projects/web-list-reply
-      (fn [_ {:keys [client-id]}]
-        (let [proc (js/Bun.spawn #js ["project" "select" "--raw"]
-                                  #js {:stdout "pipe" :stderr "pipe"})]
-          (-> (.text (.-stdout proc))
-              (.then (fn [stdout]
-                       (let [dirs (->> (str/split-lines (str/trim stdout))
-                                       (remove empty?)
-                                       vec)]
-                         (send! client-id (wire/encode {:type :projects/web-list-result
-                                                       :dirs dirs})))))
-              (.catch (fn [_]
-                        (send! client-id (wire/encode {:type :projects/web-list-result
-                                                      :dirs []})))))))
-
-      ;; Sessions for a specific project CWD.
-      :projects/web-sessions-reply
-      (fn [{:keys [state]} {:keys [client-id cwd]}]
-        (let [;; Provider session ids held by live rooms must be hidden from
-              ;; the saved-session list to avoid a duplicate card during the
-              ;; first agent turn before Xi's own :session/sync has run.
-              live-pids (into #{}
-                              (keep (fn [[_ room]]
-                                      (get-in room [:session :provider-session-id])))
-                              (:rooms state))
-              sessions (cond->> (session/list-sessions cwd)
-                         (seq live-pids)
-                         (filterv #(not (contains? live-pids (:session-id %))))
-                         :always
-                         (mapv #(select-keys % [:session-id :name :cwd
-                                                :last-accessed :timestamp :source :favorite?])))]
-          (send! client-id (wire/encode {:type :projects/web-sessions-result
-                                         :cwd cwd
-                                         :sessions sessions}))))
 
       ;; Content search over saved sessions (names + conversation text).
       :session/content-search-reply
@@ -295,31 +257,16 @@
                                        :cwd  cwd
                                        :text (fx/all-git-changes-text cwd)})))
 
-      ;; Open PRs for a CWD (roomless pull-requests list view).
-      :pr/web-list-reply
-      (fn [_ {:keys [client-id cwd]}]
-        (-> (github/pr-list cwd)
-            (.then (fn [res]
-                     (send! client-id
-                            (wire/encode (merge {:type :pr/web-list-result :cwd cwd}
-                                                res)))))))
-
-      ;; One PR's metadata + diff (roomless PR detail view).
-      :pr/web-detail-reply
-      (fn [_ {:keys [client-id cwd number]}]
-        (-> (github/pr-detail cwd number)
-            (.then (fn [res]
-                     (send! client-id
-                            (wire/encode (merge {:type :pr/web-detail-result
-                                                 :cwd cwd :number number}
-                                                res)))))))
-
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally
       ;; (xi.client.ws-transport), the rest are no-ops here.
       :app/quit       (fn [_ _] nil)
       :app/reload     (fn [_ _] nil)
       :clipboard/copy (fn [_ _] nil)}
+
+     ;; Extension server-fx — reply-to-client effect handlers instantiated
+     ;; with the send! capability (ext/compose :server-fx-fns).
+     ext-fx)
 
      :start!
      (fn [{:keys [dispatch! state add-tap!]} {:keys [port]}]

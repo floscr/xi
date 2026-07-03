@@ -156,16 +156,6 @@
   [_st {:keys [client-id]}]
   {:effects [[:models/web-list-reply {:client-id client-id}]]})
 
-(defn- projects-web-list
-  "Roomless: return the list of project directories."
-  [_st {:keys [client-id]}]
-  {:effects [[:projects/web-list-reply {:client-id client-id}]]})
-
-(defn- projects-web-sessions
-  "Roomless: return sessions for a specific CWD."
-  [_st {:keys [client-id cwd]}]
-  {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd}]]})
-
 (defn- session-content-search
   "Roomless: search saved-session names + conversation text for a query.
    `cwd` scopes to a project; nil searches all sessions."
@@ -178,16 +168,6 @@
    view, which has no room to attach a :diff buffer to)."
   [_st {:keys [client-id cwd]}]
   {:effects [[:diff/web-load-reply {:client-id client-id :cwd cwd}]]})
-
-(defn- pr-web-list
-  "Roomless: return the open pull requests for a CWD."
-  [_st {:keys [client-id cwd]}]
-  {:effects [[:pr/web-list-reply {:client-id client-id :cwd cwd}]]})
-
-(defn- pr-web-detail
-  "Roomless: return one pull request's metadata + diff."
-  [_st {:keys [client-id cwd number]}]
-  {:effects [[:pr/web-detail-reply {:client-id client-id :cwd cwd :number number}]]})
 
 (defn- favorites-toggle
   "Roomless: star/unstar a session by id. The write + lobby rebroadcast happen
@@ -203,12 +183,8 @@
    :room/list              room-list
    :session/counts         session-counts
    :models/web-list        models-web-list
-   :projects/web-list      projects-web-list
-   :projects/web-sessions  projects-web-sessions
    :session/content-search session-content-search
    :diff/web-load          diff-web-load
-   :pr/web-list            pr-web-list
-   :pr/web-detail          pr-web-detail
    :favorites/toggle       favorites-toggle})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────

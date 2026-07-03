@@ -288,9 +288,9 @@
   [_st {:keys [client-id task-id action]}]
   {:effects [[:gtd/web-task-action-reply {:client-id client-id :task-id task-id :action action}]]})
 
-(defn web-list-reply-fx
+(defn- web-list-reply-fx
   "Fetch all open GTD tasks with profile->cwd mapping and send the result
-   using the provided send-fn. Public so the WS server can call it."
+   using the provided send-fn."
   [send-fn]
   (let [cwd-map (load-gtd-profiles)]
     (-> (run-gtd-raw ["agenda" "--output" "edn"])
@@ -313,9 +313,8 @@
         (.catch (fn [_]
                   (send-fn {:type :gtd/web-list-result :tasks []}))))))
 
-(defn web-task-action-fx
-  "Run archive or done on a GTD task, then send updated task list.
-   Public so the WS server can call it."
+(defn- web-task-action-fx
+  "Run archive or done on a GTD task, then send updated task list."
   [send-fn task-id action]
   (let [args (case action
                "archive" ["change" "--id" task-id "--archive"]
@@ -331,6 +330,18 @@
       (send-fn {:type :gtd/web-task-action-error
                 :task-id task-id
                 :message (str "Unknown action: " action)}))))
+
+(defn- server-fx
+  "WS-server fx: fetch/act on tasks, reply to the requesting client."
+  [{:keys [send!]}]
+  {:gtd/web-list-reply
+   (fn [_ {:keys [client-id]}]
+     (web-list-reply-fx (fn [event] (send! client-id event))))
+
+   :gtd/web-task-action-reply
+   (fn [_ {:keys [client-id task-id action]}]
+     (web-task-action-fx (fn [event] (send! client-id event))
+                         task-id action))})
 
 ;; ── System Prompt ─────────────────────────────────────────────────────────────
 
@@ -383,6 +394,9 @@ Explicit `:file` always overrides auto-detection.")
                       :gtd/web-task-action  gtd-web-task-action}
    :fx               {:gtd/open-picker gtd-open-picker-fx
                       :gtd/start-task  gtd-start-task-fx}
+   :server-fx        server-fx
+   :roomless-events  #{:gtd/web-list :gtd/web-task-action}
+   :no-broadcast     #{:gtd/start-task}
    :tool-definitions tool-defs
    :tool-registry    {"gtd_list"    gtd-list
                       "gtd_capture" gtd-capture

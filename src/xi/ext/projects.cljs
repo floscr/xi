@@ -1,8 +1,13 @@
 (ns xi.ext.projects
   "Project path completion — /project opens a fuzzy picker of project paths
    (from `project select --raw`). Selecting inserts the path into the editor.
-   Tab drills into git-tracked files; Shift+Tab returns to the project list."
-  (:require [clojure.string :as str]))
+   Tab drills into git-tracked files; Shift+Tab returns to the project list.
+
+   Also serves the web client's roomless projects page: :projects/web-list
+   returns the project directories, :projects/web-sessions the saved
+   sessions for one project CWD."
+  (:require [clojure.string :as str]
+            [xi.session :as session]))
 
 (defn- shorten-path
   "Replace $HOME prefix with ~."
@@ -87,6 +92,58 @@
   [_st {:keys [room-id path]}]
   {:effects [[:editor/insert-text {:text path}]]})
 
+;; ── Web projects page (roomless) ───────────────────────────────────────────
+
+(defn- web-list
+  "Roomless: return the list of project directories."
+  [_st {:keys [client-id]}]
+  {:effects [[:projects/web-list-reply {:client-id client-id}]]})
+
+(defn- web-sessions
+  "Roomless: return sessions for a specific CWD."
+  [_st {:keys [client-id cwd]}]
+  {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd}]]})
+
+(defn- server-fx
+  "WS-server fx: project list + per-project sessions, replied to the
+   requesting client."
+  [{:keys [send!]}]
+  {;; Project list: run `project select --raw` and return dirs.
+   :projects/web-list-reply
+   (fn [_ {:keys [client-id]}]
+     (let [proc (js/Bun.spawn #js ["project" "select" "--raw"]
+                              #js {:stdout "pipe" :stderr "pipe"})]
+       (-> (.text (.-stdout proc))
+           (.then (fn [stdout]
+                    (let [dirs (->> (str/split-lines (str/trim stdout))
+                                    (remove empty?)
+                                    vec)]
+                      (send! client-id {:type :projects/web-list-result
+                                        :dirs dirs}))))
+           (.catch (fn [_]
+                     (send! client-id {:type :projects/web-list-result
+                                       :dirs []}))))))
+
+   ;; Sessions for a specific project CWD.
+   :projects/web-sessions-reply
+   (fn [{:keys [state]} {:keys [client-id cwd]}]
+     (let [;; Provider session ids held by live rooms must be hidden from
+           ;; the saved-session list to avoid a duplicate card during the
+           ;; first agent turn before Xi's own :session/sync has run.
+           live-pids (into #{}
+                           (keep (fn [[_ room]]
+                                   (get-in room [:session :provider-session-id])))
+                           (:rooms state))
+           sessions (cond->> (session/list-sessions cwd)
+                      (seq live-pids)
+                      (filterv #(not (contains? live-pids (:session-id %))))
+                      :always
+                      (mapv #(select-keys % [:session-id :name :cwd
+                                             :last-accessed :timestamp :source :favorite?])))]
+       (send! client-id {:type :projects/web-sessions-result
+                         :cwd cwd
+                         :sessions sessions})))})
+
 (def extension
   {:id       :projects
    :commands [{:name "project"
@@ -94,8 +151,12 @@
                :handler open-picker}]
    :handlers {:project/insert insert-handler
               :project/open   open-picker
-              :project/drill  drill-handler}
+              :project/drill  drill-handler
+              :projects/web-list     web-list
+              :projects/web-sessions web-sessions}
    :fx       {:project/open-picker open-picker-fx
               :project/open-files  open-files-fx}
+   :server-fx server-fx
+   :roomless-events #{:projects/web-list :projects/web-sessions}
    :keybindings [{:key "alt+p"
                   :event {:type :project/open}}]})
