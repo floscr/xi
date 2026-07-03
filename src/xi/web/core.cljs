@@ -23,6 +23,7 @@
             [xi.diff :as diff]
             [xi.naming :as naming]
             [xi.web.cache :as cache]
+            [xi.web.demo :as demo]
             [xi.web.router :as router]
             [xi.web.views :as views]))
 
@@ -798,9 +799,18 @@
         port   (or (.get params "port") page-port "7474")]
     (str proto host ":" port)))
 
-(defn ^:export init! []
-  (js/console.log "[xi-web] starting")
-  (r/set-dispatch! (fn [_ _]))
+(defn- demo-init!
+  "Static one-shot render for README screenshots (?demo=<view>). Seeds
+   fabricated data, skips the WS transport entirely, and renders once with a
+   no-op dispatch so the page shows a fully-populated view backed by no real
+   data. Color scheme is left on `auto` so a devtools emulation can drive
+   light/dark."
+  [view]
+  (js/console.log "[xi-web] demo mode:" view)
+  (.setProperty (.-style js/document.documentElement) "--app-height" "100dvh")
+  (r/render (el "app") (views/root-view (demo/demo-state view) (fn [& _]))))
+
+(defn- real-init! []
   (let [stored-theme (or (try (.getItem js/localStorage "ui-theme") (catch :default _ nil))
                         "auto")
         route     (router/parse-path (.-pathname js/window.location))
@@ -876,6 +886,13 @@
                          (dispatch! {:type :client/update
                                      :visible? (= "visible" (.-visibilityState js/document))})))
     (render! @state dispatch!)))
+
+(defn ^:export init! []
+  (js/console.log "[xi-web] starting")
+  (r/set-dispatch! (fn [_ _]))
+  (if-let [view (.get (js/URLSearchParams. (.-search js/window.location)) "demo")]
+    (demo-init! view)
+    (real-init!)))
 
 (defn ^:export reload! []
   (js/console.log "[xi-web] reloaded")
