@@ -129,6 +129,22 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
             {:keys [body]} (parse-frontmatter content)]
         body))))
 
+;; ── Web skill menu (roomless) ──────────────────────────────────────────────────
+
+(defn- skill-web-list
+  "Roomless handler: forward to the effect that scans skills for the client."
+  [_st {:keys [client-id]}]
+  {:effects [[:skill/web-list-reply {:client-id client-id}]]})
+
+(defn- server-fx
+  "WS-server fx: scan on-demand skills and reply to the requesting client."
+  [{:keys [send!]}]
+  {:skill/web-list-reply
+   (fn [_ {:keys [client-id]}]
+     (send! client-id {:type   :skill/web-list-result
+                       :skills (mapv #(select-keys % [:name :description])
+                                     (scan-skills))}))})
+
 ;; ── Commands ──────────────────────────────────────────────────────────────────
 
 (defn- skill-command
@@ -180,5 +196,8 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
                     :handler skill-command
                     :subcommands [{:name "list" :description "List available skills"}
                                   {:name "load" :description "Load a skill and auto-post it"}]}]
+   :handlers        {:skill/web-list skill-web-list}
+   :server-fx       server-fx
+   :roomless-events #{:skill/web-list}
    :fx            {:skill/list skill-list-fx
                    :skill/load skill-load-fx}})

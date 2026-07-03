@@ -1143,6 +1143,29 @@
                               (dispatch! {:type :models/select :model m :room-id room-id}))}}
        m])]])
 
+(defn- skill-selector
+  "Overlay menu of on-demand skills (name + description). Selecting one loads
+   it into the current room via `/skill load`. The web analog of the TUI
+   completion menu."
+  [dispatch! room-id skills]
+  (list
+   [:div {:class ["skill-selector-backdrop"]
+          :replicant/key "skill-backdrop"
+          :on {:click (fn [_] (dispatch! {:type :skill/close}))}}]
+   [:div {:class ["skill-selector"]
+          :replicant/key "skill-selector"}
+    (if (seq skills)
+      (for [{:keys [name description]} skills]
+        [:button {:class ["skill-selector-item"]
+                  :replicant/key name
+                  :on {:click (fn [e]
+                                (.stopPropagation e)
+                                (dispatch! {:type :skill/select :name name :room-id room-id}))}}
+         [:span {:class ["skill-selector-name"]} name]
+         (when (seq description)
+           [:span {:class ["skill-selector-desc"]} description])])
+      [:div {:class ["skill-selector-empty"]} "No skills found"])]))
+
 
 (defn- shorten-path
   "~/Code/Projects/xi → xi, ~/Code/Work/Hyma/studio → studio"
@@ -1258,6 +1281,14 @@
                                                :number (:number git-ctx)}))}}
             (icon/icon {:icon-name :file-text :size :sm})
             [:span "Diff"]])
+         (when room
+           [:button {:class ["overflow-menu-item"]
+                     :on {:click (fn [e]
+                                   (.stopPropagation e)
+                                   (dispatch! {:type :overflow/close})
+                                   (dispatch! {:type :skill/web-list}))}}
+            (icon/icon {:icon-name :zap :size :sm})
+            [:span "Skills"]])
          [:button {:class ["overflow-menu-item"]
                    :on {:click (fn [e]
                                  (.stopPropagation e)
@@ -1385,6 +1416,8 @@
          (icon/icon {:icon-name :refresh :size :md})])
       (offline-badge state)
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
+     (when-let [skills (:web/skill-list state)]
+       (skill-selector dispatch! (:id room) skills))
      (when has-tabs?
        (tab-bar dispatch! (:id room) active-buf buffers))
      (case active-buf

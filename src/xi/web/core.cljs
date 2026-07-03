@@ -483,6 +483,15 @@
                                                           :room-id room-id
                                                           :text (str "/model " model)}]]})
           :models/close          (fn [st _] {:state (dissoc st :web/model-list)})
+          :skill/web-list        forward
+          :skill/web-list-result (fn [st {:keys [skills]}]
+                                    {:state (assoc st :web/skill-list skills)})
+          :skill/select          (fn [st {:keys [name room-id]}]
+                                    {:state (dissoc st :web/skill-list)
+                                     :effects [[:ws/send {:type :input/submit
+                                                          :room-id room-id
+                                                          :text (str "/skill load " name)}]]})
+          :skill/close           (fn [st _] {:state (dissoc st :web/skill-list)})
           :scroll/at-bottom      (fn [st {:keys [at-bottom?]}]
                                     {:state (assoc-in st [:web/at-bottom (views/draft-key st)]
                                                       at-bottom?)})
