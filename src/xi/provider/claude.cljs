@@ -35,6 +35,16 @@
 (def ^:private claude-executable
   (delay (resolve-claude-executable)))
 
+(defn- cwd-missing?
+  "True when a working directory is set but doesn't exist on this host. A Pi
+   session (cwd=/var/lib/xi) opened on a machine without that dir makes Node's
+   spawn throw ENOENT, which the SDK mislabels as 'executable not found';
+   detecting the missing dir lets the agent recover instead."
+  [cwd]
+  (and (string? cwd)
+       (pos? (count cwd))
+       (try (not (.existsSync fs cwd)) (catch :default _ false))))
+
 ;; ── JSON Schema → Zod ─────────────────────────────────────────────────────────
 ;;
 ;; createSdkMcpServer needs Zod schemas. Convert our JSON Schema tool defs.
@@ -409,13 +419,25 @@
                            (.catch
                             (fn [err]
                               (let [msg (str (.-message err))]
-                                (if (and resume-id
-                                         (re-find #"No conversation found" msg))
+                                (cond
+                                  (and resume-id
+                                       (re-find #"No conversation found" msg))
                                   ;; The session we tried to resume is gone from
                                   ;; disk. Signal the agent to retry fresh rather
                                   ;; than surfacing a dead-end error to the user.
                                   (do (swap! state assoc :resume-failed true)
                                       (finish!))
+
+                                  ;; The working directory vanished (e.g. a Pi
+                                  ;; session with cwd=/var/lib/xi opened on a host
+                                  ;; without it). spawn ENOENT is mislabeled
+                                  ;; 'executable not found'; recover via the agent
+                                  ;; (cwd-select dialog) rather than dead-ending.
+                                  (cwd-missing? cwd)
+                                  (do (swap! state assoc :cwd-missing true)
+                                      (finish!))
+
+                                  :else
                                   (do
                                     (js/console.error "[claude] stream error:" msg)
                                     (when (:on-error callbacks)

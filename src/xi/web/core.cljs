@@ -324,6 +324,50 @@
                     :web/project-sessions-cwd cwd
                     :web/project-sessions-loading? false)})
 
+;; ── Session content search ────────────────────────────────────────────────────
+;; Names are searchable client-side, but message *content* lives only on the
+;; server, so content mode round-trips a query and caches the matching ids.
+
+(defn- content-search-cwd
+  "The project scope for a search key — only project-session lists are scoped."
+  [st key]
+  (when (= key :project-sessions) (:web/selected-project-dir st)))
+
+(defn- session-search
+  "Store the query; in content mode also (debounced) ask the server which
+   sessions match on message text."
+  [st {:keys [key query]}]
+  (let [st' (assoc-in st [:web/search key] query)]
+    (if (get-in st' [:web/content-search key])
+      {:state st'
+       :effects [[:session/content-search-debounce
+                  {:key key :query query :cwd (content-search-cwd st' key)}]]}
+      {:state st'})))
+
+(defn- toggle-content-search
+  "Flip a search box between name-only and message-content search. Turning it
+   on with a live query kicks off a search immediately."
+  [st {:keys [key]}]
+  (let [on?   (not (get-in st [:web/content-search key]))
+        query (get-in st [:web/search key])
+        st'   (-> st
+                  (assoc-in [:web/content-search key] on?)
+                  (update :web/content-matches dissoc key))]
+    (if (and on? (not (str/blank? (str/trim (or query "")))))
+      {:state st'
+       :effects [[:session/content-search-debounce
+                  {:key key :query query :cwd (content-search-cwd st' key)}]]}
+      {:state st'})))
+
+(defn- content-search-result
+  "Apply a content-search reply, ignoring stale ones whose query no longer
+   matches the live input."
+  [st {:keys [key query session-ids]}]
+  (if (= (str/trim (or query ""))
+         (str/trim (or (get-in st [:web/search key]) "")))
+    {:state (assoc-in st [:web/content-matches key] (set session-ids))}
+    {:state st}))
+
 (defn- pr-review-prompt
   "The prompt seeded into a fresh agent room to review a PR. The agent runs in
    the PR's project cwd, so it fetches the PR itself rather than us shipping a
@@ -373,6 +417,8 @@
           :lightbox/close        lightbox-close
           :copy/open             (fn [st {:keys [text]}] {:state (assoc st :web/copy-text text)})
           :copy/close            (fn [st _] {:state (dissoc st :web/copy-text)})
+          :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
+          :web/dialog-form-reset (fn [st _] {:state (dissoc st :web/dialog-form)})
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
           :web/optimistic-set    optimistic-set
@@ -380,8 +426,12 @@
           :cmd/select            cmd-select
           :web/record-command    record-command
           :theme/set-mode        theme-set-mode
-          :web/session-search    (fn [st {:keys [key query]}]
-                                    {:state (assoc-in st [:web/search key] query)})
+          :web/session-search    session-search
+          :web/toggle-content-search toggle-content-search
+          :session/content-search (fn [_st {:keys [key query cwd]}]
+                                    {:effects [[:ws/send {:type :session/content-search
+                                                          :key key :query query :cwd cwd}]]})
+          :session/content-search-result content-search-result
           :sidebar/toggle        (fn [st _] {:state (update st :web/sidebar-open? not)})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
@@ -568,7 +618,15 @@
    (fn [{:keys [dispatch!]} {:keys [room-id method]}]
      (dispatch! {:type :input/submit :room-id room-id
                  :text (str "/diff difft:" (measure-diff-cols) " " method)}))
-   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
+   :session/content-search-debounce
+  (let [timer (atom nil)]
+    (fn [{:keys [dispatch!]} payload]
+      (when-let [t @timer] (js/clearTimeout t))
+      (reset! timer
+              (js/setTimeout
+               (fn [] (dispatch! (assoc payload :type :session/content-search)))
+               180))))
+  :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :theme/apply  (fn [_ mode]
                    (let [el js/document.documentElement]

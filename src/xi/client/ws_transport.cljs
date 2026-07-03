@@ -112,7 +112,12 @@
                 :command/run  (wrap-command-run client-side-fx (get base-handlers :command/run))
                 ;; Dialog answers must reach the server (it holds the
                 ;; pending resolver); removal mirrors back via room state.
-                :ui/dialog-response forward
+                ;; Only forward the user's own answer — the server echoes
+                ;; the event back tagged :remote?, and re-forwarding that
+                ;; echo would loop endlessly (server re-echoes each time).
+                :ui/dialog-response
+                (fn [_st ev]
+                  (when-not (:remote? ev) {:effects [[:ws/send ev]]}))
                 :room/joined  room-joined
                 :room/left    room-left
                 :lobby/state  lobby-state)

@@ -626,7 +626,48 @@
 
 ;; ── Permission dialog ────────────────────────────────────────────────────────
 
-(defn- dialog-overlay [dispatch! room]
+(def ^:private cwd-custom-sentinel "__custom__")
+
+(defn- cwd-select-body
+  "Radio group (+ custom text input) + submit for the missing-cwd dialog.
+   Transient selection lives in app state under :web/dialog-form."
+  [dispatch! state options answer!]
+  (let [form   (:web/dialog-form state)
+        radios (mapv (fn [{:keys [label value]}]
+                       {:label label
+                        :value (if (= value :custom) cwd-custom-sentinel value)})
+                     options)
+        choice (or (:choice form) (:value (first radios)))
+        custom (or (:custom form) "")
+        final  (if (= choice cwd-custom-sentinel) (str/trim custom) choice)]
+    [:div {:class ["cwd-select"]}
+     (form/form-radio-group
+      {:radio-name  "cwd-select"
+       :options     radios
+       :radio-value choice
+       :on-change   (fn [^js e]
+                      (dispatch! {:type :web/dialog-form-set
+                                  :patch {:choice (.. e -target -value)}}))})
+     (when (= choice cwd-custom-sentinel)
+       (form/form-input
+        {:type        :text
+         :placeholder "/absolute/path"
+         :value       custom
+         :attrs       {:value custom}
+         :on-change   (fn [^js e]
+                        (dispatch! {:type :web/dialog-form-set
+                                    :patch {:custom (.. e -target -value)}}))}))
+     [:div {:class ["confirm-actions"]}
+      (button/button
+       {:variant :primary :size :sm
+        :disabled (empty? final)
+        :on-click (fn [_]
+                    (when (seq final)
+                      (dispatch! {:type :web/dialog-form-reset})
+                      (answer! final)))}
+       "Submit")]]))
+
+(defn- dialog-overlay [dispatch! state room]
   (when-let [{:keys [id type message text options]} (first (get-in room [:ui :dialogs]))]
     (let [room-id (:id room)
           answer! (fn [value]
@@ -637,21 +678,23 @@
       [:div {:class ["confirm-overlay"]}
        [:div {:class ["confirm-panel"]}
         [:div {:class ["confirm-message"]} (or message text)]
-        [:div {:class ["confirm-actions"]}
-         (case type
-           :select
-           (for [{:keys [label value]} options]
+        (if (= type :cwd-select)
+          (cwd-select-body dispatch! state options answer!)
+          [:div {:class ["confirm-actions"]}
+           (case type
+             :select
+             (for [{:keys [label value]} options]
+               [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                         :on {:click (fn [_] (answer! value))}} label])
+             :alert
              [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                       :on {:click (fn [_] (answer! value))}} label])
-           :alert
-           [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                     :on {:click (fn [_] (answer! nil))}} "OK"]
-           ;; :confirm (default)
-           (list
-            [:button {:class ["confirm-btn" "confirm-btn--deny"]
-                      :on {:click (fn [_] (answer! false))}} "Deny"]
-            [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                      :on {:click (fn [_] (answer! true))}} "Allow"]))]]])))
+                       :on {:click (fn [_] (answer! nil))}} "OK"]
+             ;; :confirm (default)
+             (list
+              [:button {:class ["confirm-btn" "confirm-btn--deny"]
+                        :on {:click (fn [_] (answer! false))}} "Deny"]
+              [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                        :on {:click (fn [_] (answer! true))}} "Allow"]))])]])))
 
 ;; ── Diff view ────────────────────────────────────────────────────────────────
 
@@ -1306,7 +1349,7 @@
                (keep (partial entry->post dispatch!) (subvec entries start total))
                (optimistic-post dispatch! state room sid history)))
             [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
-        (dialog-overlay dispatch! room)
+        (dialog-overlay dispatch! state room)
         (copy-dialog-overlay dispatch! (:web/copy-text state))
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
@@ -1454,21 +1497,46 @@
   [query name]
   (str/includes? (str/lower-case (or name "")) query))
 
+(defn- filter-sessions
+  "Filter `sessions` by the active search. `query` is already lowercased/trimmed.
+   In content mode, keep only sessions whose id the server returned in `matches`
+   (nil while a search is in flight -> keep none)."
+  [sessions query content? matches]
+  (cond
+    (empty? query)  sessions
+    content?        (let [ids (or matches #{})]
+                      (filter #(contains? ids (:session-id %)) sessions))
+    :else           (filter #(session-matches? query (:name %)) sessions)))
+
 
 (defn- search-box
-  "Generic search input. `search-key` is the state key for the query string."
-  [dispatch! search-key placeholder query]
-  [:div {:class ["sessions-search"]}
-   [:div {:class ["sidebar-search"]}
-    [:span {:class ["sidebar-search-icon"]}]
-    [:input {:class ["sidebar-search-input"]
-             :type "text"
-             :placeholder placeholder
-             :value (or query "")
-             :on {:input (fn [^js e]
-                           (dispatch! {:type :web/session-search
-                                       :key search-key
-                                       :query (.. e -target -value)}))}}]]])
+  "Generic search input. `search-key` is the state key for the query string.
+   When `content?` is non-nil a toggle button is rendered next to the input
+   that switches between name-only and message-content search (true = content
+   mode active)."
+  ([dispatch! search-key placeholder query]
+   (search-box dispatch! search-key placeholder query nil))
+  ([dispatch! search-key placeholder query content?]
+   [:div {:class ["sessions-search"]}
+    [:div {:class ["sidebar-search"]}
+     [:span {:class ["sidebar-search-icon"]}]
+     [:input {:class ["sidebar-search-input"]
+              :type "text"
+              :placeholder (if content? "Search message content\u2026" placeholder)
+              :value (or query "")
+              :on {:input (fn [^js e]
+                            (dispatch! {:type :web/session-search
+                                        :key search-key
+                                        :query (.. e -target -value)}))}}]]
+    (when (some? content?)
+      [:button {:class ["search-toggle" (when content? "search-toggle--active")]
+                :type "button"
+                :title (if content?
+                         "Searching message content — click to search names only"
+                         "Searching names — click to search message content")
+                :on {:click (fn [_] (dispatch! {:type :web/toggle-content-search
+                                                :key search-key}))}}
+       (icon/icon {:icon-name :file-text :size :md})])]))
 
 (defn- project-sessions-view
   "Drill-down: sessions for a selected project directory."
@@ -1476,14 +1544,12 @@
   (let [cwd       (:web/selected-project-dir state)
         raw-query (get-in state [:web/search :project-sessions])
         query     (str/lower-case (str/trim (or raw-query "")))
+        content?  (boolean (get-in state [:web/content-search :project-sessions]))
+        matches   (get-in state [:web/content-matches :project-sessions])
         sessions  (:web/project-sessions state)
         orphans   (orphan-rooms state sessions cwd)
-        sessions  (if (seq query)
-                    (filter #(session-matches? query (:name %)) sessions)
-                    sessions)
-        orphans   (if (seq query)
-                    (filter #(session-matches? query (:name %)) orphans)
-                    orphans)
+        sessions  (filter-sessions sessions query content? matches)
+        orphans   (filter-sessions orphans query content? matches)
         loading?  (:web/project-sessions-loading? state)]
     [:div {:class ["container"] :replicant/key "project-sessions"}
      [:div {:class ["topbar"]}
@@ -1499,7 +1565,7 @@
       (overflow-menu dispatch! state {:mode :project :cwd cwd})]
      [:div {:class ["home"]}
       (when-not loading?
-        (search-box dispatch! :project-sessions "Search sessions…" raw-query))
+        (search-box dispatch! :project-sessions "Search sessions…" raw-query content?))
       (cond
         loading?
         [:div {:class ["empty-state"]} (spinner) [:p "Loading sessions…"]]
@@ -1527,15 +1593,13 @@
   [state dispatch!]
   (let [raw-query  (get-in state [:web/search :all-sessions])
         query      (str/lower-case (str/trim (or raw-query "")))
+        content?   (boolean (get-in state [:web/content-search :all-sessions]))
+        matches    (get-in state [:web/content-matches :all-sessions])
         sessions   (get-in state [:lobby :sessions])
         connected? (:web/connected? state)
         orphans    (orphan-rooms state sessions)
-        sessions   (if (seq query)
-                     (filter #(session-matches? query (:name %)) sessions)
-                     sessions)
-        orphans    (if (seq query)
-                     (filter #(session-matches? query (:name %)) orphans)
-                     orphans)]
+        sessions   (filter-sessions sessions query content? matches)
+        orphans    (filter-sessions orphans query content? matches)]
     [:div {:class ["container"] :replicant/key "all-sessions"}
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
@@ -1549,7 +1613,7 @@
          (icon/icon {:icon-name :plus :size :md})])
       (overflow-menu dispatch! state)]
      [:div {:class ["home"]}
-      (search-box dispatch! :all-sessions "Search sessions\u2026" raw-query)
+      (search-box dispatch! :all-sessions "Search sessions\u2026" raw-query content?)
       (cond
         (or (seq sessions) (seq orphans))
         [:div {:class ["project-list"]}
@@ -1569,11 +1633,11 @@
   [state dispatch!]
   (let [raw-query  (get-in state [:web/search :favorites])
         query      (str/lower-case (str/trim (or raw-query "")))
+        content?   (boolean (get-in state [:web/content-search :favorites]))
+        matches    (get-in state [:web/content-matches :favorites])
         sessions   (->> (get-in state [:lobby :sessions])
                         (filter :favorite?))
-        sessions   (if (seq query)
-                     (filter #(session-matches? query (:name %)) sessions)
-                     sessions)]
+        sessions   (filter-sessions sessions query content? matches)]
     [:div {:class ["container"] :replicant/key "favorites"}
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
@@ -1583,7 +1647,7 @@
       [:div {:class ["topbar-title"]} "Favorites"]
       (overflow-menu dispatch! state)]
      [:div {:class ["home"]}
-      (search-box dispatch! :favorites "Search favorites\u2026" raw-query)
+      (search-box dispatch! :favorites "Search favorites\u2026" raw-query content?)
       (cond
         (seq sessions)
         [:div {:class ["project-list"]}
@@ -1651,6 +1715,12 @@
       (let [dirs       (:web/project-dirs state)
             raw-query  (get-in state [:web/search :home])
             query      (str/lower-case (str/trim (or raw-query "")))
+            content?   (boolean (get-in state [:web/content-search :home]))
+            matches    (get-in state [:web/content-matches :home])
+            content-active? (and content? (seq query))
+            matched-sessions (when content-active?
+                               (->> (get-in state [:lobby :sessions])
+                                    (filter #(contains? (or matches #{}) (:session-id %)))))
             dirs       (if (seq query)
                          (filter #(str/includes? (str/lower-case %) query) dirs)
                          dirs)
@@ -1697,9 +1767,18 @@
              (spinner)
              [:p "Loading projects…"]]
 
+            content-active?
+            [:div
+             (search-box dispatch! :home "Search projects…" raw-query content?)
+             (if (seq matched-sessions)
+               [:div {:class ["project-list"]}
+                (for [s (active-first state matched-sessions)]
+                  (session-card dispatch! s))]
+               [:div {:class ["empty-state"]} [:p "No matching sessions."]])]
+
             :else
             [:div
-             (search-box dispatch! :home "Search projects…" raw-query)
+             (search-box dispatch! :home "Search projects…" raw-query content?)
              [:div {:class ["project-list"]}
               ;; Active orphan rooms first (hide when filtering)
               (when-not (seq query)

@@ -188,25 +188,32 @@
                                                next-prompt)]])))))
 
 (defn- retry-fresh
-  "The provider could not resume the stored session — its transcript is gone
-   from disk. Drop the dead id and re-run the pending turn as a fresh session,
-   carrying the in-memory history as context so nothing is lost. The pending
-   prompt is still the trailing :user history entry (no assistant output was
-   produced before the resume failed), so we replay it as the fresh prompt and
-   inject everything before it as context."
+  "The provider could not start (a dead resume session, or a missing working
+   directory that has since been fixed). Drop the dead id and re-run the
+   pending turn as a fresh session, carrying the in-memory history as context
+   so nothing is lost. The pending prompt is the last :user history entry (no
+   assistant output was produced before the failure); we replay it as the
+   fresh prompt and inject everything before it as context. Scanning for the
+   last :user entry — rather than assuming it's the trailing one — tolerates a
+   transient entry appended after it (e.g. the 'CWD changed' status line the
+   cwd-recovery flow emits)."
   [st {:keys [room-id]}]
   (when-let [room (state/get-room st room-id)]
-    (let [history  (:history room)
-          user-ent (peek history)]
-      (when (= :user (:kind user-ent))
-        (let [room' (assoc-in room [:session :provider-session-id] nil)]
+    (let [history (:history room)
+          idx     (->> (map-indexed vector history)
+                       (filter #(= :user (:kind (second %))))
+                       (map first)
+                       last)]
+      (when idx
+        (let [user-ent (nth history idx)
+              room'    (assoc-in room [:session :provider-session-id] nil)]
           {:state   (assoc-in st [:rooms room-id :session :provider-session-id] nil)
            :effects [(build-turn-effect
                       {:room room'
                        :resume-id nil
                        :prompt (:text user-ent)
                        :images (:images user-ent)
-                       :context-history (pop history)})]})))))
+                       :context-history (subvec (vec history) 0 idx)})]})))))
 
 (defn- session-init
   "Provider reported its session id early (e.g. Claude system/init).
@@ -244,6 +251,18 @@
       (first (vals providers))))
 
 ;; ── Effects (contained impure edge) ──────────────────────────────────────────
+
+(defn- cwd-select-options
+  "Options for the missing-cwd recovery dialog. Concrete dirs carry a string
+   value; :custom is a sentinel the client turns into a typed path."
+  []
+  (let [home (aget js/process.env "HOME")]
+    (->> [{:label (str "Xi dir (" (.cwd js/process) ")") :value (.cwd js/process)}
+          (when (seq home) {:label (str "Home (" home ")") :value home})
+          {:label "Temp (/tmp)" :value "/tmp"}
+          {:label "Custom directory…" :value :custom}]
+         (remove nil?)
+         vec)))
 
 (defn- event-callbacks
   "Provider streaming callbacks → :agent/* event dispatches."
@@ -303,6 +322,36 @@
                                              :dialog  {:type :confirm :message message}})))}
              gate1 (when tool-gate
                      (fn [tool-call] (tool-gate tool-call gate-ctx)))
+             ;; The turn's cwd doesn't exist on this host (e.g. a Pi session
+             ;; with cwd=/var/lib/xi opened elsewhere). Ask the user where to
+             ;; run, persist it on the room, then replay the turn fresh.
+             recover-cwd!
+             (fn [missing-cwd]
+               (if ask!
+                 (-> (ask! {:dispatch! dispatch! :state (get-state)}
+                           {:room-id room-id
+                            :dialog  {:type    :cwd-select
+                                      :message (str "This chat's working directory "
+                                                    "doesn't exist on this machine: "
+                                                    missing-cwd
+                                                    ". Choose where it should run:")
+                                      :options (cwd-select-options)}})
+                     (.then
+                      (fn [chosen]
+                        (if (and (string? chosen) (pos? (count chosen)))
+                          (do (dispatch! {:type :cwd/changed :room-id room-id
+                                          :cwd chosen})
+                              (dispatch! {:type :agent/retry-fresh
+                                          :room-id room-id}))
+                          (do (dispatch! {:type :ui/status :room-id room-id
+                                          :text "Cancelled — no working directory set."})
+                              (dispatch! {:type :agent/turn-end
+                                          :room-id room-id}))))))
+                 (do (dispatch! {:type :agent/error :room-id room-id
+                                 :error {:type "error"
+                                         :message (str "Working directory does not exist: "
+                                                       missing-cwd)}})
+                     (dispatch! {:type :agent/turn-end :room-id room-id}))))
              {:keys [promise abort!]}
              ((:start-turn! provider)
               (cond-> (merge payload (event-callbacks dispatch! room-id))
@@ -314,10 +363,17 @@
              (.then
               (fn [result]
                 (.delete inflight room-id)
-                (if (:resume-failed result)
+                (cond
                   ;; Stored provider session was gone; re-run this turn fresh
                   ;; instead of ending it with a dead-end error.
+                  (:resume-failed result)
                   (dispatch! {:type :agent/retry-fresh :room-id room-id})
+
+                  ;; Working directory vanished; ask the user for a new one.
+                  (:cwd-missing result)
+                  (recover-cwd! cwd)
+
+                  :else
                   (dispatch! {:type :agent/turn-end
                               :room-id room-id
                               :usage (:usage result)

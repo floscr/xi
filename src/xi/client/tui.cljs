@@ -199,15 +199,10 @@
 
 ;; ── Dialogs (room :ui :dialogs → focused bottom-panel component) ──────────────
 
-(defn- build-dialog
-  "A focused component for the active dialog. :confirm answers y/n (Enter =
-   yes, Esc = no); the answer dispatches :ui/dialog-response, which the
-   dialog owner (xi.ext.core/create-dialogs) resolves."
-  [{:keys [id message prompt] :as dialog} room-id dispatch!]
-  (let [respond! (fn [value]
-                   (dispatch! {:type :ui/dialog-response
-                               :room-id room-id :dialog-id id :value value}))
-        text (or message prompt "Confirm?")]
+(defn- build-confirm-dialog
+  "A y/n confirm dialog. Enter = yes, Esc = no."
+  [{:keys [message prompt]} respond!]
+  (let [text (or message prompt "Confirm?")]
     {:type :dialog
      :render (fn [width]
                [(ansi/fg :border (apply str (repeat width "─")))
@@ -222,6 +217,45 @@
                        (enter? data)     (respond! true)
                        (escape? data)    (respond! false)
                        :else nil))}))
+
+(defn- build-cwd-select-dialog
+  "Missing-working-directory recovery dialog. Renders the concrete (string)
+   options as a numbered list; a digit key answers with that path, Esc
+   cancels (answers nil). The :custom sentinel option is omitted — typing a
+   path isn't supported from the TUI; the web client handles that case."
+  [{:keys [message options]} respond!]
+  (let [choices (filterv #(string? (:value %)) options)]
+    {:type :dialog
+     :render (fn [width]
+               (into [(ansi/fg :border (apply str (repeat width "─")))
+                      (str "  " (or message "Choose a working directory:"))]
+                     (concat
+                      (map-indexed
+                       (fn [i {:keys [label]}]
+                         (str "  " (ansi/fg :accent (str "[" (inc i) "]")) " " label))
+                       choices)
+                      [(str "  " (ansi/fg :dim "(number=select, Esc=cancel)"))])))
+     :handle-input (fn [data]
+                     (cond
+                       (escape? data) (respond! nil)
+                       (re-matches #"[0-9]" data)
+                       (let [idx (dec (js/parseInt data 10))]
+                         (when-let [{:keys [value]} (get choices idx)]
+                           (respond! value)))
+                       :else nil))}))
+
+(defn- build-dialog
+  "A focused component for the active dialog. Dispatches the answer via
+   :ui/dialog-response, which the dialog owner (xi.ext.core/create-dialogs)
+   resolves. :cwd-select offers a numbered directory list; everything else
+   is a y/n confirm."
+  [{:keys [id type] :as dialog} room-id dispatch!]
+  (let [respond! (fn [value]
+                   (dispatch! {:type :ui/dialog-response
+                               :room-id room-id :dialog-id id :value value}))]
+    (if (= type :cwd-select)
+      (build-cwd-select-dialog dialog respond!)
+      (build-confirm-dialog dialog respond!))))
 
 ;; ── Render sync helpers ──────────────────────────────────────────────────────
 
