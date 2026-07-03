@@ -133,6 +133,7 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
 - `xi server` — WS server + local TUI client in the same process
 - `xi server --headless` — headless server (no TUI, clients attach remotely)
 - `xi server --personal-agent-only` — personal assistant mode (no coding tools, web_search only)
+- `xi prompt <text>` (aka `xi -p`) — one-shot headless run: send a single prompt, print the assistant's response, and exit. Reads stdin when no text is given; `--stream` streams tokens live. No TUI, no server — safe to run from the agent.
 - `xi join [url]` — connect TUI client to the latest room on a running server
 - `xi create [url]` — connect TUI client to a new room on a running server
 - `--port N` — override default port (7474)

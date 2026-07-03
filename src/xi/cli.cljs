@@ -5,6 +5,9 @@
      xi               → standalone TUI (one local room, no sockets)
      xi server        → host rooms over WS; local TUI joins via WS
                         (--headless for server-only)
+     xi prompt <text> → one-shot: run a single prompt headless, print the
+                        response and exit (aka `xi -p`; reads stdin when no
+                        text is given; --stream to stream tokens live)
      xi join [url]    → connect TUI to the latest room on a server
      xi create [url]  → connect TUI to a new room on a server
 
@@ -23,9 +26,11 @@
      --model M        override the default model
      --port N         WS port (server/join/create; default 7474)
      --headless       server only, no local TUI
+     --stream         (prompt) stream response tokens to stdout as they arrive
      --debug-events   (standalone) write the full event stream to
                       ~/.pi/agent/logs/<session>.events.jsonl"
-  (:require [xi.agent :as agent]
+  (:require [clojure.string :as str]
+            [xi.agent :as agent]
             [xi.client.tui :as client-tui]
             [xi.client.ws-transport :as ws-transport]
             [xi.commands :as commands]
@@ -134,17 +139,24 @@
           "server"         (recur (next args) (assoc opts :command :server))
           "join"           (recur (next args) (assoc opts :command :join))
           "create"         (recur (next args) (assoc opts :command :create))
+          ("prompt" "-p")  (recur (next args) (assoc opts :command :prompt))
+          "--stream"       (recur (next args) (assoc opts :stream? true))
           "--headless"     (recur (next args) (assoc opts :headless? true))
           "--personal-agent-only" (recur (next args) (assoc opts :personal-agent? true))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
           "--model"        (recur (nnext args) (assoc opts :model (second args)))
           "--port"         (recur (nnext args) (assoc opts :port (js/parseInt (second args) 10)))
           (recur (next args)
-                 ;; Positional URL for join/create
-                 (if (and (#{:join :create} (:command opts))
-                          (not (.startsWith arg "--")))
+                 (cond
+                   ;; Positional URL for join/create
+                   (and (#{:join :create} (:command opts))
+                        (not (.startsWith arg "--")))
                    (assoc opts :url (if (.startsWith arg "ws") arg (str "ws://" arg)))
-                   opts)))))))
+                   ;; Positional prompt text for prompt mode
+                   (and (= :prompt (:command opts))
+                        (not (.startsWith arg "--")))
+                   (update opts :prompt-parts (fnil conj []) arg)
+                   :else opts)))))))
 
 (defn- resolve-model-opts [{:keys [model]}]
   {:model  (or model
@@ -249,6 +261,102 @@
                     :session (session/load-session summary)
                     :summary summary
                     :messages (session/read-session-messages summary)})))))
+
+;; ── Prompt (one-shot, headless) ──────────────────────────────────────────────
+
+(defn- read-stdin
+  "Resolve to the trimmed contents of stdin. Only call when stdin is piped
+   (not a TTY) — a TTY would block forever."
+  []
+  (js/Promise.
+   (fn [resolve _reject]
+     (let [chunks #js []]
+       (doto js/process.stdin
+         (.on "data" (fn [c] (.push chunks (.toString c))))
+         (.on "end" (fn [] (resolve (.trim (.join chunks ""))))))
+       (.resume js/process.stdin)))))
+
+(defn- start-prompt!
+  "Run a single prompt with no TUI and exit. The assistant's text response is
+   streamed to stdout as it arrives (--stream) or buffered and printed once the
+   turn ends. Dialogs (permission confirms, cwd recovery) resolve to their safe
+   defaults since no client is attached. Exits 0 on success, 1 on error."
+  [{:keys [prompt-text stream?] :as opts}]
+  (let [{:keys [model effort]} (resolve-model-opts opts)
+        cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
+        ring (log/create-ring)
+        ;; Drop terminal-title: it writes raw ANSI escapes to stdout, which
+        ;; would corrupt the one-shot response.
+        composed (ext/compose (remove #(= :terminal-title (:id %))
+                                      (server-extensions ring)))
+        dialogs  (ext/create-dialogs)
+        agents-files (system-prompt/find-agents-md cwd)
+        system-parts (into (system-prompt/load-agents-parts cwd)
+                           (ext/system-prompt-parts composed cwd))
+        system (system-prompt/parts->system system-parts)
+        sess (session/create-session cwd)
+        acc  #js {:out "" :error nil}
+        finish!
+        (fn []
+          (ext/on-shutdown! composed)
+          (let [code (if (.-error acc) 1 0)]
+            (when (.-error acc)
+              (.write js/process.stderr (str (.-error acc) "\n")))
+            (let [tail (if stream? "\n" (str (.-out acc) "\n"))]
+              (.write js/process.stdout tail
+                      (fn [] (js/process.exit code))))))
+        handlers (-> (make-handlers (:commands composed))
+                     ;; One-shot: skip auto-titling (naming chain) on submit.
+                     (assoc :prompt/submit (:prompt/submit agent/handlers))
+                     (ext/merge-handlers composed)
+                     (merge (:handlers dialogs)))
+        {:keys [dispatch! add-tap!]}
+        (app/create-app {:initial-state (state/initial-state
+                                         ;; :server mode → create-dialogs' ask!
+                                         ;; auto-resolves (no clients attached).
+                                         {:mode :server
+                                          :ext (:process-ext-init composed)})
+                         :handlers      handlers
+                         :transform-event (ext/transform-event composed)
+                         :effects       (merge (agent/create-fx
+                                                providers
+                                                (tooling-opts composed (:ask! dialogs)))
+                                               (fx/create-fx ring
+                                                 {:system-prompt-fn
+                                                  (fn [cwd]
+                                                    (let [parts (into (system-prompt/load-agents-parts cwd)
+                                                                      (ext/system-prompt-parts composed cwd))]
+                                                      {:system       (system-prompt/parts->system parts)
+                                                       :system-parts parts}))})
+                                               (compaction/create-fx providers)
+                                               (:fx composed)
+                                               (:fx dialogs))
+                         :ring          ring})]
+    (add-tap!
+     (fn [event _state]
+       (case (:type event)
+         :agent/text-delta
+         (let [t (:text event)]
+           (set! (.-out acc) (str (.-out acc) t))
+           (when stream? (.write js/process.stdout t)))
+
+         :agent/error
+         (set! (.-error acc) (or (get-in event [:error :message])
+                                 (str (:error event))))
+
+         :agent/turn-end (finish!)
+         nil)))
+    (dispatch! {:type :room/create
+                :room-id "main"
+                :room {:model model
+                       :cwd cwd
+                       :effort effort
+                       :system system
+                       :system-parts system-parts
+                       :agents-files agents-files
+                       :ext (:room-ext-init composed)
+                       :session sess}})
+    (dispatch! {:type :prompt/submit :room-id "main" :text prompt-text})))
 
 ;; ── Client (join/create + the server's local TUI) ────────────────────────────
 
@@ -369,10 +477,27 @@
 
 ;; ── Entry ────────────────────────────────────────────────────────────────────
 
+(defn- run-prompt!
+  "Resolve the prompt text (positional args, else piped stdin) and run it."
+  [{:keys [prompt-parts] :as opts}]
+  (let [inline (some->> (seq prompt-parts) (str/join " "))]
+    (cond
+      (seq inline) (start-prompt! (assoc opts :prompt-text inline))
+      (not (.-isTTY js/process.stdin))
+      (-> (read-stdin)
+          (.then (fn [text]
+                   (if (seq text)
+                     (start-prompt! (assoc opts :prompt-text text))
+                     (do (js/console.error "xi prompt: no prompt provided")
+                         (js/process.exit 1))))))
+      :else (do (js/console.error "usage: xi prompt [--stream] <text>   (or pipe text via stdin)")
+                (js/process.exit 1)))))
+
 (defn main [& args]
   (let [{:keys [command] :as opts} (parse-args args)]
     (case command
       :standalone (start-standalone! opts)
       :server     (start-server! opts)
+      :prompt     (run-prompt! opts)
       :join       (start-client! (assoc opts :target "latest"))
       :create     (start-client! (assoc opts :target "new")))))

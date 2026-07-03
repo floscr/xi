@@ -155,6 +155,11 @@ compaction, TUI, WS):
   client app in the same process, joining via WS like any remote client.
 - `xi join [url]` / `xi create [url]` — TUI client over `ws-transport`
   (target `"latest"` / `"new"`).
+- `xi prompt <text>` (aka `xi -p`) — one-shot headless run: the same core +
+  server-side extensions (minus terminal-title), no renderer. A tap collects
+  `:agent/text-delta` output and exits on `:agent/turn-end`; `--stream` writes
+  tokens live. Dialogs run in `:server` mode with no clients, so they resolve
+  to their safe defaults.
 - The web client (`xi.web.core`) is the same assembly pattern in the
   browser — see [web-client.md](web-client.md).
 

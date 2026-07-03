@@ -5,7 +5,7 @@
   {:target :node-script
    :main xi.cli/main
    :output-to "target/main.js"
-   :devtools {:console-support false}
+   :devtools {:console-support false :log false}
    :compiler-options {:optimizations :simple}}
 
   :test
