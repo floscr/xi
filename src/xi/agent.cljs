@@ -123,6 +123,15 @@
                 (assoc-in [:rooms (:id room) :agent :busy?] true))
    :effects [(start-turn-effect room prompt)]})
 
+(defn- join-prompts
+  "Combine queued prompts into a single prompt: non-blank texts joined by
+   blank lines, images concatenated in order."
+  [prompts]
+  {:text   (->> (map :text prompts)
+                (remove str/blank?)
+                (str/join "\n\n"))
+   :images (into [] (mapcat :images) prompts)})
+
 ;; ── Event handlers (pure) ────────────────────────────────────────────────────
 
 (defn- prompt-submit [st {:keys [room-id text images]}]
@@ -166,12 +175,12 @@
 
 (defn- turn-end [st {:keys [room-id usage cost provider-session-id aborted?]}]
   (when-let [room (state/get-room st room-id)]
-    (let [[next-prompt & rest-queued] (get-in room [:agent :queued])
+    (let [queued (get-in room [:agent :queued])
           st' (-> st
                   (update-in [:rooms room-id :history] finalize-history)
                   (update-in [:rooms room-id :agent]
                              #(-> %
-                                  (assoc :busy? false :queued (vec rest-queued))
+                                  (assoc :busy? false :queued [])
                                   (cond->
                                    usage (assoc :last-usage usage)
                                    cost  (assoc :last-cost cost))))
@@ -181,11 +190,12 @@
                               provider-session-id)
                    aborted?
                     (update-in [:rooms room-id :history] conj {:kind :aborted})))]
-      ;; Drain one queued prompt by re-dispatching — keeps a single code path.
+      ;; Drain the whole queue as one combined prompt by re-dispatching —
+      ;; keeps a single submission code path.
       (cond-> {:state st'}
-        next-prompt
+        (seq queued)
         (assoc :effects [[:app/dispatch (merge {:type :prompt/submit :room-id room-id}
-                                               next-prompt)]])))))
+                                               (join-prompts queued))]])))))
 
 (defn- retry-fresh
   "The provider could not start (a dead resume session, or a missing working
@@ -227,6 +237,17 @@
   (when (get-in st [:rooms room-id :agent :busy?])
     {:effects [[:provider/abort {:room-id room-id}]]}))
 
+(defn- queue-remove
+  "Drop the queued prompt at `index` (a message the user queued while the
+   agent was busy but no longer wants to send)."
+  [st {:keys [room-id index]}]
+  (when-let [room (state/get-room st room-id)]
+    (let [queued (vec (get-in room [:agent :queued]))]
+      (when (< -1 index (count queued))
+        {:state (assoc-in st [:rooms room-id :agent :queued]
+                          (into (subvec queued 0 index)
+                                (subvec queued (inc index))))}))))
+
 (def handlers
   {:prompt/submit        prompt-submit
    :agent/text-delta     text-delta
@@ -238,7 +259,8 @@
    :agent/session-init   session-init
    :agent/turn-end       turn-end
    :agent/retry-fresh    retry-fresh
-   :agent/abort          agent-abort})
+   :agent/abort          agent-abort
+   :prompt/queue-remove  queue-remove})
 
 ;; ── Provider routing (pure) ──────────────────────────────────────────────────
 

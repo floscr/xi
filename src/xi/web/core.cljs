@@ -437,6 +437,8 @@
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
+          :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
+          :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
           :gtd/web-list          (fn [st ev]
                                     {:state (assoc st :web/gtd-loading? true)
                                      :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
@@ -720,6 +722,9 @@
     (cond
       (and (= :input/submit (:type event))
            (not (:remote? event))
+           ;; While busy the submission is queued, not sent — the queue count
+           ;; is the feedback, so skip the optimistic timeline bubble.
+           (not (get-in state [:rooms (:room-id event) :agent :busy?]))
            (let [parsed (commands/parse-input (:text event))]
              (or (= :prompt (:type parsed))
                  (seq (:images event)))))

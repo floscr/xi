@@ -456,6 +456,15 @@
          (contains? while-busy-command-names
                     (-> t (subs 1) (str/split #"\s+") first)))))
 
+(defn submittable-while-busy?
+  "True when `text` may be submitted while the agent is busy: any plain
+   prompt (queued for after the turn) or a :while-busy? command (runs now).
+   Only non-while-busy slash commands are held back."
+  [text]
+  (let [t (str/trim (or text ""))]
+    (or (not (str/starts-with? t "/"))
+        (command-while-busy? t))))
+
 (defn- expand-commands
   "Flatten commands + their subcommands into a single suggestion list, where
    each subcommand becomes a `parent sub` entry (e.g. \"diff staged\")."
@@ -542,15 +551,44 @@
            (str "/" name)])
         (quick-command-list recents))])
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected at-bottom? pa? recents]
+(defn- queue-popover
+  "Popover listing prompts queued while the agent is busy. Each can be removed
+   before the current turn ends and the queue is sent as one combined prompt."
+  [dispatch! room-id queued]
+  [:div {:class ["queue-popover"]}
+   [:div {:class ["queue-popover-header"]}
+    [:span (str (count queued) " queued")]
+    [:button {:class ["icon-btn" "icon-btn--sm"]
+              :on {:click (fn [_] (dispatch! {:type :queue/close-popover}))}}
+     (icon/icon {:icon-name :x :size :sm})]]
+   (map-indexed
+    (fn [idx {:keys [text images]}]
+      [:div {:class ["queue-item"] :replicant/key idx}
+       [:div {:class ["queue-item-text"]}
+        (let [t (str/trim (or text ""))]
+          (if (seq t)
+            t
+            (str (count images) " image" (when (not= 1 (count images)) "s"))))]
+       [:button {:class ["icon-btn" "icon-btn--sm" "queue-item-remove"]
+                 :on {:click (fn [_]
+                               (dispatch! {:type :prompt/queue-remove
+                                           :room-id room-id :index idx}))}}
+        (icon/icon {:icon-name :x :size :sm})]])
+    queued)])
+
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected at-bottom? pa? recents queue-open?]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
         cmd-matches (when (some? cmd-query) (match-commands cmd-query))
         cmd-open?   (seq cmd-matches)
         has-input?  (seq (str/trim (or draft "")))
+        queued      (get-in room [:agent :queued])
+        qcount      (count queued)
         show-quick? (and (not pa?) at-bottom? (not has-input?) (empty? images) (not cmd-open?))]
     [:div {:class ["compose-box"]}
+     (when (and busy? queue-open? (pos? qcount))
+       (queue-popover dispatch! room-id queued))
      (compose-image-strip dispatch! images)
      (when show-quick?
        (quick-command-bar dispatch! room-id recents))
@@ -579,6 +617,28 @@
                                            :draft-key draft-key
                                            :text (.. e -target -value)}))
                       :paste (fn [^js e] (handle-compose-paste! dispatch! e))
+                      ;; iOS Safari's soft-keyboard Return key does not fire a
+                      ;; keydown with key==="Enter" in a textarea; it fires a
+                      ;; beforeinput with inputType "insertLineBreak". Handle it
+                      ;; so Enter-to-send works on iPhone. (On desktop the
+                      ;; keydown handler preventDefaults, so this never fires.)
+                      :beforeinput
+                      (fn [^js e]
+                        (when (= "insertLineBreak" (.-inputType e))
+                          (.preventDefault e)
+                          (if cmd-open?
+                            (let [sel (min (or cmd-selected 0) (dec (count cmd-matches)))
+                                  cmd-name (:name (nth cmd-matches sel))]
+                              (dispatch! {:type :input/submit :room-id room-id
+                                          :text (str "/" cmd-name)})
+                              (when-let [^js el (compose-textarea-el)]
+                                (set! (.-value el) ""))
+                              (dispatch! {:type :compose/clear-draft
+                                          :draft-key draft-key}))
+                            (let [v (.. e -target -value)]
+                              (when (or (not busy?) (submittable-while-busy? v))
+                                (submit-compose! dispatch! room-id session-id
+                                                 images draft-key v))))))
                       :keydown
                       (fn [^js e]
                         (if cmd-open?
@@ -611,14 +671,27 @@
                           (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)))
                             (.preventDefault e)
                             (let [v (.. e -target -value)]
-                              (when (or (not busy?) (command-while-busy? v))
+                              (when (or (not busy?) (submittable-while-busy? v))
                                 (submit-compose! dispatch! room-id session-id
                                                  images draft-key v))))))}}})
        (when busy? (spinner))]
       (if (and busy? (not (command-while-busy? draft)))
-        [:button {:class ["icon-btn"]
-                  :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
-         (icon/icon {:icon-name :circle-x :size :md})]
+        ;; Busy: queue-send button (when there's something to queue) next to
+        ;; the abort button, which carries the queued-message count badge.
+        [:div {:class ["compose-actions"]}
+         (when (or has-input? (seq images))
+           [:button {:class ["icon-btn"]
+                     :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
+                                                          images draft-key draft))}}
+            (icon/icon {:icon-name :arrow-up :size :md})])
+         [:div {:class ["abort-wrap"]}
+          [:button {:class ["icon-btn"]
+                    :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
+           (icon/icon {:icon-name :circle-x :size :md})]
+          (when (pos? qcount)
+            [:button {:class ["queue-count"]
+                      :on {:click (fn [_] (dispatch! {:type :queue/toggle-popover}))}}
+             (str qcount)])]]
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
                                                        images draft-key draft))}}
@@ -1360,7 +1433,8 @@
                      (:web/cmd-selected state)
                      (get-in state [:web/at-bottom dkey] true)
                      (get-in state [:lobby :personal-agent?])
-                     (:web/recent-commands state))))]))
+                     (:web/recent-commands state)
+                     (:web/queue-popover? state))))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 

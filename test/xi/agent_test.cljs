@@ -79,8 +79,33 @@
     (is (= "sid-1" (get-in state [:rooms "r" :session :provider-session-id])))
     (is (= [] (get-in state [:rooms "r" :agent :queued])))
     (is (= [[:app/dispatch {:type :prompt/submit :room-id "r"
-                            :text "queued!" :images nil}]]
+                            :text "queued!" :images []}]]
            effects))))
+
+(deftest turn-end-joins-multiple-queued-prompts
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "go"}
+                         {:type :prompt/submit :room-id "r" :text "first"}
+                         {:type :prompt/submit :room-id "r" :text "second"})
+        {:keys [state effects]}
+        (events/handle-event all-handlers st {:type :agent/turn-end :room-id "r"})]
+    (is (= [] (get-in state [:rooms "r" :agent :queued])))
+    (is (= [[:app/dispatch {:type :prompt/submit :room-id "r"
+                            :text "first\n\nsecond" :images []}]]
+           effects)
+        "all queued prompts are combined into one submission")))
+
+(deftest queue-remove-drops-one-queued-prompt
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "go"}
+                         {:type :prompt/submit :room-id "r" :text "a"}
+                         {:type :prompt/submit :room-id "r" :text "b"}
+                         {:type :prompt/submit :room-id "r" :text "c"})
+        {:keys [state]}
+        (events/handle-event all-handlers st
+                             {:type :prompt/queue-remove :room-id "r" :index 1})]
+    (is (= [{:text "a" :images nil} {:text "c" :images nil}]
+           (get-in state [:rooms "r" :agent :queued])))))
 
 (deftest resume-session-id-flows-into-next-turn
   (let [st (apply-events (with-room)

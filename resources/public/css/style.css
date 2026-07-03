@@ -598,6 +598,7 @@ body {
 
 /* ---- Compose box ---- */
 .compose-box {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -640,6 +641,91 @@ body {
 }
 
 .compose-attach-btn {
+  flex-shrink: 0;
+}
+
+/* ---- Queued-message controls (shown while the agent is busy) ---- */
+.compose-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  flex-shrink: 0;
+}
+
+.abort-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.queue-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 9px;
+  background: var(--accent-500, #3b82f6);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.queue-popover {
+  position: absolute;
+  bottom: 100%;
+  right: var(--size-3);
+  margin-bottom: var(--size-2);
+  width: min(360px, calc(100vw - 2 * var(--size-3)));
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--bg-0, #fff);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 20;
+}
+
+.queue-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--size-2) var(--size-3);
+  border-bottom: var(--border-0);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-500, #666);
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-3);
+  border-bottom: var(--border-0);
+}
+
+.queue-item:last-child {
+  border-bottom: none;
+}
+
+.queue-item-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.queue-item-remove {
   flex-shrink: 0;
 }
 
@@ -1935,7 +2021,7 @@ body {
 
 .pr-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--size-3);
   width: 100%;
   text-align: left;
@@ -1947,6 +2033,12 @@ body {
   cursor: pointer;
   font: inherit;
   transition: background-color 0.15s;
+}
+
+/* Align the state badge with the title line, not the vertical center of the
+   two-line main column. */
+.pr-row > .badge {
+  margin-top: 4px;
 }
 
 @media (hover: hover) {
