@@ -1046,6 +1046,12 @@ body {
   user-select: none;
 }
 
+/* Render the sign as generated content so it is never copied to the clipboard
+   (user-select: none alone still copies text in Chromium). */
+.tool-call-diff .tool-diff-sign::before {
+  content: attr(data-sign);
+}
+
 .tool-call-diff .tool-diff-line--add {
   background: color-mix(in srgb, var(--hl-string) 7%, transparent);
 }
@@ -1926,6 +1932,12 @@ body {
   flex-shrink: 0;
   user-select: none;
 }
+
+/* Render line numbers and the +/- sign as generated content so copying a diff
+   line yields clean source text (user-select: none alone still copies in
+   Chromium). */
+.diff-ln::before { content: attr(data-ln); }
+.diff-sign::before { content: attr(data-sign); }
 
 .diff-line--add .diff-sign { color: var(--hl-string); }
 .diff-line--del .diff-sign { color: var(--danger); }

@@ -196,8 +196,8 @@
                      body (if (or add? del? ctx?) (subs line 2) line)]
                  (if (or add? del? ctx?)
                    [:span {:class (cond-> ["tool-diff-line"] cls (conj cls))}
-                    [:span {:class ["tool-diff-sign"]}
-                     (cond add? "+" del? "-" :else " ")]
+                    [:span {:class ["tool-diff-sign"]
+                            :data-sign (cond add? "+" del? "-" :else " ")}]
                     (if grammar (highlight-code grammar body) body)]
                    [:span {:class ["tool-diff-line"]} line]))))
         (str/split-lines text)))
@@ -798,9 +798,9 @@
     [:div (cond-> {:class cls :replicant/key row-key}
             sel-idx (assoc :on {:click (fn [_] (dispatch! {:type :diff/select-line
                                                            :idx sel-idx}))}))
-     [:span {:class ["diff-ln"]} old-nr]
-     [:span {:class ["diff-ln"]} new-nr]
-     [:span {:class ["diff-sign"]} sign]
+     [:span {:class ["diff-ln"] :data-ln old-nr}]
+     [:span {:class ["diff-ln"] :data-ln new-nr}]
+     [:span {:class ["diff-sign"] :data-sign sign}]
      [:span {:class ["diff-text"]}
       (if grammar
         (highlight-code grammar (or text ""))
