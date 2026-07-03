@@ -328,6 +328,24 @@
                      (try (.isDirectory (fs/statSync full))
                           (catch :default _ false))))))))
 
+(defn- find-claude-transcript
+  "Resolve the Claude CLI transcript JSONL for a session's cli-session-id.
+   Primary lookup derives ~/.claude/projects/<encoded-cwd>/<cli-sid>.jsonl
+   from the session's cwd. If that file is missing — e.g. the session's
+   stored cwd no longer exists so the agent ran from a fallback dir and the
+   SDK wrote the transcript under a different project folder — fall back to
+   scanning every project dir for <cli-sid>.jsonl (the id is globally unique).
+   Returns the filepath, or nil when no transcript exists."
+  [cwd cli-sid]
+  (let [fname (str cli-sid ".jsonl")
+        primary (when cwd (.join node-path (claude-project-dir cwd) fname))]
+    (if (and primary (fs/existsSync primary))
+      primary
+      (->> (list-dir-subdirs CLAUDE_PROJECTS_DIR)
+           (map #(.join node-path CLAUDE_PROJECTS_DIR % fname))
+           (filter #(fs/existsSync %))
+           first))))
+
 ;; ── Favorites (source-agnostic bookmarks) ─────────────────────────────────────
 ;; Favorites live in one JSON file keyed by the summary's :session-id, so
 ;; Xi/Claude/Pi sessions can all be starred without editing their own files.
@@ -479,11 +497,8 @@
           (keep (fn [sid]
                   (when-let [meta (get id->meta sid)]
                     (when-let [cli-sid (:cli-session-id meta)]
-                      (let [cwd (or (:cwd meta) "/")
-                            filepath (.join node-path (claude-project-dir cwd)
-                                            (str cli-sid ".jsonl"))]
-                        (when (fs/existsSync filepath)
-                          [sid (count-assistant-turns-in-jsonl filepath)]))))))
+                      (when-let [filepath (find-claude-transcript (:cwd meta) cli-sid)]
+                        [sid (count-assistant-turns-in-jsonl filepath)])))))
           session-ids)))
 
 ;; ── Resume Support ────────────────────────────────────────────────────────────
@@ -605,13 +620,9 @@
   (case (:source summary)
     :xi
     (if-let [cli-sid (:cli-session-id summary)]
-      (let [cwd (:cwd summary)
-            filepath (when cwd
-                       (.join node-path (claude-project-dir cwd)
-                              (str cli-sid ".jsonl")))]
-        (if (and filepath (fs/existsSync filepath))
-          (read-claude-session-messages filepath)
-          []))
+      (if-let [filepath (find-claude-transcript (:cwd summary) cli-sid)]
+        (read-claude-session-messages filepath)
+        [])
       [])
 
     :claude
