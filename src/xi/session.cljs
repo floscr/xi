@@ -664,3 +664,35 @@
            (str/join "\n")
            (#(if (> (count %) 16384) (subs % 0 16384) %))))
     (catch :default _ "")))
+
+(defonce ^:private search-text-cache
+  ;; session-id -> {:stamp <mtime> :text <lowercased search text>}. Reading a
+  ;; session's messages off disk is expensive, so memoize it; the stamp
+  ;; (last-accessed / timestamp) busts the entry when the session grows.
+  (atom {}))
+
+(defn- cached-search-text
+  [summary]
+  (let [id    (:session-id summary)
+        stamp (or (:last-accessed summary) (:timestamp summary) 0)
+        hit   (get @search-text-cache id)]
+    (if (and hit (= (:stamp hit) stamp))
+      (:text hit)
+      (let [text (str/lower-case (build-search-text summary))]
+        (swap! search-text-cache assoc id {:stamp stamp :text text})
+        text))))
+
+(defn content-search
+  "Session-ids whose name or conversation text contains `query`
+   (case-insensitive). `cwd` nil/blank -> search across all sessions;
+   otherwise scope to that project directory. Returns a vec of session-ids."
+  [cwd query]
+  (let [q (str/lower-case (str/trim (or query "")))]
+    (if (str/blank? q)
+      []
+      (->> (if (seq cwd) (list-sessions cwd) (list-all-sessions))
+           (keep (fn [s]
+                   (when (or (str/includes? (str/lower-case (or (:name s) "")) q)
+                             (str/includes? (cached-search-text s) q))
+                     (:session-id s))))
+           vec))))

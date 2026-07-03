@@ -166,6 +166,13 @@
   [_st {:keys [client-id cwd]}]
   {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd}]]})
 
+(defn- session-content-search
+  "Roomless: search saved-session names + conversation text for a query.
+   `cwd` scopes to a project; nil searches all sessions."
+  [_st {:keys [client-id key query cwd]}]
+  {:effects [[:session/content-search-reply
+              {:client-id client-id :key key :query query :cwd cwd}]]})
+
 (defn- diff-web-load
   "Roomless: return the combined working-tree diff for a CWD (the git-status
    view, which has no room to attach a :diff buffer to)."
@@ -198,6 +205,7 @@
    :models/web-list        models-web-list
    :projects/web-list      projects-web-list
    :projects/web-sessions  projects-web-sessions
+   :session/content-search session-content-search
    :diff/web-load          diff-web-load
    :pr/web-list            pr-web-list
    :pr/web-detail          pr-web-detail

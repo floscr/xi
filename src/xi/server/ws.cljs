@@ -49,7 +49,7 @@
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id)."
   #{:client/update :session/counts :gtd/web-list :gtd/web-task-action :models/web-list
-    :projects/web-list :projects/web-sessions :diff/web-load
+    :projects/web-list :projects/web-sessions :session/content-search :diff/web-load
     :pr/web-list :pr/web-detail :favorites/toggle})
 
 (defn- gen-client-id []
@@ -271,6 +271,14 @@
           (send! client-id (wire/encode {:type :projects/web-sessions-result
                                          :cwd cwd
                                          :sessions sessions}))))
+
+      ;; Content search over saved sessions (names + conversation text).
+      :session/content-search-reply
+      (fn [_ {:keys [client-id key query cwd]}]
+        (send! client-id (wire/encode {:type        :session/content-search-result
+                                       :key         key
+                                       :query       query
+                                       :session-ids (session/content-search cwd query)})))
 
       ;; Toggle a session bookmark, then fan a fresh lobby out to every client
       ;; (the :favorites/changed dispatch is lobby-relevant, so the tap

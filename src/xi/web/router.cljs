@@ -198,6 +198,8 @@
                                      (and dir (not= dir :all) (not= dir :favorites))
                                      (-> (dissoc :web/project-sessions)
                                          (update :web/search dissoc :project-sessions)
+                                         (update :web/content-search dissoc :project-sessions)
+                                         (update :web/content-matches dissoc :project-sessions)
                                          (assoc :web/project-sessions-loading? true)))))
      :effects effects}))
 
