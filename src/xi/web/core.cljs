@@ -426,6 +426,28 @@
                 [:app/dispatch {:type :input/submit :room-id room-id :text t}]
                 [:app/dispatch {:type :submit/pending :session-id sid :text t}])]))))
 
+(defn- prompt-nav-step
+  "Move the prompt-nav cursor one step (:prompt-nav/prev = older, :next = newer)
+   over the full-history user-prompt indices. Opening jumps to the newest
+   prompt. Grows :web/timeline-window when the target prompt sits above the top
+   of the rendered window so its node exists for the scroll effect to reach."
+  [st {:keys [type user-indices total cur-window]}]
+  (let [c (count user-indices)]
+    (if (pos? c)
+      (let [cur (:web/prompt-nav st)
+            idx (if (= type :prompt-nav/next)
+                  (min (dec c) (inc (or cur 0)))
+                  (if (nil? cur) (dec c) (max 0 (dec cur))))
+            hidx (nth user-indices idx)
+            ;; +4 entries of context above the target prompt.
+            needed (+ (- total hidx) 4)
+            win (max (or cur-window 0) needed)]
+        {:state (-> st
+                    (assoc :web/prompt-nav idx)
+                    (assoc :web/timeline-window win))
+         :effects [[:prompt-nav/scroll {:history-index hidx}]]})
+      {:state st})))
+
 (defn- web-handlers []
   (merge router/handlers
          {:room/new              room-new
@@ -455,6 +477,15 @@
           :bubble/edit-change    (fn [st {:keys [text]}]
                                    {:state (assoc-in st [:web/editing-bubble :text] text)})
           :bubble/edit-cancel    (fn [st _] {:state (dissoc st :web/editing-bubble)})
+          ;; Prompt navigation: jump between the user's own prompts across the
+          ;; FULL history. :web/prompt-nav is nil (collapsed) or a 0-based index
+          ;; into :user-indices (0 = oldest). Prompts scrolled off the top of the
+          ;; render window are reached by growing :web/timeline-window on demand;
+          ;; the scroll effect then targets the node by its history index.
+          :prompt-nav/prev       prompt-nav-step
+          :prompt-nav/next       prompt-nav-step
+          :prompt-nav/close      (fn [st _] {:state (dissoc st :web/prompt-nav)
+                                             :effects [[:prompt-nav/resume {}]]})
           :bubble/edit-save      bubble-edit-save
           :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
           :web/dialog-form-reset (fn [st _] {:state (dissoc st :web/dialog-form)})
@@ -653,6 +684,12 @@
                                      :effects [[:history/push {:route {:page :chat}}]]})}))
 
 
+;; Auto-scroll gate (see the Auto-scroll section below). Declared here so the
+;; prompt-nav scroll effect can suspend it — jumping to an earlier prompt must
+;; not be yanked back to the bottom by the post-render scroll-to-bottom.
+(defonce ^:private auto-scroll? (atom true))
+(defonce ^:private tracked-timeline (atom nil))
+
 (defn- web-effects []
   {:history/push router/history-effect
    :nav/back     router/back-effect
@@ -673,6 +710,25 @@
               (js/setTimeout
                (fn [] (dispatch! (assoc payload :type :session/content-search)))
                180))))
+  :prompt-nav/scroll
+   (fn [_ {:keys [history-index]}]
+     ;; Suspend auto-scroll so the post-render scroll-to-bottom doesn't fight us.
+     (reset! auto-scroll? false)
+     ;; The target prompt may live outside the current render window; growing
+     ;; :web/timeline-window re-renders it, so poll a few frames for the node.
+     (let [sel (str ".timeline .post--user[data-history-index=\"" history-index "\"]")]
+       (letfn [(try-scroll [n]
+                 (if-let [node (.querySelector js/document sel)]
+                   (.scrollIntoView node #js {:behavior "smooth" :block "center"})
+                   (when (pos? n)
+                     (js/requestAnimationFrame #(try-scroll (dec n))))))]
+         (try-scroll 30))))
+  :prompt-nav/resume
+   (fn [_ _]
+     ;; Re-enable auto-scroll and snap to the newest content.
+     (reset! auto-scroll? true)
+     (when-let [timeline (.querySelector js/document ".timeline")]
+       (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :theme/apply  (fn [_ mode]
@@ -757,6 +813,16 @@
                    (views/known-command? (:name parsed)))
           (dispatch! {:type :web/record-command :name (:name parsed)}))))))
 
+(defn- prompt-nav-close-tap
+  "Collapse the prompt-navigation group when the user sends a message or
+   switches sessions, so a stale index/count never lingers."
+  [dispatch!]
+  (fn [event state]
+    (when (and (:web/prompt-nav state)
+               (or (and (= :input/submit (:type event)) (not (:remote? event)))
+                   (= :route/navigate (:type event))))
+      (dispatch! {:type :prompt-nav/close}))))
+
 (defn- optimistic-tap
   "Show the user's prompt in the timeline the instant they submit it,
    before the server round-trips a :user history entry back. Cleared when
@@ -796,9 +862,6 @@
         (dispatch! {:type :gtd/clear-pending})))))
 
 ;; ── Auto-scroll ──────────────────────────────────────────────────────────────
-
-(defonce ^:private auto-scroll? (atom true))
-(defonce ^:private tracked-timeline (atom nil))
 
 (defn- at-bottom? [^js el]
   (<= (- (.-scrollHeight el) (.-scrollTop el) (.-clientHeight el)) 40))
@@ -889,6 +952,7 @@
     (add-tap! (optimistic-tap dispatch!))
     (add-tap! (pending-gtd-tap dispatch!))
     (add-tap! (record-command-tap dispatch!))
+    (add-tap! (prompt-nav-close-tap dispatch!))
     (router/init! dispatch!)
     ;; Apply stored theme immediately (before first render)
     (dispatch! {:type :theme/set-mode :mode stored-theme})

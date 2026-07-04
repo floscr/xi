@@ -342,7 +342,7 @@ body {
 .post--user {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   margin-top: var(--size-3);
 }
 
@@ -752,6 +752,49 @@ body {
 
 .quick-cmd:active {
   background: var(--bg-2, rgba(128,128,128,0.15));
+}
+
+/* Prompt navigation (jump between the user's own prompts) — a single joined
+   segmented control: outer pill radius, square inner segments with dividers. */
+.prompt-nav-group {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: var(--border-0);
+  border-radius: var(--radius-full, 9999px);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.prompt-nav-group .quick-cmd {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.prompt-nav-group .quick-cmd + .quick-cmd {
+  border-left: var(--border-0);
+}
+
+.prompt-nav-btn {
+  padding: var(--size-1) var(--size-2);
+}
+
+.prompt-nav-count {
+  padding: var(--size-1) var(--size-2);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-1);
+}
+
+.prompt-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.prompt-nav-btn:disabled:hover {
+  background: transparent;
+  color: var(--fg-2);
 }
 
 /* ---- Compose box ---- */

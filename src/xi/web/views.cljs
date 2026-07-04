@@ -262,6 +262,7 @@
              :on-click (fn [_] (dispatch! {:type :bubble/edit-save}))}
             "Save")]]]
         [:div (cond-> {:class ["post" "post--user" (when idx "post--tappable")]}
+                idx (assoc :data-history-index idx)
                 idx (assoc :on {:click (fn [^js e]
                                          (dispatch! {:type :bubble/menu-open
                                                      :index idx
@@ -570,8 +571,41 @@
          (take max-quick-commands)
          vec)))
 
-(defn- quick-command-bar [dispatch! room-id recents]
+(defn- prompt-nav-controls
+  "Jump-to-previous-prompt control shown left of the Projects button. Collapsed
+   it is a single up-arrow; once opened it expands into a button group showing
+   the current position / total and up (older) / down (newer) navigation.
+   `nav-ctx` carries the full-history user-prompt indices so navigation reaches
+   prompts that aren't in the rendered timeline window yet."
+  [dispatch! nav-idx nav-ctx]
+  (let [total (:count nav-ctx)
+        prev! (fn [_] (dispatch! (assoc nav-ctx :type :prompt-nav/prev)))
+        next! (fn [_] (dispatch! (assoc nav-ctx :type :prompt-nav/next)))]
+    (if (nil? nav-idx)
+      [:button {:class ["quick-cmd" "prompt-nav-btn"]
+                :title "Jump to previous prompt"
+                :on {:click prev!}}
+       (icon/icon {:icon-name :arrow-up :size :sm})]
+      [:div {:class ["prompt-nav-group"]}
+       [:button {:class ["quick-cmd" "prompt-nav-btn"]
+                 :title "Previous prompt"
+                 :disabled (<= nav-idx 0)
+                 :on {:click prev!}}
+        (icon/icon {:icon-name :arrow-up :size :sm})]
+       [:button {:class ["quick-cmd" "prompt-nav-count"]
+                 :title "Close prompt navigation"
+                 :on {:click (fn [_] (dispatch! {:type :prompt-nav/close}))}}
+        (str (inc nav-idx) "/" total)]
+       [:button {:class ["quick-cmd" "prompt-nav-btn"]
+                 :title "Next prompt"
+                 :disabled (>= nav-idx (dec total))
+                 :on {:click next!}}
+        (icon/icon {:icon-name :arrow-down :size :sm})]])))
+
+(defn- quick-command-bar [dispatch! room-id recents prompt-nav nav-ctx]
   [:div {:class ["quick-commands"]}
+   (when (pos? (or (:count nav-ctx) 0))
+     (prompt-nav-controls dispatch! prompt-nav nav-ctx))
    [:button {:class ["quick-cmd"]
              :on {:click (fn [_] (dispatch! {:type :projects/picker-open}))}}
     (icon/icon {:icon-name :folder :size :sm})
@@ -610,7 +644,7 @@
         (icon/icon {:icon-name :x :size :sm})]])
     queued)])
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? recents queue-open?]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? recents queue-open? prompt-nav nav-ctx]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
@@ -625,7 +659,7 @@
        (queue-popover dispatch! room-id queued))
      (compose-image-strip dispatch! images)
      (when show-quick?
-       (quick-command-bar dispatch! room-id recents))
+       (quick-command-bar dispatch! room-id recents prompt-nav nav-ctx))
      (when cmd-open?
        (command-suggestions dispatch! room-id draft-key cmd-matches
                             (min (or cmd-selected 0) (dec (count cmd-matches)))))
@@ -1501,7 +1535,20 @@
         model-list (:web/model-list state)
         buffers    (get-in room [:ui :buffers])
         active-buf (get-in room [:ui :active-buffer] :chat)
-        has-tabs?  (boolean (:diff buffers))]
+        has-tabs?  (boolean (:diff buffers))
+        ;; Prompt navigation over the FULL history (not just the rendered
+        ;; window): collect every user entry's absolute history index so we can
+        ;; jump to prompts scrolled off the top, expanding the window on demand.
+        nav-ctx (let [entries (vec history)
+                      total   (count entries)
+                      win     (or (:web/timeline-window state) initial-window-size)
+                      user-indices (vec (keep-indexed
+                                         (fn [i e] (when (= :user (:kind e)) i))
+                                         entries))]
+                  {:user-indices user-indices
+                   :count (count user-indices)
+                   :total total
+                   :cur-window win})]
     [:div {:class ["container"] :replicant/key "chat"}
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
@@ -1578,7 +1625,9 @@
                      (:web/cmd-selected state)
                      (get-in state [:lobby :personal-agent?])
                      (:web/recent-commands state)
-                     (:web/queue-popover? state))))]))
+                     (:web/queue-popover? state)
+                     (:web/prompt-nav state)
+                     nav-ctx)))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
