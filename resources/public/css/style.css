@@ -83,11 +83,10 @@ body {
   /* Buttons/badges stay interactive and legible over the scrolling content. */
   .topbar--chat > * { pointer-events: auto; }
 
-  /* Frosted-glass chips: translucent fill over a heavy backdrop blur so the
-     buttons read as floating over the scrolling content. Also restyle the
-     burger toggle and the tab pill to match. */
-  .topbar--chat .icon-btn,
-  .topbar--chat .sidebar-mobile-toggle,
+  /* Frosted-glass chips: translucent fill over a light backdrop blur so every
+     header button reads as floating over the scrolling content. The tab pill
+     is frosted as a single unit, so its inner segments are left untouched. */
+  .topbar--chat button:not(.tab-pill-item),
   .topbar--chat .tab-pill {
     background: color-mix(in srgb, var(--bg-0) 55%, transparent);
     -webkit-backdrop-filter: blur(6px);
