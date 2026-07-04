@@ -1550,6 +1550,69 @@ body {
   justify-content: flex-end;
 }
 
+/* ── Inline dialog bubble (confirm/select/alert as a chat bubble) ─────── */
+
+.post--dialog {
+  align-items: flex-start;
+}
+
+.dialog-bubble {
+  max-width: 85%;
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-lg);
+  padding: var(--size-3) var(--size-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-3);
+}
+
+.dialog-message {
+  font-size: var(--font-base);
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2);
+  justify-content: flex-start;
+}
+
+.dialog-bubble--resolved {
+  opacity: 0.85;
+  border-left-color: var(--border-color, rgba(128, 128, 128, 0.4));
+}
+
+.dialog-decision {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  align-self: flex-start;
+  padding: var(--size-1) var(--size-2);
+  border-radius: var(--radius-full, 999px);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.dialog-decision--allow {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+.dialog-decision--deny {
+  background: var(--red-bg, rgba(239, 68, 68, 0.12));
+  color: var(--red-fg, #ef4444);
+}
+
+.dialog-decision--neutral {
+  background: var(--bg-2, rgba(128, 128, 128, 0.15));
+  color: var(--fg-1);
+}
+
 .copy-dialog-textarea {
   width: 100%;
   font-family: var(--font-mono, monospace);

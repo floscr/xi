@@ -808,20 +808,63 @@
                       (answer! final)))}
        "Submit")]]))
 
-(defn- dialog-overlay [dispatch! state room]
+(defn- dialog-decision-label
+  "Human label for the choice the user made on a now-resolved dialog."
+  [type options value]
+  (case type
+    :confirm    (if value "Allowed" "Denied")
+    :select     (or (some #(when (= (:value %) value) (:label %)) options)
+                    (str value))
+    :alert      "Dismissed"
+    :cwd-select (str value)
+    (str value)))
+
+(defn- resolved-dialog-post
+  "Static bubble for an already-answered dialog: the original message plus a
+   pill showing which decision the user made. Rendered from the web-only
+   :web/resolved-dialogs log so answered confirms stay visible in the timeline."
+  [key {:keys [message type value label]}]
+  (let [deny?  (and (= type :confirm) (not value))
+        allow? (and (= type :confirm) value)]
+    [:div {:class ["post" "post--assistant" "post--dialog" "post--dialog-resolved"]
+           :replicant/key (str "rdlg-" key)}
+     [:div {:class ["post-body" "dialog-bubble" "dialog-bubble--resolved"]}
+      [:div {:class ["dialog-message"]} message]
+      [:div {:class ["dialog-decision"
+                     (cond deny?  "dialog-decision--deny"
+                           allow? "dialog-decision--allow"
+                           :else  "dialog-decision--neutral")]}
+       (icon/icon {:icon-name (if deny? :x :check) :size :sm})
+       [:span label]]]]))
+
+(defn- dialog-post
+  "Render a pending dialog (confirm/select/alert/cwd-select) as an inline,
+   assistant-side chat bubble in the timeline flow. Visually distinct from a
+   normal answer via .post--dialog so the user sees it needs a response.
+   On answer we log the decision into :web/resolved-dialogs (anchored to the
+   current history length) so the bubble persists as a static record."
+  [dispatch! state room history]
   (when-let [{:keys [id type message text options]} (first (get-in room [:ui :dialogs]))]
     (let [room-id (:id room)
           answer! (fn [value]
+                    (dispatch! {:type :web/dialog-resolved
+                                :room-id room-id
+                                :entry {:key    id
+                                        :anchor (count history)
+                                        :message (or message text)
+                                        :type   type
+                                        :value  value
+                                        :label  (dialog-decision-label type options value)}})
                     (dispatch! {:type :ui/dialog-response
                                 :room-id room-id :dialog-id id :value value})
                     (dispatch! {:type :ui/dialog-close
                                 :room-id room-id :dialog-id id}))]
-      [:div {:class ["confirm-overlay"]}
-       [:div {:class ["confirm-panel"]}
-        [:div {:class ["confirm-message"]} (or message text)]
+      [:div {:class ["post" "post--assistant" "post--dialog"]}
+       [:div {:class ["post-body" "dialog-bubble"]}
+        [:div {:class ["dialog-message"]} (or message text)]
         (if (= type :cwd-select)
           (cwd-select-body dispatch! state options answer!)
-          [:div {:class ["confirm-actions"]}
+          [:div {:class ["dialog-actions"]}
            (case type
              :select
              (for [{:keys [label value]} options]
@@ -1600,19 +1643,32 @@
                                                   :window (+ win window-step)}))}
                    (str "Show " (min window-step start) " earlier messages"
                         " (" start " hidden)"))])
-               (let [editing (:web/editing-bubble state)]
-                 (keep-indexed
-                  (fn [i entry]
-                    (let [abs-idx (+ start i)]
-                      (entry->post
-                       dispatch!
-                       (cond-> (assoc entry :history-index abs-idx)
-                         (and (= :user (:kind entry)) (= abs-idx (:index editing)))
-                         (assoc :editing? true :edit-text (:text editing))))))
-                  (subvec entries start total)))
-               (optimistic-post dispatch! state room sid history)))
+               (let [editing   (:web/editing-bubble state)
+                     ;; Answered dialogs live in a web-only log, each anchored
+                     ;; to the history length at answer time so its static
+                     ;; bubble stays in chronological place as the turn resumes.
+                     by-anchor (group-by :anchor (get-in state [:web/resolved-dialogs (:id room)]))
+                     rposts    (fn [p] (map (fn [e] (resolved-dialog-post (:key e) e))
+                                            (get by-anchor p)))]
+                 (concat
+                  ;; Resolved bubbles anchored above the visible window: pin at top.
+                  (mapcat rposts (sort (filter #(< % start) (keys by-anchor))))
+                  (mapcat
+                   (fn [p]
+                     (concat
+                      (rposts p)
+                      (when (< p total)
+                        (let [entry (nth entries p)
+                              post  (entry->post
+                                     dispatch!
+                                     (cond-> (assoc entry :history-index p)
+                                       (and (= :user (:kind entry)) (= p (:index editing)))
+                                       (assoc :editing? true :edit-text (:text editing))))]
+                          (when post [post])))))
+                   (range start (inc total)))))
+               (optimistic-post dispatch! state room sid history)
+               (dialog-post dispatch! state room history)))
             [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
-        (dialog-overlay dispatch! state room)
         (copy-dialog-overlay dispatch! (:web/copy-text state))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))

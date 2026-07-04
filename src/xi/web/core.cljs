@@ -489,6 +489,11 @@
           :bubble/edit-save      bubble-edit-save
           :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
           :web/dialog-form-reset (fn [st _] {:state (dissoc st :web/dialog-form)})
+          ;; Answered-dialog log (web-only): keep resolved confirm/select
+          ;; bubbles in the timeline, anchored to their history position.
+          :web/dialog-resolved   (fn [st {:keys [room-id entry]}]
+                                   {:state (update-in st [:web/resolved-dialogs room-id]
+                                                      (fnil conj []) entry)})
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
           :web/optimistic-set    optimistic-set
