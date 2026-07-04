@@ -662,6 +662,7 @@
         has-input?  (seq (str/trim (or draft "")))
         queued      (get-in room [:agent :queued])
         qcount      (count queued)
+        new?        (nil? session-id)
         show-quick? (and (not pa?) (not cmd-open?))]
     [:div {:class ["compose-box"]}
      (when (and busy? queue-open? (pos? qcount))
@@ -689,7 +690,14 @@
         {:placeholder (if busy? "Working…" "Message…")
          :value (or draft "")
          :max-rows 6
-         :attrs {:on {:input (fn [^js e]
+         :attrs {:replicant/on-mount
+                 (fn [{:replicant/keys [^js node]}]
+                   ;; Autofocus the input when starting a fresh chat so the
+                   ;; user can type immediately. preventScroll avoids a jump
+                   ;; before the layout settles (matches the bubble-edit box).
+                   (when new?
+                     (.focus node #js {:preventScroll true})))
+                 :on {:input (fn [^js e]
                                (dispatch! {:type :compose/set-draft
                                            :draft-key draft-key
                                            :text (.. e -target -value)}))
@@ -1363,6 +1371,17 @@
   (sidebar/sidebar-mobile-toggle
    {:on-click (fn [_] (dispatch! {:type :sidebar/toggle}))}))
 
+(defn- nav-group
+  "Burger toggle + back arrow rendered as one segmented button split by a
+   divider. Used on every header bar that has both. `on-back` is the back
+   arrow's click handler."
+  [dispatch! on-back]
+  [:div {:class ["nav-group"]}
+   (menu-button dispatch!)
+   [:button {:class ["icon-btn"]
+             :on {:click on-back}}
+    (icon/icon {:icon-name :arrow-left :size :md})]])
+
 (defn- more-vertical-icon
   "Inline three-dots (vertical ellipsis) SVG — there is no ellipsis icon in the
    shared icon set, so we render a Lucide-compatible one matching the icon
@@ -1656,10 +1675,7 @@
                    :cur-window win})]
     [:div {:class ["container"] :replicant/key "chat"}
      [:div {:class ["topbar" "topbar--chat"]}
-      (menu-button dispatch!)
-      [:button {:class ["icon-btn" "icon-btn--sm"]
-                :on {:click (fn [_] (dispatch! (chat-back-route state)))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
+      (nav-group dispatch! (fn [_] (dispatch! (chat-back-route state))))
       [:div {:class ["topbar-title"]}]
       (offline-badge state)
       (when has-tabs?
@@ -1935,10 +1951,7 @@
         loading?  (:web/project-sessions-loading? state)]
     [:div {:class ["container"] :replicant/key "project-sessions"}
      [:div {:class ["topbar"]}
-      (menu-button dispatch!)
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
+      (nav-group dispatch! (fn [_] (dispatch! {:type :route/navigate :page :home})))
       [:div {:class ["topbar-title"]} (shorten-path cwd)]
       [:button {:class ["icon-btn"]
                 :title "New session"
@@ -1984,10 +1997,7 @@
         orphans    (filter-sessions orphans query content? matches)]
     [:div {:class ["container"] :replicant/key "all-sessions"}
      [:div {:class ["topbar"]}
-      (menu-button dispatch!)
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
+      (nav-group dispatch! (fn [_] (dispatch! {:type :route/navigate :page :home})))
       [:div {:class ["topbar-title"]} "All sessions"]
       (when connected?
         [:button {:class ["icon-btn"]
@@ -2022,10 +2032,7 @@
         sessions   (filter-sessions sessions query content? matches)]
     [:div {:class ["container"] :replicant/key "favorites"}
      [:div {:class ["topbar"]}
-      (menu-button dispatch!)
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
+      (nav-group dispatch! (fn [_] (dispatch! {:type :route/navigate :page :home})))
       [:div {:class ["topbar-title"]} "Favorites"]
       (overflow-menu dispatch! state)]
      [:div {:class ["home"]}
@@ -2350,14 +2357,11 @@
       :else
       [:div {:class ["container"] :replicant/key "gtd"}
        [:div {:class ["topbar"]}
-        (menu-button dispatch!)
-        [:button {:class ["icon-btn"]
-                  :on {:click (fn [_]
-                                (dispatch! {:type :nav/back
-                                            :fallback (if selected-file
-                                                        {:page :gtd}
-                                                        {:page :home})}))}}
-         (icon/icon {:icon-name :arrow-left :size :md})]
+        (nav-group dispatch! (fn [_]
+                               (dispatch! {:type :nav/back
+                                           :fallback (if selected-file
+                                                       {:page :gtd}
+                                                       {:page :home})})))
         [:div {:class ["topbar-title"]}
          (if selected-file
            selected-file
@@ -2514,12 +2518,9 @@
         loading? (:web/git-status-loading? state)]
     [:div {:class ["container"] :replicant/key "git-status"}
      [:div {:class ["topbar"]}
-      (menu-button dispatch!)
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_]
-                              (dispatch! {:type :nav/back
-                                          :fallback {:page :home :dir cwd}}))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
+      (nav-group dispatch! (fn [_]
+                             (dispatch! {:type :nav/back
+                                         :fallback {:page :home :dir cwd}})))
       [:div {:class ["topbar-title"]} "Git status · " (shorten-path cwd)]
       [:button {:class ["icon-btn"]
                 :title "Refresh"
@@ -2579,12 +2580,9 @@
         shown    (pr-filtered prs me filters)]
     [:div {:class ["container"] :replicant/key "pr-list"}
      [:div {:class ["topbar"]}
-      (menu-button dispatch!)
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_]
-                              (dispatch! {:type :nav/back
-                                          :fallback {:page :home :dir cwd}}))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
+      (nav-group dispatch! (fn [_]
+                             (dispatch! {:type :nav/back
+                                         :fallback {:page :home :dir cwd}})))
       [:div {:class ["topbar-title"]} "Pull requests · " (shorten-path cwd)]
       [:button {:class ["icon-btn"]
                 :title "Refresh"
@@ -2640,12 +2638,9 @@
         {:keys [pr diff]} detail]
     [:div {:class ["container"] :replicant/key "pr-detail"}
      [:div {:class ["topbar"]}
-      (menu-button dispatch!)
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_]
-                              (dispatch! {:type :nav/back
-                                          :fallback {:page :pr-list :cwd cwd}}))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
+      (nav-group dispatch! (fn [_]
+                             (dispatch! {:type :nav/back
+                                         :fallback {:page :pr-list :cwd cwd}})))
       [:div {:class ["topbar-title"]} "PR #" number]
       (overflow-menu dispatch! state {:mode :pr-detail :cwd cwd :number number})]
      [:div {:class ["pr-detail-scroll"]}
@@ -2698,13 +2693,10 @@
         diff     (:diff detail)]
     [:div {:class ["container"] :replicant/key "pr-diff"}
      [:div {:class ["topbar"]}
-      (menu-button dispatch!)
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_]
-                              (dispatch! {:type :nav/back
-                                          :fallback {:page :pr-detail
-                                                     :cwd cwd :number number}}))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
+      (nav-group dispatch! (fn [_]
+                             (dispatch! {:type :nav/back
+                                         :fallback {:page :pr-detail
+                                                    :cwd cwd :number number}})))
       [:div {:class ["topbar-title"]} "PR #" number " diff"]
       (overflow-menu dispatch! state)]
      [:div {:class ["diff-tab"]}
