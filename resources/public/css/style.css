@@ -112,10 +112,14 @@ body {
      height) and fades out as content passes beneath the buttons. The timeline's
      own padding is left untouched, so message spacing doesn't jump.
      --chat-header-h mirrors the topbar height (safe-area + button + padding). */
-  .timeline {
+  .topbar--chat + .timeline {
     --chat-header-h: calc(max(var(--size-2), env(safe-area-inset-top, 0px))
                           + var(--size-10) + var(--size-2));
     margin-top: calc(-1 * var(--chat-header-h));
+    /* Offset the first content below the floating header so it isn't pinned
+       under the buttons (and faded) at rest; scrolled content still passes
+       under the header and fades via the mask. */
+    padding-top: var(--chat-header-h);
     -webkit-mask-image: linear-gradient(to bottom, transparent 0,
                                         rgba(0, 0, 0, 1) var(--chat-header-h));
     mask-image: linear-gradient(to bottom, transparent 0,
