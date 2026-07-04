@@ -235,28 +235,62 @@
 (defn- entry->post [dispatch! entry]
   (case (:kind entry)
     :user
-    [:div {:class ["post" "post--user"]}
-     [:div {:class ["post-body"]}
-      (if-let [imgs (seq (:images entry))]
-        [:div {:class ["user-images"]}
-         (map-indexed
-          (fn [i {:keys [data media-type name]}]
-            (if (= media-type "application/pdf")
-              [:div {:replicant/key i :class ["user-attachment-chip"]}
-               (icon/icon {:icon-name :file-text :size :md})
-               [:span {:class ["user-attachment-name"]} (or name "document.pdf")]]
-              (let [src (str "data:" media-type ";base64," data)]
-                [:img {:replicant/key i
-                       :class ["user-image" "lightbox-thumb"]
-                       :src src
-                       :alt "attached"
-                       :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}])))
-          imgs)]
-        (when-let [n (:image-count entry)]
-          (when (pos? n)
-            [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
-      (when (seq (:text entry))
-        [:div {:class ["post-content"]} (md/render (:text entry))])]]
+    (let [idx (:history-index entry)]
+      (if (:editing? entry)
+        [:div {:class ["post" "post--user" "post--editing"]}
+         [:div {:class ["post-body"]}
+          [:textarea {:class ["bubble-edit-textarea"]
+                      :value (:edit-text entry)
+                      :replicant/on-mount
+                      (fn [{:replicant/keys [^js node]}]
+                        (.focus node)
+                        (let [n (.. node -value -length)]
+                          (.setSelectionRange node n n)))
+                      :on {:input (fn [^js e]
+                                    (dispatch! {:type :bubble/edit-change
+                                                :text (.. e -target -value)}))
+                           :keydown (fn [^js e]
+                                      (when (= "Escape" (.-key e))
+                                        (dispatch! {:type :bubble/edit-cancel})))}}]
+          [:div {:class ["bubble-edit-actions"]}
+           (button/button
+            {:variant :ghost :size :sm
+             :on-click (fn [_] (dispatch! {:type :bubble/edit-cancel}))}
+            "Cancel")
+           (button/button
+            {:variant :primary :size :sm
+             :on-click (fn [_] (dispatch! {:type :bubble/edit-save}))}
+            "Save")]]]
+        [:div (cond-> {:class ["post" "post--user" (when idx "post--tappable")]}
+                idx (assoc :on {:click (fn [^js e]
+                                         (dispatch! {:type :bubble/menu-open
+                                                     :index idx
+                                                     :text (:text entry)
+                                                     :x (.-clientX e)
+                                                     :y (.-clientY e)}))}))
+         [:div {:class ["post-body"]}
+          (if-let [imgs (seq (:images entry))]
+            [:div {:class ["user-images"]}
+             (map-indexed
+              (fn [i {:keys [data media-type name]}]
+                (if (= media-type "application/pdf")
+                  [:div {:replicant/key i :class ["user-attachment-chip"]}
+                   (icon/icon {:icon-name :file-text :size :md})
+                   [:span {:class ["user-attachment-name"]} (or name "document.pdf")]]
+                  (let [src (str "data:" media-type ";base64," data)]
+                    [:img {:replicant/key i
+                           :class ["user-image" "lightbox-thumb"]
+                           :src src
+                           :alt "attached"
+                           :on {:click (fn [^js e]
+                                         (.stopPropagation e)
+                                         (dispatch! {:type :lightbox/open :src src}))}}])))
+              imgs)]
+            (when-let [n (:image-count entry)]
+              (when (pos? n)
+                [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
+          (when (seq (:text entry))
+            [:div {:class ["post-content"]} (md/render (:text entry))])]]))
 
     :text
     [:div {:class ["post" "post--assistant"]}
@@ -1376,6 +1410,66 @@
       [:span {:class ["launch-label"]}
        (str " file" (when (> (count files) 1) "s"))]])])
 
+(defn- clamp-bubble-menu!
+  "Keep the tap menu inside the visible viewport: flip it above the tap point
+   when it would overflow the bottom (e.g. a bubble tapped just above the
+   compose box / keyboard) and nudge it left when it would run past the right
+   edge. Uses the visual viewport height so it accounts for the iOS keyboard."
+  [{:replicant/keys [^js node]}]
+  (let [vw     (.-innerWidth js/window)
+        vh     (or (some-> js/window .-visualViewport .-height) (.-innerHeight js/window))
+        r      (.getBoundingClientRect node)
+        margin 8
+        left   (js/parseFloat (.. node -style -left))
+        top    (js/parseFloat (.. node -style -top))
+        left'  (max margin (min left (- vw (.-width r) margin)))
+        top'   (if (> (+ top (.-height r)) (- vh margin))
+                 (max margin (- top (.-height r)))
+                 top)]
+    (set! (.. node -style -left) (str left' "px"))
+    (set! (.. node -style -top) (str top' "px"))))
+
+(defn- bubble-menu
+  "Action sheet shown when a user chat bubble is tapped. Edit switches the
+   bubble into an inline editor (Cancel / Save); only Save forks the
+   conversation from that message (truncates history to before it, like
+   /tree edit) and resubmits the edited text. Delete forks the same way but
+   discards the message. Copy uses the iOS long-press fallback when the async
+   Clipboard API is unavailable."
+  [dispatch! room-id {:keys [index text x y]}]
+  (let [close! (fn [] (dispatch! {:type :bubble/menu-close}))]
+    [:div {:class ["bubble-menu-backdrop"]
+           :on {:click (fn [_] (close!))}}
+     [:div {:class ["bubble-menu"]
+            :style {:top (str y "px") :left (str x "px")}
+            :replicant/on-mount clamp-bubble-menu!
+            :on {:click (fn [e] (.stopPropagation e))}}
+      [:button {:class ["bubble-menu-item"]
+                :on {:click (fn [e]
+                              (.stopPropagation e)
+                              (close!)
+                              (dispatch! {:type :bubble/edit-start
+                                          :index index :text (or text "")}))}}
+       (icon/icon {:icon-name :edit :size :sm})
+       [:span "Edit"]]
+      [:button {:class ["bubble-menu-item"]
+                :on {:click (fn [e]
+                              (.stopPropagation e)
+                              (close!)
+                              (if ios?
+                                (dispatch! {:type :copy/open :text text})
+                                (copy-to-clipboard! text)))}}
+       (icon/icon {:icon-name :copy :size :sm})
+       [:span "Copy"]]
+      [:button {:class ["bubble-menu-item" "bubble-menu-item--danger"]
+                :on {:click (fn [e]
+                              (.stopPropagation e)
+                              (close!)
+                              (dispatch! {:type :tree/navigate
+                                          :room-id room-id :index index}))}}
+       (icon/icon {:icon-name :trash :size :sm})
+       [:span "Delete"]]]]))
+
 (defn- chat-view [state dispatch!]
   (let [active  (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -1459,11 +1553,22 @@
                                                   :window (+ win window-step)}))}
                    (str "Show " (min window-step start) " earlier messages"
                         " (" start " hidden)"))])
-               (keep (partial entry->post dispatch!) (subvec entries start total))
+               (let [editing (:web/editing-bubble state)]
+                 (keep-indexed
+                  (fn [i entry]
+                    (let [abs-idx (+ start i)]
+                      (entry->post
+                       dispatch!
+                       (cond-> (assoc entry :history-index abs-idx)
+                         (and (= :user (:kind entry)) (= abs-idx (:index editing)))
+                         (assoc :editing? true :edit-text (:text editing))))))
+                  (subvec entries start total)))
                (optimistic-post dispatch! state room sid history)))
             [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
         (dialog-overlay dispatch! state room)
         (copy-dialog-overlay dispatch! (:web/copy-text state))
+        (when-let [menu (:web/bubble-menu state)]
+          (bubble-menu dispatch! (:id room) menu))
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         (when (:web/project-picker? state)

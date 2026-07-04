@@ -407,6 +407,25 @@
                 (dissoc :web/pending-room :web/overflow-menu?))
    :effects [[:ws/send {:type :room/join :target "new" :cwd cwd}]]})
 
+(defn- bubble-edit-save
+  "Commit an inline bubble edit: fork the conversation at the edited message
+   (truncate history to before it, like /tree edit) and resubmit the edited
+   text as a fresh prompt. Only invoked on Save, so tapping Edit + Cancel is a
+   no-op. Empty text just closes the editor without forking."
+  [st _]
+  (let [{:keys [index text]} (:web/editing-bubble st)
+        active  (state/active-room st)
+        sid     (get-in st [:web/route :session-id])
+        room-id (when (= (get-in active [:session :id]) sid) (:id active))
+        t       (str/trim (or text ""))]
+    (cond-> {:state (dissoc st :web/editing-bubble)}
+      (seq t)
+      (assoc :effects
+             [[:app/dispatch {:type :tree/navigate :room-id room-id :index index}]
+              (if room-id
+                [:app/dispatch {:type :input/submit :room-id room-id :text t}]
+                [:app/dispatch {:type :submit/pending :session-id sid :text t}])]))))
+
 (defn- web-handlers []
   (merge router/handlers
          {:room/new              room-new
@@ -426,6 +445,17 @@
           :lightbox/close        lightbox-close
           :copy/open             (fn [st {:keys [text]}] {:state (assoc st :web/copy-text text)})
           :copy/close            (fn [st _] {:state (dissoc st :web/copy-text)})
+          :bubble/menu-open      (fn [st {:keys [index text x y]}]
+                                   {:state (assoc st :web/bubble-menu {:index index :text text :x x :y y})})
+          :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
+          :bubble/edit-start     (fn [st {:keys [index text]}]
+                                   {:state (-> st
+                                               (dissoc :web/bubble-menu)
+                                               (assoc :web/editing-bubble {:index index :text text}))})
+          :bubble/edit-change    (fn [st {:keys [text]}]
+                                   {:state (assoc-in st [:web/editing-bubble :text] text)})
+          :bubble/edit-cancel    (fn [st _] {:state (dissoc st :web/editing-bubble)})
+          :bubble/edit-save      bubble-edit-save
           :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
           :web/dialog-form-reset (fn [st _] {:state (dissoc st :web/dialog-form)})
           :submit/pending        submit-pending
