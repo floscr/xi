@@ -2207,24 +2207,18 @@
            (sidebar/sidebar-group {:label "Projects"}
              (for [p projects]
                (project-dir-card dispatch! p))
-             [:div {:class ["project-card"]
-                    :replicant/key "all-projects"
-                    :on {:click (fn [_] (dispatch! {:type :route/navigate :page :home}))}}
-              [:div {:class ["project-card-icon"]}
-               (icon/icon {:icon-name :layout-dashboard :size :sm})]
-              [:div {:class ["project-card-info"]}
-               [:span {:class ["project-card-name"]} "All projects"]]
-              [:div {:class ["project-card-chevron"]}
-               (icon/icon {:icon-name :chevron-right :size :sm})]]
-             [:div {:class ["project-card"]
-                    :replicant/key "gtd"
-                    :on {:click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}}
-              [:div {:class ["project-card-icon"]}
-               (icon/icon {:icon-name :list :size :sm})]
-              [:div {:class ["project-card-info"]}
-               [:span {:class ["project-card-name"]} "GTD Tasks"]]
-              [:div {:class ["project-card-chevron"]}
-               (icon/icon {:icon-name :chevron-right :size :sm})]]))
+             [:div {:class ["sidebar-nav-buttons"]
+                    :replicant/key "sidebar-nav-buttons"}
+              (button/button
+               {:variant :secondary :size :sm :icon-left :layout-dashboard
+                :class "sidebar-nav-button"
+                :on-click (fn [_] (dispatch! {:type :route/navigate :page :home}))}
+               "All projects")
+              (button/button
+               {:variant :secondary :size :sm :icon-left :list
+                :class "sidebar-nav-button"
+                :on-click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}
+               "GTD Tasks")]))
          (sidebar/sidebar-group {:label "Recent"}
            (if (seq cards)
              (for [c cards]

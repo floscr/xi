@@ -1210,6 +1210,18 @@ body {
 .sidebar .active-dot,
 .sidebar .unread-dot { width: 8px; height: 8px; }
 
+/* Muted nav buttons (All projects / GTD Tasks) at the end of the drawer's
+   Projects group — real buttons, not full-width section rows */
+.sidebar-nav-buttons {
+  display: flex;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-3);
+}
+.sidebar-nav-button {
+  flex: 1;
+  justify-content: flex-start;
+}
+
 .project-card-icon { flex-shrink: 0; color: var(--fg-1); }
 
 .active-dot {
