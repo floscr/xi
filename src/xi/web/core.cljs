@@ -872,8 +872,14 @@
                           ;; whether the keyboard is open.
                           layout-h (.-clientHeight js/document.documentElement)
                           visual-h (if vv (.-height vv) js/window.innerHeight)
-                          style    (.-style js/document.documentElement)]
-                      (if (> (- layout-h visual-h) 100)
+                          root     js/document.documentElement
+                          style    (.-style root)
+                          kb-open? (> (- layout-h visual-h) 100)]
+                      ;; Expose keyboard state to CSS so layout that assumes the
+                      ;; home-indicator safe area (e.g. the compose row's bottom
+                      ;; inset) can drop it while the keyboard covers that area.
+                      (.toggle (.-classList root) "keyboard-open" kb-open?)
+                      (if kb-open?
                         ;; Keyboard is open: iOS overlays it without resizing
                         ;; the layout viewport, so pin the layout to the
                         ;; (smaller) visual viewport and scroll back to origin

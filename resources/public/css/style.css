@@ -672,6 +672,13 @@ body {
   padding-bottom: max(var(--size-2), env(safe-area-inset-bottom));
 }
 
+/* When the on-screen keyboard is open (class toggled in xi.web.core), the
+   home-indicator safe area is covered by the keyboard, so its inset would
+   just be dead space between the input and the keyboard — drop it. */
+.keyboard-open .compose-input-row {
+  padding-bottom: var(--size-2);
+}
+
 .compose-box .form-textarea-auto {
   flex: 1;
   border: none;
