@@ -1298,7 +1298,14 @@
                                      (dispatch! {:type :copy/open :text text})
                                      (copy-to-clipboard! text))))}}
           (icon/icon {:icon-name :copy :size :sm})
-          [:span "Copy debug info"]]]))])))
+          [:span "Copy debug info"]]
+         [:button {:class ["overflow-menu-item"]
+                   :on {:click (fn [e]
+                                 (.stopPropagation e)
+                                 (dispatch! {:type :overflow/close})
+                                 (.reload js/location))}}
+          (icon/icon {:icon-name :refresh :size :sm})
+          [:span "Reload"]]]))])))
 
 (defn- optimistic-post
   "An optimistic user bubble rendered at the tail of the timeline the instant a
@@ -1414,10 +1421,6 @@
           model])]
       (when model-list
         (model-selector dispatch! (:id room) model-list model))
-      (when standalone?
-        [:button {:class ["icon-btn" "icon-btn--sm"]
-                  :on {:click (fn [_] (.reload js/location))}}
-         (icon/icon {:icon-name :refresh :size :md})])
       (offline-badge state)
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
      (when-let [skills (:web/skill-list state)]
@@ -1850,10 +1853,6 @@
          [:div {:class ["topbar"]}
           (menu-button dispatch!)
           [:div {:class ["topbar-title"]} "Xi"]
-          (when standalone?
-            [:button {:class ["icon-btn" "icon-btn--sm"]
-                      :on {:click (fn [_] (.reload js/location))}}
-             (icon/icon {:icon-name :refresh :size :md})])
           (offline-badge state)
           (when connected?
             [:button {:class ["icon-btn"]
@@ -2224,11 +2223,16 @@
                (session-card dispatch! c))
              [:div {:class ["sidebar-group-label"]} "No recent sessions"])))))
      (sidebar/sidebar-footer {}
-       (theme-toggle/theme-toggle
-        {:mode (or (:web/theme-mode state) "auto")
-         :size :sm
-         :attrs {:style {:align-self "flex-start"}}
-         :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})))))
+       [:div {:style {:display "flex" :align-items "center" :justify-content "space-between"}}
+        (theme-toggle/theme-toggle
+         {:mode (or (:web/theme-mode state) "auto")
+          :size :sm
+          :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
+        (when standalone?
+          [:button {:class ["icon-btn" "icon-btn--sm"]
+                    :title "Reload"
+                    :on {:click (fn [_] (.reload js/location))}}
+           (icon/icon {:icon-name :refresh :size :md})])]))))
 
 (defn- git-status-view
   "Roomless working-tree diff page (reached from the project view's overflow
