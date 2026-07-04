@@ -8,9 +8,13 @@ the server mode adds a WS transport and a room manager on top of it.
 ```
 xi              Standalone TUI. One local room, connected to nothing.
 xi server       Start a WS server + a local TUI client in the same process.
+xi prompt <txt> One-shot: run a single prompt headless, print the response, exit.
 xi join [url]   Connect a TUI client to the latest room on a running server.
 xi create [url] Connect a TUI client to a new room on a running server.
 ```
+
+`xi prompt` (aka `xi -p`) is a headless, non-interactive mode for scripting and
+piping — see [prompt-mode.md](prompt-mode.md).
 
 ### Flags
 
