@@ -47,6 +47,7 @@ body {
 
 /* ---- Topbar ---- */
 .topbar {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -63,6 +64,49 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- Chat transparent header (mobile) ----
+   In the chat view the header floats over the timeline: its buttons stay put
+   as bordered chips (matching the burger toggle) while the conversation
+   scrolls all the way to the top and fades out beneath them. The topbar keeps
+   its default padding so switching in/out of the chat view causes no jump. */
+@media (max-width: 768px) {
+  .topbar--chat {
+    position: relative;
+    z-index: 3;
+    background: transparent;
+    border-bottom: none;
+    pointer-events: none;
+  }
+
+  /* Buttons/badges stay interactive and legible over the scrolling content. */
+  .topbar--chat > * { pointer-events: auto; }
+
+  /* Match the burger toggle: a bordered chip on a solid background. */
+  .topbar--chat .icon-btn {
+    width: var(--size-10);
+    height: var(--size-10);
+    padding: 0;
+    border: var(--border-0);
+    border-radius: var(--radius-md);
+    background: var(--bg-0);
+    color: var(--fg-1);
+  }
+
+  /* The chat timeline slides up under the transparent header (reclaiming its
+     height) and fades out as content passes beneath the buttons. The timeline's
+     own padding is left untouched, so message spacing doesn't jump.
+     --chat-header-h mirrors the topbar height (safe-area + button + padding). */
+  .timeline {
+    --chat-header-h: calc(max(var(--size-2), env(safe-area-inset-top, 0px))
+                          + var(--size-10) + var(--size-2));
+    margin-top: calc(-1 * var(--chat-header-h));
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0,
+                                        rgba(0, 0, 0, 1) var(--chat-header-h));
+    mask-image: linear-gradient(to bottom, transparent 0,
+                                rgba(0, 0, 0, 1) var(--chat-header-h));
+  }
 }
 
 /* ---- Selector menu (full-width dropdown below the topbar: models, skills) ---- */
@@ -195,6 +239,12 @@ body {
 
 .overflow-menu-item:hover {
   background: var(--bg-2);
+}
+
+.overflow-menu-divider {
+  height: 1px;
+  margin: var(--size-1) 0;
+  background: var(--border-color, var(--bg-2));
 }
 
 /* ---- Project picker ---- */
@@ -1956,34 +2006,43 @@ body {
   color: var(--fg-2);
 }
 
-/* ---- Tab bar ---- */
-.tab-bar {
-  flex-shrink: 0;
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border-0);
-  padding: 0 var(--size-4);
-  background: var(--bg-0);
+/* ---- Tab pill (segmented Chat/Diff switch, centered in the topbar) ---- */
+.tab-pill {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin-top: calc(max(var(--size-2), env(safe-area-inset-top)) / 2
+                   - var(--size-2) / 2);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
 }
 
-.tab-bar-item {
+.tab-pill-item {
   all: unset;
   cursor: pointer;
-  padding: var(--size-2) var(--size-4);
+  padding: var(--size-1) var(--size-3);
+  border-radius: calc(var(--radius-md) - 2px);
   font-size: var(--font-sm);
   font-weight: 500;
   color: var(--fg-2);
-  border-bottom: 2px solid transparent;
-  transition: color 0.15s, border-color 0.15s;
+  line-height: 1.4;
+  transition: color 0.15s, background-color 0.15s;
 }
 
-.tab-bar-item:hover {
-  color: var(--fg-0);
+@media (hover: hover) {
+  .tab-pill-item:hover { color: var(--fg-0); }
 }
 
-.tab-bar-item--active {
+.tab-pill-item--active {
   color: var(--fg-0);
-  border-bottom-color: var(--accent);
+  background: var(--bg-0);
+  box-shadow: var(--shadow-1);
 }
 
 /* ---- Diff view ---- */

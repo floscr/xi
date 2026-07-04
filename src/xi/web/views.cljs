@@ -870,7 +870,13 @@
                                         :value  value
                                         :label  (dialog-decision-label type options value)}})
                     (dispatch! {:type :ui/dialog-response
-                                :room-id room-id :dialog-id id :value value}))]
+                                :room-id room-id :dialog-id id :value value})
+                    ;; Propagate the removal to other clients: the client-side
+                    ;; :ui/dialog-response handler is a no-op on remote echoes,
+                    ;; so the mirrored :ui/dialog-close core handler is what
+                    ;; actually clears the live dialog everywhere.
+                    (dispatch! {:type :ui/dialog-close
+                                :room-id room-id :dialog-id id}))]
       [:div {:class ["post" "post--assistant" "post--dialog"]}
        [:div {:class ["post-body" "dialog-bubble"]}
         [:div {:class ["dialog-message"]} (or message text)]
@@ -1234,15 +1240,16 @@
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 
 (defn- tab-bar
-  "Tab bar for switching between chat and buffer views."
+  "Segmented pill for switching between chat and buffer views. Lives inline in
+   the topbar next to the overflow menu; only rendered when a buffer exists."
   [dispatch! room-id active-buffer buffers]
-  [:div {:class ["tab-bar"]}
-   [:button {:class ["tab-bar-item" (when (= active-buffer :chat) "tab-bar-item--active")]
+  [:div {:class ["tab-pill"]}
+   [:button {:class ["tab-pill-item" (when (= active-buffer :chat) "tab-pill-item--active")]
              :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
                                              :room-id room-id :buffer-id :chat}))}}
     "Chat"]
    (when (:diff buffers)
-     [:button {:class ["tab-bar-item" (when (= active-buffer :diff) "tab-bar-item--active")]
+     [:button {:class ["tab-pill-item" (when (= active-buffer :diff) "tab-pill-item--active")]
                :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
                                                :room-id room-id :buffer-id :diff}))}}
       "Diff"])])
@@ -1454,6 +1461,7 @@
                                    (dispatch! {:type :skill/web-list}))}}
             (icon/icon {:icon-name :zap :size :sm})
             [:span "Skills"]])
+         [:div {:class ["overflow-menu-divider"]}]
          [:button {:class ["overflow-menu-item"]
                    :on {:click (fn [e]
                                  (.stopPropagation e)
@@ -1647,21 +1655,21 @@
                    :total total
                    :cur-window win})]
     [:div {:class ["container"] :replicant/key "chat"}
-     [:div {:class ["topbar"]}
+     [:div {:class ["topbar" "topbar--chat"]}
       (menu-button dispatch!)
       [:button {:class ["icon-btn" "icon-btn--sm"]
                 :on {:click (fn [_] (dispatch! (chat-back-route state)))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]}]
       (offline-badge state)
+      (when has-tabs?
+        (tab-bar dispatch! (:id room) active-buf buffers))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
      (when model-list
        (model-selector dispatch! (:id room) model-list model
                        (get-in state [:web/selector-search "model"])))
      (when-let [skills (:web/skill-list state)]
        (skill-selector dispatch! (:id room) skills))
-     (when has-tabs?
-       (tab-bar dispatch! (:id room) active-buf buffers))
      (case active-buf
        :diff
        (diff-tab-view dispatch! (:id room) (:diff buffers)
