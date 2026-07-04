@@ -243,9 +243,18 @@
                       :value (:edit-text entry)
                       :replicant/on-mount
                       (fn [{:replicant/keys [^js node]}]
-                        (.focus node)
+                        ;; preventScroll stops iOS Safari from jumping to a
+                        ;; weird position before the keyboard/visual viewport
+                        ;; has settled; we scroll it into view ourselves once
+                        ;; the keyboard has animated in.
+                        (.focus node #js {:preventScroll true})
                         (let [n (.. node -value -length)]
-                          (.setSelectionRange node n n)))
+                          (.setSelectionRange node n n))
+                        (js/setTimeout
+                         (fn []
+                           (.scrollIntoView node #js {:block "center"
+                                                      :behavior "smooth"}))
+                         300))
                       :on {:input (fn [^js e]
                                     (dispatch! {:type :bubble/edit-change
                                                 :text (.. e -target -value)}))
