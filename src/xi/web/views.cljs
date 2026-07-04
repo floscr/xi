@@ -576,7 +576,7 @@
         (icon/icon {:icon-name :x :size :sm})]])
     queued)])
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected at-bottom? pa? recents queue-open?]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? recents queue-open?]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
@@ -585,7 +585,7 @@
         has-input?  (seq (str/trim (or draft "")))
         queued      (get-in room [:agent :queued])
         qcount      (count queued)
-        show-quick? (and (not pa?) at-bottom? (not has-input?) (empty? images) (not cmd-open?))]
+        show-quick? (and (not pa?) (not cmd-open?))]
     [:div {:class ["compose-box"]}
      (when (and busy? queue-open? (pos? qcount))
        (queue-popover dispatch! room-id queued))
@@ -1468,7 +1468,6 @@
         (compose-box dispatch! room busy? (:web/compose-images state)
                      dkey (get-in state [:web/drafts dkey]) sid
                      (:web/cmd-selected state)
-                     (get-in state [:web/at-bottom dkey] true)
                      (get-in state [:lobby :personal-agent?])
                      (:web/recent-commands state)
                      (:web/queue-popover? state))))]))

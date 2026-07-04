@@ -500,9 +500,6 @@
                                                           :room-id room-id
                                                           :text (str "/skill load " name)}]]})
           :skill/close           (fn [st _] {:state (dissoc st :web/skill-list)})
-          :scroll/at-bottom      (fn [st {:keys [at-bottom?]}]
-                                    {:state (assoc-in st [:web/at-bottom (views/draft-key st)]
-                                                      at-bottom?)})
           :diff/reopen           diff-reopen
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
@@ -776,18 +773,14 @@
 (defn- at-bottom? [^js el]
   (<= (- (.-scrollHeight el) (.-scrollTop el) (.-clientHeight el)) 40))
 
-(defn- attach-scroll-listener! [dispatch!]
+(defn- attach-scroll-listener! []
   (when-let [timeline (.querySelector js/document ".timeline")]
     (when-not (identical? timeline @tracked-timeline)
       (reset! tracked-timeline timeline)
       (reset! auto-scroll? true)
       (.addEventListener timeline "scroll"
                          (fn []
-                           (let [prev @auto-scroll?
-                                 now  (at-bottom? timeline)]
-                             (reset! auto-scroll? now)
-                             (when (not= prev now)
-                               (dispatch! {:type :scroll/at-bottom :at-bottom? now}))))))))
+                           (reset! auto-scroll? (at-bottom? timeline)))))))
 
 (defn- scroll-to-bottom! []
   (when @auto-scroll?
@@ -800,7 +793,7 @@
 
 (defn- render! [app-state dispatch!]
   (r/render (el "app") (views/root-view app-state dispatch!))
-  (attach-scroll-listener! dispatch!)
+  (attach-scroll-listener!)
   (js/requestAnimationFrame scroll-to-bottom!))
 
 ;; ── Init ─────────────────────────────────────────────────────────────────────
