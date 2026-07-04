@@ -552,11 +552,17 @@
           :models/web-list-result (fn [st {:keys [models]}]
                                     {:state (assoc st :web/model-list models)})
           :models/select         (fn [st {:keys [model room-id]}]
-                                    {:state (dissoc st :web/model-list)
+                                    {:state (-> st
+                                                (dissoc :web/model-list)
+                                                (update :web/selector-search dissoc "model"))
                                      :effects [[:ws/send {:type :input/submit
                                                           :room-id room-id
                                                           :text (str "/model " model)}]]})
-          :models/close          (fn [st _] {:state (dissoc st :web/model-list)})
+          :models/close          (fn [st _] {:state (-> st
+                                                        (dissoc :web/model-list)
+                                                        (update :web/selector-search dissoc "model"))})
+          :selector/search       (fn [st {:keys [id query]}]
+                                   {:state (assoc-in st [:web/selector-search id] query)})
           :skill/web-list        forward
           :skill/web-list-result (fn [st {:keys [skills]}]
                                     {:state (assoc st :web/skill-list skills)})

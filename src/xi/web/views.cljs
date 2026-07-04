@@ -1250,41 +1250,75 @@
   (when (false? (:web/connected? state))
     [:span {:class ["offline-label"]} "Offline"]))
 
-(defn- model-selector [dispatch! room-id models current-model]
-  [:div {:class ["model-selector-backdrop"]
-         :on {:click (fn [_] (dispatch! {:type :models/close}))}}
-   [:div {:class ["model-selector"]}
-    (for [m models]
-      [:button {:class ["model-selector-item"
-                        (when (= m current-model) "model-selector-item--active")]
-                :replicant/key m
-                :on {:click (fn [e]
-                              (.stopPropagation e)
-                              (dispatch! {:type :models/select :model m :room-id room-id}))}}
-       m])]])
+(defn- selector-menu
+  "Full-width dropdown panel rendered below the topbar — the web analog of the
+   TUI completion menu. `id` scopes the replicant keys; `items` is a seq of
+   {:value :label :desc :active?} maps; `on-select` receives the chosen item's
+   :value; `on-close` fires on backdrop click; `empty-label` shows when there
+   are no items.
+
+   When `search` is provided ({:query :placeholder :on-search}) a filter input
+   is rendered at the top; items are filtered case-insensitively on their label
+   and desc, and `on-search` receives the live query string."
+  [{:keys [id items on-select on-close empty-label search]}]
+  (let [q       (some-> (:query search) str/trim str/lower-case not-empty)
+        visible (if q
+                  (filter (fn [{:keys [label desc]}]
+                            (or (str/includes? (str/lower-case (str label)) q)
+                                (and desc (str/includes? (str/lower-case (str desc)) q))))
+                          items)
+                  items)]
+    (list
+     [:div {:class ["selector-menu-backdrop"]
+            :replicant/key (str id "-backdrop")
+            :on {:click (fn [_] (on-close))}}]
+     [:div {:class ["selector-menu"]
+            :replicant/key (str id "-menu")}
+      (when search
+        [:input {:class ["selector-menu-search"]
+                 :replicant/key (str id "-search")
+                 :type "text"
+                 :placeholder (or (:placeholder search) "Search…")
+                 :value (or (:query search) "")
+                 :replicant/on-mount (fn [{:replicant/keys [^js node]}]
+                                       (.focus node #js {:preventScroll true}))
+                 :on {:input (fn [^js e] ((:on-search search) (.. e -target -value)))
+                      :click (fn [^js e] (.stopPropagation e))}}])
+      (if (seq visible)
+        (for [{:keys [value label desc active?]} visible]
+          [:button {:class ["selector-menu-item"
+                            (when active? "selector-menu-item--active")]
+                    :replicant/key value
+                    :on {:click (fn [e]
+                                  (.stopPropagation e)
+                                  (on-select value))}}
+           [:span {:class ["selector-menu-name"]} label]
+           (when (seq desc)
+             [:span {:class ["selector-menu-desc"]} desc])])
+        [:div {:class ["selector-menu-empty"]} (or empty-label "Nothing found")])])))
+
+(defn- model-selector [dispatch! room-id models current-model query]
+  (selector-menu
+   {:id "model"
+    :items (for [m models]
+             {:value m :label m :active? (= m current-model)})
+    :on-select (fn [m] (dispatch! {:type :models/select :model m :room-id room-id}))
+    :on-close  (fn [] (dispatch! {:type :models/close}))
+    :search {:query query
+             :placeholder "Search models…"
+             :on-search (fn [q] (dispatch! {:type :selector/search :id "model" :query q}))}}))
 
 (defn- skill-selector
   "Overlay menu of on-demand skills (name + description). Selecting one loads
-   it into the current room via `/skill load`. The web analog of the TUI
-   completion menu."
+   it into the current room via `/skill load`."
   [dispatch! room-id skills]
-  (list
-   [:div {:class ["skill-selector-backdrop"]
-          :replicant/key "skill-backdrop"
-          :on {:click (fn [_] (dispatch! {:type :skill/close}))}}]
-   [:div {:class ["skill-selector"]
-          :replicant/key "skill-selector"}
-    (if (seq skills)
-      (for [{:keys [name description]} skills]
-        [:button {:class ["skill-selector-item"]
-                  :replicant/key name
-                  :on {:click (fn [e]
-                                (.stopPropagation e)
-                                (dispatch! {:type :skill/select :name name :room-id room-id}))}}
-         [:span {:class ["skill-selector-name"]} name]
-         (when (seq description)
-           [:span {:class ["skill-selector-desc"]} description])])
-      [:div {:class ["skill-selector-empty"]} "No skills found"])]))
+  (selector-menu
+   {:id "skill"
+    :items (for [{:keys [name description]} skills]
+             {:value name :label name :desc description})
+    :on-select (fn [name] (dispatch! {:type :skill/select :name name :room-id room-id}))
+    :on-close  (fn [] (dispatch! {:type :skill/close}))
+    :empty-label "No skills found"}))
 
 
 (defn- shorten-path
@@ -1401,6 +1435,14 @@
                                                :number (:number git-ctx)}))}}
             (icon/icon {:icon-name :file-text :size :sm})
             [:span "Diff"]])
+         (when room
+           [:button {:class ["overflow-menu-item"]
+                     :on {:click (fn [e]
+                                   (.stopPropagation e)
+                                   (dispatch! {:type :overflow/close})
+                                   (dispatch! {:type :models/web-list}))}}
+            (icon/icon {:icon-name :layers :size :sm})
+            [:span "Change model"]])
          (when room
            [:button {:class ["overflow-menu-item"]
                      :on {:click (fn [e]
@@ -1607,15 +1649,12 @@
       [:button {:class ["icon-btn" "icon-btn--sm"]
                 :on {:click (fn [_] (dispatch! (chat-back-route state)))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
-      [:div {:class ["topbar-title"]}
-       (when model
-         [:span {:class ["topbar-subtitle" "topbar-subtitle--clickable"]
-                 :on {:click (fn [_] (dispatch! {:type :models/web-list}))}}
-          model])]
-      (when model-list
-        (model-selector dispatch! (:id room) model-list model))
+      [:div {:class ["topbar-title"]}]
       (offline-badge state)
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
+     (when model-list
+       (model-selector dispatch! (:id room) model-list model
+                       (get-in state [:web/selector-search "model"])))
      (when-let [skills (:web/skill-list state)]
        (skill-selector dispatch! (:id room) skills))
      (when has-tabs?
