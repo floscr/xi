@@ -364,13 +364,19 @@
    the full :commands list in its ctx so e.g. /help can enumerate them."
   [commands]
   (let [by-name (into {} (map (juxt :name identity)) commands)]
-    (fn command-run [st {:keys [room-id name args]}]
+    (fn command-run [st {:keys [room-id name args remote?]}]
       (when (state/get-room st room-id)
         (if-let [cmd (get by-name name)]
           ((:handler cmd) st {:room-id  room-id
                               :args     (when (seq args) args)
                               :commands commands})
-          (status st room-id (str "Unknown command: /" name)))))))
+          ;; Mirrored (:remote?) command the client has no code for — it's a
+          ;; server-side extension command (/commit, /gtd, …). The server ran
+          ;; the real work and broadcasts the resulting events separately, so
+          ;; the client must stay silent; only a client that is authoritative
+          ;; (standalone/server) reports a genuinely unknown command.
+          (when-not remote?
+            (status st room-id (str "Unknown command: /" name))))))))
 
 (defn- ui-status [st {:keys [room-id text]}]
   (when (state/get-room st room-id)
