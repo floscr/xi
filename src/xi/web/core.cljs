@@ -142,6 +142,14 @@
                         (assoc :web/pending-submit
                                (cond-> {:session-id session-id :text text}
                                  (seq images) (assoc :images images)))
+                        ;; Show the user's bubble instantly, before the
+                        ;; :room/join round-trips. room-id is nil (no room
+                        ;; yet); optimistic-post matches the virtual window by
+                        ;; the nil session/room, and optimistic-tap re-keys it
+                        ;; to the real room once :input/submit fires post-join.
+                        (assoc :web/optimistic
+                               (cond-> {:room-id nil :session-id session-id :text text}
+                                 (seq images) (assoc :images (vec images))))
                         (dissoc :web/pending-room))}
       virtual?
       (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new"}

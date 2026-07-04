@@ -1308,7 +1308,11 @@
   [dispatch! state room sid history]
   (when-let [{:keys [room-id session-id text images]} (:web/optimistic state)]
     (let [for-this? (or (and room-id (= room-id (:id room)))
-                        (and session-id sid (= session-id sid)))
+                        (and session-id sid (= session-id sid))
+                        ;; A virtual new chat whose room hasn't joined yet: no
+                        ;; session on either side and no room adopted. Show the
+                        ;; bubble instantly while :room/join round-trips.
+                        (and (nil? sid) (nil? session-id) (nil? (:id room))))
           last-user (->> history (filter #(= :user (:kind %))) last)
           confirmed? (and last-user
                           (= (not-empty (some-> text str/trim))
