@@ -2215,6 +2215,15 @@
               [:div {:class ["project-card-info"]}
                [:span {:class ["project-card-name"]} "All projects"]]
               [:div {:class ["project-card-chevron"]}
+               (icon/icon {:icon-name :chevron-right :size :sm})]]
+             [:div {:class ["project-card"]
+                    :replicant/key "gtd"
+                    :on {:click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}}
+              [:div {:class ["project-card-icon"]}
+               (icon/icon {:icon-name :list :size :sm})]
+              [:div {:class ["project-card-info"]}
+               [:span {:class ["project-card-name"]} "GTD Tasks"]]
+              [:div {:class ["project-card-chevron"]}
                (icon/icon {:icon-name :chevron-right :size :sm})]]))
          (sidebar/sidebar-group {:label "Recent"}
            (if (seq cards)
