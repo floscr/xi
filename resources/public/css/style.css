@@ -144,7 +144,11 @@ body {
   border-radius: 0;
 }
 
-.nav-group > * + * {
+/* Segment divider between the two controls. A more specific selector than the
+   `border: none` reset above so the divider actually renders (otherwise the
+   reset collapses it to 0 width). Matches the nav group's outer border color. */
+.nav-group > .icon-btn:not(:first-child),
+.nav-group > .sidebar-mobile-toggle:not(:first-child) {
   border-left: var(--border-0);
 }
 
