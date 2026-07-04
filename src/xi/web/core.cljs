@@ -491,9 +491,15 @@
           :web/dialog-form-reset (fn [st _] {:state (dissoc st :web/dialog-form)})
           ;; Answered-dialog log (web-only): keep resolved confirm/select
           ;; bubbles in the timeline, anchored to their history position.
-          :web/dialog-resolved   (fn [st {:keys [room-id entry]}]
-                                   {:state (update-in st [:web/resolved-dialogs room-id]
-                                                      (fnil conj []) entry)})
+          ;; Also drop the live dialog optimistically so the interactive
+          ;; bubble swaps to its static record in a single render, instead of
+          ;; lingering until the server echoes the removal back.
+          :web/dialog-resolved   (fn [st {:keys [room-id dialog-id entry]}]
+                                   {:state (-> st
+                                               (update-in [:web/resolved-dialogs room-id]
+                                                          (fnil conj []) entry)
+                                               (update-in [:rooms room-id :ui :dialogs]
+                                                          (fn [ds] (vec (remove #(= dialog-id (:id %)) ds)))))})
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
           :web/optimistic-set    optimistic-set

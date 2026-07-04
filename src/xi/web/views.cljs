@@ -856,8 +856,13 @@
   (when-let [{:keys [id type message text options]} (first (get-in room [:ui :dialogs]))]
     (let [room-id (:id room)
           answer! (fn [value]
+                    ;; Optimistically log the decision and drop the live dialog
+                    ;; in one render (see the :web/dialog-resolved handler), so
+                    ;; the interactive bubble swaps to its static record without
+                    ;; a flash while the server round-trips the removal.
                     (dispatch! {:type :web/dialog-resolved
                                 :room-id room-id
+                                :dialog-id id
                                 :entry {:key    id
                                         :anchor (count history)
                                         :message (or message text)
@@ -865,9 +870,7 @@
                                         :value  value
                                         :label  (dialog-decision-label type options value)}})
                     (dispatch! {:type :ui/dialog-response
-                                :room-id room-id :dialog-id id :value value})
-                    (dispatch! {:type :ui/dialog-close
-                                :room-id room-id :dialog-id id}))]
+                                :room-id room-id :dialog-id id :value value}))]
       [:div {:class ["post" "post--assistant" "post--dialog"]}
        [:div {:class ["post-body" "dialog-bubble"]}
         [:div {:class ["dialog-message"]} (or message text)]
