@@ -421,7 +421,6 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  margin-top: var(--size-3);
 }
 
 .post--user .post-body {
