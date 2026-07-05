@@ -115,15 +115,33 @@ body {
   .topbar--chat + .timeline {
     --chat-header-h: calc(max(var(--size-2), env(safe-area-inset-top, 0px))
                           + var(--size-10) + var(--size-2));
+    /* Height reserved for the floating quick-command bar at the bottom. 0 by
+       default (personal-agent chats have no bar); overridden below when the bar
+       is present so the timeline slides under it just like under the header. */
+    --quick-cmd-h: 0px;
     margin-top: calc(-1 * var(--chat-header-h));
+    margin-bottom: calc(-1 * var(--quick-cmd-h));
     /* Offset the first content below the floating header so it isn't pinned
        under the buttons (and faded) at rest; scrolled content still passes
-       under the header and fades via the mask. */
+       under the header and fades via the mask. Mirror at the bottom for the
+       quick-command bar (keeping the base gap). */
     padding-top: var(--chat-header-h);
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0,
-                                        rgba(0, 0, 0, 1) var(--chat-header-h));
-    mask-image: linear-gradient(to bottom, transparent 0,
-                                rgba(0, 0, 0, 1) var(--chat-header-h));
+    padding-bottom: calc(var(--size-2) + var(--quick-cmd-h));
+    -webkit-mask-image: linear-gradient(to bottom,
+                          transparent 0, rgba(0, 0, 0, 1) var(--chat-header-h),
+                          rgba(0, 0, 0, 1) calc(100% - var(--quick-cmd-h)),
+                          transparent 100%);
+    mask-image: linear-gradient(to bottom,
+                  transparent 0, rgba(0, 0, 0, 1) var(--chat-header-h),
+                  rgba(0, 0, 0, 1) calc(100% - var(--quick-cmd-h)),
+                  transparent 100%);
+  }
+
+  /* When the quick-command bar is shown the timeline reserves its height and
+     lets chat content scroll behind the frosted buttons. More specific than the
+     rule above so the custom-property override actually wins. */
+  .topbar--chat + .timeline.timeline--float-footer {
+    --quick-cmd-h: calc(var(--size-1) + var(--size-2) * 2 + 1.25rem);
   }
 }
 
@@ -774,12 +792,13 @@ body {
 }
 
 /* ---- Quick command bar ---- */
+/* The bottom quick-command bar is a top-padded wrapper (flush to the sides and
+   the input row below); its buttons are joined into a single frosted segmented
+   group that matches the floating chat-header chips. */
 .quick-commands {
   display: flex;
-  gap: var(--size-2);
   overflow-x: auto;
-  padding: var(--size-2) var(--size-3);
-  border-top: var(--border-0);
+  padding: var(--size-1) 0 0;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
@@ -788,15 +807,42 @@ body {
   display: none;
 }
 
+/* Frosted segmented group: translucent fill over a backdrop blur, joined into
+   one flat bar with dividers between segments (mirrors the chat-header
+   nav-group). */
+.quick-cmd-group {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: stretch;
+  border-top: var(--border-0);
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.quick-cmd-group > .quick-cmd:not(:first-child),
+.quick-cmd-group > .prompt-nav-group:not(:first-child) {
+  border-left: var(--border-0);
+}
+
+/* The prompt-nav control is now a segment of the group: drop its own chrome so
+   it merges seamlessly (its inner up/count/down dividers still render). */
+.quick-cmd-group > .prompt-nav-group {
+  border: none;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 .quick-cmd {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: var(--size-1);
-  padding: var(--size-1) var(--size-3);
-  border-radius: var(--radius-full, 9999px);
-  border: var(--border-0);
-  background: var(--bg-1);
+  padding: var(--size-2) var(--size-3);
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--fg-2);
   font-size: var(--font-sm);
   font-family: inherit;
@@ -823,7 +869,9 @@ body {
   gap: 0;
   border: var(--border-0);
   border-radius: var(--radius-full, 9999px);
-  background: var(--bg-1);
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   overflow: hidden;
 }
 

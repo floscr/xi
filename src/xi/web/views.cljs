@@ -613,20 +613,21 @@
 
 (defn- quick-command-bar [dispatch! room-id recents prompt-nav nav-ctx]
   [:div {:class ["quick-commands"]}
-   (when (pos? (or (:count nav-ctx) 0))
-     (prompt-nav-controls dispatch! prompt-nav nav-ctx))
-   [:button {:class ["quick-cmd"]
-             :on {:click (fn [_] (dispatch! {:type :projects/picker-open}))}}
-    (icon/icon {:icon-name :folder :size :sm})
-    " Projects"]
-   (map (fn [name]
-          [:button {:class ["quick-cmd"]
-                    :replicant/key name
-                    :on {:click (fn [_]
-                                 (dispatch! {:type :input/submit :room-id room-id
-                                             :text (str "/" name)}))}}
-           (str "/" name)])
-        (quick-command-list recents))])
+   [:div {:class ["quick-cmd-group"]}
+    (when (pos? (or (:count nav-ctx) 0))
+      (prompt-nav-controls dispatch! prompt-nav nav-ctx))
+    [:button {:class ["quick-cmd"]
+              :on {:click (fn [_] (dispatch! {:type :projects/picker-open}))}}
+     (icon/icon {:icon-name :folder :size :sm})
+     " Projects"]
+    (map (fn [name]
+           [:button {:class ["quick-cmd"]
+                     :replicant/key name
+                     :on {:click (fn [_]
+                                  (dispatch! {:type :input/submit :room-id room-id
+                                              :text (str "/" name)}))}}
+            (str "/" name)])
+         (quick-command-list recents))]])
 
 (defn- queue-popover
   "Popover listing prompts queued while the agent is busy. Each can be removed
@@ -1694,7 +1695,7 @@
 
        ;; default: :chat
        (list
-        [:div {:class ["timeline"]}
+        [:div {:class ["timeline" (when-not pa? "timeline--float-footer")]}
          [:div {:class ["timeline-content"]}
           (if ready?
             (let [entries (vec history)
