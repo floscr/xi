@@ -261,7 +261,14 @@
   [{:keys [id type] :as dialog} room-id dispatch! editor]
   (let [respond! (fn [value]
                    (dispatch! {:type :ui/dialog-response
-                               :room-id room-id :dialog-id id :value value}))]
+                               :room-id room-id :dialog-id id :value value})
+                   ;; The removal must reach the mirror: in client mode the
+                   ;; :ui/dialog-response handler is a no-op on remote echoes,
+                   ;; so dispatch :ui/dialog-close (a core handler) to actually
+                   ;; clear the live dialog on every client. Without this the
+                   ;; dialog stays focused and swallows input after answering.
+                   (dispatch! {:type :ui/dialog-close
+                               :room-id room-id :dialog-id id}))]
     (if (= type :cwd-select)
       (build-cwd-select-dialog dialog respond!)
       (build-confirm-dialog dialog respond! editor))))
