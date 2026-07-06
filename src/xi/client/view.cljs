@@ -131,6 +131,63 @@
 (def ^:private diff-add-bg "\033[48;2;35;60;45m")
 (def ^:private diff-del-bg "\033[48;2;65;40;42m")
 
+;; ── Difftastic retint ────────────────────────────────────────────────────────
+;; Difftastic emits 16-color palette codes (bright red/green/yellow + bold/dim)
+;; whose look is dictated by the terminal palette, so they clash with the TUI's
+;; truecolor theme. Rewrite them to theme colors — the same red/green/header/dim
+;; mapping the web difft view applies via CSS (difft-del/difft-add/difft-hdr).
+
+(def ^:private difft-del-fg "\033[38;2;191;97;106m")   ;; danger red
+(def ^:private difft-add-fg "\033[38;2;163;190;140m")  ;; string green
+(def ^:private difft-hdr-fg "\033[38;2;216;222;233m")  ;; bright fg (filename)
+(def ^:private difft-dim-fg "\033[38;2;106;115;141m")  ;; muted gray-blue
+
+(defn- difft-sgr-state
+  "Fold one SGR escape's `;`-separated codes into the running style state.
+   Only the codes difftastic emits (syntax-highlight off) are meaningful."
+  [state codes]
+  (reduce (fn [st code]
+            (case code
+              ("" "0")     {}
+              "1"          (assoc st :bold true)
+              "2"          (assoc st :dim true)
+              "22"         (dissoc st :bold :dim)
+              ("31" "91")  (assoc st :fg :red)
+              ("32" "92")  (assoc st :fg :green)
+              ("33" "93")  (assoc st :fg :yellow)
+              "39"         (dissoc st :fg)
+              st))
+          state
+          (str/split (or codes "") #";")))
+
+(defn- difft-prefix
+  "Theme ANSI codes for a difftastic style state (empty string when unstyled)."
+  [{:keys [fg bold dim]}]
+  (str (cond
+         (= fg :red)    difft-del-fg
+         (= fg :green)  difft-add-fg
+         (= fg :yellow) difft-hdr-fg
+         dim            difft-dim-fg)
+       (when bold ansi/bold)))
+
+(defn retint-difft
+  "Rewrite difftastic's palette-colored output into the TUI theme palette so
+   `/diff difft` reads like the rest of the UI (and the web difft view)."
+  [text]
+  (let [re (js/RegExp. "\\u001b\\[([0-9;]*)m" "g")]
+    (loop [pos 0 state {} out ""]
+      (if-let [m (.exec re text)]
+        (let [idx    (.-index m)
+              chunk  (subs text pos idx)
+              prefix (difft-prefix state)
+              out'   (str out (if (and (seq chunk) (seq prefix))
+                                (str prefix chunk ansi/reset)
+                                chunk))]
+          (recur (+ idx (.-length (aget m 0)))
+                 (difft-sgr-state state (aget m 1))
+                 out'))
+        (str out (subs text pos))))))
+
 (defn- highlight-line [grammar line]
   (let [tokens (-> (hl/tokenize grammar line) hl/merge-adjacent)]
     (hl-theme/colorize tokens)))
@@ -408,13 +465,30 @@
        (node/spacer)])
     c))
 
+(def ^:private buffer-text-renderers
+  "Per-engine transforms applied to a buffer's raw text before it is shown.
+   Keyed by the buffer's :engine; engines with no entry render verbatim.
+   Add an engine by adding a key here rather than branching in buffer-view."
+  {:difft retint-difft})
+
+(defn buffer-display-text
+  "A buffer's raw text with its per-engine renderer applied (e.g. difft
+   retints its palette codes into the TUI theme). Blank text → empty string."
+  [{:keys [text engine]}]
+  (let [render (get buffer-text-renderers engine identity)]
+    (if (str/blank? text) "" (render text))))
+
 (defn buffer-view
-  "Generic text buffer view ({:title :text} from room :ui :buffers)."
-  [{:keys [title text]}]
-  (let [c (tui/make-container)]
+  "Generic text buffer view ({:title :text} from room :ui :buffers).
+   The buffer's :engine selects a text renderer from buffer-text-renderers
+   (e.g. difft retints its palette codes into the TUI theme)."
+  [{:keys [title text engine]}]
+  (let [c (tui/make-container)
+        render (get buffer-text-renderers engine identity)
+        body (if (str/blank? text) "(empty)" (render text))]
     (node/append-children! c
       [(node/text (ansi/fg :bold (or title "Buffer")))
        (node/spacer)
-       (node/text (or text "(empty)"))
+       (node/text body)
        (node/spacer)])
     c))

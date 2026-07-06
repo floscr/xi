@@ -17,9 +17,8 @@
             [xi.highlight.grammars :as hl-grammars]
             [xi.highlight.theme :as hl-theme]
             [xi.tui.ansi :as ansi]
-            [xi.tui.core :as tui]
-            [xi.diff :as diff]
-            [xi.tui.terminal :as term]))
+            [xi.tui.pager :as pager]
+            [xi.diff :as diff]))
 
 ;; ── Diff Parsing ──────────────────────────────────────────────────────────────
 
@@ -141,26 +140,6 @@
      :change-starts (vec @change-starts)
      :file-starts (vec @file-starts)}))
 
-;; ── Key Detection ─────────────────────────────────────────────────────────────
-
-(def ^:private ESC (str (char 27)))
-
-(defn- is-escape? [data]
-  (or (= data ESC) (= data (str ESC "[27u"))))
-
-(defn- is-arrow-up? [data] (= data (str ESC "[A")))
-(defn- is-arrow-down? [data] (= data (str ESC "[B")))
-(defn- ctrl? [data ch]
-  (let [legacy-code (- (.charCodeAt ch 0) 64)
-        codepoint (.charCodeAt (.toLowerCase ch) 0)]
-    (or (= data (str (char legacy-code)))
-        (= data (str ESC "[" codepoint ";5u")))))
-
-(defn- is-ctrl-d? [data] (ctrl? data "D"))
-(defn- is-ctrl-u? [data] (ctrl? data "U"))
-(defn- is-page-up? [data] (= data (str ESC "[5~")))
-(defn- is-page-down? [data] (= data (str ESC "[6~")))
-
 ;; ── Component ─────────────────────────────────────────────────────────────────
 
 (defn make-diff-buffer
@@ -171,142 +150,24 @@
      :title           — display title (e.g. \"Session Changes\")
      :on-close        — (fn []) called when q/Escape is pressed
      :on-command-mode — (fn []) called when : is pressed"
-  [opts]
-  (let [{:keys [diff-text title on-close on-command-mode]} opts
-        parsed (diff/parse-diff-text diff-text)
+  [{:keys [diff-text title on-close on-command-mode]}]
+  (let [parsed (diff/parse-diff-text diff-text)
         file-count (count parsed)
         add-count (reduce + (for [f parsed, h (:hunks f), l (:lines h)
                                   :when (= :add (:type l))] 1))
         del-count (reduce + (for [f parsed, h (:hunks f), l (:lines h)
-                                  :when (= :delete (:type l))] 1))
-
-        state (atom {:cached-lines nil
-                     :cached-width nil
-                     :change-starts []
-                     :file-starts []
-                     :pending-key nil})
-
-        ;; Viewport height estimate (terminal height minus bottom panel and status)
-        viewport-height (fn [] (max 1 (- (term/rows) 3)))
-
-        ;; Navigation: find current top visible line
-        current-top-line
-        (fn []
-          (let [total (count (:cached-lines @state))
-                vh (viewport-height)
-                offset (tui/get-scroll-offset)
-                end (- total (min offset (max 0 (- total vh))))
-                start (max 0 (- end vh))]
-            start))
-
-        ;; Jump to a specific line (places it ~1/3 from top)
-        jump-to-line!
-        (fn [n]
-          (let [total (count (:cached-lines @state))
-                vh (viewport-height)
-                offset (max 0 (- total n (quot vh 3)))]
-            (tui/scroll-to-offset! offset)))
-
-        jump-next!
-        (fn [positions]
-          (let [top (current-top-line)
-                target (first (filter #(> % (+ top 2)) positions))]
-            (when target (jump-to-line! target))))
-
-        jump-prev!
-        (fn [positions]
-          (let [top (current-top-line)
-                target (last (filter #(< % top) positions))]
-            (when target (jump-to-line! target))))]
-
-    {:type :diff-buffer
-     :capture-all-input true
-
-     :handle-scroll
-     (fn [delta]
-       (if (neg? delta)
-         (tui/scroll-up! (- delta))
-         (tui/scroll-down! delta)))
-
-     :handle-input
-     (fn [data]
-       (let [pending (:pending-key @state)]
-         (swap! state assoc :pending-key nil)
-         (cond
-           ;; gg: go to top
-           (and (= pending "g") (= data "g"))
-           (tui/scroll-to-offset! 999999)
-
-           ;; ]c / [c: next/prev change
-           (and (= pending "]") (= data "c"))
-           (jump-next! (:change-starts @state))
-           (and (= pending "[") (= data "c"))
-           (jump-prev! (:change-starts @state))
-
-           ;; ]f / [f: next/prev file
-           (and (= pending "]") (= data "f"))
-           (jump-next! (:file-starts @state))
-           (and (= pending "[") (= data "f"))
-           (jump-prev! (:file-starts @state))
-
-           ;; Pending prefix keys
-           (#{"g" "]" "["} data)
-           (swap! state assoc :pending-key data)
-
-           ;; j / ↓: scroll down
-           (or (= data "j") (is-arrow-down? data))
-           (tui/scroll-down! 1)
-
-           ;; k / ↑: scroll up
-           (or (= data "k") (is-arrow-up? data))
-           (tui/scroll-up! 1)
-
-           ;; G: go to bottom
-           (= data "G")
-           (tui/scroll-to-offset! 0)
-
-           ;; Ctrl-d / Ctrl-u: half-page scroll
-           (is-ctrl-d? data) (tui/scroll-down! (quot (viewport-height) 2))
-           (is-ctrl-u? data) (tui/scroll-up! (quot (viewport-height) 2))
-
-           ;; Page Up / Page Down
-           (is-page-up? data) (tui/scroll-up! (max 1 (- (viewport-height) 2)))
-           (is-page-down? data) (tui/scroll-down! (max 1 (- (viewport-height) 2)))
-
-           ;; q / Escape: close
-           (or (= data "q") (is-escape? data))
-           (when on-close (on-close))
-
-           ;; :: command mode
-           (= data ":")
-           (when on-command-mode (on-command-mode))
-
-           :else nil)))
-
-     :invalidate
-     (fn [] (swap! state assoc :cached-width nil :cached-lines nil))
-
-     :render
-     (fn [width]
-       ;; Re-render on width change
-       (when (or (nil? (:cached-lines @state))
-                 (not= width (:cached-width @state)))
-         (let [{:keys [lines change-starts file-starts]}
-               (render-diff-lines parsed width)
-               ;; Prepend a title/summary header
-               header [(ansi/fg :bold (str " " (or title "Diff")))
-                       (ansi/fg :dim
-                                (str "  " file-count " file"
-                                     (when (not= 1 file-count) "s")
-                                     "  " (ansi/fg :green (str "+" add-count))
-                                     "  " (ansi/fg :red (str "-" del-count))))
-                       ""]
-               header-len (count header)
-               ;; Adjust positions to account for header
-               all-lines (into header lines)]
-           (swap! state assoc
-                  :cached-lines all-lines
-                  :cached-width width
-                  :change-starts (mapv #(+ % header-len) change-starts)
-                  :file-starts (mapv #(+ % header-len) file-starts))))
-       (:cached-lines @state))}))
+                                  :when (= :delete (:type l))] 1))]
+    (pager/make-pager
+     {:title (or title "Diff")
+      :header-fn
+      (fn []
+        [(ansi/fg :dim
+                  (str "  " file-count " file"
+                       (when (not= 1 file-count) "s")
+                       "  " (ansi/fg :green (str "+" add-count))
+                       "  " (ansi/fg :red (str "-" del-count))))])
+      :lines-fn (fn [width] (render-diff-lines parsed width))
+      :help (pager/help-bar [["j/k" "scroll"] ["]c/[c" "changes"] ["]f/[f" "files"]
+                             ["gg/G" "top/bottom"] ["q" "close"] [":" "command"]])
+      :on-close on-close
+      :on-command-mode on-command-mode})))

@@ -57,3 +57,32 @@
   (let [nodes (view/launch-header {:model "test-model" :cwd "/tmp"})]
     (is (vector? nodes))
     (is (pos? (count nodes)))))
+
+;; ── retint-difft ─────────────────────────────────────────────────────────────
+
+(def ^:private difft-del-fg "\033[38;2;191;97;106m")
+(def ^:private difft-add-fg "\033[38;2;163;190;140m")
+(def ^:private difft-hdr-fg "\033[38;2;216;222;233m")
+(def ^:private difft-dim-fg "\033[38;2;106;115;141m")
+
+(deftest retint-difft-remaps-palette-to-theme
+  (testing "bright red (removed) becomes theme danger red"
+    (is (= (str difft-del-fg "gone" "\033[0m")
+           (view/retint-difft "\033[91mgone\033[0m"))))
+  (testing "bright green (added) becomes theme string green"
+    (is (= (str difft-add-fg "new" "\033[0m")
+           (view/retint-difft "\033[92mnew\033[0m"))))
+  (testing "bright yellow (header) becomes bright fg"
+    (is (= (str difft-hdr-fg "file.clj" "\033[0m")
+           (view/retint-difft "\033[93mfile.clj\033[0m"))))
+  (testing "dim becomes muted gray"
+    (is (= (str difft-dim-fg "..." "\033[0m")
+           (view/retint-difft "\033[2m...\033[0m"))))
+  (testing "bold is preserved alongside a color"
+    (is (= (str difft-add-fg "\033[1m" "12" "\033[0m")
+           (view/retint-difft "\033[92;1m12\033[0m"))))
+  (testing "unstyled text passes through untouched"
+    (is (= "  plain  " (view/retint-difft "  plain  "))))
+  (testing "palette codes with no text between them are dropped"
+    (is (= (str difft-del-fg "x" "\033[0m")
+           (view/retint-difft "\033[91;1m\033[2m\033[0m\033[91mx\033[0m")))))

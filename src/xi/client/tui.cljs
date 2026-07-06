@@ -31,6 +31,7 @@
             [xi.tui.diff-buffer :as diff-buffer]
             [xi.tui.editor :as editor]
             [xi.tui.history-selector :as history-selector]
+            [xi.tui.pager :as pager]
             [xi.tui.path-complete :as path-complete]
             [xi.tui.terminal :as term]))
 
@@ -319,50 +320,65 @@
                   (into (mapcat #(:nodes (.-block ^js %))) (vec (.-blocks ctx)))
                   (cond-> show-loader? (conj loader)))))))
 
-(defn- diff-view!
-  "Interactive diff viewer component, cached on the buffer value's identity
+(defn- pager-view!
+  "Focused pager component for a buffer, cached on the buffer value's identity
    (a /diff with new output replaces it; reopening via /buffers reuses it).
-   Building a fresh component grabs focus and scrolls to the top."
+   Git diffs (:diff?) get the interactive unified-diff viewer; other buffers
+   (difft output, plain text) get the generic text pager, with the buffer's
+   :engine renderer applied. Building a fresh component grabs focus and
+   scrolls to the top."
   [^js ctx buf room-id dispatch!]
-  (when-not (identical? buf (.-diffVal ctx))
-    (let [c (diff-buffer/make-diff-buffer
-             {:diff-text (:text buf)
-              :title (:title buf)
-              :on-close (fn [] (dispatch! {:type :ui/buffer-switch
-                                           :room-id room-id :buffer-id :chat}))
-              :on-command-mode (fn [] (tui/set-focus! (.-editor ctx)))})]
-      (set! (.-diffVal ctx) buf)
-      (set! (.-diffComp ctx) c)
+  (when-not (identical? buf (.-pagerVal ctx))
+    (let [on-close (fn [] (dispatch! {:type :ui/buffer-switch
+                                      :room-id room-id :buffer-id :chat}))
+          on-command-mode (fn [] (tui/set-focus! (.-editor ctx)))
+          c (if (:diff? buf)
+              (diff-buffer/make-diff-buffer
+               {:diff-text (:text buf) :title (:title buf)
+                :on-close on-close :on-command-mode on-command-mode})
+              (pager/make-text-buffer
+               {:text (view/buffer-display-text buf) :title (:title buf)
+                :on-close on-close :on-command-mode on-command-mode}))]
+      (set! (.-pagerVal ctx) buf)
+      (set! (.-pagerComp ctx) c)
       (tui/set-focus! c)
       (tui/scroll-to-offset! 999999)))
-  (.-diffComp ctx))
+  (.-pagerComp ctx))
+
+(defn- pager-buffer?
+  "A buffer that should be shown in a focused pager (scroll keybindings +
+   help toolbar): the diff/difft buffers, identified by their :engine key.
+   The system-prompt buffer stays on the static view so ctrl+o (an editor
+   keybinding) keeps working; :chat and :logs have their own views."
+  [buf]
+  (contains? buf :engine))
 
 (defn- sync-view!
   "Point the view wrapper at the active buffer (:chat is the persistent
    chat container; logs/other buffers are rebuilt from state each pass).
-   Diff buffers get the interactive viewer, which takes focus while open."
+   Pager buffers get the focused viewer, which takes focus while open."
   [^js ctx room ring dispatch!]
   (let [active (get-in room [:ui :active-buffer] :chat)
         switched? (not= active (.-activeBuffer ctx))]
     (when (or switched? (not= active :chat))
       (let [buf (get-in room [:ui :buffers active])
-            diff? (boolean (:diff? buf))
+            pager? (pager-buffer? buf)
             target (cond
                      (= active :chat) (.-chat ctx)
                      (= active :logs) (view/logs-view (log/entries ring) (:id room))
-                     diff? (diff-view! ctx buf (:id room) dispatch!)
+                     pager? (pager-view! ctx buf (:id room) dispatch!)
                      buf (view/buffer-view buf)
                      :else (.-chat ctx))]
         (set! (.-activeBuffer ctx) active)
         (reset! (:children (.-viewWrapper ctx)) [target])
-        ;; Focus/scroll transitions in and out of the interactive viewer
+        ;; Focus/scroll transitions in and out of the focused pager
         (when switched?
           (cond
-            diff? (do (tui/set-focus! target)
-                      (tui/scroll-to-offset! 999999))
-            (.-wasDiff ctx) (do (tui/set-focus! (.-editor ctx))
-                                (tui/scroll-to-offset! 0)))
-          (set! (.-wasDiff ctx) diff?))))))
+            pager? (do (tui/set-focus! target)
+                       (tui/scroll-to-offset! 999999))
+            (.-wasPager ctx) (do (tui/set-focus! (.-editor ctx))
+                                 (tui/scroll-to-offset! 0)))
+          (set! (.-wasPager ctx) pager?))))))
 
 (defn- focus-panel!
   "Wrap a focused component in a spacer'd container and install it as the
@@ -373,19 +389,6 @@
     ((:add-child panel) comp)
     (tui/set-bottom-panel! panel)
     (tui/set-focus! comp)))
-
-(defn- diff-help-bar
-  "Single-line help bar shown at the bottom while the diff viewer is open."
-  []
-  (let [dim  (partial ansi/fg :dim)
-        key  (partial ansi/fg :accent)]
-    (comp/make-text
-     (str (key "j") "/" (key "k") (dim ":scroll  ")
-          (key "]c") "/" (key "[c") (dim ":changes  ")
-          (key "]f") "/" (key "[f") (dim ":files  ")
-          (key "gg") "/" (key "G") (dim ":top/bottom  ")
-          (key "q") (dim ":close  ")
-          (key ":") (dim ":command")))))
 
 (defn- build-history-selector
   "Instantiate the interactive history selector for /tree."
@@ -417,21 +420,25 @@
     (fn [] (dispatch! {:type :tree/close :room-id (:id room)}))}))
 
 (defn- sync-bottom-panel!
-  "Bottom-panel priority: dialog > menu > tree > diff-help-bar > editor.
+  "Bottom-panel priority: dialog > menu > tree > pager help-bar > editor.
+   The pager help-bar is the active pager component's own :help toolbar.
    Rebuilds only when the selected target identity changes."
   [^js ctx room dispatch!]
   (let [dialog (first (get-in room [:ui :dialogs]))
         menu   (get-in room [:ui :menu])
         tree?  (boolean (get-in room [:ui :tree-open?]))
-        diff?  (boolean (get-in room [:ui :buffers (get-in room [:ui :active-buffer]) :diff?]))
-        target (or dialog menu (when tree? :tree) (when diff? :diff))]
+        active (get-in room [:ui :active-buffer] :chat)
+        buf    (get-in room [:ui :buffers active])
+        pager? (pager-buffer? buf)
+        target (or dialog menu (when tree? :tree)
+                   (when pager? (.-pagerComp ctx)))]
     (when-not (identical? target (.-panelVal ctx))
       (set! (.-panelVal ctx) target)
       (cond
         dialog (focus-panel! (build-dialog dialog (:id room) dispatch! (.-editor ctx)))
         menu   (focus-panel! (build-menu menu (:id room) dispatch!))
         tree?  (focus-panel! (build-history-selector room dispatch!))
-        diff?  (tui/set-bottom-panel! (diff-help-bar))
+        pager? (tui/set-bottom-panel! (comp/make-text (or (:help (.-pagerComp ctx)) "")))
         :else  (do (tui/set-bottom-panel! (.-editor ctx))
                    (tui/set-focus! (.-editor ctx)))))))
 
@@ -465,7 +472,7 @@
                  :chat chat :viewWrapper view-wrapper :editor nil
                  :roomId nil :blocks #js [] :header [] :chatDirty true
                  :panelVal nil :activeBuffer :chat
-                 :diffVal nil :diffComp nil :wasDiff false
+                 :pagerVal nil :pagerComp nil :wasPager false
                  :loaderShown false}
         dispatch! (fn [event] (when-let [d (.-dispatch ctx)] (d event)))
         get-state (fn [] (.-state ctx))
