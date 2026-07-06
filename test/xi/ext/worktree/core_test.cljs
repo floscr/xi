@@ -1,6 +1,7 @@
 (ns xi.ext.worktree.core-test
   (:require [cljs.test :refer [deftest is testing]]
             [clojure.string :as str]
+            [xi.core.state :as state]
             [xi.ext.worktree.core :as wt]))
 
 (deftest slugify-test
@@ -38,6 +39,36 @@
         (is (not (str/includes? s "## Build")))))
     (testing "nil when no heading matches"
       (is (nil? (wt/extract-section md "nonexistent"))))))
+
+(deftest cwd-linkage-test
+  ;; /diff and /diff git read `(:cwd room)` (see xi.ext.diff), so the worktree
+  ;; feature "respects the worktree" precisely because its handlers rewrite the
+  ;; room's cwd. Lock that linkage: :worktree/created points the room at the
+  ;; worktree, :worktree/switch moves it back to the main tree.
+  (let [handlers (:handlers (wt/create nil))
+        created  (:worktree/created handlers)
+        switch   (:worktree/switch handlers)
+        rid      "room-1"
+        st0      (-> (state/initial-state)
+                     (assoc-in [:rooms rid] (state/make-room rid {:cwd "/w/acme"})))]
+    (testing ":worktree/created retargets the room cwd to the worktree path"
+      (let [{st :state} (created st0 {:room-id rid :path "/w/acme-x"
+                                      :branch "x" :base "master"
+                                      :main-root "/w/acme"})]
+        (is (= "/w/acme-x" (get-in st [:rooms rid :cwd])))
+        (is (= {:path "/w/acme-x" :branch "x" :base "master" :main-root "/w/acme"}
+               (get-in st [:rooms rid :ext :worktree])))))
+    (testing ":worktree/switch moves the room cwd back and clears metadata"
+      (let [{st :state} (created st0 {:room-id rid :path "/w/acme-x"
+                                      :branch "x" :base "master"
+                                      :main-root "/w/acme"})
+            {st2 :state} (switch st {:room-id rid :cwd "/w/acme" :clear? true})]
+        (is (= "/w/acme" (get-in st2 [:rooms rid :cwd])))
+        (is (nil? (get-in st2 [:rooms rid :ext :worktree])))))
+    (testing "handlers no-op on an unknown room"
+      (is (nil? (created st0 {:room-id "nope" :path "/w/x" :branch "x"
+                             :base "master" :main-root "/w/acme"})))
+      (is (nil? (switch st0 {:room-id "nope" :cwd "/w/acme"}))))))
 
 (deftest build-worktree-prompt-test
   (let [p (wt/build-worktree-prompt
