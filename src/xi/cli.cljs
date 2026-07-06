@@ -45,6 +45,7 @@
             [xi.ext.commit :as ext.commit]
             [xi.ext.core :as ext]
             [xi.ext.dictation :as ext.dictation]
+            [xi.ext.diff.core :as ext.diff]
             [xi.ext.done-notify :as ext.done-notify]
             [xi.ext.events :as ext.events]
             [xi.ext.github :as ext.github]
@@ -96,6 +97,7 @@
   [ext.plan-mode/extension
    ext.done-notify/extension
    (ext.pushover/extension)
+   ext.diff/extension
    ext.kb/extension
    ext.web/extension
    ext.perplexity/extension

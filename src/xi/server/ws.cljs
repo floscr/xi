@@ -19,7 +19,8 @@
    create-server closure (runtime resources, not app state).
 
    Deferred to later phases: :visibility tracking, dictation."
-  (:require [xi.fx :as fx]
+  (:require [xi.ext.diff.git :as diff-git]
+            [xi.fx :as fx]
             [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
@@ -255,7 +256,7 @@
       (fn [_ {:keys [client-id cwd]}]
         (send! client-id (wire/encode {:type :diff/web-load-result
                                        :cwd  cwd
-                                       :text (fx/all-git-changes-text cwd)})))
+                                       :text (diff-git/all-git-changes-text cwd)})))
 
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally
