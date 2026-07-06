@@ -221,10 +221,27 @@ Returns matching repos, file paths, blob URLs, and code snippets. Requires a sav
                               :entry {:kind :status
                                       :text (str "Failed to save GitHub cookie: " (.-message err))}}))))))
 
+;; ── System prompt ─────────────────────────────────────────────────────────────
+
+(def ^:private SYSTEM_PROMPT
+  "# GitHub Code Search
+
+When the user asks you to search for code *on GitHub* — finding usages,
+examples, or patterns across public repositories (e.g. \"how do other repos use
+X\", \"find uses of `recordly` in .nix files\", \"search GitHub for …\") — you
+MUST use the `github_code_search` tool. Do NOT use `web_search`, `WebFetch`, or
+shell `gh`/`grep` for this: those hit the legacy REST API or the open web and
+miss github.com's full query syntax (`path:*.nix`, `language:`, `repo:`, regex,
+exact phrase).
+
+Use the github.com query syntax directly, e.g. `recordly path:*.nix`,
+`language:clojure defmethod`, `repo:owner/name useEffect`.")
+
 ;; ── Extension ─────────────────────────────────────────────────────────────────
 
 (def extension
   {:id               :github-code-search
+   :system-prompt    SYSTEM_PROMPT
    :commands         [{:name "github-login"
                        :description "Save the GitHub session cookie for code search"
                        :handler login-command}]

@@ -85,10 +85,18 @@ GitHub code search: recordly path:*.nix
     …
 ```
 
+## Steering the agent
+
+The extension also contributes a `:system-prompt` that instructs the agent to
+reach for `github_code_search` (rather than `web_search`, `WebFetch`, or shell
+`gh`/`grep`) whenever the user asks to search for code **on GitHub**. Without it
+the agent tends to fall back on the open web, which misses github.com's query
+syntax (`path:`, `language:`, regex, …).
+
 ## Implementation notes
 
-- `core.cljs` is the whole extension: the `github_code_search` tool plus the
-  `/github-login` command/effect.
+- `core.cljs` is the whole extension: the `github_code_search` tool, the
+  `:system-prompt` steering blurb, plus the `/github-login` command/effect.
 - Endpoint: `GET https://github.com/search?q=<query>&type=code&p=<page>` with
   `Accept: application/json`; the response's `payload.results` is formatted for
   the agent.
