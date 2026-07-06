@@ -736,7 +736,14 @@
      (let [sel (str ".timeline .post--user[data-history-index=\"" history-index "\"]")]
        (letfn [(try-scroll [n]
                  (if-let [node (.querySelector js/document sel)]
-                   (.scrollIntoView node #js {:behavior "smooth" :block "start"})
+                   (do
+                     (.scrollIntoView node #js {:behavior "smooth" :block "start"})
+                     ;; Outline only the current target: clear the mark from any
+                     ;; previously-navigated prompt, then flag this one.
+                     (doseq [el (array-seq
+                                 (.querySelectorAll js/document ".post--nav-target"))]
+                       (.remove (.-classList el) "post--nav-target"))
+                     (.add (.-classList node) "post--nav-target"))
                    (when (pos? n)
                      (js/requestAnimationFrame #(try-scroll (dec n))))))]
          (try-scroll 30))))
@@ -744,6 +751,8 @@
    (fn [_ _]
      ;; Re-enable auto-scroll and snap to the newest content.
      (reset! auto-scroll? true)
+     (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
+       (.remove (.-classList el) "post--nav-target"))
      (when-let [timeline (.querySelector js/document ".timeline")]
        (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))

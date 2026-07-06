@@ -435,6 +435,19 @@ body {
   cursor: pointer;
 }
 
+/* Outline the prompt the user has navigated to (prompt-nav). */
+.post--nav-target .post-body {
+  outline: 2px solid var(--accent, #7c3aed);
+  outline-offset: 2px;
+}
+
+/* Keep prompt-nav (scrollIntoView block:start) clear of the floating chat
+   header/gradient. --chat-header-h is set on the mobile chat timeline and
+   inherited here; it falls back to 0 elsewhere. */
+.timeline .post--user {
+  scroll-margin-top: calc(var(--chat-header-h, 0px) + var(--size-2));
+}
+
 /* ── User bubble tap menu ─────────────────────────────────────── */
 
 .bubble-menu-backdrop {
