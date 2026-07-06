@@ -48,7 +48,7 @@
             [xi.ext.done-notify :as ext.done-notify]
             [xi.ext.events :as ext.events]
             [xi.ext.github :as ext.github]
-            [xi.ext.github-code-search :as ext.github-code-search]
+            [xi.ext.github-code-search.core :as ext.github-code-search]
             [xi.ext.gtd :as ext.gtd]
             [xi.ext.kb :as ext.kb]
             [xi.ext.perplexity :as ext.perplexity]

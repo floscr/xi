@@ -1,4 +1,4 @@
-(ns xi.ext.github-code-search
+(ns xi.ext.github-code-search.core
   "GitHub code-search tool for agents — hits github.com's *new* code search
    (the blackbird engine behind github.com/search?type=code), which supports
    the full query syntax (`path:*.nix`, `language:`, regex, …) that the legacy
