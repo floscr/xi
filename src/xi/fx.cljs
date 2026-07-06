@@ -207,7 +207,17 @@
      (let [room (room-of state room-id)
            sessions (list-room-sessions room scope)]
        (if (and (<= 1 index) (<= index (count sessions)))
-         (let [summary (nth sessions (dec index))]
+         (let [summary  (nth sessions (dec index))
+               room-cwd (:cwd room)
+               sess-cwd (:cwd summary)]
+           ;; A session picked from the current folder may actually live in a
+           ;; sibling git worktree (list-sessions spans the whole project).
+           ;; Land the room in that worktree so the resumed agent runs there,
+           ;; but only within the same git project — cross-project "All" resumes
+           ;; stay put.
+           (when (and sess-cwd room-cwd (not= sess-cwd room-cwd)
+                      (contains? (set (session/git-project-cwds room-cwd)) sess-cwd))
+             (dispatch! {:type :cwd/change :room-id room-id :path sess-cwd}))
            (dispatch! {:type :session/resumed
                        :room-id room-id
                        :session (session/load-session summary)

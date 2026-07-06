@@ -32,6 +32,17 @@ When a prompt is given, the agent is told exactly that, and any
 so project-specific build/port conventions travel with it
 (`build-worktree-prompt` + `agents-worktree-guidance`).
 
+## Resuming worktree sessions
+
+Sessions are saved under a directory keyed by their cwd, so work done inside a
+worktree lands in that worktree's own session dir. `session/list-sessions`
+therefore scans the **whole git project** — the main tree plus every linked
+worktree (`session/git-project-cwds`, via `git worktree list`) — so `/resume`
+from the main repo surfaces sessions that were started inside its worktrees
+(and vice versa). Picking such a session also switches the room's cwd into the
+worktree it belongs to (guarded to the same git project), so the resumed agent
+runs in the right checkout.
+
 ## How it fits the architecture
 
 - `core.cljs` — the extension: pure command + pure event handlers
