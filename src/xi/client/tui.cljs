@@ -492,7 +492,12 @@
         editor-comp
         (editor/make-editor
          {:prompt "xi> "
-          :on-submit (fn [text] (room-event {:type :input/submit :text text}))
+          :on-submit (fn [text]
+                       (if-let [room (current-room)]
+                         (dispatch! {:type :input/submit :room-id (:id room) :text text})
+                         ;; No room yet (deferred virtual chat) — create one on
+                         ;; first prompt; the handler joins "new" + replays text.
+                         (dispatch! {:type :client/first-prompt :text text})))
           :on-escape (fn []
                        (let [room (current-room)
                              active (get-in room [:ui :active-buffer] :chat)]
@@ -539,7 +544,8 @@
                    (when (seq badge) badge))))
           :prompt-right-fn
           (fn []
-            (when-let [cwd (:cwd (current-room))]
+            (when-let [cwd (or (:cwd (current-room))
+                               (get-in (.-state ctx) [:client/pending-room :cwd]))]
               (let [connected? (= :client (state/mode (.-state ctx)))]
                 (str (ansi/fg :dim (shorten-home cwd))
                      (when connected? (str " " (ansi/fg :green "●")))))))})
@@ -550,21 +556,34 @@
           (set! (.-state ctx) state)
           (dispatch! {:type :render/start})
           (let [t0 (js/Date.now)]
-            (when-let [room (state/active-room state)]
-              (when (not= (:id room) (.-roomId ctx))
-                ;; Room switched (or first render) — rebuild from scratch
-                (set! (.-roomId ctx) (:id room))
-                (set! (.-blocks ctx) #js [])
-                (set! (.-header ctx)
-                      (view/launch-header {:model (get-in room [:agent :model])
-                                           :cwd (:cwd room)
-                                           :agents-files (get-in room [:agent :agents-files])}))
-                (set! (.-chatDirty ctx) true)
-                (set! (.-activeBuffer ctx) nil))
-              (sync-chat! ctx room loader)
-              (sync-view! ctx room ring dispatch!)
-              (sync-bottom-panel! ctx room dispatch!)
-              (tui/request-render!))
+            (if-let [room (state/active-room state)]
+              (do
+                (when (not= (:id room) (.-roomId ctx))
+                  ;; Room switched (or first render) — rebuild from scratch
+                  (set! (.-roomId ctx) (:id room))
+                  (set! (.-blocks ctx) #js [])
+                  (set! (.-header ctx)
+                        (view/launch-header {:model (get-in room [:agent :model])
+                                             :cwd (:cwd room)
+                                             :agents-files (get-in room [:agent :agents-files])}))
+                  (set! (.-chatDirty ctx) true)
+                  (set! (.-activeBuffer ctx) nil))
+                (sync-chat! ctx room loader)
+                (sync-view! ctx room ring dispatch!)
+                (sync-bottom-panel! ctx room dispatch!)
+                (tui/request-render!))
+              ;; Deferred virtual chat — no server room yet. Render just the
+              ;; launch header so the empty chat + editor are visible; the
+              ;; real room replaces it on the first prompt's :room/joined.
+              (when-let [pending (:client/pending-room state)]
+                (when (not= :pending (.-roomId ctx))
+                  (set! (.-roomId ctx) :pending)
+                  (set! (.-blocks ctx) #js [])
+                  (set! (.-header ctx) (view/launch-header {:cwd (:cwd pending)}))
+                  (set! (.-chatDirty ctx) true)
+                  (set! (.-activeBuffer ctx) nil))
+                (sync-chat! ctx {:history []} loader)
+                (tui/request-render!)))
             (dispatch! {:type :render/done
                         :duration-ms (- (js/Date.now) t0)})))]
 

@@ -416,8 +416,9 @@
               and their commands/badges/keybindings are presented locally.
      local  — process-local client extensions; handlers installed unwrapped
               (never forwarded), fx + process state run on this client."
-  [{:keys [target initial-prompt] :as opts}]
+  [{:keys [target initial-prompt defer-room?] :as opts}]
   (let [url (client-url opts)
+        cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
         ring (log/create-ring)
         mirror (ext/compose (server-extensions nil))
         local  (ext/compose (client-extensions))
@@ -426,10 +427,24 @@
         prompt-badge (fn [st] (str (ext/prompt-badges mirror st)
                                    (ext/prompt-badges local st)))
         keybindings (into (:keybindings mirror) (:keybindings local))
+        ;; Deferred room: show an empty chat and only create the server room on
+        ;; the first prompt (:client/first-prompt → :room/join "new"), then submit
+        ;; the stashed text once :room/joined arrives (pending-submit tap below).
+        deferred-handlers
+        (when defer-room?
+          {:client/first-prompt
+           (fn [st {:keys [text]}]
+             {:state   (-> st
+                           (assoc :client/pending-submit {:text text})
+                           (dissoc :client/pending-room))
+              :effects [[:ws/send (cond-> {:type :room/join :target "new"}
+                                    cwd (assoc :cwd cwd))]]})
+           :client/clear-pending
+           (fn [st _] {:state (dissoc st :client/pending-submit)})})
         transport (ws-transport/create!
                    {:url url
                     :target target
-                    :cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
+                    :cwd cwd
                     :on-close (fn []
                                 (term/restore-stdout!)
                                 (tui/stop-tui!)
@@ -444,12 +459,14 @@
         base (-> (make-handlers (:commands mirror))
                  (ext/merge-handlers mirror))
         {:keys [dispatch! add-tap!]}
-        (app/create-app {:initial-state (state/initial-state
-                                         {:mode :client
-                                          :ext (:process-ext-init local)})
+        (app/create-app {:initial-state (cond-> (state/initial-state
+                                                 {:mode :client
+                                                  :ext (:process-ext-init local)})
+                                          defer-room? (assoc :client/pending-room {:cwd cwd}))
                          :handlers      (ws-transport/make-handlers
                                          base
-                                         {:local-handlers (:handlers local)})
+                                         {:local-handlers (merge (:handlers local)
+                                                                 deferred-handlers)})
                          ;; Only client-local hooks run here; server hooks
                          ;; ran server-side and mirrored events bypass them.
                          :transform-event (ext/transform-event local)
@@ -458,6 +475,17 @@
                                                (:effects client))
                          :on-render     (:render client)
                          :ring          ring})]
+    ;; Deferred room: replay the stashed first prompt once the fresh room joins.
+    (when defer-room?
+      (add-tap!
+       (fn [event state]
+         (when (and (= :room/joined (:type event))
+                    (:client/pending-submit state))
+           (let [text (get-in state [:client/pending-submit :text])]
+             (dispatch! {:type :client/clear-pending})
+             (dispatch! {:type :input/submit
+                         :room-id (:room-id event)
+                         :text text}))))))
     ;; Auto-submit an initial prompt once the server room is joined
     ;; (e.g. launched from `hey re --join` with an error). Fires once.
     (when (seq initial-prompt)
@@ -553,14 +581,19 @@
    listening on the port and auto-join isn't disabled. Always opens a fresh
    room (like the empty chat page on the web UI) rather than resuming the latest
    one — /resume still re-attaches to a live room via a {:session-id} target."
-  [{:keys [auto-join? port] :as opts}]
+  [{:keys [auto-join? port initial-prompt] :as opts}]
   (if-not auto-join?
     (start-standalone! opts)
     (-> (server-running? (or port ws/DEFAULT_PORT))
         (.then (fn [running?]
-                 (if running?
-                   (start-client! (assoc opts :target "new"))
-                   (start-standalone! opts)))))))
+                 (cond
+                   ;; No server — plain local standalone room.
+                   (not running?) (start-standalone! opts)
+                   ;; An initial prompt wants a room + message right away.
+                   (seq initial-prompt) (start-client! (assoc opts :target "new"))
+                   ;; Otherwise stay in a virtual room — the server room is
+                   ;; created on the first prompt, like the web empty chat.
+                   :else (start-client! (assoc opts :target nil :defer-room? true))))))))
 
 (defn main [& args]
   (let [{:keys [command] :as opts} (parse-args args)]
