@@ -2,7 +2,9 @@
   "Xi entry point — one core, three connection modes.
 
    Subcommands:
-     xi               → standalone TUI (one local room, no sockets)
+     xi               → connect to a running server in a fresh room (the empty
+                        chat page); otherwise a standalone TUI (one local room,
+                        no sockets). --no-auto-join forces standalone.
      xi server        → host rooms over WS; local TUI joins via WS
                         (--headless for server-only)
      xi prompt <text> → one-shot: run a single prompt headless, print the
@@ -33,6 +35,9 @@
                       standalone (same as the `join` subcommand)
      --create         connect to a running server on a new room instead of
                       standalone (same as the `create` subcommand)
+     --no-auto-join   force a local standalone room even when a server is
+                      running (default: `xi` connects to a running server in a
+                      fresh room)
      --stream         (prompt) stream response tokens to stdout as they arrive
      --debug-events   (standalone) write the full event stream to
                       ~/.pi/agent/logs/<session>.events.jsonl"
@@ -142,7 +147,7 @@
 
 
 (defn- parse-args [args]
-  (loop [args (seq args) opts {:command :standalone}]
+  (loop [args (seq args) opts {:command :standalone :auto-join? true}]
     (if-not args
       opts
       (let [arg (first args)]
@@ -156,6 +161,8 @@
           ;; Redirect the default (standalone) invocation onto a running server
           "--join"         (recur (next args) (assoc opts :command :join))
           "--create"       (recur (next args) (assoc opts :command :create))
+          ;; Opt out of auto-joining a running server when launching standalone
+          "--no-auto-join" (recur (next args) (assoc opts :auto-join? false))
           "--headless"     (recur (next args) (assoc opts :headless? true))
           "--personal-agent-only" (recur (next args) (assoc opts :personal-agent? true))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
@@ -381,6 +388,25 @@
 (defn- client-url [{:keys [url port]}]
   (or url (str "ws://localhost:" (or port ws/DEFAULT_PORT))))
 
+(defn- server-running?
+  "Probe whether a server is already listening on the given port. Resolves a
+   boolean; used to auto-join a running server instead of starting standalone."
+  [port]
+  (js/Promise.
+   (fn [resolve _reject]
+     (let [net    (js/require "node:net")
+           done?  (atom false)
+           socket (.createConnection net #js {:port port :host "127.0.0.1"})
+           finish (fn [result]
+                    (when-not @done?
+                      (reset! done? true)
+                      (.destroy socket)
+                      (resolve result)))]
+       (.setTimeout socket 300)
+       (.once socket "connect" (fn [] (finish true)))
+       (.once socket "timeout" (fn [] (finish false)))
+       (.once socket "error"   (fn [_] (finish false)))))))
+
 (defn- start-client!
   "Connect a TUI to a running server: forward input, mirror broadcasts.
 
@@ -522,10 +548,24 @@
       :else (do (js/console.error "usage: xi prompt [--stream] <text>   (or pipe text via stdin)")
                 (js/process.exit 1)))))
 
+(defn- start-standalone-or-join!
+  "Launch standalone, but transparently connect to a running server when one is
+   listening on the port and auto-join isn't disabled. Always opens a fresh
+   room (like the empty chat page on the web UI) rather than resuming the latest
+   one — /resume still re-attaches to a live room via a {:session-id} target."
+  [{:keys [auto-join? port] :as opts}]
+  (if-not auto-join?
+    (start-standalone! opts)
+    (-> (server-running? (or port ws/DEFAULT_PORT))
+        (.then (fn [running?]
+                 (if running?
+                   (start-client! (assoc opts :target "new"))
+                   (start-standalone! opts)))))))
+
 (defn main [& args]
   (let [{:keys [command] :as opts} (parse-args args)]
     (case command
-      :standalone (start-standalone! opts)
+      :standalone (start-standalone-or-join! opts)
       :server     (start-server! opts)
       :prompt     (run-prompt! opts)
       :join       (start-client! (assoc opts :target "latest"))

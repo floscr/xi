@@ -540,7 +540,9 @@
           :prompt-right-fn
           (fn []
             (when-let [cwd (:cwd (current-room))]
-              (ansi/fg :dim (shorten-home cwd))))})
+              (let [connected? (= :client (state/mode (.-state ctx)))]
+                (str (ansi/fg :dim (shorten-home cwd))
+                     (when connected? (str " " (ansi/fg :green "●")))))))})
 
         render
         (fn [state dispatch!]
