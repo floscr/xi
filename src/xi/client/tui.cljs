@@ -201,16 +201,23 @@
 ;; ── Dialogs (room :ui :dialogs → focused bottom-panel component) ──────────────
 
 (defn- build-confirm-dialog
-  "A y/n confirm dialog. Enter = yes, Esc = no."
-  [{:keys [message prompt]} respond!]
+  "A y/n confirm dialog rendered as a bordered box that sits above the prompt
+   line. Enter = yes, Esc = no. The message word-wraps to the terminal width so
+   long guarded commands no longer overflow and corrupt the layout, and the
+   editor stays visible below the dialog for context."
+  [{:keys [message prompt]} respond! editor]
   (let [text (or message prompt "Confirm?")]
     {:type :dialog
      :render (fn [width]
-               [(ansi/fg :border (apply str (repeat width "─")))
-                (str "  " text)
-                (str "  " (ansi/fg :accent "[y]") "es   "
-                     (ansi/fg :accent "[n]") "o   "
-                     (ansi/fg :dim "(Enter=yes, Esc=no)"))])
+               (let [wrapped (ansi/wrap-text text (max 1 (- width 2)))
+                     box (into [(ansi/fg :border (apply str (repeat width "─")))]
+                               (concat
+                                (map #(str "  " %) wrapped)
+                                [(str "  " (ansi/fg :accent "[y]") "es   "
+                                      (ansi/fg :accent "[n]") "o   "
+                                      (ansi/fg :dim "(Enter=yes, Esc=no)"))
+                                 ""]))]
+                 (into box (when editor ((:render editor) width)))))
      :handle-input (fn [data]
                      (cond
                        (#{"y" "Y"} data) (respond! true)
@@ -250,13 +257,13 @@
    :ui/dialog-response, which the dialog owner (xi.ext.core/create-dialogs)
    resolves. :cwd-select offers a numbered directory list; everything else
    is a y/n confirm."
-  [{:keys [id type] :as dialog} room-id dispatch!]
+  [{:keys [id type] :as dialog} room-id dispatch! editor]
   (let [respond! (fn [value]
                    (dispatch! {:type :ui/dialog-response
                                :room-id room-id :dialog-id id :value value}))]
     (if (= type :cwd-select)
       (build-cwd-select-dialog dialog respond!)
-      (build-confirm-dialog dialog respond!))))
+      (build-confirm-dialog dialog respond! editor))))
 
 ;; ── Render sync helpers ──────────────────────────────────────────────────────
 
@@ -421,7 +428,7 @@
     (when-not (identical? target (.-panelVal ctx))
       (set! (.-panelVal ctx) target)
       (cond
-        dialog (focus-panel! (build-dialog dialog (:id room) dispatch!))
+        dialog (focus-panel! (build-dialog dialog (:id room) dispatch! (.-editor ctx)))
         menu   (focus-panel! (build-menu menu (:id room) dispatch!))
         tree?  (focus-panel! (build-history-selector room dispatch!))
         diff?  (tui/set-bottom-panel! (diff-help-bar))
