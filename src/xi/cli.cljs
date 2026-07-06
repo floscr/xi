@@ -26,6 +26,13 @@
      --model M        override the default model
      --port N         WS port (server/join/create; default 7474)
      --headless       server only, no local TUI
+     --prompt <text>  launch the TUI with an initial prompt already submitted
+                      (works standalone or with --join/--create; e.g. from
+                      `hey re` on error)
+     --join           connect to a running server's latest room instead of
+                      standalone (same as the `join` subcommand)
+     --create         connect to a running server on a new room instead of
+                      standalone (same as the `create` subcommand)
      --stream         (prompt) stream response tokens to stdout as they arrive
      --debug-events   (standalone) write the full event stream to
                       ~/.pi/agent/logs/<session>.events.jsonl"
@@ -145,6 +152,10 @@
           "create"         (recur (next args) (assoc opts :command :create))
           ("prompt" "-p")  (recur (next args) (assoc opts :command :prompt))
           "--stream"       (recur (next args) (assoc opts :stream? true))
+          "--prompt"       (recur (nnext args) (assoc opts :initial-prompt (second args)))
+          ;; Redirect the default (standalone) invocation onto a running server
+          "--join"         (recur (next args) (assoc opts :command :join))
+          "--create"       (recur (next args) (assoc opts :command :create))
           "--headless"     (recur (next args) (assoc opts :headless? true))
           "--personal-agent-only" (recur (next args) (assoc opts :personal-agent? true))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
@@ -191,7 +202,7 @@
 
 ;; ── Standalone (phase 4, unchanged) ──────────────────────────────────────────
 
-(defn- start-standalone! [{:keys [debug-events?] :as opts}]
+(defn- start-standalone! [{:keys [debug-events? initial-prompt] :as opts}]
   (let [{:keys [model effort]} (resolve-model-opts opts)
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
         ring (log/create-ring)
@@ -264,7 +275,10 @@
                     :room-id "main"
                     :session (session/load-session summary)
                     :summary summary
-                    :messages (session/read-session-messages summary)})))))
+                    :messages (session/read-session-messages summary)})))
+    ;; Auto-submit an initial prompt (e.g. launched from `hey re` with an error)
+    (when (seq initial-prompt)
+      (dispatch! {:type :prompt/submit :room-id "main" :text initial-prompt}))))
 
 ;; ── Prompt (one-shot, headless) ──────────────────────────────────────────────
 
@@ -376,7 +390,7 @@
               and their commands/badges/keybindings are presented locally.
      local  — process-local client extensions; handlers installed unwrapped
               (never forwarded), fx + process state run on this client."
-  [{:keys [target] :as opts}]
+  [{:keys [target initial-prompt] :as opts}]
   (let [url (client-url opts)
         ring (log/create-ring)
         mirror (ext/compose (server-extensions nil))
@@ -403,7 +417,7 @@
                  :keybindings keybindings})
         base (-> (make-handlers (:commands mirror))
                  (ext/merge-handlers mirror))
-        {:keys [dispatch!]}
+        {:keys [dispatch! add-tap!]}
         (app/create-app {:initial-state (state/initial-state
                                          {:mode :client
                                           :ext (:process-ext-init local)})
@@ -418,6 +432,17 @@
                                                (:effects client))
                          :on-render     (:render client)
                          :ring          ring})]
+    ;; Auto-submit an initial prompt once the server room is joined
+    ;; (e.g. launched from `hey re --join` with an error). Fires once.
+    (when (seq initial-prompt)
+      (let [sent? (atom false)]
+        (add-tap!
+         (fn [event _state]
+           (when (and (= :room/joined (:type event)) (not @sent?))
+             (reset! sent? true)
+             (dispatch! {:type :prompt/submit
+                         :room-id (:room-id event)
+                         :text initial-prompt}))))))
     ((:set-dispatch! transport) dispatch!)))
 
 ;; ── Server ───────────────────────────────────────────────────────────────────
