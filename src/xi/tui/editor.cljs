@@ -181,6 +181,7 @@
         on-git (:on-git opts)
         on-notify-toggle (:on-notify-toggle opts)
         on-paste-image (:on-paste-image opts)
+        on-tab-complete (:on-tab-complete opts)
         ext-keybindings (:ext-keybindings opts)
 
         get-text (fn []
@@ -700,7 +701,7 @@
                                            (str/replace paste-end-seq ""))]
                            (insert-text-bulk content))
 
-                         ;; Tab — snippet expansion
+                         ;; Tab — snippet expansion, else path completion
                          (is-tab? data)
                          (let [{:keys [lines cursor-line cursor-col]} @state
                                line (nth lines cursor-line)
@@ -711,19 +712,25 @@
                                               (neg? i) 0
                                               (= " " (.charAt before i)) (inc i)
                                               :else (recur (dec i))))
-                               trigger (subs before word-start (count before))]
-                           (when-let [expansion (and (seq trigger) (snippets/expand trigger))]
-                             (push-undo! :snippet)
-                             (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
-                                            (let [line (nth lines cursor-line)
-                                                  new-line (str (subs line 0 word-start)
-                                                                expansion
-                                                                (subs line cursor-col))]
-                                              (-> s
-                                                  (assoc-in [:lines cursor-line] new-line)
-                                                  (assoc :cursor-col (+ word-start (count expansion)))
-                                                  (assoc :cached-width nil :cached-lines nil)))))
-                             (tui/request-panel-render!)))
+                               trigger (subs before word-start (count before))
+                               expansion (and (seq trigger) (snippets/expand trigger))]
+                           (cond
+                             expansion
+                             (do
+                               (push-undo! :snippet)
+                               (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                              (let [line (nth lines cursor-line)
+                                                    new-line (str (subs line 0 word-start)
+                                                                  expansion
+                                                                  (subs line cursor-col))]
+                                                (-> s
+                                                    (assoc-in [:lines cursor-line] new-line)
+                                                    (assoc :cursor-col (+ word-start (count expansion)))
+                                                    (assoc :cached-width nil :cached-lines nil)))))
+                               (tui/request-panel-render!))
+
+                             on-tab-complete
+                             (on-tab-complete {:token trigger :insert! insert-char})))
 
                          ;; "/" on empty editor — open command palette
                          (and (= data "/") on-palette (empty? (str/trim (get-text))))

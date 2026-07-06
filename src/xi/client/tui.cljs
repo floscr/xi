@@ -31,6 +31,7 @@
             [xi.tui.diff-buffer :as diff-buffer]
             [xi.tui.editor :as editor]
             [xi.tui.history-selector :as history-selector]
+            [xi.tui.path-complete :as path-complete]
             [xi.tui.terminal :as term]))
 
 ;; ── Key detection (for dialogs / ext keybindings) ────────────────────────────
@@ -493,6 +494,22 @@
             (if-let [img (clip-image/read-clipboard-image)]
               (room-event {:type :ui/attach-image :image img :label "clipboard"})
               (room-event {:type :ui/status :text "No image in clipboard"})))
+          :on-tab-complete
+          (fn [{:keys [token insert!]}]
+            (when-let [room (current-room)]
+              (let [result (path-complete/complete token (:cwd room))]
+                (case (:action result)
+                  :insert (when (seq (:text result)) (insert! (:text result)))
+                  :menu   (dispatch! {:type :ui/menu-open :room-id (:id room)
+                                      :menu {:id :path-complete
+                                             :prompt "path> "
+                                             :items (mapv (fn [{:keys [label insert]}]
+                                                            {:label label
+                                                             :event {:type :editor/insert
+                                                                     :room-id (:id room)
+                                                                     :text insert}})
+                                                          (:items result))}})
+                  nil))))
           :prompt-suffix-fn
           (fn []
             (let [n (count (get-in (current-room) [:ui :pending-images]))

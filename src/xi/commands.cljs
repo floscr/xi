@@ -382,6 +382,12 @@
   (when (state/get-room st room-id)
     (status st room-id text)))
 
+(defn- editor-insert
+  "Insert text at the editor cursor (e.g. from a completion menu selection)."
+  [_st {:keys [text]}]
+  (when (seq text)
+    {:effects [[:editor/insert-text {:text text}]]}))
+
 (defn- menu-open [st {:keys [room-id menu]}]
   (when (state/get-room st room-id)
     {:state (assoc-in st [:rooms room-id :ui :menu] menu)}))
@@ -549,6 +555,7 @@
     :ui/status       ui-status
     :ui/menu-open    menu-open
     :ui/menu-close   menu-close
+    :editor/insert   editor-insert
     :ui/buffer-open  buffer-open
     :ui/prompt-toggle prompt-toggle
     :ui/diff-open    diff-open
