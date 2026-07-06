@@ -736,7 +736,7 @@
      (let [sel (str ".timeline .post--user[data-history-index=\"" history-index "\"]")]
        (letfn [(try-scroll [n]
                  (if-let [node (.querySelector js/document sel)]
-                   (.scrollIntoView node #js {:behavior "smooth" :block "center"})
+                   (.scrollIntoView node #js {:behavior "smooth" :block "start"})
                    (when (pos? n)
                      (js/requestAnimationFrame #(try-scroll (dec n))))))]
          (try-scroll 30))))
