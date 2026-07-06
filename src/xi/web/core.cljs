@@ -994,7 +994,13 @@
                           visual-h (if vv (.-height vv) js/window.innerHeight)
                           root     js/document.documentElement
                           style    (.-style root)
-                          kb-open? (> (- layout-h visual-h) 100)]
+                          kb-open? (> (- layout-h visual-h) 100)
+                          ;; Capture the timeline's scroll geometry before the
+                          ;; --app-height change resizes it, so we can keep the
+                          ;; same line pinned just above the compose box.
+                          timeline (.querySelector js/document ".timeline")
+                          prev-h   (some-> timeline .-clientHeight)
+                          prev-top (some-> timeline .-scrollTop)]
                       ;; Expose keyboard state to CSS so layout that assumes the
                       ;; home-indicator safe area (e.g. the compose row's bottom
                       ;; inset) can drop it while the keyboard covers that area.
@@ -1012,7 +1018,16 @@
                         ;; physical screen, making the app taller than the
                         ;; window and pushing the footer/compose box off the
                         ;; bottom.
-                        (.setProperty style "--app-height" "100dvh"))))]
+                        (.setProperty style "--app-height" "100dvh"))
+                      ;; Reading clientHeight forces the reflow the height
+                      ;; change queued; the timeline shrank (keyboard opening)
+                      ;; or grew (closing) from its bottom edge, so shift
+                      ;; scrollTop by the delta to keep the content that was
+                      ;; just above the prompt bar in view.
+                      (when (and timeline prev-h)
+                        (let [delta (- prev-h (.-clientHeight timeline))]
+                          (when-not (zero? delta)
+                            (set! (.-scrollTop timeline) (+ prev-top delta)))))))]
       (set-vh!)
       (if js/window.visualViewport
         (do (.addEventListener js/window.visualViewport "resize" (fn [_] (set-vh!)))
