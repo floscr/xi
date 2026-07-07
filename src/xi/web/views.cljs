@@ -1857,6 +1857,10 @@
    ;; mis-reconcile that slot and append a second spinner. A stable wrapper
    ;; keeps each card's child structure invariant so the indicator only ever
    ;; swaps content inside a node that never moves on its own.
+   [:div {:class ["project-card-status"]}
+    (cond
+      busy?   (spinner)
+      unread? [:div {:class ["unread-dot"]}])]
    (when session-id
      [:button {:class ["project-card-action" "project-card-favorite"
                        (when favorite? "project-card-favorite--on")]
@@ -1864,11 +1868,7 @@
                :on {:click (fn [^js e]
                              (.stopPropagation e)
                              (dispatch! {:type :favorites/toggle :session-id session-id}))}}
-      (icon/icon {:icon-name :star :size :sm})])
-   [:div {:class ["project-card-status"]}
-    (cond
-      busy?   (spinner)
-      unread? [:div {:class ["unread-dot"]}])]])
+      (icon/icon {:icon-name :star :size :sm})])])
 
 
 
