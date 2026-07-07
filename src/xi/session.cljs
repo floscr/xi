@@ -503,6 +503,22 @@
 
 ;; ── Resume Support ────────────────────────────────────────────────────────────
 
+(defn- transcript-first-timestamp
+  "First message timestamp in a session's Claude transcript, used to backfill
+   a missing :created. Sessions imported from the Claude CLI (and the Xi
+   metadata later saved from them) have no :created, which left
+   /diff session-edits unable to resolve the session base commit."
+  [cwd cli-sid]
+  (when-let [filepath (and cli-sid (find-claude-transcript cwd cli-sid))]
+    (try
+      (reduce (fn [_ line]
+                (when (seq line)
+                  (let [ts (:timestamp (js->clj (js/JSON.parse line)
+                                                :keywordize-keys true))]
+                    (when ts (reduced ts)))))
+              nil (read-head-lines filepath 16384))
+      (catch :default _e nil))))
+
 (defn load-session
   "Load a session for resume. Returns session state map with :cli-session-id
    for passing to claude CLI via -r."
@@ -514,7 +530,9 @@
       (cond-> {:id (:id data)
                :cli-session-id (:cli-session-id data)
                :cwd (:cwd data)
-               :created (:created data)
+               :created (or (:created data)
+                            (transcript-first-timestamp (:cwd data)
+                                                        (:cli-session-id data)))
                :last-accessed (:last-accessed data)
                :name (:name data)
                :model (:model data)
@@ -526,6 +544,9 @@
     {:id (:session-id summary)
      :cli-session-id (:session-id summary)
      :cwd nil
+     ;; No :created in the transcript metadata — use the first message's
+     ;; timestamp so /diff session-edits can resolve the session base commit.
+     :created (:timestamp summary)
      :name (:name summary)
      :source :claude}
 
@@ -535,6 +556,7 @@
     {:id (:session-id summary)
      :cli-session-id nil
      :cwd nil
+     :created (:timestamp summary)
      :name (:name summary)
      :source :pi}))
 
