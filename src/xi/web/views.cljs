@@ -20,6 +20,7 @@
             [ui.toolbar :as toolbar]
             [ui.lightbox :as lightbox]
             [ui.sidebar :as sidebar]
+            [ui.command :as cmd]
             [ui.theme-toggle :as theme-toggle]))
 
 ;; ── Standalone (homescreen) detection ────────────────────────────────────────
@@ -2718,6 +2719,71 @@
                         (diff/diff-rows (diff/parse-diff-text diff))
                         nil nil))]]))
 
+(defn- command-palette
+  "Global Cmd/Ctrl+K command palette (ui.command). Mounted once in root-view;
+   the ui-runtime.js delegate handles open/filter/keyboard-nav. Items dispatch
+   app events on select (the runtime clicks the button, firing :on-click, then
+   closes the dialog). The Chats group quick-switches to active/recent rooms;
+   room-scoped actions only appear when a room is active."
+  [state dispatch!]
+  (let [room    (state/active-room state)
+        ;; Active rooms first, then most-recently-visited sessions; drop the
+        ;; chat we're already looking at. Enriched with live status flags.
+        recents (->> (recent-sessions state)
+                     (active-first state)
+                     (remove :current?)
+                     (take 8))
+        chat-items (mapv (fn [{:keys [session-id name has-dialog?]}]
+                           (cmd/command-item
+                            {:icon (if has-dialog? :alert-circle :terminal)
+                             :on-click (fn [_] (dispatch! {:type :route/navigate
+                                                          :page :chat
+                                                          :session-id session-id}))}
+                            (or name "New session")))
+                         recents)]
+    (cmd/command-dialog
+     {:id "cmdk" :hotkey "mod+k"
+      :placeholder "Type a command or search…"
+      :attrs {:replicant/key "cmdk"}}
+     (when (seq chat-items)
+       (apply cmd/command-group {:heading "Chats"} chat-items))
+     (cmd/command-group {:heading "Navigate"}
+       (cmd/command-item {:icon :layout-dashboard
+                          :on-click (fn [_] (dispatch! {:type :route/navigate :page :home}))}
+         "All projects")
+       (cmd/command-item {:icon :list
+                          :on-click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}
+         "GTD Tasks"))
+     (cmd/command-group {:heading "Actions"}
+       (cmd/command-item {:icon :plus
+                          :on-click (fn [_] (dispatch! {:type :room/new}))}
+         "New chat")
+       (when room
+         (cmd/command-item {:icon :layers
+                            :on-click (fn [_] (dispatch! {:type :models/web-list}))}
+           "Change model"))
+       (when room
+         (cmd/command-item {:icon :zap
+                            :on-click (fn [_] (dispatch! {:type :skill/web-list}))}
+           "Skills"))
+       (when room
+         (cmd/command-item {:icon :code
+                            :on-click (fn [_] (dispatch! {:type :diff/reopen
+                                                          :room-id (:id room)
+                                                          :method "git" :engine :git}))}
+           "Git status"))
+       (when room
+         (cmd/command-item {:icon :copy
+                            :on-click (fn [_]
+                                        (let [text (commands/debug-text room)]
+                                          (if ios?
+                                            (dispatch! {:type :copy/open :text text})
+                                            (copy-to-clipboard! text))))}
+           "Copy debug info"))
+       (cmd/command-item {:icon :refresh
+                          :on-click (fn [_] (.reload js/location))}
+         "Reload")))))
+
 (defn root-view
   "Top-level view, route-driven: the session list at /, a room at /chat/:id.
    Wrapped in a floating sidebar layout so every topbar's hamburger reveals
@@ -2739,4 +2805,5 @@
         :pr-list (pr-list-view state dispatch!)
         :pr-detail (pr-detail-view state dispatch!)
         :pr-diff (pr-diff-view state dispatch!)
-        (home-view state dispatch!))))))
+        (home-view state dispatch!)))
+     (command-palette state dispatch!))))

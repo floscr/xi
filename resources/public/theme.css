@@ -1313,6 +1313,207 @@ a.btn-link {
 }
 
 
+/* ── Command Palette ─────────────────────────────────────────────── */
+/* cmdk-style searchable command menu in a native <dialog>.           */
+
+.command-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  width: min(100% - 2rem, 40rem);
+  max-height: 60vh;
+  margin: auto;
+  margin-top: 12vh;
+  padding: 0;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+
+.command-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  animation: command-in 0.14s ease;
+}
+
+@keyframes command-in {
+  from { opacity: 0; transform: scale(0.98) translateY(calc(-1 * var(--size-2))); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.command-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+/* ── Search ──────────────────────────────────────────────────────── */
+
+.command-search {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: 0 var(--size-4);
+  border-bottom: var(--border-0);
+  flex-shrink: 0;
+}
+
+.command-search-icon {
+  color: var(--fg-2);
+  flex-shrink: 0;
+}
+
+.command-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--size-12);
+  padding: 0;
+  font-size: var(--font-md);
+  color: var(--fg-0);
+  background: none;
+  border: none;
+  outline: none;
+}
+
+.command-input::placeholder {
+  color: var(--fg-2);
+}
+
+/* ── List ────────────────────────────────────────────────────────── */
+
+.command-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--size-2);
+  scroll-padding-block: var(--size-2);
+}
+
+/* ── Group ───────────────────────────────────────────────────────── */
+
+.command-group {
+  padding-bottom: var(--size-1);
+}
+
+.command-group-heading {
+  padding: var(--size-2) var(--size-2) var(--size-1);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-2);
+  user-select: none;
+}
+
+.command-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Hide groups whose items are all filtered out (set by the JS runtime). */
+.command-group[hidden] {
+  display: none;
+}
+
+/* ── Item ────────────────────────────────────────────────────────── */
+
+.command-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  width: 100%;
+  padding: var(--size-2) var(--size-3);
+  font-size: var(--font-sm);
+  line-height: 1.25;
+  color: var(--fg-0);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-decoration: none;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.command-item[hidden] {
+  display: none;
+}
+
+.command-item-icon {
+  color: var(--fg-1);
+  flex-shrink: 0;
+}
+
+.command-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Active item — set by the JS runtime during keyboard/pointer navigation. */
+.command-item--active,
+.command-item:hover:not(:disabled) {
+  background: var(--bg-2);
+  outline: none;
+}
+
+.command-item--active .command-item-icon,
+.command-item:hover:not(:disabled) .command-item-icon {
+  color: var(--fg-0);
+}
+
+.command-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Shortcut hint ───────────────────────────────────────────────── */
+
+.command-shortcut {
+  margin-left: auto;
+  padding: 0 var(--size-1);
+  min-width: var(--size-5);
+  font-family: inherit;
+  font-size: var(--font-xs);
+  letter-spacing: 0.05em;
+  line-height: var(--size-5);
+  text-align: center;
+  color: var(--fg-2);
+  background: var(--bg-2);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Empty state ─────────────────────────────────────────────────── */
+
+.command-empty {
+  display: none;
+  padding: var(--size-6) var(--size-3);
+  font-size: var(--font-sm);
+  text-align: center;
+  color: var(--fg-2);
+}
+
+/* Shown by the JS runtime when no items match. */
+.command-list--empty .command-empty {
+  display: block;
+}
+
+/* ── Dark mode ───────────────────────────────────────────────────── */
+
+[data-theme="dark"] .command-shortcut {
+  background: var(--bg-1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .command-shortcut {
+    background: var(--bg-1);
+  }
+}
+
+
 /* ── Context Menu ────────────────────────────────────────────────── */
 /* Floating menu triggered by right-click. Shared across all targets. */
 
@@ -4461,17 +4662,12 @@ a.sidebar-menu-item {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--fg-2) transparent;
-}
-
-/* Suppress shadow-cljs dev HUD "Stale Output" / connection-error banner. */
-#shadow-connection-error {
-  display: none !important;
+  scrollbar-color: var(--bg-2) transparent;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -4479,12 +4675,12 @@ a.sidebar-menu-item {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--fg-2);
+  background: var(--bg-2);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--fg-1);
+  background: var(--fg-2);
 }
 
 
