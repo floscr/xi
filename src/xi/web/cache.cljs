@@ -88,7 +88,11 @@
         cached (load-room sid)]
     (cond-> (assoc base :web/route route
                         :web/watched (load-watched)
-                        :web/recent-commands (load-recent-commands))
+                        ;; Frozen for the session: the order the quick-command
+                        ;; bar shows. `:web/command-usage` accumulates live
+                        ;; recency and is persisted to re-seed both on reload.
+                        :web/recent-commands (load-recent-commands)
+                        :web/command-usage (load-recent-commands))
       (load-lobby) (assoc :lobby (load-lobby))
       cached       (assoc-in [:web/cache sid] cached))))
 

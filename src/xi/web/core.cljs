@@ -175,15 +175,17 @@
 (def ^:private max-recent-commands 6)
 
 (defn- record-command
-  "Push a just-executed command name to the front of the recents list
-   (deduped, capped) and persist it so the quick-command bar reflects the
-   user's actual usage across reloads."
+  "Push a just-executed command name to the front of the usage list (deduped,
+   capped) and persist it. This feeds the *next* reload's quick-command bar —
+   the displayed order (`:web/recent-commands`) is deliberately frozen for the
+   session so tapping a button never reorders the bar mid-tap (a moved DOM node
+   cancels the pending click on touch devices)."
   [st {:keys [name]}]
-  (let [recents (->> (cons name (remove #(= % name) (:web/recent-commands st)))
-                     (take max-recent-commands)
-                     vec)]
-    {:state   (assoc st :web/recent-commands recents)
-     :effects [[:cache/recent-commands {:commands recents}]]}))
+  (let [usage (->> (cons name (remove #(= % name) (:web/command-usage st)))
+                   (take max-recent-commands)
+                   vec)]
+    {:state   (assoc st :web/command-usage usage)
+     :effects [[:cache/recent-commands {:commands usage}]]}))
 
 (defn- theme-set-mode [st {:keys [mode]}]
   (let [m (if (#{"auto" "light" "dark"} mode) mode "auto")]
