@@ -125,11 +125,14 @@
    matches, closes the menu and dispatches the event (with :room-id merged).
    When :selected? is true, the currently selected item is merged into the
    event under :selected."
-  [{:keys [prompt items alt-items tab-labels key-bindings search-field]} room-id dispatch!]
+  [{:keys [prompt items alt-items tab-labels key-bindings search-field close-event]} room-id dispatch!]
   (let [;; Tab state is interaction-local (like the menu's filter query) —
         ;; it lives in the component, not in app state.
         tab #js {:alt false}
-        close! (fn [] (dispatch! {:type :ui/menu-close :room-id room-id}))
+        ;; The deferred virtual chat has no server room to hold the menu, so it
+        ;; supplies its own client-local close event; real rooms clear via the
+        ;; room-scoped :ui/menu-close.
+        close! (fn [] (dispatch! (or close-event {:type :ui/menu-close :room-id room-id})))
         ;; Event-dispatching key-bindings from menu descriptor
         menu-kbs (mapv (fn [{:keys [key event selected?]}]
                          {:key-fn  (fn [data] (= data key))
@@ -196,6 +199,30 @@
                                         :description sub-desc
                                         :event {:type :command/run :room-id room-id
                                                 :name name :args sub-name}})
+                                     subcommands))))
+                commands)})
+
+(defn- pending-palette-menu
+  "Command palette for the deferred virtual chat (no server room yet). Selecting
+   a command routes through :client/first-prompt, which joins a fresh room and
+   replays the text as :input/submit — parsed there as the command — so the room
+   is created only once a command is actually chosen. Closing is client-local
+   via :close-event (the pending room isn't in :rooms, so :ui/menu-close can't
+   reach it)."
+  [commands]
+  {:id :palette
+   :prompt "palette> "
+   :close-event {:type :client/palette-close}
+   :items (into []
+                (mapcat (fn [{:keys [name description subcommands]}]
+                          (cons {:label (str "/" name)
+                                 :description description
+                                 :event {:type :client/first-prompt :text (str "/" name)}}
+                                (map (fn [{sub-name :name sub-desc :description}]
+                                       {:label (str "/" name " " sub-name)
+                                        :description sub-desc
+                                        :event {:type :client/first-prompt
+                                                :text (str "/" name " " sub-name)}})
                                      subcommands))))
                 commands)})
 
@@ -510,9 +537,13 @@
                              (room-event {:type :agent/abort})))))
           :on-interrupt (fn [] (shutdown! on-exit))
           :on-palette (fn []
-                        (when-let [room (current-room)]
+                        (if-let [room (current-room)]
                           (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                      :menu (palette-menu (:id room) commands)})))
+                                      :menu (palette-menu (:id room) commands)})
+                          ;; Deferred virtual chat — no server room to hold the
+                          ;; menu; render it client-locally on the pending room.
+                          (dispatch! {:type :client/palette-open
+                                      :menu (pending-palette-menu commands)})))
           :ext-keybindings ext-keybindings
           :on-git (fn [] (tui/run-external! ["ngit"] {}))
           :on-paste-image
@@ -583,6 +614,9 @@
                   (set! (.-chatDirty ctx) true)
                   (set! (.-activeBuffer ctx) nil))
                 (sync-chat! ctx {:history []} loader)
+                ;; Route the client-local command palette (/, Ctrl+P) through the
+                ;; normal bottom-panel path via a synthetic pending room.
+                (sync-bottom-panel! ctx {:id :pending :ui (:ui pending)} dispatch!)
                 (tui/request-render!)))
             (dispatch! {:type :render/done
                         :duration-ms (- (js/Date.now) t0)})))]

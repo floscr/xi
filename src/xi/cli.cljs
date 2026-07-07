@@ -440,7 +440,16 @@
               :effects [[:ws/send (cond-> {:type :room/join :target "new"}
                                     cwd (assoc :cwd cwd))]]})
            :client/clear-pending
-           (fn [st _] {:state (dissoc st :client/pending-submit)})})
+           (fn [st _] {:state (dissoc st :client/pending-submit)})
+           ;; The command palette in the virtual chat lives on the pending room
+           ;; (there is no server room yet); picking a command fires
+           ;; :client/first-prompt, which creates the room and runs it.
+           :client/palette-open
+           (fn [st {:keys [menu]}]
+             {:state (assoc-in st [:client/pending-room :ui :menu] menu)})
+           :client/palette-close
+           (fn [st _]
+             {:state (update-in st [:client/pending-room :ui] dissoc :menu)})})
         transport (ws-transport/create!
                    {:url url
                     :target target
