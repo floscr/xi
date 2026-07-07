@@ -126,6 +126,26 @@
     {:state (cond-> (assoc-in st [:rooms room-id :cwd] cwd)
               clear? (update-in [:rooms room-id :ext] dissoc :worktree))}))
 
+(defn- resumed-worktree-cwd
+  "Chained onto :session/resumed: when the resumed session was recorded in a
+   sibling worktree of the room's repo, land the room in that worktree so the
+   agent runs there. If the worktree's directory is gone (removed after the
+   session was recorded, but still listed by git as prunable), fall back to
+   the repo's main working tree. Cross-project resumes (a different repo, or
+   no repo) leave the cwd untouched. Emits the :cwd/change effect — the same
+   validated path the /cd command uses."
+  [st {:keys [room-id summary]}]
+  (when-let [room (state/get-room st room-id)]
+    (let [room-cwd (:cwd room)
+          sess-cwd (:cwd summary)]
+      (when (and sess-cwd room-cwd (not= sess-cwd room-cwd)
+                 (some #(= sess-cwd (:path %)) (git/worktrees room-cwd)))
+        (let [target (if (.existsSync fs sess-cwd)
+                       sess-cwd
+                       (git/main-worktree-root room-cwd))]
+          (when (and target (not= target room-cwd))
+            {:effects [[:cwd/change {:room-id room-id :path target}]]}))))))
+
 (defn- worktree-created
   "The worktree exists on disk — point the room at it, remember its metadata,
    and (when a prompt was given) launch the agent there with the heads-up."
@@ -303,7 +323,8 @@
                              {:name "list"   :description "List the repo's worktrees"}
                              {:name "remove" :description "Remove the current worktree and cd back"}]}]
    :handlers {:worktree/created worktree-created
-              :worktree/switch  worktree-switch}
+              :worktree/switch  worktree-switch
+              :session/resumed  resumed-worktree-cwd}
    :fx       {:worktree/create (partial create-fx ask!)
               :worktree/merge  (partial merge-fx ask!)
               :worktree/remove (partial remove-fx ask!)

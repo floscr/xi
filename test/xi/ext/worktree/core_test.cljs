@@ -70,6 +70,21 @@
                              :base "master" :main-root "/w/acme"})))
       (is (nil? (switch st0 {:room-id "nope" :cwd "/w/acme"}))))))
 
+(deftest resumed-worktree-cwd-test
+  ;; :session/resumed lands the room in the session's worktree (or the repo
+  ;; root when it's gone). Lock the pure short-circuits that must never touch
+  ;; git: unknown room, no session cwd, and same-cwd resumes all stay put.
+  (let [resumed (:session/resumed (:handlers (wt/create nil)))
+        rid     "room-1"
+        st      (-> (state/initial-state)
+                    (assoc-in [:rooms rid] (state/make-room rid {:cwd "/w/acme"})))]
+    (testing "no-op on an unknown room"
+      (is (nil? (resumed st {:room-id "nope" :summary {:cwd "/w/acme-x"}}))))
+    (testing "no-op when the session has no cwd"
+      (is (nil? (resumed st {:room-id rid :summary {:cwd nil}}))))
+    (testing "no-op when the session cwd already matches the room"
+      (is (nil? (resumed st {:room-id rid :summary {:cwd "/w/acme"}}))))))
+
 (deftest build-worktree-prompt-test
   (let [p (wt/build-worktree-prompt
            {:path "/w/acme-x" :branch "x" :base "master"
