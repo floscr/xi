@@ -55,6 +55,7 @@
             [xi.ext.clipboard-image :as ext.clipboard-image]
             [xi.ext.clj-surgeon :as ext.clj-surgeon]
             [xi.ext.commit :as ext.commit]
+            [xi.ext.worktree.core :as ext.worktree]
             [xi.ext.core :as ext]
             [xi.ext.dictation :as ext.dictation]
             [xi.ext.diff.core :as ext.diff]
@@ -103,12 +104,16 @@
 
 (defn- server-extensions
   "Extensions whose state + provider hooks live server-side. nils (e.g.
-   an unconfigured pushover) are dropped by ext/compose."
-  [ring]
+   an unconfigured pushover) are dropped by ext/compose. `ask!` (the dialog
+   ask! from ext/create-dialogs) is threaded into extensions that raise their
+   own confirm dialogs from effects (worktree removal); nil in the client
+   mirror, where those effects never run."
+  [ring & [ask!]]
   [ext.plan-mode/extension
    ext.done-notify/extension
    (ext.pushover/extension)
    ext.diff/extension
+   (ext.worktree/create ask!)
    ext.kb/extension
    ext.web/extension
    ext.perplexity/extension
@@ -212,8 +217,8 @@
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
         ring (log/create-ring)
         ;; Standalone runs everything locally — server + client extensions.
-        composed (ext/compose (into (server-extensions ring) (client-extensions)))
         dialogs  (ext/create-dialogs)
+        composed (ext/compose (into (server-extensions ring (:ask! dialogs)) (client-extensions)))
         agents-files (system-prompt/find-agents-md cwd)
         system-parts (into (system-prompt/load-agents-parts cwd)
                            (ext/system-prompt-parts composed cwd))
@@ -310,9 +315,9 @@
         ring (log/create-ring)
         ;; Drop terminal-title: it writes raw ANSI escapes to stdout, which
         ;; would corrupt the one-shot response.
-        composed (ext/compose (remove #(= :terminal-title (:id %))
-                                      (server-extensions ring)))
         dialogs  (ext/create-dialogs)
+        composed (ext/compose (remove #(= :terminal-title (:id %))
+                                      (server-extensions ring (:ask! dialogs))))
         agents-files (system-prompt/find-agents-md cwd)
         system-parts (into (system-prompt/load-agents-parts cwd)
                            (ext/system-prompt-parts composed cwd))
@@ -528,8 +533,8 @@
   [{:keys [port headless? personal-agent?] :as opts}]
   (let [server-opts (resolve-model-opts opts)
         ring (log/create-ring)
-        composed (ext/compose (server-extensions ring))
         dialogs  (ext/create-dialogs)
+        composed (ext/compose (server-extensions ring (:ask! dialogs)))
         server (ws/create-server
                 {:server-opts server-opts
                  :personal-agent? personal-agent?

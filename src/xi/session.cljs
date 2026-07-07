@@ -73,6 +73,25 @@
 (defn- claude-project-dir [cwd]
   (.join node-path CLAUDE_PROJECTS_DIR (encode-cwd-claude cwd)))
 
+(defn git-project-cwds
+  "All working-tree paths that belong to the same git repository as `cwd`
+   (the main tree plus every linked worktree), main tree first. Falls back to
+   just `[cwd]` when `cwd` isn't a git repo. Used so /resume from the main tree
+   also surfaces sessions recorded inside its worktrees (and vice versa)."
+  [cwd]
+  (let [proc (js/Bun.spawnSync
+              #js ["git" "worktree" "list" "--porcelain"]
+              #js {:stdout "pipe" :stderr "pipe" :cwd cwd})
+        paths (when (zero? (.-exitCode proc))
+                (->> (str/split-lines (str (.toString (.-stdout proc))))
+                     (keep (fn [line]
+                             (when (str/starts-with? line "worktree ")
+                               (subs line (count "worktree ")))))
+                     vec))]
+    (if (seq paths)
+      (distinct (cons cwd paths))
+      [cwd])))
+
 ;; ── Xi Session Metadata ───────────────────────────────────────────────────────
 ;;
 ;; Xi stores a small JSON metadata file per session:
@@ -386,9 +405,10 @@
         (js/console.error "[session] favorites write failed:" e)))
     (not fav?)))
 
-(defn list-sessions
-  "List all sessions for a CWD from all sources. Returns vec of session
-   summaries, newest first. Sources: Xi metadata, Claude CLI, Pi sessions."
+(defn- sessions-for-cwd
+  "Session summaries recorded under a single CWD, from all sources, with
+   Claude sessions that already have Xi metadata filtered out. Unsorted,
+   not favorite-annotated — callers merge/sort/annotate across CWDs."
   [cwd]
   (let [;; Xi metadata sessions
         xi-sessions (->> (list-dir-files (xi-session-dir cwd) ".json")
@@ -399,15 +419,27 @@
         ;; Pi sessions
         pi-sessions (->> (list-dir-files (pi-session-dir cwd) ".jsonl")
                          (keep read-pi-session-summary))
-        ;; Merge, dedup by session-id (Xi meta takes priority), sort by timestamp
         xi-ids (set (keep :cli-session-id xi-sessions))
         ;; Don't show claude sessions that have Xi metadata (avoid duplicates)
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
-    (annotate-favorites
-     (->> (concat xi-sessions claude-filtered pi-sessions)
-          (sort-by #(or (:last-accessed %) (:timestamp %)))
-          reverse
-          vec))))
+    ;; Claude/Pi summaries don't record their own cwd; backfill the dir they
+    ;; were scanned from so callers can tell which worktree a session lives in.
+    (map #(update % :cwd (fn [c] (or c cwd)))
+         (concat xi-sessions claude-filtered pi-sessions))))
+
+(defn list-sessions
+  "List all sessions for a CWD from all sources. Returns vec of session
+   summaries, newest first. Sources: Xi metadata, Claude CLI, Pi sessions.
+   Scans the whole git project — the main working tree plus every linked
+   worktree — so /resume from the main repo also surfaces sessions started
+   inside its worktrees."
+  [cwd]
+  (annotate-favorites
+   (->> (git-project-cwds cwd)
+        (mapcat sessions-for-cwd)
+        (sort-by #(or (:last-accessed %) (:timestamp %)))
+        reverse
+        vec)))
 
 (defn list-all-sessions
   "List sessions across ALL CWDs from all sources. Returns vec of session
