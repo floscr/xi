@@ -52,6 +52,23 @@
      :prompt-badge (fn [state] → str|nil) — TUI prompt badge
      :on-shutdown  (fn []) — process-exit cleanup (TUI on-exit)
 
+   Web-client surface (browser-safe web halves only — composed by
+   xi.web.core, ignored everywhere else):
+     :routes       {\"seg\" {:parse (fn [segments] → route-map)
+                           :path  {page-kw (fn [route] → url-path)}
+                           :roomless-pages #{page-kw}}}
+                   keyed by first URL segment; :parse gets the remaining
+                   segments. :roomless-pages lists pages that imply
+                   leaving the active room on navigation.
+     :pages        {page-kw (fn [state dispatch!] → hiccup)} — root-view
+                   page table entries
+     :nav-items    [{:menu :sidebar|:palette|:home-topbar|:overflow
+                     :mode … :label … :icon … :event {…}}] — data-only
+                   nav entries rendered by the core views; :event is
+                   dispatched on click (:overflow items get the menu's
+                   ctx keys merged in; :mode scopes them to a ctx mode)
+     :taps         [(fn [dispatch!] → tap-fn)] — app taps installed at init
+
    `compose` merges a list of extensions into the pieces the per-mode
    assembly (xi.cli) wires into the app, the provider effects and the TUI."
   (:require [clojure.string :as str]
@@ -92,6 +109,10 @@
      :no-broadcast     (into #{} (mapcat :no-broadcast) exts)
      :lobby-relevant   (into #{} (mapcat :lobby-relevant) exts)
      :server-fx-fns    (vec (keep :server-fx exts))
+     :routes           (apply merge {} (keep :routes exts))
+     :pages            (apply merge {} (keep :pages exts))
+     :nav-items        (vec (mapcat :nav-items exts))
+     :taps             (vec (mapcat :taps exts))
      :keybindings      (vec (mapcat :keybindings exts))
      :badges           (vec (keep :prompt-badge exts))
      :system-prompts   (vec (keep :system-prompt exts))

@@ -22,7 +22,12 @@ provider effects, and TUI.
    :system-prompt    str | (fn [cwd] → str|nil)
    :keybindings      [{:key "alt+r" :event {...} :when (fn [state])}]
    :prompt-badge     (fn [state] → str|nil)
-   :on-shutdown      (fn [])})
+   :on-shutdown      (fn [])
+   ;; web-client surface (browser build only — see "Web Client Surface")
+   :routes           {"seg" {:parse fn :path {page-kw fn} :roomless-pages #{page-kw}}}
+   :pages            {page-kw (fn [state dispatch!] → hiccup)}
+   :nav-items        [{:menu :sidebar|:palette|:home-topbar|:overflow ...}]
+   :taps             [(fn [dispatch!] → tap-fn)]})
 ```
 
 ## Architecture
@@ -171,6 +176,58 @@ Extensions that need runtime configuration return nil when unconfigured:
     {:id :pushover ...}))
 ```
 
+## Web Client Surface
+
+Extensions can contribute routes, pages, navigation entries and taps to the
+browser client. Because the web client is a separate shadow-cljs `:browser`
+build, an extension with a web UI is split in two:
+
+- `src/xi/ext/github.cljs` — the node/server half (tools, server handlers,
+  roomless events), composed in `xi.cli`.
+- `src/xi/ext/github/web.cljs` — the browser half (routes, pages, client
+  handlers), composed in `xi.web.core/web-extensions`. It may require
+  `xi.web.views` (shared building blocks: `nav-group`, `overflow-menu`,
+  `spinner`, `shorten-path`, `diff-rows-view`) and `ui.*` components, but
+  core web namespaces never require extension code.
+
+The two halves share an `:id` and talk over the same WS events
+(e.g. `:pr/web-list` → `:pr/web-list-result`).
+
+### Keys
+
+- **`:routes`** — `{"first-url-segment" entry}`. `(:parse entry)` receives
+  the remaining path segments and returns a route map (`{:page kw …}`);
+  `(:path entry)` maps `page-kw → (fn [route] → url-path)` for
+  `route->path`; `:roomless-pages` is a set of pages that imply leaving the
+  active room on navigation (unioned with the base `#{:home}`).
+- **`:pages`** — `{page-kw (fn [state dispatch!] → hiccup)}`; `root-view`
+  consults this table before its built-in cases.
+- **`:nav-items`** — data-only entries `{:menu … :label … :icon … :event …}`
+  rendered by core views; stored in app state at `:web/nav-items` during
+  init. Menus: `:sidebar`, `:palette` (Cmd+K), `:home-topbar`, `:overflow`.
+  Overflow items may carry `:mode` (`:project`, `:pr-detail`, …) to show
+  only in a matching topbar context; the context's `:cwd`/`:room-id`/`:number`
+  are merged into the `:event` on click.
+- **`:taps`** — `(fn [dispatch!] → (fn [event state]))` factories, added via
+  `add-tap!` at init (e.g. GTD's fire-pending-task-after-`:room/joined`).
+
+### Routing hooks
+
+There is no on-enter callback: extensions chain a `:route/navigate`
+handler after the base router handler (`ext/merge-handlers`), syncing
+drill-down state from the route and emitting fetch effects:
+
+```clojure
+(defn- on-navigate [st {:keys [page file task-id]}]
+  (when (= page :gtd)
+    {:state   (assoc st :web/gtd-file file :web/gtd-task-id task-id)
+     :effects (when (empty? (:web/gtd-tasks st))
+                [[:app/dispatch {:type :gtd/web-list}]])}))
+```
+
+Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
+(/pulls PR list/detail/diff pages).
+
 ## Writing a New Extension
 
 1. Create `src/xi/ext/my_ext.cljs`
@@ -241,7 +298,8 @@ Extensions that need runtime configuration return nil when unconfigured:
 | perplexity | tools, command | Web search via Perplexity; `/perplexity-login` to authenticate. |
 | commit | tools, command, tool-gate | Git workflow; `/commit` builds a prompt from live overview. Commit requires user confirmation via tool-gate. |
 | clj-surgeon | tools, handler | Structural Clojure refactoring. Auto-fixes parens after write/edit to .clj files. |
-| gtd | tools, command, handler, system-prompt | GTD task management. `/gtd` picker, `/gtd recommend`, `/gtd cleanup`. |
+| gtd | tools, command, handler, system-prompt, web | GTD task management. `/gtd` picker, `/gtd recommend`, `/gtd cleanup`. Web half: /gtd pages + task launcher. |
+| github | handler, web | Roomless PR browsing via `gh`. Web half: /pulls list/detail/diff pages + review-with-agent. |
 | terminal-title | handler | Sets terminal title from session name/cwd via ANSI escape. |
 | clipboard-image | event-hook | Converts pasted clipboard image paths to inline base64. |
 | projects | command, handler, keybinding | Project path picker. `/project` or Alt+P. |

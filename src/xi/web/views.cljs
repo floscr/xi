@@ -15,7 +15,6 @@
             [xi.util :as util]
             [ui.icon :as icon]
             [ui.form :as form]
-            [ui.badge :as badge]
             [ui.button :as button]
             [ui.toolbar :as toolbar]
             [ui.lightbox :as lightbox]
@@ -125,7 +124,13 @@
 
 ;; ── Spinner ──────────────────────────────────────────────────────────────────
 
-(defn- spinner [] [:div {:class ["agent-status-spinner"]}])
+(defn spinner [] [:div {:class ["agent-status-spinner"]}])
+
+(defn nav-items-for
+  "Extension nav items (from ext/compose :nav-items, stored in state at
+   init) scoped to one menu surface."
+  [state menu]
+  (filter #(= menu (:menu %)) (:web/nav-items state)))
 
 ;; ── Tool rendering ───────────────────────────────────────────────────────────
 
@@ -945,7 +950,7 @@
         (highlight-code grammar (or text ""))
         (or text ""))]]))
 
-(defn- diff-rows-view
+(defn diff-rows-view
   "Render flattened diff rows as a scrollable view with selection highlight.
    Rows are grouped by file: each file gets a sticky header and a horizontally
    scrollable body so long lines don't push the whole view. The selection
@@ -1341,12 +1346,13 @@
     :empty-label "No skills found"}))
 
 
-(defn- shorten-path
+(defn shorten-path
   "~/Code/Projects/xi → xi, ~/Code/Work/Hyma/studio → studio"
   [path]
   (when path
     (let [parts (str/split path #"/")]
       (last parts))))
+
 
 (defn- project-picker [dispatch! dirs draft-key]
   [:div {:class ["project-picker-backdrop"]
@@ -1373,7 +1379,7 @@
   (sidebar/sidebar-mobile-toggle
    {:on-click (fn [_] (dispatch! {:type :sidebar/toggle}))}))
 
-(defn- nav-group
+(defn nav-group
   "Burger toggle + back arrow rendered as one segmented button split by a
    divider. Used on every header bar that has both. `on-back` is the back
    arrow's click handler."
@@ -1402,7 +1408,7 @@
    [:circle {:cx "12" :cy "12" :r "1"}]
    [:circle {:cx "12" :cy "19" :r "1"}]])
 
-(defn- overflow-menu
+(defn overflow-menu
   "Three-dots overflow menu shown on the right of every topbar. Holds the
    debug-copy action (which used to be a standalone topbar button). Toggles the
    :web/overflow-menu? app state; a backdrop closes it on outside click.
@@ -1448,24 +1454,20 @@
                                                           :cwd (:cwd git-ctx)})))}}
             (icon/icon {:icon-name :code :size :sm})
             [:span "Git status"]])
-         (when (= :project (:mode git-ctx))
+         ;; Extension nav items: :mode-less items always show; :mode-scoped
+         ;; ones only in the matching git-ctx mode, with the ctx keys merged
+         ;; into their event (so e.g. a :project item receives the :cwd).
+         (for [item (nav-items-for state :overflow)
+               :when (or (nil? (:mode item)) (= (:mode item) (:mode git-ctx)))]
            [:button {:class ["overflow-menu-item"]
+                     :replicant/key (str "nav-" (:label item))
                      :on {:click (fn [e]
                                    (.stopPropagation e)
                                    (dispatch! {:type :overflow/close})
-                                   (dispatch! {:type :pr/open :cwd (:cwd git-ctx)}))}}
-            (icon/icon {:icon-name :message-circle :size :sm})
-            [:span "Pull requests"]])
-         (when (= :pr-detail (:mode git-ctx))
-           [:button {:class ["overflow-menu-item"]
-                     :on {:click (fn [e]
-                                   (.stopPropagation e)
-                                   (dispatch! {:type :overflow/close})
-                                   (dispatch! {:type :pr/diff-open
-                                               :cwd (:cwd git-ctx)
-                                               :number (:number git-ctx)}))}}
-            (icon/icon {:icon-name :file-text :size :sm})
-            [:span "Diff"]])
+                                   (dispatch! (merge (:event item)
+                                                     (select-keys git-ctx [:cwd :room-id :number]))))}}
+            (icon/icon {:icon-name (:icon item) :size :sm})
+            [:span (:label item)]])
          (when room
            [:button {:class ["overflow-menu-item"]
                      :on {:click (fn [e]
@@ -2133,10 +2135,12 @@
           [:div {:class ["topbar-title"]} "Xi"]
           (offline-badge state)
           (when connected?
-            [:button {:class ["icon-btn"]
-                      :title "GTD Tasks"
-                      :on {:click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}}
-             (icon/icon {:icon-name :list :size :md})])
+            (for [item (nav-items-for state :home-topbar)]
+              [:button {:class ["icon-btn"]
+                        :title (:label item)
+                        :replicant/key (str "nav-" (:label item))
+                        :on {:click (fn [_] (dispatch! (:event item)))}}
+               (icon/icon {:icon-name (:icon item) :size :md})]))
           (when connected?
             [:button {:class ["icon-btn"]
                       :on {:click (fn [_] (dispatch! {:type :room/new}))}}
@@ -2202,199 +2206,6 @@
                 [:div {:class ["empty-state"]} [:p "No matching projects."]]
                 (for [d dirs]
                   (project-dir-card dispatch! d)))]])]]))))
-
-;; ── GTD View ─────────────────────────────────────────────────────────────────
-
-
-(defn- gtd-context-menu [dispatch! {:keys [task x y]}]
-  [:div {:class ["gtd-context-backdrop"]
-         :on {:click (fn [_] (dispatch! {:type :gtd/context-menu-close}))}}
-   [:div {:class ["gtd-context-menu"]
-          :style {:top (str y "px") :left (str x "px")}}
-    [:button {:class ["gtd-context-item"]
-              :on {:click (fn [e]
-                            (.stopPropagation e)
-                            (dispatch! {:type :gtd/web-task-action
-                                        :task-id (:id task) :action "done"}))}}
-     (icon/icon {:icon-name :circle-check :size :sm})
-     [:span "Mark Done"]]
-    [:button {:class ["gtd-context-item" "gtd-context-item--danger"]
-              :on {:click (fn [e]
-                            (.stopPropagation e)
-                            (dispatch! {:type :gtd/web-task-action
-                                        :task-id (:id task) :action "archive"}))}}
-     (icon/icon {:icon-name :trash :size :sm})
-     [:span "Archive"]]]])
-
-(def ^:private long-press-state (atom nil))
-
-(defn- touch-start [dispatch! task e]
-  (let [touch (aget (.-touches e) 0)
-        x     (.-clientX touch)
-        y     (.-clientY touch)
-        timer (js/setTimeout
-               (fn []
-                 (reset! long-press-state :fired)
-                 (dispatch! {:type :gtd/context-menu
-                             :task task :x x :y y}))
-               500)]
-    (reset! long-press-state {:timer timer})))
-
-(defn- touch-end [_e]
-  (when-let [st @long-press-state]
-    (when (map? st) (js/clearTimeout (:timer st))))
-  ;; If long-press fired, keep :fired so the subsequent click is suppressed.
-  ;; Clear it on next tick after click has been processed.
-  (if (= :fired @long-press-state)
-    (js/setTimeout #(reset! long-press-state nil) 0)
-    (reset! long-press-state nil)))
-
-(defn- touch-move [_e]
-  (when-let [st @long-press-state]
-    (when (map? st) (js/clearTimeout (:timer st))))
-  (reset! long-press-state nil))
-
-(defn- gtd-task-card [dispatch! {:keys [id title todo-state file cwd tags] :as task}]
-  [:div {:class ["project-card" "gtd-task-card"]
-         :replicant/key (str "gtd-" id)
-         :on {:click (fn [_]
-                       (when-not (= :fired @long-press-state)
-                         (dispatch! {:type :gtd/select-task
-                                     :file file :task-id id})))
-              :contextmenu (fn [e]
-                             (.preventDefault e)
-                             (dispatch! {:type :gtd/context-menu
-                                         :task task
-                                         :x (.-clientX e)
-                                         :y (.-clientY e)}))
-              :touchstart (fn [e] (touch-start dispatch! task e))
-              :touchend touch-end
-              :touchmove touch-move}}
-   [:div {:class ["project-card-icon"]}
-    (case todo-state
-      "ACTIVE"  [:div {:class ["active-dot"]}]
-      "WAITING" (icon/icon {:icon-name :pause :size :sm})
-      (icon/icon {:icon-name :circle-check :size :sm}))]
-   [:div {:class ["project-card-info"]}
-    [:span {:class ["project-card-name"]} title]
-    [:span {:class ["project-card-path"]}
-     (str (or todo-state "TODO")
-          (when cwd (str " \u00B7 " (shorten-path cwd)))
-          (when (and (string? tags) (seq tags)) (str " \u00B7 " tags)))]]])
-
-(defn- gtd-file-card [dispatch! file-name task-count]
-  [:div {:class ["project-card"]
-         :replicant/key (str "gtd-file-" file-name)
-         :on {:click (fn [_] (dispatch! {:type :gtd/select-file :file file-name}))}}
-   [:div {:class ["project-card-icon"]}
-    (icon/icon {:icon-name :folder :size :sm})]
-   [:div {:class ["project-card-info"]}
-    [:span {:class ["project-card-name"]} (or file-name "Uncategorized")]
-    [:span {:class ["project-card-path"]} (str task-count " tasks")]]])
-
-(defn- render-org-body
-  "Render pre-built HTML body from the server."
-  [html-str]
-  (when (and (string? html-str) (seq html-str))
-    [:div {:class ["org-body"] :innerHTML html-str}]))
-
-(defn- gtd-task-detail [dispatch! state task]
-  (let [{:keys [title todo-state html-body file cwd tags]} task]
-    [:div {:class ["container"] :replicant/key "gtd-detail"}
-     [:div {:class ["topbar"]}
-      [:button {:class ["icon-btn"]
-                :on {:click (fn [_]
-                              (dispatch! {:type :nav/back :fallback {:page :gtd :file file}}))}}
-       (icon/icon {:icon-name :arrow-left :size :md})]
-      [:div {:class ["topbar-title"]} "Task"]
-      (overflow-menu dispatch! state)]
-     [:div {:class ["gtd-detail-scroll"]}
-      [:div {:class ["gtd-detail"]}
-       [:h2 {:class ["gtd-detail-title"]} title]
-       [:div {:class ["gtd-detail-meta"]}
-        (when todo-state
-          [:span {:class ["gtd-detail-badge"
-                          (case todo-state
-                            "ACTIVE" "gtd-detail-badge--active"
-                            "WAITING" "gtd-detail-badge--waiting"
-                            "gtd-detail-badge--default")]}
-           todo-state])
-        (when file [:span {:class ["gtd-detail-file"]} file])
-        (when (and (string? tags) (seq tags))
-          (for [tag (.split tags " ")]
-            [:span {:class ["gtd-detail-tag"]} tag]))]
-       (when html-body
-         (render-org-body html-body))
-       (when cwd
-         [:div {:class ["gtd-detail-actions"]}
-          [:button {:class ["btn" "btn-primary"]
-                    :on {:click (fn [_]
-                                  (dispatch! {:type :gtd/web-start-task
-                                              :task-id (:id task)
-                                              :title title
-                                              :cwd cwd}))}}
-           (icon/icon {:icon-name :play :size :sm})
-           [:span "Launch Agent"]]])]]]))
-
-
-(defn- gtd-view [state dispatch!]
-  (let [tasks        (:web/gtd-tasks state)
-        loading?     (:web/gtd-loading? state)
-        selected-file (:web/gtd-file state)
-        task-id      (:web/gtd-task-id state)
-        ctx-menu     (:web/gtd-context-menu state)
-        ;; Look up selected task by id
-        selected-task (when task-id
-                        (some #(when (= (:id %) task-id) %) tasks))
-        grouped      (when tasks
-                       (->> tasks
-                            (group-by :file)
-                            (sort-by key)))]
-    (cond
-      ;; Task detail view
-      selected-task
-      (gtd-task-detail dispatch! state selected-task)
-
-      ;; Task list / file list
-      :else
-      [:div {:class ["container"] :replicant/key "gtd"}
-       [:div {:class ["topbar"]}
-        (nav-group dispatch! (fn [_]
-                               (dispatch! {:type :nav/back
-                                           :fallback (if selected-file
-                                                       {:page :gtd}
-                                                       {:page :home})})))
-        [:div {:class ["topbar-title"]}
-         (if selected-file
-           selected-file
-           "Tasks")]
-        [:button {:class ["icon-btn"]
-                  :on {:click (fn [_] (dispatch! {:type :gtd/web-list}))}}
-         (icon/icon {:icon-name :refresh :size :md})]
-        (overflow-menu dispatch! state)]
-       [:div {:class ["home"]}
-        (cond
-          loading?
-          [:div {:class ["empty-state"]} (spinner) [:p "Loading tasks..."]]
-
-          (empty? tasks)
-          [:div {:class ["empty-state"]} [:p "No open tasks."]]
-
-          selected-file
-          (let [file-tasks (get (into {} grouped) selected-file)]
-            (if (seq file-tasks)
-              [:div {:class ["project-list"]}
-               (for [t file-tasks]
-                 (gtd-task-card dispatch! t))]
-              [:div {:class ["empty-state"]} [:p (str "No tasks in " selected-file)]]))
-
-          :else
-          [:div {:class ["project-list"]}
-           (for [[file-name file-tasks] grouped]
-             (gtd-file-card dispatch! file-name (count file-tasks)))])]
-       (when ctx-menu
-         (gtd-context-menu dispatch! ctx-menu))])))
-
 
 ;; ── Root ─────────────────────────────────────────────────────────────────────
 
@@ -2487,11 +2298,13 @@
                 :class "sidebar-nav-button"
                 :on-click (fn [_] (dispatch! {:type :route/navigate :page :home}))}
                "All projects")
-              (button/button
-               {:variant :secondary :size :sm :icon-left :list
-                :class "sidebar-nav-button"
-                :on-click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}
-               "GTD Tasks")]))
+              (for [item (nav-items-for state :sidebar)]
+                (button/button
+                 {:variant :secondary :size :sm :icon-left (:icon item)
+                  :class "sidebar-nav-button"
+                  :attrs {:replicant/key (str "nav-" (:label item))}
+                  :on-click (fn [_] (dispatch! (:event item)))}
+                 (:label item)))]))
          (sidebar/sidebar-group {:label "Recent"}
            (if (seq cards)
              (for [c cards]
@@ -2542,183 +2355,6 @@
                         (diff/diff-rows (diff/parse-diff-text text))
                         nil nil))]]))
 
-(defn- pr-state-badge
-  "Colored badge for a PR's state (and draft marker)."
-  [state draft?]
-  (let [open? (= state "OPEN")]
-    (badge/badge {:variant (cond
-                             (and open? draft?) :secondary
-                             open?              :success
-                             (= state "MERGED") :secondary
-                             (= state "CLOSED") :danger
-                             :else              :outline)
-                  :size :sm}
-                 (if (and open? draft?)
-                   "Draft"
-                   (str/capitalize (str/lower-case (or state "")))))))
-
-(defn- pr-filtered
-  "Apply the assigned/created toggles. With neither set, show everything; with
-   both, show the union (created-by-me OR assigned-to-me)."
-  [prs me {:keys [assigned? created?]}]
-  (if (and (not assigned?) (not created?))
-    prs
-    (filterv (fn [pr]
-               (or (and created? (= me (:author pr)))
-                   (and assigned? (some #(= me %) (:assignees pr)))))
-             prs)))
-
-(defn- pr-list-view
-  "Roomless pull-requests list for a project (reached from the project view's
-   overflow menu). Lists open PRs from `gh`, with toggles to narrow to the
-   viewer's own / assigned PRs; a row opens the detail page."
-  [state dispatch!]
-  (let [cwd      (:web/prs-cwd state)
-        prs      (:web/prs state)
-        me       (:web/prs-me state)
-        error    (:web/prs-error state)
-        loading? (:web/prs-loading? state)
-        filters  (:web/pr-filters state)
-        shown    (pr-filtered prs me filters)]
-    [:div {:class ["container"] :replicant/key "pr-list"}
-     [:div {:class ["topbar"]}
-      (nav-group dispatch! (fn [_]
-                             (dispatch! {:type :nav/back
-                                         :fallback {:page :home :dir cwd}})))
-      [:div {:class ["topbar-title"]} "Pull requests · " (shorten-path cwd)]
-      [:button {:class ["icon-btn"]
-                :title "Refresh"
-                :on {:click (fn [_] (dispatch! {:type :pr/refresh}))}}
-       (icon/icon {:icon-name :refresh :size :md})]
-      (overflow-menu dispatch! state)]
-     [:div {:class ["home"]}
-      [:div {:class ["pr-filters"]}
-       (form/form-checkbox
-        {:label "Created by me"
-         :checked (boolean (:created? filters))
-         :on-change (fn [_] (dispatch! {:type :pr/set-filter :key :created?}))})
-       (form/form-checkbox
-        {:label "Assigned to me"
-         :checked (boolean (:assigned? filters))
-         :on-change (fn [_] (dispatch! {:type :pr/set-filter :key :assigned?}))})]
-      (cond
-        (and loading? (nil? prs))
-        [:div {:class ["empty-state"]} (spinner) [:p "Loading pull requests…"]]
-
-        error
-        [:div {:class ["empty-state"]}
-         [:p "Could not load pull requests."]
-         [:pre {:class ["pr-error"]} error]]
-
-        (empty? shown)
-        [:div {:class ["empty-state"]}
-         (if (seq prs) "No matching pull requests." "No open pull requests.")]
-
-        :else
-        [:div {:class ["pr-list"]}
-         (for [pr shown]
-           [:button {:class ["pr-row"] :replicant/key (:number pr)
-                     :on {:click (fn [_] (dispatch! {:type :pr/select
-                                                     :cwd cwd :number (:number pr)}))}}
-            [:div {:class ["pr-row-main"]}
-             [:span {:class ["pr-row-title"]} (:title pr)]
-             [:span {:class ["pr-row-meta"]}
-              "#" (:number pr) " · " (:author pr)
-              " · " (:head pr) " → " (:base pr)]]
-            (pr-state-badge (:state pr) (:draft? pr))])])]]))
-
-(defn- pr-detail-view
-  "Roomless PR detail page: metadata header, markdown body, and the unified
-   diff rendered read-only with the same +/- coloring + syntax highlighting as
-   the chat :diff buffer."
-  [state dispatch!]
-  (let [cwd      (:web/pr-detail-cwd state)
-        number   (:web/pr-detail-number state)
-        detail   (:web/pr-detail state)
-        error    (:web/pr-detail-error state)
-        loading? (:web/pr-detail-loading? state)
-        {:keys [pr diff]} detail]
-    [:div {:class ["container"] :replicant/key "pr-detail"}
-     [:div {:class ["topbar"]}
-      (nav-group dispatch! (fn [_]
-                             (dispatch! {:type :nav/back
-                                         :fallback {:page :pr-list :cwd cwd}})))
-      [:div {:class ["topbar-title"]} "PR #" number]
-      (overflow-menu dispatch! state {:mode :pr-detail :cwd cwd :number number})]
-     [:div {:class ["pr-detail-scroll"]}
-      (cond
-        (and loading? (nil? detail))
-        [:div {:class ["empty-state"]} (spinner) [:p "Loading pull request…"]]
-
-        error
-        [:div {:class ["empty-state"]}
-         [:p "Could not load pull request."]
-         [:pre {:class ["pr-error"]} error]]
-
-        pr
-        (list
-         [:div {:class ["pr-detail-head"]}
-          [:h2 {:class ["pr-detail-title"]} (:title pr)]
-          [:div {:class ["pr-detail-meta"]}
-           (pr-state-badge (:state pr) (:draft? pr))
-           [:span "#" (:number pr)]
-           [:span (:author pr)]
-           [:span (:head pr) " → " (:base pr)]
-           [:span {:class ["pr-detail-stat" "pr-detail-stat--add"]} "+" (:additions pr)]
-           [:span {:class ["pr-detail-stat" "pr-detail-stat--del"]} "−" (:deletions pr)]]
-          [:div {:class ["pr-detail-actions"]}
-           (button/button
-            {:variant :primary :size :sm :icon-left :zap
-             :on-click (fn [_] (dispatch! {:type :pr/review
-                                          :cwd cwd :number number
-                                          :title (:title pr)}))}
-            "Review with agent")]]
-         (when (seq (:body pr))
-           [:div {:class ["post-content" "pr-detail-body"]} (md/render (:body pr))])
-         [:div {:class ["diff-tab"]}
-          (if (str/blank? diff)
-            [:div {:class ["empty-state"]} "No diff."]
-            (diff-rows-view dispatch!
-                            (diff/diff-rows (diff/parse-diff-text diff))
-                            nil nil))]))]]))
-
-(defn- pr-diff-view
-  "Focused full-screen unified diff for one PR — reached from the PR detail
-   page's overflow menu. Reuses the already-fetched :web/pr-detail diff so big
-   PRs can be reviewed without scrolling past the metadata + markdown body."
-  [state dispatch!]
-  (let [cwd      (:web/pr-detail-cwd state)
-        number   (:web/pr-detail-number state)
-        detail   (:web/pr-detail state)
-        error    (:web/pr-detail-error state)
-        loading? (:web/pr-detail-loading? state)
-        diff     (:diff detail)]
-    [:div {:class ["container"] :replicant/key "pr-diff"}
-     [:div {:class ["topbar"]}
-      (nav-group dispatch! (fn [_]
-                             (dispatch! {:type :nav/back
-                                         :fallback {:page :pr-detail
-                                                    :cwd cwd :number number}})))
-      [:div {:class ["topbar-title"]} "PR #" number " diff"]
-      (overflow-menu dispatch! state)]
-     [:div {:class ["diff-tab"]}
-      (cond
-        (and loading? (nil? detail))
-        [:div {:class ["empty-state"]} (spinner) [:p "Loading diff…"]]
-
-        error
-        [:div {:class ["empty-state"]}
-         [:p "Could not load pull request."]
-         [:pre {:class ["pr-error"]} error]]
-
-        (str/blank? diff)
-        [:div {:class ["empty-state"]} "No diff."]
-
-        :else
-        (diff-rows-view dispatch!
-                        (diff/diff-rows (diff/parse-diff-text diff))
-                        nil nil))]]))
-
 (defn- command-palette
   "Global Cmd/Ctrl+K command palette (ui.command). Mounted once in root-view;
    the ui-runtime.js delegate handles open/filter/keyboard-nav. Items dispatch
@@ -2747,13 +2383,14 @@
       :attrs {:replicant/key "cmdk"}}
      (when (seq chat-items)
        (apply cmd/command-group {:heading "Chats"} chat-items))
-     (cmd/command-group {:heading "Navigate"}
+     (apply cmd/command-group {:heading "Navigate"}
        (cmd/command-item {:icon :layout-dashboard
                           :on-click (fn [_] (dispatch! {:type :route/navigate :page :home}))}
          "All projects")
-       (cmd/command-item {:icon :list
-                          :on-click (fn [_] (dispatch! {:type :route/navigate :page :gtd}))}
-         "GTD Tasks"))
+       (for [item (nav-items-for state :palette)]
+         (cmd/command-item {:icon (:icon item)
+                            :on-click (fn [_] (dispatch! (:event item)))}
+           (:label item))))
      (cmd/command-group {:heading "Actions"}
        (cmd/command-item {:icon :plus
                           :on-click (fn [_] (dispatch! {:type :room/new}))}
@@ -2788,8 +2425,9 @@
   "Top-level view, route-driven: the session list at /, a room at /chat/:id.
    Wrapped in a floating sidebar layout so every topbar's hamburger reveals
    the recent-sessions drawer over the content."
-  [state dispatch!]
-  (let [open? (boolean (:web/sidebar-open? state))]
+  [state dispatch! pages]
+  (let [open? (boolean (:web/sidebar-open? state))
+        page  (get-in state [:web/route :page])]
     (sidebar/sidebar-layout
      {:class "sidebar-layout--floating"
       :attrs (cond-> {:style {:height "100%"}}
@@ -2798,12 +2436,10 @@
      (sidebar/sidebar-overlay {:on-click (fn [_] (dispatch! {:type :sidebar/close}))})
      (sidebar/sidebar-layout-main
       {:attrs {:style {:min-height "0"}}}
-      (case (get-in state [:web/route :page])
-        :chat (chat-view state dispatch!)
-        :gtd  (gtd-view state dispatch!)
-        :git-status (git-status-view state dispatch!)
-        :pr-list (pr-list-view state dispatch!)
-        :pr-detail (pr-detail-view state dispatch!)
-        :pr-diff (pr-diff-view state dispatch!)
-        (home-view state dispatch!)))
+      (if-let [page-view (get pages page)]
+        (page-view state dispatch!)
+        (case page
+          :chat (chat-view state dispatch!)
+          :git-status (git-status-view state dispatch!)
+          (home-view state dispatch!))))
      (command-palette state dispatch!))))

@@ -19,36 +19,18 @@
 ;; ── Path <-> route ───────────────────────────────────────────────────────────
 
 (defn parse-path
-  "URL path → route map."
-  [path]
+  "URL path → route map. Extension route entries (keyed by first URL
+   segment, from ext/compose :routes) take precedence over the built-ins;
+   their :parse fn receives the remaining segments."
+  [routes path]
   (let [segments (filterv seq (str/split (or path "/") #"/"))]
-    (case (first segments)
+    (if-let [entry (get routes (first segments))]
+      ((:parse entry) (vec (rest segments)))
+      (case (first segments)
       "chat" {:page :chat :session-id (second segments)}
       "git-status" (cond-> {:page :git-status}
                      (second segments)
                      (assoc :cwd (js/decodeURIComponent (str/join "/" (rest segments)))))
-      "pulls" (let [seg2 (second segments)]
-                (if (and seg2 (re-matches #"\d+" seg2))
-                  (if (= "diff" (nth segments 2 nil))
-                    {:page :pr-diff
-                     :number (js/parseInt seg2)
-                     :cwd (js/decodeURIComponent (str/join "/" (drop 3 segments)))}
-                    {:page :pr-detail
-                     :number (js/parseInt seg2)
-                     :cwd (js/decodeURIComponent (str/join "/" (drop 2 segments)))})
-                  (cond-> {:page :pr-list}
-                    seg2 (assoc :cwd (js/decodeURIComponent (str/join "/" (rest segments)))))))
-      "gtd"  (let [rest-segs (rest segments)
-                   ;; Last segment that looks like a UUID is a task-id
-                   last-seg  (last rest-segs)
-                   task-id?  (and last-seg (re-find #"^[0-9a-f]{8}-" last-seg))
-                   task-id   (when task-id? last-seg)
-                   file-segs (if task-id? (butlast rest-segs) rest-segs)
-                   file      (when (seq file-segs)
-                               (js/decodeURIComponent (str/join "/" file-segs)))]
-               (cond-> {:page :gtd}
-                 file    (assoc :file file)
-                 task-id (assoc :task-id task-id)))
       "projects" (let [seg2 (second segments)
                        dir  (cond
                               (nil? seg2) nil
@@ -57,26 +39,29 @@
                               :else (js/decodeURIComponent seg2))]
                    (cond-> {:page :home}
                      dir (assoc :dir dir)))
-      {:page :home})))
+      {:page :home}))))
 
 (defn route->path
-  "Route map → URL path."
-  [{:keys [page session-id file task-id dir cwd number]}]
-  (case page
+  "Route map → URL path. Extension :path fns (keyed by page) take
+   precedence over the built-ins."
+  [routes {:keys [page session-id file task-id dir cwd number] :as route}]
+  (if-let [f (some #(get-in % [:path page]) (vals routes))]
+    (f route)
+    (case page
     :chat (if session-id (str "/chat/" session-id) "/chat")
     :git-status (if cwd (str "/git-status/" (js/encodeURIComponent cwd)) "/git-status")
-    :pr-list (if cwd (str "/pulls/" (js/encodeURIComponent cwd)) "/pulls")
-    :pr-detail (str "/pulls/" number "/" (js/encodeURIComponent cwd))
-    :pr-diff (str "/pulls/" number "/diff/" (js/encodeURIComponent cwd))
-    :gtd  (cond-> "/gtd"
-             file    (str "/" (js/encodeURIComponent file))
-             task-id (str "/" task-id))
     ;; :home — use /projects/:cwd when drilling into a directory
     (cond
       (= dir :all) "/projects/all"
       (= dir :favorites) "/projects/favorites"
       dir          (str "/projects/" (js/encodeURIComponent dir))
-      :else        "/")))
+      :else        "/"))))
+
+(defn roomless-pages
+  "Pages that imply leaving the active room on navigation: the built-ins
+   plus every extension route entry's :roomless-pages."
+  [routes]
+  (into #{:home} (mapcat :roomless-pages) (vals routes)))
 
 ;; ── Navigation (pure handler) ────────────────────────────────────────────────
 
@@ -89,10 +74,11 @@
 
 (defn navigate
   "Set the route; push/replace history; drive the implied room change.
+     roomless    set of pages that imply leaving the active room
      :page       :home | :chat
      :session-id (chat only)
      :replace?   true for popstate / initial load (no new history entry)"
-  [st {:keys [page session-id file task-id dir cwd number replace?]}]
+  [roomless st {:keys [page session-id file task-id dir cwd number replace?]}]
   (let [route      (cond-> {:page page :session-id session-id}
                      file    (assoc :file file)
                      task-id (assoc :task-id task-id)
@@ -118,7 +104,7 @@
                   ;; Leave (→ server-side close) the empty room BEFORE joining
                   ;; the next one, so the server frees it instead of orphaning
                   ;; it (room/leave acts on the client's current membership).
-                  (and leaving-empty-new? (not (#{:home :gtd} page)))
+                  (and leaving-empty-new? (not (roomless page)))
                   (conj [:app/dispatch {:type :room/leave}])
 
                   (and (= page :chat) session-id (not already?))
@@ -133,12 +119,8 @@
                         [:app/dispatch {:type :session/mark-read
                                         :session-id session-id}])
 
-                  (#{:home :gtd} page)
+                  (roomless page)
                   (conj [:app/dispatch {:type :room/leave}])
-
-                  ;; Fetch task list when entering GTD without cached data
-                  (and (= page :gtd) (empty? (:web/gtd-tasks st)))
-                  (conj [:app/dispatch {:type :gtd/web-list}])
 
                   ;; Fetch sessions when drilling into a project directory
                   (and (= page :home) dir (not= dir :all) (not= dir :favorites))
@@ -146,21 +128,7 @@
 
                   ;; Fetch the working-tree diff when entering the git-status page
                   (and (= page :git-status) cwd)
-                  (conj [:app/dispatch {:type :git-status/load :cwd cwd}])
-
-                  ;; Fetch the PR list when entering the pull-requests page
-                  (and (= page :pr-list) cwd)
-                  (conj [:app/dispatch {:type :pr/load :cwd cwd}])
-
-                  ;; Fetch one PR's detail when entering the PR detail page
-                  (and (= page :pr-detail) cwd number)
-                  (conj [:app/dispatch {:type :pr/detail-load :cwd cwd :number number}])
-
-                  ;; Fetch detail for the focused PR diff page, unless we already
-                  ;; loaded this PR (e.g. arriving from its detail page).
-                  (and (= page :pr-diff) cwd number
-                       (not= (:web/pr-detail-number st) number))
-                  (conj [:app/dispatch {:type :pr/detail-load :cwd cwd :number number}]))]
+                  (conj [:app/dispatch {:type :git-status/load :cwd cwd}]))]
     {:state   (cond-> (assoc st :web/route route
                             ;; reset the virtualized timeline window on every
                             ;; navigation so a new session starts compact
@@ -171,7 +139,7 @@
                 ;; next fresh count marks it read (the user saw responses that
                 ;; landed while attached, before counts refreshed). See
                 ;; counts-result.
-                (and (#{:home :gtd} page) active-sid)
+                (and (roomless page) active-sid)
                 (assoc :web/pending-read active-sid)
                 ;; Leaving the virtual new chat for a real destination (a
                 ;; session, home, or gtd): drop its pending-room so its draft
@@ -179,15 +147,8 @@
                 ;; new pending-room (with a new id) via :room/new.
                 (or (not= page :chat) session-id)
                 (dissoc :web/pending-room)
-                ;; Sync file/task drill-down from the route
-                (= page :gtd) (-> (assoc :web/gtd-file file)
-                                  (assoc :web/gtd-task-id task-id))
                 ;; Sync the git-status cwd from the route
                 (= page :git-status) (assoc :web/git-status-cwd cwd)
-                ;; Sync the pull-requests cwd from the route
-                (= page :pr-list) (assoc :web/prs-cwd cwd)
-                (#{:pr-detail :pr-diff} page) (-> (assoc :web/pr-detail-cwd cwd)
-                                                  (assoc :web/pr-detail-number number))
                 ;; Sync project dir drill-down from the route
                 (= page :home) (-> (assoc :web/selected-project-dir dir)
                                    (cond->
@@ -208,9 +169,12 @@
   [_st {:keys [fallback]}]
   {:effects [[:nav/back {:fallback fallback}]]})
 
-(def handlers
-  {:route/navigate navigate
-   :nav/back       nav-back})
+(defn handlers
+  "Router handler map, closed over the composed extension route table."
+  [routes]
+  (let [roomless (roomless-pages routes)]
+    {:route/navigate (fn [st ev] (navigate roomless st ev))
+     :nav/back       nav-back}))
 
 ;; ── History effect + init (impure edge) ──────────────────────────────────────
 
@@ -219,14 +183,16 @@
 (defonce nav-depth (atom 0))
 
 (defn history-effect
-  "The `:history/push` effect — pushState/replaceState the route's path."
-  [_ctx {:keys [route replace?]}]
-  (let [path (route->path route)]
-    (if replace?
-      (.replaceState js/window.history #js {:navDepth @nav-depth} "" path)
-      (when (not= path (.-pathname js/window.location))
-        (let [d (swap! nav-depth inc)]
-          (.pushState js/window.history #js {:navDepth d} "" path))))))
+  "The `:history/push` effect — pushState/replaceState the route's path.
+   Closed over the composed extension route table."
+  [routes]
+  (fn [_ctx {:keys [route replace?]}]
+    (let [path (route->path routes route)]
+      (if replace?
+        (.replaceState js/window.history #js {:navDepth @nav-depth} "" path)
+        (when (not= path (.-pathname js/window.location))
+          (let [d (swap! nav-depth inc)]
+            (.pushState js/window.history #js {:navDepth d} "" path)))))))
 
 (defn back-effect
   "The `:nav/back` effect — go back in browser history when the app owns
@@ -239,11 +205,11 @@
 (defn init!
   "Seed the initial route from the URL and forward popstate as navigate.
    Called once after the app is created."
-  [dispatch!]
+  [routes dispatch!]
   ;; Restore nav-depth from history.state (survives page reloads)
   (when-let [d (some-> js/history.state (.-navDepth))]
     (reset! nav-depth d))
-  (let [route->ev (fn [] (assoc (parse-path (.-pathname js/window.location))
+  (let [route->ev (fn [] (assoc (parse-path routes (.-pathname js/window.location))
                                 :type :route/navigate :replace? true))]
     (dispatch! (route->ev))
     (.addEventListener js/window "popstate"

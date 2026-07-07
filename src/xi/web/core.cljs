@@ -21,6 +21,9 @@
             [xi.core.events :as events]
             [xi.core.state :as state]
             [xi.diff :as diff]
+            [xi.ext.core :as ext]
+            [xi.ext.github.web :as github-web]
+            [xi.ext.gtd.web :as gtd-web]
             [xi.naming :as naming]
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
@@ -310,22 +313,6 @@
     {:effects [[:ws/send {:type :input/submit :room-id room-id
                           :text (str "/diff " method)}]]}))
 
-;; ── GTD ──────────────────────────────────────────────────────────────────────
-
-(defn- gtd-web-list-result
-  "Store the GTD task list returned by the server."
-  [st {:keys [tasks]}]
-  {:state (assoc st :web/gtd-tasks tasks :web/gtd-loading? false)})
-
-(defn- gtd-web-start-task
-  "Click a GTD task: create a new room with the task's cwd, stash the
-   task as pending-gtd so it fires :gtd/start-task after :room/joined."
-  [st {:keys [task-id title cwd]}]
-  {:state   (-> st
-                (assoc :web/route {:page :chat})
-                (assoc :web/pending-gtd {:task-id task-id :title title :cwd cwd})
-                (assoc :web/timeline-window nil))
-   :effects [[:ws/send {:type :room/join :target "new" :cwd cwd}]]})
 
 (defn- projects-web-list-result [st {:keys [dirs]}]
   {:state (assoc st :web/project-dirs dirs :web/projects-loading? false)})
@@ -379,36 +366,6 @@
     {:state (assoc-in st [:web/content-matches key] (set session-ids))}
     {:state st}))
 
-(defn- pr-review-prompt
-  "The prompt seeded into a fresh agent room to review a PR. The agent runs in
-   the PR's project cwd, so it fetches the PR itself rather than us shipping a
-   (possibly huge) diff through app state."
-  [number title]
-  (str "Please review pull request #" number
-       (when (seq title) (str " (\"" title "\")"))
-       " in this repository.\n\n"
-       "Run `gh pr view " number "` and `gh pr diff " number "` to load the "
-       "description and full diff, then give a thorough code review:\n"
-       "- a short summary of what the PR does\n"
-       "- correctness bugs and edge cases\n"
-       "- security or performance concerns\n"
-       "- style / consistency with the surrounding code\n"
-       "- concrete suggestions with file:line references\n\n"
-       "Prioritise the most important findings first."))
-
-(defn- pr-review
-  "Open a fresh agent room in the PR's project and seed a review prompt; the
-   pending-submit tap fires it once :room/joined arrives (mirrors
-   gtd-web-start-task)."
-  [st {:keys [cwd number title]}]
-  {:state   (-> st
-                (assoc :web/route {:page :chat})
-                (assoc :web/timeline-window nil)
-                (assoc :web/pending-submit {:session-id nil
-                                            :text (pr-review-prompt number title)})
-                (dissoc :web/pending-room :web/overflow-menu?))
-   :effects [[:ws/send {:type :room/join :target "new" :cwd cwd}]]})
-
 (defn- bubble-edit-save
   "Commit an inline bubble edit: fork the conversation at the edited message
    (truncate history to before it, like /tree edit) and resubmit the edited
@@ -450,8 +407,8 @@
          :effects [[:prompt-nav/scroll {:history-index hidx}]]})
       {:state st})))
 
-(defn- web-handlers []
-  (merge router/handlers
+(defn- web-handlers [routes]
+  (merge (router/handlers routes)
          {:room/new              room-new
           :room/join             forward
           :room/leave            forward
@@ -521,41 +478,6 @@
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
           :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
-          :gtd/web-list          (fn [st ev]
-                                    {:state (assoc st :web/gtd-loading? true)
-                                     :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
-          :gtd/web-list-result   gtd-web-list-result
-          :gtd/web-start-task    gtd-web-start-task
-          :gtd/select-file       (fn [_st {:keys [file]}]
-                                    {:effects [[:app/dispatch {:type :route/navigate :page :gtd :file file}]]})
-          :gtd/back-to-files     (fn [_st _]
-                                    {:effects [[:app/dispatch {:type :route/navigate :page :gtd}]]})
-          :gtd/select-task       (fn [_st {:keys [file task-id]}]
-                                    {:effects [[:app/dispatch {:type :route/navigate :page :gtd :file file :task-id task-id}]]})
-          :gtd/back-to-tasks     (fn [_st {:keys [file]}]
-                                    {:effects [[:app/dispatch {:type :route/navigate :page :gtd :file file}]]})
-          :gtd/context-menu      (fn [st {:keys [task x y]}]
-                                    {:state (assoc st :web/gtd-context-menu {:task task :x x :y y})})
-          :gtd/context-menu-close (fn [st _] {:state (dissoc st :web/gtd-context-menu)})
-          :gtd/web-task-action   (fn [st {:keys [task-id action] :as ev}]
-                                    (let [tasks (:web/gtd-tasks st)
-                                          tasks' (case action
-                                                   ;; Both done and archive remove from visible list
-                                                   ("done" "archive")
-                                                   (vec (remove #(= (:id %) task-id) tasks))
-                                                   tasks)]
-                                      {:state (-> st
-                                                  (dissoc :web/gtd-context-menu)
-                                                  (assoc :web/gtd-tasks tasks'))
-                                       :effects [[:ws/send (dissoc ev :event/id :event/ts)]]}))
-          :gtd/web-task-action-error (fn [st _]
-                                       ;; Server failed — re-fetch authoritative list
-                                       {:state st
-                                        :effects [[:ws/send {:type :gtd/web-list}]]})
-          :gtd/start-task        (fn [_st {:keys [remote?] :as ev}]
-                                    (when-not remote?
-                                      {:effects [[:ws/send (dissoc ev :event/id :event/ts)]]}))
-          :gtd/clear-pending     (fn [st _] {:state (dissoc st :web/pending-gtd)})
           :models/web-list       forward
           :models/web-list-result (fn [st {:keys [models]}]
                                     {:state (assoc st :web/model-list models)})
@@ -603,51 +525,6 @@
                                    {:state (assoc st :web/git-status-text text
                                                      :web/git-status-cwd cwd
                                                      :web/git-status-loading? false)})
-          ;; Pull requests (roomless, per-project via gh)
-          :pr/open               (fn [_st {:keys [cwd]}]
-                                   {:effects [[:app/dispatch {:type :route/navigate
-                                                              :page :pr-list :cwd cwd}]]})
-          :pr/load               (fn [st {:keys [cwd]}]
-                                   {:state (assoc st :web/prs-loading? true
-                                                     :web/prs-cwd cwd
-                                                     :web/prs nil
-                                                     :web/prs-error nil)
-                                    :effects [[:ws/send {:type :pr/web-list :cwd cwd}]]})
-          :pr/refresh            (fn [st _]
-                                   (let [cwd (:web/prs-cwd st)]
-                                     {:state (assoc st :web/prs-loading? true)
-                                      :effects [[:ws/send {:type :pr/web-list :cwd cwd}]]}))
-          :pr/web-list-result    (fn [st {:keys [cwd prs me error]}]
-                                   {:state (assoc st :web/prs prs
-                                                     :web/prs-me me
-                                                     :web/prs-error error
-                                                     :web/prs-cwd cwd
-                                                     :web/prs-loading? false)})
-          :pr/set-filter         (fn [st {:keys [key]}]
-                                   {:state (update-in st [:web/pr-filters key] not)})
-          :pr/select             (fn [_st {:keys [cwd number]}]
-                                   {:effects [[:app/dispatch {:type :route/navigate
-                                                              :page :pr-detail
-                                                              :cwd cwd :number number}]]})
-          :pr/diff-open          (fn [_st {:keys [cwd number]}]
-                                   {:effects [[:app/dispatch {:type :route/navigate
-                                                              :page :pr-diff
-                                                              :cwd cwd :number number}]]})
-          :pr/review             pr-review
-          :pr/detail-load        (fn [st {:keys [cwd number]}]
-                                   {:state (assoc st :web/pr-detail-loading? true
-                                                     :web/pr-detail-cwd cwd
-                                                     :web/pr-detail-number number
-                                                     :web/pr-detail nil
-                                                     :web/pr-detail-error nil)
-                                    :effects [[:ws/send {:type :pr/web-detail
-                                                         :cwd cwd :number number}]]})
-          :pr/web-detail-result  (fn [st {:keys [cwd number pr diff error]}]
-                                   {:state (assoc st :web/pr-detail (when pr {:pr pr :diff diff})
-                                                     :web/pr-detail-error error
-                                                     :web/pr-detail-cwd cwd
-                                                     :web/pr-detail-number number
-                                                     :web/pr-detail-loading? false)})
           ;; Session bookmarks. Flip locally for a snappy star, then forward:
           ;; the server persists and rebroadcasts an authoritative :lobby/state.
           ;; Project-session listings aren't rebroadcast, so the local flip is
@@ -709,8 +586,8 @@
 (defonce ^:private auto-scroll? (atom true))
 (defonce ^:private tracked-timeline (atom nil))
 
-(defn- web-effects []
-  {:history/push router/history-effect
+(defn- web-effects [routes]
+  {:history/push (router/history-effect routes)
    :nav/back     router/back-effect
    :projects/sync-textarea
    (fn [_ {:keys [text]}]
@@ -876,19 +753,6 @@
            (= :prompt/submit (:type event)))
       (dispatch! {:type :web/optimistic-clear}))))
 
-(defn- pending-gtd-tap
-  "After room join, if there's a pending GTD task, dispatch :gtd/start-task
-   to the server which handles activation + prompt submission."
-  [dispatch!]
-  (fn [event state]
-    (when (and (= :room/joined (:type event))
-               (:web/pending-gtd state))
-      (let [{:keys [task-id title]} (:web/pending-gtd state)
-            room-id (:active-room state)]
-        (dispatch! {:type :gtd/start-task :room-id room-id
-                    :task-id task-id :title title})
-        (dispatch! {:type :gtd/clear-pending})))))
-
 ;; ── Auto-scroll ──────────────────────────────────────────────────────────────
 
 (defn- at-bottom? [^js el]
@@ -912,8 +776,12 @@
 
 (defn- el [id] (.getElementById js/document id))
 
+;; The composed extension page table (set at init, read by render! so
+;; reload! keeps working across hot reloads).
+(defonce ^:private pages-ref (atom nil))
+
 (defn- render! [app-state dispatch!]
-  (r/render (el "app") (views/root-view app-state dispatch!))
+  (r/render (el "app") (views/root-view app-state dispatch! @pages-ref))
   (attach-scroll-listener!)
   (js/requestAnimationFrame scroll-to-bottom!))
 
@@ -935,6 +803,13 @@
         port   (or (.get params "port") page-port "7474")]
     (str proto host ":" port)))
 
+(defn- web-extensions
+  "Browser-safe extension web halves, composed at init — symmetric to
+   server-extensions/client-extensions in xi.cli."
+  []
+  [gtd-web/extension
+   github-web/extension])
+
 (defn- demo-init!
   "Static one-shot render for README screenshots (?demo=<view>). Seeds
    fabricated data, skips the WS transport entirely, and renders once with a
@@ -943,15 +818,24 @@
    light/dark."
   [view]
   (js/console.log "[xi-web] demo mode:" view)
-  (.setProperty (.-style js/document.documentElement) "--app-height" "100dvh")
-  (r/render (el "app") (views/root-view (demo/demo-state view) (fn [& _]))))
+  (let [composed (ext/compose (web-extensions))]
+    (reset! pages-ref (:pages composed))
+    (.setProperty (.-style js/document.documentElement) "--app-height" "100dvh")
+    (r/render (el "app")
+              (views/root-view (assoc (demo/demo-state view)
+                                      :web/nav-items (:nav-items composed))
+                               (fn [& _])
+                               (:pages composed)))))
 
 (defn- real-init! []
-  (let [stored-theme (or (try (.getItem js/localStorage "ui-theme") (catch :default _ nil))
+  (let [composed  (ext/compose (web-extensions))
+        routes    (:routes composed)
+        stored-theme (or (try (.getItem js/localStorage "ui-theme") (catch :default _ nil))
                         "auto")
-        route     (router/parse-path (.-pathname js/window.location))
+        route     (router/parse-path routes (.-pathname js/window.location))
         initial   (-> (state/initial-state {:mode :client})
-                      (assoc :web/theme-mode stored-theme)
+                      (assoc :web/theme-mode stored-theme
+                             :web/nav-items (:nav-items composed))
                       (cache/hydrate route))
         transport (ws-transport/create!
                    {:url        (ws-url)
@@ -966,9 +850,13 @@
         (app/create-app {:initial-state initial
                          :handlers      (ws-transport/make-handlers
                                          (base-handlers)
-                                         {:local-handlers (web-handlers)})
-                         :effects       (merge (:effects transport) (web-effects))
+                                         {:local-handlers
+                                          (ext/merge-handlers (web-handlers routes) composed)})
+                         :effects       (merge (:effects transport)
+                                               (web-effects routes)
+                                               (:fx composed))
                          :on-render     render!})]
+    (reset! pages-ref (:pages composed))
     (reset! dispatch-ref dispatch!)
     (reset! app-ref app)
     ((:set-dispatch! transport) dispatch!)
@@ -978,10 +866,11 @@
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
     (add-tap! (optimistic-tap dispatch!))
-    (add-tap! (pending-gtd-tap dispatch!))
     (add-tap! (record-command-tap dispatch!))
     (add-tap! (prompt-nav-close-tap dispatch!))
-    (router/init! dispatch!)
+    (doseq [make-tap (:taps composed)]
+      (add-tap! (make-tap dispatch!)))
+    (router/init! routes dispatch!)
     ;; Apply stored theme immediately (before first render)
     (dispatch! {:type :theme/set-mode :mode stored-theme})
     ;; Track visual viewport height so the mobile keyboard doesn't push
