@@ -81,9 +81,7 @@
             [xi.server.room-manager :as rm]
             [xi.server.ws :as ws]
             [xi.session :as session]
-            [xi.system-prompt :as system-prompt]
-            [xi.tui.core :as tui]
-            [xi.tui.terminal :as term]))
+            [xi.system-prompt :as system-prompt]))
 
 (def providers
   {:claude claude/provider
@@ -450,15 +448,20 @@
            :client/palette-close
            (fn [st _]
              {:state (update-in st [:client/pending-room :ui] dissoc :menu)})})
+        ;; dispatch! isn't available until the app is built; on-status fires
+        ;; through this ref so early connect/drop events are simply ignored.
+        dispatch-ref (atom nil)
         transport (ws-transport/create!
                    {:url url
                     :target target
                     :cwd cwd
-                    :on-close (fn []
-                                (term/restore-stdout!)
-                                (tui/stop-tui!)
-                                (js/console.error (str "Disconnected from " url))
-                                (js/process.exit 1))})
+                    ;; Retry with backoff like the web client instead of
+                    ;; exiting, so a server restart doesn't crash the TUI.
+                    :reconnect? true
+                    :on-status (fn [connected?]
+                                 (when-let [d @dispatch-ref]
+                                   (d {:type :connection/status
+                                       :connected? connected?})))})
         client (client-tui/create!
                 {:ring ring
                  :on-exit (fn [] (ext/on-shutdown! local) ((:close! transport)))
@@ -474,8 +477,15 @@
                                           defer-room? (assoc :client/pending-room {:cwd cwd}))
                          :handlers      (ws-transport/make-handlers
                                          base
-                                         {:local-handlers (merge (:handlers local)
-                                                                 deferred-handlers)})
+                                         {:local-handlers
+                                          (merge (:handlers local)
+                                                 deferred-handlers
+                                                 ;; Client-local: track socket
+                                                 ;; up/down for the reconnecting
+                                                 ;; indicator. Never forwarded.
+                                                 {:connection/status
+                                                  (fn [st {:keys [connected?]}]
+                                                    {:state (assoc st :client/connected? connected?)})})})
                          ;; Only client-local hooks run here; server hooks
                          ;; ran server-side and mirrored events bypass them.
                          :transform-event (ext/transform-event local)
@@ -506,6 +516,7 @@
              (dispatch! {:type :prompt/submit
                          :room-id (:room-id event)
                          :text initial-prompt}))))))
+    (reset! dispatch-ref dispatch!)
     ((:set-dispatch! transport) dispatch!)))
 
 ;; ── Server ───────────────────────────────────────────────────────────────────

@@ -179,14 +179,21 @@
                  ws "message"
                  (fn [^js e]
                    (when-let [ev (wire/decode (.-data e))]
-                     ;; After joining, pin lastJoin to the session-id so
+                     ;; Pin lastJoin to the room's current session-id so
                      ;; reconnects re-attach instead of creating a new room
-                     ;; (critical on mobile where WS drops are frequent).
-                     (when (= :room/joined (:type ev))
-                       (when-let [sid (get-in ev [:room :session :id])]
-                         (set! (.-lastJoin ctx)
-                               (wire/encode {:type :room/join
-                                             :target {:session-id sid}}))))
+                     ;; (critical on mobile where WS drops are frequent). Track
+                     ;; it on :room/joined AND whenever the room swaps sessions
+                     ;; (/resume, /new, /clear) — otherwise lastJoin goes stale
+                     ;; and a reconnect can't match the live room, spinning up a
+                     ;; fresh one.
+                     (when-let [sid (case (:type ev)
+                                      :room/joined     (get-in ev [:room :session :id])
+                                      (:session/resumed
+                                       :session/created) (get-in ev [:session :id])
+                                      nil)]
+                       (set! (.-lastJoin ctx)
+                             (wire/encode {:type :room/join
+                                           :target {:session-id sid}})))
                      (when-let [dispatch! (.-dispatch ctx)]
                        (dispatch! (assoc ev :remote? true))))))
                 (.addEventListener ws "close" (fn [_] (handle-drop!)))

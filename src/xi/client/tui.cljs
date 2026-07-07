@@ -577,9 +577,15 @@
           (fn []
             (when-let [cwd (or (:cwd (current-room))
                                (get-in (.-state ctx) [:client/pending-room :cwd]))]
-              (let [connected? (= :client (state/mode (.-state ctx)))]
+              (let [client? (= :client (state/mode (.-state ctx)))
+                    ;; nil (pre-connect) counts as connected to avoid flicker;
+                    ;; only an explicit drop shows the reconnecting indicator.
+                    dropped? (false? (:client/connected? (.-state ctx)))]
                 (str (ansi/fg :dim (shorten-home cwd))
-                     (when connected? (str " " (ansi/fg :green "●")))))))})
+                     (when client?
+                       (if dropped?
+                         (str " " (ansi/fg :yellow "●") (ansi/fg :dim " reconnecting"))
+                         (str " " (ansi/fg :green "●"))))))))})
 
         render
         (fn [state dispatch!]
