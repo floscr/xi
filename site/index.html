@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Xi — a legible coding agent</title>
+<meta name="description" content="Xi is an extendable coding agent harness in ClojureScript + Bun, inspired by Pi. Ships with a ready-made web UI that connects to your terminal sessions for a clean hand-off.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #14161d;
+  --bg-alt: #1a1d27;
+  --paper: #1c2029;
+  --ink: #dfe4f0;
+  --ink-soft: #b2bcd2;
+  --ink-muted: #7d879c;
+  --ink-faint: #4d5568;
+  --rule: #272c3a;
+  --rule-soft: #202430;
+
+  --accent: #9db4e8;
+  --accent-deep: #7089c4;
+  --accent-bright: #bccdf4;
+  --accent-wash: rgba(157, 180, 232, 0.12);
+
+  --serif: 'Source Serif 4', Georgia, serif;
+  --sans: 'Inter', -apple-system, system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 19px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--accent-wash); color: var(--accent-bright); }
+
+.wrap { max-width: 1060px; margin: 0 auto; padding: 0 32px; }
+
+/* ---------- TOP NAV ---------- */
+.topnav {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
+}
+.topnav .row {
+  display: flex; align-items: center; gap: 28px;
+  padding: 16px 0;
+}
+.brand { display: flex; align-items: center; gap: 11px; text-decoration: none; color: var(--ink); }
+.brand .glyph {
+  width: 32px; height: 32px; border-radius: 7px;
+  background: var(--accent); color: var(--bg);
+  display: grid; place-items: center;
+  font-family: var(--serif); font-size: 20px; font-weight: 600;
+}
+.brand .name { font-weight: 600; font-size: 19px; letter-spacing: -.01em; }
+.topnav nav { margin-left: auto; display: flex; gap: 4px; }
+.topnav nav a {
+  display: inline-flex; align-items: baseline; gap: 9px;
+  padding: 7px 12px; border-radius: 7px;
+  text-decoration: none; color: var(--ink-soft); font-size: 15.5px;
+  transition: background .15s, color .15s;
+}
+.topnav nav a .num { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.topnav nav a:hover { background: var(--bg-alt); color: var(--ink); }
+.topnav .gh {
+  margin-left: 8px; font-family: var(--mono); font-size: 13px;
+  color: var(--accent); text-decoration: none; padding: 7px 4px;
+}
+.topnav .gh:hover { color: var(--accent-bright); }
+
+/* ---------- HERO ---------- */
+.hero { padding: 96px 0 72px; }
+.eyebrow {
+  font-family: var(--mono); font-size: 13px; font-weight: 500;
+  letter-spacing: .13em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 22px;
+}
+h1.title {
+  font-family: var(--serif); font-weight: 500;
+  font-size: clamp(48px, 6.2vw, 84px); line-height: 1.02;
+  letter-spacing: -.02em; margin-bottom: 38px; max-width: 14em;
+}
+h1.title em { font-style: italic; color: var(--accent); }
+
+.stats { display: flex; gap: 52px; flex-wrap: wrap; }
+.stat .n { font-family: var(--serif); font-size: 42px; font-weight: 500; line-height: 1; color: var(--ink); }
+.stat .l { font-size: 14px; font-family: var(--sans); color: var(--ink-muted); margin-top: 8px; max-width: 150px; }
+
+.made {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-faint);
+  margin-top: 48px;
+}
+.made a { color: var(--ink-muted); text-decoration: none; border-bottom: 1px solid var(--rule); }
+.made a:hover { color: var(--accent); }
+
+.divider { border: none; border-top: 1px solid var(--rule); }
+
+/* ---------- SECTIONS ---------- */
+section.block { padding: 68px 0 24px; }
+h2.sec {
+  font-family: var(--serif); font-weight: 500;
+  font-size: clamp(34px, 4vw, 50px); line-height: 1.05;
+  letter-spacing: -.015em; margin-bottom: 22px;
+}
+.lede { font-size: 21px; color: var(--ink-soft); max-width: 720px; line-height: 1.55; }
+.lede b { color: var(--ink); font-weight: 600; }
+.lede code {
+  font-family: var(--mono); font-size: .82em;
+  background: var(--accent-wash); color: var(--accent-bright);
+  padding: 1px 6px; border-radius: 5px;
+}
+
+/* pills / filters */
+.filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 34px 0 12px; }
+.filter {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--sans); font-size: 15px;
+  padding: 9px 17px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft);
+  transition: all .15s;
+}
+.filter .cnt {
+  font-family: var(--mono); font-size: 12px; color: var(--ink-muted);
+  background: var(--bg-alt); padding: 1px 8px; border-radius: 999px;
+}
+.filter:hover { border-color: var(--ink-faint); color: var(--ink); }
+.filter.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.filter.on .cnt { background: rgba(0,0,0,.18); color: var(--bg); }
+
+/* card grid */
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 34px 0; }
+.card {
+  background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 14px; padding: 26px 24px 28px;
+  transition: transform .2s ease, border-color .2s;
+}
+.card:hover { transform: translateY(-3px); border-color: var(--ink-faint); }
+.card .tag { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.card h3 { font-family: var(--serif); font-weight: 600; font-size: 24px; margin: 12px 0 10px; letter-spacing: -.01em; }
+.card p { font-size: 16px; font-family: var(--sans); color: var(--ink-soft); line-height: 1.55; }
+.card p code, .card p em { font-family: var(--mono); font-style: normal; font-size: .85em; color: var(--accent-bright); }
+
+/* code sample */
+.code-card {
+  background: #0f1118; border: 1px solid var(--rule);
+  border-radius: 14px; overflow: hidden; margin: 34px 0;
+}
+.code-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 18px; border-bottom: 1px solid var(--rule);
+}
+.code-bar .t { font-family: var(--mono); font-size: 12px; color: var(--ink-muted); }
+.code-bar .t::before { content: '❯ '; color: var(--accent); }
+.code-card pre {
+  margin: 0; padding: 24px 26px; overflow-x: auto;
+  font-family: var(--mono); font-size: 14px; line-height: 1.75;
+  color: var(--ink-soft);
+}
+.code-card .k { color: var(--accent-bright); }        /* keyword */
+.code-card .s { color: #a3ccb0; }                     /* string */
+.code-card .c { color: var(--ink-faint); font-style: italic; } /* comment */
+
+.two-col { display: grid; grid-template-columns: 1.1fr 1fr; gap: 44px; align-items: center; margin: 24px 0; }
+
+/* hand-off art */
+.handoff-art svg { width: 100%; height: auto; display: block; }
+.handoff-art .frame { stroke: var(--ink-faint); stroke-width: 2; fill: none; }
+.handoff-art .line  { stroke: var(--ink-faint); stroke-width: 2; }
+.handoff-art .flight {
+  stroke: var(--accent); stroke-width: 2; fill: none;
+  stroke-dasharray: 2 9; stroke-linecap: round;
+}
+.handoff-art .plane { stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; fill: var(--accent-wash); }
+.handoff-art .fold  { stroke: var(--accent); stroke-width: 2.5; fill: none; }
+.handoff-art .bubble { stroke: var(--ink-faint); stroke-width: 2; fill: none; }
+.handoff-art .bubble-me { stroke: var(--accent); fill: var(--accent-wash); }
+.handoff-art .dot { fill: var(--ink-faint); }
+.handoff-art .arrowhead { fill: var(--accent); }
+.handoff-art text   { font-family: var(--mono); font-size: 14px; fill: var(--accent); }
+
+/* invite / footer band */
+.band {
+  margin: 60px 0 0; padding: 46px 48px;
+  background: var(--paper); border: 1px solid var(--rule);
+  color: var(--ink);
+  border-radius: 18px; display: flex; align-items: center; justify-content: space-between; gap: 30px;
+}
+.band h3 { font-family: var(--serif); font-weight: 500; font-size: 32px; letter-spacing: -.01em; }
+.band p { color: var(--ink-muted); margin-top: 8px; font-size: 16px; font-family: var(--mono); }
+.band .cta {
+  font-family: var(--mono); font-size: 14px; letter-spacing: .04em;
+  background: var(--accent); color: var(--bg); text-decoration: none;
+  padding: 15px 26px; border-radius: 10px; white-space: nowrap; font-weight: 500;
+  transition: background .15s, transform .15s;
+}
+.band .cta:hover { background: var(--accent-bright); transform: translateX(3px); }
+
+footer {
+  margin: 70px 0 0; padding: 30px 0 60px; border-top: 1px solid var(--rule);
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--mono); font-size: 12.5px; color: var(--ink-muted); letter-spacing: .04em;
+}
+footer a { color: var(--ink-soft); text-decoration: none; }
+footer a:hover { color: var(--accent); }
+
+/* ---------- RESPONSIVE ---------- */
+@media (max-width: 940px) {
+  .topnav nav { display: none; }
+  .wrap { padding: 0 24px; }
+  .hero { padding: 64px 0 52px; }
+  .cards { grid-template-columns: 1fr; }
+  .two-col { grid-template-columns: 1fr; gap: 24px; }
+  .band { flex-direction: column; align-items: flex-start; text-align: left; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ TOP NAV ============ -->
+<header class="topnav">
+  <div class="wrap row">
+    <a class="brand" href="#top">
+      <span class="glyph">ξ</span>
+      <span class="name">xi</span>
+    </a>
+    <nav>
+      <a href="#core"><span class="num">01</span> What is xi?</a>
+      <a href="#handoff"><span class="num">02</span> Hand-off</a>
+      <a href="#surfaces"><span class="num">03</span> Surfaces</a>
+      <a href="#loop"><span class="num">04</span> The loop</a>
+      <a href="#ext"><span class="num">05</span> Extensions</a>
+    </nav>
+    <a class="gh" href="#">github →</a>
+  </div>
+</header>
+
+<!-- ============ MAIN ============ -->
+<main id="top">
+  <div class="wrap">
+    <header class="hero">
+      <div class="eyebrow">Personal coding agent · ξ</div>
+      <h1 class="title">An <em>extendable</em><br>coding agent.</h1>
+
+      <div class="stats">
+        <div class="stat"><div class="n">1</div><div class="l">state atom per process</div></div>
+        <div class="stat"><div class="n">3</div><div class="l">surfaces: TUI · web · server</div></div>
+        <div class="stat"><div class="n">0</div><div class="l">hidden magic — every step is an event</div></div>
+      </div>
+
+      <p class="made">a legible agent · <a href="#core">read the loop ↓</a></p>
+    </header>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SECTION 01 -->
+  <div class="wrap">
+    <section class="block" id="core">
+      <h2 class="sec">What is xi?</h2>
+      <p class="lede">
+        Xi is an <b>agent harness</b> built in ClojureScript and Bun, inspired by <b>Pi</b>.
+        It runs your coding agent in the terminal and ships with a <b>ready-made web UI</b>
+        that connects to the very same sessions — so a conversation started at your desk can be
+        picked up in the browser, mid-stream, without losing a token.
+      </p>
+
+      <div class="cards">
+        <div class="card">
+          <div class="tag">Pure core</div>
+          <h3>Handlers, not spaghetti</h3>
+          <p>Every feature is a pure reducer over one atom. No local component state, no hidden mutation. Effects are plain data, interpreted at the edge.</p>
+        </div>
+        <div class="card">
+          <div class="tag">Providers</div>
+          <h3>Bring your model</h3>
+          <p>Claude via the Agent SDK, or Ollama locally. A provider is just a map with a <code>start-turn!</code> — routing picks by name or explicit choice.</p>
+        </div>
+        <div class="card">
+          <div class="tag">Sessions</div>
+          <h3>Pi-compatible history</h3>
+          <p>Conversations persist as JSONL on disk, resumable with <code>/resume</code>. Standalone is simply "not connected" — same shape, same code.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SECTION 02 · HAND-OFF -->
+  <div class="wrap">
+    <section class="block" id="handoff">
+      <div class="two-col">
+        <div>
+          <h2 class="sec">Start in the terminal.<br>Land in the browser.</h2>
+          <p class="lede">
+            The web UI isn't a bolted-on dashboard — it joins <b>the same room, the same events</b>.
+            Kick off a refactor in the TUI, stand up, and open <code>localhost:7474</code> on any
+            device: the conversation is already there, still streaming. Reply from the browser and
+            the terminal follows. A clean hand-off, in both directions.
+          </p>
+        </div>
+        <div class="handoff-art" aria-hidden="true">
+          <svg viewBox="0 0 520 340" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">
+                <path class="arrowhead" d="M0 0 L10 5 L0 10 Z"/>
+              </marker>
+            </defs>
+            <!-- terminal window -->
+            <rect class="frame" x="24" y="196" width="184" height="122" rx="10"/>
+            <line class="line" x1="24" y1="228" x2="208" y2="228"/>
+            <circle class="frame" cx="44" cy="212" r="4"/>
+            <circle class="frame" cx="60" cy="212" r="4"/>
+            <text x="44" y="262">❯ xi</text>
+            <line class="line" x1="44" y1="284" x2="152" y2="284" opacity=".55"/>
+            <line class="line" x1="44" y1="300" x2="120" y2="300" opacity=".35"/>
+
+            <!-- phone with chat -->
+            <rect class="frame" x="366" y="20" width="116" height="212" rx="20"/>
+            <line class="line" x1="404" y1="38" x2="444" y2="38" stroke-linecap="round" opacity=".7"/>
+            <!-- chat bubbles (abstract) -->
+            <rect class="bubble" x="382" y="58" width="58" height="20" rx="10"/>
+            <rect class="bubble bubble-me" x="408" y="88" width="58" height="20" rx="10"/>
+            <rect class="bubble" x="382" y="118" width="70" height="20" rx="10"/>
+            <!-- typing indicator -->
+            <rect class="bubble" x="382" y="148" width="44" height="20" rx="10"/>
+            <circle class="dot" cx="396" cy="158" r="2"/>
+            <circle class="dot" cx="404" cy="158" r="2"/>
+            <circle class="dot" cx="412" cy="158" r="2"/>
+            <!-- input bar + home indicator -->
+            <rect class="bubble" x="382" y="190" width="84" height="18" rx="9" opacity=".5"/>
+            <line class="line" x1="406" y1="220" x2="442" y2="220" stroke-linecap="round" opacity=".7"/>
+
+            <!-- flight paths: terminal → phone, phone → terminal -->
+            <path class="flight" d="M 216 236 C 296 232, 312 180, 348 138" marker-end="url(#arrow)"/>
+            <path class="flight" d="M 356 180 C 330 226, 296 254, 226 262" marker-end="url(#arrow)"/>
+
+            <!-- paper plane -->
+            <g transform="translate(232 148) rotate(-18)">
+              <path class="plane" d="M55 0 L38 50 L28 28 L5 18 Z"/>
+              <path class="fold" d="M55 0 L28 28"/>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SECTION 03 · SURFACES -->
+  <div class="wrap">
+    <section class="block" id="surfaces">
+      <h2 class="sec">One agent, three faces.</h2>
+      <p class="lede">
+        The TUI, the WebSocket server, and the browser client are all <b>assemblies of the same
+        pure handlers</b>. Pick the surface — the brain doesn't change.
+      </p>
+
+      <div class="filters" id="surface-filter">
+        <span class="filter on"><span>All</span><span class="cnt">3</span></span>
+        <span class="filter"><span>Terminal</span><span class="cnt">TUI</span></span>
+        <span class="filter"><span>Browser</span><span class="cnt">web</span></span>
+        <span class="filter"><span>Server</span><span class="cnt">WS</span></span>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <div class="tag">xi</div>
+          <h3>Terminal TUI</h3>
+          <p>A full-screen terminal client with editor, syntax highlighting, and markdown — rendered from state, change-gated to one paint per burst.</p>
+        </div>
+        <div class="card">
+          <div class="tag">xi server</div>
+          <h3>Rooms over WS</h3>
+          <p>A Bun WebSocket server hosting multiple rooms. The wire protocol <em>is</em> the event maps, serialized as EDN. Rooms auto-destroy when idle.</p>
+        </div>
+        <div class="card">
+          <div class="tag">localhost:7474</div>
+          <h3>Web client</h3>
+          <p>A Replicant browser client that mirrors the server exactly — same reducers, same order. Works offline with a localStorage cache.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SECTION 03 -->
+  <div class="wrap">
+    <section class="block" id="loop">
+      <div class="two-col">
+        <div>
+          <h2 class="sec">Everything is an event.</h2>
+          <p class="lede">
+            Prompts, agent tokens, slash commands, dialogs, room switches, even renders — they all
+            flow through <b>one FIFO dispatch queue</b>, one event at a time. Handlers return new
+            state and effect data. Taps observe every step, which is how broadcast, caching, and the
+            event log all work.
+          </p>
+        </div>
+        <div class="code-card">
+          <div class="code-bar">
+            <span class="t">xi.core.events</span>
+          </div>
+<pre><span class="c">;; a handler is (fn [state event])</span>
+(<span class="k">defn</span> handle-text-delta
+  [state {<span class="k">:keys</span> [text]}]
+  {<span class="k">:state</span>
+     (append-entry state text)
+   <span class="k">:effects</span>
+     [[<span class="k">:render/schedule</span>]]})
+
+<span class="c">;; the wire protocol IS the event</span>
+{<span class="k">:type</span> <span class="k">:agent/text-delta</span>
+ <span class="k">:room-id</span> <span class="s">"a1f0"</span>
+ <span class="k">:text</span> <span class="s">"Reading the file…"</span>}</pre>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SECTION 04 -->
+  <div class="wrap">
+    <section class="block" id="ext">
+      <h2 class="sec">Extensions are just data.</h2>
+      <p class="lede">
+        An extension is a <b>plain map</b> — handlers, effects, tool gates, commands, keybindings.
+        No registration atoms; they're composed at assembly time. Add a tool, gate a call, or
+        badge the prompt without touching the core.
+      </p>
+
+      <div class="two-col" style="margin-top:34px">
+        <div class="code-card" style="margin:0">
+          <div class="code-bar">
+            <span class="t">xi.ext.commit</span>
+          </div>
+<pre>{<span class="k">:id</span> <span class="k">:commit</span>
+ <span class="k">:commands</span>
+ {<span class="s">"commit"</span>
+  (<span class="k">fn</span> [state args]
+    {<span class="k">:effects</span>
+     [[<span class="k">:git/commit</span> args]]})}
+
+ <span class="k">:tool-gate</span>
+ (<span class="k">fn</span> [call ctx]
+   <span class="c">;; allow / modify / block /</span>
+   <span class="c">;; short-circuit with a result</span>
+   call)}</pre>
+        </div>
+        <div>
+          <p class="lede" style="font-size:18px;margin-bottom:22px">Built in and ready to compose:</p>
+          <div class="filters" id="ext-list" style="margin:0">
+            <span class="filter">kb</span>
+            <span class="filter">web</span>
+            <span class="filter">perplexity</span>
+            <span class="filter">github&nbsp;search</span>
+            <span class="filter">commit</span>
+            <span class="filter">clj&nbsp;surgeon</span>
+            <span class="filter">gtd</span>
+            <span class="filter">permission&nbsp;gate</span>
+            <span class="filter">plan&nbsp;mode</span>
+            <span class="filter">skills</span>
+            <span class="filter">dictation</span>
+            <span class="filter">clipboard&nbsp;image</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="band">
+        <div>
+          <h3>Run it in your terminal.</h3>
+          <p>npm install · bb build · xi — and you're talking to your codebase.</p>
+        </div>
+        <a class="cta" href="#">Read the docs →</a>
+      </div>
+
+      <footer>
+        <span>ξ xi · a legible coding agent</span>
+        <span><a href="#top">back to top ↑</a></span>
+      </footer>
+    </section>
+  </div>
+</main>
+
+<script>
+// simple filter toggle (visual only)
+['#surface-filter', '#ext-list'].forEach(sel => {
+  const grp = document.querySelector(sel);
+  if (!grp) return;
+  grp.querySelectorAll('.filter').forEach(f => f.addEventListener('click', () => {
+    if (grp.id === 'surface-filter') {
+      grp.querySelectorAll('.filter').forEach(x => x.classList.remove('on'));
+      f.classList.add('on');
+    } else {
+      f.classList.toggle('on');
+    }
+  }));
+});
+</script>
+</body>
+</html>
