@@ -69,9 +69,9 @@
         (.catch (fn [e]
                   (js/console.error "[pushover] error:" (.-message e)))))))
 
-(defn extension
+(defn create
   "Factory — returns the pushover extension map, or nil when unconfigured."
-  []
+  [_ctx]
   (when (and (aget js/process.env "PUSHOVER_USER_KEY")
              (aget js/process.env "PUSHOVER_APP_TOKEN"))
     {:id       :pushover

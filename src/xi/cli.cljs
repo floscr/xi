@@ -52,29 +52,8 @@
             [xi.core.jsonl :as core-jsonl]
             [xi.core.log :as log]
             [xi.core.state :as state]
-            [xi.ext.clipboard-image :as ext.clipboard-image]
-            [xi.ext.clj-surgeon :as ext.clj-surgeon]
-            [xi.ext.commit :as ext.commit]
-            [xi.ext.worktree.core :as ext.worktree]
+            [xi.config :as config]
             [xi.ext.core :as ext]
-            [xi.ext.dictation :as ext.dictation]
-            [xi.ext.diff.core :as ext.diff]
-            [xi.ext.done-notify :as ext.done-notify]
-            [xi.ext.events :as ext.events]
-            [xi.ext.github :as ext.github]
-            [xi.ext.github-code-search.core :as ext.github-code-search]
-            [xi.ext.gtd :as ext.gtd]
-            [xi.ext.kb :as ext.kb]
-            [xi.ext.perplexity :as ext.perplexity]
-            [xi.ext.permission-gate :as ext.permission-gate]
-            [xi.ext.plan-mode :as ext.plan-mode]
-            [xi.ext.process-manager :as ext.process-manager]
-            [xi.ext.projects :as ext.projects]
-            [xi.ext.pushover :as ext.pushover]
-            [xi.ext.skills :as ext.skills]
-            [xi.ext.terminal-title :as ext.terminal-title]
-            [xi.ext.todo-intercept :as ext.todo-intercept]
-            [xi.ext.web :as ext.web]
             [xi.fx :as fx]
             [xi.naming :as naming]
             [xi.provider.claude :as claude]
@@ -90,9 +69,11 @@
 
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────
 ;;
-;; Extensions are composed at assembly time into the seams the core, the
-;; provider effects and the TUI consume. Every seam degrades to a no-op
-;; when no extensions are present.
+;; Which extensions load is declared in xi.config (one .cljc for all builds,
+;; split by reader features). Here they are only instantiated (factory fns
+;; get a ctx map) and composed into the seams the core, the provider effects
+;; and the TUI consume. Every seam degrades to a no-op when no extensions
+;; are present.
 ;;
 ;; Two groups, because state lives in two places:
 ;;   server-extensions — state + provider/tool hooks that run server-side.
@@ -103,38 +84,19 @@
 ;;                       (dictation): handlers installed unwrapped, fx local.
 
 (defn- server-extensions
-  "Extensions whose state + provider hooks live server-side. nils (e.g.
-   an unconfigured pushover) are dropped by ext/compose. `ask!` (the dialog
-   ask! from ext/create-dialogs) is threaded into extensions that raise their
-   own confirm dialogs from effects (worktree removal); nil in the client
-   mirror, where those effects never run."
+  "Extensions whose state + provider hooks live server-side (xi.config/server).
+   nils (e.g. an unconfigured pushover) are dropped by ext/compose. `ask!`
+   (the dialog ask! from ext/create-dialogs) is threaded into extensions that
+   raise their own confirm dialogs from effects (worktree removal); nil in
+   the client mirror, where those effects never run."
   [ring & [ask!]]
-  [ext.plan-mode/extension
-   ext.done-notify/extension
-   (ext.pushover/extension)
-   ext.diff/extension
-   (ext.worktree/create ask!)
-   ext.kb/extension
-   ext.web/extension
-   ext.perplexity/extension
-   ext.commit/extension
-   ext.clj-surgeon/extension
-   ext.github/extension
-   ext.github-code-search/extension
-   ext.gtd/extension
-   ext.permission-gate/extension
-   ext.todo-intercept/extension
-   ext.terminal-title/extension
-   ext.clipboard-image/extension
-   ext.process-manager/extension
-   ext.projects/extension
-   ext.skills/extension
-   (ext.events/create ring)])
+  (ext/instantiate config/server {:ring ring :ask! ask!}))
 
 (defn- client-extensions
-  "Process-local extensions that run in the TUI client process."
+  "Process-local extensions that run in the TUI client process
+   (xi.config/client)."
   []
-  [(ext.dictation/create)])
+  (ext/instantiate config/client {}))
 
 (defn- tooling-opts
   "Provider-effect tooling threaded into agent/create-fx from a composed

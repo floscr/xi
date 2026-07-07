@@ -14,7 +14,7 @@
 
 (defn create
   "Build the events extension, closed over the ring buffer."
-  [ring]
+  [{:keys [ring]}]
   {:id               :events
    :tool-definitions [tool-def]
    :tool-registry    {"xi_events"

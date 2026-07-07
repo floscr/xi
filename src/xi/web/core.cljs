@@ -22,8 +22,7 @@
             [xi.core.state :as state]
             [xi.diff :as diff]
             [xi.ext.core :as ext]
-            [xi.ext.github.web :as github-web]
-            [xi.ext.gtd.web :as gtd-web]
+            [xi.config :as config]
             [xi.naming :as naming]
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
@@ -804,11 +803,10 @@
     (str proto host ":" port)))
 
 (defn- web-extensions
-  "Browser-safe extension web halves, composed at init — symmetric to
-   server-extensions/client-extensions in xi.cli."
+  "Browser-safe extension web halves (xi.config/web), composed at init —
+   symmetric to server-extensions/client-extensions in xi.cli."
   []
-  [gtd-web/extension
-   github-web/extension])
+  (ext/instantiate config/web {}))
 
 (defn- demo-init!
   "Static one-shot render for README screenshots (?demo=<view>). Seeds

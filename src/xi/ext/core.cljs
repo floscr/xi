@@ -84,6 +84,14 @@
           acc
           m))
 
+(defn instantiate
+  "Resolve config extension entries (xi.config) into extension maps:
+   maps pass through, factory fns are called with `ctx`
+   (a per-surface map, e.g. {:ring … :ask! …}). nil results are kept —
+   compose drops them."
+  [entries ctx]
+  (mapv #(if (map? %) % (% ctx)) entries))
+
 (defn compose
   "Compose extensions (in order) into one assembly map."
   [exts]

@@ -36,19 +36,40 @@ provider effects, and TUI.
 
 ## Architecture
 
+Which extensions load is declared in **`src/xi/config.cljc`** — plain
+Clojure, one vector per surface (`server`, `client`, `web`):
+
+```clojure
+(def server
+  [plan-mode/extension    ; extension map → used as-is
+   pushover/create        ; factory fn → called with ctx by ext/instantiate
+   …])
 ```
+
+The one file is shared by every build via **custom reader features**
+(shadow-cljs `:compiler-options {:reader-features …}`): the node builds
+(`:main`, `:test`) read it with `#?(:node …)`, the browser build with
+`#?(:browser …)` — so each target only requires + compiles the extensions
+for its surface, and node-only code never leaks into the browser bundle.
+
+Order matters — `ext/compose` chains handlers/gates in list order. The
+plan is to eventually load these entries at runtime via SCI; until then
+the config is compiled in like any other namespace.
+
+```
+xi.config.cljc ── #?(:node server / client)   #?(:browser web)
+
 xi.cli (assembly)
-├── server-extensions  →  ext/compose  →  composed map
-│     plan-mode, done-notify, pushover,     │
-│     kb, web, perplexity, commit,          │  merge into
-│     clj-surgeon, gtd, permission-gate,    │  app handlers,
-│     todo-intercept, terminal-title,       │  fx, commands,
-│     clipboard-image, projects, skills     │  tool-gate, etc.
-├── client-extensions  →  ext/compose       │
-│     dictation                             │
-└── create-app ←────────────────────────────┘
+├── server-extensions  →  ext/instantiate → ext/compose → composed map
+│     (xi.config/server — factories get   │
+│      ctx {:ring … :ask! …})            │  merge into
+├── client-extensions  →  ext/instantiate │  app handlers,
+│     (xi.config/client)                  │  fx, commands,
+└── create-app ←───────────────────────┘  tool-gate, etc.
       ↕ events      ↕ effects
     handlers        fx handlers
+
+xi.web.core ── web-extensions (xi.config/web) → ext/instantiate → ext/compose
 ```
 
 ### Per-mode assembly
@@ -171,13 +192,21 @@ Rendered after `xi>` on every draw.
 
 ## Factory Extensions
 
-Extensions that need runtime configuration return nil when unconfigured:
+A config entry is either an extension **map** (used as-is) or a **factory
+fn** `(fn [ctx] → ext|nil)` — `ext/instantiate` calls factories with a
+per-surface ctx map (`server` gets `{:ring … :ask! …}`; `client`/`web`
+get `{}`). Factories close over runtime resources and may return nil when
+unconfigured:
 
 ```clojure
 ;; pushover: nil when env vars missing → ext/compose drops it
-(defn extension []
+(defn create [_ctx]
   (when (and user-key app-token)
     {:id :pushover ...}))
+
+;; events: closes over the ring buffer from ctx
+(defn create [{:keys [ring]}]
+  {:id :events ...})
 ```
 
 ## Web Client Surface
@@ -235,8 +264,10 @@ Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
 ## Writing a New Extension
 
 1. Create `src/xi/ext/my_ext.cljs`
-2. Define the extension map with an `:id`
-3. Add to `server-extensions` or `client-extensions` in `xi.cli`
+2. Define the extension map with an `:id` (or a `create` factory fn)
+3. Require it in `src/xi/config.cljc` (inside the right reader-feature
+   branch: `:node` for server/client, `:browser` for web halves) and add
+   it to the matching surface vector
 4. Build: `bb build` — shadow-cljs compiles it in
 
 ### Minimal example

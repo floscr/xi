@@ -87,9 +87,17 @@ File `src/xi/ext/my_thing.cljs`, ns `xi.ext.my-thing`, events namespaced
 
 ## 4. Register
 
-- Server: `server-extensions` in `src/xi/cli.cljs`
-- Client: `client-extensions` in `src/xi/cli.cljs`
-- Web half: `web-extensions` in `src/xi/web/core.cljs`
+Require the extension and add it to the right surface vector in
+`src/xi/config.cljc`. The file is split by custom reader features —
+node requires/defs live in `#?(:node …)` branches, browser web halves in
+`#?(:browser …)` (features set per build in shadow-cljs.edn):
+
+- Server: `server` (`:node` branch)
+- Client (TUI process-local): `client` (`:node` branch)
+- Web half: `web` (`:browser` branch — browser-safe requires only)
+
+Entries are an extension map, or a factory fn `(fn [ctx] → ext|nil)` —
+`server` factories get `{:ring … :ask! …}`.
 
 ## 5. Web Half (browser UI only)
 
@@ -143,7 +151,8 @@ Canonical examples: `src/xi/ext/gtd/web.cljs`, `src/xi/ext/github/web.cljs`.
 - `js/process.env.KEY` → `(aget js/process.env "KEY")`
 - Bare string tool result → `{:content [{:type "text" :text …}]}`
 - Node APIs in the web half
-- Forgetting to register in `xi.cli` / `xi.web.core`
+- Forgetting to register in `xi.config` (or putting a require in the wrong
+  reader-feature branch)
 - Starting/killing servers by hand → `bb` tasks only
 
 ## Examples

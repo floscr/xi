@@ -314,7 +314,7 @@
   "Build the worktree extension. `ask!` (from ext.core/create-dialogs) powers
    the removal confirm; nil (client mirror / headless) makes it a no-op that
    never removes without a yes."
-  [ask!]
+  [{:keys [ask!]}]
   {:id       :worktree
    :commands [{:name "worktree"
                :description "Create a git worktree and work in it (merge|list|remove)"

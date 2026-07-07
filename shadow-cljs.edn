@@ -6,16 +6,19 @@
    :main xi.cli/main
    :output-to "target/main.js"
    :devtools {:console-support false :log false}
-   :compiler-options {:optimizations :simple}}
+   :compiler-options {:optimizations :simple
+                      :reader-features #{:node}}}
 
   :test
   {:target    :node-test
    :output-to "target/test.js"
-   :autorun   true}
+   :autorun   true
+   :compiler-options {:reader-features #{:node}}}
 
   :web
   {:target     :browser
    :output-dir "resources/public/js"
    :asset-path "/js"
    :modules    {:main {:init-fn xi.web.core/init!}}
-   :devtools   {:after-load xi.web.core/reload!}}}}
+   :devtools   {:after-load xi.web.core/reload!}
+   :compiler-options {:reader-features #{:browser}}}}}

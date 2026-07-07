@@ -75,7 +75,7 @@
 (defn create
   "Build the dictation extension. The whisper process + diff state live in
    this closure; app state only carries the :recording? badge flag."
-  []
+  [_ctx]
   (let [proc*    (atom nil)        ;; the whisper child process (or nil)
         active?  (atom false)      ;; insert transcript output while true
         prev*    (atom "")         ;; last whisper chunk (append vs rewrite)

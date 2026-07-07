@@ -229,6 +229,14 @@ When writing a new extension, follow [docs/writing-extensions.md](docs/writing-e
   :system-prompt :keybindings :prompt-badge :on-shutdown`. No registration
   atoms; extensions are composed at assembly time in `xi.cli` via
   `ext/compose`.
+- **Which extensions load is declared in `src/xi/config.cljc`** — one
+  `server` / `client` / `web` vector per surface, shared by all builds via
+  custom reader features (`#?(:node …)` for the node builds,
+  `#?(:browser …)` for the web build; set in shadow-cljs.edn
+  `:compiler-options {:reader-features …}`). Entries are extension maps or
+  factory fns `(fn [ctx] → ext|nil)`; `ext/instantiate` supplies the
+  per-surface ctx (`server` gets `{:ring … :ask! …}`). Order matters
+  (compose chains in order).
 - Extension state lives in app state: room-scoped under
   `[:rooms room-id :ext <id>]` (mirrors to clients via `:room/joined`
   snapshots) or process-local under `[:ext <id>]` (never crosses the wire).
