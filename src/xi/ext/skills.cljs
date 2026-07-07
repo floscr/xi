@@ -157,21 +157,28 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
       ;; default: list
       {:effects [[:skill/list {:room-id room-id}]]})))
 
+(defn- skill-select-handler
+  "Menu-selected a skill \u2192 load and auto-post it."
+  [_st {:keys [room-id name]}]
+  {:effects [[:skill/load {:room-id room-id :name name}]]})
+
 (defn- skill-list-fx
-  "Scan on-demand skills and report them as a status line."
+  "Scan on-demand skills and open a picker menu; Enter loads the skill."
   [{:keys [dispatch!]} {:keys [room-id]}]
   (let [skills (scan-skills)]
-    (dispatch!
-     {:type :history/append :room-id room-id
-      :entry {:kind :status
-              :text (if (seq skills)
-                      (let [max-name (apply max (map #(count (:name %)) skills))
-                            lines (map (fn [{:keys [name description]}]
-                                         (let [pad (apply str (repeat (- (+ max-name 2) (count name)) " "))]
-                                           (str "  " name pad description)))
-                                       skills)]
-                        (str "Available skills:\n" (str/join "\n" lines)))
-                      (str "No skills found in " SKILLS_DIR))}})))
+    (if (seq skills)
+      (let [items (mapv (fn [{:keys [name description]}]
+                          {:label name
+                           :description description
+                           :event {:type :skill/select
+                                   :room-id room-id
+                                   :name name}})
+                        skills)]
+        (dispatch! {:type :ui/menu-open :room-id room-id
+                    :menu {:id :skills :prompt "skill> " :items items}}))
+      (dispatch! {:type :history/append :room-id room-id
+                  :entry {:kind :status
+                          :text (str "No skills found in " SKILLS_DIR)}}))))
 
 (defn- skill-load-fx
   "Load a skill's content and submit it as a prompt."
@@ -196,8 +203,10 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
                     :handler skill-command
                     :subcommands [{:name "list" :description "List available skills"}
                                   {:name "load" :description "Load a skill and auto-post it"}]}]
-   :handlers        {:skill/web-list skill-web-list}
+   :handlers        {:skill/web-list skill-web-list
+                     :skill/select  skill-select-handler}
    :server-fx       server-fx
    :roomless-events #{:skill/web-list}
+   :no-broadcast    #{:skill/select}
    :fx            {:skill/list skill-list-fx
                    :skill/load skill-load-fx}})
