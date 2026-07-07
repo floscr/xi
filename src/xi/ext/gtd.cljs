@@ -106,10 +106,13 @@
 ;; ── Task parsing ──────────────────────────────────────────────────────────────
 
 (defn- parse-edn-tasks
-  "Parse the agenda EDN (a vector of maps) into task maps."
+  "Parse the agenda EDN (a vector of maps) into task maps. The org CLI emits
+   tagged literals (e.g. #time/date \"2026-06-16\") that cljs.reader has no
+   parser for, so read them via a :default tag handler (keep the value, drop
+   the tag) rather than letting read-string throw and yield an empty list."
   [edn-str]
   (try
-    (let [data (reader/read-string edn-str)]
+    (let [data (reader/read-string {:default (fn [_tag value] value)} edn-str)]
       (if (vector? data) data []))
     (catch :default _ [])))
 
