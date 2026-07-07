@@ -222,6 +222,7 @@ element looks off and drifts from the design system.
 ## Extensions
 
 See [docs/extensions.md](docs/extensions.md) for full details.
+When writing a new extension, follow [docs/writing-extensions.md](docs/writing-extensions.md).
 
 - An extension is a **plain data map** — `:id :init :handlers :fx
   :event-hooks :tool-gate :tool-definitions :tool-registry :commands

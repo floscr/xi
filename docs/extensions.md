@@ -5,6 +5,10 @@ are no registration atoms or global state — extensions are plain
 ClojureScript maps wired through `xi.cli` into the core event loop,
 provider effects, and TUI.
 
+> Writing a new extension? Follow the step-by-step recipe in
+> [writing-extensions.md](writing-extensions.md) — this file is the
+> reference for every key.
+
 ## Extension Shape
 
 ```clojure
