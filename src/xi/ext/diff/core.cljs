@@ -12,6 +12,7 @@
             [xi.core.state :as state]
             [xi.ext.diff.difft :as difft]
             [xi.ext.diff.git :as git]
+            [xi.ext.diff.handlers :as handlers]
             [xi.fx :as fx]))
 
 ;; ── Command (pure) ────────────────────────────────────────────────────────────
@@ -31,22 +32,6 @@
           [:git nil args])]
     {:effects [[:diff/load (cond-> {:room-id room-id :args method :engine engine}
                              cols (assoc :cols cols))]]}))
-
-;; ── Buffer install (pure handler) ─────────────────────────────────────────────
-
-(defn- diff-open
-  "Diff text came back from :diff/load — install it as the :diff buffer and
-   switch to it. :engine records the renderer; only :git diffs are unified and
-   get :diff? true (the interactive viewer). :difft output is ANSI structural
-   text shown as a plain buffer."
-  [st {:keys [room-id title text engine]}]
-  (when (state/get-room st room-id)
-    (let [engine (or engine :git)]
-      {:state (-> st
-                  (assoc-in [:rooms room-id :ui :buffers :diff]
-                            {:title title :text text :engine engine
-                             :diff? (= engine :git)})
-                  (assoc-in [:rooms room-id :ui :active-buffer] :diff))})))
 
 ;; ── Effect (impure) ───────────────────────────────────────────────────────────
 
@@ -127,5 +112,5 @@
                              {:name "session-edits"   :description "Diff of files edited this session"}
                              {:name "session-commits" :description "Diff of commits made this session"}
                              {:name "difft"           :description "Render with difftastic (append a source, e.g. difft staged)"}]}]
-   :handlers {:ui/diff-open diff-open}
+   :handlers {:ui/diff-open handlers/diff-open}
    :fx       {:diff/load diff-load-fx}})

@@ -38,7 +38,8 @@
         [xi.ext.web :as web]
         [xi.ext.worktree.core :as worktree]]
        :browser
-       [[xi.ext.github.web :as github-web]
+       [[xi.ext.diff.web :as diff-web]
+        [xi.ext.github.web :as github-web]
         [xi.ext.gtd.web :as gtd-web]])))
 
 #?(:node
@@ -75,5 +76,6 @@
 #?(:browser
    (def web
      "Browser-safe extension web halves, composed by xi.web.core."
-     [gtd-web/extension
+     [diff-web/extension
+      gtd-web/extension
       github-web/extension]))
