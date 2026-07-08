@@ -151,6 +151,12 @@
   [{:keys [url hello target cwd reconnect? on-status on-close]}]
   (let [ctx #js {:dispatch nil :ws nil :closed false :pending #js [] :backoff 1000
                  :authed (nil? hello)
+                 ;; Incoming broadcasts are coalesced: decoded events pile into
+                 ;; :inbox and flush as one synchronous batch per event-loop
+                 ;; turn, so a streaming burst collapses into a single render
+                 ;; instead of one full render pass per frame (which starves
+                 ;; local keystroke repaints — see flush-inbox!).
+                 :inbox #js [] :flushScheduled false
                  ;; nil target → no auto-join (the web router drives joins via
                  ;; forwarded :room/join, which updates lastJoin for reconnect)
                  :lastJoin (when target
@@ -158,6 +164,21 @@
     (letfn [(open? []
               (let [ws (.-ws ctx)] (and ws (= 1 (.-readyState ws)))))
             (ready? [] (and (open?) (.-authed ctx)))
+            (flush-inbox! []
+              ;; Drain buffered broadcasts in arrival order. Dispatching them
+              ;; back-to-back keeps them in one app render batch: the app's
+              ;; render scheduler coalesces the N reducer runs into a single
+              ;; on-render pass (xi.core.app renderScheduled guard).
+              (set! (.-flushScheduled ctx) false)
+              (let [evs (.-inbox ctx)]
+                (set! (.-inbox ctx) #js [])
+                (when-let [dispatch! (.-dispatch ctx)]
+                  (doseq [ev (array-seq evs)]
+                    (dispatch! ev)))))
+            (schedule-flush! []
+              (when-not (.-flushScheduled ctx)
+                (set! (.-flushScheduled ctx) true)
+                (js/setTimeout flush-inbox! 0)))
             (flush-pending! [ws]
               (let [p (.-pending ctx)]
                 (set! (.-pending ctx) #js [])
@@ -219,8 +240,8 @@
                        (set! (.-lastJoin ctx)
                              (wire/encode {:type :room/join
                                            :target {:session-id sid}})))
-                     (when-let [dispatch! (.-dispatch ctx)]
-                       (dispatch! (assoc ev :remote? true))))))
+                     (.push (.-inbox ctx) (assoc ev :remote? true))
+                     (schedule-flush!))))
                 (.addEventListener ws "close" (fn [_] (handle-drop!)))
                 (.addEventListener ws "error"
                                    (fn [_] (try (.close ws) (catch :default _ nil))))))
