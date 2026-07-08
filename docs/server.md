@@ -112,6 +112,13 @@ serialized as EDN strings (`xi.wire/encode` / `decode`). Both peers are
 ClojureScript, so keywords and nesting survive. `:remote?` is
 transport-local and never sent.
 
+### Auth handshake
+
+Before anything else, a client must authenticate with its client key —
+`{:type :auth/hello …}` → `:auth/ok` / `:auth/pending` / `:auth/denied`.
+Unknown clients are parked with a 4-digit pairing code until approved (web
+banner or `bb serve:approve <code>`). See [client-auth.md](client-auth.md).
+
 ### Join flow
 
 1. Client connects and sends `{:type :room/join :target …}` where target is

@@ -43,6 +43,7 @@
                       ~/.pi/agent/logs/<session>.events.jsonl"
   (:require [clojure.string :as str]
             [xi.agent :as agent]
+            [xi.auth :as auth]
             [xi.client.tui :as client-tui]
             [xi.client.ws-transport :as ws-transport]
             [xi.commands :as commands]
@@ -420,6 +421,12 @@
         dispatch-ref (atom nil)
         transport (ws-transport/create!
                    {:url url
+                    ;; Identify with the persistent local key — the server
+                    ;; trusts ~/.config/xi/client-key implicitly (same user),
+                    ;; so the TUI never waits for pairing approval locally.
+                    :hello {:client-key  (auth/ensure-client-key!)
+                            :client-name (str "tui@" (.hostname (js/require "node:os")))
+                            :platform    "tui"}
                     :target target
                     :cwd cwd
                     ;; Retry with backoff like the web client instead of

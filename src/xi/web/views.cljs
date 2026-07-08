@@ -2421,6 +2421,43 @@
                           :on-click (fn [_] (.reload js/location))}
          "Reload")))))
 
+(defn- auth-overlay
+  "Full-screen block while this browser awaits pairing approval (or was
+   denied). The code must match what the approving client sees — that
+   comparison is the security, not the device label."
+  [state]
+  (when-let [{:keys [status code]} (:web/auth state)]
+    [:div {:class ["auth-overlay"]}
+     [:div {:class ["auth-overlay__card"]}
+      (if (= :denied status)
+        (list [:h2 "Connection denied"]
+              [:p "This device was not approved. Reload to request pairing again."])
+        (list [:h2 "Approve this device"]
+              [:p "New devices must be approved before they can talk to the server."]
+              [:div {:class ["auth-overlay__code"]} (str code)]
+              [:p "Approve from an already-connected client, or run:"]
+              [:code {:class ["auth-overlay__cmd"]} (str "bb serve:approve " code)]))]]))
+
+(defn- auth-request-banner
+  "Pairing requests from unknown devices, shown to authed clients."
+  [state dispatch!]
+  (when-let [reqs (seq (vals (:web/auth-requests state)))]
+    [:div {:class ["auth-requests"]}
+     (for [{:keys [code client-name platform]} reqs]
+       [:div {:class ["auth-requests__item"] :replicant/key code}
+        [:span {:class ["auth-requests__label"]}
+         (str (or client-name "Unknown device")
+              (when platform (str " · " platform))
+              " — code " code)]
+        (button/button
+         {:variant :primary :size :sm
+          :on-click (fn [_] (dispatch! {:type :auth/approve :code code}))}
+         "Approve")
+        (button/button
+         {:variant :ghost :size :sm
+          :on-click (fn [_] (dispatch! {:type :auth/deny :code code}))}
+         "Deny")])]))
+
 (defn root-view
   "Top-level view, route-driven: the session list at /, a room at /chat/:id.
    Wrapped in a floating sidebar layout so every topbar's hamburger reveals
@@ -2442,4 +2479,6 @@
           :chat (chat-view state dispatch!)
           :git-status (git-status-view state dispatch!)
           (home-view state dispatch!))))
-     (command-palette state dispatch!))))
+     (command-palette state dispatch!)
+     (auth-request-banner state dispatch!)
+     (auth-overlay state))))

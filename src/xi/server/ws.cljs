@@ -8,18 +8,33 @@
    (xi.client.ws-transport). The server owns provider effects + the agent
    loop; clients are renderers + input.
 
-   Handshake:
-     connect → server sends {:type :lobby/state :rooms […]}
+   Handshake (auth is transport-level, never dispatched into the app):
+     connect → client sends {:type :auth/hello :client-key … :client-name … :platform …}
+     server  → {:type :auth/ok} when the key is approved (clients.edn or the
+               local ~/.config/xi/client-key — see xi.auth), else
+               {:type :auth/pending :code \"1234\"} and the connection is
+               parked: every other event is answered with {:type :auth/required}.
+               Pending requests are broadcast to authed clients as
+               {:type :auth/request …}; any of them may answer with
+               {:type :auth/approve|:auth/deny :code …}, or the user runs
+               `bb serve:approve <code>` (the server polls clients.edn while
+               requests are pending). Denied clients get {:type :auth/denied}.
+     then    → server sends {:type :lobby/state :rooms […]}
      client  → {:type :room/join :target \"new\"|\"latest\"|room-id :cwd …}
      server  → {:type :room/joined :room-id … :room <snapshot>}
      normal event flow begins; {:type :room/leave} returns to the lobby.
+
+   WS upgrades with a cross-host Origin header are refused — browsers attach
+   Origin and WebSockets are not subject to CORS, so without this any webpage
+   could open ws://localhost:7474.
 
    Incoming room events get :room-id forced to the sender's joined room —
    clients can't address rooms they're not in. Sockets live in the
    create-server closure (runtime resources, not app state).
 
    Deferred to later phases: :visibility tracking, dictation."
-  (:require [xi.ext.diff.git :as diff-git]
+  (:require [xi.auth :as auth]
+            [xi.ext.diff.git :as diff-git]
             [xi.fx :as fx]
             [xi.server.room-manager :as rm]
             [xi.session :as session]
@@ -275,6 +290,82 @@
                       (some-> (aget js/process.env "XI_PORT") js/parseInt)
                       DEFAULT_PORT)
              public-dir (resolve-public-dir)
+             ;; Pairing requests awaiting approval: code → #js {:cid :key :name
+             ;; :platform}, mirrored to ~/.config/xi/pending-clients.edn for
+             ;; `bb serve:approve`. Stale entries from a previous run are
+             ;; cleared below.
+             pending (js/Map.)
+             _ (auth/write-pending! {})
+             authed? (fn [^js ws] (true? (.. ws -data -authed)))
+             notify-authed!
+             (fn [event]
+               (let [payload (wire/encode event)]
+                 (doseq [^js ws (es6-iterator-seq (.values sockets))]
+                   (when (authed? ws)
+                     (send! (.. ws -data -cid) payload)))))
+             admit!
+             (fn [^js ws]
+               (let [cid (.. ws -data -cid)]
+                 (set! (.. ws -data -authed) true)
+                 (dispatch! {:type :client/connect :client-id cid
+                             :client {:kind :remote}})
+                 (send-event! cid {:type :auth/ok})
+                 (send! cid (lobby-payload @state personal-agent?))))
+             resolve-pending!
+             (fn [code approved?]
+               (when-let [^js e (.get pending code)]
+                 (.delete pending code)
+                 (auth/remove-pending! code)
+                 (when-let [^js ws (.get sockets (.-cid e))]
+                   (set! (.. ws -data -pendingCode) nil)
+                   (if approved?
+                     (admit! ws)
+                     (do (send-event! (.-cid e) {:type :auth/denied :reason "denied"})
+                         (try (.close ws) (catch :default _ nil)))))
+                 (notify-authed! {:type :auth/resolved :code code :approved? approved?})))
+             handle-hello!
+             (fn [^js ws {:keys [client-key client-name platform]}]
+               (let [cid (.. ws -data -cid)]
+                 (cond
+                   (authed? ws) nil
+
+                   (not (and (string? client-key) (>= (count client-key) 16)))
+                   (send-event! cid {:type :auth/denied :reason "invalid client key"})
+
+                   (auth/approved? client-key)
+                   (do (auth/touch! client-key {:name client-name :platform platform})
+                       (admit! ws))
+
+                   :else
+                   (let [code (or (.. ws -data -pendingCode)
+                                  (auth/gen-code (set (es6-iterator-seq (.keys pending)))))]
+                     (.set pending code #js {:cid cid :key client-key
+                                             :name (or client-name "unknown")
+                                             :platform (or platform "unknown")})
+                     (set! (.. ws -data -pendingCode) code)
+                     (auth/add-pending! code {:client-key   client-key
+                                              :client-name  client-name
+                                              :platform     platform
+                                              :requested-at (js/Date.now)})
+                     (send-event! cid {:type :auth/pending :code code})
+                     (js/console.error (str "[ws] pairing request from "
+                                            (or client-name "unknown")
+                                            " (" (or platform "?") ")"
+                                            " — approve with: bb serve:approve " code))
+                     (notify-authed! {:type :auth/request :code code
+                                      :client-name client-name :platform platform})))))
+             ;; `bb serve:approve` moves a pending entry into clients.edn on
+             ;; disk; admit waiting sockets once their key shows up there.
+             auth-poll
+             (js/setInterval
+              (fn []
+                (when (pos? (.-size pending))
+                  (let [approved (auth/approved-clients)]
+                    (doseq [code (vec (es6-iterator-seq (.keys pending)))]
+                      (let [^js e (.get pending code)]
+                        (when (and e (contains? approved (.-key e)))
+                          (resolve-pending! code true)))))))
+              2000)
              broadcast-lobby!
              (fn [st]
                ;; Push to every connected client, not just roomless ones: the
@@ -290,20 +381,41 @@
               #js {:port port
                    :fetch
                    (fn [^js req ^js srv]
-                     (if (.upgrade srv req #js {:data #js {:cid (gen-client-id)}})
-                       js/undefined
-                       (serve-static public-dir req)))
+                     (let [headers  (.-headers req)
+                           upgrade? (some-> (.get headers "upgrade")
+                                            (.toLowerCase)
+                                            (= "websocket"))]
+                       (if-not upgrade?
+                         (serve-static public-dir req)
+                         ;; Same-host Origin only (port ignored — shadow's
+                         ;; dev-http serves the page on 8100). Non-browser
+                         ;; clients send no Origin; key auth still gates them.
+                         (let [origin-host (some-> (.get headers "origin")
+                                                   (as-> o (try (.-hostname (js/URL. o))
+                                                                (catch :default _ "<invalid>"))))
+                               req-host    (try (.-hostname (js/URL. (str "http://" (.get headers "host"))))
+                                                (catch :default _ nil))]
+                           (cond
+                             (and origin-host (not= origin-host req-host))
+                             (js/Response. "Forbidden origin" #js {:status 403})
+
+                             (.upgrade srv req #js {:data #js {:cid (gen-client-id)
+                                                               :authed false
+                                                               :pendingCode nil}})
+                             js/undefined
+
+                             :else
+                             (js/Response. "Upgrade failed" #js {:status 400}))))))
                    :websocket
                    #js {;; 100MB — multiple base64-encoded images per prompt
                         :maxPayloadLength (* 100 1024 1024)
 
                         :open
                         (fn [^js ws]
-                          (let [cid (.. ws -data -cid)]
-                            (.set sockets cid ws)
-                            (dispatch! {:type :client/connect :client-id cid
-                                        :client {:kind :remote}})
-                            (send! cid (lobby-payload @state personal-agent?))))
+                          ;; Register the socket but tell the app nothing —
+                          ;; :client/connect + lobby happen at admit! after
+                          ;; the :auth/hello key check.
+                          (.set sockets (.. ws -data -cid) ws))
 
                         :message
                         (fn [^js ws data]
@@ -312,6 +424,22 @@
                               (let [room-id (get-in @state [:connection :clients cid :room-id])
                                     ev (assoc ev :client-id cid)]
                                 (cond
+                                  ;; ─ Transport-level auth, never dispatched ─
+                                  (= :auth/hello (:type ev))
+                                  (handle-hello! ws ev)
+
+                                  (not (authed? ws))
+                                  (send! cid (wire/encode {:type :auth/required}))
+
+                                  (= :auth/approve (:type ev))
+                                  (when-let [^js e (.get pending (:code ev))]
+                                    (auth/approve! (.-key e) {:name (.-name e)
+                                                              :platform (.-platform e)})
+                                    (resolve-pending! (:code ev) true))
+
+                                  (= :auth/deny (:type ev))
+                                  (resolve-pending! (:code ev) false)
+
                                   (or (pre-join-types (:type ev))
                                       (roomless-types (:type ev)))
                                   (dispatch! ev)
@@ -329,10 +457,15 @@
                         :close
                         (fn [^js ws _code _reason]
                           (let [cid (.. ws -data -cid)]
+                            (when-let [code (.. ws -data -pendingCode)]
+                              (.delete pending code)
+                              (auth/remove-pending! code)
+                              (notify-authed! {:type :auth/resolved :code code :approved? false}))
                             ;; Dispatch before dropping the socket — cleanup
                             ;; effects may still broadcast (sends are no-ops
                             ;; on the closed socket).
-                            (dispatch! {:type :client/disconnect :client-id cid})
+                            (when (authed? ws)
+                              (dispatch! {:type :client/disconnect :client-id cid}))
                             (.delete sockets cid)))}})]
 
          ;; The transport is a tap: every processed room event is echoed to
@@ -350,4 +483,6 @@
 
          (js/console.error (str "[ws] Listening on ws://localhost:" port))
          {:port  port
-          :stop! (fn [] (.stop server))}))}))
+          :stop! (fn []
+                   (js/clearInterval auth-poll)
+                   (.stop server))}))}))

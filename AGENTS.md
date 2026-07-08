@@ -141,12 +141,17 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
 - Server hosts multiple rooms; rooms auto-destroy when their last client
   leaves while idle (or a turn ends with no clients attached)
 - "Sessions" refers to saved-to-disk conversation history, loaded via `/resume`
+- Clients authenticate with a client key before the server processes their
+  events; unknown clients get a 4-digit pairing code, approved via the web
+  banner or `bb serve:approve <code>` (`bb serve:pending|clients|revoke`).
+  See [docs/client-auth.md](docs/client-auth.md).
 
 ## Source layout
 
 ```
 src/xi/
   cli.cljs             — entry point + assembly (subcommands: server, join, create)
+  auth.cljs            — client-key auth store (approved/pending clients, pairing codes)
   core/
     state.cljs         — state schema + constructors
     events.cljs        — pure core event handlers (reducer)

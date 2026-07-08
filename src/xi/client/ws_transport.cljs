@@ -131,6 +131,12 @@
 
    opts:
      :url        ws:// URL
+     :hello      {:client-key … :client-name … :platform …} — sent as
+                 :auth/hello on every (re)connect; joins/sends are held back
+                 until the server answers :auth/ok. On :auth/pending the
+                 connection parks until another client (or `bb serve:approve
+                 <code>`) approves this key; :auth/denied stops reconnecting.
+                 All auth events are also dispatched into the app for UI.
      :target     \"latest\" | \"new\" | room-id | {:session-id sid} — joined on
                  open, and replayed on every reconnect
      :cwd        working directory sent with the join request
@@ -142,14 +148,16 @@
                  are giving up; not called after an intentional close!
 
    Returns {:effects {:ws/send …} :set-dispatch! :close!}."
-  [{:keys [url target cwd reconnect? on-status on-close]}]
+  [{:keys [url hello target cwd reconnect? on-status on-close]}]
   (let [ctx #js {:dispatch nil :ws nil :closed false :pending #js [] :backoff 1000
+                 :authed (nil? hello)
                  ;; nil target → no auto-join (the web router drives joins via
                  ;; forwarded :room/join, which updates lastJoin for reconnect)
                  :lastJoin (when target
                              (wire/encode {:type :room/join :target target :cwd cwd}))}]
     (letfn [(open? []
               (let [ws (.-ws ctx)] (and ws (= 1 (.-readyState ws)))))
+            (ready? [] (and (open?) (.-authed ctx)))
             (flush-pending! [ws]
               (let [p (.-pending ctx)]
                 (set! (.-pending ctx) #js [])
@@ -172,13 +180,30 @@
                  ws "open"
                  (fn [_]
                    (set! (.-backoff ctx) 1000)
-                   (when-let [j (.-lastJoin ctx)] (.send ws j))
-                   (flush-pending! ws)
+                   (if hello
+                     ;; Authenticate first; join + queued sends flush on
+                     ;; the :auth/ok reply below.
+                     (do (set! (.-authed ctx) false)
+                         (.send ws (wire/encode (assoc hello :type :auth/hello))))
+                     (do (when-let [j (.-lastJoin ctx)] (.send ws j))
+                         (flush-pending! ws)))
                    (when on-status (on-status true))))
                 (.addEventListener
                  ws "message"
                  (fn [^js e]
                    (when-let [ev (wire/decode (.-data e))]
+                     ;; Transport-level auth replies (also dispatched below
+                     ;; so the app can render pending/denied states).
+                     (case (:type ev)
+                       :auth/ok      (do (set! (.-authed ctx) true)
+                                         (when-let [j (.-lastJoin ctx)] (.send ws j))
+                                         (flush-pending! ws))
+                       :auth/pending (js/console.error
+                                      (str "[ws] waiting for approval — code " (:code ev)
+                                           " (bb serve:approve " (:code ev) ")"))
+                       :auth/denied  (do (js/console.error "[ws] connection denied by server")
+                                         (set! (.-closed ctx) true))
+                       nil)
                      ;; Pin lastJoin to the room's current session-id so
                      ;; reconnects re-attach instead of creating a new room
                      ;; (critical on mobile where WS drops are frequent). Track
@@ -207,13 +232,13 @@
                   (set! (.-lastJoin ctx) msg))
                 (when (= :room/leave (:type event))
                   (set! (.-lastJoin ctx) nil))
-                (if (open?)
+                (if (ready?)
                   (try (.send (.-ws ctx) msg)
                        (catch :default err
                          (js/console.error "[ws] send failed:" err)
                          (.push (.-pending ctx) msg)))
-                  ;; Offline: queue everything but joins (replayed via
-                  ;; lastJoin) so we don't double-join on reconnect.
+                  ;; Offline or awaiting auth: queue everything but joins
+                  ;; (replayed via lastJoin) so we don't double-join later.
                   (when-not (= :room/join (:type event))
                     (.push (.-pending ctx) msg)))))]
       (connect!)

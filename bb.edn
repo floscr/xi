@@ -1,8 +1,19 @@
 {:deps {tmux-dev/tmux-dev {:git/url "https://git.example.com/floscr/tmux-dev"
                             :git/sha "78a82846116d13f05c3ddd9c5d1c4639b6c3538a"}}
  :tasks
- {:requires ([tmux-dev.core :as td])
+ {:requires ([tmux-dev.core :as td]
+             [clojure.edn :as edn])
   :init (do
+          (defn xi-config-file [name]
+            (str (System/getProperty "user.home") "/.config/xi/" name))
+          (defn read-xi-edn [name]
+            (let [f (java.io.File. (xi-config-file name))]
+              (if (.exists f) (edn/read-string (slurp f)) {})))
+          (defn write-xi-edn [name m]
+            (.mkdirs (.getParentFile (java.io.File. (xi-config-file name))))
+            (spit (xi-config-file name) (str (pr-str m) "\n")))
+          (defn fmt-ts [ms]
+            (when ms (str (java.util.Date. (long ms)))))
           (def config {:session "xi"
                        :windows [["watch" "npx shadow-cljs watch main web"]]
                        :print   ["Web: http://localhost:7474"]})
@@ -93,6 +104,83 @@
   serve:stop
   {:doc "Stop tmux serve session"
    :task (td/stop serve-config)}
+
+  serve:pending
+  {:doc "List clients waiting for pairing approval"
+   :task (let [pending (read-xi-edn "pending-clients.edn")]
+           (if (empty? pending)
+             (println "No pending clients.")
+             (doseq [[code {:keys [client-name platform requested-at]}] pending]
+               (println (format "  %s  %s (%s)  requested %s"
+                                code (or client-name "unknown") (or platform "?")
+                                (fmt-ts requested-at))))))}
+
+  serve:approve
+  {:doc "Approve a pending client by pairing code: bb serve:approve <code>"
+   :task (let [code (first *command-line-args*)
+               pending (read-xi-edn "pending-clients.edn")
+               entry (get pending code)]
+           (cond
+             (nil? code)
+             (do (println "usage: bb serve:approve <code>   (see bb serve:pending)")
+                 (System/exit 1))
+
+             (nil? entry)
+             (do (println (str "No pending client with code " code "."))
+                 (when (seq pending)
+                   (println "Pending codes:" (clojure.string/join ", " (keys pending))))
+                 (System/exit 1))
+
+             :else
+             (do (write-xi-edn "clients.edn"
+                               (assoc (read-xi-edn "clients.edn")
+                                      (:client-key entry)
+                                      {:name        (:client-name entry)
+                                       :platform    (:platform entry)
+                                       :approved-at (System/currentTimeMillis)}))
+                 (write-xi-edn "pending-clients.edn" (dissoc pending code))
+                 (println (str "Approved " (or (:client-name entry) "unknown")
+                               " (" code ") — the server admits it within ~2s.")))))}
+
+  serve:clients
+  {:doc "List approved clients"
+   :task (let [clients (read-xi-edn "clients.edn")]
+           (if (empty? clients)
+             (println "No approved clients (the local TUI key is trusted implicitly).")
+             (doseq [[k {:keys [name platform approved-at last-seen]}] clients]
+               (println (format "  %s…  %s (%s)  approved %s%s"
+                                (subs k 0 (min 8 (count k)))
+                                (or name "unknown") (or platform "?")
+                                (fmt-ts approved-at)
+                                (if last-seen (str "  last seen " (fmt-ts last-seen)) ""))))))}
+
+  serve:revoke
+  {:doc "Revoke an approved client by key prefix or name: bb serve:revoke <prefix|name>"
+   :task (let [q (first *command-line-args*)
+               clients (read-xi-edn "clients.edn")
+               hits (filter (fn [[k {:keys [name]}]]
+                              (or (and q (clojure.string/starts-with? k q))
+                                  (= name q)))
+                            clients)]
+           (cond
+             (nil? q)
+             (do (println "usage: bb serve:revoke <key-prefix|name>   (see bb serve:clients)")
+                 (System/exit 1))
+
+             (empty? hits)
+             (do (println (str "No approved client matches " q ".")) (System/exit 1))
+
+             (> (count hits) 1)
+             (do (println "Ambiguous — matches:")
+                 (doseq [[k {:keys [name]}] hits]
+                   (println "  " (subs k 0 8) "…" (or name "unknown")))
+                 (System/exit 1))
+
+             :else
+             (let [[k {:keys [name]}] (first hits)]
+               (write-xi-edn "clients.edn" (dissoc clients k))
+               (println (str "Revoked " (or name "unknown")
+                             " — applies to new connections (restart the server to drop live ones).")))))}
 
   serve:restart
   {:doc "Restart tmux serve session"

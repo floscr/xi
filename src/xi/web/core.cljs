@@ -415,6 +415,29 @@
           :session/counts-result counts-result
           :session/mark-read     mark-read
           :connection/status     connection-status
+          ;; ─ Client auth (transport-level handshake, xi.server.ws) ─
+          :auth/pending          (fn [st {:keys [code]}]
+                                   {:state (assoc st :web/auth {:status :pending :code code})})
+          :auth/ok               (fn [st _] {:state (dissoc st :web/auth)})
+          :auth/denied           (fn [st _] {:state (assoc st :web/auth {:status :denied})})
+          :auth/request          (fn [st {:keys [code client-name platform]}]
+                                   {:state (assoc-in st [:web/auth-requests code]
+                                                     {:code code
+                                                      :client-name client-name
+                                                      :platform platform})})
+          :auth/resolved         (fn [st {:keys [code]}]
+                                   {:state (update st :web/auth-requests dissoc code)})
+          ;; Approve/deny a pairing request from this (already-authed) client;
+          ;; the server answers with :auth/resolved for everyone else, so
+          ;; clear the local banner optimistically.
+          :auth/approve          (fn [st {:keys [code] :as ev}]
+                                   (when-not (:remote? ev)
+                                     {:state (update st :web/auth-requests dissoc code)
+                                      :effects [[:ws/send {:type :auth/approve :code code}]]}))
+          :auth/deny             (fn [st {:keys [code] :as ev}]
+                                   (when-not (:remote? ev)
+                                     {:state (update st :web/auth-requests dissoc code)
+                                      :effects [[:ws/send {:type :auth/deny :code code}]]}))
           :compose/add-images    compose-add-images
           :compose/remove-image  compose-remove-image
           :compose/clear-images  compose-clear-images
@@ -808,6 +831,31 @@
   []
   (ext/instantiate config/web {}))
 
+(defn- ensure-client-key!
+  "Persistent random key identifying this browser to the server (the web
+   analog of ~/.config/xi/client-key). Unknown keys must be approved once
+   via the pairing flow (see xi.server.ws handshake)."
+  []
+  (or (try (.getItem js/localStorage "xi-client-key") (catch :default _ nil))
+      (let [arr (js/Uint8Array. 32)
+            _   (.getRandomValues js/crypto arr)
+            k   (.join (.from js/Array arr (fn [b] (.padStart (.toString b 16) 2 "0"))) "")]
+        (try (.setItem js/localStorage "xi-client-key" k) (catch :default _ nil))
+        k)))
+
+(defn- device-name
+  "Human label shown in pairing approvals. Client-claimed — the pairing code
+   comparison is the actual security, not this label."
+  []
+  (let [ua (.-userAgent js/navigator)]
+    (cond
+      (re-find #"iPhone" ua)  "iPhone (web)"
+      (re-find #"iPad" ua)    "iPad (web)"
+      (re-find #"Android" ua) "Android (web)"
+      (re-find #"Mac" ua)     "Mac (web)"
+      (re-find #"Linux" ua)   "Linux (web)"
+      :else                   "Browser")))
+
 (defn- demo-init!
   "Static one-shot render for README screenshots (?demo=<view>). Seeds
    fabricated data, skips the WS transport entirely, and renders once with a
@@ -837,6 +885,9 @@
                       (cache/hydrate route))
         transport (ws-transport/create!
                    {:url        (ws-url)
+                    :hello      {:client-key  (ensure-client-key!)
+                                 :client-name (device-name)
+                                 :platform    "web"}
                     ;; nil → the router drives joins; reconnect replays them.
                     :target     nil
                     :reconnect? true
