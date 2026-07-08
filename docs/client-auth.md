@@ -63,6 +63,12 @@ The **web client** generates its key into `localStorage` (`xi-client-key`)
 and derives its display name from the user agent ("iPhone (web)", "Linux
 (web)", …). Each browser/device pairs once and stays approved.
 
+> **iOS caveat:** over plain HTTP, Safari evicts a home-screen PWA's
+> `localStorage` bucket, wiping `xi-client-key` and forcing a re-pair on nearly
+> every launch. Serve the web client over HTTPS to make the key durable — see
+> [tls-https.md](tls-https.md) for the TLS listener + per-device cert-trust
+> setup.
+
 ## bb tasks
 
 ```bash

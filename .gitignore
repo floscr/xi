@@ -4,6 +4,7 @@ node_modules/
 .cpcache/
 *.js.map
 resources/public/js/
+resources/public/mkcert-rootCA.crt
 .clj-kondo/
 .deploy
 .env

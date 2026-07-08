@@ -145,6 +145,11 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
   events; unknown clients get a 4-digit pairing code, approved via the web
   banner or `bb serve:approve <code>` (`bb serve:pending|clients|revoke`).
   See [docs/client-auth.md](docs/client-auth.md).
+- The server can also serve **HTTPS/`wss://`** on a second port (default 7443,
+  `XI_TLS_PORT`) when `~/.config/xi/tls/xi.{crt,key}` exist — needed so an iOS
+  home-screen PWA keeps its `localStorage` client key (insecure origins get
+  their storage evicted). Port 7474 stays plain for the TUI. Setup + per-device
+  cert trust (iOS especially): [docs/tls-https.md](docs/tls-https.md).
 
 ## Source layout
 

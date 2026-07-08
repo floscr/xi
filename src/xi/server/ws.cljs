@@ -42,6 +42,7 @@
             [xi.wire :as wire]))
 
 (def DEFAULT_PORT 7474)
+(def DEFAULT_TLS_PORT 7443)
 
 (def ^:private base-no-broadcast
   "Room-scoped event types that are connection bookkeeping, not room state.
@@ -116,6 +117,34 @@
                      true       (conj (.resolve path (.cwd js/process) "resources" "public")))]
     (or (some (fn [d] (when (.existsSync fs (.join path d "index.html")) d)) candidates)
         (.resolve path (.cwd js/process) "resources" "public"))))
+
+(defn- resolve-tls
+  "TLS cert/key for serving https:// (and wss:// on the same port). Sourced
+   from the XI_TLS_CERT / XI_TLS_KEY env paths, else the default
+   ~/.config/xi/tls/xi.{crt,key}. Returns nil (plain HTTP) when no cert is
+   found. HTTPS matters because iOS Safari only treats a secure origin's
+   localStorage as durable — over plain HTTP a home-screen PWA's storage
+   bucket gets evicted, wiping the client-key and forcing a re-pair."
+  []
+  (let [fs   (js/require "node:fs")
+        path (js/require "node:path")
+        os   (js/require "node:os")
+        dfl  (.join path (.homedir os) ".config" "xi" "tls")
+        cert (or (aget js/process.env "XI_TLS_CERT") (.join path dfl "xi.crt"))
+        key  (or (aget js/process.env "XI_TLS_KEY")  (.join path dfl "xi.key"))
+        explicit? (boolean (or (aget js/process.env "XI_TLS_CERT")
+                               (aget js/process.env "XI_TLS_KEY")))]
+    (cond
+      (and (.existsSync fs cert) (.existsSync fs key))
+      #js {:cert (.readFileSync fs cert) :key (.readFileSync fs key)}
+
+      explicit?
+      (do (js/console.error
+           (str "[ws] XI_TLS_CERT/XI_TLS_KEY set but file(s) missing — "
+                "serving plain HTTP (cert=" cert " key=" key ")"))
+          nil)
+
+      :else nil)))
 
 (defn- serve-static
   "Serve a file from public-dir; SPA-fallback to index.html for extensionless
@@ -290,6 +319,7 @@
                       (some-> (aget js/process.env "XI_PORT") js/parseInt)
                       DEFAULT_PORT)
              public-dir (resolve-public-dir)
+             tls        (resolve-tls)
              ;; Pairing requests awaiting approval: code → #js {:cid :key :name
              ;; :platform}, mirrored to ~/.config/xi/pending-clients.edn for
              ;; `bb serve:approve`. Stale entries from a previous run are
@@ -376,9 +406,8 @@
                  (when (seq cids)
                    (let [payload (lobby-payload st personal-agent?)]
                      (doseq [cid cids] (send! cid payload))))))
-             server
-             (js/Bun.serve
-              #js {:port port
+             opts
+             #js {:port port
                    :fetch
                    (fn [^js req ^js srv]
                      (let [headers  (.-headers req)
@@ -466,7 +495,20 @@
                             ;; on the closed socket).
                             (when (authed? ws)
                               (dispatch! {:type :client/disconnect :client-id cid}))
-                            (.delete sockets cid)))}})]
+                            (.delete sockets cid)))}}
+             ;; 7474 always stays plain ws:// so the local TUI and existing
+             ;; web clients keep working. TLS (for the iOS PWA's durable
+             ;; storage) is served on a SECOND port sharing the same handlers,
+             ;; since Bun binds one protocol per port.
+             tls-port (or (some-> (aget js/process.env "XI_TLS_PORT") js/parseInt)
+                          DEFAULT_TLS_PORT)
+             server (js/Bun.serve opts)
+             tls-server (when tls
+                          (js/Bun.serve
+                           #js {:port      tls-port
+                                :tls       tls
+                                :fetch     (.-fetch opts)
+                                :websocket (.-websocket opts)}))]
 
          ;; The transport is a tap: every processed room event is echoed to
          ;; that room's clients (sender included — clients never apply their
@@ -481,8 +523,11 @@
             (when (lobby-relevant (:type event))
               (broadcast-lobby! st))))
 
-         (js/console.error (str "[ws] Listening on ws://localhost:" port))
+         (js/console.error (str "[ws] Listening on ws://localhost:" port
+                                (when tls-server
+                                  (str " + wss://localhost:" tls-port))))
          {:port  port
           :stop! (fn []
                    (js/clearInterval auth-poll)
-                   (.stop server))}))}))
+                   (.stop server)
+                   (when tls-server (.stop tls-server)))}))}))
