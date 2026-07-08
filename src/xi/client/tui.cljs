@@ -569,9 +569,12 @@
                   nil))))
           :prompt-suffix-fn
           (fn []
-            (let [n (count (get-in (current-room) [:ui :pending-images]))
+            (let [room  (current-room)
+                  n     (count (get-in room [:ui :pending-images]))
+                  qn    (count (get-in room [:agent :queued]))
                   badge (when prompt-badge (prompt-badge (.-state ctx)))]
               (str (when (pos? n) (ansi/fg :accent (str " 📎" n)))
+                   (when (pos? qn) (ansi/fg :accent (str " ⏳" qn " queued")))
                    (when (seq badge) badge))))
           :prompt-right-fn
           (fn []
