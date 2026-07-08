@@ -32,6 +32,7 @@
         [xi.ext.process-manager :as process-manager]
         [xi.ext.projects :as projects]
         [xi.ext.pushover :as pushover]
+        [xi.ext.sandbox :as ext-sandbox]
         [xi.ext.skills :as skills]
         [xi.ext.terminal-title :as terminal-title]
         [xi.ext.todo-intercept :as todo-intercept]
@@ -63,6 +64,11 @@
       todo-intercept/extension
       terminal-title/extension
       clipboard-image/extension
+      ;; sandbox after the policy gates (plan-mode, permission-gate) so
+      ;; blocks/confirms run first, but BEFORE process-manager: its gate
+      ;; executes bash itself, and backgrounded commands must not reach
+      ;; process-manager's unsandboxed spawn while the sandbox is on
+      ext-sandbox/extension
       process-manager/extension
       projects/extension
       skills/extension
