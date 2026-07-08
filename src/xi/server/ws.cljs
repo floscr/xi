@@ -319,7 +319,9 @@
                       (some-> (aget js/process.env "XI_PORT") js/parseInt)
                       DEFAULT_PORT)
              public-dir (resolve-public-dir)
-             tls        (resolve-tls)
+             ;; Personal-agent mode is single-user/local: skip HTTPS (no iOS
+             ;; PWA durable-storage concern) and skip client-key pairing.
+             tls        (when-not personal-agent? (resolve-tls))
              ;; Pairing requests awaiting approval: code → #js {:cid :key :name
              ;; :platform}, mirrored to ~/.config/xi/pending-clients.edn for
              ;; `bb serve:approve`. Stale entries from a previous run are
@@ -358,6 +360,9 @@
                (let [cid (.. ws -data -cid)]
                  (cond
                    (authed? ws) nil
+
+                   ;; Personal-agent mode has no pairing — admit every client.
+                   personal-agent? (admit! ws)
 
                    (not (and (string? client-key) (>= (count client-key) 16)))
                    (send-event! cid {:type :auth/denied :reason "invalid client key"})
