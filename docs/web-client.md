@@ -30,7 +30,7 @@ to `index.html`).
 │   xi.client.ws-transport            Replicant ← views.cljs  │
 │        │ forward (local events            (pure state →     │
 │        ▼  → [:ws/send])                    hiccup)          │
-│   WebSocket (EDN event maps, xi.wire)                       │
+│   WebSocket (transit event maps, xi.wire)                   │
 └────────┼───────────────────────────────────────────────────┘
          ▼
    xi server (:7474) — rooms, agent, sessions
@@ -44,7 +44,7 @@ to `index.html`).
   the server broadcasts every room event (sender included) and the client
   applies them through the same reducers, seeded by the `:room/joined`
   snapshot. See [architecture.md](architecture.md).
-- **Wire protocol**: there is no separate web protocol — the EDN-serialized
+- **Wire protocol**: there is no separate web protocol — the transit-serialized
   event maps (`xi.wire`) *are* the protocol, identical to the TUI client.
 
 ## Features

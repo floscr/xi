@@ -116,7 +116,7 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
   the effect interpreter (`xi.core.app/create-app`).
 - **Everything is an event** — prompts, agent output, commands, dialogs,
   room switches, renders. The WS wire protocol is the same event maps as
-  EDN strings (`xi.wire`).
+  transit strings (`xi.wire`).
 - **Standalone = not connected.** Server, client, and standalone modes share
   the same state shape and code paths; transports just forward events.
 - **Providers are pluggable** (`xi.provider.claude`, `xi.provider.ollama`).

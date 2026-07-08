@@ -61,7 +61,7 @@ state shape and code paths as server/client, just "not connected".
 - Rooms live in the **same single app atom** under `:rooms` — each has its
   own history, session, agent state, and UI state.
 - **Broadcast is a tap**: every processed event carrying a `:room-id` is
-  echoed (as EDN, `xi.wire`) to that room's clients — sender included.
+  echoed (transit-serialized, `xi.wire`) to that room's clients — sender included.
   Clients never apply their own input locally; they mirror the server's
   event order.
 - Roomless (lobby) clients receive `:lobby/state` refreshes — live rooms
@@ -108,7 +108,7 @@ xi join                                       # connect from another terminal
 ## Wire protocol
 
 There is no separate message schema — **the protocol is the event maps**,
-serialized as EDN strings (`xi.wire/encode` / `decode`). Both peers are
+serialized as transit strings (`xi.wire/encode` / `decode`). Both peers are
 ClojureScript, so keywords and nesting survive. `:remote?` is
 transport-local and never sent.
 

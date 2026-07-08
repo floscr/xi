@@ -55,7 +55,7 @@ server, and the browser client are all assemblies of the same pure handlers.
 | `xi.agent` | Agent turn lifecycle handlers + provider effects |
 | `xi.commands` | Slash commands + input routing |
 | `xi.fx` | Session/image/model effect handlers |
-| `xi.wire` | EDN wire protocol |
+| `xi.wire` | Transit wire protocol |
 | `xi.cli` | Assembly point — merges handler maps + effects per mode |
 
 ## State schema
@@ -97,7 +97,7 @@ server, and the browser client are all assemblies of the same pure handlers.
 ## Connection layer
 
 The wire protocol (`xi.wire`) is the event maps themselves, serialized as
-EDN strings (`pr-str`/`read-string`). Both peers are ClojureScript, so
+transit strings (JSON flavour). Both peers are ClojureScript, so
 keywords and nesting survive without JSON shims. `:remote?` is
 transport-local and never sent.
 
