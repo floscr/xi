@@ -86,6 +86,7 @@
        "3. Write a clear conventional commit message and commit with git_commit_with_user_approval\n\n"
        "Use conventional commit format (feat:, fix:, refactor:, chore:, docs:, etc.).\n"
        "Keep the commit message concise and descriptive. Do NOT add co-authored-by or generated-with lines.\n"
+       "NEVER bundle unrelated work into a single commit. If the changes span multiple unrelated concerns, stage and commit them separately, one logical change per commit.\n"
        "When writing commit messages for fixes consider the chat session history and make semantic commit why this was changed and not outline what was changed\n"
        (when (seq args)
          (str "\nContext from the user: " args))))
