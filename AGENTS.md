@@ -261,3 +261,16 @@ When writing a new extension, follow [docs/writing-extensions.md](docs/writing-e
 - Use `(aget js/process.env "KEY")` to access env vars (not property access)
 - All async code uses JS promises via `(.then p f)` chains
 - Tool results are `{:content [{:type "text" :text "..."}] :is-error false}`
+- **Always document config options.** User-tunable options live in
+  `src/xi/config.cljc` (e.g. the `tui` overrides map). Each option's *default*
+  lives in its consuming namespace so the code is usable without a config entry;
+  the effective value is read via a loader that falls back to that default when
+  the key is absent (`config/tui-opt`). Declare TUI options with the
+  `deftui-opt` macro (`xi.config-macros`), which pairs the default with the
+  config lookup in one form:
+  `(deftui-opt truncate-output-block-after-n-lines 100 "doc…")`. Whenever you
+  add an option, document it both at the `deftui-opt` call site and in the
+  `tui` map's docstring — its key, what it does, its default, and the owning
+  namespace. (The macro lives in its own `.clj`, not `config.cljc`, because a
+  `.cljc` whose requires are all behind `:node`/`:browser` reader features
+  can't be loaded as a JVM macro namespace.)

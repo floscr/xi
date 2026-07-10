@@ -43,6 +43,24 @@
         [xi.ext.github.web :as github-web]
         [xi.ext.gtd.web :as gtd-web]])))
 
+(def tui
+  "TUI display config overrides. Only keys the user wants to change from
+   their default belong here — each option's default lives in its consuming
+   namespace and is read via `tui-opt`. Available options (all optional):
+
+     :truncate-output-block-after-n-lines
+       Max tool-output lines shown in a tool block before the rest is
+       collapsed into a \"... (N more lines)\" marker.
+       Default 100 (xi.client.view)."
+  {})
+
+(defn tui-opt
+  "Read TUI config option `k` from `tui`, falling back to `default` when the
+   key is not defined in the config. See the `deftui-opt` macro in
+   xi.config-macros for the usual call site."
+  [k default]
+  (get tui k default))
+
 #?(:node
    (def server
      "Extensions whose state + provider/tool hooks run server-side (server,

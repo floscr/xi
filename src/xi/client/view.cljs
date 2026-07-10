@@ -13,7 +13,9 @@
    are immutable values that only change at the tail while streaming, a
    render pass usually touches one block. All tool-arg formatting and
    syntax/diff highlighting knowledge is ported from master's client/tui."
+  (:require-macros [xi.config-macros :refer [deftui-opt]])
   (:require [clojure.string :as str]
+            [xi.config]
             [xi.highlight.core :as hl]
             [xi.highlight.grammars :as hl-grammars]
             [xi.highlight.theme :as hl-theme]
@@ -98,6 +100,11 @@
 (def ^:private collapsed-tools
   "Tools whose output is hidden by default in the TUI."
   #{"read" "clj_outline"})
+
+(deftui-opt truncate-output-block-after-n-lines 100
+  "Max number of tool-output lines rendered in a tool block before the
+   remainder is collapsed into a \"... (N more lines)\" marker.
+   Overridable via :truncate-output-block-after-n-lines in xi.config/tui.")
 
 (defn- truncate-output
   "Truncate tool output to max lines."
@@ -333,8 +340,8 @@
         set-output! (fn [content is-error]
                       (when-let [text (not-empty (result-text content))]
                         (let [display (if (and (.-grammar st) (not is-error))
-                                        (truncate-output (highlight-text (.-grammar st) text) 20)
-                                        (truncate-output text 20))]
+                                        (truncate-output (highlight-text (.-grammar st) text) truncate-output-block-after-n-lines)
+                                        (truncate-output text truncate-output-block-after-n-lines))]
                           ((:add-child box) (comp/make-spacer 1))
                           ((:add-child box) (comp/make-text display))))
                       (set! (.-outputSet st) true))
