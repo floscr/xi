@@ -104,6 +104,9 @@
           ("read" "grep" "find" "ls")
           (gate-read tool-call cwd)
 
+          "start_process"
+          (blocked "Sandbox: background processes are disabled in sandbox mode.")
+
           tool-call)))))
 
 ;; ── Command + state ──────────────────────────────────────────────────────────

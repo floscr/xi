@@ -37,10 +37,16 @@
    running OR a dialog is awaiting a response. Closing a room discards its
    :ui :dialogs, which would strand the pending question and the turn
    suspended on it (a dialog stays open even with no client viewing — see
-   ext/create-dialogs)."
+   ext/create-dialogs).
+
+   It must also survive while the process-manager extension is tracking
+   live background processes: closing the room fires :room/close, which
+   kills them (ext/process-manager on-room-close). We only auto-close a
+   room the user has walked away from — not one running their dev server."
   [room]
   (or (boolean (get-in room [:agent :busy?]))
-      (boolean (seq (get-in room [:ui :dialogs])))))
+      (boolean (seq (get-in room [:ui :dialogs])))
+      (boolean (seq (get-in room [:ext :process-manager :processes])))))
 
 (defn room-summaries
   "Lobby-facing room list, newest first."
