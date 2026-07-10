@@ -59,8 +59,24 @@
     (is (= {:action :insert :text "EADME.md"} (pc/complete "R" @tmp)))))
 
 (deftest hidden-visible-with-dot
-  (testing "a leading dot reveals dotfiles"
-    (is (= {:action :insert :text "hidden"} (pc/complete "." @tmp)))))
+  (testing "a leading dot reveals dotfiles alongside the ./ and ../ relative dirs"
+    (is (= {:action :menu
+            :items [{:label "../" :insert "./"}
+                    {:label "./" :insert "/"}
+                    {:label ".hidden" :insert "hidden"}]}
+           (pc/complete "." @tmp)))))
+
+(deftest relative-dir-expansion
+  (testing "a bare '..' expands to '../'"
+    (is (= {:action :insert :text "/"} (pc/complete ".." @tmp))))
+  (testing "a nested '..' segment expands to '../'"
+    (is (= {:action :insert :text "/"} (pc/complete "src/.." @tmp))))
+  (testing "a trailing-slash relative path lists the target dir"
+    ;; src/../ resolves back to tmp, listing README.md and src/
+    (is (= {:action :menu
+            :items [{:label "README.md" :insert "README.md"}
+                    {:label "src/" :insert "src/"}]}
+           (pc/complete "src/../" @tmp)))))
 
 (deftest no-match
   (testing "no filesystem match completes nothing"

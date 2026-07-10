@@ -4,7 +4,9 @@
    match or a shared common-prefix extension) or a menu of candidates.
 
    Directories are suffixed with '/' so completing a dir lets you keep typing
-   deeper. Dotfiles are hidden unless the typed base starts with '.'."
+   deeper. Dotfiles are hidden unless the typed base starts with '.'. A dot
+   segment also offers the relative dirs './' and '../' so a bare '..' expands
+   into a navigable '../'."
   (:require [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:path" :as path]))
@@ -54,9 +56,14 @@
                             ["" token])
           expanded (expand-home dir-part)
           dir (if (str/blank? expanded) cwd (path/resolve cwd expanded))
-          entries (list-dir dir)]
-      (when (seq entries)
-        (let [hide-dots? (not (str/starts-with? base "."))
+          raw (list-dir dir)]
+      (when (seq raw)
+        (let [;; When completing a dot segment, offer the relative dirs so a
+              ;; bare '.' / '..' expands into './' / '../'.
+              entries (if (str/starts-with? base ".")
+                        (into ["./" "../"] raw)
+                        raw)
+              hide-dots? (not (str/starts-with? base "."))
               matches (->> entries
                            (filter #(str/starts-with? % base))
                            (remove #(and hide-dots? (str/starts-with? % ".")))
