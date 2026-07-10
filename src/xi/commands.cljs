@@ -174,6 +174,9 @@
 (defn- cmd-compact [_st {:keys [room-id args]}]
   {:effects [[:app/dispatch {:type :compact/request :room-id room-id :focus args}]]})
 
+(defn- cmd-summary [_st {:keys [room-id]}]
+  {:effects [[:app/dispatch {:type :summary/request :room-id room-id}]]})
+
 (def ^:private claude-preset-note
   (str "## [CLAUDE_SYSTEM_PROMPT]\n\n"
        "The Claude Code \"claude_code\" preset is injected by the Agent SDK "
@@ -297,6 +300,7 @@
    {:name "new"      :description "Start a new session"                :handler cmd-new}
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
    {:name "truncate" :description "Summarize conversation to reduce context" :handler cmd-compact}
+   {:name "summary"  :description "Describe what this session is about (cheap model)" :handler cmd-summary}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
    {:name "tree"     :description "Navigate session history"             :handler cmd-tree}
    {:name "events"   :description "Show event log for this session"     :handler cmd-events}

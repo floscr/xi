@@ -57,6 +57,7 @@
             [xi.ext.core :as ext]
             [xi.fx :as fx]
             [xi.naming :as naming]
+            [xi.summary :as summary]
             [xi.provider.claude :as claude]
             [xi.provider.ollama :as ollama]
             [xi.server.room-manager :as rm]
@@ -162,7 +163,8 @@
               agent/handlers
               (commands/command-handlers extra-commands)
               compaction/handlers
-              naming/handlers)
+              naming/handlers
+              summary/handlers)
        ;; Persist the session once the provider reports a session id
        (assoc :agent/turn-end (events/chain (:agent/turn-end agent/handlers)
                                             commands/turn-end-session-sync)
@@ -220,6 +222,9 @@
                                                        :system-parts parts}))})
                                                (compaction/create-fx providers)
                                                (naming/create-fx providers
+                                               {:make-config-dir!   session/make-throwaway-config-dir!
+                                                :remove-config-dir! session/remove-config-dir!})
+                                               (summary/create-fx providers
                                                {:make-config-dir!   session/make-throwaway-config-dir!
                                                 :remove-config-dir! session/remove-config-dir!})
                                                (:fx composed)
@@ -576,6 +581,9 @@
                                                       :system-parts parts}))})
                                               (compaction/create-fx providers)
                                               (naming/create-fx providers
+                                               {:make-config-dir!   session/make-throwaway-config-dir!
+                                                :remove-config-dir! session/remove-config-dir!})
+                                              (summary/create-fx providers
                                                {:make-config-dir!   session/make-throwaway-config-dir!
                                                 :remove-config-dir! session/remove-config-dir!})
                                               (:fx composed)
