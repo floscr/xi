@@ -261,8 +261,10 @@ When writing a new extension, follow [docs/writing-extensions.md](docs/writing-e
 - Use `(aget js/process.env "KEY")` to access env vars (not property access)
 - All async code uses JS promises via `(.then p f)` chains
 - Tool results are `{:content [{:type "text" :text "..."}] :is-error false}`
-- **Always document config options.** User-tunable options live in
-  `src/xi/config.cljc` (e.g. the `tui` overrides map). Each option's *default*
+- **Always document config options.** The full config reference is
+  [docs/config.md](docs/config.md) — keep it in sync when adding options.
+  User-tunable options live in `src/xi/config.cljc` (e.g. the `tui` overrides
+  map). Each option's *default*
   lives in its consuming namespace so the code is usable without a config entry;
   the effective value is read via a loader that falls back to that default when
   the key is absent (`config/tui-opt`). Declare TUI options with the
