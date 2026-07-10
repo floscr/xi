@@ -62,6 +62,7 @@
        (keep (fn [{:keys [arguments]}]
                (or (:path arguments) (:file_path arguments) (:file arguments))))
        (map #(.relative node-path cwd (.resolve node-path cwd %)))
+       (remove #(or (str/starts-with? % "..") (.isAbsolute node-path %)))
        distinct
        vec))
 
