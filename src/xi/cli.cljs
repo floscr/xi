@@ -393,29 +393,43 @@
         prompt-badge (fn [st] (str (ext/prompt-badges mirror st)
                                    (ext/prompt-badges local st)))
         keybindings (into (:keybindings mirror) (:keybindings local))
-        ;; Deferred room: show an empty chat and only create the server room on
-        ;; the first prompt (:client/first-prompt → :room/join "new"), then submit
-        ;; the stashed text once :room/joined arrives (pending-submit tap below).
+        ;; Deferred room: a client-local :pending room in :rooms renders the
+        ;; same empty chat as a real room — editor callbacks, palette, image
+        ;; attach, statuses and badges all run through the normal room paths,
+        ;; applied locally via the transport's :local-room? seam (their effects
+        ;; are all client-side). The server room is only created on the first
+        ;; submit: :local-submit stashes text + pending images and joins "new";
+        ;; the stash replays once :room/joined arrives (tap below).
+        pending-room?
+        (when defer-room?
+          (fn [ev] (= :pending (:room-id ev))))
+        pending-submit
+        (when defer-room?
+          (fn [st ev]
+            (let [text   (case (:type ev)
+                           :input/submit (:text ev)
+                           :command/run  (str "/" (:name ev)
+                                              (when (seq (:args ev))
+                                                (str " " (:args ev)))))
+                  images (into (vec (get-in st [:rooms :pending :ui :pending-images]))
+                               (:images ev))]
+              {:state   (assoc st :client/pending-submit {:text text :images images})
+               :effects [[:ws/send (cond-> {:type :room/join :target "new"}
+                                     cwd (assoc :cwd cwd))]]})))
         deferred-handlers
         (when defer-room?
-          {:client/first-prompt
-           (fn [st {:keys [text]}]
-             {:state   (-> st
-                           (assoc :client/pending-submit {:text text})
-                           (dissoc :client/pending-room))
-              :effects [[:ws/send (cond-> {:type :room/join :target "new"}
-                                    cwd (assoc :cwd cwd))]]})
-           :client/clear-pending
-           (fn [st _] {:state (dissoc st :client/pending-submit)})
-           ;; The command palette in the virtual chat lives on the pending room
-           ;; (there is no server room yet); picking a command fires
-           ;; :client/first-prompt, which creates the room and runs it.
-           :client/palette-open
-           (fn [st {:keys [menu]}]
-             {:state (assoc-in st [:client/pending-room :ui :menu] menu)})
-           :client/palette-close
-           (fn [st _]
-             {:state (update-in st [:client/pending-room :ui] dissoc :menu)})})
+          {:client/clear-pending
+           (fn [st _] {:state (-> st
+                                  (dissoc :client/pending-submit)
+                                  (update :rooms dissoc :pending))})
+           ;; The server's default model rides on :lobby/state — mirror it
+           ;; onto the pending room so the launch header matches the real
+           ;; room's (no text change on the pending → joined transition).
+           :lobby/state
+           (fn [st ev]
+             (cond-> (ws-transport/lobby-state st ev)
+               (and (:model ev) (get-in st [:rooms :pending]))
+               (update :state assoc-in [:rooms :pending :agent :model] (:model ev))))})
         ;; dispatch! isn't available until the app is built; on-status fires
         ;; through this ref so early connect/drop events are simply ignored.
         dispatch-ref (atom nil)
@@ -448,10 +462,21 @@
         (app/create-app {:initial-state (cond-> (state/initial-state
                                                  {:mode :client
                                                   :ext (:process-ext-init local)})
-                                          defer-room? (assoc :client/pending-room {:cwd cwd}))
+                                          defer-room?
+                                          (-> (assoc-in [:rooms :pending]
+                                                        (state/make-room
+                                                         :pending
+                                                         {:cwd cwd
+                                                          ;; Same machine as the server (defer
+                                                          ;; mode is localhost-only), so compute
+                                                          ;; the header's AGENTS.md list locally.
+                                                          :agents-files (system-prompt/find-agents-md cwd)}))
+                                              (assoc :active-room :pending)))
                          :handlers      (ws-transport/make-handlers
                                          base
-                                         {:local-handlers
+                                         {:local-room?  pending-room?
+                                          :local-submit pending-submit
+                                          :local-handlers
                                           (merge (:handlers local)
                                                  deferred-handlers
                                                  ;; Client-local: track socket
@@ -463,22 +488,33 @@
                          ;; Only client-local hooks run here; server hooks
                          ;; ran server-side and mirrored events bypass them.
                          :transform-event (ext/transform-event local)
-                         :effects       (merge (:effects transport)
+                         ;; Mirror fx run only from pending-room local handler
+                         ;; runs (real rooms forward; mirrored events strip to
+                         ;; the whitelist) — e.g. alt+p's :project/open-picker.
+                         ;; Defer mode is localhost-only, so running these
+                         ;; server-extension effects in-process is equivalent.
+                         ;; First in the merge: transport/local/client override.
+                         :effects       (merge (when defer-room? (:fx mirror))
+                                               (:effects transport)
                                                (:fx local)
                                                (:effects client))
                          :on-render     (:render client)
                          :ring          ring})]
-    ;; Deferred room: replay the stashed first prompt once the fresh room joins.
+    ;; Deferred room: replay the stashed first submission once the fresh room
+    ;; joins — images re-attach first (recreating their 📎 history entries in
+    ;; the real room, exactly as if attached there), then the text submits.
     (when defer-room?
       (add-tap!
        (fn [event state]
          (when (and (= :room/joined (:type event))
                     (:client/pending-submit state))
-           (let [text (get-in state [:client/pending-submit :text])]
+           (let [{:keys [text images]} (:client/pending-submit state)
+                 room-id (:room-id event)]
              (dispatch! {:type :client/clear-pending})
-             (dispatch! {:type :input/submit
-                         :room-id (:room-id event)
-                         :text text}))))))
+             (doseq [img images]
+               (dispatch! {:type :ui/attach-image :room-id room-id
+                           :image img :label "image"}))
+             (dispatch! {:type :input/submit :room-id room-id :text text}))))))
     ;; Auto-submit an initial prompt once the server room is joined
     ;; (e.g. launched from `hey re --join` with an error). Fires once.
     (when (seq initial-prompt)

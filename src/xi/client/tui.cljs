@@ -125,14 +125,11 @@
    matches, closes the menu and dispatches the event (with :room-id merged).
    When :selected? is true, the currently selected item is merged into the
    event under :selected."
-  [{:keys [prompt items alt-items tab-labels key-bindings search-field close-event]} room-id dispatch!]
+  [{:keys [prompt items alt-items tab-labels key-bindings search-field]} room-id dispatch!]
   (let [;; Tab state is interaction-local (like the menu's filter query) —
         ;; it lives in the component, not in app state.
         tab #js {:alt false}
-        ;; The deferred virtual chat has no server room to hold the menu, so it
-        ;; supplies its own client-local close event; real rooms clear via the
-        ;; room-scoped :ui/menu-close.
-        close! (fn [] (dispatch! (or close-event {:type :ui/menu-close :room-id room-id})))
+        close! (fn [] (dispatch! {:type :ui/menu-close :room-id room-id}))
         ;; Event-dispatching key-bindings from menu descriptor
         menu-kbs (mapv (fn [{:keys [key event selected?]}]
                          {:key-fn  (fn [data] (= data key))
@@ -199,30 +196,6 @@
                                         :description sub-desc
                                         :event {:type :command/run :room-id room-id
                                                 :name name :args sub-name}})
-                                     subcommands))))
-                commands)})
-
-(defn- pending-palette-menu
-  "Command palette for the deferred virtual chat (no server room yet). Selecting
-   a command routes through :client/first-prompt, which joins a fresh room and
-   replays the text as :input/submit — parsed there as the command — so the room
-   is created only once a command is actually chosen. Closing is client-local
-   via :close-event (the pending room isn't in :rooms, so :ui/menu-close can't
-   reach it)."
-  [commands]
-  {:id :palette
-   :prompt "palette> "
-   :close-event {:type :client/palette-close}
-   :items (into []
-                (mapcat (fn [{:keys [name description subcommands]}]
-                          (cons {:label (str "/" name)
-                                 :description description
-                                 :event {:type :client/first-prompt :text (str "/" name)}}
-                                (map (fn [{sub-name :name sub-desc :description}]
-                                       {:label (str "/" name " " sub-name)
-                                        :description sub-desc
-                                        :event {:type :client/first-prompt
-                                                :text (str "/" name " " sub-name)}})
                                      subcommands))))
                 commands)})
 
@@ -504,7 +477,7 @@
         loader (comp/make-loader "thinking...")
         ctx #js {:dispatch nil :state nil
                  :chat chat :viewWrapper view-wrapper :editor nil
-                 :roomId nil :blocks #js [] :header [] :chatDirty true
+                 :roomId nil :blocks #js [] :header [] :headerKey nil :chatDirty true
                  :panelVal nil :activeBuffer :chat
                  :pagerVal nil :pagerComp nil :wasPager false
                  :loaderShown false}
@@ -520,11 +493,8 @@
         (editor/make-editor
          {:prompt "xi> "
           :on-submit (fn [text]
-                       (if-let [room (current-room)]
-                         (dispatch! {:type :input/submit :room-id (:id room) :text text})
-                         ;; No room yet (deferred virtual chat) — create one on
-                         ;; first prompt; the handler joins "new" + replays text.
-                         (dispatch! {:type :client/first-prompt :text text})))
+                       (when-let [room (current-room)]
+                         (dispatch! {:type :input/submit :room-id (:id room) :text text})))
           :on-escape (fn []
                        (let [room (current-room)
                              active (get-in room [:ui :active-buffer] :chat)]
@@ -537,13 +507,9 @@
                              (room-event {:type :agent/abort})))))
           :on-interrupt (fn [] (shutdown! on-exit))
           :on-palette (fn []
-                        (if-let [room (current-room)]
+                        (when-let [room (current-room)]
                           (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                      :menu (palette-menu (:id room) commands)})
-                          ;; Deferred virtual chat — no server room to hold the
-                          ;; menu; render it client-locally on the pending room.
-                          (dispatch! {:type :client/palette-open
-                                      :menu (pending-palette-menu commands)})))
+                                      :menu (palette-menu (:id room) commands)})))
           :ext-keybindings ext-keybindings
           :on-git (fn [] (tui/run-external! ["ngit"] {}))
           :on-paste-image
@@ -578,8 +544,7 @@
                    (when (seq badge) badge))))
           :prompt-right-fn
           (fn []
-            (when-let [cwd (or (:cwd (current-room))
-                               (get-in (.-state ctx) [:client/pending-room :cwd]))]
+            (when-let [cwd (:cwd (current-room))]
               (let [client? (= :client (state/mode (.-state ctx)))
                     ;; nil (pre-connect) counts as connected to avoid flicker;
                     ;; only an explicit drop shows the reconnecting indicator.
@@ -596,37 +561,30 @@
           (set! (.-state ctx) state)
           (dispatch! {:type :render/start})
           (let [t0 (js/Date.now)]
-            (if-let [room (state/active-room state)]
-              (do
-                (when (not= (:id room) (.-roomId ctx))
-                  ;; Room switched (or first render) — rebuild from scratch
-                  (set! (.-roomId ctx) (:id room))
-                  (set! (.-blocks ctx) #js [])
+            (when-let [room (state/active-room state)]
+              (when (not= (:id room) (.-roomId ctx))
+                ;; Room switched (or first render) — rebuild from scratch
+                (set! (.-roomId ctx) (:id room))
+                (set! (.-blocks ctx) #js [])
+                (set! (.-chatDirty ctx) true)
+                (set! (.-activeBuffer ctx) nil))
+              ;; Header keyed on content, not room id: the deferred :pending →
+              ;; real room transition re-renders identical text (no header
+              ;; change on first prompt), and a model arriving later
+              ;; (:lobby/state) refreshes it in place.
+              (let [hkey [(get-in room [:agent :model]) (:cwd room)
+                          (get-in room [:agent :agents-files])]]
+                (when (not= hkey (.-headerKey ctx))
+                  (set! (.-headerKey ctx) hkey)
                   (set! (.-header ctx)
                         (view/launch-header {:model (get-in room [:agent :model])
                                              :cwd (:cwd room)
                                              :agents-files (get-in room [:agent :agents-files])}))
-                  (set! (.-chatDirty ctx) true)
-                  (set! (.-activeBuffer ctx) nil))
-                (sync-chat! ctx room loader)
-                (sync-view! ctx room ring dispatch!)
-                (sync-bottom-panel! ctx room dispatch!)
-                (tui/request-render!))
-              ;; Deferred virtual chat — no server room yet. Render just the
-              ;; launch header so the empty chat + editor are visible; the
-              ;; real room replaces it on the first prompt's :room/joined.
-              (when-let [pending (:client/pending-room state)]
-                (when (not= :pending (.-roomId ctx))
-                  (set! (.-roomId ctx) :pending)
-                  (set! (.-blocks ctx) #js [])
-                  (set! (.-header ctx) (view/launch-header {:cwd (:cwd pending)}))
-                  (set! (.-chatDirty ctx) true)
-                  (set! (.-activeBuffer ctx) nil))
-                (sync-chat! ctx {:history []} loader)
-                ;; Route the client-local command palette (/, Ctrl+P) through the
-                ;; normal bottom-panel path via a synthetic pending room.
-                (sync-bottom-panel! ctx {:id :pending :ui (:ui pending)} dispatch!)
-                (tui/request-render!)))
+                  (set! (.-chatDirty ctx) true)))
+              (sync-chat! ctx room loader)
+              (sync-view! ctx room ring dispatch!)
+              (sync-bottom-panel! ctx room dispatch!)
+              (tui/request-render!))
             (dispatch! {:type :render/done
                         :duration-ms (- (js/Date.now) t0)})))]
 

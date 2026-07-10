@@ -83,11 +83,13 @@
        (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite?]))))
 
 (defn- lobby-payload
-  "The :lobby/state wire payload: live rooms + saved sessions.
+  "The :lobby/state wire payload: live rooms + saved sessions (+ the server's
+   default :model, so a deferred TUI client can render the same launch header
+   pre-join as the room it will create).
    Filters out external (Claude/Pi) sessions whose id matches a live room's
    provider-session-id — prevents a duplicate card during the first agent
    turn before Xi's own :session/sync has run."
-  [st personal-agent?]
+  [st personal-agent? model]
   (let [rooms    (rm/room-summaries st)
         ;; Provider session ids currently held by live rooms (Claude CLI ids)
         ;; must be hidden from the saved-session list to avoid a duplicate card.
@@ -101,6 +103,7 @@
     (wire/encode (cond-> {:type     :lobby/state
                           :rooms    rooms
                           :sessions sessions}
+                   model           (assoc :model model)
                    personal-agent? (assoc :personal-agent? true)))))
 
 ;; ── Static file serving (resources/public, SPA fallback) ──────────────────────
@@ -264,7 +267,7 @@
       ;; Send the full lobby payload (rooms + saved sessions) to one client.
       :lobby/send
       (fn [{:keys [state]} {:keys [client-id]}]
-        (send! client-id (lobby-payload state personal-agent?)))
+        (send! client-id (lobby-payload state personal-agent? (:model server-opts))))
 
       ;; Reply to an unread-count query: assistant-turn counts per session.
       :session/counts-reply
@@ -342,7 +345,7 @@
                  (dispatch! {:type :client/connect :client-id cid
                              :client {:kind :remote}})
                  (send-event! cid {:type :auth/ok})
-                 (send! cid (lobby-payload @state personal-agent?))))
+                 (send! cid (lobby-payload @state personal-agent? (:model server-opts)))))
              resolve-pending!
              (fn [code approved?]
                (when-let [^js e (.get pending code)]
@@ -409,7 +412,7 @@
                ;; list and unread/active/dialog markers live.
                (let [cids (keys (get-in st [:connection :clients]))]
                  (when (seq cids)
-                   (let [payload (lobby-payload st personal-agent?)]
+                   (let [payload (lobby-payload st personal-agent? (:model server-opts))]
                      (doseq [cid cids] (send! cid payload))))))
              opts
              #js {:port port

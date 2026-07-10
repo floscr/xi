@@ -46,35 +46,46 @@
   {:effects [[:ws/send ev]]})
 
 (defn- wrap
-  "remote? → mirror; local → forward to the server."
-  [client-side-fx handler]
+  "remote? → mirror; local-room target → run the base handler locally with
+   full effects (client-local virtual rooms, e.g. the TUI's deferred
+   :pending room — its effects are all client-side); else forward."
+  [client-side-fx handler {:keys [local-room?]}]
   (let [m (mirror client-side-fx handler)]
     (fn [st ev]
-      (if (:remote? ev) (m st ev) (forward st ev)))))
+      (cond
+        (:remote? ev)                      (m st ev)
+        (and local-room? (local-room? ev)) (handler st ev)
+        :else                              (forward st ev)))))
 
 (defn- wrap-input-submit
-  "Like wrap, but intercept client-local commands before forwarding."
-  [client-side-fx handler]
+  "Like wrap, but intercept client-local commands before forwarding, and
+   route local-room submissions to :local-submit (the deferred-room stash)."
+  [client-side-fx handler {:keys [local-room? local-submit]}]
   (let [m (mirror client-side-fx handler)]
     (fn [st ev]
       (if (:remote? ev)
         (m st ev)
         (let [parsed (commands/parse-input (:text ev))]
-          (if-let [fx (and (= :command (:type parsed))
-                           (get local-commands (:name parsed)))]
-            {:effects [fx]}
-            (forward st ev)))))))
+          (cond
+            (and (= :command (:type parsed))
+                 (get local-commands (:name parsed)))
+            {:effects [(get local-commands (:name parsed))]}
+
+            (and local-room? (local-room? ev))
+            (local-submit st ev)
+
+            :else (forward st ev)))))))
 
 (defn- wrap-command-run
   "Like wrap-input-submit for direct :command/run (palette items)."
-  [client-side-fx handler]
+  [client-side-fx handler {:keys [local-room? local-submit]}]
   (let [m (mirror client-side-fx handler)]
     (fn [st ev]
-      (if (:remote? ev)
-        (m st ev)
-        (if-let [fx (get local-commands (:name ev))]
-          {:effects [fx]}
-          (forward st ev))))))
+      (cond
+        (:remote? ev)                      (m st ev)
+        (get local-commands (:name ev))    {:effects [(get local-commands (:name ev))]}
+        (and local-room? (local-room? ev)) (local-submit st ev)
+        :else                              (forward st ev)))))
 
 ;; ── Client-only handlers ─────────────────────────────────────────────────────
 
@@ -89,7 +100,7 @@
   {:state (cond-> (update st :rooms dissoc room-id)
             (= room-id (:active-room st)) (assoc :active-room nil))})
 
-(defn- lobby-state [st ev]
+(defn lobby-state [st ev]
   {:state (assoc st :lobby (select-keys ev [:rooms :sessions :personal-agent?]))})
 
 (defn make-handlers
@@ -103,13 +114,22 @@
      :local-handlers  process-local extension handlers (e.g. dictation)
                       installed UNWRAPPED — they act on the client process
                       and never forward/mirror. Dialog answers still
-                      forward to the server, which owns the resolver."
+                      forward to the server, which owns the resolver.
+     :local-room?     (fn [ev] → bool) — non-remote events matching this
+                      predicate target a client-local virtual room and run
+                      the base reducer locally instead of forwarding
+                      (the TUI's deferred :pending room).
+     :local-submit    (fn [st ev] → result) — :input/submit / :command/run
+                      handler for local-room events (after the
+                      local-commands intercept): stashes the submission and
+                      creates the real server room."
   ([base-handlers] (make-handlers base-handlers nil))
-  ([base-handlers {:keys [client-fx local-handlers]}]
-   (let [client-side-fx (into default-client-side-fx client-fx)]
-     (-> (into {} (map (fn [[t handler]] [t (wrap client-side-fx handler)])) base-handlers)
-         (assoc :input/submit (wrap-input-submit client-side-fx (get base-handlers :input/submit))
-                :command/run  (wrap-command-run client-side-fx (get base-handlers :command/run))
+  ([base-handlers {:keys [client-fx local-handlers local-room? local-submit]}]
+   (let [client-side-fx (into default-client-side-fx client-fx)
+         wrap-opts {:local-room? local-room? :local-submit local-submit}]
+     (-> (into {} (map (fn [[t handler]] [t (wrap client-side-fx handler wrap-opts)])) base-handlers)
+         (assoc :input/submit (wrap-input-submit client-side-fx (get base-handlers :input/submit) wrap-opts)
+                :command/run  (wrap-command-run client-side-fx (get base-handlers :command/run) wrap-opts)
                 ;; Dialog answers must reach the server (it holds the
                 ;; pending resolver); removal mirrors back via room state.
                 ;; Only forward the user's own answer — the server echoes
