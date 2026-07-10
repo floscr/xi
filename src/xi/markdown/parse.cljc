@@ -196,15 +196,29 @@
 
 (defn- consume-list-items
   "Consume consecutive list items of the same type from lines.
+   Skips blank lines between items so loose lists (items separated by a
+   blank line) stay a single list block instead of restarting numbering.
    Returns [items remaining-lines]."
   [lines item-fn]
   (loop [lines lines
          items []]
-    (if (empty? lines)
+    (cond
+      (empty? lines)
       [items lines]
-      (if-let [text (item-fn (first lines))]
-        (recur (rest lines) (conj items text))
-        [items lines]))))
+
+      (item-fn (first lines))
+      (recur (rest lines) (conj items (item-fn (first lines))))
+
+      ;; Blank line between items: continue only if a later non-blank line
+      ;; is another item of the same type (a loose list).
+      (and (seq items)
+           (blank-line? (first lines))
+           (let [next-content (drop-while blank-line? lines)]
+             (and (seq next-content) (item-fn (first next-content)))))
+      (recur (drop-while blank-line? lines) items)
+
+      :else
+      [items lines])))
 
 (defn- table-row-line?
   "Loose check: a non-blank line containing a pipe is a candidate table row."
