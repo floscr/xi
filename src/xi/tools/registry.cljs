@@ -6,7 +6,8 @@
             [xi.tools.bash :as bash]
             [xi.tools.grep :as grep]
             [xi.tools.find :as find]
-            [xi.tools.ls :as ls]))
+            [xi.tools.ls :as ls]
+            [xi.tools.view :as view]))
 
 (def ^:private builtin-tools
   [{:def read/definition  :exec read/execute}
@@ -15,7 +16,8 @@
    {:def bash/definition  :exec bash/execute}
    {:def grep/definition  :exec grep/execute}
    {:def find/definition  :exec find/execute}
-   {:def ls/definition    :exec ls/execute}])
+   {:def ls/definition    :exec ls/execute}
+   {:def view/definition  :exec view/execute}])
 
 (defn tool-definitions
   "Return vec of tool definitions in Anthropic API format for the tools parameter."

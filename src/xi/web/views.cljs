@@ -208,7 +208,23 @@
                    [:span {:class ["tool-diff-line"]} line]))))
         (str/split-lines text)))
 
-(defn- tool-post [{:keys [tool arguments result is-error status]}]
+(defn- result-images
+  "Extract image blocks from a tool result, tolerating both the MCP shape
+   ({:type \"image\" :data .. :mimeType ..}) and the API shape
+   ({:type \"image\" :source {:media_type .. :data ..}}). Returns a seq of
+   {:data :media-type} maps."
+  [result]
+  (when (sequential? result)
+    (keep (fn [b]
+            (when (and (map? b) (= "image" (:type b)))
+              (let [src (:source b)
+                    data (or (:data b) (:data src))
+                    mime (or (:mimeType b) (:media_type src) (:media-type src))]
+                (when (and data mime)
+                  {:data data :media-type mime}))))
+          result)))
+
+(defn- tool-post [dispatch! {:keys [tool arguments result is-error status]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments)
         running?  (= :running status)
@@ -234,7 +250,20 @@
            (if (and (contains? #{"Edit" "edit"} name) (not is-error))
              (edit-diff-code grammar shown)
              [:pre {:class ["tool-call-code"]}
-              (if grammar (highlight-code grammar shown) shown)]))])]]))
+              (if grammar (highlight-code grammar shown) shown)]))])
+      (when-let [imgs (seq (result-images result))]
+        [:div {:class ["tool-call-content" "user-images"]}
+         (map-indexed
+          (fn [i {:keys [data media-type]}]
+            (let [src (str "data:" media-type ";base64," data)]
+              [:img {:replicant/key i
+                     :class ["user-image" "lightbox-thumb"]
+                     :src src
+                     :alt "viewed image"
+                     :on {:click (fn [^js e]
+                                   (.stopPropagation e)
+                                   (dispatch! {:type :lightbox/open :src src}))}}]))
+          imgs)])]]))
 
 ;; ── History entry → post ─────────────────────────────────────────────────────
 
@@ -323,7 +352,7 @@
       [:pre {:class ["thinking-text"]} (:text entry)]]]
 
     :tool-call
-    (tool-post entry)
+    (tool-post dispatch! entry)
 
     :status
     [:div {:class ["post" "post--assistant"]}
