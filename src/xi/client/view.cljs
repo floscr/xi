@@ -284,7 +284,7 @@
 
 (defn- tool-header-str [tool-name args-summary]
   (let [first-line (when (seq args-summary)
-                     (truncate (first (str/split-lines args-summary)) 120))
+                     (first (str/split-lines args-summary)))
         rest-lines (when (seq args-summary)
                      (let [lines (rest (str/split-lines args-summary))]
                        (when (seq lines)
