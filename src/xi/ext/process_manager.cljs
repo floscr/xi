@@ -36,6 +36,13 @@
 
 (defonce ^:private log-buffers (atom {})) ;; pid -> {:lines [str] :partial str}
 
+;; Handles for awaiting a process's completion, kept process-local like the
+;; log buffers. Each entry's :exited promise resolves to the process exit code;
+;; wait_for_process races it against a timeout. Retained after natural exit (a
+;; resolved promise + two strings) so a late wait still resolves; dropped on
+;; kill / room-close.
+(defonce ^:private proc-handles (atom {})) ;; pid -> {:exited <promise> :logfile str :command str}
+
 (defn- append-output!
   "Append decoded output text to a pid's buffer, splitting on newlines and
    capping to the most recent `max-buffer-lines` complete lines."
@@ -62,6 +69,19 @@
         all (cond-> lines (seq partial) (conj partial))]
     (vec (take-last n all))))
 
+(defn- logfile-tail
+  "Read the last `n` lines of a logfile off disk (async → Promise<string>).
+   The logfile is written via `tee`, so it's the durable source of a
+   process's output even after its in-memory buffer is gone."
+  [logfile n]
+  (-> (.text (js/Bun.file logfile))
+      (.then (fn [text]
+               (->> (str/split (str text) #"\n")
+                    (remove str/blank?)
+                    (take-last n)
+                    (str/join "\n"))))
+      (.catch (fn [_] ""))))
+
 (defn- pid-alive?
   "Check if a PID is still running."
   [pid]
@@ -72,10 +92,11 @@
     (catch :default _e false)))
 
 (defn- kill-pid!
-  "Kill a process by PID and drop its log buffer. Returns true if the
-   signal was sent."
+  "Kill a process by PID and drop its log buffer + wait handle. Returns true
+   if the signal was sent."
   [pid]
   (drop-buffer! pid)
+  (swap! proc-handles dissoc pid)
   (try
     (.kill js/process (- pid) "SIGTERM")
     true
@@ -149,6 +170,7 @@
         pid     (.-pid proc)
         entry   {:pid pid :command cmd :started (.now js/Date) :logfile logfile}]
     (pump-output! pid (.-stdout proc))
+    (swap! proc-handles assoc pid {:exited (.-exited proc) :logfile logfile :command cmd})
     ;; When the process exits on its own, drop it from the tracked list so
     ;; the room can auto-close again (keep-alive? only counts live procs).
     (-> (.-exited proc)
@@ -163,6 +185,10 @@
      :result (text-result
               (str "Started background process (PID " pid "): " cmd "\n"
                    "Logs: " logfile " (read this file with the `read` tool to see output)\n"
+                   "If this is a finite command (a build/test) you must finish before "
+                   "continuing, call `wait_for_process` with target " pid " to block "
+                   "until it exits — do NOT `sleep` in bash. If it's a long-lived "
+                   "server/watcher, leave it running and just read its log when needed.\n"
                    "Manage with list_processes / stop_process."))}))
 
 (defn- format-duration
@@ -224,6 +250,55 @@
                 (str "No tracked process matching: " target
                      (when (empty? procs) " (none tracked)")))})))
 
+(def ^:private default-wait-ms 120000)
+
+(defn- resolve-wait-pid
+  "Resolve a wait/stop target (1-based index or PID) to a PID that has a
+   live wait handle. Falls back to a raw PID lookup in `proc-handles` so a
+   process that already deregistered from the tracked list (natural exit)
+   can still be awaited."
+  [target procs]
+  (let [n   (parse-long (str/trim (str (or target ""))))
+        via (parse-kill-target target procs)]
+    (or (:pid via)
+        (when (and n (contains? @proc-handles n)) n))))
+
+(defn- wait-process-result!
+  "Block until a tracked process exits (or `timeout-ms` elapses), then return
+   an intercepted result with the exit code + a tail of its log. Returns a
+   Promise; the tool gate awaits it. Not subject to bash's 30s timeout."
+  [target timeout-ms st room-id]
+  (let [procs  (get-processes st room-id)
+        pid    (resolve-wait-pid target procs)
+        handle (get @proc-handles pid)]
+    (if (nil? handle)
+      (js/Promise.resolve
+       {:intercepted true
+        :result (text-result
+                 (str "No tracked process matching: " target
+                      " — it may have already exited; read its log file instead."))})
+      (let [tmo       (or timeout-ms default-wait-ms)
+            timeout-p (js/Promise. (fn [res _] (js/setTimeout #(res ::timeout) tmo)))]
+        (-> (js/Promise.race #js [(:exited handle) timeout-p])
+            (.then
+             (fn [outcome]
+               (if (= outcome ::timeout)
+                 (-> (logfile-tail (:logfile handle) 20)
+                     (.then (fn [tail]
+                              {:intercepted true
+                               :result (text-result
+                                        (str "PID " pid " still running after "
+                                             (format-duration tmo)
+                                             ". Call wait_for_process again to keep waiting."
+                                             (when (seq tail) (str "\nRecent output:\n" tail))))})))
+                 (-> (logfile-tail (:logfile handle) 50)
+                     (.then (fn [tail]
+                              {:intercepted true
+                               :result (text-result
+                                        (str "PID " pid " exited with code " outcome ".\n"
+                                             "Output (last 50 lines of " (:logfile handle) "):\n"
+                                             tail))}))))))))))) 
+
 ;; ── Tool Gate ────────────────────────────────────────────────────────────────
 
 (defn- tool-gate
@@ -243,6 +318,9 @@
 
       (= lname "stop_process")
       (stop-process-result! (:target arguments) (get-state) room-id dispatch!)
+
+      (= lname "wait_for_process")
+      (wait-process-result! (:target arguments) (:timeout_ms arguments) (get-state) room-id)
 
       (and (= lname "bash") (background-command? (:command arguments)))
       (start-process-result! (strip-trailing-amp (:command arguments)) cwd room-id dispatch!)
@@ -279,6 +357,20 @@
     :input_schema {:type "object"
                    :properties {:target {:type "string"
                                          :description "The process PID, or its 1-based index from list_processes."}}
+                   :required ["target"]}}
+   {:name "wait_for_process"
+    :description (str "Block until a background process started with "
+                      "start_process finishes, then return its exit code and "
+                      "the tail of its output. Use this — NOT `sleep` in bash — "
+                      "when you need to wait for a finite long-running command "
+                      "(a build, a slow test run) to complete before continuing. "
+                      "Unlike bash it is not killed at 30s. If it returns "
+                      "'still running', just call it again to keep waiting.")
+    :input_schema {:type "object"
+                   :properties {:target {:type "string"
+                                         :description "The process PID, or its 1-based index from list_processes."}
+                                :timeout_ms {:type "integer"
+                                             :description "Max ms to wait before returning 'still running' (default 120000)."}}
                    :required ["target"]}}])
 
 (def ^:private system-prompt
@@ -292,10 +384,14 @@
        "`read` tool to check on it. Use `list_processes` to see what is running "
        "and `stop_process` to stop one. Reserve `bash` for commands that finish "
        "within a few seconds.\n"
-       "Do NOT block waiting for a background process to finish — never `sleep` "
-       "in `bash` to wait it out (that just hits the same 30s timeout). Start "
-       "it, tell the user its PID and log path, and move on; when you need its "
-       "result, read the log file with `read` or call `list_processes`."))
+       "When you need to WAIT for a finite long-running command (a build, a "
+       "slow test run) to finish before continuing, call `wait_for_process` "
+       "with its PID — it blocks until the process exits (not killed at 30s) "
+       "and returns the exit code plus its output tail. NEVER `sleep` in `bash` "
+       "to wait a process out — that just hits the same 30s timeout. For a "
+       "process you don't need to wait on (a dev server you'll leave running), "
+       "just move on and later read its log with `read` or call "
+       "`list_processes`."))
 
 ;; ── Event Handlers ───────────────────────────────────────────────────────────
 
