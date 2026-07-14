@@ -114,7 +114,7 @@
   []
   (let [path (js/require "node:path")
         fs   (js/require "node:fs")
-        script-dir (try js/__dirname (catch :default _ nil))
+        script-dir (when (exists? js/__dirname) js/__dirname)
         candidates (cond-> []
                      script-dir (conj (.resolve path script-dir ".." "resources" "public"))
                      true       (conj (.resolve path (.cwd js/process) "resources" "public")))]
