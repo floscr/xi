@@ -15,7 +15,8 @@
    runtime via SCI."
   (:require
    #?@(:node
-       [[xi.ext.clipboard-image :as clipboard-image]
+       [[xi.ext.browser-open :as browser-open]
+        [xi.ext.clipboard-image :as clipboard-image]
         [xi.ext.clj-surgeon :as clj-surgeon]
         [xi.ext.commit :as commit]
         [xi.ext.dictation :as dictation]
@@ -74,6 +75,7 @@
       web/extension
       perplexity/extension
       commit/extension
+      browser-open/extension
       clj-surgeon/extension
       github/extension
       github-code-search/extension
