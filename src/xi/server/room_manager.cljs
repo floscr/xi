@@ -48,6 +48,16 @@
       (boolean (seq (get-in room [:ui :dialogs])))
       (boolean (seq (get-in room [:ext :process-manager :processes])))))
 
+(defn prunable?
+  "A room is prunable (\"inactive\") when its agent isn't mid-turn and it holds
+   no pending dialog — nobody is actively working in or waiting on it. Unlike
+   keep-alive? this deliberately IGNORES live background processes: a manual
+   prune is meant to tear those down (and detach any lingering client) to clear
+   rooms left behind by open terminals."
+  [room]
+  (and (not (get-in room [:agent :busy?]))
+       (empty? (get-in room [:ui :dialogs]))))
+
 (defn room-summaries
   "Lobby-facing room list, newest first."
   [st]
@@ -181,6 +191,40 @@
   [_st {:keys [session-id]}]
   {:effects [[:favorites/toggle-reply {:session-id session-id}]]})
 
+(defn- rooms-prune
+  "Roomless: force-close every inactive room (see prunable?). For each target
+   we detach its clients (a direct :room/left drops each back to the lobby),
+   then :room/close it — which kills the room's tracked processes
+   (ext/process-manager on-room-close) and discards its in-memory history. The
+   caller's own room is spared, so pruning from a chat can't close the chat
+   you're looking at.
+
+   Saved sessions are untouched: :room/close only tears down the live room; the
+   on-disk session stays resumable. Issued from the web sidebar to clear rooms
+   left hanging around by open terminals."
+  [st {:keys [client-id]}]
+  (let [own-room (get-in st [:connection :clients client-id :room-id])
+        targets  (into #{}
+                       (keep (fn [[rid room]]
+                               (when (and (not= rid own-room) (prunable? room))
+                                 rid)))
+                       (:rooms st))
+        attached (for [[cid client] (get-in st [:connection :clients])
+                       :let  [rid (:room-id client)]
+                       :when (contains? targets rid)]
+                   [cid rid])]
+    (when (seq targets)
+      {:state   (reduce (fn [s [cid _]]
+                          (update-in s [:connection :clients cid] dissoc :room-id))
+                        st attached)
+       :effects (-> []
+                    (into (map (fn [[cid rid]]
+                                 [:ws/send-to {:client-id cid
+                                               :event {:type :room/left :room-id rid}}]))
+                          attached)
+                    (into (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
+                          targets))})))
+
 
 (def handlers
   {:room/join              room-join
@@ -191,7 +235,8 @@
    :models/web-list        models-web-list
    :session/content-search session-content-search
    :diff/web-load          diff-web-load
-   :favorites/toggle       favorites-toggle})
+   :favorites/toggle       favorites-toggle
+   :rooms/prune            rooms-prune})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
 

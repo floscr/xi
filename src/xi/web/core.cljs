@@ -411,6 +411,7 @@
          {:room/new              room-new
           :room/join             forward
           :room/leave            forward
+          :rooms/prune           forward
           :session/counts        forward
           :session/counts-result counts-result
           :session/mark-read     mark-read

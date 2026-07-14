@@ -65,7 +65,7 @@
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
   #{:client/update :session/counts :models/web-list :session/content-search
-    :diff/web-load :favorites/toggle})
+    :diff/web-load :favorites/toggle :rooms/prune})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"

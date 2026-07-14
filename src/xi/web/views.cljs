@@ -2360,11 +2360,17 @@
          {:mode (or (:web/theme-mode state) "auto")
           :size :sm
           :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
-        (when standalone?
-          [:button {:class ["icon-btn" "icon-btn--sm"]
-                    :title "Reload"
-                    :on {:click (fn [_] (.reload js/location))}}
-           (icon/icon {:icon-name :refresh :size :md})])]))))
+        [:div {:style {:display "flex" :align-items "center" :gap "0.25rem"}}
+         (when (not pa?)
+           [:button {:class ["icon-btn" "icon-btn--sm"]
+                     :title "Prune inactive rooms — close idle sessions, kill their processes, and detach lingering clients"
+                     :on {:click (fn [_] (dispatch! {:type :rooms/prune}))}}
+            (icon/icon {:icon-name :trash :size :md})])
+         (when standalone?
+           [:button {:class ["icon-btn" "icon-btn--sm"]
+                     :title "Reload"
+                     :on {:click (fn [_] (.reload js/location))}}
+            (icon/icon {:icon-name :refresh :size :md})])]]))))
 
 (defn- git-status-view
   "Roomless working-tree diff page (reached from the project view's overflow
