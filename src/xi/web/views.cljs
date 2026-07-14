@@ -1820,6 +1820,7 @@
         w       (get watched sid)]
     {:session-id  sid
      :name        (:name s)
+     :cwd         (:cwd s)
      :timestamp   (or (:last-accessed s) (:timestamp s))
      :favorite?   (boolean (:favorite? s))
      :current?    (and sid (= sid (get-in state [:web/route :session-id])))
@@ -1838,6 +1839,13 @@
         (group-by (comp boolean :active?)
                   (map #(session-status state %) sessions))]
     (concat active inactive)))
+
+(defn- with-projects
+  "Tag session cards to display their owning project in the description line.
+   Used by cross-project listings (All sessions, Favorites, the sidebar) so a
+   session shows which project it belongs to; the per-project view omits it."
+  [cards]
+  (map #(assoc % :show-project? true) cards))
 
 (defn- orphan-rooms
   "Live rooms from the lobby mirror that have no matching disk session in
@@ -1860,11 +1868,12 @@
           (mapv (fn [[sid rooms]]
                   {:session-id  sid
                    :name        (or (some :session-name rooms) "New session")
+                   :cwd         (some :cwd rooms)
                    :active?     true
                    :busy?       (boolean (some :busy? rooms))
                    :has-dialog? (boolean (some :has-dialog? rooms))}))))))
 
-(defn- session-card [dispatch! {:keys [session-id name timestamp current? active? busy? has-dialog? unread? favorite?]}]
+(defn- session-card [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? unread? favorite? show-project?]}]
   [:div {:class ["project-card" (when active? "project-card--active")
                  (when has-dialog? "project-card--dialog")
                  (when current? "project-card--current")]
@@ -1878,11 +1887,14 @@
    [:div {:class ["project-card-info"]}
     [:span {:class ["project-card-name"]} (or name "New session")]
     [:span {:class ["project-card-path"]}
-     (str (or (format-relative-time timestamp) "")
-          (cond has-dialog? " · needs response"
-                busy? " · working…"
-                active? " · active"
-                :else ""))]]
+     (->> [(when (and show-project? cwd) (shorten-path cwd))
+           (format-relative-time timestamp)
+           (cond has-dialog? "needs response"
+                 busy? "working…"
+                 active? "active"
+                 :else nil)]
+          (remove str/blank?)
+          (str/join " · "))]]
    ;; Keep the trailing indicator slot ALWAYS present (hidden via CSS when
    ;; empty). A bare conditional here is an unkeyed child that flips between an
    ;; element and nil; as the keyed card list churns/reorders, Replicant can
@@ -2042,9 +2054,9 @@
       (cond
         (or (seq sessions) (seq orphans))
         [:div {:class ["project-list"]}
-         (for [o orphans]
+         (for [o (with-projects orphans)]
            (session-card dispatch! o))
-         (for [s (active-first state sessions)]
+         (for [s (with-projects (active-first state sessions))]
            (session-card dispatch! s))]
 
         (seq query)
@@ -2073,7 +2085,7 @@
       (cond
         (seq sessions)
         [:div {:class ["project-list"]}
-         (for [s (active-first state sessions)]
+         (for [s (with-projects (active-first state sessions))]
            (session-card dispatch! s))]
 
         (seq query)
@@ -2192,7 +2204,7 @@
              (search-box dispatch! :home "Search projects…" raw-query content?)
              (if (seq matched-sessions)
                [:div {:class ["project-list"]}
-                (for [s (active-first state matched-sessions)]
+                (for [s (with-projects (active-first state matched-sessions))]
                   (session-card dispatch! s))]
                [:div {:class ["empty-state"]} [:p "No matching sessions."]])]
 
@@ -2205,6 +2217,8 @@
                 (for [r orphans]
                   (session-card dispatch! {:session-id (:session-id r)
                                           :name (or (:session-name r) "New session")
+                                          :cwd (:cwd r)
+                                          :show-project? true
                                           :active? true :busy? (:busy? r)
                                           :has-dialog? (:has-dialog? r)
                                           :favorite? (contains? fav-ids (:session-id r))})))
@@ -2336,7 +2350,7 @@
                  (:label item)))]))
          (sidebar/sidebar-group {:label "Recent"}
            (if (seq cards)
-             (for [c cards]
+             (for [c (with-projects cards)]
                (session-card dispatch! c))
              [:div {:class ["sidebar-group-label"]} "No recent sessions"])))))
      (sidebar/sidebar-footer {}
