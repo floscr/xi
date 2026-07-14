@@ -31,7 +31,7 @@
 
 (def ^:private MAX_INPUT 2000)
 
-(defn- clean-title
+(defn clean-title
   "Tidy a model-produced title: first non-blank line, strip wrapping quotes
    and trailing punctuation, cap length. Returns nil when nothing usable."
   [s]

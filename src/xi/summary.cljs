@@ -1,7 +1,13 @@
 (ns xi.summary
   "/summary — feed the current session to a cheap model and print a short
-   description of what it's about. Handy after a /resume when the saved title
-   is stale and you need to know what the session actually covers.
+   description of what it's about, and refresh the session title. Handy after a
+   /resume when the saved title is stale and you need to know what the session
+   actually covers.
+
+   The one-shot turn returns both a fresh short title (a leading `TITLE:` line)
+   and a 2-4 sentence description. The description is printed as a status entry;
+   the title overwrites the session's `:name` (fixing a stale title) and is
+   persisted via :session/sync.
 
    Like xi.naming, the summary turn runs a cheap one-shot model against a
    throwaway CLAUDE_CONFIG_DIR, so it never creates a session file and never
@@ -12,20 +18,25 @@
      :summary/request   ─► status \"Summarizing…\" + [:summary/generate …]
      :summary/generate  ─► one-shot cheap-model turn on the transcript;
                            on end dispatch :summary/generated | :summary/failed
-     :summary/generated ─► append the summary as a status entry
+     :summary/generated ─► append the description as a status entry, overwrite
+                           the session title, and persist via :session/sync
      :summary/failed    ─► append an error status"
   (:require [clojure.string :as str]
             [xi.commands :as commands]
-            [xi.core.state :as state]))
+            [xi.core.state :as state]
+            [xi.naming :as naming]))
 
 (def ^:private SUMMARY_MODEL "claude-haiku-4-5-20251001")
 
 (def ^:private SUMMARY_PROMPT_PREFIX
   (str "Below is a transcript of a coding session between a user and an AI "
-       "assistant. In 2-4 sentences, describe what this session is about: the "
-       "main goal or task, what has been done, and the current state. Be "
-       "concrete — name the key files, features, or bugs involved. Reply with "
-       "the description only, no preamble.\n\n"
+       "assistant. Reply in exactly this format:\n\n"
+       "TITLE: <a concise 3-6 word Title Case title, no quotes, no trailing "
+       "punctuation>\n\n"
+       "<2-4 sentences describing what this session is about: the main goal or "
+       "task, what has been done, and the current state. Be concrete — name the "
+       "key files, features, or bugs involved.>\n\n"
+       "Reply with only the TITLE line and the description, no other preamble.\n\n"
        "=== TRANSCRIPT ===\n"))
 
 (def ^:private MAX_INPUT 12000)
@@ -61,6 +72,21 @@
        (str/join "\n\n")
        clip))
 
+(defn parse-output
+  "Split the model output into a short title (from a leading `TITLE:` line) and
+   the remaining description. Returns {:title <str|nil> :description <str|nil>}.
+   Tolerates a missing TITLE line — then :title is nil and the whole text is the
+   description — so a stray-formatted reply still yields a usable summary."
+  [raw]
+  (when (some? raw)
+    (let [[first-line & rest-lines] (str/split-lines raw)
+          m (some->> first-line (re-find #"(?i)^\s*title\s*:\s*(.+?)\s*$"))]
+      (if m
+        {:title       (naming/clean-title (second m))
+         :description (not-empty (str/trim (str/join "\n" rest-lines)))}
+        {:title       nil
+         :description (not-empty (str/trim raw))}))))
+
 ;; ── Handlers (pure) ──────────────────────────────────────────────────────────
 
 (defn- append-status [st room-id text]
@@ -81,11 +107,15 @@
                      (append-status room-id "Summarizing this session…"))
        :effects  [[:summary/generate {:room-id room-id}]]})))
 
-(defn- summary-generated [st {:keys [room-id summary]}]
+(defn- summary-generated [st {:keys [room-id title summary]}]
   (when (state/get-room st room-id)
-    {:state (-> st
-                (assoc-in [:rooms room-id :agent :summary-pending?] false)
-                (append-status room-id (str "Session summary:\n\n" summary)))}))
+    (let [st (-> st
+                 (assoc-in [:rooms room-id :agent :summary-pending?] false)
+                 (append-status room-id (str "Session summary:\n\n" summary))
+                 (cond-> (seq title)
+                   (assoc-in [:rooms room-id :session :name] title)))]
+      (cond-> {:state st}
+        (seq title) (assoc :effects [[:session/sync {:room-id room-id}]])))))
 
 (defn- summary-failed [st {:keys [room-id error]}]
   (when (state/get-room st room-id)
@@ -129,17 +159,19 @@
              (.then
               (fn [result]
                 (cleanup!)
-                (let [summary (or (not-empty (str/trim (or (:result-text result) "")))
-                                  (not-empty (str/trim (str/join @chunks))))]
+                (let [raw (or (not-empty (str/trim (or (:result-text result) "")))
+                              (not-empty (str/trim (str/join @chunks))))
+                      {:keys [title description]} (parse-output raw)]
                   (cond
                     (:aborted result)
                     (dispatch! {:type :summary/failed :room-id room-id :error "aborted"})
 
-                    (nil? summary)
+                    (nil? description)
                     (dispatch! {:type :summary/failed :room-id room-id :error "empty summary"})
 
                     :else
-                    (dispatch! {:type :summary/generated :room-id room-id :summary summary})))))
+                    (dispatch! {:type :summary/generated :room-id room-id
+                                :title title :summary description})))))
              (.catch
               (fn [err]
                 (cleanup!)
