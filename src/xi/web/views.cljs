@@ -494,6 +494,7 @@
    {:name "new"      :description "Start a new session"}
    {:name "clear"    :description "Clear current session"}
    {:name "truncate" :description "Summarize conversation to reduce context"}
+   {:name "summary"  :description "Describe this session and refresh its title"}
    {:name "diff"     :description "Show changes from this session" :while-busy? true
     :subcommands [{:name "git"             :description "All git changes (staged + unstaged + untracked)"}
                   {:name "staged"          :description "Staged changes"}
@@ -598,12 +599,12 @@
         (dispatch! (cond-> {:type :submit/pending :session-id session-id :text text}
                      (seq images) (assoc :images (vec images))))))))
 
-(def ^:private max-quick-commands 6)
+(def ^:private max-quick-commands 7)
 
 (def ^:private default-quick-commands
   "Fallback commands shown in the quick-access bar before (and alongside) the
    user's recently-executed ones."
-  ["diff" "commit" "truncate" "resume" "new" "clear"])
+  ["diff" "commit" "truncate" "summary" "resume" "new" "clear"])
 
 (defn- quick-command-list
   "Most-recently-executed commands first, then the defaults not already shown,
