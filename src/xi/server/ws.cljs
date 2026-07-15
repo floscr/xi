@@ -288,7 +288,9 @@
         (send! client-id (wire/encode {:type        :session/content-search-result
                                        :key         key
                                        :query       query
-                                       :session-ids (session/content-search cwd query)})))
+                                       :session-ids (session/content-search
+                                                     cwd query
+                                                     {:personal-agent? personal-agent?})})))
 
       ;; Toggle a session bookmark, then fan a fresh lobby out to every client
       ;; (the :favorites/changed dispatch is lobby-relevant, so the tap

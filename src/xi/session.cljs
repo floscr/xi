@@ -750,14 +750,20 @@
 (defn content-search
   "Session-ids whose name or conversation text contains `query`
    (case-insensitive). `cwd` nil/blank -> search across all sessions;
-   otherwise scope to that project directory. Returns a vec of session-ids."
-  [cwd query]
+   otherwise scope to that project directory. In personal-agent mode the
+   corpus is the personal-agent sessions dir (which has no project cwds).
+   Returns a vec of session-ids."
+  ([cwd query] (content-search cwd query nil))
+  ([cwd query {:keys [personal-agent?]}]
   (let [q (str/lower-case (str/trim (or query "")))]
     (if (str/blank? q)
       []
-      (->> (if (seq cwd) (list-sessions cwd) (list-all-sessions))
+      (->> (cond
+             personal-agent? (list-personal-agent-sessions)
+             (seq cwd)       (list-sessions cwd)
+             :else           (list-all-sessions))
            (keep (fn [s]
                    (when (or (str/includes? (str/lower-case (or (:name s) "")) q)
                              (str/includes? (cached-search-text s) q))
                      (:session-id s))))
-           vec))))
+           vec)))))

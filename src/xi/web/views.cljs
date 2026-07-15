@@ -2099,16 +2099,27 @@
 
 (defn- personal-agent-home-view
   "Home view for personal-agent mode: a flat session list with no project
-   navigation (the personal agent has no projects)."
+   navigation (the personal agent has no projects). Supports name/content
+   search and a link to the favorites list."
   [state dispatch!]
-  (let [sessions    (get-in state [:lobby :sessions])
+  (let [raw-query   (get-in state [:web/search :personal-agent])
+        query       (str/lower-case (str/trim (or raw-query "")))
+        content?    (boolean (get-in state [:web/content-search :personal-agent]))
+        matches     (get-in state [:web/content-matches :personal-agent])
+        all-sessions (get-in state [:lobby :sessions])
         connected?  (:web/connected? state)
-        orphans     (orphan-rooms state sessions)]
+        orphans     (filter-sessions (orphan-rooms state all-sessions) query content? matches)
+        sessions    (filter-sessions all-sessions query content? matches)]
     [:div {:class ["container"] :replicant/key "home"}
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
       [:div {:class ["topbar-title"]} "Xi"]
       (offline-badge state)
+      (when connected?
+        [:button {:class ["icon-btn"]
+                  :title "Favorites"
+                  :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :favorites}))}}
+         (icon/icon {:icon-name :star :size :md})])
       (when connected?
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :room/new}))}}
@@ -2121,19 +2132,30 @@
          (spinner)
          [:p "Connecting to server…"]]
 
-        (or (seq sessions) (seq orphans))
-        [:div {:class ["project-list"]}
-         (for [o orphans]
-           (session-card dispatch! o))
-         (for [s (active-first state sessions)]
-           (session-card dispatch! s))]
-
         :else
-        [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
+        [:div
+         (search-box dispatch! :personal-agent "Search sessions\u2026" raw-query content?)
+         (cond
+           (or (seq sessions) (seq orphans))
+           [:div {:class ["project-list"]}
+            (for [o orphans]
+              (session-card dispatch! o))
+            (for [s (active-first state sessions)]
+              (session-card dispatch! s))]
+
+           (seq query)
+           [:div {:class ["empty-state"]} [:p "No matching sessions."]]
+
+           :else
+           [:div {:class ["empty-state"]} [:p "No sessions yet."]])])]]))
 
 (defn- home-view [state dispatch!]
   (let [selected-dir (:web/selected-project-dir state)]
     (cond
+      (and (get-in state [:lobby :personal-agent?])
+           (= selected-dir :favorites))
+      (favorites-view state dispatch!)
+
       (get-in state [:lobby :personal-agent?])
       (personal-agent-home-view state dispatch!)
 
