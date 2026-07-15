@@ -49,6 +49,21 @@
   [_st ev]
   {:effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
 
+(defn- room-new-cwd
+  "cwd for a fresh chat opened from the overflow menu: inherit the current
+   chat's cwd, else the project dir currently being viewed, else nil (server
+   default). Mirrors the user's expectation that a new chat opens in the same
+   place they were already working."
+  [st]
+  (let [sid (get-in st [:web/route :session-id])
+        dir (get-in st [:web/route :dir])]
+    (or (:cwd (state/active-room st))
+        (some (fn [r] (when (= sid (:session-id r)) (:cwd r)))
+              (get-in st [:lobby :rooms]))
+        (some (fn [s] (when (= sid (:session-id s)) (:cwd s)))
+              (get-in st [:lobby :sessions]))
+        (when (string? dir) dir))))
+
 (defn- room-new
   "Open a fresh *virtual* chat: switch to the chat view but create no server
    room yet. The room stays client-only (launch header, no spinner, nothing to
@@ -57,7 +72,7 @@
   [st _]
   {:state   (-> st
                 (assoc :web/route {:page :chat :session-id nil})
-                (assoc :web/pending-room {:id (random-uuid) :cwd nil})
+                (assoc :web/pending-room {:id (random-uuid) :cwd (room-new-cwd st)})
                 (assoc :web/timeline-window nil))
    :effects [[:history/push {:route {:page :chat}}]]})
 
