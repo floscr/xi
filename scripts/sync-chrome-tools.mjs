@@ -1,0 +1,126 @@
+// Regenerate resources/chrome/tools.edn from chrome-devtools-mcp's live
+// tools/list. Spawns the MCP server over stdio, performs the JSON-RPC
+// handshake, then transforms each tool's JSON Schema into the shape xi's
+// provider (json-schema->zod-shape in xi.provider.claude) expects:
+//   - structural keys are keywords (:type :description :enum :items
+//     :properties :required)
+//   - property-name keys stay strings (so nested :required matching, which
+//     compares raw keys, works)
+//
+// Run via `bb chrome:sync-tools` (see bb.edn) or `node scripts/sync-chrome-tools.mjs`.
+// The xi runtime never spawns this — the defs are baked into the bundle at
+// compile time by the xi.ext.chrome-defs macro. Re-run this only to pick up
+// a new chrome-devtools-mcp version's tool surface.
+import { spawn } from "node:child_process";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const OUT = resolve(__dirname, "..", "resources", "chrome", "tools.edn");
+
+const proc = spawn("npx", ["-y", "chrome-devtools-mcp@latest", "--headless", "--isolated"], {
+  stdio: ["pipe", "pipe", "ignore"],
+  env: { ...process.env },
+});
+
+let buf = "";
+const pending = new Map();
+let nextId = 1;
+function send(method, params) {
+  const id = nextId++;
+  const msg = { jsonrpc: "2.0", id, method };
+  if (params !== undefined) msg.params = params;
+  proc.stdin.write(JSON.stringify(msg) + "\n");
+  return new Promise((res) => pending.set(id, res));
+}
+function notify(method, params) {
+  const msg = { jsonrpc: "2.0", method };
+  if (params !== undefined) msg.params = params;
+  proc.stdin.write(JSON.stringify(msg) + "\n");
+}
+proc.stdout.on("data", (chunk) => {
+  buf += chunk.toString();
+  let idx;
+  while ((idx = buf.indexOf("\n")) >= 0) {
+    const line = buf.slice(0, idx).trim();
+    buf = buf.slice(idx + 1);
+    if (!line) continue;
+    let msg;
+    try { msg = JSON.parse(line); } catch { continue; }
+    if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
+  }
+});
+
+// ── EDN emission (restricted to our value shapes) ────────────────────────────
+function ednString(s) {
+  // JSON string escaping is EDN-compatible except \b and \f, which EDN's
+  // reader rejects — rewrite those to \uNNNN.
+  return JSON.stringify(s).replace(/\\b/g, "\\u0008").replace(/\\f/g, "\\u000c");
+}
+function ednKey(k) { return k.keyword ? ":" + k.name : ednString(k); }
+function kw(name) { return { keyword: true, name }; }
+function ednVal(v, indent) {
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "[]";
+    return "[" + v.map((x) => ednVal(x, indent)).join(" ") + "]";
+  }
+  if (v && typeof v === "object") {
+    const pad = "  ".repeat(indent + 1);
+    const entries = v.__entries; // ordered [ [key, val], ... ]
+    const parts = entries.map(([k, val]) => ednKey(k) + " " + ednVal(val, indent + 1));
+    return "{" + parts.join("\n" + pad) + "}";
+  }
+  if (typeof v === "string") return ednString(v);
+  return String(v);
+}
+function omap(pairs) { return { __entries: pairs.filter(([, val]) => val !== undefined) }; }
+
+// ── JSON Schema → xi tool-def input_schema ───────────────────────────────────
+function convSchema(node) {
+  if (!node || typeof node !== "object") return omap([[kw("type"), "string"]]);
+  const pairs = [];
+  if (node.type) pairs.push([kw("type"), node.type]);
+  if (node.description) pairs.push([kw("description"), node.description]);
+  if (Array.isArray(node.enum)) pairs.push([kw("enum"), node.enum]);
+  if (node.type === "object" || node.properties) {
+    const props = node.properties || {};
+    pairs.push([kw("properties"), omap(Object.keys(props).map((name) => [name, convSchema(props[name])]))]);
+    if (Array.isArray(node.required)) pairs.push([kw("required"), node.required]);
+  }
+  if (node.type === "array") {
+    pairs.push([kw("items"), node.items ? convSchema(node.items) : omap([[kw("type"), "string"]])]);
+  }
+  return omap(pairs);
+}
+function convTool(t) {
+  const schema = t.inputSchema || { type: "object", properties: {} };
+  return omap([
+    [kw("name"), t.name],
+    [kw("description"), t.description || ""],
+    [kw("input_schema"), convSchema({ type: "object", ...schema })],
+  ]);
+}
+
+const timeout = setTimeout(() => { console.error("TIMEOUT waiting for chrome-devtools-mcp"); proc.kill(); process.exit(1); }, 90000);
+const init = await send("initialize", {
+  protocolVersion: "2024-11-05",
+  capabilities: {},
+  clientInfo: { name: "xi-sync", version: "0.0.0" },
+});
+notify("notifications/initialized");
+const { tools } = (await send("tools/list", {})).result;
+clearTimeout(timeout);
+proc.kill();
+
+tools.sort((a, b) => a.name.localeCompare(b.name));
+const version = init.result?.serverInfo?.version ?? "unknown";
+const header =
+  ";; GENERATED by scripts/sync-chrome-tools.mjs — do not edit by hand.\n" +
+  ";; Source: chrome-devtools-mcp v" + version + " tools/list (" + tools.length + " tools).\n" +
+  ";; Regenerate with `bb chrome:sync-tools`.\n";
+const body = "[" + tools.map((t) => ednVal(convTool(t), 0)).join("\n\n ") + "]\n";
+mkdirSync(dirname(OUT), { recursive: true });
+writeFileSync(OUT, header + body);
+console.log("Wrote " + tools.length + " tool defs (chrome-devtools-mcp v" + version + ") to " + OUT);
+process.exit(0);

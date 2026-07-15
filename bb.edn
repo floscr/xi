@@ -71,6 +71,10 @@
   {:doc "Watch-compile and rerun tests on changes"
    :task (shell "npx shadow-cljs watch test")}
 
+  chrome:sync-tools
+  {:doc "Regenerate resources/chrome/tools.edn from chrome-devtools-mcp's live tools/list"
+   :task (shell "node" "scripts/sync-chrome-tools.mjs")}
+
   dev:url
   {:doc "Print Tailscale IP with frontend port"
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]

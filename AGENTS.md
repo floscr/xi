@@ -194,7 +194,8 @@ src/xi/
     *.cljs             — extensions: kb, web, perplexity, github_code_search,
                          commit, clj_surgeon, gtd, permission_gate, todo_intercept,
                          plan_mode, done_notify, pushover, dictation,
-                         terminal_title, clipboard_image, projects, skills, events
+                         terminal_title, clipboard_image, projects, skills, events,
+                         chrome (chrome-devtools-mcp proxy — see docs/chrome-mcp.md)
   highlight/           — syntax highlighting (engine, grammars, ANSI + CSS themes)
   markdown/            — markdown parsing + ANSI / hiccup rendering
   tui/                 — terminal UI primitives (editor, grid, render, components, …)

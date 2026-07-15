@@ -16,6 +16,7 @@
   (:require
    #?@(:node
        [[xi.ext.browser-open :as browser-open]
+        [xi.ext.chrome :as chrome]
         [xi.ext.clipboard-image :as clipboard-image]
         [xi.ext.clj-surgeon :as clj-surgeon]
         [xi.ext.commit :as commit]
@@ -86,6 +87,7 @@
       commit/extension
       review/extension
       browser-open/extension
+      chrome/create
       clj-surgeon/extension
       github/extension
       github-code-search/extension

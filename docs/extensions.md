@@ -340,3 +340,4 @@ Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
 | clipboard-image | event-hook | Converts pasted clipboard image paths to inline base64. |
 | projects | command, handler, keybinding | Project path picker. `/project` or Alt+P. |
 | skills | system-prompt, command | Injects tool knowledge based on project markers; `/skill list\|load`. |
+| chrome | tools (factory) | Proxies `chrome-devtools-mcp` as xi tools (opt-in via `XI_CHROME_TOOLS`). See [chrome-mcp.md](chrome-mcp.md). |
