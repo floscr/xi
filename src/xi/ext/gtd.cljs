@@ -137,7 +137,11 @@
   (run-gtd (cond-> ["capture" title "--auto-file"]
              file (conj "--file" file)
              body (conj "--body" body)
-             todo (conj "--todo" todo))
+             todo (conj "--todo" todo)
+             ;; Stamp the originating project so tasks in shared files
+             ;; (e.g. work/*.org) keep the context of which project they
+             ;; belong to.
+             cwd  (conj "--property" (str "PROJECT=" cwd)))
            {:project-cwd cwd}))
 
 (defn- gtd-change [{:keys [id query todo archive properties]} {:keys [cwd]}]

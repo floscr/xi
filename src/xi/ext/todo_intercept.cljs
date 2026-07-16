@@ -29,7 +29,8 @@
                  (unchecked-set env "GTD_PROJECT_CWD" project-cwd))
            args (cond-> ["bb" "org" "gtd" "capture" title]
                   body (conj "--body" body)
-                  todo (conj "--todo" todo))
+                  todo (conj "--todo" todo)
+                  project-cwd (conj "--property" (str "PROJECT=" project-cwd)))
            proc (js/Bun.spawn
                  (clj->js args)
                  #js {:stdout "pipe" :stderr "pipe"
