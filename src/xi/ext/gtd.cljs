@@ -126,12 +126,20 @@
 
 ;; ── Tools ──────────────────────────────────────────────────────────────────
 
-(defn- gtd-list [{:keys [todo file all]} {:keys [cwd]}]
-  (run-gtd (cond-> ["agenda" "--output" "edn" "--auto-file"]
-             todo (conj "--todo" todo)
-             file (conj "--file" file)
-             all  (conj "--all"))
-           {:project-cwd cwd}))
+(def ^:private default-list-fields
+  "Compact field set for gtd_list: everything the agent needs to reference or
+   act on a task, minus the heavy :body — which can bloat the list past the
+   tool-result token budget. Pass fields \"all\" to get every key (incl. body)."
+  "id,title,todo-state,tags,file")
+
+(defn- gtd-list [{:keys [todo file all fields]} {:keys [cwd]}]
+  (let [fields (or fields default-list-fields)]
+    (run-gtd (cond-> ["agenda" "--output" "edn" "--auto-file"]
+               todo (conj "--todo" todo)
+               file (conj "--file" file)
+               all  (conj "--all")
+               (not= fields "all") (into ["--fields" fields]))
+             {:project-cwd cwd})))
 
 (defn- gtd-capture [{:keys [title file body todo]} {:keys [cwd]}]
   (run-gtd (cond-> ["capture" title "--auto-file"]
@@ -161,14 +169,16 @@
 
 (def ^:private tool-defs
   [{:name "gtd_list"
-    :description "List tasks from the GTD backlog. Returns EDN with :id, :title, :todo-state, :tags, :file, :level for each task. By default only shows items with a todo state. Auto-detects project GTD file from session cwd."
+    :description "List tasks from the GTD backlog. Returns EDN, one map per task. By default returns a compact field set (id, title, todo-state, tags, file) — the heavy :body is omitted to keep the list small. Pass `fields` to choose keys, or fields=\"all\" for every key including body. By default only shows items with a todo state. Auto-detects project GTD file from session cwd."
     :input_schema {:type "object"
                    :properties {:todo {:type "string"
                                        :description "Filter by todo state (TODO, ACTIVE, DONE, WAITING, CANCELLED)"}
                                 :file {:type "string"
                                        :description "Only show tasks from this file (relative path, e.g. work/hyma.org)"}
                                 :all  {:type "boolean"
-                                       :description "Include items without todo state"}}
+                                       :description "Include items without todo state"}
+                                :fields {:type "string"
+                                         :description "Comma-separated item keys to return (e.g. \"id,title,todo-state\"). Available: id, title, todo-state, tags, file, level, created-date, line-number, body. Use \"all\" for every key. Default: id,title,todo-state,tags,file (omits body)."}}
                    :required []}}
    {:name "gtd_capture"
     :description "Capture a new task to the GTD backlog. Creates a TODO item with auto-generated ID and timestamp. Auto-detects project GTD file from session cwd."
@@ -361,7 +371,7 @@ You have access to a GTD (Getting Things Done) task management system backed by 
 
 ## Tools
 
-- **gtd_list** — List tasks. Filter by `:todo` state (TODO, ACTIVE, DONE, WAITING, CANCELLED), `:file`, or use `:all true` for items without a todo state.
+- **gtd_list** — List tasks. Filter by `:todo` state (TODO, ACTIVE, DONE, WAITING, CANCELLED), `:file`, or use `:all true` for items without a todo state. Returns a compact field set (id, title, todo-state, tags, file) by default; pass `:fields` (comma-separated, or `\"all\"`) to include more, e.g. `:body`.
 - **gtd_capture** — Create a new task. Requires `:title`. Optional: `:file` (default inbox.org), `:body`, `:todo` (default TODO).
 - **gtd_change** — Modify a task by `:id` (UUID) or `:query` (title substring). Set `:todo` to change state, `:properties` to set org properties, or `:archive true` to remove it.
 
