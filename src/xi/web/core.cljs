@@ -92,15 +92,20 @@
                     (assoc :web/response-counts counts)
                     (assoc-in [:web/watched sid] cnt)
                     (dissoc :web/pending-read))
-       :effects [[:cache/watch {:session-id sid :count cnt}]]}
+       :effects [[:cache/watch {:session-id sid :count cnt}]
+                 [:ws/send {:type :session/mark-read :session-id sid}]]}
       {:state (assoc st :web/response-counts counts)})))
 
 (defn- mark-read
-  "Mark a session read at its current response count (clears the unread dot)."
+  "Mark a session read at its current response count (clears the unread dot).
+   Updates the local overlay for an instant clear, caches it for offline
+   paint, and forwards to the server so the marker persists and syncs to
+   every other device (the server rebroadcasts an authoritative :read)."
   [st {:keys [session-id]}]
   (let [cnt (get-in st [:web/response-counts session-id] 0)]
     {:state   (assoc-in st [:web/watched session-id] cnt)
-     :effects [[:cache/watch {:session-id session-id :count cnt}]]}))
+     :effects [[:cache/watch {:session-id session-id :count cnt}]
+               [:ws/send {:type :session/mark-read :session-id session-id}]]}))
 
 (defn- connection-status [st {:keys [connected?]}]
   {:state (assoc st :web/connected? connected?)})
@@ -714,6 +719,22 @@
       (when-let [sids (seq (keep :session-id (get-in state [:lobby :sessions])))]
         (dispatch! {:type :session/counts :session-ids (vec sids)})))))
 
+(defn- mark-read-on-turn-tap
+  "When a turn ends in the room the user is currently viewing, mark that
+   session read. Closes the auto-exit gap: previously a room could finish a
+   turn and then auto-exit (tab closed, no navigation) before the seen-count
+   was ever bumped, so the dot wrongly reappeared. Marking read on every
+   turn-end while attached records \"I watched it live\" and — since mark-read
+   forwards to the server — syncs that across devices."
+  [dispatch!]
+  (fn [event state]
+    (when (= :agent/turn-end (:type event))
+      (let [room-id (:room-id event)
+            ended   (get-in state [:rooms room-id :session :id])
+            viewed  (get-in state [:web/route :session-id])]
+        (when (and ended (= ended viewed))
+          (dispatch! {:type :session/mark-read :session-id ended}))))))
+
 (defn- fill-url-tap
   "After joining a fresh room (URL has no session id yet), replace the URL
    with the real session id so reload resumes the same session."
@@ -927,6 +948,7 @@
     ((:set-dispatch! transport) dispatch!)
     (add-tap! cache/persist-tap)
     (add-tap! (request-counts-tap dispatch!))
+    (add-tap! (mark-read-on-turn-tap dispatch!))
     (add-tap! (request-projects-tap dispatch!))
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))

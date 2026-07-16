@@ -127,6 +127,23 @@
                              (when pa? {:personal-agent? true}))
                    :after-prompt after-prompt})))
 
+   :session/fork
+   (fn [{:keys [dispatch! state]} {:keys [room-id]}]
+     (let [room (room-of state room-id)
+           current (:session room)
+           pa? (get-in room [:agent :personal-agent?])]
+       ;; Persist the original branch on disk before diverging so the two
+       ;; sessions don't share a provider session id.
+       (when (:provider-session-id current)
+         (try (session/save-session! (->disk-session current))
+              (catch :default e
+                (js/console.error "[fx] session save failed:" e))))
+       (dispatch! {:type :session/forked
+                   :room-id room-id
+                   :session (session/create-session
+                             (or (:cwd room) (.cwd js/process))
+                             (when pa? {:personal-agent? true}))})))
+
    :session/sync
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]
      (let [room (room-of state room-id)

@@ -171,6 +171,9 @@
 (defn- cmd-clear [_st {:keys [room-id]}]
   {:effects [[:session/new {:room-id room-id}]]})
 
+(defn- cmd-fork [_st {:keys [room-id]}]
+  {:effects [[:session/fork {:room-id room-id}]]})
+
 (defn- cmd-compact [_st {:keys [room-id args]}]
   {:effects [[:app/dispatch {:type :compact/request :room-id room-id :focus args}]]})
 
@@ -299,6 +302,7 @@
    {:name "favorite"  :description "Toggle favorite on the current session" :handler cmd-favorite}
    {:name "new"      :description "Start a new session"                :handler cmd-new}
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
+   {:name "fork"     :description "Split the conversation into a new session" :handler cmd-fork}
    {:name "truncate" :description "Summarize conversation to reduce context" :handler cmd-compact}
    {:name "summary"  :description "Describe what this session is about (cheap model)" :handler cmd-summary}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
@@ -444,6 +448,21 @@
       (assoc :effects [[:app/dispatch {:type :prompt/submit :room-id room-id
                                        :text after-prompt}]]))))
 
+(defn- session-forked
+  "Split the conversation into a new session (from /fork): install a fresh
+   session id but KEEP the current history. The new session has no provider
+   session, so the next turn starts a fresh provider session with the existing
+   conversation injected as context (see xi.agent/history->context). The
+   original session is left untouched on disk, so the two branches diverge."
+  [st {:keys [room-id session]}]
+  (when (state/get-room st room-id)
+    (let [session' (assoc session :provider-session-id nil :inject-history? true)]
+      {:state (-> st
+                  (assoc-in [:rooms room-id :session] session')
+                  (append-history room-id
+                                  (status-entry "Forked into a new session — the original is preserved."))
+                  (update-in [:rooms room-id :agent] assoc :busy? false :queued []))})))
+
 (defn- session-toggle-favorite
   "Menu keybinding (* in /resume or /favorites) toggled a star. Defers the
    disk write to the :session/favorite-toggle effect, keyed by the selected
@@ -532,6 +551,7 @@
     :ui/attach-image attach-image
     :ui/clear-images clear-images
     :session/created session-created
+    :session/forked  session-forked
     :session/resumed session-resumed
     :session/toggle-favorite session-toggle-favorite
     :session/updated session-updated

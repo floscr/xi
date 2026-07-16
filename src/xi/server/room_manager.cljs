@@ -191,6 +191,14 @@
   [_st {:keys [session-id]}]
   {:effects [[:favorites/toggle-reply {:session-id session-id}]]})
 
+(defn- session-mark-read
+  "Roomless: record a session as seen up to its current response count. The
+   authoritative count is recomputed server-side (in the reply effect), so the
+   client only needs to name the session. The persist + lobby rebroadcast
+   happen in the :session/mark-read-reply effect (needs disk access)."
+  [_st {:keys [session-id]}]
+  {:effects [[:session/mark-read-reply {:session-id session-id}]]})
+
 (defn- rooms-prune
   "Roomless: force-close every inactive room (see prunable?). For each target
    we detach its clients (a direct :room/left drops each back to the lobby),
@@ -236,6 +244,7 @@
    :session/content-search session-content-search
    :diff/web-load          diff-web-load
    :favorites/toggle       favorites-toggle
+   :session/mark-read      session-mark-read
    :rooms/prune            rooms-prune})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────

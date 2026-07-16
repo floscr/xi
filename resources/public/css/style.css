@@ -1527,6 +1527,17 @@ body {
 }
 .project-card-status:empty { display: none; }
 
+/* Trailing status slot on command-palette chat rows — mirrors
+   .project-card-status so palette rows show the same spinner / unread dot as
+   session cards. The .command-item label has flex:1, pushing this to the
+   right edge; it collapses to nothing when it holds no indicator. */
+.command-item-status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.command-item-status:empty { display: none; }
+
 /* Trailing "new chat" button on project-directory cards (replaces the old
    chevron): clicking the card navigates into the project, this button starts
    a fresh chat. stopPropagation keeps the two actions separate. */

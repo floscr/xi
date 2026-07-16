@@ -1825,9 +1825,13 @@
   (let [sid     (:session-id s)
         rooms   (get-in state [:lobby :rooms])
         counts  (:web/response-counts state)
-        watched (:web/watched state)
-        room    (some (fn [r] (when (= (:session-id r) sid) r)) rooms)
-        w       (get watched sid)]
+        ;; Seen-count = the later of the server-authoritative read state (synced
+        ;; across devices, via the lobby payload) and the local overlay (an
+        ;; instant, offline-durable clear on this device). Whichever is further
+        ;; ahead wins, so a read on any device sticks.
+        seen    (max (get-in state [:lobby :read sid] 0)
+                     (get-in state [:web/watched sid] 0))
+        room    (some (fn [r] (when (= (:session-id r) sid) r)) rooms)]
     {:session-id  sid
      :name        (:name s)
      :cwd         (:cwd s)
@@ -1837,7 +1841,7 @@
      :active?     (boolean room)
      :busy?       (boolean (:busy? room))
      :has-dialog? (boolean (:has-dialog? room))
-     :unread?     (boolean (and w (> (get counts sid 0) w)))}))
+     :unread?     (> (get counts sid 0) seen)}))
 
 (defn- active-first
   "Enrich disk sessions with live indicators (via session-status) and pin the
@@ -2436,6 +2440,27 @@
                         (diff/diff-rows (diff/parse-diff-text text))
                         nil nil))]]))
 
+(defn- palette-chat-item
+  "cmd/command-item variant with a trailing status slot, so palette chat rows
+   surface the same live indicators as session cards — a spinner while the
+   room is busy, an unread dot when there are unseen responses. Mirrors the
+   ui.command DOM contract (.command-item + data-command-value) so the
+   ui-runtime.js live filter and keyboard navigation still work."
+  [{:keys [session-id name has-dialog? busy? unread?]} dispatch!]
+  (let [label (or name "New session")]
+    [:button {:class ["command-item"] :role "option" :type "button"
+              :data-command-value label
+              :on {:click (fn [_] (dispatch! {:type :route/navigate
+                                              :page :chat
+                                              :session-id session-id}))}}
+     (icon/icon {:icon-name (if has-dialog? :alert-circle :terminal)
+                 :size :sm :class "command-item-icon"})
+     [:span {:class ["command-item-label"]} label]
+     [:div {:class ["command-item-status"]}
+      (cond
+        busy?   (spinner)
+        unread? [:div {:class ["unread-dot"]}])]]))
+
 (defn- command-palette
   "Global Cmd/Ctrl+K command palette (ui.command). Mounted once in root-view;
    the ui-runtime.js delegate handles open/filter/keyboard-nav. Items dispatch
@@ -2450,14 +2475,7 @@
                      (active-first state)
                      (remove :current?)
                      (take 8))
-        chat-items (mapv (fn [{:keys [session-id name has-dialog?]}]
-                           (cmd/command-item
-                            {:icon (if has-dialog? :alert-circle :terminal)
-                             :on-click (fn [_] (dispatch! {:type :route/navigate
-                                                          :page :chat
-                                                          :session-id session-id}))}
-                            (or name "New session")))
-                         recents)]
+        chat-items (mapv #(palette-chat-item % dispatch!) recents)]
     (cmd/command-dialog
      {:id "cmdk" :hotkey "mod+k"
       :placeholder "Type a command or search…"
@@ -2500,7 +2518,17 @@
            "Copy debug info"))
        (cmd/command-item {:icon :refresh
                           :on-click (fn [_] (.reload js/location))}
-         "Reload")))))
+         "Reload"))
+     (when room
+       (apply cmd/command-group {:heading "Commands"}
+         (for [{:keys [name description]} (expand-commands web-commands)]
+           (cmd/command-item
+            {:icon :terminal
+             :value (str "/" name " " description)
+             :on-click (fn [_] (dispatch! {:type :input/submit
+                                           :room-id (:id room)
+                                           :text (str "/" name)}))}
+            (str "/" name))))))))
 
 (defn- auth-overlay
   "Full-screen block while this browser awaits pairing approval (or was

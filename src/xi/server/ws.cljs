@@ -53,6 +53,7 @@
   "Events after which lobby (roomless) clients get a fresh :lobby/state.
    Extensions add theirs via :lobby-relevant."
   #{:room/create :room/close :room/attach :room/leave :favorites/changed
+    :read-state/changed
     :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
     :ui/dialog-open :ui/dialog-response})
 
@@ -65,7 +66,7 @@
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
   #{:client/update :session/counts :models/web-list :session/content-search
-    :diff/web-load :favorites/toggle :rooms/prune})
+    :diff/web-load :favorites/toggle :session/mark-read :rooms/prune})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -102,7 +103,8 @@
                    (filterv #(not (contains? live-pids (:session-id %)))))]
     (wire/encode (cond-> {:type     :lobby/state
                           :rooms    rooms
-                          :sessions sessions}
+                          :sessions sessions
+                          :read     (session/load-read-state)}
                    model           (assoc :model model)
                    personal-agent? (assoc :personal-agent? true)))))
 
@@ -299,6 +301,15 @@
       (fn [{:keys [dispatch!]} {:keys [session-id]}]
         (session/toggle-favorite! session-id)
         (dispatch! {:type :favorites/changed}))
+
+      ;; Persist a session's seen-count at its current (authoritative) response
+      ;; count, then fan a fresh lobby out so every device clears the dot
+      ;; (:read-state/changed is lobby-relevant, so the tap rebroadcasts).
+      :session/mark-read-reply
+      (fn [{:keys [dispatch!]} {:keys [session-id]}]
+        (let [n (get (session/count-session-responses [session-id]) session-id 0)]
+          (session/mark-session-read! session-id n)
+          (dispatch! {:type :read-state/changed})))
 
       ;; Combined working-tree diff for a CWD (roomless git-status view).
       :diff/web-load-reply

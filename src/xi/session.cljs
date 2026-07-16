@@ -29,6 +29,9 @@
 (def ^:private FAVORITES_FILE
   (.join node-path HOME ".config" "xi" "favorites.json"))
 
+(def ^:private READ_STATE_FILE
+  (.join node-path HOME ".config" "xi" "read-state.json"))
+
 ;; ── Helpers ───────────────────────────────────────────────────────────────────
 
 (defn- gen-uuid-v7
@@ -404,6 +407,32 @@
       (catch :default e
         (js/console.error "[session] favorites write failed:" e)))
     (not fav?)))
+
+;; ── Read state (cross-device unread markers) ──────────────────────────────
+;; Persisted {session-id → seen-response-count}. A session is unread when its
+;; current assistant-turn count exceeds the seen count. Stored server-side and
+;; shipped in the lobby payload so the marker syncs across every client/device.
+
+(defn load-read-state
+  "Persisted {session-id → seen-response-count}. {} when missing or unreadable."
+  []
+  (try
+    (if (fs/existsSync READ_STATE_FILE)
+      (js->clj (js/JSON.parse (fs/readFileSync READ_STATE_FILE "utf8")))
+      {})
+    (catch :default _e {})))
+
+(defn mark-session-read!
+  "Record session-id as seen at `n` assistant responses. Returns the updated
+   read-state map."
+  [session-id n]
+  (let [state' (assoc (load-read-state) session-id n)]
+    (try
+      (fs/mkdirSync (.dirname node-path READ_STATE_FILE) #js {:recursive true})
+      (fs/writeFileSync READ_STATE_FILE (js/JSON.stringify (clj->js state')))
+      (catch :default e
+        (js/console.error "[session] read-state write failed:" e)))
+    state'))
 
 (defn- sessions-for-cwd
   "Session summaries recorded under a single CWD, from all sources, with
