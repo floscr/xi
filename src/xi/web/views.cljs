@@ -148,6 +148,7 @@
     ("Grep" "grep")  (get-arg args :pattern)
     ("Glob" "find")  (get-arg args :pattern)
     ("ls")           (get-arg args :path)
+    "gtd_capture"    (get-arg args :title)
     (let [v (some (fn [k] (let [x (get-arg args k)]
                             (when (and (string? x) (seq x)) x)))
                   [:command :file_path :path :pattern :query :url :prompt :description])]
@@ -231,6 +232,9 @@
         text      (util/extract-text-content result)
         grammar   (when (and text (not is-error)) (tool-grammar name arguments))
         bash?     (contains? #{"Bash" "bash"} name)
+        gtd?      (and (= "gtd_capture" name) (not is-error))
+        gtd-body  (when gtd? (or (not-empty (get-arg arguments :body))
+                                 (get-arg arguments :title)))
         label     (str name (when (seq summary)
                               (str " " (if bash?
                                          (str summary)
@@ -244,7 +248,12 @@
        (cond
          running? (spinner)
          is-error [:span {:class ["error-text"]} " error"])]
-      (when (seq text)
+      (cond
+        gtd?
+        (when (seq gtd-body)
+          [:div {:class ["tool-call-content"]}
+           [:div {:class ["post-content"]} (md/render gtd-body)]])
+        (seq text)
         [:div {:class ["tool-call-content"]}
          (let [shown (truncate-lines text 100)]
            (if (and (contains? #{"Edit" "edit"} name) (not is-error))
