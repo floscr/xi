@@ -17,7 +17,7 @@
             [xi.commands :as commands]
             [xi.core.state :as state]))
 
-(def ^:private COMPACT_MODEL "claude-sonnet-4-20250514")
+(def ^:private COMPACT_MODEL "claude-sonnet-4-6")
 
 (def ^:private COMPACT_PROMPT
   "Summarize this conversation for continuity. Produce a concise summary preserving:
@@ -111,6 +111,12 @@ Be thorough but concise. Output only the summary, no preamble.")
                     (:aborted result)
                     (dispatch! {:type :compact/failed :room-id room-id
                                 :error "aborted"})
+
+                    ;; Turn errored (e.g. bad model) — don't let the provider's
+                    ;; error text masquerade as the summary.
+                    (:is-error result)
+                    (dispatch! {:type :compact/failed :room-id room-id
+                                :error (or (not-empty summary) "provider error")})
 
                     (nil? summary)
                     (dispatch! {:type :compact/failed :room-id room-id

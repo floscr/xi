@@ -394,6 +394,7 @@
                                           ^js usage (.-usage message)]
                                       (swap! state assoc
                                              :result-text result-text
+                                             :is-error (boolean (.-is_error message))
                                              :cost cost :done true)
                                       (when usage
                                         (swap! state update :usage merge
