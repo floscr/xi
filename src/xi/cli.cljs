@@ -481,6 +481,15 @@
                                          base
                                          {:local-room?  pending-room?
                                           :local-submit pending-submit
+                                          ;; Editor inserts are client-side, but
+                                          ;; the emitting handlers (project/path
+                                          ;; completion menus, history-edit) live
+                                          ;; server-side; in a real room the event
+                                          ;; forwards + echoes back as :remote?, so
+                                          ;; allow its effect through the mirror
+                                          ;; strip (else nothing inserts once the
+                                          ;; room is no longer the local :pending).
+                                          :client-fx #{:editor/insert-text}
                                           :local-handlers
                                           (merge (:handlers local)
                                                  deferred-handlers
