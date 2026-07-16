@@ -5,7 +5,16 @@
   (:require [clojure.string :as str]
             [xi.tui.ansi :as ansi]
             [xi.tui.core :as tui]
-            [xi.tui.snippets :as snippets]))
+            [xi.tui.snippets :as snippets]
+            [xi.tui.terminal :as term])
+  (:require-macros [xi.config-macros :refer [deftui-opt]]))
+
+(deftui-opt prompt-max-visible-lines 10
+  "Max number of visual lines the chat prompt editor shows before it starts
+   scrolling internally to keep the cursor in view. The editor never grows past
+   this many body lines (bounded further by terminal height); longer input
+   scrolls with the cursor instead of overflowing the panel.
+   Overridable via :prompt-max-visible-lines in xi.config/tui.")
 
 ;; ── Key Detection ─────────────────────────────────────────────────────────────
 
@@ -799,5 +808,30 @@
                                                prompt-pad)]
                                      (str pfx vline)))
                                  wrapped)))
-                            (map-indexed vector lines)))]
-                 (into [border] editor-lines)))}))
+                            (map-indexed vector lines)))
+                     ;; Scroll the editor body to keep the cursor visible when
+                     ;; the input is taller than the panel budget.
+                     total (count editor-lines)
+                     budget (min prompt-max-visible-lines
+                                 (max 1 (- (term/rows) 6)))
+                     body
+                     (if (<= total budget)
+                       editor-lines
+                       (let [cursor-idx
+                             (or (some (fn [[i l]]
+                                         (when (str/includes? l (str ansi/ESC "7m")) i))
+                                       (map-indexed vector editor-lines))
+                                 (dec total))
+                             start (-> (- cursor-idx (quot budget 2))
+                                       (max 0)
+                                       (min (- total budget)))
+                             end (+ start budget)
+                             window (subvec editor-lines start end)
+                             above (when (pos? start)
+                                     (str prompt-pad (ansi/fg :dim (str "\u2191 " start " more"))))
+                             below (when (< end total)
+                                     (str prompt-pad (ansi/fg :dim (str "\u2193 " (- total end) " more"))))]
+                         (cond-> window
+                           above (->> (into [above]))
+                           below (conj below))))]
+                 (into [border] body)))}))
