@@ -613,19 +613,39 @@
           e.preventDefault();
           return move_active_BANG_(dialog1, "up");
         } else {
-          if (truth_(key2 === "Home" && e.metaKey)) {
+          if (truth_(key2 === "n" && e.ctrlKey)) {
             e.preventDefault();
-            return move_active_BANG_(dialog1, "home");
+            return move_active_BANG_(dialog1, "down");
           } else {
-            if (truth_(key2 === "End" && e.metaKey)) {
+            if (truth_(key2 === "p" && e.ctrlKey)) {
               e.preventDefault();
-              return move_active_BANG_(dialog1, "end");
+              return move_active_BANG_(dialog1, "up");
             } else {
-              if (key2 === "Enter") {
+              if (truth_(key2 === "j" && e.ctrlKey)) {
                 e.preventDefault();
-                return select_BANG_(dialog1, active_item(dialog1));
+                return move_active_BANG_(dialog1, "down");
               } else {
-                return null;
+                if (truth_(key2 === "k" && e.ctrlKey)) {
+                  e.preventDefault();
+                  return move_active_BANG_(dialog1, "up");
+                } else {
+                  if (truth_(key2 === "Home" && e.metaKey)) {
+                    e.preventDefault();
+                    return move_active_BANG_(dialog1, "home");
+                  } else {
+                    if (truth_(key2 === "End" && e.metaKey)) {
+                      e.preventDefault();
+                      return move_active_BANG_(dialog1, "end");
+                    } else {
+                      if (key2 === "Enter") {
+                        e.preventDefault();
+                        return select_BANG_(dialog1, active_item(dialog1));
+                      } else {
+                        return null;
+                      }
+                    }
+                  }
+                }
               }
             }
           }
