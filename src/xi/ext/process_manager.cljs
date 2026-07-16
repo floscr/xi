@@ -7,12 +7,8 @@
    still running after its 30s timeout, whereas this extension spawns the
    command detached (via `setsid`), redirects its stdout+stderr to a log
    file, records the PID, and returns both so the agent can read the log
-   and manage the process. `start_process` takes an optional `directory`
-   (so the agent need not `cd <dir> &&`). `wait_process` blocks until a
-   tracked process exits and returns its exit code + recent output (for
-   slow-but-finite commands like test suites, instead of `sleep`+tail).
-   `list_processes` and `stop_process` manage them; the user can also
-   `/ps` and `/kill`.
+   and manage the process. `list_processes` and `stop_process` manage them;
+   the user can also `/ps` and `/kill`.
 
    A bare `bash` command ending with `&` is intercepted the same way as a
    safety net, so backgrounded shell commands are tracked too.
@@ -40,10 +36,19 @@
 
 (defonce ^:private log-buffers (atom {})) ;; pid -> {:lines [str] :partial str}
 
-;; Live Bun subprocess objects, kept process-local so `wait_process` can await
-;; a process's exit and read its exit code. Dropped on kill / room-close; kept
-;; after a natural exit so the exit code stays readable.
-(defonce ^:private procs* (atom {})) ;; pid -> {:proc Bun-subprocess :entry {…}}
+;; Handles for awaiting a process's completion, kept process-local like the
+;; log buffers. Each entry's :exited promise resolves to the process exit code;
+;; wait_for_process races it against a timeout. Retained after natural exit (a
+;; resolved promise + two strings) so a late wait still resolves; dropped on
+;; kill / room-close.
+(defonce ^:private proc-handles (atom {})) ;; pid -> {:exited <promise> :logfile str :command str}
+
+;; Active `poll_until` loops. Each poll is tracked like a process under a
+;; synthetic NEGATIVE pid (never collides with a real OS pid) so it shows up in
+;; list_processes / /ps and is cancelable through the same stop_process / /kill
+;; paths — plus ESC (turn-end cancels lingering polls). Value is the cancel fn.
+(defonce ^:private poll-counter (atom 0))
+(defonce ^:private poll-cancels (atom {})) ;; neg-pid -> (fn [] cancel!)
 
 (defn- append-output!
   "Append decoded output text to a pid's buffer, splitting on newlines and
@@ -71,29 +76,48 @@
         all (cond-> lines (seq partial) (conj partial))]
     (vec (take-last n all))))
 
+(defn- logfile-tail
+  "Read the last `n` lines of a logfile off disk (async → Promise<string>).
+   The logfile is written via `tee`, so it's the durable source of a
+   process's output even after its in-memory buffer is gone."
+  [logfile n]
+  (-> (.text (js/Bun.file logfile))
+      (.then (fn [text]
+               (->> (str/split (str text) #"\n")
+                    (remove str/blank?)
+                    (take-last n)
+                    (str/join "\n"))))
+      (.catch (fn [_] ""))))
+
 (defn- pid-alive?
-  "Check if a PID is still running."
+  "Check if a PID is still running. A tracked poll (synthetic pid) counts as
+   alive while it's registered."
   [pid]
-  (try
-    ;; signal 0 tests for existence without actually sending a signal
-    (.kill js/process pid 0)
+  (if (contains? @poll-cancels pid)
     true
-    (catch :default _e false)))
+    (try
+      ;; signal 0 tests for existence without actually sending a signal
+      (.kill js/process pid 0)
+      true
+      (catch :default _e false))))
 
 (defn- kill-pid!
-  "Kill a process by PID and drop its log buffer. Returns true if the
-   signal was sent."
+  "Kill a process by PID and drop its log buffer + wait handle. Returns true
+   if the signal was sent. A synthetic poll pid is canceled via its stored
+   cancel fn instead of an OS signal."
   [pid]
   (drop-buffer! pid)
-  (swap! procs* dissoc pid)
-  (try
-    (.kill js/process (- pid) "SIGTERM")
-    true
-    (catch :default _e
-      (try
-        (.kill js/process pid "SIGTERM")
-        true
-        (catch :default _e false)))))
+  (swap! proc-handles dissoc pid)
+  (if-let [cancel! (get @poll-cancels pid)]
+    (do (cancel!) true)
+    (try
+      (.kill js/process (- pid) "SIGTERM")
+      true
+      (catch :default _e
+        (try
+          (.kill js/process pid "SIGTERM")
+          true
+          (catch :default _e false))))))
 
 (defn- strip-trailing-amp
   "Remove trailing `&` and whitespace from a command."
@@ -158,8 +182,8 @@
         proc    (spawn-background! cmd cwd logfile)
         pid     (.-pid proc)
         entry   {:pid pid :command cmd :started (.now js/Date) :logfile logfile}]
-    (swap! procs* assoc pid {:proc proc :entry entry})
     (pump-output! pid (.-stdout proc))
+    (swap! proc-handles assoc pid {:exited (.-exited proc) :logfile logfile :command cmd})
     ;; When the process exits on its own, drop it from the tracked list so
     ;; the room can auto-close again (keep-alive? only counts live procs).
     (-> (.-exited proc)
@@ -174,16 +198,11 @@
      :result (text-result
               (str "Started background process (PID " pid "): " cmd "\n"
                    "Logs: " logfile " (read this file with the `read` tool to see output)\n"
-                   "Manage with list_processes / stop_process; call wait_process "
-                   "to block until it exits and get its output."))}))
-
-(defn- read-log-tail
-  "Promise of the last `n` lines of a logfile (empty string if unreadable)."
-  [logfile n]
-  (-> (.text (js/Bun.file logfile))
-      (.then (fn [txt] (str/join "\n" (take-last n (str/split-lines txt)))))
-      (.catch (fn [_] ""))))
-
+                   "If this is a finite command (a build/test) you must finish before "
+                   "continuing, call `wait_for_process` with target " pid " to block "
+                   "until it exits — do NOT `sleep` in bash. If it's a long-lived "
+                   "server/watcher, leave it running and just read its log when needed.\n"
+                   "Manage with list_processes / stop_process."))}))
 
 (defn- format-duration
   "Human-readable duration from ms elapsed."
@@ -207,10 +226,13 @@
            (str/join
             "\n"
             (map-indexed
-             (fn [i {:keys [pid command started logfile]}]
-               (let [tail (recent-output pid 3)]
-                 (str "  " (inc i) ". [" (if (pid-alive? pid) "alive" "dead") "] "
-                      "PID " pid " (" (format-duration (- now started)) ") — " command
+             (fn [i {:keys [pid command started logfile kind]}]
+               (let [poll? (= kind :poll)
+                     tail  (when-not poll? (recent-output pid 3))]
+                 (str "  " (inc i) ". ["
+                      (cond poll? "polling" (pid-alive? pid) "alive" :else "dead") "] "
+                      (if poll? "poll" (str "PID " pid))
+                      " (" (format-duration (- now started)) ") — " command
                       (when logfile (str "\n       logs: " logfile))
                       (when (seq tail)
                         (str "\n       recent output:\n"
@@ -244,48 +266,163 @@
                 (str "No tracked process matching: " target
                      (when (empty? procs) " (none tracked)")))})))
 
-;; ── Tool Gate ────────────────────────────────────────────────────────────────
+(def ^:private default-wait-ms 120000)
 
+(defn- resolve-wait-pid
+  "Resolve a wait/stop target (1-based index or PID) to a PID that has a
+   live wait handle. Falls back to a raw PID lookup in `proc-handles` so a
+   process that already deregistered from the tracked list (natural exit)
+   can still be awaited."
+  [target procs]
+  (let [n   (parse-long (str/trim (str (or target ""))))
+        via (parse-kill-target target procs)]
+    (or (:pid via)
+        (when (and n (contains? @proc-handles n)) n))))
 
 (defn- wait-process-result!
-  "Wait for a tracked process to exit (or until `timeout-ms` elapses), then
-   return an intercepted result with its exit status and recent log output."
-  [target st room-id timeout-ms]
-  (let [procs (get-processes st room-id)
-        entry (or (parse-kill-target target procs)
-                  ;; A quickly-finished process is gone from room state but
-                  ;; still recorded in procs* — resolve it by PID there.
-                  (when-let [n (parse-long (str/trim (str (or target ""))))]
-                    (:entry (get @procs* n))))]
-    (if-not entry
+  "Block until a tracked process exits (or `timeout-ms` elapses), then return
+   an intercepted result with the exit code + a tail of its log. Returns a
+   Promise; the tool gate awaits it. Not subject to bash's 30s timeout."
+  [target timeout-ms st room-id]
+  (let [procs  (get-processes st room-id)
+        pid    (resolve-wait-pid target procs)
+        handle (get @proc-handles pid)]
+    (if (nil? handle)
       (js/Promise.resolve
        {:intercepted true
-        :result (text-result (str "No tracked process matching: " target
-                                  (when (empty? procs) " (none tracked)")))})
-      (let [{:keys [pid command logfile]} entry
-            ^js proc (:proc (get @procs* pid))
-            timeout  (or timeout-ms 120000)]
-        (-> (if (and proc (nil? (.-exitCode proc)))
-              (js/Promise.race
-               #js [(.-exited proc)
-                    (js/Promise. (fn [res] (js/setTimeout #(res ::timeout) timeout)))])
-              (js/Promise.resolve (some-> proc .-exitCode)))
+        :result (text-result
+                 (str "No tracked process matching: " target
+                      " — it may have already exited; read its log file instead."))})
+      (let [tmo       (or timeout-ms default-wait-ms)
+            timeout-p (js/Promise. (fn [res _] (js/setTimeout #(res ::timeout) tmo)))]
+        (-> (js/Promise.race #js [(:exited handle) timeout-p])
             (.then
              (fn [outcome]
-               (.then
-                (read-log-tail logfile 40)
-                (fn [tail]
-                  (let [timed-out? (= outcome ::timeout)
-                        header (if (and timed-out? (pid-alive? pid))
-                                 (str "PID " pid " still running after "
-                                      (format-duration timeout) " — " command)
-                                 (str "PID " pid " exited"
-                                      (when (number? outcome) (str " (exit code " outcome ")"))
-                                      " — " command))]
-                    {:intercepted true
-                     :result (text-result
-                              (str header "\nLogs: " logfile
-                                   (when (seq tail) (str "\nRecent output:\n" tail))))}))))))))))
+               (if (= outcome ::timeout)
+                 (-> (logfile-tail (:logfile handle) 20)
+                     (.then (fn [tail]
+                              {:intercepted true
+                               :result (text-result
+                                        (str "PID " pid " still running after "
+                                             (format-duration tmo)
+                                             ". Call wait_for_process again to keep waiting."
+                                             (when (seq tail) (str "\nRecent output:\n" tail))))})))
+                 (-> (logfile-tail (:logfile handle) 50)
+                     (.then (fn [tail]
+                              {:intercepted true
+                               :result (text-result
+                                        (str "PID " pid " exited with code " outcome ".\n"
+                                             "Output (last 50 lines of " (:logfile handle) "):\n"
+                                             tail))}))))))))))) 
+
+;; ── Poll until a condition holds ─────────────────────────────────────────────
+
+(def ^:private default-poll-interval-ms 5000)
+(def ^:private default-poll-timeout-ms 300000)
+(def ^:private poll-output-cap 4000)
+
+(defn- clip-output
+  "Keep the last `poll-output-cap` chars of a command's output."
+  [s]
+  (let [s (str s)]
+    (if (> (count s) poll-output-cap)
+      (str "…[earlier output truncated]…\n" (subs s (- (count s) poll-output-cap)))
+      s)))
+
+(defn- run-once!
+  "Run `cmd` once to completion, capturing merged stdout+stderr.
+   Returns a Promise of {:output str :code int}."
+  [cmd cwd]
+  (let [proc (js/Bun.spawn
+              #js ["setsid" "bash" "-c" cmd]
+              #js {:stdin  "ignore"
+                   :stdout "pipe"
+                   :stderr "pipe"
+                   :env    (unchecked-get js/process "env")
+                   :cwd    (or cwd (.cwd js/process))})]
+    (-> (js/Promise.all
+         #js [(.text (.-stdout proc)) (.text (.-stderr proc)) (.-exited proc)])
+        (.then (fn [rs]
+                 {:output (str (aget rs 0) (aget rs 1))
+                  :code   (aget rs 2)})))))
+
+(defn- poll-condition-met?
+  "Evaluate the stop condition against one attempt's result. `re` is the
+   compiled pattern (only used by the match variants)."
+  [until re {:keys [output code]}]
+  (case until
+    "stdout_matches"     (boolean (re-find re output))
+    "stdout_not_matches" (not (re-find re output))
+    (= 0 code)))
+
+(defn- poll-until-result!
+  "Run `cmd` every `interval-ms` until the `until` condition holds or
+   `timeout-ms` elapses. Returns a Promise of an intercepted tool result.
+   Not subject to bash's 30s timeout; resumable on deadline like
+   wait_for_process. Registers the poll as a tracked process (synthetic
+   negative pid) so it shows in list_processes / /ps and is cancelable via
+   stop_process, /kill, and ESC (turn-end cancels lingering polls)."
+  [cmd until re interval-ms timeout-ms cwd room-id dispatch!]
+  (let [interval (or interval-ms default-poll-interval-ms)
+        timeout  (or timeout-ms default-poll-timeout-ms)
+        started  (.now js/Date)
+        deadline (+ started timeout)
+        poll-pid (- (swap! poll-counter inc))
+        done?    (atom false)
+        timer    (atom nil)]
+    (js/Promise.
+     (fn [resolve _]
+       (let [finish (fn [result-map]
+                      (when-not @done?
+                        (reset! done? true)
+                        (some-> @timer js/clearTimeout)
+                        (swap! poll-cancels dissoc poll-pid)
+                        (dispatch! {:type :ext.process-manager/deregister
+                                    :room-id room-id :pid poll-pid})
+                        (resolve result-map)))]
+         ;; Register a cancel fn (used by stop_process / /kill / turn-end)
+         ;; and a tracked-process entry so the poll is visible + stoppable.
+         (swap! poll-cancels assoc poll-pid
+                (fn []
+                  (finish {:intercepted true
+                           :result (text-result
+                                    (str "poll_until cancelled after "
+                                         (format-duration (- (.now js/Date) started))
+                                         " — stopped by the user."))})))
+         (dispatch! {:type :ext.process-manager/register
+                     :room-id room-id
+                     :process {:pid poll-pid :kind :poll :started started
+                               :command (str "poll_until: " cmd)}})
+         (letfn [(attempt [n]
+                   (-> (run-once! cmd cwd)
+                       (.then
+                        (fn [res]
+                          (when-not @done?
+                            (let [elapsed (format-duration (- (.now js/Date) started))]
+                              (cond
+                                (poll-condition-met? until re res)
+                                (finish {:intercepted true
+                                         :result (text-result
+                                                  (str "Condition met after " n
+                                                       (if (= 1 n) " attempt (" " attempts (")
+                                                       elapsed ").\n"
+                                                       "Exit code: " (:code res) "\n"
+                                                       "Output:\n" (clip-output (:output res))))})
+
+                                (>= (.now js/Date) deadline)
+                                (finish {:intercepted true
+                                         :result (text-result
+                                                  (str "Condition NOT met after " n
+                                                       (if (= 1 n) " attempt / " " attempts / ")
+                                                       elapsed ". Call poll_until again to keep waiting.\n"
+                                                       "Last exit code: " (:code res) "\n"
+                                                       "Last output:\n" (clip-output (:output res))))})
+
+                                :else
+                                (reset! timer (js/setTimeout #(attempt (inc n)) interval)))))))))]
+           (attempt 1)))))))
+
+;; ── Tool Gate ────────────────────────────────────────────────────────────────
 
 (defn- tool-gate
   "Handle the process tools (they need dispatch!/get-state/room-id, which
@@ -296,19 +433,44 @@
         lname (str/lower-case (or name ""))]
     (cond
       (= lname "start_process")
-      (start-process-result! (:command arguments) (or (:directory arguments) cwd) room-id dispatch!)
+      (start-process-result! (:command arguments) cwd room-id dispatch!)
 
       (= lname "list_processes")
       {:intercepted true
        :result (text-result (format-process-list (get-processes (get-state) room-id)))}
 
-      (= lname "wait_process")
-      (let [t (:timeout arguments)]
-        (wait-process-result! (:target arguments) (get-state) room-id
-                              (when t (if (number? t) t (parse-long (str t))))))
-
       (= lname "stop_process")
       (stop-process-result! (:target arguments) (get-state) room-id dispatch!)
+
+      (= lname "wait_for_process")
+      (wait-process-result! (:target arguments) (:timeout_ms arguments) (get-state) room-id)
+
+      (= lname "poll_until")
+      (let [{:keys [command until pattern interval_ms timeout_ms]} arguments
+            until (or until "exit_zero")]
+        (cond
+          (str/blank? command)
+          {:intercepted true :result (text-result "poll_until requires a `command`.")}
+
+          (not (#{"exit_zero" "stdout_matches" "stdout_not_matches"} until))
+          {:intercepted true
+           :result (text-result
+                    (str "poll_until: unknown `until` " until
+                         "; use exit_zero, stdout_matches, or stdout_not_matches."))}
+
+          (and (not= until "exit_zero") (str/blank? pattern))
+          {:intercepted true
+           :result (text-result
+                    (str "poll_until with until=" until " requires a `pattern` (regex)."))}
+
+          :else
+          (let [re (when (not= until "exit_zero")
+                     (try (re-pattern pattern) (catch :default _ ::bad)))]
+            (if (= re ::bad)
+              {:intercepted true
+               :result (text-result (str "poll_until: invalid regex pattern: " pattern))}
+              (poll-until-result! command until re interval_ms timeout_ms cwd
+                                  room-id dispatch!)))))
 
       (and (= lname "bash") (background-command? (:command arguments)))
       (start-process-result! (strip-trailing-amp (:command arguments)) cwd room-id dispatch!)
@@ -332,22 +494,8 @@
                       "few seconds.")
     :input_schema {:type "object"
                    :properties {:command {:type "string"
-                                          :description "The command to run in the background, e.g. 'npm run dev'."}
-                                :directory {:type "string"
-                                            :description "Working directory to run the command in. Use this instead of prefixing the command with `cd <dir> &&`. Defaults to the session's current directory."}}
+                                          :description "The command to run in the background, e.g. 'npm run dev'."}}
                    :required ["command"]}}
-   {:name "wait_process"
-    :description (str "Wait for a background process (started with start_process) "
-                     "to finish, then return its exit status and recent output. "
-                     "Use this for slow-but-finite commands (test suites, builds) "
-                     "instead of `sleep`-ing in `bash` and tailing the log. Blocks "
-                     "until the process exits or the timeout elapses.")
-    :input_schema {:type "object"
-                   :properties {:target {:type "string"
-                                         :description "The process PID, or its 1-based index from list_processes."}
-                                :timeout {:type "integer"
-                                          :description "Max time to wait in ms (default 120000). If the process is still running when this elapses, returns its current output."}}
-                   :required ["target"]}}
    {:name "list_processes"
     :description (str "List the background processes started with start_process "
                       "(or backgrounded bash commands), with each one's PID, "
@@ -359,7 +507,50 @@
     :input_schema {:type "object"
                    :properties {:target {:type "string"
                                          :description "The process PID, or its 1-based index from list_processes."}}
-                   :required ["target"]}}])
+                   :required ["target"]}}
+   {:name "wait_for_process"
+    :description (str "Block until a background process started with "
+                      "start_process finishes, then return its exit code and "
+                      "the tail of its output. Use this — NOT `sleep` in bash — "
+                      "when you need to wait for a finite long-running command "
+                      "(a build, a slow test run) to complete before continuing. "
+                      "Unlike bash it is not killed at 30s. If it returns "
+                      "'still running', just call it again to keep waiting.")
+    :input_schema {:type "object"
+                   :properties {:target {:type "string"
+                                         :description "The process PID, or its 1-based index from list_processes."}
+                                :timeout_ms {:type "integer"
+                                             :description "Max ms to wait before returning 'still running' (default 120000)."}}
+                   :required ["target"]}}
+   {:name "poll_until"
+    :description (str "Run a command repeatedly on an interval until a "
+                     "condition holds, then return its final output. Use this "
+                     "— NOT `sleep N && cmd` in bash — to WAIT ON SOMETHING "
+                     "EXTERNAL you did not start: a CI run to finish, a health "
+                     "endpoint to come up, a log line to appear, a file to be "
+                     "produced. It is not killed at 30s and is resumable: on "
+                     "timeout it says 'call poll_until again'. (To wait on a "
+                     "process YOU started with start_process, use "
+                     "wait_for_process instead.) Conditions: `exit_zero` "
+                     "(default) stops when the command exits 0; "
+                     "`stdout_matches` / `stdout_not_matches` stop when the "
+                     "combined stdout+stderr does / does not match `pattern` "
+                     "(a regex). While polling it shows up in list_processes "
+                     "and can be stopped early with stop_process (or the user "
+                     "pressing ESC).")
+    :input_schema {:type "object"
+                   :properties {:command {:type "string"
+                                          :description "Shell command run once per attempt."}
+                                :until {:type "string"
+                                        :enum ["exit_zero" "stdout_matches" "stdout_not_matches"]
+                                        :description "Stop condition (default exit_zero)."}
+                                :pattern {:type "string"
+                                          :description "Regex tested against combined stdout+stderr; required for stdout_matches / stdout_not_matches."}
+                                :interval_ms {:type "integer"
+                                              :description "Delay between attempts in ms (default 5000)."}
+                                :timeout_ms {:type "integer"
+                                             :description "Overall deadline in ms before returning 'not met, call again' (default 300000)."}}
+                   :required ["command"]}}])
 
 (def ^:private system-prompt
   (str "## Long-running processes\n"
@@ -372,16 +563,25 @@
        "`read` tool to check on it. Use `list_processes` to see what is running "
        "and `stop_process` to stop one. Reserve `bash` for commands that finish "
        "within a few seconds.\n"
-       "For a slow-but-finite command (a test suite, a build) whose result you "
-       "need before continuing, start it with `start_process` and then call "
-       "`wait_process` with its PID/index — that blocks until it exits and "
-       "returns the exit code plus recent output. NEVER `sleep` in `bash` and "
-       "tail the log to wait for a process (that just hits the same 30s "
-       "timeout). For a truly long-lived process (a dev server) you do not need "
-       "to wait: tell the user its PID and log path and move on; when you later "
-       "need its output, read the log file with `read` or call `list_processes`.\n"
-       "To run a command in another directory, pass `start_process`'s "
-       "`directory` argument instead of prefixing the command with `cd <dir> &&`."))
+       "When you need to WAIT for a finite long-running command (a build, a "
+       "slow test run) to finish before continuing, call `wait_for_process` "
+       "with its PID — it blocks until the process exits (not killed at 30s) "
+       "and returns the exit code plus its output tail. NEVER `sleep` in `bash` "
+       "to wait a process out — that just hits the same 30s timeout. For a "
+       "process you don't need to wait on (a dev server you'll leave running), "
+       "just move on and later read its log with `read` or call "
+       "`list_processes`.\n"
+       "When you need to WAIT ON SOMETHING EXTERNAL that you did NOT start — a "
+       "CI run to complete, a server's health endpoint to come up, a log line "
+       "to appear, a file to be produced — use the `poll_until` tool INSTEAD of "
+       "`sleep N && cmd` in bash (which hits the 30s timeout and only checks "
+       "once). It reruns a command every `interval_ms` until a condition holds "
+       "(`exit_zero`, or `stdout_matches` / `stdout_not_matches` a regex), is "
+       "not killed at 30s, and is resumable — if it reports the condition "
+       "wasn't met, just call it again. A running `poll_until` appears in "
+       "`list_processes` and can be stopped early with `stop_process` (or the "
+       "user pressing ESC to abort the turn). Rule of thumb: `wait_for_process` "
+       "for a process YOU started, `poll_until` for external state."))
 
 ;; ── Event Handlers ───────────────────────────────────────────────────────────
 
@@ -406,6 +606,24 @@
     (doseq [{:keys [pid]} procs]
       (kill-pid! pid))
     nil))
+
+(defn- cancel-room-polls
+  "On turn-end (including ESC abort), cancel any polls still running for the
+   room so their loop doesn't leak past the turn that started them."
+  [st {:keys [room-id]}]
+  (let [pids (->> (get-processes st room-id)
+                  (filter #(= :poll (:kind %)))
+                  (map :pid))]
+    (when (seq pids)
+      {:effects [[:ext.process-manager/cancel-polls {:pids pids}]]})))
+
+(defn- cancel-polls-fx
+  "Effect: run each poll's stored cancel fn (resolves its tool promise and
+   deregisters it)."
+  [_ {:keys [pids]}]
+  (doseq [pid pids]
+    (when-let [cancel! (get @poll-cancels pid)]
+      (cancel!))))
 
 ;; ── Commands ─────────────────────────────────────────────────────────────────
 
@@ -492,7 +710,9 @@
    :handlers         {:ext.process-manager/register       register-process
                       :ext.process-manager/deregister     deregister-process
                       :ext.process-manager/kill-selected  kill-selected
+                      :agent/turn-end                     cancel-room-polls
                       :room/close                         on-room-close}
+   :fx               {:ext.process-manager/cancel-polls   cancel-polls-fx}
    :tool-gate        tool-gate
    :commands         [{:name "processes" :description "Pick a tracked process to kill" :handler cmd-processes}
                       {:name "ps"        :description "List tracked background processes" :handler cmd-ps}
