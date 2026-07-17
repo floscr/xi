@@ -492,19 +492,43 @@
               0 lines))
     (catch :default _ 0)))
 
+(defn- summary->transcript
+  "Resolve a session summary to the JSONL transcript whose assistant turns
+   should be counted. Xi metadata only points at the transcript (the real
+   conversation lives in the Claude CLI file); Claude and Pi summaries already
+   carry their JSONL filepath."
+  [summary]
+  (case (:source summary)
+    :xi     (when-let [cli-sid (:cli-session-id summary)]
+              (find-claude-transcript (:cwd summary) cli-sid))
+    :claude (:filepath summary)
+    :pi     (:filepath summary)
+    nil))
+
 (defn count-session-responses
-  "Given a seq of xi session-ids, return {session-id response-count}.
-   Reads session metadata to find JSONL, counts assistant turns."
+  "Given a seq of session-ids (as they appear in a lobby listing), return
+   {session-id response-count} where the count is the number of assistant
+   turns in each session's transcript. Resolves ids across ALL sources — Xi
+   coding sessions, raw Claude sessions, Pi, and the personal-agent dir — so
+   the unread marker works for every session, not just personal-agent ones.
+
+   The listing is read once and indexed by both the summary id and (for Xi
+   metadata) the underlying CLI id, so a lobby id resolves whichever form it
+   takes."
   [session-ids]
-  (let [all-metas (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
-                       (keep read-xi-session-meta))
-        id->meta (into {} (map (fn [m] [(:session-id m) m])) all-metas)]
+  (let [summaries   (concat (list-all-sessions)
+                            (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
+                                 (keep read-xi-session-meta)))
+        id->summary (persistent!
+                     (reduce (fn [acc s]
+                               (cond-> (assoc! acc (:session-id s) s)
+                                 (:cli-session-id s) (assoc! (:cli-session-id s) s)))
+                             (transient {}) summaries))]
     (into {}
           (keep (fn [sid]
-                  (when-let [meta (get id->meta sid)]
-                    (when-let [cli-sid (:cli-session-id meta)]
-                      (when-let [filepath (find-claude-transcript (:cwd meta) cli-sid)]
-                        [sid (count-assistant-turns-in-jsonl filepath)])))))
+                  (when-let [s (get id->summary sid)]
+                    (when-let [filepath (summary->transcript s)]
+                      [sid (count-assistant-turns-in-jsonl filepath)]))))
           session-ids)))
 
 ;; ── Resume Support ────────────────────────────────────────────────────────────
