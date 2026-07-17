@@ -414,6 +414,35 @@
 
 ;; ── Launch header ────────────────────────────────────────────────────────────
 
+(defn status-banner
+  "Connection / pairing status shown by a client before a room is available:
+   while the socket is still connecting, while a pairing code is awaiting
+   approval on the server, or after the server denied this client key."
+  [{:keys [status code]}]
+  (node/children
+   [(node/text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent")))
+    (node/spacer)
+    (case status
+      :pending
+      [(node/text (str (ansi/fg :yellow "●") " Waiting for pairing approval"))
+       (node/spacer)
+       (node/text (str (ansi/fg :dim "Pairing code: ")
+                       (ansi/fg :accent (or code "····"))))
+       (node/text (ansi/fg :dim "Approve this client on the server — it connects automatically once approved:"))
+       (node/text (str "  " (ansi/fg :accent (str "bb serve:approve " code))))
+       (node/text (ansi/fg :dim "  …or click Approve on the web banner at the server URL."))]
+
+      :denied
+      [(node/text (str (ansi/fg :red "●") " Connection denied by the server"))
+       (node/spacer)
+       (node/text (ansi/fg :dim "The server rejected this client key. On the server, inspect clients with"))
+       (node/text (str "  " (ansi/fg :accent "bb serve:clients")
+                       (ansi/fg :dim " / ") (ansi/fg :accent "bb serve:pending")))]
+
+      ;; :connecting (default)
+      (node/text (str (ansi/fg :yellow "●") (ansi/fg :dim " Connecting to server…"))))
+    (node/spacer)]))
+
 (defn launch-header
   "Header components shown at the top of a room's chat."
   [{:keys [model cwd agents-files]}]

@@ -489,7 +489,19 @@
                                                  ;; indicator. Never forwarded.
                                                  {:connection/status
                                                   (fn [st {:keys [connected?]}]
-                                                    {:state (assoc st :client/connected? connected?)})})})
+                                                    {:state (assoc st :client/connected? connected?)})
+                                                  ;; Client-local: surface the
+                                                  ;; pairing handshake in the TUI
+                                                  ;; (the transport only logs it,
+                                                  ;; which the full-screen render
+                                                  ;; erases). Never forwarded.
+                                                  :auth/pending
+                                                  (fn [st {:keys [code]}]
+                                                    {:state (assoc st :client/auth {:status :pending :code code})})
+                                                  :auth/ok
+                                                  (fn [st _] {:state (dissoc st :client/auth)})
+                                                  :auth/denied
+                                                  (fn [st _] {:state (assoc st :client/auth {:status :denied})})})})
                          ;; Only client-local hooks run here; server hooks
                          ;; ran server-side and mirrored events bypass them.
                          :transform-event (ext/transform-event local)

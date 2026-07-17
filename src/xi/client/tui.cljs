@@ -457,6 +457,23 @@
       (str "~" (subs path (count home)))
       path)))
 
+(defn- render-status-banner!
+  "Render a connection/pairing status banner when a client has no room to show
+   yet — still connecting, awaiting pairing approval, or denied. Keyed on the
+   auth state so it only rebuilds on change, and clears :roomId so the normal
+   room view rebuilds cleanly once a room finally joins."
+  [^js ctx auth]
+  (let [k [(:status auth) (:code auth)]]
+    (when (not= k (.-authKey ctx))
+      (set! (.-authKey ctx) k)
+      (set! (.-roomId ctx) nil)
+      (set! (.-headerKey ctx) nil)
+      (set! (.-header ctx) #js [])
+      (set! (.-panelVal ctx) nil)
+      (reset! (:children (.-chat ctx)) (view/status-banner auth))
+      (tui/set-bottom-panel! (.-editor ctx))
+      (tui/set-focus! (.-editor ctx)))))
+
 (defn create!
   "Boot the terminal UI. Returns
      {:render  (fn [state dispatch!])   ;; for app :on-render
@@ -478,6 +495,7 @@
         ctx #js {:dispatch nil :state nil
                  :chat chat :viewWrapper view-wrapper :editor nil
                  :roomId nil :blocks #js [] :header [] :headerKey nil :chatDirty true
+                 :authKey nil
                  :panelVal nil :activeBuffer :chat
                  :pagerVal nil :pagerComp nil :wasPager false
                  :loaderShown false}
@@ -560,8 +578,21 @@
           (set! (.-dispatch ctx) dispatch!)
           (set! (.-state ctx) state)
           (dispatch! {:type :render/start})
-          (let [t0 (js/Date.now)]
-            (when-let [room (state/active-room state)]
+          (let [t0 (js/Date.now)
+                auth (:client/auth state)
+                room (state/active-room state)]
+            (cond
+              ;; Client handshake with no room yet: waiting for pairing
+              ;; approval, denied, or still connecting. Show a status banner
+              ;; instead of a blank, unresponsive screen.
+              (or (#{:pending :denied} (:status auth))
+                  (and (= :client (state/mode state)) (nil? room)))
+              (do (render-status-banner! ctx (or auth {:status :connecting}))
+                  (tui/request-render!))
+
+              room
+              (do
+              (set! (.-authKey ctx) nil)
               (when (not= (:id room) (.-roomId ctx))
                 ;; Room switched (or first render) — rebuild from scratch
                 (set! (.-roomId ctx) (:id room))
@@ -584,7 +615,7 @@
               (sync-chat! ctx room loader)
               (sync-view! ctx room ring dispatch!)
               (sync-bottom-panel! ctx room dispatch!)
-              (tui/request-render!))
+              (tui/request-render!)))
             (dispatch! {:type :render/done
                         :duration-ms (- (js/Date.now) t0)})))]
 
