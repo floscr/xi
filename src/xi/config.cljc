@@ -34,6 +34,7 @@
         [xi.ext.projects :as projects]
         [xi.ext.pushover :as pushover]
         [xi.ext.sandbox :as ext-sandbox]
+        [xi.ext.session-search :as session-search]
         [xi.ext.skills :as skills]
         [xi.ext.terminal-title :as terminal-title]
         [xi.ext.todo-intercept :as todo-intercept]
@@ -72,6 +73,7 @@
       diff/extension
       worktree/create
       kb/extension
+      session-search/extension
       web/extension
       perplexity/extension
       commit/extension

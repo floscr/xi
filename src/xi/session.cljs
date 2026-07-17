@@ -796,3 +796,43 @@
                              (str/includes? (cached-search-text s) q))
                      (:session-id s))))
            vec)))))
+
+(defn- match-snippet
+  "Short single-line excerpt around the first case-insensitive occurrence of
+   `q` (already lowercased) in `text`, or nil when absent."
+  [text q]
+  (when (and (seq text) (seq q))
+    (let [idx (str/index-of (str/lower-case text) q)]
+      (when idx
+        (let [start (max 0 (- idx 50))
+              end   (min (count text) (+ idx (count q) 50))]
+          (-> (str (when (pos? start) "…")
+                   (subs text start end)
+                   (when (< end (count text)) "…"))
+              (str/replace #"\s+" " ")
+              str/trim))))))
+
+(defn search-sessions
+  "Like `content-search`, but returns full session summaries (newest first)
+   instead of bare ids. Each summary is augmented with :snippet — a short
+   excerpt around the first content match, or nil when only the title matched.
+   `cwd` nil/blank -> search across all projects; otherwise scope to that
+   project directory."
+  ([cwd query] (search-sessions cwd query nil))
+  ([cwd query {:keys [personal-agent?]}]
+   (let [q (str/lower-case (str/trim (or query "")))]
+     (if (str/blank? q)
+       []
+       (->> (cond
+              personal-agent? (list-personal-agent-sessions)
+              (seq cwd)       (list-sessions cwd)
+              :else           (list-all-sessions))
+            (keep (fn [s]
+                    (let [name-match?    (str/includes?
+                                          (str/lower-case (or (:name s) "")) q)
+                          content-match? (str/includes? (cached-search-text s) q)]
+                      (when (or name-match? content-match?)
+                        (assoc s :snippet
+                               (when content-match?
+                                 (match-snippet (build-search-text s) q)))))))
+            vec)))))
