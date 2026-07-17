@@ -1,8 +1,7 @@
 (ns xi.session
   "Session management for Xi.
    Xi sessions are lightweight metadata files in ~/.config/xi/sessions/{cwd-encoded}/.
-   The actual conversation data lives in claude CLI sessions (~/.claude/projects/).
-   Xi also reads Pi sessions from ~/.pi/agent/sessions/ for resume."
+   The actual conversation data lives in claude CLI sessions (~/.claude/projects/)."
   (:require [clojure.string :as str]
             [xi.session.sync :as sync]
             ["node:fs" :as fs]
@@ -19,9 +18,6 @@
 
 (def ^:private PERSONAL_AGENT_SESSIONS_DIR
   (.join node-path HOME ".config" "xi" "personal-agent" "root"))
-
-(def ^:private PI_SESSIONS_DIR
-  (.join node-path HOME ".pi" "agent" "sessions"))
 
 (def ^:private CLAUDE_PROJECTS_DIR
   (.join node-path HOME ".claude" "projects"))
@@ -58,20 +54,10 @@
   (let [stripped (if (str/starts-with? cwd "/") (subs cwd 1) cwd)]
     (str "-" (str/replace stripped "/" "-"))))
 
-(defn- encode-cwd-pi
-  "Encode CWD for Pi session directory (double-dash wrapped).
-   /home/floscr/Code/Projects/xi → --home-floscr-Code-Projects-xi--"
-  [cwd]
-  (let [stripped (if (str/starts-with? cwd "/") (subs cwd 1) cwd)]
-    (str "--" (str/replace stripped "/" "-") "--")))
-
 (def ^:private encode-cwd-claude sync/encode-cwd-claude)
 
 (defn- xi-session-dir [cwd]
   (.join node-path XI_SESSIONS_DIR (encode-cwd-xi cwd)))
-
-(defn- pi-session-dir [cwd]
-  (.join node-path PI_SESSIONS_DIR (encode-cwd-pi cwd)))
 
 (defn- claude-project-dir [cwd]
   (.join node-path CLAUDE_PROJECTS_DIR (encode-cwd-claude cwd)))
@@ -267,38 +253,6 @@
        :user-messages nil})
     (catch :default _e nil)))
 
-;; ── Pi Session Reading ────────────────────────────────────────────────────────
-
-(defn- read-pi-session-summary
-  "Read a Pi session file and extract summary info.
-   Only reads the first 16KB for speed."
-  [filepath]
-  (try
-    (let [lines (read-head-lines filepath 16384)
-          header (when (seq (first lines))
-                   (js->clj (js/JSON.parse (first lines)) :keywordize-keys true))
-          ;; Find session name from session_info or first user message
-          name-or-msg (reduce (fn [_ line]
-                                (when (seq line)
-                                  (let [obj (js->clj (js/JSON.parse line) :keywordize-keys true)]
-                                    (cond
-                                      (= "session_info" (:type obj))
-                                      (reduced {:name (:name obj)})
-                                      (and (= "message" (:type obj))
-                                           (= "user" (get-in obj [:message :role])))
-                                      (reduced {:name (let [text (get-in obj [:message :content])]
-                                                        (when (string? text)
-                                                          (subs text 0 (min 60 (count text)))))})
-                                      :else nil))))
-                              nil lines)]
-      {:session-id (:id header)
-       :source :pi
-       :filepath filepath
-       :timestamp (:timestamp header)
-       :name (:name name-or-msg)
-       :user-messages nil})
-    (catch :default _e nil)))
-
 ;; ── Xi Session Reading ────────────────────────────────────────────────────────
 
 (defn- uuid7->iso
@@ -370,7 +324,7 @@
 
 ;; ── Favorites (source-agnostic bookmarks) ─────────────────────────────────────
 ;; Favorites live in one JSON file keyed by the summary's :session-id, so
-;; Xi/Claude/Pi sessions can all be starred without editing their own files.
+;; Xi/Claude sessions can all be starred without editing their own files.
 
 (defn load-favorites
   "Set of favorited session-ids from ~/.config/xi/favorites.json (or #{})."
@@ -445,20 +399,17 @@
         ;; Claude CLI sessions
         claude-sessions (->> (list-dir-files (claude-project-dir cwd) ".jsonl")
                              (keep read-claude-session-summary))
-        ;; Pi sessions
-        pi-sessions (->> (list-dir-files (pi-session-dir cwd) ".jsonl")
-                         (keep read-pi-session-summary))
         xi-ids (set (keep :cli-session-id xi-sessions))
         ;; Don't show claude sessions that have Xi metadata (avoid duplicates)
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
-    ;; Claude/Pi summaries don't record their own cwd; backfill the dir they
+    ;; Claude summaries don't record their own cwd; backfill the dir they
     ;; were scanned from so callers can tell which worktree a session lives in.
     (map #(update % :cwd (fn [c] (or c cwd)))
-         (concat xi-sessions claude-filtered pi-sessions))))
+         (concat xi-sessions claude-filtered))))
 
 (defn list-sessions
   "List all sessions for a CWD from all sources. Returns vec of session
-   summaries, newest first. Sources: Xi metadata, Claude CLI, Pi sessions.
+   summaries, newest first. Sources: Xi metadata, Claude CLI.
    Scans the whole git project — the main working tree plus every linked
    worktree — so /resume from the main repo also surfaces sessions started
    inside its worktrees."
@@ -486,17 +437,11 @@
                                        (let [dir (.join node-path CLAUDE_PROJECTS_DIR subdir)]
                                          (->> (list-dir-files dir ".jsonl")
                                               (keep read-claude-session-summary))))))
-        ;; Pi: each subdir under PI_SESSIONS_DIR is an encoded CWD
-        pi-sessions (->> (list-dir-subdirs PI_SESSIONS_DIR)
-                         (mapcat (fn [subdir]
-                                   (let [dir (.join node-path PI_SESSIONS_DIR subdir)]
-                                     (->> (list-dir-files dir ".jsonl")
-                                          (keep read-pi-session-summary))))))
         ;; Dedup: Xi meta takes priority over claude sessions with same session-id
         xi-ids (set (keep :cli-session-id xi-sessions))
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
     (annotate-favorites
-     (->> (concat xi-sessions claude-filtered pi-sessions)
+     (->> (concat xi-sessions claude-filtered)
           (sort-by #(or (:last-accessed %) (:timestamp %)))
           reverse
           vec))))
@@ -609,17 +554,7 @@
      ;; timestamp so /diff session-edits can resolve the session base commit.
      :created (:timestamp summary)
      :name (:name summary)
-     :source :claude}
-
-    :pi
-    ;; Pi sessions can't be resumed via claude CLI — they use a different format.
-    ;; Show them for reference but mark as read-only.
-    {:id (:session-id summary)
-     :cli-session-id nil
-     :cwd nil
-     :created (:timestamp summary)
-     :name (:name summary)
-     :source :pi}))
+     :source :claude}))
 
 (defn- read-claude-session-messages
   "Read conversation messages from a Claude CLI session file.
@@ -710,40 +645,6 @@
 
     :claude
     (read-claude-session-messages (:filepath summary))
-
-    :pi
-    (try
-      (let [content (fs/readFileSync (:filepath summary) "utf8")
-            lines (str/split content #"\n")
-            parsed (into [] (comp (filter #(not (str/blank? %)))
-                                  (keep (fn [line]
-                                          (try
-                                            (js->clj (js/JSON.parse line) :keywordize-keys true)
-                                            (catch :default _e nil)))))
-                         lines)]
-        (->> parsed
-             (filter #(= "message" (:type %)))
-             (mapcat (fn [line]
-                       (let [msg (:message line)
-                             role (:role msg)]
-                         (cond
-                           (= "user" role)
-                           (let [text (->> (:content msg)
-                                           (filter #(= "text" (:type %)))
-                                           (map :text)
-                                           (str/join "\n"))]
-                             (when (seq text) [{:type :text :role "user" :text text}]))
-
-                           (= "assistant" role)
-                           (let [text (->> (:content msg)
-                                           (filter #(= "text" (:type %)))
-                                           (map :text)
-                                           (str/join "\n"))]
-                             (when (seq text) [{:type :text :role "assistant" :text text}]))
-
-                           :else nil))))
-             vec))
-      (catch :default _e []))
 
     []))
 

@@ -35,7 +35,7 @@
       (dissoc :provider-session-id)))
 
 (defn- source-suffix [s]
-  (case (:source s) :claude " [claude]" :pi " [pi]" ""))
+  (case (:source s) :claude " [claude]" ""))
 
 (def ^:private edit-tool-names
   "Stripped, lower-cased tool names that mutate files on disk. Includes the

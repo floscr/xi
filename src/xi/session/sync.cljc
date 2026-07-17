@@ -54,8 +54,7 @@
 
 (def ^:private session-dirs
   "Directories (relative to $HOME) that contain session metadata to sync."
-  [".pi/agent/sessions"
-   ".config/xi/sessions"])
+  [".config/xi/sessions"])
 
 (defn sync-manifest
   "Return a map describing all paths that need syncing for Xi sessions.

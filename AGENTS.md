@@ -123,7 +123,8 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
 - **shadow-cljs** compiles to a single node script run by **Bun**; the web
   client is a separate `:browser` build served by the same Bun server.
 - Runtime npm deps: only `@anthropic-ai/claude-agent-sdk` (pinned, see above).
-- Sessions stored in `~/.pi/agent/sessions/` (Pi-compatible JSONL format)
+- Session metadata stored in `~/.config/xi/sessions/`; conversation transcripts
+  live in Claude CLI sessions under `~/.claude/projects/`
 - Personal agent sessions stored separately in `~/.config/xi/personal-agent/root/`
 - Auth via `~/.pi/agent/auth.json` OAuth tokens or `ANTHROPIC_API_KEY` env var
 

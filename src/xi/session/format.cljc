@@ -33,7 +33,7 @@
 ;;  :timestamp   ISO-str|nil
 ;;  :last-accessed ISO-str|nil
 ;;  :user-messages int|nil
-;;  :source      :xi|:claude|:pi}
+;;  :source      :xi|:claude}
 
 (defn normalize-session
   "Ensure a session map has all expected keys with defaults."

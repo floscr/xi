@@ -477,7 +477,7 @@
     (let [;; A resumed session may have been recorded in a different directory
           ;; than the room is currently in — notably when picked from the "All"
           ;; tab, which lists sessions across every cwd. Follow it there so the
-          ;; agent and tools run in the session's own project. Claude/Pi
+          ;; agent and tools run in the session's own project. Claude
           ;; sessions load with :cwd nil (load-session can't know it), so take
           ;; the cwd from the picker summary; fall back to the room's cwd.
           resume-cwd (or (:cwd session) (:cwd summary))
@@ -493,10 +493,8 @@
           change-cwd? (and resume-cwd (not= resume-cwd (:cwd room)))
           label (str "Resumed: "
                      (or (:name session) (:cli-session-id session) (:id session))
-                     (case (:source summary) :claude " [claude]" :pi " [pi]" "")
-                     " (" (count messages) " messages)"
-                     (when (= :pi (:source session))
-                       "\n  (read-only — Pi sessions can't be continued)"))]
+                     (case (:source summary) :claude " [claude]" "")
+                     " (" (count messages) " messages)")]
       {:state (-> st
                   (assoc-in [:rooms room-id :session] session')
                   (assoc-in [:rooms room-id :history]
