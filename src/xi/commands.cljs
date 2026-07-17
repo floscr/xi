@@ -474,13 +474,23 @@
 
 (defn- session-resumed [st {:keys [room-id session summary messages]}]
   (when-let [room (state/get-room st room-id)]
-    (let [;; Claude/Pi sessions load with :cwd nil (load-session can't know it);
-          ;; backfill from the room so :session/sync can persist them without
-          ;; crashing in xi-session-dir on a nil cwd.
+    (let [;; A resumed session may have been recorded in a different directory
+          ;; than the room is currently in — notably when picked from the "All"
+          ;; tab, which lists sessions across every cwd. Follow it there so the
+          ;; agent and tools run in the session's own project. Claude/Pi
+          ;; sessions load with :cwd nil (load-session can't know it), so take
+          ;; the cwd from the picker summary; fall back to the room's cwd.
+          resume-cwd (or (:cwd session) (:cwd summary))
+          ;; backfill so :session/sync can persist without crashing in
+          ;; xi-session-dir on a nil cwd.
           session (cond-> session
-                    (nil? (:cwd session)) (assoc :cwd (:cwd room)))
+                    (nil? (:cwd session)) (assoc :cwd (or resume-cwd (:cwd room))))
           session' (assoc session :provider-session-id (:cli-session-id session))
           model (:model session)
+          ;; Land the room in the session's cwd via the same validated path the
+          ;; /cd command uses (rebuilds the system prompt + AGENTS.md list). The
+          ;; worktree extension refines this for now-removed sibling worktrees.
+          change-cwd? (and resume-cwd (not= resume-cwd (:cwd room)))
           label (str "Resumed: "
                      (or (:name session) (:cli-session-id session) (:id session))
                      (case (:source summary) :claude " [claude]" :pi " [pi]" "")
@@ -496,7 +506,9 @@
                     (->
                      (assoc-in [:rooms room-id :agent :model] model)
                      (assoc-in [:rooms room-id :agent :provider]
-                               (if (util/claude-model? model) :claude :ollama)))))})))
+                               (if (util/claude-model? model) :claude :ollama)))))
+       :effects (cond-> []
+                  change-cwd? (conj [:cwd/change {:room-id room-id :path resume-cwd}]))})))
 
 (defn- session-updated
   "Persisted session came back from a save/touch effect — merge metadata."

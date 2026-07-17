@@ -127,22 +127,22 @@
               clear? (update-in [:rooms room-id :ext] dissoc :worktree))}))
 
 (defn- resumed-worktree-cwd
-  "Chained onto :session/resumed: when the resumed session was recorded in a
-   sibling worktree of the room's repo, land the room in that worktree so the
-   agent runs there. If the worktree's directory is gone (removed after the
-   session was recorded, but still listed by git as prunable), fall back to
-   the repo's main working tree. Cross-project resumes (a different repo, or
-   no repo) leave the cwd untouched. Emits the :cwd/change effect — the same
-   validated path the /cd command uses."
+  "Chained onto :session/resumed to refine the cwd for a removed worktree.
+   The core :session/resumed handler already cds the room into the session's
+   own cwd when that directory still exists (covering cross-project resumes
+   and live sibling worktrees). This handler only covers the leftover case:
+   the session was recorded in a sibling worktree that has since been removed
+   but is still listed by git as prunable — land in the repo's main working
+   tree instead of failing on the gone path. Emits the :cwd/change effect —
+   the same validated path the /cd command uses."
   [st {:keys [room-id summary]}]
   (when-let [room (state/get-room st room-id)]
     (let [room-cwd (:cwd room)
           sess-cwd (:cwd summary)]
       (when (and sess-cwd room-cwd (not= sess-cwd room-cwd)
+                 (not (.existsSync fs sess-cwd))
                  (some #(= sess-cwd (:path %)) (git/worktrees room-cwd)))
-        (let [target (if (.existsSync fs sess-cwd)
-                       sess-cwd
-                       (git/main-worktree-root room-cwd))]
+        (let [target (git/main-worktree-root room-cwd)]
           (when (and target (not= target room-cwd))
             {:effects [[:cwd/change {:room-id room-id :path target}]]}))))))
 

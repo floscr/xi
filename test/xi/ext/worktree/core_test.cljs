@@ -71,9 +71,10 @@
       (is (nil? (switch st0 {:room-id "nope" :cwd "/w/acme"}))))))
 
 (deftest resumed-worktree-cwd-test
-  ;; :session/resumed lands the room in the session's worktree (or the repo
-  ;; root when it's gone). Lock the pure short-circuits that must never touch
-  ;; git: unknown room, no session cwd, and same-cwd resumes all stay put.
+  ;; :session/resumed refines the cwd only for a now-removed sibling worktree
+  ;; (the core handler already cds into a session's existing cwd). Lock the
+  ;; pure short-circuits that must never touch git: unknown room, no session
+  ;; cwd, and same-cwd resumes all stay put.
   (let [resumed (:session/resumed (:handlers (wt/create nil)))
         rid     "room-1"
         st      (-> (state/initial-state)
