@@ -17,10 +17,13 @@
   ["ssh " "scp " "rsync " "sftp "])
 
 (def ^:private GUARDED_PATTERNS
-  "Bash patterns that require extra caution."
+  "Bash patterns that require extra caution. Includes the Xi server control
+   tasks (serve:restart / serve:stop) so the agent must get user approval
+   before restarting or stopping the running server."
   ["rm -rf" "rm -r" "sudo " "chmod -R" "chown -R"
    "> /dev/" "mkfs" "dd if=" ":(){ " "fork bomb"
-   "git push"])
+   "git push"
+   "serve:restart" "serve:stop"])
 
 (def ^:private BLOCKED_WRITE_PATHS
   "File patterns that should not be written to without confirmation."
