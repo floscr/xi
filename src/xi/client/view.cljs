@@ -34,6 +34,12 @@
   (or (get arguments (name k))
       (get arguments k)))
 
+(defn- arg-file-path
+  "File-path argument, trying Claude's :file_path and Xi's :path."
+  [arguments]
+  (or (get-arg arguments :file_path)
+      (get-arg arguments :path)))
+
 (def ^:private display-tool-name
   "Map internal tool names to nicer display names."
   {"git_overview"                  "git diff --stat"
@@ -62,31 +68,20 @@
         (str/join " " pairs)))))
 
 (defn format-tool-args
-  "Format tool arguments for display in the tool header."
+  "Format tool arguments for display in the tool header. Expects a canonical
+   (lowercase) tool name — see `canonical-tool`."
   [tool-name arguments]
   (case tool-name
-    "Bash"  (get-arg arguments :command)
-    "Read"  (get-arg arguments :file_path)
-    "Write" (get-arg arguments :file_path)
-    "Edit"  (get-arg arguments :file_path)
-    "Grep"  (str (get-arg arguments :pattern)
-                 (when-let [g (get-arg arguments :glob)]
-                   (str " --glob " g)))
-    "Glob"  (get-arg arguments :pattern)
-    "Agent" (or (get-arg arguments :description)
-                (get-arg arguments :prompt)
-                (get-arg arguments :task))
-    ;; Xi's own lowercase tools
     "bash"  (get-arg arguments :command)
-    "read"  (get-arg arguments :path)
-    "write" (get-arg arguments :path)
-    "edit"  (get-arg arguments :path)
+    ("read" "write" "edit") (arg-file-path arguments)
+    "ls"    (get-arg arguments :path)
     "grep"  (str (get-arg arguments :pattern)
                  (when-let [g (get-arg arguments :glob)]
                    (str " --glob " g)))
-    "find"  (get-arg arguments :pattern)
-    "ls"    (get-arg arguments :path)
-    ;; Git tools
+    ("glob" "find") (get-arg arguments :pattern)
+    "agent" (or (get-arg arguments :description)
+                (get-arg arguments :prompt)
+                (get-arg arguments :task))
     "git_overview"    (if (get-arg arguments :staged) "--staged" nil)
     "git_file_diff"   (str/join " " (get-arg arguments :files))
     "git_hunk"        (get-arg arguments :file)
@@ -95,10 +90,18 @@
     (format-tool-args-default arguments)))
 
 (def ^:private shorten-tool-name util/strip-mcp-prefix)
+
+(defn- canonical-tool
+  "Provider-agnostic tool key: MCP prefix stripped, lowercased. Claude's
+   capitalized built-ins (\"Read\", \"Bash\") and Xi's lowercase tools
+   (\"read\", \"bash\") collapse to a single key."
+  [tool-name]
+  (some-> tool-name shorten-tool-name str/lower-case))
+
 (def ^:private truncate util/truncate)
 
 (def ^:private collapsed-tools
-  "Tools whose output is hidden by default in the TUI."
+  "Canonical (lowercase) tool names whose output is hidden by default in the TUI."
   #{"read" "clj_outline"})
 
 (deftui-opt truncate-output-block-after-n-lines 100
@@ -120,11 +123,11 @@
     (-> path (str/split #"\.") last str/lower-case)))
 
 (defn- tool-output-lang
-  "Determine the highlighting grammar for a tool's output, or nil."
+  "Determine the highlighting grammar for a tool's output, or nil.
+   Expects a canonical (lowercase) tool name."
   [tool-name arguments]
   (let [path (case tool-name
-               ("Read" "Write" "Edit") (get-arg arguments :file_path)
-               ("read" "write" "edit") (get-arg arguments :path)
+               ("read" "write" "edit") (arg-file-path arguments)
                "git_hunk" (get-arg arguments :file)
                "git_file_diff" (let [files (get-arg arguments :files)]
                                  (when (= 1 (count files)) (first files)))
@@ -325,18 +328,19 @@
   (let [bg-code "\033[48;2;38;44;55m"
         box (comp/make-box {:padding-x 1 :padding-y 0 :bg-code bg-code})
         short-name (shorten-tool-name (:tool entry))
+        canonical (canonical-tool (:tool entry))
         header-text (comp/make-text
                      (tool-header-str short-name
-                                      (format-tool-args short-name (:arguments entry))))
+                                      (format-tool-args canonical (:arguments entry))))
         live? (= :running (:status entry))
         spinner (when live? (comp/make-spinner))
         start-time (js/Date.now)
-        collapsed? (collapsed-tools short-name)
+        collapsed? (collapsed-tools canonical)
         st #js {:outputSet false :finished false
-                :grammar (tool-output-lang short-name (:arguments entry))}
+                :grammar (tool-output-lang canonical (:arguments entry))}
         ensure-grammar! (fn [arguments]
                           (when-not (.-grammar st)
-                            (set! (.-grammar st) (tool-output-lang short-name arguments))))
+                            (set! (.-grammar st) (tool-output-lang canonical arguments))))
         set-output! (fn [content is-error]
                       (when-let [text (not-empty (result-text content))]
                         (let [display (if (and (.-grammar st) (not is-error))
@@ -372,7 +376,7 @@
                     (ensure-grammar! (:arguments new))
                     ((:set-text header-text)
                      (tool-header-str short-name
-                                      (format-tool-args short-name (:arguments new)))))
+                                      (format-tool-args canonical (:arguments new)))))
                   (when (and (:result new) (not (.-outputSet st)) (not collapsed?))
                     (set-output! (:result new) (:is-error new)))
                   (when (and (not= :running (:status new)) (not (.-finished st)))
