@@ -26,6 +26,8 @@
 
    Flags:
      --model M        override the default model
+     --session SID    resume the saved session with this id on launch
+                      (standalone, join, or create)
      --port N         WS port (server/join/create; default 7474)
      --headless       server only, no local TUI
      --prompt <text>  launch the TUI with an initial prompt already submitted
@@ -134,6 +136,7 @@
           "--personal-agent-only" (recur (next args) (assoc opts :personal-agent? true))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
           "--model"        (recur (nnext args) (assoc opts :model (second args)))
+          "--session"      (recur (nnext args) (assoc opts :session-id (second args)))
           "--port"         (recur (nnext args) (assoc opts :port (js/parseInt (second args) 10)))
           (recur (next args)
                  (cond
@@ -177,7 +180,7 @@
 
 ;; ── Standalone (phase 4, unchanged) ──────────────────────────────────────────
 
-(defn- start-standalone! [{:keys [debug-events? initial-prompt] :as opts}]
+(defn- start-standalone! [{:keys [debug-events? initial-prompt session-id] :as opts}]
   (let [{:keys [model effort]} (resolve-model-opts opts)
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
         ring (log/create-ring)
@@ -245,15 +248,13 @@
                        :agents-files agents-files
                        :ext (:room-ext-init composed)
                        :session sess}})
-    ;; Auto-resume after /reload (env var set by the :app/reload effect)
-    (when-let [reload-sid (aget js/process.env "XI_RELOAD_SESSION")]
-      (js-delete js/process.env "XI_RELOAD_SESSION")
-      (when-let [summary (session/find-session-by-id reload-sid)]
-        (dispatch! {:type :session/resumed
-                    :room-id "main"
-                    :session (session/load-session summary)
-                    :summary summary
-                    :messages (session/read-session-messages summary)})))
+    ;; Resume a saved session on launch (--session, e.g. after /reload).
+    (when-let [summary (and session-id (session/find-session-by-id session-id))]
+      (dispatch! {:type :session/resumed
+                  :room-id "main"
+                  :session (session/load-session summary)
+                  :summary summary
+                  :messages (session/read-session-messages summary)}))
     ;; Auto-submit an initial prompt (e.g. launched from `hey re` with an error)
     (when (seq initial-prompt)
       (dispatch! {:type :prompt/submit :room-id "main" :text initial-prompt}))))
@@ -387,8 +388,13 @@
               and their commands/badges/keybindings are presented locally.
      local  — process-local client extensions; handlers installed unwrapped
               (never forwarded), fx + process state run on this client."
-  [{:keys [target initial-prompt defer-room?] :as opts}]
-  (let [url (client-url opts)
+  [{:keys [target initial-prompt defer-room? session-id] :as opts}]
+  (let [;; --session resumes an exact session (e.g. after /reload): rejoin that
+        ;; session instead of "latest", so a server restart doesn't drop it,
+        ;; and skip the deferred empty room.
+        target (if session-id {:session-id session-id} target)
+        defer-room? (if session-id false defer-room?)
+        url (client-url opts)
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
         ring (log/create-ring)
         mirror (ext/compose (server-extensions nil))
@@ -640,14 +646,18 @@
    listening on the port and auto-join isn't disabled. Always opens a fresh
    room (like the empty chat page on the web UI) rather than resuming the latest
    one — /resume still re-attaches to a live room via a {:session-id} target."
-  [{:keys [auto-join? port initial-prompt] :as opts}]
+  [{:keys [auto-join? port initial-prompt session-id] :as opts}]
   (if-not auto-join?
     (start-standalone! opts)
     (-> (server-running? (or port ws/DEFAULT_PORT))
         (.then (fn [running?]
                  (cond
-                   ;; No server — plain local standalone room.
+                   ;; No server — plain local standalone room (resumes
+                   ;; --session locally, if given).
                    (not running?) (start-standalone! opts)
+                   ;; --session resumes that exact session on the server
+                   ;; (start-client! turns it into a {:session-id} target).
+                   session-id (start-client! opts)
                    ;; An initial prompt wants a room + message right away.
                    (seq initial-prompt) (start-client! (assoc opts :target "new"))
                    ;; Otherwise stay in a virtual room — the server room is

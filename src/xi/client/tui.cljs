@@ -90,20 +90,30 @@
   (when on-exit (on-exit))
   (js/process.exit 0))
 
+(defn- strip-arg-pair
+  "Drop every occurrence of `flag` and its following value from an argv vector."
+  [argv flag]
+  (loop [in (seq argv) out []]
+    (if-not in
+      out
+      (if (= (first in) flag)
+        (recur (nnext in) out)
+        (recur (next in) (conj out (first in)))))))
+
 (defn- reload!
   "Restart the process with the same argv, picking up recompiled code.
-   Passes session-id via env so the new process auto-resumes."
+   Passes the current session id as `--session <sid>` so the new process
+   resumes it (replacing any stale --session already on the command line)."
   [session-id on-exit]
   (let [child-process (js/require "child_process")
-        argv (vec (js->clj js/process.argv))
-        env (js/Object.assign #js {} js/process.env)]
-    (when session-id
-      (aset env "XI_RELOAD_SESSION" session-id))
+        argv (-> (vec (js->clj js/process.argv))
+                 (strip-arg-pair "--session")
+                 (cond-> session-id (into ["--session" session-id])))]
     (term/restore-stdout!)
     (tui/stop-tui!)
     (when on-exit (on-exit))
     (.execFileSync child-process (first argv) (clj->js (rest argv))
-                   #js {:stdio "inherit" :env env})
+                   #js {:stdio "inherit"})
     (js/process.exit 0)))
 
 (defn- copy-to-clipboard!

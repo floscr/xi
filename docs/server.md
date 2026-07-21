@@ -23,6 +23,9 @@ piping — see [prompt-mode.md](prompt-mode.md).
 --headless              Server only: run without a local TUI. Clients attach remotely.
 --personal-agent-only   Server only: run as a personal assistant with no coding tools.
 --model NAME            Override the default model.
+--session SID           Resume the saved session with this id on launch
+                        (standalone, join, or create). Used by /reload to
+                        rejoin the same session across a server restart.
 --debug-events          Write the full event stream as JSONL (see architecture.md).
 ```
 

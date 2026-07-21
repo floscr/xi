@@ -32,6 +32,16 @@
   {"quit"   [:app/quit {}]
    "reload" [:app/reload {}]})
 
+(defn- local-command-effect
+  "Resolve a client-local command name to its process-level effect. For
+   /reload, inject the active room's session-id so the restarted client
+   resumes that exact session (via a {:session-id sid} join target) instead
+   of joining \"latest\" — otherwise a server restart drops the session."
+  [st name]
+  (if (= name "reload")
+    [:app/reload {:session-id (get-in st [:rooms (:active-room st) :session :id])}]
+    (get local-commands name)))
+
 (defn- mirror
   "Apply a remote event with the base reducer, dropping all effects except
    the client-side whitelist."
@@ -69,7 +79,7 @@
           (cond
             (and (= :command (:type parsed))
                  (get local-commands (:name parsed)))
-            {:effects [(get local-commands (:name parsed))]}
+            {:effects [(local-command-effect st (:name parsed))]}
 
             (and local-room? (local-room? ev))
             (local-submit st ev)
@@ -83,7 +93,7 @@
     (fn [st ev]
       (cond
         (:remote? ev)                      (m st ev)
-        (get local-commands (:name ev))    {:effects [(get local-commands (:name ev))]}
+        (get local-commands (:name ev))    {:effects [(local-command-effect st (:name ev))]}
         (and local-room? (local-room? ev)) (local-submit st ev)
         :else                              (forward st ev)))))
 
