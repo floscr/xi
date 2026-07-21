@@ -629,7 +629,19 @@
           (dispatch! {:type :render/start})
           (let [t0 (js/Date.now)
                 auth (:client/auth state)
-                room (state/active-room state)]
+                ;; Optimistic prompt echo: append the just-submitted user
+                ;; message to the active room and force the thinking loader, so
+                ;; the prompt shows instantly before the server round-trips the
+                ;; real :user entry back. The entry object is stable in state
+                ;; between :client/optimistic-set and -clear, so the block cache
+                ;; only rebuilds when it appears/disappears (see cli's tap).
+                opt  (:client/optimistic state)
+                room (let [r (state/active-room state)]
+                       (if (and r opt)
+                         (-> r
+                             (update :history (fnil conj []) opt)
+                             (assoc-in [:agent :busy?] true))
+                         r))]
             (cond
               ;; Client handshake with no room yet: waiting for pairing
               ;; approval, denied, or still connecting. Show a status banner

@@ -571,7 +571,22 @@ See docs/cli.md for the full reference.")
                                                   :auth/ok
                                                   (fn [st _] {:state (dissoc st :client/auth)})
                                                   :auth/denied
-                                                  (fn [st _] {:state (assoc st :client/auth {:status :denied})})})})
+                                                  (fn [st _] {:state (assoc st :client/auth {:status :denied})})
+                                                  ;; Client-local optimistic
+                                                  ;; prompt echo: show the user's
+                                                  ;; message + thinking loader the
+                                                  ;; instant they submit, before the
+                                                  ;; server round-trips the real
+                                                  ;; :prompt/submit back (see the
+                                                  ;; optimistic tap below). Never
+                                                  ;; forwarded.
+                                                  :client/optimistic-set
+                                                  (fn [st {:keys [text images]}]
+                                                    {:state (assoc st :client/optimistic
+                                                                   (cond-> {:kind :user :text text}
+                                                                     (seq images) (assoc :images (vec images))))})
+                                                  :client/optimistic-clear
+                                                  (fn [st _] {:state (dissoc st :client/optimistic)})})})
                          ;; Only client-local hooks run here; server hooks
                          ;; ran server-side and mirrored events bypass them.
                          :transform-event (ext/transform-event local)
@@ -587,6 +602,30 @@ See docs/cli.md for the full reference.")
                                                (:effects client))
                          :on-render     (:render client)
                          :ring          ring})]
+    ;; Optimistic prompt echo (mirrors the web client): on a non-remote prompt
+    ;; submit, show the user's message + thinking loader immediately, before the
+    ;; server round-trips the real :user history entry back. Cleared when the
+    ;; server broadcasts the real :prompt/submit. Covers both a joined room and
+    ;; the deferred :pending room (whose :input/submit also flows through here,
+    ;; even though it stashes + joins "new" instead of forwarding).
+    (add-tap!
+     (fn [event state]
+       (cond
+         (and (= :input/submit (:type event))
+              (not (:remote? event))
+              ;; While busy the submission is queued, not sent — the queue count
+              ;; is the feedback, so skip the optimistic bubble.
+              (not (get-in state [:rooms (:room-id event) :agent :busy?]))
+              (let [parsed (commands/parse-input (:text event))]
+                (or (= :prompt (:type parsed))
+                    (seq (:images event)))))
+         (dispatch! {:type :client/optimistic-set
+                     :text (:text event)
+                     :images (:images event)})
+
+         (and (:remote? event)
+              (= :prompt/submit (:type event)))
+         (dispatch! {:type :client/optimistic-clear}))))
     ;; Deferred room: replay the stashed first submission once the fresh room
     ;; joins — images re-attach first (recreating their 📎 history entries in
     ;; the real room, exactly as if attached there), then the text submits.
