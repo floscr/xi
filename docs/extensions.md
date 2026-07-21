@@ -332,6 +332,7 @@ Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
 | web | tools | Fetch URLs with HTML→markdown, Jina fallback, feed parsing. |
 | perplexity | tools, command | Web search via Perplexity; `/perplexity-login` to authenticate. |
 | commit | tools, command | Git workflow; `/commit` builds a prompt from live overview. |
+| review | command | Code review; `/review [staged\|<ref>]` embeds the code-review methodology (four-phase, severity labels) and submits a diff for review. Augments the prompt with project-type guidance auto-detected by marker files (clojure, typescript) plus an optional per-profile override (`bb profile:review-prompt`; `:review-prompt` / `:review-replace`). |
 | clj-surgeon | tools, handler | Structural Clojure refactoring. Auto-fixes parens after write/edit to .clj files. |
 | gtd | tools, command, handler, system-prompt, web | GTD task management. `/gtd` picker, `/gtd recommend`, `/gtd cleanup`. Web half: /gtd pages + task launcher. |
 | github | handler, web | Roomless PR browsing via `gh`. Web half: /pulls list/detail/diff pages + review-with-agent. |

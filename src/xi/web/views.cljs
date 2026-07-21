@@ -511,6 +511,8 @@
                   {:name "session-edits"   :description "Diff of files edited this session"}
                   {:name "session-commits" :description "Diff of commits made this session"}]}
    {:name "commit"   :description "Review changes and create a git commit"}
+   {:name "review"   :description "Review git changes against the code-review methodology"
+    :subcommands [{:name "staged" :description "Review staged changes vs HEAD"}]}
    {:name "debug"    :description "Copy debug info to clipboard" :while-busy? true}])
 
 (def ^:private web-command-names

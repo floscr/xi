@@ -33,6 +33,7 @@
         [xi.ext.process-manager :as process-manager]
         [xi.ext.projects :as projects]
         [xi.ext.pushover :as pushover]
+        [xi.ext.review :as review]
         [xi.ext.sandbox :as ext-sandbox]
         [xi.ext.session-search :as session-search]
         [xi.ext.skills :as skills]
@@ -77,6 +78,7 @@
       web/extension
       perplexity/extension
       commit/extension
+      review/extension
       browser-open/extension
       clj-surgeon/extension
       github/extension
