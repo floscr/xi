@@ -84,8 +84,64 @@ The diff emitter doesn't write cell-by-cell. It groups contiguous changed cells 
 
 ### Limitations
 
-- **Wide characters (CJK/emoji)**: Fullwidth characters occupy 2 terminal columns but the parser treats each char as 1 cell. This matches the existing `visible-width` behavior.
 - **OSC sequences**: Inline OSC sequences (hyperlinks, etc.) are not handled. Xi doesn't embed these in rendered lines — OSC 52 clipboard writes go through `term/write!` directly.
+
+## Character width
+
+The cell-diff renderer positions every write with an absolute cursor move
+(`\033[row;colH`). If the column a character *starts* at is computed even one
+off, the write lands on the wrong cell and "eats" the adjacent glyph — you see
+corruptions like `No imeout` instead of `No timeout`. So the single source of
+truth for **how many terminal columns a code point occupies** has to be correct
+for every character, not just the common ones.
+
+That truth lives in `tui/ansi.cljs`:
+
+- `zero-width?` — combining marks, variation selectors, zero-width
+  joiners/spaces → **0 columns**.
+- `wide?` — East Asian **Wide/Fullwidth** *or* **Emoji_Presentation=Yes** →
+  **2 columns**.
+- `char-width` composes them: `< U+0300` (ASCII/Latin-1) is a fast path to 1,
+  then `zero-width?` → 0, `wide?` → 2, else 1. `visible-width` /
+  `frame->grid` sum this across a string.
+
+### Why the wide table is generated, not hand-written
+
+`wide?` used to be a hand-curated `or` of ~20 code-point ranges. Every time a
+new emoji block shipped (the colored circles `🟠🟡🟢` at U+1F7E0+, for example)
+it was missing from the list, terminals rendered it 2 wide, our width said 1,
+and the cursor-diff renderer desynced and ate characters. Hand-maintaining the
+list is "waiting for the next gap."
+
+Instead the wide set is **derived from the authoritative Unicode data** and
+checked in as a generated table:
+
+- `scripts/gen-char-width.mjs` fetches `EastAsianWidth.txt` and
+  `emoji/emoji-data.txt` for a pinned Unicode version, takes
+  (EAW W/F) ∪ (Emoji_Presentation=Yes), merges adjacent ranges, and writes
+  `src/xi/tui/char_width_data.cljs`.
+- `char_width_data.cljs` is **generated — do not edit by hand**. It is a flat
+  sorted `#js [lo0 hi0 lo1 hi1 …]` int array (122 ranges at Unicode 16.0.0).
+- `wide?` **binary-searches** that array (~7 comparisons for the whole BMP+SMP
+  range space), and is only ever reached for non-ASCII code points thanks to
+  the `< U+0300` fast path — so there is no measurable cost versus the old
+  linear `or`.
+
+Note a naive "treat the whole emoji plane as wide" would be wrong: within
+U+1F700+ there are genuinely narrow blocks (alchemical symbols U+1F700,
+geometric-shapes-extended arrows U+1F780, legacy computing U+1FB00). The
+generated table keeps those at width 1.
+
+### Bumping Unicode versions
+
+When a new Unicode release adds emoji/CJK, regenerate the table:
+
+```bash
+node scripts/gen-char-width.mjs      # bump UNICODE_VERSION in the script first
+```
+
+Commit the regenerated `src/xi/tui/char_width_data.cljs` alongside the version
+bump. No `wide?` code changes are needed — only the data.
 
 ## Render scheduling
 

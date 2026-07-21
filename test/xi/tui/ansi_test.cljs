@@ -64,6 +64,14 @@
   (testing "surrogate-pair emoji counts as 2 columns"
     (is (= 2 (ansi/visible-width "📎")))
     (is (= 2 (ansi/visible-width "😀"))))
+  (testing "colored circle/square emoji (Geometric Shapes Extended) count as 2 columns"
+    ;; 🟠🟡🟢 (U+1F7E0–2) and 🟥🟩 (U+1F7E5/9) render 2-wide; regression for
+    ;; markers eating the next char (No timeout → No imeout).
+    (is (= 2 (ansi/visible-width "🟠")))
+    (is (= 2 (ansi/visible-width "🟡")))
+    (is (= 2 (ansi/visible-width "🟢")))
+    (is (= 2 (ansi/visible-width "🟥")))
+    (is (= 5 (ansi/visible-width "🟠 No"))))
   (testing "CJK counts as 2 columns"
     (is (= 2 (ansi/visible-width "日")))
     (is (= 4 (ansi/visible-width "日本"))))

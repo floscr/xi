@@ -1,6 +1,7 @@
 (ns xi.tui.ansi
   "Low-level ANSI escape code helpers — colors, cursor, visible-width."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xi.tui.char-width-data :as cwd]))
 
 ;; ── Escape Codes ──────────────────────────────────────────────────────────────
 
@@ -124,66 +125,25 @@
       (= cp 0x200D)           ;; zero-width joiner
       (= cp 0xFEFF)))         ;; zero-width no-break space
 
-(defn- emoji-presentation?
-  "True if code point renders as a wide emoji by default."
-  [cp]
-  (or (<= 0x231A cp 0x231B)   ;; watch, hourglass
-      (<= 0x23E9 cp 0x23EC)   ;; fast-forward etc.
-      (= cp 0x23F0)
-      (= cp 0x23F3)
-      (<= 0x25FD cp 0x25FE)
-      (<= 0x2614 cp 0x2615)
-      (<= 0x2648 cp 0x2653)
-      (= cp 0x267F)
-      (= cp 0x2693)
-      (= cp 0x26A1)
-      (<= 0x26AA cp 0x26AB)
-      (<= 0x26BD cp 0x26BE)
-      (<= 0x26C4 cp 0x26C5)
-      (= cp 0x26CE)
-      (= cp 0x26D4)
-      (= cp 0x26EA)
-      (<= 0x26F2 cp 0x26F3)
-      (= cp 0x26F5)
-      (= cp 0x26FA)
-      (= cp 0x26FD)
-      (= cp 0x2705)
-      (<= 0x270A cp 0x270B)
-      (= cp 0x2728)
-      (= cp 0x274C)
-      (= cp 0x274E)
-      (<= 0x2753 cp 0x2755)
-      (= cp 0x2757)
-      (<= 0x2795 cp 0x2797)
-      (= cp 0x27B0)
-      (= cp 0x27BF)
-      (<= 0x2B1B cp 0x2B1C)
-      (= cp 0x2B50)
-      (= cp 0x2B55)))
-
 (defn- wide?
-  "True if code point occupies two terminal columns (East Asian Wide/Fullwidth
-   ranges plus default-emoji-presentation symbols)."
+  "True if code point occupies two terminal columns: East Asian Wide/Fullwidth
+   or Emoji_Presentation=Yes. Binary-searches the generated Unicode range table
+   in xi.tui.char-width-data (a flat [lo0 hi0 lo1 hi1 ...] js array) so new
+   emoji blocks stay covered — regenerate with scripts/gen-char-width.mjs."
   [cp]
-  (or (<= 0x1100 cp 0x115F)    ;; hangul jamo
-      (<= 0x2E80 cp 0x303E)    ;; CJK radicals, kana punctuation
-      (<= 0x3041 cp 0x33FF)    ;; hiragana, katakana, CJK symbols
-      (<= 0x3400 cp 0x4DBF)    ;; CJK ext A
-      (<= 0x4E00 cp 0x9FFF)    ;; CJK unified
-      (<= 0xA000 cp 0xA4CF)    ;; yi
-      (<= 0xAC00 cp 0xD7A3)    ;; hangul syllables
-      (<= 0xF900 cp 0xFAFF)    ;; CJK compat ideographs
-      (<= 0xFE30 cp 0xFE4F)    ;; CJK compat forms
-      (<= 0xFF00 cp 0xFF60)    ;; fullwidth forms
-      (<= 0xFFE0 cp 0xFFE6)    ;; fullwidth signs
-      (<= 0x1F300 cp 0x1F5FF)  ;; misc symbols & pictographs
-      (<= 0x1F600 cp 0x1F64F)  ;; emoticons
-      (<= 0x1F680 cp 0x1F6FF)  ;; transport
-      (<= 0x1F900 cp 0x1F9FF)  ;; supplemental symbols
-      (<= 0x1FA70 cp 0x1FAFF)  ;; symbols ext A
-      (<= 0x20000 cp 0x2FFFD)  ;; CJK ext B+
-      (<= 0x30000 cp 0x3FFFD)
-      (emoji-presentation? cp)))
+  (let [^js r cwd/wide-ranges
+        n-ranges (bit-shift-right (alength r) 1)]
+    (loop [lo 0 hi (dec n-ranges)]
+      (if (> lo hi)
+        false
+        (let [mid (bit-shift-right (+ lo hi) 1)
+              i (bit-shift-left mid 1)
+              a (aget r i)
+              b (aget r (inc i))]
+          (cond
+            (< cp a) (recur lo (dec mid))
+            (> cp b) (recur (inc mid) hi)
+            :else true))))))
 
 (defn char-width
   "Terminal column width of a code point: 0, 1 or 2."
