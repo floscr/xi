@@ -802,11 +802,16 @@
            (let [parsed (commands/parse-input (:text event))]
              (or (= :prompt (:type parsed))
                  (seq (:images event)))))
-      (dispatch! {:type :web/optimistic-set
+      (do
+        ;; A newly-sent (non-queued) message always jumps to the bottom, even
+        ;; if the user had scrolled up into history — re-enable the auto-scroll
+        ;; gate so the post-render scroll-to-bottom snaps to the new bubble.
+        (reset! auto-scroll? true)
+        (dispatch! {:type :web/optimistic-set
                   :room-id (:room-id event)
                   :session-id (get-in state [:web/route :session-id])
                   :text (:text event)
-                  :images (:images event)})
+                  :images (:images event)}))
 
       (and (:remote? event)
            (= :prompt/submit (:type event)))
