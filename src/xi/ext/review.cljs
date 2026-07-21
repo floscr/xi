@@ -20,8 +20,7 @@
    guidance instead of appending to it."
   (:require [clojure.string :as str]
             ["node:fs" :as fs]
-            ["node:path" :as node-path])
-  (:require-macros [xi.ext.review-prompts :refer [inline-md]]))
+            ["node:path" :as node-path]))
 
 (def ^:private BB_EDN
   (str (aget js/process.env "HOME") "/.config/dotfiles/modules/scripts/bb.edn"))
@@ -127,23 +126,49 @@ mutable defaults, Go goroutine leaks, Rust unsafe/cancellation, SQL injection,
 async cancellation safety, …), apply that ecosystem's specific checks.")
 
 ;; ── Project-type review guidance (auto-loaded by marker files) ────────────────
-;; Checklist content lives in resources/review/*.md and is inlined at compile
-;; time via the inline-md macro (see xi.ext.review-prompts).
+;; Checklist content lives in resources/review/*.md and is read from disk at
+;; call time, so editing a checklist takes effect without recompiling/restarting.
 
-(def ^:private CLOJURE_REVIEW (inline-md "clojure"))
+(defn- find-xi-root
+  "Walk up from the main script's directory to xi's project root (package.json)."
+  []
+  (let [script-path (aget js/process.argv 1)
+        start-dir   (when script-path (.dirname node-path (.resolve node-path script-path)))]
+    (when start-dir
+      (loop [dir start-dir]
+        (let [pkg (.join node-path dir "package.json")]
+          (cond
+            (fs/existsSync pkg) dir
+            (= dir (.dirname node-path dir)) nil
+            :else (recur (.dirname node-path dir))))))))
 
-(def ^:private TYPESCRIPT_REVIEW (inline-md "typescript"))
+(def ^:private review-dir
+  "Absolute path to resources/review, or nil if the project root can't be found."
+  (when-let [root (find-xi-root)]
+    (.join node-path root "resources" "review")))
+
+(defn- load-review-md
+  "Read resources/review/<name>.md from disk at call time. Returns the content
+   string, or nil when unavailable."
+  [name]
+  (when review-dir
+    (let [f (.join node-path review-dir (str name ".md"))]
+      (when (fs/existsSync f)
+        (.toString (fs/readFileSync f "utf-8"))))))
 
 (def ^:private review-prompt-registry
-  "Built-in, project-type review checklists. Each entry is loaded when any of
-   its marker files exists in the room's cwd (same detection as the skills
-   extension)."
+  "Built-in, project-type review checklists. Each entry's checklist file is
+   loaded (from resources/review/<file>.md) when any of its marker files exists
+   in the room's cwd (same detection as the skills extension)."
   [{:name "clojure"
     :markers #{"bb.edn" "deps.edn" "project.clj" "shadow-cljs.edn" "squint.edn"}
-    :content CLOJURE_REVIEW}
+    :file "clojure"}
    {:name "typescript"
     :markers #{"tsconfig.json" "package.json"}
-    :content TYPESCRIPT_REVIEW}])
+    :file "typescript"}
+   {:name "swift"
+    :markers #{"Package.swift" "Podfile" "Project.swift" "Package.resolved"}
+    :file "swift"}])
 
 (defn- file-exists-in-cwd?
   "True if any of the given filenames exists directly in cwd."
@@ -151,12 +176,13 @@ async cancellation safety, …), apply that ecosystem's specific checks.")
   (boolean (some #(fs/existsSync (.join node-path cwd %)) filenames)))
 
 (defn- builtin-review-guidance
-  "Concatenated content of every registry entry whose markers match cwd,
-   or nil when none match."
+  "Content of every registry entry whose markers match cwd, read from disk at
+   call time, or nil when none match."
   [cwd]
   (->> review-prompt-registry
        (filter #(file-exists-in-cwd? cwd (:markers %)))
-       (map :content)
+       (map #(load-review-md (:file %)))
+       (remove nil?)
        seq))
 
 (defn- fetch-profile-review-prompt
