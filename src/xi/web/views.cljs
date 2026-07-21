@@ -2416,6 +2416,11 @@
           :size :sm
           :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
         [:div {:style {:display "flex" :align-items "center" :gap "0.25rem"}}
+         (when (some :unread? cards)
+           [:button {:class ["icon-btn" "icon-btn--sm"]
+                     :title "Mark all sessions as read"
+                     :on {:click (fn [_] (dispatch! {:type :session/mark-all-read}))}}
+            (icon/icon {:icon-name :check :size :md})])
          (when (not pa?)
            [:button {:class ["icon-btn" "icon-btn--sm"]
                      :title "Prune inactive rooms — close idle sessions, kill their processes, and detach lingering clients"

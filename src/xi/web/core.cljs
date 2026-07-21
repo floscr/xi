@@ -107,6 +107,26 @@
      :effects [[:cache/watch {:session-id session-id :count cnt}]
                [:ws/send {:type :session/mark-read :session-id session-id}]]}))
 
+(defn- mark-all-read
+  "Mark every unread session read at its current response count (clears all
+   unread dots at once). Per session it mirrors `mark-read`: bumps the local
+   overlay, caches it for offline paint, and forwards a marker to the server.
+   A session is unread when its response count exceeds the seen-count (the
+   later of the server-authoritative read state and the local overlay)."
+  [st _]
+  (let [reads  (get-in st [:lobby :read])
+        unread (for [[sid cnt] (:web/response-counts st)
+                     :let [seen (max (get reads sid 0)
+                                     (get-in st [:web/watched sid] 0))]
+                     :when (> cnt seen)]
+                 [sid cnt])]
+    {:state   (reduce (fn [s [sid cnt]] (assoc-in s [:web/watched sid] cnt))
+                      st unread)
+     :effects (into [] (mapcat (fn [[sid cnt]]
+                                 [[:cache/watch {:session-id sid :count cnt}]
+                                  [:ws/send {:type :session/mark-read :session-id sid}]]))
+                    unread)}))
+
 (defn- connection-status [st {:keys [connected?]}]
   {:state (assoc st :web/connected? connected?)})
 
@@ -435,6 +455,7 @@
           :session/counts        forward
           :session/counts-result counts-result
           :session/mark-read     mark-read
+          :session/mark-all-read mark-all-read
           :connection/status     connection-status
           ;; ─ Client auth (transport-level handshake, xi.server.ws) ─
           :auth/pending          (fn [st {:keys [code]}]
