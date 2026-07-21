@@ -93,3 +93,46 @@
 (deftest strip-mcp-prefix-other-server
   (testing "other MCP server prefixes are also stripped"
     (is (= "list_files" (util/strip-mcp-prefix "mcp__other-server__list_files")))))
+
+;; ── session-title ──
+
+(deftest session-title-plain
+  (testing "plain first message is used verbatim"
+    (is (= "Fix the login bug" (util/session-title "Fix the login bug"))))
+  (testing "leading/trailing whitespace is trimmed"
+    (is (= "Fix the login bug" (util/session-title "  Fix the login bug  "))))
+  (testing "long text is truncated to 60 chars"
+    (is (= 60 (count (util/session-title (apply str (repeat 100 "x")))))))
+  (testing "blank/nil yield nil"
+    (is (nil? (util/session-title nil)))
+    (is (nil? (util/session-title "   ")))))
+
+(deftest session-title-native-compaction
+  (testing "native Claude compaction preamble yields nil"
+    (is (nil? (util/session-title
+               "The conversation history has been summarized below...")))))
+
+(deftest session-title-xi-compaction
+  (testing "unwraps <conversation-summary> + Session Summary heading"
+    (is (= "Figma Styles Exp"
+           (util/session-title
+            (str "<conversation-summary>\n"
+                 "## Session Summary —Figma Styles Exp\n\n"
+                 "1. Read src/foo.cljs\n"
+                 "</conversation-summary>\n\n"
+                 "Acknowledge this summary briefly.")))))
+  (testing "handles a space after the em dash separator"
+    (is (= "Admin V2 Dashboard"
+           (util/session-title
+            (str "<conversation-summary>\n"
+                 "# Session Summary — Admin V2 Dashboard\n"
+                 "</conversation-summary>")))))
+  (testing "falls back to first meaningful line when no Session Summary label"
+    (is (= "Refactor the router"
+           (util/session-title
+            (str "<conversation-summary>\n"
+                 "Refactor the router\n"
+                 "more detail\n"
+                 "</conversation-summary>")))))
+  (testing "already-cleaned title passes through unchanged (idempotent)"
+    (is (= "Figma Styles Exp" (util/session-title "Figma Styles Exp")))))

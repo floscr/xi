@@ -4,6 +4,7 @@
    The actual conversation data lives in claude CLI sessions (~/.claude/projects/)."
   (:require [clojure.string :as str]
             [xi.session.sync :as sync]
+            [xi.util :as util]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]
@@ -237,13 +238,7 @@
                                 (map :text)
                                 first)
                            :else nil)))
-          name (when first-text
-                 (let [text (str/trim first-text)
-                       text (if (str/starts-with? text "The conversation history")
-                              nil
-                              text)]
-                   (when text
-                     (subs text 0 (min 60 (count text))))))
+          name (util/session-title first-text)
           timestamp (:timestamp first-user)]
       {:session-id session-id
        :source :claude
@@ -279,7 +274,7 @@
        :filepath filepath
        :timestamp timestamp
        :last-accessed (:last-accessed data)
-       :name (:name data)
+       :name (util/session-title (:name data))
        :model (:model data)
        :user-messages nil})
     (catch :default _e nil)))

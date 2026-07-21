@@ -149,8 +149,7 @@
      (let [room (room-of state room-id)
            sess (:session room)]
        (when (:provider-session-id sess)
-         (let [title (when-let [t (first-user-text room)]
-                       (subs t 0 (min 60 (count t))))
+         (let [title (util/session-title (first-user-text room))
                model (get-in room [:agent :model])
                named (cond-> sess
                        (and (nil? (:name sess)) title) (assoc :name title)
