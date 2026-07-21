@@ -3,11 +3,7 @@
 
    `/commit` builds a prompt from a live git overview. Reading git is I/O,
    so the command stays pure and defers to a :commit/start effect that
-   gathers the overview and submits the prompt.
-
-   The commit tool needs user approval, but tool exec-fns can't raise
-   dialogs (they only get {:cwd}). So approval is enforced by a tool-gate
-   intercept that confirms via the gate ctx before the tool runs."
+   gathers the overview and submits the prompt."
   (:require [clojure.string :as str]
             [xi.fx :as fx]))
 
@@ -166,31 +162,12 @@
                                 :files   {:type "array" :items {:type "string"} :description "Files to stage before commit"}}
                    :required ["message"]}}])
 
-;; ── Approval gate ───────────────────────────────────────────────────────────
-
-(defn- tool-gate
-  "Confirm before committing. Tools can't raise dialogs, so the approval
-   lives here: confirm via the gate ctx, allow the tool-call on yes, or
-   short-circuit with a cancelled result on no."
-  [tool-call {:keys [confirm!]}]
-  (let [{:keys [name arguments]} tool-call]
-    (if (and (= name "git_commit_with_user_approval") confirm!)
-      (-> (confirm! (str "Commit: " (first (str/split-lines (or (:message arguments) "")))))
-          (.then (fn [approved?]
-                   (if approved?
-                     tool-call
-                     {:intercepted true
-                      :result {:content  [{:type "text" :text "Commit cancelled by user."}]
-                               :is-error false}}))))
-      tool-call)))
-
 (def extension
   {:id               :commit
    :commands         [{:name "commit"
                        :description "Review changes and create a git commit"
                        :handler commit-command}]
    :fx               {:commit/start commit-start-fx}
-   :tool-gate        tool-gate
    :tool-definitions tool-defs
    :tool-registry    {"git_overview"                   git-overview
                       "git_file_diff"                  git-file-diff
