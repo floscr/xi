@@ -23,6 +23,7 @@
   ["rm -rf" "rm -r" "sudo " "chmod -R" "chown -R"
    "> /dev/" "mkfs" "dd if=" ":(){ " "fork bomb"
    "git push"
+   "kill " "kill -" "pkill" "killall"
    "serve:restart" "serve:stop"])
 
 (def ^:private BLOCKED_WRITE_PATHS
