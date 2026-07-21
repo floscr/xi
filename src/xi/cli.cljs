@@ -681,6 +681,9 @@ See docs/cli.md for the full reference.")
                      ;; catches the room a client just left by switching chats
                      ;; (a re-attach sends no :room/leave).
                      (update :room/attach events/chain rm/reap-idle-clientless-rooms)
+                     ;; Mark the session interrupted while a turn is in flight so a
+                     ;; hard restart (bb serve:restart) mid-turn can auto-resume it.
+                     (update :agent/session-init events/chain commands/session-init-mark-interrupted)
                      (update :agent/turn-end events/chain rm/turn-end-room-cleanup)
                      (assoc :client/disconnect
                             (events/chain rm/client-disconnect-cleanup

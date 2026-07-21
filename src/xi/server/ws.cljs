@@ -272,7 +272,14 @@
           (when summary
             (dispatch! {:type :session/resumed :room-id room-id
                         :session session :summary summary
-                        :messages (session/read-session-messages summary)}))))
+                        :messages (session/read-session-messages summary)})
+            ;; Auto-resume an agent whose turn was cut off by a hard restart:
+            ;; the session was marked interrupted while its spinner was up and
+            ;; never cleared (a completed turn's :session/sync would have).
+            ;; Clear the marker and re-drive it with a "continue" prompt.
+            (when (:interrupted-at summary)
+              (session/clear-interrupted! (:filepath summary))
+              (dispatch! {:type :prompt/submit :room-id room-id :text "continue"})))))
 
       ;; Send the full lobby payload (rooms + saved sessions) to one client.
       :lobby/send

@@ -32,7 +32,11 @@
   (-> sess
       (assoc :cli-session-id (or (:provider-session-id sess)
                                  (:cli-session-id sess)))
-      (dissoc :provider-session-id)))
+      (dissoc :provider-session-id
+              ;; Never carry the in-flight marker into a normal save/touch —
+              ;; a completed sync is precisely what clears it (only a hard
+              ;; process kill mid-turn leaves it behind).
+              :interrupted-at)))
 
 (defn- source-suffix [s]
   (case (:source s) :claude " [claude]" ""))
@@ -158,6 +162,24 @@
            (dispatch! {:type :session/updated :room-id room-id
                        :session (-> touched
                                     (assoc :provider-session-id (:cli-session-id touched)))})))))
+
+   ;; Persist an :interrupted-at marker as soon as a resumable session id
+   ;; exists (turn in flight / spinner shown). A completed turn's :session/sync
+   ;; rewrites the file without the marker, so it only survives a hard process
+   ;; kill mid-turn — the signal used to auto-resume the agent on reconnect.
+   :session/mark-interrupted
+   (fn [{:keys [state]} {:keys [room-id]}]
+     (let [room (room-of state room-id)
+           sess (:session room)]
+       (when (:provider-session-id sess)
+         (let [title (util/session-title (first-user-text room))
+               model (get-in room [:agent :model])
+               named (cond-> sess
+                       (and (nil? (:name sess)) title) (assoc :name title)
+                       model (assoc :model model))]
+           (try (session/mark-interrupted! (->disk-session named))
+                (catch :default e
+                  (js/console.error "[fx] session mark-interrupted failed:" e)))))))
 
    :session/list
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]

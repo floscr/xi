@@ -537,6 +537,16 @@
   (when (get-in st [:rooms room-id :session :provider-session-id])
     {:effects [[:session/sync {:room-id room-id}]]}))
 
+(defn session-init-mark-interrupted
+  "Chained onto :agent/session-init — as soon as the provider reports a
+   resumable session id (spinner shown / turn in flight), mark the on-disk
+   session interrupted. A hard server restart mid-turn then leaves a signal
+   that auto-resumes this agent when a client reconnects; a normal turn-end
+   clears it via :session/sync."
+  [st {:keys [room-id]}]
+  (when (get-in st [:rooms room-id :session :provider-session-id])
+    {:effects [[:session/mark-interrupted {:room-id room-id}]]}))
+
 (defn all-commands
   "Merge built-in commands with the extension-provided ones. Extension
    commands are appended so built-ins take precedence on name clashes

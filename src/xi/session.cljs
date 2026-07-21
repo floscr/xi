@@ -150,6 +150,29 @@
   [session]
   (update-session! session {:last-accessed (iso-now)}))
 
+(defn mark-interrupted!
+  "Persist the session with an :interrupted-at marker (a turn is in flight /
+   spinner shown). Any subsequent normal save/touch drops the marker, so it
+   only survives a hard process kill mid-turn — the signal used to auto-resume
+   an interrupted agent when a client reconnects."
+  [session]
+  (save-session! (assoc session :interrupted-at (iso-now))))
+
+(defn clear-interrupted!
+  "Remove the :interrupted-at marker from a session's on-disk file (located by
+   its summary :filepath), if present. Called after auto-resuming so a later
+   restart with no in-flight turn doesn't resume the same session again."
+  [filepath]
+  (try
+    (when (and filepath (fs/existsSync filepath))
+      (let [data (js->clj (js/JSON.parse (fs/readFileSync filepath "utf8"))
+                          :keywordize-keys true)]
+        (when (:interrupted-at data)
+          (fs/writeFileSync filepath
+                            (js/JSON.stringify (clj->js (dissoc data :interrupted-at)) nil 2)
+                            "utf8"))))
+    (catch :default _e nil)))
+
 (defn delete-session!
   "Delete a session by its summary map (must contain :filepath and :source).
    For :xi sessions, also deletes associated JSONL data file if present.
@@ -276,6 +299,7 @@
        :last-accessed (:last-accessed data)
        :name (util/session-title (:name data))
        :model (:model data)
+       :interrupted-at (:interrupted-at data)
        :user-messages nil})
     (catch :default _e nil)))
 
