@@ -134,11 +134,13 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
 - `xi server` — WS server + local TUI client in the same process
 - `xi server --headless` — headless server (no TUI, clients attach remotely)
 - `xi server --personal-agent-only` — personal assistant mode (no coding tools, web_search only)
-- `xi prompt <text>` (aka `xi -p`) — one-shot headless run: send a single prompt, print the assistant's response, and exit. Reads stdin when no text is given; `--stream` streams tokens live. No TUI, no server — safe to run from the agent.
+- `xi prompt <text>` (aka `xi -p`) — one-shot headless run: send a single prompt, print the assistant's response, and exit. Reads stdin when no text is given; `--stream` streams tokens live; `--no-store` runs ephemerally (leaves no session behind). No TUI, no server — safe to run from the agent.
 - `xi join [url]` — connect TUI client to the latest room on a running server
 - `xi create [url]` — connect TUI client to a new room on a running server
+- `xi help` (aka `--help`, `-h`) — print CLI usage and exit
 - `--port N` — override default port (7474)
 - The web client is served by the same server at `http://localhost:7474`
+- Full CLI reference (commands, flags, env): [docs/cli.md](docs/cli.md)
 - Server hosts multiple rooms; rooms auto-destroy when their last client
   leaves while idle (or a turn ends with no clients attached)
 - "Sessions" refers to saved-to-disk conversation history, loaded via `/resume`

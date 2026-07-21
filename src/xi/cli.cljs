@@ -113,7 +113,48 @@
 
 (def ^:private DEFAULT_MODEL "claude-opus-4-8")
 
+(def ^:private HELP_TEXT
+  "xi — a personal coding agent (ClojureScript + Bun)
 
+USAGE
+  xi [flags]                 Standalone TUI. One local room; auto-joins a
+                             running server on the port unless --no-auto-join.
+  xi server [flags]          WS server + a local TUI client in one process.
+  xi prompt [flags] <text>   One-shot headless run: send one prompt, print the
+  xi -p     [flags] <text>   response, and exit. Reads stdin when <text> is
+                             omitted. Safe to script/pipe (no TUI, no server).
+  xi join   [flags] [url]    Connect a TUI client to the latest room on a server.
+  xi create [flags] [url]    Connect a TUI client to a new room on a server.
+  xi help                    Show this help (also --help, -h).
+
+FLAGS
+  --port N                   Override the default port (7474). All modes.
+  --model NAME               Override the default model (also honours XI_MODEL).
+  --session ID               Resume a saved session by id (standalone/join/create).
+  --prompt TEXT              Send an initial prompt on launch (standalone/client).
+  --no-auto-join             Standalone: stay local, don't join a running server.
+  --join, --create           Standalone: redirect onto a running server instead.
+  --headless                 server: run without a local TUI (clients attach remotely).
+  --personal-agent-only      server: personal-assistant mode (no coding tools).
+  --debug-events             Write the full event stream as JSONL (see docs).
+  --stream                   prompt: stream response tokens to stdout as they arrive.
+  --no-store                 prompt: run ephemerally — leave no session behind.
+
+ENVIRONMENT
+  XI_MODEL, XI_EFFORT        Default model / reasoning effort.
+  XI_PORT                    Default port when --port is omitted.
+  XI_CWD                     Working directory the agent runs in.
+  ANTHROPIC_API_KEY          Auth (or ~/.pi/agent/auth.json OAuth tokens).
+  CLAUDE_CONFIG_DIR          Claude CLI config dir (default ~/.claude).
+
+EXAMPLES
+  xi                                         # standalone TUI
+  xi server --headless                       # headless server on :7474
+  xi prompt \"summarize the architecture\"     # one-shot, buffered
+  git diff | xi -p --no-store \"review this\"   # pipe + ephemeral run
+  xi --session <id>                          # resume a saved session
+
+See docs/cli.md for the full reference.")
 
 (defn- parse-args [args]
   (loop [args (seq args) opts {:command :standalone :auto-join? true}]
@@ -125,7 +166,9 @@
           "join"           (recur (next args) (assoc opts :command :join))
           "create"         (recur (next args) (assoc opts :command :create))
           ("prompt" "-p")  (recur (next args) (assoc opts :command :prompt))
+          ("help" "--help" "-h") (recur (next args) (assoc opts :command :help))
           "--stream"       (recur (next args) (assoc opts :stream? true))
+          "--no-store"     (recur (next args) (assoc opts :no-store? true))
           "--prompt"       (recur (nnext args) (assoc opts :initial-prompt (second args)))
           ;; Redirect the default (standalone) invocation onto a running server
           "--join"         (recur (next args) (assoc opts :command :join))
@@ -277,10 +320,21 @@
   "Run a single prompt with no TUI and exit. The assistant's text response is
    streamed to stdout as it arrives (--stream) or buffered and printed once the
    turn ends. Dialogs (permission confirms, cwd recovery) resolve to their safe
-   defaults since no client is attached. Exits 0 on success, 1 on error."
-  [{:keys [prompt-text stream?] :as opts}]
+   defaults since no client is attached. Exits 0 on success, 1 on error.
+
+   With :no-store? the turn leaves no trace: it runs against a throwaway
+   CLAUDE_CONFIG_DIR (a temp mirror of the real config) so the Claude CLI
+   writes its session transcript into a temp dir that is torn down on exit,
+   never landing in ~/.claude/projects. The one-shot already never persists an
+   Xi session file, so this makes the whole run ephemeral."
+  [{:keys [prompt-text stream? no-store?] :as opts}]
   (let [{:keys [model effort]} (resolve-model-opts opts)
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
+        ;; --no-store: point the Claude CLI at a throwaway config dir so its
+        ;; transcript lands in a temp dir we delete on exit (see finish!).
+        config-dir (when no-store? (session/make-throwaway-config-dir!))
+        _ (when config-dir
+            (aset js/process.env "CLAUDE_CONFIG_DIR" config-dir))
         ring (log/create-ring)
         ;; Drop terminal-title: it writes raw ANSI escapes to stdout, which
         ;; would corrupt the one-shot response.
@@ -296,6 +350,7 @@
         finish!
         (fn []
           (ext/on-shutdown! composed)
+          (when config-dir (session/remove-config-dir! config-dir))
           (let [code (if (.-error acc) 1 0)]
             (when (.-error acc)
               (.write js/process.stderr (str (.-error acc) "\n")))
@@ -638,7 +693,7 @@
                      (start-prompt! (assoc opts :prompt-text text))
                      (do (js/console.error "xi prompt: no prompt provided")
                          (js/process.exit 1))))))
-      :else (do (js/console.error "usage: xi prompt [--stream] <text>   (or pipe text via stdin)")
+      :else (do (js/console.error "usage: xi prompt [--stream] [--no-store] <text>   (or pipe text via stdin)")
                 (js/process.exit 1)))))
 
 (defn- start-standalone-or-join!
@@ -667,6 +722,8 @@
 (defn main [& args]
   (let [{:keys [command] :as opts} (parse-args args)]
     (case command
+      :help       (do (.write js/process.stdout (str HELP_TEXT "\n"))
+                      (js/process.exit 0))
       :standalone (start-standalone-or-join! opts)
       :server     (start-server! opts)
       :prompt     (run-prompt! opts)

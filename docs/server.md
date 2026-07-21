@@ -11,10 +11,12 @@ xi server       Start a WS server + a local TUI client in the same process.
 xi prompt <txt> One-shot: run a single prompt headless, print the response, exit.
 xi join [url]   Connect a TUI client to the latest room on a running server.
 xi create [url] Connect a TUI client to a new room on a running server.
+xi help         Print CLI usage and exit (also --help, -h).
 ```
 
 `xi prompt` (aka `xi -p`) is a headless, non-interactive mode for scripting and
-piping — see [prompt-mode.md](prompt-mode.md).
+piping — see [prompt-mode.md](prompt-mode.md). For the full CLI reference
+(all commands, flags, and environment variables) see [cli.md](cli.md).
 
 ### Flags
 
@@ -22,6 +24,8 @@ piping — see [prompt-mode.md](prompt-mode.md).
 --port N                Override the default port (7474). Applies to all server commands.
 --headless              Server only: run without a local TUI. Clients attach remotely.
 --personal-agent-only   Server only: run as a personal assistant with no coding tools.
+--stream                prompt only: stream response tokens to stdout as they arrive.
+--no-store              prompt only: run ephemerally, leaving no session behind (see prompt-mode.md).
 --model NAME            Override the default model.
 --session SID           Resume the saved session with this id on launch
                         (standalone, join, or create). Used by /reload to

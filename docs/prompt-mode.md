@@ -26,6 +26,10 @@ terminal prints a usage error instead of hanging).
 ```
 --stream        Stream response tokens to stdout as they arrive. Without it,
                 the response is buffered and printed once the turn ends.
+--no-store      Run ephemerally: leave no session behind. The turn runs against
+                a throwaway CLAUDE_CONFIG_DIR that is deleted on exit, so the
+                Claude transcript never lands in ~/.claude/projects and the run
+                never appears in the Xi or Claude session lists.
 --model NAME    Override the default model (also honours XI_MODEL).
 ```
 
@@ -46,8 +50,11 @@ the output is safe to capture and parse.
 
 - **No auto-titling.** A one-shot run skips the session-naming turn, so it
   makes exactly one provider call.
-- **Sessions are still saved.** The turn is persisted like any other, so it
-  can later be `/resume`d from a TUI or the web client.
+- **Sessions are still saved** (unless `--no-store`). The turn is persisted
+  like any other, so it can later be `/resume`d from a TUI or the web client.
+  Pass `--no-store` to run ephemerally — the turn writes its transcript to a
+  throwaway `CLAUDE_CONFIG_DIR` that is torn down on exit, so nothing is left
+  in `~/.claude/projects` and the run never shows up in any session list.
 - **Dialogs resolve to safe defaults.** Prompt mode runs unattended (no client
   attached), so permission confirms and working-directory-recovery dialogs
   resolve to their safe default instead of prompting. In practice, guarded
