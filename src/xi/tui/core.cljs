@@ -348,6 +348,46 @@
   []
   (:scroll-offset @tui-state))
 
+(defn- content-total-lines
+  "Total rendered line count of the scrollable content at the current width."
+  []
+  (let [{:keys [content]} @tui-state]
+    (if content (count ((:render content) (term/columns))) 0)))
+
+(defn viewport-height
+  "Height (in lines) of the scrollable content viewport: terminal rows minus the
+   bottom panel and the status/separator line. Mirrors do-render!'s math."
+  []
+  (let [{:keys [bottom-panel]} @tui-state
+        width (term/columns)
+        bottom-height (if bottom-panel (count ((:render bottom-panel) width)) 0)]
+    (max 1 (- (term/rows) bottom-height 1))))
+
+(defn viewport-top-line
+  "Absolute content line (0 = top of content) currently at the top of the
+   viewport, clamped to the valid range."
+  []
+  (let [total (content-total-lines)
+        vh (viewport-height)
+        offset (min (get-scroll-offset) (max 0 (- total vh)))]
+    (max 0 (- total offset vh))))
+
+(defn scroll-line-to-top!
+  "Scroll so absolute content line `line` (0 = top of content) sits at the top
+   of the viewport, clamped. do-render! clamps the offset to the content, so an
+   out-of-range line lands at the nearest edge."
+  [line]
+  (let [total (content-total-lines)
+        vh (viewport-height)]
+    (scroll-to-offset! (max 0 (- total vh line)))))
+
+(defn set-jump-fn!
+  "Register a handler (fn [dir]) invoked on Alt+k (:prev) / Alt+j (:next) to
+   scroll between navigation anchors. Handled before the snap-to-bottom path so
+   navigating while scrolled up doesn't reset the viewport."
+  [f]
+  (swap! tui-state assoc :jump-fn f))
+
 (defn set-bottom-panel!
   "Set the component pinned at the bottom of the screen (editor, menu, etc.)."
   [component]
@@ -373,6 +413,14 @@
 (defn- is-escape? [data]
   (or (= data ESC-STR)
       (= data (str ESC-STR "[27u"))))
+
+;; Alt+j / Alt+k — prompt navigation. Legacy alt encoding is ESC + letter; the
+;; kitty keyboard protocol (flag 1) reports them as CSI u with modifier 3 (Alt).
+(defn- is-alt-k? [data]
+  (or (= data (str ESC-STR "k")) (= data (str ESC-STR "[107;3u"))))
+
+(defn- is-alt-j? [data]
+  (or (= data (str ESC-STR "j")) (= data (str ESC-STR "[106;3u"))))
 
 (defn- parse-mouse-event
   "Parse SGR mouse event. Returns {:button :col :row :pressed} or nil."
@@ -471,6 +519,15 @@
         ;; Shift+Down — scroll down a few lines
         (is-shift-down? data)
         (scroll-down! 3)
+
+        ;; Alt+k / Alt+j — jump to the previous/next navigation anchor (prompt).
+        ;; Handled here (not forwarded to the editor) so it doesn't snap to the
+        ;; bottom, mirroring the page-scroll keys above.
+        (is-alt-k? data)
+        (when-let [f (:jump-fn @tui-state)] (f :prev))
+
+        (is-alt-j? data)
+        (when-let [f (:jump-fn @tui-state)] (f :next))
 
         :else
         (if-let [mouse (parse-mouse-event data)]

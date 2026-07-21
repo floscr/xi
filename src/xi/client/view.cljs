@@ -252,6 +252,14 @@
 
 (defn- never-update [_ _] false)
 
+(defn- user-label
+  "Highlighted 'you:' prefix — an accent gutter bar plus a bold accent label —
+   so the user's own prompts stand out when scanning scrollback."
+  []
+  (str (ansi/fg :accent "▌ ")
+       (ansi/fg :accent (ansi/fg :bold "you"))
+       ": "))
+
 (defn- user-message-nodes
   "Node(s) for a user message. Renders code fences through markdown."
   [text suffix]
@@ -259,10 +267,10 @@
     (let [first-nl (str/index-of text "\n")
           first-line (if first-nl (subs text 0 first-nl) text)
           rest-text (when first-nl (subs text (inc first-nl)))]
-      [(node/text (str (ansi/fg :bold "you") ": " first-line suffix))
+      [(node/text (str (user-label) first-line suffix))
        (when rest-text
          (md/make-markdown rest-text))])
-    [(node/text (str (ansi/fg :bold "you") ": " text suffix))]))
+    [(node/text (str (user-label) text suffix))]))
 
 (defn- user-block [entry]
   (let [n (or (some-> (:images entry) count)

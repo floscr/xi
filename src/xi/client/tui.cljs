@@ -337,6 +337,45 @@
                   (into (mapcat #(:nodes (.-block ^js %))) (vec (.-blocks ctx)))
                   (cond-> show-loader? (conj loader)))))))
 
+;; ── Prompt navigation (Alt+j / Alt+k) ────────────────────────────────────────
+
+(defn- measure-nodes
+  "Total rendered line count of a seq of TUI nodes at `width`."
+  [nodes width]
+  (reduce (fn [acc n] (+ acc (count ((:render n) width)))) 0 nodes))
+
+(defn- prompt-anchor-lines
+  "Content line indices (0 = top) where each :user prompt block begins, oldest
+   first. Mirrors sync-chat!'s child order: header nodes ++ (mapcat :nodes
+   blocks), so the indices line up with the rendered content lines."
+  [^js ctx width]
+  (let [blocks (.-blocks ctx)]
+    (loop [i 0
+           line (measure-nodes (.-header ctx) width)
+           acc []]
+      (if (>= i (.-length blocks))
+        acc
+        (let [^js b (aget blocks i)
+              h (measure-nodes (:nodes (.-block b)) width)
+              acc' (if (= :user (:kind (.-entry b))) (conj acc line) acc)]
+          (recur (inc i) (+ line h) acc'))))))
+
+(defn- jump-to-prompt!
+  "Scroll to the nearest :user prompt above (:prev) / below (:next) the current
+   viewport top. Stateless — like the web client's cross-history prompt nav.
+   Only acts in the chat buffer (logs/pager have their own scroll handling)."
+  [^js ctx dir]
+  (let [room (some-> (.-state ctx) state/active-room)]
+    (when (= :chat (get-in room [:ui :active-buffer] :chat))
+      (let [anchors (prompt-anchor-lines ctx (term/columns))]
+        (when (seq anchors)
+          (let [top (tui/viewport-top-line)
+                target (case dir
+                         :prev (last (filter #(< % top) anchors))
+                         :next (first (filter #(> % top) anchors)))]
+            (when target
+              (tui/scroll-line-to-top! target))))))))
+
 (defn- pager-view!
   "Focused pager component for a buffer, cached on the buffer value's identity
    (a /diff with new output replaces it; reopening via /buffers reuses it).
@@ -634,6 +673,8 @@
     ((:add-child content) view-wrapper)
     (tui/set-bottom-panel! editor-comp)
     (tui/set-focus! editor-comp)
+    ;; Alt+j / Alt+k jump between the user's own prompts (like the web client).
+    (tui/set-jump-fn! (fn [dir] (jump-to-prompt! ctx dir)))
 
     ;; Stray stdout/stderr (libraries, warnings) → event ring, so it shows
     ;; up in the logs buffer instead of corrupting the alternate screen.
