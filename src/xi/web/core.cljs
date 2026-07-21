@@ -850,17 +850,24 @@
 (defonce ^:private dispatch-ref (atom nil))
 
 (defn- ws-url
-  "WS server URL. Served by the Bun server itself → same port as the page;
-   shadow dev-http (8100) isn't the WS server → default 7474. ?host/?port
-   query params override."
+  "WS server URL. Served by the Bun server itself → same origin as the page,
+   including behind a reverse proxy on 80/443 (empty location.port → omit the
+   port so the WS goes through the proxy, e.g. wss://xi.home). Exception:
+   shadow dev-http (8100) isn't the WS server → force 7474. ?host/?port query
+   params override."
   []
   (let [params (js/URLSearchParams. (.-search js/window.location))
         proto  (if (= "https:" js/location.protocol) "wss://" "ws://")
         host   (or (.get params "host") js/location.hostname)
         page-port (let [p js/location.port]
-                    (when-not (or (= p "") (= p "8100")) p))
-        port   (or (.get params "port") page-port "7474")]
-    (str proto host ":" port)))
+                    (cond
+                      (= p "8100") "7474"  ; shadow dev-http → real WS port
+                      (= p "")     nil     ; standard 80/443 → same-origin
+                      :else        p))
+        port   (or (.get params "port") page-port)]
+    (if port
+      (str proto host ":" port)
+      (str proto host))))
 
 (defn- web-extensions
   "Browser-safe extension web halves (xi.config/web), composed at init —
