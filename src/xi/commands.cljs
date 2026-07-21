@@ -320,14 +320,15 @@
   "Raw editor submission — route to a command or a prompt. Pending images
    (room :ui :pending-images) ride along on prompts via :image/process.
    Event-level :images (from clipboard-image hook) merge with pending."
-  [st {:keys [room-id text images]}]
+  [st {:keys [room-id text images client-id]}]
   (when-let [room (state/get-room st room-id)]
     (let [parsed (parse-input text)
           images (into (vec (get-in room [:ui :pending-images])) images)]
       (cond
         (= :command (:type parsed))
-        {:effects [[:app/dispatch {:type :command/run :room-id room-id
-                                   :name (:name parsed) :args (:args parsed)}]]}
+        {:effects [[:app/dispatch (cond-> {:type :command/run :room-id room-id
+                                           :name (:name parsed) :args (:args parsed)}
+                                    client-id (assoc :client-id client-id))]]}
 
         ;; Prompt — possibly images-only (nil text → provider omits the
         ;; empty text content block; only image blocks are sent).
@@ -348,12 +349,13 @@
    the full :commands list in its ctx so e.g. /help can enumerate them."
   [commands]
   (let [by-name (into {} (map (juxt :name identity)) commands)]
-    (fn command-run [st {:keys [room-id name args remote?]}]
+    (fn command-run [st {:keys [room-id name args remote? client-id]}]
       (when (state/get-room st room-id)
         (if-let [cmd (get by-name name)]
-          ((:handler cmd) st {:room-id  room-id
-                              :args     (when (seq args) args)
-                              :commands commands})
+          ((:handler cmd) st {:room-id   room-id
+                              :args      (when (seq args) args)
+                              :commands  commands
+                              :client-id client-id})
           ;; Mirrored (:remote?) command the client has no code for — it's a
           ;; server-side extension command (/commit, /gtd, …). The server ran
           ;; the real work and broadcasts the resulting events separately, so

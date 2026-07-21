@@ -39,6 +39,12 @@
                    Unioned into the WS server's roomless whitelist.
      :no-broadcast #{event-type} — room-scoped event types the WS server
                    must NOT echo back to the room's clients.
+     :originator-only #{event-type} — room-scoped event types the WS server
+                   sends ONLY to the originating client (the event's
+                   :client-id), not the whole room. Used for client-local
+                   views (e.g. the diff viewer) that should not disturb
+                   other connected clients. Falls back to a room broadcast
+                   when the event carries no :client-id.
      :lobby-relevant #{event-type} — event types after which the WS server
                    pushes fresh :lobby/state to every client.
      :server-fx    (fn [{:keys [send!]}] → {fx-type (fn [ctx payload])})
@@ -115,6 +121,7 @@
      :tool-gates       (vec (keep :tool-gate exts))
      :roomless-events  (into #{} (mapcat :roomless-events) exts)
      :no-broadcast     (into #{} (mapcat :no-broadcast) exts)
+     :originator-only  (into #{} (mapcat :originator-only) exts)
      :lobby-relevant   (into #{} (mapcat :lobby-relevant) exts)
      :server-fx-fns    (vec (keep :server-fx exts))
      :routes           (apply merge {} (keep :routes exts))

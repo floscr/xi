@@ -25,13 +25,14 @@
    An optional `:N` suffix on the token (e.g. `difft:120`) sets difftastic's
    wrap width — the web client measures it from its viewport so the output
    fills the browser width."
-  [_st {:keys [room-id args]}]
+  [_st {:keys [room-id args client-id]}]
   (let [[engine cols method]
         (if-let [[_ cols rest] (re-matches #"difft(?::(\d+))?(?:\s+(.*))?" (or args ""))]
           [:difft (some-> cols js/parseInt) (some-> rest str/trim not-empty)]
           [:git nil args])]
     {:effects [[:diff/load (cond-> {:room-id room-id :args method :engine engine}
-                             cols (assoc :cols cols))]]}))
+                             client-id (assoc :client-id client-id)
+                             cols      (assoc :cols cols))]]}))
 
 ;; ── Effect (impure) ───────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@
   "Resolve a /diff source to diff text and open it. Binds the renderer +
    width for the whole run so the git helpers route through difftastic when
    requested."
-  [{:keys [dispatch! state]} {:keys [room-id args engine cols]}]
+  [{:keys [dispatch! state]} {:keys [room-id args engine cols client-id]}]
   (binding [difft/*diff-engine* (or engine :git)
             difft/*diff-width*  (when (= engine :difft) cols)]
     (let [room (state/get-room state room-id)
@@ -47,7 +48,9 @@
           open! (fn [title text]
                   (if (str/blank? text)
                     (dispatch! {:type :ui/status :room-id room-id :text "No changes."})
-                    (dispatch! {:type :ui/diff-open :room-id room-id
+                    ;; :client-id rides along so the server delivers the diff
+                    ;; only to the client that ran /diff (originator-only).
+                    (dispatch! {:type :ui/diff-open :room-id room-id :client-id client-id
                                 :title title :text text :engine difft/*diff-engine*})))
           run! (fn [title git-args]
                  (let [{:keys [ok err]} (git/git-diff-out cwd git-args)]
@@ -113,4 +116,8 @@
                              {:name "session-commits" :description "Diff of commits made this session"}
                              {:name "difft"           :description "Render with difftastic (append a source, e.g. difft staged)"}]}]
    :handlers {:ui/diff-open handlers/diff-open}
+   ;; The diff viewer is a client-local view: the server delivers :ui/diff-open
+   ;; only to the client that ran /diff, so it never flips other connected
+   ;; clients (TUI or web) into the diff tab.
+   :originator-only #{:ui/diff-open}
    :fx       {:diff/load diff-load-fx}})

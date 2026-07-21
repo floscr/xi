@@ -213,6 +213,7 @@
                     (try (.send ws payload) (catch :default _ nil))))
         send-event!    (fn [client-id event] (send! client-id (wire/encode event)))
         no-broadcast   (into base-no-broadcast (:no-broadcast ext))
+        originator-only (into #{} (:originator-only ext))
         lobby-relevant (into base-lobby-relevant (:lobby-relevant ext))
         roomless-types (into base-roomless-types (:roomless-events ext))
         ext-fx         (apply merge {}
@@ -538,9 +539,17 @@
           (fn [event st]
             (let [room-id (:room-id event)]
               (when (and room-id (not (no-broadcast (:type event))))
-                (when-let [cids (seq (rm/clients-in-room st room-id))]
-                  (let [payload (wire/encode event)]
-                    (doseq [cid cids] (send! cid payload))))))
+                ;; Originator-only events (e.g. the diff viewer) go to just
+                ;; the client that asked, so a client-local view doesn't flip
+                ;; every other connected client. Fall back to a room broadcast
+                ;; when no originator rode along on the event.
+                (if (and (originator-only (:type event)) (:client-id event))
+                  (when (contains? (set (rm/clients-in-room st room-id))
+                                   (:client-id event))
+                    (send! (:client-id event) (wire/encode event)))
+                  (when-let [cids (seq (rm/clients-in-room st room-id))]
+                    (let [payload (wire/encode event)]
+                      (doseq [cid cids] (send! cid payload)))))))
             (when (lobby-relevant (:type event))
               (broadcast-lobby! st))))
 

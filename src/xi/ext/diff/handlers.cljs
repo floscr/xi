@@ -1,7 +1,8 @@
 (ns xi.ext.diff.handlers
   "Pure handlers shared by the diff extension's node core and its browser
-   half. The web client mirrors the server's :ui/diff-open broadcast with the
-   same reducer, so both surfaces install the buffer identically."
+   half. The server delivers :ui/diff-open only to the client that ran /diff
+   (originator-only), and both surfaces install the buffer with this same
+   reducer, so the diff viewer is a client-local view."
   (:require [xi.core.state :as state]))
 
 (defn diff-open
