@@ -258,16 +258,27 @@
                (str "Worktree has uncommitted changes — commit or stash them "
                     "first (they won't be part of the merge)."))
 
+      (nil? (git/current-branch main-root))
+      (status! dispatch! room-id
+               (str "Main tree is in a detached HEAD — check out a branch in "
+                    main-root " before merging."))
+
       :else
-      (let [m (git/merge-branch main-root branch)]
-        ;; Move the room into the main tree regardless of the merge outcome.
-        (dispatch! {:type :worktree/switch :room-id room-id :cwd main-root})
+      (let [main-branch (git/current-branch main-root)
+            m           (git/merge-branch main-root cwd branch main-branch)]
         (if-not (git/ok? m)
+          ;; Rebase couldn't apply cleanly; it was aborted, so the worktree is
+          ;; untouched and the room stays put for the user to resolve.
           (status! dispatch! room-id
-                   (str "Merge of " branch " failed — resolve it in " main-root ".\n"
-                        (:err m)))
+                   (str "Rebasing " branch " onto " main-branch " failed — the "
+                        "rebase was aborted. Resolve the conflicts in the "
+                        "worktree (" cwd ") and try again.\n" (:err m)))
           (do
-            (status! dispatch! room-id (str "Merged " branch " into the main tree."))
+            ;; Linear history: main fast-forwarded to the rebased branch.
+            (dispatch! {:type :worktree/switch :room-id room-id :cwd main-root})
+            (status! dispatch! room-id
+                     (str "Rebased " branch " onto " main-branch
+                          " and fast-forwarded the main tree (no merge commit)."))
             (-> (ask-confirm ask! dispatch! get-state room-id
                              (str "Remove the worktree and delete branch '" branch "'?"))
                 (.then (fn [yes?]

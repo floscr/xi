@@ -87,16 +87,24 @@
   [repo-root path branch base]
   (git repo-root ["worktree" "add" "-b" branch path base]))
 
-(defn merge-branch
-  "Merge `branch` into whatever `main-root` currently has checked out
-   (non-interactive). Returns {:ok :err :code}."
-  [main-root branch]
-  (git main-root ["merge" "--no-edit" branch]))
+(defn abort-rebase
+  "Abort an in-progress rebase in `cwd` (best effort)."
+  [cwd]
+  (git cwd ["rebase" "--abort"]))
 
-(defn abort-merge
-  "Abort an in-progress merge in `main-root` (best effort)."
-  [main-root]
-  (git main-root ["merge" "--abort"]))
+(defn merge-branch
+  "Integrate `branch` into the main tree with a *linear* history: rebase the
+   worktree branch (checked out in `cwd`) onto `main-branch`, then
+   fast-forward `main-root` to it. No merge commit is ever created.
+
+   If the rebase can't apply cleanly it is aborted (leaving the worktree
+   untouched) and the failing {:ok :err :code} is returned."
+  [main-root cwd branch main-branch]
+  (let [rb (git cwd ["rebase" main-branch])]
+    (if (ok? rb)
+      (git main-root ["merge" "--ff-only" branch])
+      (do (abort-rebase cwd)
+          rb))))
 
 (defn remove-worktree
   "Remove the worktree at `path` (run from `repo-root`). `force?` drops the

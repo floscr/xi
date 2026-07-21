@@ -1,14 +1,14 @@
 # worktree
 
 The `/worktree` command — spin a room off into a fresh **git worktree** and
-work there, then merge it back.
+work there, then rebase it back.
 
 ## Commands
 
 | Command | Effect |
 | --- | --- |
 | `/worktree <prompt…>` | Create a branch + linked worktree from the room's repo, switch the room's cwd into it, and (when a prompt is given) launch the agent there. |
-| `/worktree merge` | Merge the worktree branch into the main working tree, cd the room back, then **confirm** before removing the worktree + deleting the branch. |
+| `/worktree merge` | **Rebase** the worktree branch onto the main branch and fast-forward the main tree into it (linear history — no merge commit), cd the room back, then **confirm** before removing the worktree + deleting the branch. If the rebase conflicts it is aborted and the worktree is left untouched to resolve. |
 | `/worktree list` | List the repo's worktrees. |
 | `/worktree remove` | Remove the current worktree (confirmed) and cd back to the main tree. |
 
