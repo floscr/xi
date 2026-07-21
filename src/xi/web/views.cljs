@@ -2461,12 +2461,66 @@
         busy?   (spinner)
         unread? [:div {:class ["unread-dot"]}])]]))
 
+(defn- palette-project-actions
+  "Command items for a project's second-level page (Tab-drilled from a project
+   row). Mirrors the project three-dots overflow menu — open sessions, new
+   chat, git status — plus any :project-scoped extension nav items."
+  [state dispatch! cwd]
+  (concat
+   [(cmd/command-item
+     {:icon :folder-open
+      :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd cwd}))}
+     "Open sessions")
+    (cmd/command-item
+     {:icon :plus
+      :on-click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}
+     "New chat")
+    (cmd/command-item
+     {:icon :code
+      :on-click (fn [_] (dispatch! {:type :git-status/open :cwd cwd}))}
+     "Git status")]
+   (for [item (nav-items-for state :overflow)
+         :when (contains? #{nil :project} (:mode item))]
+     (cmd/command-item
+      {:icon (:icon item)
+       :on-click (fn [_] (dispatch! (merge (:event item) {:cwd cwd})))}
+      (:label item)))))
+
+(defn- palette-keydown
+  "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
+   and Enter): Tab drills the active project row into its action sub-page;
+   Escape / Shift+Tab / Backspace-on-empty backs out of a sub-page. Reads the
+   runtime's `.command-item--active` element and its `data-palette-drill` cwd."
+  [dispatch! palette-page]
+  (fn [^js e]
+    (let [dialog (.-currentTarget e)
+          key    (.-key e)]
+      (cond
+        (and (nil? palette-page) (= key "Tab") (not (.-shiftKey e)))
+        (when-let [active (.querySelector dialog ".command-item--active")]
+          (when-let [cwd (.. active -dataset -paletteDrill)]
+            (.preventDefault e)
+            (dispatch! {:type :palette/drill :cwd cwd
+                        :label (.. active -dataset -paletteLabel)})))
+
+        (and (some? palette-page)
+             (or (= key "Escape")
+                 (and (= key "Tab") (.-shiftKey e))
+                 (and (= key "Backspace")
+                      (when-let [input (.querySelector dialog ".command-input")]
+                        (= "" (.-value input))))))
+        (do (.preventDefault e)
+            (dispatch! {:type :palette/back}))))))
+
 (defn- command-palette
   "Global Cmd/Ctrl+K command palette (ui.command). Mounted once in root-view;
    the ui-runtime.js delegate handles open/filter/keyboard-nav. Items dispatch
    app events on select (the runtime clicks the button, firing :on-click, then
    closes the dialog). The Chats group quick-switches to active/recent rooms;
-   room-scoped actions only appear when a room is active."
+   room-scoped actions only appear when a room is active.
+
+   Two levels: at the top level, Tab on a project row drills into a project
+   action page (:web/palette-page); Escape/Shift+Tab/Backspace backs out."
   [state dispatch!]
   (let [room    (state/active-room state)
         ;; Active rooms first, then most-recently-visited sessions; drop the
@@ -2476,11 +2530,25 @@
                      (remove :current?)
                      (take 8))
         chat-items (mapv #(palette-chat-item % dispatch!) recents)
-        project-dirs (:web/project-dirs state)]
-    (cmd/command-dialog
-     {:id "cmdk" :hotkey "mod+k"
-      :placeholder "Type a command or search…"
-      :attrs {:replicant/key "cmdk"}}
+        project-dirs (:web/project-dirs state)
+        palette-page (:web/palette-page state)
+        dialog-attrs {:id "cmdk" :hotkey "mod+k"
+                      :placeholder (if palette-page "Filter actions…"
+                                       "Type a command or search…")
+                      :attrs {:replicant/key "cmdk"
+                              :on {:keydown (palette-keydown dispatch! palette-page)
+                                   :close (fn [_] (dispatch! {:type :palette/closed}))}}}]
+    (if palette-page
+      (cmd/command-dialog dialog-attrs
+       ;; Non-command-item back button: the runtime only auto-closes on
+       ;; `.command-item` clicks, so this returns to the top level in place.
+       [:button {:class ["command-back"] :type "button"
+                 :on {:click (fn [_] (dispatch! {:type :palette/back}))}}
+        (icon/icon {:icon-name :arrow-left :size :sm})
+        [:span "Back"]]
+       (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
+         (palette-project-actions state dispatch! (:cwd palette-page))))
+     (cmd/command-dialog dialog-attrs
      (when (seq chat-items)
        (apply cmd/command-group {:heading "Chats"} chat-items))
      (apply cmd/command-group {:heading "Navigate"}
@@ -2496,7 +2564,10 @@
          (for [d project-dirs]
            (cmd/command-item
             {:icon :folder
+             :shortcut "⇥"
              :value (str "project " (shorten-path d) " " d)
+             :attrs {:data-palette-drill d
+                     :data-palette-label (shorten-path d)}
              :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd d}))}
             (shorten-path d)))))
      (cmd/command-group {:heading "Actions"}
@@ -2537,7 +2608,7 @@
              :on-click (fn [_] (dispatch! {:type :input/submit
                                            :room-id (:id room)
                                            :text (str "/" name)}))}
-            (str "/" name))))))))
+            (str "/" name)))))))))
 
 (defn- auth-overlay
   "Full-screen block while this browser awaits pairing approval (or was

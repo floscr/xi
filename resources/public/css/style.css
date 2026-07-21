@@ -1538,6 +1538,28 @@ body {
 }
 .command-item-status:empty { display: none; }
 
+/* Back button on the command palette's second-level (project actions) page.
+   Deliberately NOT a .command-item so the framework runtime doesn't treat it
+   as a selectable row or auto-close the dialog on click. Matches command-item
+   padding/typography so it reads as a header affordance above the group. */
+.command-back {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  width: 100%;
+  padding: var(--size-2) var(--size-3);
+  border: none;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+.command-back:hover {
+  background: var(--bg-2);
+  color: var(--fg-1);
+}
+
 /* Trailing "new chat" button on project-directory cards (replaces the old
    chevron): clicking the card navigates into the project, this button starts
    a fresh chat. stopPropagation keeps the two actions separate. */

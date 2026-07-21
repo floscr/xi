@@ -620,7 +620,19 @@
                                                 (assoc :web/pending-room {:id (random-uuid) :cwd cwd})
                                                 (assoc :web/timeline-window nil)
                                                 (assoc :web/sidebar-open? false))
-                                     :effects [[:history/push {:route {:page :chat}}]]})}))
+                                     :effects [[:history/push {:route {:page :chat}}]]})
+          ;; Command palette second level: Tab on a project row opens its
+          ;; action page; back/close return to the top level. The reset-filter
+          ;; effect re-syncs ui-runtime.js (clears the query, re-highlights).
+          :palette/drill         (fn [st {:keys [cwd label]}]
+                                   {:state (assoc st :web/palette-page
+                                                  {:kind :project :cwd cwd :label label})
+                                    :effects [[:palette/reset-filter nil]]})
+          :palette/back          (fn [st _]
+                                   {:state (dissoc st :web/palette-page)
+                                    :effects [[:palette/reset-filter nil]]})
+          :palette/closed        (fn [st _]
+                                   {:state (dissoc st :web/palette-page)})}))
 
 
 ;; Auto-scroll gate (see the Auto-scroll section below). Declared here so the
@@ -637,6 +649,16 @@
      (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
        (set! (.-value el) text)
        (.focus el)))
+   ;; After a palette page switch, clear the search box and re-fire `input` so
+   ;; ui-runtime.js re-filters the freshly-rendered items and re-highlights the
+   ;; first one. Deferred a frame so the Replicant re-render lands first.
+   :palette/reset-filter
+   (fn [_ _]
+     (js/requestAnimationFrame
+      (fn []
+        (when-let [^js input (.querySelector js/document ".command-dialog[open] .command-input")]
+          (set! (.-value input) "")
+          (.dispatchEvent input (js/Event. "input" #js {:bubbles true}))))))
    :diff/measure-cols
    (fn [{:keys [dispatch!]} {:keys [room-id method]}]
      (dispatch! {:type :input/submit :room-id room-id
