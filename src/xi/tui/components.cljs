@@ -53,11 +53,22 @@
   "Create a spacer component that renders n empty lines."
   ([] (make-spacer 1))
   ([n]
-   (let [lines (atom n)]
+   (let [lines (atom n)
+         ;; Cache the output so an unchanged spacer returns the SAME vector
+         ;; across renders. Parent containers diff child output by identity to
+         ;; reuse a stable prefix; a fresh vector every render would break that.
+         cache (atom nil)]
      {:type :spacer
-      :set-lines (fn [new-n] (reset! lines new-n) (tui/request-render!))
-      :invalidate (fn [])
-      :render (fn [_width] (vec (repeat @lines "")))})))
+      :set-lines (fn [new-n] (reset! lines new-n) (reset! cache nil) (tui/request-render!))
+      :invalidate (fn [] (reset! cache nil))
+      :render (fn [_width]
+                (let [n @lines
+                      c @cache]
+                  (if (and c (= (:n c) n))
+                    (:result c)
+                    (let [result (vec (repeat n ""))]
+                      (reset! cache {:n n :result result})
+                      result))))})))
 
 ;; ── Box ───────────────────────────────────────────────────────────────────────
 
@@ -68,32 +79,45 @@
    (let [children (atom [])
          padding-x (or (:padding-x opts) 1)
          padding-y (or (:padding-y opts) 1)
-         bg-code (:bg-code opts)]
+         bg-code (:bg-code opts)
+         ;; Memoize the whole box output. When the width and every child's
+         ;; output vector are identical? to the previous render, return the same
+         ;; result vector so the parent container can reuse it as a stable prefix.
+         cache (atom nil)]
      {:type :box
       :children children
-      :add-child (fn [c] (swap! children conj c) (tui/request-render!))
-      :remove-child (fn [c] (swap! children (fn [cs] (vec (remove #(identical? % c) cs)))) (tui/request-render!))
-      :clear (fn [] (reset! children []) (tui/request-render!))
+      :add-child (fn [c] (swap! children conj c) (reset! cache nil) (tui/request-render!))
+      :remove-child (fn [c] (swap! children (fn [cs] (vec (remove #(identical? % c) cs)))) (reset! cache nil) (tui/request-render!))
+      :clear (fn [] (reset! children []) (reset! cache nil) (tui/request-render!))
       :invalidate (fn []
+                    (reset! cache nil)
                     (doseq [c @children]
                       (when-let [inv (:invalidate c)]
                         (inv))))
       :render (fn [width]
-                (if (empty? @children)
-                  []
-                  (let [content-width (max 1 (- width (* 2 padding-x)))
-                        left-pad (apply str (repeat padding-x " "))
-                        child-lines (into []
-                                         (mapcat (fn [c] (mapv #(str left-pad %) ((:render c) content-width))))
-                                         @children)
-                        apply-line (fn [line]
-                                     (if bg-code
-                                       (ansi/apply-bg-to-line line width bg-code)
-                                       (ansi/pad-to-width line width)))
-                        empty-line (apply-line "")
-                        pad-lines (vec (repeat padding-y empty-line))
-                        content (mapv apply-line child-lines)]
-                    (into [] (concat pad-lines content pad-lines)))))})))
+                (let [cs @children]
+                  (if (empty? cs)
+                    []
+                    (let [child-outputs (mapv (fn [c] ((:render c) (max 1 (- width (* 2 padding-x))))) cs)
+                          {cw :width co :outputs cr :result} @cache]
+                      (if (and cr (= cw width)
+                               (= (count co) (count child-outputs))
+                               (every? true? (map identical? co child-outputs)))
+                        cr
+                        (let [left-pad (apply str (repeat padding-x " "))
+                              child-lines (into []
+                                               (mapcat (fn [o] (mapv #(str left-pad %) o)))
+                                               child-outputs)
+                              apply-line (fn [line]
+                                           (if bg-code
+                                             (ansi/apply-bg-to-line line width bg-code)
+                                             (ansi/pad-to-width line width)))
+                              empty-line (apply-line "")
+                              pad-lines (vec (repeat padding-y empty-line))
+                              content (mapv apply-line child-lines)
+                              result (into [] (concat pad-lines content pad-lines))]
+                          (reset! cache {:width width :outputs child-outputs :result result})
+                          result))))))})))
 
 ;; ── Spinner ───────────────────────────────────────────────────────────────────
 

@@ -20,7 +20,15 @@
 (defn make-container
   "Create a container component. Children are rendered vertically."
   []
-  (let [children (atom [])]
+  (let [children (atom [])
+        ;; Incremental flatten cache. Flattening every child's output on each
+        ;; content-dirty render is O(total-lines) — with a large scrollback that
+        ;; runs on every loader tick / streaming batch and starves keystroke
+        ;; repaints. Instead we diff child outputs against the previous render by
+        ;; identity: leaf/box/spacer components return the SAME vector when
+        ;; unchanged, so an unchanged leading prefix is reused and only the tail
+        ;; is re-flattened.
+        cache (atom nil)]
     {:type :container
      :children children
      :add-child (fn [child] (swap! children conj child))
@@ -28,10 +36,40 @@
                      (swap! children (fn [cs] (vec (remove #(identical? % child) cs)))))
      :clear (fn [] (reset! children []))
      :render (fn [width]
-               (into []
-                     (mapcat (fn [c] ((:render c) width)))
-                     @children))
+               (let [cs @children
+                     n (count cs)
+                     outputs (mapv (fn [c] ((:render c) width)) cs)
+                     {pw :width po :outputs psn :stable-n psf :stable-flat pr :result} @cache
+                     same-width? (= pw width)
+                     pn (count po)
+                     ;; Length of the leading prefix of children whose output is
+                     ;; identical? to last render (only meaningful at same width).
+                     L (if same-width?
+                         (let [m (min n pn)]
+                           (loop [i 0]
+                             (if (and (< i m) (identical? (nth outputs i) (nth po i)))
+                               (recur (inc i))
+                               i)))
+                         0)]
+                 (if (and same-width? (= n pn) (= L n) pr)
+                   pr
+                   (let [base (cond
+                                ;; Whole stable prefix already flattened last time.
+                                (and same-width? (= psn L)) psf
+                                ;; Prefix grew — extend the previously flattened prefix.
+                                (and same-width? (< psn L))
+                                (into psf (mapcat #(nth outputs %)) (range psn L))
+                                ;; Prefix shrank or width changed — flatten prefix fresh.
+                                :else
+                                (into [] (mapcat #(nth outputs %)) (range 0 L)))
+                         result (if (= L n)
+                                  base
+                                  (into base (mapcat #(nth outputs %)) (range L n)))]
+                     (reset! cache {:width width :outputs outputs
+                                    :stable-n L :stable-flat base :result result})
+                     result))))
      :invalidate (fn []
+                   (reset! cache nil)
                    (doseq [c @children]
                      (when-let [inv (:invalidate c)]
                        (inv))))}))
