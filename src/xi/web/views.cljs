@@ -799,12 +799,32 @@
                                   (dispatch! {:type :compose/clear-draft
                                               :draft-key draft-key}))
                               nil))
-                          (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)))
-                            (.preventDefault e)
-                            (let [v (.. e -target -value)]
-                              (when (or (not busy?) (submittable-while-busy? v))
-                                (submit-compose! dispatch! room-id session-id
-                                                 images draft-key v))))))}}})
+                          (cond
+                            ;; Shift+Enter inserts a newline, like the TUI. We
+                            ;; insert it manually and preventDefault so the
+                            ;; beforeinput "insertLineBreak" handler above does
+                            ;; not fire and submit the message instead (without
+                            ;; the preventDefault the default line-break would
+                            ;; proceed and trigger that handler).
+                            (and (= "Enter" (.-key e)) (.-shiftKey e))
+                            (let [^js el (.-target e)
+                                  start  (.-selectionStart el)
+                                  end    (.-selectionEnd el)
+                                  v      (.-value el)
+                                  nv     (str (subs v 0 start) "\n" (subs v end))]
+                              (.preventDefault e)
+                              (set! (.-value el) nv)
+                              (set! (.-selectionStart el) (inc start))
+                              (set! (.-selectionEnd el) (inc start))
+                              (dispatch! {:type :compose/set-draft
+                                          :draft-key draft-key :text nv}))
+
+                            (= "Enter" (.-key e))
+                            (do (.preventDefault e)
+                                (let [v (.. e -target -value)]
+                                  (when (or (not busy?) (submittable-while-busy? v))
+                                    (submit-compose! dispatch! room-id session-id
+                                                     images draft-key v)))))))}}})
        (when busy? (spinner))]
       (if (and busy? (not (command-while-busy? draft)))
         ;; Busy: queue-send button (when there's something to queue) next to
