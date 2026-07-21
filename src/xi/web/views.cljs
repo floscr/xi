@@ -2401,6 +2401,11 @@
                                    :acc  (conj acc c)}))
                               {:seen #{} :acc []})
                       :acc)
+        ;; Agents currently running (spinner up) pin to the very top of the
+        ;; list — above idle sessions and freshly-created orphan rooms —
+        ;; preserving their relative order within each group (stable partition).
+        cards    (let [{busy true idle false} (group-by #(boolean (:busy? %)) cards)]
+                   (concat busy idle))
         now      (js/Date.now)
         started  (get-in state [:lobby :started-at])
         {recent true earlier false} (group-by #(card-recent? now started %) cards)]
