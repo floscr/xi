@@ -83,6 +83,12 @@
          (session/list-all-sessions))
        (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite?]))))
 
+(def ^:private server-started-at
+  "Wall-clock ms when this server process booted. Sent in the lobby payload so
+   clients can tell which sessions have been active during the current server
+   run (last response at/after this time) vs. carried over from disk."
+  (js/Date.now))
+
 (defn- lobby-payload
   "The :lobby/state wire payload: live rooms + saved sessions (+ the server's
    default :model, so a deferred TUI client can render the same launch header
@@ -101,10 +107,11 @@
         sessions (cond->> (lobby-sessions personal-agent?)
                    (seq live-pids)
                    (filterv #(not (contains? live-pids (:session-id %)))))]
-    (wire/encode (cond-> {:type     :lobby/state
-                          :rooms    rooms
-                          :sessions sessions
-                          :read     (session/load-read-state)}
+    (wire/encode (cond-> {:type       :lobby/state
+                          :rooms      rooms
+                          :sessions   sessions
+                          :started-at server-started-at
+                          :read       (session/load-read-state)}
                    model           (assoc :model model)
                    personal-agent? (assoc :personal-agent? true)))))
 

@@ -2345,6 +2345,35 @@
          distinct
          (take 5))))
 
+(def ^:private recent-active-window-ms
+  "How fresh a session's last response must be to count as \"Recent\" in the
+   sidebar's top section — a couple of days."
+  (* 2 24 60 60 1000))
+
+(defn- ->ms
+  "Coerce a session timestamp (epoch ms number or ISO string) to epoch ms, or
+   0 when absent/unparseable."
+  [t]
+  (cond
+    (number? t) t
+    (string? t) (let [n (.getTime (js/Date. t))] (if (js/isNaN n) 0 n))
+    :else 0))
+
+(defn- card-recent?
+  "True when a session card belongs in the sidebar's top \"Recent\" section:
+   its last response happened during the current server run (at/after
+   `started-at`) AND within `recent-active-window-ms` (a couple of days). A
+   card with a live room right now (:active?) always qualifies — covering the
+   open session and brand-new orphan rooms that carry no timestamp yet."
+  [now-ms started-at {:keys [active? timestamp]}]
+  (boolean
+   (or active?
+       (and started-at
+            (let [t (->ms timestamp)]
+              (and (pos? t)
+                   (>= t started-at)
+                   (<= (- now-ms t) recent-active-window-ms)))))))
+
 (defn- recent-sidebar
   "The drawer panel: framework sidebar listing recently-used projects above
    recent sessions, both sorted by last visited. Slid in/out by the floating
@@ -2371,7 +2400,10 @@
                                   {:seen (conj seen (:session-id c))
                                    :acc  (conj acc c)}))
                               {:seen #{} :acc []})
-                      :acc)]
+                      :acc)
+        now      (js/Date.now)
+        started  (get-in state [:lobby :started-at])
+        {recent true earlier false} (group-by #(card-recent? now started %) cards)]
     (sidebar/sidebar
      {}
      ;; Keep the card list out of the DOM while the drawer is closed and
@@ -2407,10 +2439,14 @@
                   :on-click (fn [_] (dispatch! (:event item)))}
                  (:label item)))]))
          (sidebar/sidebar-group {:label "Recent"}
-           (if (seq cards)
-             (for [c (with-projects cards)]
+           (if (seq recent)
+             (for [c (with-projects recent)]
                (session-card dispatch! c))
-             [:div {:class ["sidebar-group-label"]} "No recent sessions"])))))
+             [:div {:class ["sidebar-group-label"]} "No recent sessions"]))
+         (when (seq earlier)
+           (sidebar/sidebar-group {:label "Earlier"}
+             (for [c (with-projects earlier)]
+               (session-card dispatch! c)))))))
      (sidebar/sidebar-footer {}
        [:div {:style {:display "flex" :align-items "center" :justify-content "space-between"}}
         (theme-toggle/theme-toggle
