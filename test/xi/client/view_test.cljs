@@ -4,20 +4,22 @@
 
 ;; ── format-tool-args ─────────────────────────────────────────────────────────
 
+;; format-tool-args expects a canonical (lowercase) tool name — callers
+;; canonicalize via `canonical-tool` before formatting.
+
 (deftest format-tool-args-bash
-  (is (= "ls -la" (view/format-tool-args "Bash" {"command" "ls -la"})))
   (is (= "ls -la" (view/format-tool-args "bash" {"command" "ls -la"}))))
 
 (deftest format-tool-args-read-write-edit
-  (is (= "src/main.cljs" (view/format-tool-args "Read" {"file_path" "src/main.cljs"})))
-  (is (= "src/main.cljs" (view/format-tool-args "Write" {"file_path" "src/main.cljs"})))
-  (is (= "src/main.cljs" (view/format-tool-args "Edit" {"file_path" "src/main.cljs"})))
+  (is (= "src/main.cljs" (view/format-tool-args "read" {"file_path" "src/main.cljs"})))
+  (is (= "src/main.cljs" (view/format-tool-args "write" {"file_path" "src/main.cljs"})))
+  (is (= "src/main.cljs" (view/format-tool-args "edit" {"file_path" "src/main.cljs"})))
   (is (= "foo.txt" (view/format-tool-args "read" {"path" "foo.txt"})))
   (is (= "bar.txt" (view/format-tool-args "write" {"path" "bar.txt"})))
   (is (= "baz.txt" (view/format-tool-args "edit" {"path" "baz.txt"}))))
 
 (deftest format-tool-args-grep
-  (is (= "TODO" (view/format-tool-args "Grep" {"pattern" "TODO"})))
+  (is (= "TODO" (view/format-tool-args "grep" {"pattern" "TODO"})))
   (is (= "TODO --glob *.cljs"
          (view/format-tool-args "grep" {"pattern" "TODO" "glob" "*.cljs"}))))
 

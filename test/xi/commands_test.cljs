@@ -120,8 +120,12 @@
 
 (deftest prompt-command-opens-buffer
   (let [{:keys [state]} (handle (with-room)
-                                {:type :command/run :room-id "r" :name "prompt"})]
-    (is (= "AGENTS content" (get-in state [:rooms "r" :ui :buffers :prompt :text])))
+                                {:type :command/run :room-id "r" :name "prompt"})
+        text (get-in state [:rooms "r" :ui :buffers :prompt :text])]
+    ;; Claude rooms prepend a [CLAUDE_SYSTEM_PROMPT] note surfacing the
+    ;; SDK-injected preset, ahead of the room's own system prompt.
+    (is (str/includes? text "AGENTS content"))
+    (is (str/includes? text "[CLAUDE_SYSTEM_PROMPT]"))
     (is (= :prompt (get-in state [:rooms "r" :ui :active-buffer])))))
 
 (deftest tree-command-sets-flag
