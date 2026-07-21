@@ -2475,7 +2475,8 @@
                      (active-first state)
                      (remove :current?)
                      (take 8))
-        chat-items (mapv #(palette-chat-item % dispatch!) recents)]
+        chat-items (mapv #(palette-chat-item % dispatch!) recents)
+        project-dirs (:web/project-dirs state)]
     (cmd/command-dialog
      {:id "cmdk" :hotkey "mod+k"
       :placeholder "Type a command or search…"
@@ -2490,6 +2491,14 @@
          (cmd/command-item {:icon (:icon item)
                             :on-click (fn [_] (dispatch! (:event item)))}
            (:label item))))
+     (when (seq project-dirs)
+       (apply cmd/command-group {:heading "Projects"}
+         (for [d project-dirs]
+           (cmd/command-item
+            {:icon :folder
+             :value (str "project " (shorten-path d) " " d)
+             :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd d}))}
+            (shorten-path d)))))
      (cmd/command-group {:heading "Actions"}
        (cmd/command-item {:icon :plus
                           :on-click (fn [_] (dispatch! {:type :room/new}))}
