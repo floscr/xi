@@ -167,7 +167,8 @@
                        "  " (ansi/fg :green (str "+" add-count))
                        "  " (ansi/fg :red (str "-" del-count))))])
       :lines-fn (fn [width] (render-diff-lines parsed width))
-      :help (pager/help-bar [["j/k" "scroll"] ["]c/[c" "changes"] ["]f/[f" "files"]
+      :help (pager/help-bar [["j/k" "move"] ["v/y" "select/yank"]
+                             ["]c/[c" "changes"] ["]f/[f" "files"]
                              ["gg/G" "top/bottom"] ["q" "close"] [":" "command"]])
       :on-close on-close
       :on-command-mode on-command-mode})))

@@ -223,6 +223,61 @@
           (str/replace padded (str ESC "0m") (str ESC "0m" open))
           ESC "0m"))))
 
+(def ^:private bg-simple-codes
+  #{"40" "41" "42" "43" "44" "45" "46" "47" "49"
+    "100" "101" "102" "103" "104" "105" "106" "107"})
+
+(defn strip-bg-sgr
+  "Remove background-color parameters from SGR escape sequences in a line,
+   leaving foreground colors and text styles intact. Truecolor / 256-color
+   foreground sequences are consumed as a unit so their channel values are
+   never mistaken for a background code. Used before applying a full-width
+   highlight so the highlight background shows uniformly instead of being
+   overridden by the line's own (e.g. diff add/delete) background."
+  [line]
+  (str/replace
+   line
+   #"\033\[([0-9;]*)m"
+   (fn [[_ params]]
+     (let [items (str/split params #";")
+           kept  (loop [xs (seq items), out []]
+                   (if (empty? xs)
+                     out
+                     (let [p (first xs)]
+                       (cond
+                         ;; foreground truecolor / 256-color: keep the whole run
+                         (= p "38")
+                         (case (second xs)
+                           "5" (recur (drop 3 xs) (into out (take 3 xs)))
+                           "2" (recur (drop 5 xs) (into out (take 5 xs)))
+                           (recur (rest xs) (conj out p)))
+                         ;; background truecolor / 256-color: drop the whole run
+                         (= p "48")
+                         (case (second xs)
+                           "5" (recur (drop 3 xs) out)
+                           "2" (recur (drop 5 xs) out)
+                           (recur (rest xs) out))
+                         ;; simple / default background codes: drop
+                         (contains? bg-simple-codes p)
+                         (recur (rest xs) out)
+                         :else
+                         (recur (rest xs) (conj out p))))))]
+       (cond
+         ;; a bare reset `\033[m` / `\033[0m` — preserve it
+         (= items [""]) (str ESC "m")
+         ;; nothing left after stripping bg — drop the sequence entirely
+         (empty? kept) ""
+         :else (str ESC (str/join ";" kept) "m"))))))
+
+(defn hl-line
+  "Doom-style current-line highlight: apply bg-code as a solid full-width
+   background across the whole line while preserving foreground / syntax
+   colors. Any existing background codes are stripped first (see strip-bg-sgr)
+   so bg-code shows uniformly, even over diff add/delete backgrounds."
+  ([line width bg-code] (hl-line line width bg-code code-default-fg))
+  ([line width bg-code fg-code]
+   (apply-bg-to-line (strip-bg-sgr line) width bg-code fg-code)))
+
 (defn- skip-ansi-seq
   "Return the end index of an ANSI escape sequence starting at i."
   [line i len]

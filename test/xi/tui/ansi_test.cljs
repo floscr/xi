@@ -147,3 +147,41 @@
           out (ansi/apply-bg-to-line "x" 5 code-bg fg)]
       (is (str/starts-with? out (str code-bg fg)))
       (is (not (str/includes? out ansi/code-default-fg))))))
+
+;; ── strip-bg-sgr / hl-line ──────────────────────────────────────────────────
+
+(deftest strip-bg-sgr-removes-truecolor-bg
+  (testing "a lone truecolor bg sequence is removed"
+    (is (= "" (ansi/strip-bg-sgr (str ESC "48;2;35;60;45m")))))
+  (testing "a 256-color bg sequence is removed"
+    (is (= "" (ansi/strip-bg-sgr (str ESC "48;5;236m"))))))
+
+(deftest strip-bg-sgr-keeps-fg-and-styles
+  (testing "a truecolor fg sequence is preserved verbatim"
+    (let [fg (str ESC "38;2;129;161;193m")]
+      (is (= fg (ansi/strip-bg-sgr fg)))))
+  (testing "resets are preserved"
+    (is (= reset (ansi/strip-bg-sgr reset))))
+  (testing "bold style is preserved"
+    (is (= (str ESC "1m") (ansi/strip-bg-sgr (str ESC "1m"))))))
+
+(deftest strip-bg-sgr-splits-mixed-fg-and-bg
+  (testing "a combined fg+bg sequence keeps only the fg params"
+    (is (= (str ESC "38;2;1;2;3m")
+           (ansi/strip-bg-sgr (str ESC "38;2;1;2;3;48;2;4;5;6m"))))))
+
+(deftest strip-bg-sgr-does-not-misread-fg-channel-as-bg
+  (testing "a fg channel value of 48 is not mistaken for a background code"
+    (let [fg (str ESC "38;2;48;48;48m")]
+      (is (= fg (ansi/strip-bg-sgr fg))))))
+
+(deftest hl-line-overrides-existing-bg
+  (testing "a diff-styled line's own bg is replaced by the highlight bg"
+    (let [hl   (str ESC "48;2;59;66;82m")
+          line (ansi/apply-bg-to-line "code" 10 code-bg)   ;; carries code-bg
+          out  (ansi/hl-line line 10 hl)]
+      (is (str/starts-with? out (str hl ansi/code-default-fg))
+          "line opens with the highlight bg")
+      (is (not (str/includes? out code-bg))
+          "the original bg no longer appears anywhere")
+      (is (str/ends-with? out reset)))))

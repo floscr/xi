@@ -54,7 +54,13 @@
      :truncate-output-block-after-n-lines
        Max tool-output lines shown in a tool block before the rest is
        collapsed into a \"... (N more lines)\" marker.
-       Default 100 (xi.client.view)."
+       Default 100 (xi.client.view).
+
+     :pager-cursor-scroll-off
+       Lines kept between the line-wise cursor and the top/bottom edge of a
+       pager/diff viewport while moving with j/k (clamped to half the viewport
+       height on short terminals).
+       Default 4 (xi.tui.pager)."
   {})
 
 (defn tui-opt

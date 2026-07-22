@@ -9,19 +9,36 @@
    (xi.tui.diff-buffer) is a specialization that supplies diff-rendered lines
    plus change/file jump positions.
 
+   A line-wise cursor (vim normal-mode style) tracks the current line; j/k move
+   it and the viewport keeps a scroll-off margin so the cursor never sits at the
+   very top/bottom edge until the buffer itself is at its top/bottom. v starts a
+   line-wise selection and y yanks the current line (or selection) to the system
+   clipboard. The buffer stays read-only.
+
    Keybindings:
-     j/k, ↑/↓         Scroll up/down
-     Ctrl-d/Ctrl-u     Half-page scroll
-     Page Up/Down      Full-page scroll
+     j/k, ↑/↓         Move cursor up/down
+     v                 Start / cancel line-wise selection
+     y                 Yank current line (or selection) to clipboard
+     Ctrl-d/Ctrl-u     Half-page cursor jump
+     Page Up/Down      Full-page cursor jump
      gg / G            Top / bottom
      ]c / [c           Next / previous change  (when sections present)
      ]f / [f           Next / previous file    (when sections present)
      :                 Enter command mode (focus editor)
-     q / Escape        Close the buffer"
+     q / Escape        Close the buffer (Escape cancels selection first)"
   (:require [clojure.string :as str]
             [xi.tui.ansi :as ansi]
             [xi.tui.core :as tui]
-            [xi.tui.terminal :as term]))
+            [xi.tui.terminal :as term])
+  (:require-macros [xi.config-macros :refer [deftui-opt]]))
+
+(deftui-opt pager-cursor-scroll-off 4
+  "Number of lines the pager keeps between the line-wise cursor and the top or
+   bottom edge of the viewport while moving with j/k (and the half/full-page
+   jumps). The viewport scrolls to preserve this margin until the buffer itself
+   is at its top or bottom, where the cursor is allowed to reach the edge.
+   Clamped to half the viewport height on short terminals.
+   Overridable via :pager-cursor-scroll-off in xi.config/tui.")
 
 ;; ── Key detection ─────────────────────────────────────────────────────────────
 
@@ -57,9 +74,14 @@
 
 (def scroll-help
   "Help toolbar for a plain (section-less) pager."
-  (help-bar [["j/k" "scroll"] ["gg/G" "top/bottom"] ["q" "close"] [":" "command"]]))
+  (help-bar [["j/k" "move"] ["v" "select"] ["y" "yank"]
+             ["gg/G" "top/bottom"] ["q" "close"] [":" "command"]]))
 
 ;; ── Component ─────────────────────────────────────────────────────────────────
+
+;; Doom-style full-width line highlights (solid bg, syntax fg preserved).
+(def ^:private cursor-line-bg "\033[48;2;59;66;82m")  ;; #3b4252 — current line
+(def ^:private selection-bg   "\033[48;2;76;86;106m") ;; #4c566a — visual selection
 
 (defn make-pager
   "Create a scrollable buffer viewer component.
@@ -81,37 +103,79 @@
                      :cached-width nil
                      :change-starts []
                      :file-starts []
+                     :header-len 0
+                     :cursor nil      ;; absolute line index (into cached-lines)
+                     :anchor nil      ;; visual-selection anchor line, nil = normal
+                     :display-cache nil
                      :pending-key nil})
 
-        viewport-height (fn [] (max 1 (- (term/rows) 3)))
+        line-count (fn [] (count (:cached-lines @state)))
+        cursor-lo  (fn [] (:header-len @state 0))
 
-        current-top-line
-        (fn []
-          (let [total (count (:cached-lines @state))
-                vh (viewport-height)
-                offset (tui/get-scroll-offset)
-                end (- total (min offset (max 0 (- total vh))))
-                start (max 0 (- end vh))]
-            start))
-
-        jump-to-line!
+        clamp-cursor
         (fn [n]
-          (let [total (count (:cached-lines @state))
-                vh (viewport-height)
-                offset (max 0 (- total n (quot vh 3)))]
-            (tui/scroll-to-offset! offset)))
+          (let [total (line-count) lo (cursor-lo)]
+            (-> n (max lo) (min (max lo (dec total))))))
+
+        ;; Scroll the viewport so the cursor keeps a scroll-off margin from the
+        ;; top/bottom edge, unless the buffer itself is at its top/bottom.
+        ;; Coordinates share the global content space (content == this pager).
+        ensure-cursor-visible!
+        (fn []
+          (when-let [c (:cursor @state)]
+            (let [vh (tui/viewport-height)
+                  top (tui/viewport-top-line)
+                  bottom (+ top (dec vh))
+                  so (min pager-cursor-scroll-off (quot (dec vh) 2))
+                  new-top (cond
+                            (< (- c so) top) (- c so)
+                            (> (+ c so) bottom) (- (+ c so) (dec vh))
+                            :else top)]
+              (when (not= new-top top)
+                (tui/scroll-line-to-top! (max 0 new-top))))))
+
+        set-cursor!
+        (fn [n]
+          (when (pos? (line-count))
+            (swap! state assoc :cursor (clamp-cursor n))
+            (ensure-cursor-visible!)
+            (tui/request-render!)))
+
+        move-cursor!
+        (fn [delta]
+          (set-cursor! (+ (or (:cursor @state) (cursor-lo)) delta)))
 
         jump-next!
         (fn [positions]
-          (let [top (current-top-line)
-                target (first (filter #(> % (+ top 2)) positions))]
-            (when target (jump-to-line! target))))
+          (let [c (or (:cursor @state) (cursor-lo))
+                target (first (filter #(> % c) positions))]
+            (when target (set-cursor! target))))
 
         jump-prev!
         (fn [positions]
-          (let [top (current-top-line)
-                target (last (filter #(< % top) positions))]
-            (when target (jump-to-line! target))))]
+          (let [c (or (:cursor @state) (cursor-lo))
+                target (last (filter #(< % c) positions))]
+            (when target (set-cursor! target))))
+
+        toggle-visual!
+        (fn []
+          (swap! state update :anchor
+                 (fn [a] (when-not a (or (:cursor @state) (cursor-lo)))))
+          (tui/request-render!))
+
+        yank!
+        (fn []
+          (let [{:keys [cursor anchor cached-lines]} @state]
+            (when cursor
+              (let [a (or anchor cursor)
+                    lo (min cursor a)
+                    hi (max cursor a)
+                    text (->> (subvec cached-lines lo (inc hi))
+                              (map ansi/strip-ansi)
+                              (str/join "\n"))]
+                (tui/copy-to-clipboard! text)
+                (swap! state assoc :anchor nil)
+                (tui/request-render!)))))]
 
     {:type :pager
      :capture-all-input true
@@ -130,7 +194,7 @@
          (cond
            ;; gg: go to top
            (and (= pending "g") (= data "g"))
-           (tui/scroll-to-offset! 999999)
+           (set-cursor! (cursor-lo))
 
            ;; ]c / [c: next/prev change
            (and (= pending "]") (= data "c"))
@@ -148,28 +212,42 @@
            (#{"g" "]" "["} data)
            (swap! state assoc :pending-key data)
 
-           ;; j / ↓: scroll down
+           ;; j / ↓: cursor down
            (or (= data "j") (is-arrow-down? data))
-           (tui/scroll-down! 1)
+           (move-cursor! 1)
 
-           ;; k / ↑: scroll up
+           ;; k / ↑: cursor up
            (or (= data "k") (is-arrow-up? data))
-           (tui/scroll-up! 1)
+           (move-cursor! -1)
 
            ;; G: go to bottom
            (= data "G")
-           (tui/scroll-to-offset! 0)
+           (set-cursor! (dec (line-count)))
 
-           ;; Ctrl-d / Ctrl-u: half-page scroll
-           (is-ctrl-d? data) (tui/scroll-down! (quot (viewport-height) 2))
-           (is-ctrl-u? data) (tui/scroll-up! (quot (viewport-height) 2))
+           ;; v: toggle line-wise selection
+           (= data "v")
+           (toggle-visual!)
 
-           ;; Page Up / Page Down
-           (is-page-up? data) (tui/scroll-up! (max 1 (- (viewport-height) 2)))
-           (is-page-down? data) (tui/scroll-down! (max 1 (- (viewport-height) 2)))
+           ;; y: yank current line (or selection)
+           (= data "y")
+           (yank!)
 
-           ;; q / Escape: close
-           (or (= data "q") (is-escape? data))
+           ;; Ctrl-d / Ctrl-u: half-page cursor jump
+           (is-ctrl-d? data) (move-cursor! (quot (tui/viewport-height) 2))
+           (is-ctrl-u? data) (move-cursor! (- (quot (tui/viewport-height) 2)))
+
+           ;; Page Up / Page Down: full-page cursor jump
+           (is-page-up? data) (move-cursor! (- (max 1 (- (tui/viewport-height) 2))))
+           (is-page-down? data) (move-cursor! (max 1 (- (tui/viewport-height) 2)))
+
+           ;; Escape: cancel selection first, else close
+           (is-escape? data)
+           (if (:anchor @state)
+             (do (swap! state assoc :anchor nil) (tui/request-render!))
+             (when on-close (on-close)))
+
+           ;; q: close
+           (= data "q")
            (when on-close (on-close))
 
            ;; :: command mode
@@ -179,7 +257,7 @@
            :else nil)))
 
      :invalidate
-     (fn [] (swap! state assoc :cached-width nil :cached-lines nil))
+     (fn [] (swap! state assoc :cached-width nil :cached-lines nil :display-cache nil))
 
      :render
      (fn [width]
@@ -190,13 +268,42 @@
                           (into (when header-fn (header-fn)))
                           (conj ""))
                header-len (count header)
-               all-lines (into header lines)]
+               all-lines (into header lines)
+               total (count all-lines)]
            (swap! state assoc
                   :cached-lines all-lines
                   :cached-width width
+                  :header-len header-len
+                  :display-cache nil
                   :change-starts (mapv #(+ % header-len) (or change-starts []))
-                  :file-starts (mapv #(+ % header-len) (or file-starts [])))))
-       (:cached-lines @state))}))
+                  :file-starts (mapv #(+ % header-len) (or file-starts [])))
+           ;; Initialize / re-clamp the cursor to the (possibly re-wrapped) body.
+           (swap! state update :cursor
+                  (fn [c] (when (pos? total)
+                            (-> (or c header-len) (max header-len) (min (dec total))))))))
+       ;; Overlay the line-wise cursor / selection as a reverse-video bar,
+       ;; cached by [width cursor anchor total] so unchanged frames reuse the
+       ;; same vector (container diffs by identity) and only cursor moves repaint.
+       (let [{:keys [cached-lines cursor anchor display-cache]} @state
+             total (count cached-lines)
+             key [width cursor anchor total]]
+         (if (and display-cache (= key (:key display-cache)))
+           (:lines display-cache)
+           (let [bg (if anchor selection-bg cursor-line-bg)
+                 lines (if (and cursor (pos? total))
+                         (let [a (or anchor cursor)
+                               lo (min cursor a)
+                               hi (max cursor a)]
+                           (into []
+                                 (map-indexed
+                                  (fn [i line]
+                                    (if (<= lo i hi)
+                                      (ansi/hl-line line width bg)
+                                      line)))
+                                 cached-lines))
+                         cached-lines)]
+             (swap! state assoc :display-cache {:key key :lines lines})
+             lines))))}))
 
 (defn make-text-buffer
   "Pager for plain (ANSI) text — no change/file sections.

@@ -184,7 +184,7 @@
                 (subs line (min from (count line)) (min to (count line))))]
     (str/join "\n" lines)))
 
-(defn- copy-to-clipboard!
+(defn copy-to-clipboard!
   "Copy text to system clipboard via OSC 52."
   [text]
   (when (seq text)
