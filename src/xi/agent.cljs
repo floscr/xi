@@ -45,12 +45,19 @@
     history))
 
 (defn- finalize-history
-  "Mark all open streaming entries as done."
+  "Mark all open streaming entries as done. A tool call still :running when the
+   turn ends (interrupted before its result arrived) is settled to :aborted so
+   its spinner stops instead of spinning forever."
   [history]
   (mapv (fn [entry]
-          (if (and (#{:text :thinking} (:kind entry)) (not (:done? entry)))
+          (cond
+            (and (#{:text :thinking} (:kind entry)) (not (:done? entry)))
             (assoc entry :done? true)
-            entry))
+
+            (and (= :tool-call (:kind entry)) (= :running (:status entry)))
+            (assoc entry :status :aborted)
+
+            :else entry))
         history))
 
 ;; ── Turn construction (pure) ─────────────────────────────────────────────────

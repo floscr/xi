@@ -82,6 +82,18 @@
                             :text "queued!" :images []}]]
            effects))))
 
+(deftest turn-end-settles-running-tool-call
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "go"}
+                         {:type :agent/tool-start :room-id "r" :id "t1" :tool "read"
+                          :arguments {:file "x"}})
+        {:keys [state]}
+        (events/handle-event all-handlers st
+                             {:type :agent/turn-end :room-id "r" :aborted? true})
+        tool (->> (history state) (filter #(= :tool-call (:kind %))) first)]
+    (is (= :aborted (:status tool))
+        "a tool still running when the turn is interrupted is settled (spinner stops)")))
+
 (deftest turn-end-joins-multiple-queued-prompts
   (let [st (apply-events (with-room)
                          {:type :prompt/submit :room-id "r" :text "go"}
