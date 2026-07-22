@@ -59,6 +59,7 @@
 (defn- is-ctrl-u? [data] (ctrl? data "U"))
 (defn- is-page-up? [data] (= data (str ESC "[5~")))
 (defn- is-page-down? [data] (= data (str ESC "[6~")))
+(defn- is-enter? [data] (or (= data "\r") (= data "\n")))
 
 ;; ── Help bars ─────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,7 @@
 (def scroll-help
   "Help toolbar for a plain (section-less) pager."
   (help-bar [["j/k" "move"] ["v" "select"] ["y" "yank"]
+             ["e" "explain"] ["\u23ce" "prompt"]
              ["gg/G" "top/bottom"] ["q" "close"] [":" "command"]]))
 
 ;; ── Component ─────────────────────────────────────────────────────────────────
@@ -97,8 +99,13 @@
                          jump positions relative to the body
      :help             — help toolbar string (see help-bar); exposed as :help
      :on-close         — (fn []) called when q/Escape is pressed
-     :on-command-mode  — (fn []) called when : is pressed"
-  [{:keys [title header-fn lines-fn help on-close on-command-mode]}]
+     :on-command-mode  — (fn []) called when : is pressed
+     :on-explain       — (fn [text]) called with the selected region on e;
+                         optional (key is inert when absent)
+     :on-prompt        — (fn [text]) called with the selected region on Enter;
+                         optional (key is inert when absent)"
+  [{:keys [title header-fn lines-fn help on-close on-command-mode
+           on-explain on-prompt]}]
   (let [state (atom {:cached-lines nil
                      :cached-width nil
                      :change-starts []
@@ -163,19 +170,32 @@
                  (fn [a] (when-not a (or (:cursor @state) (cursor-lo)))))
           (tui/request-render!))
 
-        yank!
+        ;; Plain text of the current selection (current line when no anchor).
+        selection-text
         (fn []
           (let [{:keys [cursor anchor cached-lines]} @state]
             (when cursor
               (let [a (or anchor cursor)
                     lo (min cursor a)
-                    hi (max cursor a)
-                    text (->> (subvec cached-lines lo (inc hi))
-                              (map ansi/strip-ansi)
-                              (str/join "\n"))]
-                (tui/copy-to-clipboard! text)
-                (swap! state assoc :anchor nil)
-                (tui/request-render!)))))]
+                    hi (max cursor a)]
+                (->> (subvec cached-lines lo (inc hi))
+                     (map ansi/strip-ansi)
+                     (str/join "\n"))))))
+
+        yank!
+        (fn []
+          (when-let [text (selection-text)]
+            (tui/copy-to-clipboard! text)
+            (swap! state assoc :anchor nil)
+            (tui/request-render!)))
+
+        ;; Hand the selected region to a host callback, then clear the anchor.
+        run-region!
+        (fn [f]
+          (when f
+            (when-let [text (selection-text)]
+              (swap! state assoc :anchor nil)
+              (f text))))]
 
     {:type :pager
      :capture-all-input true
@@ -231,6 +251,14 @@
            ;; y: yank current line (or selection)
            (= data "y")
            (yank!)
+
+           ;; e: explain the selected region (host submits a prompt)
+           (= data "e")
+           (run-region! on-explain)
+
+           ;; Enter: send the selected region to the chat prompt
+           (is-enter? data)
+           (run-region! on-prompt)
 
            ;; Ctrl-d / Ctrl-u: half-page cursor jump
            (is-ctrl-d? data) (move-cursor! (quot (tui/viewport-height) 2))
@@ -308,8 +336,8 @@
 (defn make-text-buffer
   "Pager for plain (ANSI) text — no change/file sections.
 
-   opts: :text :title :on-close :on-command-mode"
-  [{:keys [text title on-close on-command-mode]}]
+   opts: :text :title :on-close :on-command-mode :on-explain :on-prompt"
+  [{:keys [text title on-close on-command-mode on-explain on-prompt]}]
   (make-pager
    {:title (or title "Buffer")
     :lines-fn (fn [width]
@@ -321,4 +349,6 @@
                  :file-starts []})
     :help scroll-help
     :on-close on-close
-    :on-command-mode on-command-mode}))
+    :on-command-mode on-command-mode
+    :on-explain on-explain
+    :on-prompt on-prompt}))

@@ -388,13 +388,34 @@
     (let [on-close (fn [] (dispatch! {:type :ui/buffer-switch
                                       :room-id room-id :buffer-id :chat}))
           on-command-mode (fn [] (tui/set-focus! (.-editor ctx)))
+          ;; e: ask the room to explain the selected region. Diff buffers
+          ;; fence the snippet as ```diff so the model reads it as a hunk.
+          on-explain
+          (fn [text]
+            (let [prompt (if (:diff? buf)
+                           (str "Explain the following changes from our "
+                                "session in plain language — what they do "
+                                "and why:\n\n```diff\n" text "\n```")
+                           (str "Explain the following in plain language:"
+                                "\n\n" text))]
+              (dispatch! {:type :input/submit :room-id room-id :text prompt})
+              (on-close)))
+          ;; Enter: drop the selected region (plus a trailing newline) into
+          ;; the chat editor, then return to chat with the editor focused.
+          on-prompt
+          (fn [text]
+            (when-let [ins (:insert-text (.-editor ctx))]
+              (ins (str text "\n")))
+            (on-close))
           c (if (:diff? buf)
               (diff-buffer/make-diff-buffer
                {:diff-text (:text buf) :title (:title buf)
-                :on-close on-close :on-command-mode on-command-mode})
+                :on-close on-close :on-command-mode on-command-mode
+                :on-explain on-explain :on-prompt on-prompt})
               (pager/make-text-buffer
                {:text (view/buffer-display-text buf) :title (:title buf)
-                :on-close on-close :on-command-mode on-command-mode}))]
+                :on-close on-close :on-command-mode on-command-mode
+                :on-explain on-explain :on-prompt on-prompt}))]
       (set! (.-pagerVal ctx) buf)
       (set! (.-pagerComp ctx) c)
       (tui/set-focus! c)

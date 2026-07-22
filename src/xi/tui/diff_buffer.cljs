@@ -149,8 +149,10 @@
      :diff-text       — raw unified diff text
      :title           — display title (e.g. \"Session Changes\")
      :on-close        — (fn []) called when q/Escape is pressed
-     :on-command-mode — (fn []) called when : is pressed"
-  [{:keys [diff-text title on-close on-command-mode]}]
+     :on-command-mode — (fn []) called when : is pressed
+     :on-explain      — (fn [text]) called with the selected region on e
+     :on-prompt       — (fn [text]) called with the selected region on Enter"
+  [{:keys [diff-text title on-close on-command-mode on-explain on-prompt]}]
   (let [parsed (diff/parse-diff-text diff-text)
         file-count (count parsed)
         add-count (reduce + (for [f parsed, h (:hunks f), l (:lines h)
@@ -168,7 +170,10 @@
                        "  " (ansi/fg :red (str "-" del-count))))])
       :lines-fn (fn [width] (render-diff-lines parsed width))
       :help (pager/help-bar [["j/k" "move"] ["v/y" "select/yank"]
+                             ["e" "explain"] ["\u23ce" "prompt"]
                              ["]c/[c" "changes"] ["]f/[f" "files"]
                              ["gg/G" "top/bottom"] ["q" "close"] [":" "command"]])
       :on-close on-close
-      :on-command-mode on-command-mode})))
+      :on-command-mode on-command-mode
+      :on-explain on-explain
+      :on-prompt on-prompt})))
