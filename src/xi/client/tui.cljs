@@ -20,8 +20,10 @@
    Effects owned by the TUI: :app/quit, :app/reload, :clipboard/copy."
   (:require [clojure.string :as str]
             [xi.client.view :as view]
+            [xi.commands :as commands]
             [xi.core.log :as log]
             [xi.core.state :as state]
+            [xi.palette :as palette]
             [xi.session :as session]
             [xi.tui.ansi :as ansi]
             [xi.tui.clipboard-image :as clip-image]
@@ -33,7 +35,8 @@
             [xi.tui.history-selector :as history-selector]
             [xi.tui.pager :as pager]
             [xi.tui.path-complete :as path-complete]
-            [xi.tui.terminal :as term]))
+            [xi.tui.terminal :as term]
+            [xi.tui.word-complete :as word-complete]))
 
 ;; ── Key detection (for dialogs / ext keybindings) ────────────────────────────
 
@@ -191,23 +194,69 @@
                (assoc :key-bindings all-kbs))]
     (completion/make-completion-menu opts)))
 
+(defn- palette-action-event
+  "Map a shared xi.palette action to the TUI event that runs it. Every action
+   resolves to a :command/run — the same command a user could type — so the
+   Ctrl+/ palette and the web Cmd/K palette stay in sync (see xi.web.views for
+   the web mapping of the same actions)."
+  [room-id action]
+  (let [run (fn [name & [args]]
+              (cond-> {:type :command/run :room-id room-id :name name}
+                args (assoc :args args)))]
+    (case (first action)
+      :chat    (run "resume" (str "id:" (second action)))
+      :command (let [{:keys [name args]} (commands/parse-input (str "/" (second action)))]
+                 (run name args))
+      :action  (case (second action)
+                 :new-chat     (run "new")
+                 :change-model (run "model")
+                 :skills       (run "skill")
+                 :git-status   (run "diff" "git")
+                 :copy-debug   (run "debug")
+                 :reload       (run "reload")))))
+
+(defn- commands-menu
+  "Slash-commands menu (Ctrl+/ and '/' on an empty editor): the assembly's
+   command list as a flat menu — no sections. Same expansion as the palette's
+   Commands group so the two stay in sync."
+  [room-id cmd-list]
+  {:id :commands
+   :prompt "/"
+   :items (mapv (fn [{:keys [name description]}]
+                  {:label (str "/" name)
+                   :description description
+                   :event (palette-action-event room-id [:command name])})
+                (palette/expand-commands cmd-list))})
+
 (defn- palette-menu
-  "Command palette: the assembly's command list as a menu."
-  [room-id commands]
-  {:id :palette
-   :prompt "palette> "
-   :items (into []
-                (mapcat (fn [{:keys [name description subcommands]}]
-                          (cons {:label (str "/" name)
-                                 :description description
-                                 :event {:type :command/run :room-id room-id :name name}}
-                                (map (fn [{sub-name :name sub-desc :description}]
-                                       {:label (str "/" name " " sub-name)
-                                        :description sub-desc
-                                        :event {:type :command/run :room-id room-id
-                                                :name name :args sub-name}})
-                                     subcommands))))
-                commands)})
+  "Command palette (Ctrl+P): shared sections — Chats, Actions, Commands — from
+   xi.palette, each item mapped to a TUI :command/run event. Section headings
+   show only at an empty query (xi.tui.completion drops them once you type)."
+  [state room-id cmd-list]
+  (let [room?   (boolean room-id)
+        cur-sid (get-in state [:rooms room-id :session :id])
+        chats   (->> (palette/recent-sessions state)
+                     (remove #(= cur-sid (:session-id %)))
+                     (take 8))
+        heading (fn [label] {:heading label})
+        chat-items    (map (fn [s]
+                             {:label (or (:name s) "New session")
+                              :event (palette-action-event room-id [:chat (:session-id s)])})
+                           chats)
+        action-items  (map (fn [{:keys [key label]}]
+                             {:label label
+                              :event (palette-action-event room-id [:action key])})
+                           (palette/actions room?))
+        command-items (map (fn [{:keys [name description]}]
+                             {:label (str "/" name)
+                              :description description
+                              :event (palette-action-event room-id [:command name])})
+                           (palette/expand-commands cmd-list))]
+    {:id :palette
+     :prompt "palette> "
+     :items (vec (concat (when (seq chat-items) (cons (heading "Chats") chat-items))
+                         (cons (heading "Actions") action-items)
+                         (when (seq command-items) (cons (heading "Commands") command-items))))}))
 
 ;; ── Dialogs (room :ui :dialogs → focused bottom-panel component) ──────────────
 
@@ -597,7 +646,11 @@
           :on-palette (fn []
                         (when-let [room (current-room)]
                           (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                      :menu (palette-menu (:id room) commands)})))
+                                      :menu (palette-menu (get-state) (:id room) commands)})))
+          :on-commands (fn []
+                         (when-let [room (current-room)]
+                           (dispatch! {:type :ui/menu-open :room-id (:id room)
+                                       :menu (commands-menu (:id room) commands)})))
           :ext-keybindings ext-keybindings
           :on-git (fn [] (tui/run-external! ["ngit"] {}))
           :on-paste-image
@@ -605,22 +658,48 @@
             (if-let [img (clip-image/read-clipboard-image)]
               (room-event {:type :ui/attach-image :image img :label "clipboard"})
               (room-event {:type :ui/status :text "No image in clipboard"})))
+          ;; Completion order: snippets (handled in the editor) → folder paths
+          ;; (only when the token carries a '/') → buffer words. Words are
+          ;; completed inline: Tab cycles candidates (:word-candidates-fn),
+          ;; Ctrl+I opens the ranked menu (:on-word-menu). :on-tab-complete
+          ;; handles path/folder completion only.
           :on-tab-complete
           (fn [{:keys [token insert!]}]
             (when-let [room (current-room)]
-              (let [result (path-complete/complete token (:cwd room))]
-                (case (:action result)
-                  :insert (when (seq (:text result)) (insert! (:text result)))
-                  :menu   (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                      :menu {:id :path-complete
-                                             :prompt "path> "
-                                             :items (mapv (fn [{:keys [label insert]}]
-                                                            {:label label
-                                                             :event {:type :editor/insert
-                                                                     :room-id (:id room)
-                                                                     :text insert}})
-                                                          (:items result))}})
-                  nil))))
+              (when (str/includes? token "/")
+                (let [result (path-complete/complete token (:cwd room))]
+                  (case (:action result)
+                    :insert (when (seq (:text result)) (insert! (:text result)))
+                    :menu   (dispatch! {:type :ui/menu-open :room-id (:id room)
+                                        :menu {:id :path-complete
+                                               :prompt "path> "
+                                               :items (mapv (fn [{:keys [label insert]}]
+                                                              {:label label
+                                                               :event {:type :editor/insert
+                                                                       :room-id (:id room)
+                                                                       :text insert}})
+                                                            (:items result))}})
+                    nil)))))
+          :word-candidates-fn
+          (fn [token]
+            (when-let [room (current-room)]
+              ;; Words only — path tokens (with '/') route to :on-tab-complete.
+              (when-not (str/includes? token "/")
+                (word-complete/candidates token (:history room)))))
+          :on-word-menu
+          (fn [{:keys [token]}]
+            (when-let [room (current-room)]
+              (let [words (word-complete/candidates token (:history room))]
+                (when (seq words)
+                  (dispatch! {:type :ui/menu-open :room-id (:id room)
+                              :menu {:id :word-complete
+                                     :prompt "word> "
+                                     :items (mapv (fn [w]
+                                                    {:label w
+                                                     :event {:type :editor/insert
+                                                             :room-id (:id room)
+                                                             :text (subs w (count token))}})
+                                                  words)}})))))
           :prompt-suffix-fn
           (fn []
             (let [room  (current-room)

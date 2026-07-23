@@ -71,6 +71,17 @@
 (defn- is-tab? [data]
   (= data "\t"))
 
+(defn- is-shift-tab? [data]
+  ;; Legacy backtab (CBT) or kitty CSI-u (tab keycode 9, shift modifier 2).
+  (or (= data (str ESC "[Z"))
+      (= data (str ESC "[9;2u"))))
+
+(defn- is-ctrl-i? [data]
+  ;; Distinct from Tab only under the kitty keyboard protocol: 'i' is
+  ;; codepoint 105, Ctrl is modifier 5. On terminals without kitty, Ctrl+I is
+  ;; indistinguishable from Tab and this never matches.
+  (= data (str ESC "[105;5u")))
+
 (defn- is-printable? [data]
   (let [code (.charCodeAt data 0)]
     (and (= (count data) 1)
@@ -114,6 +125,12 @@
 (defn- is-alt-v? [data]
   (or (= data (str ESC "v"))
       (= data (str ESC "[118;3u"))))
+
+(defn- is-ctrl-slash? [data]
+  ;; Ctrl+/ emits 0x1F (legacy) or CSI-u \x1b[47;5u (kitty; '/' is codepoint 47).
+  ;; The generic ctrl? helper can't derive this since 47-64 is negative.
+  (or (= data (str (char 31)))
+      (= data (str ESC "[47;5u"))))
 
 ;; ── Word Boundary Helpers ─────────────────────────────────────────────────────
 
@@ -187,10 +204,13 @@
         on-interrupt (:on-interrupt opts)
         on-escape (:on-escape opts)
         on-palette (:on-palette opts)
+        on-commands (:on-commands opts)
         on-git (:on-git opts)
         on-notify-toggle (:on-notify-toggle opts)
         on-paste-image (:on-paste-image opts)
         on-tab-complete (:on-tab-complete opts)
+        word-candidates-fn (:word-candidates-fn opts)
+        on-word-menu (:on-word-menu opts)
         ext-keybindings (:ext-keybindings opts)
 
         get-text (fn []
@@ -546,7 +566,86 @@
                             (when on-submit
                               (on-submit text)))))
 
+        ;; ── Word completion (inline Tab cycling) ─────────────────────────
+        ;; The word before the cursor and where it starts on the line.
+        word-before-cursor
+        (fn []
+          (let [{:keys [lines cursor-line cursor-col]} @state
+                line (nth lines cursor-line)
+                before (subs line 0 cursor-col)
+                word-start (loop [i (dec (count before))]
+                             (cond
+                               (neg? i) 0
+                               (= " " (.charAt before i)) (inc i)
+                               :else (recur (dec i))))]
+            {:word-start word-start
+             :trigger (subs before word-start (count before))}))
+
+        ;; Replace the region [word-start, cursor] on `line-idx` with `word`,
+        ;; leaving the cursor at its end. Works both for the initial insert
+        ;; (region = typed token) and for cycling (region = previous candidate).
+        apply-candidate!
+        (fn [word-start line-idx word]
+          (swap! state (fn [{:keys [lines cursor-col] :as s}]
+                         (let [line (nth lines line-idx)
+                               new-line (str (subs line 0 word-start)
+                                             word
+                                             (subs line cursor-col))]
+                           (-> s
+                               (assoc-in [:lines line-idx] new-line)
+                               (assoc :cursor-col (+ word-start (count word)))
+                               (assoc :cached-width nil :cached-lines nil)))))
+          (tui/request-panel-render!))
+
+        ;; True when a completion session is live and the cursor still sits at
+        ;; the end of the last-inserted candidate (nothing else has moved it).
+        word-completion-active?
+        (fn []
+          (let [{:keys [cursor-line cursor-col completion]} @state]
+            (and completion
+                 (= (:line completion) cursor-line)
+                 (= (:end-col completion) cursor-col))))
+
+        ;; Advance the active session by `delta` candidates (wrapping) and
+        ;; swap the inserted word.
+        cycle-word!
+        (fn [delta]
+          (let [{:keys [cursor-line completion]} @state
+                cands (:candidates completion)
+                idx (mod (+ (:index completion) delta) (count cands))
+                word (nth cands idx)]
+            (push-undo! :word-complete)
+            (apply-candidate! (:word-start completion) cursor-line word)
+            (swap! state update :completion assoc
+                   :index idx
+                   :end-col (+ (:word-start completion) (count word)))))
+
+        ;; Start a fresh session for `trigger`. Returns true when candidates
+        ;; were found (and the first inserted), false to let the caller fall
+        ;; through to path completion.
+        start-word-completion!
+        (fn [trigger word-start]
+          (let [cands (when (and word-candidates-fn (seq trigger))
+                        (vec (word-candidates-fn trigger)))]
+            (if (seq cands)
+              (let [{:keys [cursor-line]} @state
+                    word (first cands)]
+                (push-undo! :word-complete)
+                (apply-candidate! word-start cursor-line word)
+                (swap! state assoc :completion
+                       {:line cursor-line
+                        :word-start word-start
+                        :candidates cands
+                        :index 0
+                        :end-col (+ word-start (count word))})
+                true)
+              false)))
+
         handle-input (fn [data]
+                       ;; Any key other than Tab/Shift+Tab ends an active
+                       ;; word-completion cycle.
+                       (when-not (or (is-tab? data) (is-shift-tab? data))
+                         (swap! state dissoc :completion))
                        (cond
                          ;; Extension keybindings (checked first so they can intercept Ctrl+C etc.)
                          (some (fn [{:keys [key-fn]}] (key-fn data)) ext-keybindings)
@@ -647,9 +746,13 @@
                          (ctrl? data "F")
                          (move-cursor 0 1)
 
-                         ;; Ctrl+P — command palette
+                         ;; Ctrl+P — command palette (Chats/Actions/Commands)
                          (ctrl? data "P")
                          (when on-palette (on-palette))
+
+                         ;; Ctrl+/ — slash commands menu (works with text in editor)
+                         (is-ctrl-slash? data)
+                         (when on-commands (on-commands))
 
                          ;; Ctrl+N — next line / history down
                          (ctrl? data "N")
@@ -710,40 +813,55 @@
                                            (str/replace paste-end-seq ""))]
                            (insert-text-bulk content))
 
-                         ;; Tab — snippet expansion, else path completion
+                         ;; Shift+Tab — cycle the active word completion backward
+                         (and (is-shift-tab? data) (word-completion-active?))
+                         (cycle-word! -1)
+
+                         ;; Ctrl+I — open the word completion menu for the word
+                         ;; before the cursor (kitty protocol only; falls through
+                         ;; to Tab on terminals that can't disambiguate it).
+                         (and (is-ctrl-i? data) on-word-menu)
+                         (on-word-menu (word-before-cursor))
+
+                         ;; Tab — cycle word completion, else snippet expansion,
+                         ;; else path completion. Order: cycle an active session,
+                         ;; then snippet, then start a word cycle, then path.
                          (is-tab? data)
-                         (let [{:keys [lines cursor-line cursor-col]} @state
-                               line (nth lines cursor-line)
-                               before (subs line 0 cursor-col)
-                               ;; Extract word before cursor (back to last space or start)
-                               word-start (loop [i (dec (count before))]
-                                            (cond
-                                              (neg? i) 0
-                                              (= " " (.charAt before i)) (inc i)
-                                              :else (recur (dec i))))
-                               trigger (subs before word-start (count before))
-                               expansion (and (seq trigger) (snippets/expand trigger))]
-                           (cond
-                             expansion
-                             (do
-                               (push-undo! :snippet)
-                               (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
-                                              (let [line (nth lines cursor-line)
-                                                    new-line (str (subs line 0 word-start)
-                                                                  expansion
-                                                                  (subs line cursor-col))]
-                                                (-> s
-                                                    (assoc-in [:lines cursor-line] new-line)
-                                                    (assoc :cursor-col (+ word-start (count expansion)))
-                                                    (assoc :cached-width nil :cached-lines nil)))))
-                               (tui/request-panel-render!))
+                         (cond
+                           ;; Continue an in-progress inline word cycle.
+                           (word-completion-active?)
+                           (cycle-word! 1)
 
-                             on-tab-complete
-                             (on-tab-complete {:token trigger :insert! insert-char})))
+                           :else
+                           (let [{:keys [word-start trigger]} (word-before-cursor)
+                                 expansion (and (seq trigger) (snippets/expand trigger))]
+                             (cond
+                               expansion
+                               (do
+                                 (push-undo! :snippet)
+                                 (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
+                                                (let [line (nth lines cursor-line)
+                                                      new-line (str (subs line 0 word-start)
+                                                                    expansion
+                                                                    (subs line cursor-col))]
+                                                  (-> s
+                                                      (assoc-in [:lines cursor-line] new-line)
+                                                      (assoc :cursor-col (+ word-start (count expansion)))
+                                                      (assoc :cached-width nil :cached-lines nil)))))
+                                 (tui/request-panel-render!))
 
-                         ;; "/" on empty editor — open command palette
-                         (and (= data "/") on-palette (empty? (str/trim (get-text))))
-                         (on-palette)
+                               ;; Start an inline word cycle from the buffer's
+                               ;; vocabulary; falls back to path completion when
+                               ;; there are no word candidates (e.g. a '/' token).
+                               (start-word-completion! trigger word-start)
+                               nil
+
+                               on-tab-complete
+                               (on-tab-complete {:token trigger :insert! insert-char}))))
+
+                         ;; "/" on empty editor — open slash commands menu
+                         (and (= data "/") on-commands (empty? (str/trim (get-text))))
+                         (on-commands)
 
                          ;; Printable character
                          (is-printable? data)
