@@ -137,7 +137,7 @@
    The child MCP + Chrome are lazily spawned on the first tool call; the
    connect promise is memoized (and cleared on failure so a later call
    retries)."
-  [_ctx]
+  [{:keys [ask!] :as _ctx}]
   (when (seq (env "XI_CHROME_TOOLS"))
     (let [client* (atom nil)   ;; the live client map, for :on-shutdown
           ready*  (atom nil)]  ;; memoized Promise<connected-client>
@@ -166,6 +166,7 @@
           :tool-registry    (into {} (map (fn [n] [n (fn [args _ctx] (forward n args))]))
                                   tool-names)
           :on-shutdown      (fn [] (when-let [c @client*] ((:kill c))))}
-         ;; The element picker drives the same MCP client, so it always acts
-         ;; on chrome-devtools-mcp's currently selected page.
-         (element-picker/install forward))))))
+         ;; The element picker drives the same MCP client. With multiple tabs
+         ;; open it first asks (via ask!) which one to pick from; otherwise it
+         ;; acts on chrome-devtools-mcp's currently selected page.
+         (element-picker/install forward ask!))))))

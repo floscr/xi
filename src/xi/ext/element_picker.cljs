@@ -8,11 +8,12 @@
    direct context about exactly what the user means, without describing it.
 
    Targeting: the picker drives the *same* chrome-devtools-mcp the agent uses
-   (via its `evaluate_script` / `take_screenshot` tools), so it always acts on
-   the MCP's currently *selected* page. That's the only unambiguous target —
-   tabs can share a URL, so there's no way to match a specific tab from the
-   outside. This namespace is not a standalone extension; it's installed into
-   xi.ext.chrome (which owns the shared MCP client) via `install`.
+   (via its `evaluate_script` / `take_screenshot` tools). When several tabs are
+   open it first asks (via the dialog `ask!`) which one to pick from and
+   switches to it with `select_page`; with a single tab (or headless, no
+   `ask!`) it acts on the MCP's currently *selected* page. This namespace is
+   not a standalone extension; it's installed into xi.ext.chrome (which owns
+   the shared MCP client) via `install`.
 
      /pick                  open the picker on the selected page
      /pick fix this layout  open with a pre-filled message
@@ -116,6 +117,22 @@
             (-> line (str/replace "[selected]" "") str/trim not-empty)))
         (str/split-lines (result-text result))))
 
+(defn- parse-pages
+  "Parse a list_pages result into a vector of {:id int :label str :selected? bool}.
+   chrome-devtools-mcp prints each page under a `## Pages` header as
+   `<id>: <label>[ [selected]][ isolatedContext=…]`."
+  [result]
+  (->> (str/split-lines (result-text result))
+       (keep (fn [line]
+               (when-let [[_ id rest] (re-matches #"\s*(\d+):\s*(.*)" line)]
+                 (let [selected? (str/includes? rest "[selected]")
+                       label (-> rest
+                                 (str/replace "[selected]" "")
+                                 (str/replace #"\s*isolatedContext=\S+" "")
+                                 str/trim)]
+                   {:id (js/parseInt id 10) :label label :selected? selected?}))))
+       vec))
+
 ;; ── Message building (pure) ──────────────────────────────────────────────────
 
 (defn- element-block [i multi? prefill el]
@@ -193,14 +210,38 @@
   (-> (call "evaluate_script" {:function cleanup-fn})
       (.catch (fn [_] nil))))
 
-(defn- run-picker
-  "Drive the picker on the chrome-devtools-mcp selected page."
+(defn- page-options
+  "Turn parsed pages into :select dialog options {:label :value}. The
+   currently selected page is tagged so the user knows the default target."
+  [pages]
+  (mapv (fn [{:keys [id label selected?]}]
+          {:label (str label (when selected? "  [current]")) :value id})
+        pages))
+
+(defn- choose-page!
+  "With multiple tabs open, ask the user which to pick from and switch to it
+   via select_page. Resolves to :cancelled if the user dismisses, else :ok.
+   With one page (or no ask! available) it's a no-op resolving :ok."
+  [ask! fx-ctx call room-id pages]
+  (if (and ask! (> (count pages) 1))
+    (-> (ask! fx-ctx
+              {:room-id room-id
+               :dialog {:type :select
+                        :message "Which browser tab do you want to pick from?"
+                        :options (page-options pages)}})
+        (.then (fn [page-id]
+                 (if (nil? page-id)
+                   :cancelled
+                   (-> (call "select_page" {:pageId page-id})
+                       (.then (constantly :ok)))))))
+    (js/Promise.resolve :ok)))
+
+(defn- pick-on-selected!
+  "Inject the picker into the currently selected page, poll for a result, and
+   submit it (or report cancel/timeout)."
   [{:keys [dispatch! room-id prefill call]}]
-  (status! dispatch! room-id "Element picker: connecting to browser…")
   (-> (call "list_pages" {})
       (.then (fn [res]
-               (when (:is-error res)
-                 (throw (js/Error. (str "no browser page — " (result-text res)))))
                (let [line (selected-page-line res)]
                  (status! dispatch! room-id
                           (str "🎯 Element picker: pick an element in the browser"
@@ -226,7 +267,23 @@
                      (status! dispatch! room-id
                               (if (:timeout poll)
                                 "Element picker timed out (2 min)."
-                                "Element picker: browser error."))))))
+                                "Element picker: browser error."))))))))
+
+(defn- run-picker
+  "Drive the picker. When multiple tabs are open, first ask which one to pick
+   from (and switch to it); then inject into the selected page."
+  [{:keys [dispatch! get-state room-id call ask!] :as ctx}]
+  (status! dispatch! room-id "Element picker: connecting to browser…")
+  (-> (call "list_pages" {})
+      (.then (fn [res]
+               (when (:is-error res)
+                 (throw (js/Error. (str "no browser page — " (result-text res)))))
+               (choose-page! ask! {:dispatch! dispatch! :state (get-state)}
+                             call room-id (parse-pages res))))
+      (.then (fn [choice]
+               (if (= choice :cancelled)
+                 (status! dispatch! room-id "Element picker cancelled.")
+                 (pick-on-selected! ctx))))
       (.catch (fn [e]
                 (cleanup! call)
                 (status! dispatch! room-id (str "Element picker error: " (.-message e)))))))
@@ -236,8 +293,10 @@
 (defn install
   "Return {:commands :keybindings :fx} for the element picker, wired to `call`
    — the shared chrome-devtools-mcp caller (fn [tool-name args] →
-   Promise<normalized-result {:content :is-error}>)."
-  [call]
+   Promise<normalized-result {:content :is-error}>). `ask!` (from
+   ext.core/create-dialogs) powers the multi-tab picker dialog; when absent
+   (headless / no dialogs) the picker falls back to the selected page."
+  [call & [ask!]]
   {:commands
    [{:name        "pick"
      :description "Pick a browser element and send its context + your message to xi"
@@ -249,5 +308,6 @@
      :event {:type :command/run :name "pick"}}]
    :fx
    {:ext.element-picker/run
-    (fn [{:keys [dispatch!]} {:keys [room-id prefill]}]
-      (run-picker {:dispatch! dispatch! :room-id room-id :prefill prefill :call call}))}})
+    (fn [{:keys [dispatch! get-state]} {:keys [room-id prefill]}]
+      (run-picker {:dispatch! dispatch! :get-state get-state
+                   :room-id room-id :prefill prefill :call call :ask! ask!}))}})

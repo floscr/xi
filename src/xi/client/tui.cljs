@@ -384,10 +384,34 @@
                            (respond! value)))
                        :else nil))}))
 
+(defn- build-select-dialog
+  "A generic single-choice dialog. Renders `options` (each {:label :value})
+   as a numbered list; a digit key answers with that option's value, Esc
+   cancels (answers nil). Values may be any type."
+  [{:keys [message options]} respond!]
+  {:type :dialog
+   :render (fn [width]
+             (into [(ansi/fg :border (apply str (repeat width "─")))
+                    (str "  " (or message "Choose:"))]
+                   (concat
+                    (map-indexed
+                     (fn [i {:keys [label]}]
+                       (str "  " (ansi/fg :accent (str "[" (inc i) "]")) " " label))
+                     options)
+                    [(str "  " (ansi/fg :dim "(number=select, Esc=cancel)"))])))
+   :handle-input (fn [data]
+                   (cond
+                     (escape? data) (respond! nil)
+                     (re-matches #"[0-9]" data)
+                     (let [idx (dec (js/parseInt data 10))]
+                       (when-let [choice (get (vec options) idx)]
+                         (respond! (:value choice))))
+                     :else nil))})
+
 (defn- build-dialog
   "A focused component for the active dialog. Dispatches the answer via
    :ui/dialog-response, which the dialog owner (xi.ext.core/create-dialogs)
-   resolves. :cwd-select offers a numbered directory list; everything else
+   resolves. :cwd-select and :select offer a numbered list; everything else
    is a y/n confirm."
   [{:keys [id type] :as dialog} room-id dispatch! editor]
   (let [respond! (fn [value]
@@ -400,8 +424,9 @@
                    ;; dialog stays focused and swallows input after answering.
                    (dispatch! {:type :ui/dialog-close
                                :room-id room-id :dialog-id id}))]
-    (if (= type :cwd-select)
-      (build-cwd-select-dialog dialog respond!)
+    (case type
+      :cwd-select (build-cwd-select-dialog dialog respond!)
+      :select     (build-select-dialog dialog respond!)
       (build-confirm-dialog dialog respond! editor))))
 
 ;; ── Render sync helpers ──────────────────────────────────────────────────────

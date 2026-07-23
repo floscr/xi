@@ -6,7 +6,7 @@ screenshot to the agent as the next prompt. The model gets direct visual + DOM
 context about exactly what you mean — no describing the element in prose.
 
 ```
-/pick                  open the picker on the selected page
+/pick                  open the picker (asks which tab if several are open)
 /pick fix this layout  open with a pre-filled message
 Ctrl+Shift+I           keybinding for /pick
 ```
@@ -19,18 +19,22 @@ stdio client. `xi.ext.chrome/create` merges in `element-picker/install`, passing
 the same `forward` caller the agent's browser tools use. So the picker requires
 `XI_CHROME_TOOLS` to be set — the same env that enables the chrome tools.
 
-### Targeting the selected page
+### Targeting a tab
 
-The picker always acts on chrome-devtools-mcp's **currently selected page**.
-That's the only unambiguous target: tabs can share a URL, so there's no reliable
-way to match a specific tab from the outside. `run-picker` calls `list_pages`
-first and surfaces the `[selected]` tab in the status line so you can see which
-page you're picking on.
+The picker acts on chrome-devtools-mcp's **selected page**. When more than one
+tab is open, `run-picker` first parses `list_pages` (`parse-pages`) and raises a
+`:select` dialog listing every tab (the current one tagged `[current]`); your
+choice is applied via `select_page` before injection. With a single tab — or in
+a headless server with no `ask!` available — it skips the dialog and uses the
+already-selected page. The `[selected]` tab is also surfaced in the status line
+so you can see which page you're picking on. (Tabs can share a URL, so the
+dialog labels each with its title + URL to disambiguate.)
 
 ### The flow
 
 ```
 /pick → :ext.element-picker/run fx
+  → list_pages            parse tabs; if >1, ask which (select_page)
   → list_pages            (status: which tab is selected)
   → evaluate_script       inject picker overlay (cleanup + config + picker.js)
   → poll evaluate_script  every 400ms for window.__xiPickerResult / …Cancelled

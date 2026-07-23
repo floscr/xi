@@ -7,6 +7,8 @@
 (def ^:private injection-fn #'ep/injection-fn)
 (def ^:private parse-eval-return #'ep/parse-eval-return)
 (def ^:private selected-page-line #'ep/selected-page-line)
+(def ^:private parse-pages #'ep/parse-pages)
+(def ^:private page-options #'ep/page-options)
 
 (deftest injection-fn-embeds-config-and-picker
   (let [js (injection-fn "make it wider")]
@@ -40,6 +42,35 @@
       (is (= "1: http://b/" (selected-page-line res))))
     (testing "nil when nothing is selected"
       (is (nil? (selected-page-line {:content [{:type "text" :text "0: http://a/"}]}))))))
+
+(deftest parse-pages-extracts-id-label-and-selection
+  (let [res {:content [{:type "text"
+                        :text (str "## Pages\n"
+                                   "0: Home (http://a/)\n"
+                                   "1: Docs (http://b/) [selected]\n"
+                                   "2: http://c/ isolatedContext=foo")}]}
+        pages (parse-pages res)]
+    (testing "parses each page line into id/label/selected?"
+      (is (= [{:id 0 :label "Home (http://a/)" :selected? false}
+              {:id 1 :label "Docs (http://b/)" :selected? true}
+              {:id 2 :label "http://c/" :selected? false}]
+             pages)))
+    (testing "strips the isolatedContext suffix from the label"
+      (is (= "http://c/" (:label (nth pages 2)))))
+    (testing "skips non-page lines like the header"
+      (is (= 3 (count pages)))))
+  (testing "empty when there are no page lines"
+    (is (= [] (parse-pages {:content [{:type "text" :text "no pages here"}]})))))
+
+(deftest page-options-tags-the-current-tab
+  (let [opts (page-options [{:id 0 :label "A" :selected? false}
+                            {:id 1 :label "B" :selected? true}])]
+    (testing "maps to {:label :value} with the id as value"
+      (is (= 0 (:value (first opts))))
+      (is (= 1 (:value (second opts)))))
+    (testing "marks the selected page as current"
+      (is (= "A" (:label (first opts))))
+      (is (str/includes? (:label (second opts)) "[current]")))))
 
 (deftest install-registers-command-and-fx
   (let [{:keys [commands keybindings fx]} (ep/install (fn [_ _] (js/Promise.resolve {})))
