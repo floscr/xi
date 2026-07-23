@@ -543,21 +543,13 @@
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
           :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
-          :models/web-list       forward
           :models/web-list-result (fn [st {:keys [models]}]
                                     {:state (assoc st :web/model-list models)})
           :models/select         (fn [st {:keys [model room-id]}]
-                                    {:state (-> st
-                                                (dissoc :web/model-list :web/palette-page)
-                                                (update :web/selector-search dissoc "model"))
+                                    {:state (dissoc st :web/model-list :web/palette-page)
                                      :effects [[:ws/send {:type :input/submit
                                                           :room-id room-id
                                                           :text (str "/model " model)}]]})
-          :models/close          (fn [st _] {:state (-> st
-                                                        (dissoc :web/model-list)
-                                                        (update :web/selector-search dissoc "model"))})
-          :selector/search       (fn [st {:keys [id query]}]
-                                   {:state (assoc-in st [:web/selector-search id] query)})
           :skill/web-list        forward
           :skill/web-list-result (fn [st {:keys [skills]}]
                                     {:state (assoc st :web/skill-list skills)})
@@ -661,8 +653,7 @@
                                    {:state (-> st
                                                (assoc :web/palette-page {:kind :model}
                                                       :web/palette-drilling? true)
-                                               (dissoc :web/model-list)
-                                               (update :web/selector-search dissoc "model"))
+                                               (dissoc :web/model-list))
                                     :effects [[:ws/send {:type :models/web-list}]
                                               [:palette/reopen nil]]})
           :palette/back          (fn [st _]

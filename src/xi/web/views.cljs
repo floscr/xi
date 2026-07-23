@@ -1364,17 +1364,6 @@
              [:span {:class ["selector-menu-desc"]} desc])])
         [:div {:class ["selector-menu-empty"]} (or empty-label "Nothing found")])])))
 
-(defn- model-selector [dispatch! room-id models current-model query]
-  (selector-menu
-   {:id "model"
-    :items (for [m models]
-             {:value m :label m :active? (= m current-model)})
-    :on-select (fn [m] (dispatch! {:type :models/select :model m :room-id room-id}))
-    :on-close  (fn [] (dispatch! {:type :models/close}))
-    :search {:query query
-             :placeholder "Search models…"
-             :on-search (fn [q] (dispatch! {:type :selector/search :id "model" :query q}))}}))
-
 (defn- skill-selector
   "Overlay menu of on-demand skills (name + description). Selecting one loads
    it into the current room via `/skill load`."
@@ -1515,7 +1504,7 @@
                      :on {:click (fn [e]
                                    (.stopPropagation e)
                                    (dispatch! {:type :overflow/close})
-                                   (dispatch! {:type :models/web-list}))}}
+                                   (dispatch! {:type :palette/open-models}))}}
             (icon/icon {:icon-name :layers :size :sm})
             [:span "Change model"]])
          (when room
@@ -1702,7 +1691,6 @@
         ready?  (not loading?)
         pa?     (get-in state [:lobby :personal-agent?])
         dkey    (draft-key state)
-        model-list (:web/model-list state)
         buffers    (get-in room [:ui :buffers])
         active-buf (get-in room [:ui :active-buffer] :chat)
         has-tabs?  (boolean (:diff buffers))
@@ -1727,9 +1715,6 @@
       (when has-tabs?
         (tab-bar dispatch! (:id room) active-buf buffers))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
-     (when (and model-list (not= :model (get-in state [:web/palette-page :kind])))
-       (model-selector dispatch! (:id room) model-list model
-                       (get-in state [:web/selector-search "model"])))
      (when-let [skills (:web/skill-list state)]
        (skill-selector dispatch! (:id room) skills))
      (case active-buf
