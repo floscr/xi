@@ -114,11 +114,10 @@
   (let [{:keys [state effects]} (nav {:page :chat :session-id "s1"})]
     (is (= :chat (get-in state [:web/route :page])))
     (is (= "s1" (get-in state [:web/route :session-id])))
-    (is (some (fn [[t ev]] (and (= :app/dispatch t)
-                                (= :room/join (:type ev))
+    (is (some (fn [[t ev]] (and (= :room/join-with-cache t)
                                 (= "s1" (:session-id ev))))
               effects)
-        "emits room/join with session-id")
+        "emits room/join-with-cache with session-id")
     (is (has-dispatch? effects :session/mark-read)
         "emits mark-read")))
 
@@ -206,9 +205,12 @@
           {:keys [effects]} (router/navigate roomless st {:page :chat :session-id "other-sid"})]
       (is (has-dispatch? effects :room/leave)
           "emits room/leave for the orphaned empty room")
-      (is (has-dispatch? effects :room/join)
+      (is (some #(= :room/join-with-cache (first %)) effects)
           "still joins the destination chat")
-      (let [{:keys [:room/leave :room/join]} (effect-order effects [:room/leave :room/join])]
+      (let [idx   (fn [pred] (->> (map-indexed vector effects)
+                                  (some (fn [[i e]] (when (pred e) i)))))
+            leave (idx (fn [[t ev]] (and (= :app/dispatch t) (= :room/leave (:type ev)))))
+            join  (idx (fn [[t]] (= :room/join-with-cache t)))]
         (is (< leave join)
             "leaves the old room BEFORE joining the new one"))))
   (testing "a room with history is NOT closed on chat switch"
