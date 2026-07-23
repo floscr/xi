@@ -956,6 +956,12 @@ body {
     border: var(--border-0);
     border-radius: var(--radius-lg);
     overflow: hidden;
+    /* Docked flush against the viewport bottom: drop the bottom border and
+       bottom corners so the card merges with the edge. Restored when the
+       composer floats up on tall screens (see the min-height query below). */
+    border-bottom: none;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
   /* The frame supplies the outer border, so the input row drops its bottom
      border and keeps the top one only as the divider under the command bar. */
@@ -991,6 +997,12 @@ body {
 @media (min-width: 769px) and (min-height: 820px) {
   .compose-box {
     margin-bottom: var(--size-4);
+  }
+  /* Floated up off the bottom edge — restore the full rounded card. */
+  .compose-frame {
+    border-bottom: var(--border-0);
+    border-bottom-left-radius: var(--radius-lg);
+    border-bottom-right-radius: var(--radius-lg);
   }
   .compose-box .form-textarea-auto {
     max-height: calc(1.5em * 14) !important;
