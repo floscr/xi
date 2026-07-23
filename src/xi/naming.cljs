@@ -82,15 +82,25 @@
 (defn- title-generated
   "Apply the model title over the nil/provisional name, so the prompt-derived
    placeholder is replaced once generation finishes. A /resume or compaction
-   that set a real (non-provisional) name always wins, so we never clobber it."
+   that set a real (non-provisional) name always wins, so we never clobber it.
+
+   Persist the fresh title immediately via :session/sync. The title turn
+   resolves out of band and often *after* the turn-end that first wrote the
+   session file (e.g. a short turn whose title turn is still running, or one
+   with a large first message like the element picker's), so without this the
+   provisional name would linger on disk until some later turn-end synced the
+   room — which for a one-shot picker session may never happen. :session/sync
+   no-ops until the session has a provider-session-id, so an early landing is
+   still safely persisted by the following turn-end."
   [st {:keys [room-id title]}]
   (when-let [room (state/get-room st room-id)]
     (when (and title
                (or (nil? (get-in room [:session :name]))
                    (get-in room [:agent :title-provisional?])))
-      {:state (-> st
-                  (assoc-in [:rooms room-id :session :name] title)
-                  (update-in [:rooms room-id :agent] dissoc :title-provisional?))})))
+      {:state   (-> st
+                    (assoc-in [:rooms room-id :session :name] title)
+                    (update-in [:rooms room-id :agent] dissoc :title-provisional?))
+       :effects [[:session/sync {:room-id room-id}]]})))
 
 (def handlers
   {:session/title-generated title-generated})

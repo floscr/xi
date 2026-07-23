@@ -36,11 +36,13 @@
 (deftest title-generated-overrides-provisional-name
   (let [st (:state (handle (with-room)
                            {:type :prompt/submit :room-id "r" :text "fix the parser bug"}))
-        st (:state (handle st
-                           {:type :session/title-generated :room-id "r" :title "Parser Bugfix"}))]
+        {st :state effects :effects}
+        (handle st {:type :session/title-generated :room-id "r" :title "Parser Bugfix"})]
     (testing "model title replaces the provisional prompt-derived name"
       (is (= "Parser Bugfix" (get-in st [:rooms "r" :session :name])))
-      (is (nil? (get-in st [:rooms "r" :agent :title-provisional?]))))))
+      (is (nil? (get-in st [:rooms "r" :agent :title-provisional?]))))
+    (testing "persists the fresh title immediately so a late landing isn't lost"
+      (is (some #(= :session/sync (first %)) effects)))))
 
 (deftest already-named-session-skips-generation
   (let [{:keys [effects]}
