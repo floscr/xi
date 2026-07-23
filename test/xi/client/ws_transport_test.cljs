@@ -66,6 +66,32 @@
                (peek (get-in st2 [:rooms "r1" :history]))))
         (is (= "sid" (get-in st2 [:rooms "r1" :session :provider-session-id])))))))
 
+(deftest menu-events-apply-locally-without-round-trip
+  (let [st (joined-state)
+        menu {:id :commands :prompt "/" :items []}
+        {state' :state effects :effects}
+        (handle st {:type :ui/menu-open :room-id "r1" :menu menu})]
+    (is (empty? effects) "menu-open must not forward — no ws/send round-trip")
+    (is (= menu (get-in state' [:rooms "r1" :ui :menu])) "menu appears instantly")
+    (testing "menu-pop / menu-close apply locally too"
+      (let [popped (:state (handle state' {:type :ui/menu-pop :room-id "r1"}))]
+        (is (nil? (get-in popped [:rooms "r1" :ui :menu])))))
+    (testing "server-originated menu frames still mirror in"
+      (let [pushed {:id :resume :prompt "resume> " :items [] :load [:session/list {}]}
+            {state'' :state effects'' :effects}
+            (handle state' {:type :ui/menu-push :remote? true :room-id "r1" :menu pushed})]
+        (is (= [] effects'') "the frame's :load effect ran server-side — stripped here")
+        (is (= :resume (get-in state'' [:rooms "r1" :ui :menu :id])))))))
+
+(deftest room-joined-strips-stale-menu-state
+  (let [room (-> (state/make-room "r2" {:cwd "/tmp"})
+                 (assoc-in [:ui :menu] {:id :resume})
+                 (assoc-in [:ui :menu-stack] [{:id :commands}]))
+        st (:state (handle (state/initial-state {:mode :client})
+                           {:type :room/joined :remote? true :room-id "r2" :room room}))]
+    (is (nil? (get-in st [:rooms "r2" :ui :menu])))
+    (is (nil? (get-in st [:rooms "r2" :ui :menu-stack])))))
+
 (deftest clipboard-effect-survives-mirroring
   (let [{:keys [effects]} (handle (joined-state)
                                   {:type :command/run :remote? true

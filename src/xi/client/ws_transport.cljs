@@ -3,9 +3,9 @@
 
    In :client mode the app is a pure renderer + input layer:
 
-   - Local events (editor, menus, abort) are NOT applied locally — every
-     known event type forwards to the server as [:ws/send event]. The
-     server owns all room state.
+   - Local events (editor, abort) are NOT applied locally — every known
+     event type forwards to the server as [:ws/send event]. The server
+     owns all room state.
    - Server broadcasts arrive tagged :remote? and are applied with the
      same pure reducers the server ran, with effects stripped — the mirror
      replays the server's state transitions exactly, without re-running
@@ -14,6 +14,9 @@
      runs from mirrored events, so e.g. /debug copies on the client.
    - Exception 2: /quit and /reload act on the client process, so they're
      intercepted before forwarding.
+   - Exception 3: menu events (local-ui-events) apply locally without a
+     round-trip — menus are per-client UI built client-side, and the WS
+     echo delay was long enough to eat keystrokes typed right after '/'.
    - :room/joined installs the server's room snapshot; afterwards the
      incremental event stream keeps the mirror in sync."
   (:require [xi.commands :as commands]
@@ -54,6 +57,23 @@
 
 (defn- forward [_st ev]
   {:effects [[:ws/send ev]]})
+
+(def ^:private local-ui-events
+  "Menu events apply locally instead of forwarding. Their content is built
+   client-side (the Ctrl+P palette, the '/' commands menu), so a server
+   round-trip only adds latency — enough that characters typed right after
+   '/' landed in the still-focused editor and were lost when the menu
+   finally echoed back. Server-originated menu frames (e.g. /resume pushing
+   its session list, model-fetch populate) still arrive tagged :remote? and
+   mirror in like any other event."
+  #{:ui/menu-open :ui/menu-push :ui/menu-pop :ui/menu-populate :ui/menu-close})
+
+(defn- wrap-local-apply
+  "remote? → mirror; else run the base handler locally — no forwarding."
+  [client-side-fx handler]
+  (let [m (mirror client-side-fx handler)]
+    (fn [st ev]
+      (if (:remote? ev) (m st ev) (handler st ev)))))
 
 (defn- wrap
   "remote? → mirror; local-room target → run the base handler locally with
@@ -100,10 +120,13 @@
 ;; ── Client-only handlers ─────────────────────────────────────────────────────
 
 (defn- room-joined
-  "Install the server's room snapshot and make it active."
+  "Install the server's room snapshot and make it active. Menu state is
+   stripped: menus are per-client UI handled locally (local-ui-events), so a
+   menu frame a server-side flow once pushed (and the client since closed
+   locally) must not resurrect from the snapshot."
   [st {:keys [room-id room]}]
   {:state (-> st
-              (assoc-in [:rooms room-id] room)
+              (assoc-in [:rooms room-id] (update room :ui dissoc :menu :menu-stack))
               (assoc :active-room room-id))})
 
 (defn- room-left [st {:keys [room-id]}]
@@ -137,7 +160,11 @@
   ([base-handlers {:keys [client-fx local-handlers local-room? local-submit]}]
    (let [client-side-fx (into default-client-side-fx client-fx)
          wrap-opts {:local-room? local-room? :local-submit local-submit}]
-     (-> (into {} (map (fn [[t handler]] [t (wrap client-side-fx handler wrap-opts)])) base-handlers)
+     (-> (into {} (map (fn [[t handler]]
+                         [t (if (local-ui-events t)
+                              (wrap-local-apply client-side-fx handler)
+                              (wrap client-side-fx handler wrap-opts))]))
+               base-handlers)
          (assoc :input/submit (wrap-input-submit client-side-fx (get base-handlers :input/submit) wrap-opts)
                 :command/run  (wrap-command-run client-side-fx (get base-handlers :command/run) wrap-opts)
                 ;; Dialog answers must reach the server (it holds the
