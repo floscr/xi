@@ -66,83 +66,83 @@ body {
   white-space: nowrap;
 }
 
-/* ---- Chat transparent header (mobile) ----
+/* ---- Chat transparent header (all widths) ----
    In the chat view the header floats over the timeline: its buttons stay put
    as bordered chips (matching the burger toggle) while the conversation
    scrolls all the way to the top and fades out beneath them. The topbar keeps
-   its default padding so switching in/out of the chat view causes no jump. */
-@media (max-width: 768px) {
-  .topbar--chat {
-    position: relative;
-    z-index: 3;
-    background: transparent;
-    border-bottom: none;
-    pointer-events: none;
-  }
+   its default padding so switching in/out of the chat view causes no jump.
+   The sidebar is a floating overlay at every width, so the chat header uses
+   this same overlay treatment on desktop as on mobile. */
+.topbar--chat {
+  position: relative;
+  z-index: 3;
+  background: transparent;
+  border-bottom: none;
+  pointer-events: none;
+}
 
-  /* Buttons/badges stay interactive and legible over the scrolling content. */
-  .topbar--chat > * { pointer-events: auto; }
+/* Buttons/badges stay interactive and legible over the scrolling content. */
+.topbar--chat > * { pointer-events: auto; }
 
-  /* Frosted-glass chips: translucent fill over a light backdrop blur so every
-     header button reads as floating over the scrolling content. The tab pill
-     is frosted as a single unit, so its inner segments are left untouched. */
-  .topbar--chat button:not(.tab-pill-item),
-  .topbar--chat .tab-pill {
-    background: color-mix(in srgb, var(--bg-0) 55%, transparent);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
-  }
+/* Frosted-glass chips: translucent fill over a light backdrop blur so every
+   header button reads as floating over the scrolling content. The tab pill
+   is frosted as a single unit, so its inner segments are left untouched. */
+.topbar--chat button:not(.tab-pill-item),
+.topbar--chat .tab-pill {
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
 
-  /* Match the burger toggle: a bordered chip. */
-  .topbar--chat .icon-btn {
-    width: var(--size-10);
-    height: var(--size-10);
-    padding: 0;
-    border: var(--border-0);
-    border-radius: var(--radius-md);
-    color: var(--fg-1);
-  }
+/* Match the burger toggle: a bordered chip. */
+.topbar--chat .icon-btn {
+  width: var(--size-10);
+  height: var(--size-10);
+  padding: 0;
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  color: var(--fg-1);
+}
 
-  /* The active tab segment stays a touch more opaque so it reads as selected. */
-  .topbar--chat .tab-pill-item--active {
-    background: color-mix(in srgb, var(--bg-0) 80%, transparent);
-  }
+/* The active tab segment stays a touch more opaque so it reads as selected. */
+.topbar--chat .tab-pill-item--active {
+  background: color-mix(in srgb, var(--bg-0) 80%, transparent);
+}
 
-  /* The chat timeline slides up under the transparent header (reclaiming its
-     height) and fades out as content passes beneath the buttons. The timeline's
-     own padding is left untouched, so message spacing doesn't jump.
-     --chat-header-h mirrors the topbar height (safe-area + button + padding). */
-  .topbar--chat + .timeline {
-    --chat-header-h: calc(max(var(--size-2), env(safe-area-inset-top, 0px))
-                          + var(--size-10) + var(--size-2));
-    /* Height reserved for the floating quick-command bar at the bottom. 0 by
-       default (personal-agent chats have no bar); overridden below when the bar
-       is present so the timeline slides under it just like under the header. */
-    --quick-cmd-h: 0px;
-    margin-top: calc(-1 * var(--chat-header-h));
-    margin-bottom: calc(-1 * var(--quick-cmd-h));
-    /* Offset the first content below the floating header so it isn't pinned
-       under the buttons (and faded) at rest; scrolled content still passes
-       under the header and fades via the mask. Mirror at the bottom for the
-       quick-command bar (keeping the base gap). */
-    padding-top: var(--chat-header-h);
-    padding-bottom: calc(var(--size-2) + var(--quick-cmd-h));
-    -webkit-mask-image: linear-gradient(to bottom,
-                          transparent 0, rgba(0, 0, 0, 1) var(--chat-header-h),
-                          rgba(0, 0, 0, 1) calc(100% - var(--quick-cmd-h)),
-                          transparent 100%);
-    mask-image: linear-gradient(to bottom,
-                  transparent 0, rgba(0, 0, 0, 1) var(--chat-header-h),
-                  rgba(0, 0, 0, 1) calc(100% - var(--quick-cmd-h)),
-                  transparent 100%);
-  }
+/* The chat timeline slides up under the transparent header (reclaiming its
+   height) and fades out as content passes beneath the buttons. The timeline's
+   own padding is left untouched, so message spacing doesn't jump.
+   --chat-header-h mirrors the topbar height (safe-area + button + padding). */
+.topbar--chat + .timeline {
+  --chat-header-h: calc(max(var(--size-2), env(safe-area-inset-top, 0px))
+                        + var(--size-10) + var(--size-2));
+  /* Height reserved for the floating quick-command bar at the bottom. 0 by
+     default (personal-agent chats have no bar); overridden below when the bar
+     is present so the timeline slides under it just like under the header. */
+  --quick-cmd-h: 0px;
+  margin-top: calc(-1 * var(--chat-header-h));
+  margin-bottom: calc(-1 * var(--quick-cmd-h));
+  /* Offset the first content below the floating header so it isn't pinned
+     under the buttons (and faded) at rest; scrolled content still passes
+     under the header and fades via the mask. Mirror at the bottom for the
+     quick-command bar (keeping the base gap). */
+  padding-top: var(--chat-header-h);
+  padding-bottom: calc(var(--size-2) + var(--quick-cmd-h));
+  -webkit-mask-image: linear-gradient(to bottom,
+                        transparent 0, rgba(0, 0, 0, 1) var(--chat-header-h),
+                        rgba(0, 0, 0, 1) calc(100% - var(--quick-cmd-h)),
+                        transparent 100%);
+  mask-image: linear-gradient(to bottom,
+                transparent 0, rgba(0, 0, 0, 1) var(--chat-header-h),
+                rgba(0, 0, 0, 1) calc(100% - var(--quick-cmd-h)),
+                transparent 100%);
+}
 
-  /* When the quick-command bar is shown the timeline reserves its height and
-     lets chat content scroll behind the frosted buttons. More specific than the
-     rule above so the custom-property override actually wins. */
-  .topbar--chat + .timeline.timeline--float-footer {
-    --quick-cmd-h: calc(var(--size-1) + var(--size-2) * 2 + 1.25rem);
-  }
+/* When the quick-command bar is shown the timeline reserves its height and
+   lets chat content scroll behind the frosted buttons. More specific than the
+   rule above so the custom-property override actually wins. */
+.topbar--chat + .timeline.timeline--float-footer {
+  --quick-cmd-h: calc(var(--size-1) + var(--size-2) * 2 + 1.25rem);
 }
 
 /* ---- Nav group (burger toggle + back arrow as one segmented button) ----
