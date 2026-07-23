@@ -382,13 +382,57 @@
   (when (seq text)
     {:effects [[:editor/insert-text {:text text}]]}))
 
-(defn- menu-open [st {:keys [room-id menu]}]
+(defn- menu-open
+  "Open a menu as a fresh root frame — clears any existing drill stack."
+  [st {:keys [room-id menu]}]
   (when (state/get-room st room-id)
-    {:state (assoc-in st [:rooms room-id :ui :menu] menu)}))
+    {:state (update-in st [:rooms room-id :ui] assoc
+                       :menu menu :menu-stack [])}))
+
+(defn- menu-push
+  "Push a menu frame. If a menu is already active, it is pushed onto the
+   stack and the new frame is marked :back? so the renderer shows a back
+   affordance; Esc/cancel pops back to it. If no menu is active this behaves
+   like menu-open (so typed commands that open a select-menu still work
+   standalone). A frame's optional :load effect is fired to fetch async data."
+  [st {:keys [room-id menu]}]
+  (when (state/get-room st room-id)
+    (let [active (get-in st [:rooms room-id :ui :menu])
+          load  (:load menu)
+          frame (cond-> (dissoc menu :load)
+                  active (assoc :back? true))]
+      (cond-> {:state (-> st
+                          (cond-> active
+                            (update-in [:rooms room-id :ui :menu-stack] (fnil conj []) active))
+                          (assoc-in [:rooms room-id :ui :menu] frame))}
+        load (assoc :effects [load])))))
+
+(defn- menu-pop
+  "Pop one frame off the drill stack, restoring the parent as active. If the
+   stack is empty, close the menu entirely. Universal back-navigation."
+  [st {:keys [room-id]}]
+  (when (get-in st [:rooms room-id :ui :menu])
+    (let [stack (get-in st [:rooms room-id :ui :menu-stack])]
+      (if (seq stack)
+        {:state (update-in st [:rooms room-id :ui] assoc
+                           :menu (peek stack)
+                           :menu-stack (pop stack))}
+        {:state (update-in st [:rooms room-id :ui] dissoc :menu :menu-stack)}))))
+
+(defn- menu-populate
+  "Fill the active menu frame with fetched data (async result). Only applies
+   when the active menu is still the one that requested the load — matched by
+   :id — so a late-arriving fetch can't clobber a menu the user drilled away
+   from. Clears :loading?."
+  [st {:keys [room-id id menu]}]
+  (let [active (get-in st [:rooms room-id :ui :menu])]
+    (when (and active (or (nil? id) (= id (:id active))))
+      {:state (assoc-in st [:rooms room-id :ui :menu]
+                        (-> active (merge menu) (dissoc :loading?)))})))
 
 (defn- menu-close [st {:keys [room-id]}]
   (when (get-in st [:rooms room-id :ui :menu])
-    {:state (update-in st [:rooms room-id :ui] dissoc :menu)}))
+    {:state (update-in st [:rooms room-id :ui] dissoc :menu :menu-stack)}))
 
 (defn- tree-close [st {:keys [room-id]}]
   (when (state/get-room st room-id)
@@ -572,6 +616,9 @@
     :command/run     (make-command-run (all-commands extra-commands))
     :ui/status       ui-status
     :ui/menu-open    menu-open
+    :ui/menu-push    menu-push
+    :ui/menu-pop     menu-pop
+    :ui/menu-populate menu-populate
     :ui/menu-close   menu-close
     :editor/insert   editor-insert
     :ui/buffer-open  buffer-open

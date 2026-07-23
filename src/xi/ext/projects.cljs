@@ -39,7 +39,7 @@
                                                   :room-id room-id
                                                   :path p}})
                                        lines)]
-                       (dispatch! {:type :ui/menu-open :room-id room-id
+                       (dispatch! {:type :ui/menu-push :room-id room-id
                                    :menu {:id :projects :prompt "project> " :items items
                                           :key-bindings [{:key "\t"
                                                           :selected? true

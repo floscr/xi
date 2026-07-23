@@ -195,7 +195,7 @@
                                   all-sessions)]
        (if (and (empty? cwd-items) (empty? all-items))
          (dispatch! {:type :ui/status :room-id room-id :text "(no previous sessions)"})
-         (dispatch! {:type :ui/menu-open :room-id room-id
+         (dispatch! {:type :ui/menu-push :room-id room-id
                      :menu {:id :resume
                             :prompt "resume> "
                             :items cwd-items
@@ -219,7 +219,7 @@
        (if (empty? items)
          (dispatch! {:type :ui/status :room-id room-id
                      :text "(no favorites yet — press * on a session in /resume)"})
-         (dispatch! {:type :ui/menu-open :room-id room-id
+         (dispatch! {:type :ui/menu-push :room-id room-id
                      :menu {:id :favorites
                             :prompt "favorite> "
                             :items items
@@ -280,6 +280,10 @@
 
    :models/fetch
    (fn [{:keys [dispatch!]} {:keys [room-id]}]
+     ;; Show a spinner frame immediately (drills onto the palette if it's
+     ;; open), then fill it in once the model list arrives.
+     (dispatch! {:type :ui/menu-push :room-id room-id
+                 :menu {:id :model :prompt "model> " :loading? true}})
      (fetch-all-model-ids
       (fn [ids]
         (let [items (mapv (fn [id]
@@ -287,8 +291,8 @@
                              :event {:type :command/run :room-id room-id
                                      :name "model" :args id}})
                           ids)]
-          (dispatch! {:type :ui/menu-open :room-id room-id
-                      :menu {:id :model :prompt "model> " :items items}})))))
+          (dispatch! {:type :ui/menu-populate :room-id room-id :id :model
+                      :menu {:prompt "model> " :items items}})))))
 
    :cwd/change
    (fn [{:keys [dispatch! state]} {:keys [room-id path]}]

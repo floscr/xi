@@ -4,7 +4,7 @@
 
    `/gtd` opens a picker: a :gtd/open-picker effect runs the agenda (I/O),
    builds a menu whose items carry :gtd/start-task events, and opens it via
-   :ui/menu-open. Selecting an item dispatches :gtd/start-task, whose
+   :ui/menu-push. Selecting an item dispatches :gtd/start-task, whose
    handler defers to a :gtd/start-task effect that marks the task ACTIVE,
    reads its org body, and submits it as a prompt.
 
@@ -258,7 +258,7 @@
                                     :event {:type :gtd/start-task :room-id room-id
                                             :task-id (:id t) :title (:title t)}})
                                  active)]
-                 (dispatch! {:type :ui/menu-open :room-id room-id
+                 (dispatch! {:type :ui/menu-push :room-id room-id
                              :menu {:id :gtd :prompt "task> " :items items}}))))))
         (.catch (fn [err]
                   (dispatch! {:type :history/append :room-id room-id

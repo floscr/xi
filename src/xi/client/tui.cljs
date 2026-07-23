@@ -128,12 +128,47 @@
 
 ;; ── Menus (room :ui :menu → completion menu) ─────────────────────────────────
 
-(defn- build-menu
+(def ^:private menu-spinner-frames
+  ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
+
+(defn- build-loading-menu
+  "Spinner panel shown while an async menu frame fetches its items (e.g. the
+   model list). Self-animates via its own timer (:start/:stop are driven by
+   sync-bottom-panel!, since focus-panel! has no lifecycle). Esc pops back."
+  [{:keys [prompt]} room-id dispatch!]
+  (let [st    (atom {:frame 0 :timer nil})
+        label (or prompt "> ")]
+    {:type :loading-menu
+     :start (fn []
+              (when-not (:timer @st)
+                (let [t (js/setInterval
+                         (fn []
+                           (swap! st update :frame inc)
+                           (tui/request-render!))
+                         80)]
+                  (swap! st assoc :timer t))))
+     :stop (fn []
+             (when-let [t (:timer @st)]
+               (js/clearInterval t)
+               (swap! st assoc :timer nil)))
+     :invalidate (fn [])
+     :handle-input (fn [data]
+                     (when (escape? data)
+                       (dispatch! {:type :ui/menu-pop :room-id room-id})))
+     :render (fn [_width]
+               (let [n     (count menu-spinner-frames)
+                     spin  (nth menu-spinner-frames (mod (:frame @st) n))]
+                 [(str (ansi/fg :accent spin) " "
+                       (ansi/fg :dim label)
+                       (ansi/fg :dim "loading…"))]))}))
+
+(defn- build-completion-menu
   "Completion menu component from a menu description:
      {:id kw :prompt str :items [...] :alt-items [...] :tab-labels [...]}
-   Items carry {:label :description :event} — selecting dispatches the
-   event (after closing the menu). :alt-items adds a Tab-switched second
-   item set (e.g. /resume current-folder vs all).
+   Items carry {:label :description :event | :drill} — an :event item is
+   terminal (closes the menu then dispatches), a :drill item pushes a
+   sub-view frame and keeps the palette open. :alt-items adds a Tab-switched
+   second item set (e.g. /resume current-folder vs all).
    :key-bindings — vec of {:key str :event map :selected? bool}. When :key
    matches, closes the menu and dispatches the event (with :room-id merged).
    When :selected? is true, the currently selected item is merged into the
@@ -143,6 +178,7 @@
         ;; it lives in the component, not in app state.
         tab #js {:alt false}
         close! (fn [] (dispatch! {:type :ui/menu-close :room-id room-id}))
+        back!  (fn [] (dispatch! {:type :ui/menu-pop :room-id room-id}))
         ;; Event-dispatching key-bindings from menu descriptor
         menu-kbs (mapv (fn [{:keys [key event selected?]}]
                          {:key-fn  (fn [data] (= data key))
@@ -164,10 +200,16 @@
         opts (cond-> {:items items
                       :prompt (or prompt "> ")
                       :on-select (fn [item]
-                                   (close!)
-                                   (when-let [event (:event item)]
-                                     (dispatch! event)))
-                      :on-cancel close!}
+                                   ;; :drill items open a sub-view (push a
+                                   ;; frame) and keep the palette open; :event
+                                   ;; items are terminal — close then run.
+                                   (if-let [drill (:drill item)]
+                                     (dispatch! drill)
+                                     (do (close!)
+                                         (when-let [event (:event item)]
+                                           (dispatch! event)))))
+                      ;; Esc pops one drill frame (or closes at the root).
+                      :on-cancel back!}
                search-field
                (assoc :search-field search-field
                       :search-enrich-fn
@@ -193,6 +235,14 @@
                (seq all-kbs)
                (assoc :key-bindings all-kbs))]
     (completion/make-completion-menu opts)))
+
+(defn- build-menu
+  "Build the bottom-panel component for a menu descriptor: a spinner panel
+   while :loading?, otherwise the completion menu."
+  [menu room-id dispatch!]
+  (if (:loading? menu)
+    (build-loading-menu menu room-id dispatch!)
+    (build-completion-menu menu room-id dispatch!)))
 
 (defn- palette-action-event
   "Map a shared xi.palette action to the TUI event that runs it. Every action
@@ -228,10 +278,17 @@
                    :event (palette-action-event room-id [:command name])})
                 (palette/expand-commands palette/palette-commands))})
 
+;; Commands/actions whose selection opens a sub-picker: in the palette they
+;; drill in-place (push a frame, keep the palette open) instead of closing.
+(def ^:private palette-drill-commands #{"model" "resume" "sessions" "favorites"})
+(def ^:private palette-drill-actions  #{:change-model :skills})
+
 (defn- palette-menu
   "Command palette (Ctrl+P): shared sections — Chats, Actions, Commands — from
    xi.palette, each item mapped to a TUI :command/run event. Section headings
-   show only at an empty query (xi.tui.completion drops them once you type)."
+   show only at an empty query (xi.tui.completion drops them once you type).
+   Picker-opening entries become :drill items so they open a sub-view within
+   the palette (with Esc back-nav) rather than closing it."
   [state room-id]
   (let [room?   (boolean room-id)
         cur-sid (get-in state [:rooms room-id :session :id])
@@ -244,13 +301,16 @@
                               :event (palette-action-event room-id [:chat (:session-id s)])})
                            chats)
         action-items  (map (fn [{:keys [key label]}]
-                             {:label label
-                              :event (palette-action-event room-id [:action key])})
+                             (let [evt (palette-action-event room-id [:action key])]
+                               (if (palette-drill-actions key)
+                                 {:label label :drill evt}
+                                 {:label label :event evt})))
                            (palette/actions room?))
         command-items (map (fn [{:keys [name description]}]
-                             {:label (str "/" name)
-                              :description description
-                              :event (palette-action-event room-id [:command name])})
+                             (let [evt (palette-action-event room-id [:command name])]
+                               (cond-> {:label (str "/" name) :description description}
+                                 (palette-drill-commands name) (assoc :drill evt)
+                                 (not (palette-drill-commands name)) (assoc :event evt))))
                            (palette/expand-commands palette/palette-commands))]
     {:id :palette
      :prompt "palette> "
@@ -559,10 +619,16 @@
         target (or dialog menu (when tree? :tree)
                    (when pager? (.-pagerComp ctx)))]
     (when-not (identical? target (.-panelVal ctx))
+      ;; Stop any spinner timer started for the panel we're replacing.
+      (when-let [stop (.-panelStop ctx)] (stop) (set! (.-panelStop ctx) nil))
       (set! (.-panelVal ctx) target)
       (cond
         dialog (focus-panel! (build-dialog dialog (:id room) dispatch! (.-editor ctx)))
-        menu   (focus-panel! (build-menu menu (:id room) dispatch!))
+        menu   (let [c (build-menu menu (:id room) dispatch!)]
+                 (focus-panel! c)
+                 (when-let [start (:start c)]
+                   (start)
+                   (set! (.-panelStop ctx) (:stop c))))
         tree?  (focus-panel! (build-history-selector room dispatch!))
         pager? (tui/set-bottom-panel! (comp/make-text (or (:help (.-pagerComp ctx)) "")))
         :else  (do (tui/set-bottom-panel! (.-editor ctx))

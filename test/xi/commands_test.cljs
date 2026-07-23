@@ -174,7 +174,71 @@
         st (apply-events (with-room) {:type :ui/menu-open :room-id "r" :menu menu})]
     (is (= menu (get-in st [:rooms "r" :ui :menu])))
     (let [st' (apply-events st {:type :ui/menu-close :room-id "r"})]
-      (is (nil? (get-in st' [:rooms "r" :ui :menu]))))))
+      (is (nil? (get-in st' [:rooms "r" :ui :menu])))
+      (is (nil? (get-in st' [:rooms "r" :ui :menu-stack]))))))
+
+(deftest menu-open-clears-stack
+  ;; A fresh root open wipes any leftover drill stack.
+  (let [st (-> (with-room)
+               (assoc-in [:rooms "r" :ui :menu] {:id :old})
+               (assoc-in [:rooms "r" :ui :menu-stack] [{:id :ancient}]))
+        st' (apply-events st {:type :ui/menu-open :room-id "r"
+                              :menu {:id :palette}})]
+    (is (= {:id :palette} (get-in st' [:rooms "r" :ui :menu])))
+    (is (= [] (get-in st' [:rooms "r" :ui :menu-stack])))))
+
+(deftest menu-push-with-no-active-acts-like-open
+  (let [st (apply-events (with-room)
+                         {:type :ui/menu-push :room-id "r" :menu {:id :model}})]
+    (is (= {:id :model} (get-in st [:rooms "r" :ui :menu])))
+    (is (nil? (:back? (get-in st [:rooms "r" :ui :menu]))))))
+
+(deftest menu-push-drills-and-marks-back
+  (let [st  (apply-events (with-room)
+                          {:type :ui/menu-open :room-id "r" :menu {:id :palette}})
+        st' (apply-events st
+                          {:type :ui/menu-push :room-id "r" :menu {:id :model}})]
+    (is (= :model (get-in st' [:rooms "r" :ui :menu :id])))
+    (is (true? (get-in st' [:rooms "r" :ui :menu :back?])))
+    (is (= [{:id :palette}] (get-in st' [:rooms "r" :ui :menu-stack])))))
+
+(deftest menu-push-load-effect-fires
+  (let [handler (get commands/handlers :ui/menu-push)
+        result  (handler (with-room)
+                         {:room-id "r"
+                          :menu {:id :model :load [:models/fetch {:room-id "r"}]}})]
+    (is (= [[:models/fetch {:room-id "r"}]] (:effects result)))
+    ;; :load is stripped from the stored frame
+    (is (nil? (get-in (:state result) [:rooms "r" :ui :menu :load])))))
+
+(deftest menu-pop-restores-parent-then-closes
+  (let [st  (-> (with-room)
+                (apply-events {:type :ui/menu-open :room-id "r" :menu {:id :palette}})
+                (apply-events {:type :ui/menu-push :room-id "r" :menu {:id :model}}))
+        st1 (apply-events st {:type :ui/menu-pop :room-id "r"})]
+    (is (= {:id :palette} (get-in st1 [:rooms "r" :ui :menu])))
+    (is (= [] (get-in st1 [:rooms "r" :ui :menu-stack])))
+    (let [st2 (apply-events st1 {:type :ui/menu-pop :room-id "r"})]
+      (is (nil? (get-in st2 [:rooms "r" :ui :menu]))))))
+
+(deftest menu-populate-fills-active-and-clears-loading
+  (let [st  (apply-events (with-room)
+                          {:type :ui/menu-push :room-id "r"
+                           :menu {:id :model :loading? true}})
+        st' (apply-events st
+                          {:type :ui/menu-populate :room-id "r" :id :model
+                           :menu {:items [{:label "gpt"}]}})]
+    (is (= [{:label "gpt"}] (get-in st' [:rooms "r" :ui :menu :items])))
+    (is (nil? (get-in st' [:rooms "r" :ui :menu :loading?])))))
+
+(deftest menu-populate-ignores-stale-id
+  ;; A late fetch must not clobber a menu the user drilled away from.
+  (let [st  (apply-events (with-room)
+                          {:type :ui/menu-open :room-id "r" :menu {:id :other}})
+        st' (apply-events st
+                          {:type :ui/menu-populate :room-id "r" :id :model
+                           :menu {:items [{:label "gpt"}]}})]
+    (is (= {:id :other} (get-in st' [:rooms "r" :ui :menu])))))
 
 ;; ── session lifecycle ────────────────────────────────────────────────────────
 

@@ -174,7 +174,7 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
                                    :room-id room-id
                                    :name name}})
                         skills)]
-        (dispatch! {:type :ui/menu-open :room-id room-id
+        (dispatch! {:type :ui/menu-push :room-id room-id
                     :menu {:id :skills :prompt "skill> " :items items}}))
       (dispatch! {:type :history/append :room-id room-id
                   :entry {:kind :status
