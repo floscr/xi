@@ -294,7 +294,15 @@
                                         :includePartialMessages true
                                         ;; Whitelist approach: disable ALL builtins
                                         :tools []
-                                        :allowedTools [(str MCP_TOOL_PREFIX "*")]}
+                                        :allowedTools [(str MCP_TOOL_PREFIX "*")]
+                                        ;; Ignore filesystem MCP config
+                                        ;; (~/.claude.json). Without this the
+                                        ;; SDK merges the user's native MCP
+                                        ;; servers with ours and spawns them; we
+                                        ;; want ONLY our programmatic xi-tools
+                                        ;; server so the inner agent can't reach
+                                        ;; native MCP (e.g. chrome-devtools).
+                                        :strictMcpConfig true}
                                  @claude-executable
                                  (assoc :pathToClaudeCodeExecutable @claude-executable)
 
