@@ -11,11 +11,11 @@
                  (clj->js (cons "kb" args))
                  #js {:stdout "pipe" :stderr "pipe"
                       :cwd (or cwd (.cwd js/process))})]
-       (-> (js/Promise.all #js [(.text (.-stdout proc)) (.text (.-stderr proc))])
+       (-> (js/Promise.all #js [(.text (.-stdout proc)) (.text (.-stderr proc)) (.-exited proc)])
            (.then (fn [results]
                     (let [stdout (aget results 0)
                           stderr (aget results 1)
-                          code   (.-exitCode proc)]
+                          code   (aget results 2)]
                       (resolve
                        (if (= 0 code)
                          {:content [{:type "text" :text (if (seq stdout) stdout "(no output)")}]}
