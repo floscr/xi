@@ -20,7 +20,26 @@ immediately on page load, even when the backend is down.
 |---|---|
 | `xi/lobby` | last `{:rooms :sessions}` for an instant home paint |
 | `xi/room/<session-id>` | last `{:history :model}` per session for chat paint |
+| `xi/room-lru` | `[sid …]` most-recent-first, caps the room snapshots |
 | `xi/watched` | `{session-id response-count-when-last-seen}` (unread) |
+
+### Keeping the store under quota
+
+localStorage is ~5MB per origin, and both the lobby and the per-room
+snapshots grow without bound (thousands of saved sessions, heavy tool
+results). Once a single `setItem` throws `QuotaExceededError`, **every**
+subsequent write fails-safe (warn + continue) and the cache silently stops
+updating. Two guards keep it small:
+
+- **Lobby trim.** `save-lobby!` stores only favorites + the
+  most-recently-accessed N sessions (`max-cached-sessions`, 80) — a first
+  paint doesn't need the full history, and the live `:lobby/state`
+  restores it. This is the big one: the untrimmed list was hundreds of KB.
+- **Room LRU.** `save-room!` keeps at most `max-cached-rooms` (15) room
+  snapshots, pruning the least-recently-saved (and any legacy keys) on
+  every write. On a `QuotaExceededError` it drops every other room and
+  retries with only the current one, so one oversized write can't poison
+  the store.
 
 ## Hydrate
 
@@ -46,6 +65,73 @@ so streaming doesn't thrash storage:
 `:history/append`-style per-delta writes are intentionally excluded;
 `:agent/tool-result` gives a mid-turn checkpoint and `:agent/turn-end`
 persists the final state.
+
+### Cache seed on in-app navigation
+
+`hydrate` only seeds `:web/cache` for the URL the page *loaded* on. When
+you tap another chat inside the app, `router/navigate` also emits a
+`:cache/seed-room` effect that reads that session's cached snapshot into
+`:web/cache`, so the chat view paints its history immediately while the WS
+`:room/joined` round-trips (noticeable on slow mobile links). `:room/joined`
+then overwrites it with the live room.
+
+### Painting cache while the server history resumes
+
+Opening an idle session goes through a disk **resume**: the server installs
+the room with an *empty* history for a beat, then streams the messages in a
+separate `:session/resumed`. The chat view must not let that empty history
+shadow the cache — `(or (:history room) (:history cached))` returns `[]`
+(truthy) and blanks the timeline, which used to flash the “Connecting…”
+spinner between the cached paint and the newest chat. Instead `chat-view`
+prefers the room history only once it is *authoritative* (`(seq room-history)`)
+and otherwise falls through to the cache:
+
+- **cache present** — paint it immediately and show a quiet `Updating…` hint
+  in the chat topbar (`.topbar-updating`) while the resume is in flight; the
+  hint clears the moment the authoritative history lands (identical history =
+  no visible change; new messages simply reconcile in). No spinner flash.
+- **no cache** — fall back to the blocking `Connecting…` spinner, since there
+  is nothing to paint.
+
+The live re-attach path (`:room/joined` carries the full history) is
+authoritative on arrival, so it never shows the `Updating…` hint.
+
+### Hash-validated transfer skip (`:session/current`)
+
+Resuming a large session ships its whole transcript over the wire — the
+expensive part on a slow mobile link. When the client already has that exact
+transcript cached there is no reason to resend it. Xi detects this with a
+content hash and skips the transfer.
+
+Because client and server are the **same ClojureScript** compiled to JS,
+`(hash messages)` of equal EDN values matches across the two processes. That
+makes the hash a cheap, reliable “are we already current?” check:
+
+1. **Cache the hash.** Every `:session/resumed` now carries `:msg-hash`
+   (`(hash raw-messages)`, computed server-side). The web cache stores it
+   alongside the room's `:history`/`:model` under `xi/room/<sid>`, and
+   `:session/resumed` is in `persist-on` so even a cold-opened chat gets its
+   hash cached.
+2. **Echo it on join.** Router chat-joins dispatch through the
+   `:room/join-with-cache` effect, which reads the cached `:msg-hash` and
+   attaches it to the `:room/join` as `:cached-msg-hash`. The server threads
+   it through `:room/setup`.
+3. **Compare + skip.** In the `:room/setup` fx the server recomputes
+   `(hash messages)` from disk and compares. On a match it:
+   - broadcasts the `:session/resumed` with `:no-broadcast? true` so the
+     server still fills **its own** room mirror (multi-client correctness)
+     without pushing the full history to the joining client, and
+   - sends a tiny `:session/current {:session-id :msg-hash}` instead.
+   The client's `:session/current` handler repaints `[:rooms room-id :history]`
+   from its own cache and stamps the room's `:msg-hash`.
+
+A mismatch (or a client with no cached hash) always falls back to the normal
+full `:session/resumed` — a hash collision is astronomically unlikely, and any
+divergence is a safe over-send, never wrong data. The broadcast tap honours a
+per-event `:no-broadcast?` flag in addition to the static no-broadcast set.
+
+Wire effect: an unchanged large session drops from a ~19 KB `:session/resumed`
+to a ~185 B `:session/current` — the client paints entirely from cache.
 
 ## Reconnect (`xi.client.ws-transport`)
 
@@ -90,6 +176,8 @@ session-id mismatch so a navigation race can't send into the wrong room).
 - **No service worker.** If the page itself can't load, the app won't
   start. Offline support covers "page loaded but WS backend is down."
 - **localStorage limits.** Long sessions with heavy tool results can
-  approach the ~5MB quota; writes fail safe (warn + continue).
+  approach the ~5MB quota; writes fail safe (warn + continue). The lobby
+  trim + room LRU (see "Keeping the store under quota") bound the total so
+  the cache doesn't overflow and stall.
 - **Lobby may be stale offline.** Sessions created elsewhere appear on the
   next `:lobby/state`.

@@ -1598,18 +1598,29 @@
         room    (when (= (get-in active [:session :id]) sid)
                   active)
         cached  (get-in state [:web/cache sid])
-        history (or (:history room) (:history cached))
+        ;; Prefer the server's history once it lands, but an empty room
+        ;; history ([] — truthy) must NOT shadow the cache. On the resume
+        ;; path the room is installed with an empty history for a beat before
+        ;; :session/resumed streams the messages in; `(or [] cached)` would
+        ;; return [] and blank the timeline, flashing a spinner between the
+        ;; cached paint and the newest chat. Fall through to the cache until
+        ;; the authoritative history actually arrives.
+        room-history   (:history room)
+        authoritative? (boolean (seq room-history))
+        history (if authoritative? room-history (:history cached))
         busy?   (get-in room [:agent :busy?])
         model   (or (get-in room [:agent :model]) (:model cached))
         new?    (nil? sid)
-        ;; An existing session whose history hasn't streamed in yet (and that
-        ;; has no optimistic/pending content to show) is still loading — keep
-        ;; the spinner up instead of flashing the empty-room launch header for
-        ;; a frame before the messages render.
-        loading? (and (not new?)
-                      (empty? history)
-                      (not (:web/optimistic state))
-                      (not (:web/pending-submit state)))
+        ;; The server's history for an existing session is still in flight
+        ;; (nothing optimistic/pending to show in the meantime).
+        resuming? (and (not new?)
+                       (not authoritative?)
+                       (not (:web/optimistic state))
+                       (not (:web/pending-submit state)))
+        ;; Only fall back to a blocking spinner when there's no cache to
+        ;; paint. With a cache we render it immediately and show a subtle
+        ;; "updating" hint in the topbar instead of a spinner flash.
+        loading? (and resuming? (empty? history))
         ready?  (not loading?)
         pa?     (get-in state [:lobby :personal-agent?])
         dkey    (draft-key state)
@@ -1632,7 +1643,12 @@
     [:div {:class ["container"] :replicant/key "chat"}
      [:div {:class ["topbar" "topbar--chat"]}
       (nav-group dispatch! (fn [_] (dispatch! (chat-back-route state))))
-      [:div {:class ["topbar-title"]}]
+      [:div {:class ["topbar-title"]}
+       ;; Cached history is already painted; the server's copy is still in
+       ;; flight. Show a quiet inline hint instead of blanking to a spinner.
+       (when (and resuming? (seq history))
+         [:span {:class ["topbar-updating"]}
+          (spinner) [:span "Updating…"]])]
       (offline-badge state)
       (when has-tabs?
         (tab-bar dispatch! (:id room) active-buf buffers))

@@ -108,14 +108,19 @@
                   (conj [:app/dispatch {:type :room/leave}])
 
                   (and (= page :chat) session-id (not already?))
-                  (conj [:app/dispatch
-                         ;; Always carry :session-id so the server can resume
-                         ;; even when the lobby cache has a stale room-id that
-                         ;; no longer exists on a restarted server.
-                         (cond-> {:type   :room/join
-                                  :target (or (session->room-id st session-id)
-                                              {:session-id session-id})}
-                           session-id (assoc :session-id session-id))]
+                  (conj ;; Paint the target's cached history immediately while
+                        ;; the join round-trips (slow on mobile).
+                        [:cache/seed-room {:session-id session-id}]
+                        ;; Join through the cache-aware effect so the client
+                        ;; can echo the cached msg-hash and let the server skip
+                        ;; re-sending unchanged history over the (slow) wire.
+                        ;; Always carry :session-id so the server can resume
+                        ;; even when the lobby cache has a stale room-id that
+                        ;; no longer exists on a restarted server.
+                        [:room/join-with-cache
+                         {:target     (or (session->room-id st session-id)
+                                          {:session-id session-id})
+                          :session-id session-id}]
                         [:app/dispatch {:type :session/mark-read
                                         :session-id session-id}])
 

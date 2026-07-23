@@ -66,6 +66,24 @@ body {
   white-space: nowrap;
 }
 
+/* Quiet "cache shown, fetching newer" hint that replaces the old
+   cache→spinner→newest flash. Sits in the (otherwise empty) chat topbar
+   title so it stays visible even when the timeline is scrolled to the bottom. */
+.topbar-updating {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2);
+  font-weight: 500;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+.topbar-updating .agent-status-spinner {
+  width: 11px;
+  height: 11px;
+  border-width: 1.5px;
+}
+
 /* ---- Chat transparent header (all widths) ----
    In the chat view the header floats over the timeline: its buttons stay put
    as bordered chips (matching the burger toggle) while the conversation

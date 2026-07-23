@@ -238,7 +238,7 @@
       ;; starting fresh (the :session/resumed broadcast fills the client's
       ;; mirror right after the empty :room/joined snapshot).
       :room/setup
-      (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd session-id]}]
+      (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd session-id cached-msg-hash]}]
         (let [summary (when session-id
                         (if personal-agent?
                           (session/find-personal-agent-session-by-id session-id)
@@ -270,16 +270,30 @@
                              :created      (js/Date.now)}})
           (dispatch! {:type :room/attach :client-id client-id :room-id room-id})
           (when summary
-            (dispatch! {:type :session/resumed :room-id room-id
-                        :session session :summary summary
-                        :messages (session/read-session-messages summary)})
-            ;; Auto-resume an agent whose turn was cut off by a hard restart:
-            ;; the session was marked interrupted while its spinner was up and
-            ;; never cleared (a completed turn's :session/sync would have).
-            ;; Clear the marker and re-drive it with a "continue" prompt.
-            (when (:interrupted-at summary)
-              (session/clear-interrupted! (:filepath summary))
-              (dispatch! {:type :prompt/submit :room-id room-id :text "continue"})))))
+            (let [messages (session/read-session-messages summary)
+                  ;; Hash the raw messages so client + server (same cljs, so
+                  ;; equal EDN hashes match) can detect an unchanged session.
+                  ;; When the joining client already cached this exact hash we
+                  ;; skip broadcasting the full history over the (slow mobile)
+                  ;; wire and send a tiny :session/current instead — the server
+                  ;; still fills its own room mirror via the non-broadcast
+                  ;; :session/resumed so multi-client correctness holds.
+                  msg-hash (hash messages)
+                  current? (= cached-msg-hash msg-hash)]
+              (dispatch! {:type :session/resumed :room-id room-id
+                          :session session :summary summary
+                          :messages messages :msg-hash msg-hash
+                          :no-broadcast? current?})
+              (when current?
+                (dispatch! {:type :session/current :room-id room-id
+                            :session-id session-id :msg-hash msg-hash}))
+              ;; Auto-resume an agent whose turn was cut off by a hard restart:
+              ;; the session was marked interrupted while its spinner was up and
+              ;; never cleared (a completed turn's :session/sync would have).
+              ;; Clear the marker and re-drive it with a "continue" prompt.
+              (when (:interrupted-at summary)
+                (session/clear-interrupted! (:filepath summary))
+                (dispatch! {:type :prompt/submit :room-id room-id :text "continue"}))))))
 
       ;; Send the full lobby payload (rooms + saved sessions) to one client.
       :lobby/send
@@ -552,7 +566,12 @@
          (add-tap!
           (fn [event st]
             (let [room-id (:room-id event)]
-              (when (and room-id (not (no-broadcast (:type event))))
+              ;; :no-broadcast? lets a single event opt out at runtime — the
+              ;; hash-matched :session/resumed fills the server mirror without
+              ;; re-sending the full history to the (already-current) client.
+              (when (and room-id
+                         (not (no-broadcast (:type event)))
+                         (not (:no-broadcast? event)))
                 ;; Originator-only events (e.g. the diff viewer) go to just
                 ;; the client that asked, so a client-local view doesn't flip
                 ;; every other connected client. Fall back to a room broadcast

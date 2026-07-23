@@ -457,6 +457,26 @@
           :session/counts-result counts-result
           :session/mark-read     mark-read
           :session/mark-all-read mark-all-read
+          ;; Seed a chat's cached history into :web/cache so it paints
+          ;; instantly on SPA navigation while the WS :room/joined is in
+          ;; flight (esp. on slow mobile links). :room/joined overwrites it.
+          :web/cache-seed        (fn [st {:keys [session-id room]}]
+                                   (when (and session-id room)
+                                     {:state (assoc-in st [:web/cache session-id] room)}))
+          ;; The server compared our :cached-msg-hash against the on-disk
+          ;; session and confirmed we're current, so it SKIPPED re-sending the
+          ;; (potentially large) resume payload. Promote our cached snapshot
+          ;; into the room mirror so the chat flips from the "Updating…" hint
+          ;; to authoritative with no transfer.
+          :session/current
+          (fn [st {:keys [room-id session-id msg-hash]}]
+            (let [cached (get-in st [:web/cache session-id])]
+              (when (seq (:history cached))
+                {:state (cond-> (-> st
+                                    (assoc-in [:rooms room-id :history] (:history cached))
+                                    (assoc-in [:rooms room-id :msg-hash] msg-hash))
+                          (:model cached)
+                          (assoc-in [:rooms room-id :agent :model] (:model cached)))})))
           :connection/status     connection-status
           ;; ─ Client auth (transport-level handshake, xi.server.ws) ─
           :auth/pending          (fn [st {:keys [code]}]
@@ -795,6 +815,21 @@
        (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
+   ;; Read a session's cached snapshot and feed it into :web/cache so the chat
+   ;; view paints from it while the WS join lands.
+   :cache/seed-room
+   (fn [{:keys [dispatch!]} {:keys [session-id]}]
+     (when-let [room (cache/load-room session-id)]
+       (dispatch! {:type :web/cache-seed :session-id session-id :room room})))
+   ;; Dispatch a :room/join carrying our cached message-hash (if any) so the
+   ;; server can skip re-sending an unchanged session's history over the wire
+   ;; and answer :session/current instead. Reads localStorage, hence an effect.
+   :room/join-with-cache
+   (fn [{:keys [dispatch!]} {:keys [target session-id]}]
+     (let [msg-hash (:msg-hash (cache/load-room session-id))]
+       (dispatch! (cond-> {:type :room/join :target target}
+                    session-id (assoc :session-id session-id)
+                    msg-hash   (assoc :cached-msg-hash msg-hash)))))
    :theme/apply  (fn [_ mode]
                    (let [el js/document.documentElement]
                      ;; Suppress transitions during switch
