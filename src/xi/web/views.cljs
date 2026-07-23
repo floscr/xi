@@ -574,6 +574,15 @@
   (let [q (str/lower-case (or query ""))]
     (filterv #(str/starts-with? (:name %) q) (expand-commands web-commands))))
 
+(defn dispatch-command!
+  "Fire a slash command as a structured :command/run key, decoupled from the
+   compose draft. Accepts \"/diff staged\", \"diff staged\", or \"diff\"."
+  [dispatch! room-id slash]
+  (let [{:keys [name args]}
+        (commands/parse-input (if (str/starts-with? slash "/") slash (str "/" slash)))]
+    (dispatch! (cond-> {:type :command/run :room-id room-id :name name}
+                 args (assoc :args args)))))
+
 (defn- command-suggestions
   "Popup list of matching slash commands above the compose box."
   [dispatch! room-id draft-key commands selected-index]
@@ -584,8 +593,7 @@
         [:button {:class ["slash-item"
                           (when (= i selected-index) "slash-item--selected")]
                   :on {:click (fn [_]
-                                (dispatch! {:type :input/submit :room-id room-id
-                                            :text (str "/" name)})
+                                (dispatch-command! dispatch! room-id name)
                                 (when-let [^js el (compose-textarea-el)]
                                   (set! (.-value el) ""))
                                 (dispatch! {:type :compose/clear-draft :draft-key draft-key}))
@@ -672,8 +680,7 @@
            [:button {:class ["quick-cmd"]
                      :replicant/key name
                      :on {:click (fn [_]
-                                  (dispatch! {:type :input/submit :room-id room-id
-                                              :text (str "/" name)}))}}
+                                  (dispatch-command! dispatch! room-id name))}}
             (str "/" name)])
          (quick-command-list recents))]])
 
@@ -763,8 +770,7 @@
                           (if cmd-open?
                             (let [sel (min (or cmd-selected 0) (dec (count cmd-matches)))
                                   cmd-name (:name (nth cmd-matches sel))]
-                              (dispatch! {:type :input/submit :room-id room-id
-                                          :text (str "/" cmd-name)})
+                              (dispatch-command! dispatch! room-id cmd-name)
                               (when-let [^js el (compose-textarea-el)]
                                 (set! (.-value el) ""))
                               (dispatch! {:type :compose/clear-draft
@@ -789,8 +795,7 @@
                               ("Enter" "Tab")
                               (do (.preventDefault e)
                                   (let [cmd-name (:name (nth cmd-matches sel))]
-                                    (dispatch! {:type :input/submit :room-id room-id
-                                                :text (str "/" cmd-name)})
+                                    (dispatch-command! dispatch! room-id cmd-name)
                                     (when-let [^js el (compose-textarea-el)]
                                       (set! (.-value el) ""))
                                     (dispatch! {:type :compose/clear-draft
@@ -2674,10 +2679,8 @@
            (cmd/command-item
             {:icon :terminal
              :value (str "/" name " " description)
-             :on-click (fn [_] (dispatch! {:type :input/submit
-                                           :room-id (:id room)
-                                           :text (str "/" name)}))}
-            (str "/" name)))))))))
+             :on-click (fn [_] (dispatch-command! dispatch! (:id room) name))}
+            (str "/" name))))))))))
 
 (defn- auth-overlay
   "Full-screen block while this browser awaits pairing approval (or was

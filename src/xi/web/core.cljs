@@ -808,17 +808,15 @@
                        (seq images) (assoc :images (vec images)))))))))
 
 (defn- record-command-tap
-  "Record originating slash-command submissions into the recently-executed
-   list that feeds the quick-command bar (skips mirrored/remote events and
-   plain prompts)."
+  "Record originating slash-command invocations (:command/run keys) into the
+   recently-executed list that feeds the quick-command bar (skips
+   mirrored/remote events)."
   [dispatch!]
   (fn [event _state]
-    (when (and (= :input/submit (:type event))
-               (not (:remote? event)))
-      (let [parsed (commands/parse-input (:text event))]
-        (when (and (= :command (:type parsed))
-                   (views/known-command? (:name parsed)))
-          (dispatch! {:type :web/record-command :name (:name parsed)}))))))
+    (when (and (= :command/run (:type event))
+               (not (:remote? event))
+               (views/known-command? (:name event)))
+      (dispatch! {:type :web/record-command :name (:name event)}))))
 
 (defn- prompt-nav-close-tap
   "Collapse the prompt-navigation group when the user sends a message or
