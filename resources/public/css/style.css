@@ -812,7 +812,6 @@ body {
   display: flex;
   overflow-x: auto;
   padding: var(--size-1) 0 0;
-  border-top: var(--border-0);
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
@@ -828,6 +827,9 @@ body {
   flex-shrink: 0;
   display: inline-flex;
   align-items: stretch;
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  overflow: hidden;
   background: color-mix(in srgb, var(--bg-0) 55%, transparent);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
