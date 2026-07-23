@@ -64,14 +64,41 @@
         (-> (str prefix (subs text start end) suffix)
             (str/replace #"[\n\r]+" " "))))))
 
+(defn- heading?
+  "A non-selectable section-heading item (carries :heading, no :label/:event).
+   Shown only at an empty query so the palette reads as grouped sections;
+   dropped once the user types, leaving a flat fuzzy list."
+  [item]
+  (contains? item :heading))
+
+(defn- first-selectable
+  "Index of the first non-heading item (0 when there are none/only headings)."
+  [items]
+  (or (first (keep-indexed (fn [i it] (when-not (heading? it) i)) items)) 0))
+
+(defn- step-selectable
+  "Nearest selectable index from `idx` moving by `delta`, skipping heading
+   items and wrapping. Returns `idx` unchanged when nothing is selectable."
+  [items idx delta]
+  (let [n (count items)]
+    (loop [i idx steps n]
+      (if (or (zero? n) (neg? steps))
+        idx
+        (let [i' (mod (+ i delta n) n)]
+          (if (heading? (nth items i'))
+            (recur i' (dec steps))
+            i'))))))
+
 (defn- filter-and-sort
   "Filter items by fuzzy query, sort by score.
    search-field — when non-nil, use substring match on that field instead of
-   fuzzy match on :label. Matched items get a :snippet in :description."
+   fuzzy match on :label. Matched items get a :snippet in :description.
+   Section headings are kept at an empty query and dropped once filtering."
   [items query search-field]
   (if (empty? query)
     items
-    (if search-field
+    (let [items (remove heading? items)]
+     (if search-field
       (->> items
            (keep (fn [item]
                    (let [text (get item search-field)]
@@ -84,7 +111,7 @@
            vec)
       (->> items
            (filter #(fuzzy-match? query (:label %)))
-           (sort-by #(fuzzy-score query (:label %)))))))
+           (sort-by #(fuzzy-score query (:label %))))))))
 
 ;; ── Key Detection (subset — reuse from editor) ───────────────────────────────
 
@@ -153,7 +180,7 @@
         key-bindings (or (:key-bindings opts) [])
 
         state (atom {:query ""
-                     :selected 0
+                     :selected (first-selectable all-items)
                      :all-items all-items
                      :filtered all-items
                      :search-mode false})
@@ -161,11 +188,13 @@
         refilter! (fn []
                     (let [{:keys [query all-items search-mode]} @state
                           sf (when search-mode search-field)
-                          filtered (filter-and-sort all-items query sf)]
-                      (swap! state assoc
-                             :filtered filtered
-                             :selected (min (:selected @state)
-                                            (max 0 (dec (count filtered)))))))
+                          filtered (filter-and-sort all-items query sf)
+                          n (count filtered)
+                          sel (min (:selected @state) (max 0 (dec n)))
+                          sel (if (and (pos? n) (heading? (nth filtered sel)))
+                                (step-selectable filtered sel 1)
+                                sel)]
+                      (swap! state assoc :filtered filtered :selected sel)))
 
         update-items! (fn [new-items]
                         (let [items (if (and search-enrich-fn
@@ -178,11 +207,10 @@
                           (tui/request-panel-render!)))
 
         move-selection (fn [delta]
-                         (let [{:keys [filtered selected]} @state
-                               n (count filtered)]
-                           (when (pos? n)
+                         (let [{:keys [filtered selected]} @state]
+                           (when (seq filtered)
                              (swap! state assoc :selected
-                                    (mod (+ selected delta n) n))))
+                                    (step-selectable filtered selected delta))))
                          (tui/request-panel-render!))
 
         insert-char (fn [ch]
@@ -199,8 +227,10 @@
 
         confirm (fn []
                   (let [{:keys [filtered selected]} @state]
-                    (when (and (seq filtered) on-select)
-                      (on-select (nth filtered selected)))))
+                    (when (seq filtered)
+                      (let [item (nth filtered selected)]
+                        (when (and on-select (not (heading? item)))
+                          (on-select item))))))
 
         cancel (fn []
                  (when on-cancel (on-cancel)))
@@ -299,20 +329,24 @@
              (into []
                    (map-indexed
                     (fn [vi idx]
-                      (let [item (nth filtered idx)
-                            is-selected (= idx selected)
-                            label (str/replace (or (:label item) "") #"[\n\r]+" " ")
-                            desc (:description item)
-                            prefix (if is-selected
-                                     (ansi/fg :accent "❯ ")
-                                     "  ")
-                            label-str (if is-selected
-                                        (ansi/fg :bold label)
-                                        label)
-                            desc-str (when (seq desc)
-                                       (str " " (ansi/fg :dim desc)))
-                            line (str prefix label-str desc-str)]
-                        (ansi/truncate-to-width line width)))
+                      (let [item (nth filtered idx)]
+                        (if (heading? item)
+                          ;; Section heading: dim, non-selectable separator.
+                          (ansi/truncate-to-width
+                           (str "  " (ansi/fg :dim (:heading item))) width)
+                          (let [is-selected (= idx selected)
+                                label (str/replace (or (:label item) "") #"[\n\r]+" " ")
+                                desc (:description item)
+                                prefix (if is-selected
+                                         (ansi/fg :accent "❯ ")
+                                         "  ")
+                                label-str (if is-selected
+                                            (ansi/fg :bold label)
+                                            label)
+                                desc-str (when (seq desc)
+                                           (str " " (ansi/fg :dim desc)))
+                                line (str prefix label-str desc-str)]
+                            (ansi/truncate-to-width line width)))))
                     (range scroll-start scroll-end)))
 
              ;; Empty state
@@ -322,7 +356,8 @@
 
              ;; Count indicator
              count-line (ansi/fg :dim
-                                 (str "  " (count filtered) "/" (count all-items)
+                                 (str "  " (count (remove heading? filtered)) "/"
+                                      (count (remove heading? all-items))
                                       (when (> n max-visible)
                                         (str " (scroll ↑↓)"))))]
 

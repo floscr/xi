@@ -142,8 +142,16 @@
     {:effects [[:models/fetch {:room-id room-id}]]}))
 
 (defn- cmd-resume [st {:keys [room-id args]}]
-  (if (nil? args)
+  (cond
+    (nil? args)
     {:effects [[:session/list {:room-id room-id}]]}
+
+    ;; `id:<session-id>` — resume a specific session (used by the palette Chats
+    ;; section), not an index into the listing.
+    (str/starts-with? args "id:")
+    {:effects [[:session/load {:room-id room-id :scope :all :session-id (subs args 3)}]]}
+
+    :else
     (let [[scope idx-str] (if (str/starts-with? args "all:")
                             [:all (subs args 4)]
                             [:cwd args])

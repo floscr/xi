@@ -216,23 +216,23 @@
                  :reload       (run "reload")))))
 
 (defn- commands-menu
-  "Slash-commands menu (Ctrl+/ and '/' on an empty editor): the assembly's
-   command list as a flat menu — no sections. Same expansion as the palette's
-   Commands group so the two stay in sync."
-  [room-id cmd-list]
+  "Slash-commands menu (Ctrl+/ and '/' on an empty editor): the shared curated
+   command list (xi.palette/palette-commands) as a flat menu — no sections —
+   so it matches the web '/' suggestions and the palette's Commands group."
+  [room-id]
   {:id :commands
    :prompt "/"
    :items (mapv (fn [{:keys [name description]}]
                   {:label (str "/" name)
                    :description description
                    :event (palette-action-event room-id [:command name])})
-                (palette/expand-commands cmd-list))})
+                (palette/expand-commands palette/palette-commands))})
 
 (defn- palette-menu
   "Command palette (Ctrl+P): shared sections — Chats, Actions, Commands — from
    xi.palette, each item mapped to a TUI :command/run event. Section headings
    show only at an empty query (xi.tui.completion drops them once you type)."
-  [state room-id cmd-list]
+  [state room-id]
   (let [room?   (boolean room-id)
         cur-sid (get-in state [:rooms room-id :session :id])
         chats   (->> (palette/recent-sessions state)
@@ -251,7 +251,7 @@
                              {:label (str "/" name)
                               :description description
                               :event (palette-action-event room-id [:command name])})
-                           (palette/expand-commands cmd-list))]
+                           (palette/expand-commands palette/palette-commands))]
     {:id :palette
      :prompt "palette> "
      :items (vec (concat (when (seq chat-items) (cons (heading "Chats") chat-items))
@@ -601,12 +601,10 @@
    opts:
      :ring         event ring buffer (feeds the logs buffer)
      :on-exit      (fn []) — flush hooks before process exit (quit/reload)
-     :commands     command list for the palette (built-ins + ext commands;
-                   defaults to nil → empty palette source)
      :prompt-badge (fn [state] → str) — extra prompt badge (ext indicators)
      :keybindings  ext keybindings ([{:key :event :when}]) wired into the
                    editor; :event dispatched with the active :room-id"
-  [{:keys [ring on-exit commands prompt-badge keybindings]}]
+  [{:keys [ring on-exit prompt-badge keybindings]}]
   (let [content (tui/create-tui!)
         chat (tui/make-container)
         view-wrapper (tui/make-container)
@@ -646,11 +644,11 @@
           :on-palette (fn []
                         (when-let [room (current-room)]
                           (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                      :menu (palette-menu (get-state) (:id room) commands)})))
+                                      :menu (palette-menu (get-state) (:id room))})))
           :on-commands (fn []
                          (when-let [room (current-room)]
                            (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                       :menu (commands-menu (:id room) commands)})))
+                                       :menu (commands-menu (:id room))})))
           :ext-keybindings ext-keybindings
           :on-git (fn [] (tui/run-external! ["ngit"] {}))
           :on-paste-image

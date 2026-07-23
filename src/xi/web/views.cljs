@@ -12,11 +12,13 @@
             [xi.highlight.bundle :as grammars]
             [xi.highlight.theme-css :as theme]
             [xi.diff :as diff]
+            [xi.palette :as palette]
             [xi.session.recent :as recent]
             [xi.util :as util]
             [ui.icon :as icon]
             [ui.form :as form]
             [ui.button :as button]
+            [ui.empty-state :as empty-state]
             [ui.toolbar :as toolbar]
             [ui.lightbox :as lightbox]
             [ui.sidebar :as sidebar]
@@ -494,28 +496,10 @@
 ;; ── Command suggestions ───────────────────────────────────────────────────────
 
 (def ^:private web-commands
-  "Commands shown in the web suggestion popup. `:while-busy?` marks
-   non-interrupting commands — read-only views that neither mutate session
-   state nor interrupt the running turn, so they may be submitted while the
-   agent is busy."
-  [{:name "help"     :description "Show available commands" :while-busy? true}
-   {:name "model"    :description "Show or set model"}
-   {:name "resume"   :description "Resume a previous session"}
-   {:name "sessions" :description "List previous sessions"}
-   {:name "new"      :description "Start a new session"}
-   {:name "clear"    :description "Clear current session"}
-   {:name "truncate" :description "Summarize conversation to reduce context"}
-   {:name "summary"  :description "Describe this session and refresh its title"}
-   {:name "diff"     :description "Show changes from this session" :while-busy? true
-    :subcommands [{:name "git"             :description "All git changes (staged + unstaged + untracked)"}
-                  {:name "staged"          :description "Staged changes"}
-                  {:name "unstaged"        :description "Unstaged changes"}
-                  {:name "session-edits"   :description "Diff of files edited this session"}
-                  {:name "session-commits" :description "Diff of commits made this session"}]}
-   {:name "commit"   :description "Review changes and create a git commit"}
-   {:name "review"   :description "Review git changes against the code-review methodology"
-    :subcommands [{:name "staged" :description "Review staged changes vs HEAD"}]}
-   {:name "debug"    :description "Copy debug info to clipboard" :while-busy? true}])
+  "Commands shown in the web suggestion popup and palette Commands section —
+   the shared curated list (see xi.palette/palette-commands), so the web and
+   TUI palettes stay identical."
+  palette/palette-commands)
 
 (def ^:private web-command-names
   (into #{} (map :name) web-commands))
@@ -558,22 +542,11 @@
     (or (not (str/starts-with? t "/"))
         (command-while-busy? t))))
 
-(defn- expand-commands
-  "Flatten commands + their subcommands into a single suggestion list, where
-   each subcommand becomes a `parent sub` entry (e.g. \"diff staged\")."
-  [commands]
-  (mapcat (fn [{:keys [name description subcommands]}]
-            (cons {:name name :description description}
-                  (map (fn [{sub-name :name sub-desc :description}]
-                         {:name (str name " " sub-name) :description sub-desc})
-                       subcommands)))
-          commands))
-
 (defn- match-commands
   "Filter commands (and their subcommands) by prefix query (text after the /)."
   [query]
   (let [q (str/lower-case (or query ""))]
-    (filterv #(str/starts-with? (:name %) q) (expand-commands web-commands))))
+    (filterv #(str/starts-with? (:name %) q) (palette/expand-commands web-commands))))
 
 (defn dispatch-command!
   "Fire a slash command as a structured :command/run key, decoupled from the
@@ -1066,7 +1039,7 @@
                      nil)))
                body-rows)]]))
         file-groups)
-       [:div {:class ["empty-state"]} "No changes."])
+       (empty-state/empty-state {} "No changes."))
      toolbar]))
 
 (defn- position-sel-toolbar!
@@ -1815,7 +1788,7 @@
                    (range start (inc total)))))
                (optimistic-post dispatch! state room sid history)
                (dialog-post dispatch! state room history)))
-            [:div {:class ["empty-state"]} (spinner) [:p "Connecting…"]])]]
+            (empty-state/empty-state {} (spinner) [:p "Connecting…"]))]]
         (copy-dialog-overlay dispatch! (:web/copy-text state))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))
@@ -2051,16 +2024,16 @@
         (search-box dispatch! :project-sessions "Search sessions…" raw-query content?))
       (cond
         loading?
-        [:div {:class ["empty-state"]} (spinner) [:p "Loading sessions…"]]
+        (empty-state/empty-state {} (spinner) [:p "Loading sessions…"])
 
         (and (empty? sessions) (empty? orphans))
         (if (seq query)
-          [:div {:class ["empty-state"]} [:p "No matching sessions."]]
-          [:div {:class ["empty-state"]}
+          (empty-state/empty-state {} [:p "No matching sessions."])
+          (empty-state/empty-state {}
            [:p "No sessions yet."]
            [:button {:class ["btn" "btn--primary"]
                      :on {:click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}}
-            "Start new session"]])
+            "Start new session"]))
 
         :else
         [:div {:class ["project-list"]}
@@ -2103,10 +2076,10 @@
            (session-card dispatch! s))]
 
         (seq query)
-        [:div {:class ["empty-state"]} [:p "No matching sessions."]]
+        (empty-state/empty-state {} [:p "No matching sessions."])
 
         :else
-        [:div {:class ["empty-state"]} [:p "No sessions yet."]])]]))
+        (empty-state/empty-state {} [:p "No sessions yet."]))]]))
 
 (defn- favorites-view
   "Flat list of bookmarked sessions (filtered from the lobby sessions)."
@@ -2132,12 +2105,12 @@
            (session-card dispatch! s))]
 
         (seq query)
-        [:div {:class ["empty-state"]} [:p "No matching favorites."]]
+        (empty-state/empty-state {} [:p "No matching favorites."])
 
         :else
-        [:div {:class ["empty-state"]}
+        (empty-state/empty-state {}
          [:p "No favorites yet."]
-         [:p {:class ["empty-state-hint"]} "Tap the star on a session to bookmark it."]])]]))
+         [:p {:class ["empty-state-hint"]} "Tap the star on a session to bookmark it."]))]]))
 
 (defn- personal-agent-home-view
   "Home view for personal-agent mode: a flat session list with no project
@@ -2170,9 +2143,9 @@
      [:div {:class ["home"]}
       (cond
         (not connected?)
-        [:div {:class ["empty-state"]}
+        (empty-state/empty-state {}
          (spinner)
-         [:p "Connecting to server…"]]
+         [:p "Connecting to server…"])
 
         :else
         [:div
@@ -2186,10 +2159,10 @@
               (session-card dispatch! s))]
 
            (seq query)
-           [:div {:class ["empty-state"]} [:p "No matching sessions."]]
+           (empty-state/empty-state {} [:p "No matching sessions."])
 
            :else
-           [:div {:class ["empty-state"]} [:p "No sessions yet."]])])]]))
+           (empty-state/empty-state {} [:p "No sessions yet."]))])]]))
 
 (defn- home-view [state dispatch!]
   (let [selected-dir (:web/selected-project-dir state)]
@@ -2255,14 +2228,14 @@
          [:div {:class ["home"]}
           (cond
             (not connected?)
-            [:div {:class ["empty-state"]}
+            (empty-state/empty-state {}
              (spinner)
-             [:p "Connecting to server…"]]
+             [:p "Connecting to server…"])
 
             loading?
-            [:div {:class ["empty-state"]}
+            (empty-state/empty-state {}
              (spinner)
-             [:p "Loading projects…"]]
+             [:p "Loading projects…"])
 
             content-active?
             [:div
@@ -2271,7 +2244,7 @@
                [:div {:class ["project-list"]}
                 (for [s (with-projects (active-first state matched-sessions))]
                   (session-card dispatch! s))]
-               [:div {:class ["empty-state"]} [:p "No matching sessions."]])]
+               (empty-state/empty-state {} [:p "No matching sessions."]))]
 
             :else
             [:div
@@ -2311,32 +2284,11 @@
                   (icon/icon {:icon-name :chevron-right :size :sm})]])
               ;; Project directories
               (if (and (seq query) (empty? dirs))
-                [:div {:class ["empty-state"]} [:p "No matching projects."]]
+                (empty-state/empty-state {} [:p "No matching projects."])
                 (for [d dirs]
                   (project-dir-card dispatch! d)))]])]]))))
 
 ;; ── Root ─────────────────────────────────────────────────────────────────────
-
-(defn- session-time
-  "Numeric last-visited timestamp for a session, for sorting."
-  [s]
-  (let [t (or (:last-accessed s) (:timestamp s))]
-    (cond
-      (number? t) t
-      (string? t) (let [n (.getTime (js/Date. t))] (if (js/isNaN n) 0 n))
-      :else 0)))
-
-(defn- recent-sessions
-  "Sessions from the lobby mirror: rooms with a running agent pinned to the
-   top, then by most-recently visited."
-  [state]
-  (let [rooms  (get-in state [:lobby :rooms])
-        busy?  (fn [s] (boolean (some (fn [r] (and (= (:session-id r) (:session-id s))
-                                                   (:busy? r)))
-                                      rooms)))]
-    (->> (get-in state [:lobby :sessions])
-         (sort-by (juxt busy? session-time) #(compare %2 %1))
-         (take 25))))
 
 (defn- recent-projects
   "Distinct project directories ordered by most-recently used, derived from
@@ -2346,7 +2298,7 @@
   (let [room-cwds (->> (get-in state [:lobby :rooms]) (keep :cwd))
         sess-cwds (->> (get-in state [:lobby :sessions])
                        (filter :cwd)
-                       (sort-by session-time #(compare %2 %1))
+                       (sort-by palette/session-time #(compare %2 %1))
                        (map :cwd))]
     (->> (concat room-cwds sess-cwds)
          distinct
@@ -2362,7 +2314,7 @@
   (let [open?    (boolean (:web/sidebar-open? state))
         pa?      (get-in state [:lobby :personal-agent?])
         projects (when (and open? (not pa?)) (recent-projects state))
-        sessions (when open? (recent-sessions state))
+        sessions (when open? (palette/recent-sessions state))
         orphans  (when open? (orphan-rooms state sessions))
         ;; Render one card per session-id from a single keyed sequence.
         ;; Replicant renders BOTH siblings when two share a :replicant/key
@@ -2476,10 +2428,10 @@
      [:div {:class ["diff-tab"]}
       (cond
         (and loading? (nil? text))
-        [:div {:class ["empty-state"]} (spinner) [:p "Loading changes…"]]
+        (empty-state/empty-state {} (spinner) [:p "Loading changes…"])
 
         (str/blank? text)
-        [:div {:class ["empty-state"]} "No changes."]
+        (empty-state/empty-state {} "No changes.")
 
         :else
         (diff-rows-view dispatch!
@@ -2619,7 +2571,7 @@
       (let [room         (state/active-room state)
             ;; Active rooms first, then most-recently-visited sessions; drop the
             ;; chat we're already looking at. Enriched with live status flags.
-            recents      (->> (recent-sessions state)
+            recents      (->> (palette/recent-sessions state)
                               (active-first state)
                               (remove :current?)
                               (take 8))
@@ -2647,38 +2599,29 @@
                      :data-palette-label (shorten-path d)}
              :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd d}))}
             (shorten-path d)))))
-     (cmd/command-group {:heading "Actions"}
-       (cmd/command-item {:icon :plus
-                          :on-click (fn [_] (dispatch! {:type :room/new}))}
-         "New chat")
-       (when room
-         (cmd/command-item {:icon :layers
-                            :on-click (fn [_] (dispatch! {:type :models/web-list}))}
-           "Change model"))
-       (when room
-         (cmd/command-item {:icon :zap
-                            :on-click (fn [_] (dispatch! {:type :skill/web-list}))}
-           "Skills"))
-       (when room
-         (cmd/command-item {:icon :code
-                            :on-click (fn [_] (dispatch! {:type :diff/reopen
-                                                          :room-id (:id room)
-                                                          :method "git" :engine :git}))}
-           "Git status"))
-       (when room
-         (cmd/command-item {:icon :copy
-                            :on-click (fn [_]
-                                        (let [text (commands/debug-text room)]
-                                          (if ios?
-                                            (dispatch! {:type :copy/open :text text})
-                                            (copy-to-clipboard! text))))}
-           "Copy debug info"))
-       (cmd/command-item {:icon :refresh
-                          :on-click (fn [_] (.reload js/location))}
-         "Reload"))
+     ;; Actions come from the shared xi.palette spec (same labels/icons/order as
+     ;; the TUI Ctrl+/ palette); the web maps each :key to its own handler.
+     (let [action-onclick
+           (fn [key]
+             (case key
+               :new-chat     (fn [_] (dispatch! {:type :room/new}))
+               :change-model (fn [_] (dispatch! {:type :models/web-list}))
+               :skills       (fn [_] (dispatch! {:type :skill/web-list}))
+               :git-status   (fn [_] (dispatch! {:type :diff/reopen
+                                                 :room-id (:id room)
+                                                 :method "git" :engine :git}))
+               :copy-debug   (fn [_]
+                               (let [text (commands/debug-text room)]
+                                 (if ios?
+                                   (dispatch! {:type :copy/open :text text})
+                                   (copy-to-clipboard! text))))
+               :reload       (fn [_] (.reload js/location))))]
+       (apply cmd/command-group {:heading "Actions"}
+         (for [{:keys [key label icon]} (palette/actions (boolean room))]
+           (cmd/command-item {:icon icon :on-click (action-onclick key)} label))))
      (when room
        (apply cmd/command-group {:heading "Commands"}
-         (for [{:keys [name description]} (expand-commands web-commands)]
+         (for [{:keys [name description]} (palette/expand-commands web-commands)]
            (cmd/command-item
             {:icon :terminal
              :value (str "/" name " " description)

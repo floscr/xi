@@ -242,19 +242,22 @@
            (dispatch! {:type :command/run :room-id room-id :name reopen})))))
 
    :session/load
-   (fn [{:keys [dispatch! state]} {:keys [room-id scope index]}]
+   (fn [{:keys [dispatch! state]} {:keys [room-id scope index session-id]}]
      (let [room (room-of state room-id)
-           sessions (list-room-sessions room scope)]
-       (if (and (<= 1 index) (<= index (count sessions)))
-         (let [summary (nth sessions (dec index))]
-           ;; A resumed session may live in a sibling git worktree; landing the
-           ;; room in that worktree (or the repo root when it's gone) is the
-           ;; worktree extension's job, chained onto :session/resumed.
-           (dispatch! {:type :session/resumed
-                       :room-id room-id
-                       :session (session/load-session summary)
-                       :summary summary
-                       :messages (session/read-session-messages summary)}))
+           sessions (list-room-sessions room scope)
+           summary (if session-id
+                     (some #(when (= session-id (:session-id %)) %) sessions)
+                     (when (and (<= 1 index) (<= index (count sessions)))
+                       (nth sessions (dec index))))]
+       (if summary
+         ;; A resumed session may live in a sibling git worktree; landing the
+         ;; room in that worktree (or the repo root when it's gone) is the
+         ;; worktree extension's job, chained onto :session/resumed.
+         (dispatch! {:type :session/resumed
+                     :room-id room-id
+                     :session (session/load-session summary)
+                     :summary summary
+                     :messages (session/read-session-messages summary)})
          (dispatch! {:type :ui/status :room-id room-id :text "Session not found."}))))
 
    :events/load

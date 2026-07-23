@@ -254,7 +254,6 @@ See docs/cli.md for the full reference.")
                  :on-exit (fn []
                             (ext/on-shutdown! composed)
                             (when jsonl-writer ((:flush! jsonl-writer))))
-                 :commands (commands/all-commands (:commands composed))
                  :prompt-badge (fn [st] (ext/prompt-badges composed st))
                  :keybindings (:keybindings composed)})
         handlers (-> (make-handlers (:commands composed))
@@ -464,8 +463,6 @@ See docs/cli.md for the full reference.")
         ring (log/create-ring)
         mirror (ext/compose (server-extensions nil))
         local  (ext/compose (client-extensions))
-        commands (into (commands/all-commands (:commands mirror))
-                       (:commands local))
         prompt-badge (fn [st] (str (ext/prompt-badges mirror st)
                                    (ext/prompt-badges local st)))
         keybindings (into (:keybindings mirror) (:keybindings local))
@@ -529,7 +526,6 @@ See docs/cli.md for the full reference.")
         client (client-tui/create!
                 {:ring ring
                  :on-exit (fn [] (ext/on-shutdown! local) ((:close! transport)))
-                 :commands commands
                  :prompt-badge prompt-badge
                  :keybindings keybindings})
         base (-> (make-handlers (:commands mirror))
