@@ -65,6 +65,7 @@
             [xi.server.room-manager :as rm]
             [xi.server.ws :as ws]
             [xi.session :as session]
+            [xi.session.recent :as recent]
             [xi.system-prompt :as system-prompt]))
 
 (def providers
@@ -125,6 +126,8 @@ USAGE
                              omitted. Safe to script/pipe (no TUI, no server).
   xi join   [flags] [url]    Connect a TUI client to the latest room on a server.
   xi create [flags] [url]    Connect a TUI client to a new room on a server.
+  xi sessions [flags]        List saved chats (the web sidebar's Recent set),
+                             then exit. Machine-facing; no TUI, no server.
   xi help                    Show this help (also --help, -h).
 
 FLAGS
@@ -139,6 +142,9 @@ FLAGS
   --debug-events             Write the full event stream as JSONL (see docs).
   --stream                   prompt: stream response tokens to stdout as they arrive.
   --no-store                 prompt: run ephemerally — leave no session behind.
+  --json                     sessions: emit a JSON array instead of TSV lines.
+  --all                      sessions: list every saved chat, not just recent.
+  --limit N                  sessions: cap the number of chats listed.
 
 ENVIRONMENT
   XI_MODEL, XI_EFFORT        Default model / reasoning effort.
@@ -166,7 +172,11 @@ See docs/cli.md for the full reference.")
           "join"           (recur (next args) (assoc opts :command :join))
           "create"         (recur (next args) (assoc opts :command :create))
           ("prompt" "-p")  (recur (next args) (assoc opts :command :prompt))
+          "sessions"       (recur (next args) (assoc opts :command :sessions))
           ("help" "--help" "-h") (recur (next args) (assoc opts :command :help))
+          "--json"         (recur (next args) (assoc opts :json? true))
+          "--all"          (recur (next args) (assoc opts :all? true))
+          "--limit"        (recur (nnext args) (assoc opts :limit (js/parseInt (second args) 10)))
           "--stream"       (recur (next args) (assoc opts :stream? true))
           "--no-store"     (recur (next args) (assoc opts :no-store? true))
           "--prompt"       (recur (nnext args) (assoc opts :initial-prompt (second args)))
@@ -761,6 +771,85 @@ See docs/cli.md for the full reference.")
                    ;; created on the first prompt, like the web empty chat.
                    :else (start-client! (assoc opts :target nil :defer-room? true))))))))
 
+;; ── Sessions (headless listing) ──────────────────────────────────────────────
+
+(defn- fetch-recent-sessions
+  "Connect to the running server's lobby — the SAME websocket the web sidebar
+   uses — and derive its \"Recent\" set from the :lobby/state payload via the
+   shared xi.session.recent filter, so the CLI and the web agree exactly (only
+   the server knows which sessions have a live room). Authenticates with the
+   local client-key (implicitly trusted by the server), stays in the lobby (no
+   room join), reads the first :lobby/state, then closes.
+
+   Resolves a vector of {:session-id :name :cwd} maps, or nil when no server
+   answers (connection refused / no lobby state in time). A present-but-empty
+   recent set resolves to []."
+  [opts]
+  (js/Promise.
+   (fn [resolve _reject]
+     (let [done?  (atom false)
+           timer  (atom nil)
+           closer (atom nil)
+           finish (fn [result]
+                    (when-not @done?
+                      (reset! done? true)
+                      (when-let [t @timer] (js/clearTimeout t))
+                      (when-let [c @closer] (try (c) (catch :default _ nil)))
+                      (resolve result)))
+           transport (ws-transport/create!
+                      {:url        (client-url opts)
+                       :hello      {:client-key  (auth/ensure-client-key!)
+                                    :client-name (str "cli@" (.hostname (js/require "node:os")))
+                                    :platform    "cli"}
+                       :target     nil
+                       :reconnect? false
+                       :on-close   (fn [] (finish nil))})]
+       (reset! closer (:close! transport))
+       ((:set-dispatch! transport)
+        (fn [ev]
+          (when (= :lobby/state (:type ev))
+            (let [cards (recent/recent-cards
+                         {:rooms      (:rooms ev)
+                          :sessions   (:sessions ev)
+                          :started-at (:started-at ev)
+                          :now        (js/Date.now)})]
+              (finish (mapv #(select-keys % [:session-id :name :cwd]) cards))))))
+       ;; No lobby state within the window → treat as unreachable.
+       (reset! timer (js/setTimeout #(finish nil) 3000))))))
+
+(defn- print-sessions! [{:keys [json? limit]} sessions]
+  (let [sessions (cond->> sessions
+                   (and limit (pos? limit)) (take limit))]
+    (if json?
+      (.write js/process.stdout
+              (str (js/JSON.stringify (clj->js sessions)) "\n"))
+      (doseq [{:keys [session-id name cwd]} sessions]
+        (.write js/process.stdout (str session-id "\t" name "\t" cwd "\n"))))
+    (js/process.exit 0)))
+
+(defn- run-sessions!
+  "List saved chats and exit — the machine-facing counterpart to the web
+   sidebar's \"Recent\" section. The recent set is read live from the running
+   server's lobby websocket so the CLI and the web agree exactly (active live
+   rooms + the recency window). --all skips the server and lists every saved
+   chat from disk; --limit N caps the count; --json emits a JSON array
+   (default is one tab-separated session-id⇥name⇥cwd line per chat)."
+  [{:keys [all? port] :as opts}]
+  (if all?
+    (print-sessions! opts (->> (session/list-all-sessions)
+                               (map #(dissoc % :filepath :user-messages))))
+    (-> (fetch-recent-sessions opts)
+        (.then
+         (fn [rows]
+           (if (nil? rows)
+             (do (.write js/process.stderr
+                         (str "xi sessions: no running server on port "
+                              (or port ws/DEFAULT_PORT)
+                              " — recent is relative to a running server. "
+                              "Use --all to list every saved chat.\n"))
+                 (print-sessions! opts []))
+             (print-sessions! opts rows)))))))
+
 (defn main [& args]
   (let [{:keys [command] :as opts} (parse-args args)]
     (case command
@@ -769,5 +858,6 @@ See docs/cli.md for the full reference.")
       :standalone (start-standalone-or-join! opts)
       :server     (start-server! opts)
       :prompt     (run-prompt! opts)
+      :sessions   (run-sessions! opts)
       :join       (start-client! (assoc opts :target "latest"))
       :create     (start-client! (assoc opts :target "new")))))
