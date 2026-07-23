@@ -74,7 +74,8 @@
                 (assoc :web/route {:page :chat :session-id nil})
                 (assoc :web/pending-room {:id (random-uuid) :cwd (room-new-cwd st)})
                 (assoc :web/timeline-window nil))
-   :effects [[:history/push {:route {:page :chat}}]]})
+   :effects [[:history/push {:route {:page :chat}}]
+             [:compose/focus]]})
 
 (defn- counts-result
   "Store per-session response counts from a :session/counts reply.
@@ -641,7 +642,8 @@
                                                 (assoc :web/pending-room {:id (random-uuid) :cwd cwd})
                                                 (assoc :web/timeline-window nil)
                                                 (assoc :web/sidebar-open? false))
-                                     :effects [[:history/push {:route {:page :chat}}]]})
+                                     :effects [[:history/push {:route {:page :chat}}]
+                                               [:compose/focus]]})
           ;; Command palette second level: Tab on a project row opens its
           ;; action page; back/close return to the top level. The reset-filter
           ;; effect re-syncs ui-runtime.js (clears the query, re-highlights).
@@ -681,6 +683,17 @@
      (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
        (set! (.-value el) text)
        (.focus el)))
+   ;; Focus the compose input when entering a fresh chat. Deferred a frame so
+   ;; it runs after the Replicant re-render (the textarea may be freshly
+   ;; mounted) and after the command palette's <dialog>.close() restores focus
+   ;; to the pre-dialog element — otherwise that restoration clobbers the
+   ;; focus. preventScroll avoids a layout jump (matches the on-mount focus).
+   :compose/focus
+   (fn [_ _]
+     (js/requestAnimationFrame
+      (fn []
+        (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
+          (.focus el #js {:preventScroll true})))))
    ;; After a palette page switch, clear the search box and re-fire `input` so
    ;; ui-runtime.js re-filters the freshly-rendered items and re-highlights the
    ;; first one. Deferred a frame so the Replicant re-render lands first.
