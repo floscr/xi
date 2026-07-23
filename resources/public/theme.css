@@ -485,6 +485,14 @@ body {
   filter: brightness(1.1);
 }
 
+.btn-success {
+  background: var(--success);
+  color: var(--fg-on-success);
+}
+.btn-success:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
 .btn-link {
   background: transparent;
   color: var(--accent);
@@ -535,6 +543,15 @@ a.btn-link {
 
 .btn-icon-round {
   border-radius: 9999px;
+}
+
+/* ── Loading ─────────────────────────────────────────────────── */
+
+/* Spinner inside a loading button adapts to the button's text color
+   so it stays visible on any variant (primary, success, ghost, …). */
+.btn-loading .spinner {
+  border-color: color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor;
 }
 
 /* ── Disabled ────────────────────────────────────────────────── */
@@ -1768,6 +1785,27 @@ a.btn-link {
 }
 
 
+/* Empty state — centered muted placeholder for empty lists/views */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-2);
+  text-align: center;
+  color: var(--fg-2);
+  padding: var(--size-8) var(--size-4);
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.empty-state-icon {
+  opacity: 0.6;
+}
+
+
 /* ── File Browser ─────────────────────────────────────────────────── */
 
 /* Grid container */
@@ -2995,24 +3033,44 @@ a.btn-link {
   width: 100%;
 }
 
-/* Progress slider at top */
+/* Progress slider at top.
+   The container keeps a fixed height so hover never shifts the row below.
+   The track and thumb are absolutely positioned and anchored to the BOTTOM,
+   so hover growth expands the bar UPWARD instead of pushing content down. */
 .player-bar-progress {
+  --player-bar-track-h: var(--size-1);
   width: 100%;
   height: var(--size-1);
   cursor: pointer;
   position: relative;
-  transition: height 0.1s;
 }
 
 .player-bar-progress:hover {
-  height: 6px;
+  --player-bar-track-h: 6px;
+}
+
+/* Invisible hit area extending upward — makes the thin bar easy to grab with a
+   mouse and tappable on touch. Clicks/taps here fire on the container, so
+   on-seek still maps the horizontal position correctly (the container's
+   bounding rect is unchanged; only the pointer target grows). */
+.player-bar-progress::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: calc(-1 * var(--player-bar-hit-area, var(--size-4)));
 }
 
 .player-bar-progress-track {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--player-bar-track-h);
   background: var(--bg-2);
   overflow: hidden;
+  transition: height 0.1s;
 }
 
 .player-bar-progress-fill {
@@ -3023,13 +3081,14 @@ a.btn-link {
 
 /* Scrubber thumb — visible on hover.
    Lives on the progress container (not the track) so overflow:hidden doesn't clip it.
-   Positioned via --progress custom property set inline on the element. */
+   Anchored to the track's vertical center (bottom-anchored) so it rises with the
+   track on hover. Positioned horizontally via --progress set inline on the element. */
 .player-bar-progress::after {
   content: "";
   position: absolute;
   left: var(--progress, 0%);
-  top: 50%;
-  translate: -50% -50%;
+  bottom: calc(var(--player-bar-track-h) / 2);
+  translate: -50% 50%;
   width: var(--size-3);
   height: var(--size-3);
   border-radius: 9999px;
@@ -3037,7 +3096,7 @@ a.btn-link {
   box-shadow: var(--shadow-1);
   opacity: 0;
   scale: 0.5;
-  transition: opacity 0.15s, scale 0.15s;
+  transition: opacity 0.15s, scale 0.15s, bottom 0.1s;
   z-index: 1;
   pointer-events: none;
 }
@@ -4070,6 +4129,11 @@ a.sidebar-menu-item {
   animation: spinner-spin 1s linear infinite;
 }
 
+.spinner-xs {
+  width: var(--size-3);
+  height: var(--size-3);
+}
+
 .spinner-sm {
   width: 1rem;
   height: 1rem;
@@ -4233,6 +4297,122 @@ a.sidebar-menu-item {
 .table--bordered th,
 .table--bordered td {
   border: var(--border-0);
+}
+
+
+/* ── Tabs ─────────────────────────────────────────────────────────── */
+/* Pure CSS/HTML tabs: visually-hidden radio inputs drive panel           */
+/* visibility via :checked + :has(). Two variants: .tabs-boxed (segmented */
+/* pill) and .tabs-line (underline).                                      */
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4);
+}
+
+/* Visually hidden radios — still focusable for keyboard arrow-key nav. */
+.tabs-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.tabs-list {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+}
+
+.tabs-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  font-family: inherit;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: var(--size-5);
+  color: var(--fg-1);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.tabs-trigger:hover {
+  color: var(--fg-0);
+}
+
+/* The hidden radio takes keyboard focus; ring is drawn on its label. */
+.tabs-input:focus-visible + .tabs-trigger {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tabs-content {
+  display: none;
+}
+
+/* Active-panel correlation: the nth checked radio shows the nth panel. */
+.tabs-list:has(.tabs-input:nth-of-type(1):checked) ~ .tabs-panels > .tabs-content:nth-of-type(1),
+.tabs-list:has(.tabs-input:nth-of-type(2):checked) ~ .tabs-panels > .tabs-content:nth-of-type(2),
+.tabs-list:has(.tabs-input:nth-of-type(3):checked) ~ .tabs-panels > .tabs-content:nth-of-type(3),
+.tabs-list:has(.tabs-input:nth-of-type(4):checked) ~ .tabs-panels > .tabs-content:nth-of-type(4),
+.tabs-list:has(.tabs-input:nth-of-type(5):checked) ~ .tabs-panels > .tabs-content:nth-of-type(5),
+.tabs-list:has(.tabs-input:nth-of-type(6):checked) ~ .tabs-panels > .tabs-content:nth-of-type(6),
+.tabs-list:has(.tabs-input:nth-of-type(7):checked) ~ .tabs-panels > .tabs-content:nth-of-type(7),
+.tabs-list:has(.tabs-input:nth-of-type(8):checked) ~ .tabs-panels > .tabs-content:nth-of-type(8),
+.tabs-list:has(.tabs-input:nth-of-type(9):checked) ~ .tabs-panels > .tabs-content:nth-of-type(9),
+.tabs-list:has(.tabs-input:nth-of-type(10):checked) ~ .tabs-panels > .tabs-content:nth-of-type(10) {
+  display: block;
+}
+
+/* ── Boxed variant (default) — segmented control ──────────────────── */
+
+.tabs-boxed .tabs-list {
+  gap: var(--size-1);
+  background: var(--bg-2);
+  border-radius: var(--radius-md);
+  padding: var(--size-1);
+}
+
+.tabs-boxed .tabs-trigger {
+  padding: var(--size-1) var(--size-3);
+  border-radius: var(--radius-sm);
+}
+
+.tabs-boxed .tabs-input:checked + .tabs-trigger {
+  background: var(--bg-0);
+  color: var(--fg-0);
+  box-shadow: var(--shadow-0);
+}
+
+/* ── Line variant — underlined tabs ───────────────────────────────── */
+
+.tabs-line .tabs-list {
+  align-self: stretch;
+  gap: var(--size-4);
+  border-bottom: var(--border-0);
+}
+
+.tabs-line .tabs-trigger {
+  padding: var(--size-2) var(--size-1);
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  /* Overlap the list's bottom border so the active underline sits on it. */
+  margin-bottom: -1px;
+}
+
+.tabs-line .tabs-input:checked + .tabs-trigger {
+  color: var(--fg-0);
+  border-bottom-color: var(--accent);
 }
 
 

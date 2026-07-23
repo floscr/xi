@@ -1640,16 +1640,11 @@ body {
   white-space: nowrap;
 }
 
+/* Extends the framework .empty-state (theme.css): fill parent + center vertically */
 .empty-state {
   flex: 1;
-  display: flex;
-  align-items: center;
   justify-content: center;
-  color: var(--fg-2);
   padding: var(--size-8);
-  text-align: center;
-  flex-direction: column;
-  gap: var(--size-2);
 }
 
 .launch-header {
