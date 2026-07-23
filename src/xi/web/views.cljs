@@ -1727,7 +1727,7 @@
       (when has-tabs?
         (tab-bar dispatch! (:id room) active-buf buffers))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
-     (when model-list
+     (when (and model-list (not= :model (get-in state [:web/palette-page :kind])))
        (model-selector dispatch! (:id room) model-list model
                        (get-in state [:web/selector-search "model"])))
      (when-let [skills (:web/skill-list state)]
@@ -2492,6 +2492,25 @@
        :on-click (fn [_] (dispatch! (merge (:event item) {:cwd cwd})))}
       (:label item)))))
 
+(defn- palette-model-page
+  "Model list as a palette sub-page (drilled from Change model / /model). Shows
+   a spinner while :web/model-list loads, then a command-item per model with
+   the active one checked. Selecting sends /model and closes the palette."
+  [state dispatch!]
+  (let [room    (state/active-room state)
+        models  (:web/model-list state)
+        current (get-in room [:agent :model])]
+    (if (nil? models)
+      [:div {:class ["command-empty"]} (spinner) " Loading models…"]
+      (apply cmd/command-group {:heading "Model"}
+        (for [m models]
+          (cmd/command-item
+           {:icon (if (= m current) :check :layers)
+            :value m
+            :on-click (fn [_] (dispatch! {:type :models/select
+                                          :model m :room-id (:id room)}))}
+           m))))))
+
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
@@ -2565,8 +2584,10 @@
                  :on {:click (fn [_] (dispatch! {:type :palette/back}))}}
         (icon/icon {:icon-name :arrow-left :size :sm})
         [:span "Back"]]
-       (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
-         (palette-project-actions state dispatch! (:cwd palette-page))))
+       (case (:kind palette-page)
+         :model   (palette-model-page state dispatch!)
+         (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
+           (palette-project-actions state dispatch! (:cwd palette-page)))))
 
       :else
       (let [room         (state/active-room state)
@@ -2606,7 +2627,7 @@
            (fn [key]
              (case key
                :new-chat     (fn [_] (dispatch! {:type :room/new}))
-               :change-model (fn [_] (dispatch! {:type :models/web-list}))
+               :change-model (fn [_] (dispatch! {:type :palette/open-models}))
                :skills       (fn [_] (dispatch! {:type :skill/web-list}))
                :git-status   (fn [_] (dispatch! {:type :diff/reopen
                                                  :room-id (:id room)
@@ -2626,7 +2647,11 @@
            (cmd/command-item
             {:icon :terminal
              :value (str "/" name " " description)
-             :on-click (fn [_] (dispatch-command! dispatch! (:id room) name))}
+             ;; /model drills into an in-palette model picker instead of
+             ;; running the command (which would close the palette).
+             :on-click (if (= name "model")
+                         (fn [_] (dispatch! {:type :palette/open-models}))
+                         (fn [_] (dispatch-command! dispatch! (:id room) name)))}
             (str "/" name))))))))))
 
 (defn- auth-overlay

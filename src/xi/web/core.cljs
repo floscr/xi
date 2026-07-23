@@ -548,7 +548,7 @@
                                     {:state (assoc st :web/model-list models)})
           :models/select         (fn [st {:keys [model room-id]}]
                                     {:state (-> st
-                                                (dissoc :web/model-list)
+                                                (dissoc :web/model-list :web/palette-page)
                                                 (update :web/selector-search dissoc "model"))
                                      :effects [[:ws/send {:type :input/submit
                                                           :room-id room-id
@@ -651,6 +651,20 @@
                                    {:state (assoc st :web/palette-page
                                                   {:kind :project :cwd cwd :label label})
                                     :effects [[:palette/reset-filter nil]]})
+          ;; Change model / /model: drill into an in-palette model picker. The
+          ;; runtime force-closes the <dialog> on the item click, so we set a
+          ;; one-shot :web/palette-drilling? flag and re-open the dialog (see the
+          ;; :palette/reopen effect); :palette/opened keeps the sub-page when the
+          ;; flag is set. Clearing :web/model-list makes the page show a spinner
+          ;; until the fresh model list arrives.
+          :palette/open-models   (fn [st _]
+                                   {:state (-> st
+                                               (assoc :web/palette-page {:kind :model}
+                                                      :web/palette-drilling? true)
+                                               (dissoc :web/model-list)
+                                               (update :web/selector-search dissoc "model"))
+                                    :effects [[:ws/send {:type :models/web-list}]
+                                              [:palette/reopen nil]]})
           :palette/back          (fn [st _]
                                    {:state (dissoc st :web/palette-page)
                                     :effects [[:palette/reset-filter nil]]})
@@ -662,11 +676,22 @@
           ;; that the items exist. Microtasks run before paint, so the content
           ;; fills before the dialog is visibly shown.
           :palette/opened        (fn [st _]
-                                   {:state (assoc st :web/palette-open? true)
-                                    :effects [[:palette/reset-filter nil]]})
+                                   (if (:web/palette-drilling? st)
+                                     ;; Re-open triggered by a drill (e.g. Change
+                                     ;; model): keep the sub-page, consume flag.
+                                     {:state (-> st
+                                                 (assoc :web/palette-open? true)
+                                                 (dissoc :web/palette-drilling?))
+                                      :effects [[:palette/reset-filter nil]]}
+                                     ;; Fresh mod+k open: always start at the top.
+                                     {:state (-> st
+                                                 (assoc :web/palette-open? true)
+                                                 (dissoc :web/palette-page))
+                                      :effects [[:palette/reset-filter nil]]}))
+          ;; Keep :web/palette-page here so a drill's close+reopen doesn't lose
+          ;; the sub-page; a fresh mod+k open (:palette/opened) resets it.
           :palette/closed        (fn [st _]
-                                   {:state (dissoc st :web/palette-page
-                                                   :web/palette-open?)})}))
+                                   {:state (dissoc st :web/palette-open?)})}))
 
 
 ;; Auto-scroll gate (see the Auto-scroll section below). Declared here so the
@@ -704,6 +729,15 @@
         (when-let [^js input (.querySelector js/document ".command-dialog[open] .command-input")]
           (set! (.-value input) "")
           (.dispatchEvent input (js/Event. "input" #js {:bubbles true}))))))
+   ;; Re-open the command palette after the ui-runtime force-closed it on a
+   ;; command-item click (used when drilling into a sub-page). Idempotent:
+   ;; __uiCommand.open only calls showModal when the dialog isn't already open.
+   :palette/reopen
+   (fn [_ _]
+     (js/requestAnimationFrame
+      (fn []
+        (when-let [^js cmd (aget js/window "__uiCommand")]
+          (.open cmd "cmdk")))))
    :diff/measure-cols
    (fn [{:keys [dispatch!]} {:keys [room-id method]}]
      (dispatch! {:type :input/submit :room-id room-id
