@@ -305,11 +305,11 @@
   [_st {:keys [client-id task-id action]}]
   {:effects [[:gtd/web-task-action-reply {:client-id client-id :task-id task-id :action action}]]})
 
+;; Server-side stale-while-revalidate cache of the web task list:
+;; {:tasks [...] :at epoch-ms}. Spawning `bb org gtd agenda` costs ~0.4s
+;; (babashka startup dominates), so the first request warms this and every
+;; later /gtd load paints instantly, refreshing in the background.
 (defonce ^:private gtd-cache
-  "Server-side stale-while-revalidate cache of the web task list:
-   {:tasks [...] :at epoch-ms}. Spawning `bb org gtd agenda` costs ~0.4s
-   (babashka startup dominates), so the first request warms this and every
-   later /gtd load paints instantly, refreshing in the background."
   (atom nil))
 
 (def ^:private gtd-cache-stale-ms
