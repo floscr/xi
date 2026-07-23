@@ -417,7 +417,14 @@
 
                                     "rate_limit_event"
                                     (let [^js info (.-rate_limit_info message)]
+                                      ;; A "rejected" rate limit is only a hard
+                                      ;; stop when overage isn't covering it. When
+                                      ;; overage is allowed / already in use the
+                                      ;; request proceeds, so don't surface it as
+                                      ;; an error the user has to see.
                                       (when (and info (= "rejected" (.-status info))
+                                                 (not (= "allowed" (.-overageStatus info)))
+                                                 (not (.-isUsingOverage info))
                                                  (:on-error callbacks))
                                         ((:on-error callbacks)
                                          {:type "rate_limit"
