@@ -827,6 +827,7 @@ body {
    the input row below); its buttons are joined into a single frosted segmented
    group that matches the floating chat-header chips. */
 .quick-commands {
+  position: relative;
   display: flex;
   overflow-x: auto;
   padding: var(--size-1) var(--size-3) 0;
@@ -836,6 +837,40 @@ body {
 
 .quick-commands::-webkit-scrollbar {
   display: none;
+}
+
+/* Scroll shadows: sticky overlays pinned to the visible left/right edges that
+   fade in only while there is more of the bar to scroll toward that side (the
+   .has-overflow-left / .has-overflow-right classes are toggled from JS — see
+   xi.web.views). Negative margins keep them out of the scrollable width. */
+.quick-commands::before,
+.quick-commands::after {
+  content: "";
+  position: sticky;
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 2rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 1;
+}
+
+.quick-commands::before {
+  left: 0;
+  margin-right: -2rem;
+  background: linear-gradient(to left, transparent, rgba(0, 0, 0, 0.12));
+}
+
+.quick-commands::after {
+  right: 0;
+  margin-left: -2rem;
+  background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.12));
+}
+
+.quick-commands.has-overflow-left::before,
+.quick-commands.has-overflow-right::after {
+  opacity: 1;
 }
 
 /* On narrow screens the bar runs flush to the edges so it can scroll
@@ -859,6 +894,17 @@ body {
   background: color-mix(in srgb, var(--bg-0) 55%, transparent);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
+}
+
+/* On narrow screens the segmented group runs flush to the edges: drop its
+   rounded corners and side borders so it sits flat against the viewport. */
+@media (max-width: 768px) {
+  .quick-cmd-group {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+  }
 }
 
 .quick-cmd-group > .quick-cmd:not(:first-child),
@@ -892,9 +938,13 @@ body {
   transition: background-color 0.1s;
 }
 
-.quick-cmd:hover {
-  background: var(--bg-2, rgba(128,128,128,0.1));
-  color: var(--fg-0);
+/* Only on devices with a real pointer — on touch screens :hover sticks after
+   a tap, leaving the last-tapped command highlighted. */
+@media (hover: hover) {
+  .quick-cmd:hover {
+    background: var(--bg-2, rgba(128,128,128,0.1));
+    color: var(--fg-0);
+  }
 }
 
 .quick-cmd:active {

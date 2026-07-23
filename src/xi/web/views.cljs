@@ -641,8 +641,32 @@
                  :on {:click next!}}
         (icon/icon {:icon-name :arrow-down :size :sm})]])))
 
+(defn- measure-scroll-shadow!
+  "Toggle the edge scroll shadows on the quick-command bar: the left shadow
+   shows while scrolled away from the start, the right while there is more to
+   scroll toward the end."
+  [{:replicant/keys [^js node]}]
+  (let [overflow? (> (.-scrollWidth node) (+ (.-clientWidth node) 1))
+        at-start? (<= (.-scrollLeft node) 1)
+        at-end?   (>= (+ (.-scrollLeft node) (.-clientWidth node))
+                     (- (.-scrollWidth node) 1))
+        cl        (.-classList node)]
+    (.toggle cl "has-overflow-left" (boolean (and overflow? (not at-start?))))
+    (.toggle cl "has-overflow-right" (boolean (and overflow? (not at-end?))))))
+
+(defn- init-scroll-shadow!
+  "On mount, wire the quick-command bar's scroll shadow to its scroll position
+   and size (a ResizeObserver catches viewport/keyboard resizes)."
+  [{:replicant/keys [^js node] :as ctx}]
+  (measure-scroll-shadow! ctx)
+  (.addEventListener node "scroll" (fn [_] (measure-scroll-shadow! ctx)) #js {:passive true})
+  (doto (js/ResizeObserver. (fn [_] (measure-scroll-shadow! ctx)))
+    (.observe node)))
+
 (defn- quick-command-bar [dispatch! room-id recents prompt-nav nav-ctx]
-  [:div {:class ["quick-commands"]}
+  [:div {:class ["quick-commands"]
+         :replicant/on-mount init-scroll-shadow!
+         :replicant/on-render measure-scroll-shadow!}
    [:div {:class ["quick-cmd-group"]}
     (when (pos? (or (:count nav-ctx) 0))
       (prompt-nav-controls dispatch! prompt-nav nav-ctx))
