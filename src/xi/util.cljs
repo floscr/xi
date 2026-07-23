@@ -10,6 +10,20 @@
     (str (subs s 0 max-len) "...")
     s))
 
+(defn truncate-text-lines
+  "Clip `text` to at most `n` lines. On overflow the last kept line becomes a
+   '… (K more lines)' marker, so the result is never longer than `n` lines —
+   re-truncating it with the same cap is a no-op. Non-strings pass through."
+  [text n]
+  (if (string? text)
+    (let [lines (str/split-lines text)
+          total (count lines)]
+      (if (<= total n)
+        text
+        (str (str/join "\n" (take (dec n) lines))
+             "\n… (" (- total (dec n)) " more lines)")))
+    text))
+
 (defn claude-model?
   "Returns true if model string looks like a Claude/Anthropic model."
   [model]

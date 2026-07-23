@@ -133,6 +133,29 @@ per-event `:no-broadcast?` flag in addition to the static no-broadcast set.
 Wire effect: an unchanged large session drops from a ~19 KB `:session/resumed`
 to a ~185 B `:session/current` — the client paints entirely from cache.
 
+### Truncating tool output on the resume wire
+
+Every surface caps how much of a tool result it renders — the web client
+hard-clips each result at 100 lines (`xi.web.views`, with a `… (N more lines)`
+marker) and the TUI at `truncate-output-block-after-n-lines` (default 100). So
+shipping a resumed transcript's *full* tool output is pure waste: a single
+`take_snapshot` a11y tree or `bash`/`grep` dump can be thousands of lines the
+client never shows.
+
+On the resume path the server therefore clips each `:tool-result` block's text
+to `session/resume-result-line-cap` (100) via `session/truncate-message-results`
+before the messages enter `:session/resumed`
+(`xi.session/truncate-message-results` + `xi.util/truncate-text-lines`). The
+clip is idempotent — it yields at most `n` lines including the marker, so the
+client's own re-truncation at the same cap is a no-op. `read-session-messages`
+already flattens tool-result content to a string (images never survive the
+resume path), so only strings are touched.
+
+The transfer-skip hash is taken over the **truncated** wire form, so it tracks
+exactly what the client caches and renders: change the cap and the hash shifts,
+busting stale caches into a fresh resend. Observed: a resume dominated by one
+204-line diff dropped from ~19 KB to ~8.9 KB.
+
 ## Reconnect (`xi.client.ws-transport`)
 
 The web client opts into `:reconnect?`:

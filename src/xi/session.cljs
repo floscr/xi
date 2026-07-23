@@ -691,6 +691,25 @@
 
     []))
 
+(def resume-result-line-cap
+  "Max lines of any tool-result kept when shipping a resumed transcript over
+   the wire. Both the web client (hard 100 in xi.web.views) and the TUI
+   (truncate-output-block-after-n-lines, default 100) clip tool output at
+   render, so sending more is pure wire waste on a long session."
+  100)
+
+(defn truncate-message-results
+  "Clip every :tool-result block's text content to `resume-result-line-cap`
+   lines before it crosses the wire on resume. read-session-messages already
+   flattens tool-result :content to a string, so this only touches strings;
+   every other block passes through untouched."
+  [messages]
+  (mapv (fn [block]
+          (if (= :tool-result (:type block))
+            (update block :content util/truncate-text-lines resume-result-line-cap)
+            block))
+        messages))
+
 (defn build-search-text
   "Extract concatenated user+assistant text from a session for content search.
    Returns a single string, capped to 16KB."

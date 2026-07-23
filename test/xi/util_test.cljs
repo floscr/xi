@@ -1,5 +1,6 @@
 (ns xi.util-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.util :as util]))
 
 ;; ── truncate ──
@@ -23,6 +24,30 @@
 (deftest truncate-empty
   (testing "empty string is unchanged"
     (is (= "" (util/truncate "" 5)))))
+
+;; ── truncate-text-lines ──
+
+(deftest truncate-text-lines-under-cap
+  (testing "text at or under the line cap is unchanged"
+    (is (= "a\nb\nc" (util/truncate-text-lines "a\nb\nc" 3)))
+    (is (= "a\nb" (util/truncate-text-lines "a\nb" 5)))))
+
+(deftest truncate-text-lines-over-cap
+  (testing "overflow keeps n-1 lines plus a marker line, never exceeding n"
+    (let [out (util/truncate-text-lines "a\nb\nc\nd\ne" 3)]
+      (is (= "a\nb\n… (3 more lines)" out))
+      (is (= 3 (count (str/split-lines out)))))))
+
+(deftest truncate-text-lines-idempotent
+  (testing "re-truncating with the same cap is a no-op (client re-truncation safe)"
+    (let [once  (util/truncate-text-lines "a\nb\nc\nd\ne\nf" 4)
+          twice (util/truncate-text-lines once 4)]
+      (is (= once twice)))))
+
+(deftest truncate-text-lines-non-string
+  (testing "non-strings pass through untouched"
+    (is (nil? (util/truncate-text-lines nil 3)))
+    (is (= 42 (util/truncate-text-lines 42 3)))))
 
 ;; ── claude-model? ──
 

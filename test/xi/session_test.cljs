@@ -1,5 +1,6 @@
 (ns xi.session-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.session :as session]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -104,6 +105,28 @@
           (fs/writeFileSync favorites-file backup "utf8")
           (when (fs/existsSync favorites-file)
             (fs/rmSync favorites-file)))))))
+
+(deftest truncate-message-results-clips-tool-results
+  (testing "tool-result text is clipped to the resume cap; other blocks pass through"
+    (let [long-text (str/join "\n" (map str (range 250)))
+          messages  [{:type :text :role "user" :text "hi"}
+                     {:type :tool-use :name "bash" :tool-use-id "t1" :arguments {}}
+                     {:type :tool-result :tool-use-id "t1" :content long-text}
+                     {:type :text :role "assistant" :text "done"}]
+          out       (session/truncate-message-results messages)
+          result    (nth out 2)]
+      (is (<= (count (str/split-lines (:content result)))
+              session/resume-result-line-cap)
+          "result clipped to the cap")
+      (is (str/includes? (:content result) "more lines)") "marker present")
+      (is (= (nth messages 0) (nth out 0)) "text block untouched")
+      (is (= (nth messages 1) (nth out 1)) "tool-use block untouched")
+      (is (= (nth messages 3) (nth out 3)) "assistant block untouched"))))
+
+(deftest truncate-message-results-short-unchanged
+  (testing "a short tool-result is returned unchanged"
+    (let [messages [{:type :tool-result :tool-use-id "t1" :content "one\ntwo"}]]
+      (is (= messages (session/truncate-message-results messages))))))
 
 (deftest toggle-favorite-round-trip
   (testing "toggle adds then removes a session-id, load/favorite? reflect it"

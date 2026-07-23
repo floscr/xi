@@ -270,14 +270,19 @@
                              :created      (js/Date.now)}})
           (dispatch! {:type :room/attach :client-id client-id :room-id room-id})
           (when summary
-            (let [messages (session/read-session-messages summary)
-                  ;; Hash the raw messages so client + server (same cljs, so
-                  ;; equal EDN hashes match) can detect an unchanged session.
-                  ;; When the joining client already cached this exact hash we
-                  ;; skip broadcasting the full history over the (slow mobile)
-                  ;; wire and send a tiny :session/current instead — the server
-                  ;; still fills its own room mirror via the non-broadcast
-                  ;; :session/resumed so multi-client correctness holds.
+            (let [;; Clip long tool outputs before they cross the wire — every
+                  ;; client caps tool results at render, so a resumed transcript
+                  ;; must not ship thousands of unshown lines.
+                  messages (session/truncate-message-results
+                            (session/read-session-messages summary))
+                  ;; Hash the wire form (what the client caches + renders) so
+                  ;; client + server (same cljs, so equal EDN hashes match) can
+                  ;; detect an unchanged session. When the joining client
+                  ;; already cached this exact hash we skip broadcasting the
+                  ;; history over the (slow mobile) wire and send a tiny
+                  ;; :session/current instead — the server still fills its own
+                  ;; room mirror via the non-broadcast :session/resumed so
+                  ;; multi-client correctness holds.
                   msg-hash (hash messages)
                   current? (= cached-msg-hash msg-hash)]
               (dispatch! {:type :session/resumed :room-id room-id
