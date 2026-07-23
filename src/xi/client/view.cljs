@@ -46,7 +46,7 @@
    "git_file_diff"                 "git diff"
    "git_hunk"                      "git diff"
    "git_stage_hunks"               "git add"
-   "git_commit_with_user_approval" "git commit"})
+   "git_commit"                    "git commit"})
 
 (defn- tool-display-name [tool-name]
   (or (display-tool-name tool-name) tool-name))
@@ -86,7 +86,7 @@
     "git_file_diff"   (str/join " " (get-arg arguments :files))
     "git_hunk"        (get-arg arguments :file)
     "git_stage_hunks" (str/join " " (get-arg arguments :files))
-    "git_commit_with_user_approval" (get-arg arguments :message)
+    "git_commit" (get-arg arguments :message)
     (format-tool-args-default arguments)))
 
 (def ^:private shorten-tool-name util/strip-mcp-prefix)

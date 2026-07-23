@@ -29,7 +29,7 @@
   (is (= "a.cljs b.cljs"
          (view/format-tool-args "git_file_diff" {"files" ["a.cljs" "b.cljs"]})))
   (is (= "fix: stuff"
-         (view/format-tool-args "git_commit_with_user_approval" {"message" "fix: stuff"}))))
+         (view/format-tool-args "git_commit" {"message" "fix: stuff"}))))
 
 (deftest format-tool-args-unknown-fallback
   (is (= "a=hello b=world"

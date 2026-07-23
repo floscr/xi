@@ -149,6 +149,7 @@
     ("Glob" "find")  (get-arg args :pattern)
     ("ls")           (get-arg args :path)
     "gtd_capture"    (get-arg args :title)
+    "git_commit"     (get-arg args :message)
     (let [v (some (fn [k] (let [x (get-arg args k)]
                             (when (and (string? x) (seq x)) x)))
                   [:command :file_path :path :pattern :query :url :prompt :description])]

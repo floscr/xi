@@ -79,7 +79,7 @@
        "Steps:\n"
        "1. Review the actual diffs with git_file_diff to understand the changes\n"
        "2. Stage the appropriate files with git_stage_hunks\n"
-       "3. Write a clear conventional commit message and commit with git_commit_with_user_approval\n\n"
+       "3. Write a clear conventional commit message and commit with git_commit\n\n"
        "Use conventional commit format (feat:, fix:, refactor:, chore:, docs:, etc.).\n"
        "Keep the commit message concise and descriptive. Do NOT add co-authored-by or generated-with lines.\n"
        "NEVER bundle unrelated work into a single commit. If the changes span multiple unrelated concerns, stage and commit them separately, one logical change per commit.\n"
@@ -155,7 +155,7 @@
     :input_schema {:type "object"
                    :properties {:files {:type "array" :items {:type "string"} :description "Files to stage"}}
                    :required ["files"]}}
-   {:name "git_commit_with_user_approval"
+   {:name "git_commit"
     :description "Create a git commit. The message should follow conventional commit format."
     :input_schema {:type "object"
                    :properties {:message {:type "string" :description "Commit message"}
@@ -173,4 +173,4 @@
                       "git_file_diff"                  git-file-diff
                       "git_hunk"                       git-hunk
                       "git_stage_hunks"                git-stage-hunks
-                      "git_commit_with_user_approval"  git-commit}})
+                      "git_commit"                     git-commit}})
