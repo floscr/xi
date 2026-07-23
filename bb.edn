@@ -75,6 +75,14 @@
   {:doc "Regenerate resources/chrome/tools.edn from chrome-devtools-mcp's live tools/list"
    :task (shell "node" "scripts/sync-chrome-tools.mjs")}
 
+  picker:build
+  {:doc "Compile the element-picker (squint → esbuild) to resources/element-picker/picker.js"
+   :task (let [dir "resources/element-picker"]
+           (shell {:dir dir} "npx" "squint" "compile")
+           (shell {:dir dir} "npx" "esbuild" ".compiled/picker.mjs"
+                  "--bundle" "--format=iife" "--minify" "--outfile=picker.js"
+                  "--banner:js=/* GENERATED from picker.cljs by `bb picker:build` — do not edit. */"))}
+
   dev:url
   {:doc "Print Tailscale IP with frontend port"
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]

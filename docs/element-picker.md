@@ -38,19 +38,56 @@ page you're picking on.
   → :prompt/submit        text (build-message) + resized :images
 ```
 
-The browser-side script (`resources/element-picker/picker.js`) draws a
-transparent overlay plus a visible banner ("🎯 xi picker — hover & click an
-element · Esc to cancel"), highlights elements on hover, and on click shows a
-panel where you type the message. Selecting supports multiple elements; the
-result is stashed on `window.__xiPickerResult` for the poll loop to read.
+The browser-side script draws a transparent overlay plus a visible banner
+("🎯 xi picker — hover & click an element · Esc to cancel"), highlights elements
+on hover, and on click shows a panel where you type the message. Selecting
+supports multiple elements; the result is stashed on `window.__xiPickerResult`
+for the poll loop to read.
 
-### JS is inlined at compile time
+### The browser script is ClojureScript (squint), bundled to a self-contained IIFE
 
-`picker.js` is baked into the bundle by the `inline-picker-js` macro
-(`src/xi/ext/element_picker_js.clj`), mirroring `xi.ext.chrome-defs` /
-`xi.highlight.bundle`. `resources/` isn't on the classpath, so the macro reads
-the file by repo-relative path at compile time — there is no runtime path
-dependency.
+The picker's browser-side code is written in ClojureScript at
+`resources/element-picker/picker.cljs` and compiled with
+[squint](https://github.com/squint-cljs/squint) → [esbuild](https://esbuild.github.io/)
+into `resources/element-picker/picker.js` — a **committed, generated** artifact.
+
+Why this toolchain (and not xi's own shadow-cljs `:browser` build): the script
+is injected as a *string* into an arbitrary remote page via `evaluate_script`,
+so it must be one self-contained blob with **no `import`s**. squint's runtime is
+tiny — esbuild tree-shakes it down so the whole bundle is ~10KB (a shadow-cljs
+browser build would drag in `cljs.core`, 100KB+, on every pick). squint emits an
+ESM `import` of `squint-cljs/core.js`; the esbuild `--bundle --format=iife` step
+inlines it into an IIFE that runs on eval.
+
+Regenerate after editing `picker.cljs`:
+
+```bash
+bb picker:build   # squint compile + esbuild → resources/element-picker/picker.js
+```
+
+`squint-cljs` and `esbuild` are **devDependencies** (build-time only) — xi's
+single-runtime-dep rule is untouched, since the generated `picker.js` is what
+ships.
+
+#### squint gotchas (learned porting picker.js → picker.cljs)
+
+- **No `js->clj` / `clj->js`** — squint works on JS-native data. Read the config
+  object (`window.__XI_PICKER_CFG__`) via interop (`(.-colors cfg)`), never
+  `js->clj`. A stray `js->clj` compiles to an undefined `js__GT_clj` reference.
+- **Empty string is truthy** in CLJS `when`/`and` (only `nil`/`false` are
+  falsy), unlike JS where `''` is falsy. The original `if (CFG.prefillMessage)`
+  became `(when … (not-empty (.-prefillMessage cfg)))` to preserve behavior.
+
+### JS is inlined into the CLJS bundle at compile time
+
+The generated `picker.js` is baked into xi's node bundle by the
+`inline-picker-js` macro (`src/xi/ext/element_picker_js.clj`), mirroring
+`xi.ext.chrome-defs` / `xi.highlight.bundle`. `resources/` isn't on the
+classpath, so the macro reads the file by repo-relative path at compile time —
+no runtime path dependency. Because shadow-cljs doesn't track `picker.js` as a
+source dependency, a fresh `bb picker:build` won't retrigger a recompile of
+`element_picker.cljs` on its own — touch that file (or clean-compile) to
+re-inline.
 
 ## Pitfall: `:image/process` is an effect, not an event
 
@@ -76,7 +113,9 @@ XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 |------|------|
 | `src/xi/ext/element_picker.cljs` | The picker: MCP orchestration, parsing, message building, `install`. |
 | `src/xi/ext/element_picker_js.clj` | Compile-time macro inlining `picker.js`. |
-| `resources/element-picker/picker.js` | The browser-side overlay/picker script. |
+| `resources/element-picker/picker.cljs` | Browser-side picker source (squint ClojureScript). |
+| `resources/element-picker/picker.js` | **Generated** self-contained IIFE (squint → esbuild); committed. |
+| `resources/element-picker/squint.edn` | squint config for the picker build. |
 | `test/xi/ext/element_picker_test.cljs` | Unit tests (injection, parsing, install, message building). |
 
 The picker is wired into `xi.ext.chrome` (`src/xi/ext/chrome.cljs`), which owns

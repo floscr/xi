@@ -7,7 +7,9 @@
     "test:watch": "npx shadow-cljs watch test"
   },
   "devDependencies": {
-    "shadow-cljs": "3.4.9"
+    "esbuild": "^0.24.0",
+    "shadow-cljs": "3.4.9",
+    "squint-cljs": "^0.11.189"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.2.110",
