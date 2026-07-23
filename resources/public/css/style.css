@@ -811,13 +811,21 @@ body {
 .quick-commands {
   display: flex;
   overflow-x: auto;
-  padding: var(--size-1) 0 0;
+  padding: var(--size-1) var(--size-3) 0;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
 
 .quick-commands::-webkit-scrollbar {
   display: none;
+}
+
+/* On narrow screens the bar runs flush to the edges so it can scroll
+   edge-to-edge; on larger screens the composer centers into the conversation
+   column (see .compose-box) and the bar's side padding aligns it with the
+   input row below it. */
+@media (max-width: 768px) {
+  .quick-commands { padding-inline: 0; }
 }
 
 /* Frosted segmented group: translucent fill over a backdrop blur, joined into
@@ -926,6 +934,13 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  /* Center into the same 48rem column as the conversation on larger screens.
+     When the viewport is narrower than the column this collapses to full
+     width (width: 100% wins), so the mobile edge-to-edge composer is
+     unchanged. */
+  max-width: 48rem;
+  width: 100%;
+  margin-inline: auto;
 }
 
 .compose-input-row {
@@ -2579,6 +2594,21 @@ body {
 .pr-detail-body {
   padding: var(--size-4);
   border-bottom: var(--border-0);
+}
+
+/* In the PR detail page the whole column (head + body + diff) scrolls together
+   via .pr-detail-scroll — the diff must not open its own inner scroll region,
+   otherwise the metadata/body stay pinned while only the diff scrolls. Let the
+   diff grow to its content height and flow into the outer scroller. (The
+   focused pr-diff-view and git-status pages keep the internal scroller.) */
+.pr-detail-scroll .diff-tab {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.pr-detail-scroll .diff-view {
+  flex: 0 0 auto;
+  overflow-y: visible;
 }
 
 /* ── Client auth (pairing) ──────────────────────────────────────────────── */
