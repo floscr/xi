@@ -2518,12 +2518,19 @@
   "cmd/command-item variant with a trailing status slot, so palette chat rows
    surface the same live indicators as session cards — a spinner while the
    room is busy, an unread dot when there are unseen responses. Mirrors the
-   ui.command DOM contract (.command-item + data-command-value) so the
-   ui-runtime.js live filter and keyboard navigation still work."
+   ui.command DOM contract (.command-item) so ui-runtime.js keyboard
+   navigation works.
+
+   The empty data-command-value makes these recents show ONLY at the empty
+   query: ui-runtime.js's filter matches an item when the query is empty OR
+   the item value includes the query, so an empty value matches nothing once
+   anything is typed — the whole Chats group then auto-hides and its rows drop
+   out of keyboard nav, leaving the palette to search commands/actions
+   instead of sessions."
   [{:keys [session-id name has-dialog? busy? unread?]} dispatch!]
   (let [label (or name "New session")]
     [:button {:class ["command-item"] :role "option" :type "button"
-              :data-command-value label
+              :data-command-value ""
               :on {:click (fn [_] (dispatch! {:type :route/navigate
                                               :page :chat
                                               :session-id session-id}))}}
@@ -2596,23 +2603,36 @@
    Two levels: at the top level, Tab on a project row drills into a project
    action page (:web/palette-page); Escape/Shift+Tab/Backspace backs out."
   [state dispatch!]
-  (let [room    (state/active-room state)
-        ;; Active rooms first, then most-recently-visited sessions; drop the
-        ;; chat we're already looking at. Enriched with live status flags.
-        recents (->> (recent-sessions state)
-                     (active-first state)
-                     (remove :current?)
-                     (take 8))
-        chat-items (mapv #(palette-chat-item % dispatch!) recents)
-        project-dirs (:web/project-dirs state)
+  (let [open?        (boolean (:web/palette-open? state))
         palette-page (:web/palette-page state)
         dialog-attrs {:id "cmdk" :hotkey "mod+k"
                       :placeholder (if palette-page "Filter actions…"
                                        "Type a command or search…")
                       :attrs {:replicant/key "cmdk"
+                              ;; Flip :web/palette-open? when the native dialog
+                              ;; gains its `open` attribute (opened by
+                              ;; ui-runtime's mod+k). Until then the heavy
+                              ;; command items below aren't built, so typing in
+                              ;; the compose box doesn't re-diff ~120 hidden
+                              ;; nodes every keystroke.
+                              :replicant/on-mount
+                              (fn [{:replicant/keys [^js node]}]
+                                (let [obs (js/MutationObserver.
+                                           (fn [_ _]
+                                             (when (.-open node)
+                                               (dispatch! {:type :palette/opened}))))]
+                                  (.observe obs node
+                                            #js {:attributes true
+                                                 :attributeFilter #js ["open"]})))
                               :on {:keydown (palette-keydown dispatch! palette-page)
                                    :close (fn [_] (dispatch! {:type :palette/closed}))}}}]
-    (if palette-page
+    (cond
+      ;; Closed: render just the dialog shell (observer stays attached via the
+      ;; stable :replicant/key). No children means near-zero per-keystroke cost.
+      (not open?)
+      (cmd/command-dialog dialog-attrs)
+
+      palette-page
       (cmd/command-dialog dialog-attrs
        ;; Non-command-item back button: the runtime only auto-closes on
        ;; `.command-item` clicks, so this returns to the top level in place.
@@ -2622,6 +2642,17 @@
         [:span "Back"]]
        (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
          (palette-project-actions state dispatch! (:cwd palette-page))))
+
+      :else
+      (let [room         (state/active-room state)
+            ;; Active rooms first, then most-recently-visited sessions; drop the
+            ;; chat we're already looking at. Enriched with live status flags.
+            recents      (->> (recent-sessions state)
+                              (active-first state)
+                              (remove :current?)
+                              (take 8))
+            chat-items   (mapv #(palette-chat-item % dispatch!) recents)
+            project-dirs (:web/project-dirs state)]
      (cmd/command-dialog dialog-attrs
      (when (seq chat-items)
        (apply cmd/command-group {:heading "Chats"} chat-items))

@@ -652,8 +652,19 @@
           :palette/back          (fn [st _]
                                    {:state (dissoc st :web/palette-page)
                                     :effects [[:palette/reset-filter nil]]})
+          ;; The palette dialog is always in the DOM but its (heavy) contents
+          ;; are gated on :web/palette-open? so keystrokes elsewhere don't
+          ;; rebuild ~120 hidden command items every render. An on-mount
+          ;; MutationObserver on the <dialog> flips the flag when the `open`
+          ;; attribute appears; reset-filter re-runs ui-runtime's highlight now
+          ;; that the items exist. Microtasks run before paint, so the content
+          ;; fills before the dialog is visibly shown.
+          :palette/opened        (fn [st _]
+                                   {:state (assoc st :web/palette-open? true)
+                                    :effects [[:palette/reset-filter nil]]})
           :palette/closed        (fn [st _]
-                                   {:state (dissoc st :web/palette-page)})}))
+                                   {:state (dissoc st :web/palette-page
+                                                   :web/palette-open?)})}))
 
 
 ;; Auto-scroll gate (see the Auto-scroll section below). Declared here so the
