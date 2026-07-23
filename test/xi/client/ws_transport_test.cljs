@@ -34,11 +34,12 @@
       (is (= [[:ws/send ev]] (:effects (handle st ev)))))))
 
 (deftest local-quit-and-reload-stay-local
-  (let [st (joined-state)]
+  (let [st (assoc-in (joined-state) [:rooms "r1" :session :id] "sess-1")]
     (is (= [[:app/quit {}]]
            (:effects (handle st {:type :input/submit :room-id "r1" :text "/quit"}))))
-    (is (= [[:app/reload {}]]
-           (:effects (handle st {:type :input/submit :room-id "r1" :text "/reload"}))))
+    (testing "reload injects the active room's session-id so it resumes that session"
+      (is (= [[:app/reload {:session-id "sess-1"}]]
+             (:effects (handle st {:type :input/submit :room-id "r1" :text "/reload"})))))
     (testing "palette :command/run as well"
       (is (= [[:app/quit {}]]
              (:effects (handle st {:type :command/run :room-id "r1" :name "quit"})))))
