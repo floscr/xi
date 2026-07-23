@@ -165,16 +165,6 @@
           (when cwd (str " \u00B7 " (views/shorten-path cwd)))
           (when (and (string? tags) (seq tags)) (str " \u00B7 " tags)))]]])
 
-(defn- gtd-file-card [dispatch! file-name task-count]
-  [:div {:class ["project-card"]
-         :replicant/key (str "gtd-file-" file-name)
-         :on {:click (fn [_] (dispatch! {:type :gtd/select-file :file file-name}))}}
-   [:div {:class ["project-card-icon"]}
-    (icon/icon {:icon-name :folder :size :sm})]
-   [:div {:class ["project-card-info"]}
-    [:span {:class ["project-card-name"]} (or file-name "Uncategorized")]
-    [:span {:class ["project-card-path"]} (str task-count " tasks")]]])
-
 (defn- render-org-body
   "Render pre-built HTML body from the server."
   [html-str]
@@ -219,19 +209,48 @@
            (icon/icon {:icon-name :play :size :sm})
            [:span "Launch Agent"]]])]]]))
 
+(def ^:private recent-limit
+  "How many tasks the default /gtd list shows before the View-all button."
+  5)
+
+(defn- by-recent
+  "Tasks sorted by creation date, newest first. Missing dates sort last."
+  [tasks]
+  (sort-by (fn [t] (or (:created-date t) "")) #(compare %2 %1) tasks))
+
+(defn- gtd-group
+  "One file's section on the main view: a clickable header (showing how many
+   more tasks are hidden) and up to recent-limit tasks, newest first. The
+   header opens the file's full detail view."
+  [dispatch! file-name file-tasks]
+  (let [more (- (count file-tasks) recent-limit)
+        open (fn [_] (dispatch! {:type :gtd/select-file :file file-name}))]
+    [:div {:class ["section"] :replicant/key (str "gtd-group-" file-name)}
+     [:button {:class ["section-title" "gtd-group-header"] :on {:click open}}
+      [:span {:class ["gtd-group-name"]}
+       [:span (or file-name "Uncategorized")]
+       (when (pos? more) [:span {:class ["gtd-group-more"]} (str "(" more " more)")])]
+      (icon/icon {:icon-name :chevron-right :size :sm})]
+     [:div {:class ["project-list"]}
+      (for [t (take recent-limit file-tasks)]
+        (gtd-task-card dispatch! t))]]))
+
 (defn- gtd-view [state dispatch!]
-  (let [tasks        (:web/gtd-tasks state)
-        loading?     (:web/gtd-loading? state)
+  (let [tasks         (:web/gtd-tasks state)
+        loading?      (:web/gtd-loading? state)
         selected-file (:web/gtd-file state)
-        task-id      (:web/gtd-task-id state)
-        ctx-menu     (:web/gtd-context-menu state)
+        task-id       (:web/gtd-task-id state)
+        ctx-menu      (:web/gtd-context-menu state)
         ;; Look up selected task by id
         selected-task (when task-id
                         (some #(when (= (:id %) task-id) %) tasks))
-        grouped      (when tasks
-                       (->> tasks
-                            (group-by :file)
-                            (sort-by key)))]
+        recent        (by-recent tasks)
+        grouped       (when tasks
+                        (->> recent
+                             (group-by :file)
+                             ;; groups ordered by their newest task, newest first
+                             (sort-by (fn [[_ ts]] (or (:created-date (first ts)) ""))
+                                      #(compare %2 %1))))]
     (cond
       ;; Task detail view
       selected-task
@@ -247,21 +266,21 @@
                                                              {:page :gtd}
                                                              {:page :home})})))
         [:div {:class ["topbar-title"]}
-         (if selected-file
-           selected-file
-           "Tasks")]
+         (if selected-file selected-file "Tasks")]
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :gtd/web-list}))}}
          (icon/icon {:icon-name :refresh :size :md})]
         (views/overflow-menu dispatch! state)]
        [:div {:class ["home"]}
         (cond
-          loading?
+          ;; Only block on the spinner when we have nothing cached to show.
+          (and loading? (empty? tasks))
           [:div {:class ["empty-state"]} (views/spinner) [:p "Loading tasks..."]]
 
           (empty? tasks)
           [:div {:class ["empty-state"]} [:p "No open tasks."]]
 
+          ;; File detail view: every task in the selected file, newest first.
           selected-file
           (let [file-tasks (get (into {} grouped) selected-file)]
             (if (seq file-tasks)
@@ -270,10 +289,10 @@
                  (gtd-task-card dispatch! t))]
               [:div {:class ["empty-state"]} [:p (str "No tasks in " selected-file)]]))
 
+          ;; Main view: tasks grouped by file, max recent-limit per group.
           :else
-          [:div {:class ["project-list"]}
-           (for [[file-name file-tasks] grouped]
-             (gtd-file-card dispatch! file-name (count file-tasks)))])]
+          (for [[file-name file-tasks] grouped]
+            (gtd-group dispatch! file-name file-tasks)))]
        (when ctx-menu
          (gtd-context-menu dispatch! ctx-menu))])))
 

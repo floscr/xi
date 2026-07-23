@@ -305,33 +305,63 @@
   [_st {:keys [client-id task-id action]}]
   {:effects [[:gtd/web-task-action-reply {:client-id client-id :task-id task-id :action action}]]})
 
-(defn- web-list-reply-fx
-  "Fetch all open GTD tasks with profile->cwd mapping and send the result
-   using the provided send-fn."
-  [send-fn]
+(defonce ^:private gtd-cache
+  "Server-side stale-while-revalidate cache of the web task list:
+   {:tasks [...] :at epoch-ms}. Spawning `bb org gtd agenda` costs ~0.4s
+   (babashka startup dominates), so the first request warms this and every
+   later /gtd load paints instantly, refreshing in the background."
+  (atom nil))
+
+(def ^:private gtd-cache-stale-ms
+  "Serve cached tasks without a background refresh when younger than this."
+  2000)
+
+(defn- enrich-tasks
+  "Parse the agenda EDN and shape the open tasks for the web client."
+  [edn-str cwd-map]
+  (let [tasks  (parse-edn-tasks edn-str)
+        active (->> tasks
+                    (filter #(and (:id %) (:title %)))
+                    (remove #(#{"DONE" "CANCELLED"} (:todo-state %))))]
+    (mapv (fn [t]
+            (let [f    (:file t)
+                  tags (when (seq (:tags t)) (str/join " " (:tags t)))]
+              (cond-> (-> (select-keys t [:id :title :todo-state :file :html-body :created-date])
+                          (assoc :tags tags))
+                (get cwd-map f) (assoc :cwd (get cwd-map f)))))
+          active)))
+
+(defn- refresh-cache!
+  "Fetch + enrich tasks, store them in the cache, and return a promise of
+   the fresh task vector."
+  []
   (let [cwd-map (load-gtd-profiles)]
     (-> (run-gtd-raw ["agenda" "--output" "edn"])
-        (.then
-         (fn [edn-str]
-           (let [tasks  (parse-edn-tasks edn-str)
-                 active (->> tasks
-                             (filter #(and (:id %) (:title %)))
-                             (remove #(#{"DONE" "CANCELLED"} (:todo-state %))))
-                 enriched (mapv (fn [t]
-                                  (let [f (:file t)
-                                        tags (when (seq (:tags t))
-                                               (str/join " " (:tags t)))]
-                                    (cond-> (-> (select-keys t [:id :title :todo-state :file :html-body])
-                                                (assoc :tags tags))
-                                      (get cwd-map f)
-                                      (assoc :cwd (get cwd-map f)))))
-                                active)]
-             (send-fn {:type :gtd/web-list-result :tasks enriched}))))
-        (.catch (fn [_]
-                  (send-fn {:type :gtd/web-list-result :tasks []}))))))
+        (.then (fn [edn-str]
+                 (let [tasks (enrich-tasks edn-str cwd-map)]
+                   (reset! gtd-cache {:tasks tasks :at (js/Date.now)})
+                   tasks))))))
+
+(defn- web-list-reply-fx
+  "Stale-while-revalidate: send the cached task list immediately (instant
+   paint), then refresh in the background when the cache is missing or
+   stale, sending the fresh list when it lands."
+  [send-fn]
+  (let [cached @gtd-cache]
+    (when cached
+      (send-fn {:type :gtd/web-list-result :tasks (:tasks cached)}))
+    (when (or (nil? cached)
+              (> (- (js/Date.now) (:at cached)) gtd-cache-stale-ms))
+      (-> (refresh-cache!)
+          (.then (fn [tasks] (send-fn {:type :gtd/web-list-result :tasks tasks})))
+          (.catch (fn [_]
+                    (when-not cached
+                      (send-fn {:type :gtd/web-list-result :tasks []}))))))))
 
 (defn- web-task-action-fx
-  "Run archive or done on a GTD task, then send updated task list."
+  "Run archive or done on a GTD task, rebuild the cache, then send the
+   updated list. No cached pre-send here — the client already removed the
+   task optimistically, so a stale echo would flash it back."
   [send-fn task-id action]
   (let [args (case action
                "archive" ["change" "--id" task-id "--archive"]
@@ -339,7 +369,8 @@
                nil)]
     (if args
       (-> (run-gtd-raw args)
-          (.then (fn [_] (web-list-reply-fx send-fn)))
+          (.then (fn [_] (refresh-cache!)))
+          (.then (fn [tasks] (send-fn {:type :gtd/web-list-result :tasks tasks})))
           (.catch (fn [_]
                     (send-fn {:type :gtd/web-task-action-error
                               :task-id task-id
