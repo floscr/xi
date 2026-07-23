@@ -12,15 +12,17 @@
 
    Flow:
      :prompt/submit (first msg, unnamed)
-       ─► maybe-generate-title sets :agent :title-pending? + emits
+       ─► maybe-generate-title sets :agent :title-pending?, sets a provisional
+          [:session :name] from the prompt text, + emits
           [:session/generate-title …]
      :session/generate-title (effect)
        ─► one-shot turn in a temp config dir; on end, remove the temp dir +
           dispatch :session/title-generated
      :session/title-generated
-       ─► sets [:session :name] when still unnamed."
+       ─► replaces the nil/provisional [:session :name] with the model title."
   (:require [clojure.string :as str]
-            [xi.core.state :as state]))
+            [xi.core.state :as state]
+            [xi.util :as util]))
 
 (def ^:private TITLE_MODEL "claude-haiku-4-5-20251001")
 
@@ -51,7 +53,13 @@
 (defn maybe-generate-title
   "Chained onto :prompt/submit. On the first user message of an unnamed
    session, kick off out-of-band title generation. :title-pending? guards
-   against a queued second message firing a second turn."
+   against a queued second message firing a second turn.
+
+   Immediately sets a *provisional* name derived from the first prompt (via
+   `util/session-title`) so the UI shows a snippet of the request instead of
+   the New-session placeholder while the model title is still generating.
+   :title-provisional? marks it so `title-generated` may overwrite it once the
+   real title lands."
   [st {:keys [room-id text]}]
   (when-let [room (state/get-room st room-id)]
     (when (and (string? text)
@@ -61,16 +69,28 @@
                ;; prompt-submit ran first (chain), so the message is in
                ;; history — confirms this wasn't merely queued while busy.
                (some #(= :user (:kind %)) (:history room)))
-      {:state    (assoc-in st [:rooms room-id :agent :title-pending?] true)
-       :effects  [[:session/generate-title {:room-id room-id :text text}]]})))
+      (let [provisional (util/session-title text)
+            st (assoc-in st [:rooms room-id :agent :title-pending?] true)
+            st (if provisional
+                 (-> st
+                     (assoc-in [:rooms room-id :session :name] provisional)
+                     (assoc-in [:rooms room-id :agent :title-provisional?] true))
+                 st)]
+        {:state   st
+         :effects [[:session/generate-title {:room-id room-id :text text}]]}))))
 
 (defn- title-generated
-  "Apply the title — only while the session is still unnamed, so a /resume
-   that landed first always wins."
+  "Apply the model title over the nil/provisional name, so the prompt-derived
+   placeholder is replaced once generation finishes. A /resume or compaction
+   that set a real (non-provisional) name always wins, so we never clobber it."
   [st {:keys [room-id title]}]
   (when-let [room (state/get-room st room-id)]
-    (when (and title (nil? (get-in room [:session :name])))
-      {:state (assoc-in st [:rooms room-id :session :name] title)})))
+    (when (and title
+               (or (nil? (get-in room [:session :name]))
+                   (get-in room [:agent :title-provisional?])))
+      {:state (-> st
+                  (assoc-in [:rooms room-id :session :name] title)
+                  (update-in [:rooms room-id :agent] dissoc :title-provisional?))})))
 
 (def handlers
   {:session/title-generated title-generated})

@@ -28,7 +28,19 @@
              (-> (some #(when (= :session/generate-title (first %)) %) effects)
                  second :text))))
     (testing "marks title generation pending"
-      (is (true? (get-in state [:rooms "r" :agent :title-pending?]))))))
+      (is (true? (get-in state [:rooms "r" :agent :title-pending?]))))
+    (testing "sets a provisional name from the prompt instead of \"New session\""
+      (is (= "fix the parser bug" (get-in state [:rooms "r" :session :name])))
+      (is (true? (get-in state [:rooms "r" :agent :title-provisional?]))))))
+
+(deftest title-generated-overrides-provisional-name
+  (let [st (:state (handle (with-room)
+                           {:type :prompt/submit :room-id "r" :text "fix the parser bug"}))
+        st (:state (handle st
+                           {:type :session/title-generated :room-id "r" :title "Parser Bugfix"}))]
+    (testing "model title replaces the provisional prompt-derived name"
+      (is (= "Parser Bugfix" (get-in st [:rooms "r" :session :name])))
+      (is (nil? (get-in st [:rooms "r" :agent :title-provisional?]))))))
 
 (deftest already-named-session-skips-generation
   (let [{:keys [effects]}
