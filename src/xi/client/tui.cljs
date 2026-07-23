@@ -265,18 +265,30 @@
                  :copy-debug   (run "debug")
                  :reload       (run "reload")))))
 
+(defn- full-command-list
+  "The curated palette commands (ordering, descriptions, subcommand
+   expansions) followed by every other assembly command not in the curated
+   set — the TUI shows ALL commands (built-ins + extensions, e.g. /reload,
+   /gtd, /skill), while the web palette sticks to the curated subset."
+  [cmd-list]
+  (let [curated-names (into #{} (map :name) palette/palette-commands)]
+    (into (vec palette/palette-commands)
+          (comp (remove (comp curated-names :name))
+                (map #(select-keys % [:name :description])))
+          cmd-list)))
+
 (defn- commands-menu
-  "Slash-commands menu (Ctrl+/ and '/' on an empty editor): the shared curated
-   command list (xi.palette/palette-commands) as a flat menu — no sections —
-   so it matches the web '/' suggestions and the palette's Commands group."
-  [room-id]
+  "Slash-commands menu (Ctrl+/ and '/' on an empty editor): the full command
+   list — the curated shared entries first (matching the web '/' suggestions),
+   then every remaining assembly command — as a flat menu, no sections."
+  [room-id cmd-list]
   {:id :commands
    :prompt "/"
    :items (mapv (fn [{:keys [name description]}]
                   {:label (str "/" name)
                    :description description
                    :event (palette-action-event room-id [:command name])})
-                (palette/expand-commands palette/palette-commands))})
+                (palette/expand-commands (full-command-list cmd-list)))})
 
 ;; Commands/actions whose selection opens a sub-picker: in the palette they
 ;; drill in-place (push a frame, keep the palette open) instead of closing.
@@ -289,7 +301,7 @@
    show only at an empty query (xi.tui.completion drops them once you type).
    Picker-opening entries become :drill items so they open a sub-view within
    the palette (with Esc back-nav) rather than closing it."
-  [state room-id]
+  [state room-id cmd-list]
   (let [room?   (boolean room-id)
         cur-sid (get-in state [:rooms room-id :session :id])
         chats   (->> (palette/recent-sessions state)
@@ -311,7 +323,7 @@
                                (cond-> {:label (str "/" name) :description description}
                                  (palette-drill-commands name) (assoc :drill evt)
                                  (not (palette-drill-commands name)) (assoc :event evt))))
-                           (palette/expand-commands palette/palette-commands))]
+                           (palette/expand-commands (full-command-list cmd-list)))]
     {:id :palette
      :prompt "palette> "
      :items (vec (concat (when (seq chat-items) (cons (heading "Chats") chat-items))
@@ -667,10 +679,12 @@
    opts:
      :ring         event ring buffer (feeds the logs buffer)
      :on-exit      (fn []) — flush hooks before process exit (quit/reload)
+     :commands     command list for the menus (built-ins + ext commands;
+                   merged after the curated palette entries)
      :prompt-badge (fn [state] → str) — extra prompt badge (ext indicators)
      :keybindings  ext keybindings ([{:key :event :when}]) wired into the
                    editor; :event dispatched with the active :room-id"
-  [{:keys [ring on-exit prompt-badge keybindings]}]
+  [{:keys [ring on-exit commands prompt-badge keybindings]}]
   (let [content (tui/create-tui!)
         chat (tui/make-container)
         view-wrapper (tui/make-container)
@@ -710,11 +724,11 @@
           :on-palette (fn []
                         (when-let [room (current-room)]
                           (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                      :menu (palette-menu (get-state) (:id room))})))
+                                      :menu (palette-menu (get-state) (:id room) commands)})))
           :on-commands (fn []
                          (when-let [room (current-room)]
                            (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                       :menu (commands-menu (:id room))})))
+                                       :menu (commands-menu (:id room) commands)})))
           :ext-keybindings ext-keybindings
           :on-git (fn [] (tui/run-external! ["ngit"] {}))
           :on-paste-image
