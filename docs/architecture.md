@@ -37,6 +37,19 @@ server, and the browser client are all assemblies of the same pure handlers.
   dispatch new events when they complete; they never touch state directly.
   The built-in `:app/dispatch` effect re-dispatches an event (used e.g. to
   drain queued prompts through the normal code path).
+
+  > **Pitfall — effects are not dispatchable as events.** Events
+  > (`(dispatch! {:type :foo …})`, handled by pure reducers) and effects
+  > (`[:effect/name {…}]` in a handler's `:effects`, run by the `:fx` map) are
+  > separate namespaces of keywords. Dispatching an effect *as* an event —
+  > e.g. `(dispatch! {:type :image/process …})` — matches no event handler and
+  > is **silently dropped** (no error; the action just never happens). If you're
+  > in fx/side-effect code and need what an effect does, call the underlying
+  > pure fn directly rather than dispatching the effect. Example: `:image/process`
+  > resizes then dispatches `:prompt/submit`; from fx code, resize inline via
+  > `xi.image/process-images` and dispatch `:prompt/submit` with `:images`
+  > yourself. (This bit the element-picker extension — see
+  > [element-picker.md](element-picker.md).)
 - **Taps observe** every processed event (with the post-event state). The WS
   server's broadcast, the web client's localStorage persistence, and the
   event log are all taps.
