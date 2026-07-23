@@ -546,19 +546,19 @@
           :models/web-list-result (fn [st {:keys [models]}]
                                     {:state (assoc st :web/model-list models)})
           :models/select         (fn [st {:keys [model room-id]}]
-                                    {:state (dissoc st :web/model-list :web/palette-page)
-                                     :effects [[:ws/send {:type :input/submit
+                                    {:state (dissoc st :web/model-list :web/palette-page :web/palette-open?)
+                                     :effects [[:palette/close nil]
+                                               [:ws/send {:type :input/submit
                                                           :room-id room-id
                                                           :text (str "/model " model)}]]})
-          :skill/web-list        forward
           :skill/web-list-result (fn [st {:keys [skills]}]
                                     {:state (assoc st :web/skill-list skills)})
           :skill/select          (fn [st {:keys [name room-id]}]
-                                    {:state (dissoc st :web/skill-list)
-                                     :effects [[:ws/send {:type :input/submit
+                                    {:state (dissoc st :web/skill-list :web/palette-page :web/palette-open?)
+                                     :effects [[:palette/close nil]
+                                               [:ws/send {:type :input/submit
                                                           :room-id room-id
                                                           :text (str "/skill load " name)}]]})
-          :skill/close           (fn [st _] {:state (dissoc st :web/skill-list)})
           :diff/reopen           diff-reopen
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
@@ -612,22 +612,16 @@
                                     {:state (dissoc st :web/selected-project-dir
                                                       :web/project-sessions
                                                       :web/project-sessions-cwd)})
-          ;; Project path picker (insert into compose)
-          :projects/picker-open  (fn [st _]
-                                    ;; Reuse already-loaded dirs, or fetch them
-                                    (cond-> {:state (assoc st :web/project-picker? true)}
-                                      (empty? (:web/project-dirs st))
-                                      (assoc :effects [[:ws/send {:type :projects/web-list}]])))
-          :projects/picker-close (fn [st _]
-                                    {:state (dissoc st :web/project-picker?)})
+          ;; Project path picker (insert into compose) — an in-palette sub-page.
           :projects/picker-insert (fn [st {:keys [path draft-key]}]
                                      (let [cur (get-in st [:web/drafts draft-key] "")
                                            sep (if (and (seq cur) (not (str/ends-with? cur " "))) " " "")
                                            new-text (str cur sep path)]
                                        {:state (-> st
                                                    (assoc-in [:web/drafts draft-key] new-text)
-                                                   (dissoc :web/project-picker?))
-                                        :effects [[:projects/sync-textarea {:text new-text}]]}))
+                                                   (dissoc :web/palette-page :web/palette-open?))
+                                        :effects [[:palette/close nil]
+                                                  [:projects/sync-textarea {:text new-text}]]}))
           :projects/new-session   (fn [st {:keys [cwd]}]
                                     {:state (-> st
                                                 (assoc :web/route {:page :chat :session-id nil})
@@ -639,10 +633,17 @@
           ;; Command palette second level: Tab on a project row opens its
           ;; action page; back/close return to the top level. The reset-filter
           ;; effect re-syncs ui-runtime.js (clears the query, re-highlights).
-          :palette/drill         (fn [st {:keys [cwd label]}]
-                                   {:state (assoc st :web/palette-page
-                                                  {:kind :project :cwd cwd :label label})
-                                    :effects [[:palette/reset-filter nil]]})
+          ;; Drill a project row into its action sub-page. Keyboard Tab keeps
+          ;; the <dialog> open (preventDefault), so it needs no reopen. A mouse
+          ;; click is a `.command-item` click, which the runtime force-closes —
+          ;; :reopen? re-opens it (same one-shot :web/palette-drilling? cycle as
+          ;; :palette/open-models) so the panel stays open on the sub-page.
+          :palette/drill         (fn [st {:keys [cwd label reopen?]}]
+                                   {:state (cond-> (assoc st :web/palette-page
+                                                          {:kind :project :cwd cwd :label label})
+                                             reopen? (assoc :web/palette-drilling? true))
+                                    :effects (cond-> [[:palette/reset-filter nil]]
+                                               reopen? (conj [:palette/reopen nil]))})
           ;; Change model / /model: drill into an in-palette model picker. The
           ;; runtime force-closes the <dialog> on the item click, so we set a
           ;; one-shot :web/palette-drilling? flag and re-open the dialog (see the
@@ -656,6 +657,20 @@
                                                (dissoc :web/model-list))
                                     :effects [[:ws/send {:type :models/web-list}]
                                               [:palette/reopen nil]]})
+          ;; Skills / project path picker: same drill pattern as models.
+          :palette/open-skills   (fn [st _]
+                                   {:state (-> st
+                                               (assoc :web/palette-page {:kind :skill}
+                                                      :web/palette-drilling? true)
+                                               (dissoc :web/skill-list))
+                                    :effects [[:ws/send {:type :skill/web-list}]
+                                              [:palette/reopen nil]]})
+          :palette/open-projects (fn [st _]
+                                   {:state (assoc st :web/palette-page {:kind :project-insert}
+                                                     :web/palette-drilling? true)
+                                    :effects (cond-> [[:palette/reopen nil]]
+                                               (empty? (:web/project-dirs st))
+                                               (conj [:ws/send {:type :projects/web-list}]))})
           :palette/back          (fn [st _]
                                    {:state (dissoc st :web/palette-page)
                                     :effects [[:palette/reset-filter nil]]})
@@ -729,6 +744,15 @@
       (fn []
         (when-let [^js cmd (aget js/window "__uiCommand")]
           (.open cmd "cmdk")))))
+   ;; Explicitly close the palette after a leaf action (insert path, select
+   ;; model/skill). We can't rely on ui-runtime's document click handler here:
+   ;; the on-click dispatch re-renders and detaches the clicked node before the
+   ;; runtime runs, so its `target.closest('.command-dialog')` is null and it
+   ;; never closes. Closing by id is robust to the detached node.
+   :palette/close
+   (fn [_ _]
+     (when-let [^js cmd (aget js/window "__uiCommand")]
+       (.close cmd "cmdk")))
    :diff/measure-cols
    (fn [{:keys [dispatch!]} {:keys [room-id method]}]
      (dispatch! {:type :input/submit :room-id room-id

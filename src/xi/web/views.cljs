@@ -647,7 +647,7 @@
     (when (pos? (or (:count nav-ctx) 0))
       (prompt-nav-controls dispatch! prompt-nav nav-ctx))
     [:button {:class ["quick-cmd"]
-              :on {:click (fn [_] (dispatch! {:type :projects/picker-open}))}}
+              :on {:click (fn [_] (dispatch! {:type :palette/open-projects}))}}
      (icon/icon {:icon-name :folder :size :sm})
      " Projects"]
     (map (fn [name]
@@ -1317,66 +1317,6 @@
   (when (false? (:web/connected? state))
     [:span {:class ["offline-label"]} "Offline"]))
 
-(defn- selector-menu
-  "Full-width dropdown panel rendered below the topbar — the web analog of the
-   TUI completion menu. `id` scopes the replicant keys; `items` is a seq of
-   {:value :label :desc :active?} maps; `on-select` receives the chosen item's
-   :value; `on-close` fires on backdrop click; `empty-label` shows when there
-   are no items.
-
-   When `search` is provided ({:query :placeholder :on-search}) a filter input
-   is rendered at the top; items are filtered case-insensitively on their label
-   and desc, and `on-search` receives the live query string."
-  [{:keys [id items on-select on-close empty-label search]}]
-  (let [q       (some-> (:query search) str/trim str/lower-case not-empty)
-        visible (if q
-                  (filter (fn [{:keys [label desc]}]
-                            (or (str/includes? (str/lower-case (str label)) q)
-                                (and desc (str/includes? (str/lower-case (str desc)) q))))
-                          items)
-                  items)]
-    (list
-     [:div {:class ["selector-menu-backdrop"]
-            :replicant/key (str id "-backdrop")
-            :on {:click (fn [_] (on-close))}}]
-     [:div {:class ["selector-menu"]
-            :replicant/key (str id "-menu")}
-      (when search
-        [:input {:class ["selector-menu-search"]
-                 :replicant/key (str id "-search")
-                 :type "text"
-                 :placeholder (or (:placeholder search) "Search…")
-                 :value (or (:query search) "")
-                 :replicant/on-mount (fn [{:replicant/keys [^js node]}]
-                                       (.focus node #js {:preventScroll true}))
-                 :on {:input (fn [^js e] ((:on-search search) (.. e -target -value)))
-                      :click (fn [^js e] (.stopPropagation e))}}])
-      (if (seq visible)
-        (for [{:keys [value label desc active?]} visible]
-          [:button {:class ["selector-menu-item"
-                            (when active? "selector-menu-item--active")]
-                    :replicant/key value
-                    :on {:click (fn [e]
-                                  (.stopPropagation e)
-                                  (on-select value))}}
-           [:span {:class ["selector-menu-name"]} label]
-           (when (seq desc)
-             [:span {:class ["selector-menu-desc"]} desc])])
-        [:div {:class ["selector-menu-empty"]} (or empty-label "Nothing found")])])))
-
-(defn- skill-selector
-  "Overlay menu of on-demand skills (name + description). Selecting one loads
-   it into the current room via `/skill load`."
-  [dispatch! room-id skills]
-  (selector-menu
-   {:id "skill"
-    :items (for [{:keys [name description]} skills]
-             {:value name :label name :desc description})
-    :on-select (fn [name] (dispatch! {:type :skill/select :name name :room-id room-id}))
-    :on-close  (fn [] (dispatch! {:type :skill/close}))
-    :empty-label "No skills found"}))
-
-
 (defn shorten-path
   "~/Code/Projects/xi → xi, ~/Code/Work/Hyma/studio → studio"
   [path]
@@ -1384,24 +1324,6 @@
     (let [parts (str/split path #"/")]
       (last parts))))
 
-
-(defn- project-picker [dispatch! dirs draft-key]
-  [:div {:class ["project-picker-backdrop"]
-         :on {:click (fn [_] (dispatch! {:type :projects/picker-close}))}}
-   [:div {:class ["project-picker"]}
-    (if (seq dirs)
-      (for [path dirs]
-        [:button {:class ["project-picker-item"]
-                  :replicant/key path
-                  :on {:click (fn [e]
-                                (.stopPropagation e)
-                                (dispatch! {:type :projects/picker-insert
-                                            :path path :draft-key draft-key}))}}
-         [:span {:class ["project-picker-icon"]}
-          (icon/icon {:icon-name :folder :size :sm})]
-         [:span {:class ["project-picker-path"]} (shorten-path path)]
-         [:span {:class ["project-picker-full"]} path]])
-      [:div {:class ["project-picker-empty"]} "Loading…"])]])
 
 (defn- menu-button
   "Framework hamburger toggle that opens the recent-sessions drawer. Lives on
@@ -1512,7 +1434,7 @@
                      :on {:click (fn [e]
                                    (.stopPropagation e)
                                    (dispatch! {:type :overflow/close})
-                                   (dispatch! {:type :skill/web-list}))}}
+                                   (dispatch! {:type :palette/open-skills}))}}
             (icon/icon {:icon-name :zap :size :sm})
             [:span "Skills"]])
          [:div {:class ["overflow-menu-divider"]}]
@@ -1715,8 +1637,6 @@
       (when has-tabs?
         (tab-bar dispatch! (:id room) active-buf buffers))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
-     (when-let [skills (:web/skill-list state)]
-       (skill-selector dispatch! (:id room) skills))
      (case active-buf
        :diff
        (diff-tab-view dispatch! (:id room) (:diff buffers)
@@ -1780,8 +1700,6 @@
           (bubble-menu dispatch! (:id room) menu))
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
-        (when (:web/project-picker? state)
-          (project-picker dispatch! (:web/project-dirs state) dkey))
         (compose-box dispatch! room busy? (:web/compose-images state)
                      dkey (get-in state [:web/drafts dkey]) sid
                      (:web/cmd-selected state)
@@ -2496,6 +2414,45 @@
                                           :model m :room-id (:id room)}))}
            m))))))
 
+(defn- palette-skill-page
+  "On-demand skills as a palette sub-page (drilled from Skills). Spinner while
+   :web/skill-list loads, then a command-item per skill. Selecting loads it via
+   /skill load and closes the palette."
+  [state dispatch!]
+  (let [room   (state/active-room state)
+        skills (:web/skill-list state)]
+    (cond
+      (nil? skills)  [:div {:class ["command-empty"]} (spinner) " Loading skills…"]
+      (empty? skills) [:div {:class ["command-empty"]} "No skills found"]
+      :else
+      (apply cmd/command-group {:heading "Skills"}
+        (for [{:keys [name description]} skills]
+          (cmd/command-item
+           {:icon :zap
+            :value (str name " " description)
+            :description description
+            :on-click (fn [_] (dispatch! {:type :skill/select
+                                          :name name :room-id (:id room)}))}
+           name))))))
+
+(defn- palette-project-insert-page
+  "Project paths as a palette sub-page (drilled from the Projects compose
+   button). Spinner while :web/project-dirs loads, then a command-item per
+   project. Selecting inserts the path into the current compose draft."
+  [state dispatch!]
+  (let [dirs (:web/project-dirs state)
+        dkey (draft-key state)]
+    (if (empty? dirs)
+      [:div {:class ["command-empty"]} (spinner) " Loading…"]
+      (apply cmd/command-group {:heading "Insert project path"}
+        (for [path dirs]
+          (cmd/command-item
+           {:icon :folder
+            :value (str (shorten-path path) " " path)
+            :on-click (fn [_] (dispatch! {:type :projects/picker-insert
+                                          :path path :draft-key dkey}))}
+           (shorten-path path)))))))
+
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
@@ -2570,7 +2527,9 @@
         (icon/icon {:icon-name :arrow-left :size :sm})
         [:span "Back"]]
        (case (:kind palette-page)
-         :model   (palette-model-page state dispatch!)
+         :model          (palette-model-page state dispatch!)
+         :skill          (palette-skill-page state dispatch!)
+         :project-insert (palette-project-insert-page state dispatch!)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
            (palette-project-actions state dispatch! (:cwd palette-page)))))
 
@@ -2604,7 +2563,11 @@
              :value (str "project " (shorten-path d) " " d)
              :attrs {:data-palette-drill d
                      :data-palette-label (shorten-path d)}
-             :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd d}))}
+             ;; Mouse click drills into the project action sub-page (same as
+             ;; keyboard Tab); :reopen? keeps the panel open past the runtime's
+             ;; force-close. "Open sessions" inside the sub-page navigates.
+             :on-click (fn [_] (dispatch! {:type :palette/drill :cwd d
+                                           :label (shorten-path d) :reopen? true}))}
             (shorten-path d)))))
      ;; Actions come from the shared xi.palette spec (same labels/icons/order as
      ;; the TUI Ctrl+/ palette); the web maps each :key to its own handler.
@@ -2613,7 +2576,7 @@
              (case key
                :new-chat     (fn [_] (dispatch! {:type :room/new}))
                :change-model (fn [_] (dispatch! {:type :palette/open-models}))
-               :skills       (fn [_] (dispatch! {:type :skill/web-list}))
+               :skills       (fn [_] (dispatch! {:type :palette/open-skills}))
                :git-status   (fn [_] (dispatch! {:type :diff/reopen
                                                  :room-id (:id room)
                                                  :method "git" :engine :git}))
