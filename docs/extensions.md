@@ -341,3 +341,4 @@ Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
 | projects | command, handler, keybinding | Project path picker. `/project` or Alt+P. |
 | skills | system-prompt, command | Injects tool knowledge based on project markers; `/skill list\|load`. |
 | chrome | tools (factory) | Proxies `chrome-devtools-mcp` as xi tools (opt-in via `XI_CHROME_TOOLS`). See [chrome-mcp.md](chrome-mcp.md). |
+| element_picker | command + fx | `/pick` a DOM element in the MCP-controlled Chrome → sends its HTML, selector, styles + a screenshot as the next prompt. Installed into `chrome` (shares its MCP client). See [element-picker.md](element-picker.md). |

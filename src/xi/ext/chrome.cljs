@@ -30,6 +30,7 @@
                             devtools-mcp launches its own managed Chrome
      XI_CHROME_MCP_ARGS     extra CLI args for chrome-devtools-mcp (space-split)"
   (:require [clojure.string :as str]
+            [xi.ext.element-picker :as element-picker]
             ["node:child_process" :as child-process])
   (:require-macros [xi.ext.chrome-defs :refer [inline-tool-defs]]))
 
@@ -159,8 +160,12 @@
                                            :text (str "chrome-devtools-mcp error: "
                                                       (.-message e))}]
                                :is-error true}))))]
-        {:id               :chrome
-         :tool-definitions tool-defs
-         :tool-registry    (into {} (map (fn [n] [n (fn [args _ctx] (forward n args))]))
-                                 tool-names)
-         :on-shutdown      (fn [] (when-let [c @client*] ((:kill c))))}))))
+        (merge
+         {:id               :chrome
+          :tool-definitions tool-defs
+          :tool-registry    (into {} (map (fn [n] [n (fn [args _ctx] (forward n args))]))
+                                  tool-names)
+          :on-shutdown      (fn [] (when-let [c @client*] ((:kill c))))}
+         ;; The element picker drives the same MCP client, so it always acts
+         ;; on chrome-devtools-mcp's currently selected page.
+         (element-picker/install forward))))))
