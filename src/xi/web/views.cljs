@@ -698,12 +698,13 @@
      (when (and busy? queue-open? (pos? qcount))
        (queue-popover dispatch! room-id queued))
      (compose-image-strip dispatch! images)
-     (when show-quick?
-       (quick-command-bar dispatch! room-id recents prompt-nav nav-ctx))
-     (when cmd-open?
-       (command-suggestions dispatch! room-id draft-key cmd-matches
-                            (min (or cmd-selected 0) (dec (count cmd-matches)))))
-     [:div {:class ["compose-input-row"]}
+     [:div {:class ["compose-frame"]}
+      (when show-quick?
+        (quick-command-bar dispatch! room-id recents prompt-nav nav-ctx))
+      (when cmd-open?
+        (command-suggestions dispatch! room-id draft-key cmd-matches
+                             (min (or cmd-selected 0) (dec (count cmd-matches)))))
+      [:div {:class ["compose-input-row"]}
       [:button {:class ["icon-btn" "compose-attach-btn"]
                 :on {:click (fn [_]
                               (some-> (.getElementById js/document "compose-image-input")
@@ -828,7 +829,7 @@
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
                                                        images draft-key draft))}}
-         (icon/icon {:icon-name :arrow-up :size :md})])]]))
+         (icon/icon {:icon-name :arrow-up :size :md})])]]]))
 
 ;; ── Permission dialog ────────────────────────────────────────────────────────
 

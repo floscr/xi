@@ -943,6 +943,60 @@ body {
   margin-inline: auto;
 }
 
+/* The frame wraps the quick-command bar and the input row. On narrow screens it
+   is a transparent pass-through column so the composer stays edge-to-edge; on
+   larger displays it becomes a single rounded card (see the media query). */
+.compose-frame {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 769px) {
+  .compose-frame {
+    border: var(--border-0);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  /* The frame supplies the outer border, so the input row drops its bottom
+     border and keeps the top one only as the divider under the command bar. */
+  .compose-frame .compose-input-row {
+    border-bottom: none;
+  }
+  /* With no command bar above it (e.g. personal-agent mode) the input row is
+     the whole frame — drop its top border so no stray line sits at the top. */
+  .compose-frame > .compose-input-row:first-child {
+    border-top: none;
+  }
+  /* The command bar sits inside the frame now, so its buttons no longer need
+     their own frosted pill — drop the border, radius and blur so they read as
+     a flat row within the card. */
+  .compose-frame .quick-cmd-group {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /* Pull the bar's left padding in by one step so the leading button's glyph
+     (arrow) lines up with the image icon in the input row below it — the
+     button carries size-2 internal padding vs the icon-btn's size-1. */
+  .compose-frame .quick-commands {
+    padding-left: var(--size-2);
+  }
+}
+
+/* Tall screens: float the composer card up off the bottom edge and let the
+   auto-growing textarea expand past its default 6-row cap. The component sets
+   that cap via an inline max-height, so override it with !important. */
+@media (min-width: 769px) and (min-height: 820px) {
+  .compose-box {
+    margin-bottom: var(--size-4);
+  }
+  .compose-box .form-textarea-auto {
+    max-height: calc(1.5em * 14) !important;
+  }
+}
+
 .compose-input-row {
   display: flex;
   gap: var(--size-2);
