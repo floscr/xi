@@ -108,6 +108,38 @@
     if (obj instanceof Object) return OBJECT_TYPE;
     return void 0;
   }
+  function contains_QMARK_(coll, v) {
+    switch (typeConst(coll)) {
+      case SET_TYPE:
+      case MAP_TYPE:
+        return coll.has(v);
+      case void 0:
+        return false;
+      default:
+        return v in coll;
+    }
+  }
+  function nth(coll, idx, orElse) {
+    if (coll) {
+      var elt = void 0;
+      if (Array.isArray(coll)) {
+        elt = coll[idx];
+      } else {
+        const iter = iterable(coll);
+        let i = 0;
+        for (const value of iter) {
+          if (i++ == idx) {
+            elt = value;
+            break;
+          }
+        }
+      }
+      if (elt !== void 0) {
+        return elt;
+      }
+    }
+    return orElse;
+  }
   function get(coll, key, otherwise = void 0) {
     if (coll == null) {
       return otherwise;
@@ -162,6 +194,10 @@
     throw new TypeError(`${x} is not iterable`);
   }
   var IIterable = Symbol("Iterable");
+  function _iterator(coll) {
+    return coll[Symbol.iterator]();
+  }
+  var es6_iterator = _iterator;
   function first(coll) {
     const [first2] = iterable(coll);
     return first2;
@@ -187,6 +223,89 @@
   LazyIterable.prototype[IIterable] = true;
   function lazy(f) {
     return new LazyIterable(f);
+  }
+  function map(f, ...colls) {
+    f = toFn(f);
+    switch (colls.length) {
+      case 0:
+        return (rf) => {
+          return (...args) => {
+            switch (args.length) {
+              case 0: {
+                return rf();
+              }
+              case 1: {
+                return rf(args[0]);
+              }
+              case 2: {
+                return rf(args[0], f(args[1]));
+              }
+              default: {
+                return rf(args[0], f(...args.slice(1)));
+              }
+            }
+          };
+        };
+      case 1:
+        return lazy(function* () {
+          for (const x of iterable(colls[0])) {
+            yield f(x);
+          }
+        });
+      default:
+        return lazy(function* () {
+          const iters = colls.map((coll) => es6_iterator(iterable(coll)));
+          while (true) {
+            const args = [];
+            for (const i of iters) {
+              const nextVal = i.next();
+              if (nextVal.done) {
+                return;
+              }
+              args.push(nextVal.value);
+            }
+            yield f(...args);
+          }
+        });
+    }
+  }
+  function filter1(pred) {
+    return (rf) => {
+      return (...args) => {
+        switch (args.length) {
+          case 0:
+            return rf();
+          case 1:
+            return rf(args[0]);
+          case 2: {
+            const result = args[0];
+            const input = args[1];
+            if (truth_(pred(input))) {
+              return rf(result, input);
+            } else return result;
+          }
+        }
+      };
+    };
+  }
+  function filter(pred, coll) {
+    if (arguments.length === 1) {
+      return filter1(pred);
+    }
+    pred = toFn(pred);
+    return lazy(function* () {
+      for (const x of iterable(coll)) {
+        if (truth_(pred(x))) {
+          yield x;
+        }
+      }
+    });
+  }
+  function remove(pred, coll) {
+    if (arguments.length === 1) {
+      return filter1(complement(pred));
+    }
+    return filter(complement(pred), coll);
   }
   function not(expr) {
     return !truth_(expr);
@@ -233,7 +352,38 @@
     reset_BANG_(atm, v);
     return v;
   }
+  function vector(...args) {
+    return args;
+  }
+  function mapv(...args) {
+    if (args.length === 2) {
+      const [_f, coll] = args;
+      const f = toFn(_f);
+      const iter = iterable(coll);
+      if (Array.isArray(iter)) {
+        const ret2 = new Array(iter.length);
+        for (var i = 0; i < iter.length; i++) {
+          ret2[i] = f(iter[i]);
+        }
+        return ret2;
+      } else {
+        var ret = [];
+        for (const x of iter) {
+          ret.push(f(x));
+        }
+        return ret;
+      }
+    }
+    return [...map(...args)];
+  }
+  function set(coll) {
+    return new Set(iterable(coll));
+  }
   var IApply__apply = Symbol("IApply__apply");
+  function complement(f) {
+    f = toFn(f);
+    return (...args) => not(f(...args));
+  }
   var List = class extends Array {
     constructor(...args) {
       super();
@@ -304,6 +454,9 @@
   }
   function truth_(x) {
     return x != null && x !== false;
+  }
+  function number_QMARK_(x) {
+    return typeof x == "number";
   }
   var _metaSym = Symbol("meta");
   var SortedSet = class _SortedSet {
@@ -469,6 +622,24 @@
     }
     ;
   };
+  var observe_list_BANG_ = function(dialog) {
+    const temp__23062__auto__1 = dialog["__cmdListObs"];
+    if (truth_(temp__23062__auto__1)) {
+      const prev2 = temp__23062__auto__1;
+      prev2.disconnect();
+    }
+    ;
+    const list3 = dialog.querySelector(".command-list");
+    if (truth_(list3)) {
+      const obs4 = new MutationObserver((function(_, _5) {
+        const input6 = dialog.querySelector(".command-input");
+        return filter_BANG_(dialog, truth_(input6) ? input6.value : "");
+      }));
+      obs4.observe(list3, { "childList": true, "subtree": true });
+      return dialog["__cmdListObs"] = obs4;
+    }
+    ;
+  };
   var open = function(id) {
     const dialog1 = find_dialog(id);
     if (truth_((() => {
@@ -487,7 +658,8 @@
         input3.focus();
       }
       ;
-      return filter_BANG_(dialog1, "");
+      filter_BANG_(dialog1, "");
+      return observe_list_BANG_(dialog1);
     }
     ;
   };
@@ -986,6 +1158,207 @@
   })();
   window["__uiContextMenu"] = open_context_menu;
 
+  // .compiled/drop_zone.mjs
+  var closest_zone = function(el) {
+    if (truth_((() => {
+      const and__23442__auto__1 = el;
+      if (truth_(and__23442__auto__1)) {
+        return el.closest;
+      } else {
+        return and__23442__auto__1;
+      }
+      ;
+    })())) {
+      return el.closest("[data-ui-drop-zone]");
+    }
+    ;
+  };
+  var emit_files_BANG_ = function(zone, files) {
+    if (files.length > 0) {
+      return zone.dispatchEvent(new CustomEvent("ui:drop-zone-files", { "bubbles": true, "detail": { "files": files } }));
+    }
+    ;
+  };
+  var on_dragover = function(e) {
+    const temp__23062__auto__1 = closest_zone(e.target);
+    if (truth_(temp__23062__auto__1)) {
+      const zone2 = temp__23062__auto__1;
+      e.preventDefault();
+      return zone2.classList.add("drop-zone-active");
+    }
+    ;
+  };
+  var on_dragleave = function(e) {
+    const temp__23062__auto__1 = closest_zone(e.target);
+    if (truth_(temp__23062__auto__1)) {
+      const zone2 = temp__23062__auto__1;
+      if (truth_((() => {
+        const and__23442__auto__3 = e.relatedTarget;
+        if (truth_(and__23442__auto__3)) {
+          return zone2.contains(e.relatedTarget);
+        } else {
+          return and__23442__auto__3;
+        }
+        ;
+      })())) {
+        return null;
+      } else {
+        return zone2.classList.remove("drop-zone-active");
+      }
+      ;
+    }
+    ;
+  };
+  var on_drop = function(e) {
+    const temp__23062__auto__1 = closest_zone(e.target);
+    if (truth_(temp__23062__auto__1)) {
+      const zone2 = temp__23062__auto__1;
+      e.preventDefault();
+      zone2.classList.remove("drop-zone-active");
+      return emit_files_BANG_(zone2, Array.from(e.dataTransfer.files));
+    }
+    ;
+  };
+  var on_change = function(e) {
+    const input1 = e.target;
+    if (truth_((() => {
+      const and__23442__auto__2 = input1;
+      if (truth_(and__23442__auto__2)) {
+        const and__23442__auto__3 = input1.matches;
+        if (truth_(and__23442__auto__3)) {
+          return input1.matches('input[type="file"]');
+        } else {
+          return and__23442__auto__3;
+        }
+        ;
+      } else {
+        return and__23442__auto__2;
+      }
+      ;
+    })())) {
+      const temp__23062__auto__4 = closest_zone(input1);
+      if (truth_(temp__23062__auto__4)) {
+        const zone5 = temp__23062__auto__4;
+        return emit_files_BANG_(zone5, Array.from(input1.files));
+      }
+      ;
+    }
+    ;
+  };
+  var init_BANG_2 = function() {
+    document.addEventListener("dragover", on_dragover);
+    document.addEventListener("dragleave", on_dragleave);
+    document.addEventListener("drop", on_drop);
+    return document.addEventListener("change", on_change);
+  };
+  init_BANG_2();
+
+  // .compiled/masonry.mjs
+  var raf = atom(null);
+  var observed = /* @__PURE__ */ new Set();
+  var ro = new ResizeObserver((function(_) {
+    return schedule_BANG_();
+  }));
+  var native_QMARK_ = function(container) {
+    return "masonry" === getComputedStyle(container).gridTemplateRows;
+  };
+  var clear_BANG_ = function(container) {
+    container.style.gridAutoRows = "";
+    container.style.removeProperty("row-gap");
+    for (let G__1 of iterable(Array.from(container.children))) {
+      const item2 = G__1;
+      item2.style.gridRowEnd = "";
+    }
+    return null;
+  };
+  var layout_BANG_ = function(container) {
+    const items1 = Array.from(container.children);
+    container.style.gridAutoRows = "0px";
+    container.style.setProperty("row-gap", "1px", "important");
+    const col_gap2 = parseFloat(getComputedStyle(container).columnGap);
+    const col_gap3 = truth_(isNaN(col_gap2)) ? 0 : col_gap2;
+    const heights4 = mapv((function(item) {
+      return item.getBoundingClientRect().height;
+    }), items1);
+    for (let G__5 of iterable(map(vector, items1, heights4))) {
+      const vec__69 = G__5;
+      const item10 = nth(vec__69, 0, null);
+      const h11 = nth(vec__69, 1, null);
+      item10.style.gridRowEnd = `${"span "}${Math.round(h11 + col_gap3) ?? ""}`;
+    }
+    return null;
+  };
+  var run_BANG_ = function() {
+    const els1 = Array.from(document.querySelectorAll(".tile-grid-masonry"));
+    for (let G__2 of iterable(els1)) {
+      const el3 = G__2;
+      if (truth_(observed.has(el3))) {
+      } else {
+        observed.add(el3);
+        ro.observe(el3);
+      }
+    }
+    ;
+    for (let G__4 of iterable(Array.from(observed))) {
+      const el5 = G__4;
+      if (truth_((() => {
+        const or__23426__auto__6 = not(el5.isConnected);
+        if (or__23426__auto__6) {
+          return or__23426__auto__6;
+        } else {
+          return not(el5.classList.contains("tile-grid-masonry"));
+        }
+        ;
+      })())) {
+        observed.delete(el5);
+        ro.unobserve(el5);
+        if (truth_(el5.isConnected)) {
+          clear_BANG_(el5);
+        }
+      }
+    }
+    ;
+    for (let G__7 of iterable(els1)) {
+      const el8 = G__7;
+      if (truth_(native_QMARK_(el8))) {
+        clear_BANG_(el8);
+      } else {
+        layout_BANG_(el8);
+      }
+    }
+    return null;
+  };
+  var schedule_BANG_ = function() {
+    if (truth_(deref(raf))) {
+      cancelAnimationFrame(deref(raf));
+    }
+    ;
+    return reset_BANG_(raf, requestAnimationFrame((function(_) {
+      reset_BANG_(raf, null);
+      return run_BANG_();
+    })));
+  };
+  var init_BANG_3 = function() {
+    schedule_BANG_();
+    const obs1 = new MutationObserver((function(_, _2) {
+      return schedule_BANG_();
+    }));
+    obs1.observe(document.body, { "childList": true, "subtree": true, "attributes": true, "attributeFilter": ["class"] });
+    return document.addEventListener("load", (function(e) {
+      const target3 = e.target;
+      if (truth_("IMG" === target3.tagName && target3.closest(".tile-grid-masonry"))) {
+        return schedule_BANG_();
+      }
+      ;
+    }), true);
+  };
+  window["__uiMasonry"] = schedule_BANG_;
+  if ("loading" === document.readyState) {
+    document.addEventListener("DOMContentLoaded", init_BANG_3);
+  } else {
+    init_BANG_3();
+  }
+
   // .compiled/popover.mjs
   var gap = 8;
   var edge = 8;
@@ -1097,12 +1470,12 @@
     }
     ;
   };
-  var init_BANG_2 = function() {
+  var init_BANG_4 = function() {
     document.addEventListener("toggle", on_toggle, true);
     window.addEventListener("scroll", reposition_BANG_, true);
     return window.addEventListener("resize", reposition_BANG_);
   };
-  init_BANG_2();
+  init_BANG_4();
   window["__uiPopover"] = { "reposition": reposition_BANG_ };
 
   // .compiled/theme.mjs
@@ -1236,7 +1609,7 @@
       }));
     };
   };
-  var init_BANG_3 = function() {
+  var init_BANG_5 = function() {
     const mode1 = get_mode();
     apply_theme_BANG_(mode1);
     const mql2 = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1248,5 +1621,201 @@
       ;
     }));
   };
-  window["__uiTheme"] = { "init": init_BANG_3, "set": set_mode_BANG_, "get": get_mode, "effective": get_effective, "toggle": toggle_BANG_, "subscribe": subscribe_BANG_ };
+  window["__uiTheme"] = { "init": init_BANG_5, "set": set_mode_BANG_, "get": get_mode, "effective": get_effective, "toggle": toggle_BANG_, "subscribe": subscribe_BANG_ };
+
+  // .compiled/toast.mjs
+  var container_id = "ui-toast-container";
+  var ensure_container_BANG_ = function() {
+    const or__23426__auto__1 = document.getElementById(container_id);
+    if (truth_(or__23426__auto__1)) {
+      return or__23426__auto__1;
+    } else {
+      const el2 = document.createElement("div");
+      el2.id = container_id;
+      el2.className = "toast-container";
+      document.body.appendChild(el2);
+      return el2;
+    }
+    ;
+  };
+  var dismiss_BANG_2 = function(el) {
+    if (truth_(el["__uiToastDismissed"])) {
+      return null;
+    } else {
+      el["__uiToastDismissed"] = true;
+      el.classList.add("toast-leaving");
+      return setTimeout((function() {
+        return el.remove();
+      }), 300);
+    }
+    ;
+  };
+  var show_BANG_ = function(message, opts) {
+    const opts1 = (() => {
+      const or__23426__auto__2 = opts;
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return {};
+      }
+      ;
+    })();
+    const variant3 = (() => {
+      const or__23426__auto__4 = opts1["variant"];
+      if (truth_(or__23426__auto__4)) {
+        return or__23426__auto__4;
+      } else {
+        return "info";
+      }
+      ;
+    })();
+    const raw_dur5 = opts1["duration"];
+    const duration6 = truth_(number_QMARK_(raw_dur5)) ? raw_dur5 : 5e3;
+    const container7 = ensure_container_BANG_();
+    const el8 = document.createElement("div");
+    el8.className = `${"toast toast-"}${variant3 ?? ""}`;
+    el8.textContent = `${message ?? ""}`;
+    el8.setAttribute("role", "status");
+    el8.addEventListener("click", (function(_) {
+      return dismiss_BANG_2(el8);
+    }));
+    container7.appendChild(el8);
+    if (duration6 > 0) {
+      setTimeout((function() {
+        return dismiss_BANG_2(el8);
+      }), duration6);
+    }
+    ;
+    return el8;
+  };
+  var consume_BANG_ = function(el) {
+    const msg1 = el.getAttribute("data-ui-toast");
+    const dur2 = el.getAttribute("data-duration");
+    el.remove();
+    return show_BANG_(msg1, { "variant": (() => {
+      const or__23426__auto__3 = el.getAttribute("data-variant");
+      if (truth_(or__23426__auto__3)) {
+        return or__23426__auto__3;
+      } else {
+        return "info";
+      }
+      ;
+    })(), "duration": truth_(dur2) ? parseInt(dur2, 10) : null });
+  };
+  var scan_BANG_ = function() {
+    for (let G__1 of iterable(Array.from(document.querySelectorAll("[data-ui-toast]")))) {
+      const el2 = G__1;
+      consume_BANG_(el2);
+    }
+    return null;
+  };
+  var init_BANG_6 = function() {
+    scan_BANG_();
+    const obs1 = new MutationObserver((function(_, _2) {
+      return scan_BANG_();
+    }));
+    return obs1.observe(document.body, { "childList": true, "subtree": true });
+  };
+  window["__uiToast"] = show_BANG_;
+  if ("loading" === document.readyState) {
+    document.addEventListener("DOMContentLoaded", init_BANG_6);
+  } else {
+    init_BANG_6();
+  }
+
+  // ../../../dev/squint/node_modules/squint-cljs/src/squint/string.js
+  function join(sep, coll) {
+    if (coll === void 0) {
+      coll = sep;
+      sep = "";
+    }
+    if (coll instanceof Array) {
+      return coll.join(sep);
+    }
+    let ret = "";
+    let addSep = false;
+    for (const o of iterable(coll)) {
+      if (addSep) ret += sep;
+      ret += o;
+      addSep = true;
+    }
+    return ret;
+  }
+
+  // .compiled/touch.mjs
+  var mq = window.matchMedia("(hover: none)");
+  var viewport_overrides = [["width", "device-width"], ["initial-scale", "1.0"], ["maximum-scale", "1.0"], ["user-scalable", "no"], ["viewport-fit", "cover"]];
+  var merge_viewport = function(existing) {
+    const entries1 = map((function(s) {
+      const i2 = s.indexOf("=");
+      if (i2 < 0) {
+        return [s, null];
+      } else {
+        return [s.slice(0, i2).trim(), s.slice(i2 + 1).trim()];
+      }
+      ;
+    }), remove((function(s) {
+      return _EQ_("", s);
+    }), map((function(s) {
+      return s.trim();
+    }), (() => {
+      const or__23426__auto__3 = existing;
+      if (truth_(or__23426__auto__3)) {
+        return or__23426__auto__3;
+      } else {
+        return "";
+      }
+      ;
+    })().split(","))));
+    const override_keys4 = set(map(first, viewport_overrides));
+    const kept5 = remove((function(p__8) {
+      const vec__69 = p__8;
+      const k10 = nth(vec__69, 0, null);
+      const _11 = nth(vec__69, 1, null);
+      return contains_QMARK_(override_keys4, k10);
+    }), entries1);
+    return join(", ", map((function(p__9) {
+      const vec__1215 = p__9;
+      const k16 = nth(vec__1215, 0, null);
+      const v17 = nth(vec__1215, 1, null);
+      if (v17 == null) {
+        return k16;
+      } else {
+        return `${k16 ?? ""}${"="}${v17 ?? ""}`;
+      }
+      ;
+    }), concat(kept5, viewport_overrides)));
+  };
+  var harden_viewport_BANG_ = function() {
+    const temp__23007__auto__1 = document.querySelector("meta[name=viewport]");
+    if (truth_(temp__23007__auto__1)) {
+      const meta_el2 = temp__23007__auto__1;
+      return meta_el2.setAttribute("content", merge_viewport(meta_el2.getAttribute("content")));
+    } else {
+      const m3 = document.createElement("meta");
+      m3.setAttribute("name", "viewport");
+      m3.setAttribute("content", merge_viewport(null));
+      return document.head.appendChild(m3);
+    }
+    ;
+  };
+  var sync_BANG_ = function() {
+    const touch_QMARK_1 = mq.matches;
+    const cl2 = document.documentElement.classList;
+    if (truth_(touch_QMARK_1)) {
+      cl2.add("clj-ui-touch");
+    } else {
+      cl2.remove("clj-ui-touch");
+    }
+    ;
+    return touch_QMARK_1;
+  };
+  window["__uiTouch"] = sync_BANG_;
+  if (truth_(sync_BANG_())) {
+    harden_viewport_BANG_();
+    document.addEventListener("gesturestart", (function(e) {
+      return e.preventDefault();
+    }));
+  }
+  mq.addEventListener("change", sync_BANG_);
 })();

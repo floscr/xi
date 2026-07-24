@@ -2448,7 +2448,7 @@
         models  (:web/model-list state)
         current (get-in room [:agent :model])]
     (if (nil? models)
-      [:div {:class ["command-empty"]} (spinner) " Loading models…"]
+      [:div {:class ["command-loading"]} (spinner)]
       (apply cmd/command-group {:heading "Model"}
         (for [m models]
           (cmd/command-item
@@ -2466,7 +2466,7 @@
   (let [room   (state/active-room state)
         skills (:web/skill-list state)]
     (cond
-      (nil? skills)  [:div {:class ["command-empty"]} (spinner) " Loading skills…"]
+      (nil? skills)  [:div {:class ["command-loading"]} (spinner)]
       (empty? skills) [:div {:class ["command-empty"]} "No skills found"]
       :else
       (apply cmd/command-group {:heading "Skills"}
@@ -2487,7 +2487,7 @@
   (let [dirs (:web/project-dirs state)
         dkey (draft-key state)]
     (if (empty? dirs)
-      [:div {:class ["command-empty"]} (spinner) " Loading…"]
+      [:div {:class ["command-loading"]} (spinner)]
       (apply cmd/command-group {:heading "Insert project path"}
         (for [path dirs]
           (cmd/command-item
@@ -2517,7 +2517,7 @@
         dkey (draft-key state)]
     (cond
       (nil? loaded)
-      [:div {:class ["command-empty"]} (spinner) " Loading…"]
+      [:div {:class ["command-loading"]} (spinner)]
 
       (and (empty? global) (empty? project))
       [:div {:class ["command-empty"]} "No snippets found"]
@@ -2597,13 +2597,15 @@
       (cmd/command-dialog dialog-attrs)
 
       palette-page
-      (cmd/command-dialog dialog-attrs
-       ;; Non-command-item back button: the runtime only auto-closes on
-       ;; `.command-item` clicks, so this returns to the top level in place.
-       [:button {:class ["command-back"] :type "button"
-                 :on {:click (fn [_] (dispatch! {:type :palette/back}))}}
-        (icon/icon {:icon-name :arrow-left :size :sm})
-        [:span "Back"]]
+      ;; On a sub-page the leading search icon becomes a clickable back arrow
+      ;; (via the framework's :leading slot) instead of a separate back row.
+       (cmd/command-dialog
+       (assoc dialog-attrs
+              :leading
+              [:button {:class ["command-search-back"] :type "button"
+                        :aria-label "Back"
+                        :on {:click (fn [_] (dispatch! {:type :palette/back}))}}
+               (icon/icon {:icon-name :arrow-left :size :sm})])
        (case (:kind palette-page)
          :model          (palette-model-page state dispatch!)
          :skill          (palette-skill-page state dispatch!)

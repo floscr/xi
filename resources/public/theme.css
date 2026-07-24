@@ -477,6 +477,12 @@ body {
   background: var(--bg-1);
 }
 
+/* Pressed state for segmented toggles (e.g. ui.grid layout-toggle). */
+.btn.btn-toggled {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
 .btn-danger {
   background: var(--danger);
   color: var(--fg-on-danger);
@@ -1475,6 +1481,23 @@ a.btn-link {
 .command-search-icon {
   color: var(--fg-2);
   flex-shrink: 0;
+}
+
+/* Clickable leading element (e.g. a back button) via the :leading slot. */
+.command-search-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--fg-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.command-search-back:hover {
+  color: var(--fg-0);
 }
 
 .command-input {
@@ -2797,10 +2820,6 @@ a.btn-link {
   transform: translateY(4px);
 }
 
-.tooltip.form-error-icon:hover::after {
-  transform: translateY(0);
-}
-
 .tooltip.form-error-icon::before {
   border-top-color: color-mix(in srgb, var(--danger) 18%, var(--bg-1));
   left: auto;
@@ -2808,8 +2827,16 @@ a.btn-link {
   transform: translateY(4px);
 }
 
-.tooltip.form-error-icon:hover::before {
-  transform: translateY(0);
+/* Hover-reveal transforms — gated like the tooltip reveal itself
+   (see ui/tooltip.css). */
+@media (hover: hover) {
+  .tooltip.form-error-icon:hover::after {
+    transform: translateY(0);
+  }
+
+  .tooltip.form-error-icon:hover::before {
+    transform: translateY(0);
+  }
 }
 
 /* ── Fieldset & Legend ──────────────────────────────────────────── */
@@ -2898,6 +2925,83 @@ a.btn-link {
 }
 
 
+/* ── Tile grid ───────────────────────────────────────────────────
+   Responsive auto-fill grid of tiles with an optional masonry layout.
+   Tile min-width is driven by --tile-min, set via size classes or an
+   inline override (the grid component's :min prop). */
+
+.tile-grid {
+  --tile-min: 160px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile-min), 1fr));
+  gap: var(--size-3);
+}
+
+.tile-grid-s { --tile-min: 110px; }
+.tile-grid-l { --tile-min: 240px; }
+.tile-grid-xl { --tile-min: 340px; }
+.tile-grid-xxl { --tile-min: 480px; }
+
+/* Masonry: each tile keeps its natural height, packed left-to-right in
+   DOM order (unlike CSS columns, which flow top-to-bottom per column).
+
+   Firefox supports this natively via `grid-template-rows: masonry`. Every
+   other browser gets the identical result from the JS runtime
+   (src/ui/js/masonry.cljs, technique from
+   css-tricks.com/making-a-masonry-layout-that-works-today): the grid stays
+   a normal CSS Grid, then JS sets `grid-auto-rows: 0` + `row-gap: 1px` and
+   gives each tile a `grid-row-end: span <height>` derived from its
+   measured height, so items flow into rows and pack tightly. */
+.tile-grid-masonry {
+  grid-template-rows: masonry; /* Firefox native; ignored elsewhere (JS runtime) */
+  grid-auto-flow: dense;
+  /* Keep tiles at their content height instead of stretching to fill the
+     row span. Without this the JS runtime re-measures a stretched
+     (span-sized) height each pass, growing every tile by the row gap on a
+     runaway ResizeObserver loop. */
+  align-items: start;
+}
+
+/* Smaller tile minimums on narrow viewports. */
+@media (max-width: 640px) {
+  .tile-grid { --tile-min: 120px; }
+  .tile-grid-s { --tile-min: 95px; }
+  .tile-grid-l { --tile-min: 160px; }
+  .tile-grid-xl { --tile-min: 220px; }
+  .tile-grid-xxl { --tile-min: 320px; }
+}
+
+
+/* ── Icon ──────────────────────────────────────────────────────── */
+
+.icon {
+  display: inline-block;
+  width: var(--size-5);
+  height: var(--size-5);
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.icon-sm {
+  width: var(--size-4);
+  height: var(--size-4);
+}
+
+.icon-lg {
+  width: var(--size-6);
+  height: var(--size-6);
+}
+
+.icon-xl {
+  width: var(--size-8);
+  height: var(--size-8);
+}
+
+
+/* ── 12-column layout grid (adapted from Oat UI) ─────────────────
+   Page-level .container / .row / .col-* helpers. The tile grid
+   component lives in grid.css. */
+
 .container {
   width: 100%;
   max-width: 1280px;
@@ -2948,32 +3052,6 @@ a.btn-link {
   [class*="offset-"] {
     grid-column-start: auto;
   }
-}
-
-
-/* ── Icon ──────────────────────────────────────────────────────── */
-
-.icon {
-  display: inline-block;
-  width: var(--size-5);
-  height: var(--size-5);
-  flex-shrink: 0;
-  vertical-align: middle;
-}
-
-.icon-sm {
-  width: var(--size-4);
-  height: var(--size-4);
-}
-
-.icon-lg {
-  width: var(--size-6);
-  height: var(--size-6);
-}
-
-.icon-xl {
-  width: var(--size-8);
-  height: var(--size-8);
 }
 
 
@@ -3121,6 +3199,36 @@ a.btn-link {
 }
 
 
+/* ── Mobile base optimizations ────────────────────────────────── */
+/* Applied globally via the generated theme. Complemented by the    */
+/* ui.js.touch runtime module, which hardens the viewport meta and  */
+/* blocks the iOS pinch gesture on touch devices.                   */
+
+html {
+  /* Don't let mobile browsers inflate text on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Remove the gray/blue tap flash on iOS and Android */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Kill the double-tap-to-zoom gesture (and its 300ms click delay)
+   on interactive elements. `manipulation` still allows scrolling. */
+a,
+button,
+input,
+select,
+textarea,
+label,
+summary,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+
 .pagination {
   display: flex;
   align-items: center;
@@ -3182,8 +3290,13 @@ a.btn-link {
   position: relative;
 }
 
-.player-bar-progress:hover {
-  --player-bar-track-h: 6px;
+/* Hover growth/reveal only on devices that actually hover — a bare :hover
+   reveal makes iOS consume the first tap as hover, so seeking would need a
+   double-tap. See AGENTS.md "Mobile & Touch Friendliness". */
+@media (hover: hover) {
+  .player-bar-progress:hover {
+    --player-bar-track-h: 6px;
+  }
 }
 
 /* Invisible hit area extending upward — makes the thin bar easy to grab with a
@@ -3238,9 +3351,11 @@ a.btn-link {
   pointer-events: none;
 }
 
-.player-bar-progress:hover::after {
-  opacity: 1;
-  scale: 1;
+@media (hover: hover) {
+  .player-bar-progress:hover::after {
+    opacity: 1;
+    scale: 1;
+  }
 }
 
 /* Touch: always show scrubber */
@@ -5006,11 +5121,17 @@ a.sidebar-menu-item {
   border-top-color: var(--fg-0);
 }
 
-.tooltip:hover::before,
-.tooltip:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(0);
+/* Reveal on hover — only on devices that actually hover. A bare :hover
+   reveal makes iOS treat the first tap as hover (suppressing that tap's
+   click), so touch devices would need a double-tap. See AGENTS.md
+   "Mobile & Touch Friendliness". */
+@media (hover: hover) {
+  .tooltip:hover::before,
+  .tooltip:hover::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 
@@ -5038,6 +5159,13 @@ a.sidebar-menu-item {
   display: flex;
   flex-direction: column;
   gap: var(--size-3);
+}
+
+/* Tight inline cluster of toolbar buttons (segmented toggles, steppers). */
+.toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
 }
 
 .gap-1 { gap: var(--size-1); }
@@ -5077,6 +5205,27 @@ a.sidebar-menu-item {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ── Hover reveal ─────────────────────────────────────────────── */
+/* Hide controls until their container is hovered — but ONLY on    */
+/* devices that actually hover. On touch devices the items stay    */
+/* visible, which also avoids the iOS first-tap-as-hover bug (a    */
+/* bare :hover reveal makes iOS suppress the first tap's click,    */
+/* forcing a double-tap). Put .hover-reveal on the container and   */
+/* .hover-reveal-item on each control it should reveal.            */
+/* :focus-within keeps the controls reachable by keyboard.         */
+
+@media (hover: hover) {
+  .hover-reveal .hover-reveal-item {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .hover-reveal:hover .hover-reveal-item,
+  .hover-reveal:focus-within .hover-reveal-item {
+    opacity: 1;
+  }
 }
 
 /* ── Hit area expand ──────────────────────────────────────────── */
