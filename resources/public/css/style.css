@@ -1628,11 +1628,12 @@ body {
 
 /* Compact session cards inside the sidebar drawer */
 .sidebar .project-card {
-  padding: var(--size-1) var(--size-3);
+  padding: var(--size-2);
   gap: var(--size-2);
   font-size: var(--font-sm);
   line-height: 1.3;
 }
+.sidebar .project-card-info { row-gap: 1px; }
 .sidebar .project-card-name { font-size: var(--font-sm); }
 .sidebar .project-card-path { font-size: var(--font-xs); }
 .sidebar .active-dot,
