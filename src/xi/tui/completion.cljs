@@ -6,6 +6,9 @@
             [xi.tui.ansi :as ansi]
             [xi.tui.core :as tui]))
 
+(def ^:private spinner-frames
+  ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
+
 ;; ── Fuzzy Matching ────────────────────────────────────────────────────────────
 
 (defn- fuzzy-match?
@@ -166,6 +169,12 @@
                      fuzzy-on-:label and substring-on-this-field.
      :search-enrich-fn — (fn [items]) → items with search-field populated.
                      Called lazily on first Ctrl+S toggle when items lack the field.
+     :status-fn  — (fn [item]) → {:busy? bool :unread? bool} (optional). When set,
+                   each item gets a live status slot: an animated spinner while
+                   :busy?, an unread dot while :unread?. Read fresh every frame so
+                   it tracks live state (e.g. a session's agent running). Enables a
+                   self-driven 80ms animation timer (:start/:stop, driven by the
+                   panel host) that only redraws while some visible item is busy.
      :key-bindings — vec of {:key-fn (fn [data]) :handler (fn [state-atom])} for custom keys"
   [opts]
   (let [all-items (:items opts)
@@ -177,6 +186,9 @@
         search-field (:search-field opts)
         search-enrich-fn (:search-enrich-fn opts)
         search-enriched? (atom false)
+        status-fn (:status-fn opts)
+        frame (atom 0)
+        spin-timer (atom nil)
         key-bindings (or (:key-bindings opts) [])
 
         state (atom {:query ""
@@ -287,6 +299,24 @@
     {:type :completion-menu
      :handle-input handle-input
      :invalidate (fn [])
+     ;; Spinner animation lifecycle (only when :status-fn is set). The panel
+     ;; host (sync-bottom-panel!) calls :start on focus and :stop on replace.
+     ;; The tick only redraws while some visible item is busy, so an idle menu
+     ;; costs nothing beyond the timer itself.
+     :start (fn []
+              (when (and status-fn (not @spin-timer))
+                (reset! spin-timer
+                        (js/setInterval
+                         (fn []
+                           (when (some (fn [it] (:busy? (status-fn it)))
+                                       (:filtered @state))
+                             (swap! frame inc)
+                             (tui/request-panel-render!)))
+                         80))))
+     :stop (fn []
+             (when-let [t @spin-timer]
+               (js/clearInterval t)
+               (reset! spin-timer nil)))
      :render
      (fn [width]
        (let [{:keys [query selected filtered all-items search-mode]} @state
@@ -340,12 +370,26 @@
                                 prefix (if is-selected
                                          (ansi/fg :accent "❯ ")
                                          "  ")
+                                ;; Live status slot (2 cols, reserved for every
+                                ;; item so labels stay aligned): a spinner while
+                                ;; the item is busy, an unread dot otherwise.
+                                status (when status-fn (status-fn item))
+                                status-slot
+                                (when status-fn
+                                  (cond
+                                    (:busy? status)
+                                    (ansi/fg :accent
+                                             (str (nth spinner-frames
+                                                       (mod @frame (count spinner-frames)))
+                                                  " "))
+                                    (:unread? status) (ansi/fg :accent "• ")
+                                    :else "  "))
                                 label-str (if is-selected
                                             (ansi/fg :bold label)
                                             label)
                                 desc-str (when (seq desc)
                                            (str " " (ansi/fg :dim desc)))
-                                line (str prefix label-str desc-str)]
+                                line (str prefix status-slot label-str desc-str)]
                             (ansi/truncate-to-width line width)))))
                     (range scroll-start scroll-end)))
 

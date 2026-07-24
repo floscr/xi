@@ -162,6 +162,20 @@
                        (ansi/fg :dim label)
                        (ansi/fg :dim "loading…"))]))}))
 
+(defn- session-status-fn
+  "Live status lookup for menu items that carry a :session-id (e.g. the palette
+   Chats section, /resume). Reads the lobby mirror fresh on every call so a menu
+   item animates a spinner while that session's agent is running — mirroring the
+   web session cards. Returns nil for items without a :session-id."
+  [get-state]
+  (fn [item]
+    (when-let [sid (:session-id item)]
+      (let [rooms (get-in (get-state) [:lobby :rooms])
+            match? (fn [pred] (boolean (some (fn [r] (and (= (:session-id r) sid) (pred r)))
+                                             rooms)))]
+        {:busy?       (match? :busy?)
+         :has-dialog? (match? :has-dialog?)}))))
+
 (defn- build-completion-menu
   "Completion menu component from a menu description:
      {:id kw :prompt str :items [...] :alt-items [...] :tab-labels [...]}
@@ -173,7 +187,7 @@
    matches, closes the menu and dispatches the event (with :room-id merged).
    When :selected? is true, the currently selected item is merged into the
    event under :selected."
-  [{:keys [prompt items alt-items tab-labels key-bindings search-field]} room-id dispatch!]
+  [{:keys [prompt items alt-items tab-labels key-bindings search-field]} room-id dispatch! get-state]
   (let [;; Tab state is interaction-local (like the menu's filter query) —
         ;; it lives in the component, not in app state.
         tab #js {:alt false}
@@ -233,16 +247,22 @@
                                       (ansi/fg :dim (str "○ " b))))
                                (ansi/fg :dim "  (Tab to switch)")))))
                (seq all-kbs)
-               (assoc :key-bindings all-kbs))]
+               (assoc :key-bindings all-kbs)
+               ;; Only enable the live status slot when the menu actually
+               ;; carries session items (palette Chats, /resume) — otherwise
+               ;; the reserved slot would needlessly indent session-less menus
+               ;; (commands, model list).
+               (and get-state (some :session-id (concat items alt-items)))
+               (assoc :status-fn (session-status-fn get-state)))]
     (completion/make-completion-menu opts)))
 
 (defn- build-menu
   "Build the bottom-panel component for a menu descriptor: a spinner panel
    while :loading?, otherwise the completion menu."
-  [menu room-id dispatch!]
+  [menu room-id dispatch! get-state]
   (if (:loading? menu)
     (build-loading-menu menu room-id dispatch!)
-    (build-completion-menu menu room-id dispatch!)))
+    (build-completion-menu menu room-id dispatch! get-state)))
 
 (defn- palette-action-event
   "Map a shared xi.palette action to the TUI event that runs it. Every action
@@ -310,6 +330,7 @@
         heading (fn [label] {:heading label})
         chat-items    (map (fn [s]
                              {:label (or (:name s) "New session")
+                              :session-id (:session-id s)
                               :event (palette-action-event room-id [:chat (:session-id s)])})
                            chats)
         action-items  (map (fn [{:keys [key label]}]
@@ -661,7 +682,7 @@
       (set! (.-panelVal ctx) target)
       (cond
         dialog (focus-panel! (build-dialog dialog (:id room) dispatch! (.-editor ctx)))
-        menu   (let [c (build-menu menu (:id room) dispatch!)]
+        menu   (let [c (build-menu menu (:id room) dispatch! #(.-state ctx))]
                  (focus-panel! c)
                  (when-let [start (:start c)]
                    (start)
