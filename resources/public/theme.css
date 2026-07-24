@@ -1673,13 +1673,19 @@ a.btn-link {
 /* Floating menu triggered by right-click. Shared across all targets. */
 
 /* Touch: long-press opens the menu (ui/js/gestures dispatches a synthetic
-   contextmenu). Disable the iOS press callout / text selection on the
-   opt-in surface so the system UI doesn't fight the long-press. */
+   contextmenu). Disable the iOS press callout / text selection / image
+   drag-lift on the opt-in surface so the system UI doesn't fight the
+   long-press. Descendants are targeted explicitly because
+   -webkit-user-drag does NOT inherit — without it, long-pressing an <img>
+   inside a trigger lifts a drag ghost in front of the menu. */
 .clj-ui-touch .context-menu-trigger,
-.clj-ui-touch [data-long-press] {
+.clj-ui-touch [data-long-press],
+.clj-ui-touch .context-menu-trigger *,
+.clj-ui-touch [data-long-press] * {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-user-drag: none;
 }
 
 .context-menu {
