@@ -46,7 +46,9 @@ The browser-side script draws a transparent overlay plus a visible banner
 ("🎯 xi picker — hover & click an element · Esc to cancel"), highlights elements
 on hover, and on click shows a panel where you type the message. Selecting
 supports multiple elements; the result is stashed on `window.__xiPickerResult`
-for the poll loop to read.
+for the poll loop to read. The panel's **🎨 Style editor** button flags the
+result with `mode: "style-editor"` so xi hands the picked selector to the
+[live style editor](style-editor.md) instead of sending a plain prompt.
 
 ### The browser script is ClojureScript (squint), bundled to a self-contained IIFE
 

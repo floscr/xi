@@ -35,14 +35,17 @@
                   (.replaceAll "\"" "&quot;")))
 
             (selector [el]
-              (if (.-id el)
+              ;; NB: an element without an id has (.-id el) = "", which is
+              ;; truthy in CLJS — guard with not-empty so id-less elements fall
+              ;; through to a structural path instead of yielding "#".
+              (if (not-empty (.-id el))
                 (str "#" (js/CSS.escape (.-id el)))
                 (let [path #js []]
                   (loop [cur el]
                     (when (and cur
                                (not= cur (.-body doc))
                                (not= cur root))
-                      (if (.-id cur)
+                      (if (not-empty (.-id cur))
                         (.unshift path (str "#" (js/CSS.escape (.-id cur))))
                         (let [tag    (.toLowerCase (.-tagName cur))
                               parent (.-parentElement cur)
@@ -61,7 +64,7 @@
             (info [el]
               (let [s (atom (.toLowerCase (.-tagName el)))]
                 (cond
-                  (.-id el)
+                  (not-empty (.-id el))
                   (reset! s (str @s "#" (.-id el)))
 
                   (and (.-className el) (string? (.-className el)))
@@ -188,6 +191,18 @@
                           #js {:elements picked :url js/window.location.href})
                     (cleanup-dom)))
 
+                ;; Like do-submit, but flags the result so xi opens the live
+                ;; style editor on the picked element (controls tailored to the
+                ;; typed message) instead of sending a plain prompt.
+                (do-style-edit []
+                  (let [m  (.getElementById doc "__xi-picker-msg")
+                        msg (if m (.trim (.-value m)) "")]
+                    (.push picked (capture (.-selected state) msg))
+                    (set! js/window.__xiPickerResult
+                          #js {:elements picked :url js/window.location.href
+                               :mode "style-editor"})
+                    (cleanup-dom)))
+
                 (do-pick-more []
                   (let [m   (.getElementById doc "__xi-picker-msg")
                         msg (if m (.trim (.-value m)) "")]
@@ -239,6 +254,9 @@
                            "<button id=\"__xi-picker-cancel\" style=\"padding:8px 16px;border-radius:6px;"
                            "border:1px solid " (.-border C) ";background:" (.-bgLight C)
                            ";color:" (.-textMuted C) ";cursor:pointer;font-size:13px;\">Cancel</button>"
+                           "<button id=\"__xi-picker-style\" style=\"padding:8px 16px;border-radius:6px;"
+                           "border:1px solid " (.-primary C) ";background:transparent;color:" (.-primary C)
+                           ";cursor:pointer;font-size:13px;font-weight:600;\">\uD83C\uDFA8 Style editor</button>"
                            "<button id=\"__xi-picker-submit\" style=\"padding:8px 16px;border-radius:6px;"
                            "border:none;background:" (.-primary C)
                            ";color:white;cursor:pointer;font-size:13px;font-weight:600;\">Send to xi</button>"
@@ -250,6 +268,7 @@
                         (set! (.-value msg-el) (.-prefillMessage cfg)))
                       (js/setTimeout (fn [] (.focus msg-el)) 50)
                       (.addEventListener (.getElementById doc "__xi-picker-cancel") "click" do-cancel)
+                      (.addEventListener (.getElementById doc "__xi-picker-style") "click" do-style-edit)
                       (.addEventListener (.getElementById doc "__xi-picker-submit") "click" do-submit)
                       (.addEventListener msg-el "keydown"
                                          (fn [e]

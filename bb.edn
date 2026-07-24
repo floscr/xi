@@ -83,6 +83,14 @@
                   "--bundle" "--format=iife" "--minify" "--outfile=picker.js"
                   "--banner:js=/* GENERATED from picker.cljs by `bb picker:build` — do not edit. */"))}
 
+  style-editor:build
+  {:doc "Compile the style-editor (squint → esbuild) to resources/style-editor/style-editor.js"
+   :task (let [dir "resources/style-editor"]
+           (shell {:dir dir} "npx" "squint" "compile")
+           (shell {:dir dir} "npx" "esbuild" ".compiled/style-editor.mjs"
+                  "--bundle" "--format=iife" "--minify" "--outfile=style-editor.js"
+                  "--banner:js=/* GENERATED from style-editor.cljs by `bb style-editor:build` — do not edit. */"))}
+
   dev:url
   {:doc "Print Tailscale IP with frontend port"
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]

@@ -158,22 +158,54 @@
          (when multi? (str "**Elements:** " (count elements) "\n"))
          (str/join "" (map-indexed (fn [i el] (element-block i multi? prefill el)) elements)))))
 
+(defn- style-edit-message
+  "Prompt that asks the agent to open the live `style_editor` on the picked
+   element, tailoring its controls to what the user typed, then apply the
+   committed CSS back to the source."
+  [prefill result]
+  (let [el (first (:elements result))]
+    (str "Open a live style editor on the element I just picked so I can tune it "
+         "visually, then apply my committed changes to the source code.\n\n"
+         "Call the `style_editor` tool with:\n"
+         "- `selector`: prefer a stable **class selector** derived from the "
+         "element (e.g. `.project-card`) over the brittle positional selector "
+         "below. The panel's \"apply to a shared class rule\" toggle live-"
+         "previews the change across every element sharing that class, and the "
+         "class rule is what you'll edit in the source — so a class selector is "
+         "almost always right. Use the positional selector `" (:selector el) "` "
+         "only as a fallback when the element has no usable class. Give each "
+         "control its own `selector` when the properties live on different "
+         "elements (e.g. wrapper padding on `.project-card`, the gap between "
+         "title and subtitle on `.project-card-info`).\n"
+         "- `controls`: choose the CSS properties that fit what I want to tune "
+         "(one control per property; use `range` for lengths like padding / "
+         "border-radius, `color` for colors, `opacity` for opacity). Pick "
+         "sensible min/max/step/unit for each.\n\n"
+         "After I apply, use the returned values to edit the source. "
+         "Do NOT ask me which properties — infer them from my request below.\n\n"
+         (build-message prefill result))))
+
 ;; ── Feedback + submission ────────────────────────────────────────────────────
 
 (defn- status! [dispatch! room-id text]
   (dispatch! {:type :ui/status :room-id room-id :text text}))
 
 (defn- submit! [dispatch! room-id prefill result shots]
-  (let [text   (build-message prefill result)
+  (let [style? (= "style-editor" (:mode result))
+        text   (if style?
+                 (style-edit-message prefill result)
+                 (build-message prefill result))
         images (mapv (fn [data] {:data data :media-type "image/png"}) shots)
         n      (count (:elements result))
-        label  (if (> n 1) (str n " elements") "Element context")]
+        label  (if style?
+                 "Style editor request"
+                 (if (> n 1) (str n " elements") "Element context"))]
     ;; :prompt/submit takes :images directly; :image/process is an effect, not
     ;; an event, so we resize inline (as :image/process would) and dispatch the
     ;; prompt ourselves.
     (dispatch! {:type :prompt/submit :room-id room-id :text text
                 :images (image/process-images images)})
-    (status! dispatch! room-id (str "🎯 " label " sent to xi."))))
+    (status! dispatch! room-id (str (if style? "🎨 " "🎯 ") label " sent to xi."))))
 
 ;; ── Orchestration ────────────────────────────────────────────────────────────
 

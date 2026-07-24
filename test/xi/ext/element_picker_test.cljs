@@ -4,6 +4,7 @@
             [xi.ext.element-picker :as ep]))
 
 (def ^:private build-message #'ep/build-message)
+(def ^:private style-edit-message #'ep/style-edit-message)
 (def ^:private injection-fn #'ep/injection-fn)
 (def ^:private parse-eval-return #'ep/parse-eval-return)
 (def ^:private selected-page-line #'ep/selected-page-line)
@@ -106,6 +107,21 @@
       (is (str/includes? text "<main>hi</main>")))
     (testing "single element has no per-element numbering"
       (is (not (str/includes? text "### Element"))))))
+
+(deftest style-edit-message-targets-picked-selector
+  (let [result {:url "http://localhost:3001/"
+                :mode "style-editor"
+                :elements [{:selector ".card > .body"
+                            :tagName "div"
+                            :message "tune the padding and radius"
+                            :outerHTML "<div class=\"card\"/>"}]}
+        text (style-edit-message "" result)]
+    (testing "instructs the agent to open the style_editor tool"
+      (is (str/includes? text "style_editor")))
+    (testing "passes the picked selector"
+      (is (str/includes? text "`.card > .body`")))
+    (testing "appends the picked-element context so intent is preserved"
+      (is (str/includes? text "**Message:** tune the padding and radius")))))
 
 (deftest build-message-multi-element-and-prefill-fallback
   (let [result {:url "http://x/"

@@ -31,6 +31,7 @@
      XI_CHROME_MCP_ARGS     extra CLI args for chrome-devtools-mcp (space-split)"
   (:require [clojure.string :as str]
             [xi.ext.element-picker :as element-picker]
+            [xi.ext.style-editor :as style-editor]
             ["node:child_process" :as child-process])
   (:require-macros [xi.ext.chrome-defs :refer [inline-tool-defs]]))
 
@@ -160,13 +161,18 @@
                                            :text (str "chrome-devtools-mcp error: "
                                                       (.-message e))}]
                                :is-error true}))))]
-        (merge
-         {:id               :chrome
-          :tool-definitions tool-defs
-          :tool-registry    (into {} (map (fn [n] [n (fn [args _ctx] (forward n args))]))
-                                  tool-names)
-          :on-shutdown      (fn [] (when-let [c @client*] ((:kill c))))}
-         ;; The element picker drives the same MCP client. With multiple tabs
-         ;; open it first asks (via ask!) which one to pick from; otherwise it
-         ;; acts on chrome-devtools-mcp's currently selected page.
-         (element-picker/install forward ask!))))))
+        (let [editor (style-editor/install forward)]
+          (merge
+           {:id               :chrome
+            ;; Combine the proxied chrome tools with the style-editor's own tool
+            ;; (both contribute :tool-definitions/:tool-registry, so merge them
+            ;; explicitly — a plain map merge would clobber one).
+            :tool-definitions (into tool-defs (:tool-definitions editor))
+            :tool-registry    (merge (into {} (map (fn [n] [n (fn [args _ctx] (forward n args))]))
+                                           tool-names)
+                                     (:tool-registry editor))
+            :on-shutdown      (fn [] (when-let [c @client*] ((:kill c))))}
+           ;; The element picker drives the same MCP client. With multiple tabs
+           ;; open it first asks (via ask!) which one to pick from; otherwise it
+           ;; acts on chrome-devtools-mcp's currently selected page.
+           (element-picker/install forward ask!)))))))
