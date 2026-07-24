@@ -1688,6 +1688,18 @@ a.btn-link {
   -webkit-user-drag: none;
 }
 
+/* Touch: press feedback — ui/js/gestures toggles .clj-ui-pressing on the
+   pressed trigger while a long-press is pending; scale it down slightly
+   (iOS-style) and pop back on fire/cancel/release. */
+.clj-ui-touch .context-menu-trigger,
+.clj-ui-touch [data-long-press] {
+  transition: transform 0.15s ease;
+}
+
+.clj-ui-touch .clj-ui-pressing {
+  transform: scale(0.97);
+}
+
 .context-menu {
   position: fixed;
   z-index: 9999;

@@ -1257,13 +1257,21 @@
   var press_ms = 500;
   var slop_px = 10;
   var selector = ".context-menu-trigger, [data-long-press]";
+  var press_class = "clj-ui-pressing";
   var press = atom(null);
   var suppress_click_QMARK_ = atom(false);
+  var clear_press_visual_BANG_ = function(el) {
+    if (truth_(el)) {
+      return el.classList.remove(press_class);
+    }
+    ;
+  };
   var cancel_BANG_ = function() {
     const temp__23062__auto__1 = deref(press);
     if (truth_(temp__23062__auto__1)) {
       const p2 = temp__23062__auto__1;
       clearTimeout(get(p2, "timer"));
+      clear_press_visual_BANG_(get(p2, "el"));
       return reset_BANG_(press, null);
     }
     ;
@@ -1288,8 +1296,10 @@
         cancel_BANG_();
         const x4 = e.clientX;
         const y5 = e.clientY;
+        el3.classList.add(press_class);
         return reset_BANG_(press, { "el": el3, "x": x4, "y": y5, "timer": setTimeout((function() {
           reset_BANG_(press, null);
+          clear_press_visual_BANG_(el3);
           reset_BANG_(suppress_click_QMARK_, true);
           return dispatch_contextmenu_BANG_(el3, x4, y5);
         }), press_ms) });
