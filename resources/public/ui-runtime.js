@@ -1399,7 +1399,7 @@
     const col_gap2 = parseFloat(getComputedStyle(container).columnGap);
     const col_gap3 = truth_(isNaN(col_gap2)) ? 0 : col_gap2;
     const heights4 = mapv((function(item) {
-      return item.getBoundingClientRect().height;
+      return item.offsetHeight;
     }), items1);
     for (let G__5 of iterable(map(vector, items1, heights4))) {
       const vec__69 = G__5;
