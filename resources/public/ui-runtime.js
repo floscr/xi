@@ -916,6 +916,7 @@
     if (truth_(state1.menu)) {
       state1.menu.remove();
       state1.menu = null;
+      document.dispatchEvent(new CustomEvent("clj-ui-menu-dismiss"));
     }
     ;
     if (truth_(state1.cleanup)) {
@@ -1260,9 +1261,19 @@
   var press_class = "clj-ui-pressing";
   var press = atom(null);
   var suppress_click_QMARK_ = atom(false);
+  var held = atom(null);
   var clear_press_visual_BANG_ = function(el) {
     if (truth_(el)) {
       return el.classList.remove(press_class);
+    }
+    ;
+  };
+  var clear_held_BANG_ = function() {
+    const temp__23062__auto__1 = deref(held);
+    if (truth_(temp__23062__auto__1)) {
+      const el2 = temp__23062__auto__1;
+      clear_press_visual_BANG_(el2);
+      return reset_BANG_(held, null);
     }
     ;
   };
@@ -1281,6 +1292,7 @@
   };
   var on_pointerdown = function(e) {
     reset_BANG_(suppress_click_QMARK_, false);
+    clear_held_BANG_();
     if (e.pointerType === "touch") {
       const temp__23062__auto__1 = (() => {
         const G__52 = e.target;
@@ -1299,7 +1311,7 @@
         el3.classList.add(press_class);
         return reset_BANG_(press, { "el": el3, "x": x4, "y": y5, "timer": setTimeout((function() {
           reset_BANG_(press, null);
-          clear_press_visual_BANG_(el3);
+          reset_BANG_(held, el3);
           reset_BANG_(suppress_click_QMARK_, true);
           return dispatch_contextmenu_BANG_(el3, x4, y5);
         }), press_ms) });
@@ -1332,7 +1344,14 @@
   };
   var on_native_contextmenu = function(e) {
     if (truth_(e.isTrusted)) {
-      return cancel_BANG_();
+      const temp__23062__auto__1 = deref(press);
+      if (truth_(temp__23062__auto__1)) {
+        const p2 = temp__23062__auto__1;
+        clearTimeout(get(p2, "timer"));
+        reset_BANG_(press, null);
+        return reset_BANG_(held, get(p2, "el"));
+      }
+      ;
     }
     ;
   };
@@ -1350,6 +1369,9 @@
   document.addEventListener("pointercancel", on_pointer_end, true);
   document.addEventListener("contextmenu", on_native_contextmenu, true);
   document.addEventListener("click", on_click_capture, true);
+  document.addEventListener("clj-ui-menu-dismiss", (function(_) {
+    return clear_held_BANG_();
+  }));
   window["__uiLongPress"] = dispatch_contextmenu_BANG_;
 
   // .compiled/masonry.mjs
