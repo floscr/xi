@@ -4,6 +4,7 @@
    :gtd/* handlers, the pending-task tap and the GTD nav entries via the
    ext/compose web seams (:routes/:pages/:nav-items/:taps)."
   (:require [clojure.string :as str]
+            [ui.context-menu :as ctx]
             [ui.icon :as icon]
             [xi.web.views :as views]))
 
@@ -49,9 +50,6 @@
                             {:effects [[:app/dispatch {:type :route/navigate :page :gtd :file file :task-id task-id}]]})
    :gtd/back-to-tasks     (fn [_st {:keys [file]}]
                             {:effects [[:app/dispatch {:type :route/navigate :page :gtd :file file}]]})
-   :gtd/context-menu      (fn [st {:keys [task x y]}]
-                            {:state (assoc st :web/gtd-context-menu {:task task :x x :y y})})
-   :gtd/context-menu-close (fn [st _] {:state (dissoc st :web/gtd-context-menu)})
    :gtd/web-task-action   (fn [st {:keys [task-id action] :as ev}]
                             (let [tasks (:web/gtd-tasks st)
                                   tasks' (case action
@@ -59,9 +57,7 @@
                                            ("done" "archive")
                                            (vec (remove #(= (:id %) task-id) tasks))
                                            tasks)]
-                              {:state (-> st
-                                          (dissoc :web/gtd-context-menu)
-                                          (assoc :web/gtd-tasks tasks'))
+                              {:state (assoc st :web/gtd-tasks tasks')
                                :effects [[:ws/send (dissoc ev :event/id :event/ts)]]}))
    :gtd/web-task-action-error (fn [st _]
                                 ;; Server failed — re-fetch authoritative list
@@ -89,71 +85,27 @@
 
 ;; ── Views ────────────────────────────────────────────────────────────────────
 
-(defn- gtd-context-menu [dispatch! {:keys [task x y]}]
-  [:div {:class ["gtd-context-backdrop"]
-         :on {:click (fn [_] (dispatch! {:type :gtd/context-menu-close}))}}
-   [:div {:class ["gtd-context-menu"]
-          :style {:top (str y "px") :left (str x "px")}}
-    [:button {:class ["gtd-context-item"]
-              :on {:click (fn [e]
-                            (.stopPropagation e)
-                            (dispatch! {:type :gtd/web-task-action
-                                        :task-id (:id task) :action "done"}))}}
-     (icon/icon {:icon-name :circle-check :size :sm})
-     [:span "Mark Done"]]
-    [:button {:class ["gtd-context-item" "gtd-context-item--danger"]
-              :on {:click (fn [e]
-                            (.stopPropagation e)
-                            (dispatch! {:type :gtd/web-task-action
-                                        :task-id (:id task) :action "archive"}))}}
-     (icon/icon {:icon-name :trash :size :sm})
-     [:span "Archive"]]]])
 
-(def ^:private long-press-state (atom nil))
 
-(defn- touch-start [dispatch! task e]
-  (let [touch (aget (.-touches e) 0)
-        x     (.-clientX touch)
-        y     (.-clientY touch)
-        timer (js/setTimeout
-               (fn []
-                 (reset! long-press-state :fired)
-                 (dispatch! {:type :gtd/context-menu
-                             :task task :x x :y y}))
-               500)]
-    (reset! long-press-state {:timer timer})))
-
-(defn- touch-end [_e]
-  (when-let [st @long-press-state]
-    (when (map? st) (js/clearTimeout (:timer st))))
-  ;; If long-press fired, keep :fired so the subsequent click is suppressed.
-  ;; Clear it on next tick after click has been processed.
-  (if (= :fired @long-press-state)
-    (js/setTimeout #(reset! long-press-state nil) 0)
-    (reset! long-press-state nil)))
-
-(defn- touch-move [_e]
-  (when-let [st @long-press-state]
-    (when (map? st) (js/clearTimeout (:timer st))))
-  (reset! long-press-state nil))
-
-(defn- gtd-task-card [dispatch! {:keys [id title todo-state file cwd tags] :as task}]
-  [:div {:class ["project-card" "gtd-task-card"]
-         :replicant/key (str "gtd-" id)
-         :on {:click (fn [_]
-                       (when-not (= :fired @long-press-state)
-                         (dispatch! {:type :gtd/select-task
-                                     :file file :task-id id})))
-              :contextmenu (fn [e]
-                             (.preventDefault e)
-                             (dispatch! {:type :gtd/context-menu
-                                         :task task
-                                         :x (.-clientX e)
-                                         :y (.-clientY e)}))
-              :touchstart (fn [e] (touch-start dispatch! task e))
-              :touchend touch-end
-              :touchmove touch-move}}
-   [:div {:class ["project-card-icon"]}
+(defn- gtd-task-card [dispatch! {:keys [id title todo-state file cwd tags]}]
+  ;; The framework trigger handles right-click AND touch long-press (via
+  ;; the ui.js.gestures runtime), including click suppression after a
+  ;; fired press — no hand-rolled recognizer needed.
+  (ctx/context-menu-trigger
+   {:attrs {:replicant/key (str "gtd-" id)}
+    :items [{:label "Mark Done" :icon :circle-check
+             :on-click (fn []
+                         (dispatch! {:type :gtd/web-task-action
+                                     :task-id id :action "done"}))}
+            {:label "Archive" :icon :trash :variant :danger
+             :on-click (fn []
+                         (dispatch! {:type :gtd/web-task-action
+                                     :task-id id :action "archive"}))}]}
+   [:div {:class ["project-card" "gtd-task-card"]
+          :on {:click (fn [_]
+                        (dispatch! {:type :gtd/select-task
+                                    :file file :task-id id}))}}
+    [:div {:class ["project-card-icon"]}
     (case todo-state
       "ACTIVE"  [:div {:class ["active-dot"]}]
       "WAITING" (icon/icon {:icon-name :pause :size :sm})
@@ -163,7 +115,7 @@
     [:span {:class ["project-card-path"]}
      (str (or todo-state "TODO")
           (when cwd (str " \u00B7 " (views/shorten-path cwd)))
-          (when (and (string? tags) (seq tags)) (str " \u00B7 " tags)))]]])
+          (when (and (string? tags) (seq tags)) (str " \u00B7 " tags)))]]]))
 
 (defn- render-org-body
   "Render pre-built HTML body from the server."
@@ -240,7 +192,6 @@
         loading?      (:web/gtd-loading? state)
         selected-file (:web/gtd-file state)
         task-id       (:web/gtd-task-id state)
-        ctx-menu      (:web/gtd-context-menu state)
         ;; Look up selected task by id
         selected-task (when task-id
                         (some #(when (= (:id %) task-id) %) tasks))
@@ -292,9 +243,7 @@
           ;; Main view: tasks grouped by file, max recent-limit per group.
           :else
           (for [[file-name file-tasks] grouped]
-            (gtd-group dispatch! file-name file-tasks)))]
-       (when ctx-menu
-         (gtd-context-menu dispatch! ctx-menu))])))
+            (gtd-group dispatch! file-name file-tasks)))]])))
 
 ;; ── Route ────────────────────────────────────────────────────────────────────
 

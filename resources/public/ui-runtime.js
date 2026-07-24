@@ -1253,6 +1253,95 @@
   };
   init_BANG_2();
 
+  // .compiled/gestures.mjs
+  var press_ms = 500;
+  var slop_px = 10;
+  var selector = ".context-menu-trigger, [data-long-press]";
+  var press = atom(null);
+  var suppress_click_QMARK_ = atom(false);
+  var cancel_BANG_ = function() {
+    const temp__23062__auto__1 = deref(press);
+    if (truth_(temp__23062__auto__1)) {
+      const p2 = temp__23062__auto__1;
+      clearTimeout(get(p2, "timer"));
+      return reset_BANG_(press, null);
+    }
+    ;
+  };
+  var dispatch_contextmenu_BANG_ = function(el, x, y) {
+    return el.dispatchEvent(new MouseEvent("contextmenu", { "bubbles": true, "cancelable": true, "view": window, "clientX": x, "clientY": y }));
+  };
+  var on_pointerdown = function(e) {
+    reset_BANG_(suppress_click_QMARK_, false);
+    if (e.pointerType === "touch") {
+      const temp__23062__auto__1 = (() => {
+        const G__52 = e.target;
+        if (G__52 == null) {
+          return null;
+        } else {
+          return G__52.closest(selector);
+        }
+        ;
+      })();
+      if (truth_(temp__23062__auto__1)) {
+        const el3 = temp__23062__auto__1;
+        cancel_BANG_();
+        const x4 = e.clientX;
+        const y5 = e.clientY;
+        return reset_BANG_(press, { "el": el3, "x": x4, "y": y5, "timer": setTimeout((function() {
+          reset_BANG_(press, null);
+          reset_BANG_(suppress_click_QMARK_, true);
+          return dispatch_contextmenu_BANG_(el3, x4, y5);
+        }), press_ms) });
+      }
+      ;
+    }
+    ;
+  };
+  var on_pointermove2 = function(e) {
+    const temp__23062__auto__1 = deref(press);
+    if (truth_(temp__23062__auto__1)) {
+      const p2 = temp__23062__auto__1;
+      if (truth_((() => {
+        const or__23426__auto__3 = Math.abs(e.clientX - get(p2, "x")) > slop_px;
+        if (or__23426__auto__3) {
+          return or__23426__auto__3;
+        } else {
+          return Math.abs(e.clientY - get(p2, "y")) > slop_px;
+        }
+        ;
+      })())) {
+        return cancel_BANG_();
+      }
+      ;
+    }
+    ;
+  };
+  var on_pointer_end = function(_e) {
+    return cancel_BANG_();
+  };
+  var on_native_contextmenu = function(e) {
+    if (truth_(e.isTrusted)) {
+      return cancel_BANG_();
+    }
+    ;
+  };
+  var on_click_capture = function(e) {
+    if (truth_(deref(suppress_click_QMARK_))) {
+      reset_BANG_(suppress_click_QMARK_, false);
+      e.preventDefault();
+      return e.stopPropagation();
+    }
+    ;
+  };
+  document.addEventListener("pointerdown", on_pointerdown, true);
+  document.addEventListener("pointermove", on_pointermove2, true);
+  document.addEventListener("pointerup", on_pointer_end, true);
+  document.addEventListener("pointercancel", on_pointer_end, true);
+  document.addEventListener("contextmenu", on_native_contextmenu, true);
+  document.addEventListener("click", on_click_capture, true);
+  window["__uiLongPress"] = dispatch_contextmenu_BANG_;
+
   // .compiled/masonry.mjs
   var raf = atom(null);
   var observed = /* @__PURE__ */ new Set();
@@ -1507,8 +1596,8 @@
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   };
   var resolve_effective = function(mode) {
-    const G__51 = mode;
-    switch (G__51) {
+    const G__61 = mode;
+    switch (G__61) {
       case "light":
         return "light";
         break;
@@ -1537,8 +1626,8 @@
   var apply_theme_BANG_ = function(mode) {
     const el1 = document.documentElement;
     suppress_transitions_BANG_();
-    const G__62 = mode;
-    switch (G__62) {
+    const G__72 = mode;
+    switch (G__72) {
       case "light":
         return el1.setAttribute("data-theme", "light");
         break;
@@ -1578,8 +1667,8 @@
   var toggle_BANG_ = function() {
     const current1 = get_mode();
     const next_mode2 = (() => {
-      const G__73 = current1;
-      switch (G__73) {
+      const G__83 = current1;
+      switch (G__83) {
         case "auto":
           return "light";
           break;
@@ -1768,14 +1857,14 @@
       ;
     })().split(","))));
     const override_keys4 = set(map(first, viewport_overrides));
-    const kept5 = remove((function(p__8) {
-      const vec__69 = p__8;
+    const kept5 = remove((function(p__9) {
+      const vec__69 = p__9;
       const k10 = nth(vec__69, 0, null);
       const _11 = nth(vec__69, 1, null);
       return contains_QMARK_(override_keys4, k10);
     }), entries1);
-    return join(", ", map((function(p__9) {
-      const vec__1215 = p__9;
+    return join(", ", map((function(p__10) {
+      const vec__1215 = p__10;
       const k16 = nth(vec__1215, 0, null);
       const v17 = nth(vec__1215, 1, null);
       if (v17 == null) {
