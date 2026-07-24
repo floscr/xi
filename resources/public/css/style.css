@@ -619,6 +619,12 @@ body {
   color: #fff;
 }
 
+.post--user .post-content a {
+  color: #fff;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.6);
+}
+
 .post-content pre {
   background-color: var(--bg-1);
   padding: var(--size-3);
