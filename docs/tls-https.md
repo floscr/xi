@@ -133,6 +133,19 @@ Tailscale, etc.). The profile-download flow only works in Safari.
 
 ## Troubleshooting
 
+- **The hostname doesn't resolve at all (`pi.home` / every `.home` domain fails,
+  not just Xi)** — this is a DNS problem, not a cert problem; the cert only
+  matters *after* the name resolves. If you reach the server fine by its
+  Tailscale IP (e.g. `http://100.x.y.z:7474`) but the name never loads, the
+  device isn't using the tailnet's DNS. Fixes, in order:
+  1. **iOS/iPadOS:** open the **Tailscale app → Settings → turn ON "Use
+     Tailscale DNS settings"**. iOS otherwise keeps its own resolver, which has
+     never heard of `pi.home`. (This is the one that's easy to miss — installing
+     the cert and being "connected" to the tailnet is not enough on its own.)
+  2. In the Tailscale **admin console → DNS**, add the pi as a **nameserver**
+     and set up **Split DNS** so the `home` domain is routed to it.
+  3. Confirm the pi actually runs a DNS server (dnsmasq / Pi-hole / CoreDNS)
+     that answers `pi.home` → its IP.
 - **"This connection is not private"** — the CA isn't trusted. Confirm the
   `mkcert` root is toggled **on** in *Certificate Trust Settings* (iOS). If it
   won't appear there, reboot. Also verify the hostname/IP you're visiting is in
