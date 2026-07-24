@@ -674,6 +674,10 @@
               :on {:click (fn [_] (dispatch! {:type :palette/open-projects}))}}
      (icon/icon {:icon-name :folder :size :sm})
      " Projects"]
+    [:button {:class ["quick-cmd"]
+              :on {:click (fn [_] (dispatch! {:type :palette/open-snippets}))}}
+     (icon/icon {:icon-name :file-text :size :sm})
+     " Snippets"]
     (map (fn [name]
            [:button {:class ["quick-cmd"]
                      :replicant/key name
@@ -2493,6 +2497,40 @@
                                           :path path :draft-key dkey}))}
            (shorten-path path)))))))
 
+(defn- snippet-command-item
+  [dispatch! dkey {:keys [label text]}]
+  (cmd/command-item
+   {:icon :code
+    :value (str label " " text)
+    :description text
+    :on-click (fn [_] (dispatch! {:type :snippets/picker-insert
+                                  :text text :draft-key dkey}))}
+   label))
+
+(defn- palette-snippets-page
+  "Snippets as a palette sub-page (drilled from the Snippets compose button).
+   Spinner while :web/snippet-list loads, then a command-item per snippet
+   grouped into Project (cwd-specific, from the dotfiles profile) and global.
+   Selecting inserts the snippet's text into the current compose draft."
+  [state dispatch!]
+  (let [{:keys [global project] :as loaded} (:web/snippet-list state)
+        dkey (draft-key state)]
+    (cond
+      (nil? loaded)
+      [:div {:class ["command-empty"]} (spinner) " Loading…"]
+
+      (and (empty? global) (empty? project))
+      [:div {:class ["command-empty"]} "No snippets found"]
+
+      :else
+      [:div
+       (when (seq project)
+         (apply cmd/command-group {:heading "Project snippets"}
+           (map #(snippet-command-item dispatch! dkey %) project)))
+       (when (seq global)
+         (apply cmd/command-group {:heading "Snippets"}
+           (map #(snippet-command-item dispatch! dkey %) global)))])))
+
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
@@ -2570,6 +2608,7 @@
          :model          (palette-model-page state dispatch!)
          :skill          (palette-skill-page state dispatch!)
          :project-insert (palette-project-insert-page state dispatch!)
+         :snippets       (palette-snippets-page state dispatch!)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
            (palette-project-actions state dispatch! (:cwd palette-page)))))
 

@@ -642,6 +642,19 @@
                                                    (dissoc :web/palette-page :web/palette-open?))
                                         :effects [[:palette/close nil]
                                                   [:projects/sync-textarea {:text new-text}]]}))
+          ;; Snippets picker (insert into compose) — an in-palette sub-page.
+          :snippets/web-list-result (fn [st {:keys [global project]}]
+                                      {:state (assoc st :web/snippet-list
+                                                     {:global (vec global) :project (vec project)})})
+          :snippets/picker-insert (fn [st {:keys [text draft-key]}]
+                                    (let [cur (get-in st [:web/drafts draft-key] "")
+                                          sep (if (and (seq cur) (not (str/ends-with? cur " "))) " " "")
+                                          new-text (str cur sep text)]
+                                      {:state (-> st
+                                                  (assoc-in [:web/drafts draft-key] new-text)
+                                                  (dissoc :web/palette-page :web/palette-open?))
+                                       :effects [[:palette/close nil]
+                                                 [:projects/sync-textarea {:text new-text}]]}))
           :projects/new-session   (fn [st {:keys [cwd]}]
                                     {:state (-> st
                                                 (assoc :web/route {:page :chat :session-id nil})
@@ -691,6 +704,18 @@
                                     :effects (cond-> [[:palette/reopen nil]]
                                                (empty? (:web/project-dirs st))
                                                (conj [:ws/send {:type :projects/web-list}]))})
+          ;; Snippets: same drill pattern as projects. Always re-fetch (the
+          ;; project snippets depend on the active room's cwd, which differs
+          ;; per chat); clearing :web/snippet-list shows a spinner meanwhile.
+          :palette/open-snippets (fn [st _]
+                                   (let [cwd (or (:cwd (state/active-room st))
+                                                 (get-in st [:web/pending-room :cwd]))]
+                                     {:state (-> st
+                                                 (assoc :web/palette-page {:kind :snippets}
+                                                        :web/palette-drilling? true)
+                                                 (dissoc :web/snippet-list))
+                                      :effects [[:ws/send {:type :snippets/web-list :cwd cwd}]
+                                                [:palette/reopen nil]]}))
           :palette/back          (fn [st _]
                                    {:state (dissoc st :web/palette-page)
                                     :effects [[:palette/reset-filter nil]]})

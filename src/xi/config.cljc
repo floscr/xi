@@ -38,6 +38,7 @@
         [xi.ext.sandbox :as ext-sandbox]
         [xi.ext.session-search :as session-search]
         [xi.ext.skills :as skills]
+        [xi.ext.snippets :as snippets]
         [xi.ext.terminal-title :as terminal-title]
         [xi.ext.todo-intercept :as todo-intercept]
         [xi.ext.web :as web]
@@ -104,6 +105,7 @@
       process-manager/extension
       projects/extension
       skills/extension
+      snippets/extension
       events/create]))
 
 #?(:node
