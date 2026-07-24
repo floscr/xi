@@ -129,6 +129,24 @@
 
 (defn spinner [] [:div {:class ["agent-status-spinner"]}])
 
+(defn card-status-indicator
+  "Trailing status indicator for session cards / palette rows: a single,
+  ALWAYS-present node whose class toggles between the busy spinner, the unread
+  dot, or nothing. Do NOT replace this with a `cond` that returns a spinner div,
+  an unread-dot div, or nil — those swap element identity / drop to nil, and as
+  the keyed card list churns and reorders Replicant mis-reconciles the slot:
+  it leaves the stale spinner in the DOM (spinner shown after the agent stops)
+  and appends a second one on the next state change (the doubled-spinner bug).
+  One stable node means Replicant only ever patches the `class` attribute, so it
+  can never add or remove children here. The containing slot collapses via the
+  `:has()` rule on .project-card-status / .command-item-status."
+  [{:keys [busy? unread?]}]
+  [:div {:replicant/key "status-indicator"
+         :class (cond
+                  busy?   ["agent-status-spinner"]
+                  unread? ["unread-dot"]
+                  :else   [])}])
+
 (defn nav-items-for
   "Extension nav items (from ext/compose :nav-items, stored in state at
    init) scoped to one menu surface."
@@ -1859,16 +1877,11 @@
                  :else nil)]
           (remove str/blank?)
           (str/join " · "))]]
-   ;; Keep the trailing indicator slot ALWAYS present (hidden via CSS when
-   ;; empty). A bare conditional here is an unkeyed child that flips between an
-   ;; element and nil; as the keyed card list churns/reorders, Replicant can
-   ;; mis-reconcile that slot and append a second spinner. A stable wrapper
-   ;; keeps each card's child structure invariant so the indicator only ever
-   ;; swaps content inside a node that never moves on its own.
+   ;; Keep the trailing indicator slot ALWAYS present (hidden via CSS when it
+   ;; holds no indicator) with a single stable child (see card-status-indicator)
+   ;; so Replicant never duplicates or strands the spinner as cards reorder.
    [:div {:class ["project-card-status"]}
-    (cond
-      busy?   (spinner)
-      unread? [:div {:class ["unread-dot"]}])]
+    (card-status-indicator {:busy? busy? :unread? unread?})]
    (when session-id
      [:button {:class ["project-card-action" "project-card-favorite"
                        (when favorite? "project-card-favorite--on")]
@@ -2410,9 +2423,7 @@
                  :size :sm :class "command-item-icon"})
      [:span {:class ["command-item-label"]} label]
      [:div {:class ["command-item-status"]}
-      (cond
-        busy?   (spinner)
-        unread? [:div {:class ["unread-dot"]}])]]))
+      (card-status-indicator {:busy? busy? :unread? unread?})]]))
 
 (defn- palette-project-actions
   "Command items for a project's second-level page (Tab-drilled from a project

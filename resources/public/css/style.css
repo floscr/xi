@@ -1676,14 +1676,17 @@ body {
 }
 
 /* Always-present trailing indicator slot (keeps each card's child structure
-   invariant so Replicant never duplicates the spinner). Collapses to nothing
-   when it holds no spinner/dot. */
+   invariant so Replicant never duplicates the spinner). It always holds one
+   stable node (see card-status-indicator), so collapse it via :has() when that
+   node carries no spinner/dot rather than :empty. */
 .project-card-status {
   display: flex;
   align-items: center;
   flex-shrink: 0;
 }
-.project-card-status:empty { display: none; }
+.project-card-status:not(:has(.agent-status-spinner, .unread-dot)) {
+  display: none;
+}
 
 /* iOS/WebKit fix: the framework's .command-list uses `flex: 1` (i.e.
    flex-basis: 0%). Inside the content-sized <dialog> (max-height, no definite
@@ -1730,7 +1733,9 @@ body {
   align-items: center;
   flex-shrink: 0;
 }
-.command-item-status:empty { display: none; }
+.command-item-status:not(:has(.agent-status-spinner, .unread-dot)) {
+  display: none;
+}
 
 /* Trailing "new chat" button on project-directory cards (replaces the old
    chevron): clicking the card navigates into the project, this button starts
