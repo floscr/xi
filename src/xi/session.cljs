@@ -245,12 +245,22 @@
                          last
                          (str/replace ".jsonl" ""))
           lines (read-head-lines filepath 16384)
-          first-user (reduce (fn [_ line]
-                               (when (seq line)
-                                 (let [obj (js->clj (js/JSON.parse line) :keywordize-keys true)]
-                                   (when (= "user" (:type obj))
-                                     (reduced obj)))))
-                             nil lines)
+          ;; Whole file fits in the head window — so a missing assistant reply
+          ;; below means the transcript really has none (not just unread tail).
+          full? (<= (.-size (fs/statSync filepath)) 16384)
+          {:keys [first-user assistant?]}
+          (reduce (fn [acc line]
+                    (if (seq line)
+                      (let [obj (try (js->clj (js/JSON.parse line) :keywordize-keys true)
+                                     (catch :default _ nil))
+                            t   (:type obj)]
+                        (cond-> acc
+                          (and (nil? (:first-user acc)) (= "user" t))
+                          (assoc :first-user obj)
+                          (= "assistant" t)
+                          (assoc :assistant? true)))
+                      acc))
+                  {:first-user nil :assistant? false} lines)
           first-text (when first-user
                        (let [content (:content (:message first-user))]
                          (cond
@@ -268,7 +278,12 @@
        :filepath filepath
        :timestamp timestamp
        :name name
-       :user-messages nil})
+       :user-messages nil
+       ;; A complete transcript with a first user prompt but no assistant reply
+       ;; is an aborted stub — the user interrupted before any response, and Xi
+       ;; often spun up a NEW cli session for the retry, leaving this one as an
+       ;; orphaned duplicate in listings. Flag it so callers can drop it.
+       :empty? (boolean (and full? first-user (not assistant?)))})
     (catch :default _e nil)))
 
 ;; ── Xi Session Reading ────────────────────────────────────────────────────────
@@ -415,9 +430,10 @@
   (let [;; Xi metadata sessions
         xi-sessions (->> (list-dir-files (xi-session-dir cwd) ".json")
                          (keep read-xi-session-meta))
-        ;; Claude CLI sessions
+        ;; Claude CLI sessions (dropping aborted stubs with no assistant reply)
         claude-sessions (->> (list-dir-files (claude-project-dir cwd) ".jsonl")
-                             (keep read-claude-session-summary))
+                             (keep read-claude-session-summary)
+                             (remove :empty?))
         xi-ids (set (keep :cli-session-id xi-sessions))
         ;; Don't show claude sessions that have Xi metadata (avoid duplicates)
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
@@ -455,7 +471,9 @@
                              (mapcat (fn [subdir]
                                        (let [dir (.join node-path CLAUDE_PROJECTS_DIR subdir)]
                                          (->> (list-dir-files dir ".jsonl")
-                                              (keep read-claude-session-summary))))))
+                                              (keep read-claude-session-summary)))))
+                             ;; Drop aborted stubs with no assistant reply.
+                             (remove :empty?))
         ;; Dedup: Xi meta takes priority over claude sessions with same session-id
         xi-ids (set (keep :cli-session-id xi-sessions))
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
