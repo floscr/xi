@@ -197,7 +197,10 @@ src/xi/
                          terminal_title, clipboard_image, projects, skills, events,
                          chrome (chrome-devtools-mcp proxy — see docs/chrome-mcp.md),
                          element_picker (visual DOM element picker → prompt,
-                         installed into chrome — see docs/element-picker.md)
+                         installed into chrome — see docs/element-picker.md),
+                         style_editor (agent-driven live style editor: sliders /
+                         color pickers on a page element → committed CSS values,
+                         installed into chrome — see docs/style-editor.md)
   highlight/           — syntax highlighting (engine, grammars, ANSI + CSS themes)
   markdown/            — markdown parsing + ANSI / hiccup rendering
   tui/                 — terminal UI primitives (editor, grid, render, components, …)
@@ -282,3 +285,22 @@ When writing a new extension, follow [docs/writing-extensions.md](docs/writing-e
   namespace. (The macro lives in its own `.clj`, not `config.cljc`, because a
   `.cljc` whose requires are all behind `:node`/`:browser` reader features
   can't be loaded as a JVM macro namespace.)
+
+<!-- clj-ui-framework:begin -->
+## UI Framework — clj-ui-framework
+
+This repo uses the shared **clj-ui-framework** component library
+(cross-target Clojure/ClojureScript/Squint UI components, theme
+tokens, icons, and browser JS runtime), pinned as a git dependency
+in this project's `bb.edn`/`deps.edn`.
+
+- Local checkout: `~/Code/Projects/clj-ui-framework`
+- Remote (git dep source): <https://git.example.com/floscr/clj-ui-framework>
+
+Before doing UI work here, read the framework's `AGENTS.md` — it
+documents the available components and icons (full generated list in
+`docs/components.md`), how to add new components and icons, per-target
+pitfalls (hiccup/replicant/squint), theming/tokens, and the JS runtime.
+Update the framework by bumping the pinned `:sha` in this project's
+`bb.edn`/`deps.edn`.
+<!-- clj-ui-framework:end -->
