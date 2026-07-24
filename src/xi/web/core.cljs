@@ -683,9 +683,17 @@
           ;; :palette/reopen effect); :palette/opened keeps the sub-page when the
           ;; flag is set. Clearing :web/model-list makes the page show a spinner
           ;; until the fresh model list arrives.
+          ;; The three open-* handlers below open the palette from a compose
+          ;; button (not mod+k), so they set :web/palette-open? true directly
+          ;; instead of waiting on the async MutationObserver → :palette/opened
+          ;; round-trip that the :palette/reopen showModal triggers. On iOS that
+          ;; round-trip can race/fail, leaving the dialog natively open but
+          ;; rendering the empty shell — a collapsed 65px palette. Flipping the
+          ;; flag here guarantees the items render before the dialog is shown.
           :palette/open-models   (fn [st _]
                                    {:state (-> st
                                                (assoc :web/palette-page {:kind :model}
+                                                      :web/palette-open? true
                                                       :web/palette-drilling? true)
                                                (dissoc :web/model-list))
                                     :effects [[:ws/send {:type :models/web-list}]
@@ -694,12 +702,14 @@
           :palette/open-skills   (fn [st _]
                                    {:state (-> st
                                                (assoc :web/palette-page {:kind :skill}
+                                                      :web/palette-open? true
                                                       :web/palette-drilling? true)
                                                (dissoc :web/skill-list))
                                     :effects [[:ws/send {:type :skill/web-list}]
                                               [:palette/reopen nil]]})
           :palette/open-projects (fn [st _]
                                    {:state (assoc st :web/palette-page {:kind :project-insert}
+                                                     :web/palette-open? true
                                                      :web/palette-drilling? true)
                                     :effects (cond-> [[:palette/reopen nil]]
                                                (empty? (:web/project-dirs st))
