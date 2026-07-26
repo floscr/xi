@@ -35,7 +35,7 @@ Defaults to `ws://localhost:<port>`.
 | `--no-auto-join` | standalone | Stay a local room; don't connect to a running server. |
 | `--join` / `--create` | standalone | Redirect the bare `xi` invocation onto a running server (latest / new room). |
 | `--headless` | `server` | Run the server without a local TUI; clients attach remotely. |
-| `--personal-agent-only` | `server` | Personal-assistant mode — no coding tools, `web_search` only. |
+| `--personal-agent-only` | `server`, `prompt` | Personal-assistant mode — no coding tools, `web_search` only. In prompt mode the run also gets no AGENTS.md/skills context, only the personal-agent system prompt. |
 | `--debug-events` | standalone, `server` | Write the full event stream as JSONL (see [architecture.md](architecture.md)). |
 | `--stream` | `prompt` | Stream response tokens to stdout as they arrive (otherwise buffered until the turn ends). |
 | `--no-store` | `prompt` | Run ephemerally: the turn uses a throwaway `CLAUDE_CONFIG_DIR` that is deleted on exit, so it leaves no session in `~/.claude/projects` and never appears in any session list. See [prompt-mode.md](prompt-mode.md). |

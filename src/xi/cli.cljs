@@ -138,7 +138,8 @@ FLAGS
   --no-auto-join             Standalone: stay local, don't join a running server.
   --join, --create           Standalone: redirect onto a running server instead.
   --headless                 server: run without a local TUI (clients attach remotely).
-  --personal-agent-only      server: personal-assistant mode (no coding tools).
+  --personal-agent-only      server/prompt: personal-assistant mode (no coding
+                             tools, web_search only; prompt: no AGENTS.md context).
   --debug-events             Write the full event stream as JSONL (see docs).
   --stream                   prompt: stream response tokens to stdout as they arrive.
   --no-store                 prompt: run ephemerally — leave no session behind.
@@ -337,7 +338,7 @@ See docs/cli.md for the full reference.")
    writes its session transcript into a temp dir that is torn down on exit,
    never landing in ~/.claude/projects. The one-shot already never persists an
    Xi session file, so this makes the whole run ephemeral."
-  [{:keys [prompt-text stream? no-store?] :as opts}]
+  [{:keys [prompt-text stream? no-store? personal-agent?] :as opts}]
   (let [{:keys [model effort]} (resolve-model-opts opts)
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
         ;; --no-store: point the Claude CLI at a throwaway config dir so its
@@ -351,11 +352,18 @@ See docs/cli.md for the full reference.")
         dialogs  (ext/create-dialogs)
         composed (ext/compose (remove #(= :terminal-title (:id %))
                                       (server-extensions ring (:ask! dialogs))))
-        agents-files (system-prompt/find-agents-md cwd)
-        system-parts (into (system-prompt/load-agents-parts cwd)
-                           (ext/system-prompt-parts composed cwd))
+        ;; --personal-agent-only: PA system prompt only (no AGENTS.md, no
+        ;; profile/skills, no extension prompt parts) and the room's
+        ;; :personal-agent? flag restricts provider tools to web_search —
+        ;; mirrors the server's :room/setup PA provisioning.
+        agents-files (when-not personal-agent? (system-prompt/find-agents-md cwd))
+        system-parts (if personal-agent?
+                       [{:source "personal-agent"
+                         :text   system-prompt/PERSONAL_AGENT_PROMPT}]
+                       (into (system-prompt/load-agents-parts cwd)
+                             (ext/system-prompt-parts composed cwd)))
         system (system-prompt/parts->system system-parts)
-        sess (session/create-session cwd)
+        sess (session/create-session cwd (when personal-agent? {:personal-agent? true}))
         acc  #js {:out "" :error nil}
         finish!
         (fn []
@@ -417,6 +425,7 @@ See docs/cli.md for the full reference.")
                        :system-parts system-parts
                        :agents-files agents-files
                        :ext (:room-ext-init composed)
+                       :personal-agent? personal-agent?
                        :session sess}})
     (dispatch! {:type :prompt/submit :room-id "main" :text prompt-text})))
 
