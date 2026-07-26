@@ -31,6 +31,12 @@ terminal prints a usage error instead of hanging).
                 Claude transcript never lands in ~/.claude/projects and the run
                 never appears in the Xi or Claude session lists.
 --model NAME    Override the default model (also honours XI_MODEL).
+--personal-agent-only
+                Restricted one-shot: the personal-agent system prompt only (no
+                AGENTS.md, profile, or skills context) and provider tools
+                limited to web_search — no file/shell/browser access. Useful
+                for piping untrusted or minimal data to the model from other
+                services (combine with --no-store).
 ```
 
 `XI_CWD` (or the current directory) sets the working directory the agent runs
