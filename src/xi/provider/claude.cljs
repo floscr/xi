@@ -302,7 +302,13 @@
                                         ;; want ONLY our programmatic xi-tools
                                         ;; server so the inner agent can't reach
                                         ;; native MCP (e.g. chrome-devtools).
-                                        :strictMcpConfig true}
+                                        :strictMcpConfig true
+                                        ;; Disable the SDK's auto-memory feature
+                                        ;; (~/.claude/projects/<cwd>/memory/,
+                                        ;; enabled by default with the
+                                        ;; claude_code preset). We don't want the
+                                        ;; inner agent reading or writing memory.
+                                        :autoMemoryEnabled false}
                                  @claude-executable
                                  (assoc :pathToClaudeCodeExecutable @claude-executable)
 
