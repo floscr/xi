@@ -514,6 +514,11 @@
           :bubble/menu-open      (fn [st {:keys [index text x y]}]
                                    {:state (assoc st :web/bubble-menu {:index index :text text :x x :y y})})
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
+          ;; Floating Copy button surfaced when a rendered code block (`pre`)
+          ;; or inline `code` is tapped (see attach-code-copy-listener!).
+          :code/menu-open        (fn [st {:keys [text x y]}]
+                                   {:state (assoc st :web/code-menu {:text text :x x :y y})})
+          :code/menu-close       (fn [st _] {:state (dissoc st :web/code-menu)})
           :bubble/edit-start     (fn [st {:keys [index text]}]
                                    {:state (-> st
                                                (dissoc :web/bubble-menu)
@@ -530,6 +535,18 @@
           :prompt-nav/next       prompt-nav-step
           :prompt-nav/close      (fn [st _] {:state (dissoc st :web/prompt-nav)
                                              :effects [[:prompt-nav/resume {}]]})
+          ;; Timeline scroll-to-bottom (down-arrow beside the prompt-nav
+          ;; up-arrow, and the next-arrow while sitting on the newest prompt).
+          ;; Closes prompt-nav so the group collapses back to the plain arrow.
+          :timeline/scroll-to-bottom
+          (fn [st _] {:state (dissoc st :web/prompt-nav)
+                      :effects [[:timeline/scroll-bottom {}]]})
+          ;; Reflect the timeline's scroll position into state so the
+          ;; scroll-to-bottom down-arrow can appear only while scrolled up.
+          :web/set-scrolled-up
+          (fn [st {:keys [scrolled-up?]}]
+            (when (not= (boolean scrolled-up?) (boolean (:web/scrolled-up? st)))
+              {:state (assoc st :web/scrolled-up? (boolean scrolled-up?))}))
           :bubble/edit-save      bubble-edit-save
           :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
           :web/dialog-form-reset (fn [st _] {:state (dissoc st :web/dialog-form)})
@@ -760,6 +777,10 @@
 ;; not be yanked back to the bottom by the post-render scroll-to-bottom.
 (defonce ^:private auto-scroll? (atom true))
 (defonce ^:private tracked-timeline (atom nil))
+;; Set at init (see below); referenced by the scroll listener to push the
+;; scrolled-up flag into state. Declared here so attach-scroll-listener! can
+;; reach it without a forward reference.
+(defonce ^:private dispatch-ref (atom nil))
 
 (defn- web-effects [routes]
   {:history/push (router/history-effect routes)
@@ -843,6 +864,15 @@
   :prompt-nav/resume
    (fn [_ _]
      ;; Re-enable auto-scroll and snap to the newest content.
+     (reset! auto-scroll? true)
+     (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
+       (.remove (.-classList el) "post--nav-target"))
+     (when-let [timeline (.querySelector js/document ".timeline")]
+       (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
+  :timeline/scroll-bottom
+   (fn [_ _]
+     ;; Re-enable auto-scroll and snap to the newest content (mirrors
+     ;; :prompt-nav/resume, but for the standalone scroll-to-bottom arrow).
      (reset! auto-scroll? true)
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
@@ -1013,12 +1043,47 @@
       (reset! auto-scroll? true)
       (.addEventListener timeline "scroll"
                          (fn []
-                           (reset! auto-scroll? (at-bottom? timeline)))))))
+                           (let [bottom? (at-bottom? timeline)]
+                             (reset! auto-scroll? bottom?)
+                             ;; Surface "scrolled up" into state so the
+                             ;; scroll-to-bottom down-arrow can toggle. The
+                             ;; handler no-ops when the flag is unchanged, so
+                             ;; this only re-renders on the two transitions.
+                             (when-let [d @dispatch-ref]
+                               (d {:type :web/set-scrolled-up
+                                   :scrolled-up? (not bottom?)})))))
+      ;; Sync the flag once on (re)attach so a fresh timeline starts consistent.
+      (when-let [d @dispatch-ref]
+        (d {:type :web/set-scrolled-up :scrolled-up? (not (at-bottom? timeline))})))))
 
 (defn- scroll-to-bottom! []
   (when @auto-scroll?
     (when-let [timeline (.querySelector js/document ".timeline")]
       (set! (.-scrollTop timeline) (.-scrollHeight timeline)))))
+
+(defonce ^:private code-copy-attached? (atom false))
+
+(defn- attach-code-copy-listener!
+  "Delegated document click listener: tapping a rendered code block (`pre`) or
+   inline `code` surfaces a floating Copy button near the tap point
+   (:web/code-menu, rendered by chat-view). Skipped inside user bubbles (which
+   already have their own tap menu with Copy) and inline editors."
+  []
+  (when-not @code-copy-attached?
+    (reset! code-copy-attached? true)
+    (.addEventListener
+     js/document "click"
+     (fn [^js e]
+       (when-let [d @dispatch-ref]
+         (when-let [node (some-> (.-target e) (.closest "pre, code"))]
+           (when (and (not (.closest node ".post--user"))
+                      (not (.closest node ".bubble-edit-textarea")))
+             (let [text (.-textContent node)]
+               (when (seq (str/trim (or text "")))
+                 (d {:type :code/menu-open
+                     :text text
+                     :x (.-clientX e)
+                     :y (.-clientY e)}))))))))))
 
 ;; ── Render ───────────────────────────────────────────────────────────────────
 
@@ -1036,7 +1101,6 @@
 ;; ── Init ─────────────────────────────────────────────────────────────────────
 
 (defonce ^:private app-ref (atom nil))
-(defonce ^:private dispatch-ref (atom nil))
 
 (defn- ws-url
   "WS server URL. Served by the Bun server itself → same origin as the page,
@@ -1207,6 +1271,7 @@
         (do (.addEventListener js/window.visualViewport "resize" (fn [_] (set-vh!)))
             (.addEventListener js/window.visualViewport "scroll" (fn [_] (set-vh!))))
         (.addEventListener js/window "resize" (fn [_] (set-vh!)))))
+    (attach-code-copy-listener!)
     ;; Prevent iOS Safari smart-zoom (double-tap & pinch)
     (.addEventListener js/document "gesturestart" (fn [e] (.preventDefault e)))
     (.addEventListener js/document "gesturechange" (fn [e] (.preventDefault e)))

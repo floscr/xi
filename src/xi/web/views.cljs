@@ -630,34 +630,46 @@
 
 (defn- prompt-nav-controls
   "Jump-to-previous-prompt control shown left of the Projects button. Collapsed
-   it is a single up-arrow; once opened it expands into a button group showing
-   the current position / total and up (older) / down (newer) navigation.
+   it is a single up-arrow; when the timeline is scrolled up off the bottom a
+   down-arrow that snaps back to the newest content appears beside it. Once
+   opened it expands into a button group showing the current position / total
+   and up (older) / down (newer) navigation — on the newest prompt the down
+   arrow scrolls to the bottom instead of being a no-op.
    `nav-ctx` carries the full-history user-prompt indices so navigation reaches
    prompts that aren't in the rendered timeline window yet."
-  [dispatch! nav-idx nav-ctx]
-  (let [total (:count nav-ctx)
-        prev! (fn [_] (dispatch! (assoc nav-ctx :type :prompt-nav/prev)))
-        next! (fn [_] (dispatch! (assoc nav-ctx :type :prompt-nav/next)))]
+  [dispatch! nav-idx nav-ctx scrolled-up?]
+  (let [total   (:count nav-ctx)
+        prev!   (fn [_] (dispatch! (assoc nav-ctx :type :prompt-nav/prev)))
+        bottom! (fn [_] (dispatch! {:type :timeline/scroll-to-bottom}))
+        up-btn  [:button {:class ["quick-cmd" "prompt-nav-btn"]
+                          :title (if nav-idx "Previous prompt" "Jump to previous prompt")
+                          :disabled (boolean (and nav-idx (<= nav-idx 0)))
+                          :on {:click prev!}}
+                 (icon/icon {:icon-name :arrow-up :size :sm})]]
     (if (nil? nav-idx)
-      [:button {:class ["quick-cmd" "prompt-nav-btn"]
-                :title "Jump to previous prompt"
-                :on {:click prev!}}
-       (icon/icon {:icon-name :arrow-up :size :sm})]
-      [:div {:class ["prompt-nav-group"]}
-       [:button {:class ["quick-cmd" "prompt-nav-btn"]
-                 :title "Previous prompt"
-                 :disabled (<= nav-idx 0)
-                 :on {:click prev!}}
-        (icon/icon {:icon-name :arrow-up :size :sm})]
-       [:button {:class ["quick-cmd" "prompt-nav-count"]
-                 :title "Close prompt navigation"
-                 :on {:click (fn [_] (dispatch! {:type :prompt-nav/close}))}}
-        (str (inc nav-idx) "/" total)]
-       [:button {:class ["quick-cmd" "prompt-nav-btn"]
-                 :title "Next prompt"
-                 :disabled (>= nav-idx (dec total))
-                 :on {:click next!}}
-        (icon/icon {:icon-name :arrow-down :size :sm})]])))
+      (if scrolled-up?
+        [:div {:class ["prompt-nav-group"]}
+         up-btn
+         [:button {:class ["quick-cmd" "prompt-nav-btn"]
+                   :title "Scroll to bottom"
+                   :on {:click bottom!}}
+          (icon/icon {:icon-name :arrow-down :size :sm})]]
+        up-btn)
+      (let [last? (>= nav-idx (dec total))
+            next! (fn [_]
+                    (if last?
+                      (bottom! nil)
+                      (dispatch! (assoc nav-ctx :type :prompt-nav/next))))]
+        [:div {:class ["prompt-nav-group"]}
+         up-btn
+         [:button {:class ["quick-cmd" "prompt-nav-count"]
+                   :title "Close prompt navigation"
+                   :on {:click (fn [_] (dispatch! {:type :prompt-nav/close}))}}
+          (str (inc nav-idx) "/" total)]
+         [:button {:class ["quick-cmd" "prompt-nav-btn"]
+                   :title (if last? "Scroll to bottom" "Next prompt")
+                   :on {:click next!}}
+          (icon/icon {:icon-name :arrow-down :size :sm})]]))))
 
 (defn- measure-scroll-shadow!
   "Toggle the edge scroll shadows on the quick-command bar: the left shadow
@@ -681,13 +693,13 @@
   (doto (js/ResizeObserver. (fn [_] (measure-scroll-shadow! ctx)))
     (.observe node)))
 
-(defn- quick-command-bar [dispatch! room-id recents prompt-nav nav-ctx]
+(defn- quick-command-bar [dispatch! room-id recents prompt-nav nav-ctx scrolled-up?]
   [:div {:class ["quick-commands"]
          :replicant/on-mount init-scroll-shadow!
          :replicant/on-render measure-scroll-shadow!}
    [:div {:class ["quick-cmd-group"]}
     (when (pos? (or (:count nav-ctx) 0))
-      (prompt-nav-controls dispatch! prompt-nav nav-ctx))
+      (prompt-nav-controls dispatch! prompt-nav nav-ctx scrolled-up?))
     [:button {:class ["quick-cmd"]
               :on {:click (fn [_] (dispatch! {:type :palette/open-projects}))}}
      (icon/icon {:icon-name :folder :size :sm})
@@ -729,7 +741,7 @@
         (icon/icon {:icon-name :x :size :sm})]])
     queued)])
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? recents queue-open? prompt-nav nav-ctx]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? recents queue-open? prompt-nav nav-ctx scrolled-up?]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
@@ -746,7 +758,7 @@
      (compose-image-strip dispatch! images)
      [:div {:class ["compose-frame"]}
       (when show-quick?
-        (quick-command-bar dispatch! room-id recents prompt-nav nav-ctx))
+        (quick-command-bar dispatch! room-id recents prompt-nav nav-ctx scrolled-up?))
       (when cmd-open?
         (command-suggestions dispatch! room-id draft-key cmd-matches
                              (min (or cmd-selected 0) (dec (count cmd-matches)))))
@@ -1631,6 +1643,29 @@
        (icon/icon {:icon-name :trash :size :sm})
        [:span "Delete"]]]]))
 
+(defn- code-copy-menu
+  "Floating single-action Copy button shown when a rendered code block (`pre`)
+   or inline `code` is tapped. Mirrors bubble-menu's positioning/backdrop; the
+   tap is detected by a delegated listener in xi.web.core. Uses the iOS
+   long-press fallback when the async Clipboard API is unavailable."
+  [dispatch! {:keys [text x y]}]
+  (let [close! (fn [] (dispatch! {:type :code/menu-close}))]
+    [:div {:class ["bubble-menu-backdrop"]
+           :on {:click (fn [_] (close!))}}
+     [:div {:class ["bubble-menu"]
+            :style {:top (str y "px") :left (str x "px")}
+            :replicant/on-mount clamp-bubble-menu!
+            :on {:click (fn [e] (.stopPropagation e))}}
+      [:button {:class ["bubble-menu-item"]
+                :on {:click (fn [e]
+                              (.stopPropagation e)
+                              (close!)
+                              (if ios?
+                                (dispatch! {:type :copy/open :text text})
+                                (copy-to-clipboard! text)))}}
+       (icon/icon {:icon-name :copy :size :sm})
+       [:span "Copy"]]]]))
+
 (defn- chat-view [state dispatch!]
   (let [active  (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -1760,6 +1795,8 @@
         (copy-dialog-overlay dispatch! (:web/copy-text state))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))
+        (when-let [menu (:web/code-menu state)]
+          (code-copy-menu dispatch! menu))
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         (compose-box dispatch! room busy? (:web/compose-images state)
@@ -1769,7 +1806,8 @@
                      (:web/recent-commands state)
                      (:web/queue-popover? state)
                      (:web/prompt-nav state)
-                     nav-ctx)))]))
+                     nav-ctx
+                     (:web/scrolled-up? state))))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
