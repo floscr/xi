@@ -24,6 +24,8 @@ Do not create files unless necessary. Prefer editing existing files over creatin
 Be careful not to introduce security vulnerabilities.
 Don't add features, refactor code, or make improvements beyond what was asked.
 
+Python is not available in this environment. Do not write or run Python scripts.
+
 When committing changes:
 - ALWAYS use the git_commit tool — never run git commit directly
 - Before committing, present a short summary of the changes (what and why) so the user can review before approving")
