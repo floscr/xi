@@ -100,18 +100,32 @@
    Targets: \"new\" | \"latest\" | room-id | {:session-id sid} (resume a
    saved session into a fresh room)."
   [st {:keys [client-id target cwd cached-msg-hash] :as ev}]
-  (let [target (or target "latest")]
-    (if (map? target)
-      ;; Map target {:session-id sid} — check for a live room first (e.g.
-      ;; mobile reconnects) before creating a new one.
-      (if-let [existing (room-for-session st (:session-id target))]
-        {:effects [[:app/dispatch {:type :room/attach
-                                   :client-id client-id
-                                   :room-id existing}]]}
-        {:effects [[:room/setup {:client-id       client-id
-                                 :room-id         (gen-room-id ev)
-                                 :session-id      (:session-id target)
-                                 :cached-msg-hash cached-msg-hash}]]})
+  (let [target     (or target "latest")
+        ;; A session-id may ride on the event (web navigation always carries
+        ;; it) or inside a {:session-id …} target (mobile reconnect).
+        session-id (or (:session-id ev)
+                       (when (map? target) (:session-id target)))
+        ;; Always prefer a live room hosting this session over resuming a
+        ;; fresh copy from disk. Critical while the agent is mid-turn: the
+        ;; disk snapshot lags the running room, so resuming it would show an
+        ;; older state (and split new prompts into a second room). A
+        ;; stale/renamed room-id in the client's lobby must never cause a disk
+        ;; resume when a live room for the session still exists.
+        live       (when session-id (room-for-session st session-id))]
+    (cond
+      live
+      {:effects [[:app/dispatch {:type :room/attach
+                                 :client-id client-id
+                                 :room-id live}]]}
+
+      (map? target)
+      ;; Map target {:session-id sid} with no live room — resume from disk.
+      {:effects [[:room/setup {:client-id       client-id
+                               :room-id         (gen-room-id ev)
+                               :session-id      (:session-id target)
+                               :cached-msg-hash cached-msg-hash}]]}
+
+      :else
       (let [existing (cond
                        (= "new" target)    nil
                        (= "latest" target) (latest-room-id st)

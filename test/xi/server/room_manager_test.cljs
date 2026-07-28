@@ -69,7 +69,19 @@
                                     {:type :room/join :client-id "c1"
                                      :target {:session-id "no-such-session"}
                                      :event/ts 999 :event/id 1})]
-      (is (= :room/setup (ffirst effects))))))
+      (is (= :room/setup (ffirst effects)))))
+  (testing "stale string room-id + live room for session-id attaches to the live room"
+    ;; The client's lobby cached a room-id that no longer exists, but a live
+    ;; room still hosts the session (agent mid-turn). We must attach to the
+    ;; live room, never resume a lagging disk copy into a second room.
+    (let [st (assoc-in (server-state-with-room)
+                       [:rooms "r1" :session] {:id "sess-abc" :cwd "/x"})
+          {:keys [effects]} (handle st {:type :room/join :client-id "c1"
+                                        :target "stale-room-id"
+                                        :session-id "sess-abc"
+                                        :event/ts 999 :event/id 1})]
+      (is (= [[:app/dispatch {:type :room/attach :client-id "c1" :room-id "r1"}]]
+             effects)))))
 
 ;; ── :room/attach ─────────────────────────────────────────────────────────────
 
