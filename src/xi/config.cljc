@@ -15,7 +15,8 @@
    runtime via SCI."
   (:require
    #?@(:node
-       [[xi.ext.browser-open :as browser-open]
+       [[xi.ext.amazon :as amazon]
+        [xi.ext.browser-open :as browser-open]
         [xi.ext.chrome :as chrome]
         [xi.ext.clipboard-image :as clipboard-image]
         [xi.ext.clj-surgeon :as clj-surgeon]
@@ -85,6 +86,7 @@
       session-search/extension
       web/extension
       perplexity/extension
+      amazon/extension
       commit/extension
       review/extension
       browser-open/extension
