@@ -275,8 +275,18 @@
 
    :image/process
    (fn [{:keys [dispatch!]} {:keys [room-id text images]}]
-     (dispatch! {:type :prompt/submit :room-id room-id :text text
-                 :images (image/process-images images)}))
+     ;; Resize for the API, then persist each image to disk so the agent's
+     ;; file tools and any spawned subagents can reach it by path (they only
+     ;; see the inline base64 blocks otherwise). The path rides on each image
+     ;; map (:path) and is surfaced to the provider prompt at turn time — the
+     ;; visible user bubble keeps the plain text.
+     (let [processed (->> (image/process-images images)
+                          (mapv (fn [img]
+                                  (if-let [p (image/persist-image! img)]
+                                    (assoc img :path p)
+                                    img))))]
+       (dispatch! {:type :prompt/submit :room-id room-id :text text
+                   :images processed})))
 
    :models/fetch
    (fn [{:keys [dispatch!]} {:keys [room-id]}]

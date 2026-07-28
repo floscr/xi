@@ -82,6 +82,17 @@
            (str/join "\n\n" msgs)
            "\n</conversation_history>"))))
 
+(defn- prompt-with-image-paths
+  "Append the on-disk paths of attached images to the provider prompt so the
+   agent's file tools and subagents can reach them. Kept out of the history
+   entry text so the user's message bubble stays clean."
+  [prompt images]
+  (let [paths (keep :path images)]
+    (if (seq paths)
+      (str/join "\n" (concat (some-> prompt str/trim not-empty vector)
+                             (map #(str "[Attached image: " % "]") paths)))
+      prompt)))
+
 (defn- build-turn-effect
   "Build the :provider/start-turn effect payload. When :resume-id is nil and
    :context-history is supplied, the prior conversation is rendered into the
@@ -97,7 +108,7 @@
                   (:system agent))]
     [:provider/start-turn
      (cond-> {:room-id  (:id room)
-              :prompt   prompt
+              :prompt   (prompt-with-image-paths prompt images)
               :model    (:model agent)
               :provider (:provider agent)
               :cwd      (:cwd room)

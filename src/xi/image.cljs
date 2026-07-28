@@ -100,3 +100,26 @@
   [images]
   (when (seq images)
     (mapv ensure-within-limits images)))
+
+(defn- uploads-dir []
+  (.join path (.homedir os) ".config" "xi" "uploads"))
+
+(defn persist-image!
+  "Write an image map {:data base64 :media-type mime} to
+   ~/.config/xi/uploads/<sha256>.<ext>, deduped by content hash. Returns the
+   absolute file path so the agent's file tools and subagents can reach the
+   image on disk, or nil on failure."
+  [{:keys [data media-type]}]
+  (try
+    (let [buf  (js/Buffer.from data "base64")
+          sha  (-> (.createHash crypto "sha256")
+                   (.update buf)
+                   (.digest "hex"))
+          ext  (ext-for-mime media-type)
+          dir  (uploads-dir)
+          file (.join path dir (str sha "." ext))]
+      (.mkdirSync fs dir #js {:recursive true})
+      (when-not (.existsSync fs file)
+        (fs/writeFileSync file buf))
+      file)
+    (catch :default _e nil)))
