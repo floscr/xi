@@ -921,9 +921,12 @@ body {
 }
 
 /* The prompt-nav control is now a segment of the group: drop its own chrome so
-   it merges seamlessly (its inner up/count/down dividers still render). */
+   it merges seamlessly (its inner up/count/down dividers still render). The
+   pill radius must go too — otherwise the leading up button rounds its corner
+   against the flat segmented bar instead of reading as a square segment. */
 .quick-cmd-group > .prompt-nav-group {
   border: none;
+  border-radius: 0;
   background: transparent;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -1020,11 +1023,26 @@ body {
 }
 
 /* The frame wraps the quick-command bar and the input row. On narrow screens it
-   is a transparent pass-through column so the composer stays edge-to-edge; on
-   larger displays it becomes a single rounded card (see the media query). */
+   is an edge-to-edge column; on larger displays it becomes a single rounded
+   card (see the media query). */
 .compose-frame {
   display: flex;
   flex-direction: column;
+}
+
+/* On phones the composer is a SOLID bar docked to the bottom rather than a
+   floating translucent panel. The timeline overlaps the composer's top and
+   fades its content out under it (see the mask on .topbar--chat + .timeline);
+   with a transparent composer that faded content shone through the bar and the
+   gaps between the image strip / command bar / input row, and any image caught
+   in the timeline's bottom fade zone read as a broken "half gradient." An
+   opaque page-colored fill covers all of that: content simply disappears
+   behind the bar like in any native chat app. Scoped below the desktop card
+   breakpoint so the ≥769px rounded card (with its own surface) is unaffected. */
+@media (max-width: 768px) {
+  .compose-box {
+    background: var(--bg-0);
+  }
 }
 
 @media (min-width: 769px) {
@@ -1032,6 +1050,18 @@ body {
     border: var(--border-0);
     border-radius: var(--radius-lg);
     overflow: hidden;
+    /* The card is the frosted surface now that its buttons are flattened (see
+       the .quick-cmd-group override below). It carries a NEAR-OPAQUE surface
+       fill plus a backdrop blur for a little frost. The fill is deliberately
+       opaque rather than a light 55% tint: iOS Safari renders backdrop-filter
+       with seams at child-row boundaries when the filtered element also does
+       overflow:hidden + border-radius, which let the conversation shine
+       through the band between the command bar and the input row. A normal
+       background paints uniformly and is immune to that bug, so an opaque fill
+       hides the content everywhere while the blur still softens the edges. */
+    background: color-mix(in srgb, var(--bg-1) 92%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
     /* Docked flush against the viewport bottom: drop the bottom border and
        bottom corners so the card merges with the edge. Restored when the
        composer floats up on tall screens (see the min-height query below). */
