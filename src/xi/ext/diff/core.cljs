@@ -45,13 +45,15 @@
             difft/*diff-width*  (when (= engine :difft) cols)]
     (let [room (state/get-room state room-id)
           cwd (or (:cwd room) (.cwd js/process))
-          open! (fn [title text]
+          open! (fn [title text & [extra]]
                   (if (str/blank? text)
                     (dispatch! {:type :ui/status :room-id room-id :text "No changes."})
                     ;; :client-id rides along so the server delivers the diff
                     ;; only to the client that ran /diff (originator-only).
-                    (dispatch! {:type :ui/diff-open :room-id room-id :client-id client-id
-                                :title title :text text :engine difft/*diff-engine*})))
+                    ;; `extra` carries commit metadata for single-commit diffs.
+                    (dispatch! (merge {:type :ui/diff-open :room-id room-id :client-id client-id
+                                       :title title :text text :engine difft/*diff-engine*}
+                                      extra))))
           run! (fn [title git-args]
                  (let [{:keys [ok err]} (git/git-diff-out cwd git-args)]
                    (if err
@@ -94,9 +96,11 @@
         ;; web "session commits" bar to open one commit's changes.
         (cond
           (and args (str/starts-with? args "commit:"))
-          (let [sha (subs args (count "commit:"))]
-            (open! (str "Commit " (subs sha 0 (min 8 (count sha))))
-                   (git/commit-show-text cwd sha)))
+          (let [sha  (subs args (count "commit:"))
+                info (git/commit-info cwd sha)]
+            (open! (str "Commit " (or (:short info) (subs sha 0 (min 8 (count sha)))))
+                   (git/commit-show-text cwd sha)
+                   (when info {:commit info})))
 
           ;; A single token that resolves to a branch/commit → diff against it
           ;; (PR-style, vs the merge-base).

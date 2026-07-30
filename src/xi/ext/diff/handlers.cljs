@@ -10,11 +10,14 @@
    switch to it. :engine records the renderer; only :git diffs are unified and
    get :diff? true (the interactive viewer). :difft output is ANSI structural
    text shown as a plain buffer."
-  [st {:keys [room-id title text engine]}]
+  [st {:keys [room-id title text engine commit]}]
   (when (state/get-room st room-id)
     (let [engine (or engine :git)]
       {:state (-> st
                   (assoc-in [:rooms room-id :ui :buffers :diff]
                             {:title title :text text :engine engine
-                             :diff? (= engine :git)})
+                             :diff? (= engine :git)
+                             ;; commit metadata for single-commit diffs; nil
+                             ;; for every other source.
+                             :commit commit})
                   (assoc-in [:rooms room-id :ui :active-buffer] :diff))})))

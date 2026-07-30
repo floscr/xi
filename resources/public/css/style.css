@@ -2608,6 +2608,43 @@ body {
   background: var(--bg-1);
 }
 
+/* Single-commit diff header: message + metadata above the commit's diff body. */
+.diff-commit-info {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  padding: var(--size-3) var(--size-4);
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+
+.diff-commit-subject {
+  font-weight: 600;
+  color: var(--fg-0);
+}
+
+.diff-commit-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+.diff-commit-sha {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  color: var(--fg-1);
+}
+
+.diff-commit-body {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: var(--font-sm);
+  color: var(--fg-1);
+}
+
 /* Recent-sessions drawer: 80% of the viewport, capped at 560px */
 .sidebar-layout--floating > .sidebar {
   width: min(80%, 560px);

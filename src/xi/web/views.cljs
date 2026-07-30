@@ -1280,18 +1280,34 @@
 (defn- diff-method-bar
   "Selects above the diff to switch the source and the renderer. Each fires
    :diff/reopen, which re-runs /diff on the server (measuring the difftastic
-   column width from the browser viewport first, so it fills the page)."
-  [dispatch! room-id title engine]
-  (let [method (diff-method-for-title title)
-        engine (or engine :git)]
+   column width from the browser viewport first, so it fills the page).
+
+   A session can hold arbitrarily many commits, so single-commit diffs are not
+   enumerated in the source list. Instead the commit currently in view appears
+   as a dynamic option, and a trailing \"Pick a commit…\" entry opens the
+   commits command bar to choose another. The engine toggle reuses the active
+   method, so flipping git/difftastic keeps the same commit in view."
+  [dispatch! room-id diff-buffer engine]
+  (let [commit  (:commit diff-buffer)
+        engine  (or engine :git)
+        method  (if commit
+                  (str "commit:" (:sha commit))
+                  (diff-method-for-title (:title diff-buffer)))
+        options (cond-> diff-methods
+                  commit  (conj {:value (str "commit:" (:sha commit))
+                                 :label (str "Commit " (:short commit))})
+                  :always (conj {:value "__pick-commit__" :label "Pick a commit…"}))]
     [:div {:class ["diff-method-bar"]}
      (form/form-select
-      {:options   diff-methods
+      {:options   options
        :value     method
        :attrs     {:value method :replicant/on-render (select-value-hook method)}
        :on-change (fn [^js e]
-                    (dispatch! {:type :diff/reopen :room-id room-id
-                                :method (.. e -target -value) :engine engine}))})
+                    (let [v (.. e -target -value)]
+                      (if (= v "__pick-commit__")
+                        (dispatch! {:type :palette/open-commits})
+                        (dispatch! {:type :diff/reopen :room-id room-id
+                                    :method v :engine engine}))))})
      (form/form-select
       {:options   diff-engines
        :value     (name engine)
@@ -1299,6 +1315,23 @@
        :on-change (fn [^js e]
                     (dispatch! {:type :diff/reopen :room-id room-id
                                 :method method :engine (keyword (.. e -target -value))}))})]))
+
+(defn- commit-info-header
+  "Message + metadata for a single-commit diff, shown above the diff body. The
+   raw `git show` preamble is stripped by the unified-diff parser, so this
+   renders the subject, short sha, author, date and optional body from the
+   structured commit metadata carried on the buffer."
+  [{:keys [short subject body author date rel-time]}]
+  [:div {:class ["diff-commit-info"]}
+   [:div {:class ["diff-commit-subject"]} subject]
+   [:div {:class ["diff-commit-meta"]}
+    (->> [[:span {:class ["diff-commit-sha"]} short]
+          (when author author)
+          (or date rel-time)]
+         (remove nil?)
+         (interpose " · "))]
+   (when body
+     [:pre {:class ["diff-commit-body"]} body])])
 
 (defn- ansi-sgr-state
   "Fold one SGR escape's `;`-separated codes into the running style state.
@@ -1352,7 +1385,9 @@
   [dispatch! room-id diff-buffer sel modify?]
   (let [engine (or (:engine diff-buffer) :git)]
     [:div {:class ["diff-tab"]}
-     (diff-method-bar dispatch! room-id (:title diff-buffer) engine)
+     (diff-method-bar dispatch! room-id diff-buffer engine)
+     (when-let [c (:commit diff-buffer)]
+       (commit-info-header c))
      (if (= engine :difft)
        (into [:pre {:class ["diff-difft"]}] (difft-spans (:text diff-buffer)))
        (let [rows  (diff/diff-rows (diff/parse-diff-text (:text diff-buffer)))

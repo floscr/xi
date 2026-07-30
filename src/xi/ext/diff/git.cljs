@@ -118,6 +118,22 @@
   [cwd sha]
   (some-> (:ok (git-diff-out cwd ["show" sha])) str/trim not-empty))
 
+(defn commit-info
+  "Structured metadata for one commit — {:sha :short :author :date :rel-time
+   :subject :body}. Feeds the diff viewer's commit header (message + info) since
+   the raw `git show` preamble is discarded by the unified-diff parser. nil when
+   the sha doesn't resolve. :body is nil when the commit has no body."
+  [cwd sha]
+  (some-> (:ok (git-out cwd ["show" "-s" "--date=format:%Y-%m-%d %H:%M"
+                            "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%cr%x1f%s%x1f%b"
+                            sha]))
+          str/trim not-empty
+          (as-> s
+              (let [[full short author date rel-time subject body] (str/split s #"\x1f")]
+                {:sha full :short short :author author :date date
+                 :rel-time rel-time :subject subject
+                 :body (some-> body str/trim not-empty)}))))
+
 (defn git-ref?
   "True when ref resolves to a commit in cwd."
   [cwd ref]
