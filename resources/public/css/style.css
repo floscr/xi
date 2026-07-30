@@ -1886,7 +1886,6 @@ body {
   max-width: 85%;
   background: var(--bg-1);
   border: var(--border-0);
-  border-left: 3px solid var(--accent);
   border-radius: var(--radius-lg);
   padding: var(--size-3) var(--size-4);
   display: flex;
@@ -1910,7 +1909,6 @@ body {
 
 .dialog-bubble--resolved {
   opacity: 0.85;
-  border-left-color: var(--border-color, rgba(128, 128, 128, 0.4));
 }
 
 .dialog-decision {
