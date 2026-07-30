@@ -829,14 +829,16 @@ body {
 }
 
 /* ---- Quick command bar ---- */
-/* The bottom quick-command bar is a top-padded wrapper (flush to the sides and
-   the input row below); its buttons are joined into a single frosted segmented
-   group that matches the floating chat-header chips. */
+/* The bottom quick-command bar is flush to the sides and the input row below;
+   its buttons are joined into a single frosted segmented group that matches the
+   floating chat-header chips. The buttons carry their own vertical padding, so
+   the wrapper adds none — keeping the action items visually centered between
+   the frame's top border and the input-row divider. */
 .quick-commands {
   position: relative;
   display: flex;
   overflow-x: auto;
-  padding: var(--size-1) var(--size-3) 0;
+  padding: 0 var(--size-3);
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
