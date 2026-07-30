@@ -96,6 +96,28 @@
   (when base
     (some-> (:ok (git-diff-out cwd ["diff" base "HEAD"])) str/trim not-empty)))
 
+(defn session-commits-list
+  "Metadata for every commit made during the session (base..HEAD), newest
+   first — official git_commit-tool commits and plain shell `git commit`s
+   alike, since both are ordinary commits in the range. Each entry:
+   {:sha :short :subject :rel-time}. Empty when there is no base or no commits."
+  [cwd base]
+  (when base
+    (some->> (:ok (git-out cwd ["log" "--format=%H%x1f%h%x1f%s%x1f%cr"
+                                (str base "..HEAD")]))
+             str/split-lines
+             (remove str/blank?)
+             (mapv (fn [line]
+                     (let [[sha short subject rel-time] (str/split line #"\x1f")]
+                       {:sha sha :short short :subject subject :rel-time rel-time}))))))
+
+(defn commit-show-text
+  "Unified diff for a single commit (git show). Honors *diff-engine*. The
+   commit-message preamble git prepends is ignored by the diff parser (it only
+   reads from the first `diff --git`), so this feeds the diff viewer directly."
+  [cwd sha]
+  (some-> (:ok (git-diff-out cwd ["show" sha])) str/trim not-empty))
+
 (defn git-ref?
   "True when ref resolves to a commit in cwd."
   [cwd ref]

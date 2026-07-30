@@ -515,9 +515,14 @@
 
 (def ^:private web-commands
   "Commands shown in the web suggestion popup and palette Commands section —
-   the shared curated list (see xi.palette/palette-commands), so the web and
-   TUI palettes stay identical."
-  palette/palette-commands)
+   the shared curated list (see xi.palette/palette-commands) plus a few
+   web-only entries. `/commits` opens the session-commits bar (a client-side
+   palette sub-page, not a server command), so it lives here rather than in
+   the shared list the TUI reads."
+  (conj (vec palette/palette-commands)
+        {:name "commits"
+         :description "List commits made this session"
+         :while-busy? true}))
 
 (def ^:private web-command-names
   (into #{} (map :name) web-commands))
@@ -572,8 +577,12 @@
   [dispatch! room-id slash]
   (let [{:keys [name args]}
         (commands/parse-input (if (str/starts-with? slash "/") slash (str "/" slash)))]
-    (dispatch! (cond-> {:type :command/run :room-id room-id :name name}
-                 args (assoc :args args)))))
+    (if (= name "commits")
+      ;; Web-only: open the session-commits palette bar instead of running a
+      ;; (non-existent) server command.
+      (dispatch! {:type :palette/open-commits})
+      (dispatch! (cond-> {:type :command/run :room-id room-id :name name}
+                   args (assoc :args args))))))
 
 (defn- command-suggestions
   "Popup list of matching slash commands above the compose box."
@@ -2580,6 +2589,28 @@
          (apply cmd/command-group {:heading "Snippets"}
            (map #(snippet-command-item dispatch! dkey %) global)))])))
 
+(defn- palette-commits-page
+  "Commits made during this session (git base..HEAD) as a palette sub-page —
+   official git_commit-tool commits and plain shell `git commit`s alike, since
+   both are ordinary commits in the range. Spinner while :web/commit-list
+   loads; selecting a commit opens its diff in the room's diff viewer."
+  [state dispatch!]
+  (let [room    (state/active-room state)
+        commits (:web/commit-list state)]
+    (cond
+      (nil? commits)   [:div {:class ["command-loading"]} (spinner)]
+      (empty? commits) [:div {:class ["command-empty"]} "No commits this session"]
+      :else
+      (apply cmd/command-group {:heading "Session commits"}
+        (for [{:keys [sha short subject rel-time]} commits]
+          (cmd/command-item
+           {:icon :code
+            :value (str short " " subject)
+            :description (str short " · " rel-time)
+            :on-click (fn [_] (dispatch! {:type :commits/open-diff
+                                          :sha sha :room-id (:id room)}))}
+           subject))))))
+
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
@@ -2658,6 +2689,7 @@
        (case (:kind palette-page)
          :model          (palette-model-page state dispatch!)
          :skill          (palette-skill-page state dispatch!)
+         :commits        (palette-commits-page state dispatch!)
          :project-insert (palette-project-insert-page state dispatch!)
          :snippets       (palette-snippets-page state dispatch!)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}

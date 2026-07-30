@@ -201,6 +201,13 @@
   [_st {:keys [client-id cwd]}]
   {:effects [[:diff/web-load-reply {:client-id client-id :cwd cwd}]]})
 
+(defn- commits-web-load
+  "Roomless: list the commits made during a session (base..HEAD) for the web
+   commit bar. The cwd + the session's created timestamp travel from the
+   client's mirrored room, since the request carries no room-id."
+  [_st {:keys [client-id cwd created]}]
+  {:effects [[:commits/web-load-reply {:client-id client-id :cwd cwd :created created}]]})
+
 (defn- favorites-toggle
   "Roomless: star/unstar a session by id. The write + lobby rebroadcast happen
    in the :favorites/toggle-reply effect (needs disk access)."
@@ -259,6 +266,7 @@
    :models/web-list        models-web-list
    :session/content-search session-content-search
    :diff/web-load          diff-web-load
+   :commits/web-load       commits-web-load
    :favorites/toggle       favorites-toggle
    :session/mark-read      session-mark-read
    :rooms/prune            rooms-prune})

@@ -724,6 +724,33 @@
                                                (dissoc :web/skill-list))
                                     :effects [[:ws/send {:type :skill/web-list}]
                                               [:palette/reopen nil]]})
+          ;; Session commits: list the commits made this session in a palette
+          ;; sub-page. cwd + the session's created timestamp come from the
+          ;; mirrored room; the server computes base..HEAD and replies.
+          :palette/open-commits  (fn [st _]
+                                   (let [room    (state/active-room st)
+                                         cwd     (:cwd room)
+                                         created (or (get-in room [:session :created])
+                                                     (when-let [ms (:created room)]
+                                                       (.toISOString (js/Date. ms))))]
+                                     {:state (-> st
+                                                 (assoc :web/palette-page {:kind :commits}
+                                                        :web/palette-open? true
+                                                        :web/palette-drilling? true)
+                                                 (dissoc :web/commit-list))
+                                      :effects [[:ws/send {:type :commits/web-load
+                                                           :cwd cwd :created created}]
+                                                [:palette/reopen nil]]}))
+          :commits/web-load-result (fn [st {:keys [commits]}]
+                                     {:state (assoc st :web/commit-list commits)})
+          ;; Selecting a commit opens its diff in the room's diff viewer via
+          ;; /diff commit:<sha> (originator-only, so only this client flips).
+          :commits/open-diff     (fn [st {:keys [sha room-id]}]
+                                   {:state (dissoc st :web/palette-page :web/palette-open?)
+                                    :effects [[:palette/close nil]
+                                              [:ws/send {:type :input/submit
+                                                         :room-id room-id
+                                                         :text (str "/diff commit:" sha)}]]})
           :palette/open-projects (fn [st _]
                                    {:state (assoc st :web/palette-page {:kind :project-insert}
                                                      :web/palette-open? true

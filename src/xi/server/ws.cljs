@@ -66,7 +66,8 @@
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
   #{:client/update :session/counts :models/web-list :session/content-search
-    :diff/web-load :favorites/toggle :session/mark-read :rooms/prune})
+    :diff/web-load :commits/web-load :favorites/toggle :session/mark-read
+    :rooms/prune})
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -351,6 +352,13 @@
         (send! client-id (wire/encode {:type :diff/web-load-result
                                        :cwd  cwd
                                        :text (diff-git/all-git-changes-text cwd)})))
+
+      ;; Commits made during a session (base..HEAD) for the web commit bar.
+      :commits/web-load-reply
+      (fn [_ {:keys [client-id cwd created]}]
+        (let [base (diff-git/session-base-commit cwd created)]
+          (send! client-id (wire/encode {:type    :commits/web-load-result
+                                         :commits (or (diff-git/session-commits-list cwd base) [])}))))
 
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally

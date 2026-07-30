@@ -90,15 +90,26 @@
                         :text "No files edited this session."})
             (open! "Session Edits" (git/session-diff-text cwd base files))))
 
-        ;; A single token that resolves to a branch/commit → diff against it
-        ;; (PR-style, vs the merge-base). Anything else is passed straight to
-        ;; git diff (e.g. "HEAD~3", "--stat", "A..B").
-        (if (and args (not (re-find #"\s" args)) (git/git-ref? cwd args))
+        ;; commit:<sha> → the diff of that single commit (git show). Used by the
+        ;; web "session commits" bar to open one commit's changes.
+        (cond
+          (and args (str/starts-with? args "commit:"))
+          (let [sha (subs args (count "commit:"))]
+            (open! (str "Commit " (subs sha 0 (min 8 (count sha))))
+                   (git/commit-show-text cwd sha)))
+
+          ;; A single token that resolves to a branch/commit → diff against it
+          ;; (PR-style, vs the merge-base).
+          (and args (not (re-find #"\s" args)) (git/git-ref? cwd args))
           (let [{:keys [ok err]} (git/diff-against-ref cwd args)]
             (if err
               (dispatch! {:type :ui/status :room-id room-id
                           :text (str "git diff failed: " err)})
               (open! (str "Diff: " args) ok)))
+
+          ;; Anything else is passed straight to git diff (e.g. "HEAD~3",
+          ;; "--stat", "A..B").
+          :else
           (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+"))))))))
 
 ;; ── Extension ─────────────────────────────────────────────────────────────────
