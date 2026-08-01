@@ -611,6 +611,7 @@
                                                           :key key :query query :cwd cwd}]]})
           :session/content-search-result content-search-result
           :sidebar/toggle        (fn [st _] {:state (update st :web/sidebar-open? not)})
+          :sidebar/open          (fn [st _] {:state (assoc st :web/sidebar-open? true)})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
@@ -1408,6 +1409,37 @@
                                      (on-resume))))
         (.addEventListener js/window "pageshow" (fn [_] (on-resume)))))
     (attach-code-copy-listener!)
+    ;; Edge-swipe to open the sidebar: a horizontal drag starting near the
+    ;; left screen edge opens the drawer; dragging left again closes it. Gated
+    ;; on a near-edge start and horizontal dominance so it doesn't fight
+    ;; vertical scrolling or in-content horizontal scroll.
+    (let [edge-px   24
+          thresh-px 60
+          start     (atom nil)]
+      (.addEventListener
+       js/document "touchstart"
+       (fn [e]
+         (let [t (aget (.-touches e) 0)]
+           (reset! start (when t {:x (.-clientX t) :y (.-clientY t)}))))
+       #js {:passive true})
+      (.addEventListener
+       js/document "touchend"
+       (fn [e]
+         (when-let [{:keys [x y]} @start]
+           (reset! start nil)
+           (let [t   (aget (.-changedTouches e) 0)]
+             (when t
+               (let [dx (- (.-clientX t) x)
+                     dy (- (.-clientY t) y)]
+                 (when (> (js/Math.abs dx) (js/Math.abs dy))
+                   (cond
+                     (and (not (:web/sidebar-open? @state))
+                          (<= x edge-px) (>= dx thresh-px))
+                     (dispatch! {:type :sidebar/open})
+
+                     (and (:web/sidebar-open? @state) (<= dx (- thresh-px)))
+                     (dispatch! {:type :sidebar/close}))))))))
+       #js {:passive true}))
     ;; Prevent iOS Safari smart-zoom (double-tap & pinch)
     (.addEventListener js/document "gesturestart" (fn [e] (.preventDefault e)))
     (.addEventListener js/document "gesturechange" (fn [e] (.preventDefault e)))
