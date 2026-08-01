@@ -135,9 +135,15 @@
                          (:history room))})))
 
 (defn- begin-turn [st room prompt]
+  ;; A live turn diverges the room's history from its resumed on-disk snapshot,
+  ;; so the cached :msg-hash/:msg-count (set at resume time) no longer describe
+  ;; the current history. Clear them so the web cache doesn't pair grown history
+  ;; with a stale hash — which would make the incremental-resume prefix check
+  ;; double-append the tail. The next resume event re-establishes them.
   {:state   (-> st
                 (update-in [:rooms (:id room) :history] conj
                            {:kind :user :text (:text prompt) :images (:images prompt)})
+                (update-in [:rooms (:id room)] dissoc :msg-hash :msg-count)
                 (assoc-in [:rooms (:id room) :agent :busy?] true))
    :effects [(start-turn-effect room prompt)]})
 

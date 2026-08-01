@@ -469,14 +469,34 @@
           ;; into the room mirror so the chat flips from the "Updating…" hint
           ;; to authoritative with no transfer.
           :session/current
-          (fn [st {:keys [room-id session-id msg-hash]}]
+          (fn [st {:keys [room-id session-id msg-hash msg-count]}]
             (let [cached (get-in st [:web/cache session-id])]
               (when (seq (:history cached))
                 {:state (cond-> (-> st
                                     (assoc-in [:rooms room-id :history] (:history cached))
-                                    (assoc-in [:rooms room-id :msg-hash] msg-hash))
+                                    (assoc-in [:rooms room-id :msg-hash] msg-hash)
+                                    (assoc-in [:rooms room-id :msg-count] msg-count))
                           (:model cached)
                           (assoc-in [:rooms room-id :agent :model] (:model cached)))})))
+          ;; Incremental resume: the server confirmed our cache is a clean
+          ;; PREFIX of the on-disk session and sent only the new tail messages.
+          ;; Append their rendered history onto our cached base instead of
+          ;; re-downloading the whole transcript. Guarded on :base-hash so a
+          ;; client whose cache doesn't match the prefix ignores the tail (it
+          ;; will have gotten a full :session/resumed instead).
+          :session/resumed-tail
+          (fn [st {:keys [room-id session-id base-hash messages msg-hash msg-count]}]
+            (let [cached (get-in st [:web/cache session-id])]
+              (when (and (seq (:history cached))
+                         (= base-hash (:msg-hash cached)))
+                (let [history (into (vec (:history cached))
+                                    (commands/messages->history messages))]
+                  {:state (cond-> (-> st
+                                      (assoc-in [:rooms room-id :history] history)
+                                      (assoc-in [:rooms room-id :msg-hash] msg-hash)
+                                      (assoc-in [:rooms room-id :msg-count] msg-count))
+                            (:model cached)
+                            (assoc-in [:rooms room-id :agent :model] (:model cached)))}))))
           :connection/status     connection-status
           ;; ─ Client auth (transport-level handshake, xi.server.ws) ─
           :auth/pending          (fn [st {:keys [code]}]
@@ -913,15 +933,18 @@
    (fn [{:keys [dispatch!]} {:keys [session-id]}]
      (when-let [room (cache/load-room session-id)]
        (dispatch! {:type :web/cache-seed :session-id session-id :room room})))
-   ;; Dispatch a :room/join carrying our cached message-hash (if any) so the
-   ;; server can skip re-sending an unchanged session's history over the wire
-   ;; and answer :session/current instead. Reads localStorage, hence an effect.
+   ;; Dispatch a :room/join carrying our cached message-hash + count (if any)
+   ;; so the server can skip re-sending an unchanged session's history over the
+   ;; wire (answers :session/current), or ship only the new tail when our cache
+   ;; is a clean prefix (answers :session/resumed-tail). Reads localStorage,
+   ;; hence an effect.
    :room/join-with-cache
    (fn [{:keys [dispatch!]} {:keys [target session-id]}]
-     (let [msg-hash (:msg-hash (cache/load-room session-id))]
+     (let [{:keys [msg-hash msg-count]} (cache/load-room session-id)]
        (dispatch! (cond-> {:type :room/join :target target}
                     session-id (assoc :session-id session-id)
-                    msg-hash   (assoc :cached-msg-hash msg-hash)))))
+                    msg-hash   (assoc :cached-msg-hash msg-hash)
+                    msg-count  (assoc :cached-msg-count msg-count)))))
    :theme/apply  (fn [_ mode]
                    (let [el js/document.documentElement]
                      ;; Suppress transitions during switch

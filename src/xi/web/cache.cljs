@@ -8,7 +8,7 @@
 
    Keys:
      xi/lobby            last {:rooms :sessions} for an instant home paint
-     xi/room/<sid>       last {:history :model :msg-hash} per session for chat paint
+     xi/room/<sid>       last {:history :model :msg-hash :msg-count} per session for chat paint
      xi/room-lru         [sid …] most-recent-first, caps the room snapshots
      xi/watched          {session-id response-count-when-last-seen}"
   (:require [clojure.string :as str]
@@ -109,9 +109,9 @@
   "Cache a room's renderable slice (history + model) under its session id, then
    prune to the most-recently-saved rooms so the store can't overflow. On a
    quota failure, drop every other cached room and retry with just this one."
-  [session-id {:keys [history model msg-hash]}]
+  [session-id {:keys [history model msg-hash msg-count]}]
   (when (and session-id (seq history))
-    (let [payload {:history history :model model :msg-hash msg-hash}
+    (let [payload {:history history :model model :msg-hash msg-hash :msg-count msg-count}
           lru     (->> (load-room-lru)
                        (remove #(= % session-id))
                        (cons session-id)
@@ -127,7 +127,7 @@
               (store-set! room-lru-key [session-id])))))))
 
 (defn load-room
-  "Cached {:history :model :msg-hash} for a session, or nil."
+  "Cached {:history :model :msg-hash :msg-count} for a session, or nil."
   [session-id]
   (when session-id (store-get (room-key session-id))))
 
@@ -191,6 +191,7 @@
     (when-let [lobby (:lobby state)] (save-lobby! lobby))
     (when-let [room (state/active-room state)]
       (when-let [sid (get-in room [:session :id])]
-        (save-room! sid {:history  (:history room)
-                         :model    (get-in room [:agent :model])
-                         :msg-hash (:msg-hash room)})))))
+        (save-room! sid {:history   (:history room)
+                         :model     (get-in room [:agent :model])
+                         :msg-hash  (:msg-hash room)
+                         :msg-count (:msg-count room)})))))

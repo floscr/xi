@@ -239,7 +239,7 @@
       ;; starting fresh (the :session/resumed broadcast fills the client's
       ;; mirror right after the empty :room/joined snapshot).
       :room/setup
-      (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd session-id cached-msg-hash]}]
+      (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd session-id cached-msg-hash cached-msg-count]}]
         (let [summary (when session-id
                         (if personal-agent?
                           (session/find-personal-agent-session-by-id session-id)
@@ -274,8 +274,9 @@
             (let [;; Clip long tool outputs before they cross the wire — every
                   ;; client caps tool results at render, so a resumed transcript
                   ;; must not ship thousands of unshown lines.
-                  messages (session/truncate-message-results
-                            (session/read-session-messages summary))
+                  messages (vec (session/truncate-message-results
+                                 (session/read-session-messages summary)))
+                  msg-count (count messages)
                   ;; Hash the wire form (what the client caches + renders) so
                   ;; client + server (same cljs, so equal EDN hashes match) can
                   ;; detect an unchanged session. When the joining client
@@ -285,14 +286,37 @@
                   ;; room mirror via the non-broadcast :session/resumed so
                   ;; multi-client correctness holds.
                   msg-hash (hash messages)
-                  current? (= cached-msg-hash msg-hash)]
+                  current? (= cached-msg-hash msg-hash)
+                  ;; Incremental resume: when not fully current, check whether
+                  ;; the client's cache is a clean PREFIX of the on-disk
+                  ;; session — i.e. its cached hash equals the hash of our
+                  ;; first cached-msg-count messages. Sessions are append-only
+                  ;; on disk (written at turn boundaries), so a matching prefix
+                  ;; means we can ship just the new tail and let the client
+                  ;; append it, instead of re-sending the whole transcript.
+                  ;; /compact (which rewrites history) breaks the prefix →
+                  ;; hash mismatch → falls back to a full resume below.
+                  prefix?  (and (not current?)
+                                (integer? cached-msg-count)
+                                (< 0 cached-msg-count msg-count)
+                                (= cached-msg-hash (hash (subvec messages 0 cached-msg-count))))]
+              ;; The server mirror always gets the full history (multi-client
+              ;; correctness); we only skip BROADCASTING it when the joining
+              ;; client can be served a smaller targeted payload instead.
               (dispatch! {:type :session/resumed :room-id room-id
                           :session session :summary summary
-                          :messages messages :msg-hash msg-hash
-                          :no-broadcast? current?})
-              (when current?
+                          :messages messages :msg-hash msg-hash :msg-count msg-count
+                          :no-broadcast? (or current? prefix?)})
+              (cond
+                current?
                 (dispatch! {:type :session/current :room-id room-id
-                            :session-id session-id :msg-hash msg-hash}))
+                            :session-id session-id :msg-hash msg-hash :msg-count msg-count})
+                prefix?
+                (dispatch! {:type :session/resumed-tail :room-id room-id
+                            :session-id session-id
+                            :base-hash cached-msg-hash :base-count cached-msg-count
+                            :messages (subvec messages cached-msg-count)
+                            :msg-hash msg-hash :msg-count msg-count}))
               ;; Auto-resume an agent whose turn was cut off by a hard restart:
               ;; the session was marked interrupted while its spinner was up and
               ;; never cleared (a completed turn's :session/sync would have).

@@ -526,7 +526,7 @@
     {:effects [[:session/favorite-toggle {:room-id room-id :session-id sid :reopen reopen}]]}
     (status st room-id "No session selected.")))
 
-(defn- session-resumed [st {:keys [room-id session summary messages msg-hash]}]
+(defn- session-resumed [st {:keys [room-id session summary messages msg-hash msg-count]}]
   (when-let [room (state/get-room st room-id)]
     (let [;; A resumed session may have been recorded in a different directory
           ;; than the room is currently in — notably when picked from the "All"
@@ -554,6 +554,7 @@
                   (assoc-in [:rooms room-id :history]
                             (into [(status-entry label)] (messages->history messages)))
                   (assoc-in [:rooms room-id :msg-hash] msg-hash)
+                  (assoc-in [:rooms room-id :msg-count] (or msg-count (count messages)))
                   (update-in [:rooms room-id :agent] assoc :busy? false :queued [])
                   (cond-> model
                     (->

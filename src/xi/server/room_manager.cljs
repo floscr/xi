@@ -99,7 +99,7 @@
 
    Targets: \"new\" | \"latest\" | room-id | {:session-id sid} (resume a
    saved session into a fresh room)."
-  [st {:keys [client-id target cwd cached-msg-hash] :as ev}]
+  [st {:keys [client-id target cwd cached-msg-hash cached-msg-count] :as ev}]
   (let [target     (or target "latest")
         ;; A session-id may ride on the event (web navigation always carries
         ;; it) or inside a {:session-id …} target (mobile reconnect).
@@ -120,10 +120,11 @@
 
       (map? target)
       ;; Map target {:session-id sid} with no live room — resume from disk.
-      {:effects [[:room/setup {:client-id       client-id
-                               :room-id         (gen-room-id ev)
-                               :session-id      (:session-id target)
-                               :cached-msg-hash cached-msg-hash}]]}
+      {:effects [[:room/setup {:client-id        client-id
+                               :room-id          (gen-room-id ev)
+                               :session-id       (:session-id target)
+                               :cached-msg-hash  cached-msg-hash
+                               :cached-msg-count cached-msg-count}]]}
 
       :else
       (let [existing (cond
@@ -134,10 +135,11 @@
           {:effects [[:app/dispatch {:type :room/attach
                                      :client-id client-id
                                      :room-id existing}]]}
-          {:effects [[:room/setup (cond-> {:client-id       client-id
-                                           :room-id         (gen-room-id ev)
-                                           :cwd             cwd
-                                           :cached-msg-hash cached-msg-hash}
+          {:effects [[:room/setup (cond-> {:client-id        client-id
+                                           :room-id          (gen-room-id ev)
+                                           :cwd              cwd
+                                           :cached-msg-hash  cached-msg-hash
+                                           :cached-msg-count cached-msg-count}
                                     (:session-id ev) (assoc :session-id (:session-id ev)))]]})))))
 
 (defn- room-attach [st {:keys [client-id room-id]}]
