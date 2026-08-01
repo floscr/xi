@@ -35,7 +35,7 @@
 
 ;; ── Timeline virtualization ──────────────────────────────────────────────────
 
-(def ^:private initial-window-size
+(def initial-window-size
   "Number of history entries rendered initially; keeps the DOM light on
    long sessions."
   60)
@@ -1823,7 +1823,15 @@
             (let [entries (vec history)
                   total   (count entries)
                   win     (or (:web/timeline-window state) initial-window-size)
-                  start   (max 0 (- total win))]
+                  natural (max 0 (- total win))
+                  ;; While the user is scrolled up, the top edge is frozen (set
+                  ;; in :web/set-scrolled-up) so streaming appends below can't
+                  ;; slide the window and drop nodes above the viewport (which
+                  ;; jumps the scroll on Safari/iOS). min with natural keeps
+                  ;; "Show earlier" able to reveal further back.
+                  start   (if-let [fs (:web/frozen-window-start state)]
+                            (min fs natural)
+                            natural)]
               (list
                (when (and (zero? total)
                           (not (:web/optimistic state))

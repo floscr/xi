@@ -563,10 +563,26 @@
                       :effects [[:timeline/scroll-bottom {}]]})
           ;; Reflect the timeline's scroll position into state so the
           ;; scroll-to-bottom down-arrow can appear only while scrolled up.
+          ;; On the transition INTO scrolled-up, freeze the render window's top
+          ;; edge (:web/frozen-window-start) at its current value. While the
+          ;; user reads scrolled up, new blocks append BELOW the viewport, so
+          ;; freezing the top stops the window from sliding — which would
+          ;; otherwise drop DOM nodes above the viewport and (on Safari/iOS,
+          ;; which has no scroll anchoring) yank the scroll position. Cleared
+          ;; on the way back to the bottom so the window trims normally again.
           :web/set-scrolled-up
           (fn [st {:keys [scrolled-up?]}]
-            (when (not= (boolean scrolled-up?) (boolean (:web/scrolled-up? st)))
-              {:state (assoc st :web/scrolled-up? (boolean scrolled-up?))}))
+            (let [su (boolean scrolled-up?)]
+              (when (not= su (boolean (:web/scrolled-up? st)))
+                (if su
+                  (let [room  (state/active-room st)
+                        total (count (:history room))
+                        win   (or (:web/timeline-window st) views/initial-window-size)]
+                    {:state (assoc st :web/scrolled-up? true
+                                      :web/frozen-window-start (max 0 (- total win)))})
+                  {:state (-> st
+                              (assoc :web/scrolled-up? false)
+                              (dissoc :web/frozen-window-start))}))))
           :bubble/edit-save      bubble-edit-save
           :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
           :web/dialog-form-reset (fn [st _] {:state (dissoc st :web/dialog-form)})
