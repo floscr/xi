@@ -529,12 +529,19 @@
 
 (defn draft-key
   "Per-chat identity key for state that should be scoped to a single chat
-   (drafts, scroll position, …). The room's session id once joined, else the
-   route's session id, else the virtual room's id, else `:new`."
+   (drafts, scroll position, …). The virtual room's id while composing a brand
+   new chat, else the room's session id once joined, else the route's session
+   id, else `:new`.
+
+   The virtual-room id must win over the active room: opening a new chat leaves
+   the client attached to the *previous* room (it only leaves on the first
+   prompt, see xi.web.core/submit-pending), so `active-room` still points at the
+   old chat. Keying off it would file the new chat's draft under the old chat's
+   id, leaking it into that chat the next time it's shown."
   [state]
-  (or (get-in (state/active-room state) [:session :id])
+  (or (get-in state [:web/pending-room :id])
+      (get-in (state/active-room state) [:session :id])
       (get-in state [:web/route :session-id])
-      (get-in state [:web/pending-room :id])
       :new))
 
 (defn known-command?
