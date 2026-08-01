@@ -1258,6 +1258,24 @@
                                (fn [& _])
                                (:pages composed)))))
 
+(defn- reset-zoom!
+  "Force iOS WebKit back to scale=1. In a standalone PWA, resuming from the
+   background can restore the page at a stuck visual-viewport scale > 1 — the
+   whole app looks zoomed until the keyboard is first opened, which focuses an
+   input and snaps the scale back. Momentarily tightening maximum-scale below
+   the current scale makes WebKit clamp the zoom down; restoring the original
+   viewport meta on the next frame settles it at 1. No-op unless the viewport
+   is actually zoomed, so it stays inert on desktop."
+  []
+  (let [vv    js/window.visualViewport
+        scale (some-> vv .-scale)]
+    (when (and scale (> scale 1.01))
+      (when-let [meta (.querySelector js/document "meta[name=viewport]")]
+        (let [content (.getAttribute meta "content")]
+          (.setAttribute meta "content" (str content ", maximum-scale=0.99"))
+          (js/requestAnimationFrame
+           (fn [] (.setAttribute meta "content" content))))))))
+
 (defn- real-init! []
   (let [composed  (ext/compose (web-extensions))
         routes    (:routes composed)
@@ -1358,7 +1376,21 @@
       (if js/window.visualViewport
         (do (.addEventListener js/window.visualViewport "resize" (fn [_] (set-vh!)))
             (.addEventListener js/window.visualViewport "scroll" (fn [_] (set-vh!))))
-        (.addEventListener js/window "resize" (fn [_] (set-vh!)))))
+        (.addEventListener js/window "resize" (fn [_] (set-vh!))))
+      ;; Resuming a standalone PWA from the background can restore the page
+      ;; zoomed (visual-viewport scale stuck > 1) and with a stale height,
+      ;; until the keyboard is first opened. Re-sync the viewport height and
+      ;; force the scale back to 1 whenever the app becomes visible again. The
+      ;; rAF pass re-runs it after WebKit has settled the restored scale.
+      (let [on-resume (fn []
+                        (reset-zoom!)
+                        (set-vh!)
+                        (js/requestAnimationFrame
+                         (fn [] (reset-zoom!) (set-vh!))))]
+        (.addEventListener js/document "visibilitychange"
+                           (fn [_] (when (= "visible" (.-visibilityState js/document))
+                                     (on-resume))))
+        (.addEventListener js/window "pageshow" (fn [_] (on-resume)))))
     (attach-code-copy-listener!)
     ;; Prevent iOS Safari smart-zoom (double-tap & pinch)
     (.addEventListener js/document "gesturestart" (fn [e] (.preventDefault e)))
