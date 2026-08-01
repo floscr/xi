@@ -210,6 +210,18 @@
   [_st {:keys [client-id cwd created]}]
   {:effects [[:commits/web-load-reply {:client-id client-id :cwd cwd :created created}]]})
 
+(defn- files-web-list
+  "Roomless: list a directory's children for the web file browser. The browse
+   path is absolute (seeded from the client's mirrored room cwd, then advanced
+   by drill-down); cwd is the fallback when no path is sent yet."
+  [_st {:keys [client-id cwd path]}]
+  {:effects [[:files/web-list-reply {:client-id client-id :cwd cwd :path path}]]})
+
+(defn- file-web-read
+  "Roomless: read one file's contents for the web file viewer (the :file tab)."
+  [_st {:keys [client-id cwd path]}]
+  {:effects [[:file/web-read-reply {:client-id client-id :cwd cwd :path path}]]})
+
 (defn- favorites-toggle
   "Roomless: star/unstar a session by id. The write + lobby rebroadcast happen
    in the :favorites/toggle-reply effect (needs disk access)."
@@ -269,6 +281,8 @@
    :session/content-search session-content-search
    :diff/web-load          diff-web-load
    :commits/web-load       commits-web-load
+   :files/web-list         files-web-list
+   :file/web-read          file-web-read
    :favorites/toggle       favorites-toggle
    :session/mark-read      session-mark-read
    :rooms/prune            rooms-prune})

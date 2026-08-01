@@ -522,6 +522,9 @@
   (conj (vec palette/palette-commands)
         {:name "commits"
          :description "List commits made this session"
+         :while-busy? true}
+        {:name "files"
+         :description "Browse project files"
          :while-busy? true}))
 
 (def ^:private web-command-names
@@ -584,10 +587,12 @@
   [dispatch! room-id slash]
   (let [{:keys [name args]}
         (commands/parse-input (if (str/starts-with? slash "/") slash (str "/" slash)))]
-    (if (= name "commits")
+    (case name
       ;; Web-only: open the session-commits palette bar instead of running a
       ;; (non-existent) server command.
-      (dispatch! {:type :palette/open-commits})
+      "commits" (dispatch! {:type :palette/open-commits})
+      ;; Web-only: open the file browser palette page.
+      "files"   (dispatch! {:type :palette/open-files})
       (dispatch! (cond-> {:type :command/run :room-id room-id :name name}
                    args (assoc :args args))))))
 
@@ -1403,6 +1408,17 @@
                          (when range
                            (diff-action-bar dispatch! room-id rows range modify?)))))]))
 
+(defn- file-tab-view
+  "Read-only file viewer rendered as the active tab. Syntax-highlighted from the
+   file extension when a grammar is available, else plain text."
+  [{:keys [path text]}]
+  (let [grammar (grammars/get-grammar (file-ext path))]
+    [:div {:class ["file-tab"]}
+     [:div {:class ["file-tab-header"]}
+      [:span {:class ["file-tab-path"]} path]]
+     [:pre {:class ["file-tab-code"]}
+      (if grammar (highlight-code grammar text) text)]]))
+
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 
 (defn- tab-bar
@@ -1418,7 +1434,12 @@
      [:button {:class ["tab-pill-item" (when (= active-buffer :diff) "tab-pill-item--active")]
                :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
                                                :room-id room-id :buffer-id :diff}))}}
-      "Diff"])])
+      "Diff"])
+   (when (:file buffers)
+     [:button {:class ["tab-pill-item" (when (= active-buffer :file) "tab-pill-item--active")]
+               :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
+                                               :room-id room-id :buffer-id :file}))}}
+      "File"])])
 
 ;; ── Chat view ────────────────────────────────────────────────────────────────
 
@@ -1758,7 +1779,7 @@
         dkey    (draft-key state)
         buffers    (get-in room [:ui :buffers])
         active-buf (get-in room [:ui :active-buffer] :chat)
-        has-tabs?  (boolean (:diff buffers))
+        has-tabs?  (boolean (or (:diff buffers) (:file buffers)))
         ;; Prompt navigation over the FULL history (not just the rendered
         ;; window): collect every user entry's absolute history index so we can
         ;; jump to prompts scrolled off the top, expanding the window on demand.
@@ -1790,6 +1811,9 @@
        (diff-tab-view dispatch! (:id room) (:diff buffers)
                       (:web/diff-sel state)
                       (:web/diff-modify? state))
+
+       :file
+       (file-tab-view (:file buffers))
 
        ;; default: :chat
        (list
@@ -2653,6 +2677,37 @@
                                           :sha sha :room-id (:id room)}))}
            subject))))))
 
+(defn- palette-files-page
+  "File browser as a palette sub-page: drill into directories (\"..\" steps up),
+   click a file to open it in the :file tab. Absolute paths throughout; the
+   server lists each directory. Spinner while :web/file-list loads."
+  [state dispatch!]
+  (let [{:keys [path parent entries error]} (:web/file-list state)]
+    (cond
+      (nil? (:web/file-list state)) [:div {:class ["command-loading"]} (spinner)]
+      error [:div {:class ["command-empty"]} error]
+      :else
+      (apply cmd/command-group {:heading (or path "Files")}
+        (concat
+         (when parent
+           [(cmd/command-item
+             {:icon :arrow-left
+              :value ".."
+              :on-click (fn [_] (dispatch! {:type :files/cd :path parent}))}
+             "..")])
+         (if (empty? entries)
+           [(cmd/command-item {:icon :folder :value ""} "(empty directory)")]
+           (for [{:keys [name dir?]} entries
+                 :let [child (str path "/" name)]]
+             (cmd/command-item
+              {:icon (if dir? :folder :file-text)
+               :value name
+               :on-click (fn [_]
+                           (if dir?
+                             (dispatch! {:type :files/cd :path child})
+                             (dispatch! {:type :files/open :path child})))}
+              (if dir? (str name "/") name)))))))))
+
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
@@ -2732,6 +2787,7 @@
          :model          (palette-model-page state dispatch!)
          :skill          (palette-skill-page state dispatch!)
          :commits        (palette-commits-page state dispatch!)
+         :files          (palette-files-page state dispatch!)
          :project-insert (palette-project-insert-page state dispatch!)
          :snippets       (palette-snippets-page state dispatch!)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}

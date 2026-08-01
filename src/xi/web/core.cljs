@@ -771,6 +771,44 @@
                                               [:ws/send {:type :input/submit
                                                          :room-id room-id
                                                          :text (str "/diff commit:" sha)}]]})
+          ;; File browser: open the drill-down browser palette page seeded at
+          ;; the active room's cwd. Same drill pattern as commits/models — the
+          ;; server lists the directory and replies with :files/web-list-result.
+          :palette/open-files    (fn [st _]
+                                   (let [cwd (:cwd (state/active-room st))]
+                                     {:state (-> st
+                                                 (assoc :web/palette-page {:kind :files}
+                                                        :web/palette-open? true
+                                                        :web/palette-drilling? true)
+                                                 (dissoc :web/file-list))
+                                      :effects [[:ws/send {:type :files/web-list :cwd cwd :path cwd}]
+                                                [:palette/reopen nil]]}))
+          ;; Drill into a directory (or step up via ".."): the palette stays
+          ;; open; clearing :web/file-list shows a spinner while the new listing
+          ;; loads. Paths are absolute, so cwd is only a fallback.
+          :files/cd              (fn [st {:keys [path]}]
+                                   (let [cwd (:cwd (state/active-room st))]
+                                     {:state (dissoc st :web/file-list)
+                                      :effects [[:ws/send {:type :files/web-list :cwd cwd :path path}]]}))
+          :files/web-list-result (fn [st {:keys [path parent entries error]}]
+                                   {:state (assoc st :web/file-list
+                                                  {:path path :parent parent
+                                                   :entries (or entries []) :error error})})
+          ;; Selecting a file closes the browser and asks the server to read it;
+          ;; the reply installs the :file tab (client-local, like the diff tab).
+          :files/open            (fn [st {:keys [path]}]
+                                   (let [cwd (:cwd (state/active-room st))]
+                                     {:state (dissoc st :web/palette-page :web/palette-open?)
+                                      :effects [[:palette/close nil]
+                                                [:ws/send {:type :file/web-read :cwd cwd :path path}]]}))
+          :file/web-read-result  (fn [st {:keys [path text error]}]
+                                   (if-let [room-id (:id (state/active-room st))]
+                                     {:state (-> st
+                                                 (assoc-in [:rooms room-id :ui :buffers :file]
+                                                           {:title path :path path
+                                                            :text (or text (str "Could not read file:\n" error))})
+                                                 (assoc-in [:rooms room-id :ui :active-buffer] :file))}
+                                     {:state st}))
           :palette/open-projects (fn [st _]
                                    {:state (assoc st :web/palette-page {:kind :project-insert}
                                                      :web/palette-open? true

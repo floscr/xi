@@ -36,6 +36,7 @@
   (:require [xi.auth :as auth]
             [xi.ext.diff.git :as diff-git]
             [xi.fx :as fx]
+            [xi.server.files :as files]
             [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
@@ -66,7 +67,8 @@
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
   #{:client/update :session/counts :models/web-list :session/content-search
-    :diff/web-load :commits/web-load :favorites/toggle :session/mark-read
+    :diff/web-load :commits/web-load :files/web-list :file/web-read
+    :favorites/toggle :session/mark-read
     :rooms/prune})
 
 (defn- gen-client-id []
@@ -383,6 +385,18 @@
         (let [base (diff-git/session-base-commit cwd created)]
           (send! client-id (wire/encode {:type    :commits/web-load-result
                                          :commits (or (diff-git/session-commits-list cwd base) [])}))))
+
+      ;; Directory listing for the web file browser (drill-down navigation).
+      :files/web-list-reply
+      (fn [_ {:keys [client-id cwd path]}]
+        (send! client-id (wire/encode (assoc (files/list-dir path cwd)
+                                             :type :files/web-list-result))))
+
+      ;; One file's contents for the web file viewer (the :file tab).
+      :file/web-read-reply
+      (fn [_ {:keys [client-id cwd path]}]
+        (send! client-id (wire/encode (assoc (files/read-file path cwd)
+                                             :type :file/web-read-result))))
 
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally

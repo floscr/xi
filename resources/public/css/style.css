@@ -2627,6 +2627,50 @@ body {
 .diff-difft .difft-dim  { color: var(--fg-2); opacity: 0.6; }
 .diff-difft .difft-bold { font-weight: 600; }
 
+/* File viewer tab: read-only, syntax-highlighted file contents */
+.file-tab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.file-tab-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-4);
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+
+.file-tab-path {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.file-tab-code {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--size-3) var(--size-4);
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--fg-0);
+}
+
 /* Diff method selector: header bar above the diff with source + engine <select>s */
 .diff-method-bar {
   flex-shrink: 0;
