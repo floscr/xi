@@ -800,13 +800,18 @@
                                                  (dissoc :web/file-list))
                                       :effects [[:ws/send {:type :files/web-list :cwd cwd :path cwd}]
                                                 [:palette/reopen nil]]}))
-          ;; Drill into a directory (or step up via ".."): the palette stays
-          ;; open; clearing :web/file-list shows a spinner while the new listing
-          ;; loads. Paths are absolute, so cwd is only a fallback.
+          ;; Drill into a directory (or step up via ".."): clearing
+          ;; :web/file-list shows a spinner while the new listing loads. The
+          ;; ui-runtime force-closes the dialog on the item click, so re-open it
+          ;; (same one-shot :web/palette-drilling? cycle as the model/commits
+          ;; pages). Paths are absolute, so cwd is only a fallback.
           :files/cd              (fn [st {:keys [path]}]
                                    (let [cwd (:cwd (state/active-room st))]
-                                     {:state (dissoc st :web/file-list)
-                                      :effects [[:ws/send {:type :files/web-list :cwd cwd :path path}]]}))
+                                     {:state (-> st
+                                                 (assoc :web/palette-drilling? true)
+                                                 (dissoc :web/file-list))
+                                      :effects [[:ws/send {:type :files/web-list :cwd cwd :path path}]
+                                                [:palette/reopen nil]]}))
           :files/web-list-result (fn [st {:keys [path parent entries error]}]
                                    {:state (assoc st :web/file-list
                                                   {:path path :parent parent
