@@ -2671,6 +2671,15 @@ body {
   color: var(--fg-0);
 }
 
+/* Markdown files: rendered as formatted HTML instead of source */
+.file-tab-md {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--size-4) var(--size-5);
+}
+
 /* Diff method selector: header bar above the diff with source + engine <select>s */
 .diff-method-bar {
   flex-shrink: 0;

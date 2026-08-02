@@ -1408,16 +1408,26 @@
                          (when range
                            (diff-action-bar dispatch! room-id rows range modify?)))))]))
 
+(def ^:private markdown-exts
+  "Extensions rendered as formatted markdown (HTML markup) instead of
+   syntax-highlighted source in the file viewer."
+  #{"md" "markdown" "mdown" "markdn" "mkd" "mdx"})
+
 (defn- file-tab-view
-  "Read-only file viewer rendered as the active tab. Syntax-highlighted from the
-   file extension when a grammar is available, else plain text."
+  "Read-only file viewer rendered as the active tab. Markdown files render as
+   formatted HTML; other files are syntax-highlighted from their extension when
+   a grammar is available, else shown as plain text."
   [{:keys [path text]}]
-  (let [grammar (grammars/get-grammar (file-ext path))]
+  (let [ext     (file-ext path)
+        grammar (grammars/get-grammar ext)]
     [:div {:class ["file-tab"]}
      [:div {:class ["file-tab-header"]}
       [:span {:class ["file-tab-path"]} path]]
-     [:pre {:class ["file-tab-code"]}
-      (if grammar (highlight-code grammar text) text)]]))
+     (if (contains? markdown-exts ext)
+       [:div {:class ["file-tab-md"]}
+        [:div {:class ["post-content"]} (md/render text)]]
+       [:pre {:class ["file-tab-code"]}
+        (if grammar (highlight-code grammar text) text)])]))
 
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 
