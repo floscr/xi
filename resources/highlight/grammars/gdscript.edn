@@ -7,10 +7,9 @@
    {:pattern "\\$[a-zA-Z_][\\w\\/]*" :token :name-var}
    {:pattern "%[a-zA-Z_]\\w*" :token :name-var}
    {:pattern "%" :token :operator}
-   {:pattern "[a-zA-Z_]\\w*" :token :text}
    {:pattern "(?<!\\w)(PI|TAU|NAN|INF|true|false)\\b" :token :keyword}
    {:pattern "(?<!\\w)(is|in|as|not|or|and)\\b" :token :operator}
-   {:pattern "(?<!\\w)(var|const|enum|signal|static)\\b" :token :keyword-decl}
+   {:pattern "(?<!\\w)(func|class_name|class|extends|var|const|enum|signal|static)\\b" :token :keyword-decl}
    {:pattern "(?<!\\w)(if|elif|else|for|while|match|break|continue|pass|return|breakpoint|await|yield|super)\\b" :token :keyword}
    {:pattern "(?<!\\w)(self)\\b" :token :name-builtin}
    {:pattern "^\\s*@export(_category|_color_no_alpha|_dir|_enum|_exp_easing|_file|_flags((_2d|_3d)(_navigation|_physics|_render)|_avoidance)?|_global(_file|_dir)|_group|_multiline|_node_path|_placeholder|_range|_subgroup)?" :token :name-builtin}
@@ -27,4 +26,5 @@
    {:pattern "\\d+[eE][+-]?[0-9]+" :token :number}
    {:pattern "0x[a-fA-F0-9]+" :token :number}
    {:pattern "0b[01]+" :token :number}
-   {:pattern "\\d+" :token :number}]
+   {:pattern "\\d+" :token :number}
+   {:pattern "[a-zA-Z_]\\w*" :token :text}]

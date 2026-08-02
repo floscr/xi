@@ -6,7 +6,7 @@
 ;; Common languages bundled at compile time (~35KB of grammar data)
 (def ^:private bundled-filenames
   ["bash" "c" "clojure" "cplusplus" "css" "diff" "docker" "elixir"
-   "go" "hcl" "html" "java" "javascript" "json" "kotlin" "lua"
+   "gdscript" "go" "hcl" "html" "java" "javascript" "json" "kotlin" "lua"
    "makefile" "mysql" "nix" "python" "react" "ruby" "rust" "swift"
    "terraform" "toml" "typescript" "xml" "yaml"])
 
@@ -16,7 +16,7 @@
 #?(:cljs
    (def ^:private grammars (inline-grammars
                             ["bash" "c" "clojure" "cplusplus" "css" "diff" "docker" "elixir"
-                             "go" "hcl" "html" "java" "javascript" "json" "kotlin" "lua"
+                             "gdscript" "go" "hcl" "html" "java" "javascript" "json" "kotlin" "lua"
                              "makefile" "mysql" "nix" "python" "react" "ruby" "rust" "swift"
                              "terraform" "toml" "typescript" "xml" "yaml"])))
 
