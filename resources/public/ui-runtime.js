@@ -552,21 +552,50 @@
   var active_item = function(dialog) {
     return dialog.querySelector(".command-item--active");
   };
-  var set_active_BANG_ = function(dialog, el) {
-    const prev1 = active_item(dialog);
-    if (truth_(prev1)) {
-      prev1.classList.remove("command-item--active");
-    }
-    ;
-    if (truth_(el)) {
-      el.classList.add("command-item--active");
-      if (truth_(el.scrollIntoView)) {
-        return el.scrollIntoView({ "block": "nearest" });
+  var set_active_BANG_ = (() => {
+    const f1 = (function(...args2) {
+      const G__31 = args2.length;
+      switch (G__31) {
+        case 2:
+          return f1.cljs$core$IFn$_invoke$arity$2(args2[0], args2[1]);
+          break;
+        case 3:
+          return f1.cljs$core$IFn$_invoke$arity$3(args2[0], args2[1], args2[2]);
+          break;
+        default:
+          throw new Error(`${"Invalid arity: "}${args2.length ?? ""}`);
       }
       ;
-    }
-    ;
-  };
+    });
+    f1.cljs$core$IFn$_invoke$arity$2 = (function(dialog, el) {
+      return set_active_BANG_(dialog, el, true);
+    });
+    f1.cljs$core$IFn$_invoke$arity$3 = (function(dialog, el, scroll_QMARK_) {
+      const prev3 = active_item(dialog);
+      if (truth_(prev3)) {
+        prev3.classList.remove("command-item--active");
+      }
+      ;
+      if (truth_(el)) {
+        el.classList.add("command-item--active");
+        if (truth_((() => {
+          const and__23442__auto__4 = scroll_QMARK_;
+          if (truth_(and__23442__auto__4)) {
+            return el.scrollIntoView;
+          } else {
+            return and__23442__auto__4;
+          }
+          ;
+        })())) {
+          return el.scrollIntoView({ "block": "nearest" });
+        }
+        ;
+      }
+      ;
+    });
+    f1.cljs$lang$maxFixedArity = 3;
+    return f1;
+  })();
   var move_active_BANG_ = function(dialog, dir) {
     const vis1 = visible_items(dialog);
     const len2 = vis1.length;
@@ -848,21 +877,24 @@
     ;
   };
   var on_pointermove = function(e) {
-    const t1 = e.target;
-    if (truth_(t1.closest)) {
-      const item2 = t1.closest(".command-item");
-      if (truth_((() => {
-        const and__23442__auto__3 = item2;
-        if (truth_(and__23442__auto__3)) {
-          return not(item2.hidden) && not(item2.disabled);
-        } else {
-          return and__23442__auto__3;
-        }
-        ;
-      })())) {
-        const dialog4 = item2.closest(".command-dialog");
-        if (truth_(dialog4)) {
-          return set_active_BANG_(dialog4, item2);
+    if (!(e.pointerType === "touch")) {
+      const t1 = e.target;
+      if (truth_(t1.closest)) {
+        const item2 = t1.closest(".command-item");
+        if (truth_((() => {
+          const and__23442__auto__3 = item2;
+          if (truth_(and__23442__auto__3)) {
+            return not(item2.hidden) && not(item2.disabled);
+          } else {
+            return and__23442__auto__3;
+          }
+          ;
+        })())) {
+          const dialog4 = item2.closest(".command-dialog");
+          if (truth_(dialog4)) {
+            return set_active_BANG_(dialog4, item2, false);
+          }
+          ;
         }
         ;
       }
@@ -1071,25 +1103,25 @@
     ;
   };
   var open_context_menu = (() => {
-    const f1 = (function(var_args) {
-      const args21 = [];
+    const f4 = (function(var_args) {
+      const args51 = [];
       const len__23321__auto__2 = arguments.length;
-      let i33 = 0;
+      let i63 = 0;
       while (true) {
-        if (i33 < len__23321__auto__2) {
-          args21.push(arguments[i33]);
-          let G__4 = i33 + 1;
-          i33 = G__4;
+        if (i63 < len__23321__auto__2) {
+          args51.push(arguments[i63]);
+          let G__4 = i63 + 1;
+          i63 = G__4;
           continue;
         }
         ;
         break;
       }
       ;
-      const argseq__23513__auto__5 = 1 < args21.length ? args21.slice(1) : null;
-      return f1.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
+      const argseq__23513__auto__5 = 1 < args51.length ? args51.slice(1) : null;
+      return f4.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
     });
-    f1.cljs$core$IFn$_invoke$arity$variadic = (function(event, args) {
+    f4.cljs$core$IFn$_invoke$arity$variadic = (function(event, args) {
       dismiss_BANG_();
       const items6 = (() => {
         const passed7 = first(args);
@@ -1154,8 +1186,8 @@
       window.addEventListener("resize", on_resize16);
       return state11.cleanup = cleanup17;
     });
-    f1.cljs$lang$maxFixedArity = 1;
-    return f1;
+    f4.cljs$lang$maxFixedArity = 1;
+    return f4;
   })();
   window["__uiContextMenu"] = open_context_menu;
 
@@ -1295,11 +1327,11 @@
     clear_held_BANG_();
     if (e.pointerType === "touch") {
       const temp__23062__auto__1 = (() => {
-        const G__52 = e.target;
-        if (G__52 == null) {
+        const G__82 = e.target;
+        if (G__82 == null) {
           return null;
         } else {
-          return G__52.closest(selector);
+          return G__82.closest(selector);
         }
         ;
       })();
@@ -1628,8 +1660,8 @@
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   };
   var resolve_effective = function(mode) {
-    const G__61 = mode;
-    switch (G__61) {
+    const G__91 = mode;
+    switch (G__91) {
       case "light":
         return "light";
         break;
@@ -1658,8 +1690,8 @@
   var apply_theme_BANG_ = function(mode) {
     const el1 = document.documentElement;
     suppress_transitions_BANG_();
-    const G__72 = mode;
-    switch (G__72) {
+    const G__102 = mode;
+    switch (G__102) {
       case "light":
         return el1.setAttribute("data-theme", "light");
         break;
@@ -1699,8 +1731,8 @@
   var toggle_BANG_ = function() {
     const current1 = get_mode();
     const next_mode2 = (() => {
-      const G__83 = current1;
-      switch (G__83) {
+      const G__113 = current1;
+      switch (G__113) {
         case "auto":
           return "light";
           break;
@@ -1889,14 +1921,14 @@
       ;
     })().split(","))));
     const override_keys4 = set(map(first, viewport_overrides));
-    const kept5 = remove((function(p__9) {
-      const vec__69 = p__9;
+    const kept5 = remove((function(p__12) {
+      const vec__69 = p__12;
       const k10 = nth(vec__69, 0, null);
       const _11 = nth(vec__69, 1, null);
       return contains_QMARK_(override_keys4, k10);
     }), entries1);
-    return join(", ", map((function(p__10) {
-      const vec__1215 = p__10;
+    return join(", ", map((function(p__13) {
+      const vec__1215 = p__13;
       const k16 = nth(vec__1215, 0, null);
       const v17 = nth(vec__1215, 1, null);
       if (v17 == null) {

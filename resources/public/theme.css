@@ -1608,15 +1608,26 @@ a.btn-link {
 }
 
 /* Active item — set by the JS runtime during keyboard/pointer navigation. */
-.command-item--active,
-.command-item:hover:not(:disabled) {
+.command-item--active {
   background: var(--bg-2);
   outline: none;
 }
 
-.command-item--active .command-item-icon,
-.command-item:hover:not(:disabled) .command-item-icon {
+.command-item--active .command-item-icon {
   color: var(--fg-0);
+}
+
+/* Hover only on real pointer devices — on touch, :hover sticks after a tap
+   and leaves a highlight glued under the finger while scrolling. */
+@media (hover: hover) {
+  .command-item:hover:not(:disabled) {
+    background: var(--bg-2);
+    outline: none;
+  }
+
+  .command-item:hover:not(:disabled) .command-item-icon {
+    color: var(--fg-0);
+  }
 }
 
 .command-item:disabled {
