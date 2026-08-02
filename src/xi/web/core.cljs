@@ -1409,37 +1409,85 @@
                                      (on-resume))))
         (.addEventListener js/window "pageshow" (fn [_] (on-resume)))))
     (attach-code-copy-listener!)
-    ;; Edge-swipe to open the sidebar: a horizontal drag starting near the
-    ;; left screen edge opens the drawer; dragging left again closes it. Gated
-    ;; on a near-edge start and horizontal dominance so it doesn't fight
-    ;; vertical scrolling or in-content horizontal scroll.
-    (let [edge-px   24
-          thresh-px 60
-          start     (atom nil)]
+    ;; Left-edge swipe to open the sidebar; swipe left again to close it.
+    ;;
+    ;; iOS/WebKit reserves the extreme left edge (~first 20px) for its own
+    ;; interactive back gesture and web content can't intercept it, so we do
+    ;; NOT anchor on the very edge — the open zone is the left ~20% of the
+    ;; viewport (capped), which catches the natural swipe most people start a
+    ;; little inward. Gated on horizontal dominance and a distance threshold
+    ;; (tracked across touchmove, since touchend alone can miss the peak), and
+    ;; ignored when the drag begins inside a horizontally-scrollable element
+    ;; (code blocks, wide tables) so it doesn't hijack their scroll.
+    (let [thresh-px 60
+          scrollable-x?
+          (fn [node]
+            (loop [n node]
+              (cond
+                (or (nil? n) (not (instance? js/Element n))) false
+                (and (> (.-scrollWidth n) (+ (.-clientWidth n) 1))
+                     (let [ox (.-overflowX (js/getComputedStyle n))]
+                       (or (= ox "auto") (= ox "scroll"))))
+                true
+                :else (recur (.-parentElement n)))))
+          start (atom nil)]
       (.addEventListener
        js/document "touchstart"
        (fn [e]
          (let [t (aget (.-touches e) 0)]
-           (reset! start (when t {:x (.-clientX t) :y (.-clientY t)}))))
+           (reset! start (when (and t (= 1 (.-length (.-touches e))))
+                           {:x       (.-clientX t)
+                            :y       (.-clientY t)
+                            :dx      0
+                            :dy      0
+                            :scroll? (scrollable-x? (.-target e))}))))
+       #js {:passive true})
+      (.addEventListener
+       js/document "touchmove"
+       (fn [e]
+         (when-let [{:keys [x y] :as s} @start]
+           (when-let [t (aget (.-touches e) 0)]
+             (reset! start (assoc s
+                                  :dx (- (.-clientX t) x)
+                                  :dy (- (.-clientY t) y))))))
+       #js {:passive true})
+      (.addEventListener
+       js/document "touchcancel"
+       (fn [_] (reset! start nil))
        #js {:passive true})
       (.addEventListener
        js/document "touchend"
-       (fn [e]
-         (when-let [{:keys [x y]} @start]
+       (fn [_]
+         (when-let [{:keys [x dx dy scroll?]} @start]
            (reset! start nil)
-           (let [t   (aget (.-changedTouches e) 0)]
-             (when t
-               (let [dx (- (.-clientX t) x)
-                     dy (- (.-clientY t) y)]
-                 (when (> (js/Math.abs dx) (js/Math.abs dy))
-                   (cond
-                     (and (not (:web/sidebar-open? @state))
-                          (<= x edge-px) (>= dx thresh-px))
-                     (dispatch! {:type :sidebar/open})
+           (let [open-zone (min 100 (* 0.2 (or (.-innerWidth js/window) 0)))]
+             (when (and (not scroll?)
+                        (> (js/Math.abs dx) (js/Math.abs dy)))
+               (cond
+                 (and (not (:web/sidebar-open? @state))
+                      (<= x open-zone) (>= dx thresh-px))
+                 (dispatch! {:type :sidebar/open})
 
-                     (and (:web/sidebar-open? @state) (<= dx (- thresh-px)))
-                     (dispatch! {:type :sidebar/close}))))))))
-       #js {:passive true}))
+                 (and (:web/sidebar-open? @state) (<= dx (- thresh-px)))
+                 (dispatch! {:type :sidebar/close}))))))
+       #js {:passive true})
+      ;; Suppress iOS' native left-edge back-swipe (iOS 13.4+) so a swipe that
+      ;; starts right at the edge falls through to the open gesture above
+      ;; instead of navigating history. A non-passive touchstart that
+      ;; preventDefaults only within ~20px of the LEFT edge is the documented
+      ;; way to do this; scoped to the left edge (back-nav) so the right-edge
+      ;; forward gesture is untouched, and the strip is thin enough that normal
+      ;; taps/scrolls are effectively unaffected. (Best-effort: some standalone
+      ;; PWA builds still ignore it — the inward open-zone above is the
+      ;; fallback for those.)
+      (.addEventListener
+       js/document "touchstart"
+       (fn [e]
+         (when-let [t (aget (.-touches e) 0)]
+           (when (and (not (:web/sidebar-open? @state))
+                      (<= (.-pageX t) 20))
+             (.preventDefault e))))
+       #js {:passive false}))
     ;; Prevent iOS Safari smart-zoom (double-tap & pinch)
     (.addEventListener js/document "gesturestart" (fn [e] (.preventDefault e)))
     (.addEventListener js/document "gesturechange" (fn [e] (.preventDefault e)))
