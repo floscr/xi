@@ -57,6 +57,13 @@
                    client; :event is dispatched with :room-id added
      :prompt-badge (fn [state] → str|nil) — TUI prompt badge
      :on-shutdown  (fn []) — process-exit cleanup (TUI on-exit)
+     :on-enable    (fn []) — runtime enable hook (xi.ext.manager): fired
+                   when the extension is enabled at runtime via /ext or /mcp
+                   (NOT during the initial seed). Not fired at assembly.
+     :on-disable   (fn []) — runtime disable hook: fired when the extension
+                   is disabled/removed at runtime; the extension owns its own
+                   teardown here (e.g. close an MCP subprocess). Only tool
+                   surfaces hot-swap — see xi.ext.manager for the honest scope.
 
    Web-client surface (browser-safe web halves only — composed by
    xi.web.core, ignored everywhere else):

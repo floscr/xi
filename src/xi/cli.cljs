@@ -57,6 +57,8 @@
             [xi.core.state :as state]
             [xi.config :as config]
             [xi.ext.core :as ext]
+            [xi.ext.manager :as manager]
+            [xi.ext.mcp :as mcp]
             [xi.fx :as fx]
             [xi.naming :as naming]
             [xi.summary :as summary]
@@ -93,9 +95,10 @@
    nils (e.g. an unconfigured pushover) are dropped by ext/compose. `ask!`
    (the dialog ask! from ext/create-dialogs) is threaded into extensions that
    raise their own confirm dialogs from effects (worktree removal); nil in
-   the client mirror, where those effects never run."
-  [ring & [ask!]]
-  (ext/instantiate config/server {:ring ring :ask! ask!}))
+   the client mirror, where those effects never run. `manager` (xi.ext.manager)
+   is threaded to control extensions (/ext, /mcp) that toggle the live set."
+  [ring & [ask! manager]]
+  (ext/instantiate config/server {:ring ring :ask! ask! :manager manager}))
 
 (defn- client-extensions
   "Process-local extensions that run in the TUI client process
@@ -104,12 +107,17 @@
   (ext/instantiate config/client {}))
 
 (defn- tooling-opts
-  "Provider-effect tooling threaded into agent/create-fx from a composed
-   extension set + the dialog ask!."
-  [composed ask!]
-  {:tool-gate              (ext/tool-gate composed)
-   :extra-tool-definitions (:tool-definitions composed)
-   :extra-tool-registry    (:tool-registry composed)
+  "Provider-effect tooling threaded into agent/create-fx. Reads the extension
+   manager *live* so runtime enable/disable is reflected on the next turn:
+   the gate + tool defs/registry are fn-valued and re-evaluated per turn by
+   xi.provider.claude/build-mcp-server (see xi.ext.manager)."
+  [manager ask!]
+  {:tool-gate              (fn [tool-call ctx]
+                            (if-let [g (ext/tool-gate (manager/composed manager))]
+                              (g tool-call ctx)
+                              tool-call))
+   :extra-tool-definitions (fn [] (:tool-definitions (manager/composed manager)))
+   :extra-tool-registry    (fn [] (:tool-registry (manager/composed manager)))
    :ask!                   ask!})
 
 (def ^:private DEFAULT_MODEL "claude-opus-4-8")
@@ -240,7 +248,11 @@ See docs/cli.md for the full reference.")
         ring (log/create-ring)
         ;; Standalone runs everything locally — server + client extensions.
         dialogs  (ext/create-dialogs)
-        composed (ext/compose (into (server-extensions ring (:ask! dialogs)) (client-extensions)))
+        mgr      (manager/create)
+        _        (manager/seed! mgr (into (server-extensions ring (:ask! dialogs) mgr)
+                                          (client-extensions)))
+        _        (mcp/install! mgr)
+        composed (manager/composed mgr)
         agents-files (system-prompt/find-agents-md cwd)
         system-parts (into (system-prompt/load-agents-parts cwd)
                            (ext/system-prompt-parts composed cwd))
@@ -269,7 +281,7 @@ See docs/cli.md for the full reference.")
                          :transform-event (ext/transform-event composed)
                          :effects       (merge (agent/create-fx
                                                 providers
-                                                (tooling-opts composed (:ask! dialogs)))
+                                                (tooling-opts mgr (:ask! dialogs)))
                                                (fx/create-fx ring
                                                  {:system-prompt-fn
                                                   (fn [cwd]
@@ -350,8 +362,11 @@ See docs/cli.md for the full reference.")
         ;; Drop terminal-title: it writes raw ANSI escapes to stdout, which
         ;; would corrupt the one-shot response.
         dialogs  (ext/create-dialogs)
-        composed (ext/compose (remove #(= :terminal-title (:id %))
-                                      (server-extensions ring (:ask! dialogs))))
+        mgr      (manager/create)
+        _        (manager/seed! mgr (remove #(= :terminal-title (:id %))
+                                            (server-extensions ring (:ask! dialogs) mgr)))
+        _        (mcp/install! mgr)
+        composed (manager/composed mgr)
         ;; --personal-agent-only: PA system prompt only (no AGENTS.md, no
         ;; profile/skills, no extension prompt parts) and the room's
         ;; :personal-agent? flag restricts provider tools to web_search —
@@ -390,7 +405,7 @@ See docs/cli.md for the full reference.")
                          :transform-event (ext/transform-event composed)
                          :effects       (merge (agent/create-fx
                                                 providers
-                                                (tooling-opts composed (:ask! dialogs)))
+                                                (tooling-opts mgr (:ask! dialogs)))
                                                (fx/create-fx ring
                                                  {:system-prompt-fn
                                                   (fn [cwd]
@@ -684,7 +699,10 @@ See docs/cli.md for the full reference.")
   (let [server-opts (resolve-model-opts opts)
         ring (log/create-ring)
         dialogs  (ext/create-dialogs)
-        composed (ext/compose (server-extensions ring (:ask! dialogs)))
+        mgr      (manager/create)
+        _        (manager/seed! mgr (server-extensions ring (:ask! dialogs) mgr))
+        _        (mcp/install! mgr)
+        composed (manager/composed mgr)
         server (ws/create-server
                 {:server-opts server-opts
                  :personal-agent? personal-agent?
@@ -714,7 +732,7 @@ See docs/cli.md for the full reference.")
                              :transform-event (ext/transform-event composed)
                              :effects  (merge (agent/create-fx
                                                providers
-                                               (tooling-opts composed (:ask! dialogs)))
+                                               (tooling-opts mgr (:ask! dialogs)))
                                               (fx/create-fx ring
                                                 {:system-prompt-fn
                                                  (fn [cwd]

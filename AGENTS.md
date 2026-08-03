@@ -190,8 +190,15 @@ src/xi/
     tree_recorder.cljs — event → tree entry mapping (currently unwired)
   system_prompt.cljs   — system prompt construction (base + personal-agent)
   tools/*.cljs         — built-in tools (bash, read, write, edit, grep, find, ls) + registry
+  mcp/
+    client.cljs        — stdio JSON-RPC MCP client (consume external MCP servers)
   ext/
     core.cljs          — extension composition API (compose, dialogs, tool-gate chain)
+    manager.cljs       — live extension registry: runtime enable/disable +
+                         :on-enable/:on-disable hooks (see docs/mcp-servers.md)
+    extensions.cljs    — /ext list|enable|disable control command
+    mcp.cljs           — MCP-as-extension helper + /mcp command (external MCP
+                         servers → tools; see docs/mcp-servers.md)
     *.cljs             — extensions: kb, web, perplexity, github_code_search,
                          commit, clj_surgeon, gtd, permission_gate, todo_intercept,
                          plan_mode, done_notify, pushover, dictation,
@@ -243,12 +250,21 @@ element looks off and drifts from the design system.
 
 See [docs/extensions.md](docs/extensions.md) for full details.
 When writing a new extension, follow [docs/writing-extensions.md](docs/writing-extensions.md).
+For **runtime enable/disable** and **consuming external MCP servers**, see
+[docs/mcp-servers.md](docs/mcp-servers.md).
 
 - An extension is a **plain data map** — `:id :init :handlers :fx
   :event-hooks :tool-gate :tool-definitions :tool-registry :commands
-  :system-prompt :keybindings :prompt-badge :on-shutdown`. No registration
-  atoms; extensions are composed at assembly time in `xi.cli` via
-  `ext/compose`.
+  :system-prompt :keybindings :prompt-badge :on-shutdown :on-enable
+  :on-disable`. No registration atoms; extensions are composed at assembly
+  time in `xi.cli` via `ext/compose`.
+- **Runtime enable/disable**: `xi.ext.manager` keeps the composition live so
+  extensions can be toggled mid-session (`/ext list|enable|disable`), firing
+  `:on-enable` / `:on-disable`. Only *use-time* surfaces (tools + tool-gate,
+  which the provider re-reads per turn) hot-swap; handler/command/keybinding/
+  system-prompt surfaces need a restart. **External MCP servers** are wrapped
+  as extensions on top of this (`xi.ext.mcp`, `/mcp` command,
+  `~/.config/xi/mcp.edn`) — no MCP-specific provider code.
 - **Which extensions load is declared in `src/xi/config.cljc`** — one
   `server` / `client` / `web` vector per surface, shared by all builds via
   custom reader features (`#?(:node …)` for the node builds,

@@ -27,6 +27,8 @@ provider effects, and TUI.
    :keybindings      [{:key "alt+r" :event {...} :when (fn [state])}]
    :prompt-badge     (fn [state] → str|nil)
    :on-shutdown      (fn [])
+   :on-enable        (fn [])           ; runtime enable hook (see "Runtime enable/disable")
+   :on-disable       (fn [])           ; runtime disable hook; owns its own teardown
    ;; web-client surface (browser build only — see "Web Client Surface")
    :routes           {"seg" {:parse fn :path {page-kw fn} :roomless-pages #{page-kw}}}
    :pages            {page-kw (fn [state dispatch!] → hiccup)}
@@ -208,6 +210,32 @@ unconfigured:
 (defn create [{:keys [ring]}]
   {:id :events ...})
 ```
+
+The `server` ctx also includes `:manager` (the live extension registry). A
+factory that wants to toggle extensions at runtime — e.g. the `/ext` and
+`/mcp` control commands — reads it and returns nil where there is no manager
+(so the client mirror gets nothing).
+
+## Runtime enable/disable
+
+Assembly freezes one `ext/compose` snapshot per process. `xi.ext.manager`
+keeps that snapshot **live** so extensions can be enabled/disabled
+mid-session (`/ext list|enable|disable`), firing the `:on-enable` /
+`:on-disable` hooks. The provider re-reads the composed tool set on every
+turn (via the fn-valued tooling seam in `xi.cli/tooling-opts`, deref'd in
+`xi.provider.claude/build-mcp-server`), so tool changes take effect on the
+next turn without a restart.
+
+**Scope:** only *use-time* surfaces hot-swap — `:tool-definitions`,
+`:tool-registry`, `:tool-gate`. Construction-time surfaces (`:handlers`,
+`:event-hooks`, commands, `:keybindings`, `:system-prompt`, `:taps`,
+`:routes`) are baked at assembly and need a restart to fully change. Design
+runtime-toggleable extensions to contribute only tools + a tool-gate.
+
+**External MCP servers** are built on this: `xi.ext.mcp` wraps each
+configured MCP server (`~/.config/xi/mcp.edn`) as an extension contributing
+`mcp__<id>__*` tools and registers it into the manager. See
+[mcp-servers.md](mcp-servers.md).
 
 ## Web Client Surface
 

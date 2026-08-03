@@ -109,13 +109,21 @@
   (fn [tool-call] (js/Promise.resolve tool-call)))
 
 (defn- build-mcp-server
+  ;; extra-tool-definitions / extra-tool-registry may be a value OR a 0-arg fn.
+  ;; The manager passes fns (xi.cli/tooling-opts) so the enabled tool set is
+  ;; read *fresh each turn* — enabling/disabling an extension changes what the
+  ;; model sees on the next turn without a restart (see xi.ext.manager).
   [{:keys [cwd only-tools tool-gate extra-tool-definitions extra-tool-registry]}]
   (let [tool-gate (or tool-gate default-gate)
-        all-defs (into (tools/tool-definitions) extra-tool-definitions)
+        extra-defs (if (fn? extra-tool-definitions)
+                     (extra-tool-definitions) extra-tool-definitions)
+        extra-registry (if (fn? extra-tool-registry)
+                         (extra-tool-registry) extra-tool-registry)
+        all-defs (into (tools/tool-definitions) extra-defs)
         defs (if only-tools
                (filterv #(contains? only-tools (:name %)) all-defs)
                all-defs)
-        registry (merge (tools/tool-registry) extra-tool-registry)
+        registry (merge (tools/tool-registry) extra-registry)
         mcp-tools (into-array
                    (map (fn [tool-def]
                           (let [tool-name (:name tool-def)

@@ -25,10 +25,12 @@
         [xi.ext.diff.core :as diff]
         [xi.ext.done-notify :as done-notify]
         [xi.ext.events :as events]
+        [xi.ext.extensions :as extensions]
         [xi.ext.github :as github]
         [xi.ext.github-code-search.core :as github-code-search]
         [xi.ext.gtd :as gtd]
         [xi.ext.kb :as kb]
+        [xi.ext.mcp :as mcp]
         [xi.ext.permission-gate :as permission-gate]
         [xi.ext.perplexity :as perplexity]
         [xi.ext.plan-mode :as plan-mode]
@@ -99,6 +101,8 @@
       todo-intercept/extension
       terminal-title/extension
       clipboard-image/extension
+      extensions/create
+      mcp/create
       ;; sandbox after the policy gates (plan-mode, permission-gate) so
       ;; blocks/confirms run first, but BEFORE process-manager: its gate
       ;; executes bash itself, and backgrounded commands must not reach

@@ -115,3 +115,23 @@ See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 | `ORG_CLI_DIR` | `~/Code/Projects/org-mode-agenda-cli` | gtd, todo-intercept | Path to the org-mode agenda CLI. |
 | `WINDOWID` | — | done-notify | Terminal window id used to focus on notification. |
 | `XI_AMAZON_CHROME` | auto-detected | amazon | Path to the Chrome/Chromium binary used to drive the `amazon_search` headless browser. Falls back to common install paths and `google-chrome-stable` on `PATH`. |
+
+---
+
+## On-disk config files
+
+Some features persist runtime state under `~/.config/xi/`. These are not part of
+the compile-time `config.cljc` — they are written and read at runtime.
+
+### External MCP servers
+
+| Path | Written by | Description |
+| --- | --- | --- |
+| `~/.config/xi/mcp.edn` | `/mcp` command | Registry of external MCP servers. A map of `server-id → entry`; each entry has `:transport` (`:stdio`), the launch `:command`/`:args`, and optional `:enabled false` to keep a server registered but off. |
+| `~/.config/xi/mcp/<id>/tools.edn` | `/mcp add`, `/mcp refresh` | Cached tool definitions for one server, so its tools can be advertised synchronously at boot without spawning the subprocess. Refreshed on `/mcp refresh`; the whole `~/.config/xi/mcp/<id>/` dir is removed on `/mcp remove`. |
+
+Managing these files by hand is not required — use the `/mcp` command
+(`add` / `refresh` / `enable` / `disable` / `remove` / `list`). Runtime
+enable/disable of *any* extension (including the `mcp-<id>` wrappers) also
+works via `/ext enable|disable`. See [mcp-servers.md](mcp-servers.md) for the
+full walkthrough.
