@@ -70,6 +70,48 @@
        distinct
        vec))
 
+(def ^:private commit-summary-re
+  "Matches git's commit-summary line `[<branch> <sha>] subject` and captures
+   the abbreviated sha. Covers the root-commit and detached-HEAD variants
+   (`[master (root-commit) abc1234]`, `[detached HEAD abc1234]`)."
+  #"\[[^\]]*?([0-9a-f]{7,40})\]")
+
+(defn- commit-block?
+  "True when a history entry is a commit action: the git_commit tool, or a
+   bash command that ran `git commit` (amend/fixup included). Tolerant of the
+   mcp__ prefix and casing."
+  [{:keys [kind tool arguments]}]
+  (and (= :tool-call kind)
+       (let [t (some-> tool util/strip-mcp-prefix str/lower-case)]
+         (or (= t "git_commit")
+             (and (= t "bash")
+                  (some-> (:command arguments) str/lower-case (str/includes? "git commit")))))))
+
+(defn- result->text
+  "Display text of a tool-result content (a string or a vector of blocks)."
+  [content]
+  (cond
+    (string? content)     content
+    (sequential? content) (->> content
+                               (keep #(cond (string? %)          %
+                                            (= "text" (:type %)) (:text %)))
+                               (str/join "\n"))
+    :else nil))
+
+(defn session-commit-refs
+  "Abbreviated shas of the commits created during the session, in the order
+   they were made. Scans the room history for commit blocks (the git_commit
+   tool and shell `git commit`s alike) and pulls each result's `[branch <sha>]`
+   summary line. Stays pure: dedup and dead-commit (amended/rebased-away)
+   pruning happen in the git layer against the live repo."
+  [room]
+  (->> (:history room)
+       (filter commit-block?)
+       (mapcat (fn [{:keys [result]}]
+                 (->> (re-seq commit-summary-re (or (result->text result) ""))
+                      (map second))))
+       vec))
+
 (defn- list-room-sessions [room scope]
   (let [pa? (get-in room [:agent :personal-agent?])]
     (cond

@@ -111,6 +111,37 @@
                      (let [[sha short subject rel-time] (str/split line #"\x1f")]
                        {:sha sha :short short :subject subject :rel-time rel-time}))))))
 
+(defn resolve-commit
+  "Full sha for a ref (commit) in cwd, or nil when it either doesn't resolve or
+   is no longer reachable from HEAD — the filter that drops dead commits
+   (amended/rebased/reset away). The reachability test matters because an
+   amended commit's object still lingers in the store, so existence alone
+   wouldn't prune it; `merge-base --is-ancestor` (exit 0 ⇒ in HEAD's history)
+   does."
+  [cwd ref]
+  (when-let [sha (some-> (:ok (git-out cwd ["rev-parse" "--verify" "--quiet"
+                                            (str ref "^{commit}")]))
+                         str/trim not-empty)]
+    (when (:ok (git-out cwd ["merge-base" "--is-ancestor" sha "HEAD"]))
+      sha)))
+
+(defn session-commits-from-refs
+  "Metadata for the commits made this session, resolved from the abbreviated
+   refs collected off the room history (fx/session-commit-refs). Resolves each
+   ref to a full sha (dropping dead ones), dedupes, and returns
+   [{:sha :short :subject :rel-time}] newest first. Empty when none survive."
+  [cwd refs]
+  (let [shas (->> refs (keep #(resolve-commit cwd %)) distinct vec)]
+    (when (seq shas)
+      (some->> (:ok (git-out cwd (into ["log" "--no-walk=sorted"
+                                        "--format=%H%x1f%h%x1f%s%x1f%cr"]
+                                       shas)))
+               str/split-lines
+               (remove str/blank?)
+               (mapv (fn [line]
+                       (let [[sha short subject rel-time] (str/split line #"\x1f")]
+                         {:sha sha :short short :subject subject :rel-time rel-time})))))))
+
 (defn commit-show-text
   "Unified diff for a single commit (git show). Honors *diff-engine*. The
    commit-message preamble git prepends is ignored by the diff parser (it only

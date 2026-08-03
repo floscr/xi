@@ -34,6 +34,22 @@
                              client-id (assoc :client-id client-id)
                              cols      (assoc :cols cols))]]}))
 
+(defn- cmd-commits
+  "List this session's commits and let the user pick one to view its diff.
+   The picking happens in the :commits/pick effect (it needs git I/O + the
+   dialog `ask!`); this only fans out the effect."
+  [_st {:keys [room-id client-id]}]
+  {:effects [[:commits/pick (cond-> {:room-id room-id}
+                              client-id (assoc :client-id client-id))]]})
+
+(defn- diff-open-commit
+  "Open one commit's diff (originator-only) via the same :diff/load path as
+   /diff commit:<sha>. Dispatched by the /commits selection menu once the user
+   picks a commit."
+  [_st {:keys [room-id sha client-id]}]
+  {:effects [[:diff/load (cond-> {:room-id room-id :args (str "commit:" sha) :engine :git}
+                           client-id (assoc :client-id client-id))]]})
+
 ;; ── Effect (impure) ───────────────────────────────────────────────────────────
 
 (defn- diff-load-fx
@@ -116,6 +132,36 @@
           :else
           (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+"))))))))
 
+(defn- commits-pick-fx
+  "Present a numbered selection menu of the commits made this session (newest
+   first) and open the chosen commit's diff via :diff/open-commit (the same
+   :diff/load path as /diff commit:<sha>). `ask!` (from create-dialogs) powers
+   the menu; without it (headless) it points the user at /diff session-commits."
+  [ask! {:keys [dispatch! state] :as fx-ctx} {:keys [room-id client-id]}]
+  (let [room    (state/get-room state room-id)
+        cwd     (or (:cwd room) (.cwd js/process))
+        ;; Collect commits from the session history (git_commit tool + shell
+        ;; `git commit`s), then dedupe and drop dead (amended/rebased) ones
+        ;; against the live repo — more precise than a base..HEAD range.
+        commits (git/session-commits-from-refs cwd (fx/session-commit-refs room))
+        status! (fn [text] (dispatch! {:type :ui/status :room-id room-id :text text}))]
+    (cond
+      (empty? commits) (status! "No commits made this session.")
+      (nil? ask!)     (status! "No dialog available to pick a commit (try /diff session-commits).")
+      :else
+      (-> (ask! fx-ctx
+                {:room-id room-id
+                 :dialog {:type :select
+                          :message "View the diff of which commit?"
+                          :options (mapv (fn [{:keys [sha short subject rel-time]}]
+                                           {:label (str short "  " subject "  (" rel-time ")")
+                                            :value sha})
+                                         commits)}})
+          (.then (fn [sha]
+                   (when sha
+                     (dispatch! (cond-> {:type :diff/open-commit :room-id room-id :sha sha}
+                                  client-id (assoc :client-id client-id))))))))))
+
 ;; ── Extension ─────────────────────────────────────────────────────────────────
 
 (def extension
@@ -129,10 +175,23 @@
                              {:name "unstaged"        :description "Unstaged changes"}
                              {:name "session-edits"   :description "Diff of files edited this session"}
                              {:name "session-commits" :description "Diff of commits made this session"}
-                             {:name "difft"           :description "Render with difftastic (append a source, e.g. difft staged)"}]}]
-   :handlers {:ui/diff-open handlers/diff-open}
+                             {:name "difft"           :description "Render with difftastic (append a source, e.g. difft staged)"}]}
+              {:name "commits"
+               :description "Pick a commit made this session and view its diff"
+               :handler cmd-commits}]
+   :handlers {:ui/diff-open    handlers/diff-open
+              :diff/open-commit diff-open-commit}
    ;; The diff viewer is a client-local view: the server delivers :ui/diff-open
    ;; only to the client that ran /diff, so it never flips other connected
-   ;; clients (TUI or web) into the diff tab.
+   ;; clients (TUI or web) into the diff tab. :diff/open-commit is an internal
+   ;; server-side relay (menu choice → :diff/load) and never needs the wire.
    :originator-only #{:ui/diff-open}
+   :no-broadcast    #{:diff/open-commit}
    :fx       {:diff/load diff-load-fx}})
+
+(defn create
+  "Factory: captures `ask!` (from ext.core/create-dialogs) so the /commits
+   command can present its selection menu. Everything else is the plain
+   `extension` map."
+  [{:keys [ask!]}]
+  (assoc-in extension [:fx :commits/pick] (partial commits-pick-fx ask!)))
