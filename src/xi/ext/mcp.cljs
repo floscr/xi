@@ -404,19 +404,50 @@
        "Arguments:\n"
        (format-arguments arguments)))
 
+(defn- tool-allowed?
+  "Has this exact MCP tool been remembered as always-allowed for the room?
+   Remembering is per-room (i.e. per session) and keyed on the fully qualified
+   tool name, so it covers every call to that tool regardless of arguments."
+  [st room-id qualified-name]
+  (contains? (get-in st [:rooms room-id :ext :mcp :allowed-tools]) qualified-name))
+
+(defn- allow-tool-handler
+  "Remember `tool` as always-allowed for the room's session — set when the user
+   chooses [a]llow always on an MCP confirm dialog. Room-scoped, so it lives as
+   long as the room does and is cleared when the session ends."
+  [st {:keys [room-id tool]}]
+  {:state (update-in st [:rooms room-id :ext :mcp :allowed-tools]
+                     (fnil conj #{}) tool)})
+
 (defn- mcp-tool-gate
   "Gate every external MCP tool call behind a confirm dialog. Non-MCP tools
    (bare names) pass through untouched; on approval the call proceeds, on
    denial it's blocked (nil). With no :confirm! (the client mirror, where the
    gate never actually executes tools) it passes through — the authoritative
    gate runs server-side, where :confirm! resolves to its safe default (deny)
-   when no client is attached to approve."
-  [tool-call {:keys [confirm!]}]
+   when no client is attached to approve.
+
+   The dialog offers a third choice, [a]llow always, which allows the call and
+   remembers this tool for the rest of the session (see allow-tool-handler), so
+   subsequent calls to the same tool skip the prompt entirely."
+  [tool-call {:keys [confirm! get-state dispatch! room-id]}]
   (if-let [{:keys [server tool]} (parse-qualified-name (:name tool-call))]
-    (if confirm!
-      (-> (confirm! (gate-message server tool (:arguments tool-call)))
-          (.then (fn [ok?] (if ok? tool-call nil))))
-      tool-call)
+    (cond
+      (not confirm!) tool-call
+      (and get-state (tool-allowed? (get-state) room-id (:name tool-call))) tool-call
+      :else
+      (-> (confirm! (gate-message server tool (:arguments tool-call))
+                    {:allow-always? true})
+          (.then (fn [ans]
+                   (cond
+                     (= ans :always)
+                     (do (when dispatch!
+                           (dispatch! {:type :mcp/allow-tool
+                                       :room-id room-id
+                                       :tool (:name tool-call)}))
+                         tool-call)
+                     ans tool-call
+                     :else nil)))))
     tool-call))
 
 (defn create
@@ -430,6 +461,8 @@
      ;; mcp-tool-gate) — external servers are third-party code, so nothing they
      ;; expose executes without an explicit, information-rich approval.
      :tool-gate mcp-tool-gate
+     ;; Remembers [a]llow-always choices per room for the session's lifetime.
+     :handlers  {:mcp/allow-tool allow-tool-handler}
      :commands [{:name "mcp"
                  :description "Manage MCP servers (list/add/enable/disable/remove/refresh)"
                  :handler mcp-command

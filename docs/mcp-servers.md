@@ -129,6 +129,14 @@ approve, the confirm resolves to its safe default (deny), so MCP tools never run
 unattended. The gate lives alongside the built-in `permission-gate`; both are
 composed into the same per-turn tool-gate chain.
 
+**Allow always (per session).** The dialog offers a third choice besides
+yes/no — `[a]llow always` in the TUI, an **Always** button on the web. Choosing
+it approves this call *and* remembers the tool (keyed on its fully qualified
+`mcp__<id>__<tool>` name, regardless of arguments) for the rest of the session,
+so every later call to that same tool skips the prompt. The memory is
+room-scoped: it lives as long as the room does and is cleared when the session
+ends — there is no on-disk allow-list. To un-remember, start a new session.
+
 ### `/mcp` command
 
 ```
@@ -215,7 +223,9 @@ deploys and mutate service env vars, never load unless you opt in. To use it:
 2. `/mcp enable render` then `/mcp refresh render` (caches its tools).
 3. `/render` shows key presence, enabled state, and these steps.
 
-Once enabled, every Render tool call is still confirmed by the MCP tool gate.
+Once enabled, every Render tool call is still confirmed by the MCP tool gate —
+unless you `[a]llow always` a given tool, which remembers it for the session
+(e.g. approve `list_logs` once with `[a]` and later log reads run un-prompted).
 
 The hosted-OAuth flow (`/mcp auth`) remains unimplemented — API-key auth covers
 Render and most hosted servers without it.

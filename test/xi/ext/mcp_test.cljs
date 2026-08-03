@@ -95,6 +95,53 @@
           (is (nil? denied) "denial blocks the call"))
         (done)))))
 
+(deftest allow-tool-handler-remembers-per-room
+  (let [handler (get (:handlers (mcp/create {:manager :stub})) :mcp/allow-tool)
+        {st' :state} (handler {} {:room-id "r1" :tool "mcp__render__list_logs"})]
+    (is (= #{"mcp__render__list_logs"}
+           (get-in st' [:rooms "r1" :ext :mcp :allowed-tools])))
+    (testing "a second tool joins the room's set"
+      (let [{st2 :state} (handler st' {:room-id "r1" :tool "mcp__render__get_metrics"})]
+        (is (= #{"mcp__render__list_logs" "mcp__render__get_metrics"}
+               (get-in st2 [:rooms "r1" :ext :mcp :allowed-tools])))))))
+
+(deftest tool-gate-allow-always-remembers-and-proceeds
+  (let [gate (:tool-gate (mcp/create {:manager :stub}))
+        tc   {:name "mcp__render__list_logs" :arguments {:svc "web"}}]
+    (async done
+      (let [dispatched (atom [])
+            opts-seen  (atom nil)
+            gated      (gate tc {:room-id   "r1"
+                                 :get-state (fn [] {})
+                                 :dispatch! (fn [ev] (swap! dispatched conj ev))
+                                 :confirm!  (fn [_ opts]
+                                              (reset! opts-seen opts)
+                                              (js/Promise.resolve :always))})]
+        (is (= tc gated) ":always lets the call proceed")
+        (is (= {:allow-always? true} @opts-seen)
+            "the gate offers the allow-always option")
+        (is (= [{:type :mcp/allow-tool :room-id "r1" :tool "mcp__render__list_logs"}]
+               @dispatched)
+            ":always dispatches the per-session remember event")
+        (done)))))
+
+(deftest tool-gate-skips-remembered-tools
+  (let [gate (:tool-gate (mcp/create {:manager :stub}))
+        st   {:rooms {"r1" {:ext {:mcp {:allowed-tools #{"mcp__render__list_logs"}}}}}}]
+    (testing "a remembered tool bypasses the confirm dialog (returned synchronously)"
+      (let [tc {:name "mcp__render__list_logs" :arguments {}}]
+        (is (= tc (gate tc {:room-id   "r1"
+                            :get-state (fn [] st)
+                            :confirm!  (fn [& _] (throw (js/Error. "should not ask again")))})))))
+    (testing "a different, unremembered tool is still gated (can be denied)"
+      (async done
+        (let [denied (gate {:name "mcp__render__delete" :arguments {}}
+                           {:room-id   "r1"
+                            :get-state (fn [] st)
+                            :confirm!  (fn [& _] (js/Promise.resolve false))})]
+          (is (nil? denied) "unremembered tool is asked and denial blocks it")
+          (done))))))
+
 (deftest parse-command-covers-subs
   (testing "empty defaults to list"
     (is (= {:sub "list"} (mcp/parse-command "")))

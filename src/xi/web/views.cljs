@@ -981,7 +981,7 @@
   "Human label for the choice the user made on a now-resolved dialog."
   [type options value]
   (case type
-    :confirm    (if value "Allowed" "Denied")
+    :confirm    (cond (= value :always) "Always allowed" value "Allowed" :else "Denied")
     :select     (or (some #(when (= (:value %) value) (:label %)) options)
                     (str value))
     :alert      "Dismissed"
@@ -1013,7 +1013,7 @@
    On answer we log the decision into :web/resolved-dialogs (anchored to the
    current history length) so the bubble persists as a static record."
   [dispatch! state room history]
-  (when-let [{:keys [id type message text options]} (first (get-in room [:ui :dialogs]))]
+  (when-let [{:keys [id type message text options allow-always?]} (first (get-in room [:ui :dialogs]))]
     (let [room-id (:id room)
           answer! (fn [value]
                     ;; Optimistically log the decision and drop the live dialog
@@ -1055,6 +1055,9 @@
              (list
               [:button {:class ["confirm-btn" "confirm-btn--deny"]
                         :on {:click (fn [_] (answer! false))}} "Deny"]
+              (when allow-always?
+                [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                          :on {:click (fn [_] (answer! :always))}} "Always"])
               [:button {:class ["confirm-btn" "confirm-btn--allow"]
                         :on {:click (fn [_] (answer! true))}} "Allow"]))])]])))
 
