@@ -92,6 +92,7 @@ bb check
 - If port 7474 is NOT in use: start it with **`bb serve`** (never raw `bun …`).
 - The server is a long-lived bun process and does **not** hot-reload server-side code, even when shadow-cljs watch is running. The browser web client *does* hot-reload — just refresh the page. But for changes to server-side namespaces (`xi.server.*`, `xi.core.*`, `xi.agent`, extensions, providers, etc.) the server must be restarted with **`bb serve:restart`**.
 - **Never kill an existing server process** to restart it, and never `kill` a stray bun server by PID — use `bb serve:restart` / `bb serve:stop` so the tmux session stays consistent. If a restart seems risky, ask the user first.
+- **`bb serve:restart` / `bb serve:stop` deliberately sever your own connection.** They kill the `xi-serve` server that hosts your session, so once approved the permission gate runs them **detached** and returns a success result immediately. Your WS link to :7474 dropping right after (a "stream closed"/"connecting to server" blip) is the **expected sign it worked**, not a failure — do NOT retry the command. The server is back within ~5s; confirm with `bb check` or by reloading the page.
 
 ### Unit Tests
 
