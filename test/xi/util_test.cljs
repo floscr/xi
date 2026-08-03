@@ -161,3 +161,48 @@
                  "</conversation-summary>")))))
   (testing "already-cleaned title passes through unchanged (idempotent)"
     (is (= "Figma Styles Exp" (util/session-title "Figma Styles Exp")))))
+
+;; ── cap-tool-result-content ──
+
+(def ^:private max-chars util/max-tool-result-chars)
+
+(defn- total-text [content]
+  (if (string? content)
+    (count content)
+    (->> content
+         (filter #(= "text" (:type %)))
+         (map #(count (:text %)))
+         (reduce + 0))))
+
+(deftest cap-small-content-passes-through
+  (testing "under-budget string is unchanged"
+    (is (= "hello world" (util/cap-tool-result-content "hello world"))))
+  (testing "under-budget block vec is unchanged"
+    (let [content [{:type "text" :text "hello world"}]]
+      (is (= content (util/cap-tool-result-content content))))))
+
+(deftest cap-huge-string-is-trimmed
+  (testing "a plain string far over budget is trimmed under the cap (Ollama shape)"
+    (let [big (apply str (repeat (* max-chars 3) "x"))
+          out (util/cap-tool-result-content big)]
+      (is (string? out))
+      (is (<= (count out) max-chars))
+      (is (re-find #"Xi truncated" out)))))
+
+(deftest cap-single-huge-line-block-is-trimmed
+  (testing "a one-line block dump over budget keeps head+tail under the cap"
+    (let [big (apply str (repeat (* max-chars 3) "x"))
+          content [{:type "text" :text big}]
+          out (util/cap-tool-result-content content)]
+      (is (<= (total-text out) max-chars))
+      (is (re-find #"Xi truncated" (:text (first out))))
+      (is (< (total-text out) (count big))))))
+
+(deftest cap-image-blocks-pass-through
+  (testing "non-text blocks are untouched even when text is trimmed"
+    (let [big (apply str (repeat (* max-chars 2) "y"))
+          img {:type "image" :source {:type "base64" :data "AAAA"}}
+          content [{:type "text" :text big} img]
+          out (util/cap-tool-result-content content)]
+      (is (some #(= img %) out))
+      (is (<= (total-text out) max-chars)))))

@@ -24,6 +24,64 @@
              "\n… (" (- total (dec n)) " more lines)")))
     text))
 
+(def max-tool-result-chars
+  "Upper bound on the text characters a single tool result may carry back to an
+   LLM. Providers trim oversized output to this (via cap-tool-result-content) so
+   we never spend a huge slice of the context window — and the model's token
+   budget — on one tool result. Kept below the Claude SDK's own tool-output
+   token guard so Xi decides how output is trimmed rather than the SDK."
+  40000)
+
+(defn head-tail-truncate
+  "Trim `s` to at most `budget` chars by keeping the head and tail and dropping
+   the middle. Works whether the overflow is spread across many lines or crammed
+   into one giant line (e.g. a one-line JSON log dump)."
+  [s budget]
+  (let [n (count s)]
+    (cond
+      (<= n budget) s
+      (< budget 200) (str "… [Xi truncated " n " chars] …")
+      :else (let [keep (- budget 80)
+                  head-len (quot (* keep 2) 3)
+                  tail-len (- keep head-len)]
+              (str (subs s 0 head-len)
+                   "\n\n… [Xi truncated " (- n keep) " of " n " chars] …\n\n"
+                   (subs s (- n tail-len)))))))
+
+(defn cap-tool-result-content
+  "Cap the total text of a tool result's `content` to `max-tool-result-chars`
+   so a provider never forwards an oversized result to an LLM. `content` may be
+   a plain string (Ollama flattens results) or a vec of `{:type ...}` blocks
+   (the Claude bridge); image / non-text blocks pass through untouched. Returns
+   the same shape, trimmed."
+  [content]
+  (cond
+    (string? content) (head-tail-truncate content max-tool-result-chars)
+
+    (sequential? content)
+    (let [content (vec content)
+          total (transduce (comp (filter #(= "text" (:type %)))
+                                 (map #(count (:text % ""))))
+                           + 0 content)]
+      (if (<= total max-tool-result-chars)
+        content
+        (:blocks
+         (reduce
+          (fn [{:keys [remaining] :as acc} b]
+            (if (= "text" (:type b))
+              (let [t (:text b "")
+                    t' (if (pos? remaining)
+                         (head-tail-truncate t remaining)
+                         "… [Xi truncated: output budget exhausted] …")]
+                (-> acc
+                    (update :blocks conj (assoc b :text t'))
+                    (update :remaining - (count t'))))
+              (update acc :blocks conj b)))
+          {:blocks [] :remaining max-tool-result-chars}
+          content))))
+
+    :else content))
+
 (defn claude-model?
   "Returns true if model string looks like a Claude/Anthropic model."
   [model]

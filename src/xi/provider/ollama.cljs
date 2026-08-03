@@ -50,7 +50,8 @@
                        (if (instance? js/Promise result) result (js/Promise.resolve result)))
                      (.then (fn [result]
                               {:role "tool" :tool_call_id id
-                               :content (util/extract-text-content (:content result))}))
+                               :content (util/cap-tool-result-content
+                                         (util/extract-text-content (:content result)))}))
                      (.catch (fn [err]
                                {:role "tool" :tool_call_id id
                                 :content (str "Tool error: " (.-message err))})))

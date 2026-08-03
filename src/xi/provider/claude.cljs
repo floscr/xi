@@ -108,58 +108,6 @@
   "Pass-through tool gate (extensions inject the real one)."
   (fn [tool-call] (js/Promise.resolve tool-call)))
 
-(def ^:private MAX_TOOL_RESULT_CHARS
-  "Upper bound on the text characters Xi returns to the SDK from a single tool
-   result. Xi trims oversized output on its own terms below this so the SDK's
-   own token-based tool-output guard never fires — that guard dumps the result
-   to a file and appends a python-based 'read it in chunks' notice, noise Xi
-   controls away from here. The SDK guard is additionally raised in
-   stream-messages as a backstop so it can't fire on this already-trimmed
-   output."
-  40000)
-
-(defn- head-tail-truncate
-  "Trim `s` to at most `budget` chars by keeping the head and tail and dropping
-   the middle. Works whether the overflow is spread across many lines or
-   crammed into one giant line (e.g. a one-line JSON log dump)."
-  [s budget]
-  (let [n (count s)]
-    (cond
-      (<= n budget) s
-      (< budget 200) (str "… [Xi truncated " n " chars] …")
-      :else (let [keep (- budget 80)
-                  head-len (quot (* keep 2) 3)
-                  tail-len (- keep head-len)]
-              (str (subs s 0 head-len)
-                   "\n\n… [Xi truncated " (- n keep) " of " n " chars] …\n\n"
-                   (subs s (- n tail-len)))))))
-
-(defn- cap-tool-result-content
-  "Cap the total text of a tool result's content vector to
-   MAX_TOOL_RESULT_CHARS so Xi — not the SDK — decides how oversized output is
-   trimmed. Image / non-text blocks pass through untouched."
-  [content]
-  (let [content (vec content)
-        total (transduce (comp (filter #(= "text" (:type %)))
-                               (map #(count (:text % ""))))
-                         + 0 content)]
-    (if (<= total MAX_TOOL_RESULT_CHARS)
-      content
-      (:blocks
-       (reduce
-        (fn [{:keys [remaining] :as acc} b]
-          (if (= "text" (:type b))
-            (let [t (:text b "")
-                  t' (if (pos? remaining)
-                       (head-tail-truncate t remaining)
-                       "… [Xi truncated: output budget exhausted] …")]
-              (-> acc
-                  (update :blocks conj (assoc b :text t'))
-                  (update :remaining - (count t'))))
-            (update acc :blocks conj b)))
-        {:blocks [] :remaining MAX_TOOL_RESULT_CHARS}
-        content)))))
-
 (defn- build-mcp-server
   ;; extra-tool-definitions / extra-tool-registry may be a value OR a 0-arg fn.
   ;; The manager passes fns (xi.cli/tooling-opts) so the enabled tool set is
@@ -199,7 +147,7 @@
 
                                               (:intercepted gated)
                                               (let [result (:result gated)]
-                                                #js {:content (clj->js (cap-tool-result-content (:content result)))
+                                                #js {:content (clj->js (util/cap-tool-result-content (:content result)))
                                                      :isError (boolean (:is-error result))})
 
                                               :else
@@ -208,7 +156,7 @@
                                                       result
                                                       (js/Promise.resolve result)))
                                                   (.then (fn [result]
-                                                           #js {:content (clj->js (cap-tool-result-content (:content result)))
+                                                           #js {:content (clj->js (util/cap-tool-result-content (:content result)))
                                                                 :isError (boolean (:is-error result))}))
                                                   (.catch (fn [err]
                                                             #js {:content #js [#js {:type "text"
