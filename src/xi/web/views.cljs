@@ -33,6 +33,29 @@
       (and (exists? js/window.matchMedia)
            (.-matches (.matchMedia js/window "(display-mode: standalone)")))))
 
+;; ── Block context menus ──────────────────────────────────────────────────────
+
+(defn tap-opens-context-menu?
+  "True when a `click` event should open a content block's context menu — i.e.
+   it came from a touch/pen tap, not a mouse pointer. On a mouse pointer the
+   menu opens via right-click (contextmenu) instead, so a plain left-click
+   never summons it."
+  [^js e]
+  (not= "mouse" (.-pointerType e)))
+
+(defn block-context-menu-on
+  "Replicant `:on` handlers that summon a content block's context menu via a
+   touch tap or a mouse right-click — never a plain left-click. `open!` is
+   called with the triggering DOM event (read `.clientX`/`.clientY` for the
+   anchor point)."
+  [open!]
+  {:click       (fn [^js e]
+                  (when (tap-opens-context-menu? e)
+                    (open! e)))
+   :contextmenu (fn [^js e]
+                  (.preventDefault e)
+                  (open! e))})
+
 ;; ── Timeline virtualization ──────────────────────────────────────────────────
 
 (def initial-window-size
@@ -338,12 +361,13 @@
             "Save")]]]
         [:div (cond-> {:class ["post" "post--user" (when idx "post--tappable")]}
                 idx (assoc :data-history-index idx)
-                idx (assoc :on {:click (fn [^js e]
-                                         (dispatch! {:type :bubble/menu-open
-                                                     :index idx
-                                                     :text (:text entry)
-                                                     :x (.-clientX e)
-                                                     :y (.-clientY e)}))}))
+                idx (assoc :on (block-context-menu-on
+                                (fn [^js e]
+                                  (dispatch! {:type :bubble/menu-open
+                                              :index idx
+                                              :text (:text entry)
+                                              :x (.-clientX e)
+                                              :y (.-clientY e)})))))
          [:div {:class ["post-body"]}
           (if-let [imgs (seq (:images entry))]
             [:div {:class ["user-images"]}

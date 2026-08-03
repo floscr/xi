@@ -1191,26 +1191,40 @@
 (defonce ^:private code-copy-attached? (atom false))
 
 (defn- attach-code-copy-listener!
-  "Delegated document click listener: tapping a rendered code block (`pre`) or
-   inline `code` surfaces a floating Copy button near the tap point
-   (:web/code-menu, rendered by chat-view). Skipped inside user bubbles (which
-   already have their own tap menu with Copy) and inline editors."
+  "Delegated document listeners: right-clicking (mouse) or tapping (touch) a
+   rendered code block (`pre`) or inline `code` surfaces a floating Copy button
+   near the pointer (:web/code-menu, rendered by chat-view); a plain mouse
+   left-click does nothing. Skipped inside user bubbles (which already have
+   their own tap menu with Copy) and inline editors. Mirrors the
+   right-click/tap contract of user bubbles via views/tap-opens-context-menu?."
   []
   (when-not @code-copy-attached?
     (reset! code-copy-attached? true)
-    (.addEventListener
-     js/document "click"
-     (fn [^js e]
-       (when-let [d @dispatch-ref]
-         (when-let [node (some-> (.-target e) (.closest "pre, code"))]
-           (when (and (not (.closest node ".post--user"))
-                      (not (.closest node ".bubble-edit-textarea")))
-             (let [text (.-textContent node)]
-               (when (seq (str/trim (or text "")))
-                 (d {:type :code/menu-open
-                     :text text
-                     :x (.-clientX e)
-                     :y (.-clientY e)}))))))))))
+    (let [code-node (fn [^js e]
+                      (when-let [node (some-> (.-target e) (.closest "pre, code"))]
+                        (when (and (not (.closest node ".post--user"))
+                                   (not (.closest node ".bubble-edit-textarea")))
+                          node)))
+          open!     (fn [^js e ^js node]
+                      (when-let [d @dispatch-ref]
+                        (let [text (.-textContent node)]
+                          (when (seq (str/trim (or text "")))
+                            (d {:type :code/menu-open
+                                :text text
+                                :x (.-clientX e)
+                                :y (.-clientY e)})))))]
+      (.addEventListener
+       js/document "click"
+       (fn [^js e]
+         (when (views/tap-opens-context-menu? e)
+           (when-let [node (code-node e)]
+             (open! e node)))))
+      (.addEventListener
+       js/document "contextmenu"
+       (fn [^js e]
+         (when-let [node (code-node e)]
+           (.preventDefault e)
+           (open! e node)))))))
 
 ;; ── Render ───────────────────────────────────────────────────────────────────
 
