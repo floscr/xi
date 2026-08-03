@@ -1,6 +1,16 @@
 (ns xi.tui.grid-test
   (:require [cljs.test :refer [deftest is testing]]
-            [xi.tui.grid :as grid]))
+            [clojure.string :as str]
+            [xi.tui.grid :as grid]
+            [xi.tui.terminal :as term]))
+
+(defn- capture-diff
+  "Run emit-diff! against captured terminal output, returning the emitted string."
+  [new-grid old-grid]
+  (let [out (atom "")]
+    (with-redefs [term/write! (fn [s] (swap! out str s))]
+      (grid/emit-diff! new-grid old-grid))
+    @out))
 
 (deftest line->row-plain-text
   (testing "plain text fills cells correctly"
@@ -105,6 +115,38 @@
     (let [row (grid/line->row "e\u0301x" 4)]
       (is (= "e\u0301" (aget (aget row 0) 0)))
       (is (= "x" (aget (aget row 1) 0))))))
+
+(deftest emit-diff-clears-trailing-orphans
+  (testing "a shorter line erases to end-of-line so a longer previous line leaves no orphans"
+    ;; The previous frame had a long line (with a wide glyph whose terminal
+    ;; width may disagree with the grid); the new frame is much shorter.
+    (let [old-g (grid/frame->grid ["⚠️ the remote branch has now diverged"] 40 1)
+          new-g (grid/frame->grid ["hi"] 40 1)
+          out (capture-diff new-g old-g)]
+      ;; Writes the new content
+      (is (str/includes? out "hi"))
+      ;; Clears the blank tail with a single erase-to-end-of-line at the first
+      ;; blank column ("hi" occupies cols 0-1, so erase starts at 1-based col 3)
+      (is (str/includes? out "\033[1;3H\033[0m\033[K")
+          "emits erase-to-EOL at the start of the blank tail"))))
+
+(deftest emit-diff-no-erase-when-unchanged
+  (testing "an unchanged row emits nothing (no erase spam)"
+    (let [a (grid/frame->grid ["hello"] 20 1)
+          b (grid/frame->grid ["hello"] 20 1)
+          out (capture-diff a b)]
+      (is (= "" out)))))
+
+(deftest emit-diff-no-erase-on-full-width-background
+  (testing "a row filled edge-to-edge with a background is not erased-to-EOL"
+    ;; Full-width styled line has no default-blank tail, so it must not be
+    ;; cleared with \033[K (which would drop the background).
+    (let [styled (str "\033[44m" (apply str (repeat 20 " ")))
+          old-g (grid/frame->grid ["prev"] 20 1)
+          new-g (grid/frame->grid [styled] 20 1)
+          out (capture-diff new-g old-g)]
+      (is (not (str/includes? out "\033[K"))
+          "no erase-to-EOL when the tail carries a background style"))))
 
 (deftest line->row-tab-expansion
   (testing "tabs expand to spaces at 4-column stops"

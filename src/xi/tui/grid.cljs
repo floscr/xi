@@ -37,6 +37,27 @@
 
 (def ^:private SPACE_CELL (make-cell " " ""))
 
+(defn- default-blank?
+  "True if a cell is an unstyled space (the value a padded/short line leaves
+   in the tail of a row). Continuation cells carry the wide glyph, so they are
+   never default-blank."
+  [^js cell]
+  (and (= (aget cell 0) " ")
+       (= (aget cell 1) "")
+       (not (aget cell 2))))
+
+(defn- blank-tail-start
+  "Index where the maximal trailing run of default-blank cells begins in a row.
+   Returns `width` when the row has no blank tail. Used so a changed row can be
+   cleared with a single erase-to-end-of-line instead of per-cell space writes —
+   which also wipes orphan glyphs left behind when the terminal renders a wide
+   glyph at a different column count than the grid's width model."
+  [^js row width]
+  (loop [c width]
+    (if (and (pos? c) (default-blank? (aget row (dec c))))
+      (recur (dec c))
+      c)))
+
 (defn- cell-eq?
   "Fast cell equality — compare char, style, and continuation marker.
    The marker matters: a wide glyph's base and its continuation share
@@ -211,14 +232,22 @@
     (dotimes [r height]
       (let [new-row (aget new-cells r)
             old-row (when (< r old-height) (aget old-cells r))
-            ;; Find runs of changed cells on this row
-            ;; Emit: cursor-to + style + chars for each contiguous run
-            ]
+            ;; A changed row is cleared to end-of-line at the start of its blank
+            ;; tail (see blank-tail-start). Cells in the tail are handled by that
+            ;; erase, so run emission stops there.
+            bt (blank-tail-start new-row width)
+            row-changed?
+            (loop [c 0]
+              (cond
+                (>= c width) false
+                (let [oc (when (and old-row (< c old-width)) (aget old-row c))]
+                  (or (nil? oc) (not (cell-eq? (aget new-row c) oc)))) true
+                :else (recur (inc c))))]
         (loop [c 0
                run-start -1
                run-style nil
                run-chars nil]
-          (if (>= c width)
+          (if (>= c bt)
             ;; Flush final run
             (when (>= run-start 0)
               (.push buf (str "\033[" (inc r) ";" (inc run-start) "H"))
@@ -255,7 +284,11 @@
                     (when (seq run-style) (.push buf run-style))
                     (.push buf (.join run-chars ""))
                     (.push buf "\033[0m"))
-                  (recur (inc c) -1 nil nil))))))))
+                  (recur (inc c) -1 nil nil))))))
+        ;; Clear the blank tail (and any width-desync orphans in it) with a
+        ;; single erase-to-end-of-line, rather than diffing cell-by-cell.
+        (when (and row-changed? (< bt width))
+          (.push buf (str "\033[" (inc r) ";" (inc bt) "H\033[0m\033[K")))))
     ;; Write all at once
     (when (pos? (.-length buf))
       (term/write! (.join buf "")))))

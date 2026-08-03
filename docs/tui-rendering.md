@@ -78,6 +78,26 @@ On each render pass (`do-render!` in `core.cljs`):
 
 On full repaint (resize, startup, resume from external command), `previous-grid` is nil. The renderer clears the screen first, then emits the full grid.
 
+### Erasing the blank tail (width-desync robustness)
+
+Every grid row is padded to the full terminal width, so a *short* line replacing
+a *longer* one leaves a trailing run of blank cells. Diffing those cell-by-cell
+assumes the grid's column model matches the terminal's exactly — but for glyphs
+whose width is genuinely ambiguous across terminals/fonts (notably
+text-default emoji upgraded by VS16, e.g. `⚠️` = U+26A0 U+FE0F), the terminal
+may draw the glyph one column narrower than the width model. Everything after it
+then sits one physical column off, and stale glyphs drift into the logically
+*blank* tail — where old and new cells both read as spaces, so per-cell diffing
+never clears them. The result is scattered orphan characters after a shorter
+line (e.g. a heading left with `b  h  n  d …` trailing it).
+
+To stay robust to any such disagreement, `emit-diff!` clears a **changed** row's
+trailing blank run with a single erase-to-end-of-line (`\033[row;colH\033[0m\033[K`)
+at the first blank column, instead of writing per-cell spaces. This wipes any
+drifted orphans regardless of the width mismatch's direction. Rows whose tail
+carries a background style (full-width tool boxes, etc.) have no default-blank
+tail, so they are never erased this way — the background is preserved.
+
 ### Run coalescing
 
 The diff emitter doesn't write cell-by-cell. It groups contiguous changed cells that share the same style into **runs**, emitting one cursor-move + style + character-sequence per run. For a typical frame where only the spinner changed, this produces a single short write. For a full repaint, runs span entire lines — roughly equivalent to the old line-by-line approach.
