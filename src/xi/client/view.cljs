@@ -329,6 +329,17 @@
          (str/join "\n"))
     :else nil))
 
+(defn- pretty-json
+  "If `text` is a JSON object or array, return it pretty-printed with 2-space
+   indentation; otherwise nil. Scalars and plain text are left to the caller,
+   so only structured JSON (the typical MCP tool payload) gets reformatted."
+  [text]
+  (let [t (str/trim (str text))]
+    (when (and (seq t) (or (str/starts-with? t "{") (str/starts-with? t "[")))
+      (try
+        (js/JSON.stringify (js/JSON.parse t) nil 2)
+        (catch :default _ nil)))))
+
 (defn- tool-block
   "Tool-call entry → box with header, output and (when live) spinner/timer.
    Entries that arrive already finished (resumed sessions) render statically."
@@ -337,6 +348,7 @@
         box (comp/make-box {:padding-x 1 :padding-y 0 :bg-code bg-code})
         short-name (shorten-tool-name (:tool entry))
         canonical (canonical-tool (:tool entry))
+        mcp? (str/starts-with? (str (:tool entry)) "mcp__")
         header-text (comp/make-text
                      (tool-header-str short-name
                                       (format-tool-args canonical (:arguments entry))))
@@ -351,8 +363,13 @@
                             (set! (.-grammar st) (tool-output-lang canonical arguments))))
         set-output! (fn [content is-error]
                       (when-let [text (not-empty (result-text content))]
-                        (let [display (if (and (.-grammar st) (not is-error))
-                                        (truncate-output (highlight-text (.-grammar st) text) truncate-output-block-after-n-lines)
+                        ;; MCP tools return JSON payloads: pretty-print + JSON-
+                        ;; highlight them; fall back to the tool's own grammar.
+                        (let [pretty  (when (and mcp? (not is-error)) (pretty-json text))
+                              text    (or pretty text)
+                              grammar (if pretty (hl-grammars/get-grammar "json") (.-grammar st))
+                              display (if (and grammar (not is-error))
+                                        (truncate-output (highlight-text grammar text) truncate-output-block-after-n-lines)
                                         (truncate-output text truncate-output-block-after-n-lines))]
                           ((:add-child box) (comp/make-spacer 1))
                           ((:add-child box) (comp/make-text display))))
