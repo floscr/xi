@@ -11,6 +11,11 @@
    In server mode the notification carries a deep link (PUSHOVER_URL +
    /chat/<session-id>) so tapping it opens the chat.
 
+   A per-room push toggle (Ctrl+Shift+P, 📲 badge) forces notifications
+   regardless of the above — so a user watching in the TUI can still opt
+   into phone pushes (ping me even while I'm here). Mirrors the done-notify
+   bell's toggle mechanics.
+
    `extension` is a factory: it returns nil (and compose drops it) unless
    both PUSHOVER_USER_KEY and PUSHOVER_APP_TOKEN are set, so the seam is a
    no-op when pushover isn't configured.
@@ -23,18 +28,41 @@
 
 (def ^:private API_URL "https://api.pushover.net/1/messages.json")
 
+(def ^:private ext-id :pushover)
+
+(defn- forced?
+  "True when the per-room push toggle is on — forces a notification even
+   when the user is deemed to be watching."
+  [st room-id]
+  (boolean (:enabled? (state/room-ext st room-id ext-id))))
+
 (defn- visible-clients-in-room [st room-id]
   (count (filter (fn [[_ client]]
                    (and (= room-id (:room-id client)) (:visible? client)))
                  (get-in st [:connection :clients]))))
 
 (defn- should-notify? [st room-id]
-  (case (state/mode st)
-    ;; Standalone: piggyback on the done-notify bell toggle.
-    :standalone (boolean (:enabled? (state/room-ext st room-id :done-notify)))
-    ;; Server: notify only when nobody is watching the room.
-    :server     (zero? (visible-clients-in-room st room-id))
-    false))
+  (or (forced? st room-id)
+      (case (state/mode st)
+        ;; Standalone: piggyback on the done-notify bell toggle.
+        :standalone (boolean (:enabled? (state/room-ext st room-id :done-notify)))
+        ;; Server: notify only when nobody is watching the room.
+        :server     (zero? (visible-clients-in-room st room-id))
+        false)))
+
+(defn- toggle
+  "Ctrl+Shift+P → flip the room-scoped push toggle and report the new state."
+  [st {:keys [room-id]}]
+  (when (state/get-room st room-id)
+    (let [st' (update-in st [:rooms room-id :ext ext-id :enabled?] not)
+          on? (get-in st' [:rooms room-id :ext ext-id :enabled?])]
+      {:state (update-in st' [:rooms room-id :history] conj
+                         {:kind :status
+                          :text (str "Push notifications: " (if on? "ON" "OFF"))})})))
+
+(defn- prompt-badge [state]
+  (when-let [room (state/active-room state)]
+    (when (forced? state (:id room)) " 📲")))
 
 (defn- deep-link-url
   "Server-mode deep link to the room's chat (PUSHOVER_URL + /chat/<sid>),
@@ -98,7 +126,11 @@
   [_ctx]
   (when (and (aget js/process.env "PUSHOVER_USER_KEY")
              (aget js/process.env "PUSHOVER_APP_TOKEN"))
-    {:id       :pushover
-     :handlers {:agent/turn-end  on-turn-end
-                :ui/dialog-open  on-dialog-open}
-     :fx       {:notify/pushover notify-pushover}}))
+    {:id           ext-id
+     :init         {:room {:enabled? false}}
+     :handlers     {:ext.pushover/toggle toggle
+                    :agent/turn-end      on-turn-end
+                    :ui/dialog-open      on-dialog-open}
+     :fx           {:notify/pushover notify-pushover}
+     :keybindings  [{:key "ctrl+shift+p" :event {:type :ext.pushover/toggle}}]
+     :prompt-badge prompt-badge}))
