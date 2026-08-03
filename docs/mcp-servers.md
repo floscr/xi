@@ -95,6 +95,31 @@ Discovered tools are advertised as `mcp__<id>__<tool>` (the ecosystem
 convention) so they never collide with Xi's built-in tools. The wrapper strips
 the `mcp__<id>__` prefix before forwarding the call to the server.
 
+### Tool gate: every MCP tool call is confirmed
+
+External MCP servers are third-party code, so **nothing they expose runs without
+an explicit approval.** The `:mcp` control extension carries a `:tool-gate` that
+intercepts every `mcp__<id>__<tool>` call (built-in Xi tools with bare names are
+untouched) and raises a confirm dialog before the call is forwarded. The block
+carries as much info as possible — the server, the tool, and every argument:
+
+```
+MCP tool call — approve?
+
+Server: context7
+Tool:   get-library-docs
+
+Arguments:
+  context7CompatibleLibraryID: /facebook/react
+  topic: hooks
+```
+
+Approve and the call proceeds; deny and it is blocked (the model gets
+"Blocked by Xi permission gate"). In headless mode with no client attached to
+approve, the confirm resolves to its safe default (deny), so MCP tools never run
+unattended. The gate lives alongside the built-in `permission-gate`; both are
+composed into the same per-turn tool-gate chain.
+
 ### `/mcp` command
 
 ```

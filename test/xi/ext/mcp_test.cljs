@@ -1,5 +1,6 @@
 (ns xi.ext.mcp-test
-  (:require [cljs.test :refer [deftest is testing]]
+  (:require [cljs.test :refer [deftest is testing async]]
+            [clojure.string :as str]
             [xi.ext.mcp :as mcp]))
 
 (deftest ext-id-namespaces-server-id
@@ -37,6 +38,62 @@
   (is (true?  (mcp/enabled-entry? {})))
   (is (true?  (mcp/enabled-entry? {:enabled true})))
   (is (false? (mcp/enabled-entry? {:enabled false}))))
+
+(deftest parse-qualified-name-inverts-qualify-name
+  (testing "external MCP tool names split into server + tool"
+    (is (= {:server "render" :tool "list_services"}
+           (mcp/parse-qualified-name "mcp__render__list_services")))
+    (is (= {:server "context7" :tool "get_docs"}
+           (mcp/parse-qualified-name (mcp/qualify-name :context7 "get_docs"))))
+    (testing "a tool name containing __ keeps the split at the server boundary"
+      (is (= {:server "srv" :tool "weird__tool"}
+             (mcp/parse-qualified-name "mcp__srv__weird__tool")))))
+  (testing "bare / non-MCP names yield nil so the gate skips built-in tools"
+    (is (nil? (mcp/parse-qualified-name "bash")))
+    (is (nil? (mcp/parse-qualified-name "Read")))
+    (is (nil? (mcp/parse-qualified-name "mcp__nodelim")))
+    (is (nil? (mcp/parse-qualified-name nil)))))
+
+(deftest format-arguments-lists-every-key
+  (testing "empty args get a placeholder"
+    (is (= "  (no arguments)" (mcp/format-arguments {})))
+    (is (= "  (no arguments)" (mcp/format-arguments nil))))
+  (testing "strings verbatim, non-strings via pr-str, one per line"
+    (let [out (mcp/format-arguments {:q "react" :limit 5})]
+      (is (str/includes? out "  q: react"))
+      (is (str/includes? out "  limit: 5")))))
+
+(deftest gate-message-carries-server-tool-and-args
+  (let [msg (mcp/gate-message "context7" "get_docs" {:library "react"})]
+    (is (str/includes? msg "Server: context7"))
+    (is (str/includes? msg "Tool:   get_docs"))
+    (is (str/includes? msg "library: react"))))
+
+(deftest tool-gate-confirms-mcp-and-passes-through-others
+  (let [gate (:tool-gate (mcp/create {:manager :stub}))]
+    (testing "the /mcp extension exposes a tool-gate"
+      (is (fn? gate)))
+    (testing "non-MCP (bare) tool calls pass through untouched, even with a gate"
+      (let [tc {:name "bash" :arguments {:command "ls"}}]
+        (is (= tc (gate tc {:confirm! (fn [_] (throw (js/Error. "should not ask")))})))))
+    (testing "MCP calls with no :confirm! (client mirror) pass through"
+      (let [tc {:name "mcp__render__list" :arguments {}}]
+        (is (= tc (gate tc {})))))
+    ;; shadow-cljs auto-awaits promise values in an async test body, so we can
+    ;; bind the gate's promise result and compare it directly (see
+    ;; ext.core-test/tool-gate-promise-value).
+    (async done
+      (let [tc     {:name "mcp__render__deploy" :arguments {:svc "web"}}
+            asked  (atom nil)
+            gated  (gate tc {:confirm! (fn [msg]
+                                         (reset! asked msg)
+                                         (js/Promise.resolve true))})]
+        (is (= tc gated) "approval lets the call proceed")
+        (is (str/includes? @asked "Server: render")
+            "the confirm message is the rich gate block")
+        (let [denied (gate tc {:confirm! (fn [_] (js/Promise.resolve false))})]
+          (is (nil? denied) "denial blocks the call"))
+        (done)))))
 
 (deftest parse-command-covers-subs
   (testing "empty defaults to list"

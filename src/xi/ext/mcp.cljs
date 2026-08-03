@@ -53,6 +53,18 @@
   [id tool-name]
   (str "mcp__" (name id) "__" tool-name))
 
+(defn parse-qualified-name
+  "Inverse of qualify-name: mcp__<id>__<tool> -> {:server <id> :tool <tool>},
+   or nil when `n` is not an external MCP tool name. Built-in Xi tools have
+   bare names (bash, read, …), so they yield nil and the gate skips them."
+  [n]
+  (when (and n (str/starts-with? n "mcp__"))
+    (let [body (subs n (count "mcp__"))
+          idx  (str/index-of body "__")]
+      (when idx
+        {:server (subs body 0 idx)
+         :tool   (subs body (+ idx 2))}))))
+
 (defn normalize-tool-def
   "MCP tool map -> Xi tool-definition (namespaced, :input_schema key)."
   [id t]
@@ -310,13 +322,61 @@
   (status! dispatch! room-id
            "/mcp auth (OAuth for hosted MCP servers) is not implemented yet — Phase C."))
 
+;; ── Tool gate (confirm every MCP tool call) ───────────────────────────────────
+
+(defn- format-arg-value
+  "Render one argument value for the confirm block: strings verbatim (so paths
+   and prose read naturally), everything else via pr-str."
+  [v]
+  (if (string? v) v (pr-str v)))
+
+(defn format-arguments
+  "Indented `key: value` lines for a tool-call arguments map (a placeholder
+   when empty). Shown in the gate block so the user sees exactly what the model
+   is about to send to the MCP server."
+  [arguments]
+  (if (empty? arguments)
+    "  (no arguments)"
+    (str/join "\n"
+              (map (fn [[k v]] (str "  " (name k) ": " (format-arg-value v)))
+                   arguments))))
+
+(defn gate-message
+  "The confirm-dialog text for an MCP tool call — server, tool, and every
+   argument, so the web/TUI block carries as much info as possible."
+  [server tool arguments]
+  (str "MCP tool call — approve?\n\n"
+       "Server: " server "\n"
+       "Tool:   " tool "\n\n"
+       "Arguments:\n"
+       (format-arguments arguments)))
+
+(defn- mcp-tool-gate
+  "Gate every external MCP tool call behind a confirm dialog. Non-MCP tools
+   (bare names) pass through untouched; on approval the call proceeds, on
+   denial it's blocked (nil). With no :confirm! (the client mirror, where the
+   gate never actually executes tools) it passes through — the authoritative
+   gate runs server-side, where :confirm! resolves to its safe default (deny)
+   when no client is attached to approve."
+  [tool-call {:keys [confirm!]}]
+  (if-let [{:keys [server tool]} (parse-qualified-name (:name tool-call))]
+    (if confirm!
+      (-> (confirm! (gate-message server tool (:arguments tool-call)))
+          (.then (fn [ok?] (if ok? tool-call nil))))
+      tool-call)
+    tool-call))
+
 (defn create
   "Factory — the /mcp control extension, or nil when no manager is in ctx.
    Also installs configured MCP servers into the manager as a side effect the
    first time it runs with a manager (see xi.cli, which calls install!)."
   [{:keys [manager]}]
   (when manager
-    {:id       :mcp
+    {:id        :mcp
+     ;; Every external MCP tool call is confirmed before it runs (see
+     ;; mcp-tool-gate) — external servers are third-party code, so nothing they
+     ;; expose executes without an explicit, information-rich approval.
+     :tool-gate mcp-tool-gate
      :commands [{:name "mcp"
                  :description "Manage MCP servers (list/add/enable/disable/remove/refresh)"
                  :handler mcp-command
