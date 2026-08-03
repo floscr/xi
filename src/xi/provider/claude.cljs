@@ -332,19 +332,12 @@
                                  (:effort opts)
                                  (assoc :effort (:effort opts))
 
-                                 ;; Env for the SDK subprocess, merged over
+                                 ;; Per-turn env override, merged over
                                  ;; process.env (the SDK replaces env wholesale,
-                                 ;; so we must keep PATH/auth/etc). Always set so
-                                 ;; we can raise MAX_MCP_OUTPUT_TOKENS as a
-                                 ;; backstop: Xi already trims oversized tool
-                                 ;; results in build-mcp-server, and this keeps
-                                 ;; the SDK's own token guard from firing on that
-                                 ;; trimmed output (a user-set value wins).
-                                 true
-                                 (assoc :env (let [penv (js->clj js/process.env)]
-                                               (cond-> (merge penv (:env opts))
-                                                 (not (get penv "MAX_MCP_OUTPUT_TOKENS"))
-                                                 (assoc "MAX_MCP_OUTPUT_TOKENS" "50000"))))
+                                 ;; so we must keep PATH/auth/etc).
+                                 (:env opts)
+                                 (assoc :env (merge (js->clj js/process.env)
+                                                    (:env opts)))
 
                                  resume-id
                                  (assoc :resume resume-id)))]
