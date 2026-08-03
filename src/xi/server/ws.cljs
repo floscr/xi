@@ -241,7 +241,7 @@
       ;; starting fresh (the :session/resumed broadcast fills the client's
       ;; mirror right after the empty :room/joined snapshot).
       :room/setup
-      (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd session-id cached-msg-hash cached-msg-count]}]
+      (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd session-id cached-msg-hash cached-msg-count join-token]}]
         (let [summary (when session-id
                         (if personal-agent?
                           (session/find-personal-agent-session-by-id session-id)
@@ -271,7 +271,8 @@
                              :ext          room-ext-init
                              :personal-agent? personal-agent?
                              :created      (js/Date.now)}})
-          (dispatch! {:type :room/attach :client-id client-id :room-id room-id})
+          (dispatch! (cond-> {:type :room/attach :client-id client-id :room-id room-id}
+                       join-token (assoc :join-token join-token)))
           (when summary
             (let [;; Clip long tool outputs before they cross the wire — every
                   ;; client caps tool results at render, so a resumed transcript

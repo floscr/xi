@@ -99,7 +99,7 @@
 
    Targets: \"new\" | \"latest\" | room-id | {:session-id sid} (resume a
    saved session into a fresh room)."
-  [st {:keys [client-id target cwd cached-msg-hash cached-msg-count] :as ev}]
+  [st {:keys [client-id target cwd cached-msg-hash cached-msg-count join-token] :as ev}]
   (let [target     (or target "latest")
         ;; A session-id may ride on the event (web navigation always carries
         ;; it) or inside a {:session-id …} target (mobile reconnect).
@@ -140,15 +140,20 @@
                                            :cwd              cwd
                                            :cached-msg-hash  cached-msg-hash
                                            :cached-msg-count cached-msg-count}
-                                    (:session-id ev) (assoc :session-id (:session-id ev)))]]})))))
+                                    (:session-id ev) (assoc :session-id (:session-id ev))
+                                    ;; Echo the client's join-token back on
+                                    ;; :room/joined so the web pending-submit
+                                    ;; fires into THIS new room only.
+                                    join-token       (assoc :join-token join-token))]]})))))
 
-(defn- room-attach [st {:keys [client-id room-id]}]
+(defn- room-attach [st {:keys [client-id room-id join-token]}]
   (when (state/get-room st room-id)
     {:state   (assoc-in st [:connection :clients client-id :room-id] room-id)
      :effects [[:ws/send-to {:client-id client-id
-                             :event {:type :room/joined
-                                     :room-id room-id
-                                     :room (state/get-room st room-id)}}]]}))
+                             :event (cond-> {:type :room/joined
+                                             :room-id room-id
+                                             :room (state/get-room st room-id)}
+                                      join-token (assoc :join-token join-token))}]]}))
 
 ;; ── Client departure / cleanup ───────────────────────────────────────────────
 ;; RECURRING PITFALL: never abort a BUSY room when its last client leaves or

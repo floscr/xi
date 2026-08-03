@@ -176,14 +176,23 @@
      still attached to the previous room, so active-room is usually non-nil;
      keying off it would fire the prompt into that previous room.
    - cached session view (session-id set): the join is already in flight from
-     navigation, so just stash and wait."
+     navigation, so just stash and wait.
+
+   The virtual join carries a :join-token (the pending-room id) which the
+   server echoes back on :room/joined, so pending-submit-tap can fire the
+   prompt into *this* new room only — never into some other room that happens
+   to join first (a navigation back to a session, a reconnect). Both a fresh
+   room and an existing session carry a non-nil session id, so the token is
+   the only reliable way to correlate the reply with our own request."
   [st {:keys [session-id text images]}]
   (let [pending  (:web/pending-room st)
         virtual? (and (nil? session-id) (some? pending))
-        cwd      (:cwd pending)]
+        cwd      (:cwd pending)
+        token    (str (:id pending))]
     (cond-> {:state (-> st
                         (assoc :web/pending-submit
                                (cond-> {:session-id session-id :text text}
+                                 virtual?     (assoc :join-token token)
                                  (seq images) (assoc :images images)))
                         ;; Show the user's bubble instantly, before the
                         ;; :room/join round-trips. room-id is nil (no room
@@ -195,7 +204,7 @@
                                  (seq images) (assoc :images (vec images))))
                         (dissoc :web/pending-room))}
       virtual?
-      (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new"}
+      (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
                                    cwd (assoc :cwd cwd))]]))))
 
 (defn- submit-clear-pending [st _]
@@ -1076,16 +1085,24 @@
 
 (defn- pending-submit-tap
   "Fire a stashed message after the room it was aimed at finishes joining.
-   Guards against session-id mismatch so a navigation race can't send a
-   message into the wrong room."
+   Correlate the reply with our own request so a navigation race (or a mobile
+   reconnect) can't send the message into the wrong room:
+   - virtual new chat: match the :join-token the server echoes back — a
+     bare session-id check would match ANY room, since a fresh room and an
+     existing session both carry a non-nil session id.
+   - cached session view: match the joined session id.
+   Target the room that actually joined (:room-id event), not :active-room."
   [dispatch!]
   (fn [event state]
     (when (and (= :room/joined (:type event))
                (:web/pending-submit state))
-      (let [{:keys [session-id text images]} (:web/pending-submit state)
-            joined-sid (get-in event [:room :session :id])
-            room-id    (:active-room state)]
-        (when (or (nil? session-id) (= session-id joined-sid))
+      (let [{:keys [session-id text images join-token]} (:web/pending-submit state)
+            joined-sid   (get-in event [:room :session :id])
+            joined-token (:join-token event)
+            room-id      (:room-id event)]
+        (when (if join-token
+                (= join-token joined-token)
+                (or (nil? session-id) (= session-id joined-sid)))
           (dispatch! {:type :submit/clear-pending})
           (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
                        (seq images) (assoc :images (vec images)))))))))
