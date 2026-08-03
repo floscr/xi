@@ -188,7 +188,7 @@
    matches, closes the menu and dispatches the event (with :room-id merged).
    When :selected? is true, the currently selected item is merged into the
    event under :selected."
-  [{:keys [prompt items alt-items tab-labels key-bindings search-field]} room-id dispatch! get-state]
+  [{:keys [prompt items alt-items tab-labels key-bindings search-field freeform]} room-id dispatch! get-state]
   (let [;; Tab state is interaction-local (like the menu's filter query) —
         ;; it lives in the component, not in app state.
         tab #js {:alt false}
@@ -225,6 +225,20 @@
                                            (dispatch! event)))))
                       ;; Esc pops one drill frame (or closes at the root).
                       :on-cancel back!}
+               ;; Freeform menu (slash commands): Enter with no match runs the
+               ;; raw typed text as a command; Esc restores it (with its '/')
+               ;; to the editor instead of discarding it.
+               freeform
+               (assoc :on-submit-query
+                      (fn [query]
+                        (close!)
+                        (dispatch! {:type :input/submit :room-id room-id
+                                    :text (str "/" query)}))
+                      :on-cancel-query
+                      (fn [query]
+                        (close!)
+                        (dispatch! {:type :editor/insert :room-id room-id
+                                    :text (str "/" query)})))
                search-field
                (assoc :search-field search-field
                       :search-enrich-fn
@@ -305,6 +319,7 @@
   [room-id cmd-list]
   {:id :commands
    :prompt "/"
+   :freeform true
    :items (mapv (fn [{:keys [name description]}]
                   {:label (str "/" name)
                    :description description

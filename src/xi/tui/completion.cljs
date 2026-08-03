@@ -164,6 +164,12 @@
      :max-visible — max visible items (default: 10)
      :on-select  — (fn [item]) called when user confirms selection
      :on-cancel  — (fn []) called when user presses Escape
+     :on-submit-query — (fn [query]) called on Enter when nothing matches the
+                     current query — lets the caller run the raw typed text
+                     (e.g. a slash command that isn't in the list).
+     :on-cancel-query — (fn [query]) called on Escape instead of :on-cancel;
+                     receives the current query so the caller can restore the
+                     typed text (and its leading '/') to the editor.
      :header-fn  — (fn []) returns header string to render above items (optional)
      :search-field — kw (e.g. :search-text). When set, Ctrl+S toggles between
                      fuzzy-on-:label and substring-on-this-field.
@@ -182,6 +188,12 @@
         max-visible (or (:max-visible opts) 10)
         on-select (:on-select opts)
         on-cancel (:on-cancel opts)
+        ;; Freeform submit: when Enter is pressed and nothing matches the
+        ;; query, run whatever the user typed (e.g. a slash command not in the
+        ;; list). Cancel-query hands the current query back on Escape so the
+        ;; typed text (and its leading '/') isn't discarded.
+        on-submit-query (:on-submit-query opts)
+        on-cancel-query (:on-cancel-query opts)
         header-fn (:header-fn opts)
         search-field (:search-field opts)
         search-enrich-fn (:search-enrich-fn opts)
@@ -238,14 +250,18 @@
                           (tui/request-panel-render!))))
 
         confirm (fn []
-                  (let [{:keys [filtered selected]} @state]
-                    (when (seq filtered)
+                  (let [{:keys [filtered selected query]} @state]
+                    (if (seq filtered)
                       (let [item (nth filtered selected)]
                         (when (and on-select (not (heading? item)))
-                          (on-select item))))))
+                          (on-select item)))
+                      (when (and on-submit-query (seq (str/trim query)))
+                        (on-submit-query query)))))
 
         cancel (fn []
-                 (when on-cancel (on-cancel)))
+                 (if on-cancel-query
+                   (on-cancel-query (:query @state))
+                   (when on-cancel (on-cancel))))
 
         check-key-bindings
         (fn [data]
