@@ -46,15 +46,10 @@
               :content "Blocked by Xi permission gate"}
              (let [exec-fn (get registry name)]
                (if exec-fn
-                 (-> (let [result (exec-fn arguments {:cwd cwd})]
-                       (if (instance? js/Promise result) result (js/Promise.resolve result)))
-                     (.then (fn [result]
+                 (-> (tools/run-tool exec-fn arguments {:cwd cwd})
+                     (.then (fn [{:keys [content]}]
                               {:role "tool" :tool_call_id id
-                               :content (util/cap-tool-result-content
-                                         (util/extract-text-content (:content result)))}))
-                     (.catch (fn [err]
-                               {:role "tool" :tool_call_id id
-                                :content (str "Tool error: " (.-message err))})))
+                               :content (util/extract-text-content content)})))
                  {:role "tool" :tool_call_id id
                   :content (str "Unknown tool: " name)}))))))))
 

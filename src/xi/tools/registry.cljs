@@ -1,6 +1,7 @@
 (ns xi.tools.registry
   "Tool registry — maps tool names to definitions and execute fns."
-  (:require [xi.tools.read :as read]
+  (:require [xi.util :as util]
+            [xi.tools.read :as read]
             [xi.tools.write :as write]
             [xi.tools.edit :as edit]
             [xi.tools.bash :as bash]
@@ -28,3 +29,21 @@
   "Return map of tool-name → execute fn."
   []
   (into {} (map (fn [{:keys [def exec]}] [(:name def) exec]) builtin-tools)))
+
+(defn run-tool
+  "Run a tool's `exec-fn` with `args`/`ctx` and normalize its result to a
+   promise of {:content <blocks> :is-error bool}. Every tool result is capped
+   via util/cap-tool-result-content here, so oversized-output trimming is the
+   default for any provider that runs tools through this fn — providers never
+   have to remember to cap. Errors are turned into an error tool result."
+  [exec-fn args ctx]
+  ;; Invoke exec-fn inside .then so a synchronous throw becomes a rejected
+  ;; promise too (not just an async rejection) — both land in .catch.
+  (-> (js/Promise.resolve)
+      (.then (fn [_] (exec-fn args ctx)))
+      (.then (fn [result]
+               {:content (util/cap-tool-result-content (:content result))
+                :is-error (boolean (:is-error result))}))
+      (.catch (fn [err]
+                {:content [{:type "text" :text (str "Tool error: " (.-message err))}]
+                 :is-error true}))))

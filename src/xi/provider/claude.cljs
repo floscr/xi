@@ -151,17 +151,10 @@
                                                      :isError (boolean (:is-error result))})
 
                                               :else
-                                              (-> (let [result (exec-fn args {:cwd cwd})]
-                                                    (if (instance? js/Promise result)
-                                                      result
-                                                      (js/Promise.resolve result)))
-                                                  (.then (fn [result]
-                                                           #js {:content (clj->js (util/cap-tool-result-content (:content result)))
-                                                                :isError (boolean (:is-error result))}))
-                                                  (.catch (fn [err]
-                                                            #js {:content #js [#js {:type "text"
-                                                                                    :text (str "Tool error: " (.-message err))}]
-                                                                 :isError true})))))))))}))
+                                              (-> (tools/run-tool exec-fn args {:cwd cwd})
+                                                  (.then (fn [{:keys [content is-error]}]
+                                                           #js {:content (clj->js content)
+                                                                :isError is-error})))))))))}))
                         defs))]
     (sdk/createSdkMcpServer
      #js {:name MCP_SERVER_NAME
