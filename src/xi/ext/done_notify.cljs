@@ -1,5 +1,6 @@
 (ns xi.ext.done-notify
-  "Desktop notification when an agent turn completes.
+  "Desktop notification when an agent turn completes or a dialog needs a
+   decision.
 
    Toggled with Ctrl+Shift+N; shows a 🔔 badge in the prompt while enabled.
    When a turn ends (and isn't aborted / draining a queued prompt) the
@@ -7,6 +8,12 @@
    spawns dunstify. If a terminal window id is known (WINDOWID), the
    notification carries a default action so a middle-click focuses the
    terminal again.
+
+   A confirm dialog opening (an MCP tool approval, git commit approval,
+   guarded command, worktree removal, …) blocks the agent until answered,
+   so the chained :ui/dialog-open handler *always* fires a desktop
+   notification — regardless of the turn-end bell — so the prompt isn't
+   missed.
 
    State is room-scoped ([:rooms rid :ext :done-notify] {:enabled? bool}) so
    the toggle (forwarded in client mode) mirrors back and the badge renders
@@ -62,6 +69,16 @@
                       #js {:stdout "ignore" :stderr "ignore"})))
     (catch :default _e nil)))
 
+(defn- on-dialog-open
+  "Chained after the base :ui/dialog-open. A confirm dialog blocks the
+   agent until it's answered, so always notify — independent of the
+   turn-end bell toggle."
+  [st {:keys [room-id dialog]}]
+  (when (and (= :confirm (:type dialog))
+             (state/get-room st room-id))
+    {:effects [[:notify/desktop
+                {:title (str "Approval needed: " (or (:message dialog) "confirm"))}]]}))
+
 (defn- prompt-badge [state]
   (when-let [room (state/active-room state)]
     (when (enabled? state (:id room)) " 🔔")))
@@ -70,7 +87,8 @@
   {:id           ext-id
    :init         {:room {:enabled? false}}
    :handlers     {:ext.done-notify/toggle toggle
-                  :agent/turn-end          on-turn-end}
+                  :agent/turn-end          on-turn-end
+                  :ui/dialog-open          on-dialog-open}
    :fx           {:notify/desktop notify-desktop}
    :keybindings  [{:key "ctrl+shift+n" :event {:type :ext.done-notify/toggle}}]
    :prompt-badge prompt-badge})
