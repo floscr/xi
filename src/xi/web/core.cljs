@@ -1216,7 +1216,7 @@
       (.addEventListener
        js/document "click"
        (fn [^js e]
-         (when (views/tap-opens-context-menu? e)
+         (when (views/tap-opens-context-menu?)
            (when-let [node (code-node e)]
              (open! e node)))))
       (.addEventListener
@@ -1444,6 +1444,7 @@
                            (fn [_] (when (= "visible" (.-visibilityState js/document))
                                      (on-resume))))
         (.addEventListener js/window "pageshow" (fn [_] (on-resume)))))
+    (views/install-pointer-type-tracker!)
     (attach-code-copy-listener!)
     ;; Left-edge swipe to open the sidebar; swipe left again to close it.
     ;;

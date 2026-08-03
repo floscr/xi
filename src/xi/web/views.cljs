@@ -35,13 +35,28 @@
 
 ;; ── Block context menus ──────────────────────────────────────────────────────
 
+(defonce ^:private last-pointer-type
+  ;; pointerType of the most recent pointerdown. The `click` event's own
+  ;; pointerType is unreliable — undefined on Firefox, and not "touch" for taps
+  ;; on Safari/iOS — so we read the touch/mouse distinction from the pointerdown
+  ;; that precedes every click instead. Set by install-pointer-type-tracker!.
+  (atom nil))
+
+(defn install-pointer-type-tracker!
+  "Record the pointerType of each pointerdown so click handlers can tell a touch
+   tap from a mouse click. Idempotent; call once at init."
+  []
+  (.addEventListener js/document "pointerdown"
+                     (fn [^js e] (reset! last-pointer-type (.-pointerType e)))
+                     #js {:capture true :passive true}))
+
 (defn tap-opens-context-menu?
-  "True when a `click` event should open a content block's context menu — i.e.
-   it came from a touch/pen tap, not a mouse pointer. On a mouse pointer the
-   menu opens via right-click (contextmenu) instead, so a plain left-click
-   never summons it."
-  [^js e]
-  (not= "mouse" (.-pointerType e)))
+  "True when a click should open a content block's context menu — i.e. the last
+   pointer interaction was a touch/pen tap, not a mouse. On a mouse pointer the
+   menu opens via right-click (contextmenu) instead, so a plain left-click never
+   summons it."
+  []
+  (not= "mouse" @last-pointer-type))
 
 (defn block-context-menu-on
   "Replicant `:on` handlers that summon a content block's context menu via a
@@ -50,7 +65,7 @@
    anchor point)."
   [open!]
   {:click       (fn [^js e]
-                  (when (tap-opens-context-menu? e)
+                  (when (tap-opens-context-menu?)
                     (open! e)))
    :contextmenu (fn [^js e]
                   (.preventDefault e)
