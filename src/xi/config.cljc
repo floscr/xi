@@ -37,6 +37,7 @@
         [xi.ext.process-manager :as process-manager]
         [xi.ext.projects :as projects]
         [xi.ext.pushover :as pushover]
+        [xi.ext.render :as render]
         [xi.ext.review :as review]
         [xi.ext.sandbox :as ext-sandbox]
         [xi.ext.session-search :as session-search]
@@ -103,6 +104,7 @@
       clipboard-image/extension
       extensions/create
       mcp/create
+      render/create
       ;; sandbox after the policy gates (plan-mode, permission-gate) so
       ;; blocks/confirms run first, but BEFORE process-manager: its gate
       ;; executes bash itself, and backgrounded commands must not reach

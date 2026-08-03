@@ -127,7 +127,7 @@ the compile-time `config.cljc` — they are written and read at runtime.
 
 | Path | Written by | Description |
 | --- | --- | --- |
-| `~/.config/xi/mcp.edn` | `/mcp` command | Registry of external MCP servers. A map of `server-id → entry`; each entry has `:transport` (`:stdio`), the launch `:command`/`:args`, and optional `:enabled false` to keep a server registered but off. |
+| `~/.config/xi/mcp.edn` | `/mcp` command | Registry of external MCP servers. A map of `server-id → entry`; each entry has `:transport` (`:stdio` or `:http`), the launch `:command`/`:args` (stdio) or `:url`/`:headers`/`:auth` (http), and optional `:enabled false` to keep a server registered but off. |
 | `~/.config/xi/mcp/<id>/tools.edn` | `/mcp add`, `/mcp refresh` | Cached tool definitions for one server, so its tools can be advertised synchronously at boot without spawning the subprocess. Refreshed on `/mcp refresh`; the whole `~/.config/xi/mcp/<id>/` dir is removed on `/mcp remove`. |
 
 Managing these files by hand is not required — use the `/mcp` command
@@ -135,3 +135,15 @@ Managing these files by hand is not required — use the `/mcp` command
 enable/disable of *any* extension (including the `mcp-<id>` wrappers) also
 works via `/ext enable|disable`. See [mcp-servers.md](mcp-servers.md) for the
 full walkthrough.
+
+### Per-extension secrets (gitignored)
+
+| Path | Read by | Description |
+| --- | --- | --- |
+| `~/.config/xi/ext/<id>.env` | `xi.ext.config` | Dotenv-style per-extension secrets (`KEY=VALUE` lines; `#` comments and blank lines ignored; surrounding quotes stripped). Lives outside the repo; the repo `.gitignore` also covers stray `*.env` as a backstop. A non-blank `process.env` value of the same name overrides the file. |
+
+Used for API keys that must not be committed. For example, the
+disabled-by-default **Render** MCP extension reads its key from
+`~/.config/xi/ext/render.env` (`RENDER_API_KEY=…`); the `mcp.edn` entry only
+references the key by name via an `:auth` descriptor, never the secret itself.
+See [mcp-servers.md](mcp-servers.md#http-transport-streamable-http--api-key).

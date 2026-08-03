@@ -7,4 +7,7 @@ resources/public/js/
 resources/public/mkcert-rootCA.crt
 .clj-kondo/
 .deploy
+# Per-extension secrets (xi.ext.config) live in ~/.config/xi/ext/<id>.env;
+# ignore any stray env files in the repo as a backstop so keys can't be committed.
 .env
+*.env

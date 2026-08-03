@@ -100,6 +100,17 @@
   [ring & [ask! manager]]
   (ext/instantiate config/server {:ring ring :ask! ask! :manager manager}))
 
+(defn- mirror-extensions
+  "Server extensions instantiated for the *client mirror* (a join/create TUI
+   client). A throwaway manager is supplied so the manager-gated control
+   commands (/ext, /mcp, /render) are presented in the local palette;
+   `:mirror? true` makes their factories skip create-time side effects (e.g.
+   seeding mcp.edn). The client never runs these commands' fx — it forwards
+   them to the server, which owns the live manager — so a stub manager is fine."
+  []
+  (ext/instantiate config/server
+                   {:ring nil :ask! nil :manager (manager/create) :mirror? true}))
+
 (defn- client-extensions
   "Process-local extensions that run in the TUI client process
    (xi.config/client)."
@@ -486,7 +497,7 @@ See docs/cli.md for the full reference.")
         url (client-url opts)
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
         ring (log/create-ring)
-        mirror (ext/compose (server-extensions nil))
+        mirror (ext/compose (mirror-extensions))
         local  (ext/compose (client-extensions))
         commands (into (commands/all-commands (:commands mirror))
                        (:commands local))

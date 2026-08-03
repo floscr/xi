@@ -72,13 +72,22 @@ An EDN map keyed by server id:
             :command   "npx"
             :args      ["-y" "@upstash/context7-mcp"]
             :enabled   true}
- :render   {:transport :http                 ;; OAuth — not yet implemented
+ :render   {:transport :http
             :url       "https://mcp.render.com/mcp"
-            :enabled   true}}
+            ;; API key resolved at connect time from the gitignored
+            ;; per-extension config — never stored here (see below):
+            :auth      {:ext-config "render" :key "RENDER_API_KEY"
+                        :header "Authorization" :scheme "Bearer"}
+            :enabled   false}}
 ```
 
-- `:transport` — `:stdio` (implemented) or `:http` (planned; needs OAuth).
+- `:transport` — `:stdio` (spawn a subprocess) or `:http` (POST to a hosted
+  server, [Streamable HTTP](#http-transport-streamable-http--api-key)).
 - `:command` / `:args` / `:env` / `:cwd` — how to spawn a stdio server.
+- `:url` — the endpoint of an `:http` server.
+- `:headers` — literal headers for an `:http` server (a clj map).
+- `:auth` — an `:http` server's auth *descriptor* (never the secret itself);
+  see [HTTP transport](#http-transport-streamable-http--api-key).
 - `:enabled` — load it at startup (default `true` when the key is absent).
 
 ### Tool cache: `~/.config/xi/mcp/<id>/tools.edn`
@@ -155,20 +164,70 @@ Handshake: `initialize` request → `notifications/initialized` notify. Then
 `tools/call` result (`{content, isError}`) is normalized to Xi's tool-result
 shape (`{:content [...] :is-error bool}`).
 
-## HTTP / OAuth transport (planned)
+## HTTP transport (Streamable HTTP + API key)
 
-Hosted MCP servers (e.g. Render's `https://mcp.render.com/mcp`) use the
-streamable-HTTP transport with OAuth 2.1 (PKCE, dynamic client registration per
-RFC 7591, authorization-server metadata per RFC 8414, loopback redirect). That
-transport and the `/mcp auth` flow are not yet implemented; `:http` entries
-currently error with a "needs OAuth" message and `/mcp auth` is a stub.
+Hosted MCP servers (e.g. Render's `https://mcp.render.com/mcp`) speak the
+**Streamable HTTP** transport: each JSON-RPC message is a `POST` to the server's
+URL, and the reply is either an `application/json` body or a `text/event-stream`
+(SSE) frame carrying the response. `xi.mcp.client/connect-http` implements this
+natively over `fetch` — **no npm bridge, no OAuth flow.** A server that assigns
+an `Mcp-Session-Id` on `initialize` gets it echoed on every subsequent request.
+
+Authentication is by **API key** via an `Authorization: Bearer <key>` header.
+The key is **never** stored in `mcp.edn`; the entry carries only an `:auth`
+*descriptor* naming where to read it and how to shape the header:
+
+```clojure
+:auth {:ext-config "render"          ;; which per-extension config to read
+       :key        "RENDER_API_KEY"  ;; the KEY in that config
+       :header     "Authorization"   ;; header to set
+       :scheme     "Bearer"}         ;; optional prefix → "Bearer <key>"
+```
+
+At connect time `xi.ext.mcp` resolves the secret with
+`xi.ext.config/get-value` and adds the header. If the key is missing the header
+is omitted and the server's `401` surfaces as a clear error.
+
+### Per-extension config (gitignored secrets)
+
+Secrets live in a dotenv-style file, **outside the repo**, one per extension:
+
+```
+# ~/.config/xi/ext/render.env
+RENDER_API_KEY=rnd_your_key_here
+```
+
+`xi.ext.config` reads `~/.config/xi/ext/<id>.env` (`KEY=VALUE` lines; `#`
+comments and blank lines ignored; surrounding quotes stripped). A non-blank
+`process.env` value of the same name overrides the file, so a shell `export`
+works too. The repo's `.gitignore` also covers stray `*.env` files as a
+backstop. This loader is generic — any extension can use it for its own
+secrets, not just MCP.
+
+### Render extension
+
+`xi.ext.render` is a dedicated, **disabled-by-default** extension that wires all
+of the above together. On startup it idempotently seeds the disabled `:render`
+`:http` entry (above) into `mcp.edn` — so Render's tools, which can trigger
+deploys and mutate service env vars, never load unless you opt in. To use it:
+
+1. Put your key in `~/.config/xi/ext/render.env` (`RENDER_API_KEY=…`).
+2. `/mcp enable render` then `/mcp refresh render` (caches its tools).
+3. `/render` shows key presence, enabled state, and these steps.
+
+Once enabled, every Render tool call is still confirmed by the MCP tool gate.
+
+The hosted-OAuth flow (`/mcp auth`) remains unimplemented — API-key auth covers
+Render and most hosted servers without it.
 
 ## Source
 
 - `src/xi/ext/manager.cljs` — live extension registry + enable/disable/register/unregister
 - `src/xi/ext/extensions.cljs` — the `/ext` control command
-- `src/xi/ext/mcp.cljs` — MCP-as-extension helper + registry/cache I/O + `/mcp` command
-- `src/xi/mcp/client.cljs` — stdio JSON-RPC MCP client
+- `src/xi/ext/mcp.cljs` — MCP-as-extension helper + registry/cache I/O + `/mcp` command + `:auth` resolution
+- `src/xi/ext/render.cljs` — the disabled-by-default Render (`:http`) extension
+- `src/xi/ext/config.cljs` — generic per-extension gitignored config/secret loader
+- `src/xi/mcp/client.cljs` — JSON-RPC MCP client (stdio `connect` + Streamable-HTTP `connect-http`)
 - `src/xi/cli.cljs` — creates the manager, seeds it, calls `mcp/install!`, and
   wires the fn-valued tooling seam (`tooling-opts`)
 - `src/xi/provider/claude.cljs` — `build-mcp-server` derefs the tooling seam per turn

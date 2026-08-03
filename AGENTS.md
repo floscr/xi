@@ -191,14 +191,19 @@ src/xi/
   system_prompt.cljs   — system prompt construction (base + personal-agent)
   tools/*.cljs         — built-in tools (bash, read, write, edit, grep, find, ls) + registry
   mcp/
-    client.cljs        — stdio JSON-RPC MCP client (consume external MCP servers)
+    client.cljs        — JSON-RPC MCP client: stdio + Streamable-HTTP transports
+                         (consume external MCP servers)
   ext/
     core.cljs          — extension composition API (compose, dialogs, tool-gate chain)
     manager.cljs       — live extension registry: runtime enable/disable +
                          :on-enable/:on-disable hooks (see docs/mcp-servers.md)
     extensions.cljs    — /ext list|enable|disable control command
     mcp.cljs           — MCP-as-extension helper + /mcp command (external MCP
-                         servers → tools; see docs/mcp-servers.md)
+                         servers → tools, stdio + http; see docs/mcp-servers.md)
+    config.cljs        — generic per-extension gitignored secret loader
+                         (~/.config/xi/ext/<id>.env; see docs/config.md)
+    render.cljs        — Render.com MCP server as a disabled-by-default http
+                         extension (API key from config; see docs/mcp-servers.md)
     *.cljs             — extensions: kb, web, perplexity, github_code_search,
                          commit, clj_surgeon, gtd, permission_gate, todo_intercept,
                          plan_mode, done_notify, pushover, dictation,

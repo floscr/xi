@@ -12,9 +12,13 @@
                  :command   \"npx\"
                  :args      [\"-y\" \"@upstash/context7-mcp\"]
                  :enabled   true}
-      :render   {:transport :http          ;; Phase C (OAuth) — not yet wired
+      :render   {:transport :http
                  :url       \"https://mcp.render.com/mcp\"
-                 :enabled   true}}
+                 ;; API key resolved at connect time from the gitignored
+                 ;; per-extension config (xi.ext.config) -- not stored here:
+                 :auth      {:ext-config \"render\" :key \"RENDER_API_KEY\"
+                             :header \"Authorization\" :scheme \"Bearer\"}
+                 :enabled   false}}
 
    Each server's discovered tools are cached to
    ~/.config/xi/mcp/<id>/tools.edn so they advertise synchronously on the
@@ -28,6 +32,7 @@
    is the control command (a factory gated on a :manager in ctx, like /ext)."
   (:require [clojure.string :as str]
             [cljs.reader :as reader]
+            [xi.ext.config :as ext-config]
             [xi.ext.manager :as manager]
             [xi.mcp.client :as client]
             ["node:fs" :as fs]
@@ -113,6 +118,19 @@
   (fs/mkdirSync (config-dir) #js {:recursive true})
   (fs/writeFileSync (registry-file) (pr-str m)))
 
+(defn ensure-registry-entry!
+  "Idempotently add `entry` under `id` to the MCP registry when `id` is absent
+   (an existing entry is left untouched, so the user's enable/disable choice
+   and edits win). Returns true when it wrote a new entry. Used by dedicated
+   MCP extensions (e.g. xi.ext.render) to seed a disabled server that install!
+   then registers and /mcp manages."
+  [id entry]
+  (let [reg (read-registry)
+        kid (keyword id)]
+    (if (contains? reg kid)
+      false
+      (do (write-registry! (assoc reg kid entry)) true))))
+
 (defn- read-cached-tools [id]
   (read-edn (tools-cache-file id)))
 
@@ -122,15 +140,36 @@
 
 ;; ── Transport ─────────────────────────────────────────────────────────────────
 
+(defn- resolve-auth-header
+  "Resolve an entry's :auth descriptor into a single [header value] pair, or
+   nil when the secret is absent. Keeps API keys out of mcp.edn: the descriptor
+   names where to read the secret ({:ext-config <id> :key <ENV_KEY>}) and how
+   to shape the header ({:header <name> :scheme <prefix>})."
+  [{:keys [ext-config key header scheme]}]
+  (when (and header key)
+    (when-let [secret (ext-config/get-value (or ext-config :xi) key)]
+      [header (if (str/blank? scheme) secret (str scheme " " secret))])))
+
+(defn- http-headers
+  "Headers for an :http entry: its literal :headers plus the resolved :auth
+   header (if any)."
+  [entry]
+  (let [base (or (:headers entry) {})]
+    (if-let [auth (some-> (:auth entry) resolve-auth-header)]
+      (conj base auth)
+      base)))
+
 (defn- connect-entry
-  "Open a client for a registry entry. Returns a promise of the client, or a
-   rejected promise for transports Phase B does not implement (http/OAuth)."
+  "Open a client for a registry entry. :stdio spawns a subprocess; :http POSTs
+   to a hosted server (auth resolved from the gitignored per-extension config).
+   Returns a promise of the client, or a rejected promise for unknown
+   transports."
   [entry]
   (case (or (:transport entry) :stdio)
     :stdio (client/connect (select-keys entry [:command :args :env :cwd]))
+    :http  (client/connect-http {:url (:url entry) :headers (http-headers entry)})
     (js/Promise.reject
-     (js/Error. (str "MCP transport " (pr-str (:transport entry))
-                     " is not supported yet (needs OAuth — Phase C)")))))
+     (js/Error. (str "Unknown MCP transport " (pr-str (:transport entry)))))))
 
 ;; ── Extension construction ────────────────────────────────────────────────────
 
@@ -200,6 +239,23 @@
   (dispatch! {:type :history/append :room-id room-id
               :entry {:kind :status :text text}}))
 
+(defn- discover-and-register!
+  "Connect to `entry`, cache its tools, then (re)register the extension in the
+   manager (enabled per `entry`'s :enabled). Reports progress via dispatch!.
+   Returns the discover promise."
+  [mgr dispatch! room-id kid entry]
+  (-> (discover! (assoc entry :id kid))
+      (.then (fn [tools]
+               (manager/unregister! mgr (ext-id kid))
+               (manager/register! mgr (build-extension (assoc entry :id kid))
+                                  {:enable? (enabled-entry? entry)})
+               (status! dispatch! room-id
+                        (str "Refreshed '" (name kid) "': " (count tools) " tools cached."
+                             " Takes effect on the next turn."))))
+      (.catch (fn [e]
+                (status! dispatch! room-id
+                         (str "Failed to refresh '" (name kid) "': " (.-message e)))))))
+
 (defn- render-list [mgr]
   (let [reg (read-registry)]
     (if (empty? reg)
@@ -251,17 +307,7 @@
       :else
       (do
         (status! dispatch! room-id (str "Refreshing MCP server '" id "'…"))
-        (-> (discover! (assoc entry :id kid))
-            (.then (fn [tools]
-                     (manager/unregister! mgr (ext-id kid))
-                     (manager/register! mgr (build-extension (assoc entry :id kid))
-                                        {:enable? (enabled-entry? entry)})
-                     (status! dispatch! room-id
-                              (str "Refreshed '" id "': " (count tools) " tools cached."
-                                   " Takes effect on the next turn."))))
-            (.catch (fn [e]
-                      (status! dispatch! room-id
-                               (str "Failed to refresh '" id "': " (.-message e))))))))))
+        (discover-and-register! mgr dispatch! room-id kid entry)))))
 
 (defn- toggle-fx [mgr {:keys [dispatch!]} {:keys [room-id action id]}]
   (let [kid   (keyword id)
@@ -271,9 +317,16 @@
       (str/blank? id) (status! dispatch! room-id (str "Usage: /mcp " (name action) " <id>"))
       (nil? entry)    (status! dispatch! room-id (str "Unknown MCP server '" id "'. Use /mcp list."))
       :else
-      (let [enable? (= action :enable)]
-        (write-registry! (assoc reg kid (assoc entry :enabled enable?)))
+      (let [enable? (= action :enable)
+            entry'  (assoc entry :enabled enable?)]
+        (write-registry! (assoc reg kid entry'))
         (cond
+          ;; enabling a server whose tools were never fetched — connect, cache
+          ;; the tool list, and (re)register so the tools actually surface.
+          (and enable? (empty? (read-cached-tools kid)))
+          (do (status! dispatch! room-id (str "Connecting to MCP server '" id "'…"))
+              (discover-and-register! mgr dispatch! room-id kid entry'))
+
           ;; enabling a server that was never registered this session (added to
           ;; the file out of band, or disabled at startup) — register it fresh
           (and enable? (not (manager/known? mgr (ext-id kid))))
