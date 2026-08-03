@@ -133,11 +133,11 @@
           (run! (str "Diff: " args) (into ["diff"] (str/split args #"\s+"))))))))
 
 (defn- commits-pick-fx
-  "Present a numbered selection menu of the commits made this session (newest
-   first) and open the chosen commit's diff via :diff/open-commit (the same
-   :diff/load path as /diff commit:<sha>). `ask!` (from create-dialogs) powers
-   the menu; without it (headless) it points the user at /diff session-commits."
-  [ask! {:keys [dispatch! state] :as fx-ctx} {:keys [room-id client-id]}]
+  "Open the Ctrl+P-style fuzzy menu listing the commits made this session
+   (newest first); selecting one opens its diff via :diff/open-commit (the same
+   :diff/load path as /diff commit:<sha>). Each item's :event forwards to the
+   server, where :diff/open-commit is handled."
+  [{:keys [dispatch! state]} {:keys [room-id client-id]}]
   (let [room    (state/get-room state room-id)
         cwd     (or (:cwd room) (.cwd js/process))
         ;; Collect commits from the session history (git_commit tool + shell
@@ -145,22 +145,16 @@
         ;; against the live repo — more precise than a base..HEAD range.
         commits (git/session-commits-from-refs cwd (fx/session-commit-refs room))
         status! (fn [text] (dispatch! {:type :ui/status :room-id room-id :text text}))]
-    (cond
-      (empty? commits) (status! "No commits made this session.")
-      (nil? ask!)     (status! "No dialog available to pick a commit (try /diff session-commits).")
-      :else
-      (-> (ask! fx-ctx
-                {:room-id room-id
-                 :dialog {:type :select
-                          :message "View the diff of which commit?"
-                          :options (mapv (fn [{:keys [sha short subject rel-time]}]
-                                           {:label (str short "  " subject "  (" rel-time ")")
-                                            :value sha})
-                                         commits)}})
-          (.then (fn [sha]
-                   (when sha
-                     (dispatch! (cond-> {:type :diff/open-commit :room-id room-id :sha sha}
-                                  client-id (assoc :client-id client-id))))))))))
+    (if (empty? commits)
+      (status! "No commits made this session.")
+      (let [items (mapv (fn [{:keys [sha short subject rel-time]}]
+                          {:label subject
+                           :description (str short " · " rel-time)
+                           :event (cond-> {:type :diff/open-commit :room-id room-id :sha sha}
+                                    client-id (assoc :client-id client-id))})
+                        commits)]
+        (dispatch! {:type :ui/menu-open :room-id room-id
+                    :menu {:id :commits :prompt "commit> " :items items}})))))
 
 ;; ── Extension ─────────────────────────────────────────────────────────────────
 
@@ -187,11 +181,5 @@
    ;; server-side relay (menu choice → :diff/load) and never needs the wire.
    :originator-only #{:ui/diff-open}
    :no-broadcast    #{:diff/open-commit}
-   :fx       {:diff/load diff-load-fx}})
-
-(defn create
-  "Factory: captures `ask!` (from ext.core/create-dialogs) so the /commits
-   command can present its selection menu. Everything else is the plain
-   `extension` map."
-  [{:keys [ask!]}]
-  (assoc-in extension [:fx :commits/pick] (partial commits-pick-fx ask!)))
+   :fx       {:diff/load    diff-load-fx
+              :commits/pick commits-pick-fx}})

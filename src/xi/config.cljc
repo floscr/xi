@@ -82,7 +82,7 @@
      [plan-mode/extension
       done-notify/extension
       pushover/create
-      diff/create
+      diff/extension
       worktree/create
       kb/extension
       session-search/extension
