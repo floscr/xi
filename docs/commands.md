@@ -55,7 +55,7 @@ Defined in `xi.commands/built-in-commands`:
 | `/clear` | Clear current session |
 | `/truncate` | Summarize conversation to reduce context ([compaction.md](compaction.md)) |
 | `/prompt` | Show system prompt |
-| `/diff` | Diff viewer (`git` \| `staged` \| `unstaged` \| `<ref>`; no args → session diff) |
+| `/diff` | Diff viewer (`git` \| `staged` \| `unstaged` \| `session-edits` \| `session-git` \| `session-commits` \| `<ref>`; no args → session diff). `session-git` = files edited this session that are still uncommitted (vs the last commit) |
 | `/tree` | Navigate session history ([session-tree.md](session-tree.md)) |
 | `/events` | Show the event log for this session |
 | `/buffers` | Switch buffer view (chat / logs / prompt / diff) |

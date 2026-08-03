@@ -1287,6 +1287,7 @@
   "Selectable diff sources. :title is the buffer title :diff/load assigns for
    each, used to reflect the active method back into the select."
   [{:value "session-edits"   :label "Session edits"   :title "Session Edits"}
+   {:value "session-git"     :label "Session uncommitted" :title "Session Changes (since last commit)"}
    {:value "session-commits" :label "Session commits" :title "Session Commits"}
    {:value "git"             :label "All git changes" :title "All Git Changes"}
    {:value "git-upstream"    :label "Upstream"        :title "Upstream"}

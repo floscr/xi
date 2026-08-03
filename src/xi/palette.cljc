@@ -52,6 +52,7 @@
                   {:name "staged"          :description "Staged changes"}
                   {:name "unstaged"        :description "Unstaged changes"}
                   {:name "session-edits"   :description "Diff of files edited this session"}
+                  {:name "session-git"     :description "Session edits still uncommitted (vs the last commit)"}
                   {:name "session-commits" :description "Diff of commits made this session"}]}
    {:name "commit"   :description "Review changes and create a git commit"}
    {:name "review"   :description "Review git changes against the code-review methodology"
