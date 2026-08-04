@@ -15,6 +15,7 @@
   (:require [clojure.string :as str]
             [ui.button :as button]
             [ui.icon :as icon]
+            [ui.toolbar :as toolbar]
             [xi.core.state :as state]
             [xi.diff :as diff]
             [xi.ext.canvas-review.handlers :as h]
@@ -94,7 +95,13 @@
         {:range range :file file :snippet (diff/selected-snippet rows range)}))))
 
 (defn- cr-clear-sel [st _]
-  {:state (dissoc st :web/diff-sel)})
+  {:state (-> st (dissoc :web/diff-sel) (update :web/cr dissoc :composing?))})
+
+(defn- cr-compose-toggle
+  "Toggle the selection popover between its pill and the comment-compose panel
+   (mirrors the diff view's :diff/modify-toggle)."
+  [st _]
+  {:state (update-in st [:web/cr :composing?] not)})
 
 (defn- send-fx
   "Submit a prompt into the room and jump to the chat view (mirrors
@@ -124,7 +131,8 @@
   "Send the current selection (+ optional comment) to the agent right away."
   [st {:keys [text]}]
   (when-let [{:keys [range] :as sel} (cr-selection st)]
-    {:state   (-> st (mark-reviewed range) (dissoc :web/diff-sel))
+    {:state   (-> st (mark-reviewed range) (dissoc :web/diff-sel)
+                  (update :web/cr dissoc :composing?))
      :effects (send-fx st (one-prompt sel (some-> text str/trim)))}))
 
 (defn- cr-add-item
@@ -136,7 +144,8 @@
                            {:file file :range range :snippet snippet
                             :comment (some-> text str/trim not-empty)})
                 (mark-reviewed range)
-                (dissoc :web/diff-sel))}))
+                (dissoc :web/diff-sel)
+                (update :web/cr dissoc :composing?))}))
 
 (defn- cr-remove-item [st {:keys [idx]}]
   {:state (update-in st [:web/cr :items]
@@ -183,6 +192,7 @@
           :canvas-review/goto          cr-goto
           :canvas-review/select        cr-select
           :canvas-review/clear-sel     cr-clear-sel
+          :canvas-review/compose-toggle cr-compose-toggle
           :canvas-review/send-selection cr-send-selection
           :canvas-review/add-item      cr-add-item
           :canvas-review/remove-item   cr-remove-item
@@ -424,41 +434,70 @@
         (when-let [preview (:comment (first comments))]
           [:span {:class ["diff-comment-preview"]} preview])])]))
 
-(defn- read-new []
-  (some-> (.getElementById js/document "cr-new-comment") .-value))
+(defn- read-sel-comment []
+  (some-> (.getElementById js/document "cr-sel-comment") .-value))
 
-(defn- new-comment-editor
-  [dispatch! range]
-  (let [n (inc (- (second range) (first range)))]
-    [:div {:class ["diff-comment-block"] :replicant/key "cr-new"
-           :on {:click (fn [^js e] (.stopPropagation e))}}
-     [:div {:class ["diff-comment-edit"]}
-      [:span {:class ["diff-comment-count"]}
-       (str n " line" (when (not= 1 n) "s") " selected")]
-      [:textarea {:id "cr-new-comment"
-                  :class ["form-textarea" "cr-comment-input"]
-                  :placeholder "Add a comment or question (optional)…"
-                  :rows 2
-                  :replicant/on-mount (fn [{:replicant/keys [^js node]}] (.focus node))
-                  :on {:keydown (fn [^js e]
-                                  (when (and (= "Enter" (.-key e)) (.-metaKey e))
-                                    (.preventDefault e)
-                                    (dispatch! {:type :canvas-review/send-selection
-                                                :text (read-new)})))}}]
-      [:div {:class ["diff-comment-actions"]}
-       (button/button {:variant :ghost :size :sm
-                       :on-click (fn [_] (dispatch! {:type :canvas-review/clear-sel}))}
-                      "Cancel")
-       (button/button {:variant :outline :size :sm
-                       :on-click (fn [_] (dispatch! {:type :canvas-review/add-item
-                                                     :text (read-new)}))}
-                      "Add to review")
-       (button/button {:variant :primary :size :sm
-                       :on-click (fn [_] (dispatch! {:type :canvas-review/send-selection
-                                                     :text (read-new)}))}
-                      "Send now")]]]))
+(defn- cr-action-bar
+  "Selection popover for a code node, reusing the diff view's anchored pill +
+   compose panel (same toolbar/popover-content components, styling, and
+   position-sel-toolbar! anchoring). Collapsed it's a Clear / Comment / Send
+   pill; Comment swaps it for a popover-content panel with a textarea to add a
+   comment/question before stashing it in the review cart or sending it to the
+   agent."
+  [dispatch! range composing?]
+  (let [n     (inc (- (second range) (first range)))
+        stop  {:click (fn [^js e] (.stopPropagation e))}]
+    (if composing?
+      [:div {:replicant/key "cr-sel-compose"
+             :replicant/on-render views/position-modify-panel!
+             :on stop
+             :class ["diff-sel-anchor" "diff-sel-anchor--modify"
+                     "popover-content" "popover-content--bottom"]}
+       [:div {:class ["diff-modify-head"]}
+        [:span {:class ["popover-title"]}
+         (str "Comment on " n " line" (when (not= 1 n) "s"))]
+        (button/button {:variant :ghost :size :sm
+                        :on-click (fn [_] (dispatch! {:type :canvas-review/compose-toggle}))}
+                       "Cancel")]
+       [:textarea {:id "cr-sel-comment"
+                   :class ["form-textarea" "diff-modify-input"]
+                   :placeholder "Add a comment or question (optional)…"
+                   :rows 3
+                   :replicant/on-mount (fn [{:replicant/keys [^js node]}]
+                                         (.focus node #js {:preventScroll true}))
+                   :on {:keydown (fn [^js e]
+                                   (when (and (= "Enter" (.-key e)) (.-metaKey e))
+                                     (.preventDefault e)
+                                     (dispatch! {:type :canvas-review/send-selection
+                                                 :text (read-sel-comment)})))}}]
+       [:div {:class ["diff-modify-foot"]}
+        (button/button {:variant :outline :size :sm
+                        :on-click (fn [_] (dispatch! {:type :canvas-review/add-item
+                                                      :text (read-sel-comment)}))}
+                       "Add to review")
+        (button/button {:variant :primary :size :sm
+                        :on-click (fn [_] (dispatch! {:type :canvas-review/send-selection
+                                                      :text (read-sel-comment)}))}
+                       "Send now")]]
+      [:div {:replicant/key "cr-sel-toolbar"
+             :replicant/on-mount views/position-sel-toolbar!
+             :replicant/on-update views/position-sel-toolbar!
+             :on stop
+             :class ["diff-sel-anchor"]}
+       (toolbar/toolbar
+        {}
+        (button/button {:variant :ghost :size :sm :aria-label "Clear selection"
+                        :on-click (fn [_] (dispatch! {:type :canvas-review/clear-sel}))}
+                       (icon/icon {:icon-name :x :size :sm}))
+        (button/button {:variant :ghost :size :sm
+                        :on-click (fn [_] (dispatch! {:type :canvas-review/compose-toggle}))}
+                       "Comment")
+        (button/button {:variant :primary :size :sm
+                        :on-click (fn [_] (dispatch! {:type :canvas-review/send-selection
+                                                      :text nil}))}
+                       "Send"))])))
 
-(defn- node-card [dispatch! diff-text range {:keys [reviewed comments open]} current? [id {:keys [kind x y w] :as n}]]
+(defn- node-card [dispatch! diff-text range {:keys [reviewed comments open composing?]} current? [id {:keys [kind x y w] :as n}]]
   [:div {:class (cond-> ["cr-node" (str "cr-node--" (name (or kind :comment)))]
                   current? (conj "cr-node--current"))
          :data-cr-node id
@@ -473,18 +512,19 @@
        [:span {:class ["cr-node-loc"]} (:file n) ":" (:start n) "-" (:end n)]]
       [:div {:class ["cr-node-body" "cr-node-code"]}
        (if-let [rows (node-diff-rows diff-text (:file n) (:start n) (:end n))]
-         (views/diff-rows-view dispatch! rows range nil
-                               {:highlight (highlight-idx rows (:highlight n))
-                                :reviewed  reviewed
-                                :line-suffix (fn [idx]
-                                               (let [saved  (when-let [cs (get comments idx)]
-                                                              (comment-row dispatch! (contains? (or open #{}) idx)
-                                                                           idx cs))
-                                                     editor (when (and range (= idx (second range)))
-                                                              (new-comment-editor dispatch! range))]
-                                                 (if (and saved editor)
-                                                   (list saved editor)
-                                                   (or editor saved))))})
+         (let [anchor-here? (boolean
+                             (and range
+                                  (some (fn [{:keys [row sel-idx]}]
+                                          (and (= :line row) (= sel-idx (second range))))
+                                        rows)))]
+           (views/diff-rows-view dispatch! rows range
+                                 (when anchor-here? (cr-action-bar dispatch! range composing?))
+                                 {:highlight (highlight-idx rows (:highlight n))
+                                  :reviewed  reviewed
+                                  :line-suffix (fn [idx]
+                                                 (when-let [cs (get comments idx)]
+                                                   (comment-row dispatch! (contains? (or open #{}) idx)
+                                                                idx cs)))}))
          [:div {:class ["cr-node-missing"]} "No matching diff lines."])])
 
      :prose
@@ -583,6 +623,7 @@
         reviewed (get-in state [:web/cr :reviewed])
         comments (comments-index items)
         open     (get-in state [:web/cr :open-comments])
+        composing? (get-in state [:web/cr :composing?])
         {cw :w ch :h} (canvas-size nodes)]
     [:div {:class ["container" "cr-container"] :replicant/key "canvas-review"}
      [:div {:class ["topbar"]}
@@ -606,7 +647,8 @@
           [:svg {:class ["cr-edges"]}]
           (for [entry (sort-by (fn [[_ n]] [(:y n) (:x n)]) nodes)]
             (node-card dispatch! (:diff cr) range
-                       {:reviewed reviewed :comments comments :open open}
+                       {:reviewed reviewed :comments comments :open open
+                        :composing? composing?}
                        (= (first entry) cur-node) entry))])
        (when (seq items)
          [:div {:class ["cr-dock"]}

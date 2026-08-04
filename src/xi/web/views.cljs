@@ -1184,10 +1184,11 @@
        (empty-state/empty-state {} "No changes."))
      toolbar])))
 
-(defn- position-sel-toolbar!
+(defn position-sel-toolbar!
   "Anchor the selection toolbar to the bottom edge of the last selected diff
    line, within the scrollable diff view. Runs on mount and on every update so
-   the toolbar follows the range as the selection changes."
+   the toolbar follows the range as the selection changes. Public so the
+   canvas-review extension can reuse the same anchored selection popover."
   [{:replicant/keys [^js node]}]
   (when-let [view (some-> node (.closest ".diff-view"))]
     (let [sels (.querySelectorAll view ".diff-line--selected")
@@ -1212,12 +1213,13 @@
       (.setProperty st "--vv-height" (str (.-height vv) "px"))
       (.setProperty st "--vv-bottom" (str (+ (.-offsetTop vv) (.-height vv)) "px")))))
 
-(defn- position-modify-panel!
+(defn position-modify-panel!
   "Keep the modify panel pinned above the keyboard instead of anchored to the
    diff range, so focusing the textarea doesn't cause the weird iOS scroll.
    Repositions on mount/update and tracks the VisualViewport so it follows the
    keyboard as it animates open/closed and as the page scrolls; the listeners
-   are torn down on unmount."
+   are torn down on unmount. Public so the canvas-review extension can reuse
+   the same keyboard-pinned compose panel."
   [{:replicant/keys [^js node life-cycle]}]
   (let [vv (.-visualViewport js/window)]
     (if (= life-cycle :replicant.life-cycle/unmount)
