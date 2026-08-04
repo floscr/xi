@@ -86,11 +86,19 @@
 ;; ── Handlers (pure) ──────────────────────────────────────────────────────────
 
 (defn- room-for-session
-  "Find an existing room hosting this session-id, if any."
+  "Find an existing room hosting this session-id, if any. Matches on the Xi
+   session uuid AND the Claude CLI id (:provider-session-id / :cli-session-id):
+   a client may resume by either — a stale /chat/<cli-id> URL, a cached route,
+   or the transient Claude-CLI card that surfaces mid-turn. Matching only the
+   Xi uuid would miss the live room and fork a fresh disk resume, leaving the
+   originating client (e.g. an open TUI) stuck on the now-orphaned room."
   [st session-id]
   (some (fn [[_ room]]
-          (when (= session-id (get-in room [:session :id]))
-            (:id room)))
+          (let [sess (:session room)]
+            (when (or (= session-id (:id sess))
+                      (= session-id (:provider-session-id sess))
+                      (= session-id (:cli-session-id sess)))
+              (:id room))))
         (:rooms st)))
 
 (defn- room-join

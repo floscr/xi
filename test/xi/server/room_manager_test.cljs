@@ -70,6 +70,20 @@
                                      :target {:session-id "no-such-session"}
                                      :event/ts 999 :event/id 1})]
       (is (= :room/setup (ffirst effects)))))
+  (testing "resume by the Claude CLI id attaches to the live room (never forks)"
+    ;; A stale /chat/<cli-id> URL, cached route, or transient Claude-CLI card
+    ;; carries the provider id, not the Xi uuid. It must still resolve to the
+    ;; live room so an open TUI keeps streaming instead of being orphaned.
+    (let [st (assoc-in (server-state-with-room)
+                       [:rooms "r1" :session]
+                       {:id "sess-abc" :provider-session-id "cli-xyz"
+                        :cli-session-id "cli-xyz" :cwd "/x"})
+          {:keys [effects]} (handle st {:type :room/join :client-id "c1"
+                                        :session-id "cli-xyz"
+                                        :target {:session-id "cli-xyz"}
+                                        :event/ts 999 :event/id 1})]
+      (is (= [[:app/dispatch {:type :room/attach :client-id "c1" :room-id "r1"}]]
+             effects))))
   (testing "stale string room-id + live room for session-id attaches to the live room"
     ;; The client's lobby cached a room-id that no longer exists, but a live
     ;; room still hosts the session (agent mid-turn). We must attach to the
