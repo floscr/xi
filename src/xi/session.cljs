@@ -271,6 +271,24 @@
       (butlast lines)
       lines)))
 
+(defn- claude-message-text
+  "Pull the first text out of a raw Claude message JS object's `.content`,
+   which is either a plain string or an array of content blocks. Kept on the
+   raw JS side (no js->clj) since it runs once per session in the listing."
+  [^js message]
+  (let [content (some-> message .-content)]
+    (cond
+      (string? content) content
+      (array? content)
+      (let [n (alength content)]
+        (loop [i 0]
+          (when (< i n)
+            (let [block (aget content i)]
+              (if (= "text" (.-type block))
+                (.-text block)
+                (recur (inc i)))))))
+      :else nil)))
+
 (defn- read-claude-session-summary
   "Read a claude CLI session file and extract summary info.
    Only reads the first 16KB for speed — enough for the first user message."
@@ -284,31 +302,22 @@
           ;; Whole file fits in the head window — so a missing assistant reply
           ;; below means the transcript really has none (not just unread tail).
           full? (<= (.-size (fs/statSync filepath)) 16384)
-          {:keys [first-user assistant?]}
-          (reduce (fn [acc line]
+          ;; Read fields off the raw JS objects rather than js->clj-converting
+          ;; every line: we only need the first user message and whether any
+          ;; assistant line exists, and deep keywordized conversion of ~8k
+          ;; head lines dominated /resume's open latency.
+          [first-user assistant?]
+          (reduce (fn [[fu asst?] line]
                     (if (seq line)
-                      (let [obj (try (js->clj (js/JSON.parse line) :keywordize-keys true)
-                                     (catch :default _ nil))
-                            t   (:type obj)]
-                        (cond-> acc
-                          (and (nil? (:first-user acc)) (= "user" t))
-                          (assoc :first-user obj)
-                          (= "assistant" t)
-                          (assoc :assistant? true)))
-                      acc))
-                  {:first-user nil :assistant? false} lines)
-          first-text (when first-user
-                       (let [content (:content (:message first-user))]
-                         (cond
-                           (string? content) content
-                           (sequential? content)
-                           (->> content
-                                (filter #(= "text" (:type %)))
-                                (map :text)
-                                first)
-                           :else nil)))
+                      (let [obj (try (js/JSON.parse line) (catch :default _ nil))
+                            t   (some-> obj .-type)]
+                        [(if (and (nil? fu) (= "user" t)) obj fu)
+                         (or asst? (= "assistant" t))])
+                      [fu asst?]))
+                  [nil false] lines)
+          first-text (some-> first-user .-message claude-message-text)
           name (util/session-title first-text)
-          timestamp (:timestamp first-user)]
+          timestamp (some-> first-user .-timestamp)]
       {:session-id session-id
        :source :claude
        :filepath filepath
@@ -458,6 +467,28 @@
         (js/console.error "[session] read-state write failed:" e)))
     state'))
 
+(defonce ^:private summary-cache
+  ;; filepath -> {:mtime <ms> :summary <map|nil>}. Memoizes the per-file
+  ;; summary reads that /resume does across every session on disk: the stat is
+  ;; cheap, but the head read + JSON parse per file dominated open latency and
+  ;; was repeated on every open (no caching). Keyed by mtime so an edited
+  ;; session file is re-read; bounded by the number of session files on disk.
+  (atom {}))
+
+(defn- cached-summary
+  "Return the summary for `filepath`, invoking `read-fn` only when the file is
+   new or its mtime changed since it was last read."
+  [read-fn filepath]
+  (let [mtime (try (.-mtimeMs (fs/statSync filepath)) (catch :default _ nil))]
+    (if (nil? mtime)
+      (read-fn filepath)
+      (let [cached (get @summary-cache filepath)]
+        (if (= (:mtime cached) mtime)
+          (:summary cached)
+          (let [summary (read-fn filepath)]
+            (swap! summary-cache assoc filepath {:mtime mtime :summary summary})
+            summary))))))
+
 (defn- sessions-for-cwd
   "Session summaries recorded under a single CWD, from all sources, with
    Claude sessions that already have Xi metadata filtered out. Unsorted,
@@ -465,10 +496,10 @@
   [cwd]
   (let [;; Xi metadata sessions
         xi-sessions (->> (list-dir-files (xi-session-dir cwd) ".json")
-                         (keep read-xi-session-meta))
+                         (keep #(cached-summary read-xi-session-meta %)))
         ;; Claude CLI sessions (dropping aborted stubs with no assistant reply)
         claude-sessions (->> (list-dir-files (claude-project-dir cwd) ".jsonl")
-                             (keep read-claude-session-summary)
+                             (keep #(cached-summary read-claude-session-summary %))
                              (remove :empty?))
         xi-ids (set (keep :cli-session-id xi-sessions))
         ;; Don't show claude sessions that have Xi metadata (avoid duplicates)
@@ -501,13 +532,13 @@
                          (mapcat (fn [subdir]
                                    (let [dir (.join node-path XI_SESSIONS_DIR subdir)]
                                      (->> (list-dir-files dir ".json")
-                                          (keep read-xi-session-meta))))))
+                                          (keep #(cached-summary read-xi-session-meta %)))))))
         ;; Claude: each subdir under CLAUDE_PROJECTS_DIR is an encoded CWD
         claude-sessions (->> (list-dir-subdirs CLAUDE_PROJECTS_DIR)
                              (mapcat (fn [subdir]
                                        (let [dir (.join node-path CLAUDE_PROJECTS_DIR subdir)]
                                          (->> (list-dir-files dir ".jsonl")
-                                              (keep read-claude-session-summary)))))
+                                              (keep #(cached-summary read-claude-session-summary %))))))
                              ;; Drop aborted stubs with no assistant reply.
                              (remove :empty?))
         ;; Dedup: Xi meta takes priority over claude sessions with same session-id
@@ -524,7 +555,7 @@
    Returns vec of session summaries, newest first."
   []
   (let [xi-sessions (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
-                         (keep read-xi-session-meta))]
+                         (keep #(cached-summary read-xi-session-meta %)))]
     (annotate-favorites
      (->> xi-sessions
           (sort-by #(or (:last-accessed %) (:timestamp %)))
@@ -591,7 +622,7 @@
   [session-ids]
   (let [summaries   (concat (list-all-sessions)
                             (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
-                                 (keep read-xi-session-meta)))
+                                 (keep #(cached-summary read-xi-session-meta %))))
         id->summary (persistent!
                      (reduce (fn [acc s]
                                (cond-> (assoc! acc (:session-id s) s)
