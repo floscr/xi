@@ -2947,3 +2947,341 @@ body {
   font-size: var(--font-sm);
   color: var(--fg-0);
 }
+
+/* ── Canvas review (experimental node-based review) ─────────────────────── */
+
+.cr-container { display: flex; flex-direction: column; height: 100%; }
+
+.cr-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.cr-viewport {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--fg-2) 22%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.cr-canvas { position: relative; }
+
+.cr-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cr-edge-path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--fg-2) 55%, transparent);
+  stroke-width: 1.5;
+}
+
+.cr-edge-path--structural {
+  stroke: color-mix(in srgb, var(--hl-keyword, var(--accent, var(--fg-1))) 60%, transparent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.cr-edge-label {
+  fill: var(--fg-1);
+  font-size: 11px;
+  font-family: var(--font-base);
+  paint-order: stroke;
+  stroke: var(--bg-0);
+  stroke-width: 3px;
+  text-anchor: middle;
+}
+
+.cr-node {
+  position: absolute;
+  z-index: 1;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.cr-node--current {
+  border-color: var(--hl-keyword, var(--fg-0));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hl-keyword, var(--fg-0)) 55%, transparent);
+}
+
+.cr-node--code { background: var(--bg-0); }
+.cr-node--comment { background: color-mix(in srgb, var(--hl-string, var(--bg-1)) 10%, var(--bg-1)); }
+.cr-node--prose { background: var(--bg-1); }
+
+.cr-node-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-3);
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+
+.cr-node-title { font-size: var(--font-sm); font-weight: 600; color: var(--fg-0); }
+.cr-node-loc {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  font-family: "SF Mono", "Menlo", monospace;
+  white-space: nowrap;
+}
+
+.cr-node-body { max-height: 340px; overflow: auto; }
+.cr-node-code .diff-view { overflow: visible; }
+/* Establish a horizontal containment context so pinned comment blocks can
+   size to the visible width (100cqi) rather than the scrolled max-content width. */
+.cr-node-code .diff-file-body { container-type: inline-size; }
+
+/* Agent-highlighted lines within a code block */
+.diff-line--highlight {
+  background: color-mix(in srgb, var(--hl-keyword, var(--accent, var(--fg-1))) 16%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--hl-keyword, var(--accent, var(--fg-1))) 70%, transparent);
+}
+
+/* Reviewed lines: user has already added them to a review (persistent marker) */
+.diff-line--reviewed {
+  background: color-mix(in srgb, var(--hl-string, var(--fg-2)) 12%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--hl-string, var(--fg-2)) 65%, transparent);
+}
+
+/* Inline comment thread rendered under a commented diff line */
+.diff-comment-block { display: block; }
+/* Inside a canvas node's code block the diff scrolls horizontally; pin the
+   comment thread to the visible width so it never stretches/scrolls with it. */
+.cr-node-code .diff-comment-block {
+  position: sticky;
+  left: 0;
+  width: 100cqi;
+  box-sizing: border-box;
+}
+.diff-comment-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2);
+  width: 100%;
+  padding: var(--size-1) var(--size-3);
+  border: none;
+  border-left: 3px solid color-mix(in srgb, var(--hl-keyword, var(--accent, var(--fg-1))) 55%, transparent);
+  background: color-mix(in srgb, var(--hl-keyword, var(--accent, var(--fg-1))) 6%, var(--bg-1));
+  color: var(--fg-1);
+  font-size: var(--font-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.diff-comment-row:hover { background: color-mix(in srgb, var(--hl-keyword, var(--accent, var(--fg-1))) 12%, var(--bg-1)); }
+.diff-comment-count { font-weight: 600; color: var(--fg-0); white-space: nowrap; }
+.diff-comment-preview {
+  color: var(--fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.diff-comment-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-3);
+  border-left: 3px solid color-mix(in srgb, var(--hl-keyword, var(--accent, var(--fg-1))) 55%, transparent);
+  background: color-mix(in srgb, var(--hl-keyword, var(--accent, var(--fg-1))) 6%, var(--bg-1));
+}
+.diff-comment-actions { display: flex; gap: var(--size-2); justify-content: flex-end; }
+.diff-comment-collapse {
+  width: 100%;
+  padding: var(--size-1) var(--size-3);
+  border: none;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: var(--font-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.diff-comment-collapse:hover { color: var(--fg-0); }
+
+/* Selection dock: sticky footer pinned to the bottom-right of the canvas */
+.cr-dock {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--size-2);
+  padding: var(--size-3);
+  pointer-events: none;
+}
+.cr-dock > * { pointer-events: auto; }
+
+.cr-tray {
+  width: min(420px, calc(100% - var(--size-6)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  padding: var(--size-3);
+  background: var(--bg-1);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2, 0 4px 16px rgba(0, 0, 0, 0.25));
+}
+
+.cr-tray-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-2);
+}
+.cr-tray-title { font-size: var(--font-sm); font-weight: 600; color: var(--fg-0); }
+.cr-comment-input { width: 100%; resize: vertical; }
+
+.cr-tray-items { display: flex; flex-direction: column; gap: var(--size-1); max-height: 180px; overflow-y: auto; }
+.cr-tray-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-1) var(--size-2);
+  border-radius: var(--radius-1, 6px);
+  background: var(--bg-2, var(--bg-1));
+}
+.cr-tray-item-main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.cr-tray-loc {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  font-family: "SF Mono", "Menlo", monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-tray-comment {
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cr-tray-remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--size-1);
+  color: var(--fg-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-1, 6px);
+}
+.cr-tray-remove:hover { color: var(--fg-0); background: var(--bg-1); }
+.cr-node-note, .cr-node-prose { padding: var(--size-3); font-size: var(--font-sm); }
+.cr-node-note :first-child, .cr-node-prose :first-child { margin-top: 0; }
+.cr-node-note :last-child, .cr-node-prose :last-child { margin-bottom: 0; }
+.cr-node-missing { padding: var(--size-3); color: var(--fg-2); font-size: var(--font-xs); }
+
+/* Walkthrough plan panel */
+.cr-plan {
+  width: 280px;
+  flex: 0 0 280px;
+  border-left: 1px solid var(--border-0);
+  background: var(--bg-1);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cr-plan-head {
+  padding: var(--size-3) var(--size-4);
+  font-weight: 600;
+  font-size: var(--font-sm);
+  border-bottom: 1px solid var(--border-0);
+}
+
+.cr-plan-empty { padding: var(--size-4); color: var(--fg-2); font-size: var(--font-sm); }
+.cr-plan-inner { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.cr-plan-steps { overflow-y: auto; flex: 1; padding: var(--size-2); }
+
+.cr-step {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--size-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-1);
+  cursor: pointer;
+  font-size: var(--font-sm);
+}
+
+.cr-step:hover { background: var(--bg-2); }
+.cr-step--current {
+  background: var(--bg-2);
+  border-color: var(--border-0);
+  color: var(--fg-0);
+  font-weight: 600;
+}
+
+.cr-step-n {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--bg-0);
+  border: 1px solid var(--border-0);
+  font-size: var(--font-xs);
+}
+
+.cr-step-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cr-plan-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-2);
+  padding: var(--size-3);
+  border-top: 1px solid var(--border-0);
+}
+.cr-plan-count { font-size: var(--font-xs); color: var(--fg-2); }
+
+.cr-step-note {
+  padding: var(--size-3) var(--size-4);
+  border-top: 1px solid var(--border-0);
+  font-size: var(--font-sm);
+  max-height: 40%;
+  overflow-y: auto;
+}
+.cr-step-note :first-child { margin-top: 0; }
+
+.cr-source { color: var(--fg-2); font-weight: 400; }
+
+@media (max-width: 720px) {
+  .cr-layout { flex-direction: column; }
+  .cr-plan {
+    width: auto;
+    flex: 0 0 auto;
+    max-height: 42%;
+    border-left: none;
+    border-top: 1px solid var(--border-0);
+  }
+}

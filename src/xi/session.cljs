@@ -2,7 +2,8 @@
   "Session management for Xi.
    Xi sessions are lightweight metadata files in ~/.config/xi/sessions/{cwd-encoded}/.
    The actual conversation data lives in claude CLI sessions (~/.claude/projects/)."
-  (:require [clojure.string :as str]
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]
             [xi.session.sync :as sync]
             [xi.util :as util]
             ["node:fs" :as fs]
@@ -137,6 +138,41 @@
       (fs/mkdirSync dir #js {:recursive true}))
     (fs/writeFileSync filepath (js/JSON.stringify (clj->js data) nil 2) "utf8")
     session))
+
+(defn- session-dir
+  "The on-disk directory holding a session's metadata + sidecars."
+  [session]
+  (or (:_dir session)
+      (if (:personal-agent? session)
+        PERSONAL_AGENT_SESSIONS_DIR
+        (xi-session-dir (:cwd session)))))
+
+(defn canvas-sidecar-path
+  "Path to a session's canvas-review sidecar (the node-based review canvas).
+   Stored as EDN so keyword values (node :kind) and string node-id map keys
+   survive the round-trip — a JSON round-trip would mangle both."
+  [session]
+  (.join node-path (session-dir session) (str (:id session) ".canvas.edn")))
+
+(defn save-canvas!
+  "Persist a room's canvas-review state (diff + nodes + edges + plan) so it
+   survives room reaping and server restarts. nil canvas removes the sidecar."
+  [session canvas]
+  (let [fp  (canvas-sidecar-path session)
+        dir (session-dir session)]
+    (when-not (fs/existsSync dir)
+      (fs/mkdirSync dir #js {:recursive true}))
+    (if canvas
+      (fs/writeFileSync fp (pr-str canvas) "utf8")
+      (when (fs/existsSync fp) (fs/unlinkSync fp)))))
+
+(defn load-canvas
+  "Read a session's persisted canvas-review state, or nil if none."
+  [session]
+  (let [fp (canvas-sidecar-path session)]
+    (when (and (:id session) (fs/existsSync fp))
+      (try (edn/read-string (str (fs/readFileSync fp "utf8")))
+           (catch :default _e nil)))))
 
 (defn update-session!
   "Update session fields and persist."

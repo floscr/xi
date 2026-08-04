@@ -1087,13 +1087,21 @@
 
 (defn- diff-line-view
   "Render a single selectable diff line with syntax highlighting. Tapping a
-   code line dispatches :diff/select-line with its selection index."
-  [dispatch! grammar selected? {:keys [type text old-line new-line]} sel-idx row-key]
+   code line dispatches :diff/select-line with its selection index. `highlight?`
+   adds an emphasis class (agent-spotlighted lines); `reviewed?` marks lines the
+   user has already added to a review (both used by the review canvas)."
+  ([dispatch! grammar selected? line sel-idx row-key]
+   (diff-line-view dispatch! grammar selected? line sel-idx row-key false false))
+  ([dispatch! grammar selected? line sel-idx row-key highlight?]
+   (diff-line-view dispatch! grammar selected? line sel-idx row-key highlight? false))
+  ([dispatch! grammar selected? {:keys [type text old-line new-line]} sel-idx row-key highlight? reviewed?]
   (let [cls (cond-> ["diff-line"]
               (= type :add)     (conj "diff-line--add")
               (= type :delete)  (conj "diff-line--del")
               (= type :meta)    (conj "diff-line--meta")
               sel-idx           (conj "diff-line--selectable")
+              reviewed?         (conj "diff-line--reviewed")
+              highlight?        (conj "diff-line--highlight")
               selected?         (conj "diff-line--selected"))
         old-nr (case type
                  (:delete :context) (str old-line)
@@ -1111,14 +1119,19 @@
      [:span {:class ["diff-text"]}
       (if grammar
         (highlight-code grammar (or text ""))
-        (or text ""))]]))
+        (or text ""))]])))
 
 (defn diff-rows-view
   "Render flattened diff rows as a scrollable view with selection highlight.
    Rows are grouped by file: each file gets a sticky header and a horizontally
    scrollable body so long lines don't push the whole view. The selection
-   toolbar, when present, is anchored to the bottom of the selected range."
-  [dispatch! rows range toolbar]
+   toolbar, when present, is anchored to the bottom of the selected range.
+   Optional opts: :highlight — a set of :sel-idx to spotlight (review canvas);
+   :reviewed — a set of :sel-idx marked as already-reviewed (review canvas);
+   :line-suffix — (fn [sel-idx]) → hiccup|nil, rendered right after that line
+   (review canvas inline comment threads)."
+  ([dispatch! rows range toolbar] (diff-rows-view dispatch! rows range toolbar nil))
+  ([dispatch! rows range toolbar {:keys [highlight reviewed line-suffix]}]
   (let [grammar-cache (atom {})
         grammar-for (fn [f] (or (@grammar-cache f)
                                 (let [g (diff-file-grammar f)]
@@ -1155,14 +1168,21 @@
                      [:div {:class ["diff-hunk-header"] :replicant/key (str "h" k)} header]
                      :line
                      (let [selected? (boolean (and range sel-idx
-                                                   (<= (first range) sel-idx (second range))))]
-                       (diff-line-view dispatch! (grammar-for (:filename r))
-                                       selected? line sel-idx (str "l" k)))
+                                                   (<= (first range) sel-idx (second range))))
+                           hl?       (boolean (and highlight sel-idx (highlight sel-idx)))
+                           rev?      (boolean (and reviewed sel-idx (reviewed sel-idx)))
+                           suffix    (when line-suffix (line-suffix sel-idx))]
+                       (if suffix
+                         (list (diff-line-view dispatch! (grammar-for (:filename r))
+                                               selected? line sel-idx (str "l" k) hl? rev?)
+                               suffix)
+                         (diff-line-view dispatch! (grammar-for (:filename r))
+                                         selected? line sel-idx (str "l" k) hl? rev?)))
                      nil)))
                body-rows)]]))
         file-groups)
        (empty-state/empty-state {} "No changes."))
-     toolbar]))
+     toolbar])))
 
 (defn- position-sel-toolbar!
   "Anchor the selection toolbar to the bottom edge of the last selected diff
@@ -1476,8 +1496,11 @@
 
 (defn- tab-bar
   "Segmented pill for switching between chat and buffer views. Lives inline in
-   the topbar next to the overflow menu; only rendered when a buffer exists."
-  [dispatch! room-id active-buffer buffers]
+   the topbar next to the overflow menu; only rendered when a buffer exists.
+   `canvas?` adds a Canvas pill that navigates to the room's canvas-review
+   page (a separate route, not a buffer switch) — shown once a review has
+   been built for this session."
+  [dispatch! room-id active-buffer buffers canvas?]
   [:div {:class ["tab-pill"]}
    [:button {:class ["tab-pill-item" (when (= active-buffer :chat) "tab-pill-item--active")]
              :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
@@ -1492,7 +1515,12 @@
      [:button {:class ["tab-pill-item" (when (= active-buffer :file) "tab-pill-item--active")]
                :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
                                                :room-id room-id :buffer-id :file}))}}
-      "File"])])
+      "File"])
+   (when canvas?
+     [:button {:class ["tab-pill-item"]
+               :on {:click (fn [_] (dispatch! {:type :canvas-review/open-page
+                                               :room-id room-id}))}}
+      "Canvas"])])
 
 ;; ── Chat view ────────────────────────────────────────────────────────────────
 
@@ -1832,7 +1860,8 @@
         dkey    (draft-key state)
         buffers    (get-in room [:ui :buffers])
         active-buf (get-in room [:ui :active-buffer] :chat)
-        has-tabs?  (boolean (or (:diff buffers) (:file buffers)))
+        canvas?    (boolean (seq (get-in room [:ext :canvas-review :diff])))
+        has-tabs?  (boolean (or (:diff buffers) (:file buffers) canvas?))
         ;; Prompt navigation over the FULL history (not just the rendered
         ;; window): collect every user entry's absolute history index so we can
         ;; jump to prompts scrolled off the top, expanding the window on demand.
@@ -1857,7 +1886,7 @@
           (spinner) [:span "Updating…"]])]
       (offline-badge state)
       (when has-tabs?
-        (tab-bar dispatch! (:id room) active-buf buffers))
+        (tab-bar dispatch! (:id room) active-buf buffers canvas?))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
      (case active-buf
        :diff

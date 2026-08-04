@@ -17,6 +17,7 @@
    #?@(:node
        [[xi.ext.amazon :as amazon]
         [xi.ext.browser-open :as browser-open]
+        [xi.ext.canvas-review :as canvas-review]
         [xi.ext.chrome :as chrome]
         [xi.ext.clipboard-image :as clipboard-image]
         [xi.ext.clj-surgeon :as clj-surgeon]
@@ -48,7 +49,8 @@
         [xi.ext.web :as web]
         [xi.ext.worktree.core :as worktree]]
        :browser
-       [[xi.ext.diff.web :as diff-web]
+       [[xi.ext.canvas-review.web :as canvas-review-web]
+        [xi.ext.diff.web :as diff-web]
         [xi.ext.github.web :as github-web]
         [xi.ext.gtd.web :as gtd-web]])))
 
@@ -92,6 +94,7 @@
       amazon/extension
       commit/extension
       review/extension
+      canvas-review/extension
       browser-open/extension
       chrome/create
       clj-surgeon/extension
@@ -126,4 +129,5 @@
      "Browser-safe extension web halves, composed by xi.web.core."
      [diff-web/extension
       gtd-web/extension
-      github-web/extension]))
+      github-web/extension
+      canvas-review-web/extension]))

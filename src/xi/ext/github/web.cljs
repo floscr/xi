@@ -45,6 +45,20 @@
                 (dissoc :web/pending-room :web/overflow-menu?))
    :effects [[:ws/send {:type :room/join :target "new" :cwd cwd}]]})
 
+(defn- pr-canvas-review
+  "Like pr-review, but seed the `/canvas-review pr <number>` command so the
+   new room loads the PR's diff via `gh pr diff` and builds the node-based
+   review canvas. The canvas-review extension's originator-only
+   :canvas-review/open then navigates this client to the Canvas view."
+  [st {:keys [cwd number]}]
+  {:state   (-> st
+                (assoc :web/route {:page :chat})
+                (assoc :web/timeline-window nil)
+                (assoc :web/pending-submit {:session-id nil
+                                            :text (str "/canvas-review pr " number)})
+                (dissoc :web/pending-room :web/overflow-menu?))
+   :effects [[:ws/send {:type :room/join :target "new" :cwd cwd}]]})
+
 (defn- on-navigate
   "Chained after the base router navigate: sync the PR drill-down state from
    the route and fetch what the destination needs — the list on :pr-list, one
@@ -99,6 +113,7 @@
                                                       :page :pr-diff
                                                       :cwd cwd :number number}]]})
    :pr/review            pr-review
+   :pr/canvas-review     pr-canvas-review
    :pr/detail-load       (fn [st {:keys [cwd number]}]
                            {:state (assoc st :web/pr-detail-loading? true
                                              :web/pr-detail-cwd cwd
@@ -246,7 +261,12 @@
              :on-click (fn [_] (dispatch! {:type :pr/review
                                           :cwd cwd :number number
                                           :title (:title pr)}))}
-            "Review with agent")]]
+            "Review with agent")
+           (button/button
+            {:variant :outline :size :sm :icon-left :git-branch
+             :on-click (fn [_] (dispatch! {:type :pr/canvas-review
+                                          :cwd cwd :number number}))}
+            "Canvas review")]]
          (when (seq (:body pr))
            [:div {:class ["post-content" "pr-detail-body"]} (md/render (:body pr))])
          [:div {:class ["diff-tab"]}
