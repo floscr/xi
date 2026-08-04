@@ -5309,6 +5309,24 @@ a.sidebar-menu-item {
   gap: var(--size-1);
 }
 
+/* Bordered variant — a segmented control in a box (matches .button-group-boxed). */
+.toolbar-group-boxed {
+  background: var(--bg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  padding: var(--size-1);
+}
+
+.toolbar-group-boxed > .btn {
+  width: var(--size-8);
+  height: var(--size-8);
+  padding: 0;
+}
+
+.toolbar-group-boxed > .btn.btn-toggled {
+  box-shadow: var(--shadow-0);
+}
+
 .gap-1 { gap: var(--size-1); }
 .gap-2 { gap: var(--size-2); }
 .gap-3 { gap: var(--size-3); }

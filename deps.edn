@@ -3,5 +3,5 @@
         no.cjohansen/replicant {:mvn/version "2025.12.1"}
         com.example.git/clj-ui-framework
         {:git/url "https://git.example.com/floscr/clj-ui-framework.git"
-         :git/sha "3d2a73805590abafb04197b3d3f05ddac9efe7d9"}}
+         :git/sha "0063cb56100ec08ea0d744d71c9a9c94fa4f7e52"}}
  :paths ["src" "test"]}
