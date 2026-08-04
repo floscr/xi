@@ -568,6 +568,107 @@ a.btn-link {
 }
 
 
+/* ── Button group ─────────────────────────────────────────────────── */
+/* A cluster of related buttons as a segmented control. Two flavors:    */
+/* ghost (container-less, active item filled) and boxed (bordered, like  */
+/* tabs-boxed). Items are icon-only or text with an optional count.       */
+
+.button-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+}
+
+.button-group-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--size-9);
+  padding: 0 var(--size-3);
+  gap: var(--size-2);
+  border: none;
+  background: transparent;
+  color: var(--fg-1);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: var(--size-5);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.button-group-item:hover {
+  background: var(--bg-1);
+  color: var(--fg-0);
+}
+
+.button-group-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button-group-item.is-active {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+/* Square icon-only item */
+.button-group-item-icon {
+  width: var(--size-9);
+  height: var(--size-9);
+  padding: 0;
+}
+
+/* Muted trailing count badge */
+.button-group-count {
+  color: var(--fg-2);
+  font-weight: 400;
+}
+
+.button-group-item.is-active .button-group-count {
+  color: var(--fg-1);
+}
+
+/* Divider between sub-clusters */
+.button-group-separator {
+  flex: none;
+  width: 1px;
+  height: var(--size-5);
+  margin: 0 var(--size-1);
+  background: var(--bg-2);
+}
+
+/* ── Boxed flavor — bordered container (like tabs-boxed) ───────────── */
+
+.button-group-boxed {
+  gap: var(--size-1);
+  background: var(--bg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  padding: var(--size-1);
+}
+
+.button-group-boxed .button-group-item {
+  height: var(--size-8);
+}
+
+.button-group-boxed .button-group-item-icon {
+  width: var(--size-8);
+  height: var(--size-8);
+}
+
+.button-group-boxed .button-group-item:hover {
+  background: var(--bg-1);
+}
+
+.button-group-boxed .button-group-item.is-active {
+  background: var(--bg-2);
+  color: var(--fg-0);
+  box-shadow: var(--shadow-0);
+}
+
+
 /* ── Calendar ─────────────────────────────────────────────────────── */
 /* Date picker inspired by shadcn/radix Calendar component.         */
 
