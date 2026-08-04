@@ -2733,6 +2733,28 @@ body {
   width: min(80%, 560px);
 }
 
+/* On wider screens, dock the recent-sessions sidebar so it's always visible
+   and sits inline beside the content — no overlay darkening, no slide-in. */
+@media (min-width: 1024px) {
+  .sidebar-layout--floating > .sidebar {
+    position: relative;
+    transform: none;
+    transition: none;
+    width: 20rem;
+    z-index: auto;
+    box-shadow: none;
+  }
+
+  .sidebar-layout--floating > .sidebar-overlay {
+    display: none;
+  }
+
+  /* Sidebar is permanently docked, so the hamburger toggle is redundant. */
+  .sidebar-layout--floating .sidebar-mobile-toggle {
+    display: none;
+  }
+}
+
 /* ---- Pull requests ---- */
 .pr-filters {
   display: flex;

@@ -2468,7 +2468,19 @@
          distinct
          (take 5))))
 
-(defn- recent-sidebar
+(def ^:private recent-sidebar-cache
+  ;; Memo for the docked/drawer sidebar. On wide screens the sidebar is always
+  ;; rendered, so without this its whole projects+sessions subtree would be
+  ;; rebuilt (and re-diffed) on every app render — including every composer
+  ;; keystroke — making typing janky. We cache the built hiccup keyed on the
+  ;; state slices the sidebar actually reads; while those are unchanged
+  ;; (typing only touches composer state) we hand back the *identical* hiccup,
+  ;; which Replicant's `unchanged?` skips by reference, so the subtree is
+  ;; neither rebuilt nor reconciled. (dispatch! is a stable singleton, so it's
+  ;; safe to leave out of the key.)
+  (atom nil))
+
+(defn- recent-sidebar*
   "The drawer panel: framework sidebar listing recently-used projects above
    recent sessions, both sorted by last visited. Slid in/out by the floating
    layout's data-sidebar-open attribute. Reuses session-card/project-dir-card
@@ -2476,10 +2488,14 @@
    auto-closes the drawer)."
   [state dispatch!]
   (let [open?    (boolean (:web/sidebar-open? state))
+        ;; On wide screens the drawer is docked (always visible, no overlay),
+        ;; so render its content regardless of the open/closed drawer state.
+        wide?    (boolean (:web/wide? state))
+        render?  (or open? wide?)
         pa?      (get-in state [:lobby :personal-agent?])
-        projects (when (and open? (not pa?)) (recent-projects state))
-        sessions (when open? (palette/recent-sessions state))
-        orphans  (when open? (orphan-rooms state sessions))
+        projects (when (and render? (not pa?)) (recent-projects state))
+        sessions (when render? (palette/recent-sessions state))
+        orphans  (when render? (orphan-rooms state sessions))
         ;; Render one card per session-id from a single keyed sequence.
         ;; Replicant renders BOTH siblings when two share a :replicant/key
         ;; (it does not dedupe), so any duplicate stacks cards on top of each
@@ -2516,8 +2532,8 @@
      ;; anew the moment the drawer opens.
      (sidebar/sidebar-content
       {:attrs {:style {:padding "env(safe-area-inset-top) 0 0 0"}
-               :replicant/key (str "sidebar-content-" open?)}}
-      (when open?
+               :replicant/key (str "sidebar-content-" render?)}}
+      (when render?
         (list
          (when (not pa?)
            (sidebar/sidebar-group {:label "Projects"}
@@ -2558,6 +2574,8 @@
                      :title "Mark all sessions as read"
                      :on {:click (fn [_] (dispatch! {:type :session/mark-all-read}))}}
             (icon/icon {:icon-name :check :size :md})])
+         ;; NOTE: keep this fn's state reads reflected in `recent-sidebar`'s
+         ;; memo key below, or the docked sidebar can go stale.
          (when (not pa?)
            [:button {:class ["icon-btn" "icon-btn--sm"]
                      :title "Prune inactive rooms — close idle sessions, kill their processes, and detach lingering clients"
@@ -2568,6 +2586,25 @@
                      :title "Reload"
                      :on {:click (fn [_] (.reload js/location))}}
             (icon/icon {:icon-name :refresh :size :md})])]]))))
+
+(defn- recent-sidebar
+  "Memoized wrapper around `recent-sidebar*`. Returns the identical cached
+   hiccup while the sidebar's input slices are unchanged (see cache docstring)."
+  [state dispatch!]
+  (let [sig    [(:web/sidebar-open? state)
+                (:web/wide? state)
+                (:lobby state)
+                (:web/response-counts state)
+                (:web/watched state)
+                (get-in state [:web/route :session-id])
+                (:web/theme-mode state)
+                (:web/nav-items state)]
+        cached @recent-sidebar-cache]
+    (if (and cached (= (:sig cached) sig))
+      (:html cached)
+      (let [html (recent-sidebar* state dispatch!)]
+        (reset! recent-sidebar-cache {:sig sig :html html})
+        html))))
 
 (defn- git-status-view
   "Roomless working-tree diff page (reached from the project view's overflow

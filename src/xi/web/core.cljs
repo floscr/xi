@@ -622,6 +622,7 @@
           :sidebar/toggle        (fn [st _] {:state (update st :web/sidebar-open? not)})
           :sidebar/open          (fn [st _] {:state (assoc st :web/sidebar-open? true)})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
+          :web/set-wide          (fn [st {:keys [wide?]}] {:state (assoc st :web/wide? wide?)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
           :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
@@ -1446,6 +1447,13 @@
         (.addEventListener js/window "pageshow" (fn [_] (on-resume)))))
     (views/install-pointer-type-tracker!)
     (attach-code-copy-listener!)
+    ;; Track wide viewports so the sidebar can dock (always-visible, no overlay)
+    ;; at >=1024px. The matching CSS lives in style.css; this only keeps the
+    ;; :web/wide? flag in sync so the docked drawer actually renders content.
+    (let [mql (.matchMedia js/window "(min-width: 1024px)")]
+      (dispatch! {:type :web/set-wide :wide? (.-matches mql)})
+      (.addEventListener mql "change"
+                         (fn [e] (dispatch! {:type :web/set-wide :wide? (.-matches e)}))))
     ;; Left-edge swipe to open the sidebar; swipe left again to close it.
     ;;
     ;; iOS/WebKit reserves the extreme left edge (~first 20px) for its own
