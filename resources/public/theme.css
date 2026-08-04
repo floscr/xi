@@ -595,7 +595,13 @@ a.btn-link {
   line-height: var(--size-5);
   border-radius: var(--radius-sm);
   cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
   transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+a.button-group-item:hover {
+  text-decoration: none;
 }
 
 .button-group-item:hover {
