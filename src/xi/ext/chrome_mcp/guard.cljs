@@ -228,10 +228,16 @@
                 (wm/current-workspace)))
 
             (scoped [tool args & [ctx]]
-              (-> (resolve-workspace ctx)
-                  (.then (fn [ws]
-                           (if (nil? ws)
-                             (forward tool args)   ;; wm unavailable → no scoping
-                             (dispatch tool args ws))))
+              ;; Only scope when the WM can actually see our Chrome's X11
+              ;; windows. If `wm` is blind (empty — e.g. the attached Chrome
+              ;; has a different WM_CLASS than we filter on), managing/creating
+              ;; windows would spawn unrecognized windows forever, so pass
+              ;; through raw instead.
+              (-> (js/Promise.all #js [(resolve-workspace ctx) (wm/chrome-windows)])
+                  (.then (fn [arr]
+                           (let [[ws wins] (vec arr)]
+                             (if (or (nil? ws) (empty? wins))
+                               (forward tool args)   ;; wm blind → no scoping
+                               (dispatch tool args ws)))))
                   (.catch (fn [_] (forward tool args)))))]
       scoped)))
