@@ -1,4 +1,4 @@
-(ns xi.ext.chrome-defs
+(ns xi.ext.chrome-mcp.defs
   "Compile-time macro that inlines the chrome-devtools-mcp tool definitions
    into the ClojureScript bundle. Mirrors xi.highlight.bundle: the runtime
    never reads the file, so there is no runtime path/classpath dependency —

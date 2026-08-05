@@ -10,7 +10,7 @@
    source. On cancel the inline styles are restored.
 
    Like the element picker, this is not a standalone extension — it's installed
-   into xi.ext.chrome (which owns the shared chrome-devtools-mcp client) via
+   into xi.ext.chrome-mcp (which owns the shared chrome-devtools-mcp client) via
    `install`, and drives the MCP's currently selected page through its
    `evaluate_script` tool.
 
@@ -223,7 +223,7 @@
                   (cleanup! call)
                   (text-result (str "style_editor error: " (.-message e)) true))))))
 
-;; ── Install (into xi.ext.chrome, which owns the shared MCP client) ────────────
+;; ── Install (into xi.ext.chrome-mcp, which owns the shared MCP client) ────────────
 
 (def ^:private tool-def
   {:name "style_editor"

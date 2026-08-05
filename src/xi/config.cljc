@@ -18,7 +18,7 @@
        [[xi.ext.amazon :as amazon]
         [xi.ext.browser-open :as browser-open]
         [xi.ext.canvas-review :as canvas-review]
-        [xi.ext.chrome :as chrome]
+        [xi.ext.chrome-mcp :as chrome]
         [xi.ext.clipboard-image :as clipboard-image]
         [xi.ext.clj-surgeon :as clj-surgeon]
         [xi.ext.commit :as commit]

@@ -440,7 +440,7 @@
                              :client (cond-> {:kind :remote}
                                        ;; pid + platform (from :auth/hello) let
                                        ;; chrome-mcp scope to the client's
-                                       ;; terminal workspace (xi.ext.chrome-guard)
+                                       ;; terminal workspace (xi.ext.chrome-mcp.guard)
                                        (.. ws -data -clientPid)
                                        (assoc :pid (.. ws -data -clientPid))
                                        (.. ws -data -clientPlatform)

@@ -12,7 +12,7 @@
    open it first asks (via the dialog `ask!`) which one to pick from and
    switches to it with `select_page`; with a single tab (or headless, no
    `ask!`) it acts on the MCP's currently *selected* page. This namespace is
-   not a standalone extension; it's installed into xi.ext.chrome (which owns
+   not a standalone extension; it's installed into xi.ext.chrome-mcp (which owns
    the shared MCP client) via `install`.
 
      /pick                  open the picker on the selected page
@@ -320,7 +320,7 @@
                 (cleanup! call)
                 (status! dispatch! room-id (str "Element picker error: " (.-message e)))))))
 
-;; ── Install (into xi.ext.chrome, which owns the shared MCP client) ────────────
+;; ── Install (into xi.ext.chrome-mcp, which owns the shared MCP client) ────────────
 
 (defn install
   "Return {:commands :keybindings :fx} for the element picker, wired to `call`

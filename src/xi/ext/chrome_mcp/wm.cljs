@@ -1,4 +1,4 @@
-(ns xi.ext.chrome-wm
+(ns xi.ext.chrome-mcp.wm
   "Thin async wrappers around the dotfiles `wm` CLI (xmonad/EWMH queries).
 
    Used by the chrome-mcp workspace scoping to learn the currently-viewed

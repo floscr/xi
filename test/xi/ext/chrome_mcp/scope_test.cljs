@@ -1,6 +1,6 @@
-(ns xi.ext.chrome-scope-test
+(ns xi.ext.chrome-mcp.scope-test
   (:require [cljs.test :refer [deftest is testing]]
-            [xi.ext.chrome-scope :as scope]))
+            [xi.ext.chrome-mcp.scope :as scope]))
 
 (deftest strip-chrome-suffix-test
   (is (= "Shovels" (scope/strip-chrome-suffix "Shovels - Google Chrome")))

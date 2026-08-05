@@ -554,7 +554,7 @@ See docs/cli.md for the full reference.")
                             :platform    "tui"
                             ;; This process' pid — the server resolves its
                             ;; terminal window's xmonad workspace to scope
-                            ;; chrome-mcp (see xi.ext.chrome-guard).
+                            ;; chrome-mcp (see xi.ext.chrome-mcp.guard).
                             :pid         (.-pid js/process)}
                     :target target
                     :cwd cwd

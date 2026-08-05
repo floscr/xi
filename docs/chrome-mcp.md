@@ -1,4 +1,4 @@
-# Chrome DevTools MCP (`xi.ext.chrome`)
+# Chrome DevTools MCP (`xi.ext.chrome-mcp`)
 
 Proxies [`chrome-devtools-mcp`](https://github.com/ChromeDevTools/chrome-devtools-mcp)
 into xi's own tool surface, so an agent running through the Claude bridge can
@@ -185,7 +185,7 @@ async seam to discover chrome's tool list via `tools/list` per run. So the 29
 tool defs are inlined into the bundle at compile time:
 
 - `resources/chrome/tools.edn` — the generated defs (committed).
-- `xi.ext.chrome-defs` — a `.clj` macro that `slurp`s + inlines that EDN
+- `xi.ext.chrome-mcp.defs` — a `.clj` macro that `slurp`s + inlines that EDN
   (mirrors `xi.highlight.bundle`; `resources/` isn't on the classpath, so the
   macro reads the file by repo-relative path at compile time).
 - `scripts/sync-chrome-tools.mjs` — regenerates the EDN from
@@ -204,11 +204,11 @@ bb chrome:sync-tools   # → rewrites resources/chrome/tools.edn; rebuild to inl
 
 | Path | Role |
 |------|------|
-| `src/xi/ext/chrome.cljs` | The extension: stdio JSON-RPC client + forward registry; wraps forward with the scope guard in attach mode. |
-| `src/xi/ext/chrome_guard.cljs` | Workspace-scoping orchestration (the four gates + reconcile/self-heal). |
-| `src/xi/ext/chrome_scope.cljs` | Pure classification (parse `list_pages`, title/URL correlation) + unit tests. |
-| `src/xi/ext/chrome_cdp.cljs` | Minimal CDP WebSocket client (`Target.getTargets`, `getWindowForTarget`, `createTarget`). |
-| `src/xi/ext/chrome_wm.cljs` | Async wrappers around the dotfiles `wm` CLI, by absolute path (current workspace name, window list, move-by-name) + `workspace-for-pid` (PID → X11 window via `/proc` ancestry + `wmctrl -lp` → workspace name). |
-| `src/xi/ext/chrome_defs.clj` | Compile-time macro inlining the tool defs. |
+| `src/xi/ext/chrome_mcp.cljs` | The extension: stdio JSON-RPC client + forward registry; wraps forward with the scope guard in attach mode. |
+| `src/xi/ext/chrome_mcp/guard.cljs` | Workspace-scoping orchestration (the four gates + reconcile/self-heal). |
+| `src/xi/ext/chrome_mcp/scope.cljs` | Pure classification (parse `list_pages`, title/URL correlation) + unit tests. |
+| `src/xi/ext/chrome_mcp/cdp.cljs` | Minimal CDP WebSocket client (`Target.getTargets`, `getWindowForTarget`, `createTarget`). |
+| `src/xi/ext/chrome_mcp/wm.cljs` | Async wrappers around the dotfiles `wm` CLI, by absolute path (current workspace name, window list, move-by-name) + `workspace-for-pid` (PID → X11 window via `/proc` ancestry + `wmctrl -lp` → workspace name). |
+| `src/xi/ext/chrome_mcp/defs.clj` | Compile-time macro inlining the tool defs. |
 | `resources/chrome/tools.edn` | Generated tool defs (29 tools). |
 | `scripts/sync-chrome-tools.mjs` | Regenerator (`bb chrome:sync-tools`). |

@@ -14,8 +14,8 @@ Ctrl+Shift+I           keybinding for /pick
 ## How it works
 
 The picker is **not a standalone extension**. It's installed *into*
-[`xi.ext.chrome`](chrome-mcp.md), which owns the shared `chrome-devtools-mcp`
-stdio client. `xi.ext.chrome/create` merges in `element-picker/install`, passing
+[`xi.ext.chrome-mcp`](chrome-mcp.md), which owns the shared `chrome-devtools-mcp`
+stdio client. `xi.ext.chrome-mcp/create` merges in `element-picker/install`, passing
 the same `forward` caller the agent's browser tools use. So the picker requires
 `XI_CHROME_TOOLS` to be set — the same env that enables the chrome tools.
 
@@ -88,7 +88,7 @@ ships.
 
 The generated `picker.js` is baked into xi's node bundle by the
 `inline-picker-js` macro (`src/xi/ext/element_picker_js.clj`), mirroring
-`xi.ext.chrome-defs` / `xi.highlight.bundle`. `resources/` isn't on the
+`xi.ext.chrome-mcp.defs` / `xi.highlight.bundle`. `resources/` isn't on the
 classpath, so the macro reads the file by repo-relative path at compile time —
 no runtime path dependency. Because shadow-cljs doesn't track `picker.js` as a
 source dependency, a fresh `bb picker:build` won't retrigger a recompile of
@@ -124,5 +124,5 @@ XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 | `resources/element-picker/squint.edn` | squint config for the picker build. |
 | `test/xi/ext/element_picker_test.cljs` | Unit tests (injection, parsing, install, message building). |
 
-The picker is wired into `xi.ext.chrome` (`src/xi/ext/chrome.cljs`), which owns
+The picker is wired into `xi.ext.chrome-mcp` (`src/xi/ext/chrome_mcp.cljs`), which owns
 the shared MCP client.

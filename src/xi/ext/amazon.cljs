@@ -12,7 +12,7 @@
 
    Chrome is launched lazily on the first search, the connection is memoized,
    searches are serialized (one shared tab), and Chrome is killed on shutdown —
-   mirroring xi.ext.chrome.
+   mirroring xi.ext.chrome-mcp.
 
    Env:
      XI_AMAZON_CHROME   path to the Chrome/Chromium binary (otherwise a small

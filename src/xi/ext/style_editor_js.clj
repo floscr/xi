@@ -1,6 +1,6 @@
 (ns xi.ext.style-editor-js
   "Compile-time macro that inlines the style-editor browser JS into the
-   ClojureScript bundle. Mirrors xi.ext.element-picker-js / xi.ext.chrome-defs:
+   ClojureScript bundle. Mirrors xi.ext.element-picker-js / xi.ext.chrome-mcp.defs:
    the runtime never reads the file, so there is no runtime path/classpath
    dependency — the script is baked in at compile time.
 

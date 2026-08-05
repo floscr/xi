@@ -1,6 +1,6 @@
 (ns xi.ext.element-picker-js
   "Compile-time macro that inlines the element-picker browser JS into the
-   ClojureScript bundle. Mirrors xi.ext.chrome-defs / xi.highlight.bundle:
+   ClojureScript bundle. Mirrors xi.ext.chrome-mcp.defs / xi.highlight.bundle:
    the runtime never reads the file, so there is no runtime path/classpath
    dependency — the picker script is baked in at compile time.
 

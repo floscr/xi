@@ -1,4 +1,4 @@
-(ns xi.ext.chrome
+(ns xi.ext.chrome-mcp
   "chrome-devtools-mcp proxied into xi's own tool surface.
 
    xi's provider disables the Claude CLI's native MCP servers (only xi's
@@ -14,7 +14,7 @@
            → hand-rolled stdio JSON-RPC client → chrome-devtools-mcp → Chrome
 
    The tool definitions are baked into the bundle at compile time from
-   chrome-devtools-mcp's live tools/list (xi.ext.chrome-defs /
+   chrome-devtools-mcp's live tools/list (xi.ext.chrome-mcp.defs /
    scripts/sync-chrome-tools.mjs), because xi collects :tool-definitions
    synchronously at assembly — there is no async seam to discover them per
    run.
@@ -30,11 +30,11 @@
                             devtools-mcp launches its own managed Chrome
      XI_CHROME_MCP_ARGS     extra CLI args for chrome-devtools-mcp (space-split)"
   (:require [clojure.string :as str]
-            [xi.ext.chrome-guard :as guard]
+            [xi.ext.chrome-mcp.guard :as guard]
             [xi.ext.element-picker :as element-picker]
             [xi.ext.style-editor :as style-editor]
             ["node:child_process" :as child-process])
-  (:require-macros [xi.ext.chrome-defs :refer [inline-tool-defs]]))
+  (:require-macros [xi.ext.chrome-mcp.defs :refer [inline-tool-defs]]))
 
 (def ^:private tool-defs (inline-tool-defs))
 (def ^:private tool-names (mapv :name tool-defs))
@@ -163,7 +163,7 @@
                                                       (.-message e))}]
                                :is-error true}))))]
         ;; In attach mode, scope every call to the agent's launch xmonad
-        ;; workspace (unless XI_CHROME_NO_SCOPE is set). See xi.ext.chrome-guard.
+        ;; workspace (unless XI_CHROME_NO_SCOPE is set). See xi.ext.chrome-mcp.guard.
         (let [browser-url (env "XI_CHROME_BROWSER_URL")
               scope?      (and (seq browser-url) (not (seq (env "XI_CHROME_NO_SCOPE"))))
               ;; `forward` is uniformly variadic `(fn [tool args & [ctx]])`. When

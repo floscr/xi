@@ -1,9 +1,9 @@
-(ns xi.ext.chrome-guard
+(ns xi.ext.chrome-mcp.guard
   "Workspace scoping for the chrome-devtools-mcp proxy.
 
    Wraps the raw MCP `forward` fn so an agent only ever acts on Chrome windows
    on the xmonad workspace the user is *currently viewing*, and creates new
-   windows there. See docs/chrome-mcp.md for the model; xi.ext.chrome-scope for
+   windows there. See docs/chrome-mcp.md for the model; xi.ext.chrome-mcp.scope for
    the pure classification.
 
    The target workspace is the workspace of **this session's TUI terminal**,
@@ -44,9 +44,9 @@
    unavailable, the destructive gates block and the rest passes through."
   (:require [clojure.set :as set]
             [clojure.string :as str]
-            [xi.ext.chrome-scope :as scope]
-            [xi.ext.chrome-cdp :as cdp]
-            [xi.ext.chrome-wm :as wm]))
+            [xi.ext.chrome-mcp.scope :as scope]
+            [xi.ext.chrome-mcp.cdp :as cdp]
+            [xi.ext.chrome-mcp.wm :as wm]))
 
 ;; ── result helpers ───────────────────────────────────────────────────────────
 

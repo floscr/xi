@@ -1,4 +1,4 @@
-(ns xi.ext.chrome-cdp
+(ns xi.ext.chrome-mcp.cdp
   "Minimal Chrome DevTools Protocol client over the browser-level WebSocket.
 
    chrome-devtools-mcp addresses pages by a flat index and never exposes which

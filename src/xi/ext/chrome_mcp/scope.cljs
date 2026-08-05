@@ -1,4 +1,4 @@
-(ns xi.ext.chrome-scope
+(ns xi.ext.chrome-mcp.scope
   "Pure classification for chrome-mcp workspace scoping.
 
    Given what chrome-devtools-mcp reports (`list_pages`), what CDP reports

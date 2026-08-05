@@ -118,8 +118,8 @@ instruction (class rule vs. single node), and any refine text.
 ## How it works
 
 Like the element picker, this is **not a standalone extension** — it's installed
-*into* [`xi.ext.chrome`](chrome-mcp.md), which owns the shared
-`chrome-devtools-mcp` stdio client. `xi.ext.chrome/create` merges in
+*into* [`xi.ext.chrome-mcp`](chrome-mcp.md), which owns the shared
+`chrome-devtools-mcp` stdio client. `xi.ext.chrome-mcp/create` merges in
 `style-editor/install`, passing the same `forward` caller the agent's browser
 tools use. Both the chrome proxy tools and this tool contribute
 `:tool-definitions` / `:tool-registry`, so `create` combines them explicitly
@@ -188,5 +188,5 @@ XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 | `resources/style-editor/squint.edn` | squint config for the build. |
 | `test/xi/ext/style_editor_test.cljs` | Unit tests (config, injection, parsing, formatting, install). |
 
-The tool is wired into `xi.ext.chrome` (`src/xi/ext/chrome.cljs`), which owns the
+The tool is wired into `xi.ext.chrome-mcp` (`src/xi/ext/chrome_mcp.cljs`), which owns the
 shared MCP client.
