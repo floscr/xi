@@ -437,7 +437,14 @@
                (let [cid (.. ws -data -cid)]
                  (set! (.. ws -data -authed) true)
                  (dispatch! {:type :client/connect :client-id cid
-                             :client {:kind :remote}})
+                             :client (cond-> {:kind :remote}
+                                       ;; pid + platform (from :auth/hello) let
+                                       ;; chrome-mcp scope to the client's
+                                       ;; terminal workspace (xi.ext.chrome-guard)
+                                       (.. ws -data -clientPid)
+                                       (assoc :pid (.. ws -data -clientPid))
+                                       (.. ws -data -clientPlatform)
+                                       (assoc :platform (.. ws -data -clientPlatform)))})
                  (send-event! cid {:type :auth/ok})
                  (send! cid (lobby-payload @state personal-agent? (:model server-opts)))))
              resolve-pending!
@@ -453,8 +460,12 @@
                          (try (.close ws) (catch :default _ nil)))))
                  (notify-authed! {:type :auth/resolved :code code :approved? approved?})))
              handle-hello!
-             (fn [^js ws {:keys [client-key client-name platform]}]
+             (fn [^js ws {:keys [client-key client-name platform pid]}]
                (let [cid (.. ws -data -cid)]
+                 ;; Stash identity on the socket so admit! (which may run later,
+                 ;; after pairing approval) can record it into the client entry.
+                 (when pid (set! (.. ws -data -clientPid) pid))
+                 (when platform (set! (.. ws -data -clientPlatform) platform))
                  (cond
                    (authed? ws) nil
 

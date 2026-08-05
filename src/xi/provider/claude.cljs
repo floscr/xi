@@ -113,7 +113,7 @@
   ;; The manager passes fns (xi.cli/tooling-opts) so the enabled tool set is
   ;; read *fresh each turn* — enabling/disabling an extension changes what the
   ;; model sees on the next turn without a restart (see xi.ext.manager).
-  [{:keys [cwd only-tools tool-gate extra-tool-definitions extra-tool-registry]}]
+  [{:keys [cwd only-tools tool-gate extra-tool-definitions extra-tool-registry client-pid]}]
   (let [tool-gate (or tool-gate default-gate)
         extra-defs (if (fn? extra-tool-definitions)
                      (extra-tool-definitions) extra-tool-definitions)
@@ -151,7 +151,7 @@
                                                      :isError (boolean (:is-error result))})
 
                                               :else
-                                              (-> (tools/run-tool exec-fn args {:cwd cwd})
+                                              (-> (tools/run-tool exec-fn args {:cwd cwd :client-pid client-pid})
                                                   (.then (fn [{:keys [content is-error]}]
                                                            #js {:content (clj->js content)
                                                                 :isError is-error})))))))))}))
@@ -284,6 +284,7 @@
         resume-id (:resume-session-id opts)
         mcp-server (build-mcp-server
                     (cond-> {:cwd cwd
+                             :client-pid (:client-pid opts)
                              :tool-gate (:tool-gate opts)
                              :extra-tool-definitions (:extra-tool-definitions opts)
                              :extra-tool-registry (:extra-tool-registry opts)}

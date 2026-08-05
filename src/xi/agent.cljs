@@ -333,6 +333,17 @@
                      (dispatch! {:type :agent/error :room-id room-id :error error}))})
 
 
+(defn- room-client-pid
+  "Pid of the client driving `room-id` (preferring a TUI client), or nil, from
+   the connection registry. Threaded into the tool ctx so chrome-mcp can scope
+   to that client's terminal workspace (see xi.ext.chrome-guard)."
+  [st room-id]
+  (->> (vals (get-in st [:connection :clients]))
+       (filter (fn [c] (and (= room-id (:room-id c)) (:pid c))))
+       (sort-by (fn [c] (if (= "tui" (:platform c)) 0 1)))
+       first
+       :pid))
+
 (defn create-fx
   "Provider effects. `providers` is a map of provider-id → provider.
    In-flight turn handles live here — runtime resources, not app state.
@@ -403,12 +414,14 @@
                                          :message (str "Working directory does not exist: "
                                                        missing-cwd)}})
                      (dispatch! {:type :agent/turn-end :room-id room-id}))))
+             client-pid (room-client-pid (get-state) room-id)
              {:keys [promise abort!]}
              ((:start-turn! provider)
               (cond-> (merge payload (event-callbacks dispatch! room-id))
                 gate1                  (assoc :tool-gate gate1)
                 extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
-                extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)))]
+                extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
+                client-pid             (assoc :client-pid client-pid)))]
          (.set inflight room-id {:abort! abort!})
          (-> promise
              (.then

@@ -30,6 +30,7 @@
                             devtools-mcp launches its own managed Chrome
      XI_CHROME_MCP_ARGS     extra CLI args for chrome-devtools-mcp (space-split)"
   (:require [clojure.string :as str]
+            [xi.ext.chrome-guard :as guard]
             [xi.ext.element-picker :as element-picker]
             [xi.ext.style-editor :as style-editor]
             ["node:child_process" :as child-process])
@@ -150,7 +151,7 @@
                       (reset! ready* p)
                       (.catch p (fn [_] (reset! ready* nil) (reset! client* nil)))
                       p)))
-              (forward [tool-name args]
+              (raw-forward [tool-name args]
                 (-> (ensure!)
                     (.then (fn [client]
                              ((:call client) "tools/call"
@@ -161,14 +162,25 @@
                                            :text (str "chrome-devtools-mcp error: "
                                                       (.-message e))}]
                                :is-error true}))))]
-        (let [editor (style-editor/install forward)]
+        ;; In attach mode, scope every call to the agent's launch xmonad
+        ;; workspace (unless XI_CHROME_NO_SCOPE is set). See xi.ext.chrome-guard.
+        (let [browser-url (env "XI_CHROME_BROWSER_URL")
+              scope?      (and (seq browser-url) (not (seq (env "XI_CHROME_NO_SCOPE"))))
+              ;; `forward` is uniformly variadic `(fn [tool args & [ctx]])`. When
+              ;; scoped, the guard reads (:client-pid ctx) to pick this session's
+              ;; TUI-terminal workspace; the style-editor / element-picker call
+              ;; it 2-arg (no ctx) and fall back to `wm current`.
+              forward     (if scope?
+                            (guard/install raw-forward browser-url)
+                            (fn [tool args & _] (raw-forward tool args)))
+              editor (style-editor/install forward)]
           (merge
            {:id               :chrome
             ;; Combine the proxied chrome tools with the style-editor's own tool
             ;; (both contribute :tool-definitions/:tool-registry, so merge them
             ;; explicitly — a plain map merge would clobber one).
             :tool-definitions (into tool-defs (:tool-definitions editor))
-            :tool-registry    (merge (into {} (map (fn [n] [n (fn [args _ctx] (forward n args))]))
+            :tool-registry    (merge (into {} (map (fn [n] [n (fn [args ctx] (forward n args ctx))]))
                                            tool-names)
                                      (:tool-registry editor))
             :on-shutdown      (fn [] (when-let [c @client*] ((:kill c))))}

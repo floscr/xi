@@ -551,7 +551,11 @@ See docs/cli.md for the full reference.")
                     ;; so the TUI never waits for pairing approval locally.
                     :hello {:client-key  (auth/ensure-client-key!)
                             :client-name (str "tui@" (.hostname (js/require "node:os")))
-                            :platform    "tui"}
+                            :platform    "tui"
+                            ;; This process' pid — the server resolves its
+                            ;; terminal window's xmonad workspace to scope
+                            ;; chrome-mcp (see xi.ext.chrome-guard).
+                            :pid         (.-pid js/process)}
                     :target target
                     :cwd cwd
                     ;; Retry with backoff like the web client instead of
@@ -838,7 +842,8 @@ See docs/cli.md for the full reference.")
                       {:url        (client-url opts)
                        :hello      {:client-key  (auth/ensure-client-key!)
                                     :client-name (str "cli@" (.hostname (js/require "node:os")))
-                                    :platform    "cli"}
+                                    :platform    "cli"
+                                    :pid         (.-pid js/process)}
                        :target     nil
                        :reconnect? false
                        :on-close   (fn [] (finish nil))})]
