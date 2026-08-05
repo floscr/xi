@@ -204,7 +204,22 @@
 
 (defonce ^:private last-focus (atom nil))
 
+(defonce ^:private pan-offset
+  ;; Current pan of the canvas layer, in px. The .cr-canvas is translated by
+  ;; this so panning is unbounded in every direction (no scroll clamping).
+  (atom {:x 0 :y 0}))
+
+(defn- apply-pan!
+  [^js canvas {:keys [x y]}]
+  (set! (.. canvas -style -transform) (str "translate(" x "px, " y "px)")))
+
 (def ^:private SVGNS "http://www.w3.org/2000/svg")
+
+(def ^:private CANVAS-PAD-LEFT
+  "A left gutter for the node lanes so same-lane connectors have room to bow out
+   into positive, scrollable space. Without it the left lane sits at x=40 and
+   the bows curve into negative coordinates the scroll container clips away."
+  72)
 
 (defn- edge-geometry
   "Compute a readable connector between cards `a` and `b` from their live
@@ -225,9 +240,12 @@
         ay (+ (.-offsetTop a) (min 34 (/ (.-offsetHeight a) 2)))
         by (+ (.-offsetTop b) (min 34 (/ (.-offsetHeight b) 2)))]
     (if (< (js/Math.abs (- ax bx)) 8)
-      ;; same lane → bow into the left margin
+      ;; same lane → bow into the left margin. Clamp so the curve stays within
+      ;; the positive canvas (the scroll container can't reach negative x), and
+      ;; cap it so far-apart cards don't produce a giant off-screen arc.
       (let [x   ax
-            bow (+ 40 (* 0.15 (js/Math.abs (- ay by))))]
+            bow (max 32 (min (+ 40 (* 0.15 (js/Math.abs (- ay by))))
+                             (- x 16)))]
         {:path (str "M " x " " ay
                     " C " (- x bow) " " ay " " (- x bow) " " by " " x " " by)
          :lx (- x (* bow 0.55)) :ly (/ (+ ay by) 2)})
@@ -269,13 +287,20 @@
                 (.appendChild svg t)))))))))
 
 (defn- focus-current!
-  "When the walkthrough cursor changes, scroll the focused node to center."
+  "When the walkthrough cursor changes, pan the focused node to the centre of
+   the viewport. Transform-based (updates `pan-offset`) so it composes with the
+   free pan offset; canvas-hook applies the resulting translate."
   [^js canvas]
   (let [cur (.getAttribute canvas "data-cr-cursor")]
     (when (and cur (seq cur) (not= cur @last-focus))
       (reset! last-focus cur)
       (when-let [el (.querySelector canvas (str "[data-cr-node=\"" cur "\"]"))]
-        (.scrollIntoView el #js {:behavior "smooth" :block "center" :inline "center"})))))
+        (when-let [vp (.-parentElement canvas)]
+          (reset! pan-offset
+                  {:x (- (/ (.-clientWidth vp) 2)
+                         (+ (.-offsetLeft el) (/ (.-offsetWidth el) 2)))
+                   :y (- (/ (.-clientHeight vp) 2)
+                         (+ (.-offsetTop el) (/ (.-offsetHeight el) 2)))}))))))
 
 (def ^:private LANE-GAP
   "Vertical gap between stacked cards in a lane. The server seeds a rough
@@ -352,7 +377,65 @@
   (fn [{:replicant/keys [^js node]}]
     (reflow! node nodes edges)
     (draw-edges! node edges)
-    (focus-current! node)))
+    (focus-current! node)
+    (apply-pan! node @pan-offset)))
+
+(defn- canvas-pan!
+  "Grab-to-pan and wheel-pan the canvas across an unbounded 2D space. Panning
+   translates the .cr-canvas layer (via `pan-offset`) with no scroll clamping,
+   so you can pan freely in every direction — left/up past the origin included.
+   A left-drag that starts on empty background pans; drags on a card or control
+   are left alone so clicks and text selection still work. Wheel / trackpad
+   scroll also pans. Listeners are torn down on unmount."
+  [{:replicant/keys [^js node life-cycle]}]
+  (if (= life-cycle :replicant.life-cycle/unmount)
+    (do (when-let [h (.-_xiPanDown node)] (.removeEventListener node "mousedown" h))
+        (when-let [w (.-_xiPanWheel node)] (.removeEventListener node "wheel" w))
+        (set! (.-_xiPanDown node) nil)
+        (set! (.-_xiPanWheel node) nil))
+    (when-not (.-_xiPanDown node)
+      (let [canvas   (fn [] (.querySelector node ".cr-canvas"))
+            origin   (atom nil)
+            on-move  (fn [^js e]
+                       (let [o @origin]
+                         (when o
+                           (reset! pan-offset
+                                   {:x (+ (:ox o) (- (.-clientX e) (:px o)))
+                                    :y (+ (:oy o) (- (.-clientY e) (:py o)))})
+                           (apply-pan! (:c o) @pan-offset))))
+            on-up    (fn on-up [_]
+                       (when-let [c (:c @origin)]
+                         (set! (.. c -style -transition) ""))
+                       (reset! origin nil)
+                       (set! (.. node -style -cursor) "")
+                       (.removeEventListener js/window "mousemove" on-move)
+                       (.removeEventListener js/window "mouseup" on-up))
+            on-down  (fn [^js e]
+                       (when (and (zero? (.-button e))
+                                  (not (.closest (.-target e)
+                                                 ".cr-node, button, a, input, textarea")))
+                         (when-let [c (canvas)]
+                           ;; kill the focus transition so the drag tracks the
+                           ;; pointer 1:1 instead of easing behind it
+                           (set! (.. c -style -transition) "none")
+                           (reset! origin {:px (.-clientX e) :py (.-clientY e)
+                                           :ox (:x @pan-offset) :oy (:y @pan-offset)
+                                           :c c})
+                           (set! (.. node -style -cursor) "grabbing")
+                           (.addEventListener js/window "mousemove" on-move)
+                           (.addEventListener js/window "mouseup" on-up)
+                           (.preventDefault e))))
+            on-wheel (fn [^js e]
+                       (when-let [c (canvas)]
+                         (.preventDefault e)
+                         (swap! pan-offset (fn [{:keys [x y]}]
+                                             {:x (- x (.-deltaX e))
+                                              :y (- y (.-deltaY e))}))
+                         (apply-pan! c @pan-offset)))]
+        (set! (.-_xiPanDown node) on-down)
+        (set! (.-_xiPanWheel node) on-wheel)
+        (.addEventListener node "mousedown" on-down)
+        (.addEventListener node "wheel" on-wheel #js {:passive false})))))
 
 ;; ── Node rendering ───────────────────────────────────────────────────────────
 
@@ -502,7 +585,7 @@
                   current? (conj "cr-node--current"))
          :data-cr-node id
          :replicant/key id
-         :style {:left (str x "px") :top (str y "px") :width (str w "px")}
+         :style {:left (str (+ CANVAS-PAD-LEFT x) "px") :top (str y "px") :width (str w "px")}
          :on {:click (fn [_] (dispatch! {:type :canvas-review/select :id id}))}}
    (case kind
      :code
@@ -604,7 +687,7 @@
   "Explicit canvas dimensions so the absolutely-positioned nodes have a
    scrollable area and the SVG overlay can cover them."
   [nodes]
-  (let [xs (map (fn [n] (+ (:x n) (:w n))) (vals nodes))
+  (let [xs (map (fn [n] (+ CANVAS-PAD-LEFT (:x n) (:w n))) (vals nodes))
         ys (map (fn [n] (+ (:y n) 360)) (vals nodes))]
     {:w (+ 80 (apply max 900 xs))
      :h (apply max 640 ys)}))
@@ -634,7 +717,9 @@
        (when (:title cr) [:span {:class ["cr-source"]} " · " (:title cr)])]
       (views/overflow-menu dispatch! state)]
      [:div {:class ["cr-layout"]}
-      [:div {:class ["cr-viewport"]}
+      [:div {:class ["cr-viewport"]
+             :replicant/on-mount canvas-pan!
+             :replicant/on-unmount canvas-pan!}
        (if (empty? nodes)
          [:div {:class ["empty-state"]}
           (views/spinner)

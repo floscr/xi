@@ -2984,14 +2984,21 @@ body {
   position: relative;
   flex: 1;
   min-width: 0;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  overscroll-behavior: contain;
   background:
     radial-gradient(circle, color-mix(in srgb, var(--fg-2) 22%, transparent) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 
-.cr-canvas { position: relative; }
+.cr-canvas {
+  position: relative;
+  transform-origin: 0 0;
+  will-change: transform;
+  transition: transform 0.2s ease;
+}
 
 .cr-edges {
   position: absolute;
@@ -3005,8 +3012,8 @@ body {
 
 .cr-edge-path {
   fill: none;
-  stroke: color-mix(in srgb, var(--fg-2) 55%, transparent);
-  stroke-width: 1.5;
+  stroke: color-mix(in srgb, var(--fg-1) 60%, transparent);
+  stroke-width: 1.75;
 }
 
 .cr-edge-path--structural {
@@ -3138,7 +3145,7 @@ body {
 
 /* Selection dock: sticky footer pinned to the bottom-right of the canvas */
 .cr-dock {
-  position: sticky;
+  position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
