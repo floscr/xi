@@ -26,7 +26,7 @@
 
 ;; ── History folding (pure) ───────────────────────────────────────────────────
 
-(defn- fold-delta
+(defn fold-delta
   "Extend the trailing open entry of `kind`, or start a new one."
   [history kind text]
   (let [last-entry (peek history)]
@@ -34,7 +34,7 @@
       (conj (pop history) (update last-entry :text str text))
       (conj history {:kind kind :text text}))))
 
-(defn- update-tool-call
+(defn update-tool-call
   "Update the most recent tool-call entry with matching id."
   [history id f]
   (if-let [idx (->> (range (dec (count history)) -1 -1)
@@ -44,7 +44,7 @@
     (update history idx f)
     history))
 
-(defn- finalize-history
+(defn finalize-history
   "Mark all open streaming entries as done. A tool call still :running when the
    turn ends (interrupted before its result arrived) is settled to :aborted so
    its spinner stops instead of spinning forever."

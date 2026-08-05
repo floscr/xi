@@ -44,6 +44,7 @@
         [xi.ext.session-search :as session-search]
         [xi.ext.skills :as skills]
         [xi.ext.snippets :as snippets]
+        [xi.ext.subagent :as subagent]
         [xi.ext.terminal-title :as terminal-title]
         [xi.ext.todo-intercept :as todo-intercept]
         [xi.ext.web :as web]
@@ -114,6 +115,7 @@
       ;; process-manager's unsandboxed spawn while the sandbox is on
       ext-sandbox/extension
       process-manager/extension
+      subagent/extension
       projects/extension
       skills/extension
       snippets/extension

@@ -68,6 +68,7 @@
             [xi.server.ws :as ws]
             [xi.session :as session]
             [xi.session.recent :as recent]
+            [xi.subagent :as subagent]
             [xi.system-prompt :as system-prompt]))
 
 (def providers
@@ -130,6 +131,15 @@
    :extra-tool-definitions (fn [] (:tool-definitions (manager/composed manager)))
    :extra-tool-registry    (fn [] (:tool-registry (manager/composed manager)))
    :ask!                   ask!})
+
+(defn- subagent-opts
+  "Like tooling-opts, plus the throwaway CLAUDE_CONFIG_DIR fns so a sub-agent's
+   Claude CLI session lands in a temp dir instead of ~/.claude/projects (where
+   it would leak into the recent-sessions list as a top-level chat)."
+  [manager ask!]
+  (merge (tooling-opts manager ask!)
+         {:make-config-dir!   session/make-throwaway-config-dir!
+          :remove-config-dir! session/remove-config-dir!}))
 
 (def ^:private DEFAULT_MODEL "claude-opus-4-8")
 
@@ -293,6 +303,9 @@ See docs/cli.md for the full reference.")
                          :effects       (merge (agent/create-fx
                                                 providers
                                                 (tooling-opts mgr (:ask! dialogs)))
+                                               (subagent/create-fx
+                                                providers
+                                                (subagent-opts mgr (:ask! dialogs)))
                                                (fx/create-fx ring
                                                  {:system-prompt-fn
                                                   (fn [cwd]
@@ -417,6 +430,9 @@ See docs/cli.md for the full reference.")
                          :effects       (merge (agent/create-fx
                                                 providers
                                                 (tooling-opts mgr (:ask! dialogs)))
+                                               (subagent/create-fx
+                                                providers
+                                                (subagent-opts mgr (:ask! dialogs)))
                                                (fx/create-fx ring
                                                  {:system-prompt-fn
                                                   (fn [cwd]
@@ -748,6 +764,9 @@ See docs/cli.md for the full reference.")
                              :effects  (merge (agent/create-fx
                                                providers
                                                (tooling-opts mgr (:ask! dialogs)))
+                                              (subagent/create-fx
+                                               providers
+                                               (subagent-opts mgr (:ask! dialogs)))
                                               (fx/create-fx ring
                                                 {:system-prompt-fn
                                                  (fn [cwd]
