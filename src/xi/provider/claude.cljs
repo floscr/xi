@@ -102,7 +102,7 @@
 
 (def ^:private PERSONAL_AGENT_TOOLS
   "Tools available in personal-agent mode."
-  #{"web_search" "amazon_search"})
+  #{"web_search" "amazon_search" "willhaben_search" "geizhals_search"})
 
 (def ^:private default-gate
   "Pass-through tool gate (extensions inject the real one)."

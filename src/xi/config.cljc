@@ -15,8 +15,7 @@
    runtime via SCI."
   (:require
    #?@(:node
-       [[xi.ext.amazon :as amazon]
-        [xi.ext.browser-open :as browser-open]
+       [[xi.ext.browser-open :as browser-open]
         [xi.ext.canvas-review :as canvas-review]
         [xi.ext.chrome-mcp :as chrome]
         [xi.ext.clipboard-image :as clipboard-image]
@@ -36,6 +35,7 @@
         [xi.ext.perplexity :as perplexity]
         [xi.ext.plan-mode :as plan-mode]
         [xi.ext.process-manager :as process-manager]
+        [xi.ext.product-search.core :as product-search]
         [xi.ext.projects :as projects]
         [xi.ext.pushover :as pushover]
         [xi.ext.render :as render]
@@ -91,7 +91,7 @@
       session-search/extension
       web/extension
       perplexity/extension
-      amazon/extension
+      product-search/extension
       commit/extension
       review/extension
       canvas-review/extension

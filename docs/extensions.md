@@ -359,7 +359,7 @@ Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
 | kb | tools | Knowledge base search/get/store via `kb` CLI. |
 | web | tools | Fetch URLs with HTML→markdown, Jina fallback, feed parsing. |
 | perplexity | tools, command | Web search via Perplexity; `/perplexity-login` to authenticate. |
-| amazon | tools | `amazon_search` — searches amazon.de via headless Chrome (CDP), returns product cards (title, price, rating, reviews, Prime, ASIN, URL). Also enabled in `--personal-agent-only` mode. Chrome path via `XI_AMAZON_CHROME`. |
+| product-search | tools | `amazon_search` (amazon.de), `willhaben_search` (willhaben.at classifieds), `geizhals_search` (geizhals.at price comparison). All three share one lazily-launched headless Chrome (CDP) and return product entries (title, price, URL, plus site-specific fields). Also enabled in `--personal-agent-only` mode. Chrome path via `XI_PRODUCT_SEARCH_CHROME` (legacy `XI_AMAZON_CHROME` still honored). |
 | commit | tools, command | Git workflow; `/commit` builds a prompt from live overview. |
 | review | command | Code review; `/review [staged\|<ref>]` embeds the code-review methodology (four-phase, severity labels) and submits a diff for review. Augments the prompt with project-type guidance auto-detected by marker files (clojure, typescript) plus an optional per-profile override (`bb profile:review-prompt`; `:review-prompt` / `:review-replace`). |
 | clj-surgeon | tools, handler | Structural Clojure refactoring. Auto-fixes parens after write/edit to .clj files. |
