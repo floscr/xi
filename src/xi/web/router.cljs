@@ -137,9 +137,14 @@
     {:state   (cond-> (assoc st :web/route route
                             ;; reset the virtualized timeline window on every
                             ;; navigation so a new session starts compact
-                            :web/timeline-window nil
-                            ;; close the recent-sessions drawer on navigation
-                            :web/sidebar-open? false)
+                            :web/timeline-window nil)
+                ;; Close the recent-sessions drawer on a real navigation, but
+                ;; NOT on the post-join URL sync (already? — a virtual new chat
+                ;; getting its real session id after the first message). That
+                ;; sync isn't a user navigation, so it must not yank a sidebar
+                ;; the user left open shut from under them.
+                (not already?)
+                (assoc :web/sidebar-open? false)
                 ;; Leaving a chat we were viewing: remember the session so the
                 ;; next fresh count marks it read (the user saw responses that
                 ;; landed while attached, before counts refreshed). See
