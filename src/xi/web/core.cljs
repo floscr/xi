@@ -1073,12 +1073,20 @@
 
 (defn- fill-url-tap
   "After joining a fresh room (URL has no session id yet), replace the URL
-   with the real session id so reload resumes the same session."
+   with the real session id so reload resumes the same session.
+
+   Gated on the :join-token: only the user's OWN new-chat join carries one
+   (submit-pending sets it, the server echoes it back). A background reattach
+   — a reconnect re-joining the room we were still attached to (the virtual
+   new-chat view never leaves the previous room), or any other room joining —
+   arrives WITHOUT a token, so it can no longer hijack the URL and yank the
+   user off the new-chat view onto that session."
   [dispatch!]
   (fn [event state]
     (when (= :room/joined (:type event))
       (let [sid (get-in event [:room :session :id])]
         (when (and sid
+                   (:join-token event)
                    (= :chat (get-in state [:web/route :page]))
                    (nil? (get-in state [:web/route :session-id])))
           (dispatch! {:type :route/navigate :page :chat
