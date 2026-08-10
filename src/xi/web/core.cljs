@@ -1444,9 +1444,27 @@
       ;; until the keyboard is first opened. Re-sync the viewport height and
       ;; force the scale back to 1 whenever the app becomes visible again. The
       ;; rAF pass re-runs it after WebKit has settled the restored scale.
-      (let [on-resume (fn []
+      (let [repaint-drawer!
+            (fn []
+              ;; iOS WebKit can restore a standalone PWA showing a STALE
+              ;; composited frame of the recent-sessions drawer: it looks open
+              ;; (stuck at translateX(0)) even though its state is closed, until
+              ;; a later interaction — focusing the compose box, which opens the
+              ;; keyboard and resizes the viewport — forces a repaint. Drop the
+              ;; drawer's layer for a frame so it re-rasterizes at its true
+              ;; (closed, off-screen) position. Skipped when the drawer is docked
+              ;; (wide screens) or genuinely open, so we never flash a visible
+              ;; drawer.
+              (let [s @state]
+                (when (and (not (:web/wide? s)) (not (:web/sidebar-open? s)))
+                  (when-let [^js el (.querySelector js/document ".sidebar-layout--floating > .sidebar")]
+                    (let [st (.-style el)]
+                      (set! (.-display st) "none")
+                      (js/requestAnimationFrame (fn [] (set! (.-display st) ""))))))))
+            on-resume (fn []
                         (reset-zoom!)
                         (set-vh!)
+                        (repaint-drawer!)
                         (js/requestAnimationFrame
                          (fn [] (reset-zoom!) (set-vh!))))]
         (.addEventListener js/document "visibilitychange"
