@@ -139,3 +139,31 @@
           (is (contains? (session/load-favorites) id) "present in the set")
           (is (false? (session/toggle-favorite! id)) "toggle off returns false")
           (is (false? (session/favorite? id)) "no longer favorited"))))))
+
+;; ── Dismissed (hidden from Recent) ────────────────────────────────────────────
+
+(deftest annotate-dismissed-tags-matching-ids
+  (testing "summaries whose session-id is in the set get :dismissed? true"
+    (let [summaries [{:session-id "a" :name "one"}
+                     {:session-id "b" :name "two"}
+                     {:session-id "c" :name "three"}]
+          tagged (session/annotate-dismissed summaries #{"a" "c"})]
+      (is (= [true false true] (mapv :dismissed? tagged)))
+      (is (= ["one" "two" "three"] (mapv :name tagged))
+          "other keys are preserved"))))
+
+(deftest annotate-dismissed-empty-set
+  (testing "empty dismissed set tags everything false"
+    (is (= [false false]
+           (mapv :dismissed?
+                 (session/annotate-dismissed
+                  [{:session-id "x"} {:session-id "y"}] #{}))))))
+
+(deftest toggle-dismissed-round-trip
+  (testing "toggle adds then removes a session-id, load-dismissed reflects it (in-memory)"
+    (let [id (str "test-dismiss-" (js/Date.now))]
+      (is (not (contains? (session/load-dismissed) id)) "not dismissed initially")
+      (is (true? (session/toggle-dismissed! id)) "toggle on returns true")
+      (is (contains? (session/load-dismissed) id) "present in the set")
+      (is (false? (session/toggle-dismissed! id)) "toggle off returns false")
+      (is (not (contains? (session/load-dismissed) id)) "no longer dismissed"))))

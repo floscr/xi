@@ -1809,13 +1809,16 @@ body {
 
 .project-card-name { font-weight: 600; }
 
+/* Hide-from-Recent toggle on session cards. Reversible (not a delete), so it
+   stays neutral rather than danger-red. Reveal on hover (desktop), faint but
+   always visible on touch. */
 .session-delete-btn {
   flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.15s;
   color: var(--fg-2);
 }
-.session-delete-btn:hover { color: var(--danger, #e55); }
+.session-delete-btn:hover { color: var(--fg-0); }
 @media (hover: hover) {
   .project-card:hover .session-delete-btn { opacity: 1; }
 }

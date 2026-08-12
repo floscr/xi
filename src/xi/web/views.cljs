@@ -2071,6 +2071,7 @@
      :cwd         (:cwd s)
      :timestamp   (or (:last-accessed s) (:timestamp s))
      :favorite?   (boolean (:favorite? s))
+     :dismissed?  (boolean (:dismissed? s))
      :current?    (and sid (= sid (get-in state [:web/route :session-id])))
      :active?     (boolean room)
      :busy?       (boolean (:busy? room))
@@ -2121,7 +2122,7 @@
                    :busy?       (boolean (some :busy? rooms))
                    :has-dialog? (boolean (some :has-dialog? rooms))}))))))
 
-(defn- session-card [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? unread? favorite? show-project?]}]
+(defn- session-card [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? unread? favorite? dismissed? dismissable? show-project?]}]
   [:div {:class ["project-card" (when active? "project-card--active")
                  (when has-dialog? "project-card--dialog")
                  (when current? "project-card--current")]
@@ -2155,7 +2156,18 @@
                :on {:click (fn [^js e]
                              (.stopPropagation e)
                              (dispatch! {:type :favorites/toggle :session-id session-id}))}}
-      (icon/icon {:icon-name :star :size :sm})])])
+      (icon/icon {:icon-name :star :size :sm})])
+   ;; Hide/show in Recent — only rendered where the caller opts in (:dismissable?):
+   ;; the sidebar's Recent group (eye-off → hide) and Hidden group (eye → restore).
+   ;; Earlier cards omit it entirely. Also gated on idle ("sent, not processing"):
+   ;; a busy card or one awaiting a dialog response can't be dismissed.
+   (when (and session-id dismissable? (not busy?) (not has-dialog?))
+     [:button {:class ["project-card-action" "session-delete-btn"]
+               :title (if dismissed? "Show in recent" "Hide from recent")
+               :on {:click (fn [^js e]
+                             (.stopPropagation e)
+                             (dispatch! {:type :dismissed/toggle :session-id session-id}))}}
+      (icon/icon {:icon-name (if dismissed? :eye :eye-off) :size :sm})])])
 
 
 
@@ -2557,6 +2569,13 @@
         render?  (or open? wide?)
         pa?      (get-in state [:lobby :personal-agent?])
         projects (when (and render? (not pa?)) (recent-projects state))
+        ;; Session-ids the user has hidden from Recent this run (reversible,
+        ;; cleared on server restart). They move into the "Hidden" group rather
+        ;; than vanishing; still fully resumable via All sessions / search.
+        dismissed-ids (->> (get-in state [:lobby :sessions])
+                           (filter :dismissed?)
+                           (map :session-id)
+                           set)
         sessions (when render? (palette/recent-sessions state))
         orphans  (when render? (orphan-rooms state sessions))
         ;; Render one card per session-id from a single keyed sequence.
@@ -2579,9 +2598,14 @@
         ;; preserving their relative order within each group (stable partition).
         cards    (let [{busy true idle false} (group-by #(boolean (:busy? %)) cards)]
                    (concat busy idle))
+        ;; Tag every card (incl. live/orphan rooms, which don't carry it) with
+        ;; the current hidden state, then peel the hidden ones into their own
+        ;; group; the rest split into Recent vs Earlier by recency.
+        cards    (map #(assoc % :dismissed? (boolean (dismissed-ids (:session-id %)))) cards)
+        {hidden true visible false} (group-by :dismissed? cards)
         now      (js/Date.now)
         started  (get-in state [:lobby :started-at])
-        {recent true earlier false} (group-by #(recent/recent? now started %) cards)]
+        {recent true earlier false} (group-by #(recent/recent? now started %) visible)]
     (sidebar/sidebar
      {}
      ;; Keep the card list out of the DOM while the drawer is closed and
@@ -2619,8 +2643,14 @@
          (sidebar/sidebar-group {:label "Recent"}
            (if (seq recent)
              (for [c (with-projects recent)]
-               (session-card dispatch! c))
+               (session-card dispatch! (assoc c :dismissable? true)))
              [:div {:class ["sidebar-group-label"]} "No recent sessions"]))
+         ;; Hidden group sits between Recent and Earlier. Its cards keep the
+         ;; toggle (now an eye → "Show in recent") so the user can restore them.
+         (when (seq hidden)
+           (sidebar/sidebar-group {:label "Hidden"}
+             (for [c (with-projects hidden)]
+               (session-card dispatch! (assoc c :dismissable? true)))))
          (when (seq earlier)
            (sidebar/sidebar-group {:label "Earlier"}
              (for [c (with-projects earlier)]

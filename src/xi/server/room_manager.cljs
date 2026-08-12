@@ -249,6 +249,26 @@
   [_st {:keys [session-id]}]
   {:effects [[:favorites/toggle-reply {:session-id session-id}]]})
 
+(defn- dismissed-toggle
+  "Roomless: hide/show a session in the recent list by id. The persist + lobby
+   rebroadcast happen in the :dismissed/toggle-reply effect (needs disk access).
+
+   As a courtesy we also tear down the session's live room when it is safe to
+   do so — i.e. it holds no client, its agent isn't mid-turn, no dialog is
+   pending, and it isn't tracking background processes (keep-alive?). This
+   frees a lingering, finished job the user is dismissing without ever killing
+   a running turn, a room someone is still viewing, or a dev server. A room
+   that fails these checks is simply left running (it auto-closes later)."
+  [st {:keys [session-id]}]
+  (let [close-rids (for [[rid room] (:rooms st)
+                         :when (and (= session-id (get-in room [:session :id]))
+                                    (not (keep-alive? room))
+                                    (empty? (clients-in-room st rid)))]
+                     rid)]
+    {:effects (into [[:dismissed/toggle-reply {:session-id session-id}]]
+                    (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
+                    close-rids)}))
+
 (defn- session-mark-read
   "Roomless: record a session as seen up to its current response count. The
    authoritative count is recomputed server-side (in the reply effect), so the
@@ -305,6 +325,7 @@
    :files/web-list         files-web-list
    :file/web-read          file-web-read
    :favorites/toggle       favorites-toggle
+   :dismissed/toggle       dismissed-toggle
    :session/mark-read      session-mark-read
    :rooms/prune            rooms-prune})
 

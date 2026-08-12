@@ -54,6 +54,7 @@
   "Events after which lobby (roomless) clients get a fresh :lobby/state.
    Extensions add theirs via :lobby-relevant."
   #{:room/create :room/close :room/attach :room/leave :favorites/changed
+    :dismissed/changed
     :read-state/changed
     :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
     :ui/dialog-open :ui/dialog-response})
@@ -68,7 +69,7 @@
    via :roomless-events."
   #{:client/update :session/counts :models/web-list :session/content-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
-    :favorites/toggle :session/mark-read
+    :favorites/toggle :dismissed/toggle :session/mark-read
     :rooms/prune})
 
 (defn- gen-client-id []
@@ -84,7 +85,7 @@
   (->> (if personal-agent?
          (session/list-personal-agent-sessions)
          (session/list-all-sessions))
-       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite?]))))
+       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite? :dismissed?]))))
 
 (def ^:private server-started-at
   "Wall-clock ms when this server process booted. Sent in the lobby payload so
@@ -363,6 +364,14 @@
       (fn [{:keys [dispatch!]} {:keys [session-id]}]
         (session/toggle-favorite! session-id)
         (dispatch! {:type :favorites/changed}))
+
+      ;; Toggle a session's dismissed (hidden-from-recent) flag, then fan a
+      ;; fresh lobby out to every client (:dismissed/changed is lobby-relevant,
+      ;; so the tap rebroadcasts with updated :dismissed? flags).
+      :dismissed/toggle-reply
+      (fn [{:keys [dispatch!]} {:keys [session-id]}]
+        (session/toggle-dismissed! session-id)
+        (dispatch! {:type :dismissed/changed}))
 
       ;; Persist a session's seen-count at its current (authoritative) response
       ;; count, then fan a fresh lobby out so every device clears the dot

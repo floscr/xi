@@ -184,3 +184,47 @@
     (is (= 0 (:clients a)))
     (is (= "r1" (:id b)))
     (is (= 1 (:clients b)))))
+
+;; ── :dismissed/toggle ────────────────────────────────────────────────────────
+
+(defn- state-with-sessioned-room
+  "Server state with client c1 in the lobby and a room r1 carrying session id
+   \"s1\" (nobody attached)."
+  []
+  (apply-events (state/initial-state {:mode :server})
+                {:type :client/connect :client-id "c1" :client {:kind :remote}}
+                {:type :room/create :room-id "r1"
+                 :room {:created 100 :cwd "/x" :session {:id "s1"}}}))
+
+(deftest dismissed-toggle-persists-and-reaps-idle-clientless-room
+  (testing "idle + clientless room for the session → reply effect + room close"
+    (let [{:keys [effects]} (handle (state-with-sessioned-room)
+                                    {:type :dismissed/toggle :client-id "c1"
+                                     :session-id "s1"})]
+      (is (some #(= % [:dismissed/toggle-reply {:session-id "s1"}]) effects)
+          "persists via the reply effect")
+      (is (some #(= % [:app/dispatch {:type :room/close :room-id "r1"}]) effects)
+          "reaps the lingering idle room"))))
+
+(deftest dismissed-toggle-spares-attached-room
+  (testing "a room someone is viewing is hidden but NOT closed"
+    (let [st (apply-events (state-with-sessioned-room)
+                           {:type :room/attach :client-id "c1" :room-id "r1"})
+          {:keys [effects]} (handle st {:type :dismissed/toggle :client-id "c1"
+                                        :session-id "s1"})]
+      (is (= [[:dismissed/toggle-reply {:session-id "s1"}]] effects)))))
+
+(deftest dismissed-toggle-spares-busy-room
+  (testing "a room mid-turn is hidden but NOT closed"
+    (let [st (apply-events (state-with-sessioned-room)
+                           {:type :agent/busy :room-id "r1" :busy? true})
+          {:keys [effects]} (handle st {:type :dismissed/toggle :client-id "c1"
+                                        :session-id "s1"})]
+      (is (= [[:dismissed/toggle-reply {:session-id "s1"}]] effects)))))
+
+(deftest dismissed-toggle-no-live-room
+  (testing "no matching live room → just the persist effect"
+    (let [{:keys [effects]} (handle (state-with-sessioned-room)
+                                    {:type :dismissed/toggle :client-id "c1"
+                                     :session-id "other"})]
+      (is (= [[:dismissed/toggle-reply {:session-id "other"}]] effects)))))

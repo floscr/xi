@@ -441,6 +441,38 @@
         (js/console.error "[session] favorites write failed:" e)))
     (not fav?)))
 
+;; ── Dismissed (hidden from Recent) ────────────────────────────────────────────
+;; Reversible "archive from the recent list": session-ids the user has hidden
+;; from the sidebar Recent group this run. The session stays fully on disk and
+;; resumable (it still shows in All sessions / search) — this only moves the
+;; card into the sidebar's "Hidden" group. Deliberately in-memory (process
+;; local, not a file): the hidden list is a per-focus-session convenience and
+;; is scrapped on server restart, so a restart gives a clean Recent list again.
+
+(defonce ^:private dismissed-set (atom #{}))
+
+(defn load-dismissed
+  "The current in-memory set of dismissed (hidden-from-Recent) session-ids."
+  []
+  @dismissed-set)
+
+(defn annotate-dismissed
+  "Tag each summary with :dismissed? using a dismissed set. The 1-arity reads
+   the live in-memory set; the 2-arity is pure (for tests / batch use)."
+  ([summaries] (annotate-dismissed summaries (load-dismissed)))
+  ([summaries dismissed]
+   (mapv #(assoc % :dismissed? (contains? dismissed (:session-id %))) summaries)))
+
+(defn toggle-dismissed!
+  "Add/remove session-id from the in-memory dismissed set. Returns the new
+   dismissed? state."
+  [session-id]
+  (let [d? (contains? @dismissed-set session-id)]
+    (if d?
+      (swap! dismissed-set disj session-id)
+      (swap! dismissed-set conj session-id))
+    (not d?)))
+
 ;; ── Read state (cross-device unread markers) ──────────────────────────────
 ;; Persisted {session-id → seen-response-count}. A session is unread when its
 ;; current assistant-turn count exceeds the seen count. Stored server-side and
@@ -516,12 +548,13 @@
    worktree — so /resume from the main repo also surfaces sessions started
    inside its worktrees."
   [cwd]
-  (annotate-favorites
-   (->> (git-project-cwds cwd)
-        (mapcat sessions-for-cwd)
-        (sort-by #(or (:last-accessed %) (:timestamp %)))
-        reverse
-        vec)))
+  (annotate-dismissed
+   (annotate-favorites
+    (->> (git-project-cwds cwd)
+         (mapcat sessions-for-cwd)
+         (sort-by #(or (:last-accessed %) (:timestamp %)))
+         reverse
+         vec))))
 
 (defn list-all-sessions
   "List sessions across ALL CWDs from all sources. Returns vec of session
@@ -544,11 +577,12 @@
         ;; Dedup: Xi meta takes priority over claude sessions with same session-id
         xi-ids (set (keep :cli-session-id xi-sessions))
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
-    (annotate-favorites
-     (->> (concat xi-sessions claude-filtered)
-          (sort-by #(or (:last-accessed %) (:timestamp %)))
-          reverse
-          vec))))
+    (annotate-dismissed
+     (annotate-favorites
+      (->> (concat xi-sessions claude-filtered)
+           (sort-by #(or (:last-accessed %) (:timestamp %)))
+           reverse
+           vec)))))
 
 (defn list-personal-agent-sessions
   "List sessions from the personal-agent sessions dir only.
@@ -556,11 +590,12 @@
   []
   (let [xi-sessions (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
                          (keep #(cached-summary read-xi-session-meta %)))]
-    (annotate-favorites
-     (->> xi-sessions
-          (sort-by #(or (:last-accessed %) (:timestamp %)))
-          reverse
-          vec))))
+    (annotate-dismissed
+     (annotate-favorites
+      (->> xi-sessions
+           (sort-by #(or (:last-accessed %) (:timestamp %)))
+           reverse
+           vec)))))
 
 (defn- summary-matches-id? [session-id summary]
   (or (= session-id (:session-id summary))

@@ -685,6 +685,21 @@
                                                  (update :web/project-sessions flip))
                                       :effects [[:ws/send {:type :favorites/toggle
                                                            :session-id session-id}]]}))
+          ;; Hide/show a session in the recent list. Flip locally so the card
+          ;; drops out of (or returns to) Recent instantly, then forward: the
+          ;; server persists, closes any lingering idle room, and rebroadcasts
+          ;; an authoritative :lobby/state.
+          :dismissed/toggle      (fn [st {:keys [session-id]}]
+                                   (let [flip (fn [ss]
+                                                (mapv #(if (= (:session-id %) session-id)
+                                                         (update % :dismissed? not)
+                                                         %)
+                                                      ss))]
+                                     {:state (-> st
+                                                 (update-in [:lobby :sessions] flip)
+                                                 (update :web/project-sessions flip))
+                                      :effects [[:ws/send {:type :dismissed/toggle
+                                                           :session-id session-id}]]}))
           ;; Projects
           :projects/web-list     (fn [st _ev]
                                     {:state (assoc st :web/projects-loading? true)
