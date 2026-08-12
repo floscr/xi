@@ -28,7 +28,11 @@
       (str "~" (subs path (count home)))
       path)))
 
-(defn- ->disk-session [sess]
+(defn ->disk-session
+  "Normalize a room's in-memory session map for an on-disk write: fold the
+   in-memory :provider-session-id mirror back into :cli-session-id and drop the
+   keys that must never hit disk (the mirror itself and the in-flight marker)."
+  [sess]
   (-> sess
       (assoc :cli-session-id (or (:provider-session-id sess)
                                  (:cli-session-id sess)))

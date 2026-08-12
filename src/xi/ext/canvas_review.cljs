@@ -320,13 +320,22 @@
           :session/resumed         on-session-resumed}))
 
 (defn- persist-fx
-  "Write the room's current canvas to its session sidecar."
+  "Write the room's current canvas to its session sidecar. A review driven only
+   by a sub-agent never gets a :provider-session-id (the sub-agent runs in a
+   throwaway config dir), so the core :session/sync never writes the session's
+   metadata to disk — the room, its sidebar card, and this canvas would all
+   vanish when the room reaps. Persist the metadata alongside the canvas so the
+   review survives as a real, resumable session. Once a normal turn gives the
+   session a provider-session-id, :session/sync owns the metadata and we leave
+   it alone."
   [{:keys [get-state]} {:keys [room-id]}]
   (let [st      (get-state)
         session (get-in st [:rooms room-id :session])
         canvas  (get-in st [:rooms room-id :ext ext-id])]
     (when (:id session)
-      (session/save-canvas! session canvas))))
+      (session/save-canvas! session canvas)
+      (when-not (:provider-session-id session)
+        (session/save-session! (fx/->disk-session session))))))
 
 (defn- rehydrate-fx
   "Load a persisted canvas from disk and install it into the resumed room."
