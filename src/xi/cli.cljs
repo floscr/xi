@@ -812,6 +812,7 @@ See docs/cli.md for the full reference.")
                                               (:fx composed)
                                               (:fx dialogs)
                                               (:fx server))
+                             :on-runaway (fn [msg] (log-crash! "dispatch-livelock" msg))
                              :ring ring})
         {actual-port :port} ((:start! server) app {:port port})]
     (if headless?

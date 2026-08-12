@@ -15,8 +15,17 @@
      don't change state (e.g. :render/done) therefore never cause a
      re-render — renderers can safely emit debug events.
    - Taps observe every processed event (extensions, WS transports, tests)."
-  (:require [xi.core.events :as events]
+  (:require [clojure.string :as str]
+            [xi.core.events :as events]
             [xi.core.log :as log]))
+
+(def ^:private RUNAWAY_BATCH_MS
+  "Hard ceiling on a single synchronous dispatch drain. A batch that runs this
+   long without the queue emptying is a livelock — a self-feeding dispatch cycle
+   pegging the single-threaded event loop, so nothing else (new sessions, WS
+   messages, agent turns) can make progress. Break it so the server recovers
+   instead of hanging forever. Normal batches complete in milliseconds."
+  15000)
 
 (defn create-app
   "Options:
@@ -29,10 +38,14 @@
      :schedule-render (fn [thunk]) — defaults to queueMicrotask (sync in tests)
      :ring            log ring buffer (xi.core.log/create-ring)
      :jsonl-writer    optional debug writer (xi.core.log/create-jsonl-writer)
+     :on-runaway      optional (fn [msg]) — called when the dispatch drain is
+                      broken as a livelock (server wires this to crash.log)
+     :runaway-batch-ms optional override for the livelock ceiling (tests)
 
    Returns {:state :dispatch! :add-tap! :ring}."
-  [{:keys [initial-state handlers transform-event effects on-render schedule-render ring jsonl-writer]}]
-  (let [;; Built-in effect: re-dispatch an event (lets handlers chain flows,
+  [{:keys [initial-state handlers transform-event effects on-render schedule-render ring jsonl-writer on-runaway runaway-batch-ms]}]
+  (let [runaway-ms (or runaway-batch-ms RUNAWAY_BATCH_MS)
+        ;; Built-in effect: re-dispatch an event (lets handlers chain flows,
         ;; e.g. draining a queued prompt by re-entering the normal code path).
         effects  (merge {:app/dispatch       (fn [{:keys [dispatch!]} event] (dispatch! event))
                          :app/dispatch-after (fn [{:keys [dispatch!]} {:keys [ms event]}]
@@ -104,6 +117,26 @@
                 (set! (.-renderScheduled ctx) true)
                 (schedule #(render! dispatch!))))
 
+            (runaway! [counts ms]
+              ;; Livelock breaker: the drain ran past RUNAWAY_BATCH_MS without
+              ;; emptying, so the event loop is pegged. Log a histogram of what
+              ;; it churned on and drop the backlog so the process recovers
+              ;; (a dropped batch beats an endless hang needing a manual
+              ;; restart). on-runaway persists it (the server writes crash.log).
+              (let [pairs (->> (js-keys counts)
+                               (map (fn [k] [k (aget counts k)]))
+                               (sort-by second >))
+                    total (reduce + 0 (map second pairs))
+                    top   (->> pairs (take 15)
+                               (map (fn [[k n]] (str "  " n "×  " k)))
+                               (str/join "\n"))
+                    msg   (str "dispatch livelock: drained " total " events in "
+                               ms "ms without emptying the queue — dropping the "
+                               "backlog to recover.\nTop event types:\n" top)]
+                (js/console.error "[app]" msg)
+                (when on-runaway (try (on-runaway msg) (catch :default _ nil)))
+                (.splice (.-queue ctx) 0)))
+
             (dispatch! [event]
               (set! (.-eventSeq ctx) (inc (.-eventSeq ctx)))
               (.push (.-queue ctx)
@@ -112,11 +145,22 @@
                             :event/ts (js/Date.now)))
               (when-not (.-processing ctx)
                 (set! (.-processing ctx) true)
-                (try
-                  (while (pos? (.-length (.-queue ctx)))
-                    (process-one! dispatch! (.shift (.-queue ctx))))
-                  (finally
-                    (set! (.-processing ctx) false)))
+                (let [batch-start (js/Date.now)
+                      counts      #js {}]
+                  (try
+                    (loop []
+                      (when (pos? (.-length (.-queue ctx)))
+                        (let [ev (.shift (.-queue ctx))
+                              t  (str (:type ev))]
+                          (aset counts t (inc (or (aget counts t) 0)))
+                          (process-one! dispatch! ev))
+                        ;; Guard AFTER each event: a livelock never lets the
+                        ;; queue empty, so we'd otherwise loop here forever.
+                        (if (> (- (js/Date.now) batch-start) runaway-ms)
+                          (runaway! counts (- (js/Date.now) batch-start))
+                          (recur))))
+                    (finally
+                      (set! (.-processing ctx) false))))
                 (maybe-schedule-render! dispatch!))
               nil)]
       {:state     !state

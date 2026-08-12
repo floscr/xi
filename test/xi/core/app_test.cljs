@@ -88,6 +88,32 @@
     (dispatch! {:type :room/create :room-id "b"})
     (is (= ["a" "b"] (sort (state/room-ids @state))))))
 
+(deftest runaway-drain-is-broken-and-server-recovers
+  ;; A self-feeding dispatch cycle (handler → effect → same event) would peg
+  ;; the single-threaded loop forever. The watchdog must break the drain, report
+  ;; it via :on-runaway, and leave the app usable (processing reset, queue clear)
+  ;; so new events — e.g. creating a session — still work.
+  (let [reported (atom nil)
+        {:keys [dispatch! state]}
+        (app/create-app
+         {:initial-state    (state/initial-state)
+          :handlers         (merge events/core-handlers
+                                   {:loop (fn [_ _] {:effects [[:fx/loop nil]]})})
+          :effects          {:fx/loop (fn [{:keys [dispatch!]} _]
+                                        (dispatch! {:type :loop}))}
+          :schedule-render  (fn [thunk] (thunk))
+          :runaway-batch-ms 20
+          :on-runaway       (fn [msg] (reset! reported msg))
+          :ring             (log/create-ring 100)})]
+    (dispatch! {:type :loop})
+    (testing "the livelock was detected and reported"
+      (is (string? @reported))
+      (is (re-find #"livelock" @reported))
+      (is (re-find #":loop" @reported)))
+    (testing "the app recovered — new events are still processed"
+      (dispatch! {:type :room/create :room-id "after"})
+      (is (= ["after"] (state/room-ids @state))))))
+
 (deftest taps-can-unsubscribe
   (let [seen (atom 0)
         {:keys [dispatch! add-tap!]} (test-app)
