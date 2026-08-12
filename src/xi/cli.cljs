@@ -69,7 +69,9 @@
             [xi.session :as session]
             [xi.session.recent :as recent]
             [xi.subagent :as subagent]
-            [xi.system-prompt :as system-prompt]))
+            [xi.system-prompt :as system-prompt]
+            ["node:fs" :as fs]
+            ["node:path" :as node-path]))
 
 (def providers
   {:claude claude/provider
@@ -722,11 +724,37 @@ See docs/cli.md for the full reference.")
 
 ;; ── Server ───────────────────────────────────────────────────────────────────
 
+(defn- log-crash!
+  "Record a stray async error to stderr AND ~/.config/xi/crash.log. The file
+   copy survives a `bb serve:restart` (which respawns the tmux pane and wipes
+   its scrollback), so a crash stays diagnosable after the fact."
+  [label err]
+  (let [stack (or (some-> err .-stack) (str err))]
+    (js/console.error (str "[xi] " label ":") stack)
+    (try
+      (let [file (.join node-path (aget js/process.env "HOME") ".config" "xi" "crash.log")]
+        (.appendFileSync fs file (str "\n[" (.toISOString (js/Date.)) "] " label "\n" stack "\n")))
+      (catch :default _ nil))))
+
+(defn- install-crash-guard!
+  "Keep the long-lived server alive across stray async errors and record every
+   one. Without this a single unhandled rejection — notably EPIPE from a Claude
+   SDK / sub-agent subprocess pipe on teardown — kills the whole process and
+   drops every connected client. We log loudly (with stack) rather than swallow
+   silently, so root causes stay findable; we just refuse to let one background
+   leak take down the server for everyone."
+  []
+  (.on js/process "unhandledRejection"
+       (fn [reason _promise] (log-crash! "unhandledRejection" reason)))
+  (.on js/process "uncaughtException"
+       (fn [err] (log-crash! "uncaughtException" err))))
+
 (defn- start-server!
   "Host rooms over WS. The server app runs providers + sessions and has no
    renderer; unless --headless, a local TUI joins through the same WS path
    as any remote client."
   [{:keys [port headless? personal-agent?] :as opts}]
+  (install-crash-guard!)
   (let [server-opts (resolve-model-opts opts)
         ring (log/create-ring)
         dialogs  (ext/create-dialogs)

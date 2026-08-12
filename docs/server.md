@@ -197,6 +197,35 @@ clients attached. That is the single reaping path for busy rooms.
 > far cheaper than aborting every running agent on every navigation (and an
 > abort may not even resolve a hung SDK).
 
+## Crash resilience
+
+The server is a long-lived, multi-client process, so a single stray async
+error must not take everyone down. `install-crash-guard!` (in `xi.cli`, run
+at the start of `start-server!`) installs process-level handlers for
+`unhandledRejection` and `uncaughtException`:
+
+- **It keeps the server alive.** Without it, one unhandled rejection — most
+  often an `EPIPE` from a Claude SDK / sub-agent subprocess pipe on teardown
+  — crashes the whole process and drops every connected client (they see
+  "connecting to server"). The guard logs the error instead of exiting.
+- **It logs loudly, not silently.** Every caught error is written with its
+  full stack to **stderr** *and appended to `~/.config/xi/crash.log`*. The
+  guard is a net, not a fix: root causes stay findable so the actual
+  escaping path can be repaired at the source.
+
+The file copy matters because `bb serve:restart` respawns the `xi-serve`
+tmux pane and wipes its scrollback — so a crash printed only to the pane is
+lost on restart. `~/.config/xi/crash.log` survives, so after a crash:
+
+```bash
+cat ~/.config/xi/crash.log   # timestamped label + stack for each caught error
+```
+
+> The guard is server-only (it's installed in `start-server!`, not in
+> standalone/client/prompt modes). Standalone and one-shot `xi prompt` runs
+> are short-lived and single-user, so a crash there is surfaced directly
+> rather than swallowed.
+
 ## Source files
 
 ```
