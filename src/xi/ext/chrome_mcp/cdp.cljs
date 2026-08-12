@@ -90,8 +90,13 @@
 
 (defn create-window
   "Open `url` (default about:blank) in a brand-new browser window.
-   Resolves to the new target id."
+   Resolves to the new target id.
+
+   `:background true` creates the window *without activating/focusing it*, so a
+   window opened on the currently-viewed xmonad workspace (before the guard
+   moves it to the agent's workspace) doesn't steal focus. It still gets mapped
+   and moved as usual."
   ([client] (create-window client "about:blank"))
   ([{:keys [call]} url]
-   (-> (call "Target.createTarget" {:url url :newWindow true})
+   (-> (call "Target.createTarget" {:url url :newWindow true :background true})
        (.then (fn [res] (aget res "targetId"))))))

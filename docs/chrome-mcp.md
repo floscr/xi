@@ -157,6 +157,15 @@ mcp page  --URL exact-match-->  CDP target
 **Fail-safe:** if a page's workspace can't be determined, it is treated as
 *not* the agent's — the agent never touches what it can't place.
 
+**No focus theft:** self-created windows are opened via CDP
+`Target.createTarget` with `background: true`, so the new window is *not*
+activated/focused. Chrome opens it on the currently-viewed workspace before the
+guard moves it to the agent's workspace; `background` keeps that transient
+window from stealing focus (or, on a tiling WM, the keyboard) while it's still
+there. On a tiling WM the window may still reflow the viewed layout for the
+instant before `wm move` relocates it — eliminating that entirely is a
+WM-config concern (an xmonad `ManageHook`/`doShift`), not something CDP can do.
+
 ### What the gates do
 
 The invariant is that the mcp **selected page is always a current-workspace
