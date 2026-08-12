@@ -1676,12 +1676,20 @@
    history so it never duplicates the authoritative message."
   [dispatch! state room sid history]
   (when-let [{:keys [room-id session-id text images]} (:web/optimistic state)]
-    (let [for-this? (or (and room-id (= room-id (:id room)))
-                        (and session-id sid (= session-id sid))
-                        ;; A virtual new chat whose room hasn't joined yet: no
-                        ;; session on either side and no room adopted. Show the
-                        ;; bubble instantly while :room/join round-trips.
-                        (and (nil? sid) (nil? session-id) (nil? (:id room))))
+    (let [;; room-id is the strong identity: a stashed prompt fired after the
+          ;; user switched chats carries the room it was AIMED at (:room-id),
+          ;; while :session-id may have drifted to the now-viewed room's
+          ;; session (optimistic-tap stamps the route's sid). Matching those
+          ;; independently would leak the bubble into the room the user
+          ;; switched to. So when a room-id is known it must match; only fall
+          ;; back to session-id when the room hasn't joined yet (room-id nil).
+          for-this? (cond
+                      room-id    (= room-id (:id room))
+                      session-id (and sid (= session-id sid))
+                      ;; A virtual new chat whose room hasn't joined yet: no
+                      ;; session on either side and no room adopted. Show the
+                      ;; bubble instantly while :room/join round-trips.
+                      :else      (and (nil? sid) (nil? (:id room))))
           last-user (->> history (filter #(= :user (:kind %))) last)
           confirmed? (and last-user
                           (= (not-empty (some-> text str/trim))
