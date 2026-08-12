@@ -1821,6 +1821,66 @@
        (icon/icon {:icon-name :copy :size :sm})
        [:span "Copy"]]]]))
 
+(defn- subagent-duration [{:keys [started ended]}]
+  (when started
+    (let [secs (quot (- (or ended (.now js/Date)) started) 1000)
+          mins (quot secs 60)]
+      (if (>= mins 1) (str mins "m " (mod secs 60) "s") (str secs "s")))))
+
+(def ^:private subagent-status-label
+  {:running "running" :done "done" :error "error" :stopped "stopped"})
+
+;; Children default COLLAPSED (opt-in :expanded?): the panel renders one head
+;; per agent (status · label · duration) during the run, and only streams a
+;; child's full history once the user expands it. Expanding-by-default made the
+;; panel re-render every entry of every sub-agent on every streaming delta,
+;; which stalled the web client with several concurrent agents (PR reviews).
+(defn- subagent-child [dispatch! room-id {:keys [id label task status history result expanded?] :as child}]
+  (let [open? (boolean expanded?)]
+    [:div {:class ["subagent-card" (str "subagent-card--" (name (or status :running)))]
+           :replicant/key id}
+     [:div {:class ["subagent-card-head"]
+            :on {:click (fn [_] (dispatch! {:type :subagent/toggle-child
+                                            :room-id room-id :sub-id id}))}}
+      [:span {:class ["subagent-card-chevron" (when open? "is-open")]}
+       (icon/icon {:icon-name :chevron-right :size :sm})]
+      [:span {:class ["subagent-status" (str "subagent-status--" (name (or status :running)))]}
+       (when (= :running status) (spinner))
+       (get subagent-status-label status (name (or status :running)))]
+      [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
+      (when-let [d (subagent-duration child)]
+        [:span {:class ["subagent-card-dur"]} d])]
+     (when open?
+       [:div {:class ["subagent-card-body"]}
+        (when (seq task)
+          [:div {:class ["subagent-task"]} task])
+        (if (seq history)
+          (map-indexed
+           (fn [i e] (when-let [post (entry->post dispatch! e)]
+                       [:div {:replicant/key i :class ["subagent-entry"]} post]))
+           history)
+          [:div {:class ["subagent-empty"]} "No output yet."])])]))
+
+(defn- subagents-panel [dispatch! room]
+  (let [room-id (:id room)
+        {:keys [agents collapsed?]} (get-in room [:ext :subagents])]
+    (when (seq agents)
+      (let [running (count (filter #(= :running (:status %)) agents))
+            open?   (not collapsed?)]
+        [:div {:class ["subagents-panel"]}
+         [:div {:class ["subagents-head"]
+                :on {:click (fn [_] (dispatch! {:type :subagent/toggle-collapse
+                                                :room-id room-id}))}}
+          [:span {:class ["subagents-chevron" (when open? "is-open")]}
+           (icon/icon {:icon-name :chevron-right :size :sm})]
+          [:span {:class ["subagents-title"]} "Sub-agents"]
+          [:span {:class ["subagents-count"]} (count agents)]
+          (when (pos? running)
+            [:span {:class ["subagents-running"]} (spinner) (str running " running")])]
+         (when open?
+           [:div {:class ["subagents-list"]}
+            (map (fn [c] (subagent-child dispatch! room-id c)) agents)])]))))
+
 (defn- chat-view [state dispatch!]
   (let [active  (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -1958,7 +2018,8 @@
                    (range start (inc total)))))
                (optimistic-post dispatch! state room sid history)
                (dialog-post dispatch! state room history)))
-            (empty-state/empty-state {} (spinner) [:p "Connecting…"]))]]
+            (empty-state/empty-state {} (spinner) [:p "Connecting…"]))
+          (when room (subagents-panel dispatch! room))]]
         (copy-dialog-overlay dispatch! (:web/copy-text state))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))

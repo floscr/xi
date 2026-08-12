@@ -462,6 +462,10 @@
           :room/join             forward
           :room/leave            forward
           :rooms/prune           forward
+          ;; Sub-agent panel collapse/expand toggles are handled purely
+          ;; client-side by the xi.ext.subagent.web handlers — they're an
+          ;; ephemeral per-client UI preference, so we do NOT forward them
+          ;; (forwarding double-toggled: local apply + server broadcast back).
           :session/counts        forward
           :session/counts-result counts-result
           :session/mark-read     mark-read

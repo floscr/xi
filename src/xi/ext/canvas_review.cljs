@@ -132,23 +132,33 @@
   [{:keys [dispatch! get-state]} {:keys [room-id args client-id]}]
   (let [room (state/get-room (get-state) room-id)
         cwd  (or (:cwd room) (.cwd js/process))
-        {:keys [title text]} (load-diff cwd room args)]
+        {:keys [title text]} (load-diff cwd room args)
+        ;; One deterministic label, reused for the session name and the
+        ;; sub-agent entry so both read identically ("Canvas review: PR #333").
+        label (str "Canvas review: " title)]
     (if (str/blank? text)
       (dispatch! {:type :ui/status :room-id room-id
                   :text "No changes to review."})
       (do
-        ;; Broadcast: install the diff + reset the canvas for every client.
+        ;; Broadcast: install the diff + reset the canvas for every client, and
+        ;; name the (still-unnamed) session so the sidebar shows the review.
         (dispatch! {:type :canvas-review/load :room-id room-id
                     :source (or (some-> args str/trim not-empty) "session-git")
-                    :title title :text text})
+                    :title title :text text :name label})
         ;; Originator-only: tell the web client that ran the command to open
         ;; the Canvas view (a no-op on the server + TUI).
         (dispatch! (cond-> {:type :canvas-review/open :room-id room-id
                             :session-id (get-in room [:session :id])}
                      client-id (assoc :client-id client-id)))
-        ;; Kick off the agent turn that builds the canvas.
-        (dispatch! {:type :prompt/submit :room-id room-id
-                    :text (build-seed-prompt title text)})))))
+        ;; Kick off a background sub-agent that builds the canvas — the
+        ;; canvas_review_* tools act on THIS room (the sub-agent's gate uses
+        ;; the parent room-id), so the canvas fills live while the verbose
+        ;; block-by-block work stays out of the parent chat. The user ran
+        ;; /canvas-review, so this bypasses the spawn confirmation.
+        (dispatch! {:type :subagent/spawn :room-id room-id
+                    :label label
+                    :task  (str "Build a review canvas for " title)
+                    :prompt (build-seed-prompt title text)})))))
 
 ;; ── Tools (advertised to the model, executed via the gate) ───────────────────
 
@@ -345,5 +355,8 @@
    ;; the Canvas view — it must not flip other clients or reach the server as
    ;; state, so it rides originator-only with no server handler.
    :originator-only  #{:canvas-review/open}
+   ;; Loading a review names the (unnamed) session; a fresh lobby fan-out lets
+   ;; every client's recent-sessions sidebar pick up the new :session-name.
+   :lobby-relevant   #{:canvas-review/load}
    :tool-definitions tool-defs
    :tool-gate        tool-gate})

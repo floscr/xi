@@ -10,12 +10,21 @@
 (def ext-id :canvas-review)
 
 (defn load-handler
-  "Install the diff and reset the canvas."
-  [st {:keys [room-id source title text]}]
+  "Install the diff and reset the canvas. Deterministically names an unnamed
+   session (e.g. \"Canvas review: PR #333\") so the sidebar/session list shows
+   what the room is instead of lingering on \"New session\" — the review is
+   seeded by a /command, which bypasses the usual prompt-driven auto-naming.
+   Guarded on `nil?` name so re-running /canvas-review in a real, already-named
+   user session never clobbers its title."
+  [st {:keys [room-id source title text name]}]
   (when (state/get-room st room-id)
-    {:state (assoc-in st [:rooms room-id :ext ext-id]
-                      {:source source :title title :diff text
-                       :nodes {} :edges {} :plan []})}))
+    (let [st (assoc-in st [:rooms room-id :ext ext-id]
+                       {:source source :title title :diff text
+                        :nodes {} :edges {} :plan []})
+          st (if (and name (nil? (get-in st [:rooms room-id :session :name])))
+               (assoc-in st [:rooms room-id :session :name] name)
+               st)]
+      {:state st})))
 
 (def ^:private lane-x
   "Horizontal lane per node kind — code on the left, notes middle, prose right."

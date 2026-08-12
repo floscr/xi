@@ -42,11 +42,19 @@
    It must also survive while the process-manager extension is tracking
    live background processes: closing the room fires :room/close, which
    kills them (ext/process-manager on-room-close). We only auto-close a
-   room the user has walked away from — not one running their dev server."
+   room the user has walked away from — not one running their dev server.
+
+   Likewise it must survive while a background SUB-AGENT is still running
+   (e.g. the /canvas-review builder): the sub-agent runs as a background
+   process while the room's own agent is idle, so without this check the
+   room reaps out from under it the moment its last client navigates away
+   — aborting the turn mid-build (the canvas gets the diff but no nodes)."
   [room]
   (or (boolean (get-in room [:agent :busy?]))
       (boolean (seq (get-in room [:ui :dialogs])))
-      (boolean (seq (get-in room [:ext :process-manager :processes])))))
+      (boolean (seq (get-in room [:ext :process-manager :processes])))
+      (boolean (some #(= :running (:status %))
+                     (get-in room [:ext :subagents :agents])))))
 
 (defn prunable?
   "A room is prunable (\"inactive\") when its agent isn't mid-turn and it holds

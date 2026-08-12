@@ -132,6 +132,20 @@
         {:keys [effects]} (handle st {:type :room/leave :client-id "c1"})]
     (is (not-any? #(= :app/dispatch (first %)) effects))))
 
+(deftest leave-with-running-subagent-survives
+  ;; A background sub-agent (e.g. the /canvas-review builder) runs while the
+  ;; room's own agent is idle. The room must NOT reap when its last client
+  ;; leaves, or the sub-agent turn is aborted mid-build.
+  (let [st (assoc-in (joined-state) [:rooms "r1" :ext :subagents :agents]
+                     [{:id "sa-1" :status :running}])
+        {:keys [effects]} (handle st {:type :room/leave :client-id "c1"})]
+    (is (not-any? #(= [:app/dispatch {:type :room/close :room-id "r1"}] %) effects)))
+  (testing "a finished sub-agent no longer keeps the room alive"
+    (let [st (assoc-in (joined-state) [:rooms "r1" :ext :subagents :agents]
+                       [{:id "sa-1" :status :done}])
+          {:keys [effects]} (handle st {:type :room/leave :client-id "c1"})]
+      (is (some #(= % [:app/dispatch {:type :room/close :room-id "r1"}]) effects)))))
+
 (deftest leave-with-other-clients-keeps-room
   (let [st (apply-events (joined-state)
                          {:type :client/connect :client-id "c2" :client {:kind :remote}}

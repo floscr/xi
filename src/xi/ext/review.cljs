@@ -235,15 +235,19 @@ async cancellation safety, …), apply that ecosystem's specific checks.")
   {:effects [[:review/start {:room-id room-id :args args}]]})
 
 (defn- review-start-fx
-  "Gather a diff overview for the room's cwd and submit the review prompt."
+  "Gather a diff overview for the room's cwd and spawn a background sub-agent to
+   run the review — keeping the verbose review work out of the parent chat. The
+   user explicitly ran /review, so this bypasses the spawn confirmation."
   [{:keys [dispatch! get-state]} {:keys [room-id args]}]
   (let [room       (get-in (get-state) [:rooms room-id])
         cwd        (:cwd room)
         {:keys [diff-args desc include-untracked?]} (resolve-target args)
         overview   (review-overview-sync cwd diff-args include-untracked?)
         guidance   (project-review-guidance cwd)]
-    (dispatch! {:type :prompt/submit :room-id room-id
-                :text (build-review-prompt desc overview guidance)})))
+    (dispatch! {:type :subagent/spawn :room-id room-id
+                :label (str "Review: " desc)
+                :task  (str "Code review of the " desc)
+                :prompt (build-review-prompt desc overview guidance)})))
 
 ;; ── Extension ─────────────────────────────────────────────────────────────────
 

@@ -53,7 +53,8 @@
        [[xi.ext.canvas-review.web :as canvas-review-web]
         [xi.ext.diff.web :as diff-web]
         [xi.ext.github.web :as github-web]
-        [xi.ext.gtd.web :as gtd-web]])))
+        [xi.ext.gtd.web :as gtd-web]
+        [xi.ext.subagent.web :as subagent-web]])))
 
 (def tui
   "TUI display config overrides. Only keys the user wants to change from
@@ -132,4 +133,5 @@
      [diff-web/extension
       gtd-web/extension
       github-web/extension
-      canvas-review-web/extension]))
+      canvas-review-web/extension
+      subagent-web/extension]))
