@@ -1553,6 +1553,11 @@ body {
   padding: var(--size-3);
   border-radius: var(--radius-md);
   border: var(--border-0);
+  /* iOS WebKit does not repaint text streamed into an already-open <details>
+     (the .thinking-block is :open from creation, then deltas fold in), so the
+     box paints but its text stays blank. Promoting the <pre> to its own
+     compositing layer forces WebKit to repaint its contents on each update. */
+  transform: translateZ(0);
 }
 
 /* ---- Home view ---- */
