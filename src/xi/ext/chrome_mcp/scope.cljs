@@ -122,9 +122,15 @@
                              *its* workspace (not ours-everywhere).
 
    → {:in-workspace #{page-id …}
+      :in-workspace-window-ids #{cdp-window-id …}
       :selected-id  page-id|nil
       :selected-in? bool
-      :page->workspace {page-id workspace-name|nil}}"
+      :page->workspace {page-id workspace-name|nil}}
+
+   `:in-workspace-window-ids` is every CDP window on the launch workspace
+   (derived from the window→workspace map, independent of page correlation) —
+   the guard opens a new tab in one of these to reuse an existing window instead
+   of spawning a fresh one."
   [{:keys [pages cdp-targets wm-windows launch-workspace owned-window-workspaces]}]
   (let [page->wid (correlate-pages->wid pages cdp-targets)
         wid->ws (merge (window->workspace cdp-targets wm-windows)
@@ -137,11 +143,16 @@
                             (let [ws (get page->ws id)]
                               (when (and (some? ws) (= ws launch-workspace)) id))))
                     pages)
+        in-ws-wids (into #{}
+                        (keep (fn [[wid ws]]
+                                (when (and (some? wid) (= ws launch-workspace)) wid)))
+                        wid->ws)
         selected (some #(when (:selected? %) (:id %)) pages)]
-    {:in-workspace    in-ws
-     :selected-id     selected
-     :selected-in?    (contains? in-ws selected)
-     :page->workspace page->ws}))
+    {:in-workspace            in-ws
+     :in-workspace-window-ids in-ws-wids
+     :selected-id             selected
+     :selected-in?            (contains? in-ws selected)
+     :page->workspace         page->ws}))
 
 (defn filter-list-pages-text
   "Rewrite a `list_pages` result body to only the lines for `keep-ids`

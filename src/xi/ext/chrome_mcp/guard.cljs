@@ -187,26 +187,47 @@
                                    (.then (fn [_] (gate-list-pages ws))))
                                (gate-list-pages ws)))))))
 
-            (gate-new-page [ws args]
-              ;; chrome-devtools-mcp `new_page` only adds a *tab* to the focused
-              ;; window, so the new page inherits that window's workspace and
-              ;; can't be placed. Instead open a real new OS window via CDP
+            (new-window-page! [ws url]
+              ;; No existing window on `ws`: open a real new OS window via CDP
               ;; (Target.createTarget :newWindow), move it onto `ws`, record it
               ;; as owned, then select it — same primitive as ensure-window!.
+              ;; This is the only path that can flash (a window maps on the
+              ;; viewed workspace for an instant before `wm move` relocates it).
+              (-> (wm/chrome-window-ids)
+                  (.then (fn [before]
+                           (-> (cdp-client)
+                               (.then (fn [c]
+                                        (-> (cdp/create-window c url)
+                                            (.then (fn [tid] (cdp/window-for-target c tid))))))
+                               (.then (fn [win-id]
+                                        (when win-id (swap! owned* assoc win-id ws))))
+                               (.then (fn [_] (wait-new-wid before)))
+                               (.then (fn [new-wid]
+                                        (when new-wid (wm/move-window new-wid ws))))
+                               (.then (fn [_] (sleep 150)))
+                               (.then (fn [_] (select-new-page! ws url))))))))
+
+            (new-tab-in-window! [ws url win-id]
+              ;; Reuse an existing window on `ws`: open a plain tab in it. No new
+              ;; OS window, no `wm move`, so no flash. select-new-page! then
+              ;; brings the tab to front.
+              (-> (cdp-client)
+                  (.then (fn [c] (cdp/create-tab c url win-id)))
+                  (.then (fn [_] (sleep 100)))
+                  (.then (fn [_] (select-new-page! ws url)))))
+
+            (gate-new-page [ws args]
+              ;; chrome-devtools-mcp `new_page` only adds a *tab* to the focused
+              ;; window, which need not be on our workspace — so we can't use it
+              ;; blindly. Favor reusing a window already on `ws` (open a tab in
+              ;; it via CDP with an explicit windowId — cheap, no flash); only
+              ;; when `ws` has no window do we spawn a fresh OS window.
               (let [url (or (:url args) "about:blank")]
-                (-> (wm/chrome-window-ids)
-                    (.then (fn [before]
-                             (-> (cdp-client)
-                                 (.then (fn [c]
-                                          (-> (cdp/create-window c url)
-                                              (.then (fn [tid] (cdp/window-for-target c tid))))))
-                                 (.then (fn [win-id]
-                                          (when win-id (swap! owned* assoc win-id ws))))
-                                 (.then (fn [_] (wait-new-wid before)))
-                                 (.then (fn [new-wid]
-                                          (when new-wid (wm/move-window new-wid ws))))
-                                 (.then (fn [_] (sleep 150)))
-                                 (.then (fn [_] (select-new-page! ws url))))))
+                (-> (classify ws)
+                    (.then (fn [{:keys [scope]}]
+                             (if-let [win-id (first (:in-workspace-window-ids scope))]
+                               (new-tab-in-window! ws url win-id)
+                               (new-window-page! ws url))))
                     (.catch (fn [_] (forward "new_page" args))))))
 
             (dispatch [tool args ws]

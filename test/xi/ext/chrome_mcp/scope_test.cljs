@@ -39,6 +39,8 @@
   (testing "launch on 'shovels' → only the Shovels page is in-workspace"
     (let [r (scope/classify (assoc sample :launch-workspace "shovels"))]
       (is (= #{6} (:in-workspace r)))
+      (is (= #{1052} (:in-workspace-window-ids r))
+          "only the CDP window on 'shovels' is reusable for a new tab")
       (is (= 7 (:selected-id r)))
       (is (false? (:selected-in? r)))
       (is (= {6 "shovels" 7 "figma"} (:page->workspace r)))))
@@ -78,7 +80,9 @@
              :launch-workspace "work"
              :owned-window-workspaces {777 "work"}}
           r (scope/classify s)]
-      (is (= #{8} (:in-workspace r)) "owned window on 'work' == launch 'work' -> in-workspace")))
+      (is (= #{8} (:in-workspace r)) "owned window on 'work' == launch 'work' -> in-workspace")
+      (is (= #{777} (:in-workspace-window-ids r))
+          "the owned window on 'work' is reusable for a new tab")))
   (testing "an owned window on ANOTHER workspace is NOT ours-here (scoping survives workspace switches)"
     (let [s {:pages [{:id 8 :title "about:blank" :url "about:blank" :selected? false}]
              :cdp-targets [{:url "about:blank" :title "" :window-id 777}]

@@ -100,3 +100,17 @@
   ([{:keys [call]} url]
    (-> (call "Target.createTarget" {:url url :newWindow true :background true})
        (.then (fn [res] (aget res "targetId"))))))
+
+(defn create-tab
+  "Open `url` as a new *tab* in the existing window `window-id` (no new OS
+   window). Resolves to the new target id.
+
+   Reusing a window on the agent's workspace avoids the new-window creation +
+   `wm move` dance entirely — and with it the transient flash of a window
+   mapping on the viewed workspace before it's relocated. `:background true`
+   keeps the tab from stealing focus on create; the guard brings it to front
+   afterwards with `select_page`."
+  [{:keys [call]} url window-id]
+  (-> (call "Target.createTarget"
+            {:url url :newWindow false :windowId window-id :background true})
+      (.then (fn [res] (aget res "targetId")))))

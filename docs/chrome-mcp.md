@@ -163,8 +163,11 @@ activated/focused. Chrome opens it on the currently-viewed workspace before the
 guard moves it to the agent's workspace; `background` keeps that transient
 window from stealing focus (or, on a tiling WM, the keyboard) while it's still
 there. On a tiling WM the window may still reflow the viewed layout for the
-instant before `wm move` relocates it — eliminating that entirely is a
-WM-config concern (an xmonad `ManageHook`/`doShift`), not something CDP can do.
+instant before `wm move` relocates it — eliminating that *last* flash entirely
+is a WM-config concern (an xmonad `ManageHook`/`doShift`), not something CDP can
+do. Note this only applies to the **first** window on a workspace: once one
+exists, `new_page` reuses it as a tab (see the `new_page` gate below), so
+repeated opens never create a window and never flash.
 
 ### What the gates do
 
@@ -178,7 +181,7 @@ gating the four page-management tools:
 | `list_pages` | **Read-only:** filtered to current-workspace pages (never creates a window — self-heal is the reconcile step's job). |
 | `select_page` | **Blocked** when the target page is on another workspace. |
 | `close_page` | **Blocked** when the target page is on another workspace. |
-| `new_page` | Any brand-new window the call spawns is **moved onto the current workspace** (Chrome opens new windows on the *currently viewed* workspace, which is normally the same one — this pins it). |
+| `new_page` | **Reuses a window on the agent's workspace when one exists** — opens the URL as a plain tab in it (CDP `Target.createTarget` with an explicit `windowId`, `newWindow:false`), so no new OS window is mapped and there is **no flash**. Only when the workspace has *no* Chrome window does it spawn a fresh window and **move it onto the workspace** (Chrome opens new windows on the *currently viewed* workspace — this pins it, and is the one path that can still flash on a tiling WM). |
 
 Self-heal (creating a current-workspace window when none exists) is the
 **reconcile** step that runs before any page-acting tool — not `list_pages`,
