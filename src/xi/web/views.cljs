@@ -440,6 +440,18 @@
 
     nil))
 
+(defn- with-post-key
+  "Attach a stable :replicant/key so Replicant reconciles timeline posts by
+   identity, not position. Without it, dropping an entry from the middle of the
+   sequence (e.g. hidden :thinking blocks) or sliding the render window crashes
+   the DOM diff with `removeChild ... not a Node`. Every entry->post return is a
+   `[:div {attrs} …]` vector; guard the rare non-map-attrs shape anyway."
+  [k node]
+  (cond
+    (not (vector? node))  node
+    (map? (second node))  (assoc-in node [1 :replicant/key] k)
+    :else                 (into [(first node) {:replicant/key k}] (rest node))))
+
 ;; ── Compose ──────────────────────────────────────────────────────────────────
 
 (defn- compose-textarea-el []
@@ -2029,7 +2041,7 @@
                                         (cond-> (assoc entry :history-index p)
                                           (and (= :user (:kind entry)) (= p (:index editing)))
                                           (assoc :editing? true :edit-text (:text editing))))]
-                              (when post [post])))))))
+                              (when post [(with-post-key (str "h-" p) post)])))))))
                    (range start (inc total)))))
                (optimistic-post dispatch! state room sid history)
                (dialog-post dispatch! state room history)))
