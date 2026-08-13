@@ -167,12 +167,17 @@
       (when (fs/existsSync fp) (fs/unlinkSync fp)))))
 
 (defn load-canvas
-  "Read a session's persisted canvas-review state, or nil if none."
+  "Read a session's persisted canvas-review state, or nil if none. A parse
+   failure is logged (not swallowed silently) so a corrupt sidecar surfaces
+   instead of masquerading as \"no canvas\" and resuming to an empty page."
   [session]
   (let [fp (canvas-sidecar-path session)]
     (when (and (:id session) (fs/existsSync fp))
       (try (edn/read-string (str (fs/readFileSync fp "utf8")))
-           (catch :default _e nil)))))
+           (catch :default e
+             (js/console.error (str "[session] failed to parse canvas sidecar " fp
+                                    ": " (.-message e)))
+             nil)))))
 
 (defn update-session!
   "Update session fields and persist."

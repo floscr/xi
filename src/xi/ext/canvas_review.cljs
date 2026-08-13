@@ -218,6 +218,23 @@
 (defn- gen-id [prefix]
   (str prefix (.toString (js/Math.floor (* (js/Math.random) 1e9)) 36)))
 
+(defn- safe-kind
+  "Coerce a free-form edge `kind` into an EDN-safe keyword: lowercased with any
+   run of non-alphanumeric characters collapsed to a single hyphen. The model
+   often passes multi-word kinds (\"shared invariant\", \"consumed by\") that a
+   bare `keyword` call would turn into a keyword CONTAINING A SPACE — which
+   `pr-str` writes to the canvas sidecar unescaped (`:shared invariant`),
+   yielding EDN that no longer reads back (an odd-form map literal). That silent
+   parse failure is why a completed review resumed to a permanently empty canvas."
+  [s]
+  (some-> s
+          str/trim
+          str/lower-case
+          (str/replace #"[^a-z0-9]+" "-")
+          (str/replace #"^-+|-+$" "")
+          not-empty
+          keyword))
+
 (defn- ok-result [text]
   {:intercepted true :result {:content [{:type "text" :text text}]}})
 
@@ -257,7 +274,7 @@
       (dispatch! {:type :canvas-review/add-edge :room-id room-id
                   :edge {:id id :from (:from args) :to (:to args)
                          :label (:label args)
-                         :kind (or (some-> (:kind args) not-empty keyword) :relates)}})
+                         :kind (or (safe-kind (:kind args)) :relates)}})
       (ok-result (str "Connected " (:from args) " → " (:to args)
                       (when (:label args) (str " (" (:label args) ")")))))
 
