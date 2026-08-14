@@ -1379,7 +1379,7 @@ body {
 .agent-status-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid var(--gray-300);
+  border: 2px solid var(--bg-2);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -1397,7 +1397,7 @@ body {
 .agent-status-spinner--sm {
   width: 10px;
   height: 10px;
-  border: 1.5px solid var(--gray-300);
+  border: 1.5px solid var(--bg-2);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -2923,7 +2923,7 @@ body {
 .reload-overlay__spinner {
   width: 28px;
   height: 28px;
-  border: 3px solid var(--gray-300);
+  border: 3px solid var(--bg-2);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
