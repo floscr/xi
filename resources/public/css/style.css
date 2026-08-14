@@ -2894,6 +2894,41 @@ body {
   overflow-y: visible;
 }
 
+/* ── Reload feedback ────────────────────────────────────────────────────── */
+
+.reload-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-0) 80%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.reload-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-3);
+}
+
+.reload-overlay__card p {
+  margin: 0;
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+}
+
+.reload-overlay__spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--gray-300);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 /* ── Client auth (pairing) ──────────────────────────────────────────────── */
 
 .auth-overlay {

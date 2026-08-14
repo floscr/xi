@@ -167,6 +167,26 @@
 
 (defn spinner [] [:div {:class ["agent-status-spinner"]}])
 
+(defn reload-with-feedback!
+  "A hard page reload (especially the big dev build) takes a beat before the
+   browser swaps in the new document, so the old page just sits there looking
+   frozen after the user clicks Reload. Paint an immediate full-screen
+   'Reloading…' overlay, then reload on the next frame so the browser renders
+   the overlay first — the user gets instant feedback that stays up until the
+   fresh page paints its own 'Connecting…' spinner. State is about to be
+   discarded by the reload, so build the node directly instead of via Replicant."
+  []
+  (let [overlay (.createElement js/document "div")]
+    (set! (.-className overlay) "reload-overlay")
+    (set! (.-innerHTML overlay)
+          (str "<div class=\"reload-overlay__card\">"
+               "<div class=\"reload-overlay__spinner\"></div>"
+               "<p>Reloading…</p></div>"))
+    (.appendChild js/document.body overlay)
+    ;; Double rAF guarantees the overlay is painted before we navigate away.
+    (js/requestAnimationFrame
+     (fn [] (js/requestAnimationFrame #(.reload js/location))))))
+
 (defn card-status-indicator
   "Trailing status indicator for session cards / palette rows: a single,
   ALWAYS-present node whose class toggles between the busy spinner, the unread
@@ -1677,7 +1697,7 @@
                    :on {:click (fn [e]
                                  (.stopPropagation e)
                                  (dispatch! {:type :overflow/close})
-                                 (.reload js/location))}}
+                                 (reload-with-feedback!))}}
           (icon/icon {:icon-name :refresh :size :sm})
           [:span "Reload"]]]))])))
 
@@ -2697,7 +2717,7 @@
          (when standalone?
            [:button {:class ["icon-btn" "icon-btn--sm"]
                      :title "Reload"
-                     :on {:click (fn [_] (.reload js/location))}}
+                     :on {:click (fn [_] (reload-with-feedback!))}}
             (icon/icon {:icon-name :refresh :size :md})])]]))))
 
 (defn- recent-sidebar
@@ -3085,7 +3105,7 @@
                                  (if ios?
                                    (dispatch! {:type :copy/open :text text})
                                    (copy-to-clipboard! text))))
-               :reload       (fn [_] (.reload js/location))))]
+               :reload       (fn [_] (reload-with-feedback!))))]
        (apply cmd/command-group {:heading "Actions"}
          (for [{:keys [key label icon]} (palette/actions (boolean room))]
            (cmd/command-item {:icon icon :on-click (action-onclick key)} label))))
