@@ -3434,6 +3434,10 @@ summary,
   height: var(--size-1);
   cursor: pointer;
   position: relative;
+  /* Claim horizontal drag gestures so touch devices scrub instead of
+     scrolling the page — without this iOS steals pointermove for scroll and
+     drag-to-seek never fires (only taps register). */
+  touch-action: none;
 }
 
 /* Hover growth/reveal only on devices that actually hover — a bare :hover
