@@ -128,6 +128,43 @@
                                   [:ws/send {:type :session/mark-read :session-id sid}]]))
                     unread)}))
 
+(defn- dismiss-all
+  "Hide every currently-visible, idle session from Recent at once — the bulk
+   version of the per-card eye-off toggle. Flips the local :dismissed? overlay
+   for an instant move into the Hidden group, then forwards a :dismissed/toggle
+   per session so the server persists it and rebroadcasts an authoritative
+   lobby.
+
+   Skips sessions that are (a) already dismissed — so it never accidentally
+   un-hides one — and (b) in progress: any session with a live room that is
+   busy (agent working) or awaiting a dialog response is left visible, matching
+   the per-card toggle which hides itself while `busy?`/`has-dialog?`. Hiding a
+   running turn would bury it and lose the user's place in active work."
+  [st _]
+  (let [;; session-ids with a live room that is busy or needs a dialog response
+        in-progress (->> (get-in st [:lobby :rooms])
+                         (filter #(or (:busy? %) (:has-dialog? %)))
+                         (map :session-id)
+                         (filter some?)
+                         set)
+        target-ids  (->> (get-in st [:lobby :sessions])
+                         (remove :dismissed?)
+                         (map :session-id)
+                         (filter some?)
+                         (remove in-progress)
+                         set)
+        flip (fn [ss]
+               (mapv #(if (target-ids (:session-id %))
+                        (assoc % :dismissed? true)
+                        %)
+                     ss))]
+    {:state   (-> st
+                  (update-in [:lobby :sessions] flip)
+                  (update :web/project-sessions flip))
+     :effects (into [] (map (fn [sid]
+                              [:ws/send {:type :dismissed/toggle :session-id sid}]))
+                    target-ids)}))
+
 (defn- connection-status [st {:keys [connected?]}]
   {:state (assoc st :web/connected? connected?)})
 
@@ -470,6 +507,7 @@
           :session/counts-result counts-result
           :session/mark-read     mark-read
           :session/mark-all-read mark-all-read
+          :session/dismiss-all   dismiss-all
           ;; Seed a chat's cached history into :web/cache so it paints
           ;; instantly on SPA navigation while the WS :room/joined is in
           ;; flight (esp. on slow mobile links). :room/joined overwrites it.

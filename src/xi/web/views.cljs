@@ -2707,6 +2707,11 @@
                      :title "Mark all sessions as read"
                      :on {:click (fn [_] (dispatch! {:type :session/mark-all-read}))}}
             (icon/icon {:icon-name :check :size :md})])
+         (when (seq visible)
+           [:button {:class ["icon-btn" "icon-btn--sm"]
+                     :title "Hide all sessions from Recent"
+                     :on {:click (fn [_] (dispatch! {:type :session/dismiss-all}))}}
+            (icon/icon {:icon-name :eye-off :size :md})])
          ;; NOTE: keep this fn's state reads reflected in `recent-sidebar`'s
          ;; memo key below, or the docked sidebar can go stale.
          (when (not pa?)
