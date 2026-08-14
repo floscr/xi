@@ -3037,7 +3037,8 @@ a.button-group-item:hover {
 
 .form-group > .form-input,
 .form-group > .form-select,
-.form-group > .btn {
+.form-group > .btn,
+.form-group > .form-input-wrap .form-input {
   border-radius: 0;
 }
 
