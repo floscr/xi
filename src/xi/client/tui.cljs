@@ -289,7 +289,6 @@
               (cond-> {:type :command/run :room-id room-id :name name}
                 args (assoc :args args)))]
     (case (first action)
-      :chat    (run "resume" (str "id:" (second action)))
       :command (let [{:keys [name args]} (commands/parse-input (str "/" (second action)))]
                  (run name args))
       :action  (case (second action)
@@ -347,7 +346,13 @@
         chat-items    (map (fn [s]
                              {:label (or (:name s) "New session")
                               :session-id (:session-id s)
-                              :event (palette-action-event room-id [:chat (:session-id s)])})
+                              ;; Join the session's LIVE room (server prefers it
+                              ;; via room-for-session) so a working chat streams
+                              ;; live, instead of /resume loading a stale disk
+                              ;; snapshot into the current room. Mirrors the web
+                              ;; (see xi.web.router/session->room-id).
+                              :event {:type :room/join
+                                      :target {:session-id (:session-id s)}}})
                            chats)
         action-items  (map (fn [{:keys [key label]}]
                              (let [evt (palette-action-event room-id [:action key])]

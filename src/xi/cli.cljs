@@ -624,7 +624,15 @@ See docs/cli.md for the full reference.")
                                                  ;; Client-local: track socket
                                                  ;; up/down for the reconnecting
                                                  ;; indicator. Never forwarded.
-                                                 {:connection/status
+                                                 {;; Palette "Chats" pick: forward a
+                                                  ;; :room/join so the server attaches
+                                                  ;; us to the session's LIVE room
+                                                  ;; (room-for-session) and it streams,
+                                                  ;; instead of a disk resume into the
+                                                  ;; current room. Never mirrored back.
+                                                  :room/join
+                                                  (fn [_st ev] {:effects [[:ws/send ev]]})
+                                                  :connection/status
                                                   (fn [st {:keys [connected?]}]
                                                     {:state (assoc st :client/connected? connected?)})
                                                   ;; Client-local: surface the
