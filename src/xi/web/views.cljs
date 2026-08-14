@@ -1855,7 +1855,7 @@
 ;; child's full history once the user expands it. Expanding-by-default made the
 ;; panel re-render every entry of every sub-agent on every streaming delta,
 ;; which stalled the web client with several concurrent agents (PR reviews).
-(defn- subagent-child [dispatch! room-id redact-thinking? {:keys [id label task status history result expanded?] :as child}]
+(defn- subagent-child [dispatch! room-id {:keys [id label task status history result expanded?] :as child}]
   (let [open? (boolean expanded?)]
     [:div {:class ["subagent-card" (str "subagent-card--" (name (or status :running)))]
            :replicant/key id}
@@ -1876,16 +1876,13 @@
           [:div {:class ["subagent-task"]} task])
         (if (seq history)
           (map-indexed
-           (fn [i e]
-             (when-not (and redact-thinking? (= :thinking (:kind e)))
-               (when-let [post (entry->post dispatch! e)]
-                 [:div {:replicant/key i :class ["subagent-entry"]} post])))
+           (fn [i e] (when-let [post (entry->post dispatch! e)]
+                       [:div {:replicant/key i :class ["subagent-entry"]} post]))
            history)
           [:div {:class ["subagent-empty"]} "No output yet."])])]))
 
 (defn- subagents-panel [dispatch! room]
   (let [room-id (:id room)
-        redact-thinking? (state/redacts-thinking? room)
         {:keys [agents collapsed?]} (get-in room [:ext :subagents])]
     (when (seq agents)
       (let [running (count (filter #(= :running (:status %)) agents))
@@ -1902,7 +1899,7 @@
             [:span {:class ["subagents-running"]} (spinner) (str running " running")])]
          (when open?
            [:div {:class ["subagents-list"]}
-            (map (fn [c] (subagent-child dispatch! room-id redact-thinking? c)) agents)])]))))
+            (map (fn [c] (subagent-child dispatch! room-id c)) agents)])]))))
 
 (defn- chat-view [state dispatch!]
   (let [active  (state/active-room state)
@@ -1928,9 +1925,6 @@
         authoritative? (boolean (seq room-history))
         history (if authoritative? room-history (:history cached))
         busy?   (get-in room [:agent :busy?])
-        ;; Providers that redact thinking emit only empty `:thinking` entries,
-        ;; so hide them rather than render blank blocks (see xi.core.state).
-        redact-thinking? (state/redacts-thinking? room)
         model   (or (get-in room [:agent :model]) (:model cached))
         new?    (nil? sid)
         ;; The server's history for an existing session is still in flight
@@ -2034,14 +2028,13 @@
                      (concat
                       (rposts p)
                       (when (< p total)
-                        (let [entry (nth entries p)]
-                          (when-not (and redact-thinking? (= :thinking (:kind entry)))
-                            (let [post (entry->post
-                                        dispatch!
-                                        (cond-> (assoc entry :history-index p)
-                                          (and (= :user (:kind entry)) (= p (:index editing)))
-                                          (assoc :editing? true :edit-text (:text editing))))]
-                              (when post [(with-post-key (str "h-" p) post)])))))))
+                        (let [entry (nth entries p)
+                              post  (entry->post
+                                     dispatch!
+                                     (cond-> (assoc entry :history-index p)
+                                       (and (= :user (:kind entry)) (= p (:index editing)))
+                                       (assoc :editing? true :edit-text (:text editing))))]
+                          (when post [(with-post-key (str "h-" p) post)])))))
                    (range start (inc total)))))
                (optimistic-post dispatch! state room sid history)
                (dialog-post dispatch! state room history)))

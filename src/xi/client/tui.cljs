@@ -515,12 +515,7 @@
                        (= :running (:status last-entry))))))))
 
 (defn- sync-chat! [^js ctx room loader]
-  (let [;; Hide thinking blocks for providers that redact thinking (their
-        ;; `:thinking` entries are always empty — see xi.core.state).
-        history (cond->> (:history room)
-                  (state/redacts-thinking? room)
-                  (into [] (remove #(= :thinking (:kind %)))))
-        history-changed? (sync-history! ctx history)
+  (let [history-changed? (sync-history! ctx (:history room))
         show-loader? (loader-visible? room)
         loader-toggled? (not= show-loader? (.-loaderShown ctx))]
     (when loader-toggled?

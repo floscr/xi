@@ -70,24 +70,6 @@
 (defn mode [state]
   (get-in state [:connection :mode]))
 
-;; ── Provider capabilities ────────────────────────────────────────────────────
-
-(def redacts-thinking-providers
-  "Provider ids whose extended-thinking content is redacted by the backend:
-   only an encrypted signature comes back, never the plaintext reasoning, so
-   `:thinking` history entries are always empty. Clients hide thinking blocks
-   for these providers rather than render blank boxes. (The Claude Agent SDK
-   redacts thinking over subscription/OAuth auth — see xi.provider.claude.)
-
-   Lives here (not on the provider map) because it must be reachable from the
-   web client, which only ever sees the provider id keyword in room state."
-  #{:claude})
-
-(defn redacts-thinking?
-  "Does `room`'s active provider redact thinking? See redacts-thinking-providers."
-  [room]
-  (contains? redacts-thinking-providers (get-in room [:agent :provider])))
-
 (defn room-ext
   "Room-scoped extension state for ext-id (mirrors to clients)."
   [state room-id ext-id]
