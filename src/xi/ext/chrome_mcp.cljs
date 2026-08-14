@@ -28,9 +28,13 @@
      XI_CHROME_BROWSER_URL  attach to an existing Chrome's remote-debugging
                             URL (passed as --browserUrl); otherwise chrome-
                             devtools-mcp launches its own managed Chrome
-     XI_CHROME_MCP_ARGS     extra CLI args for chrome-devtools-mcp (space-split)"
+     XI_CHROME_MCP_ARGS     extra CLI args for chrome-devtools-mcp (space-split)
+     XI_CHROME_LAUNCH_BIN   absolute path to the launcher used to start the
+                            shared OS Chrome when it isn't running (attach mode;
+                            default dotfiles `browser` bin)"
   (:require [clojure.string :as str]
             [xi.ext.chrome-mcp.guard :as guard]
+            [xi.ext.chrome-mcp.launch :as launch]
             [xi.ext.element-picker :as element-picker]
             [xi.ext.style-editor :as style-editor]
             ["node:child_process" :as child-process])
@@ -170,9 +174,19 @@
               ;; scoped, the guard reads (:client-pid ctx) to pick this session's
               ;; TUI-terminal workspace; the style-editor / element-picker call
               ;; it 2-arg (no ctx) and fall back to `wm current`.
-              forward     (if scope?
-                            (guard/install raw-forward browser-url)
-                            (fn [tool args & _] (raw-forward tool args)))
+              ;; In attach mode, make sure the shared OS Chrome is actually
+              ;; running before any tool call — probe its CDP endpoint and
+              ;; launch it (detached) if it's down, so an agent can bootstrap
+              ;; Chrome itself instead of erroring when nothing is running. When
+              ;; scoped, the guard does the launch itself (it also needs to
+              ;; place the fresh window on the agent's workspace); the no-scope
+              ;; attach path only needs the process up, so it wraps here.
+              forward     (cond
+                            scope?            (guard/install raw-forward browser-url)
+                            (seq browser-url) (fn [tool args & _]
+                                                (-> (launch/ensure-process! browser-url)
+                                                    (.then (fn [_] (raw-forward tool args)))))
+                            :else             (fn [tool args & _] (raw-forward tool args)))
               editor (style-editor/install forward)]
           (merge
            {:id               :chrome

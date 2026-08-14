@@ -39,6 +39,7 @@ the 29 browser tools aren't advertised on every turn by default.
 | `XI_CHROME_TOOLS` | Enable the extension (any non-empty value). |
 | `XI_CHROME_BROWSER_URL` | Attach to an existing Chrome's remote-debugging URL (passed as `--browserUrl`) instead of letting chrome-devtools-mcp launch its own. |
 | `XI_CHROME_MCP_ARGS` | Extra CLI args for `chrome-devtools-mcp`, space-split. |
+| `XI_CHROME_LAUNCH_BIN` | Absolute path to the launcher used to **start the shared OS Chrome** when it isn't running (attach mode only). Default: the dotfiles `browser` bin (`google-chrome-stable --remote-debugging-port=9222 …`). Must be absolute — the server's PATH doesn't include dotfiles/bin. |
 | `XI_CHROME_NO_SCOPE` | Disable workspace scoping even in attach mode (any non-empty value). |
 | `XI_CHROME_WM_CLASS` | WM_CLASS substring identifying the shared Chrome for scoping (default `chrome-profile-stable`). |
 | `XI_CHROME_WM_BIN` | Absolute path to the dotfiles `wm` CLI used for scoping (default `/home/floscr/.config/dotfiles/bin/wm`). Must be absolute — the server's PATH doesn't include dotfiles/bin. |
@@ -47,6 +48,27 @@ the 29 browser tools aren't advertised on every turn by default.
 Chrome is launched **lazily on the first tool call** and killed on shutdown.
 The connect promise is memoized, and cleared on failure so a later call
 retries.
+
+### Auto-launching the OS Chrome (attach mode)
+
+In attach mode (`XI_CHROME_BROWSER_URL`) xi drives an *external* Chrome over its
+remote-debugging URL. If that Chrome process isn't running, every CDP /
+chrome-devtools-mcp call fails with a connection error. So before forwarding any
+tool call, xi probes the CDP browser endpoint (`<browser-url>/json/version`) and
+— when it's unreachable — **spawns Chrome itself** (the `XI_CHROME_LAUNCH_BIN`
+launcher, detached) and waits (~10s cap) for the endpoint to come up. This lets
+an agent bootstrap the browser instead of requiring a human to start it first.
+Concurrent calls share a single in-flight launch, so Chrome is only started
+once. In non-attach mode this doesn't apply — `chrome-devtools-mcp` launches its
+own managed Chrome. See `xi.ext.chrome-mcp.launch`.
+
+**Placed on the agent's workspace.** A cold-launched Chrome maps its first
+window on whatever workspace the user is *currently viewing*, not the agent's.
+So when scoping is active and the launch happens, the guard waits for that
+window to map, then **moves every fresh Chrome window onto the agent's
+workspace** and adopts them as owned (a cold launch means no other Chrome
+windows exist yet, so all of them belong to this launch). The bootstrap window
+therefore lands where the agent works, not on the viewed workspace.
 
 Because it's a server-side extension, set the env before starting the server
 and pick it up with `bb serve:restart`:

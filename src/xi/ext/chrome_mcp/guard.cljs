@@ -46,6 +46,7 @@
             [clojure.string :as str]
             [xi.ext.chrome-mcp.scope :as scope]
             [xi.ext.chrome-mcp.cdp :as cdp]
+            [xi.ext.chrome-mcp.launch :as launch]
             [xi.ext.chrome-mcp.wm :as wm]))
 
 ;; ── result helpers ───────────────────────────────────────────────────────────
@@ -248,17 +249,58 @@
                 (wm/workspace-for-pid pid)
                 (wm/current-workspace)))
 
-            (scoped [tool args & [ctx]]
-              ;; Only scope when the WM can actually see our Chrome's X11
-              ;; windows. If `wm` is blind (empty — e.g. the attached Chrome
-              ;; has a different WM_CLASS than we filter on), managing/creating
-              ;; windows would spawn unrecognized windows forever, so pass
-              ;; through raw instead.
-              (-> (js/Promise.all #js [(resolve-workspace ctx) (wm/chrome-windows)])
+            (place-launched! [ws]
+              ;; Right after a *cold* launch, Chrome maps its window on the
+              ;; currently-viewed workspace (not the agent's). Since we only
+              ;; launch when no Chrome was reachable at all, every current
+              ;; Chrome window belongs to this launch — so move each off any
+              ;; other workspace onto `ws`, and adopt every CDP window as ours
+              ;; on `ws` (so a still-blank/loading window with no correlatable
+              ;; title is recognized as the agent's instead of triggering a
+              ;; second self-healed window).
+              (-> (js/Promise.all
+                   #js [(-> (cdp-client) (.then cdp/page-windows) (.catch (fn [_] [])))
+                        (wm/chrome-windows)])
                   (.then (fn [arr]
-                           (let [[ws wins] (vec arr)]
-                             (if (or (nil? ws) (empty? wins))
-                               (forward tool args)   ;; wm blind → no scoping
-                               (dispatch tool args ws)))))
+                           (let [[targets wins] (vec arr)
+                                 cdp-wids (into #{} (keep :window-id) targets)]
+                             (doseq [w cdp-wids] (swap! owned* assoc w ws))
+                             (-> (js/Promise.all
+                                  (clj->js (for [w wins :when (not= (:workspace w) ws)]
+                                             (wm/move-window (:wid w) ws))))
+                                 (.then (fn [_] :ok))))))
+                  (.catch (fn [_] :ok))))
+
+            (ensure-chrome! [ws]
+              ;; Make sure the shared OS Chrome is running before we act. When
+              ;; it was down and we launched it, place its fresh window(s) on
+              ;; the agent's workspace so the bootstrap window doesn't strand on
+              ;; whatever workspace the user was viewing.
+              (-> (launch/ensure-process! browser-url)
+                  (.then (fn [res]
+                           (if (= res :launched)
+                             ;; wait until Chrome's window is actually mapped
+                             ;; (its endpoint answers slightly before the X11
+                             ;; window shows up in wm), then place it on `ws`.
+                             (-> (wait-new-wid #{})
+                                 (.then (fn [_] (place-launched! ws))))
+                             :ok)))
+                  (.catch (fn [_] :ok))))
+
+            (scoped [tool args & [ctx]]
+              ;; First make sure Chrome is actually running (launch + place its
+              ;; window on `ws` if it was down), then scope. Only scope when the
+              ;; WM can actually see our Chrome's X11 windows: if `wm` is blind
+              ;; (empty — e.g. the attached Chrome has a different WM_CLASS than
+              ;; we filter on), managing/creating windows would spawn
+              ;; unrecognized windows forever, so pass through raw instead.
+              (-> (resolve-workspace ctx)
+                  (.then (fn [ws]
+                           (-> (ensure-chrome! ws)
+                               (.then (fn [_] (wm/chrome-windows)))
+                               (.then (fn [wins]
+                                        (if (or (nil? ws) (empty? wins))
+                                          (forward tool args)   ;; wm blind → no scoping
+                                          (dispatch tool args ws)))))))
                   (.catch (fn [_] (forward tool args)))))]
       scoped)))
