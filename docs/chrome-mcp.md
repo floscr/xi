@@ -39,6 +39,7 @@ the 29 browser tools aren't advertised on every turn by default.
 | `XI_CHROME_TOOLS` | Enable the extension (any non-empty value). |
 | `XI_CHROME_BROWSER_URL` | Attach to an existing Chrome's remote-debugging URL (passed as `--browserUrl`) instead of letting chrome-devtools-mcp launch its own. |
 | `XI_CHROME_MCP_ARGS` | Extra CLI args for `chrome-devtools-mcp`, space-split. |
+| `XI_CHROME_MCP_TIMEOUT_MS` | Per-call cap (ms) on a chrome-devtools-mcp JSON-RPC request, so a wedged child / stalled stdio pipe surfaces as an error tool-result instead of hanging the turn forever. Default `120000` (generous, so it only fires on a true wedge, never on a legit-slow op); `<= 0` disables. |
 | `XI_CHROME_LAUNCH_BIN` | Absolute path to the launcher used to **start the shared OS Chrome** when it isn't running (attach mode only). Default: the dotfiles `browser` bin (`google-chrome-stable --remote-debugging-port=9222 …`). Must be absolute — the server's PATH doesn't include dotfiles/bin. |
 | `XI_CHROME_NO_SCOPE` | Disable workspace scoping even in attach mode (any non-empty value). |
 | `XI_CHROME_WM_CLASS` | WM_CLASS substring identifying the shared Chrome for scoping (default `chrome-profile-stable`). |

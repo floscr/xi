@@ -58,6 +58,21 @@
 
 ;; ── Hand-rolled stdio JSON-RPC 2.0 client ────────────────────────────────────
 
+(defn- call-timeout-ms
+  "Per-call cap on a chrome-devtools-mcp JSON-RPC request. Without it a wedged
+   child process or a stalled stdio pipe leaves the pending promise unresolved
+   forever, hanging the agent's turn (the same failure class as the dead CDP
+   socket). On timeout the pending entry is dropped and the call rejects, which
+   `raw-forward` turns into a normal error tool-result.
+
+   The default is deliberately generous — real chrome ops (navigation, waits,
+   performance traces) are slow, and a spurious abort of a legit call is worse
+   than a rare long wait — so it only ever fires on a true wedge. Override with
+   `XI_CHROME_MCP_TIMEOUT_MS` (milliseconds); a value <= 0 disables the timeout."
+  []
+  (let [n (some-> (env "XI_CHROME_MCP_TIMEOUT_MS") str/trim not-empty js/parseInt)]
+    (if (and n (not (js/isNaN n))) n 120000)))
+
 (defn- make-client
   "Spawn an MCP stdio server (`npx <args>`) and return
    {:call (fn [method params] -> Promise<result>)
@@ -109,8 +124,21 @@
                 (fn [resolve reject]
                   (if @dead
                     (reject (js/Error. @dead))
-                    (let [id (swap! next-id inc)]
-                      (.set pending id #js {:resolve resolve :reject reject})
+                    (let [id (swap! next-id inc)
+                          ms (call-timeout-ms)
+                          t  (when (pos? ms)
+                               (js/setTimeout
+                                (fn []
+                                  (when (.has pending id)
+                                    (.delete pending id)
+                                    (reject (js/Error. (str "chrome-devtools-mcp call timed out after "
+                                                            ms "ms: " method)))))
+                                ms))]
+                      ;; Wrap resolve/reject to clear the timer, so the normal
+                      ;; onmessage / settle-dead! paths (which call these) also
+                      ;; cancel it — no separate bookkeeping needed.
+                      (.set pending id #js {:resolve (fn [v] (when t (js/clearTimeout t)) (resolve v))
+                                            :reject  (fn [e] (when t (js/clearTimeout t)) (reject e))})
                       (write! (cond-> {:jsonrpc "2.0" :id id :method method}
                                 (some? params) (assoc :params params))))))))
      :notify (fn [method params]
