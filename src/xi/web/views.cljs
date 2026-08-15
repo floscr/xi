@@ -596,6 +596,9 @@
          :while-busy? true}
         {:name "files"
          :description "Browse project files"
+         :while-busy? true}
+        {:name "skills"
+         :description "Browse and load skills"
          :while-busy? true}))
 
 (def ^:private web-command-names
@@ -664,6 +667,9 @@
       "commits" (dispatch! {:type :palette/open-commits})
       ;; Web-only: open the file browser palette page.
       "files"   (dispatch! {:type :palette/open-files})
+      ;; Web-only: /skills opens the skills palette page (the TUI's picker
+      ;; menu the server command would push doesn't render on web).
+      "skills"  (dispatch! {:type :palette/open-skills})
       (dispatch! (cond-> {:type :command/run :room-id room-id :name name}
                    args (assoc :args args))))))
 
