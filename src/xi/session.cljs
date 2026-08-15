@@ -18,8 +18,42 @@
 (def ^:private XI_SESSIONS_DIR
   (.join node-path HOME ".config" "xi" "sessions"))
 
-(def ^:private PERSONAL_AGENT_SESSIONS_DIR
-  (.join node-path HOME ".config" "xi" "personal-agent" "root"))
+(def ^:private PERSONAL_AGENT_DIR
+  (.join node-path HOME ".config" "xi" "personal-agent"))
+
+(defn personal-agent-dir
+  "Sessions dir for a named personal agent. nil/absent agent-id = the default
+   agent (\"root\", the historical layout)."
+  [agent-id]
+  (.join node-path PERSONAL_AGENT_DIR (or agent-id "root")))
+
+(defn agent-config
+  "Read a named agent's optional agent.edn config from its sessions dir
+   (~/.config/xi/personal-agent/<agent-id>/agent.edn). Recognized keys:
+     :system-prompt      - system prompt text (replaces the default PA prompt)
+     :system-prompt-file - path to a file holding the system prompt (relative
+                           paths resolve against the agent dir)
+     :model              - default model for this agent
+   Returns the parsed map (with :system-prompt-file resolved into
+   :system-prompt) or nil when no config exists / it fails to parse."
+  [agent-id]
+  (let [dir (personal-agent-dir agent-id)
+        fp  (.join node-path dir "agent.edn")]
+    (when (fs/existsSync fp)
+      (try
+        (let [cfg (edn/read-string (fs/readFileSync fp "utf8"))]
+          (if-let [prompt-file (:system-prompt-file cfg)]
+            (let [resolved (if (.isAbsolute node-path prompt-file)
+                             prompt-file
+                             (.join node-path dir prompt-file))]
+              (-> cfg
+                  (dissoc :system-prompt-file)
+                  (assoc :system-prompt (str/trim (fs/readFileSync resolved "utf8")))))
+            cfg))
+        (catch :default e
+          (js/console.error (str "xi: failed to read agent config " fp ": "
+                                 (.-message e)))
+          nil)))))
 
 (def ^:private CLAUDE_PROJECTS_DIR
   (.join node-path HOME ".claude" "projects"))
@@ -98,20 +132,24 @@
 (defn create-session
   "Create a new Xi session. Returns session state map.
    opts:
-     :personal-agent? - store in personal-agent sessions dir"
+     :personal-agent? - store in personal-agent sessions dir
+     :agent           - named agent id (subdir of the personal-agent dir;
+                        implies :personal-agent?)"
   [cwd & [opts]]
-  (let [dir (if (:personal-agent? opts)
-              PERSONAL_AGENT_SESSIONS_DIR
+  (let [pa? (boolean (or (:personal-agent? opts) (:agent opts)))
+        dir (if pa?
+              (personal-agent-dir (:agent opts))
               (xi-session-dir cwd))
         session-id (gen-uuid-v7)
         timestamp (iso-now)
-        meta {:id session-id
-              :cli-session-id nil
-              :cwd cwd
-              :created timestamp
-              :name nil
-              :model nil
-              :personal-agent? (:personal-agent? opts)}]
+        meta (cond-> {:id session-id
+                      :cli-session-id nil
+                      :cwd cwd
+                      :created timestamp
+                      :name nil
+                      :model nil
+                      :personal-agent? pa?}
+               (:agent opts) (assoc :agent (:agent opts)))]
     (when-not (fs/existsSync dir)
       (fs/mkdirSync dir #js {:recursive true}))
     (assoc meta :_dir dir)))
@@ -121,7 +159,7 @@
   [session]
   (let [dir (or (:_dir session)
                 (if (:personal-agent? session)
-                  PERSONAL_AGENT_SESSIONS_DIR
+                  (personal-agent-dir (:agent session))
                   (xi-session-dir (:cwd session))))]
     (.join node-path dir (str (:id session) ".tree.jsonl"))))
 
@@ -130,7 +168,7 @@
   [session]
   (let [dir (or (:_dir session)
                 (if (:personal-agent? session)
-                  PERSONAL_AGENT_SESSIONS_DIR
+                  (personal-agent-dir (:agent session))
                   (xi-session-dir (:cwd session))))
         filepath (.join node-path dir (str (:id session) ".json"))
         data (dissoc session :_dir :source)]
@@ -144,7 +182,7 @@
   [session]
   (or (:_dir session)
       (if (:personal-agent? session)
-        PERSONAL_AGENT_SESSIONS_DIR
+        (personal-agent-dir (:agent session))
         (xi-session-dir (:cwd session)))))
 
 (defn canvas-sidecar-path
@@ -589,11 +627,20 @@
            reverse
            vec)))))
 
-(defn list-personal-agent-sessions
-  "List sessions from the personal-agent sessions dir only.
-   Returns vec of session summaries, newest first."
+(defn- list-all-personal-agent-session-files
+  "All session metadata files across every named-agent subdir of the
+   personal-agent dir."
   []
-  (let [xi-sessions (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
+  (->> (list-dir-subdirs PERSONAL_AGENT_DIR)
+       (mapcat #(list-dir-files (.join node-path PERSONAL_AGENT_DIR %) ".json"))
+       vec))
+
+(defn list-personal-agent-sessions
+  "List sessions from the personal-agent sessions dir only. With an agent-id,
+   lists that named agent's dir; without, the default (root) agent.
+   Returns vec of session summaries, newest first."
+  [& [agent-id]]
+  (let [xi-sessions (->> (list-dir-files (personal-agent-dir agent-id) ".json")
                          (keep #(cached-summary read-xi-session-meta %)))]
     (annotate-dismissed
      (annotate-favorites
@@ -615,10 +662,11 @@
   (first (filter (partial summary-matches-id? session-id) (list-all-sessions))))
 
 (defn find-personal-agent-session-by-id
-  "Find a session summary by its ID in the personal-agent sessions dir."
-  [session-id]
+  "Find a session summary by its ID in the personal-agent sessions dir.
+   With an agent-id, searches that named agent's dir."
+  [session-id & [agent-id]]
   (first (filter (partial summary-matches-id? session-id)
-                 (list-personal-agent-sessions))))
+                 (list-personal-agent-sessions agent-id))))
 
 ;; ── Response counting (for unread indicators) ────────────────────────────────
 
@@ -661,7 +709,7 @@
    takes."
   [session-ids]
   (let [summaries   (concat (list-all-sessions)
-                            (->> (list-dir-files PERSONAL_AGENT_SESSIONS_DIR ".json")
+                            (->> (list-all-personal-agent-session-files)
                                  (keep #(cached-summary read-xi-session-meta %))))
         id->summary (persistent!
                      (reduce (fn [acc s]
@@ -712,7 +760,8 @@
                :model (:model data)
                :source :xi}
         ;; Keep the flag so resumed sessions save back to the PA dir
-        (:personal-agent? data) (assoc :personal-agent? true)))
+        (:personal-agent? data) (assoc :personal-agent? true)
+        (:agent data) (assoc :agent (:agent data))))
 
     :claude
     {:id (:session-id summary)

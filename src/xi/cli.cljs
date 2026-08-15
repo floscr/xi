@@ -171,10 +171,16 @@ FLAGS
   --headless                 server: run without a local TUI (clients attach remotely).
   --personal-agent-only      server/prompt: personal-assistant mode (no coding
                              tools, web_search only; prompt: no AGENTS.md context).
+  --agent ID                 prompt: run as a named personal agent. Sessions live
+                             in ~/.config/xi/personal-agent/<ID>/; an optional
+                             agent.edn there sets :system-prompt(-file)/:model.
+                             Implies --personal-agent-only.
   --debug-events             Write the full event stream as JSONL (see docs).
   --stream                   prompt: stream response tokens to stdout as they arrive.
   --no-store                 prompt: run ephemerally — leave no session behind.
   --json                     sessions: emit a JSON array instead of TSV lines.
+                             prompt: emit {\"session-id\", \"text\"} JSON instead
+                             of raw text (for scripting with --agent/--session).
   --all                      sessions: list every saved chat, not just recent.
   --limit N                  sessions: cap the number of chats listed.
 
@@ -219,6 +225,8 @@ See docs/cli.md for the full reference.")
           "--no-auto-join" (recur (next args) (assoc opts :auto-join? false))
           "--headless"     (recur (next args) (assoc opts :headless? true))
           "--personal-agent-only" (recur (next args) (assoc opts :personal-agent? true))
+          "--agent"        (recur (nnext args) (assoc opts :agent (second args)
+                                                     :personal-agent? true))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
           "--model"        (recur (nnext args) (assoc opts :model (second args)))
           "--session"      (recur (nnext args) (assoc opts :session-id (second args)))
@@ -371,13 +379,20 @@ See docs/cli.md for the full reference.")
    turn ends. Dialogs (permission confirms, cwd recovery) resolve to their safe
    defaults since no client is attached. Exits 0 on success, 1 on error.
 
+   The run persists an Xi session file (like any other mode), so a one-shot
+   conversation can be continued later via --session; --json emits
+   {\"session-id\", \"text\"} for scripting that loop.
+
    With :no-store? the turn leaves no trace: it runs against a throwaway
    CLAUDE_CONFIG_DIR (a temp mirror of the real config) so the Claude CLI
    writes its session transcript into a temp dir that is torn down on exit,
-   never landing in ~/.claude/projects. The one-shot already never persists an
-   Xi session file, so this makes the whole run ephemeral."
-  [{:keys [prompt-text stream? no-store? personal-agent?] :as opts}]
-  (let [{:keys [model effort]} (resolve-model-opts opts)
+   never landing in ~/.claude/projects, and the Xi session save is skipped."
+  [{:keys [prompt-text stream? no-store? personal-agent? agent session-id json?] :as opts}]
+  (let [;; --agent: optional per-agent config (system prompt + model) read from
+        ;; ~/.config/xi/personal-agent/<agent>/agent.edn (root agent included).
+        agent-cfg (when personal-agent? (session/agent-config agent))
+        {:keys [model effort]} (resolve-model-opts
+                                (update opts :model #(or % (:model agent-cfg))))
         cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
         ;; --no-store: point the Claude CLI at a throwaway config dir so its
         ;; transcript lands in a temp dir we delete on exit (see finish!).
@@ -399,12 +414,26 @@ See docs/cli.md for the full reference.")
         ;; mirrors the server's :room/setup PA provisioning.
         agents-files (when-not personal-agent? (system-prompt/find-agents-md cwd))
         system-parts (if personal-agent?
-                       [{:source "personal-agent"
-                         :text   system-prompt/PERSONAL_AGENT_PROMPT}]
+                       [{:source (if agent (str "agent:" agent) "personal-agent")
+                         :text   (or (:system-prompt agent-cfg)
+                                     system-prompt/PERSONAL_AGENT_PROMPT)}]
                        (into (system-prompt/load-agents-parts cwd)
                              (ext/system-prompt-parts composed cwd)))
         system (system-prompt/parts->system system-parts)
-        sess (session/create-session cwd (when personal-agent? {:personal-agent? true}))
+        ;; --session: resume an existing conversation — load its metadata and
+        ;; seed :provider-session-id so the provider continues the transcript.
+        resumed (when session-id
+                  (if personal-agent?
+                    (session/find-personal-agent-session-by-id session-id agent)
+                    (session/find-session-by-id session-id)))
+        _ (when (and session-id (not resumed))
+            (.write js/process.stderr (str "xi: session not found: " session-id "\n"))
+            (js/process.exit 1))
+        sess (if resumed
+               (let [loaded (session/load-session resumed)]
+                 (assoc loaded :provider-session-id (:cli-session-id loaded)))
+               (session/create-session
+                cwd (when personal-agent? {:personal-agent? true :agent agent})))
         acc  #js {:out "" :error nil}
         finish!
         (fn []
@@ -413,12 +442,25 @@ See docs/cli.md for the full reference.")
           (let [code (if (.-error acc) 1 0)]
             (when (.-error acc)
               (.write js/process.stderr (str (.-error acc) "\n")))
-            (let [tail (if stream? "\n" (str (.-out acc) "\n"))]
+            (let [tail (cond
+                         ;; --json: machine-readable one-shot result. The
+                         ;; session id is the Xi session id — pass it back via
+                         ;; --session to continue the conversation.
+                         json?   (str (js/JSON.stringify
+                                       #js {:session-id (:id sess)
+                                            :text (.-out acc)})
+                                      "\n")
+                         stream? "\n"
+                         :else   (str (.-out acc) "\n"))]
               (.write js/process.stdout tail
                       (fn [] (js/process.exit code))))))
         handlers (-> (make-handlers (:commands composed))
                      ;; One-shot: skip auto-titling (naming chain) on submit.
                      (assoc :prompt/submit (:prompt/submit agent/handlers))
+                     ;; --no-store: drop the turn-end session sync so no Xi
+                     ;; session file is left behind.
+                     (cond-> no-store?
+                       (assoc :agent/turn-end (:agent/turn-end agent/handlers)))
                      (ext/merge-handlers composed)
                      (merge (:handlers dialogs)))
         {:keys [dispatch! add-tap!]}
@@ -452,13 +494,16 @@ See docs/cli.md for the full reference.")
          :agent/text-delta
          (let [t (:text event)]
            (set! (.-out acc) (str (.-out acc) t))
-           (when stream? (.write js/process.stdout t)))
+           (when (and stream? (not json?)) (.write js/process.stdout t)))
 
          :agent/error
          (set! (.-error acc) (or (get-in event [:error :message])
                                  (str (:error event))))
 
-         :agent/turn-end (finish!)
+         ;; Deferred a tick: taps run before the effect interpreter, and the
+         ;; :agent/turn-end effects include :session/sync (the session save).
+         ;; Exiting synchronously here would race — and lose — that write.
+         :agent/turn-end (js/setTimeout finish! 0)
          nil)))
     (dispatch! {:type :room/create
                 :room-id "main"

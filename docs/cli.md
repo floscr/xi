@@ -30,15 +30,53 @@ Defaults to `ws://localhost:<port>`.
 | --- | --- | --- |
 | `--port N` | all | Override the default port (`7474`; falls back to `XI_PORT`). |
 | `--model NAME` | all | Override the default model (also honours `XI_MODEL`). |
-| `--session ID` | standalone, `join`, `create` | Resume a saved session by its id instead of opening a fresh room. |
+| `--session ID` | standalone, `join`, `create`, `prompt` | Resume a saved session by its id instead of opening a fresh room. In prompt mode this continues the saved conversation (the provider transcript is resumed) — chain one-shots into a stateful conversation. |
 | `--prompt TEXT` | standalone, client | Send an initial prompt as soon as the room is ready. |
 | `--no-auto-join` | standalone | Stay a local room; don't connect to a running server. |
 | `--join` / `--create` | standalone | Redirect the bare `xi` invocation onto a running server (latest / new room). |
 | `--headless` | `server` | Run the server without a local TUI; clients attach remotely. |
 | `--personal-agent-only` | `server`, `prompt` | Personal-assistant mode — no coding tools, `web_search` only. In prompt mode the run also gets no AGENTS.md/skills context, only the personal-agent system prompt. |
+| `--agent ID` | `prompt` | Run as a **named personal agent** (implies `--personal-agent-only`). Sessions are stored per agent in `~/.config/xi/personal-agent/<ID>/`, and an optional `agent.edn` there customizes the agent — see [Named agents](#named-agents) below. |
 | `--debug-events` | standalone, `server` | Write the full event stream as JSONL (see [architecture.md](architecture.md)). |
 | `--stream` | `prompt` | Stream response tokens to stdout as they arrive (otherwise buffered until the turn ends). |
-| `--no-store` | `prompt` | Run ephemerally: the turn uses a throwaway `CLAUDE_CONFIG_DIR` that is deleted on exit, so it leaves no session in `~/.claude/projects` and never appears in any session list. See [prompt-mode.md](prompt-mode.md). |
+| `--no-store` | `prompt` | Run ephemerally: the turn uses a throwaway `CLAUDE_CONFIG_DIR` that is deleted on exit and the Xi session save is skipped, so it leaves no session anywhere and never appears in any session list. See [prompt-mode.md](prompt-mode.md). |
+| `--json` | `prompt`, `sessions` | prompt: emit `{"session-id": …, "text": …}` instead of raw text — pass the id back via `--session` to continue the conversation programmatically. sessions: emit a JSON array instead of TSV. |
+
+## Named agents
+
+`xi prompt --agent <id>` runs the one-shot as a named personal agent: a
+personal-assistant-mode run (no coding tools) whose sessions live in their own
+directory, `~/.config/xi/personal-agent/<id>/` — one directory per consumer
+application (a fitness coach, a finance categorizer, …), fully isolated from
+coding sessions and from each other.
+
+An optional `agent.edn` in that directory customizes the agent:
+
+```clojure
+;; ~/.config/xi/personal-agent/coach/agent.edn
+{:system-prompt-file "prompt.md"          ; or :system-prompt "inline text…"
+ :model              "claude-haiku-4-5-20251001"}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `:system-prompt` | System prompt text; replaces the default personal-agent prompt. |
+| `:system-prompt-file` | Path to a file holding the system prompt (relative paths resolve against the agent dir). Wins over the default; `:system-prompt` wins over it. |
+| `:model` | Default model for this agent. Precedence: `--model` flag > `agent.edn` > `XI_MODEL` > built-in default. |
+
+The intended scripting loop:
+
+```bash
+# first turn — returns the session id
+xi prompt --agent coach --json "I ran 5k today"
+# → {"session-id":"0198…","text":"Nice pace! …"}
+
+# later turns — same conversation, no history re-sending needed
+xi prompt --agent coach --session 0198… --json "how does that compare to last week?"
+```
+
+The root agent (plain `--personal-agent-only`, sessions in
+`…/personal-agent/root/`) reads an `agent.edn` the same way.
 
 ## Environment
 
@@ -66,6 +104,9 @@ xi prompt "summarize the architecture in one sentence"   # one-shot, buffered
 xi -p    "count from 1 to 10" --stream                   # stream tokens live
 echo "what does xi.wire do?" | xi prompt                 # prompt from stdin
 git diff | xi -p --no-store "write a commit message"     # pipe + ephemeral run
+
+xi prompt --agent coach --json "hi"        # named agent, JSON out
+xi prompt --agent coach --session 0198… "…" # continue that conversation
 
 xi join                                    # attach to the latest room on :7474
 xi create ws://host:7474                   # new room on a remote server

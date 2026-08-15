@@ -119,7 +119,8 @@
 (defn- list-room-sessions [room scope]
   (let [pa? (get-in room [:agent :personal-agent?])]
     (cond
-      pa?           (session/list-personal-agent-sessions)
+      pa?           (session/list-personal-agent-sessions
+                     (get-in room [:session :agent]))
       (= :all scope) (session/list-all-sessions)
       :else          (session/list-sessions (:cwd room)))))
 
@@ -174,7 +175,8 @@
                    :room-id room-id
                    :session (session/create-session
                              (or (:cwd room) (.cwd js/process))
-                             (when pa? {:personal-agent? true}))
+                             (when pa? {:personal-agent? true
+                                        :agent (:agent current)}))
                    :after-prompt after-prompt})))
 
    :session/fork
@@ -192,7 +194,8 @@
                    :room-id room-id
                    :session (session/create-session
                              (or (:cwd room) (.cwd js/process))
-                             (when pa? {:personal-agent? true}))})))
+                             (when pa? {:personal-agent? true
+                                        :agent (:agent current)}))})))
 
    :session/sync
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]

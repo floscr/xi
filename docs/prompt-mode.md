@@ -37,6 +37,15 @@ terminal prints a usage error instead of hanging).
                 limited to web_search — no file/shell/browser access. Useful
                 for piping untrusted or minimal data to the model from other
                 services (combine with --no-store).
+--agent ID      Run as a named personal agent (implies --personal-agent-only).
+                Sessions live in ~/.config/xi/personal-agent/<ID>/ and an
+                optional agent.edn there sets the system prompt and model.
+                See "Named agents" in cli.md.
+--session ID    Continue a saved conversation: the provider transcript is
+                resumed, so the agent remembers earlier turns — no need to
+                re-send history. The id is the Xi session id printed by --json.
+--json          Emit {"session-id": …, "text": …} instead of raw text, for
+                programmatic use — feed the id back via --session.
 ```
 
 `XI_CWD` (or the current directory) sets the working directory the agent runs
@@ -57,7 +66,16 @@ the output is safe to capture and parse.
 - **No auto-titling.** A one-shot run skips the session-naming turn, so it
   makes exactly one provider call.
 - **Sessions are still saved** (unless `--no-store`). The turn is persisted
-  like any other, so it can later be `/resume`d from a TUI or the web client.
+  like any other, so it can later be `/resume`d from a TUI or the web client —
+  or continued from another one-shot via `--session`, which is how external
+  services hold a stateful conversation through prompt mode:
+
+  ```bash
+  xi prompt --agent coach --json "I ran 5k today"
+  # → {"session-id":"0198…","text":"…"}
+  xi prompt --agent coach --session 0198… --json "and yesterday?"
+  ```
+
   Pass `--no-store` to run ephemerally — the turn writes its transcript to a
   throwaway `CLAUDE_CONFIG_DIR` that is torn down on exit, so nothing is left
   in `~/.claude/projects` and the run never shows up in any session list.
