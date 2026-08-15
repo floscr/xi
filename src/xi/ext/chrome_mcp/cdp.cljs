@@ -30,11 +30,15 @@
             (let [ws      (js/WebSocket. url)
                   pending (js/Map.)
                   next-id (atom 0)
+                  dead    (atom false)
                   fail!   (fn [reason]
+                            (reset! dead true)
                             (doseq [k (js/Array.from (.keys pending))]
                               (when-let [p (.get pending k)]
                                 (.delete pending k)
-                                ((.-reject p) (js/Error. reason)))))]
+                                ((.-reject p) (js/Error. reason)))))
+                  open?   (fn [] (and (not @dead)
+                                      (= (.-readyState ws) (.-OPEN js/WebSocket))))]
               (set! (.-onmessage ws)
                     (fn [ev]
                       (when-let [msg (try (js/JSON.parse (.-data ev)) (catch :default _ nil))]
@@ -51,13 +55,26 @@
                     (fn [_]
                       (resolve
                        {:call  (fn [method params]
+                                 ;; Bun's WebSocket.send() on a CLOSED socket
+                                 ;; silently no-ops (no throw), so a call on a
+                                 ;; dead client would register a pending entry
+                                 ;; that never settles — hanging forever. Guard
+                                 ;; the readyState and reject instead, so callers
+                                 ;; (and the guard's reconnect) can recover.
                                  (js/Promise.
                                   (fn [res rej]
-                                    (let [id (swap! next-id inc)]
-                                      (.set pending id #js {:resolve res :reject rej})
-                                      (.send ws (js/JSON.stringify
-                                                 (clj->js (cond-> {:id id :method method}
-                                                            (some? params) (assoc :params params)))))))))
+                                    (if-not (open?)
+                                      (rej (js/Error. "CDP socket closed"))
+                                      (let [id (swap! next-id inc)]
+                                        (.set pending id #js {:resolve res :reject rej})
+                                        (try
+                                          (.send ws (js/JSON.stringify
+                                                     (clj->js (cond-> {:id id :method method}
+                                                                (some? params) (assoc :params params)))))
+                                          (catch :default e
+                                            (.delete pending id)
+                                            (rej e))))))))
+                        :closed? (fn [] (not (open?)))
                         :close (fn [] (try (.close ws) (catch :default _ nil)))})))))))))) 
 
 (defn page-windows

@@ -75,10 +75,15 @@
   [forward browser-url]
   (let [cdp*   (atom nil)   ;; memoized Promise<cdp-client>
         owned* (atom {})]   ;; {cdp-window-id → workspace-name} of windows we created
-    (letfn [(cdp-client []
-              (or @cdp*
-                  (reset! cdp* (-> (cdp/connect browser-url)
-                                   (.catch (fn [e] (reset! cdp* nil) (throw e)))))))
+    (letfn [(cdp-connect! []
+              (reset! cdp* (-> (cdp/connect browser-url)
+                               (.catch (fn [e] (reset! cdp* nil) (throw e))))))
+            (cdp-client []
+              ;; Reconnect a memoized client whose socket has since died (Chrome
+              ;; relaunched / browser endpoint dropped). Reusing a dead client
+              ;; would `.send` into the void and hang forever (see xi.ext.chrome-mcp.cdp).
+              (-> (or @cdp* (cdp-connect!))
+                  (.then (fn [c] (if ((:closed? c)) (cdp-connect!) c)))))
 
             (classify [ws]
               ;; → Promise<{:result :text :scope}>
