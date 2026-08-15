@@ -1844,6 +1844,22 @@ body {
   .session-delete-btn { opacity: 0.7; }
 }
 
+/* ⋮ more-actions trigger on session cards. Reveal on hover (desktop), faint
+   but always visible on touch — mirrors .session-delete-btn. */
+.session-more-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--fg-2);
+}
+.session-more-btn:hover { color: var(--fg-0); }
+@media (hover: hover) {
+  .project-card:hover .session-more-btn { opacity: 1; }
+}
+@media (hover: none) {
+  .session-more-btn { opacity: 0.7; }
+}
+
 .project-card-path {
   font-size: var(--font-sm);
   color: var(--fg-2);

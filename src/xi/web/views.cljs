@@ -2151,13 +2151,28 @@
                    :busy?       (boolean (some :busy? rooms))
                    :has-dialog? (boolean (some :has-dialog? rooms))}))))))
 
+(defn- open-session-menu!
+  "Dispatch :session/menu-open anchored at (x, y), reading the point from the
+   triggering DOM event: pointer coords for a right-click, else the trigger
+   button's bottom-left corner."
+  [dispatch! session-id name x y]
+  (dispatch! {:type :session/menu-open
+              :session-id session-id :name name :x x :y y}))
+
 (defn- session-card [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? unread? favorite? dismissed? dismissable? show-project?]}]
+  (let [menuable? (and session-id (not busy?) (not has-dialog?))]
   [:div {:class ["project-card" (when active? "project-card--active")
                  (when has-dialog? "project-card--dialog")
                  (when current? "project-card--current")]
          :replicant/key (or session-id (str "card-" name))
-         :on {:click (fn [_] (dispatch! {:type :route/navigate
-                                         :page :chat :session-id session-id}))}}
+         :on (cond-> {:click (fn [_] (dispatch! {:type :route/navigate
+                                                 :page :chat :session-id session-id}))}
+               menuable?
+               (assoc :contextmenu
+                      (fn [^js e]
+                        (.preventDefault e)
+                        (open-session-menu! dispatch! session-id name
+                                            (.-clientX e) (.-clientY e)))))}
    [:div {:class ["project-card-icon"]}
     (cond
       has-dialog? (icon/icon {:icon-name :alert-circle :size :sm})
@@ -2196,9 +2211,42 @@
                :on {:click (fn [^js e]
                              (.stopPropagation e)
                              (dispatch! {:type :dismissed/toggle :session-id session-id}))}}
-      (icon/icon {:icon-name (if dismissed? :eye :eye-off) :size :sm})])])
+      (icon/icon {:icon-name (if dismissed? :eye :eye-off) :size :sm})])
+   ;; ⋮ more-actions trigger — opens the session context menu (Delete). The
+   ;; reliable touch/mobile entry point (right-click also opens it on desktop).
+   (when menuable?
+     [:button {:class ["project-card-action" "session-more-btn"]
+               :title "More actions"
+               :on {:click (fn [^js e]
+                             (.stopPropagation e)
+                             (let [r (.getBoundingClientRect (.-currentTarget e))]
+                               (open-session-menu! dispatch! session-id name
+                                                   (.-left r) (.-bottom r))))}}
+      (more-vertical-icon)])]))
 
 
+
+(defn- session-menu
+  "Context menu for a session card, summoned by right-clicking the card or
+   tapping its ⋮ button. Anchored at {:x :y}; clamped into the viewport on
+   mount. Reuses the bubble-menu styling. Delete permanently removes the
+   session from disk (server unlinks the file)."
+  [dispatch! {:keys [session-id x y]}]
+  (let [close! (fn [] (dispatch! {:type :session/menu-close}))]
+    [:div {:class ["bubble-menu-backdrop"]
+           :on {:click       (fn [_] (close!))
+                :contextmenu (fn [^js e] (.preventDefault e) (close!))}}
+     [:div {:class ["bubble-menu"]
+            :style {:top (str y "px") :left (str x "px")}
+            :replicant/on-mount clamp-bubble-menu!
+            :on {:click (fn [^js e] (.stopPropagation e))}}
+      [:button {:class ["bubble-menu-item" "bubble-menu-item--danger"]
+                :on {:click (fn [^js e]
+                              (.stopPropagation e)
+                              (close!)
+                              (dispatch! {:type :session/delete :session-id session-id}))}}
+       (icon/icon {:icon-name :trash :size :sm})
+       [:span "Delete"]]]]))
 
 (defn- project-dir-card
   "Card for a project directory in the home view."
@@ -3175,5 +3223,7 @@
           :git-status (git-status-view state dispatch!)
           (home-view state dispatch!))))
      (command-palette state dispatch!)
+     (when-let [menu (:web/session-menu state)]
+       (session-menu dispatch! menu))
      (auth-request-banner state dispatch!)
      (auth-overlay state))))

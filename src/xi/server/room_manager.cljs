@@ -269,6 +269,24 @@
                     (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
                     close-rids)}))
 
+(defn- session-delete
+  "Roomless: permanently delete a saved session by id. The unlink + lobby
+   rebroadcast happen in the :session/delete-reply effect (needs disk access).
+
+   Like dismissed-toggle, we also tear down the session's live room when it is
+   safe to do so — it holds no client, its agent isn't mid-turn, no dialog is
+   pending, and it isn't tracking background processes (keep-alive?) — so a
+   deleted session doesn't linger as a live room that would re-persist itself."
+  [st {:keys [session-id]}]
+  (let [close-rids (for [[rid room] (:rooms st)
+                         :when (and (= session-id (get-in room [:session :id]))
+                                    (not (keep-alive? room))
+                                    (empty? (clients-in-room st rid)))]
+                     rid)]
+    {:effects (into [[:session/delete-reply {:session-id session-id}]]
+                    (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
+                    close-rids)}))
+
 (defn- session-mark-read
   "Roomless: record a session as seen up to its current response count. The
    authoritative count is recomputed server-side (in the reply effect), so the
@@ -326,6 +344,7 @@
    :file/web-read          file-web-read
    :favorites/toggle       favorites-toggle
    :dismissed/toggle       dismissed-toggle
+   :session/delete         session-delete
    :session/mark-read      session-mark-read
    :rooms/prune            rooms-prune})
 

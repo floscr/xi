@@ -55,6 +55,7 @@
    Extensions add theirs via :lobby-relevant."
   #{:room/create :room/close :room/attach :room/leave :favorites/changed
     :dismissed/changed
+    :session/deleted
     :read-state/changed
     :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
     :ui/dialog-open :ui/dialog-response})
@@ -69,7 +70,7 @@
    via :roomless-events."
   #{:client/update :session/counts :models/web-list :session/content-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
-    :favorites/toggle :dismissed/toggle :session/mark-read
+    :favorites/toggle :dismissed/toggle :session/delete :session/mark-read
     :rooms/prune})
 
 (defn- gen-client-id []
@@ -372,6 +373,16 @@
       (fn [{:keys [dispatch!]} {:keys [session-id]}]
         (session/toggle-dismissed! session-id)
         (dispatch! {:type :dismissed/changed}))
+
+      ;; Permanently delete a saved session's on-disk file, then fan a fresh
+      ;; lobby out so every device drops the card (:session/deleted is
+      ;; lobby-relevant, so the tap rebroadcasts without the gone session).
+      :session/delete-reply
+      (fn [{:keys [dispatch!]} {:keys [session-id]}]
+        (when-let [summary (or (session/find-session-by-id session-id)
+                               (session/find-personal-agent-session-by-id session-id))]
+          (session/delete-session! summary))
+        (dispatch! {:type :session/deleted}))
 
       ;; Persist a session's seen-count at its current (authoritative) response
       ;; count, then fan a fresh lobby out so every device clears the dot
