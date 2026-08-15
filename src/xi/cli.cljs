@@ -393,7 +393,25 @@ See docs/cli.md for the full reference.")
         agent-cfg (when personal-agent? (session/agent-config agent))
         {:keys [model effort]} (resolve-model-opts
                                 (update opts :model #(or % (:model agent-cfg))))
-        cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
+        ;; --session: resume an existing conversation — load its metadata and
+        ;; seed :provider-session-id so the provider continues the transcript.
+        resumed (when session-id
+                  (if personal-agent?
+                    (session/find-personal-agent-session-by-id session-id agent)
+                    (session/find-session-by-id session-id)))
+        _ (when (and session-id (not resumed))
+            (.write js/process.stderr (str "xi: session not found: " session-id "\n"))
+            (js/process.exit 1))
+        loaded (when resumed (session/load-session resumed))
+        ;; Personal-agent one-shots run in the agent's own dir, and resumes
+        ;; follow the session's recorded cwd: the provider resolves a resume id
+        ;; within the *current* cwd's transcript dir, so the cwd must be stable
+        ;; across turns — callers (bb services) typically spawn from throwaway
+        ;; temp dirs, which would strand each turn in its own project dir.
+        cwd (or (aget js/process.env "XI_CWD")
+                (when-let [c (:cwd loaded)] (when (fs/existsSync c) c))
+                (when personal-agent? (session/personal-agent-dir agent))
+                (.cwd js/process))
         ;; --no-store: point the Claude CLI at a throwaway config dir so its
         ;; transcript lands in a temp dir we delete on exit (see finish!).
         config-dir (when no-store? (session/make-throwaway-config-dir!))
@@ -420,18 +438,8 @@ See docs/cli.md for the full reference.")
                        (into (system-prompt/load-agents-parts cwd)
                              (ext/system-prompt-parts composed cwd)))
         system (system-prompt/parts->system system-parts)
-        ;; --session: resume an existing conversation — load its metadata and
-        ;; seed :provider-session-id so the provider continues the transcript.
-        resumed (when session-id
-                  (if personal-agent?
-                    (session/find-personal-agent-session-by-id session-id agent)
-                    (session/find-session-by-id session-id)))
-        _ (when (and session-id (not resumed))
-            (.write js/process.stderr (str "xi: session not found: " session-id "\n"))
-            (js/process.exit 1))
-        sess (if resumed
-               (let [loaded (session/load-session resumed)]
-                 (assoc loaded :provider-session-id (:cli-session-id loaded)))
+        sess (if loaded
+               (assoc loaded :provider-session-id (:cli-session-id loaded))
                (session/create-session
                 cwd (when personal-agent? {:personal-agent? true :agent agent})))
         acc  #js {:out "" :error nil}

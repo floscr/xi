@@ -49,7 +49,16 @@ terminal prints a usage error instead of hanging).
 ```
 
 `XI_CWD` (or the current directory) sets the working directory the agent runs
-in, exactly like the other modes.
+in, exactly like the other modes — except personal-agent runs (`--agent`,
+`--personal-agent-only`), which run in the agent's own directory
+(`~/.config/xi/personal-agent/<id>/`), and `--session` resumes, which follow
+the session's recorded cwd. The provider resolves a resume id within the
+current cwd's transcript dir, so the cwd must be stable across turns for
+`--session` to work — callers spawning from throwaway temp dirs would
+otherwise strand each turn in its own project dir. (`XI_CWD` still overrides.)
+
+From Babashka/JVM services, use the bundled client lib — see
+[bb-client.md](bb-client.md).
 
 ## Output & exit codes
 

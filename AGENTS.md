@@ -226,6 +226,10 @@ src/xi/
   util.cljs            — shared pure utilities
 ```
 
+Outside `src/`: `bb-client/` — a Babashka/JVM client lib (`xi.client/prompt!`)
+for calling xi's one-shot prompt mode from other services, paired with named
+agent profiles (`xi prompt --agent`). See [docs/bb-client.md](docs/bb-client.md).
+
 ### Web Client
 
 Browser-based client built with shadow-cljs `:browser` target and [Replicant](https://github.com/cjohansen/replicant) for rendering. Runs the same pure handlers as the TUI over the WS transport; supports offline mode with localStorage caching.

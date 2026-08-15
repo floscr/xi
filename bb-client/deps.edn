@@ -1,0 +1,4 @@
+{:paths ["src"]
+ ;; cheshire is built into babashka; the dep is only needed when this lib is
+ ;; consumed from JVM Clojure.
+ :deps {cheshire/cheshire {:mvn/version "5.13.0"}}}

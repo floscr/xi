@@ -78,6 +78,9 @@ xi prompt --agent coach --session 0198… --json "how does that compare to last 
 The root agent (plain `--personal-agent-only`, sessions in
 `…/personal-agent/root/`) reads an `agent.edn` the same way.
 
+From Babashka/JVM services, use the bundled client lib instead of spawning
+the process by hand — see [bb-client.md](bb-client.md).
+
 ## Environment
 
 | Variable | Default | Purpose |
