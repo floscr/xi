@@ -133,7 +133,15 @@
 
                   ;; Fetch the working-tree diff when entering the git-status page
                   (and (= page :git-status) cwd)
-                  (conj [:app/dispatch {:type :git-status/load :cwd cwd}]))]
+                  (conj [:app/dispatch {:type :git-status/load :cwd cwd}])
+
+                  ;; Closing the mobile drawer on a real navigation (see the
+                  ;; :web/sidebar-open? reset below): force a re-raster so iOS
+                  ;; WebKit doesn't leave the drawer stuck open on a session
+                  ;; switch. No-op on desktop/docked. Skipped on the post-join
+                  ;; URL sync (already?), which must not touch the drawer.
+                  (and (:web/sidebar-open? st) (not already?))
+                  (conj [:sidebar/repaint]))]
     {:state   (cond-> (assoc st :web/route route
                             ;; reset the virtualized timeline window on every
                             ;; navigation so a new session starts compact

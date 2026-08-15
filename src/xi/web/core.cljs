@@ -974,8 +974,32 @@
 ;; reach it without a forward reference.
 (defonce ^:private dispatch-ref (atom nil))
 
+(defn- repaint-closed-drawer!
+  "iOS WebKit can leave the recent-sessions drawer showing a STALE composited
+   frame — stuck at translateX(0) as if open — even though its state is closed
+   (e.g. after a session switch, or when a standalone PWA resumes). Drop the
+   drawer's layer for one frame so WebKit re-rasterizes it at its true closed
+   (off-screen) position. No-op when the drawer is docked (wide screens) or
+   genuinely open, so we never flash a visible drawer."
+  [wide? sidebar-open?]
+  (when (and (not wide?) (not sidebar-open?))
+    (when-let [^js el (.querySelector js/document ".sidebar-layout--floating > .sidebar")]
+      (let [st (.-style el)]
+        (set! (.-display st) "none")
+        (js/requestAnimationFrame (fn [] (set! (.-display st) "")))))))
+
 (defn- web-effects [routes]
   {:history/push (router/history-effect routes)
+   ;; A session switch closes the drawer via state, but on iOS WebKit the
+   ;; drawer's composited layer can stay stuck open (translateX(0)) because
+   ;; the heavy timeline re-render on the same frame starves its transition.
+   ;; Force a re-raster after the render commits. No-op on desktop/docked.
+   :sidebar/repaint
+   (fn [{:keys [get-state]} _]
+     (js/requestAnimationFrame
+      (fn []
+        (let [s (get-state)]
+          (repaint-closed-drawer! (:web/wide? s) (:web/sidebar-open? s))))))
    :nav/back     router/back-effect
    :projects/sync-textarea
    (fn [_ {:keys [text]}]
@@ -1521,21 +1545,13 @@
       ;; rAF pass re-runs it after WebKit has settled the restored scale.
       (let [repaint-drawer!
             (fn []
-              ;; iOS WebKit can restore a standalone PWA showing a STALE
-              ;; composited frame of the recent-sessions drawer: it looks open
-              ;; (stuck at translateX(0)) even though its state is closed, until
-              ;; a later interaction — focusing the compose box, which opens the
-              ;; keyboard and resizes the viewport — forces a repaint. Drop the
-              ;; drawer's layer for a frame so it re-rasterizes at its true
-              ;; (closed, off-screen) position. Skipped when the drawer is docked
-              ;; (wide screens) or genuinely open, so we never flash a visible
-              ;; drawer.
+              ;; See repaint-closed-drawer!: a resumed standalone PWA can show a
+              ;; stale open frame of the drawer (stuck at translateX(0)) even
+              ;; though its state is closed, until a later interaction — focusing
+              ;; the compose box, which opens the keyboard and resizes the
+              ;; viewport — forces a repaint.
               (let [s @state]
-                (when (and (not (:web/wide? s)) (not (:web/sidebar-open? s)))
-                  (when-let [^js el (.querySelector js/document ".sidebar-layout--floating > .sidebar")]
-                    (let [st (.-style el)]
-                      (set! (.-display st) "none")
-                      (js/requestAnimationFrame (fn [] (set! (.-display st) ""))))))))
+                (repaint-closed-drawer! (:web/wide? s) (:web/sidebar-open? s))))
             on-resume (fn []
                         (reset-zoom!)
                         (set-vh!)
