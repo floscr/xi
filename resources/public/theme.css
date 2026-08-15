@@ -2737,6 +2737,14 @@ a.button-group-item:hover {
   align-items: center;
   pointer-events: none;
   color: var(--fg-2);
+  /* Focused inputs get z-index: 1 (to lift their accent border over joined
+     siblings) — keep the icon above them or it vanishes on focus. */
+  z-index: 2;
+}
+
+/* Focus: tint the icon with the accent to match the focused border. */
+.form-input-wrap:focus-within .form-input-icon {
+  color: var(--accent);
 }
 
 .form-input-icon--left {
