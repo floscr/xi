@@ -104,8 +104,12 @@
                      (.then (fn [body]
                               {:status (.-status resp)
                                :payload (try
-                                          (:payload (js->clj (js/JSON.parse body)
-                                                             :keywordize-keys true))
+                                          ;; GitHub nests the search payload under
+                                          ;; :blackbirdSearchRoute now; fall back to the
+                                          ;; old flat shape for resilience.
+                                          (let [p (:payload (js->clj (js/JSON.parse body)
+                                                                     :keywordize-keys true))]
+                                            (or (:blackbirdSearchRoute p) p))
                                           (catch :default _ nil))})))))
         (.catch (fn [err]
                   (js/clearTimeout timer)
