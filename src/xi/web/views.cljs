@@ -318,7 +318,7 @@
         label     (str name (when (seq summary)
                               (str " " (if bash?
                                          (str summary)
-                                         (util/truncate (first (str/split-lines (str summary))) 80)))))]
+                                         (first (str/split-lines (str summary)))))))]
     [:div {:class ["post" "post--tool"]}
      [:details {:class ["tool-call-block"] :open (boolean (expanded-tools name))}
       [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}

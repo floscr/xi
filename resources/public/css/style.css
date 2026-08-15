@@ -1473,6 +1473,18 @@ body {
   word-break: break-word;
 }
 
+/* Expanded: show the full, untruncated label (e.g. the whole command). */
+.tool-call-block[open] > .tool-call-toggle {
+  align-items: flex-start;
+}
+
+.tool-call-block[open] > .tool-call-toggle .tool-call-toggle-label {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .tool-call-content {
   padding: 0 0 var(--size-2);
   animation: fadeSlideIn 0.15s ease-out;
