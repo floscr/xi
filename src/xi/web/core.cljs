@@ -679,12 +679,27 @@
                                                           :text (str "/model " model)}]]})
           :skill/web-list-result (fn [st {:keys [skills]}]
                                     {:state (assoc st :web/skill-list skills)})
-          :skill/select          (fn [st {:keys [name room-id]}]
-                                    {:state (dissoc st :web/skill-list :web/palette-page :web/palette-open?)
-                                     :effects [[:palette/close nil]
-                                               [:ws/send {:type :input/submit
-                                                          :room-id room-id
-                                                          :text (str "/skill load " name)}]]})
+          :skill/select          (fn [st {:keys [name]}]
+                                    ;; Resolve the target like chat-view does: a
+                                    ;; new chat (route sid nil) must NOT adopt the
+                                    ;; previous room we're still attached to. With
+                                    ;; no matching room, route through
+                                    ;; :submit/pending so the virtual room is
+                                    ;; created first (else the skill loads into
+                                    ;; the old chat, or nowhere).
+                                    (let [text   (str "/skill load " name)
+                                          sid    (get-in st [:web/route :session-id])
+                                          active (state/active-room st)
+                                          room   (when (= (get-in active [:session :id]) sid)
+                                                   active)
+                                          rid    (:id room)]
+                                      {:state (dissoc st :web/skill-list :web/palette-page :web/palette-open?)
+                                       :effects [[:palette/close nil]
+                                                 (if rid
+                                                   [:ws/send {:type :input/submit
+                                                              :room-id rid :text text}]
+                                                   [:app/dispatch {:type :submit/pending
+                                                                   :session-id sid :text text}])]}))
           :diff/reopen           diff-reopen
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection

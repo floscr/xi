@@ -2895,8 +2895,7 @@
    :web/skill-list loads, then a command-item per skill. Selecting loads it via
    /skill load and closes the palette."
   [state dispatch!]
-  (let [room   (state/active-room state)
-        skills (:web/skill-list state)]
+  (let [skills (:web/skill-list state)]
     (cond
       (nil? skills)  [:div {:class ["command-loading"]} (spinner)]
       (empty? skills) [:div {:class ["command-empty"]} "No skills found"]
@@ -2907,8 +2906,7 @@
            {:icon :zap
             :value (str name " " description)
             :description description
-            :on-click (fn [_] (dispatch! {:type :skill/select
-                                          :name name :room-id (:id room)}))}
+            :on-click (fn [_] (dispatch! {:type :skill/select :name name}))}
            name))))))
 
 (defn- palette-project-insert-page
