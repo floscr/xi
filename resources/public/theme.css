@@ -3998,6 +3998,125 @@ summary,
 }
 
 
+/* ── Select ──────────────────────────────────────────────────────── */
+/* Custom framework-drawn select. The trigger mimics a form input; the
+   floating listbox is created by the __uiSelect JS runtime. */
+
+.select {
+  position: relative;
+  display: block;
+}
+
+/* ── Trigger ─────────────────────────────────────────────────────── */
+
+.select-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--size-2) var(--size-8) var(--size-2) var(--size-3);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  line-height: 1.5;
+  text-align: left;
+  background-color: var(--bg-0);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--size-2) center;
+  color: var(--fg-0);
+  border: var(--border-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.select-trigger:focus-visible {
+  border-color: var(--accent);
+  outline-offset: -1px;
+}
+
+.select-trigger:disabled {
+  background-color: var(--bg-2);
+  color: var(--fg-2);
+  cursor: not-allowed;
+}
+
+.select-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-value--placeholder {
+  color: var(--fg-2);
+}
+
+/* ── Menu (created by the JS runtime) ────────────────────────────── */
+
+.select-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 10rem;
+  max-height: 16rem;
+  padding: var(--size-1);
+  overflow-y: auto;
+  background: var(--bg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  animation: select-menu-in 0.12s ease;
+}
+
+@keyframes select-menu-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Option ──────────────────────────────────────────────────────── */
+
+.select-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--size-2) var(--size-3);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  line-height: 1.25;
+  text-align: left;
+  color: var(--fg-0);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.select-option:hover,
+.select-option:focus-visible {
+  background: var(--bg-2);
+  outline: none;
+}
+
+.select-option--selected {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ── Dark mode ───────────────────────────────────────────────────── */
+
+[data-theme="dark"] .select-trigger {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .select-trigger {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+}
+
+
 /* Separator — visually or semantically separates content */
 
 .separator {

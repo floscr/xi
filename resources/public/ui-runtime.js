@@ -202,6 +202,10 @@
     const [first2] = iterable(coll);
     return first2;
   }
+  function second(coll) {
+    const [_, v] = iterable(coll);
+    return v;
+  }
   var tolr = false;
   var LazyIterable = class {
     constructor(gen) {
@@ -1144,6 +1148,8 @@
       focus_first_item_BANG_(menu10);
       const on_click12 = (function(e) {
         if (not(menu10.contains(e.target))) {
+          e.preventDefault();
+          e.stopPropagation();
           return dismiss_BANG_();
         }
         ;
@@ -1631,6 +1637,248 @@
   init_BANG_4();
   window["__uiPopover"] = { "reposition": reposition_BANG_ };
 
+  // .compiled/select.mjs
+  var get_state2 = function() {
+    const or__23426__auto__1 = window["__uiSelectState"];
+    if (truth_(or__23426__auto__1)) {
+      return or__23426__auto__1;
+    } else {
+      const s2 = { "menu": null, "trigger": null, "cleanup": null };
+      window["__uiSelectState"] = s2;
+      return s2;
+    }
+    ;
+  };
+  var dismiss_BANG_2 = function() {
+    const state1 = get_state2();
+    if (truth_(state1.menu)) {
+      state1.menu.remove();
+      state1.menu = null;
+    }
+    ;
+    if (truth_(state1.trigger)) {
+      state1.trigger.setAttribute("aria-expanded", "false");
+      state1.trigger = null;
+    }
+    ;
+    if (truth_(state1.cleanup)) {
+      state1.cleanup();
+      return state1.cleanup = null;
+    }
+    ;
+  };
+  var update_trigger_BANG_ = function(trigger, value, label) {
+    trigger.dataset.selectValue = value;
+    const span1 = trigger.querySelector(".select-value");
+    if (truth_(span1)) {
+      span1.textContent = label;
+      span1.classList.remove("select-value--placeholder");
+    }
+    ;
+    const wrap2 = trigger.parentElement;
+    const input3 = truth_(wrap2) ? wrap2.querySelector("input[type=hidden]") : null;
+    if (truth_(input3)) {
+      input3.value = value;
+      return input3.dispatchEvent(new Event("change", { "bubbles": true }));
+    }
+    ;
+  };
+  var create_menu2 = function(options, current_value, on_change2, trigger) {
+    const menu1 = document.createElement("div");
+    menu1.className = "select-menu";
+    menu1.setAttribute("role", "listbox");
+    options.forEach((function(opt) {
+      const value2 = opt["value"];
+      const label3 = opt["label"];
+      const selected4 = _EQ_(value2, current_value);
+      const el5 = document.createElement("button");
+      el5.className = selected4 ? "select-option select-option--selected" : "select-option";
+      el5.setAttribute("type", "button");
+      el5.setAttribute("role", "option");
+      el5.setAttribute("tabindex", "-1");
+      el5.setAttribute("aria-selected", selected4 ? "true" : "false");
+      el5.textContent = label3;
+      el5.addEventListener("click", (function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (truth_(on_change2)) {
+          dismiss_BANG_2();
+          return on_change2(value2);
+        } else {
+          update_trigger_BANG_(trigger, value2, label3);
+          return dismiss_BANG_2();
+        }
+        ;
+      }));
+      return menu1.appendChild(el5);
+    }));
+    return menu1;
+  };
+  var position_menu_BANG_2 = function(menu, trigger) {
+    const r1 = trigger.getBoundingClientRect();
+    menu.style.minWidth = `${r1.width ?? ""}px`;
+    document.body.appendChild(menu);
+    const mr2 = menu.getBoundingClientRect();
+    const vw3 = window.innerWidth;
+    const vh4 = window.innerHeight;
+    const left5 = Math.max(8, Math.min(r1.left, vw3 - mr2.width - 8));
+    const below6 = r1.bottom + 4;
+    const top7 = below6 + mr2.height > vh4 ? Math.max(8, r1.top - mr2.height - 4) : below6;
+    menu.style.left = `${left5 ?? ""}px`;
+    return menu.style.top = `${top7 ?? ""}px`;
+  };
+  var focus_selected_or_first_BANG_ = function(menu) {
+    const sel1 = menu.querySelector(".select-option--selected");
+    if (truth_(sel1)) {
+      return sel1.focus();
+    } else {
+      const first_opt2 = menu.querySelector(".select-option");
+      if (truth_(first_opt2)) {
+        return first_opt2.focus();
+      }
+      ;
+    }
+    ;
+  };
+  var focus_next_BANG_2 = function(menu, direction) {
+    const items1 = menu.querySelectorAll(".select-option");
+    const active2 = document.activeElement;
+    const len3 = items1.length;
+    if (len3 > 0) {
+      const current_idx4 = (() => {
+        const result5 = atom(-1);
+        items1.forEach((function(item, i) {
+          if (_EQ_(item, active2)) {
+            return reset_BANG_(result5, i);
+          }
+          ;
+        }));
+        return deref(result5);
+      })();
+      const next_idx6 = direction === "down" ? current_idx4 < len3 - 1 ? current_idx4 + 1 : 0 : direction === "up" ? current_idx4 > 0 ? current_idx4 - 1 : len3 - 1 : "else" ? current_idx4 : null;
+      return items1[next_idx6].focus();
+    }
+    ;
+  };
+  var open_select = (() => {
+    const f9 = (function(var_args) {
+      const args101 = [];
+      const len__23321__auto__2 = arguments.length;
+      let i113 = 0;
+      while (true) {
+        if (i113 < len__23321__auto__2) {
+          args101.push(arguments[i113]);
+          let G__4 = i113 + 1;
+          i113 = G__4;
+          continue;
+        }
+        ;
+        break;
+      }
+      ;
+      const argseq__23513__auto__5 = 1 < args101.length ? args101.slice(1) : null;
+      return f9.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
+    });
+    f9.cljs$core$IFn$_invoke$arity$variadic = (function(trigger, args) {
+      dismiss_BANG_2();
+      const options6 = (() => {
+        const passed7 = first(args);
+        if (truth_(passed7)) {
+          return passed7;
+        } else {
+          const json8 = trigger.dataset.selectOptions;
+          if (truth_(json8)) {
+            return JSON.parse(json8);
+          }
+          ;
+        }
+        ;
+      })();
+      const on_change9 = second(args);
+      const current10 = trigger.dataset.selectValue;
+      if (truth_(options6)) {
+        const menu11 = create_menu2(options6, current10, on_change9, trigger);
+        const state12 = get_state2();
+        state12.menu = menu11;
+        state12.trigger = trigger;
+        trigger.setAttribute("aria-expanded", "true");
+        position_menu_BANG_2(menu11, trigger);
+        focus_selected_or_first_BANG_(menu11);
+        const on_click13 = (function(e) {
+          if (not(menu11.contains(e.target))) {
+            e.preventDefault();
+            e.stopPropagation();
+            return dismiss_BANG_2();
+          }
+          ;
+        });
+        const on_key14 = (function(e) {
+          const key15 = e.key;
+          if (key15 === "Escape") {
+            e.preventDefault();
+            dismiss_BANG_2();
+            return trigger.focus();
+          } else {
+            if (key15 === "ArrowDown") {
+              e.preventDefault();
+              return focus_next_BANG_2(menu11, "down");
+            } else {
+              if (key15 === "ArrowUp") {
+                e.preventDefault();
+                return focus_next_BANG_2(menu11, "up");
+              } else {
+                if (key15 === "Enter") {
+                  const active16 = document.activeElement;
+                  if (truth_((() => {
+                    const and__23442__auto__17 = active16;
+                    if (truth_(and__23442__auto__17)) {
+                      return menu11.contains(active16);
+                    } else {
+                      return and__23442__auto__17;
+                    }
+                    ;
+                  })())) {
+                    e.preventDefault();
+                    return active16.click();
+                  }
+                  ;
+                } else {
+                  if (key15 === "Tab") {
+                    return dismiss_BANG_2();
+                  } else {
+                    return null;
+                  }
+                }
+              }
+            }
+          }
+          ;
+        });
+        const on_scroll18 = (function(_) {
+          return dismiss_BANG_2();
+        });
+        const on_resize19 = (function(_) {
+          return dismiss_BANG_2();
+        });
+        const cleanup20 = (function() {
+          document.removeEventListener("click", on_click13, true);
+          document.removeEventListener("keydown", on_key14, true);
+          window.removeEventListener("scroll", on_scroll18, true);
+          return window.removeEventListener("resize", on_resize19);
+        });
+        document.addEventListener("click", on_click13, true);
+        document.addEventListener("keydown", on_key14, true);
+        window.addEventListener("scroll", on_scroll18, true);
+        window.addEventListener("resize", on_resize19);
+        return state12.cleanup = cleanup20;
+      }
+      ;
+    });
+    f9.cljs$lang$maxFixedArity = 1;
+    return f9;
+  })();
+  window["__uiSelect"] = open_select;
+
   // .compiled/theme.mjs
   var storage_key = "ui-theme";
   var get_stored = function() {
@@ -1660,8 +1908,8 @@
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   };
   var resolve_effective = function(mode) {
-    const G__91 = mode;
-    switch (G__91) {
+    const G__131 = mode;
+    switch (G__131) {
       case "light":
         return "light";
         break;
@@ -1690,8 +1938,8 @@
   var apply_theme_BANG_ = function(mode) {
     const el1 = document.documentElement;
     suppress_transitions_BANG_();
-    const G__102 = mode;
-    switch (G__102) {
+    const G__142 = mode;
+    switch (G__142) {
       case "light":
         return el1.setAttribute("data-theme", "light");
         break;
@@ -1731,8 +1979,8 @@
   var toggle_BANG_ = function() {
     const current1 = get_mode();
     const next_mode2 = (() => {
-      const G__113 = current1;
-      switch (G__113) {
+      const G__153 = current1;
+      switch (G__153) {
         case "auto":
           return "light";
           break;
@@ -1791,7 +2039,7 @@
     }
     ;
   };
-  var dismiss_BANG_2 = function(el) {
+  var dismiss_BANG_3 = function(el) {
     if (truth_(el["__uiToastDismissed"])) {
       return null;
     } else {
@@ -1830,12 +2078,12 @@
     el8.textContent = `${message ?? ""}`;
     el8.setAttribute("role", "status");
     el8.addEventListener("click", (function(_) {
-      return dismiss_BANG_2(el8);
+      return dismiss_BANG_3(el8);
     }));
     container7.appendChild(el8);
     if (duration6 > 0) {
       setTimeout((function() {
-        return dismiss_BANG_2(el8);
+        return dismiss_BANG_3(el8);
       }), duration6);
     }
     ;
@@ -1921,14 +2169,14 @@
       ;
     })().split(","))));
     const override_keys4 = set(map(first, viewport_overrides));
-    const kept5 = remove((function(p__12) {
-      const vec__69 = p__12;
+    const kept5 = remove((function(p__16) {
+      const vec__69 = p__16;
       const k10 = nth(vec__69, 0, null);
       const _11 = nth(vec__69, 1, null);
       return contains_QMARK_(override_keys4, k10);
     }), entries1);
-    return join(", ", map((function(p__13) {
-      const vec__1215 = p__13;
+    return join(", ", map((function(p__17) {
+      const vec__1215 = p__17;
       const k16 = nth(vec__1215, 0, null);
       const v17 = nth(vec__1215, 1, null);
       if (v17 == null) {

@@ -1378,14 +1378,6 @@
       (when (str/starts-with? (or title "") "Upstream") "git-upstream")
       "session-edits"))
 
-(defn- select-value-hook
-  "Replicant on-render hook that forces a <select>'s value. Replicant does not
-   reliably bind a select's value on initial mount (the value is set before the
-   option children exist), so we set it after the node + options are in place."
-  [v]
-  (fn [{:replicant/keys [^js node]}]
-    (set! (.-value node) v)))
-
 (defn- diff-method-bar
   "Selects above the diff to switch the source and the renderer. Each fires
    :diff/reopen, which re-runs /diff on the server (measuring the difftastic
@@ -1410,20 +1402,17 @@
      (form/form-select
       {:options   options
        :value     method
-       :attrs     {:value method :replicant/on-render (select-value-hook method)}
-       :on-change (fn [^js e]
-                    (let [v (.. e -target -value)]
-                      (if (= v "__pick-commit__")
-                        (dispatch! {:type :palette/open-commits})
-                        (dispatch! {:type :diff/reopen :room-id room-id
-                                    :method v :engine engine}))))})
+       :on-change (fn [v]
+                    (if (= v "__pick-commit__")
+                      (dispatch! {:type :palette/open-commits})
+                      (dispatch! {:type :diff/reopen :room-id room-id
+                                  :method v :engine engine})))})
      (form/form-select
       {:options   diff-engines
        :value     (name engine)
-       :attrs     {:value (name engine) :replicant/on-render (select-value-hook (name engine))}
-       :on-change (fn [^js e]
+       :on-change (fn [v]
                     (dispatch! {:type :diff/reopen :room-id room-id
-                                :method method :engine (keyword (.. e -target -value))}))})]))
+                                :method method :engine (keyword v)}))})]))
 
 (defn- commit-info-header
   "Message + metadata for a single-commit diff, shown above the diff body. The
