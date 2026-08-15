@@ -2659,7 +2659,8 @@ a.button-group-item:hover {
 .form-field--error .form-input:focus-visible,
 .form-field--error .form-textarea:focus-visible,
 .form-field--error .form-select:focus-visible {
-  outline-color: var(--danger);
+  border-color: var(--danger);
+  box-shadow: inset 0 0 6px color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
 /* ── Label ─────────────────────────────────────────────────────── */
@@ -2685,9 +2686,6 @@ a.button-group-item:hover {
   color: var(--fg-0);
   border: var(--border-1);
   border-radius: var(--radius-sm);
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
 }
 
 .form-input::placeholder,
@@ -2699,7 +2697,10 @@ a.button-group-item:hover {
 .form-textarea:focus-visible,
 .form-select:focus-visible {
   border-color: var(--accent);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: inset 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
+  position: relative;
+  z-index: 1;
 }
 
 .form-input:disabled,
@@ -2717,7 +2718,8 @@ a.button-group-item:hover {
 
 .form-input--error:focus-visible,
 .form-textarea--error:focus-visible {
-  outline-color: var(--danger);
+  border-color: var(--danger);
+  box-shadow: inset 0 0 6px color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
 /* ── Input with icons ──────────────────────────────────────────── */
@@ -3058,6 +3060,25 @@ a.button-group-item:hover {
 
 .form-group > *:not(:first-child) {
   margin-left: -1px;
+}
+
+/* Joined submit/action button: give it a matching border so the whole group
+   reads as one outlined unit, and turn it accent when the group's input is
+   focused. The input's seam-side border sits under the button's overlapping
+   (-1px) border, so no doubled line shows between them. */
+.form-group > .btn {
+  border: var(--border-1);
+}
+
+.form-group:focus-within > .btn {
+  border-color: var(--accent);
+}
+
+/* Stretch the icon-input's inner <input> to the group height so its bottom
+   border lines up flush with the joined button (the button's line-height
+   makes it the tallest child; without this the input leaves a ~1px step). */
+.form-group > .form-input-wrap {
+  display: flex;
 }
 
 .form-group-addon {
@@ -4026,14 +4047,12 @@ summary,
   border: var(--border-1);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
 }
 
 .select-trigger:focus-visible {
   border-color: var(--accent);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: inset 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .select-trigger:disabled {
