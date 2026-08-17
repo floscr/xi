@@ -30,7 +30,7 @@
 (deftest turn-end-notifies-only-when-armed
   (testing "enabled + clean turn → desktop notification with session title"
     (let [st (state-with-room {:enabled? true})]
-      (is (= [[:notify/desktop {:title "Fix the bug"}]]
+      (is (= [[:notify/desktop {:title "Fix the bug" :label "Fix the bug"}]]
              (:effects (on-turn-end st {:room-id "r1"}))))))
   (testing "disabled → no notification"
     (let [st (state-with-room {:enabled? false})]
