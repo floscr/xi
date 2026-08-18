@@ -46,13 +46,22 @@
 (defn- env [k] (aget js/process.env k))
 
 (defn- server-args
-  "CLI args for `npx` to launch chrome-devtools-mcp, honoring the env knobs."
+  "CLI args for `npx` to launch chrome-devtools-mcp, honoring the env knobs.
+
+   `--allow-unrestricted-paths` lifts chrome-devtools-mcp's own path gate on
+   file tools (upload_file, save_*, screenshots). Without it, because xi's
+   hand-rolled JSON-RPC client never negotiates the MCP `roots` capability,
+   chrome-devtools-mcp restricts those tools to the OS temp dir — so uploading
+   e.g. a CV from a project dir fails with a 'not within any of the configured
+   workspace roots' error. Path safety is already enforced upstream of the proxy by
+   xi's sandbox + permission-gate, so the child server's redundant gate only
+   gets in the way."
   []
   (let [browser-url (env "XI_CHROME_BROWSER_URL")
         extra       (some->> (env "XI_CHROME_MCP_ARGS")
                              str/trim
                              (#(when (seq %) (remove str/blank? (str/split % #"\s+")))))]
-    (cond-> ["-y" "chrome-devtools-mcp@latest"]
+    (cond-> ["-y" "chrome-devtools-mcp@latest" "--allow-unrestricted-paths"]
       (seq browser-url) (into ["--browserUrl" browser-url])
       (seq extra)       (into extra))))
 
