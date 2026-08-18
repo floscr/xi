@@ -42,6 +42,7 @@ the 29 browser tools aren't advertised on every turn by default.
 | `XI_CHROME_MCP_TIMEOUT_MS` | Per-call cap (ms) on a chrome-devtools-mcp JSON-RPC request, so a wedged child / stalled stdio pipe surfaces as an error tool-result instead of hanging the turn forever. Default `120000` (generous, so it only fires on a true wedge, never on a legit-slow op); `<= 0` disables. |
 | `XI_CHROME_LAUNCH_BIN` | Absolute path to the launcher used to **start the shared OS Chrome** when it isn't running (attach mode only). Default: the dotfiles `browser` bin (`google-chrome-stable --remote-debugging-port=9222 …`). Must be absolute — the server's PATH doesn't include dotfiles/bin. |
 | `XI_CHROME_NO_SCOPE` | Disable workspace scoping even in attach mode (any non-empty value). |
+| `XI_CHROME_OWN_WINDOWS_ONLY` | Isolate by **window ownership** instead of xmonad workspace (any non-empty value). Each agent only ever acts on Chrome windows *it* created — for several agents sharing one Chrome on one workspace (see [Owned-windows-only mode](#owned-windows-only-mode)). |
 | `XI_CHROME_WM_CLASS` | WM_CLASS substring identifying the shared Chrome for scoping (default `chrome-profile-stable`). |
 | `XI_CHROME_WM_BIN` | Absolute path to the dotfiles `wm` CLI used for scoping (default `/home/floscr/.config/dotfiles/bin/wm`). Must be absolute — the server's PATH doesn't include dotfiles/bin. |
 | `XI_CHROME_WMCTRL_BIN` | Absolute path to `wmctrl`, used to map a client PID → X11 window for per-session workspace resolution (default `/etc/profiles/per-user/floscr/bin/wmctrl`). |
@@ -96,6 +97,42 @@ Or attach to an already-running Chrome started with
 ```bash
 XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 ```
+
+## Owned-windows-only mode
+
+Workspace scoping assumes each agent is on its own xmonad workspace. When
+**several agents share one Chrome on one workspace** — e.g. running
+`hn-hiring apply` for several jobs in parallel, each a standalone `xi --prompt`
+process with no driving TUI terminal — they all resolve to the *same* workspace
+(`wm current`) and see the same tabs, so workspace scoping can't tell them
+apart. One agent could then navigate or close another agent's tab.
+
+Set `XI_CHROME_OWN_WINDOWS_ONLY=1` to switch the isolation axis from *workspace*
+to *ownership*: an agent only ever acts on the Chrome windows it created itself.
+Each `bb apply` is its own process with its own guard state (`owned*`), so
+ownership is naturally per-agent.
+
+- The membership set is the windows this process opened (tracked by CDP window
+  id), not the ones on some workspace. `list_pages` is filtered to them;
+  `select_page`/`close_page` are blocked for anyone else's tab; `new_page` opens
+  a tab in this agent's own window; and the reconcile step (before every
+  page-acting tool) selects an owned page or, if none exists yet, **creates one
+  first** — so the agent never inherits chrome-devtools-mcp's default selection
+  (which could be another agent's tab).
+- No `wm` calls are made in this mode — isolation rides purely on CDP window
+  ids — and the "wm blind → passthrough" fallback is disabled (passing through
+  raw would drop isolation). Windows are **not** relocated to any workspace;
+  they land wherever Chrome opens them.
+- Focus theft is a separate concern: the shared Chrome must still be launched
+  with a `WM_CLASS` the desktop's activation-ignore rule recognizes (on this
+  setup, an instance name containing `chrome-profile-stable`, e.g. Chrome's
+  `--class=chrome-profile-stable`). Otherwise every navigation raises the window
+  and steals focus regardless of scoping.
+
+Implementation: `xi.ext.chrome-mcp.guard` keys membership on a per-process
+sentinel workspace name — owned windows are recorded under it and it's used as
+the `launch-workspace`, so `scope/classify`'s existing owned-window merge yields
+exactly the owned set with no new classification path.
 
 ## Workspace scoping
 

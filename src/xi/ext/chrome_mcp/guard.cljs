@@ -41,7 +41,20 @@
 
    Fail-safe: whenever a page's workspace can't be determined, it is treated as
    NOT ours — the agent never touches what it can't place. If CDP/wm are
-   unavailable, the destructive gates block and the rest passes through."
+   unavailable, the destructive gates block and the rest passes through.
+
+   Owned-windows-only mode (XI_CHROME_OWN_WINDOWS_ONLY): when several agents
+   share ONE Chrome on ONE workspace (e.g. parallel `hn-hiring apply` runs),
+   xmonad-workspace scoping can't isolate them — they all resolve to the same
+   workspace and see the same tabs. In this mode the membership axis is
+   *ownership*, not workspace: an agent only ever acts on the Chrome windows it
+   itself created (tracked in `owned*`), so it can never navigate or close
+   another agent's tab. Each agent is its own process with its own `owned*`, so
+   ownership is naturally per-agent. Implemented by keying membership on a
+   per-process sentinel workspace name: owned windows are recorded under the
+   sentinel and `launch-workspace` is the sentinel, so `scope/classify`'s
+   existing owned-window merge yields exactly the owned set. No `wm` calls are
+   needed (or made) in this mode — isolation rides purely on CDP window ids."
   (:require [clojure.set :as set]
             [clojure.string :as str]
             [xi.ext.chrome-mcp.scope :as scope]
@@ -64,6 +77,16 @@
 
 (defn- sleep [ms] (js/Promise. (fn [r] (js/setTimeout r ms))))
 
+(defn- env [k] (aget js/process.env k))
+
+(defn- owned-only?* []
+  (boolean (some-> (env "XI_CHROME_OWN_WINDOWS_ONLY") str/trim not-empty)))
+
+;; A synthetic workspace name used purely as the membership key in
+;; owned-windows-only mode. Never a real xmonad workspace, so only windows this
+;; process explicitly records under it count as "ours".
+(def ^:private owned-sentinel "__xi-owned-window__")
+
 ;; ── install ──────────────────────────────────────────────────────────────────
 
 (defn install
@@ -73,7 +96,8 @@
    (falling back to `wm current`); when `wm` can't resolve one the raw `forward`
    runs unscoped."
   [forward browser-url]
-  (let [cdp*   (atom nil)   ;; memoized Promise<cdp-client>
+  (let [owned-only? (owned-only?*) ;; isolate to windows THIS agent created
+        cdp*   (atom nil)   ;; memoized Promise<cdp-client>
         owned* (atom {})]   ;; {cdp-window-id → workspace-name} of windows we created
     (letfn [(cdp-connect! []
               (reset! cdp* (-> (cdp/connect browser-url)
@@ -90,7 +114,9 @@
               (-> (js/Promise.all
                    #js [(forward "list_pages" {})
                         (-> (cdp-client) (.then cdp/page-windows) (.catch (fn [_] [])))
-                        (wm/chrome-windows)])
+                        ;; owned-only: membership is by CDP window ownership, so
+                        ;; the WM isn't consulted (avoid the subprocess spawn).
+                        (if owned-only? [] (wm/chrome-windows))])
                   (.then (fn [arr]
                            (let [[result cdp-targets wm-windows] (vec arr)
                                  text  (result->text result)
@@ -118,19 +144,31 @@
             (ensure-window! [ws]
               ;; open a new Chrome window, record it as owned on `ws`, move it
               ;; there, and select it in mcp
-              (-> (wm/chrome-window-ids)
-                  (.then (fn [before]
-                           (-> (cdp-client)
-                               (.then (fn [c]
-                                        (-> (cdp/create-window c "about:blank")
-                                            (.then (fn [tid] (cdp/window-for-target c tid)))
-                                            (.then (fn [win-id]
-                                                     (when win-id (swap! owned* assoc win-id ws)))))))
-                               (.then (fn [_] (wait-new-wid before)))
-                               (.then (fn [new-wid]
-                                        (when new-wid (wm/move-window new-wid ws))))
-                               (.then (fn [_] (sleep 150)))
-                               (.then (fn [_] (select-workspace-page! ws))))))))
+              (if owned-only?
+                ;; Owned-only: no workspace placement — just create the window,
+                ;; adopt it by its CDP window id (that's the whole isolation),
+                ;; and select it. No wm calls (wm is intentionally unused here).
+                (-> (cdp-client)
+                    (.then (fn [c]
+                             (-> (cdp/create-window c "about:blank")
+                                 (.then (fn [tid] (cdp/window-for-target c tid)))
+                                 (.then (fn [win-id]
+                                          (when win-id (swap! owned* assoc win-id ws)))))))
+                    (.then (fn [_] (sleep 150)))
+                    (.then (fn [_] (select-workspace-page! ws))))
+                (-> (wm/chrome-window-ids)
+                    (.then (fn [before]
+                             (-> (cdp-client)
+                                 (.then (fn [c]
+                                          (-> (cdp/create-window c "about:blank")
+                                              (.then (fn [tid] (cdp/window-for-target c tid)))
+                                              (.then (fn [win-id]
+                                                       (when win-id (swap! owned* assoc win-id ws)))))))
+                                 (.then (fn [_] (wait-new-wid before)))
+                                 (.then (fn [new-wid]
+                                          (when new-wid (wm/move-window new-wid ws))))
+                                 (.then (fn [_] (sleep 150)))
+                                 (.then (fn [_] (select-workspace-page! ws)))))))))
 
             (select-workspace-page! [ws]
               (-> (classify ws)
@@ -165,11 +203,16 @@
                     (.then (fn [{:keys [scope]}]
                              (if (contains? (:in-workspace scope) pid)
                                (forward tool args)
-                               (blocked (str "Page " pid " is on another xmonad workspace. "
-                                             "This agent only controls Chrome windows on the "
-                                             "current workspace — run list_pages to see them.")))))
+                               (blocked (if owned-only?
+                                          (str "Page " pid " belongs to another agent's "
+                                               "Chrome window. This agent only controls windows "
+                                               "it opened itself — run list_pages to see them.")
+                                          (str "Page " pid " is on another xmonad workspace. "
+                                               "This agent only controls Chrome windows on the "
+                                               "current workspace — run list_pages to see them."))))))
                     (.catch (fn [_]
-                              (blocked (str "Could not verify which workspace page " pid
+                              (blocked (str "Could not verify which "
+                                            (if owned-only? "window" "workspace") " page " pid
                                             " is on; refusing to touch it (fail-safe). "
                                             "Retry list_pages.")))))))
 
@@ -199,19 +242,29 @@
               ;; as owned, then select it — same primitive as ensure-window!.
               ;; This is the only path that can flash (a window maps on the
               ;; viewed workspace for an instant before `wm move` relocates it).
-              (-> (wm/chrome-window-ids)
-                  (.then (fn [before]
-                           (-> (cdp-client)
-                               (.then (fn [c]
-                                        (-> (cdp/create-window c url)
-                                            (.then (fn [tid] (cdp/window-for-target c tid))))))
-                               (.then (fn [win-id]
-                                        (when win-id (swap! owned* assoc win-id ws))))
-                               (.then (fn [_] (wait-new-wid before)))
-                               (.then (fn [new-wid]
-                                        (when new-wid (wm/move-window new-wid ws))))
-                               (.then (fn [_] (sleep 150)))
-                               (.then (fn [_] (select-new-page! ws url))))))))
+              (if owned-only?
+                ;; Owned-only: adopt the new window by CDP id, no wm move.
+                (-> (cdp-client)
+                    (.then (fn [c]
+                             (-> (cdp/create-window c url)
+                                 (.then (fn [tid] (cdp/window-for-target c tid))))))
+                    (.then (fn [win-id]
+                             (when win-id (swap! owned* assoc win-id ws))))
+                    (.then (fn [_] (sleep 150)))
+                    (.then (fn [_] (select-new-page! ws url))))
+                (-> (wm/chrome-window-ids)
+                    (.then (fn [before]
+                             (-> (cdp-client)
+                                 (.then (fn [c]
+                                          (-> (cdp/create-window c url)
+                                              (.then (fn [tid] (cdp/window-for-target c tid))))))
+                                 (.then (fn [win-id]
+                                          (when win-id (swap! owned* assoc win-id ws))))
+                                 (.then (fn [_] (wait-new-wid before)))
+                                 (.then (fn [new-wid]
+                                          (when new-wid (wm/move-window new-wid ws))))
+                                 (.then (fn [_] (sleep 150)))
+                                 (.then (fn [_] (select-new-page! ws url)))))))))
 
             (new-tab-in-window! [ws url win-id]
               ;; Reuse an existing window on `ws`: open a plain tab in it. No new
@@ -248,11 +301,14 @@
                     (.then (fn [_] (forward tool args))))))
 
             (resolve-workspace [ctx]
-              ;; This session's TUI-terminal workspace name (per-session), or
-              ;; the globally-viewed one when no client pid is available.
-              (if-let [pid (:client-pid ctx)]
-                (wm/workspace-for-pid pid)
-                (wm/current-workspace)))
+              ;; Owned-only: a fixed per-process sentinel — membership is by
+              ;; ownership, not workspace, so we never ask the WM anything.
+              ;; Otherwise: this session's TUI-terminal workspace name
+              ;; (per-session), or the globally-viewed one when no client pid.
+              (cond
+                owned-only?       (js/Promise.resolve owned-sentinel)
+                (:client-pid ctx) (wm/workspace-for-pid (:client-pid ctx))
+                :else             (wm/current-workspace)))
 
             (place-launched! [ws]
               ;; Right after a *cold* launch, Chrome maps its window on the
@@ -280,8 +336,13 @@
               ;; Make sure the shared OS Chrome is running before we act. When
               ;; it was down and we launched it, place its fresh window(s) on
               ;; the agent's workspace so the bootstrap window doesn't strand on
-              ;; whatever workspace the user was viewing.
-              (-> (launch/ensure-process! browser-url)
+              ;; whatever workspace the user was viewing. In owned-only mode we
+              ;; only need the process up — no window placement (no wm).
+              (if owned-only?
+                (-> (launch/ensure-process! browser-url)
+                    (.then (fn [_] :ok))
+                    (.catch (fn [_] :ok)))
+                (-> (launch/ensure-process! browser-url)
                   (.then (fn [res]
                            (if (= res :launched)
                              ;; wait until Chrome's window is actually mapped
@@ -290,7 +351,7 @@
                              (-> (wait-new-wid #{})
                                  (.then (fn [_] (place-launched! ws))))
                              :ok)))
-                  (.catch (fn [_] :ok))))
+                  (.catch (fn [_] :ok)))))
 
             (scoped [tool args & [ctx]]
               ;; First make sure Chrome is actually running (launch + place its
@@ -299,12 +360,16 @@
               ;; (empty — e.g. the attached Chrome has a different WM_CLASS than
               ;; we filter on), managing/creating windows would spawn
               ;; unrecognized windows forever, so pass through raw instead.
+              ;; In owned-only mode isolation rides on CDP window ids, not the
+              ;; WM, so we never fall back to the "wm blind" passthrough — doing
+              ;; so would drop isolation and let agents stomp each other's tabs.
               (-> (resolve-workspace ctx)
                   (.then (fn [ws]
                            (-> (ensure-chrome! ws)
-                               (.then (fn [_] (wm/chrome-windows)))
+                               (.then (fn [_] (if owned-only? nil (wm/chrome-windows))))
                                (.then (fn [wins]
-                                        (if (or (nil? ws) (empty? wins))
+                                        (if (and (not owned-only?)
+                                                 (or (nil? ws) (empty? wins)))
                                           (forward tool args)   ;; wm blind → no scoping
                                           (dispatch tool args ws)))))))
                   (.catch (fn [_] (forward tool args)))))]
