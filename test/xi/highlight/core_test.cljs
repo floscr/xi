@@ -61,6 +61,29 @@
       (is (string? result))
       (is (pos? (count result))))))
 
+(deftest theme-mode-switching
+  (testing "palette + chrome follow the active mode"
+    (theme/set-mode! :dark)
+    (is (= :dark (theme/mode)))
+    (let [dark-var (theme/token-color :name-var)
+          dark-bg  (theme/block-bg)
+          dark-fg  (theme/code-default-fg)]
+      (theme/set-mode! :light)
+      (is (= :light (theme/mode)))
+      (is (not= dark-var (theme/token-color :name-var))
+          "syntax color flips between modes")
+      (is (not= dark-bg (theme/block-bg))
+          "block background flips between modes")
+      (is (not= dark-fg (theme/code-default-fg))
+          "default fg flips between modes")
+      (is (not= (theme/diff-add-bg) (theme/diff-del-bg))
+          "add/del diff backgrounds are distinct"))
+    ;; anything not :light collapses to :dark
+    (theme/set-mode! :something-else)
+    (is (= :dark (theme/mode)))
+    ;; restore default for other tests
+    (theme/set-mode! :dark)))
+
 (deftest grammar-registry
   (testing "get-grammar resolves standard names"
     (is (some? (grammars/get-grammar "clojure")))

@@ -1,6 +1,7 @@
 (ns xi.tui.ansi-test
   (:require [cljs.test :refer [deftest is testing]]
             [clojure.string :as str]
+            [xi.highlight.theme :as hl-theme]
             [xi.tui.ansi :as ansi]))
 
 (deftest wrap-text-propagates-sgr
@@ -128,7 +129,7 @@
   (testing "opens the line with both bg and the light default fg so untokenized
             text stays readable on light terminals"
     (let [out (ansi/apply-bg-to-line "plain" 10 code-bg)]
-      (is (str/starts-with? out (str code-bg ansi/code-default-fg))
+      (is (str/starts-with? out (str code-bg (hl-theme/code-default-fg)))
           "line begins with bg + default fg")
       (is (str/ends-with? out reset)))))
 
@@ -138,7 +139,7 @@
     (let [kw   (str ESC "38;2;129;161;193m")
           line (str kw "if" reset " plain")
           out  (ansi/apply-bg-to-line line 20 code-bg)]
-      (is (str/includes? out (str reset code-bg ansi/code-default-fg))
+      (is (str/includes? out (str reset code-bg (hl-theme/code-default-fg)))
           "bg + default fg re-applied immediately after the inner reset"))))
 
 (deftest apply-bg-to-line-respects-explicit-fg
@@ -146,7 +147,7 @@
     (let [fg  (str ESC "38;2;1;2;3m")
           out (ansi/apply-bg-to-line "x" 5 code-bg fg)]
       (is (str/starts-with? out (str code-bg fg)))
-      (is (not (str/includes? out ansi/code-default-fg))))))
+      (is (not (str/includes? out (hl-theme/code-default-fg)))))))
 
 ;; ── strip-bg-sgr / hl-line ──────────────────────────────────────────────────
 
@@ -180,7 +181,7 @@
     (let [hl   (str ESC "48;2;59;66;82m")
           line (ansi/apply-bg-to-line "code" 10 code-bg)   ;; carries code-bg
           out  (ansi/hl-line line 10 hl)]
-      (is (str/starts-with? out (str hl ansi/code-default-fg))
+      (is (str/starts-with? out (str hl (hl-theme/code-default-fg)))
           "line opens with the highlight bg")
       (is (not (str/includes? out code-bg))
           "the original bg no longer appears anywhere")

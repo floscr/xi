@@ -137,9 +137,8 @@
 
 ;; ── Syntax / diff highlighting ───────────────────────────────────────────────
 
-;; Diff line background colors — blended with tool block bg (38,44,55)
-(def ^:private diff-add-bg "\033[48;2;35;60;45m")
-(def ^:private diff-del-bg "\033[48;2;65;40;42m")
+;; Diff line background colors — blended with the tool block bg. Mode-aware
+;; (light/dark) via the syntax theme; see xi.highlight.theme.
 
 ;; ── Difftastic retint ────────────────────────────────────────────────────────
 ;; Difftastic emits 16-color palette codes (bright red/green/yellow + bold/dim)
@@ -211,12 +210,14 @@
        (mapv (fn [line]
                (cond
                  (str/starts-with? line "+ ")
-                 (let [code (highlight-line grammar (subs line 2))
+                 (let [diff-add-bg (hl-theme/diff-add-bg)
+                       code (highlight-line grammar (subs line 2))
                        patched (str/replace code ansi/reset (str ansi/reset diff-add-bg))]
                    (str diff-add-bg "+ " patched))
 
                  (str/starts-with? line "- ")
-                 (let [code (highlight-line grammar (subs line 2))
+                 (let [diff-del-bg (hl-theme/diff-del-bg)
+                       code (highlight-line grammar (subs line 2))
                        patched (str/replace code ansi/reset (str ansi/reset diff-del-bg))]
                    (str diff-del-bg "- " patched))
 
@@ -344,7 +345,7 @@
   "Tool-call entry → box with header, output and (when live) spinner/timer.
    Entries that arrive already finished (resumed sessions) render statically."
   [entry]
-  (let [bg-code "\033[48;2;38;44;55m"
+  (let [bg-code (hl-theme/block-bg)
         box (comp/make-box {:padding-x 1 :padding-y 0 :bg-code bg-code})
         short-name (shorten-tool-name (:tool entry))
         canonical (canonical-tool (:tool entry))

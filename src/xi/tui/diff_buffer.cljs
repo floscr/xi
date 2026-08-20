@@ -24,10 +24,7 @@
 
 ;; ── Rendering ─────────────────────────────────────────────────────────────────
 
-(def ^:private file-header-bg "\033[48;2;50;55;70m")
 (def ^:private hunk-header-fg "\033[38;2;129;161;193m")
-(def ^:private add-bg "\033[48;2;35;60;45m")
-(def ^:private del-bg "\033[48;2;65;40;42m")
 (def ^:private line-nr-fg "\033[38;2;90;100;120m")
 (def ^:private separator-fg "\033[38;2;70;80;100m")
 
@@ -57,7 +54,10 @@
   "Pre-render parsed diff files into a flat vector of ANSI-formatted lines.
    Returns {:lines [string] :change-starts [int] :file-starts [int]}"
   [parsed-files width]
-  (let [lines (atom [])
+  (let [file-header-bg (hl-theme/diff-header-bg)
+        add-bg (hl-theme/diff-add-bg)
+        del-bg (hl-theme/diff-del-bg)
+        lines (atom [])
         change-starts (atom [])
         file-starts (atom [])
         prev-was-change (atom false)

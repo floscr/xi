@@ -1,6 +1,7 @@
 (ns xi.tui.ansi
   "Low-level ANSI escape code helpers — colors, cursor, visible-width."
   (:require [clojure.string :as str]
+            [xi.highlight.theme :as hl-theme]
             [xi.tui.char-width-data :as cwd]))
 
 ;; ── Escape Codes ──────────────────────────────────────────────────────────────
@@ -202,12 +203,11 @@
         padding (max 0 (- width vis))]
     (str line (apply str (repeat padding " ")))))
 
-;; Light default foreground paired with dark block backgrounds. Without it,
-;; untokenized (:text) characters — and any text after an ANSI reset — fall
-;; back to the terminal's default fg, which is dark on light terminals and so
-;; becomes invisible on the dark code/tool-block background. Matches the
-;; syntax theme's default fg (:name-var / :punctuation).
-(def code-default-fg (str ESC "38;2;216;222;233m"))
+;; Default foreground paired with the block background. Without it, untokenized
+;; (:text) characters — and any text after an ANSI reset — fall back to the
+;; terminal's default fg, which can be invisible on the block background (dark
+;; text on a dark block in light terminals, and vice-versa). Sourced from the
+;; syntax theme so it flips with the light/dark mode (see xi.highlight.theme).
 
 (defn apply-bg-to-line
   "Apply background (and a default foreground) to a full-width line.
@@ -215,7 +215,7 @@
    fg-code is the default foreground for untokenized text (defaults to
    code-default-fg so plain text stays readable on light terminals).
    Handles internal resets by re-applying both bg and fg after each \\033[0m."
-  ([line width bg-code] (apply-bg-to-line line width bg-code code-default-fg))
+  ([line width bg-code] (apply-bg-to-line line width bg-code (hl-theme/code-default-fg)))
   ([line width bg-code fg-code]
    (let [padded (pad-to-width line width)
          open   (str bg-code fg-code)]
@@ -274,7 +274,7 @@
    background across the whole line while preserving foreground / syntax
    colors. Any existing background codes are stripped first (see strip-bg-sgr)
    so bg-code shows uniformly, even over diff add/delete backgrounds."
-  ([line width bg-code] (hl-line line width bg-code code-default-fg))
+  ([line width bg-code] (hl-line line width bg-code (hl-theme/code-default-fg)))
   ([line width bg-code fg-code]
    (apply-bg-to-line (strip-bg-sgr line) width bg-code fg-code)))
 

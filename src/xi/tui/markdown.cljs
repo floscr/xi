@@ -1,11 +1,10 @@
 (ns xi.tui.markdown
   "Markdown component — renders markdown text with ANSI formatting.
    Implements the component protocol (render/invalidate)."
-  (:require [xi.tui.ansi :as ansi]
+  (:require [xi.highlight.theme :as hl-theme]
+            [xi.tui.ansi :as ansi]
             [xi.tui.core :as tui]
             [xi.markdown.ansi :as md-ansi]))
-
-(def ^:private code-bg "\033[48;2;38;44;55m")
 
 (defn- render-md-text
   "Render markdown text to ANSI-formatted lines.
@@ -41,7 +40,7 @@
                           lines (mapv (fn [{:keys [text code?]}]
                                         (let [padded (str left-pad text)]
                                           (if code?
-                                            (ansi/apply-bg-to-line padded width code-bg)
+                                            (ansi/apply-bg-to-line padded width (hl-theme/block-bg))
                                             padded)))
                                       entries)
                           result (if (empty? lines) [""] lines)]

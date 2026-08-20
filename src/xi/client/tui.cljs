@@ -36,6 +36,7 @@
             [xi.tui.pager :as pager]
             [xi.tui.path-complete :as path-complete]
             [xi.tui.terminal :as term]
+            [xi.tui.theme-mode :as theme-mode]
             [xi.tui.word-complete :as word-complete]))
 
 ;; ── Key detection (for dialogs / ext keybindings) ────────────────────────────
@@ -888,6 +889,13 @@
         (fn [state dispatch!]
           (set! (.-dispatch ctx) dispatch!)
           (set! (.-state ctx) state)
+          ;; Sync the light/dark theme so tool/code blocks track the terminal.
+          ;; On a mode flip, drop the roomId sentinel so the room-switch branch
+          ;; below rebuilds every cached block with the new palette.
+          (let [mode (theme-mode/refresh!)]
+            (when (not= mode (.-themeMode ctx))
+              (set! (.-themeMode ctx) mode)
+              (set! (.-roomId ctx) nil)))
           (dispatch! {:type :render/start})
           (let [t0 (js/Date.now)
                 auth (:client/auth state)
@@ -963,7 +971,9 @@
 
     {:render render
      :effects {:app/quit
-               (fn [_ _] (shutdown! on-exit))
+               (fn [_ _]
+                 (when-let [stop (.-themeWatcher ctx)] (stop))
+                 (shutdown! on-exit))
 
                :app/reload
                (fn [_ {:keys [session-id]}] (reload! session-id on-exit))
