@@ -56,6 +56,7 @@
             [xi.core.log :as log]
             [xi.core.state :as state]
             [xi.config :as config]
+            [xi.env :as env]
             [xi.ext.core :as ext]
             [xi.ext.manager :as manager]
             [xi.ext.mcp :as mcp]
@@ -816,6 +817,10 @@ See docs/cli.md for the full reference.")
    as any remote client."
   [{:keys [port headless? personal-agent?] :as opts}]
   (install-crash-guard!)
+  ;; A long-lived server can outlive the nix generation it was launched under;
+  ;; drop stale /nix/store env vars (e.g. DEPS_CLJ_TOOLS_DIR) so spawned tools
+  ;; use the current toolchain. See xi.env.
+  (env/sanitize-inherited-env!)
   (let [server-opts (resolve-model-opts opts)
         ring (log/create-ring)
         dialogs  (ext/create-dialogs)
