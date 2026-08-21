@@ -639,7 +639,8 @@
           ;; up-arrow, and the next-arrow while sitting on the newest prompt).
           ;; Closes prompt-nav so the group collapses back to the plain arrow.
           :timeline/scroll-to-bottom
-          (fn [st _] {:state (dissoc st :web/prompt-nav)
+          (fn [st _] {:state (dissoc st :web/prompt-nav
+                                     :web/scrolled-up? :web/frozen-window-start)
                       :effects [[:timeline/scroll-bottom {}]]})
           ;; Reflect the timeline's scroll position into state so the
           ;; scroll-to-bottom down-arrow can appear only while scrolled up.
@@ -1019,6 +1020,15 @@
 ;; upward USER scroll apart from content growth / our own snap-to-bottom (both
 ;; of which keep or increase scrollTop). See attach-scroll-listener!.
 (defonce ^:private prev-scroll-top (atom 0))
+;; Timestamp (ms) until which scrollTop changes are treated as programmatic, not
+;; a user gesture. A snap-to-bottom (the down-arrow, prompt-nav resume, the
+;; ResizeObserver, the post-render RAF) can trigger a reflow — e.g. unfreezing
+;; the render window trims nodes above the viewport, so the browser shifts
+;; scrollTop DOWN — and that decrease must NOT be mistaken for the user
+;; scrolling up and disable auto-scroll. See scroll listener + mark-programmatic-scroll!.
+(defonce ^:private programmatic-scroll-until (atom 0))
+(defn- mark-programmatic-scroll! []
+  (reset! programmatic-scroll-until (+ (js/Date.now) 250)))
 ;; Set at init (see below); referenced by the scroll listener to push the
 ;; scrolled-up flag into state. Declared here so attach-scroll-listener! can
 ;; reach it without a forward reference.
@@ -1134,15 +1144,21 @@
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
      (when-let [timeline (.querySelector js/document ".timeline")]
+       (mark-programmatic-scroll!)
        (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
   :timeline/scroll-bottom
    (fn [_ _]
      ;; Re-enable auto-scroll and snap to the newest content (mirrors
      ;; :prompt-nav/resume, but for the standalone scroll-to-bottom arrow).
+     ;; The state handler clears :web/scrolled-up? / :web/frozen-window-start,
+     ;; so this snap runs against the unfrozen window; the reflow from that
+     ;; unfreeze is covered by mark-programmatic-scroll! so it can't be misread
+     ;; as the user scrolling back up.
      (reset! auto-scroll? true)
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
      (when-let [timeline (.querySelector js/document ".timeline")]
+       (mark-programmatic-scroll!)
        (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
@@ -1344,6 +1360,7 @@
 (defn- scroll-to-bottom! []
   (when @auto-scroll?
     (when-let [timeline (.querySelector js/document ".timeline")]
+      (mark-programmatic-scroll!)
       (set! (.-scrollTop timeline) (.-scrollHeight timeline)))))
 
 (defn- attach-scroll-listener! []
@@ -1365,10 +1382,16 @@
                              ;; growth and used to mistake it for the user
                              ;; leaving the bottom — freezing the scroll at a
                              ;; random spot. Snapping back to the bottom always
-                             ;; re-enables it.
+                             ;; re-enables it. A scrollTop decrease within the
+                             ;; programmatic window (a snap + its reflow, e.g.
+                             ;; the down-arrow unfreezing the window) is ours,
+                             ;; not the user, so it must not disable auto-scroll.
                              (cond
-                               bottom?          (reset! auto-scroll? true)
-                               (< top (- prev 2)) (reset! auto-scroll? false))
+                               bottom?
+                               (reset! auto-scroll? true)
+                               (and (< top (- prev 2))
+                                    (> (js/Date.now) @programmatic-scroll-until))
+                               (reset! auto-scroll? false))
                              ;; Surface "scrolled up" into state so the
                              ;; scroll-to-bottom down-arrow can toggle (shown
                              ;; exactly while auto-scroll is off). The handler
