@@ -2723,11 +2723,10 @@
                   :attrs {:replicant/key (str "nav-" (:label item))}
                   :on-click (fn [_] (dispatch! (:event item)))}
                  (:label item)))]))
-         (sidebar/sidebar-group {:label "Recent"}
-           (if (seq recent)
+         (when (seq recent)
+           (sidebar/sidebar-group {:label "Recent"}
              (for [c (with-projects recent)]
-               (session-card dispatch! (assoc c :dismissable? true)))
-             [:div {:class ["sidebar-group-label"]} "No recent sessions"]))
+               (session-card dispatch! (assoc c :dismissable? true)))))
          ;; Hidden group sits between Recent and Earlier. Its cards keep the
          ;; toggle (now an eye → "Show in recent") so the user can restore them.
          (when (seq hidden)
