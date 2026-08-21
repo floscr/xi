@@ -984,6 +984,10 @@
 ;; not be yanked back to the bottom by the post-render scroll-to-bottom.
 (defonce ^:private auto-scroll? (atom true))
 (defonce ^:private tracked-timeline (atom nil))
+;; Last observed timeline scrollTop, so the scroll listener can tell an actual
+;; upward USER scroll apart from content growth / our own snap-to-bottom (both
+;; of which keep or increase scrollTop). See attach-scroll-listener!.
+(defonce ^:private prev-scroll-top (atom 0))
 ;; Set at init (see below); referenced by the scroll listener to push the
 ;; scrolled-up flag into state. Declared here so attach-scroll-listener! can
 ;; reach it without a forward reference.
@@ -1286,30 +1290,53 @@
 (defn- at-bottom? [^js el]
   (<= (- (.-scrollHeight el) (.-scrollTop el) (.-clientHeight el)) 40))
 
+(defn- scroll-to-bottom! []
+  (when @auto-scroll?
+    (when-let [timeline (.querySelector js/document ".timeline")]
+      (set! (.-scrollTop timeline) (.-scrollHeight timeline)))))
+
 (defn- attach-scroll-listener! []
   (when-let [timeline (.querySelector js/document ".timeline")]
     (when-not (identical? timeline @tracked-timeline)
       (reset! tracked-timeline timeline)
       (reset! auto-scroll? true)
+      (reset! prev-scroll-top (.-scrollTop timeline))
       (.addEventListener timeline "scroll"
                          (fn []
-                           (let [bottom? (at-bottom? timeline)]
-                             (reset! auto-scroll? bottom?)
+                           (let [top     (.-scrollTop timeline)
+                                 prev    @prev-scroll-top
+                                 bottom? (at-bottom? timeline)]
+                             (reset! prev-scroll-top top)
+                             ;; ONLY an actual upward user scroll disables
+                             ;; auto-scroll. Content growing mid-stream (or our
+                             ;; own programmatic snap-to-bottom) keeps/increases
+                             ;; scrollTop; reading at-bottom? there races the
+                             ;; growth and used to mistake it for the user
+                             ;; leaving the bottom — freezing the scroll at a
+                             ;; random spot. Snapping back to the bottom always
+                             ;; re-enables it.
+                             (cond
+                               bottom?          (reset! auto-scroll? true)
+                               (< top (- prev 2)) (reset! auto-scroll? false))
                              ;; Surface "scrolled up" into state so the
-                             ;; scroll-to-bottom down-arrow can toggle. The
-                             ;; handler no-ops when the flag is unchanged, so
-                             ;; this only re-renders on the two transitions.
+                             ;; scroll-to-bottom down-arrow can toggle (shown
+                             ;; exactly while auto-scroll is off). The handler
+                             ;; no-ops when the flag is unchanged, so this only
+                             ;; re-renders on the two transitions.
                              (when-let [d @dispatch-ref]
                                (d {:type :web/set-scrolled-up
-                                   :scrolled-up? (not bottom?)})))))
+                                   :scrolled-up? (not @auto-scroll?)})))))
+      ;; Content that lays out AFTER a render — images loading, code blocks
+      ;; getting syntax-highlighted, a stream that paused on a big block — grows
+      ;; the timeline without firing a render or a scroll event, so the RAF
+      ;; snap-to-bottom never runs again and the view stops just short of the
+      ;; bottom. Re-snap on any content-size growth while auto-scroll is on.
+      (when-let [content (.querySelector timeline ".timeline-content")]
+        (doto (js/ResizeObserver. (fn [] (scroll-to-bottom!)))
+          (.observe content)))
       ;; Sync the flag once on (re)attach so a fresh timeline starts consistent.
       (when-let [d @dispatch-ref]
         (d {:type :web/set-scrolled-up :scrolled-up? (not (at-bottom? timeline))})))))
-
-(defn- scroll-to-bottom! []
-  (when @auto-scroll?
-    (when-let [timeline (.querySelector js/document ".timeline")]
-      (set! (.-scrollTop timeline) (.-scrollHeight timeline)))))
 
 (defonce ^:private code-copy-attached? (atom false))
 
