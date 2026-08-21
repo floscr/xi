@@ -454,6 +454,29 @@ body {
   cursor: pointer;
 }
 
+/* Queued backend slash command (offline / pre-join): a dimmed user bubble
+   with the command text + a spinner, cleared once it fires on (re)join. */
+.post--pending-command .post-body {
+  opacity: 0.7;
+}
+
+.post--pending-command .post-content {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+}
+
+.post--pending-command .pending-command-text {
+  font-family: var(--font-mono, monospace);
+}
+
+/* The default spinner border tone (--bg-2) is near-invisible on the purple
+   user bubble; use translucent white so it reads on the filled background. */
+.post--pending-command .agent-status-spinner {
+  border-color: rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+}
+
 /* Outline the prompt the user has navigated to (prompt-nav). */
 .post--nav-target .post-body {
   outline: 2px solid var(--accent, #7c3aed);

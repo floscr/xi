@@ -656,8 +656,14 @@
     (filterv #(str/starts-with? (:name %) q) (palette/expand-commands web-commands))))
 
 (defn dispatch-command!
-  "Fire a slash command as a structured :command/run key, decoupled from the
-   compose draft. Accepts \"/diff staged\", \"diff staged\", or \"diff\"."
+  "Fire a slash command, decoupled from the compose draft. Accepts
+   \"/diff staged\", \"diff staged\", or \"diff\".
+
+   Backend commands go through :web/command (not :command/run directly): that
+   handler delivers them immediately when a room is joined and the socket is
+   up, else stashes them as a pending spinner bubble tied to THIS session and
+   fires them on (re)join — so an offline command can never be forwarded blind
+   into the wrong room."
   [dispatch! room-id slash]
   (let [{:keys [name args]}
         (commands/parse-input (if (str/starts-with? slash "/") slash (str "/" slash)))]
@@ -670,7 +676,7 @@
       ;; Web-only: /skills opens the skills palette page (the TUI's picker
       ;; menu the server command would push doesn't render on web).
       "skills"  (dispatch! {:type :palette/open-skills})
-      (dispatch! (cond-> {:type :command/run :room-id room-id :name name}
+      (dispatch! (cond-> {:type :web/command :room-id room-id :name name}
                    args (assoc :args args))))))
 
 (defn- command-suggestions
@@ -1725,6 +1731,27 @@
       (when (and for-this? (not confirmed?))
         (entry->post dispatch! {:kind :user :text text :images images})))))
 
+(defn- pending-command-post
+  "Spinner bubble for a backend slash command queued while offline / before the
+   room joined (see the :web/command handler). Renders the command text with a
+   spinner so the user sees it is pending for THIS session; pending-command-tap
+   fires it on (re)join and clears it. Matched to the viewed room the same way
+   optimistic-post is (strong room-id identity, session-id fallback, then the
+   not-yet-joined virtual chat)."
+  [state room sid]
+  (when-let [{:keys [room-id session-id name args]} (:web/pending-command state)]
+    (let [for-this? (cond
+                      room-id    (= room-id (:id room))
+                      session-id (and sid (= session-id sid))
+                      :else      (and (nil? sid) (nil? (:id room))))]
+      (when for-this?
+        [:div {:class ["post" "post--user" "post--pending-command"]}
+         [:div {:class ["post-body"]}
+          [:div {:class ["post-content"]}
+           [:span {:class ["pending-command-text"]}
+            (str "/" name (when args (str " " args)))]
+           (spinner)]]]))))
+
 (defn- chat-back-route
   "Where the chat-view back arrow should land: the listing the session belongs
    to, regardless of how the chat was reached (drill-down or a sidebar jump).
@@ -1947,7 +1974,8 @@
         resuming? (and (not new?)
                        (not authoritative?)
                        (not (:web/optimistic state))
-                       (not (:web/pending-submit state)))
+                       (not (:web/pending-submit state))
+                       (not (:web/pending-command state)))
         ;; Only fall back to a blocking spinner when there's no cache to
         ;; paint. With a cache we render it immediately and show a subtle
         ;; "updating" hint in the topbar instead of a spinner flash.
@@ -2014,7 +2042,8 @@
               (list
                (when (and (zero? total)
                           (not (:web/optimistic state))
-                          (not (:web/pending-submit state)))
+                          (not (:web/pending-submit state))
+                          (not (:web/pending-command state)))
                  (launch-header
                   {:model model
                    :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
@@ -2052,6 +2081,7 @@
                           (when post [(with-post-key (str "h-" p) post)])))))
                    (range start (inc total)))))
                (optimistic-post dispatch! state room sid history)
+               (pending-command-post state room sid)
                (dialog-post dispatch! state room history)))
             (empty-state/empty-state {} (spinner) [:p "Connecting…"]))
           (when room (subagents-panel dispatch! room))]]

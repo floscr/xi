@@ -258,6 +258,35 @@
 (defn- optimistic-clear [st _]
   {:state (dissoc st :web/optimistic)})
 
+(defn- web-command
+  "Route a backend slash command. Deliver it immediately when the socket is up
+   AND a room is joined; otherwise stash it as a pending command (a spinner
+   bubble, see views/pending-command-post) and let pending-command-tap fire it
+   once :room/joined (re)arrives — so an offline / mid-join command is never
+   forwarded blind into the wrong room. Mirrors the prompt pending-submit path,
+   including the virtual new-chat join-token correlation."
+  [st {:keys [room-id name args]}]
+  (if (and (:web/connected? st) room-id)
+    {:effects [[:app/dispatch (cond-> {:type :command/run :room-id room-id :name name}
+                                args (assoc :args args))]]}
+    (let [sid      (get-in st [:web/route :session-id])
+          pending  (:web/pending-room st)
+          virtual? (and (nil? sid) (some? pending))
+          token    (when virtual? (str (:id pending)))
+          cwd      (:cwd pending)]
+      (cond-> {:state (-> st
+                          (assoc :web/pending-command
+                                 (cond-> {:room-id room-id :session-id sid :name name}
+                                   args  (assoc :args args)
+                                   token (assoc :join-token token)))
+                          (cond-> virtual? (dissoc :web/pending-room)))}
+        virtual?
+        (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
+                                     cwd (assoc :cwd cwd))]])))))
+
+(defn- command-clear-pending [st _]
+  {:state (dissoc st :web/pending-command)})
+
 (defn- cmd-select [st {:keys [index]}]
   {:state (assoc st :web/cmd-selected (or index 0))})
 
@@ -652,6 +681,8 @@
           :submit/clear-pending  submit-clear-pending
           :web/optimistic-set    optimistic-set
           :web/optimistic-clear  optimistic-clear
+          :web/command           web-command
+          :command/clear-pending command-clear-pending
           :cmd/select            cmd-select
           :web/record-command    record-command
           :theme/set-mode        theme-set-mode
@@ -1234,14 +1265,34 @@
           (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
                        (seq images) (assoc :images (vec images)))))))))
 
+(defn- pending-command-tap
+  "Fire a stashed backend slash command once the room it was aimed at joins —
+   the command analogue of pending-submit-tap. Correlated by :join-token (a
+   virtual new chat) or the joined session id so a reconnect / navigation race
+   can't run it in the wrong room. Targets the room that actually joined
+   (:room-id event), never a stale/captured id."
+  [dispatch!]
+  (fn [event state]
+    (when (and (= :room/joined (:type event))
+               (:web/pending-command state))
+      (let [{:keys [session-id name args join-token]} (:web/pending-command state)
+            joined-sid   (get-in event [:room :session :id])
+            joined-token (:join-token event)
+            room-id      (:room-id event)]
+        (when (if join-token
+                (= join-token joined-token)
+                (or (nil? session-id) (= session-id joined-sid)))
+          (dispatch! {:type :command/clear-pending})
+          (dispatch! (cond-> {:type :command/run :room-id room-id :name name}
+                       args (assoc :args args))))))))
+
 (defn- record-command-tap
-  "Record originating slash-command invocations (:command/run keys) into the
-   recently-executed list that feeds the quick-command bar (skips
-   mirrored/remote events)."
+  "Record originating slash-command invocations into the recently-executed list
+   that feeds the quick-command bar. All web slash commands funnel through the
+   local :web/command event (see views/dispatch-command!), so match that."
   [dispatch!]
   (fn [event _state]
-    (when (and (= :command/run (:type event))
-               (not (:remote? event))
+    (when (and (= :web/command (:type event))
                (views/known-command? (:name event)))
       (dispatch! {:type :web/record-command :name (:name event)}))))
 
@@ -1521,6 +1572,7 @@
     (add-tap! (request-projects-tap dispatch!))
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
+    (add-tap! (pending-command-tap dispatch!))
     (add-tap! (optimistic-tap dispatch!))
     (add-tap! (record-command-tap dispatch!))
     (add-tap! (prompt-nav-close-tap dispatch!))
