@@ -35,6 +35,7 @@
   (:require [clojure.string :as str]
             [xi.ext.chrome-mcp.guard :as guard]
             [xi.ext.chrome-mcp.launch :as launch]
+            [xi.ext.chrome-mcp.scope :as scope]
             [xi.ext.element-picker :as element-picker]
             [xi.ext.style-editor :as style-editor]
             ["node:child_process" :as child-process])
@@ -153,6 +154,7 @@
      :notify (fn [method params]
                (write! (cond-> {:jsonrpc "2.0" :method method}
                          (some? params) (assoc :params params))))
+     :dead?  (fn [] (some? @dead))
      :kill   (fn [] (try (.kill child) (catch :default _ nil)))}))
 
 (defn- connect!
@@ -173,6 +175,21 @@
     {:content  (or (:content m) [{:type "text" :text ""}])
      :is-error (boolean (:isError m))}))
 
+(defn- result-text [result]
+  (->> (:content result)
+       (keep (fn [b] (when (= "text" (:type b)) (:text b))))
+       (str/join "\n")))
+
+(defn- wedged-selection?
+  "chrome-devtools-mcp 1.7.0 bug: once the *selected* page is closed, EVERY
+   tool call — including list_pages and select_page, the tools that would
+   repair the selection — throws 'The selected page has been closed' from an
+   unconditional getSelectedMcpPage() in ToolHandler, wedging the child
+   permanently. (Fixed on upstream main, not yet released.)"
+  [result]
+  (and (:is-error result)
+       (str/includes? (result-text result) "The selected page has been closed")))
+
 ;; ── Factory ──────────────────────────────────────────────────────────────────
 
 (defn create
@@ -185,14 +202,17 @@
     (let [client* (atom nil)   ;; the live client map, for :on-shutdown
           ready*  (atom nil)]  ;; memoized Promise<connected-client>
       (letfn [(ensure! []
-                (or @ready*
-                    (let [c (make-client (server-args))
-                          p (connect! c)]
-                      (reset! client* c)
-                      (reset! ready* p)
-                      (.catch p (fn [_] (reset! ready* nil) (reset! client* nil)))
-                      p)))
-              (raw-forward [tool-name args]
+                ;; Respawn when the memoized child has since died (its exit
+                ;; settles pending calls but must not wedge future ones).
+                (if (and @ready* (not (when-let [c @client*] ((:dead? c)))))
+                  @ready*
+                  (let [c (make-client (server-args))
+                        p (connect! c)]
+                    (reset! client* c)
+                    (reset! ready* p)
+                    (.catch p (fn [_] (reset! ready* nil) (reset! client* nil)))
+                    p)))
+              (call! [tool-name args]
                 (-> (ensure!)
                     (.then (fn [client]
                              ((:call client) "tools/call"
@@ -202,7 +222,31 @@
                               {:content  [{:type "text"
                                            :text (str "chrome-devtools-mcp error: "
                                                       (.-message e))}]
-                               :is-error true}))))]
+                               :is-error true}))))
+              (heal-selection! []
+                ;; Un-wedge a closed-selected-page child (see wedged-selection?).
+                ;; new_page is the one call that still works: its handler
+                ;; re-selects the fresh page BEFORE the buggy post-handler line
+                ;; runs. Then move selection onto another live page and drop the
+                ;; helper tab so the heal leaves no clutter behind (skipped when
+                ;; the blank tab is the only page — the last page can't close).
+                (-> (call! "new_page" {:url "about:blank"})
+                    (.then (fn [res]
+                             (let [pages (scope/parse-pages (result-text res))
+                                   blank (some #(when (:selected? %) (:id %)) pages)
+                                   other (some #(when-not (:selected? %) (:id %)) pages)]
+                               (if (and blank other)
+                                 (-> (call! "select_page" {:pageId other})
+                                     (.then (fn [_] (call! "close_page" {:pageId blank}))))
+                                 (js/Promise.resolve nil)))))
+                    (.catch (fn [_] nil))))
+              (raw-forward [tool-name args]
+                (-> (call! tool-name args)
+                    (.then (fn [res]
+                             (if (wedged-selection? res)
+                               (-> (heal-selection!)
+                                   (.then (fn [_] (call! tool-name args))))
+                               res)))))]
         ;; In attach mode, scope every call to the agent's launch xmonad
         ;; workspace (unless XI_CHROME_NO_SCOPE is set). See xi.ext.chrome-mcp.guard.
         (let [browser-url (env "XI_CHROME_BROWSER_URL")

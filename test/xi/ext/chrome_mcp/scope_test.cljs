@@ -24,8 +24,29 @@
     (is (= "https://ex.com/" (:url (nth pages 2))))))
 
 (deftest parse-pages-no-url-test
-  (is (= [{:id 3 :title "about:blank" :url nil :selected? false}]
-         (scope/parse-pages "3: about:blank"))))
+  (testing "untitled pages print as a bare URL (no parens) — parsed as :url"
+    (is (= [{:id 3 :title "about:blank" :url "about:blank" :selected? false}]
+           (scope/parse-pages "3: about:blank")))
+    (is (= [{:id 4 :title "chrome://newtab/" :url "chrome://newtab/" :selected? false}]
+           (scope/parse-pages "4: chrome://newtab/"))))
+  (testing "a plain non-URL title still parses with :url nil"
+    (is (= [{:id 5 :title "Loading page" :url nil :selected? false}]
+           (scope/parse-pages "5: Loading page")))))
+
+(deftest classify-newtab-url-alias-test
+  (testing "mcp reports chrome://new-tab-page/ where CDP reports chrome://newtab/
+            — alias-normalized so alignment survives and blanks stay correlatable"
+    (let [s {:pages [{:id 1 :title "New Tab" :url "chrome://new-tab-page/" :selected? false}
+                     {:id 2 :title "about:blank" :url "about:blank" :selected? true}]
+             :cdp-targets [{:url "chrome://newtab/" :title "New Tab" :window-id 100}
+                           {:url "about:blank" :title "about:blank" :window-id 200}]
+             :wm-windows [{:workspace "web" :title "New Tab - Google Chrome"}
+                          {:workspace "work" :title "about:blank - Google Chrome"}]
+             :launch-workspace "work"}
+          r (scope/classify s)]
+      (is (= #{2} (:in-workspace r)) "the blank page's window is on 'work'")
+      (is (= {1 "web" 2 "work"} (:page->workspace r)))
+      (is (true? (:selected-in? r))))))
 
 (def ^:private sample
   {:pages [{:id 6 :title "Shovels | building data" :url "https://app.shovels.ai/" :selected? false}

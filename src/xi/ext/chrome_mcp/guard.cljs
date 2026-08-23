@@ -106,8 +106,13 @@
               ;; Reconnect a memoized client whose socket has since died (Chrome
               ;; relaunched / browser endpoint dropped). Reusing a dead client
               ;; would `.send` into the void and hang forever (see xi.ext.chrome-mcp.cdp).
+              ;; Retry a failed connect once within the same call: a cold
+              ;; first connect (fresh server) rejecting would otherwise drop the
+              ;; whole operation into the unscoped raw-forward fallback — which
+              ;; is how a new_page once landed in a foreign-workspace window.
               (-> (or @cdp* (cdp-connect!))
-                  (.then (fn [c] (if ((:closed? c)) (cdp-connect!) c)))))
+                  (.then (fn [c] (if ((:closed? c)) (cdp-connect!) c)))
+                  (.catch (fn [_] (cdp-connect!)))))
 
             (classify [ws]
               ;; → Promise<{:result :text :scope}>
@@ -278,15 +283,32 @@
             (gate-new-page [ws args]
               ;; chrome-devtools-mcp `new_page` only adds a *tab* to the focused
               ;; window, which need not be on our workspace — so we can't use it
-              ;; blindly. Favor reusing a window already on `ws` (open a tab in
-              ;; it via CDP with an explicit windowId — cheap, no flash); only
-              ;; when `ws` has no window do we spawn a fresh OS window.
+              ;; blindly. Best case: `ws` already has an empty page (a New Tab /
+              ;; about:blank — e.g. Chrome's cold-launch tab, or our own
+              ;; bootstrap window) → navigate it in place instead of stacking a
+              ;; tab beside it. Else favor reusing a window already on `ws`
+              ;; (open a tab in it via CDP with an explicit windowId — cheap, no
+              ;; flash); only when `ws` has no window do we spawn a fresh OS
+              ;; window.
               (let [url (or (:url args) "about:blank")]
                 (-> (classify ws)
-                    (.then (fn [{:keys [scope]}]
-                             (if-let [win-id (first (:in-workspace-window-ids scope))]
-                               (new-tab-in-window! ws url win-id)
-                               (new-window-page! ws url))))
+                    (.then (fn [{:keys [scope text]}]
+                             (let [pages    (scope/parse-pages text)
+                                   empty-id (some (fn [p]
+                                                    (when (and (contains? (:in-workspace scope) (:id p))
+                                                               (scope/empty-page-url? (:url p)))
+                                                      (:id p)))
+                                                  pages)]
+                               (cond
+                                 empty-id
+                                 (-> (forward "select_page" {:pageId empty-id :bringToFront true})
+                                     (.then (fn [_] (forward "navigate_page" {:type "url" :url url})))
+                                     (.then (fn [_] (gate-list-pages ws))))
+
+                                 :else
+                                 (if-let [win-id (first (:in-workspace-window-ids scope))]
+                                   (new-tab-in-window! ws url win-id)
+                                   (new-window-page! ws url))))))
                     (.catch (fn [_] (forward "new_page" args))))))
 
             (dispatch [tool args ws]

@@ -30,7 +30,11 @@
 (defn parse-pages
   "Parse a `list_pages` result body into [{:id :title :url :selected?}].
    chrome-devtools-mcp prints `<id>: <title> (<url>)[ [selected]]` lines under a
-   `## Pages` header."
+   `## Pages` header — except for UNTITLED pages (about:blank, still-loading),
+   which it prints as the bare URL with no parens (`4: about:blank`). Without
+   the bare-URL fallback such pages parse with :url nil and become
+   uncorrelatable — notably the guard's own self-healed blank window, which
+   then never counts as in-workspace."
   [text]
   (->> (str/split-lines (or text ""))
        (keep (fn [line]
@@ -41,9 +45,33 @@
                                      (str/replace #"\s*\[selected\]" "")
                                      (str/replace #"\s*isolatedContext=\S+" "")
                                      (cond-> url (str/replace (str "(" url ")") ""))
-                                     str/trim)]
+                                     str/trim)
+                       url       (or url
+                                     (when (re-matches #"[a-z][a-z0-9+.-]*:\S*" title)
+                                       title))]
                    {:id (js/parseInt id 10) :title title :url url :selected? selected?}))))
        vec))
+
+(def ^:private url-aliases
+  "The same page reported under different URLs by the two sources that must be
+   correlated: chrome-devtools-mcp (via puppeteer) reports the New Tab page as
+   chrome://new-tab-page/ while CDP Target.getTargets reports chrome://newtab/.
+   Left unnormalized this reads as a URL *contradiction*, which knocks out
+   positional alignment for the whole page list whenever a New Tab exists."
+  {"chrome://new-tab-page/" "chrome://newtab/"
+   "chrome://new-tab-page"  "chrome://newtab/"})
+
+(defn- norm-url
+  "Trimmed, alias-normalized URL for cross-source comparison; nil when blank."
+  [u]
+  (let [u (some-> u str/trim)]
+    (when (seq u) (get url-aliases u u))))
+
+(defn empty-page-url?
+  "URL of a contentless page (blank tab or Chrome's New Tab) — safe to reuse by
+   navigating it in place instead of stacking yet another tab beside it."
+  [u]
+  (contains? #{"about:blank" "chrome://newtab/"} (norm-url u)))
 
 (defn- titles-loosely-equal?
   "Titles from two sources for the same tab; exact, else one contains the other
@@ -67,9 +95,9 @@
   (and (= (count pages) (count cdp-targets))
        (seq pages)
        (every? (fn [[p t]]
-                 (let [pu (some-> (:url p) str/trim)
-                       tu (some-> (:url t) str/trim)]
-                   (or (str/blank? pu) (str/blank? tu) (= pu tu))))
+                 (let [pu (norm-url (:url p))
+                       tu (norm-url (:url t))]
+                   (or (nil? pu) (nil? tu) (= pu tu))))
                (map vector pages cdp-targets))))
 
 (defn- correlate-pages->wid
@@ -80,10 +108,11 @@
   (if (pages-aligned? pages cdp-targets)
     (into {} (map (fn [p t] [(:id p) (:window-id t)]) pages cdp-targets))
     (let [url->wid (reduce (fn [m {:keys [url window-id]}]
-                            (cond-> m (and url (not (contains? m url)))
-                                    (assoc url window-id)))
-                          {} cdp-targets)]
-      (into {} (map (fn [{:keys [id url]}] [id (get url->wid url)]) pages)))))
+                             (let [u (norm-url url)]
+                               (cond-> m (and u (not (contains? m u)))
+                                       (assoc u window-id))))
+                           {} cdp-targets)]
+      (into {} (map (fn [{:keys [id url]}] [id (get url->wid (norm-url url))]) pages)))))
 
 (defn- window->workspace
   "Map each CDP windowId → xmonad workspace *name* by matching any of the
