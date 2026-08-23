@@ -1,5 +1,6 @@
 target/
 node_modules/
+.demo-home/
 .shadow-cljs/
 .cpcache/
 *.js.map

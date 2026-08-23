@@ -22,7 +22,16 @@
                                        ["server" "bun target/main.js server --headless"]]
                              :env-file ".env"})
           (def pa-serve-config {:session "xi-pa"
-                                :windows [["server" "bun target/main.js server --headless --personal-agent-only --port 7475"]]}))
+                                :windows [["server" "bun target/main.js server --headless --personal-agent-only --port 7475"]]})
+          ;; Isolated demo server (port 7476). HOME is redirected at .demo-home
+          ;; (built by scripts/demo-seed.mjs) so it never sees the real active
+          ;; session — see docs/demo.md. Reuses the target/main.js compiled by
+          ;; the main watch (bb dev / bb serve).
+          (def demo-home (str (System/getProperty "user.dir") "/.demo-home"))
+          (def demo-config {:session "xi-demo"
+                            :windows [["server" (str "HOME=" demo-home
+                                                     " bun target/main.js server --headless --port 7476")]]
+                            :print ["Demo web: http://localhost:7476"]}))
 
   dev         {:doc "Start tmux dev session"
                :task (td/start config)}
@@ -207,12 +216,40 @@
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
            (td/restart (assoc serve-config :print [(str "Web: http://" ip ":7474")])))}
 
+  demo:seed
+  {:doc "(Re)build the isolated demo HOME (.demo-home) with seed sessions"
+   :task (shell "bun" "scripts/demo-seed.mjs")}
+
+  demo
+  {:doc "Seed + start the isolated demo server (port 7476, HOME=.demo-home)"
+   :task (do (shell "bun" "scripts/demo-seed.mjs")
+             (td/start demo-config))}
+
+  demo:stop
+  {:doc "Stop the demo server tmux session"
+   :task (td/stop demo-config)}
+
+  demo:restart
+  {:doc "Re-seed .demo-home and restart the demo server (picks up server-side changes)"
+   :task (do (shell "bun" "scripts/demo-seed.mjs")
+             (td/restart demo-config))}
+
+  demo:logs
+  {:doc "Show recent output from the demo server window"
+   :task (td/logs demo-config {:lines 40})}
+
+  demo:key
+  {:doc "Print the demo client key + the localStorage snippet to install it"
+   :task (let [k "demo00000000000000000000000000000000000000000000000000000000demo"]
+           (println (str "client key: " k))
+           (println (str "localStorage.setItem('xi-client-key', '" k "')")))}
+
   check
   {:doc "Inspect all Xi processes (ports, server + shadow procs, tmux pane logs) AND print agent guidance: what runs where + which bb task to use. Run before starting/stopping anything."
    :task (do
-           (println "── Listening ports (7474 main · 7475 personal · 8100 dev-http · 9630 shadow) ──")
+           (println "── Listening ports (7474 main · 7475 personal · 7476 demo · 8100 dev-http · 9630 shadow) ──")
            (shell {:continue true} "bash" "-c"
-                  "ss -tlnp 2>/dev/null | grep -E ':(7474|7475|8100|9630)\\b' || echo '  none listening'")
+                  "ss -tlnp 2>/dev/null | grep -E ':(7474|7475|7476|8100|9630)\\b' || echo '  none listening'")
            (println)
            (println "── Headless server processes (bun) ──")
            (shell {:continue true} "bash" "-c"
@@ -231,6 +268,9 @@
            (println "=== xi-pa session (bb serve:personal — personal agent) ===")
            (td/status pa-serve-config)
            (td/logs pa-serve-config {:lines 40})
+           (println "=== xi-demo session (bb demo — isolated seed data, port 7476) ===")
+           (td/status demo-config)
+           (td/logs demo-config {:lines 20})
            (println)
            (println "── How to act on this (agents: read before starting/stopping anything) ──")
            (println "  Never start services by hand (no raw `bun target/main.js ...`,")
@@ -239,6 +279,7 @@
            (println)
            (println "  port 7474  main server      session xi-serve  bb serve   / serve:restart / serve:stop")
            (println "  port 7475  personal agent   session xi-pa     bb serve:personal[:restart|:stop]")
+           (println "  port 7476  demo (seed data)  session xi-demo   bb demo / demo:restart / demo:stop")
            (println "  shadow watch (main+web)     session xi-serve  auto-compiles on save; no manual build")
            (println "  standalone watch (no srv)   session xi        bb dev / dev:restart / dev:stop")
            (println)

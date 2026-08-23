@@ -69,6 +69,7 @@ The `@anthropic-ai/claude-agent-sdk` must be pinned to **`0.2.110`** — the sam
 
 - **Do NOT run `xi` / `bun target/main.js` from the agent.** It's a TUI app that requires an interactive terminal and will not work inside the agent shell. Only compile; the user tests manually.
 - The **web client** CAN be agent-tested via the chrome-devtools tools at `http://localhost:7474`.
+- **To self-test the web UI, prefer the isolated demo server (`bb demo`, port 7476) — NOT the real :7474 server unless the user explicitly asks.** The demo runs with `HOME` redirected at a gitignored `.demo-home/` seeded with fake sessions, so it can never see or mutate the user's real active session. Open `http://localhost:7476`, install the pre-approved demo client key from `bb demo:key` into `localStorage` (`xi-client-key`), reload, and drive it. See [docs/demo.md](docs/demo.md).
 
 ### IMPORTANT: Always Manage the Server via the `bb serve` Tasks
 
