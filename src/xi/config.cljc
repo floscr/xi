@@ -46,6 +46,7 @@
         [xi.ext.snippets :as snippets]
         [xi.ext.subagent :as subagent]
         [xi.ext.terminal-title :as terminal-title]
+        [xi.ext.tmp-cleanup-intercept :as tmp-cleanup-intercept]
         [xi.ext.todo-intercept :as todo-intercept]
         [xi.ext.web :as web]
         [xi.ext.worktree.core :as worktree]]
@@ -105,6 +106,7 @@
       gtd/extension
       permission-gate/extension
       todo-intercept/extension
+      tmp-cleanup-intercept/extension
       terminal-title/extension
       clipboard-image/extension
       extensions/create
