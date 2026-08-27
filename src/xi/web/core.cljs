@@ -1709,6 +1709,15 @@
                        (or (= ox "auto") (= ox "scroll"))))
                 true
                 :else (recur (.-parentElement n)))))
+          ;; True while the user has an active (non-collapsed) text selection.
+          ;; iOS text selection is a touch-drag on the selection handles, which
+          ;; looks just like a horizontal swipe — so a drag that produced/extends
+          ;; a selection must never open or close the sidebar.
+          selecting?
+          (fn []
+            (when-let [sel (.getSelection js/window)]
+              (and (not (.-isCollapsed sel))
+                   (pos? (.-length (.toString sel))))))
           start (atom nil)]
       (.addEventListener
        js/document "touchstart"
@@ -1741,6 +1750,7 @@
            (reset! start nil)
            (let [open-zone (min 100 (* 0.2 (or (.-innerWidth js/window) 0)))]
              (when (and (not scroll?)
+                        (not (selecting?))
                         (> (js/Math.abs dx) (js/Math.abs dy)))
                (cond
                  (and (not (:web/sidebar-open? @state))
