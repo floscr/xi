@@ -2080,6 +2080,38 @@ body {
   filter: brightness(1.1);
 }
 
+/* ── "Copied" toast (native copy confirmation) ───────────────────────── */
+
+.copy-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--size-12) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-4);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  animation: copy-toast-in 0.15s ease-out;
+}
+
+.copy-toast svg {
+  color: var(--accent);
+}
+
+@keyframes copy-toast-in {
+  from { opacity: 0; transform: translate(-50%, var(--size-2)); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
 /* Resume session overlay */
 
 .resume-overlay {

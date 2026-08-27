@@ -629,6 +629,11 @@
           :lightbox/close        lightbox-close
           :copy/open             (fn [st {:keys [text]}] {:state (assoc st :web/copy-text text)})
           :copy/close            (fn [st _] {:state (dissoc st :web/copy-text)})
+          ;; Transient "Copied" toast after a native programmatic copy. Setting
+          ;; the flag paints the toast; the effect schedules its removal.
+          :copy/flash            (fn [st _] {:state   (assoc st :web/copy-flash true)
+                                            :effects [[:copy/flash-clear {}]]})
+          :copy/flash-off        (fn [st _] {:state (dissoc st :web/copy-flash)})
           :bubble/menu-open      (fn [st {:keys [index text x y]}]
                                    {:state (assoc st :web/bubble-menu {:index index :text text :x x :y y})})
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
@@ -1141,6 +1146,16 @@
               (js/setTimeout
                (fn [] (dispatch! (assoc payload :type :session/content-search)))
                180))))
+   ;; Auto-dismiss the "Copied" toast. A fresh copy restarts the timer so the
+   ;; toast doesn't blink out mid-flash when the user copies twice in a row.
+   :copy/flash-clear
+  (let [timer (atom nil)]
+    (fn [{:keys [dispatch!]} _]
+      (when-let [t @timer] (js/clearTimeout t))
+      (reset! timer
+              (js/setTimeout
+               (fn [] (dispatch! {:type :copy/flash-off}))
+               1500))))
   :prompt-nav/scroll
    (fn [_ {:keys [history-index]}]
      ;; Suspend auto-scroll so the post-render scroll-to-bottom doesn't fight us.

@@ -116,12 +116,14 @@
   "Copy text to the clipboard, falling back to a synchronous textarea when the
    async Clipboard API is unavailable (e.g. iOS over non-secure HTTP). Calling
    navigator.clipboard.writeText directly when navigator.clipboard is undefined
-   throws synchronously, bypassing any .catch — so guard on it explicitly."
+   throws synchronously, bypassing any .catch — so guard on it explicitly.
+   Always returns a promise that resolves once the text has been copied."
   [text]
   (if (and (some? js/navigator.clipboard) js/window.isSecureContext)
     (-> (.writeText js/navigator.clipboard text)
         (.catch (fn [_] (fallback-copy! text))))
-    (fallback-copy! text)))
+    (do (fallback-copy! text)
+        (js/Promise.resolve))))
 
 (def ios?
   "True on iOS/iPadOS, where programmatic clipboard writes are unavailable over
@@ -133,6 +135,26 @@
     (boolean
      (or (re-find #"iPad|iPhone|iPod" ua)
          (and (re-find #"Mac" platform) (> touch 1))))))
+
+(defn- needs-copy-dialog?
+  "Whether the manual long-press copy dialog is required instead of a direct
+   programmatic copy. Only on iOS over an *insecure* origin (plain HTTP), where
+   neither navigator.clipboard (not a secure context) nor execCommand works. Over
+   HTTPS the async Clipboard API is available, so iOS copies directly like every
+   other platform. Evaluated per-click since isSecureContext is fixed per load."
+  []
+  (and ios? (not js/window.isSecureContext)))
+
+(defn- copy!
+  "Copy text from a UI action. On iOS over insecure HTTP, opens the manual
+   long-press dialog (its own confirmation). Otherwise copies programmatically
+   and flashes a \"Copied\" toast once the copy lands, so the native copy has
+   visible feedback."
+  [dispatch! text]
+  (if (needs-copy-dialog?)
+    (dispatch! {:type :copy/open :text text})
+    (-> (copy-to-clipboard! text)
+        (.then (fn [_] (dispatch! {:type :copy/flash}))))))
 
 (defn- copy-dialog-overlay
   "iOS manual-copy fallback. Shows the text in a pre-selected, read-only
@@ -162,6 +184,14 @@
         [:div {:class ["confirm-actions"]}
          [:button {:class ["confirm-btn" "confirm-btn--allow"]
                    :on {:click (fn [_] (close!))}} "Done"]]]])))
+
+(defn- copy-toast
+  "Transient \"Copied\" confirmation shown after a native (programmatic) copy.
+   Rendered only while :web/copy-flash is set; auto-dismissed by :copy/flash."
+  []
+  [:div {:class ["copy-toast"] :replicant/key "copy-toast"}
+   (icon/icon {:icon-name :check :size :sm})
+   [:span "Copied"]])
 
 ;; ── Spinner ──────────────────────────────────────────────────────────────────
 
@@ -1715,10 +1745,7 @@
                    :on {:click (fn [e]
                                  (.stopPropagation e)
                                  (dispatch! {:type :overflow/close})
-                                 (let [text (commands/debug-text room)]
-                                   (if ios?
-                                     (dispatch! {:type :copy/open :text text})
-                                     (copy-to-clipboard! text))))}}
+                                 (copy! dispatch! (commands/debug-text room)))}}
           (icon/icon {:icon-name :copy :size :sm})
           [:span "Copy debug info"]]
          [:button {:class ["overflow-menu-item"]
@@ -1874,9 +1901,7 @@
                 :on {:click (fn [e]
                               (.stopPropagation e)
                               (close!)
-                              (if ios?
-                                (dispatch! {:type :copy/open :text text})
-                                (copy-to-clipboard! text)))}}
+                              (copy! dispatch! text))}}
        (icon/icon {:icon-name :copy :size :sm})
        [:span "Copy"]]
       [:button {:class ["bubble-menu-item"]
@@ -1913,9 +1938,7 @@
                 :on {:click (fn [e]
                               (.stopPropagation e)
                               (close!)
-                              (if ios?
-                                (dispatch! {:type :copy/open :text text})
-                                (copy-to-clipboard! text)))}}
+                              (copy! dispatch! text))}}
        (icon/icon {:icon-name :copy :size :sm})
        [:span "Copy"]]]]))
 
@@ -2122,6 +2145,7 @@
             (empty-state/empty-state {} (spinner) [:p "Connecting…"]))
           (when room (subagents-panel dispatch! room))]]
         (copy-dialog-overlay dispatch! (:web/copy-text state))
+        (when (:web/copy-flash state) (copy-toast))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))
         (when-let [menu (:web/code-menu state)]
@@ -3213,10 +3237,7 @@
                                                  :room-id (:id room)
                                                  :method "git" :engine :git}))
                :copy-debug   (fn [_]
-                               (let [text (commands/debug-text room)]
-                                 (if ios?
-                                   (dispatch! {:type :copy/open :text text})
-                                   (copy-to-clipboard! text))))
+                               (copy! dispatch! (commands/debug-text room)))
                :reload       (fn [_] (reload-with-feedback!))))]
        (apply cmd/command-group {:heading "Actions"}
          (for [{:keys [key label icon]} (palette/actions (boolean room))]
