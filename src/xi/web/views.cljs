@@ -408,10 +408,10 @@
             [:div {:class ["user-images"]}
              (map-indexed
               (fn [i {:keys [data media-type name]}]
-                (if (= media-type "application/pdf")
+                (if-not (str/starts-with? (or media-type "") "image/")
                   [:div {:replicant/key i :class ["user-attachment-chip"]}
                    (icon/icon {:icon-name :file-text :size :md})
-                   [:span {:class ["user-attachment-name"]} (or name "document.pdf")]]
+                   [:span {:class ["user-attachment-name"]} (or name "file")]]
                   (let [src (str "data:" media-type ";base64," data)]
                     [:img {:replicant/key i
                            :class ["user-image" "lightbox-thumb"]
@@ -516,34 +516,39 @@
        (set! (.-onerror reader) (fn [_] (resolve nil)))
        (.readAsDataURL reader file)))))
 
-(defn- read-pdf-file
-  "Read a PDF File as base64; promise of
-   {:data base64 :media-type \"application/pdf\" :name filename} or nil on failure."
+(defn- read-raw-file
+  "Read any File as base64, preserving its real mime type and filename; promise
+   of {:data base64 :media-type mime :name filename} or nil on failure. Used for
+   every non-image attachment (PDF, zip, text, …) — the bytes are stored
+   verbatim and reach the agent by on-disk path."
   [^js file]
   (js/Promise.
    (fn [resolve _]
      (let [reader (js/FileReader.)]
        (set! (.-onload reader)
              (fn [_]
-               (let [[_ media-type b64] (re-matches #"data:([^;]+);base64,(.*)"
-                                                    (.-result reader))]
+               (let [[_ mime _ b64] (re-matches #"^data:([^;,]*)(;base64)?,(.*)$"
+                                                (.-result reader))]
                  (resolve {:data b64
-                           :media-type (or media-type "application/pdf")
+                           :media-type (or (not-empty (.-type file))
+                                           (not-empty mime)
+                                           "application/octet-stream")
                            :name (.-name file)}))))
        (set! (.-onerror reader) (fn [_] (resolve nil)))
        (.readAsDataURL reader file)))))
 
 (defn- add-files!
-  "Stage a seq of Files as compose attachments: images are downscaled, PDFs are
-   read as-is."
+  "Stage a seq of Files as compose attachments: images are downscaled; every
+   other file type (PDF, zip, text, …) is read as-is and referenced by path
+   server-side."
   [dispatch! files]
   (when (seq files)
     (-> (js/Promise.all
          (to-array
           (map (fn [^js f]
-                 (if (= "application/pdf" (.-type f))
-                   (read-pdf-file f)
-                   (resize-image-file f)))
+                 (if (str/starts-with? (or (.-type f) "") "image/")
+                   (resize-image-file f)
+                   (read-raw-file f)))
                files)))
         (.then (fn [results]
                  (when-let [valid (seq (remove nil? (array-seq results)))]
@@ -566,10 +571,10 @@
     [:div {:class ["compose-images"]}
      (map-indexed
       (fn [idx {:keys [data media-type name]}]
-        (if (= media-type "application/pdf")
+        (if-not (str/starts-with? (or media-type "") "image/")
           [:div {:replicant/key idx :class ["compose-attachment-chip"]}
            (icon/icon {:icon-name :file-text :size :md})
-           [:span {:class ["compose-attachment-name"]} (or name "document.pdf")]
+           [:span {:class ["compose-attachment-name"]} (or name "file")]
            [:button {:class ["compose-attachment-remove"]
                      :on {:click (fn [_] (dispatch! {:type :compose/remove-image :idx idx}))}}
             (icon/icon {:icon-name :x :size :sm})]]
@@ -873,7 +878,7 @@
                                       (.click)))}}
        (icon/icon {:icon-name :image :size :md})]
       [:input {:id "compose-image-input" :type "file"
-               :accept "image/*,application/pdf" :multiple true
+               :multiple true
                :style {:display "none"}
                :on {:change (fn [^js e]
                               (add-files! dispatch! (array-seq (.. e -target -files)))

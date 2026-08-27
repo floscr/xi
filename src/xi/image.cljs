@@ -123,3 +123,31 @@
         (fs/writeFileSync file buf))
       file)
     (catch :default _e nil)))
+
+(defn- sanitize-name
+  "Make an uploaded filename safe to use as a leaf path component: strip any
+   directory separators / NULs and leading dots."
+  [name]
+  (-> (or (not-empty name) "file")
+      (str/replace #"[\\/\x00]" "_")
+      (str/replace #"^\.+" "_")))
+
+(defn persist-file!
+  "Write an arbitrary attachment {:data base64 :name filename} to
+   ~/.config/xi/uploads/<sha16>-<name>, deduped by content hash. Preserves the
+   original filename (and extension) so the agent's file tools and subagents can
+   recognise and read it by path. Returns the absolute file path, or nil."
+  [{:keys [data name]}]
+  (try
+    (let [buf  (js/Buffer.from data "base64")
+          sha  (-> (.createHash crypto "sha256")
+                   (.update buf)
+                   (.digest "hex"))
+          base (sanitize-name name)
+          dir  (uploads-dir)
+          file (.join path dir (str (subs sha 0 16) "-" base))]
+      (.mkdirSync fs dir #js {:recursive true})
+      (when-not (.existsSync fs file)
+        (fs/writeFileSync file buf))
+      file)
+    (catch :default _e nil)))

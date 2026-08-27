@@ -324,16 +324,24 @@
 
    :image/process
    (fn [{:keys [dispatch!]} {:keys [room-id text images]}]
-     ;; Resize for the API, then persist each image to disk so the agent's
-     ;; file tools and any spawned subagents can reach it by path (they only
-     ;; see the inline base64 blocks otherwise). The path rides on each image
-     ;; map (:path) and is surfaced to the provider prompt at turn time — the
-     ;; visible user bubble keeps the plain text.
-     (let [processed (->> (image/process-images images)
-                          (mapv (fn [img]
-                                  (if-let [p (image/persist-image! img)]
-                                    (assoc img :path p)
-                                    img))))]
+     ;; Persist each attachment to disk so the agent's file tools and any
+     ;; spawned subagents can reach it by path (they only see the inline base64
+     ;; blocks otherwise). The path rides on each attachment map (:path) and is
+     ;; surfaced to the provider prompt at turn time — the visible user bubble
+     ;; keeps the plain text. Images are additionally resized to fit the API
+     ;; pixel limits; other file types (PDF, zip, text, …) are stored verbatim
+     ;; and reach the model only via their on-disk path.
+     (let [processed
+           (->> images
+                (mapv (fn [{:keys [media-type] :as att}]
+                        (if (str/starts-with? (or media-type "") "image/")
+                          (let [img (image/ensure-within-limits att)]
+                            (if-let [p (image/persist-image! img)]
+                              (assoc img :path p)
+                              img))
+                          (if-let [p (image/persist-file! att)]
+                            (assoc att :path p)
+                            att)))))]
        (dispatch! {:type :prompt/submit :room-id room-id :text text
                    :images processed})))
 

@@ -82,15 +82,20 @@
            (str/join "\n\n" msgs)
            "\n</conversation_history>"))))
 
-(defn- prompt-with-image-paths
-  "Append the on-disk paths of attached images to the provider prompt so the
+(defn- prompt-with-attachment-paths
+  "Append the on-disk paths of attached files to the provider prompt so the
    agent's file tools and subagents can reach them. Kept out of the history
-   entry text so the user's message bubble stays clean."
+   entry text so the user's message bubble stays clean. Images are labelled as
+   images; every other type (PDF, zip, text, …) as a generic file."
   [prompt images]
-  (let [paths (keep :path images)]
-    (if (seq paths)
-      (str/join "\n" (concat (some-> prompt str/trim not-empty vector)
-                             (map #(str "[Attached image: " % "]") paths)))
+  (let [refs (keep (fn [{:keys [path media-type]}]
+                     (when path
+                       (if (str/starts-with? (or media-type "") "image/")
+                         (str "[Attached image: " path "]")
+                         (str "[Attached file: " path "]"))))
+                   images)]
+    (if (seq refs)
+      (str/join "\n" (concat (some-> prompt str/trim not-empty vector) refs))
       prompt)))
 
 (defn- build-turn-effect
@@ -108,7 +113,7 @@
                   (:system agent))]
     [:provider/start-turn
      (cond-> {:room-id  (:id room)
-              :prompt   (prompt-with-image-paths prompt images)
+              :prompt   (prompt-with-attachment-paths prompt images)
               :model    (:model agent)
               :provider (:provider agent)
               :cwd      (:cwd room)

@@ -16,6 +16,7 @@
             ["node:child_process" :as child-process]
             ["node:fs" :as fs]
             ["zod" :as z]
+            [clojure.string :as str]
             [xi.tools.registry :as tools]
             [xi.util :as util]))
 
@@ -340,10 +341,18 @@
                      base)
 
         images (:images opts)
-        ;; With images: SDKUserMessage with multipart content via async
-        ;; generator (same pattern as pi's claude-bridge); else plain string.
+        ;; Only images and PDFs can be inlined as API content blocks (vision /
+        ;; document). Any other attachment (zip, text, …) reaches the model only
+        ;; via its on-disk path, already appended to the prompt text upstream.
+        inline (filter (fn [{:keys [media-type]}]
+                         (or (= media-type "application/pdf")
+                             (str/starts-with? (or media-type "") "image/")))
+                       images)
+        ;; With inline attachments: SDKUserMessage with multipart content via
+        ;; async generator (same pattern as pi's claude-bridge); else plain
+        ;; string.
         prompt-value
-        (if (seq images)
+        (if (seq inline)
           (let [text-blocks (when (seq (:prompt opts))
                               [#js {:type "text" :text (:prompt opts)}])
                 content (into-array
@@ -359,7 +368,7 @@
                                         :source #js {:type "base64"
                                                      :media_type media-type
                                                      :data data}}))
-                               images)))
+                               inline)))
                 msg #js {:type "user"
                          :message #js {:role "user" :content content}
                          :parent_tool_use_id nil}]
