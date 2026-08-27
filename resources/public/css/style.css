@@ -2082,11 +2082,20 @@ body {
 
 /* ── "Copied" toast (native copy confirmation) ───────────────────────── */
 
+/* Wraps the composer so the toast can anchor directly above the actions bar,
+   right-aligned to the same column, regardless of the composer's height. */
+.compose-dock {
+  position: relative;
+  flex-shrink: 0;
+  max-width: 48rem;
+  width: 100%;
+  margin-inline: auto;
+}
+
 .copy-toast {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--size-12) + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
+  position: absolute;
+  right: var(--size-4);
+  bottom: calc(100% + var(--size-2));
   z-index: 300;
   display: flex;
   align-items: center;
@@ -2097,10 +2106,10 @@ body {
   color: var(--fg-0);
   background: var(--bg-1);
   border: var(--border-0);
-  border-radius: var(--radius-2);
+  border-radius: var(--radius-full, 999px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   pointer-events: none;
-  animation: copy-toast-in 0.15s ease-out;
+  animation: copy-toast-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .copy-toast svg {
@@ -2108,8 +2117,8 @@ body {
 }
 
 @keyframes copy-toast-in {
-  from { opacity: 0; transform: translate(-50%, var(--size-2)); }
-  to   { opacity: 1; transform: translate(-50%, 0); }
+  from { opacity: 0; transform: translateX(calc(100% + var(--size-4))); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 /* Resume session overlay */

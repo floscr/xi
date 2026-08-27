@@ -2145,23 +2145,24 @@
             (empty-state/empty-state {} (spinner) [:p "Connecting…"]))
           (when room (subagents-panel dispatch! room))]]
         (copy-dialog-overlay dispatch! (:web/copy-text state))
-        (when (:web/copy-flash state) (copy-toast))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))
         (when-let [menu (:web/code-menu state)]
           (code-copy-menu dispatch! menu))
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
-        (compose-box dispatch! room busy? (:web/compose-images state)
-                     dkey (get-in state [:web/drafts dkey]) sid
-                     (:web/cmd-selected state)
-                     (get-in state [:lobby :personal-agent?])
-                     (:web/recent-commands state)
-                     (:web/queue-popover? state)
-                     (:web/prompt-nav state)
-                     nav-ctx
-                     (:web/scrolled-up? state)
-                     (false? (:web/connected? state)))))]))
+        [:div {:class ["compose-dock"]}
+         (when (:web/copy-flash state) (copy-toast))
+         (compose-box dispatch! room busy? (:web/compose-images state)
+                      dkey (get-in state [:web/drafts dkey]) sid
+                      (:web/cmd-selected state)
+                      (get-in state [:lobby :personal-agent?])
+                      (:web/recent-commands state)
+                      (:web/queue-popover? state)
+                      (:web/prompt-nav state)
+                      nav-ctx
+                      (:web/scrolled-up? state)
+                      (false? (:web/connected? state)))]))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
