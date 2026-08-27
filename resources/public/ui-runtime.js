@@ -673,6 +673,42 @@
     }
     ;
   };
+  var viewport = function() {
+    return window.visualViewport;
+  };
+  var clear_viewport_BANG_ = function(dialog) {
+    const s1 = dialog.style;
+    s1.removeProperty("--command-top");
+    return s1.removeProperty("--command-max-h");
+  };
+  var sync_viewport_BANG_ = function(dialog) {
+    const vv1 = viewport();
+    if (truth_((() => {
+      const and__23442__auto__2 = dialog;
+      if (truth_(and__23442__auto__2)) {
+        return vv1;
+      } else {
+        return and__23442__auto__2;
+      }
+      ;
+    })())) {
+      const h3 = vv1.height;
+      const kb4 = window.innerHeight - h3;
+      if (kb4 > 120) {
+        const off5 = vv1.offsetTop;
+        const top_gap6 = Math.max(12, Math.round(h3 * 0.08));
+        const bot_gap7 = Math.max(12, Math.round(h3 * 0.06));
+        const max_h8 = Math.max(160, h3 - top_gap6 - bot_gap7);
+        const s9 = dialog.style;
+        s9.setProperty("--command-top", `${off5 + top_gap6}px`);
+        return s9.setProperty("--command-max-h", `${max_h8 ?? ""}px`);
+      } else {
+        return clear_viewport_BANG_(dialog);
+      }
+      ;
+    }
+    ;
+  };
   var open = function(id) {
     const dialog1 = find_dialog(id);
     if (truth_((() => {
@@ -692,7 +728,8 @@
       }
       ;
       filter_BANG_(dialog1, "");
-      return observe_list_BANG_(dialog1);
+      observe_list_BANG_(dialog1);
+      return sync_viewport_BANG_(dialog1);
     }
     ;
   };
@@ -906,12 +943,49 @@
     }
     ;
   };
+  var on_viewport_change = function() {
+    const temp__23062__auto__1 = open_dialog();
+    if (truth_(temp__23062__auto__1)) {
+      const dialog2 = temp__23062__auto__1;
+      return sync_viewport_BANG_(dialog2);
+    }
+    ;
+  };
+  var on_dialog_close = function(e) {
+    const t1 = e.target;
+    if (truth_((() => {
+      const and__23442__auto__2 = t1;
+      if (truth_(and__23442__auto__2)) {
+        const and__23442__auto__3 = t1.classList;
+        if (truth_(and__23442__auto__3)) {
+          return t1.classList.contains("command-dialog");
+        } else {
+          return and__23442__auto__3;
+        }
+        ;
+      } else {
+        return and__23442__auto__2;
+      }
+      ;
+    })())) {
+      return clear_viewport_BANG_(t1);
+    }
+    ;
+  };
   var init_BANG_ = function() {
     document.addEventListener("input", on_input, true);
     document.addEventListener("keydown", on_keydown, true);
     document.addEventListener("keydown", on_global_key);
     document.addEventListener("click", on_click);
-    return document.addEventListener("pointermove", on_pointermove, true);
+    document.addEventListener("pointermove", on_pointermove, true);
+    document.addEventListener("close", on_dialog_close, true);
+    const temp__23062__auto__1 = viewport();
+    if (truth_(temp__23062__auto__1)) {
+      const vv2 = temp__23062__auto__1;
+      vv2.addEventListener("resize", on_viewport_change);
+      return vv2.addEventListener("scroll", on_viewport_change);
+    }
+    ;
   };
   init_BANG_();
   window["__uiCommand"] = { "open": open, "close": close, "toggle": toggle };

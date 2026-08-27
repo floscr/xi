@@ -1498,6 +1498,81 @@ a.button-group-item:hover {
 }
 
 
+/* Chat — conversation log, bubbles, thinking indicator, input bar */
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-3);
+}
+
+.chat-bubble {
+  max-width: 85%;
+  padding: var(--size-3);
+  border-radius: var(--radius-md);
+  overflow-wrap: anywhere;
+}
+
+.chat-bubble-user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.chat-bubble-assistant {
+  align-self: flex-start;
+  background: var(--bg-1);
+  border: var(--border-0);
+}
+
+/* Markdown content sits flush against the bubble padding */
+.chat-bubble > :first-child {
+  margin-top: 0;
+}
+
+.chat-bubble > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-bubble-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2);
+  color: var(--fg-2);
+  font-size: var(--font-sm);
+}
+
+.chat-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--size-2);
+  margin-bottom: var(--size-2);
+}
+
+.chat-input {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+.chat-input-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-2);
+}
+
+.chat-hint {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+
 /* ── Chip ───────────────────────────────────────────────────────── */
 /* Small selectable buttons for tags, filters, presets.            */
 
@@ -1542,12 +1617,17 @@ a.button-group-item:hover {
 
 .command-dialog {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
   z-index: 50;
   width: min(100% - 2rem, 40rem);
-  max-height: 60vh;
-  margin: auto;
-  margin-top: 12vh;
+  /* --command-top / --command-max-h are set by the JS runtime from
+     visualViewport while the on-screen keyboard is open, pinning the dialog
+     into the visible band above it. Defaults match the old centered look. */
+  top: var(--command-top, 12vh);
+  max-height: var(--command-max-h, 60vh);
+  margin-inline: auto;
+  margin-top: 0;
   padding: 0;
   background: var(--bg-0);
   color: var(--fg-0);
@@ -1628,6 +1708,8 @@ a.button-group-item:hover {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: var(--size-2);
   scroll-padding-block: var(--size-2);
 }
