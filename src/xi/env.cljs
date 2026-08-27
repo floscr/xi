@@ -51,18 +51,33 @@
               (str/split out #"\u0000"))))
     (catch :default _ nil)))
 
+(def ^:private preserved-prefixes
+  "Env-key prefixes for launcher / service vars that are intentionally set by
+   xi's own launcher (systemd unit, .env) and legitimately point into
+   /nix/store — e.g. XI_AMAZON_CHROME=/nix/store/…/chromium/bin/chromium. A
+   login shell never sets these, so without this guard the store-pointer drop
+   below would delete them and break the services that read them."
+  ["XI_" "PUSHOVER_"])
+
+(defn- preserved-key?
+  [k]
+  (boolean (some #(str/starts-with? k %) preserved-prefixes)))
+
 (defn plan-sanitize
   "Pure reconciliation. Given `inherited` and `clean` env maps ({string string}),
    decide what to change:
    - :dropped — orphaned vars the clean env does not set AND whose value points
      into /nix/store (stale references left by an old generation, e.g.
      DEPS_CLJ_TOOLS_DIR / JAVA_HOME / LOCALE_ARCHIVE_2_27). Non-store orphans
-     (launcher / service vars like PUSHOVER_*/XI_*) are kept.
+     (launcher / service vars like PUSHOVER_*/XI_*) are kept, as are launcher /
+     service vars matching `preserved-prefixes` even when they point into the
+     store.
    - :path — the refreshed PATH from `clean`, or nil when it already matches."
   [inherited clean]
   (let [dropped  (->> inherited
                       (keep (fn [[k v]]
                               (when (and (not (contains? clean k))
+                                         (not (preserved-key? k))
                                          (string? v)
                                          (str/starts-with? v "/nix/store/"))
                                 k)))

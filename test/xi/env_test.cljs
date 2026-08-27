@@ -25,6 +25,17 @@
       (is (= ["DEPS_CLJ_TOOLS_DIR"] dropped))
       (is (nil? path) "PATH unchanged -> nil"))))
 
+(deftest plan-sanitize-preserves-store-pointing-service-vars
+  (testing "launcher/service vars are kept even when they point into /nix/store"
+    (let [inherited {"PATH" "/bin"
+                     "XI_AMAZON_CHROME" "/nix/store/abc-chromium/bin/chromium"
+                     "PUSHOVER_TOKEN" "/nix/store/def-secret/token"
+                     "DEPS_CLJ_TOOLS_DIR" "/nix/store/aaa/clojure_tools"}
+          clean     {"PATH" "/bin"}
+          {:keys [dropped]} (env/plan-sanitize inherited clean)]
+      (is (= ["DEPS_CLJ_TOOLS_DIR"] dropped)
+          "only the non-preserved store orphan is dropped"))))
+
 (deftest plan-sanitize-noop-when-clean-matches
   (testing "nothing to do when clean env introduces no changes"
     (let [inherited {"PATH" "/bin" "HOME" "/home/x"}
