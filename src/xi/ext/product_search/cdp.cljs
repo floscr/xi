@@ -24,7 +24,7 @@
             ["node:os" :as os]
             ["node:path" :as path]))
 
-(def LAUNCH_TIMEOUT_MS 15000)
+(def LAUNCH_TIMEOUT_MS 45000)  ;; generous: SD-card cold start on a Pi is slow
 (def RESULTS_TIMEOUT_MS 15000)
 
 (defn- env [k] (aget js/process.env k))
@@ -65,16 +65,29 @@
     (catch :default _ nil)))
 
 (defn- wait-for-port
-  "Poll for the DevToolsActivePort file until Chrome is listening."
-  [user-dir deadline]
+  "Poll for the DevToolsActivePort file until Chrome is listening. Rejects
+   early if Chrome exits/errors before writing the port, and appends any
+   captured chromium stderr so the failure is diagnosable."
+  [user-dir deadline exit* stderr*]
   (js/Promise.
    (fn [resolve reject]
-     (letfn [(tick []
+     (letfn [(stderr-tail []
+               (let [e (str/trim @stderr*)]
+                 (when (seq e)
+                   (str "\nchromium: "
+                        (->> (str/split-lines e)
+                             (remove str/blank?)
+                             (take-last 6)
+                             (str/join "\n"))))))
+             (fail [why]
+               (reject (js/Error. (str "Chrome did not start (" why ")" (stderr-tail)))))
+             (tick []
                (if-let [port (read-devtools-port user-dir)]
                  (resolve port)
-                 (if (> (js/Date.now) deadline)
-                   (reject (js/Error. "Chrome did not start (no DevToolsActivePort)"))
-                   (js/setTimeout tick 150))))]
+                 (cond
+                   @exit*                     (fail @exit*)
+                   (> (js/Date.now) deadline) (fail "no DevToolsActivePort")
+                   :else                      (js/setTimeout tick 150))))]
        (tick)))))
 
 (defn- open-ws
@@ -102,8 +115,24 @@
                           "--remote-debugging-port=0"
                           "--lang=de-DE"
                           (str "--user-data-dir=" user-dir)]
-                     #js {:stdio "ignore"})]
-    (-> (wait-for-port user-dir (+ (js/Date.now) LAUNCH_TIMEOUT_MS))
+                     ;; Capture stderr so a launch crash is diagnosable instead
+                     ;; of a silent timeout; stdin/stdout are dropped.
+                     #js {:stdio #js ["ignore" "ignore" "pipe"]})
+        stderr* (atom "")
+        exit*   (atom nil)]
+    (some-> (.-stderr proc)
+            (.on "data" (fn [chunk]
+                          (swap! stderr*
+                                 (fn [s]
+                                   (let [t (str s chunk)]
+                                     (cond-> t
+                                       (> (count t) 4000) (subs (- (count t) 4000)))))))))
+    (.on proc "error" (fn [e] (reset! exit* (str "spawn error: " (.-message e)))))
+    (.on proc "exit"  (fn [code signal]
+                        (reset! exit* (str "chromium exited early ("
+                                           (if signal (str "signal " signal)
+                                               (str "code " code)) ")"))))
+    (-> (wait-for-port user-dir (+ (js/Date.now) LAUNCH_TIMEOUT_MS) exit* stderr*)
         (.then open-ws)
         (.then
          (fn [ws]
