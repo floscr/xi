@@ -693,15 +693,23 @@
       ;
     })())) {
       const h3 = vv1.height;
-      const kb4 = window.innerHeight - h3;
-      if (kb4 > 120) {
-        const off5 = vv1.offsetTop;
-        const top_gap6 = Math.max(12, Math.round(h3 * 0.08));
-        const bot_gap7 = Math.max(12, Math.round(h3 * 0.06));
-        const max_h8 = Math.max(160, h3 - top_gap6 - bot_gap7);
-        const s9 = dialog.style;
-        s9.setProperty("--command-top", `${off5 + top_gap6}px`);
-        return s9.setProperty("--command-max-h", `${max_h8 ?? ""}px`);
+      const off4 = vv1.offsetTop;
+      const kb5 = window.innerHeight - h3;
+      if (truth_((() => {
+        const or__23426__auto__6 = kb5 > 120;
+        if (or__23426__auto__6) {
+          return or__23426__auto__6;
+        } else {
+          return off4 > 1;
+        }
+        ;
+      })())) {
+        const top_gap7 = Math.max(12, Math.round(h3 * 0.08));
+        const bot_gap8 = Math.max(12, Math.round(h3 * 0.06));
+        const max_h9 = Math.max(160, h3 - top_gap7 - bot_gap8);
+        const s10 = dialog.style;
+        s10.setProperty("--command-top", `${off4 + top_gap7}px`);
+        return s10.setProperty("--command-max-h", `${max_h9 ?? ""}px`);
       } else {
         return clear_viewport_BANG_(dialog);
       }

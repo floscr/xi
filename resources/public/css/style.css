@@ -1768,19 +1768,6 @@ body {
   display: none;
 }
 
-/* iOS/WebKit fix: the framework's .command-list uses `flex: 1` (i.e.
-   flex-basis: 0%). Inside the content-sized <dialog> (max-height, no definite
-   height) Safari resolves that 0% basis against the dialog's indefinite height
-   as 0 and the list collapses to zero — the whole palette shrinks to just its
-   search input (the Projects palette bug). Chrome tolerates the 0% basis, but
-   `flex-basis: auto` is correct on both: the list sizes to its content, growing
-   the dialog up to its 60vh cap, then scrolls past that (min-height:0 lets it
-   shrink under the cap). Loads after theme.css, so this wins. */
-.command-list {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
 /* Sub-page back arrow (framework :leading slot): tint it with the accent so it
    reads as an active affordance rather than the muted search icon. */
 .command-search-back {

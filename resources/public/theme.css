@@ -1705,7 +1705,12 @@ a.button-group-item:hover {
 /* ── List ────────────────────────────────────────────────────────── */
 
 .command-list {
-  flex: 1;
+  /* Grow with content up to the dialog's max-height, then scroll. `flex: 1`
+     (basis 0) contributes nothing to the dialog's auto-height, so the dialog
+     collapses to just the search row and the list never gets room. `flex-basis:
+     auto` makes the list content count toward the dialog height; `min-height: 0`
+     still lets it shrink and scroll once max-height is hit. */
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
