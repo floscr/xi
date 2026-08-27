@@ -248,15 +248,16 @@
     (when path (grammars/get-grammar (file-ext path)))))
 
 (defn- highlight-code
-  "Tokenize + class-wrap text against a grammar → hiccup [:code ...]."
+  "Tokenize + class-wrap text against a grammar → hiccup [:code ...].
+   Bare URLs inside tokens are linkified so they stay clickable."
   [grammar text]
   (let [tokens (hl/merge-adjacent (hl/tokenize grammar text))]
     (into [:code]
-          (mapv (fn [{:keys [type value]}]
-                  (if-let [cls (theme/token-class type)]
-                    [:span {:class cls} value]
-                    value))
-                tokens))))
+          (mapcat (fn [{:keys [type value]}]
+                    (if-let [cls (theme/token-class type)]
+                      [(into [:span {:class cls}] (md/linkify value))]
+                      (md/linkify value)))
+                  tokens))))
 
 (defn- truncate-lines [text n]
   (let [lines (str/split-lines text)]
@@ -339,7 +340,7 @@
            (if (and (contains? #{"Edit" "edit"} name) (not is-error))
              (edit-diff-code grammar shown)
              [:pre {:class ["tool-call-code"]}
-              (if grammar (highlight-code grammar shown) shown)]))])
+              (if grammar (highlight-code grammar shown) (into [:code] (md/linkify shown)))]))])
       (when-let [imgs (seq (result-images result))]
         [:div {:class ["tool-call-content" "user-images"]}
          (map-indexed

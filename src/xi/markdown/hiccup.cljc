@@ -1,9 +1,36 @@
 (ns xi.markdown.hiccup
   "Renders markdown AST tokens to Replicant-compatible hiccup."
   (:require [xi.markdown.parse :as parse]
+            [xi.url :as url]
             [xi.highlight.core :as hl]
             [xi.highlight.bundle :as grammars]
             [xi.highlight.theme-css :as theme]))
+
+;; ---------------------------------------------------------------------------
+;; Bare-URL linkification (for pre-formatted / code contexts)
+;; ---------------------------------------------------------------------------
+
+(defn linkify
+  "Split a plain string into a seq of hiccup nodes, wrapping bare http(s)://
+   URLs in anchor tags. Unlike the inline markdown parser this does NOT treat
+   any other character specially, so it's safe to run over literal code — it's
+   how links inside code blocks and inline code stay clickable."
+  [^String s]
+  (if-not (string? s)
+    [s]
+    (let [len (count s)]
+      (loop [idx   0
+             start 0
+             acc   []]
+        (if (>= idx len)
+          (if (< start len) (conj acc (subs s start)) acc)
+          (if-let [[u end] (and (url/scheme-at s idx) (url/url-at s idx))]
+            (recur (long end) (long end)
+                   (cond-> acc
+                     (< start idx) (conj (subs s start idx))
+                     :always       (conj [:a {:href u :target "_blank"
+                                              :rel "noopener noreferrer"} u])))
+            (recur (inc idx) start acc)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Inline rendering
@@ -20,7 +47,7 @@
         :bold (into [:strong] (map render-inline-token content))
         :italic (into [:em] (map render-inline-token content))
         :strike (into [:del] (map render-inline-token content))
-        :code [:code content]
+        :code (into [:code] (linkify content))
         :link [:a {:href (:url content) :target "_blank" :rel "noopener noreferrer"} (:text content)]
         ;; fallback
         (str token)))
@@ -58,12 +85,12 @@
           [:pre {:class (str "md-code-block" (when lang (str " language-" lang)))}
            (if tokens
              (into [:code]
-                   (mapv (fn [{:keys [type value]}]
-                           (if-let [cls (theme/token-class type)]
-                             [:span {:class cls} value]
-                             value))
-                         tokens))
-             [:code code])])
+                   (mapcat (fn [{:keys [type value]}]
+                             (if-let [cls (theme/token-class type)]
+                               [(into [:span {:class cls}] (linkify value))]
+                               (linkify value)))
+                           tokens))
+             (into [:code] (linkify code)))])
 
         :ul
         (let [[_ items] block]
