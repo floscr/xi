@@ -210,16 +210,17 @@
 ;; ── Orchestration ────────────────────────────────────────────────────────────
 
 (defn- poll-loop
-  "Poll the selected page for the picker result until it resolves, is
-   cancelled, errors, or the deadline passes. `call` is the shared
-   chrome-devtools-mcp caller (fn [tool args] → Promise<normalized-result>)."
-  [call deadline]
+  "Poll `page-id` for the picker result until it resolves, is cancelled,
+   errors, or the deadline passes. `call` is the shared chrome-devtools-mcp
+   caller (fn [tool args] → Promise<normalized-result>). chrome-devtools-mcp
+   1.8.0 requires an explicit `:pageId` on page-scoped tools."
+  [call deadline page-id]
   (js/Promise.
    (fn [resolve _reject]
      (letfn [(step []
                (if (> (js/Date.now) deadline)
                  (resolve {:timeout true})
-                 (-> (call "evaluate_script" {:function poll-fn})
+                 (-> (call "evaluate_script" {:function poll-fn :pageId page-id})
                      (.then (fn [res]
                               (if (:is-error res)
                                 (resolve {:error true})
@@ -233,14 +234,15 @@
 
 (defn- capture-screenshot
   "One viewport PNG of the (now clean) page, as base64, or nil. Best-effort."
-  [call]
-  (-> (call "take_screenshot" {:format "png"})
+  [call page-id]
+  (-> (call "take_screenshot" {:format "png" :pageId page-id})
       (.then (fn [res] (when-not (:is-error res) (image-data res))))
       (.catch (fn [_] nil))))
 
-(defn- cleanup! [call]
-  (-> (call "evaluate_script" {:function cleanup-fn})
-      (.catch (fn [_] nil))))
+(defn- cleanup! [call page-id]
+  (when page-id
+    (-> (call "evaluate_script" {:function cleanup-fn :pageId page-id})
+        (.catch (fn [_] nil)))))
 
 (defn- page-options
   "Turn parsed pages into :select dialog options {:label :value}. The
@@ -252,8 +254,9 @@
 
 (defn- choose-page!
   "With multiple tabs open, ask the user which to pick from and switch to it
-   via select_page. Resolves to :cancelled if the user dismisses, else :ok.
-   With one page (or no ask! available) it's a no-op resolving :ok."
+   via select_page. Resolves to :cancelled if the user dismisses, else the
+   chosen page's id. With one page (or no ask! available) it resolves to the
+   selected (or first) page's id."
   [ask! fx-ctx call room-id pages]
   (if (and ask! (> (count pages) 1))
     (-> (ask! fx-ctx
@@ -265,37 +268,38 @@
                  (if (nil? page-id)
                    :cancelled
                    (-> (call "select_page" {:pageId page-id})
-                       (.then (constantly :ok)))))))
-    (js/Promise.resolve :ok)))
+                       (.then (constantly page-id)))))))
+    (js/Promise.resolve (or (some #(when (:selected? %) (:id %)) pages)
+                            (:id (first pages))))))
 
 (defn- pick-on-selected!
-  "Inject the picker into the currently selected page, poll for a result, and
-   submit it (or report cancel/timeout)."
-  [{:keys [dispatch! room-id prefill call]}]
+  "Inject the picker into `page-id`, poll for a result, and submit it (or
+   report cancel/timeout)."
+  [{:keys [dispatch! room-id prefill call page-id]}]
   (-> (call "list_pages" {})
       (.then (fn [res]
                (let [line (selected-page-line res)]
                  (status! dispatch! room-id
                           (str "🎯 Element picker: pick an element in the browser"
                                (when line (str " (" line ")")) "…")))))
-      (.then (fn [_] (call "evaluate_script" {:function (injection-fn prefill)})))
+      (.then (fn [_] (call "evaluate_script" {:function (injection-fn prefill) :pageId page-id})))
       (.then (fn [res]
                (when (:is-error res)
                  (throw (js/Error. (str "inject failed — " (result-text res)))))))
-      (.then (fn [_] (poll-loop call (+ (js/Date.now) picker-timeout-ms))))
+      (.then (fn [_] (poll-loop call (+ (js/Date.now) picker-timeout-ms) page-id)))
       (.then (fn [poll]
                (cond
                  (:cancelled poll)
                  (status! dispatch! room-id "Element picker cancelled.")
 
                  (:result poll)
-                 (-> (capture-screenshot call)
+                 (-> (capture-screenshot call page-id)
                      (.then (fn [shot]
                               (submit! dispatch! room-id prefill (:result poll)
                                        (if shot [shot] [])))))
 
                  :else
-                 (do (cleanup! call)
+                 (do (cleanup! call page-id)
                      (status! dispatch! room-id
                               (if (:timeout poll)
                                 "Element picker timed out (2 min)."
@@ -306,19 +310,21 @@
    from (and switch to it); then inject into the selected page."
   [{:keys [dispatch! get-state room-id call ask!] :as ctx}]
   (status! dispatch! room-id "Element picker: connecting to browser…")
-  (-> (call "list_pages" {})
-      (.then (fn [res]
-               (when (:is-error res)
-                 (throw (js/Error. (str "no browser page — " (result-text res)))))
-               (choose-page! ask! {:dispatch! dispatch! :state (get-state)}
-                             call room-id (parse-pages res))))
-      (.then (fn [choice]
-               (if (= choice :cancelled)
-                 (status! dispatch! room-id "Element picker cancelled.")
-                 (pick-on-selected! ctx))))
-      (.catch (fn [e]
-                (cleanup! call)
-                (status! dispatch! room-id (str "Element picker error: " (.-message e)))))))
+  (let [page-id* (atom nil)]
+    (-> (call "list_pages" {})
+        (.then (fn [res]
+                 (when (:is-error res)
+                   (throw (js/Error. (str "no browser page — " (result-text res)))))
+                 (choose-page! ask! {:dispatch! dispatch! :state (get-state)}
+                               call room-id (parse-pages res))))
+        (.then (fn [choice]
+                 (if (= choice :cancelled)
+                   (status! dispatch! room-id "Element picker cancelled.")
+                   (do (reset! page-id* choice)
+                       (pick-on-selected! (assoc ctx :page-id choice))))))
+        (.catch (fn [e]
+                  (cleanup! call @page-id*)
+                  (status! dispatch! room-id (str "Element picker error: " (.-message e))))))))
 
 ;; ── Install (into xi.ext.chrome-mcp, which owns the shared MCP client) ────────────
 

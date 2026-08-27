@@ -151,17 +151,34 @@
 
 ;; ── Orchestration ────────────────────────────────────────────────────────────
 
+(defn- selected-page-id
+  "Resolve the pageId to operate on: the currently-selected page, else the
+   first page. chrome-devtools-mcp 1.8.0 requires an explicit pageId on all
+   page-scoped tools (evaluate_script), so we can no longer rely on an implicit
+   selected page."
+  [call]
+  (-> (call "list_pages" {})
+      (.then (fn [res]
+               (let [pages (->> (str/split-lines (result-text res))
+                                (keep (fn [line]
+                                        (when-let [[_ id rest] (re-matches #"\s*(\d+):\s*(.*)" line)]
+                                          {:id (js/parseInt id 10)
+                                           :selected? (str/includes? rest "[selected]")}))))]
+                 (or (some #(when (:selected? %) (:id %)) pages)
+                     (:id (first pages))))))))
+
 (defn- poll-loop
-  "Poll the selected page for the editor result until it resolves, is
-   cancelled, errors, or the deadline passes. `call` is the shared
-   chrome-devtools-mcp caller (fn [tool args] → Promise<normalized-result>)."
-  [call deadline]
+  "Poll `page-id` for the editor result until it resolves, is cancelled,
+   errors, or the deadline passes. `call` is the shared chrome-devtools-mcp
+   caller (fn [tool args] → Promise<normalized-result>). chrome-devtools-mcp
+   1.8.0 requires an explicit `:pageId` on page-scoped tools."
+  [call deadline page-id]
   (js/Promise.
    (fn [resolve _reject]
      (letfn [(step []
                (if (> (js/Date.now) deadline)
                  (resolve {:timeout true})
-                 (-> (call "evaluate_script" {:function poll-fn})
+                 (-> (call "evaluate_script" {:function poll-fn :pageId page-id})
                      (.then (fn [res]
                               (if (:is-error res)
                                 (resolve {:error true})
@@ -173,9 +190,10 @@
                      (.catch (fn [_] (resolve {:error true}))))))]
        (step)))))
 
-(defn- cleanup! [call]
-  (-> (call "evaluate_script" {:function cleanup-fn})
-      (.catch (fn [_] nil))))
+(defn- cleanup! [call page-id]
+  (when page-id
+    (-> (call "evaluate_script" {:function cleanup-fn :pageId page-id})
+        (.catch (fn [_] nil)))))
 
 (defn- run-editor
   "Inject the editor into the selected page, poll for a result, and resolve a
@@ -193,34 +211,39 @@
                   true))
 
     :else
-    (-> (call "evaluate_script" {:function (injection-fn selector title controls)})
-        (.then (fn [res]
-                 (when (:is-error res)
-                   (throw (js/Error. (str "inject failed — " (result-text res)))))))
-        (.then (fn [_] (poll-loop call (+ (js/Date.now) editor-timeout-ms))))
-        (.then (fn [poll]
-                 (cond
-                   (:result poll)
-                   (let [r (:result poll)]
-                     (if (:notFound r)
-                       (text-result (str "style_editor: no element matched any control's "
-                                         "selector"
-                                         (when-let [m (seq (:missing r))]
-                                           (str " (" (str/join ", " (map #(str "`" (:selector %) "`") m)) ")"))
-                                         ".") true)
-                       (text-result (format-result r))))
+    (-> (selected-page-id call)
+        (.then
+         (fn [page-id]
+           (-> (call "evaluate_script" {:function (injection-fn selector title controls) :pageId page-id})
+               (.then (fn [res]
+                        (when (:is-error res)
+                          (throw (js/Error. (str "inject failed — " (result-text res)))))))
+               (.then (fn [_] (poll-loop call (+ (js/Date.now) editor-timeout-ms) page-id)))
+               (.then (fn [poll]
+                        (cond
+                          (:result poll)
+                          (let [r (:result poll)]
+                            (if (:notFound r)
+                              (text-result (str "style_editor: no element matched any control's "
+                                                "selector"
+                                                (when-let [m (seq (:missing r))]
+                                                  (str " (" (str/join ", " (map #(str "`" (:selector %) "`") m)) ")"))
+                                                ".") true)
+                              (text-result (format-result r))))
 
-                   (:cancelled poll)
-                   (text-result "style_editor: the user cancelled without committing changes.")
+                          (:cancelled poll)
+                          (text-result "style_editor: the user cancelled without committing changes.")
 
-                   :else
-                   (do (cleanup! call)
-                       (text-result (if (:timeout poll)
-                                      "style_editor: timed out waiting for the user (5 min)."
-                                      "style_editor: browser error.")
-                                    true)))))
+                          :else
+                          (do (cleanup! call page-id)
+                              (text-result (if (:timeout poll)
+                                             "style_editor: timed out waiting for the user (5 min)."
+                                             "style_editor: browser error.")
+                                           true)))))
+               (.catch (fn [e]
+                         (cleanup! call page-id)
+                         (text-result (str "style_editor error: " (.-message e)) true))))))
         (.catch (fn [e]
-                  (cleanup! call)
                   (text-result (str "style_editor error: " (.-message e)) true))))))
 
 ;; ── Install (into xi.ext.chrome-mcp, which owns the shared MCP client) ────────────

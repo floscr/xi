@@ -41,8 +41,39 @@
             ["node:child_process" :as child-process])
   (:require-macros [xi.ext.chrome-mcp.defs :refer [inline-tool-defs]]))
 
-(def ^:private tool-defs (inline-tool-defs))
-(def ^:private tool-names (mapv :name tool-defs))
+(def ^:private raw-tool-defs (inline-tool-defs))
+(def ^:private tool-names (mapv :name raw-tool-defs))
+
+(def ^:private no-inject-tools
+  "Tools whose `pageId` is the operand (which page to select/close), not an
+   'operate on this page' target — never auto-fill these. list_pages/new_page
+   carry no pageId at all; they're listed for clarity."
+  #{"select_page" "close_page" "list_pages" "new_page"})
+
+(def ^:private page-scoped-tools
+  "chrome-devtools-mcp 1.8.0 made `pageId` required on every page-scoped tool
+   (evaluate_script, take_snapshot, take_screenshot, click, …). xi auto-fills it
+   with the currently-selected page when a caller omits it, preserving the
+   pre-1.8.0 'act on the current page' ergonomics for both the agent's proxied
+   tools and the picker / style-editor. Derived from the baked-in defs so the
+   set tracks whatever `bb chrome:sync-tools` last captured."
+  (into #{}
+        (comp (filter #(get-in % [:input_schema :properties "pageId"]))
+              (map :name)
+              (remove no-inject-tools))
+        raw-tool-defs))
+
+(def ^:private tool-defs
+  "Agent-facing tool defs: the auto-injected `pageId` is stripped from every
+   page-scoped tool's schema so the model's browser tools keep their pre-1.8.0
+   shape (xi supplies pageId itself in the forward layer)."
+  (mapv (fn [t]
+          (if (contains? page-scoped-tools (:name t))
+            (-> t
+                (update-in [:input_schema :properties] dissoc "pageId")
+                (update-in [:input_schema :required] #(vec (remove #{"pageId"} %))))
+            t))
+        raw-tool-defs))
 
 (defn- env [k] (aget js/process.env k))
 
@@ -212,7 +243,7 @@
                     (reset! ready* p)
                     (.catch p (fn [_] (reset! ready* nil) (reset! client* nil)))
                     p)))
-              (call! [tool-name args]
+              (raw-call! [tool-name args]
                 (-> (ensure!)
                     (.then (fn [client]
                              ((:call client) "tools/call"
@@ -223,6 +254,27 @@
                                            :text (str "chrome-devtools-mcp error: "
                                                       (.-message e))}]
                                :is-error true}))))
+              (select-page-id! []
+                ;; The currently-selected page's id (else the first page's),
+                ;; for auto-filling pageId on page-scoped calls. list_pages is
+                ;; not page-scoped, so this never recurses through the injector.
+                (-> (raw-call! "list_pages" {})
+                    (.then (fn [res]
+                             (let [pages (scope/parse-pages (result-text res))]
+                               (or (some #(when (:selected? %) (:id %)) pages)
+                                   (:id (first pages))))))
+                    (.catch (fn [_] nil))))
+              (call! [tool-name args]
+                ;; chrome-devtools-mcp 1.8.0: page-scoped tools require an
+                ;; explicit pageId. Fill it with the selected page when the
+                ;; caller omitted it (a map may key it :pageId or "pageId").
+                (if (and (contains? page-scoped-tools tool-name)
+                         (nil? (:pageId args))
+                         (nil? (get args "pageId")))
+                  (-> (select-page-id!)
+                      (.then (fn [pid]
+                               (raw-call! tool-name (cond-> args pid (assoc :pageId pid))))))
+                  (raw-call! tool-name args)))
               (heal-selection! []
                 ;; Un-wedge a closed-selected-page child (see wedged-selection?).
                 ;; new_page is the one call that still works: its handler
