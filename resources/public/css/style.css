@@ -1433,6 +1433,14 @@ body {
   color: var(--fg-2);
 }
 
+/* Non-interactive offline glyph left of the compose send button. */
+.compose-offline-indicator {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-2);
+  flex-shrink: 0;
+}
+
 /* ---- Offline project card ---- */
 .project-card--offline {
   opacity: 0.8;

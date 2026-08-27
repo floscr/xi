@@ -1034,6 +1034,11 @@
 ;; reach it without a forward reference.
 (defonce ^:private dispatch-ref (atom nil))
 
+;; Debounce timer for the offline transition — a pending js/setTimeout id (or
+;; nil). Set on WS drop, cleared on reconnect, so transient blips never flip the
+;; offline badge (prevents flicker).
+(defonce ^:private offline-timer (atom nil))
+
 (defn- repaint-closed-drawer!
   "iOS WebKit can leave the recent-sessions drawer showing a STALE composited
    frame — stuck at translateX(0) as if open — even though its state is closed
@@ -1573,8 +1578,28 @@
                     :reconnect? true
                     :on-status  (fn [connected?]
                                   (when-let [d @dispatch-ref]
-                                    (d {:type :connection/status
-                                        :connected? connected?})))})
+                                    (if connected?
+                                      ;; Reconnected: cancel any pending
+                                      ;; offline flip and clear immediately so a
+                                      ;; brief blip never surfaces the badge.
+                                      (do (when-let [t @offline-timer]
+                                            (js/clearTimeout t)
+                                            (reset! offline-timer nil))
+                                          (d {:type :connection/status
+                                              :connected? true}))
+                                      ;; Dropped: debounce — only show offline if
+                                      ;; the socket stays down for a beat. WS
+                                      ;; drops are frequent on mobile and would
+                                      ;; otherwise flicker the badge on every
+                                      ;; reconnect.
+                                      (when-not @offline-timer
+                                        (reset! offline-timer
+                                                (js/setTimeout
+                                                 (fn []
+                                                   (reset! offline-timer nil)
+                                                   (d {:type :connection/status
+                                                       :connected? false}))
+                                                 2500))))))})
         {:keys [dispatch! state add-tap!] :as app}
         (app/create-app {:initial-state initial
                          :handlers      (ws-transport/make-handlers

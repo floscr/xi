@@ -850,7 +850,25 @@
         (icon/icon {:icon-name :x :size :sm})]])
     queued)])
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? recents queue-open? prompt-nav nav-ctx scrolled-up?]
+(defn- offline-indicator
+  "Non-interactive wifi-off glyph shown to the left of the send button while the
+   client is disconnected. The framework icon set has no wifi/offline glyph, so
+   this is an inline SVG styled to match .icon."
+  []
+  [:span {:class ["compose-offline-indicator"] :title "Offline"}
+   [:svg {:class ["icon"] :xmlns "http://www.w3.org/2000/svg"
+          :viewBox "0 0 24 24" :fill "none" :stroke "currentColor"
+          :stroke-width "2" :stroke-linecap "round" :stroke-linejoin "round"
+          :aria-hidden "true"}
+    [:path {:d "M12 20h.01"}]
+    [:path {:d "M8.5 16.429a5 5 0 0 1 7 0"}]
+    [:path {:d "M5 12.859a10 10 0 0 1 5.17-2.69"}]
+    [:path {:d "M19 12.859a10 10 0 0 0-2.007-1.523"}]
+    [:path {:d "M2 8.82a15 15 0 0 1 4.177-2.643"}]
+    [:path {:d "M22 8.82a15 15 0 0 0-11.288-3.764"}]
+    [:path {:d "m2 2 20 20"}]]])
+
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? recents queue-open? prompt-nav nav-ctx scrolled-up? offline?]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
@@ -980,6 +998,7 @@
         ;; Busy: queue-send button (when there's something to queue) next to
         ;; the abort button, which carries the queued-message count badge.
         [:div {:class ["compose-actions"]}
+         (when offline? (offline-indicator))
          (when (or has-input? (seq images))
            [:button {:class ["icon-btn"]
                      :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
@@ -993,10 +1012,12 @@
             [:button {:class ["queue-count"]
                       :on {:click (fn [_] (dispatch! {:type :queue/toggle-popover}))}}
              (str qcount)])]]
-        [:button {:class ["icon-btn"]
-                  :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
-                                                       images draft-key draft))}}
-         (icon/icon {:icon-name :arrow-up :size :md})])]]]))
+        [:div {:class ["compose-actions"]}
+         (when offline? (offline-indicator))
+         [:button {:class ["icon-btn"]
+                   :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
+                                                        images draft-key draft))}}
+          (icon/icon {:icon-name :arrow-up :size :md})]])]]]))
 
 ;; ── Permission dialog ────────────────────────────────────────────────────────
 
@@ -2105,7 +2126,8 @@
                      (:web/queue-popover? state)
                      (:web/prompt-nav state)
                      nav-ctx
-                     (:web/scrolled-up? state))))]))
+                     (:web/scrolled-up? state)
+                     (false? (:web/connected? state)))))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
