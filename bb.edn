@@ -31,7 +31,30 @@
           (def demo-config {:session "xi-demo"
                             :windows [["server" (str "HOME=" demo-home
                                                      " bun target/main.js server --headless --port 7476")]]
-                            :print ["Demo web: http://localhost:7476"]}))
+                            :print ["Demo web: http://localhost:7476"]})
+          ;; Reap leaked dev :7474 headless servers. `td/*` only manage the tmux
+          ;; session, and the systemd xi-serve unit uses KillMode=process, so
+          ;; detached/orphaned `bun target/main.js server --headless` processes
+          ;; leak across restarts and keep :7474 occupied. The personal-agent
+          ;; (--port 7475), demo (--port 7476) and system xi-agent
+          ;; (--personal-agent-only) servers all carry --port/--personal-agent-only
+          ;; and are deliberately excluded.
+          ;; The `--headless$` end-anchor matches ONLY the dev serve cmdline
+          ;; (`bun target/main.js server --headless`); personal/demo/xi-agent
+          ;; carry trailing --port/--personal-agent-only args so they don't
+          ;; match. pgrep returns just the PIDs, so no cmdline parsing is
+          ;; needed (bb.edn is EDN — no #(...) / #"..." reader macros).
+          (defn stray-serve-pids []
+            (let [{:keys [out]} (shell {:out :string :continue true}
+                                       "pgrep" "-f" "target/main.js server --headless$")]
+              (remove clojure.string/blank?
+                      (clojure.string/split-lines (or out "")))))
+          (defn reap-stray-serve! []
+            (when-let [pids (seq (stray-serve-pids))]
+              (println (str "Reaping " (count pids) " stray xi serve process(es): "
+                            (clojure.string/join " " pids)))
+              (apply shell {:continue true} "kill" "-9" pids)
+              (Thread/sleep 500))))
 
   dev         {:doc "Start tmux dev session"
                :task (td/start config)}
@@ -131,8 +154,9 @@
            (td/attach serve-config))}
 
   serve:stop
-  {:doc "Stop tmux serve session"
-   :task (td/stop serve-config)}
+  {:doc "Stop tmux serve session (also reaps leaked headless :7474 servers)"
+   :task (do (td/stop serve-config)
+             (reap-stray-serve!))}
 
   serve:pending
   {:doc "List clients waiting for pairing approval"
@@ -212,8 +236,9 @@
                              " — applies to new connections (restart the server to drop live ones).")))))}
 
   serve:restart
-  {:doc "Restart tmux serve session"
+  {:doc "Restart tmux serve session (reaps leaked headless :7474 servers first)"
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
+           (reap-stray-serve!)
            (td/restart (assoc serve-config :print [(str "Web: http://" ip ":7474")])))}
 
   demo:seed
