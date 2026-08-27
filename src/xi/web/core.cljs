@@ -500,6 +500,24 @@
                 [:app/dispatch {:type :input/submit :room-id room-id :text t}]
                 [:app/dispatch {:type :submit/pending :session-id sid :text t}])]))))
 
+(defn- bubble-retry
+  "Resend a user message unchanged at its node point: fork the conversation at
+   that message (truncate history to before it, like Delete) and resubmit the
+   original text as a fresh prompt. Same flow as bubble-edit-save minus the
+   editor."
+  [st {:keys [index text]}]
+  (let [active  (state/active-room st)
+        sid     (get-in st [:web/route :session-id])
+        room-id (when (= (get-in active [:session :id]) sid) (:id active))
+        t       (str/trim (or text ""))]
+    (cond-> {:state (dissoc st :web/bubble-menu)}
+      (seq t)
+      (assoc :effects
+             [[:app/dispatch {:type :tree/navigate :room-id room-id :index index}]
+              (if room-id
+                [:app/dispatch {:type :input/submit :room-id room-id :text t}]
+                [:app/dispatch {:type :submit/pending :session-id sid :text t}])]))))
+
 (defn- prompt-nav-step
   "Move the prompt-nav cursor one step (:prompt-nav/prev = older, :next = newer)
    over the full-history user-prompt indices. Opening jumps to the newest
@@ -665,6 +683,7 @@
                               (assoc :web/scrolled-up? false)
                               (dissoc :web/frozen-window-start))}))))
           :bubble/edit-save      bubble-edit-save
+          :bubble/retry          bubble-retry
           :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
           :web/dialog-form-reset (fn [st _] {:state (dissoc st :web/dialog-form)})
           ;; Answered-dialog log (web-only): keep resolved confirm/select

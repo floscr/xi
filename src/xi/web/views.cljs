@@ -1850,9 +1850,10 @@
   "Action sheet shown when a user chat bubble is tapped. Edit switches the
    bubble into an inline editor (Cancel / Save); only Save forks the
    conversation from that message (truncates history to before it, like
-   /tree edit) and resubmits the edited text. Delete forks the same way but
-   discards the message. Copy uses the iOS long-press fallback when the async
-   Clipboard API is unavailable."
+   /tree edit) and resubmits the edited text. Retry forks the same way and
+   resubmits the message unchanged. Delete forks the same way but discards the
+   message. Copy uses the iOS long-press fallback when the async Clipboard API
+   is unavailable."
   [dispatch! room-id {:keys [index text x y]}]
   (let [close! (fn [] (dispatch! {:type :bubble/menu-close}))]
     [:div {:class ["bubble-menu-backdrop"]
@@ -1878,6 +1879,14 @@
                                 (copy-to-clipboard! text)))}}
        (icon/icon {:icon-name :copy :size :sm})
        [:span "Copy"]]
+      [:button {:class ["bubble-menu-item"]
+                :on {:click (fn [e]
+                              (.stopPropagation e)
+                              (close!)
+                              (dispatch! {:type :bubble/retry
+                                          :index index :text (or text "")}))}}
+       (icon/icon {:icon-name :refresh :size :sm})
+       [:span "Retry"]]
       [:button {:class ["bubble-menu-item" "bubble-menu-item--danger"]
                 :on {:click (fn [e]
                               (.stopPropagation e)
