@@ -230,7 +230,38 @@
         roomless-types (into base-roomless-types (:roomless-events ext))
         ext-fx         (apply merge {}
                               (map (fn [f] (f {:send! send-event!}))
-                                   (:server-fx-fns ext)))]
+                                   (:server-fx-fns ext)))
+        ;; Impurely provision a room map for a fresh (or resumed) room —
+        ;; session + system prompt are read per-cwd from disk. Shared by the
+        ;; :room/setup effect (WS join) and the HTTP /api/rooms endpoint.
+        ;; Returns {:cwd :session :room}.
+        build-room
+        (fn [{:keys [cwd summary model effort]}]
+          (let [cwd (or (:cwd summary) cwd (.cwd js/process))
+                system-parts (if personal-agent?
+                               [{:source "personal-agent"
+                                 :text   system-prompt/PERSONAL_AGENT_PROMPT}]
+                               (into (system-prompt/load-agents-parts cwd)
+                                     (when ext-system-prompt-parts
+                                       (ext-system-prompt-parts cwd))))
+                system (system-prompt/parts->system system-parts)
+                session (if summary
+                          (session/load-session summary)
+                          (session/create-session
+                           cwd (when personal-agent? {:personal-agent? true})))]
+            {:cwd     cwd
+             :session session
+             :room    {:model        (or model (:model server-opts))
+                       :effort       (or effort (:effort server-opts))
+                       :cwd          cwd
+                       :system       system
+                       :system-parts system-parts
+                       :agents-files (when-not personal-agent?
+                                       (system-prompt/find-agents-md cwd))
+                       :session      session
+                       :ext          room-ext-init
+                       :personal-agent? personal-agent?
+                       :created      (js/Date.now)}}))]
     {:fx
      (merge
      {:ws/send-to
@@ -248,31 +279,8 @@
                         (if personal-agent?
                           (session/find-personal-agent-session-by-id session-id)
                           (session/find-session-by-id session-id)))
-              cwd (or (:cwd summary) cwd (.cwd js/process))
-              system-parts (if personal-agent?
-                             [{:source "personal-agent"
-                               :text   system-prompt/PERSONAL_AGENT_PROMPT}]
-                             (into (system-prompt/load-agents-parts cwd)
-                                   (when ext-system-prompt-parts
-                                     (ext-system-prompt-parts cwd))))
-              system (system-prompt/parts->system system-parts)
-              session (if summary
-                        (session/load-session summary)
-                        (session/create-session
-                         cwd (when personal-agent? {:personal-agent? true})))]
-          (dispatch! {:type :room/create
-                      :room-id room-id
-                      :room {:model        (:model server-opts)
-                             :effort       (:effort server-opts)
-                             :cwd          cwd
-                             :system       system
-                             :system-parts system-parts
-                             :agents-files (when-not personal-agent?
-                                             (system-prompt/find-agents-md cwd))
-                             :session      session
-                             :ext          room-ext-init
-                             :personal-agent? personal-agent?
-                             :created      (js/Date.now)}})
+              {:keys [session room]} (build-room {:cwd cwd :summary summary})]
+          (dispatch! {:type :room/create :room-id room-id :room room})
           (dispatch! (cond-> {:type :room/attach :client-id client-id :room-id room-id}
                        join-token (assoc :join-token join-token)))
           (when summary
@@ -539,16 +547,76 @@
                  (when (seq cids)
                    (let [payload (lobby-payload st personal-agent? (:model server-opts))]
                      (doseq [cid cids] (send! cid payload))))))
+             ;; HTTP API: programmatically create a room (and optionally kick
+             ;; off a turn) so an external service — e.g. the GTD service in
+             ;; dotfiles — can spawn a background agent session and hand back a
+             ;; web-client URL to open it. POST /api/rooms {prompt?, cwd?,
+             ;; model?}. Auth: same client-key trust as WS (via Authorization:
+             ;; Bearer <key> or X-Xi-Client-Key), skipped in personal-agent
+             ;; mode. The room runs clientless (busy rooms keep running) and its
+             ;; session persists on disk, so /chat/<session-id> resumes it later.
+             handle-api!
+             (fn [^js req pathname]
+               (cond
+                 (not= pathname "/api/rooms")
+                 (js/Response. "Not found" #js {:status 404})
+
+                 (not= "POST" (.-method req))
+                 (js/Response. "Method not allowed" #js {:status 405})
+
+                 :else
+                 (let [headers (.-headers req)
+                       key (or (some-> (.get headers "authorization")
+                                       (.replace #"(?i)^bearer\s+" ""))
+                               (.get headers "x-xi-client-key"))]
+                   (if (and (not personal-agent?) (not (auth/approved? key)))
+                     (js/Response. (js/JSON.stringify #js {:error "unauthorized"})
+                                   #js {:status  401
+                                        :headers #js {"Content-Type" "application/json"}})
+                     (-> (.json req)
+                         (.then
+                          (fn [^js body]
+                            (let [prompt (some-> (aget body "prompt") str)
+                                  cwd    (some-> (aget body "cwd") str)
+                                  model  (some-> (aget body "model") str)
+                                  room-id (str "r-" (.toString (js/Date.now) 36)
+                                               "-" (.toString (rand-int 1000000) 36))
+                                  {:keys [session room]} (build-room {:cwd cwd :model model})
+                                  session-id (:id session)
+                                  host (or (.get headers "host") (str "localhost:" port))]
+                              (dispatch! {:type :room/create :room-id room-id :room room})
+                              (when (seq prompt)
+                                (dispatch! {:type :prompt/submit :room-id room-id :text prompt}))
+                              (js/Response. (js/JSON.stringify
+                                             #js {:room-id    room-id
+                                                  :session-id session-id
+                                                  :cwd        (:cwd room)
+                                                  :url        (str "http://" host "/chat/" session-id)})
+                                            #js {:status  200
+                                                 :headers #js {"Content-Type" "application/json"}}))))
+                         (.catch
+                          (fn [err]
+                            (js/Response. (js/JSON.stringify #js {:error (str err)})
+                                          #js {:status  400
+                                               :headers #js {"Content-Type" "application/json"}}))))))))
              opts
              #js {:port port
                    :fetch
                    (fn [^js req ^js srv]
                      (let [headers  (.-headers req)
+                           pathname (try (.-pathname (js/URL. (.-url req)))
+                                         (catch :default _ ""))
                            upgrade? (some-> (.get headers "upgrade")
                                             (.toLowerCase)
                                             (= "websocket"))]
-                       (if-not upgrade?
+                       (cond
+                         (.startsWith pathname "/api/")
+                         (handle-api! req pathname)
+
+                         (not upgrade?)
                          (serve-static public-dir req)
+
+                         :else
                          ;; Same-host Origin only (port ignored — shadow's
                          ;; dev-http serves the page on 8100). Non-browser
                          ;; clients send no Origin; key auth still gates them.

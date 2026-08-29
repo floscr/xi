@@ -143,6 +143,11 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
 - `--port N` — override default port (7474)
 - The web client is served by the same server at `http://localhost:7474`
 - Full CLI reference (commands, flags, env): [docs/cli.md](docs/cli.md)
+- The server exposes a small HTTP API on the same port: `POST /api/rooms`
+  creates a room (and optionally starts a turn) so external tooling — e.g. the
+  dotfiles GTD service — can spawn a background agent session and get back a
+  `/chat/<session-id>` URL. Auth is the same client-key as WS (`Authorization:
+  Bearer` / `X-Xi-Client-Key`). See [docs/server.md](docs/server.md#http-api).
 - Server hosts multiple rooms; rooms auto-destroy when their last client
   leaves while idle (or a turn ends with no clients attached)
 - "Sessions" refers to saved-to-disk conversation history, loaded via `/resume`

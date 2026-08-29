@@ -62,6 +62,7 @@ state shape and code paths as server/client, just "not connected".
 │                                                 │
 │  HTTP (:7474) — serves the web client from      │
 │  resources/public (SPA fallback to index.html)  │
+│  + POST /api/rooms (create a room over HTTP)    │
 └────────────────────────────────────────────────┘
 ```
 
@@ -111,6 +112,70 @@ everything downstream:
 xi server --headless --personal-agent-only   # start personal assistant
 xi join                                       # connect from another terminal
 ```
+
+## HTTP API
+
+Besides serving the web client and upgrading WebSocket connections, the server
+exposes a small HTTP API so external tooling can drive it. It is served on the
+same port (7474) — and, when TLS is configured, on the TLS port too (the two
+share one fetch handler).
+
+### `POST /api/rooms` — create a room (spawn a background agent)
+
+Provisions a fresh room (session + system prompt for the given cwd) and, when a
+`prompt` is supplied, immediately kicks off an agent turn. The room runs
+**clientless** — background agents are the whole point of a headless server, so
+no client needs to be attached (see *Busy rooms keep running* below). The turn
+auto-titles the session from the first message, and the session persists on
+disk, so the returned `url` (`/chat/<session-id>`) resumes it in the web client
+later.
+
+This is how the GTD service in dotfiles triggers new coding sessions: a task
+POSTs its prompt + project cwd and gets back a URL to open.
+
+**Auth** — same client-key trust as the WS transport: send an approved key (or
+the local `~/.config/xi/client-key`) as either header:
+
+```
+Authorization: Bearer <client-key>
+X-Xi-Client-Key: <client-key>
+```
+
+Auth is skipped in `--personal-agent-only` mode (single-user/local, like WS).
+
+**Request body** (JSON, all fields optional):
+
+| field    | meaning                                                        |
+|----------|----------------------------------------------------------------|
+| `prompt` | first user message; when present, starts a turn immediately     |
+| `cwd`    | working directory the agent runs in (default: the server's cwd) |
+| `model`  | model override (default: the server's configured model)         |
+
+**Response** (`200`, JSON):
+
+```json
+{
+  "room-id": "r-mte9cxsi-jaql",
+  "session-id": "01a04d23-271b-7a48-a3dd-f25b97460a43",
+  "cwd": "/home/floscr/Code/Projects/xi",
+  "url": "http://localhost:7474/chat/01a04d23-271b-7a48-a3dd-f25b97460a43"
+}
+```
+
+Status codes: `401` (bad/missing key), `404` (unknown `/api/*` path), `405`
+(non-POST), `400` (unparseable body).
+
+**Example**
+
+```bash
+curl -sX POST http://localhost:7474/api/rooms \
+  -H "Authorization: Bearer $(cat ~/.config/xi/client-key)" \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Review the open diff and suggest fixes","cwd":"/home/me/proj"}'
+# → {"room-id":"…","session-id":"…","cwd":"/home/me/proj","url":"http://localhost:7474/chat/…"}
+```
+
+Open the returned `url` in the web client to watch (or continue) the agent.
 
 ## Wire protocol
 
