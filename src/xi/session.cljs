@@ -835,10 +835,25 @@
                                                                     (= "text" (:type b)) (:text b)
                                                                     :else nil)))
                                                           (str/join "\n"))
-                                                     :else nil)]
+                                                     :else nil)
+                                              ;; Keep any image blocks so a
+                                              ;; resumed view_image / screenshot
+                                              ;; result still shows its picture —
+                                              ;; flattening to text alone dropped
+                                              ;; them. result-images (web) reads
+                                              ;; the API {:source {:media_type …}}
+                                              ;; shape stored here.
+                                              images (when (sequential? c)
+                                                       (filterv #(and (map? %)
+                                                                      (= "image" (:type %)))
+                                                                c))]
                                           {:type :tool-result
                                            :tool-use-id (:tool_use_id block)
-                                           :content (or text "")
+                                           :content (if (seq images)
+                                                      (cond-> []
+                                                        (seq text) (conj {:type "text" :text text})
+                                                        true       (into images))
+                                                      (or text ""))
                                            :is-error (boolean (:is_error block))})
 
                                         ;; Skip thinking, etc.
@@ -874,13 +889,22 @@
 
 (defn truncate-message-results
   "Clip every :tool-result block's text content to `resume-result-line-cap`
-   lines before it crosses the wire on resume. read-session-messages already
-   flattens tool-result :content to a string, so this only touches strings;
-   every other block passes through untouched."
+   lines before it crosses the wire on resume. :content is a string for plain
+   results, or a vec of blocks when the result carries an image (see
+   read-claude-session-messages) — in that case only the text block(s) are
+   clipped and image blocks pass through. Every other block is untouched."
   [messages]
   (mapv (fn [block]
           (if (= :tool-result (:type block))
-            (update block :content util/truncate-text-lines resume-result-line-cap)
+            (update block :content
+                    (fn [c]
+                      (if (sequential? c)
+                        (mapv (fn [b]
+                                (if (and (map? b) (= "text" (:type b)))
+                                  (update b :text util/truncate-text-lines resume-result-line-cap)
+                                  b))
+                              c)
+                        (util/truncate-text-lines c resume-result-line-cap))))
             block))
         messages))
 

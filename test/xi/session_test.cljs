@@ -70,6 +70,55 @@
     (let [filepath (write-tmp-jsonl [""])]
       (is (= [] (session/read-session-messages (claude-summary filepath)))))))
 
+(defn- make-tool-result-with-image-line
+  "A user message echoing a tool_result whose content is a text caption plus an
+   API-shape image block (what view_image produces on disk)."
+  [tool-use-id caption data]
+  (js/JSON.stringify
+   #js {:type "user"
+        :message
+        #js {:content
+             #js [#js {:type "tool_result"
+                       :tool_use_id tool-use-id
+                       :content #js [#js {:type "text" :text caption}
+                                     #js {:type "image"
+                                          :source #js {:type "base64"
+                                                       :media_type "image/png"
+                                                       :data data}}]}]}}))
+
+(deftest read-session-messages-preserves-tool-result-image
+  (testing "a resumed view_image tool_result keeps its image block, not just text"
+    (let [filepath (write-tmp-jsonl
+                    [(make-tool-result-with-image-line
+                      "t1" "Viewed image: /tmp/pic.png" "AAAA")])
+          msgs     (session/read-session-messages (claude-summary filepath))
+          result   (first (filter #(= :tool-result (:type %)) msgs))
+          content  (:content result)]
+      (is (sequential? content) "content is a vec of blocks, not a flat string")
+      (is (some #(= "image" (:type %)) content) "the image block survives")
+      (let [img (first (filter #(= "image" (:type %)) content))]
+        (is (= "AAAA" (get-in img [:source :data])) "image data preserved")
+        (is (= "image/png" (get-in img [:source :media_type])) "media type preserved"))
+      (is (some #(and (= "text" (:type %))
+                      (str/includes? (:text %) "Viewed image")) content)
+          "the text caption is kept alongside the image"))))
+
+(deftest truncate-message-results-keeps-image-blocks
+  (testing "clipping a vec-content tool-result clips text but keeps image blocks"
+    (let [long-text (str/join "\n" (map str (range 250)))
+          messages  [{:type :tool-result :tool-use-id "t1"
+                      :content [{:type "text" :text long-text}
+                                {:type "image"
+                                 :source {:type "base64" :media_type "image/png" :data "AAAA"}}]}]
+          out       (session/truncate-message-results messages)
+          content   (:content (first out))
+          text-blk  (first (filter #(= "text" (:type %)) content))
+          img-blk   (first (filter #(= "image" (:type %)) content))]
+      (is (<= (count (str/split-lines (:text text-blk)))
+              session/resume-result-line-cap)
+          "text block clipped to the cap")
+      (is (= "AAAA" (get-in img-blk [:source :data])) "image block untouched"))))
+
 ;; ── Favorites ─────────────────────────────────────────────────────────────────
 
 (deftest annotate-favorites-tags-matching-ids

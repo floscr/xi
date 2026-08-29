@@ -346,6 +346,7 @@
         gtd?      (and (= "gtd_capture" name) (not is-error))
         gtd-body  (when gtd? (or (not-empty (get-arg arguments :body))
                                  (get-arg arguments :title)))
+        imgs      (seq (result-images result))
         label     (str name (when (seq summary)
                               (str " " (if bash?
                                          (str summary)
@@ -364,14 +365,16 @@
         (when (seq gtd-body)
           [:div {:class ["tool-call-content"]}
            [:div {:class ["post-content"]} (md/render gtd-body)]])
-        (seq text)
+        ;; When the result carries an image (view_image, screenshots) the text is
+        ;; just a "Viewed image: /path" caption — drop it and show only the image.
+        (and (seq text) (not imgs))
         [:div {:class ["tool-call-content"]}
          (let [shown (truncate-lines text 100)]
            (if (and (contains? #{"Edit" "edit"} name) (not is-error))
              (edit-diff-code grammar shown)
              [:pre {:class ["tool-call-code"]}
               (if grammar (highlight-code grammar shown) (into [:code] (md/linkify shown)))]))])
-      (when-let [imgs (seq (result-images result))]
+      (when imgs
         [:div {:class ["tool-call-content" "user-images"]}
          (map-indexed
           (fn [i {:keys [data media-type]}]
