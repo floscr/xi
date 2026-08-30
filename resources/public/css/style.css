@@ -610,8 +610,15 @@ body {
 }
 
 .post-body {
+  /* min-width:0 lets the bubble shrink inside its flex row. We deliberately do
+     NOT clip overflow here: `overflow: hidden` used to slice the left edge off
+     list markers (a 2-digit "10." or a larger iOS-PWA font renders wider than
+     the list's left padding, so the number pokes past the box edge and got
+     cut). Wide content is already contained by wrapping (overflow-wrap on text,
+     pre-wrap/break-all on <pre>, the <table> scroll wrapper) and by
+     `.post-content img { max-width: 100% }`, so there is nothing left for a
+     clip to guard. */
   min-width: 0;
-  overflow: hidden;
 }
 
 .post-content {
@@ -670,6 +677,14 @@ body {
 }
 
 .post-content pre code { background: none; padding: 0; border: none; }
+
+/* Keep inline/rendered images inside the bubble. Without this a wide image
+   would spill past the message and force horizontal page-scroll on mobile —
+   the job `.post-body { overflow: hidden }` used to do before it was removed. */
+.post-content img, .markdown img {
+  max-width: 100%;
+  height: auto;
+}
 
 /* ---- Markdown rendered content ---- */
 .markdown h1, .markdown h2, .markdown h3,
