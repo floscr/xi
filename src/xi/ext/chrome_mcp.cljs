@@ -63,17 +63,98 @@
               (remove no-inject-tools))
         raw-tool-defs))
 
+(def ^:private emulate-viewport-desc
+  "Clearer `emulate` viewport guidance than the upstream one-liner, whose terse
+   grammar lets the model drop the required dimensions and pass a bare tag like
+   \"mobile\" — which then crashes deep in CDP with an int32/width error."
+  (str "Emulate a device viewport, given as "
+       "'<width>x<height>[x<devicePixelRatio>][,mobile][,touch][,landscape]'. "
+       "Numeric width and height are REQUIRED, e.g. \"1280x720\" for desktop or "
+       "\"375x667,mobile,touch\" for a phone. A bare tag like \"mobile\" with no "
+       "dimensions is invalid. 'mobile'/'touch' emulate a mobile device; "
+       "'landscape' emulates landscape mode."))
+
 (def ^:private tool-defs
   "Agent-facing tool defs: the auto-injected `pageId` is stripped from every
    page-scoped tool's schema so the model's browser tools keep their pre-1.8.0
-   shape (xi supplies pageId itself in the forward layer)."
+   shape (xi supplies pageId itself in the forward layer). The `emulate`
+   viewport description is also spelled out (see emulate-viewport-desc)."
   (mapv (fn [t]
-          (if (contains? page-scoped-tools (:name t))
-            (-> t
-                (update-in [:input_schema :properties] dissoc "pageId")
+          (cond-> t
+            (contains? page-scoped-tools (:name t))
+            (-> (update-in [:input_schema :properties] dissoc "pageId")
                 (update-in [:input_schema :required] #(vec (remove #{"pageId"} %))))
-            t))
+
+            (= (:name t) "emulate")
+            (assoc-in [:input_schema :properties "viewport" :description]
+                      emulate-viewport-desc)))
         raw-tool-defs))
+
+(defn- finite-num [x]
+  "x as a finite number, or nil (accepts numbers and numeric strings)."
+  (let [n (cond (number? x) x
+                (and (string? x) (seq (str/trim x))) (js/Number (str/trim x))
+                :else nil)]
+    (when (and (number? n) (js/isFinite n)) n)))
+
+(defn- viewport-has-dims?
+  "True when a viewport string carries numeric width AND height, the only shape
+   chrome-devtools-mcp's viewportTransform can feed to setDeviceMetricsOverride."
+  [s]
+  (and (string? s)
+       (let [dims  (first (str/split s #","))
+             [w h] (str/split (str dims) #"x")]
+         (boolean (and (finite-num w) (finite-num h))))))
+
+(defn- emulate-flag-tags [args]
+  (cond-> []
+    (or (:mobile args) (:isMobile args))       (conj "mobile")
+    (or (:touch args) (:hasTouch args))        (conj "touch")
+    (or (:landscape args) (:isLandscape args)) (conj "landscape")))
+
+(defn- coerce-emulate-args
+  "Normalize the model's viewport intent before forwarding `emulate`.
+
+   chrome-devtools-mcp takes viewport as a single
+   '<w>x<h>x<dpr>[,mobile][,touch][,landscape]' string; anything without numeric
+   dimensions (e.g. \"mobile\") slips past the schema and crashes in CDP with
+   'width - int32 value expected'. Returns {:args …} to forward, or {:error …}
+   (a tool-result) to short-circuit with actionable guidance:
+
+   - a valid viewport string is passed through untouched;
+   - separate numeric width/height (the model treating emulate like resize_page)
+     are assembled into a viewport string, honoring mobile/touch/landscape;
+   - a viewport change with no usable dimensions is rejected with a clear error;
+   - a call with no viewport intent at all (only networkConditions, colorScheme,
+     …) is forwarded unchanged."
+  [args]
+  (let [vp     (:viewport args)
+        w      (finite-num (:width args))
+        h      (finite-num (:height args))
+        dpr    (finite-num (or (:deviceScaleFactor args) (:devicePixelRatio args)))
+        flags  (emulate-flag-tags args)
+        strip  #(dissoc % :width :height :deviceScaleFactor :devicePixelRatio
+                        :mobile :touch :landscape :isMobile :hasTouch :isLandscape)]
+    (cond
+      (viewport-has-dims? vp)
+      {:args (strip args)}
+
+      (and w h)
+      {:args (assoc (strip args)
+                    :viewport (str w "x" h (when dpr (str "x" dpr))
+                                   (when (seq flags) (str "," (str/join "," flags)))))}
+
+      (or (some? vp) (seq flags) w h)
+      {:error {:content [{:type "text"
+                          :text (str "emulate: viewport needs numeric dimensions. "
+                                     "Pass viewport as \"<width>x<height>"
+                                     "[x<dpr>][,mobile][,touch][,landscape]\", e.g. "
+                                     "\"1280x720\" for desktop or \"375x667,mobile\" "
+                                     "for a phone.")}]
+                :is-error true}}
+
+      :else
+      {:args (strip args)})))
 
 (defn- env [k] (aget js/process.env k))
 
@@ -327,7 +408,14 @@
             ;; (both contribute :tool-definitions/:tool-registry, so merge them
             ;; explicitly — a plain map merge would clobber one).
             :tool-definitions (into tool-defs (:tool-definitions editor))
-            :tool-registry    (merge (into {} (map (fn [n] [n (fn [args ctx] (forward n args ctx))]))
+            :tool-registry    (merge (into {} (map (fn [n]
+                                                     [n (fn [args ctx]
+                                                          (if (= n "emulate")
+                                                            (let [c (coerce-emulate-args args)]
+                                                              (if-let [err (:error c)]
+                                                                (js/Promise.resolve err)
+                                                                (forward n (:args c) ctx)))
+                                                            (forward n args ctx)))]))
                                            tool-names)
                                      (:tool-registry editor))
             :on-shutdown      (fn [] (when-let [c @client*] ((:kill c))))}
