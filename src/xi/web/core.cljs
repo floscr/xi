@@ -24,6 +24,7 @@
             [xi.ext.core :as ext]
             [xi.config :as config]
             [xi.naming :as naming]
+            [xi.quick-replies :as quick-replies]
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
             [xi.web.router :as router]
@@ -33,14 +34,27 @@
 
 (defn- base-handlers
   "The pure handler map shared with the server, sans node-coupled chains.
-   Effects are stripped on mirror, so the simple merge suffices for a
-   read-and-forward client."
+   Effects are stripped on mirror, so a simple merge suffices for most
+   read-and-forward handlers.
+
+   Quick-reply chips are the exception: the server broadcasts its exact event
+   stream, and the :quick-replies/suggested handler only accepts a result whose
+   :gen matches the room's current :gen — which maybe-suggest sets on turn-end
+   and clear-on-submit bumps on submit. So the client must run those same
+   gen-tracking reducers (mirroring the node make-handlers) or every suggestion
+   is rejected as stale and no chips ever render. The server-only
+   :quick-replies/generate effect is dropped on mirror."
   []
-  (merge events/core-handlers
-         agent/handlers
-         (commands/command-handlers)
-         compaction/handlers
-         naming/handlers))
+  (-> (merge events/core-handlers
+             agent/handlers
+             (commands/command-handlers)
+             compaction/handlers
+             naming/handlers
+             quick-replies/handlers)
+      (assoc :agent/turn-end (events/chain (:agent/turn-end agent/handlers)
+                                           quick-replies/maybe-suggest)
+             :prompt/submit  (events/chain (:prompt/submit agent/handlers)
+                                           quick-replies/clear-on-submit))))
 
 ;; ── Web-local handlers (installed unwrapped; never mirrored) ──────────────────
 
