@@ -163,6 +163,16 @@ body {
   --quick-cmd-h: calc(var(--size-1) + var(--size-2) * 2 + 1.25rem);
 }
 
+/* Quick-reply chips ride at the top of the floating footer, above the
+   quick-command bar. Reserve their row height on top of the bar's, so the last
+   messages clear the chips instead of being trapped behind them (which also
+   stole the bottom touch-scroll strip on mobile). Kept in sync with the
+   .quick-replies row height (one chip row + its margin-bottom). */
+.topbar--chat + .timeline.timeline--float-footer.timeline--quick-replies {
+  --quick-cmd-h: calc(var(--size-1) + var(--size-2) * 2 + 1.25rem
+                      + var(--size-2) * 3 + 1.25rem);
+}
+
 /* ---- Nav group (burger toggle + back arrow as one segmented button) ----
    The two controls share a single border/radius and are split by a divider.
    The floating sidebar keeps the burger visible at every width, so both

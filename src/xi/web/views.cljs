@@ -2105,8 +2105,15 @@
        (file-tab-view (:file buffers))
 
        ;; default: :chat
-       (list
-        [:div {:class ["timeline" (when-not pa? "timeline--float-footer")]}
+       (let [show-qr? (and (seq (get-in room [:quick-replies :chips])) (not busy?))]
+        (list
+        [:div {:class ["timeline"
+                       (when-not pa? "timeline--float-footer")
+                       ;; Chips ride at the top of the floating footer, so the
+                       ;; timeline must reserve their height too — otherwise
+                       ;; they overlap (and steal touch-scroll from) the last
+                       ;; messages. Matches quick-replies-row's render guard.
+                       (when (and (not pa?) show-qr?) "timeline--quick-replies")]}
          [:div {:class ["timeline-content"]}
           (if ready?
             (let [entries (vec history)
@@ -2186,7 +2193,7 @@
                       (:web/prompt-nav state)
                       nav-ctx
                       (:web/scrolled-up? state)
-                      (false? (:web/connected? state)))]))]))
+                      (false? (:web/connected? state)))])))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
