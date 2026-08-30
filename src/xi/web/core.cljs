@@ -1444,9 +1444,16 @@
       ;; the timeline without firing a render or a scroll event, so the RAF
       ;; snap-to-bottom never runs again and the view stops just short of the
       ;; bottom. Re-snap on any content-size growth while auto-scroll is on.
-      (when-let [content (.querySelector timeline ".timeline-content")]
-        (doto (js/ResizeObserver. (fn [] (scroll-to-bottom!)))
-          (.observe content)))
+      ;; Also observe the floating footer (.compose-dock): quick-reply chips
+      ;; arrive out-of-band ~1-2s after the turn ends, growing the footer that
+      ;; overlaps the timeline's bottom — without a re-snap the grown footer
+      ;; covers the last response line (looked "cut off"). A growing composer
+      ;; (textarea auto-grow) re-snaps for the same reason.
+      (let [obs (js/ResizeObserver. (fn [] (scroll-to-bottom!)))]
+        (when-let [content (.querySelector timeline ".timeline-content")]
+          (.observe obs content))
+        (when-let [dock (.querySelector js/document ".compose-dock")]
+          (.observe obs dock)))
       ;; Sync the flag once on (re)attach so a fresh timeline starts consistent.
       (when-let [d @dispatch-ref]
         (d {:type :web/set-scrolled-up :scrolled-up? (not (at-bottom? timeline))})))))
