@@ -23,6 +23,8 @@
             ["node:os" :as os]
             ["node:path" :as path]
             ["node:crypto" :as crypto]
+            ["node:child_process" :as cp]
+            [xi.image :as image]
             [xi.ext.image-graph.gemini :as gemini]))
 
 ;; ── Paths ────────────────────────────────────────────────────────────────────
@@ -148,6 +150,83 @@
       (let [f (image-path h)]
         (when (fs/existsSync f) (fs/unlinkSync f))))))
 
+;; ── Project image scan (find real image files on disk to rework) ─────────────
+
+(def ^:private image-exts #{".png" ".jpg" ".jpeg" ".webp" ".gif"})
+
+(def ^:private scan-ignore
+  #{"node_modules" ".git" "target" ".demo-home" ".shadow-cljs" "dist" "build"
+    ".next" "out" ".cache" "vendor" ".cljs_node_repl" "coverage" ".idea"
+    ".vscode" "tmp" ".gradle" "__pycache__" ".venv" "venv"})
+
+(def ^:private max-scan-results 60)
+(def ^:private max-scan-depth 7)
+(def ^:private max-scan-file-bytes (* 25 1024 1024))
+
+(defn- mime-for-ext [ext]
+  (case (str/lower-case ext)
+    ".png"  "image/png"
+    ".jpg"  "image/jpeg"
+    ".jpeg" "image/jpeg"
+    ".webp" "image/webp"
+    ".gif"  "image/gif"
+    "image/png"))
+
+(defn- walk-images
+  "Recursively collect image file paths under `root`, skipping build/vendor and
+   hidden directories, bounded by depth, count, and per-file size."
+  [root]
+  (let [results (volatile! [])]
+    (letfn [(walk [dir depth]
+              (when (and (< depth max-scan-depth) (< (count @results) max-scan-results))
+                (let [entries (try (.readdirSync fs dir #js {:withFileTypes true})
+                                   (catch :default _ #js []))]
+                  (doseq [^js ent entries
+                          :while (< (count @results) max-scan-results)]
+                    (let [nm   (.-name ent)
+                          full (path/join dir nm)]
+                      (cond
+                        (.isDirectory ent)
+                        (when-not (or (contains? scan-ignore nm)
+                                      (str/starts-with? nm "."))
+                          (walk full (inc depth)))
+                        (.isFile ent)
+                        (when (contains? image-exts (str/lower-case (path/extname nm)))
+                          (let [sz (try (.-size (.statSync fs full)) (catch :default _ 0))]
+                            (when (and (pos? sz) (<= sz max-scan-file-bytes))
+                              (vswap! results conj full))))))))))]
+      (walk root 0)
+      @results)))
+
+(defn- thumb-data-url
+  "Produce a small JPEG thumbnail data URL for an image file via ImageMagick,
+   or nil when it can't be read/processed."
+  [file]
+  (let [out (path/join (os/tmpdir) (str "ig-thumb-" (rand36) ".jpg"))]
+    (try
+      (let [res (cp/spawnSync "magick"
+                              #js [(str file "[0]") "-resize" "400x400>"
+                                   "-quality" "78" out]
+                              #js {:timeout 8000 :maxBuffer (* 16 1024 1024)})]
+        (when (and (some? (.-status res)) (zero? (.-status res)) (fs/existsSync out))
+          (let [^js buf (fs/readFileSync out)]
+            (str "data:image/jpeg;base64," (.toString buf "base64")))))
+      (catch :default _ nil)
+      (finally (when (fs/existsSync out)
+                 (try (fs/unlinkSync out) (catch :default _)))))))
+
+(defn- scan-project-images
+  "Walk the project cwd for image files and return client entries with inlined
+   thumbnails: [{:path :name :rel :thumb} …]. Drops anything we can't thumbnail."
+  [cwd]
+  (->> (walk-images cwd)
+       (mapv (fn [f]
+               {:path  f
+                :name  (path/basename f)
+                :rel   (path/relative cwd f)
+                :thumb (thumb-data-url f)}))
+       (filterv :thumb)))
+
 ;; ── Roomless handlers (forward to reply effects) ─────────────────────────────
 
 (defn- fwd [reply-kw]
@@ -162,7 +241,9 @@
    :image-graph/generate     (fwd :image-graph/generate-reply)
    :image-graph/set-cover    (fwd :image-graph/set-cover-reply)
    :image-graph/delete-node  (fwd :image-graph/delete-node-reply)
-   :image-graph/upload-sketch (fwd :image-graph/upload-sketch-reply)})
+   :image-graph/upload-sketch (fwd :image-graph/upload-sketch-reply)
+   :image-graph/scan-images  (fwd :image-graph/scan-images-reply)
+   :image-graph/import-image (fwd :image-graph/import-image-reply)})
 
 ;; ── Server fx ────────────────────────────────────────────────────────────────
 
@@ -276,6 +357,40 @@
         (prune-images! cwd removed-imgs nil)
         (send-graph! send cwd g')))))
 
+(defn- do-scan-images! [send cwd]
+  (send {:type :image-graph/scan-result :cwd cwd
+         :images (scan-project-images cwd)}))
+
+(defn- do-import-image!
+  "Create a new graph seeded with an on-disk image as its (imported) root node,
+   resized within API limits. The root is a normal node so forks use it as a
+   reference image (image-to-image), letting you rework the original."
+  [send cwd {:keys [path title]}]
+  (if-not (and path (fs/existsSync path))
+    (send-error! send cwd "image not found")
+    (let [nm    (path/basename path)
+          ext   (path/extname path)
+          raw   (fs/readFileSync path)
+          {:keys [data media-type]}
+          (image/ensure-within-limits {:data (.toString raw "base64")
+                                       :media-type (mime-for-ext ext)})
+          buf   (js/Buffer.from data "base64")
+          hash  (write-image! buf)
+          node  {:id     (gen-id "n")
+                 :parent nil
+                 :prompt (str "imported \u00b7 " nm)
+                 :model  nil
+                 :image  hash
+                 :mime   media-type
+                 :ts     (js/Date.now)
+                 :imported true}
+          id    (gen-id "g")
+          g     {:id id :title (or (not-empty (str/trim (str title))) nm)
+                 :cwd cwd :cover (:id node) :created (js/Date.now) :nodes [node]}]
+      (write-graph! cwd id g)
+      (send {:type :image-graph/created :cwd cwd :graph-id id})
+      (send-list! send cwd))))
+
 (defn- do-new-graph! [send cwd {:keys [title]}]
   (let [id (gen-id "g")
         g  {:id id :title (or (not-empty (str/trim (str title))) "Untitled")
@@ -323,7 +438,13 @@
      (reply (fn [send cwd {:keys [graph-id node-id]}] (do-delete-node! send cwd graph-id node-id)))
 
      :image-graph/upload-sketch-reply
-     (reply (fn [send cwd {:keys [graph-id] :as ev}] (do-upload-sketch! send cwd graph-id ev)))}))
+     (reply (fn [send cwd {:keys [graph-id] :as ev}] (do-upload-sketch! send cwd graph-id ev)))
+
+     :image-graph/scan-images-reply
+     (reply (fn [send cwd _] (do-scan-images! send cwd)))
+
+     :image-graph/import-image-reply
+     (reply (fn [send cwd ev] (do-import-image! send cwd ev)))}))
 
 ;; ── Extension ────────────────────────────────────────────────────────────────
 
@@ -334,4 +455,5 @@
    :roomless-events #{:image-graph/list :image-graph/read :image-graph/new
                       :image-graph/delete-graph :image-graph/generate
                       :image-graph/set-cover :image-graph/delete-node
-                      :image-graph/upload-sketch}})
+                      :image-graph/upload-sketch :image-graph/scan-images
+                      :image-graph/import-image}})

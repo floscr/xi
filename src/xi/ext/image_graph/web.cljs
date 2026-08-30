@@ -188,6 +188,10 @@
       (nil? cwd)
       {:effects (when (empty? (:web/project-dirs st))
                   [[:app/dispatch {:type :projects/web-list}]])}
+      (= file "__scan__")
+      {:state   (assoc st :web/art-scan-loading? true :web/art-scan-images nil
+                       :web/art-error nil)
+       :effects [[:app/dispatch {:type :image-graph/scan-images :cwd cwd}]]}
       file
       {:state   (assoc st :web/art-loading? true :web/art-selected nil :web/art-error nil)
        :effects [[:app/dispatch {:type :image-graph/read :cwd cwd :graph-id file}]]}
@@ -219,6 +223,9 @@
    :image-graph/open-graph
    (fn [_ {:keys [cwd graph-id]}]
      {:effects [[:app/dispatch {:type :route/navigate :page :art :cwd cwd :file graph-id}]]})
+   :image-graph/open-scan
+   (fn [_ {:keys [cwd]}]
+     {:effects [[:app/dispatch {:type :route/navigate :page :art :cwd cwd :file "__scan__"}]]})
 
    ;; Server round-trips (forward → server-fx replies)
    :image-graph/list
@@ -239,8 +246,22 @@
                     :web/art-loading? false)})
    :image-graph/new forward
    :image-graph/created
-   (fn [_ {:keys [cwd graph-id]}]
-     {:effects [[:app/dispatch {:type :image-graph/open-graph :cwd cwd :graph-id graph-id}]]})
+   (fn [st {:keys [cwd graph-id]}]
+     {:state   (dissoc st :web/art-importing)
+      :effects [[:app/dispatch {:type :image-graph/open-graph :cwd cwd :graph-id graph-id}]]})
+
+   ;; Scan the project's real image files on disk to rework them
+   :image-graph/scan-images
+   (fn [st ev] {:state (assoc st :web/art-scan-loading? true)
+                :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
+   :image-graph/scan-result
+   (fn [st {:keys [cwd images]}]
+     {:state (assoc st :web/art-scan-images images :web/art-scan-cwd cwd
+                    :web/art-scan-loading? false)})
+   :image-graph/import-image
+   (fn [st {:keys [path] :as ev}]
+     {:state (assoc st :web/art-importing path)
+      :effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
    :image-graph/delete-graph forward
    :image-graph/graph-deleted
    (fn [st {:keys [cwd]}]
@@ -308,39 +329,54 @@
 
 ;; ── Editor page ──────────────────────────────────────────────────────────────
 
-(defn- model-toggle [dispatch! model]
-  [:div {:class ["ig-models"]}
-   (for [[id label] [["nano-banana" "Nano Banana"] ["nano-banana-pro" "Nano Banana Pro"]]]
-     (button/button {:variant (if (= id model) :primary :ghost) :size :sm
-                     :replicant/key id
-                     :on-click (fn [_] (dispatch! {:type :image-graph/set-model :model id}))}
-                    label))])
+(defn- model-toggle
+  "Compact segmented control so the two model names never wrap on mobile."
+  [dispatch! model]
+  [:div {:class ["ig-seg"] :role "group"}
+   (for [[id label] [["nano-banana" "Nano Banana"] ["nano-banana-pro" "Pro"]]]
+     [:button {:class (cond-> ["ig-seg-btn"] (= id model) (conj "ig-seg-btn--on"))
+               :type "button" :replicant/key id
+               :title (if (= id "nano-banana-pro") "Nano Banana Pro" label)
+               :on {:click (fn [_] (dispatch! {:type :image-graph/set-model :model id}))}}
+      label])])
 
 (defn- compose-bar [dispatch! cwd graph-id selected model generating?]
-  [:div {:class ["ig-compose"]}
-   [:div {:class ["ig-compose-target"]}
-    (if selected "Fork from selected node" "New root image")]
-   [:textarea {:id "ig-prompt" :class ["form-textarea" "ig-prompt"]
-               :placeholder "Describe the image to generate…"
-               :rows 2
-               :disabled generating?
-               :on {:keydown (fn [^js e]
-                               (when (and (= "Enter" (.-key e))
-                                          (or (.-metaKey e) (.-ctrlKey e)))
-                                 (.preventDefault e)
-                                 (let [t (read-prompt)]
-                                   (when (and t (seq (str/trim t)))
-                                     (dispatch! {:type :image-graph/generate
-                                                 :cwd cwd :graph-id graph-id
-                                                 :parent selected :prompt t :model model})))))}}]
-   (button/button {:variant :primary :size :md :disabled generating?
-                   :on-click (fn [_]
-                               (let [t (read-prompt)]
-                                 (when (and t (seq (str/trim t)))
-                                   (dispatch! {:type :image-graph/generate
-                                               :cwd cwd :graph-id graph-id
-                                               :parent selected :prompt t :model model}))))}
-                  (if generating? "Generating…" "Generate"))])
+  (let [go (fn []
+             (let [t (read-prompt)]
+               (when (and t (seq (str/trim t)) (not generating?))
+                 (dispatch! {:type :image-graph/generate
+                             :cwd cwd :graph-id graph-id
+                             :parent selected :prompt t :model model}))))]
+    [:div {:class ["ig-compose"]}
+     [:div {:class ["ig-compose-head"]}
+      [:span {:class ["ig-compose-target" (when selected "ig-compose-target--fork")]}
+       (if selected "⎇ Fork from selected" "◉ New root image")]
+      (model-toggle dispatch! model)
+      [:label {:class ["ig-icon-btn" "ig-upload"] :title "Upload a sketch"}
+       (icon/icon {:icon-name :image :size :sm})
+       [:input {:type "file" :accept "image/*" :style {:display "none"}
+                :on {:change (fn [^js e]
+                               (when-let [f (aget (.. e -target -files) 0)]
+                                 (-> (read-image-file f)
+                                     (.then (fn [res]
+                                              (when res
+                                                (dispatch! {:type :image-graph/upload-sketch
+                                                            :cwd cwd :graph-id graph-id
+                                                            :data (:data res) :mime (:mime res)})))))))}}]]]
+     [:div {:class ["ig-compose-main"]}
+      [:textarea {:id "ig-prompt" :class ["form-textarea" "ig-prompt"]
+                  :placeholder "Describe the image to generate…"
+                  :rows 2
+                  :disabled generating?
+                  :on {:keydown (fn [^js e]
+                                  (when (and (= "Enter" (.-key e))
+                                             (or (.-metaKey e) (.-ctrlKey e)))
+                                    (.preventDefault e)
+                                    (go)))}}]
+      (button/button {:variant :primary :size :md :disabled generating?
+                      :class "ig-generate-btn"
+                      :on-click (fn [_] (go))}
+                     (if generating? "Generating…" "Generate"))]]))
 
 (defn- editor-page [state dispatch!]
   (let [graph      (:web/art-graph state)
@@ -360,25 +396,9 @@
                 :on {:click (fn [_] (dispatch! {:type :nav/back
                                                 :fallback {:page :art :cwd cwd}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
-      [:div {:class ["topbar-title"]}
-       (or (:title graph) "Image graph")
-       [:span {:class ["ig-cost-total"]} (str " · " (fmt-cost (:cost-total graph)))]]
-      [:div {:class ["ig-topbar-tools"]}
-       (model-toggle dispatch! model)
-       [:label {:class ["btn" "btn-sm" "ig-upload"]}
-        (icon/icon {:icon-name :image :size :sm}) " Sketch"
-        [:input {:type "file" :accept "image/*" :style {:display "none"}
-                 :on {:change (fn [^js e]
-                                (when-let [f (aget (.. e -target -files) 0)]
-                                  (-> (read-image-file f)
-                                      (.then (fn [res]
-                                               (when res
-                                                 (dispatch! {:type :image-graph/upload-sketch
-                                                             :cwd cwd :graph-id gid
-                                                             :data (:data res) :mime (:mime res)})))))))}}]]
-       [:button {:class ["icon-btn"] :title "Zoom out" :on {:click (zoom! -0.15)}} "−"]
-       [:button {:class ["icon-btn"] :title "Reset view" :on {:click reset-view!}} "⟳"]
-       [:button {:class ["icon-btn"] :title "Zoom in" :on {:click (zoom! 0.15)}} "+"]]
+      [:div {:class ["topbar-title" "ig-editor-title"]}
+       [:span {:class ["ig-editor-name"]} (or (:title graph) "Image graph")]
+       [:span {:class ["ig-cost-total"]} (fmt-cost (:cost-total graph))]]
       (views/overflow-menu dispatch! state)]
      (when error [:div {:class ["ig-error"]} error])
      [:div {:class ["ig-viewport"]
@@ -397,7 +417,12 @@
          [:svg {:class ["ig-edges"]}]
          (for [n nodes]
            (node-card dispatch! {:cwd cwd :graph-id gid :selected selected}
-                      n (get positions (:id n))))])]
+                      n (get positions (:id n))))])
+      (when (seq nodes)
+        [:div {:class ["ig-zoom"]}
+         [:button {:class ["ig-zoom-btn"] :title "Zoom out" :on {:click (zoom! -0.15)}} "−"]
+         [:button {:class ["ig-zoom-btn"] :title "Reset view" :on {:click reset-view!}} "⟳"]
+         [:button {:class ["ig-zoom-btn"] :title "Zoom in" :on {:click (zoom! 0.15)}} "+"]])]
      (compose-bar dispatch! cwd gid selected model generating?)]))
 
 ;; ── Gallery page ─────────────────────────────────────────────────────────────
@@ -432,6 +457,9 @@
                 :on {:click (fn [_] (dispatch! {:type :nav/back :fallback {:page :art}}))}}
        (icon/icon {:icon-name :arrow-left :size :md})]
       [:div {:class ["topbar-title"]} (views/shorten-path cwd)]
+      [:button {:class ["icon-btn"] :title "Rework an existing project image"
+                :on {:click (fn [_] (dispatch! {:type :image-graph/open-scan :cwd cwd}))}}
+       (icon/icon {:icon-name :search :size :md})]
       [:button {:class ["icon-btn"] :title "New image"
                 :on {:click (fn [_] (dispatch! {:type :image-graph/new :cwd cwd :title "Untitled"}))}}
        (icon/icon {:icon-name :plus :size :md})]
@@ -443,12 +471,60 @@
         (empty? graphs)
         [:div {:class ["empty-state"]}
          [:p "No image graphs yet."]
-         (button/button {:variant :primary :size :md :icon-left :plus
-                         :on-click (fn [_] (dispatch! {:type :image-graph/new :cwd cwd :title "Untitled"}))}
-                        "New image")]
+         [:div {:class ["ig-empty-actions"]}
+          (button/button {:variant :primary :size :md :icon-left :plus
+                          :on-click (fn [_] (dispatch! {:type :image-graph/new :cwd cwd :title "Untitled"}))}
+                         "New image")
+          (button/button {:variant :ghost :size :md :icon-left :search
+                          :on-click (fn [_] (dispatch! {:type :image-graph/open-scan :cwd cwd}))}
+                         "Rework existing")]]
         :else
         [:div {:class ["ig-gallery"]}
          (for [g graphs] (gallery-card dispatch! cwd g))])]]))
+
+;; ── Scan page (rework a real project image) ──────────────────────────────────
+
+(defn- scan-card [dispatch! cwd importing? {:keys [path name rel thumb]}]
+  [:button {:class (cond-> ["ig-scan-card"] importing? (conj "ig-scan-card--busy"))
+            :replicant/key path :type "button" :disabled importing?
+            :title rel
+            :on {:click (fn [_]
+                          (dispatch! {:type :image-graph/import-image
+                                      :cwd cwd :path path :title name}))}}
+   [:div {:class ["ig-scan-thumb"]}
+    [:img {:src thumb :alt (or name "")}]
+    (when importing? [:div {:class ["ig-scan-busy"]} (views/spinner)])]
+   [:div {:class ["ig-scan-meta"]}
+    [:span {:class ["ig-scan-name"]} name]
+    [:span {:class ["ig-scan-rel"]} rel]]])
+
+(defn- scan-page [state dispatch!]
+  (let [cwd       (get-in state [:web/route :cwd])
+        images    (:web/art-scan-images state)
+        loading?  (:web/art-scan-loading? state)
+        importing (:web/art-importing state)]
+    [:div {:class ["container"] :replicant/key "ig-scan"}
+     [:div {:class ["topbar"]}
+      [:button {:class ["icon-btn"]
+                :on {:click (fn [_] (dispatch! {:type :nav/back
+                                                :fallback {:page :art :cwd cwd}}))}}
+       (icon/icon {:icon-name :arrow-left :size :md})]
+      [:div {:class ["topbar-title"]} "Rework a project image"]
+      [:button {:class ["icon-btn"] :title "Rescan"
+                :on {:click (fn [_] (dispatch! {:type :image-graph/scan-images :cwd cwd}))}}
+       (icon/icon {:icon-name :refresh :size :md})]
+      (views/overflow-menu dispatch! state)]
+     [:div {:class ["home"]}
+      (cond
+        (and loading? (empty? images))
+        [:div {:class ["empty-state"]} (views/spinner)]
+        (empty? images)
+        [:div {:class ["empty-state"]}
+         [:p "No image files found in this project."]]
+        :else
+        [:div {:class ["ig-scan-grid"]}
+         (for [img images]
+           (scan-card dispatch! cwd (= importing (:path img)) img))])]]))
 
 ;; ── Project picker page ──────────────────────────────────────────────────────
 
@@ -482,9 +558,10 @@
 (defn- art-page [state dispatch!]
   (let [{:keys [cwd file]} (:web/route state)]
     (cond
-      (nil? cwd) (picker-page state dispatch!)
-      file       (editor-page state dispatch!)
-      :else      (gallery-page state dispatch!))))
+      (nil? cwd)          (picker-page state dispatch!)
+      (= file "__scan__") (scan-page state dispatch!)
+      file                (editor-page state dispatch!)
+      :else               (gallery-page state dispatch!))))
 
 ;; ── Route ────────────────────────────────────────────────────────────────────
 
