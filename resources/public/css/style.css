@@ -1746,6 +1746,17 @@ body {
 }
 
 .project-card-icon { flex-shrink: 0; color: var(--fg-1); }
+.project-card-icon--dirty { position: relative; }
+.project-dirty-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--warning);
+  box-shadow: 0 0 0 2px var(--bg-0);
+}
 
 .active-dot {
   width: 10px;

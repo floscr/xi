@@ -104,11 +104,22 @@
   [_st {:keys [client-id cwd]}]
   {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd}]]})
 
+(defn- git-dirty?
+  "Resolve to true when the git working tree at `dir` has uncommitted changes.
+   Non-git dirs or errors resolve to false."
+  [dir]
+  (let [proc (js/Bun.spawn #js ["git" "-C" dir "status" "--porcelain"]
+                           #js {:stdout "pipe" :stderr "pipe"})]
+    (-> (.text (.-stdout proc))
+        (.then (fn [out] (not (str/blank? out))))
+        (.catch (fn [_] false)))))
+
 (defn- server-fx
   "WS-server fx: project list + per-project sessions, replied to the
    requesting client."
   [{:keys [send!]}]
-  {;; Project list: run `project select --raw` and return dirs.
+  {;; Project list: run `project select --raw` and return dirs, plus the
+   ;; subset whose git working tree is dirty (drives the status dot).
    :projects/web-list-reply
    (fn [_ {:keys [client-id]}]
      (let [proc (js/Bun.spawn #js ["project" "select" "--raw"]
@@ -118,8 +129,14 @@
                     (let [dirs (->> (str/split-lines (str/trim stdout))
                                     (remove empty?)
                                     vec)]
-                      (send! client-id {:type :projects/web-list-result
-                                        :dirs dirs}))))
+                      (-> (js/Promise.all (clj->js (mapv git-dirty? dirs)))
+                          (.then (fn [flags]
+                                   (let [dirty (into #{} (keep-indexed
+                                                          (fn [i d] (when (aget flags i) d))
+                                                          dirs))]
+                                     (send! client-id {:type :projects/web-list-result
+                                                       :dirs dirs
+                                                       :dirty dirty}))))))))
            (.catch (fn [_]
                      (send! client-id {:type :projects/web-list-result
                                        :dirs []}))))))

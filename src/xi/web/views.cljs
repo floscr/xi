@@ -2378,13 +2378,15 @@
        [:span "Delete"]]]]))
 
 (defn- project-dir-card
-  "Card for a project directory in the home view."
-  [dispatch! path]
+  "Card for a project directory in the home view. `dirty?` draws an orange
+   status dot on the folder icon when the project's git tree has changes."
+  [dispatch! path dirty?]
   [:div {:class ["project-card"]
          :replicant/key (str "dir-" path)
          :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}}
-   [:div {:class ["project-card-icon"]}
-    (icon/icon {:icon-name :folder :size :sm})]
+   [:div {:class ["project-card-icon" (when dirty? "project-card-icon--dirty")]}
+    (icon/icon {:icon-name :folder :size :sm})
+    (when dirty? [:span {:class ["project-dirty-dot"]}])]
    [:div {:class ["project-card-info"]}
     [:span {:class ["project-card-name"]} (shorten-path path)]
     [:span {:class ["project-card-path"]} path]]
@@ -2730,8 +2732,9 @@
               ;; Project directories
               (if (and (seq query) (empty? dirs))
                 (empty-state/empty-state {} [:p "No matching projects."])
-                (for [d dirs]
-                  (project-dir-card dispatch! d)))]])]]))))
+                (let [dirty (:web/project-dirty state)]
+                  (for [d dirs]
+                    (project-dir-card dispatch! d (contains? dirty d)))))]])]]))))
 
 ;; ── Root ─────────────────────────────────────────────────────────────────────
 
@@ -2830,8 +2833,9 @@
         (list
          (when (not pa?)
            (sidebar/sidebar-group {:label "Projects"}
-             (for [p projects]
-               (project-dir-card dispatch! p))
+             (let [dirty (:web/project-dirty state)]
+               (for [p projects]
+                 (project-dir-card dispatch! p (contains? dirty p))))
              [:div {:class ["sidebar-nav-buttons"]
                     :replicant/key "sidebar-nav-buttons"}
               (button/button

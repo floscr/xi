@@ -443,8 +443,10 @@
                           :text (str "/diff " method)}]]}))
 
 
-(defn- projects-web-list-result [st {:keys [dirs]}]
-  {:state (assoc st :web/project-dirs dirs :web/projects-loading? false)})
+(defn- projects-web-list-result [st {:keys [dirs dirty]}]
+  {:state (assoc st :web/project-dirs dirs
+                    :web/project-dirty (set dirty)
+                    :web/projects-loading? false)})
 
 (defn- projects-web-sessions-result [st {:keys [cwd sessions]}]
   {:state (assoc st :web/project-sessions sessions
