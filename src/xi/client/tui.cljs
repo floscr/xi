@@ -87,6 +87,39 @@
                                  (dispatch! (assoc event :room-id (:id room))))))}))
              keybindings)))
 
+(defn- quick-reply-keybindings
+  "Native editor bindings alt+1..alt+4: submit the Nth quick-reply chip
+   (xi.quick-replies) of the active room. The chip is looked up at press time
+   and sent via :input/submit — the universal submit path — so it works in
+   standalone and client alike with no core handler. Guarded so the key falls
+   through to the editor when there is no chip at that index."
+  [get-state dispatch!]
+  (mapv (fn [i]
+          (let [seqs #{(str ESC (inc i)) (str ESC "[" (+ 49 i) ";3u")}
+                chip-at (fn [] (some-> (get-state) state/active-room
+                                       (get-in [:quick-replies :chips]) (nth i nil)))]
+            {:key-fn  (fn [data] (and (contains? seqs data) (some? (chip-at))))
+             :handler (fn []
+                        (let [st   (get-state)
+                              room (state/active-room st)
+                              chip (chip-at)]
+                          (when (and room chip)
+                            (dispatch! {:type :input/submit :room-id (:id room)
+                                        :text (:send chip)}))))}))
+        (range 4)))
+
+(defn- quick-replies-hint
+  "Prompt-suffix hint for the active room's quick-reply chips, e.g.
+   '  ⌥1 Yes  ⌥2 No'. nil when there are none."
+  [room]
+  (when-let [chips (seq (get-in room [:quick-replies :chips]))]
+    (apply str
+           (map-indexed
+            (fn [i {:keys [label]}]
+              (let [label (if (> (count label) 18) (str (subs label 0 17) "…") label)]
+                (str (ansi/fg :accent (str "  ⌥" (inc i) " ")) (ansi/fg :dim label))))
+            chips))))
+
 ;; ── Lifecycle ────────────────────────────────────────────────────────────────
 
 (defn- shutdown! [on-exit]
@@ -786,8 +819,9 @@
         current-room (fn [] (some-> (.-state ctx) state/active-room))
         room-event (fn [event] (when-let [room (current-room)]
                                  (dispatch! (assoc event :room-id (:id room)))))
-        ext-keybindings (->editor-keybindings (into builtin-keybindings (vec keybindings))
-                                              get-state dispatch!)
+        ext-keybindings (into (->editor-keybindings (into builtin-keybindings (vec keybindings))
+                                                     get-state dispatch!)
+                              (quick-reply-keybindings get-state dispatch!))
 
         editor-comp
         (editor/make-editor
@@ -871,7 +905,8 @@
                   badge (when prompt-badge (prompt-badge (.-state ctx)))]
               (str (when (pos? n) (ansi/fg :accent (str " 📎" n)))
                    (when (pos? qn) (ansi/fg :accent (str " ⏳" qn " queued")))
-                   (when (seq badge) badge))))
+                   (when (seq badge) badge)
+                   (quick-replies-hint room))))
           :prompt-right-fn
           (fn []
             (when-let [cwd (:cwd (current-room))]

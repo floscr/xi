@@ -74,6 +74,17 @@ its namespace and add its `extension`/factory to the vector. See
 
 ---
 
+## Feature flags (`xi.config`)
+
+Plain `def`s in `src/xi/config.cljc`, read directly by their consuming
+namespace.
+
+| Flag | Default | What it does | Owner |
+| --- | --- | --- | --- |
+| `quick-replies?` | `true` | After each finished assistant turn, run a cheap model (Haiku) over the final message to detect a decision point (yes/no, pick-one) and show one-tap **quick-reply chips** below the response. The response text is never modified — chips are additive UI, and tapping one sends a predefined message. A cheap regex gate runs first, so most turns never call the model. Set to `false` to disable. | `xi.quick-replies` |
+
+---
+
 ## Environment variables
 
 ### Core / model

@@ -2005,6 +2005,26 @@
            [:div {:class ["subagents-list"]}
             (map (fn [c] (subagent-child dispatch! room-id c)) agents)])]))))
 
+(defn- quick-replies-row
+  "One-tap reply chips detected for the last assistant response
+   (xi.quick-replies). Additive UI — the response text is unchanged. Tapping a
+   chip sends its predefined message as a normal prompt (same path as the
+   composer). Hidden while a turn is in flight."
+  [dispatch! room busy?]
+  (let [chips (get-in room [:quick-replies :chips])]
+    (when (and (seq chips) (not busy?))
+      [:div {:class ["quick-replies"]}
+       (map-indexed
+        (fn [i {:keys [label send]}]
+          [:div {:replicant/key (str "qr-" i) :class ["quick-reply"]}
+           (button/button
+            {:variant :ghost :size :sm :class "quick-reply-btn"
+             :on-click (fn [_] (dispatch! {:type :input/submit
+                                           :room-id (:id room)
+                                           :text send}))}
+            label)])
+        chips)])))
+
 (defn- chat-view [state dispatch!]
   (let [active  (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -2156,6 +2176,7 @@
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         [:div {:class ["compose-dock"]}
          (when (:web/copy-flash state) (copy-toast))
+         (quick-replies-row dispatch! room busy?)
          (compose-box dispatch! room busy? (:web/compose-images state)
                       dkey (get-in state [:web/drafts dkey]) sid
                       (:web/cmd-selected state)

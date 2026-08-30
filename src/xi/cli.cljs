@@ -62,6 +62,7 @@
             [xi.ext.mcp :as mcp]
             [xi.fx :as fx]
             [xi.naming :as naming]
+            [xi.quick-replies :as quick-replies]
             [xi.summary :as summary]
             [xi.provider.claude :as claude]
             [xi.provider.ollama :as ollama]
@@ -261,16 +262,21 @@ See docs/cli.md for the full reference.")
               (commands/command-handlers extra-commands)
               compaction/handlers
               naming/handlers
-              summary/handlers)
-       ;; Persist the session once the provider reports a session id
+              summary/handlers
+              quick-replies/handlers)
+       ;; Persist the session once the provider reports a session id, then
+       ;; maybe suggest quick-reply chips for the finished turn
        (assoc :agent/turn-end (events/chain (:agent/turn-end agent/handlers)
-                                            commands/turn-end-session-sync)
+                                            commands/turn-end-session-sync
+                                            quick-replies/maybe-suggest)
               ;; Escape also stops an in-flight compaction
               :agent/abort (events/chain (:agent/abort agent/handlers)
                                          compaction/abort-handler)
-              ;; First message of an unnamed session → kick off auto-titling
+              ;; First message of an unnamed session → kick off auto-titling;
+              ;; sending anything clears stale quick-reply chips
               :prompt/submit (events/chain (:prompt/submit agent/handlers)
-                                           naming/maybe-generate-title)))))
+                                           naming/maybe-generate-title
+                                           quick-replies/clear-on-submit)))))
 
 ;; ── Standalone (phase 4, unchanged) ──────────────────────────────────────────
 
@@ -326,6 +332,9 @@ See docs/cli.md for the full reference.")
                                                        :system-parts parts}))})
                                                (compaction/create-fx providers)
                                                (naming/create-fx providers
+                                               {:make-config-dir!   session/make-throwaway-config-dir!
+                                                :remove-config-dir! session/remove-config-dir!})
+                                               (quick-replies/create-fx providers
                                                {:make-config-dir!   session/make-throwaway-config-dir!
                                                 :remove-config-dir! session/remove-config-dir!})
                                                (summary/create-fx providers
@@ -870,6 +879,9 @@ See docs/cli.md for the full reference.")
                                                       :system-parts parts}))})
                                               (compaction/create-fx providers)
                                               (naming/create-fx providers
+                                               {:make-config-dir!   session/make-throwaway-config-dir!
+                                                :remove-config-dir! session/remove-config-dir!})
+                                              (quick-replies/create-fx providers
                                                {:make-config-dir!   session/make-throwaway-config-dir!
                                                 :remove-config-dir! session/remove-config-dir!})
                                               (summary/create-fx providers
