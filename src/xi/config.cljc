@@ -29,6 +29,7 @@
         [xi.ext.github :as github]
         [xi.ext.github-code-search.core :as github-code-search]
         [xi.ext.gtd :as gtd]
+        [xi.ext.image-graph :as image-graph]
         [xi.ext.kb :as kb]
         [xi.ext.mcp :as mcp]
         [xi.ext.permission-gate :as permission-gate]
@@ -55,6 +56,7 @@
         [xi.ext.diff.web :as diff-web]
         [xi.ext.github.web :as github-web]
         [xi.ext.gtd.web :as gtd-web]
+        [xi.ext.image-graph.web :as image-graph-web]
         [xi.ext.subagent.web :as subagent-web]])))
 
 (def tui
@@ -112,6 +114,7 @@
       github/extension
       github-code-search/extension
       gtd/extension
+      image-graph/extension
       permission-gate/extension
       todo-intercept/extension
       tmp-cleanup-intercept/extension
@@ -144,4 +147,5 @@
       gtd-web/extension
       github-web/extension
       canvas-review-web/extension
+      image-graph-web/extension
       subagent-web/extension]))
