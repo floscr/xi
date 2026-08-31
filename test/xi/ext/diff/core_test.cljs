@@ -27,6 +27,6 @@
   (let [{:keys [state]} (diff-open (room)
                                    {:room-id "r" :title "Session Changes"
                                     :text "diff --git a/x b/x"})]
-    (is (= {:title "Session Changes" :text "diff --git a/x b/x" :engine :git :diff? true}
+    (is (= {:title "Session Changes" :text "diff --git a/x b/x" :engine :git :diff? true :commit nil}
            (get-in state [:rooms "r" :ui :buffers :diff])))
     (is (= :diff (get-in state [:rooms "r" :ui :active-buffer])))))
