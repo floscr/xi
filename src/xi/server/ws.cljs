@@ -348,7 +348,8 @@
       (fn [_ {:keys [client-id session-ids]}]
         (send! client-id (wire/encode {:type   :session/counts-result
                                        :counts (session/count-session-responses
-                                                session-ids)})))
+                                                session-ids
+                                                {:personal-agent? personal-agent?})})))
 
       ;; Model list for web clients.
       :models/web-list-reply
@@ -397,7 +398,9 @@
       ;; (:read-state/changed is lobby-relevant, so the tap rebroadcasts).
       :session/mark-read-reply
       (fn [{:keys [dispatch!]} {:keys [session-id]}]
-        (let [n (get (session/count-session-responses [session-id]) session-id 0)]
+        (let [n (get (session/count-session-responses
+                      [session-id] {:personal-agent? personal-agent?})
+                     session-id 0)]
           (session/mark-session-read! session-id n)
           (dispatch! {:type :read-state/changed})))
 
@@ -547,6 +550,21 @@
                  (when (seq cids)
                    (let [payload (lobby-payload st personal-agent? (:model server-opts))]
                      (doseq [cid cids] (send! cid payload))))))
+             ;; Coalesce lobby broadcasts: lobby-relevant events arrive in
+             ;; bursts (prompt/submit → session-init → dialog events, turn
+             ;; ends across rooms), and each broadcast re-reads the session
+             ;; listing and re-encodes a payload per client. One trailing-edge
+             ;; timer per burst; state is read fresh at fire time.
+             lobby-timer (atom nil)
+             schedule-lobby-broadcast!
+             (fn []
+               (when (nil? @lobby-timer)
+                 (reset! lobby-timer
+                         (js/setTimeout
+                          (fn []
+                            (reset! lobby-timer nil)
+                            (broadcast-lobby! @state))
+                          150))))
              ;; HTTP API: programmatically create a room (and optionally kick
              ;; off a turn) so an external service — e.g. the GTD service in
              ;; dotfiles — can spawn a background agent session and hand back a
@@ -735,7 +753,7 @@
                     (let [payload (wire/encode event)]
                       (doseq [cid cids] (send! cid payload)))))))
             (when (lobby-relevant (:type event))
-              (broadcast-lobby! st))))
+              (schedule-lobby-broadcast!))))
 
          (js/console.error (str "[ws] Listening on ws://localhost:" port
                                 (when tls-server
@@ -743,5 +761,8 @@
          {:port  port
           :stop! (fn []
                    (js/clearInterval auth-poll)
+                   (when-let [t @lobby-timer]
+                     (js/clearTimeout t)
+                     (reset! lobby-timer nil))
                    (.stop server)
                    (when tls-server (.stop tls-server)))}))}))

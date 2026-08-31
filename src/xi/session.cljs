@@ -67,6 +67,9 @@
 (def ^:private PREFERRED_MODEL_FILE
   (.join node-path HOME ".config" "xi" "preferred-model.json"))
 
+(def ^:private COUNT_CACHE_FILE
+  (.join node-path HOME ".config" "xi" "response-counts-cache.json"))
+
 ;; ── Helpers ───────────────────────────────────────────────────────────────────
 
 (defn- gen-uuid-v7
@@ -166,6 +169,17 @@
                   (xi-session-dir (:cwd session))))]
     (.join node-path dir (str (:id session) ".tree.jsonl"))))
 
+(defonce ^:private all-sessions-cache
+  ;; {:at <ms> :sessions [...]} — short-TTL cache of the raw (un-annotated)
+  ;; list-all-sessions scan. The scan stats every session file on disk
+  ;; (thousands of sync fs calls) and used to run multiple times per lobby
+  ;; broadcast AND per unread-counts query, per client. Invalidated on any
+  ;; session write so a just-synced session lists fresh.
+  (atom nil))
+
+(defn- invalidate-listing-cache! []
+  (reset! all-sessions-cache nil))
+
 (defn save-session!
   "Persist session metadata to disk."
   [session]
@@ -178,6 +192,7 @@
     (when-not (fs/existsSync dir)
       (fs/mkdirSync dir #js {:recursive true}))
     (fs/writeFileSync filepath (js/JSON.stringify (clj->js data) nil 2) "utf8")
+    (invalidate-listing-cache!)
     session))
 
 (defn- session-dir
@@ -252,7 +267,8 @@
         (when (:interrupted-at data)
           (fs/writeFileSync filepath
                             (js/JSON.stringify (clj->js (dissoc data :interrupted-at)) nil 2)
-                            "utf8"))))
+                            "utf8")
+          (invalidate-listing-cache!))))
     (catch :default _e nil)))
 
 (defn delete-session!
@@ -263,6 +279,7 @@
   (let [filepath (:filepath summary)]
     (if (and filepath (fs/existsSync filepath))
       (do (fs/unlinkSync filepath)
+          (invalidate-listing-cache!)
           true)
       false)))
 
@@ -429,23 +446,42 @@
                      (try (.isDirectory (fs/statSync full))
                           (catch :default _ false))))))))
 
+(defonce ^:private transcript-index-cache
+  ;; {:at <ms> :index {"<sid>.jsonl" "/full/path"}} — short-TTL index of every
+  ;; transcript under ~/.claude/projects. The find-claude-transcript fallback
+  ;; used to probe every project dir with existsSync PER session; for listings
+  ;; with many Xi metas whose transcript is gone that was O(sessions × dirs)
+  ;; syscalls per unread-counts query. One readdir sweep replaces them all.
+  (atom nil))
+
+(defn- claude-transcript-index
+  "Basename → filepath index of all Claude CLI transcripts, cached briefly."
+  []
+  (let [now (js/Date.now)
+        cached @transcript-index-cache]
+    (if (and cached (< (- now (:at cached)) 2000))
+      (:index cached)
+      (let [index (into {}
+                        (for [sub (list-dir-subdirs CLAUDE_PROJECTS_DIR)
+                              f   (list-dir-files (.join node-path CLAUDE_PROJECTS_DIR sub) ".jsonl")]
+                          [(.basename node-path f) f]))]
+        (reset! transcript-index-cache {:at now :index index})
+        index))))
+
 (defn- find-claude-transcript
   "Resolve the Claude CLI transcript JSONL for a session's cli-session-id.
    Primary lookup derives ~/.claude/projects/<encoded-cwd>/<cli-sid>.jsonl
    from the session's cwd. If that file is missing — e.g. the session's
    stored cwd no longer exists so the agent ran from a fallback dir and the
    SDK wrote the transcript under a different project folder — fall back to
-   scanning every project dir for <cli-sid>.jsonl (the id is globally unique).
-   Returns the filepath, or nil when no transcript exists."
+   the (cached) index of every project dir's transcripts (the id is globally
+   unique). Returns the filepath, or nil when no transcript exists."
   [cwd cli-sid]
   (let [fname (str cli-sid ".jsonl")
         primary (when cwd (.join node-path (claude-project-dir cwd) fname))]
     (if (and primary (fs/existsSync primary))
       primary
-      (->> (list-dir-subdirs CLAUDE_PROJECTS_DIR)
-           (map #(.join node-path CLAUDE_PROJECTS_DIR % fname))
-           (filter #(fs/existsSync %))
-           first))))
+      (get (claude-transcript-index) fname))))
 
 ;; ── Favorites (source-agnostic bookmarks) ─────────────────────────────────────
 ;; Favorites live in one JSON file keyed by the summary's :session-id, so
@@ -625,9 +661,10 @@
          reverse
          vec))))
 
-(defn list-all-sessions
-  "List sessions across ALL CWDs from all sources. Returns vec of session
-   summaries, newest first. Each summary includes :cwd."
+(def ^:private all-sessions-cache-ttl-ms 2000)
+
+(defn- scan-all-sessions
+  "The raw (un-annotated) all-CWDs session scan behind list-all-sessions."
   []
   (let [;; Xi: each subdir under XI_SESSIONS_DIR is an encoded CWD
         xi-sessions (->> (list-dir-subdirs XI_SESSIONS_DIR)
@@ -646,12 +683,25 @@
         ;; Dedup: Xi meta takes priority over claude sessions with same session-id
         xi-ids (set (keep :cli-session-id xi-sessions))
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
-    (annotate-dismissed
-     (annotate-favorites
-      (->> (concat xi-sessions claude-filtered)
-           (sort-by #(or (:last-accessed %) (:timestamp %)))
-           reverse
-           vec)))))
+    (->> (concat xi-sessions claude-filtered)
+         (sort-by #(or (:last-accessed %) (:timestamp %)))
+         reverse
+         vec)))
+
+(defn list-all-sessions
+  "List sessions across ALL CWDs from all sources. Returns vec of session
+   summaries, newest first. Each summary includes :cwd. The underlying disk
+   scan is cached briefly (see all-sessions-cache) — favorites/dismissed
+   annotation stays per-call so toggles reflect instantly."
+  []
+  (let [now (js/Date.now)
+        cached @all-sessions-cache
+        raw (if (and cached (< (- now (:at cached)) all-sessions-cache-ttl-ms))
+              (:sessions cached)
+              (let [sessions (scan-all-sessions)]
+                (reset! all-sessions-cache {:at now :sessions sessions})
+                sessions))]
+    (annotate-dismissed (annotate-favorites raw))))
 
 (defn- list-all-personal-agent-session-files
   "All session metadata files across every named-agent subdir of the
@@ -696,19 +746,109 @@
 
 ;; ── Response counting (for unread indicators) ────────────────────────────────
 
+(defn- count-assistant-lines
+  "Count assistant message lines in a chunk of JSONL text — just checks the
+   type field."
+  [text]
+  (reduce (fn [n line]
+            (if (and (not (str/blank? line))
+                     (str/includes? line "\"type\":\"assistant\""))
+              (inc n)
+              n))
+          0 (str/split text #"\n")))
+
 (defn- count-assistant-turns-in-jsonl
-  "Count assistant message lines in a JSONL file. Fast — just checks type field."
+  "Count assistant message lines in a JSONL file (full read)."
   [filepath]
   (try
-    (let [content (fs/readFileSync filepath "utf8")
-          lines (str/split content #"\n")]
-      (reduce (fn [n line]
-                (if (and (not (str/blank? line))
-                         (str/includes? line "\"type\":\"assistant\""))
-                  (inc n)
-                  n))
-              0 lines))
+    (count-assistant-lines (fs/readFileSync filepath "utf8"))
     (catch :default _ 0)))
+
+(defn- read-file-slice
+  "Read `len` bytes of a file starting at byte `offset`, decoded as utf8."
+  [filepath offset len]
+  (let [fd  (fs/openSync filepath "r")
+        buf (js/Buffer.alloc len)]
+    (try
+      (let [n (fs/readSync fd buf 0 len offset)]
+        (.toString buf "utf8" 0 n))
+      (finally (fs/closeSync fd)))))
+
+(defonce ^:private response-count-cache
+  ;; filepath → {:mtime <ms> :size <bytes> :n <count>}, nil until loaded from
+  ;; COUNT_CACHE_FILE. Unread-dot counts used to re-read EVERY transcript in
+  ;; full, synchronously, on every counts query from every client — hundreds
+  ;; of MB of sync reads blocking the WS event loop (the "web stalls +
+  ;; dropped sessions"). Cached by (mtime,size); persisted so restarts don't
+  ;; pay the full-scan warmup either.
+  (atom nil))
+
+(defonce ^:private count-cache-save-timer (atom nil))
+
+(defn- ensure-count-cache!
+  "Lazy-load the persisted response-count cache (once per process)."
+  []
+  (when (nil? @response-count-cache)
+    (reset! response-count-cache
+            (try
+              (if (fs/existsSync COUNT_CACHE_FILE)
+                (into {}
+                      (map (fn [[fp e]]
+                             [fp {:mtime (nth e 0) :size (nth e 1) :n (nth e 2)}]))
+                      (js->clj (js/JSON.parse (fs/readFileSync COUNT_CACHE_FILE "utf8"))))
+                {})
+              (catch :default _ {})))))
+
+(defn- schedule-count-cache-save!
+  "Debounced persist of the response-count cache (compact [mtime size n]
+   entries) — counts trickle in per query, so coalesce writes."
+  []
+  (when (nil? @count-cache-save-timer)
+    (reset! count-cache-save-timer
+            (js/setTimeout
+             (fn []
+               (reset! count-cache-save-timer nil)
+               (try
+                 (fs/writeFileSync
+                  COUNT_CACHE_FILE
+                  (js/JSON.stringify
+                   (clj->js (into {}
+                                  (map (fn [[fp {:keys [mtime size n]}]]
+                                         [fp [mtime size n]]))
+                                  @response-count-cache)))
+                  "utf8")
+                 (catch :default _ nil)))
+             1000))))
+
+(defn- transcript-response-count
+  "Assistant-turn count for a transcript, via the mtime/size cache. When a
+   cached file has only grown (transcripts are append-only JSONL, so the old
+   EOF is a line boundary), count just the appended tail instead of
+   re-reading the whole file."
+  [filepath]
+  (ensure-count-cache!)
+  (let [stat (try (fs/statSync filepath) (catch :default _ nil))]
+    (if-not stat
+      0
+      (let [mtime (.-mtimeMs stat)
+            size  (.-size stat)
+            entry (get @response-count-cache filepath)
+            fresh? (and entry (= mtime (:mtime entry)) (= size (:size entry)))
+            n (cond
+                fresh?
+                (:n entry)
+
+                (and entry (> size (:size entry)))
+                (+ (:n entry)
+                   (count-assistant-lines
+                    (read-file-slice filepath (:size entry) (- size (:size entry)))))
+
+                :else
+                (count-assistant-turns-in-jsonl filepath))]
+        (when-not fresh?
+          (swap! response-count-cache assoc filepath {:mtime mtime :size size :n n})
+          (schedule-count-cache-save!))
+        n))))
 
 (defn- summary->transcript
   "Resolve a session summary to the JSONL transcript whose assistant turns
@@ -732,11 +872,15 @@
 
    The listing is read once and indexed by both the summary id and (for Xi
    metadata) the underlying CLI id, so a lobby id resolves whichever form it
-   takes."
-  [session-ids]
-  (let [summaries   (concat (list-all-sessions)
-                            (->> (list-all-personal-agent-session-files)
-                                 (keep #(cached-summary read-xi-session-meta %))))
+   takes. With {:personal-agent? true} only the personal-agent dirs are
+   scanned — a PA server's lobby never lists coding sessions, so the
+   all-CWDs scan would be pure waste (and painfully slow on a Pi)."
+  [session-ids & [{:keys [personal-agent?]}]]
+  (let [pa-summaries (->> (list-all-personal-agent-session-files)
+                          (keep #(cached-summary read-xi-session-meta %)))
+        summaries   (if personal-agent?
+                      pa-summaries
+                      (concat (list-all-sessions) pa-summaries))
         id->summary (persistent!
                      (reduce (fn [acc s]
                                (cond-> (assoc! acc (:session-id s) s)
@@ -746,7 +890,7 @@
           (keep (fn [sid]
                   (when-let [s (get id->summary sid)]
                     (when-let [filepath (summary->transcript s)]
-                      [sid (count-assistant-turns-in-jsonl filepath)]))))
+                      [sid (transcript-response-count filepath)]))))
           session-ids)))
 
 ;; ── Resume Support ────────────────────────────────────────────────────────────
