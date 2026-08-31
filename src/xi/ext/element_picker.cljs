@@ -27,7 +27,6 @@
 
 ;; ── Config ───────────────────────────────────────────────────────────────────
 
-(def ^:private picker-timeout-ms 120000)
 (def ^:private poll-interval-ms 400)
 (def ^:private max-html-length 10000)
 
@@ -211,25 +210,23 @@
 
 (defn- poll-loop
   "Poll `page-id` for the picker result until it resolves, is cancelled,
-   errors, or the deadline passes. `call` is the shared chrome-devtools-mcp
-   caller (fn [tool args] → Promise<normalized-result>). chrome-devtools-mcp
+   or errors. `call` is the shared chrome-devtools-mcp caller
+   (fn [tool args] → Promise<normalized-result>). chrome-devtools-mcp
    1.8.0 requires an explicit `:pageId` on page-scoped tools."
-  [call deadline page-id]
+  [call page-id]
   (js/Promise.
    (fn [resolve _reject]
      (letfn [(step []
-               (if (> (js/Date.now) deadline)
-                 (resolve {:timeout true})
-                 (-> (call "evaluate_script" {:function poll-fn :pageId page-id})
-                     (.then (fn [res]
-                              (if (:is-error res)
-                                (resolve {:error true})
-                                (let [v (parse-eval-return res)]
-                                  (cond
-                                    (:r v) (resolve {:result (:r v)})
-                                    (:c v) (resolve {:cancelled true})
-                                    :else  (js/setTimeout step poll-interval-ms))))))
-                     (.catch (fn [_] (resolve {:error true}))))))]
+               (-> (call "evaluate_script" {:function poll-fn :pageId page-id})
+                   (.then (fn [res]
+                            (if (:is-error res)
+                              (resolve {:error true})
+                              (let [v (parse-eval-return res)]
+                                (cond
+                                  (:r v) (resolve {:result (:r v)})
+                                  (:c v) (resolve {:cancelled true})
+                                  :else  (js/setTimeout step poll-interval-ms))))))
+                   (.catch (fn [_] (resolve {:error true})))))]
        (step)))))
 
 (defn- capture-screenshot
@@ -286,7 +283,7 @@
       (.then (fn [res]
                (when (:is-error res)
                  (throw (js/Error. (str "inject failed — " (result-text res)))))))
-      (.then (fn [_] (poll-loop call (+ (js/Date.now) picker-timeout-ms) page-id)))
+      (.then (fn [_] (poll-loop call page-id)))
       (.then (fn [poll]
                (cond
                  (:cancelled poll)
@@ -301,9 +298,7 @@
                  :else
                  (do (cleanup! call page-id)
                      (status! dispatch! room-id
-                              (if (:timeout poll)
-                                "Element picker timed out (2 min)."
-                                "Element picker: browser error."))))))))
+                              "Element picker: browser error.")))))))
 
 (defn- run-picker
   "Drive the picker. When multiple tabs are open, first ask which one to pick
