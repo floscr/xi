@@ -64,6 +64,9 @@
 (def ^:private READ_STATE_FILE
   (.join node-path HOME ".config" "xi" "read-state.json"))
 
+(def ^:private PREFERRED_MODEL_FILE
+  (.join node-path HOME ".config" "xi" "preferred-model.json"))
+
 ;; ── Helpers ───────────────────────────────────────────────────────────────────
 
 (defn- gen-uuid-v7
@@ -483,6 +486,29 @@
       (catch :default e
         (js/console.error "[session] favorites write failed:" e)))
     (not fav?)))
+
+;; ── Preferred model (last model chosen via /model) ────────────────────────────
+;; Persisted so a model picked via /model becomes the default for new sessions.
+
+(defn load-preferred-model
+  "The last model chosen via /model (from ~/.config/xi/preferred-model.json),
+   or nil when none has been saved / the file is missing or invalid."
+  []
+  (try
+    (when (fs/existsSync PREFERRED_MODEL_FILE)
+      (let [m (js->clj (js/JSON.parse (fs/readFileSync PREFERRED_MODEL_FILE "utf8")))]
+        (get m "model")))
+    (catch :default _e nil)))
+
+(defn save-preferred-model!
+  "Persist model as the default for new sessions."
+  [model]
+  (try
+    (fs/mkdirSync (.dirname node-path PREFERRED_MODEL_FILE) #js {:recursive true})
+    (fs/writeFileSync PREFERRED_MODEL_FILE
+                      (js/JSON.stringify #js {:model model}))
+    (catch :default e
+      (js/console.error "[session] preferred-model write failed:" e))))
 
 ;; ── Dismissed (hidden from Recent) ────────────────────────────────────────────
 ;; Reversible "archive from the recent list": session-ids the user has hidden

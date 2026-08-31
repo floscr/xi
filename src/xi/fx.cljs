@@ -383,6 +383,11 @@
           (dispatch! {:type :ui/menu-populate :room-id room-id :id :model
                       :menu {:prompt "model> " :items items}})))))
 
+   :model/persist-preferred
+   (fn [_ctx {:keys [model]}]
+     (when (seq model)
+       (session/save-preferred-model! model)))
+
    :cwd/change
    (fn [{:keys [dispatch! state]} {:keys [room-id path]}]
      (let [room     (room-of state room-id)

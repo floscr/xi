@@ -250,6 +250,7 @@ See docs/cli.md for the full reference.")
 (defn- resolve-model-opts [{:keys [model]}]
   {:model  (or model
                (aget js/process.env "XI_MODEL")
+               (session/load-preferred-model)
                DEFAULT_MODEL)
    :effort (or (aget js/process.env "XI_EFFORT")
                "high")})

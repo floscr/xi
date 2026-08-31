@@ -134,11 +134,12 @@
   (if (seq args)
     (let [provider (util/provider-for-model args)
           has-session? (get-in st [:rooms room-id :session :provider-session-id])]
-      (cond-> {:state (-> st
-                          (assoc-in [:rooms room-id :agent :model] args)
-                          (assoc-in [:rooms room-id :agent :provider] provider)
-                          (append-history room-id (status-entry (str "Model set to: " args))))}
-        has-session? (assoc :effects [[:session/sync {:room-id room-id}]])))
+      {:state (-> st
+                  (assoc-in [:rooms room-id :agent :model] args)
+                  (assoc-in [:rooms room-id :agent :provider] provider)
+                  (append-history room-id (status-entry (str "Model set to: " args))))
+       :effects (cond-> [[:model/persist-preferred {:model args}]]
+                  has-session? (conj [:session/sync {:room-id room-id}]))})
     {:effects [[:models/fetch {:room-id room-id}]]}))
 
 (defn- cmd-resume [st {:keys [room-id args]}]
