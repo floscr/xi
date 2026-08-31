@@ -819,9 +819,11 @@
         current-room (fn [] (some-> (.-state ctx) state/active-room))
         room-event (fn [event] (when-let [room (current-room)]
                                  (dispatch! (assoc event :room-id (:id room)))))
-        ext-keybindings (into (->editor-keybindings (into builtin-keybindings (vec keybindings))
-                                                     get-state dispatch!)
-                              (quick-reply-keybindings get-state dispatch!))
+        ;; Quick-reply chips are disabled in the TUI for now (kept for the web
+        ;; client). Re-add `(quick-reply-keybindings get-state dispatch!)` to
+        ;; the `into` below to restore the alt+1..4 chip bindings.
+        ext-keybindings (->editor-keybindings (into builtin-keybindings (vec keybindings))
+                                              get-state dispatch!)
 
         editor-comp
         (editor/make-editor
@@ -903,10 +905,12 @@
                   n     (count (get-in room [:ui :pending-images]))
                   qn    (count (get-in room [:agent :queued]))
                   badge (when prompt-badge (prompt-badge (.-state ctx)))]
+              ;; Quick-reply chips are disabled in the TUI for now (kept for
+              ;; the web client). Re-add `(quick-replies-hint room)` here to
+              ;; restore the chip hint suffix.
               (str (when (pos? n) (ansi/fg :accent (str " 📎" n)))
                    (when (pos? qn) (ansi/fg :accent (str " ⏳" qn " queued")))
-                   (when (seq badge) badge)
-                   (quick-replies-hint room))))
+                   (when (seq badge) badge))))
           :prompt-right-fn
           (fn []
             (when-let [cwd (:cwd (current-room))]
