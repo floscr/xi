@@ -73,6 +73,32 @@ Selecting a GPT/Grok/Muse or Gemini model currently surfaces a clear
 - `xi.provider.zen.auth` / `xi.provider.zen.models` — key resolution and the
   id-normalization + wire-format routing table.
 
+## Prompt caching (cost)
+
+The Anthropic Messages adapter (`xi.provider.zen.anthropic`) uses Anthropic
+**prompt caching**. Xi's tool-use loop re-sends the same large static prefix
+(system prompt + tool definitions + prior turns) on every iteration; without
+caching each round-trip is billed the full input price for all of it — a
+multi-step turn like `/commit` (overview → diff → stage → commit) pays for the
+whole prefix 4–5×.
+
+The adapter places `cache_control: {type: "ephemeral"}` breakpoints on:
+
+1. the system prompt (large, fixed for the whole turn),
+2. the last tool definition (caches the whole static tool list), and
+3. the tail of the conversation (so each iteration only pays full price for the
+   newest turn; earlier turns are read from cache).
+
+On Zen this cuts the cached span to ~10% of the input price (e.g. Claude Haiku:
+`$1.00` input vs `$0.10` cached read). Measured on a real multi-tool turn:
+`cache_read_input_tokens` of ~51K at 10% price vs. full price without caching —
+roughly a 3× reduction, growing with the number/size of tool iterations.
+
+Caching only kicks in above Anthropic's ~1024-token minimum prefix, so trivial
+one-line turns won't show cache hits — that's expected. The native Claude
+provider (`xi.provider.claude`) already caches automatically via the SDK's
+`claude_code` preset; this brings the Zen Anthropic surface to parity.
+
 ## Privacy
 
 The free models (Big Pickle, `*-free`) may retain prompts to improve the model

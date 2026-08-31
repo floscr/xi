@@ -31,6 +31,64 @@
 (defn- build-tools []
   (mapv xi-tool->anthropic (tools/tool-definitions)))
 
+;; ── Prompt caching ───────────────────────────────────────────────────────────
+;;
+;; Anthropic prompt caching caches the request prefix up to each block marked
+;; with `cache_control`. Xi's tool-use loop re-sends the same large static
+;; prefix (system prompt + tool defs + prior turns) on every iteration; without
+;; caching each round-trip pays full input price for all of it. We place
+;; breakpoints on the biggest static spans so repeat iterations hit the cache
+;; at ~10% of the input price:
+;;   1. the system prompt (large, fixed for the whole turn)
+;;   2. the tool definitions (fixed for the whole turn)
+;;   3. the tail of the conversation so far (grows by one turn each iteration —
+;;      the previous turns are already cached, so only the newest is full-price)
+;; Anthropic allows up to 4 breakpoints per request; we use at most 3.
+
+(def ^:private cache-control {:type "ephemeral"})
+
+(defn system->blocks
+  "Turn a plain system string into a single cached text block. A block array
+   lets us attach cache_control; a bare string can't be cached."
+  [system]
+  (when (and (string? system) (pos? (count system)))
+    [{:type "text" :text system :cache_control cache-control}]))
+
+(defn cache-last-tool
+  "Mark the final tool definition with cache_control so the whole (static) tool
+   list is cached as one prefix span."
+  [tools]
+  (if (seq tools)
+    (conj (vec (butlast tools))
+          (assoc (last tools) :cache_control cache-control))
+    tools))
+
+(defn- block-with-cache
+  "Attach cache_control to a content block. String content is first promoted to
+   a text block so the marker has somewhere to live."
+  [block]
+  (cond
+    (string? block) {:type "text" :text block :cache_control cache-control}
+    (map? block)    (assoc block :cache_control cache-control)
+    :else           block))
+
+(defn cache-conversation
+  "Add a cache breakpoint at the very end of the message list: the last content
+   block of the last message. Everything before it (all prior turns) becomes a
+   cacheable prefix, so each tool-loop iteration only pays full price for the
+   newest turn instead of re-billing the whole history."
+  [messages]
+  (if-let [last-msg (peek (vec messages))]
+    (let [content (:content last-msg)
+          content' (cond
+                     (string? content) [(block-with-cache content)]
+                     (sequential? content)
+                     (conj (vec (butlast content))
+                           (block-with-cache (last content)))
+                     :else content)]
+      (conj (vec (butlast messages)) (assoc last-msg :content content')))
+    messages))
+
 ;; ── Tool execution ───────────────────────────────────────────────────────────
 
 (defn- execute-tool-call
@@ -71,7 +129,9 @@
     (when-let [^js u (some-> ev .-message .-usage)]
       (swap! state assoc :usage
              {:input_tokens (or (.-input_tokens u) 0)
-              :output_tokens (or (.-output_tokens u) 0)}))
+              :output_tokens (or (.-output_tokens u) 0)
+              :cache_creation_input_tokens (or (.-cache_creation_input_tokens u) 0)
+              :cache_read_input_tokens (or (.-cache_read_input_tokens u) 0)}))
 
     "content_block_start"
     (let [idx (.-index ev)
@@ -142,9 +202,9 @@
         body (cond-> {:model model
                       :max_tokens max-tokens
                       :stream true
-                      :messages (clj->js messages)}
-               system              (assoc :system system)
-               (seq anthropic-tools) (assoc :tools (clj->js anthropic-tools)))]
+                      :messages (clj->js (cache-conversation messages))}
+               system              (assoc :system (clj->js (system->blocks system)))
+               (seq anthropic-tools) (assoc :tools (clj->js (cache-last-tool anthropic-tools))))]
     (-> (js/fetch (str base-url "/messages")
                   #js {:method "POST"
                        :headers #js {"Content-Type" "application/json"
@@ -238,7 +298,9 @@
                        (swap! !usage (fn [t]
                                        (-> t
                                            (update :input_tokens + (:input_tokens u 0))
-                                           (update :output_tokens + (:output_tokens u 0))))))
+                                           (update :output_tokens + (:output_tokens u 0))
+                                           (update :cache_creation_input_tokens (fnil + 0) (:cache_creation_input_tokens u 0))
+                                           (update :cache_read_input_tokens (fnil + 0) (:cache_read_input_tokens u 0))))))
                      (if-not (seq (:tool-calls result))
                        (finish {:content [{:type "text" :text (:text result)}]
                                 :stop-reason "stop"
