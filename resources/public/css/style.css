@@ -163,16 +163,6 @@ body {
   --quick-cmd-h: calc(var(--size-1) + var(--size-2) * 2 + 1.25rem);
 }
 
-/* Quick-reply chips ride at the top of the floating footer, above the
-   quick-command bar. Reserve their row height on top of the bar's, so the last
-   messages clear the chips instead of being trapped behind them (which also
-   stole the bottom touch-scroll strip on mobile). Kept in sync with the
-   .quick-replies row height (one chip row + its margin-bottom). */
-.topbar--chat + .timeline.timeline--float-footer.timeline--quick-replies {
-  --quick-cmd-h: calc(var(--size-1) + var(--size-2) * 2 + 1.25rem
-                      + var(--size-2) * 3 + 1.25rem);
-}
-
 /* ---- Nav group (burger toggle + back arrow as one segmented button) ----
    The two controls share a single border/radius and are split by a divider.
    The floating sidebar keeps the burger visible at every width, so both
@@ -2105,15 +2095,16 @@ body {
 }
 
 /* Quick-reply chips: one-tap answers detected for the last response.
-   Additive UI rendered just above the composer (xi.quick-replies). Styled as
-   accent-outlined pills that echo the user-bubble accent and fill on hover, so
-   they read clearly as a tap affordance without competing with the composer.
-   The row is inset to line up with the composer's input padding. */
+   Additive UI rendered inline at the bottom of the feed, right under the last
+   assistant message they regard (xi.quick-replies). Styled as accent-outlined
+   pills that echo the user-bubble accent and fill on hover. Flush with the
+   message body's inline edge (.timeline-content already pads the column), with
+   a little top gap to separate them from the response. */
 .quick-replies {
   display: flex;
   flex-wrap: wrap;
   gap: var(--size-2);
-  padding-inline: var(--size-3);
+  margin-top: var(--size-2);
   margin-bottom: var(--size-2);
 }
 

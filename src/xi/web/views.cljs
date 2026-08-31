@@ -2105,15 +2105,9 @@
        (file-tab-view (:file buffers))
 
        ;; default: :chat
-       (let [show-qr? (and (seq (get-in room [:quick-replies :chips])) (not busy?))]
-        (list
+       (list
         [:div {:class ["timeline"
-                       (when-not pa? "timeline--float-footer")
-                       ;; Chips ride at the top of the floating footer, so the
-                       ;; timeline must reserve their height too — otherwise
-                       ;; they overlap (and steal touch-scroll from) the last
-                       ;; messages. Matches quick-replies-row's render guard.
-                       (when (and (not pa?) show-qr?) "timeline--quick-replies")]}
+                       (when-not pa? "timeline--float-footer")]}
          [:div {:class ["timeline-content"]}
           (if ready?
             (let [entries (vec history)
@@ -2173,7 +2167,11 @@
                (pending-command-post state room sid)
                (dialog-post dispatch! state room history)))
             (empty-state/empty-state {} (spinner) [:p "Connecting…"]))
-          (when room (subagents-panel dispatch! room))]]
+          (when room (subagents-panel dispatch! room))
+          ;; Quick-reply chips render inline at the bottom of the feed, right
+          ;; after the last response they regard — normal flow content, so they
+          ;; can never overlap the message the way the floating footer did.
+          (quick-replies-row dispatch! room busy?)]]
         (copy-dialog-overlay dispatch! (:web/copy-text state))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))
@@ -2183,7 +2181,6 @@
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         [:div {:class ["compose-dock"]}
          (when (:web/copy-flash state) (copy-toast))
-         (quick-replies-row dispatch! room busy?)
          (compose-box dispatch! room busy? (:web/compose-images state)
                       dkey (get-in state [:web/drafts dkey]) sid
                       (:web/cmd-selected state)
@@ -2193,7 +2190,7 @@
                       (:web/prompt-nav state)
                       nav-ctx
                       (:web/scrolled-up? state)
-                      (false? (:web/connected? state)))])))]))
+                      (false? (:web/connected? state)))]))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 

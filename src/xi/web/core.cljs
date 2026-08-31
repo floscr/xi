@@ -1460,11 +1460,11 @@
       ;; the timeline without firing a render or a scroll event, so the RAF
       ;; snap-to-bottom never runs again and the view stops just short of the
       ;; bottom. Re-snap on any content-size growth while auto-scroll is on.
-      ;; Also observe the floating footer (.compose-dock): quick-reply chips
-      ;; arrive out-of-band ~1-2s after the turn ends, growing the footer that
-      ;; overlaps the timeline's bottom — without a re-snap the grown footer
-      ;; covers the last response line (looked "cut off"). A growing composer
-      ;; (textarea auto-grow) re-snaps for the same reason.
+      ;; Quick-reply chips now render inline at the bottom of .timeline-content
+      ;; (not the footer), so their (possibly wrapped) height grows the observed
+      ;; content and re-snaps like any other late-laid-out node. Still observe
+      ;; the footer (.compose-dock) so a growing composer (textarea auto-grow)
+      ;; re-snaps too.
       (let [obs (js/ResizeObserver. (fn [] (scroll-to-bottom!)))]
         (when-let [content (.querySelector timeline ".timeline-content")]
           (.observe obs content))
