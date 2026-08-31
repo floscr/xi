@@ -1,0 +1,80 @@
+# OpenCode Zen provider
+
+[OpenCode Zen](https://opencode.ai/docs/zen) is a curated, benchmarked
+multi-model AI gateway from the OpenCode team. Xi talks to it as a **native HTTP
+provider** (`xi.provider.zen`) — no `opencode` CLI subprocess and no extra npm
+deps. It reuses Xi's existing OpenAI-compatible streaming core, plus a raw-HTTP
+Anthropic Messages adapter for the Claude/Qwen models.
+
+## Using it
+
+Any model id prefixed with `opencode/` routes to the Zen gateway:
+
+```bash
+# One-shot (safe to run headless)
+xi prompt --model opencode/big-pickle "Reply with exactly: OK"
+xi prompt --model opencode/claude-haiku-4-5 "..."
+
+# In the TUI
+/model opencode/deepseek-v4-flash
+```
+
+The `/model` picker lists live Zen ids (fetched from
+`https://opencode.ai/zen/v1/models`, prefixed with `opencode/`) alongside the
+Claude and Ollama models.
+
+The `opencode/` prefix is what forces the Zen gateway — a bare id like
+`claude-opus-4-8` still routes to the native Claude provider. Internally the
+prefix is stripped before the request (the API expects the bare id).
+
+## Authentication
+
+The key is resolved fresh on each turn, in this order:
+
+1. `OPENCODE_API_KEY`
+2. `OPENCODE_ZEN_API_KEY`
+3. OpenCode's own credential store at
+   `~/.local/share/opencode/auth.json`
+   (`{"opencode":{"type":"api","key":"sk-…"}}`) — so if you've run
+   `opencode auth login`, Xi picks up the same key automatically.
+
+A key is **optional** for the free chat-completions models (Big Pickle, the
+`*-free` models); paid models and the Anthropic/Responses surfaces require one.
+Get a key at <https://opencode.ai/auth>.
+
+## Supported API surfaces
+
+Zen serves different model families through different wire formats. Xi routes
+each model to the right adapter via a static table transcribed from the docs
+(`xi.provider.zen.models`); unknown/new ids default to chat-completions.
+
+| Surface | Endpoint | Models | Status |
+| --- | --- | --- | --- |
+| Chat Completions | `POST /zen/v1/chat/completions` | DeepSeek, GLM, Kimi, MiniMax, Big Pickle, all `*-free` | ✅ supported (via `xi.provider.openai-compat`) |
+| Anthropic Messages | `POST /zen/v1/messages` (`x-api-key`) | Claude, Qwen | ✅ supported (via `xi.provider.zen.anthropic`) |
+| OpenAI Responses | `POST /zen/v1/responses` | GPT, Grok, Muse | ⏳ not yet implemented |
+| Google | `POST /zen/v1/models/<id>` | Gemini | ⏳ not yet implemented |
+
+Selecting a GPT/Grok/Muse or Gemini model currently surfaces a clear
+"not supported yet" error rather than failing silently.
+
+## Architecture notes
+
+- `xi.provider.openai-compat` — the shared OpenAI Chat Completions streaming +
+  tool-use loop, extracted from `xi.provider.ollama`. Both Ollama and Zen's
+  chat-completions surface are thin config wrappers over it (base URL, auth
+  headers, optional pre-flight).
+- `xi.provider.zen` — the dispatcher: picks the adapter by the model's wire
+  format and injects the resolved auth header.
+- `xi.provider.zen.anthropic` — raw-HTTP Anthropic Messages streaming adapter
+  (tool_use blocks accumulated from `input_json_delta`, executed through Xi's
+  registry + tool gate, fed back as `tool_result` blocks). Uses `x-api-key`
+  auth (the Zen Anthropic surface rejects bearer-only).
+- `xi.provider.zen.auth` / `xi.provider.zen.models` — key resolution and the
+  id-normalization + wire-format routing table.
+
+## Privacy
+
+The free models (Big Pickle, `*-free`) may retain prompts to improve the model
+during their free period — don't send confidential data through them. See the
+[Zen privacy docs](https://opencode.ai/docs/zen/#privacy).

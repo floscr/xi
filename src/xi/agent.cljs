@@ -297,7 +297,7 @@
   "Pick a provider: explicit :provider key wins, else route by model name."
   [providers {:keys [provider model]}]
   (or (get providers provider)
-      (get providers (if (util/claude-model? model) :claude :ollama))
+      (get providers (util/provider-for-model model))
       (get providers :claude)
       (first (vals providers))))
 

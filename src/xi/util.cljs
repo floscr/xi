@@ -90,6 +90,25 @@
         (str/starts-with? model "anthropic/")
         (contains? #{"sonnet" "opus" "haiku"} model))))
 
+(defn zen-model?
+  "Returns true if model string names an OpenCode Zen model — the explicit
+   `opencode/` prefix routes to Zen regardless of the bare id. (Bare Zen ids
+   like `claude-opus-4-8` overlap with Claude and are intentionally NOT matched
+   here; prefix with `opencode/` to force the Zen gateway.)"
+  [model]
+  (boolean
+   (when (string? model)
+     (str/starts-with? model "opencode/"))))
+
+(defn provider-for-model
+  "Route a model id to a provider keyword: Zen (`opencode/…`) wins, then Claude,
+   else the OpenAI-compatible Ollama path."
+  [model]
+  (cond
+    (zen-model? model)    :zen
+    (claude-model? model) :claude
+    :else                 :ollama))
+
 (defn extract-text-content
   "Extract plain text from content that may be a string or a vec of blocks."
   [content]

@@ -77,6 +77,35 @@
   (testing "nil returns falsy"
     (is (not (util/claude-model? nil)))))
 
+;; ── zen-model? ──
+
+(deftest zen-model-opencode-prefix
+  (testing "opencode/ prefix routes to Zen"
+    (is (util/zen-model? "opencode/big-pickle"))
+    (is (util/zen-model? "opencode/claude-opus-4-8"))
+    (is (util/zen-model? "opencode/gpt-5.5"))))
+
+(deftest zen-model-non-zen
+  (testing "bare ids and other providers are not Zen"
+    (is (not (util/zen-model? "big-pickle")))
+    (is (not (util/zen-model? "claude-opus-4-8")))
+    (is (not (util/zen-model? "llama3")))
+    (is (not (util/zen-model? nil)))))
+
+;; ── provider-for-model ──
+
+(deftest provider-for-model-routing
+  (testing "opencode/ wins over an overlapping claude bare id"
+    (is (= :zen (util/provider-for-model "opencode/claude-opus-4-8")))
+    (is (= :zen (util/provider-for-model "opencode/big-pickle"))))
+  (testing "claude models route to :claude"
+    (is (= :claude (util/provider-for-model "claude-opus-4-6")))
+    (is (= :claude (util/provider-for-model "sonnet"))))
+  (testing "everything else routes to :ollama"
+    (is (= :ollama (util/provider-for-model "llama3")))
+    (is (= :ollama (util/provider-for-model "deepseek-r1")))
+    (is (= :ollama (util/provider-for-model nil)))))
+
 ;; ── extract-text-content ──
 
 (deftest extract-text-string

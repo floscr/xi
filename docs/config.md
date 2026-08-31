@@ -114,6 +114,11 @@ See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint (`xi.provider.ollama`). |
+| `OPENCODE_API_KEY` | — | OpenCode Zen API key (`xi.provider.zen`). Falls back to `OPENCODE_ZEN_API_KEY`, then `~/.local/share/opencode/auth.json`. Optional — free chat-completions models work without it. |
+| `OPENCODE_ZEN_API_KEY` | — | Alternate name for the Zen API key. |
+
+See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider (models,
+auth, and supported API surfaces).
 
 ### Extensions
 

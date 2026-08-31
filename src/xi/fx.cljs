@@ -140,15 +140,37 @@
   ["claude-opus-4-8" "claude-fable-5" "claude-opus-4-6"
    "claude-sonnet-4-6" "claude-haiku-4-5-20251001"])
 
-(defn- fetch-all-model-ids
-  "Fetch Ollama model names, combine with Claude IDs, call cb.
-   Falls back to Claude-only on error."
-  [cb]
+(defn- fetch-ollama-ids
+  "Promise of Ollama model-name vector (empty on error)."
+  []
   (-> (js/fetch "http://localhost:11434/api/tags")
       (.then (fn [res] (.json res)))
       (.then (fn [^js data]
-               (let [models (js->clj (.-models data) :keywordize-keys true)]
-                 (cb (into claude-model-ids (mapv :name models))))))
+               (mapv :name (js->clj (.-models data) :keywordize-keys true))))
+      (.catch (fn [_err] []))))
+
+(defn- fetch-zen-ids
+  "Promise of OpenCode Zen model ids, each prefixed with `opencode/` so the
+   picker routes them to the Zen provider. Empty on error (best-effort)."
+  []
+  (-> (js/fetch "https://opencode.ai/zen/v1/models"
+                #js {:signal (js/AbortSignal.timeout 4000)})
+      (.then (fn [res] (.json res)))
+      (.then (fn [^js data]
+               (->> (js->clj (.-data data) :keywordize-keys true)
+                    (keep :id)
+                    (mapv (fn [id] (str "opencode/" id))))))
+      (.catch (fn [_err] []))))
+
+(defn- fetch-all-model-ids
+  "Fetch Ollama + Zen model names, combine with Claude IDs, call cb.
+   Each source degrades to empty independently, so a failure never blocks the
+   others; falls back to Claude-only if all remote sources fail."
+  [cb]
+  (-> (js/Promise.all #js [(fetch-ollama-ids) (fetch-zen-ids)])
+      (.then (fn [^js results]
+               (let [[ollama zen] (js->clj results)]
+                 (cb (into (into claude-model-ids ollama) zen)))))
       (.catch (fn [_err] (cb claude-model-ids)))))
 
 (defn web-model-list-reply-fx

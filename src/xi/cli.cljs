@@ -66,6 +66,7 @@
             [xi.summary :as summary]
             [xi.provider.claude :as claude]
             [xi.provider.ollama :as ollama]
+            [xi.provider.zen :as zen]
             [xi.server.room-manager :as rm]
             [xi.server.ws :as ws]
             [xi.session :as session]
@@ -77,7 +78,8 @@
 
 (def providers
   {:claude claude/provider
-   :ollama ollama/provider})
+   :ollama ollama/provider
+   :zen    zen/provider})
 
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────
 ;;

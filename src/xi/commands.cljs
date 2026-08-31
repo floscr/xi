@@ -132,7 +132,7 @@
 
 (defn- cmd-model [st {:keys [room-id args]}]
   (if (seq args)
-    (let [provider (if (util/claude-model? args) :claude :ollama)
+    (let [provider (util/provider-for-model args)
           has-session? (get-in st [:rooms room-id :session :provider-session-id])]
       (cond-> {:state (-> st
                           (assoc-in [:rooms room-id :agent :model] args)
@@ -560,7 +560,7 @@
                     (->
                      (assoc-in [:rooms room-id :agent :model] model)
                      (assoc-in [:rooms room-id :agent :provider]
-                               (if (util/claude-model? model) :claude :ollama)))))
+                               (util/provider-for-model model)))))
        :effects (cond-> []
                   change-cwd? (conj [:cwd/change {:room-id room-id :path resume-cwd}]))})))
 

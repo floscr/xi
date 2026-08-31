@@ -121,7 +121,10 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
   transit strings (`xi.wire`).
 - **Standalone = not connected.** Server, client, and standalone modes share
   the same state shape and code paths; transports just forward events.
-- **Providers are pluggable** (`xi.provider.claude`, `xi.provider.ollama`).
+- **Providers are pluggable** (`xi.provider.claude`, `xi.provider.ollama`,
+  `xi.provider.zen`). Zen (OpenCode Zen gateway) routes `opencode/<id>` models
+  across several API surfaces; chat-completions + Anthropic Messages are
+  implemented today. See [docs/providers-zen.md](docs/providers-zen.md).
 - **shadow-cljs** compiles to a single node script run by **Bun**; the web
   client is a separate `:browser` build served by the same Bun server.
 - Runtime npm deps: only `@anthropic-ai/claude-agent-sdk` (pinned, see above).
@@ -180,7 +183,13 @@ src/xi/
   wire.cljs            — EDN wire protocol (the events ARE the protocol)
   provider/
     claude.cljs        — Claude Agent SDK provider (MCP tool bridge, streaming)
-    ollama.cljs        — Ollama provider
+    openai_compat.cljs — shared OpenAI Chat Completions streaming + tool loop
+    ollama.cljs        — Ollama provider (thin wrapper over openai_compat)
+    zen.cljs           — OpenCode Zen gateway provider (dispatches by wire format)
+    zen/
+      auth.cljs        — Zen API key resolution (env + OpenCode auth.json)
+      models.cljs      — Zen id normalization + wire-format routing table
+      anthropic.cljs   — Zen Anthropic Messages surface adapter (raw HTTP)
   server/
     ws.cljs            — Bun WS server + static serving for the web client
     room_manager.cljs  — rooms as pure event handlers (join/attach/auto-destroy)

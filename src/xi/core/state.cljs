@@ -17,8 +17,9 @@
    - process-local [:ext <id>]           — never crosses the wire
                   (e.g. dictation :recording? on a client process)
 
-   Standalone = one local room, connected to nothing. Server hosts N rooms.
-   Client mirrors remote rooms into the same shape.")
+    Standalone = one local room, connected to nothing. Server hosts N rooms.
+   Client mirrors remote rooms into the same shape."
+  (:require [xi.util :as util]))
 
 (defn make-room
   "A room: independent conversation with its own history, session and UI."
@@ -31,7 +32,7 @@
     :history []                       ;; event-sourced chat history (local cache)
     :session session                  ;; current session map (+ :provider-session-id)
     :agent   {:busy?           false
-              :provider        (or provider :claude)
+              :provider        (or provider (util/provider-for-model model))
               :model           model
               :system          system          ;; concatenated system prompt string
               :system-parts    (or system-parts []) ;; [{:source :text}] with attribution
