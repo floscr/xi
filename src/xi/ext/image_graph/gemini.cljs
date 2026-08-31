@@ -58,7 +58,7 @@
                        (.then (fn [body]
                                 (if (and (>= (.-status res) 200) (<= (.-status res) 299))
                                   (js->clj (js/JSON.parse body) :keywordize-keys true)
-                                  (throw (js/Error. (str "Gemini " (.-status res) ": " body))))))))))))
+                                  (throw (js/Error. (str "Gemini " (.-status res) ": " body)))))))))))))
 
 (defn generate
   "Generate one image with Gemini. `ref-bytes` (a Buffer of the parent image,
@@ -105,4 +105,3 @@
                    (if (str/blank? text)
                      (throw (js/Error. "Gemini returned no composition description"))
                      text)))))))
-)

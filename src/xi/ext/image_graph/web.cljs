@@ -95,18 +95,35 @@
     (draw-edges! node nodes)
     (apply-view! node)))
 
+(defn- touch-dist
+  "Euclidean distance between two Touch points."
+  [^js t0 ^js t1]
+  (let [dx (- (.-clientX t1) (.-clientX t0))
+        dy (- (.-clientY t1) (.-clientY t0))]
+    (js/Math.sqrt (+ (* dx dx) (* dy dy)))))
+
 (defn- canvas-pan!
   "Grab-to-pan on empty background; wheel pans; ctrl/⌘+wheel zooms around the
-   pointer. Listeners torn down on unmount."
+   pointer. On touch: one finger drags (infinite), two fingers pinch-zoom
+   around the pinch midpoint. Listeners torn down on unmount."
   [{:replicant/keys [^js node life-cycle]}]
   (if (= life-cycle :replicant.life-cycle/unmount)
     (do (when-let [h (.-_igDown node)] (.removeEventListener node "mousedown" h))
         (when-let [w (.-_igWheel node)] (.removeEventListener node "wheel" w))
+        (when-let [ts (.-_igTStart node)] (.removeEventListener node "touchstart" ts))
+        (when-let [tm (.-_igTMove node)] (.removeEventListener node "touchmove" tm))
+        (when-let [te (.-_igTEnd node)]
+          (.removeEventListener node "touchend" te)
+          (.removeEventListener node "touchcancel" te))
         (set! (.-_igDown node) nil)
-        (set! (.-_igWheel node) nil))
+        (set! (.-_igWheel node) nil)
+        (set! (.-_igTStart node) nil)
+        (set! (.-_igTMove node) nil)
+        (set! (.-_igTEnd node) nil))
     (when-not (.-_igDown node)
       (let [canvas  (fn [] (.querySelector node ".ig-canvas"))
             origin  (atom nil)
+            gesture (atom nil)
             on-move (fn [^js e]
                       (when-let [o @origin]
                         (swap! view assoc
@@ -144,11 +161,79 @@
                            (swap! view (fn [v] (-> v
                                                    (update :x - (.-deltaX e))
                                                    (update :y - (.-deltaY e))))))
-                         (apply-view! c)))]
+                         (apply-view! c)))
+            on-touch-start
+            (fn [^js e]
+              (let [ts (.-touches e)]
+                (cond
+                  ;; two fingers → begin pinch-zoom around the midpoint
+                  (>= (.-length ts) 2)
+                  (when-let [c (canvas)]
+                    (let [t0   (aget ts 0) t1 (aget ts 1)
+                          rect (.getBoundingClientRect node)
+                          mx   (- (/ (+ (.-clientX t0) (.-clientX t1)) 2) (.-left rect))
+                          my   (- (/ (+ (.-clientY t0) (.-clientY t1)) 2) (.-top rect))
+                          {:keys [x y z]} @view]
+                      (reset! gesture {:mode :pinch :c c :d0 (touch-dist t0 t1)
+                                       :z0 z :x0 x :y0 y :mx mx :my my})
+                      (.preventDefault e)))
+                  ;; one finger on empty background → begin pan
+                  (= (.-length ts) 1)
+                  (let [t (aget ts 0)]
+                    (when (and (not (.closest (.-target e)
+                                              ".ig-node, button, a, input, textarea, select"))
+                               (canvas))
+                      (reset! gesture {:mode :pan :c (canvas)
+                                       :px (.-clientX t) :py (.-clientY t)
+                                       :ox (:x @view) :oy (:y @view)})
+                      (.preventDefault e))))))
+            on-touch-move
+            (fn [^js e]
+              (when-let [g @gesture]
+                (let [ts (.-touches e)]
+                  (case (:mode g)
+                    :pan
+                    (when (>= (.-length ts) 1)
+                      (let [t (aget ts 0)]
+                        (swap! view assoc
+                               :x (+ (:ox g) (- (.-clientX t) (:px g)))
+                               :y (+ (:oy g) (- (.-clientY t) (:py g))))
+                        (apply-view! (:c g))
+                        (.preventDefault e)))
+                    :pinch
+                    (when (>= (.-length ts) 2)
+                      (let [t0 (aget ts 0) t1 (aget ts 1)
+                            nz (max 0.2 (min 3 (* (:z0 g) (/ (touch-dist t0 t1) (:d0 g)))))]
+                        ;; keep the pinch midpoint pinned while scaling
+                        (reset! view {:z nz
+                                      :x (- (:mx g) (* (/ (- (:mx g) (:x0 g)) (:z0 g)) nz))
+                                      :y (- (:my g) (* (/ (- (:my g) (:y0 g)) (:z0 g)) nz))})
+                        (apply-view! (:c g))
+                        (.preventDefault e)))
+                    nil))))
+            on-touch-end
+            (fn [^js e]
+              (let [ts (.-touches e)]
+                (cond
+                  (zero? (.-length ts)) (reset! gesture nil)
+                  ;; pinch released to a single finger → hand off to a pan so
+                  ;; the view doesn't jump on the final lift
+                  (and (= (.-length ts) 1) (= (:mode @gesture) :pinch))
+                  (let [t (aget ts 0)]
+                    (reset! gesture {:mode :pan :c (:c @gesture)
+                                     :px (.-clientX t) :py (.-clientY t)
+                                     :ox (:x @view) :oy (:y @view)})))))]
         (set! (.-_igDown node) on-down)
         (set! (.-_igWheel node) on-wheel)
+        (set! (.-_igTStart node) on-touch-start)
+        (set! (.-_igTMove node) on-touch-move)
+        (set! (.-_igTEnd node) on-touch-end)
         (.addEventListener node "mousedown" on-down)
-        (.addEventListener node "wheel" on-wheel #js {:passive false})))))
+        (.addEventListener node "wheel" on-wheel #js {:passive false})
+        (.addEventListener node "touchstart" on-touch-start #js {:passive false})
+        (.addEventListener node "touchmove" on-touch-move #js {:passive false})
+        (.addEventListener node "touchend" on-touch-end)
+        (.addEventListener node "touchcancel" on-touch-end)))))
 
 (defn- zoom! [delta]
   (fn [_]
