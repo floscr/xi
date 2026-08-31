@@ -18,9 +18,38 @@
      :model-id   (fn [model] → str) transform the model id before sending
                  (e.g. strip an `opencode/` prefix); optional, identity default"
   (:require [clojure.string :as str]
+            [xi.agent :as agent]
             [xi.tools.registry :as tools]
             [xi.system-prompt :as system-prompt]
             [xi.util :as util]))
+
+;; ── History replay → OpenAI messages ─────────────────────────────────────────
+
+(defn history->openai-messages
+  "Convert the neutral message list from `xi.agent/history->messages` into
+   OpenAI chat-completions messages so a sessionless turn replays prior
+   conversation. Assistant tool-calls become `:tool_calls`; tool results become
+   `{:role \"tool\"}` entries keyed by `tool_call_id`."
+  [neutral]
+  (mapcat
+   (fn [{:keys [role text tool-calls results]}]
+     (case role
+       :user      [{:role "user" :content text}]
+       :assistant [(cond-> {:role "assistant" :content (or text nil)}
+                     (seq tool-calls)
+                     (assoc :tool_calls
+                            (mapv (fn [{:keys [id name arguments]}]
+                                    {:id id
+                                     :type "function"
+                                     :function {:name name
+                                                :arguments (js/JSON.stringify
+                                                            (clj->js (or arguments {})))}})
+                                  tool-calls)))]
+       :tool      (mapv (fn [{:keys [id content]}]
+                          {:role "tool" :tool_call_id id :content (str content)})
+                        results)
+       []))
+   neutral))
 
 ;; ── Tool Definitions → OpenAI Format ────────────────────────────────────────
 
@@ -190,8 +219,15 @@
         flags #js {:aborted false}
 
         ;; Per-turn conversation — managed here (no bridge). Contained.
-        !messages (atom [{:role "system" :content system-text}
-                         {:role "user" :content (:prompt opts)}])
+        ;; Sessionless providers keep no server-side transcript, so we replay
+        ;; the room's prior history (passed via :history) ahead of the current
+        ;; prompt. Without this the model forgets everything each turn.
+        prior-msgs (some-> (:history opts)
+                           agent/history->messages
+                           history->openai-messages)
+        !messages (atom (into [{:role "system" :content system-text}]
+                              (conj (vec prior-msgs)
+                                    {:role "user" :content (:prompt opts)})))
         !usage (atom {:input_tokens 0 :output_tokens 0})
 
         promise

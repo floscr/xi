@@ -10,12 +10,44 @@
 
    Interface: (stream-messages config opts) → {:promise :abort!}."
   (:require [clojure.string :as str]
+            [xi.agent :as agent]
             [xi.tools.registry :as tools]
             [xi.system-prompt :as system-prompt]
             [xi.util :as util]))
 
+;; ── History replay → Anthropic messages ───────────────────────────────────
+
+(defn history->anthropic-messages
+  "Convert the neutral message list from `xi.agent/history->messages` into
+   Anthropic Messages so a sessionless turn replays prior conversation.
+   Assistant tool-calls become `tool_use` content blocks; tool results become
+   `{:role \"user\"}` messages carrying `tool_result` blocks."
+  [neutral]
+  (mapv
+   (fn [{:keys [role text tool-calls results]}]
+     (case role
+       :user      {:role "user" :content text}
+       :assistant {:role "assistant"
+                   :content (into (if (seq text)
+                                    [{:type "text" :text text}]
+                                    [])
+                                  (mapv (fn [{:keys [id name arguments]}]
+                                          {:type "tool_use"
+                                           :id id
+                                           :name name
+                                           :input (or arguments {})})
+                                        tool-calls))}
+       :tool      {:role "user"
+                   :content (mapv (fn [{:keys [id content is-error]}]
+                                    {:type "tool_result"
+                                     :tool_use_id id
+                                     :content (str content)
+                                     :is_error (boolean is-error)})
+                                  results)}))
+   neutral))
+
 (def ^:private max-iterations 25)
-(def ^:private max-tokens 8192)
+(def ^:private max-tokens 32000)
 
 (def ^:private default-gate
   (fn [tool-call] (js/Promise.resolve tool-call)))
@@ -154,14 +186,18 @@
         nil))
 
     "message_delta"
-    (let [^js u (.-usage ev)]
-      (when u
-        (swap! state update :usage
-               (fn [cur]
-                 (merge (or cur {})
-                        (cond-> {}
-                          (.-input_tokens u)  (assoc :input_tokens (.-input_tokens u))
-                          (.-output_tokens u) (assoc :output_tokens (.-output_tokens u))))))))
+    (do
+      (when-let [^js d (.-delta ev)]
+        (when-let [sr (.-stop_reason d)]
+          (swap! state assoc :stop-reason sr)))
+      (let [^js u (.-usage ev)]
+        (when u
+          (swap! state update :usage
+                 (fn [cur]
+                   (merge (or cur {})
+                          (cond-> {}
+                            (.-input_tokens u)  (assoc :input_tokens (.-input_tokens u))
+                            (.-output_tokens u) (assoc :output_tokens (.-output_tokens u)))))))))
 
     nil))
 
@@ -197,7 +233,7 @@
   [messages system anthropic-tools
    {:keys [model api-key base-url on-text on-thinking abort-signal]}]
   (let [!text (atom "")
-        state (atom {:tool-blocks {} :usage nil})
+        state (atom {:tool-blocks {} :usage nil :stop-reason nil})
         on-text* (fn [t] (swap! !text str t) (when on-text (on-text t)))
         body (cond-> {:model model
                       :max_tokens max-tokens
@@ -231,6 +267,7 @@
                                                             (catch :default _ {}))}))))]
              {:text @!text
               :tool-calls tool-calls
+              :stop-reason (:stop-reason final)
               :usage (:usage final)})))
         (.catch
          (fn [err]
@@ -258,7 +295,13 @@
         abort-controller (js/AbortController.)
         flags #js {:aborted false}
 
-        !messages (atom [{:role "user" :content (:prompt opts)}])
+        ;; Sessionless surface — replay the room's prior history ahead of the
+        ;; current prompt so the model keeps context across turns.
+        prior-msgs (some-> (:history opts)
+                           agent/history->messages
+                           history->anthropic-messages)
+        !messages (atom (conj (vec prior-msgs)
+                              {:role "user" :content (:prompt opts)}))
         !usage (atom {:input_tokens 0 :output_tokens 0})
 
         promise
@@ -302,9 +345,21 @@
                                            (update :cache_creation_input_tokens (fnil + 0) (:cache_creation_input_tokens u 0))
                                            (update :cache_read_input_tokens (fnil + 0) (:cache_read_input_tokens u 0))))))
                      (if-not (seq (:tool-calls result))
-                       (finish {:content [{:type "text" :text (:text result)}]
-                                :stop-reason "stop"
-                                :result-text (:text result)})
+                       ;; No tool calls. If the model was cut off at max_tokens
+                       ;; (a truncated response — the classic "it just stopped"
+                       ;; mid-thought), append the partial text and re-request so
+                       ;; it continues, instead of silently ending the turn.
+                       (if (and (= "max_tokens" (:stop-reason result))
+                                (seq (:text result))
+                                (< (inc n) max-iterations))
+                         (do
+                           (swap! !messages conj
+                                  {:role "assistant"
+                                   :content [{:type "text" :text (:text result)}]})
+                           (iterate-turn (inc n)))
+                         (finish {:content [{:type "text" :text (:text result)}]
+                                  :stop-reason "stop"
+                                  :result-text (:text result)}))
                        (let [tcs (:tool-calls result)]
                          (doseq [tc tcs]
                            (when (:on-tool-start callbacks)

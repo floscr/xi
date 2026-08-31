@@ -143,6 +143,72 @@
     (is (not (str/includes? ctx "hmm")) "thinking is not carried")
     (is (not (str/includes? ctx "out")) "tool results are not carried")))
 
+(deftest history->messages-builds-neutral-transcript
+  (testing "empty history yields no messages"
+    (is (= [] (agent/history->messages []))))
+  (testing "user + assistant text alternate"
+    (is (= [{:role :user :text "hi"}
+            {:role :assistant :text "hello!"}]
+           (agent/history->messages
+            [{:kind :user :text "hi"}
+             {:kind :text :text "hello!"}]))))
+  (testing "thinking/error/aborted entries are dropped"
+    (is (= [{:role :user :text "hi"}]
+           (agent/history->messages
+            [{:kind :user :text "hi"}
+             {:kind :thinking :text "hmm"}
+             {:kind :error :error {:message "x"}}
+             {:kind :aborted}]))))
+  (testing "assistant text + tool calls in the same turn merge into one entry"
+    (is (= [{:role :user :text "do it"}
+            {:role :assistant :text "on it"
+             :tool-calls [{:id "t1" :name "bash" :arguments {:command "ls"}}]}
+            {:role :tool :results [{:id "t1" :content "out" :is-error false}]}]
+           (agent/history->messages
+            [{:kind :user :text "do it"}
+             {:kind :text :text "on it"}
+             {:kind :tool-call :id "t1" :tool "bash"
+              :arguments {:command "ls"} :result "out"
+              :is-error false :status :done}]))))
+  (testing "running/aborted tool calls are skipped (no dangling tool_use)"
+    (is (= [{:role :user :text "go"}]
+           (agent/history->messages
+            [{:kind :user :text "go"}
+             {:kind :tool-call :id "t1" :tool "bash" :status :running}]))))
+  (testing "multiple tool calls in one turn group under one assistant + one tool entry"
+    (is (= [{:role :assistant :text nil
+             :tool-calls [{:id "t1" :name "bash" :arguments {}}
+                          {:id "t2" :name "read" :arguments {}}]}
+            {:role :tool :results [{:id "t1" :content "a" :is-error false}
+                                   {:id "t2" :content "b" :is-error false}]}]
+           (agent/history->messages
+            [{:kind :tool-call :id "t1" :tool "bash" :result "a" :status :done}
+             {:kind :tool-call :id "t2" :tool "read" :result "b" :status :done}])))))
+
+(deftest prior-history-flows-into-turn-payload
+  (testing "a second prompt carries the prior conversation as :history"
+    (let [st (apply-events (with-room)
+                           {:type :prompt/submit :room-id "r" :text "first"}
+                           {:type :agent/text-delta :room-id "r" :text "answer"}
+                           {:type :agent/turn-end :room-id "r"})
+          {:keys [effects]}
+          (events/handle-event all-handlers st
+                               {:type :prompt/submit :room-id "r" :text "second"})
+          payload (second (first effects))]
+      (is (= [{:kind :user :text "first" :images nil}
+              {:kind :text :text "answer" :done? true}]
+             (:history payload))
+          "prior turns are threaded through, current prompt excluded")
+      (is (= "second" (:prompt payload))))))
+
+(deftest first-prompt-has-no-prior-history
+  (let [{:keys [effects]}
+        (events/handle-event all-handlers (with-room)
+                             {:type :prompt/submit :room-id "r" :text "hello"})
+        payload (second (first effects))]
+    (is (not (contains? payload :history))
+        "an empty prior history is omitted from the payload")))
+
 (deftest inject-history-flag-injects-context-into-system
   (let [st (-> (with-room)
                (assoc-in [:rooms "r" :agent :system] "base prompt")

@@ -82,6 +82,71 @@
            (str/join "\n\n" msgs)
            "\n</conversation_history>"))))
 
+(defn history->messages
+  "Convert a room's flat :history into a neutral, provider-agnostic message
+   list so sessionless providers (Zen/Ollama) can replay the full conversation
+   each turn — they keep no server-side transcript like Claude does.
+
+   Output is a vector of maps in one of these shapes, in order:
+     {:role :user      :text ...}
+     {:role :assistant :text ... :tool-calls [{:id :name :arguments}]}
+     {:role :tool      :results    [{:id :content :is-error}]}
+
+   Adjacent assistant output (streamed text + the tool calls it made in the
+   same turn) is merged into ONE assistant entry, and the matching tool
+   results into ONE following tool entry, so providers that require strict
+   user/assistant alternation (Anthropic) don't get two same-role messages in
+   a row. Thinking, error, and aborted entries are dropped. Tool calls without
+   a result yet (interrupted mid-turn) are skipped so we never send a dangling
+   tool_use the API would reject."
+  [history]
+  (letfn [(assistant-entry [acc]
+            ;; Ensure the trailing acc entry is an open assistant message we can
+            ;; extend; open a fresh one if the last entry is a different role.
+            (if (= :assistant (:role (peek acc)))
+              acc
+              (conj acc {:role :assistant :text nil})))
+          (tool-entry [acc]
+            (if (= :tool (:role (peek acc)))
+              acc
+              (conj acc {:role :tool :results []})))]
+    (reduce
+     (fn [acc {:keys [kind text id tool arguments result is-error status]}]
+       (case kind
+         :user (if (seq text)
+                 (conj acc {:role :user :text text})
+                 acc)
+         :text (if (seq text)
+                 (let [acc (assistant-entry acc)]
+                   (update acc (dec (count acc)) update :text
+                           (fn [t] (if (seq t) (str t text) text))))
+                 acc)
+         :tool-call
+         ;; Only replay completed calls (a result arrived). Skip running/aborted.
+         (if (and id (contains? #{:done :error} status))
+           (let [tc  {:id id :name tool :arguments (or arguments {})}
+                 res {:id id :content (or result "") :is-error (boolean is-error)}]
+             (if (= :tool (:role (peek acc)))
+               ;; Mid tool-group: this call ran in the same assistant turn as
+               ;; the open tool entry at the tail, so extend that assistant
+               ;; message and its tool entry rather than opening new ones.
+               (let [ti (dec (count acc))
+                     ai (dec ti)]
+                 (-> acc
+                     (update ai update :tool-calls (fnil conj []) tc)
+                     (update ti update :results (fnil conj []) res)))
+               ;; Open (or reuse a text) assistant entry, then a tool entry.
+               (let [acc (assistant-entry acc)
+                     acc (update acc (dec (count acc)) update :tool-calls
+                                 (fnil conj []) tc)
+                     acc (tool-entry acc)]
+                 (update acc (dec (count acc)) update :results
+                         (fnil conj []) res))))
+           acc)
+         acc))
+     []
+     history)))
+
 (defn- prompt-with-attachment-paths
   "Append the on-disk paths of attached files to the provider prompt so the
    agent's file tools and subagents can reach them. Kept out of the history
@@ -101,8 +166,13 @@
 (defn- build-turn-effect
   "Build the :provider/start-turn effect payload. When :resume-id is nil and
    :context-history is supplied, the prior conversation is rendered into the
-   system prompt so the fresh provider session keeps the context."
-  [{:keys [room resume-id prompt images context-history]}]
+   system prompt so the fresh provider session keeps the context.
+
+   :prior-history (the room's history *before* this prompt) is threaded through
+   so sessionless providers (Zen/Ollama, which keep no server-side transcript)
+   can rebuild the full multi-turn message array. Claude ignores it — it
+   resumes its own server-side session via :resume-session-id instead."
+  [{:keys [room resume-id prompt images context-history prior-history]}]
   (let [agent   (:agent room)
         context (when (and (nil? resume-id) context-history)
                   (history->context context-history))
@@ -120,8 +190,9 @@
               :effort   (:effort agent)
               :system   system
               :personal-agent? (:personal-agent? agent)}
-       (seq images) (assoc :images images)
-       resume-id    (assoc :resume-session-id resume-id))]))
+       (seq images)   (assoc :images images)
+       (seq prior-history) (assoc :history (vec prior-history))
+       resume-id      (assoc :resume-session-id resume-id))]))
 
 (defn- start-turn-effect
   "Build the :provider/start-turn effect payload from room state + prompt.
@@ -135,6 +206,11 @@
       :resume-id resume-id
       :prompt text
       :images images
+      ;; The room's history at this point is the *prior* conversation — the
+      ;; current prompt has not yet been appended (begin-turn appends it in
+      ;; the same handler, but passes the pre-append `room` here). Sessionless
+      ;; providers replay it as prior turns.
+      :prior-history (:history room)
       :context-history (when (and (nil? resume-id)
                                   (get-in room [:session :inject-history?]))
                          (:history room))})))
@@ -252,6 +328,7 @@
                        :resume-id nil
                        :prompt (:text user-ent)
                        :images (:images user-ent)
+                       :prior-history (subvec (vec history) 0 idx)
                        :context-history (subvec (vec history) 0 idx)})]})))))
 
 (defn- session-init
