@@ -1078,16 +1078,35 @@
             block))
         messages))
 
+(def ^:private search-text-byte-cap
+  "Max bytes of a transcript read when building content-search text. The
+   search corpus is capped at 16KB of extracted text anyway; fully reading
+   every transcript (hundreds of MB across a big install) synchronously
+   froze the event loop on the first search."
+  (* 512 1024))
+
 (defn build-search-text
   "Extract concatenated user+assistant text from a session for content search.
-   Returns a single string, capped to 16KB."
+   Returns a single string, capped to 16KB. Reads at most
+   `search-text-byte-cap` bytes of the transcript and pulls text straight off
+   the raw JS lines (no js->clj of the whole conversation), so per-file work
+   stays bounded no matter how large the transcript is."
   [summary]
   (try
-    (let [msgs (read-session-messages summary)]
-      (->> msgs
-           (keep (fn [{:keys [type text]}] (when (= :text type) text)))
-           (str/join "\n")
-           (#(if (> (count %) 16384) (subs % 0 16384) %))))
+    (if-let [filepath (summary->transcript summary)]
+      (loop [lines (read-head-lines filepath search-text-byte-cap)
+             acc   ""]
+        (if (or (empty? lines) (>= (count acc) 16384))
+          (if (> (count acc) 16384) (subs acc 0 16384) acc)
+          (let [line (first lines)
+                obj  (when (seq line)
+                       (try (js/JSON.parse line) (catch :default _ nil)))
+                t    (some-> obj .-type)
+                text (when (or (= "user" t) (= "assistant" t))
+                       (some-> obj .-message claude-message-text))]
+            (recur (rest lines)
+                   (if (seq text) (str acc "\n" text) acc)))))
+      "")
     (catch :default _ "")))
 
 (defonce ^:private search-text-cache

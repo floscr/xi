@@ -92,7 +92,7 @@
              [:compose/focus]]})
 
 (defn- counts-result
-  "Store per-session response counts from a :session/counts reply.
+  "Store per-session response counts (ride along on :lobby/state).
 
    If a session was just left (`:web/pending-read`), mark it read at this
    fresh count: the user saw whatever landed while they were attached, but
@@ -453,6 +453,16 @@
                     :web/project-sessions-cwd cwd
                     :web/project-sessions-loading? false)})
 
+(defn- sessions-all-result
+  "Full (uncapped) saved-session list for the all-sessions view, with its
+   counts merged over the lobby's (the lobby broadcast only counts the capped
+   recent subset)."
+  [st {:keys [sessions counts]}]
+  {:state (-> st
+              (assoc :web/all-sessions sessions
+                     :web/all-sessions-loading? false)
+              (update :web/response-counts merge counts))})
+
 ;; ── Session content search ────────────────────────────────────────────────────
 ;; Names are searchable client-side, but message *content* lives only on the
 ;; server, so content mode round-trips a query and caches the matching ids.
@@ -566,10 +576,24 @@
           ;; client-side by the xi.ext.subagent.web handlers — they're an
           ;; ephemeral per-client UI preference, so we do NOT forward them
           ;; (forwarding double-toggled: local apply + server broadcast back).
-          :session/counts        forward
-          :session/counts-result counts-result
+          ;; Counts ride along on :lobby/state (one count pass per server
+          ;; broadcast instead of a :session/counts round trip per client).
+          ;; Install the lobby mirror, then apply the counts — including the
+          ;; pending-read logic in counts-result.
+          :lobby/state
+          (fn [st ev]
+            (let [{st' :state} (ws-transport/lobby-state st ev)]
+              (if (contains? ev :counts)
+                (counts-result st' ev)
+                {:state st'})))
           :session/mark-read     mark-read
           :session/mark-all-read mark-all-read
+          ;; Full saved-session list on demand (all-sessions view) — the
+          ;; lobby broadcast only carries a capped recent subset.
+          :sessions/all          (fn [st _ev]
+                                   {:state (assoc st :web/all-sessions-loading? true)
+                                    :effects [[:ws/send {:type :sessions/all}]]})
+          :sessions/all-result   sessions-all-result
           :session/dismiss-all   dismiss-all
           ;; Seed a chat's cached history into :web/cache so it paints
           ;; instantly on SPA navigation while the WS :room/joined is in
@@ -807,7 +831,12 @@
                                                       ss))]
                                      {:state (-> st
                                                  (update-in [:lobby :sessions] flip)
-                                                 (update :web/project-sessions flip))
+                                                 (update :web/project-sessions flip)
+                                                 ;; some-> : leave a nil (not
+                                                 ;; loaded) list nil — an empty
+                                                 ;; vec would shadow the lobby
+                                                 ;; fallback in the all view.
+                                                 (update :web/all-sessions #(some-> % flip)))
                                       :effects [[:ws/send {:type :favorites/toggle
                                                            :session-id session-id}]]}))
           ;; Hide/show a session in the recent list. Flip locally so the card
@@ -822,7 +851,8 @@
                                                       ss))]
                                      {:state (-> st
                                                  (update-in [:lobby :sessions] flip)
-                                                 (update :web/project-sessions flip))
+                                                 (update :web/project-sessions flip)
+                                                 (update :web/all-sessions #(some-> % flip)))
                                       :effects [[:ws/send {:type :dismissed/toggle
                                                            :session-id session-id}]]}))
           ;; Session context menu (right-click / ⋮ on a session card). Anchored
@@ -840,7 +870,8 @@
                                      {:state (-> st
                                                  (dissoc :web/session-menu)
                                                  (update-in [:lobby :sessions] drop)
-                                                 (update :web/project-sessions drop))
+                                                 (update :web/project-sessions drop)
+                                                 (update :web/all-sessions #(some-> % drop)))
                                       :effects [[:ws/send {:type :session/delete
                                                            :session-id session-id}]]}))
           ;; Projects
@@ -1266,15 +1297,6 @@
                (nil? (:web/project-dirs state)))
       (dispatch! {:type :projects/web-list}))))
 
-(defn- request-counts-tap
-  "On a fresh lobby, ask the server for response counts of the saved
-   sessions so the home view can flag unread ones."
-  [dispatch!]
-  (fn [event state]
-    (when (= :lobby/state (:type event))
-      (when-let [sids (seq (keep :session-id (get-in state [:lobby :sessions])))]
-        (dispatch! {:type :session/counts :session-ids (vec sids)})))))
-
 (defn- mark-read-on-turn-tap
   "When a turn ends in the room the user is currently viewing, mark that
    session read. Closes the auto-exit gap: previously a room could finish a
@@ -1672,7 +1694,6 @@
     (reset! app-ref app)
     ((:set-dispatch! transport) dispatch!)
     (add-tap! cache/persist-tap)
-    (add-tap! (request-counts-tap dispatch!))
     (add-tap! (mark-read-on-turn-tap dispatch!))
     (add-tap! (request-projects-tap dispatch!))
     (add-tap! (fill-url-tap dispatch!))

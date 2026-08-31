@@ -68,7 +68,8 @@
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
-  #{:client/update :session/counts :models/web-list :session/content-search
+  #{:client/update :session/counts :sessions/all :models/web-list
+    :session/content-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
     :favorites/toggle :dismissed/toggle :session/delete :session/mark-read
     :rooms/prune})
@@ -88,6 +89,42 @@
          (session/list-all-sessions))
        (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite? :dismissed?]))))
 
+(defn- saved-sessions
+  "All saved-session summaries, minus those shadowed by a live room's
+   provider-session-id (Claude CLI ids) — prevents a duplicate card during
+   the first agent turn before Xi's own :session/sync has run."
+  [st personal-agent?]
+  (let [live-pids (into #{}
+                        (keep (fn [[_ room]]
+                                (get-in room [:session :provider-session-id])))
+                        (:rooms st))]
+    (cond->> (lobby-sessions personal-agent?)
+      (seq live-pids)
+      (filterv #(not (contains? live-pids (:session-id %)))))))
+
+(def ^:private lobby-session-cap
+  "Max saved sessions carried in the lobby broadcast. The drawer shows 25
+   and the home surfaces show recents; the all-sessions view fetches the
+   full list on demand (:sessions/all). Favorites and live rooms' sessions
+   always ride along regardless of age, so the capped list stays complete
+   for every always-visible surface."
+  100)
+
+(defn- cap-sessions
+  "Trim a newest-first summary list to the recent cap, keeping all favorites
+   and any session in keep-ids (live rooms). Preserves order."
+  [sessions keep-ids]
+  (if (<= (count sessions) lobby-session-cap)
+    sessions
+    (let [recent (into #{}
+                       (comp (take lobby-session-cap) (keep :session-id))
+                       sessions)]
+      (filterv (fn [s]
+                 (or (:favorite? s)
+                     (contains? recent (:session-id s))
+                     (contains? keep-ids (:session-id s))))
+               sessions))))
+
 (def ^:private server-started-at
   "Wall-clock ms when this server process booted. Sent in the lobby payload so
    clients can tell which sessions have been active during the current server
@@ -103,18 +140,23 @@
    turn before Xi's own :session/sync has run."
   [st personal-agent? model]
   (let [rooms    (rm/room-summaries st)
-        ;; Provider session ids currently held by live rooms (Claude CLI ids)
-        ;; must be hidden from the saved-session list to avoid a duplicate card.
-        live-pids (into #{}
-                        (keep (fn [[_ room]]
-                                (get-in room [:session :provider-session-id])))
-                        (:rooms st))
-        sessions (cond->> (lobby-sessions personal-agent?)
-                   (seq live-pids)
-                   (filterv #(not (contains? live-pids (:session-id %)))))]
+        ;; Cap the broadcast list (recent + favorites + live) — the full list
+        ;; can be thousands of summaries, and every lobby-relevant event would
+        ;; ship all of them to every client. Personal-agent mode stays uncapped:
+        ;; its home view is the only listing surface and its corpus is small.
+        sessions (cond-> (saved-sessions st personal-agent?)
+                   (not personal-agent?)
+                   (cap-sessions (into #{} (keep :session-id) rooms)))
+        ;; Response counts ride along so clients don't each round-trip a
+        ;; :session/counts query for every session on every lobby refresh —
+        ;; one count pass per broadcast instead of one per client.
+        counts   (session/count-session-responses
+                  (into [] (keep :session-id) sessions)
+                  {:personal-agent? personal-agent?})]
     (wire/encode (cond-> {:type       :lobby/state
                           :rooms      rooms
                           :sessions   sessions
+                          :counts     counts
                           :started-at server-started-at
                           :read       (session/load-read-state)}
                    model           (assoc :model model)
@@ -351,6 +393,19 @@
                                                 session-ids
                                                 {:personal-agent? personal-agent?})})))
 
+      ;; Full (uncapped) saved-session list + counts — fetched on demand by
+      ;; the all-sessions view, since the lobby broadcast only carries the
+      ;; capped recent list.
+      :sessions/all-reply
+      (fn [{:keys [state]} {:keys [client-id]}]
+        (let [sessions (saved-sessions state personal-agent?)
+              counts   (session/count-session-responses
+                        (into [] (keep :session-id) sessions)
+                        {:personal-agent? personal-agent?})]
+          (send! client-id (wire/encode {:type     :sessions/all-result
+                                         :sessions sessions
+                                         :counts   counts}))))
+
       ;; Model list for web clients.
       :models/web-list-reply
       (fn [_ {:keys [client-id]}]
@@ -540,6 +595,10 @@
                         (when (and e (contains? approved (.-key e)))
                           (resolve-pending! code true)))))))
               2000)
+             ;; Last broadcast lobby payload (encoded). Many lobby-relevant
+             ;; events produce a byte-identical lobby; skipping those saves
+             ;; every client a decode + re-render + localStorage rewrite.
+             last-lobby (atom nil)
              broadcast-lobby!
              (fn [st]
                ;; Push to every connected client, not just roomless ones: the
@@ -549,7 +608,9 @@
                (let [cids (keys (get-in st [:connection :clients]))]
                  (when (seq cids)
                    (let [payload (lobby-payload st personal-agent? (:model server-opts))]
-                     (doseq [cid cids] (send! cid payload))))))
+                     (when (not= payload @last-lobby)
+                       (reset! last-lobby payload)
+                       (doseq [cid cids] (send! cid payload)))))))
              ;; Coalesce lobby broadcasts: lobby-relevant events arrive in
              ;; bursts (prompt/submit → session-init → dialog events, turn
              ;; ends across rooms), and each broadcast re-reads the session
@@ -657,6 +718,11 @@
                    :websocket
                    #js {;; 100MB — multiple base64-encoded images per prompt
                         :maxPayloadLength (* 100 1024 1024)
+
+                        ;; Compress frames (RFC 7692). The lobby payload is
+                        ;; transit text that deflates ~8-10x — a large win for
+                        ;; phone/PWA clients on cellular links.
+                        :perMessageDeflate true
 
                         :open
                         (fn [^js ws]

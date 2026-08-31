@@ -183,15 +183,29 @@
   #{:lobby/state :room/joined :session/resumed
     :agent/turn-end :agent/tool-result :agent/abort})
 
+(def ^:private tool-result-persist-interval-ms
+  "Min gap between :agent/tool-result checkpoints. save-room! pr-strs the
+   full history (can be hundreds of KB) synchronously on the main thread, so
+   tool-heavy turns would otherwise jank the UI on every result."
+  5000)
+
+(defonce ^:private last-tool-persist (atom 0))
+
 (defn persist-tap
   "App tap that mirrors lobby + the active room into the cache. Gated to a
-   few event types so we don't write localStorage on every delta."
+   few event types so we don't write localStorage on every delta; mid-turn
+   :agent/tool-result checkpoints are additionally rate-limited."
   [event state]
   (when (persist-on (:type event))
-    (when-let [lobby (:lobby state)] (save-lobby! lobby))
-    (when-let [room (state/active-room state)]
-      (when-let [sid (get-in room [:session :id])]
-        (save-room! sid {:history   (:history room)
-                         :model     (get-in room [:agent :model])
-                         :msg-hash  (:msg-hash room)
-                         :msg-count (:msg-count room)})))))
+    (when (or (not= :agent/tool-result (:type event))
+              (let [now (js/Date.now)]
+                (when (> (- now @last-tool-persist) tool-result-persist-interval-ms)
+                  (reset! last-tool-persist now)
+                  true)))
+      (when-let [lobby (:lobby state)] (save-lobby! lobby))
+      (when-let [room (state/active-room state)]
+        (when-let [sid (get-in room [:session :id])]
+          (save-room! sid {:history   (:history room)
+                           :model     (get-in room [:agent :model])
+                           :msg-hash  (:msg-hash room)
+                           :msg-count (:msg-count room)}))))))

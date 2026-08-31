@@ -207,6 +207,12 @@
   {:effects [[:session/counts-reply {:client-id client-id
                                      :session-ids session-ids}]]})
 
+(defn- sessions-all
+  "Roomless: the full (uncapped) saved-session list + counts, for the
+   all-sessions view. The lobby broadcast only carries a capped recent list."
+  [_st {:keys [client-id]}]
+  {:effects [[:sessions/all-reply {:client-id client-id}]]})
+
 (defn- models-web-list
   [_st {:keys [client-id]}]
   {:effects [[:models/web-list-reply {:client-id client-id}]]})
@@ -336,6 +342,7 @@
    :room/leave             room-leave
    :room/list              room-list
    :session/counts         session-counts
+   :sessions/all           sessions-all
    :models/web-list        models-web-list
    :session/content-search session-content-search
    :diff/web-load          diff-web-load

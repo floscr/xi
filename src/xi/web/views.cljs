@@ -2495,7 +2495,11 @@
         query      (str/lower-case (str/trim (or raw-query "")))
         content?   (boolean (get-in state [:web/content-search :all-sessions]))
         matches    (get-in state [:web/content-matches :all-sessions])
-        sessions   (get-in state [:lobby :sessions])
+        ;; The lobby broadcast only carries a capped recent list; the full
+        ;; list is fetched on demand (:sessions/all) when this view opens.
+        ;; Fall back to the capped list for an instant paint while it loads.
+        sessions   (or (:web/all-sessions state)
+                       (get-in state [:lobby :sessions]))
         connected? (:web/connected? state)
         orphans    (orphan-rooms state sessions)
         sessions   (filter-sessions sessions query content? matches)

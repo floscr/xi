@@ -131,6 +131,11 @@
                   (and (= page :home) dir (not= dir :all) (not= dir :favorites))
                   (conj [:app/dispatch {:type :projects/web-sessions :cwd dir}])
 
+                  ;; The all-sessions view needs the full list — the lobby
+                  ;; broadcast only carries a capped recent subset.
+                  (and (= page :home) (= dir :all))
+                  (conj [:app/dispatch {:type :sessions/all}])
+
                   ;; Fetch the working-tree diff when entering the git-status page
                   (and (= page :git-status) cwd)
                   (conj [:app/dispatch {:type :git-status/load :cwd cwd}])
@@ -173,6 +178,10 @@
                                      ;; Clear stale sessions when navigating away
                                      (nil? dir) (dissoc :web/project-sessions
                                                         :web/project-sessions-cwd)
+                                     ;; Leaving the all-sessions view: drop the
+                                     ;; full list so it's re-fetched fresh next
+                                     ;; time (the capped lobby keeps painting).
+                                     (not= dir :all) (dissoc :web/all-sessions)
                                      ;; Clear old data when drilling into a new dir
                                      (and dir (not= dir :all) (not= dir :favorites))
                                      (-> (dissoc :web/project-sessions)
