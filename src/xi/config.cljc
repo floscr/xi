@@ -89,7 +89,7 @@
    the response (xi.quick-replies). The response text is never modified — chips
    are additive UI. Default true. A cheap regex gate runs first, so most turns
    never call the model."
-  true)
+  false)
 
 #?(:node
    (def server
