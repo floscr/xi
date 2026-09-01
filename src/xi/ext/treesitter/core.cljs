@@ -49,8 +49,7 @@
    [{:type "text"
      :text (str "[" path " — " total " lines. Structural outline; [n-m] are 1-based line ranges.\n"
                 " Literal code: read_source(path, symbol) for one definition, "
-                "read(path, offset, limit) for a range (offset is 0-based), "
-                "read_source(path) for the whole file.]\n\n"
+                "read(path, offset, limit) for a range (offset is 0-based).]\n\n"
                 skeleton-text)}]})
 
 (defn- try-outline
@@ -136,11 +135,14 @@
 (def ^:private read-source-def
   {:name "read_source"
    :description
-   (str "Read literal source code, bypassing the outline that `read` returns for large files. "
+   (str "Follow-up to `read`: pull literal source for a definition you found in a "
+        "read outline. Always `read` the file first — the outline shows what exists "
+        "and where; only then fetch the parts you need. "
         "Modes: {path, symbol} → the full source of one named definition "
         "(function/class/type — names are shown in the outline; methods as Class.method); "
         "{path, start_line, end_line} → a 1-based inclusive line range; "
-        "{path} alone → the whole file verbatim.")
+        "{path} alone → the whole file verbatim (last resort — defeats the outline's "
+        "token savings).")
    :input_schema
    {:type "object"
     :properties {:path {:type "string" :description "Path to file"}
@@ -153,9 +155,11 @@
   (str "## Reading code\n"
        "For large source files the read tool returns a tree-sitter outline "
        "(definitions with [line-ranges]) instead of full contents — this is "
-       "expected, not an error. Pull only what you need: read_source(path, symbol) "
-       "for one definition, read(path, offset, limit) for a line range, "
-       "read_source(path) only when you truly need the whole file."))
+       "expected, not an error. Always start with read: the outline tells you "
+       "what exists and where. Never open a file with read_source — it is a "
+       "follow-up for pulling one definition (read_source(path, symbol)) or a "
+       "range you found in the outline; read(path, offset, limit) also works "
+       "for line ranges. Whole-file read_source(path) is a last resort."))
 
 (defn create
   "Extension factory — nil (disabled) when the native CLI/grammars are absent."
