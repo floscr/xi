@@ -18,7 +18,9 @@
    "rs" "rust"
    "go" "go"
    "nix" "nix"
-   "sh" "bash" "bash" "bash" "zsh" "bash"})
+   "sh" "bash" "bash" "bash" "zsh" "bash"
+   "clj" "clojure" "cljs" "clojure" "cljc" "clojure" "bb" "clojure"
+   "css" "css"})
 
 (def ^:private member-cap
   "Max fields/members listed per container before truncating (maki uses 8)."
@@ -389,6 +391,202 @@
 (defn- nix-extract [root src]
   (nix-walk src (first (p/named-children root)) [] 0))
 
+;; ── Clojure / ClojureScript ──────────────────────────────────────────────────
+
+(defn- clj-forms
+  "Value-field children of a collection node — the actual forms, skipping
+   delimiters, comments and discards."
+  [n]
+  (filterv #(= "value" (p/field %)) (array-seq (p/children n))))
+
+(defn- clj-sym-name
+  "Bare name of a sym_lit (drops any ^meta attached to the symbol)."
+  [src sym]
+  (when (and sym (= "sym_lit" (p/node-type sym)))
+    (some->> (p/child-by-field sym "name") (p/node-text src))))
+
+(defn- clj-arg-vecs
+  "Arg-vector texts of a defn-style form. `post` = forms after the name.
+   Single arity → the first direct vec_lit; multi-arity → each arity list's
+   leading vec_lit."
+  [src post]
+  (if-let [args (some #(when (= "vec_lit" (p/node-type %)) %) post)]
+    [(p/compact-ws (p/node-text src args))]
+    (into []
+          (keep (fn [l]
+                  (when (= "list_lit" (p/node-type l))
+                    (let [ff (first (clj-forms l))]
+                      (when (and ff (= "vec_lit" (p/node-type ff)))
+                        (p/compact-ws (p/node-text src ff)))))))
+          post)))
+
+(defn- clj-sig [src n head nm post]
+  (let [args (clj-arg-vecs src post)]
+    (p/truncate
+     (if (seq args)
+       (str "(" head " " nm " " (str/join " " args) ")")
+       (str "(" head " " nm " …)"))
+     100)))
+
+(defn- clj-method-sig
+  "Protocol/record method list → child entry map."
+  [src m]
+  (when (= "list_lit" (p/node-type m))
+    (let [forms (clj-forms m)
+          nm (clj-sym-name src (first forms))]
+      (when nm
+        {:text (clj-sig src m nm nm (rest forms))
+         :name nm
+         :start (p/start-line m) :end (p/end-line src m)}))))
+
+(defn- clj-ns-entries [src n forms]
+  (let [nm (clj-sym-name src (second forms))
+        clauses (filter #(= "list_lit" (p/node-type %)) forms)
+        libspecs (mapcat
+                  (fn [clause]
+                    (let [[kw & specs] (clj-forms clause)]
+                      (when (and kw (= "kwd_lit" (p/node-type kw))
+                                 (#{":require" ":require-macros" ":import" ":use"}
+                                  (p/node-text src kw)))
+                        specs)))
+                  clauses)]
+    (into [(entry :mods src n (str "(ns " nm ")") nm)]
+          (map #(entry :imports src %
+                       (p/truncate (p/compact-ws (p/node-text src %)) 90)))
+          libspecs)))
+
+(defn- clj-extract-node [src n]
+  (case (p/node-type n)
+    "list_lit"
+    (let [forms (clj-forms n)
+          head (clj-sym-name src (first forms))
+          nm (clj-sym-name src (second forms))
+          post (drop 2 forms)]
+      (when head
+        (cond
+          (= head "ns")
+          (clj-ns-entries src n forms)
+
+          (nil? nm)
+          nil
+
+          (#{"def" "defonce" "goog-define"} head)
+          [(entry :consts src n
+                  (p/truncate (p/compact-ws (p/node-text src n)) 80)
+                  nm)]
+
+          (#{"defn" "defn-" "deftest" "defmulti"} head)
+          [(entry :fns src n (clj-sig src n head nm post) nm)]
+
+          (= head "defmethod")
+          (let [dispatch (some->> (first post) (p/node-text src) p/compact-ws)
+                qualified (str nm " " dispatch)]
+            [(entry :fns src n (clj-sig src n head qualified (rest post))
+                    qualified)])
+
+          (= head "defmacro")
+          [(entry :macros src n (clj-sig src n head nm post) nm)]
+
+          (#{"defprotocol" "definterface"} head)
+          (let [methods (keep #(clj-method-sig src %) post)]
+            [(assoc (entry :types src n (str "(" head " " nm ")") nm)
+                    :children (cap-members methods (count methods)))])
+
+          (#{"defrecord" "deftype"} head)
+          (let [fields (some #(when (= "vec_lit" (p/node-type %)) %) post)
+                methods (keep #(clj-method-sig src %) post)]
+            [(assoc (entry :types src n
+                           (str "(" head " " nm
+                                (some->> fields (p/node-text src) p/compact-ws (str " "))
+                                ")")
+                           nm)
+                    :children (cap-members methods (count methods)))])
+
+          (#{"extend-protocol" "extend-type"} head)
+          [(entry :impls src n (str "(" head " " nm " …)") nm)]
+
+          (str/starts-with? head "def")
+          [(entry :consts src n (clj-sig src n head nm post) nm)]
+
+          :else nil)))
+
+    ;; #?(:clj …) / #?@(:clj […]) — extract the definitions inside each branch
+    ("read_cond_lit" "splicing_read_cond_lit")
+    (mapcat (fn [branch]
+              (case (p/node-type branch)
+                "list_lit" (clj-extract-node src branch)
+                "vec_lit" (mapcat #(clj-extract-node src %) (clj-forms branch))
+                nil))
+            (clj-forms n))
+
+    nil))
+
+(defn- clj-extract [root src]
+  (into [] (mapcat #(clj-extract-node src %)) (p/named-children root)))
+
+;; ── CSS ──────────────────────────────────────────────────────────────────────────
+
+(defn- css-selector-text [src rs]
+  (some->> (p/child-of-type rs "selectors") (p/node-text src) p/compact-ws))
+
+(defn- css-custom-props
+  "Custom-property declarations (--foo: …) inside a rule_set's block."
+  [src rs]
+  (when-let [block (p/child-of-type rs "block")]
+    (->> (p/children-of-type block "declaration")
+         (filter (fn [d]
+                   (when-let [pn (p/child-of-type d "property_name")]
+                     (str/starts-with? (p/node-text src pn) "--"))))
+         (mapv #(p/truncate (strip-trailing (p/compact-ws (p/node-text src %)) #";$") 60)))))
+
+(defn- css-rule-entry [src rs]
+  (when-let [sel (css-selector-text src rs)]
+    (let [vars (css-custom-props src rs)]
+      (cond-> (entry :rules src rs (p/truncate sel 100) sel)
+        (seq vars) (assoc :children (cap-members vars (count vars)))))))
+
+(defn- css-nested-selectors
+  "Selector child entries for the rule_sets inside an at-rule's block."
+  [src block]
+  (into []
+        (keep (fn [rs]
+                (when (= "rule_set" (p/node-type rs))
+                  (when-let [sel (css-selector-text src rs)]
+                    {:text (p/truncate sel 80) :name sel
+                     :start (p/start-line rs) :end (p/end-line src rs)}))))
+        (p/named-children block)))
+
+(defn- css-extract-node [src n]
+  (case (p/node-type n)
+    ("import_statement" "charset_statement" "namespace_statement")
+    [(entry :imports src n
+            (strip-trailing (p/compact-ws (p/node-text src n)) #";$"))]
+
+    "rule_set"
+    (some-> (css-rule-entry src n) vector)
+
+    ("media_statement" "supports_statement")
+    (when-let [block (p/child-of-type n "block")]
+      (let [subs (css-nested-selectors src block)]
+        [(assoc (entry :rules src n
+                       (p/truncate (p/text-before-child src n block) 100))
+                :children (cap-members subs (count subs)))]))
+
+    "keyframes_statement"
+    (let [nm (some->> (p/child-of-type n "keyframes_name") (p/node-text src))]
+      [(entry :rules src n (str "@keyframes " nm) nm)])
+
+    "at_rule"
+    (let [text (if-let [block (p/child-of-type n "block")]
+                 (p/text-before-child src n block)
+                 (strip-trailing (p/compact-ws (p/node-text src n)) #";$"))]
+      [(entry :rules src n (p/truncate text 100))])
+
+    nil))
+
+(defn- css-extract [root src]
+  (into [] (mapcat #(css-extract-node src %)) (p/named-children root)))
+
 ;; ── Dispatch ─────────────────────────────────────────────────────────────────
 
 (def ^:private extractors
@@ -399,7 +597,9 @@
    "rust"       rust-extract
    "go"         go-extract
    "bash"       bash-extract
-   "nix"        nix-extract})
+   "nix"        nix-extract
+   "clojure"    clj-extract
+   "css"        css-extract})
 
 (defn lang-for
   "Grammar name for a file path, nil when unsupported."

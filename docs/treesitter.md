@@ -110,6 +110,8 @@ Thresholds live in `xi.ext.treesitter.core` (`min-lines`, `max-bytes`).
 | Go | `.go` | package, imports, const/var specs, type specs (structs/interfaces + members), funcs, methods |
 | Nix | `.nix` | attrpath bindings across function/let/with/attrset nesting |
 | Bash | `.sh .bash .zsh` | function definitions |
+| CSS | `.css` | @import/@charset/@namespace, rule selectors (custom `--props` listed as children), @media/@supports + nested selectors, @keyframes, other at-rules |
+| Clojure | `.clj .cljs .cljc .bb` | ns + require libspecs, def/defonce, defn (multi-arity arglists), defmethod (named `fn :dispatch`), defmacro, defprotocol/defrecord/deftype + methods, generic `def*` forms; recurses into `#?(...)` reader conditionals |
 
 To add a language: add the grammar to `native/xi-treesitter/default.nix`,
 re-run `bb treesitter:install`, then add an extension mapping + extractor in

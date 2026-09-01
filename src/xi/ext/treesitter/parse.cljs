@@ -104,6 +104,12 @@
     s
     (str (subs s 0 (clojure.core/max 0 (- max 11))) "[truncated]")))
 
+(defn text-before-child
+  "Compacted node text up to (excluding) one of its child nodes — for grammars
+   whose body/block is not a named field."
+  [^js src ^js n ^js child]
+  (compact-ws (.toString (.subarray src (.-sb n) (.-sb child)) "utf8")))
+
 (defn sig-before-body
   "The node's text up to its `body` field — a language-agnostic signature
    (works for fns, classes, impls, traits, …). Falls back to full node text."

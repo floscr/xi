@@ -195,3 +195,129 @@
       (let [e (by-name entries "programs.git")]
         (is (some? e))
         (is (some #(= "enable" %) (:children e)))))))
+
+(deftest clojure-test
+  (with-extracted "clojure" "cljc"
+    (str "(ns xi.sample\n"
+         "  (:require [clojure.string :as str]\n"
+         "            [xi.util :as util]))\n"
+         "\n"
+         "(def max-size 1024)\n"
+         "\n"
+         "(defonce cache (atom {}))\n"
+         "\n"
+         "(defn- helper\n"
+         "  \"doc\"\n"
+         "  [x]\n"
+         "  (* x 2))\n"
+         "\n"
+         "(defn greet\n"
+         "  ([name] (greet name \"!\"))\n"
+         "  ([name suffix] (str name suffix)))\n"
+         "\n"
+         "(def ^:private secret 1)\n"
+         "\n"
+         "(defmulti render :type)\n"
+         "(defmethod render :text [m] (:text m))\n"
+         "\n"
+         "(defprotocol Renderer\n"
+         "  (render-it [this opts]))\n"
+         "\n"
+         "(defrecord Box [w h]\n"
+         "  Renderer\n"
+         "  (render-it [this opts] nil))\n"
+         "\n"
+         "(defmacro with-thing [& body]\n"
+         "  `(do ~@body))\n"
+         "\n"
+         "#?(:node\n"
+         "   (defn node-only [a] a)\n"
+         "   :browser\n"
+         "   (defn browser-only [b] b))\n")
+    (fn [entries]
+      (testing "ns + requires"
+        (is (= "(ns xi.sample)" (:text (by-name entries "xi.sample"))))
+        (is (some #(and (= :imports (:section %))
+                        (= "[clojure.string :as str]" (:text %)))
+                  entries)))
+      (testing "def / defonce / meta name"
+        (is (= :consts (:section (by-name entries "max-size"))))
+        (is (= :consts (:section (by-name entries "cache"))))
+        (is (= :consts (:section (by-name entries "secret")))))
+      (testing "defn- with docstring"
+        (let [e (by-name entries "helper")]
+          (is (= :fns (:section e)))
+          (is (= "(defn- helper [x])" (:text e)))
+          (is (= 9 (:start e)))
+          (is (= 12 (:end e)))))
+      (testing "multi-arity"
+        (is (= "(defn greet [name] [name suffix])"
+               (:text (by-name entries "greet")))))
+      (testing "defmethod is addressable with its dispatch value"
+        (is (= "(defmethod render :text [m])"
+               (:text (by-name entries "render :text")))))
+      (testing "protocol methods"
+        (let [e (by-name entries "Renderer")]
+          (is (= :types (:section e)))
+          (is (some #(and (map? %) (= "render-it" (:name %))) (:children e)))))
+      (testing "record fields + methods"
+        (let [e (by-name entries "Box")]
+          (is (= "(defrecord Box [w h])" (:text e)))
+          (is (some #(and (map? %) (= "render-it" (:name %))) (:children e)))))
+      (testing "defmacro"
+        (is (= :macros (:section (by-name entries "with-thing")))))
+      (testing "reader conditional branches"
+        (is (= "(defn node-only [a])" (:text (by-name entries "node-only"))))
+        (is (= "(defn browser-only [b])" (:text (by-name entries "browser-only"))))))))
+
+(deftest css-test
+  (with-extracted "css" "css"
+    (str "@import url(\"base.css\");\n"
+         "\n"
+         ":root {\n"
+         "  --accent: #f00;\n"
+         "  --gap: 8px;\n"
+         "}\n"
+         "\n"
+         ".button, .button:hover {\n"
+         "  color: var(--accent);\n"
+         "}\n"
+         "\n"
+         "#main > .content .title {\n"
+         "  font-size: 2rem;\n"
+         "}\n"
+         "\n"
+         "@media (max-width: 600px) {\n"
+         "  .button { display: none; }\n"
+         "}\n"
+         "\n"
+         "@keyframes spin {\n"
+         "  from { transform: rotate(0); }\n"
+         "  to { transform: rotate(360deg); }\n"
+         "}\n"
+         "\n"
+         "@font-face {\n"
+         "  font-family: \"Foo\";\n"
+         "}\n")
+    (fn [entries]
+      (testing "import"
+        (is (some #(and (= :imports (:section %))
+                        (= "@import url(\"base.css\")" (:text %)))
+                  entries)))
+      (testing "custom properties listed under their rule"
+        (let [e (by-name entries ":root")]
+          (is (= :rules (:section e)))
+          (is (= 3 (:start e)))
+          (is (= 6 (:end e)))
+          (is (some #(= "--accent: #f00" %) (:children e)))))
+      (testing "selector lists and nesting"
+        (is (some? (by-name entries ".button, .button:hover")))
+        (is (some? (by-name entries "#main > .content .title"))))
+      (testing "media query with nested selectors"
+        (let [e (some #(when (= "@media (max-width: 600px)" (:text %)) %) entries)]
+          (is (some? e))
+          (is (some #(and (map? %) (= ".button" (:name %))) (:children e)))))
+      (testing "keyframes"
+        (is (= "@keyframes spin" (:text (by-name entries "spin")))))
+      (testing "at-rule"
+        (is (some #(= "@font-face" (:text %)) entries))))))

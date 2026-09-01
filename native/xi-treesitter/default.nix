@@ -21,6 +21,8 @@ let
     p.tree-sitter-go
     p.tree-sitter-nix
     p.tree-sitter-bash
+    p.tree-sitter-clojure
+    p.tree-sitter-css
   ]);
 in
 pkgs.stdenv.mkDerivation {

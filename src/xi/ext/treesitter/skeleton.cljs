@@ -2,8 +2,8 @@
   "Format extracted entries into a compact outline (maki-style).
 
    Entries are maps:
-     {:section :imports|:bindings|:mods|:consts|:types|:traits|:impls|:fns
-               |:classes|:macros
+     {:section :imports|:bindings|:mods|:consts|:rules|:types|:traits|:impls
+               |:fns|:classes|:macros
       :text    \"function greet(name: string): string\"
       :name    \"greet\"            ; optional — used for symbol lookup
       :start 13 :end 15            ; 1-based line range
@@ -22,6 +22,7 @@
    [:bindings "bindings:"]
    [:mods     "mods:"]
    [:consts   "consts:"]
+   [:rules    "rules:"]
    [:types    "types:"]
    [:traits   "traits:"]
    [:impls    "impls:"]
