@@ -68,8 +68,8 @@
    Used after /tree navigation: the provider session is fresh, so the
    truncated conversation rides along as context."
   [history]
-  (let [msgs (keep (fn [{:keys [kind text]}]
-                     (when (seq text)
+  (let [msgs (keep (fn [{:keys [kind text no-llm?]}]
+                     (when (and (seq text) (not no-llm?))
                        (case kind
                          :user (str "user: " text)
                          :text (str "assistant: " text)
@@ -145,7 +145,9 @@
            acc)
          acc))
      []
-     history)))
+     ;; Display-only entries carried over from before a /truncate are shown
+     ;; in every client but never replayed to the model.
+     (remove :no-llm? history))))
 
 (defn- prompt-with-attachment-paths
   "Append the on-disk paths of attached files to the provider prompt so the

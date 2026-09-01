@@ -20,7 +20,10 @@
   (get-in state [:rooms room-id]))
 
 (defn- first-user-text [room]
-  (some #(when (= :user (:kind %)) (:text %)) (:history room)))
+  ;; Skip display-only entries carried over from before a /truncate — the
+  ;; session title must come from this session's own conversation.
+  (some #(when (and (= :user (:kind %)) (not (:no-llm? %))) (:text %))
+        (:history room)))
 
 (defn- shorten-home [path]
   (let [home (aget js/process.env "HOME")]
@@ -185,7 +188,7 @@
                         — called on /cd to rebuild the system prompt."
   [ring & [{:keys [system-prompt-fn]}]]
   {:session/new
-   (fn [{:keys [dispatch! state]} {:keys [room-id save-current? after-prompt]}]
+   (fn [{:keys [dispatch! state]} {:keys [room-id save-current? after-prompt truncated-from keep-history?]}]
      (let [room (room-of state room-id)
            current (:session room)
            pa? (get-in room [:agent :personal-agent?])]
@@ -195,10 +198,15 @@
                 (js/console.error "[fx] session save failed:" e))))
        (dispatch! {:type :session/created
                    :room-id room-id
-                   :session (session/create-session
-                             (or (:cwd room) (.cwd js/process))
-                             (when pa? {:personal-agent? true
-                                        :agent (:agent current)}))
+                   :session (cond-> (session/create-session
+                                     (or (:cwd room) (.cwd js/process))
+                                     (when pa? {:personal-agent? true
+                                                :agent (:agent current)}))
+                              ;; Lineage link from /truncate — persisted with the
+                              ;; session so a later resume can render the prior
+                              ;; conversation above the truncation divider.
+                              truncated-from (assoc :truncated-from truncated-from))
+                   :keep-history? keep-history?
                    :after-prompt after-prompt})))
 
    :session/fork

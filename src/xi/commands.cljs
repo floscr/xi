@@ -26,6 +26,9 @@
 (defn status-entry [text]
   {:kind :status :text text})
 
+(def truncation-divider-text
+  "── conversation truncated here — messages above are shown for reference only and are not sent to the model ──")
+
 (defn- append-history [st room-id entry]
   (update-in st [:rooms room-id :history] conj entry))
 
@@ -68,7 +71,11 @@
   (let [results-by-id (into {}
                             (comp (filter #(= :tool-result (:type %)))
                                   (map (juxt :tool-use-id identity)))
-                            messages)]
+                            messages)
+        ;; Blocks read from a pre-truncation ancestor session are display-only:
+        ;; tag their history entries :no-llm? so xi.agent never replays them.
+        flag (fn [entry block]
+               (cond-> entry (:pre-truncation? block) (assoc :no-llm? true)))]
     (loop [ms (seq messages) out [] img-count 0]
       (if-not ms
         out
@@ -77,29 +84,36 @@
             :image
             (recur (next ms) out (inc img-count))
 
+            :truncation-divider
+            (recur (next ms)
+                   (conj out (status-entry truncation-divider-text))
+                   img-count)
+
             :text
             (case (:role block)
               "user"
               (recur (next ms)
-                     (conj out (cond-> {:kind :user :text (:text block)}
-                                 (pos? img-count) (assoc :image-count img-count)))
+                     (conj out (flag (cond-> {:kind :user :text (:text block)}
+                                       (pos? img-count) (assoc :image-count img-count))
+                                     block))
                      0)
               "assistant"
               (recur (next ms)
-                     (conj out {:kind :text :text (:text block) :done? true})
+                     (conj out (flag {:kind :text :text (:text block) :done? true} block))
                      img-count)
               (recur (next ms) out img-count))
 
             :tool-use
             (let [result (get results-by-id (:tool-use-id block))]
               (recur (next ms)
-                     (conj out (cond-> {:kind      :tool-call
-                                        :id        (:tool-use-id block)
-                                        :tool      (:name block)
-                                        :arguments (:arguments block)
-                                        :status    (if (:is-error result) :error :done)}
-                                 result (assoc :result (:content result)
-                                               :is-error (boolean (:is-error result)))))
+                     (conj out (flag (cond-> {:kind      :tool-call
+                                              :id        (:tool-use-id block)
+                                              :tool      (:name block)
+                                              :arguments (:arguments block)
+                                              :status    (if (:is-error result) :error :done)}
+                                       result (assoc :result (:content result)
+                                                     :is-error (boolean (:is-error result))))
+                                     block))
                      img-count))
 
             ;; :tool-result rendered inline with :tool-use; unknown → skip
@@ -491,12 +505,18 @@
 (defn- session-created
   "Fresh session installed (from /new, /clear or compaction): reset the
    room. :after-prompt (compaction summary) is re-submitted into the new
-   session through the normal prompt path."
-  [st {:keys [room-id session after-prompt]}]
-  (when (state/get-room st room-id)
+   session through the normal prompt path. With :keep-history? (/truncate),
+   the old conversation stays visible above a divider, flagged :no-llm? so
+   it is never replayed to the model."
+  [st {:keys [room-id session after-prompt keep-history?]}]
+  (when-let [room (state/get-room st room-id)]
     (cond-> {:state (-> st
                         (assoc-in [:rooms room-id :session] session)
-                        (assoc-in [:rooms room-id :history] [])
+                        (assoc-in [:rooms room-id :history]
+                                  (if keep-history?
+                                    (conj (mapv #(assoc % :no-llm? true) (:history room))
+                                          (status-entry truncation-divider-text))
+                                    []))
                         (update-in [:rooms room-id :agent]
                                    assoc :busy? false :queued []))}
       after-prompt

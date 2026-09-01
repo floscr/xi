@@ -141,7 +141,15 @@
     (is (str/includes? ctx "assistant: hello!"))
     (is (str/includes? ctx "user: next"))
     (is (not (str/includes? ctx "hmm")) "thinking is not carried")
-    (is (not (str/includes? ctx "out")) "tool results are not carried")))
+    (is (not (str/includes? ctx "out")) "tool results are not carried"))
+  (testing ":no-llm? entries (pre-/truncate conversation) are not carried"
+    (let [ctx (agent/history->context
+               [{:kind :user :text "old secret" :no-llm? true}
+                {:kind :text :text "old answer" :no-llm? true}
+                {:kind :user :text "fresh"}])]
+      (is (str/includes? ctx "user: fresh"))
+      (is (not (str/includes? ctx "old secret")))
+      (is (not (str/includes? ctx "old answer"))))))
 
 (deftest history->messages-builds-neutral-transcript
   (testing "empty history yields no messages"
@@ -183,7 +191,15 @@
                                    {:id "t2" :content "b" :is-error false}]}]
            (agent/history->messages
             [{:kind :tool-call :id "t1" :tool "bash" :result "a" :status :done}
-             {:kind :tool-call :id "t2" :tool "read" :result "b" :status :done}])))))
+             {:kind :tool-call :id "t2" :tool "read" :result "b" :status :done}]))))
+  (testing ":no-llm? entries (pre-/truncate conversation) are never replayed"
+    (is (= [{:role :user :text "fresh"}]
+           (agent/history->messages
+            [{:kind :user :text "old q" :no-llm? true}
+             {:kind :text :text "old a" :no-llm? true}
+             {:kind :tool-call :id "t1" :tool "bash" :result "out"
+              :status :done :no-llm? true}
+             {:kind :user :text "fresh"}])))))
 
 (deftest prior-history-flows-into-turn-payload
   (testing "a second prompt carries the prior conversation as :history"

@@ -54,6 +54,10 @@
     (is (false? (busy? state)))
     (is (= :session/new fx-type))
     (is (= "r" (:room-id payload)))
+    (is (true? (:save-current? payload)))
+    (is (true? (:keep-history? payload)))
+    (is (= "sess-1" (:truncated-from payload))
+        "lineage link back to the truncated session")
     (is (str/includes? (:after-prompt payload) "<conversation-summary>"))
     (is (str/includes? (:after-prompt payload) "the summary"))))
 

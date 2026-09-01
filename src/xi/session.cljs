@@ -423,6 +423,7 @@
        :name (util/session-title (:name data))
        :model (:model data)
        :interrupted-at (:interrupted-at data)
+       :truncated-from (:truncated-from data)
        :user-messages nil})
     (catch :default _e nil)))
 
@@ -931,7 +932,9 @@
                :source :xi}
         ;; Keep the flag so resumed sessions save back to the PA dir
         (:personal-agent? data) (assoc :personal-agent? true)
-        (:agent data) (assoc :agent (:agent data))))
+        (:agent data) (assoc :agent (:agent data))
+        ;; Keep the /truncate lineage link so it survives future saves
+        (:truncated-from data) (assoc :truncated-from (:truncated-from data))))
 
     :claude
     {:id (:session-id summary)
@@ -1033,8 +1036,8 @@
            vec))
     (catch :default _e [])))
 
-(defn read-session-messages
-  "Read conversation messages from a session for display.
+(defn- read-own-session-messages
+  "Read a session's own conversation messages (no /truncate ancestry).
    Returns vec of block maps — see read-claude-session-messages for format."
   [summary]
   (case (:source summary)
@@ -1049,6 +1052,32 @@
     (read-claude-session-messages (:filepath summary))
 
     []))
+
+(defn read-session-messages
+  "Read conversation messages from a session for display.
+
+   When the session was created by /truncate it carries a :truncated-from
+   lineage link; the ancestor chain's messages are prepended for display,
+   each ancestor block tagged :pre-truncation? true (→ :no-llm? history
+   entries — shown but never replayed to the model) with a
+   {:type :truncation-divider} block between ancestor and descendant.
+
+   Returns vec of block maps — see read-claude-session-messages for format."
+  [summary]
+  (loop [msgs (read-own-session-messages summary)
+         parent-id (:truncated-from summary)
+         seen #{(:session-id summary)}]
+    (let [parent (when (and parent-id (not (seen parent-id)))
+                   (or (find-session-by-id parent-id)
+                       (find-personal-agent-session-by-id parent-id)))]
+      (if-not parent
+        msgs
+        (recur (-> (mapv #(assoc % :pre-truncation? true)
+                         (read-own-session-messages parent))
+                   (conj {:type :truncation-divider})
+                   (into msgs))
+               (:truncated-from parent)
+               (conj seen parent-id))))))
 
 (def resume-result-line-cap
   "Max lines of any tool-result kept when shipping a resumed transcript over

@@ -53,13 +53,20 @@ Be thorough but concise. Output only the summary, no preamble.")
                                     :focus focus}]]}))))
 
 (defn- compact-done [st {:keys [room-id summary]}]
-  (when (state/get-room st room-id)
+  (when-let [room (state/get-room st room-id)]
     {:state (-> st
                 (assoc-in [:rooms room-id :agent :busy?] false)
                 (append-status room-id
                                "Session compacted. Summary preserved as context."))
      :effects [[:session/new
                 {:room-id room-id
+                 ;; Persist the outgoing session and link the new one back to
+                 ;; it, so resuming the truncated session can show the prior
+                 ;; conversation above the divider (display-only — never sent
+                 ;; to the model). :keep-history? keeps it visible live too.
+                 :save-current? true
+                 :keep-history? true
+                 :truncated-from (get-in room [:session :id])
                  :after-prompt
                  (str "<conversation-summary>\n" summary "\n</conversation-summary>\n\n"
                       "Acknowledge this summary briefly and wait for my next instruction.")}]]}))

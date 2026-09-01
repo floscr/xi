@@ -260,6 +260,40 @@
     (is (= [[:app/dispatch {:type :prompt/submit :room-id "r" :text "summary text"}]]
            effects))))
 
+(deftest session-created-keep-history-flags-old-conversation
+  ;; /truncate: the old conversation stays visible above a divider, flagged
+  ;; :no-llm? so it is never replayed to the model.
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "hi"}
+                         {:type :agent/text-delta :room-id "r" :text "yo"})
+        {:keys [state]} (handle st {:type :session/created :room-id "r"
+                                    :session {:id "sess-2"}
+                                    :keep-history? true})
+        h (history state)]
+    (is (= "sess-2" (get-in state [:rooms "r" :session :id])))
+    (is (= 3 (count h)) "user + assistant + divider")
+    (is (every? :no-llm? (butlast h)))
+    (is (= :status (:kind (last h))))
+    (is (str/includes? (:text (last h)) "truncated"))))
+
+(deftest messages->history-pre-truncation-blocks
+  ;; Blocks from a /truncate ancestor become :no-llm? entries; the divider
+  ;; block becomes a status line between ancestor and descendant.
+  (let [h (commands/messages->history
+           [{:type :text :role "user" :text "old q" :pre-truncation? true}
+            {:type :tool-use :tool-use-id "t1" :name "bash"
+             :arguments {:command "ls"} :pre-truncation? true}
+            {:type :tool-result :tool-use-id "t1" :content "files"
+             :is-error false :pre-truncation? true}
+            {:type :truncation-divider}
+            {:type :text :role "user" :text "new q"}])]
+    (is (= [{:kind :user :text "old q" :no-llm? true}
+            {:kind :tool-call :id "t1" :tool "bash" :arguments {:command "ls"}
+             :status :done :result "files" :is-error false :no-llm? true}
+            (commands/status-entry commands/truncation-divider-text)
+            {:kind :user :text "new q"}]
+           h))))
+
 (deftest session-resumed-rebuilds-history
   (let [messages [{:type :text :role "user" :text "question"}
                   {:type :text :role "assistant" :text "answer"}
