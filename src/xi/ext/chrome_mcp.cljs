@@ -309,9 +309,15 @@
   "Return the chrome extension, or nil when XI_CHROME_TOOLS is unset.
    The child MCP + Chrome are lazily spawned on the first tool call; the
    connect promise is memoized (and cleared on failure so a later call
-   retries)."
-  [{:keys [ask!] :as _ctx}]
-  (when (seq (env "XI_CHROME_TOOLS"))
+   retries).
+
+   In a client mirror (`:mirror? true`) the env gate is bypassed: the TUI
+   client process usually lacks XI_CHROME_TOOLS (it lives in the server's
+   .env), but the mirror only *presents* the commands (/design, /pick) and
+   keybindings in the palette — they forward to the server, which owns the
+   live chrome client, so nothing is ever spawned client-side."
+  [{:keys [ask! mirror?] :as _ctx}]
+  (when (or mirror? (seq (env "XI_CHROME_TOOLS")))
     (let [client* (atom nil)   ;; the live client map, for :on-shutdown
           ready*  (atom nil)]  ;; memoized Promise<connected-client>
       (letfn [(ensure! []
