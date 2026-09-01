@@ -774,12 +774,27 @@
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
           :models/web-list-result (fn [st {:keys [models]}]
                                     {:state (assoc st :web/model-list models)})
-          :models/select         (fn [st {:keys [model room-id]}]
-                                    {:state (dissoc st :web/model-list :web/palette-page :web/palette-open?)
-                                     :effects [[:palette/close nil]
-                                               [:ws/send {:type :input/submit
-                                                          :room-id room-id
-                                                          :text (str "/model " model)}]]})
+          :models/select         (fn [st {:keys [model]}]
+                                    ;; Resolve the target like :skill/select: a
+                                    ;; new chat (route sid with no matching room)
+                                    ;; must NOT adopt the previous room we're
+                                    ;; still attached to. Route through
+                                    ;; :submit/pending so the virtual room is
+                                    ;; created first (else /model loads into the
+                                    ;; old chat, or nowhere).
+                                    (let [text   (str "/model " model)
+                                          sid    (get-in st [:web/route :session-id])
+                                          active (state/active-room st)
+                                          room   (when (= (get-in active [:session :id]) sid)
+                                                   active)
+                                          rid    (:id room)]
+                                      {:state (dissoc st :web/model-list :web/palette-page :web/palette-open?)
+                                       :effects [[:palette/close nil]
+                                                 (if rid
+                                                   [:ws/send {:type :input/submit
+                                                              :room-id rid :text text}]
+                                                   [:app/dispatch {:type :submit/pending
+                                                                   :session-id sid :text text}])]}))
           :skill/web-list-result (fn [st {:keys [skills]}]
                                     {:state (assoc st :web/skill-list skills)})
           :skill/select          (fn [st {:keys [name]}]
