@@ -679,8 +679,8 @@
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
           ;; Floating Copy button surfaced when a rendered code block (`pre`)
           ;; or inline `code` is tapped (see attach-code-copy-listener!).
-          :code/menu-open        (fn [st {:keys [text x y]}]
-                                   {:state (assoc st :web/code-menu {:text text :x x :y y})})
+          :code/menu-open        (fn [st {:keys [text path x y]}]
+                                   {:state (assoc st :web/code-menu {:text text :path path :x x :y y})})
           :code/menu-close       (fn [st _] {:state (dissoc st :web/code-menu)})
           :bubble/edit-start     (fn [st {:keys [index text]}]
                                    {:state (-> st
@@ -1522,12 +1522,16 @@
                           node)))
           open!     (fn [^js e ^js node]
                       (when-let [d @dispatch-ref]
-                        (let [text (.-textContent node)]
+                        (let [text (.-textContent node)
+                              path (some-> node
+                                           (.closest "[data-file-path]")
+                                           (.getAttribute "data-file-path"))]
                           (when (seq (str/trim (or text "")))
-                            (d {:type :code/menu-open
-                                :text text
-                                :x (.-clientX e)
-                                :y (.-clientY e)})))))]
+                            (d (cond-> {:type :code/menu-open
+                                        :text text
+                                        :x (.-clientX e)
+                                        :y (.-clientY e)}
+                                 path (assoc :path path)))))))]
       (.addEventListener
        js/document "click"
        (fn [^js e]

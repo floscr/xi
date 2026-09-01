@@ -26,6 +26,7 @@
         [xi.ext.done-notify :as done-notify]
         [xi.ext.events :as events]
         [xi.ext.extensions :as extensions]
+        [xi.ext.file-view.core :as file-view]
         [xi.ext.github :as github]
         [xi.ext.github-code-search.core :as github-code-search]
         [xi.ext.gtd :as gtd]
@@ -55,6 +56,7 @@
        :browser
        [[xi.ext.canvas-review.web :as canvas-review-web]
         [xi.ext.diff.web :as diff-web]
+        [xi.ext.file-view.web :as file-view-web]
         [xi.ext.github.web :as github-web]
         [xi.ext.gtd.web :as gtd-web]
         [xi.ext.image-graph.web :as image-graph-web]
@@ -100,6 +102,7 @@
       done-notify/extension
       pushover/create
       diff/extension
+      file-view/extension
       worktree/create
       kb/extension
       session-search/extension
@@ -146,6 +149,7 @@
    (def web
      "Browser-safe extension web halves, composed by xi.web.core."
      [diff-web/extension
+      file-view-web/extension
       gtd-web/extension
       github-web/extension
       canvas-review-web/extension

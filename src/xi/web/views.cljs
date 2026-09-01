@@ -336,6 +336,14 @@
                   {:data data :media-type mime}))))
           result)))
 
+(defn- tool-file-path
+  "The file a Read/Write/Edit tool block refers to, for the View-file action."
+  [tool args]
+  (case tool
+    ("Read" "read" "Write" "write" "Edit" "edit")
+    (or (get-arg args :file_path) (get-arg args :path))
+    nil))
+
 (defn- tool-post [dispatch! {:keys [tool arguments result is-error status]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments)
@@ -368,7 +376,9 @@
         ;; When the result carries an image (view_image, screenshots) the text is
         ;; just a "Viewed image: /path" caption — drop it and show only the image.
         (and (seq text) (not imgs))
-        [:div {:class ["tool-call-content"]}
+        [:div (cond-> {:class ["tool-call-content"]}
+                (tool-file-path name arguments)
+                (assoc :data-file-path (tool-file-path name arguments)))
          (let [shown (truncate-lines text 100)]
            (if (and (contains? #{"Edit" "edit"} name) (not is-error))
              (edit-diff-code grammar shown)
@@ -1925,11 +1935,13 @@
        [:span "Delete"]]]]))
 
 (defn- code-copy-menu
-  "Floating single-action Copy button shown when a rendered code block (`pre`)
-   or inline `code` is tapped. Mirrors bubble-menu's positioning/backdrop; the
-   tap is detected by a delegated listener in xi.web.core. Uses the iOS
-   long-press fallback when the async Clipboard API is unavailable."
-  [dispatch! {:keys [text x y]}]
+  "Floating menu shown when a rendered code block (`pre`) or inline `code` is
+   tapped: Copy, plus View file when the block belongs to a Read/Write/Edit
+   tool call (opens the file in the room's :file buffer tab via :file/open).
+   Mirrors bubble-menu's positioning/backdrop; the tap is detected by a
+   delegated listener in xi.web.core. Uses the iOS long-press fallback when
+   the async Clipboard API is unavailable."
+  [dispatch! {:keys [text path x y]}]
   (let [close! (fn [] (dispatch! {:type :code/menu-close}))]
     [:div {:class ["bubble-menu-backdrop"]
            :on {:click (fn [_] (close!))}}
@@ -1943,7 +1955,15 @@
                               (close!)
                               (copy! dispatch! text))}}
        (icon/icon {:icon-name :copy :size :sm})
-       [:span "Copy"]]]]))
+       [:span "Copy"]]
+      (when path
+        [:button {:class ["bubble-menu-item"]
+                  :on {:click (fn [e]
+                                (.stopPropagation e)
+                                (close!)
+                                (dispatch! {:type :file/open :path path}))}}
+         (icon/icon {:icon-name :file-text :size :sm})
+         [:span "View file"]])]]))
 
 (defn- subagent-duration [{:keys [started ended]}]
   (when started
