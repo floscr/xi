@@ -252,6 +252,21 @@
     (is (= "sess-2" (get-in state [:rooms "r" :session :id])))
     (is (false? (get-in state [:rooms "r" :agent :busy?])))))
 
+(deftest session-created-discards-in-flight-turn
+  ;; /new or /clear mid-turn: the live provider turn must be discarded so the
+  ;; LLM stops responding into the fresh session.
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "hi"}
+                         {:type :agent/text-delta :room-id "r" :text "yo"})
+        {:keys [effects]} (handle st {:type :session/created :room-id "r"
+                                      :session {:id "sess-2"}})]
+    (is (some #{[:provider/discard {:room-id "r"}]} effects)))
+  (testing "idle room emits no discard"
+    (let [{:keys [effects]} (handle (with-room)
+                                    {:type :session/created :room-id "r"
+                                     :session {:id "sess-2"}})]
+      (is (not-any? #(= :provider/discard (first %)) (or effects []))))))
+
 (deftest session-created-with-after-prompt
   (let [{:keys [effects]} (handle (with-room)
                                   {:type :session/created :room-id "r"

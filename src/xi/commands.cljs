@@ -510,18 +510,25 @@
    it is never replayed to the model."
   [st {:keys [room-id session after-prompt keep-history?]}]
   (when-let [room (state/get-room st room-id)]
-    (cond-> {:state (-> st
-                        (assoc-in [:rooms room-id :session] session)
-                        (assoc-in [:rooms room-id :history]
-                                  (if keep-history?
-                                    (conj (mapv #(assoc % :no-llm? true) (:history room))
-                                          (status-entry truncation-divider-text))
-                                    []))
-                        (update-in [:rooms room-id :agent]
-                                   assoc :busy? false :queued []))}
-      after-prompt
-      (assoc :effects [[:app/dispatch {:type :prompt/submit :room-id room-id
-                                       :text after-prompt}]]))))
+    (let [busy? (get-in room [:agent :busy?])
+          ;; The session is being swapped out from under a live turn. Discard
+          ;; the in-flight provider turn (kill the subprocess and drop its
+          ;; handle) so the LLM stops responding into the fresh session and its
+          ;; late turn-end can't clobber it.
+          effects (cond-> []
+                    busy?        (conj [:provider/discard {:room-id room-id}])
+                    after-prompt (conj [:app/dispatch {:type :prompt/submit :room-id room-id
+                                                       :text after-prompt}]))]
+      (cond-> {:state (-> st
+                          (assoc-in [:rooms room-id :session] session)
+                          (assoc-in [:rooms room-id :history]
+                                    (if keep-history?
+                                      (conj (mapv #(assoc % :no-llm? true) (:history room))
+                                            (status-entry truncation-divider-text))
+                                      []))
+                          (update-in [:rooms room-id :agent]
+                                     assoc :busy? false :queued []))}
+        (seq effects) (assoc :effects effects)))))
 
 (defn- session-forked
   "Split the conversation into a new session (from /fork): install a fresh

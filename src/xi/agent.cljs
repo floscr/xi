@@ -506,36 +506,56 @@
                 extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
                 extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
                 client-pid             (assoc :client-pid client-pid)))]
-         (.set inflight room-id {:abort! abort!})
-         (-> promise
-             (.then
-              (fn [result]
-                (.delete inflight room-id)
-                (cond
-                  ;; Stored provider session was gone; re-run this turn fresh
-                  ;; instead of ending it with a dead-end error.
-                  (:resume-failed result)
-                  (dispatch! {:type :agent/retry-fresh :room-id room-id})
+         ;; `handle` identifies this turn in `inflight`. A turn that was
+         ;; discarded (see :provider/discard, fired when /new or /clear
+         ;; replaces the session mid-turn) has its entry removed, so the
+         ;; identity guard below drops its late promise resolution instead of
+         ;; dispatching turn-end into the fresh session and clobbering it.
+         (let [handle {:abort! abort!}
+               current? (fn [] (identical? handle (.get inflight room-id)))]
+           (.set inflight room-id handle)
+           (-> promise
+               (.then
+                (fn [result]
+                  (when (current?)
+                    (.delete inflight room-id)
+                    (cond
+                      ;; Stored provider session was gone; re-run this turn fresh
+                      ;; instead of ending it with a dead-end error.
+                      (:resume-failed result)
+                      (dispatch! {:type :agent/retry-fresh :room-id room-id})
 
-                  ;; Working directory vanished; ask the user for a new one.
-                  (:cwd-missing result)
-                  (recover-cwd! cwd)
+                      ;; Working directory vanished; ask the user for a new one.
+                      (:cwd-missing result)
+                      (recover-cwd! cwd)
 
-                  :else
-                  (dispatch! {:type :agent/turn-end
-                              :room-id room-id
-                              :usage (:usage result)
-                              :cost (:cost result)
-                              :provider-session-id (:session-id result)
-                              :aborted? (boolean (:aborted result))}))))
-             (.catch
-              (fn [err]
-                (.delete inflight room-id)
-                (dispatch! {:type :agent/error :room-id room-id
-                            :error {:type "error" :message (str (.-message err))}})
-                (dispatch! {:type :agent/turn-end :room-id room-id}))))))
+                      :else
+                      (dispatch! {:type :agent/turn-end
+                                  :room-id room-id
+                                  :usage (:usage result)
+                                  :cost (:cost result)
+                                  :provider-session-id (:session-id result)
+                                  :aborted? (boolean (:aborted result))})))))
+               (.catch
+                (fn [err]
+                  (when (current?)
+                    (.delete inflight room-id)
+                    (dispatch! {:type :agent/error :room-id room-id
+                                :error {:type "error" :message (str (.-message err))}})
+                    (dispatch! {:type :agent/turn-end :room-id room-id}))))))))
 
      :provider/abort
      (fn [_ {:keys [room-id]}]
        (when-let [handle (.get inflight room-id)]
+         ((:abort! handle))))
+
+     ;; Abort the in-flight turn AND drop its entry so its late promise
+     ;; resolution is ignored (the guard in start-turn's .then/.catch). Used
+     ;; when the session is being replaced out from under the turn (/new,
+     ;; /clear) — the killed turn must not dispatch turn-end into the fresh
+     ;; session.
+     :provider/discard
+     (fn [_ {:keys [room-id]}]
+       (when-let [handle (.get inflight room-id)]
+         (.delete inflight room-id)
          ((:abort! handle))))})))
