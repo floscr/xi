@@ -279,19 +279,31 @@
   "Roomless: permanently delete a saved session by id. The unlink + lobby
    rebroadcast happen in the :session/delete-reply effect (needs disk access).
 
-   Like dismissed-toggle, we also tear down the session's live room when it is
-   safe to do so — it holds no client, its agent isn't mid-turn, no dialog is
-   pending, and it isn't tracking background processes (keep-alive?) — so a
-   deleted session doesn't linger as a live room that would re-persist itself."
+   We must also tear down the session's live room, if any — otherwise it
+   lingers in the lobby (room-summaries keeps emitting its card) and would
+   re-persist itself on the next turn sync, so the delete visibly does
+   nothing when the session is open in a room.
+   Unlike dismissed-toggle we do NOT skip rooms with a client attached: a
+   delete is an explicit, destructive intent, so a session being viewed must
+   go too. To avoid stranding that client we swap its room to a fresh blank
+   session (:session/new, no save) rather than closing the room out from
+   under it; a clientless room is simply closed.
+
+   keep-alive? rooms are still left alone — a running turn, a pending dialog,
+   live background processes, or a running sub-agent must not be killed by a
+   lobby delete (the deleted file stays gone; the live room just outlives it)."
   [st {:keys [session-id]}]
-  (let [close-rids (for [[rid room] (:rooms st)
+  (let [match-rids (for [[rid room] (:rooms st)
                          :when (and (= session-id (get-in room [:session :id]))
-                                    (not (keep-alive? room))
-                                    (empty? (clients-in-room st rid)))]
-                     rid)]
-    {:effects (into [[:session/delete-reply {:session-id session-id}]]
-                    (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
-                    close-rids)}))
+                                    (not (keep-alive? room)))]
+                     rid)
+        {closable false attached true}
+        (group-by #(boolean (seq (clients-in-room st %))) match-rids)]
+    {:effects (-> [[:session/delete-reply {:session-id session-id}]]
+                  (into (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
+                        closable)
+                  (into (map (fn [rid] [:session/new {:room-id rid :save-current? false}]))
+                        attached))}))
 
 (defn- session-mark-read
   "Roomless: record a session as seen up to its current response count. The
