@@ -21,6 +21,8 @@
        (let [c (.charCodeAt d 0)] (and (>= c 32) (not= c 127)))))
 (defn- ctrl-u? [d]
   (and (= (count d) 1) (= (.charCodeAt d 0) 21)))
+(defn- ctrl-n? [d] (and (= (count d) 1) (= (.charCodeAt d 0) 14)))
+(defn- ctrl-p? [d] (and (= (count d) 1) (= (.charCodeAt d 0) 16)))
 
 ;; ── History → items ───────────────────────────────────────────────────────────
 
@@ -118,8 +120,8 @@
            (when (and (seq filtered) on-select)
              (on-select (:idx (nth filtered selected)) mode)))
 
-         (arrow-up? data)   (move! -1)
-         (arrow-down? data) (move! 1)
+         (or (arrow-up? data) (ctrl-p? data))   (move! -1)
+         (or (arrow-down? data) (ctrl-n? data)) (move! 1)
          (= data "\t")      (cycle-filter! 1)
 
          (backspace? data)
