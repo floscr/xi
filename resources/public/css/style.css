@@ -1713,9 +1713,18 @@ body {
 /* Claude subscription usage bar at the bottom of the sidebar drawer */
 .claude-usage {
   display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: calc(var(--size-2) / 3) var(--size-1) 0;
+}
+.claude-usage-row {
+  display: flex;
   align-items: center;
   gap: var(--size-2);
-  padding: calc(var(--size-2) / 3) var(--size-1) 0;
+}
+.claude-usage-reset {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
 }
 .claude-usage-track {
   flex: 1;
