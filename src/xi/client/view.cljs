@@ -127,7 +127,7 @@
    Expects a canonical (lowercase) tool name."
   [tool-name arguments]
   (let [path (case tool-name
-               ("read" "write" "edit") (arg-file-path arguments)
+               ("read" "write" "edit" "read_source") (arg-file-path arguments)
                "git_hunk" (get-arg arguments :file)
                "git_file_diff" (let [files (get-arg arguments :files)]
                                  (when (= 1 (count files)) (first files)))

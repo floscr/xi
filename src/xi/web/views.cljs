@@ -273,7 +273,7 @@
   [tool args]
   (let [path (case tool
                ("Read" "Write" "Edit") (get-arg args :file_path)
-               ("read" "write" "edit") (get-arg args :path)
+               ("read" "write" "edit" "read_source") (get-arg args :path)
                nil)]
     (when path (grammars/get-grammar (file-ext path)))))
 
