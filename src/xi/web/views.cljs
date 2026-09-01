@@ -2077,7 +2077,8 @@
         authoritative? (boolean (seq room-history))
         history (if authoritative? room-history (:history cached))
         busy?   (get-in room [:agent :busy?])
-        model   (or (get-in room [:agent :model]) (:model cached))
+        model   (or (get-in room [:agent :model]) (:model cached)
+                    (get-in state [:web/pending-room :model]))
         new?    (nil? sid)
         ;; The server's history for an existing session is still in flight
         ;; (nothing optimistic/pending to show in the meantime).
@@ -3070,7 +3071,10 @@
   [state dispatch!]
   (let [room    (state/active-room state)
         models  (:web/model-list state)
-        current (get-in room [:agent :model])]
+        ;; In a not-yet-created chat the choice lives on the pending room;
+        ;; prefer it so the checkmark tracks the pick before the room exists.
+        current (or (get-in state [:web/pending-room :model])
+                    (get-in room [:agent :model]))]
     (if (nil? models)
       [:div {:class ["command-loading"]} (spinner)]
       (apply cmd/command-group {:heading "Model"}

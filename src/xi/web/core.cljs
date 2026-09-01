@@ -239,6 +239,7 @@
   (let [pending  (:web/pending-room st)
         virtual? (and (nil? session-id) (some? pending))
         cwd      (:cwd pending)
+        model    (:model pending)
         token    (str (:id pending))]
     (cond-> {:state (-> st
                         (assoc :web/pending-submit
@@ -256,7 +257,8 @@
                         (dissoc :web/pending-room))}
       virtual?
       (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
-                                   cwd (assoc :cwd cwd))]]))))
+                                   cwd   (assoc :cwd cwd)
+                                   model (assoc :model model))]]))))
 
 (defn- submit-clear-pending [st _]
   {:state (dissoc st :web/pending-submit)})
@@ -287,7 +289,8 @@
           pending  (:web/pending-room st)
           virtual? (and (nil? sid) (some? pending))
           token    (when virtual? (str (:id pending)))
-          cwd      (:cwd pending)]
+          cwd      (:cwd pending)
+          model    (:model pending)]
       (cond-> {:state (-> st
                           (assoc :web/pending-command
                                  (cond-> {:room-id room-id :session-id sid :name name}
@@ -296,7 +299,8 @@
                           (cond-> virtual? (dissoc :web/pending-room)))}
         virtual?
         (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
-                                     cwd (assoc :cwd cwd))]])))))
+                                     cwd   (assoc :cwd cwd)
+                                     model (assoc :model model))]])))))
 
 (defn- command-clear-pending [st _]
   {:state (dissoc st :web/pending-command)})
@@ -775,26 +779,43 @@
           :models/web-list-result (fn [st {:keys [models]}]
                                     {:state (assoc st :web/model-list models)})
           :models/select         (fn [st {:keys [model]}]
-                                    ;; Resolve the target like :skill/select: a
+                                    ;; Only the *viewed* room may be targeted: a
                                     ;; new chat (route sid with no matching room)
                                     ;; must NOT adopt the previous room we're
-                                    ;; still attached to. Route through
-                                    ;; :submit/pending so the virtual room is
-                                    ;; created first (else /model loads into the
-                                    ;; old chat, or nowhere).
+                                    ;; still attached to (that was the original
+                                    ;; bug — /model landed on the old chat).
                                     (let [text   (str "/model " model)
                                           sid    (get-in st [:web/route :session-id])
                                           active (state/active-room st)
                                           room   (when (= (get-in active [:session :id]) sid)
                                                    active)
-                                          rid    (:id room)]
-                                      {:state (dissoc st :web/model-list :web/palette-page :web/palette-open?)
-                                       :effects [[:palette/close nil]
-                                                 (if rid
+                                          rid    (:id room)
+                                          base   (dissoc st :web/model-list :web/palette-page :web/palette-open?)]
+                                      (cond
+                                        ;; Live room for the viewed session: apply now.
+                                        rid
+                                        {:state base
+                                         :effects [[:palette/close nil]
                                                    [:ws/send {:type :input/submit
-                                                              :room-id rid :text text}]
-                                                   [:app/dispatch {:type :submit/pending
-                                                                   :session-id sid :text text}])]}))
+                                                              :room-id rid :text text}]]}
+                                        ;; New virtual chat: no server room yet.
+                                        ;; Remember the choice on the pending room
+                                        ;; so the launch header reflects it and
+                                        ;; the room is born with this model — the
+                                        ;; first prompt's :room/join "new" carries
+                                        ;; :model (see submit-pending/web-command).
+                                        (:web/pending-room base)
+                                        {:state (assoc-in base [:web/pending-room :model] model)
+                                         :effects [[:palette/close nil]]}
+                                        ;; Fallback (rare: a cached session whose
+                                        ;; room is still joining) — send to the
+                                        ;; active room if there is one.
+                                        :else
+                                        {:state base
+                                         :effects (cond-> [[:palette/close nil]]
+                                                    (:id active)
+                                                    (conj [:ws/send {:type :input/submit
+                                                                     :room-id (:id active) :text text}]))})))
           :skill/web-list-result (fn [st {:keys [skills]}]
                                     {:state (assoc st :web/skill-list skills)})
           :skill/select          (fn [st {:keys [name]}]

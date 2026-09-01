@@ -376,12 +376,12 @@
       ;; starting fresh (the :session/resumed broadcast fills the client's
       ;; mirror right after the empty :room/joined snapshot).
       :room/setup
-      (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd session-id cached-msg-hash cached-msg-count join-token]}]
+      (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd model session-id cached-msg-hash cached-msg-count join-token]}]
         (let [summary (when session-id
                         (if personal-agent?
                           (session/find-personal-agent-session-by-id session-id)
                           (session/find-session-by-id session-id)))
-              {:keys [session room]} (build-room {:cwd cwd :summary summary})]
+              {:keys [session room]} (build-room {:cwd cwd :summary summary :model model})]
           (dispatch! {:type :room/create :room-id room-id :room room})
           (dispatch! (cond-> {:type :room/attach :client-id client-id :room-id room-id}
                        join-token (assoc :join-token join-token)))

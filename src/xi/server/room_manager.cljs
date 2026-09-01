@@ -115,7 +115,7 @@
 
    Targets: \"new\" | \"latest\" | room-id | {:session-id sid} (resume a
    saved session into a fresh room)."
-  [st {:keys [client-id target cwd cached-msg-hash cached-msg-count join-token] :as ev}]
+  [st {:keys [client-id target cwd model cached-msg-hash cached-msg-count join-token] :as ev}]
   (let [target     (or target "latest")
         ;; A session-id may ride on the event (web navigation always carries
         ;; it) or inside a {:session-id …} target (mobile reconnect).
@@ -156,6 +156,7 @@
                                            :cwd              cwd
                                            :cached-msg-hash  cached-msg-hash
                                            :cached-msg-count cached-msg-count}
+                                    model            (assoc :model model)
                                     (:session-id ev) (assoc :session-id (:session-id ev))
                                     ;; Echo the client's join-token back on
                                     ;; :room/joined so the web pending-submit
