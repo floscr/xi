@@ -819,8 +819,9 @@ body {
 
 .slash-item {
   display: flex;
-  align-items: baseline;
-  gap: var(--size-3);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--size-1);
   padding: var(--size-2) var(--size-3);
   border: none;
   background: none;
@@ -848,11 +849,12 @@ body {
 }
 
 .slash-item-desc {
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
   color: var(--fg-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 /* ---- Quick command bar ---- */

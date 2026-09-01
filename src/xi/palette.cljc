@@ -46,6 +46,11 @@
    {:name "new"      :description "Start a new session"}
    {:name "clear"    :description "Clear current session"}
    {:name "truncate" :description "Summarize conversation to reduce context"}
+   {:name "trim"     :description "Trim bloated tool results from the transcript"
+    :subcommands [{:name "yes"    :description "Apply the pending trim preview"}
+                  {:name "cancel" :description "Abandon the pending trim preview"}]}
+   {:name "rollover" :description "Fresh session with lineage pointers to this one"}
+   {:name "lineage"  :description "Show this session's ancestor chain" :while-busy? true}
    {:name "summary"  :description "Describe this session and refresh its title"}
    {:name "diff"     :description "Show changes from this session" :while-busy? true
     :subcommands [{:name "git"             :description "All git changes (staged + unstaged + untracked)"}
