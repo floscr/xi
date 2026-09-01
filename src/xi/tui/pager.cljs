@@ -75,7 +75,7 @@
 
 (def scroll-help
   "Help toolbar for a plain (section-less) pager."
-  (help-bar [["j/k" "move"] ["v" "select"] ["y" "yank"]
+  (help-bar [["j/k" "move"] ["V" "select"] ["y" "yank"]
              ["e" "explain"] ["\u23ce" "prompt"]
              ["gg/G" "top/bottom"] ["q" "close"] [":" "command"]]))
 
@@ -103,9 +103,16 @@
      :on-explain       — (fn [text]) called with the selected region on e;
                          optional (key is inert when absent)
      :on-prompt        — (fn [text]) called with the selected region on Enter;
-                         optional (key is inert when absent)"
+                         optional (key is inert when absent)
+     :extra-keys       — (fn [data {:keys [cursor body-cursor]}]) tried BEFORE
+                         the built-in keys; return truthy when the key was
+                         handled (falsy falls through). :cursor is the absolute
+                         line index, :body-cursor is relative to the lines-fn
+                         body (nil while above it / before first render).
+                         Optional — lets specializations (e.g. the sub-agents
+                         buffer) add expand/stop keys."
   [{:keys [title header-fn lines-fn help on-close on-command-mode
-           on-explain on-prompt]}]
+           on-explain on-prompt extra-keys]}]
   (let [state (atom {:cached-lines nil
                      :cached-width nil
                      :change-starts []
@@ -212,6 +219,16 @@
        (let [pending (:pending-key @state)]
          (swap! state assoc :pending-key nil)
          (cond
+           ;; Specialization keys run first (expand/stop in the sub-agents
+           ;; buffer); falsy return falls through to the built-ins.
+           (and extra-keys
+                (extra-keys data
+                            (let [c (:cursor @state)
+                                  hl (:header-len @state 0)]
+                              {:cursor c
+                               :body-cursor (when (and c (>= c hl)) (- c hl))})))
+           nil
+
            ;; gg: go to top
            (and (= pending "g") (= data "g"))
            (set-cursor! (cursor-lo))
@@ -244,8 +261,8 @@
            (= data "G")
            (set-cursor! (dec (line-count)))
 
-           ;; v: toggle line-wise selection
-           (= data "v")
+           ;; V: toggle line-wise selection
+           (= data "V")
            (toggle-visual!)
 
            ;; y: yank current line (or selection)

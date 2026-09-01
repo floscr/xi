@@ -646,11 +646,25 @@
             (when-let [ins (:insert-text (.-editor ctx))]
               (ins (str text "\n")))
             (on-close))
+          ;; v: suspend the TUI and open the file under the cursor in
+          ;; $EDITOR (+line works for vi/vim/nvim/nano/emacs), resolved
+          ;; against the room's cwd (diff paths are repo-relative).
+          on-edit
+          (fn [{:keys [file line]}]
+            (let [cwd (get-in (.-state ctx) [:rooms room-id :cwd])
+                  editor (or (aget js/process.env "VISUAL")
+                             (aget js/process.env "EDITOR")
+                             "vi")
+                  cmd (-> (vec (str/split editor #"\s+"))
+                          (cond-> line (conj (str "+" line)))
+                          (conj file))]
+              (tui/run-external! cmd (when cwd {:cwd cwd}))))
           c (if (:diff? buf)
               (diff-buffer/make-diff-buffer
                {:diff-text (:text buf) :title (:title buf)
                 :on-close on-close :on-command-mode on-command-mode
-                :on-explain on-explain :on-prompt on-prompt})
+                :on-explain on-explain :on-prompt on-prompt
+                :on-edit on-edit})
               (pager/make-text-buffer
                {:text (view/buffer-display-text buf) :title (:title buf)
                 :on-close on-close :on-command-mode on-command-mode
