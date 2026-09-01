@@ -230,6 +230,10 @@ src/xi/
                          chrome (chrome-devtools-mcp proxy — see docs/chrome-mcp.md),
                          element_picker (visual DOM element picker → prompt,
                          installed into chrome — see docs/element-picker.md),
+                         design_mode (persistent in-browser design mode: Ctrl+I
+                         picks elements, each request runs in a background
+                         sub-agent, survives navigation — installed into chrome,
+                         see docs/design-mode.md),
                          style_editor (agent-driven live style editor: sliders /
                          color pickers on a page element → committed CSS values,
                          installed into chrome — see docs/style-editor.md)

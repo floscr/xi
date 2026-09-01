@@ -115,6 +115,14 @@
                   "--bundle" "--format=iife" "--minify" "--outfile=picker.js"
                   "--banner:js=/* GENERATED from picker.cljs by `bb picker:build` — do not edit. */"))}
 
+  design:build
+  {:doc "Compile the design-mode browser script (squint → esbuild) to resources/design-mode/design.js"
+   :task (let [dir "resources/design-mode"]
+           (shell {:dir dir} "npx" "squint" "compile")
+           (shell {:dir dir} "npx" "esbuild" ".compiled/design.mjs"
+                  "--bundle" "--format=iife" "--minify" "--outfile=design.js"
+                  "--banner:js=/* GENERATED from design.cljs by `bb design:build` — do not edit. */"))}
+
   style-editor:build
   {:doc "Compile the style-editor (squint → esbuild) to resources/style-editor/style-editor.js"
    :task (let [dir "resources/style-editor"]

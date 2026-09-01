@@ -36,6 +36,7 @@
             [xi.ext.chrome-mcp.guard :as guard]
             [xi.ext.chrome-mcp.launch :as launch]
             [xi.ext.chrome-mcp.scope :as scope]
+            [xi.ext.design-mode :as design-mode]
             [xi.ext.element-picker :as element-picker]
             [xi.ext.style-editor :as style-editor]
             ["node:child_process" :as child-process])
@@ -401,7 +402,9 @@
                                                 (-> (launch/ensure-process! browser-url)
                                                     (.then (fn [_] (raw-forward tool args)))))
                             :else             (fn [tool args & _] (raw-forward tool args)))
-              editor (style-editor/install forward)]
+              editor (style-editor/install forward)
+              picker (element-picker/install forward ask!)
+              design (design-mode/install forward ask!)]
           (merge
            {:id               :chrome
             ;; Combine the proxied chrome tools with the style-editor's own tool
@@ -418,8 +421,12 @@
                                                             (forward n args ctx)))]))
                                            tool-names)
                                      (:tool-registry editor))
-            :on-shutdown      (fn [] (when-let [c @client*] ((:kill c))))}
-           ;; The element picker drives the same MCP client. With multiple tabs
-           ;; open it first asks (via ask!) which one to pick from; otherwise it
-           ;; acts on chrome-devtools-mcp's currently selected page.
-           (element-picker/install forward ask!)))))))
+            :on-shutdown      (fn []
+                                ((:shutdown! design))
+                                (when-let [c @client*] ((:kill c))))}
+           ;; The element picker and design mode drive the same MCP client.
+           ;; Both contribute :commands/:keybindings/:fx, so combine them
+           ;; explicitly — a plain map merge would clobber one.
+           {:commands    (into (vec (:commands picker)) (:commands design))
+            :keybindings (into (vec (:keybindings picker)) (:keybindings design))
+            :fx          (merge (:fx picker) (:fx design))}))))))
