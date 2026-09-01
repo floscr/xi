@@ -263,6 +263,11 @@
   {:doc "Show recent output from the demo server window"
    :task (td/logs demo-config {:lines 40})}
 
+  treesitter:install
+  {:doc "nix-build the xi-treesitter CLI + grammars into ~/.config/xi/treesitter"
+   :task (shell "nix-build" "native/xi-treesitter"
+                "-o" (str (System/getProperty "user.home") "/.config/xi/treesitter"))}
+
   demo:key
   {:doc "Print the demo client key + the localStorage snippet to install it"
    :task (let [k "demo00000000000000000000000000000000000000000000000000000000demo"]

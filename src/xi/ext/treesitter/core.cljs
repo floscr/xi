@@ -1,0 +1,168 @@
+(ns xi.ext.treesitter.core
+  "Tree-sitter outline extension — maki-style context-token saving.
+
+   Overrides the `read` tool via a tool-gate: reading a large supported source
+   file (no offset/limit) returns a compact structural outline (imports, types,
+   fn signatures with 1-based [line-ranges]) instead of the full contents. The
+   model then pulls only the lines it needs.
+
+   Adds `read_source` for literal code: whole file, a line range, or one named
+   definition located via tree-sitter node boundaries.
+
+   Requires the native CLI + grammars at ~/.config/xi/treesitter (see
+   native/xi-treesitter and docs/treesitter.md); the factory returns nil when
+   they are missing, so the extension silently stays off."
+  (:require [clojure.string :as str]
+            [xi.ext.treesitter.parse :as p]
+            [xi.ext.treesitter.langs :as langs]
+            [xi.ext.treesitter.skeleton :as skeleton]
+            [xi.tools.fs :as tfs]
+            ["node:fs" :as fs]))
+
+(def ^:private min-lines
+  "Files shorter than this are read whole — outlining tiny files saves nothing."
+  120)
+
+(def ^:private max-bytes
+  "Files larger than this skip outlining (read caps output anyway)."
+  (* 2 1024 1024))
+
+(defn- line-count [^js buf]
+  (let [len (.-length buf)]
+    (loop [i 0 n 1]
+      (if (< i len)
+        (recur (inc i) (if (= 10 (aget buf i)) (inc n) n))
+        n))))
+
+(defn- slice-lines
+  "1-based inclusive line range of a source string."
+  [text start end]
+  (let [lines (str/split text #"\n" -1)
+        total (count lines)
+        s (max 1 (or start 1))
+        e (min total (or end total))]
+    {:text (str/join "\n" (subvec lines (dec s) e))
+     :start s :end e :total total}))
+
+(defn- outline-result [path total skeleton-text]
+  {:content
+   [{:type "text"
+     :text (str "[" path " — " total " lines. Structural outline; [n-m] are 1-based line ranges.\n"
+                " Literal code: read_source(path, symbol) for one definition, "
+                "read(path, offset, limit) for a range (offset is 0-based), "
+                "read_source(path) for the whole file.]\n\n"
+                skeleton-text)}]})
+
+(defn- try-outline
+  "→ Promise of {:intercepted true :result …} or nil (pass through)."
+  [resolved display-path lang]
+  (-> (js/Promise.resolve)
+      (.then (fn [_]
+               (let [src (fs/readFileSync resolved)
+                     total (line-count src)]
+                 (when (>= total min-lines)
+                   (-> (p/parse-file lang resolved)
+                       (.then (fn [root]
+                                (let [entries ((langs/extractor lang) root src)
+                                      text (skeleton/format-skeleton entries)]
+                                  ;; Only intercept when the outline is a real
+                                  ;; saving over the file itself.
+                                  (when (and text
+                                             (< (count text) (* 0.5 (.-length src))))
+                                    {:intercepted true
+                                     :result (outline-result display-path total text)})))))))))
+      (.catch (fn [_] nil))))
+
+(defn- tool-gate
+  "Intercept plain `read` of large supported source files → outline."
+  [tool-call {:keys [cwd]}]
+  (let [{:keys [name arguments]} tool-call
+        {:keys [path offset limit]} arguments]
+    (if (and (= name "read") path (nil? offset) (nil? limit))
+      (let [resolved (tfs/resolve-path path cwd)
+            lang (langs/lang-for resolved)]
+        (if (and lang
+                 (p/grammar? lang)
+                 (langs/extractor lang)
+                 (fs/existsSync resolved)
+                 (not (.isDirectory (fs/statSync resolved)))
+                 (< (.-size (fs/statSync resolved)) max-bytes))
+          (-> (try-outline resolved path lang)
+              (.then (fn [intercepted] (or intercepted tool-call))))
+          tool-call))
+      tool-call)))
+
+;; ── read_source tool ─────────────────────────────────────────────────────────
+
+(defn- text-result [s] {:content [{:type "text" :text s}]})
+(defn- error-result [s] {:content [{:type "text" :text s}] :is-error true})
+
+(defn- read-symbol [resolved path symbol lang src]
+  (-> (p/parse-file lang resolved)
+      (.then
+       (fn [root]
+         (let [entries ((langs/extractor lang) root src)
+               syms (skeleton/symbols entries)]
+           (if-let [{:keys [start end]} (get syms symbol)]
+             (let [{:keys [text total]} (slice-lines (.toString src "utf8") start end)]
+               (text-result (str "[" path " lines " start "-" end " of " total "]\n" text)))
+             (error-result
+              (str "Symbol not found: " symbol "\nAvailable: "
+                   (str/join ", " (sort (keys syms)))))))))))
+
+(defn- read-source
+  "Literal source: whole file, line range, or a named definition."
+  [{:keys [path symbol start_line end_line]} {:keys [cwd]}]
+  (let [resolved (tfs/resolve-path path cwd)]
+    (cond
+      (not (fs/existsSync resolved))
+      (error-result (str "File not found: " path))
+
+      symbol
+      (let [lang (langs/lang-for resolved)]
+        (if (and lang (p/grammar? lang) (langs/extractor lang))
+          (read-symbol resolved path symbol lang (fs/readFileSync resolved))
+          (error-result (str "No tree-sitter support for " path
+                             " — use start_line/end_line instead."))))
+
+      (or start_line end_line)
+      (let [{:keys [text start end total]}
+            (slice-lines (fs/readFileSync resolved "utf8") start_line end_line)]
+        (text-result (str "[" path " lines " start "-" end " of " total "]\n" text)))
+
+      :else
+      (text-result (fs/readFileSync resolved "utf8")))))
+
+(def ^:private read-source-def
+  {:name "read_source"
+   :description
+   (str "Read literal source code, bypassing the outline that `read` returns for large files. "
+        "Modes: {path, symbol} → the full source of one named definition "
+        "(function/class/type — names are shown in the outline; methods as Class.method); "
+        "{path, start_line, end_line} → a 1-based inclusive line range; "
+        "{path} alone → the whole file verbatim.")
+   :input_schema
+   {:type "object"
+    :properties {:path {:type "string" :description "Path to file"}
+                 :symbol {:type "string" :description "Named definition to read (e.g. greet or Client.fetch)"}
+                 :start_line {:type "integer" :description "First line, 1-based inclusive"}
+                 :end_line {:type "integer" :description "Last line, 1-based inclusive"}}
+    :required ["path"]}})
+
+(def ^:private system-prompt
+  (str "## Reading code\n"
+       "For large source files the read tool returns a tree-sitter outline "
+       "(definitions with [line-ranges]) instead of full contents — this is "
+       "expected, not an error. Pull only what you need: read_source(path, symbol) "
+       "for one definition, read(path, offset, limit) for a line range, "
+       "read_source(path) only when you truly need the whole file."))
+
+(defn create
+  "Extension factory — nil (disabled) when the native CLI/grammars are absent."
+  [_ctx]
+  (when (p/available?)
+    {:id :treesitter
+     :tool-gate tool-gate
+     :tool-definitions [read-source-def]
+     :tool-registry {"read_source" read-source}
+     :system-prompt system-prompt}))

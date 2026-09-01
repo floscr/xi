@@ -49,6 +49,7 @@
         [xi.ext.terminal-title :as terminal-title]
         [xi.ext.tmp-cleanup-intercept :as tmp-cleanup-intercept]
         [xi.ext.todo-intercept :as todo-intercept]
+        [xi.ext.treesitter.core :as treesitter]
         [xi.ext.web :as web]
         [xi.ext.worktree.core :as worktree]]
        :browser
@@ -117,6 +118,7 @@
       image-graph/extension
       permission-gate/extension
       todo-intercept/extension
+      treesitter/create
       tmp-cleanup-intercept/extension
       terminal-title/extension
       clipboard-image/extension

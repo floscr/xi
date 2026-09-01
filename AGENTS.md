@@ -219,6 +219,10 @@ src/xi/
                          (~/.config/xi/ext/<id>.env; see docs/config.md)
     render.cljs        — Render.com MCP server as a disabled-by-default http
                          extension (API key from config; see docs/mcp-servers.md)
+    treesitter/        — tree-sitter outline extension: `read` of large source
+                         files → structural outline via a native nix-built CLI
+                         (native/xi-treesitter, `bb treesitter:install`), plus a
+                         read_source tool for literal code — see docs/treesitter.md
     *.cljs             — extensions: kb, web, perplexity, github_code_search,
                          commit, clj_surgeon, gtd, permission_gate, todo_intercept,
                          plan_mode, done_notify, pushover, dictation,
