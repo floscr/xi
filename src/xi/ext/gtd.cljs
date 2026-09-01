@@ -95,9 +95,12 @@
            (reduce (fn [m {:keys [dir gtd-file]}]
                      (let [expanded (if (str/starts-with? dir "~")
                                       (str home (subs dir 1))
-                                      dir)]
-                       ;; First profile for a gtd-file wins
-                       (if (contains? m gtd-file)
+                                      dir)
+                           existing (get m gtd-file)]
+                       ;; When several profiles share a gtd-file (e.g. a
+                       ;; service dir nested inside another workspace), the
+                       ;; shortest dir (the workspace root) wins.
+                       (if (and existing (<= (count existing) (count expanded)))
                          m
                          (assoc m gtd-file expanded))))
                    {})))
