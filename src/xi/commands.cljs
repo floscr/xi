@@ -279,7 +279,11 @@
                 (get-in room [:ui :buffers :prompt])
                 (conj (item "Prompt" :prompt))
                 (get-in room [:ui :buffers :diff])
-                (conj (item "Diff" :diff)))]
+                (conj (item "Diff" :diff))
+                ;; Live view over the subagent extension's room state (no
+                ;; [:ui :buffers] entry — rendered from state each pass).
+                (seq (get-in room [:ext :subagents :agents]))
+                (conj (item "Subagents" :subagents)))]
     {:state (assoc-in st [:rooms room-id :ui :menu]
                       {:id :buffers :prompt "buffer> " :items items})}))
 

@@ -104,13 +104,15 @@
                          optional (key is inert when absent)
      :on-prompt        — (fn [text]) called with the selected region on Enter;
                          optional (key is inert when absent)
-     :extra-keys       — (fn [data {:keys [cursor body-cursor]}]) tried BEFORE
-                         the built-in keys; return truthy when the key was
-                         handled (falsy falls through). :cursor is the absolute
-                         line index, :body-cursor is relative to the lines-fn
-                         body (nil while above it / before first render).
+     :extra-keys       — (fn [data ctx]) tried BEFORE the built-in keys;
+                         return truthy when the key was handled (falsy falls
+                         through). ctx keys: :cursor (absolute line index),
+                         :body-cursor (relative to the lines-fn body; nil while
+                         above it / before first render), :set-cursor! (fn [n]),
+                         :jump-next-file! / :jump-prev-file! (0-arg fns over
+                         the :file-starts jump positions).
                          Optional — lets specializations (e.g. the sub-agents
-                         buffer) add expand/stop keys."
+                         buffer) add selection/stop keys."
   [{:keys [title header-fn lines-fn help on-close on-command-mode
            on-explain on-prompt extra-keys]}]
   (let [state (atom {:cached-lines nil
@@ -150,10 +152,14 @@
 
         set-cursor!
         (fn [n]
-          (when (pos? (line-count))
-            (swap! state assoc :cursor (clamp-cursor n))
-            (ensure-cursor-visible!)
-            (tui/request-render!)))
+          (if (pos? (line-count))
+            (do (swap! state assoc :cursor (clamp-cursor n))
+                (ensure-cursor-visible!)
+                (tui/request-render!))
+            ;; No cached lines (e.g. just invalidated): store the raw value —
+            ;; the next render pass clamps it into the rebuilt body.
+            (do (swap! state assoc :cursor n)
+                (tui/request-render!))))
 
         move-cursor!
         (fn [delta]
@@ -207,6 +213,7 @@
     {:type :pager
      :capture-all-input true
      :help help
+     :set-cursor! set-cursor!
 
      :handle-scroll
      (fn [delta]
@@ -226,7 +233,10 @@
                             (let [c (:cursor @state)
                                   hl (:header-len @state 0)]
                               {:cursor c
-                               :body-cursor (when (and c (>= c hl)) (- c hl))})))
+                               :body-cursor (when (and c (>= c hl)) (- c hl))
+                               :set-cursor! set-cursor!
+                               :jump-next-file! #(jump-next! (:file-starts @state))
+                               :jump-prev-file! #(jump-prev! (:file-starts @state))})))
            nil
 
            ;; gg: go to top

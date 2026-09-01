@@ -1993,7 +1993,15 @@
        (get subagent-status-label status (name (or status :running)))]
       [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
       (when-let [d (subagent-duration child)]
-        [:span {:class ["subagent-card-dur"]} d])]
+        [:span {:class ["subagent-card-dur"]} d])
+      (when (= :running status)
+        [:button {:class ["subagent-stop"]
+                  :title "Stop sub-agent"
+                  :on {:click (fn [e]
+                                (.stopPropagation e)
+                                (dispatch! {:type :subagent/abort
+                                            :room-id room-id :sub-id id}))}}
+         (icon/icon {:icon-name :circle-x :size :sm})])]
      (when open?
        [:div {:class ["subagent-card-body"]}
         (when (seq task)

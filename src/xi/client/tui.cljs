@@ -19,6 +19,7 @@
 
    Effects owned by the TUI: :app/quit, :app/reload, :clipboard/copy."
   (:require [clojure.string :as str]
+            [xi.client.subagents-buffer :as subagents-buffer]
             [xi.client.view :as view]
             [xi.commands :as commands]
             [xi.core.log :as log]
@@ -675,6 +676,36 @@
       (tui/scroll-to-offset! 999999)))
   (.-pagerComp ctx))
 
+(defn- subagents-pager-view!
+  "Focused live pager over the room's sub-agents (xi.client.subagents-buffer).
+   Cached per room in the same pagerComp/pagerVal slots as the other pagers
+   (so the bottom-panel help bar works unchanged); unlike them its content is
+   read from app state, so it is invalidated whenever the agents vector
+   changes identity — streaming deltas repaint live while the buffer is open."
+  [^js ctx room dispatch!]
+  (let [room-id (:id room)
+        agents  (get-in room [:ext :subagents :agents])
+        cache-key [:subagents room-id]]
+    (when-not (= cache-key (.-pagerVal ctx))
+      (let [c (subagents-buffer/make-subagents-buffer
+               {:get-agents (fn [] (get-in (.-state ctx)
+                                           [:rooms room-id :ext :subagents :agents]))
+                :on-stop (fn [sub-id]
+                           (dispatch! {:type :subagent/abort
+                                       :room-id room-id :sub-id sub-id}))
+                :on-close (fn [] (dispatch! {:type :ui/buffer-switch
+                                             :room-id room-id :buffer-id :chat}))
+                :on-command-mode (fn [] (tui/set-focus! (.-editor ctx)))})]
+        (set! (.-pagerVal ctx) cache-key)
+        (set! (.-pagerComp ctx) c)
+        (set! (.-subagentsVal ctx) agents)
+        (tui/set-focus! c)
+        (tui/scroll-to-offset! 999999)))
+    (when-not (identical? agents (.-subagentsVal ctx))
+      (set! (.-subagentsVal ctx) agents)
+      ((:invalidate (.-pagerComp ctx))))
+    (.-pagerComp ctx)))
+
 (defn- pager-buffer?
   "A buffer that should be shown in a focused pager (scroll keybindings +
    help toolbar): the diff/difft buffers, identified by their :engine key.
@@ -682,6 +713,13 @@
    keybinding) keeps working; :chat and :logs have their own views."
   [buf]
   (contains? buf :engine))
+
+(defn- pager-active?
+  "True when the active buffer renders as a focused pager: a pager buffer
+   value, or the live :subagents view (which has no [:ui :buffers] entry)."
+  [room active]
+  (or (= active :subagents)
+      (pager-buffer? (get-in room [:ui :buffers active]))))
 
 (defn- sync-view!
   "Point the view wrapper at the active buffer (:chat is the persistent
@@ -692,10 +730,11 @@
         switched? (not= active (.-activeBuffer ctx))]
     (when (or switched? (not= active :chat))
       (let [buf (get-in room [:ui :buffers active])
-            pager? (pager-buffer? buf)
+            pager? (pager-active? room active)
             target (cond
                      (= active :chat) (.-chat ctx)
                      (= active :logs) (view/logs-view (log/entries ring) (:id room))
+                     (= active :subagents) (subagents-pager-view! ctx room dispatch!)
                      pager? (pager-view! ctx buf (:id room) dispatch!)
                      buf (view/buffer-view buf)
                      :else (.-chat ctx))]
@@ -758,8 +797,7 @@
         menu   (get-in room [:ui :menu])
         tree?  (boolean (get-in room [:ui :tree-open?]))
         active (get-in room [:ui :active-buffer] :chat)
-        buf    (get-in room [:ui :buffers active])
-        pager? (pager-buffer? buf)
+        pager? (pager-active? room active)
         target (or dialog menu (when tree? :tree)
                    (when pager? (.-pagerComp ctx)))]
     (when-not (identical? target (.-panelVal ctx))

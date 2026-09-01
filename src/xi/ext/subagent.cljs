@@ -53,6 +53,16 @@
     (subagent/abort! id))
   nil)
 
+(defn- abort-sub
+  "User/tool-initiated stop of one sub-agent. Emits the :subagent/abort
+   effect (xi.subagent) — the turn's own turn-end (:aborted? true) then
+   flips the child's status to :stopped. Dispatched by stop_subagent, the
+   TUI sub-agents buffer (x) and the web panel's stop button; carries
+   :room-id so the server broadcasts it room-scoped."
+  [st {:keys [room-id sub-id]}]
+  (when (find-child st room-id sub-id)
+    {:effects [[:subagent/abort {:sub-id sub-id}]]}))
+
 ;; ── Tools (handled in the gate — they need dispatch!/get-state/room-id) ───────
 
 (def ^:private tool-defs
@@ -163,7 +173,7 @@
 
 (defn- stop-tool [id room-id dispatch!]
   (if (subagent/running? id)
-    (do (dispatch! {:type :subagent/abort :sub-id id})
+    (do (dispatch! {:type :subagent/abort :room-id room-id :sub-id id})
         {:intercepted true :result (text-result (str "Stopping sub-agent " id "."))})
     {:intercepted true :result (text-result (str "Sub-agent " id " is not running."))}))
 
@@ -182,9 +192,11 @@
 
 ;; ── Command (TUI visibility) ─────────────────────────────────────────────────
 
-(defn- cmd-subagents [st {:keys [room-id]}]
-  {:state (update-in st [:rooms room-id :history] conj
-                     {:kind :status :text (format-list (agents st room-id))})})
+(defn- cmd-subagents
+  "Open the live :subagents buffer (TUI: navigable pager; the web shows its
+   inline panel regardless, so the buffer id just falls back to chat there)."
+  [st {:keys [room-id]}]
+  {:state (assoc-in st [:rooms room-id :ui :active-buffer] :subagents)})
 
 ;; ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -209,7 +221,9 @@
    :system-prompt    system-prompt
    :tool-definitions tool-defs
    :tool-gate        tool-gate
-   :handlers         (assoc h/handlers :room/close on-room-close)
+   :handlers         (assoc h/handlers
+                            :room/close on-room-close
+                            :subagent/abort abort-sub)
    :commands         [{:name "subagents"
-                       :description "List this room's background sub-agents"
+                       :description "View this room's background sub-agents"
                        :handler cmd-subagents}]})

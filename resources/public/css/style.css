@@ -3670,6 +3670,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.subagent-stop {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--fg-3);
+}
+.subagent-stop:hover { color: var(--danger, #dc2626); }
+
 .subagent-card-body {
   padding: var(--size-2) var(--size-3);
   border-top: 1px solid var(--border-0);
