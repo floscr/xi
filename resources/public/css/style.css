@@ -1710,6 +1710,35 @@ body {
   padding-bottom: max(var(--size-3), env(safe-area-inset-bottom));
 }
 
+/* Claude subscription usage bar at the bottom of the sidebar drawer */
+.claude-usage {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: calc(var(--size-2) / 3) var(--size-1) 0;
+}
+.claude-usage-track {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background-color: var(--bg-2);
+  overflow: hidden;
+}
+.claude-usage-fill {
+  height: 100%;
+  border-radius: 3px;
+  background-color: var(--success);
+}
+.claude-usage--warning .claude-usage-fill { background-color: var(--warning); }
+.claude-usage--critical .claude-usage-fill,
+.claude-usage--exceeded .claude-usage-fill { background-color: var(--danger); }
+.claude-usage-pct {
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  min-width: 30px;
+  text-align: right;
+}
+
 /* Compact session cards inside the sidebar drawer */
 .sidebar .project-card {
   padding: var(--size-2);

@@ -131,6 +131,65 @@
    run (last response at/after this time) vs. carried over from disk."
   (js/Date.now))
 
+;; ── Claude subscription usage ───────────────────────────────────────────
+
+(def ^:private claude-usage
+  "Latest Claude subscription usage reading (nil until the first successful
+   fetch). Rides along on the lobby broadcast so the sidebar footer can show
+   how much of the 5h/weekly windows is used."
+  (atom nil))
+
+(defn- read-claude-token
+  "OAuth access token from ~/.claude/.credentials.json (kept fresh by Claude
+   Code). nil when the file is missing/unreadable (e.g. the demo server's
+   redirected HOME)."
+  []
+  (try
+    (let [fs   (js/require "node:fs")
+          os   (js/require "node:os")
+          path (str (.homedir os) "/.claude/.credentials.json")]
+      (when (.existsSync fs path)
+        (some-> (.readFileSync fs path "utf8")
+                (js/JSON.parse)
+                (aget "claudeAiOauth")
+                (aget "accessToken"))))
+    (catch :default _ nil)))
+
+(def ^:private claude-usage-fetched-at
+  "Wall-clock ms of the last fetch attempt — throttles on-demand refreshes
+   (sidebar opens) so drawer-happy clients can't hammer the OAuth endpoint."
+  (atom 0))
+
+(defn- fetch-claude-usage!
+  "Fetch subscription usage from the OAuth endpoint (the same one Claude
+   Code's /usage screen calls) into the claude-usage atom; calls on-change
+   when the reading differs from the previous one. Failures (no credentials,
+   expired token, network) keep the last reading."
+  [on-change]
+  (reset! claude-usage-fetched-at (js/Date.now))
+  (when-let [token (read-claude-token)]
+    (-> (js/fetch "https://api.anthropic.com/api/oauth/usage"
+                  #js {:headers #js {"Authorization"  (str "Bearer " token)
+                                     "anthropic-beta" "oauth-2025-04-20"}})
+        (.then (fn [^js res] (when (.-ok res) (.json res))))
+        (.then (fn [^js data]
+                 (when data
+                   (let [{:keys [five_hour seven_day limits]}
+                         (js->clj data :keywordize-keys true)
+                         pct   (fn [u] (some-> u js/Math.round (min 100)))
+                         usage {:session  (pct (:utilization five_hour))
+                                :weekly   (pct (:utilization seven_day))
+                                :severity (or (some #(when (= "session" (:kind %))
+                                                       (:severity %))
+                                              limits)
+                                              "normal")
+                                :session-resets-at (:resets_at five_hour)
+                                :weekly-resets-at  (:resets_at seven_day)}]
+                     (when (and (:session usage) (not= usage @claude-usage))
+                       (reset! claude-usage usage)
+                       (on-change))))))
+        (.catch (fn [_] nil)))))
+
 (defn- lobby-payload
   "The :lobby/state wire payload: live rooms + saved sessions (+ the server's
    default :model, so a deferred TUI client can render the same launch header
@@ -160,7 +219,8 @@
                           :started-at server-started-at
                           :read       (session/load-read-state)}
                    model           (assoc :model model)
-                   personal-agent? (assoc :personal-agent? true)))))
+                   personal-agent? (assoc :personal-agent? true)
+                   @claude-usage   (assoc :claude-usage @claude-usage)))))
 
 ;; ── Static file serving (resources/public, SPA fallback) ──────────────────────
 
@@ -626,6 +686,12 @@
                             (reset! lobby-timer nil)
                             (broadcast-lobby! @state))
                           150))))
+             ;; Refresh Claude subscription usage now and every 5 minutes; a
+             ;; changed reading rides the coalesced lobby broadcast out to
+             ;; every connected client (the sidebar footer renders it).
+             _ (fetch-claude-usage! schedule-lobby-broadcast!)
+             _ (js/setInterval #(fetch-claude-usage! schedule-lobby-broadcast!)
+                               (* 5 60 1000))
              ;; HTTP API: programmatically create a room (and optionally kick
              ;; off a turn) so an external service — e.g. the GTD service in
              ;; dotfiles — can spawn a background agent session and hand back a
@@ -753,6 +819,15 @@
 
                                   (= :auth/deny (:type ev))
                                   (resolve-pending! (:code ev) false)
+
+                                  ;; ─ On-demand Claude usage refresh (sent when
+                                  ;; the sidebar drawer opens). Transport-level,
+                                  ;; never dispatched; throttled to 30s — the
+                                  ;; changed reading rides the lobby broadcast. ─
+                                  (= :usage/refresh (:type ev))
+                                  (when (> (- (js/Date.now) @claude-usage-fetched-at)
+                                           (* 30 1000))
+                                    (fetch-claude-usage! schedule-lobby-broadcast!))
 
                                   (or (pre-join-types (:type ev))
                                       (roomless-types (:type ev)))

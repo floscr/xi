@@ -2753,6 +2753,29 @@
          distinct
          (take 5))))
 
+(defn- claude-usage-bar
+  "Claude subscription usage (rides on the lobby broadcast): the session
+   (5-hour window) percent as a thin bar colored by severity, with weekly
+   usage + reset times in the tooltip."
+  [state]
+  (when-let [{:keys [session weekly severity session-resets-at weekly-resets-at]}
+             (get-in state [:lobby :claude-usage])]
+    (let [fmt-time (fn [iso opts]
+                     (when iso
+                       (try (.toLocaleTimeString (js/Date. iso) js/undefined opts)
+                            (catch :default _ nil))))
+          session-reset (fmt-time session-resets-at #js {:hour "2-digit" :minute "2-digit"})
+          weekly-reset  (fmt-time weekly-resets-at #js {:weekday "short" :hour "2-digit" :minute "2-digit"})]
+      [:div {:class ["claude-usage" (str "claude-usage--" severity)]
+             :title (str "Claude session: " session "% used"
+                         (when session-reset (str ", resets " session-reset))
+                         " \u00b7 week: " weekly "%"
+                         (when weekly-reset (str ", resets " weekly-reset)))}
+       [:div {:class ["claude-usage-track"]}
+        [:div {:class ["claude-usage-fill"]
+               :style {:width (str session "%")}}]]
+       [:span {:class ["claude-usage-pct"]} (str session "%")]])))
+
 (def ^:private recent-sidebar-cache
   ;; Memo for the docked/drawer sidebar. On wide screens the sidebar is always
   ;; rendered, so without this its whole projects+sessions subtree would be
@@ -2893,7 +2916,8 @@
            [:button {:class ["icon-btn" "icon-btn--sm"]
                      :title "Reload"
                      :on {:click (fn [_] (reload-with-feedback!))}}
-            (icon/icon {:icon-name :refresh :size :md})])]]))))
+            (icon/icon {:icon-name :refresh :size :md})])]]
+       (claude-usage-bar state)))))
 
 (defn- recent-sidebar
   "Memoized wrapper around `recent-sidebar*`. Returns the identical cached

@@ -757,8 +757,15 @@
                                     {:effects [[:ws/send {:type :session/content-search
                                                           :key key :query query :cwd cwd}]]})
           :session/content-search-result content-search-result
-          :sidebar/toggle        (fn [st _] {:state (update st :web/sidebar-open? not)})
-          :sidebar/open          (fn [st _] {:state (assoc st :web/sidebar-open? true)})
+          ;; Opening the drawer pings the server to refetch Claude usage
+          ;; (throttled server-side); a changed reading rides the lobby
+          ;; broadcast back into the footer bar.
+          :sidebar/toggle        (fn [st _]
+                                   (let [open? (not (:web/sidebar-open? st))]
+                                     (cond-> {:state (assoc st :web/sidebar-open? open?)}
+                                       open? (assoc :effects [[:ws/send {:type :usage/refresh}]]))))
+          :sidebar/open          (fn [st _] {:state (assoc st :web/sidebar-open? true)
+                                             :effects [[:ws/send {:type :usage/refresh}]]})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
           :web/set-wide          (fn [st {:keys [wide?]}] {:state (assoc st :web/wide? wide?)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
