@@ -105,7 +105,8 @@
    the client mirror, where those effects never run. `manager` (xi.ext.manager)
    is threaded to control extensions (/ext, /mcp) that toggle the live set."
   [ring & [ask! manager]]
-  (ext/instantiate config/server {:ring ring :ask! ask! :manager manager}))
+  (ext/instantiate config/server {:ring ring :ask! ask! :manager manager
+                                  :providers providers}))
 
 (defn- mirror-extensions
   "Server extensions instantiated for the *client mirror* (a join/create TUI

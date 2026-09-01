@@ -226,6 +226,7 @@ src/xi/
     *.cljs             — extensions: kb, web, perplexity, github_code_search,
                          commit, clj_surgeon, gtd, permission_gate, todo_intercept,
                          plan_mode, done_notify, pushover, dictation,
+                         resume (/trim /rollover /lineage — see docs/resume.md),
                          terminal_title, clipboard_image, projects, skills, events,
                          chrome (chrome-devtools-mcp proxy — see docs/chrome-mcp.md),
                          element_picker (visual DOM element picker → prompt,

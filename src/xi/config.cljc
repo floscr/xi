@@ -41,6 +41,7 @@
         [xi.ext.projects :as projects]
         [xi.ext.pushover :as pushover]
         [xi.ext.render :as render]
+        [xi.ext.resume :as resume]
         [xi.ext.review :as review]
         [xi.ext.sandbox :as ext-sandbox]
         [xi.ext.session-search :as session-search]
@@ -110,6 +111,7 @@
       perplexity/extension
       product-search/extension
       commit/extension
+      resume/create
       review/extension
       canvas-review/extension
       browser-open/extension
