@@ -700,24 +700,67 @@
              ;; Bearer <key> or X-Xi-Client-Key), skipped in personal-agent
              ;; mode. The room runs clientless (busy rooms keep running) and its
              ;; session persists on disk, so /chat/<session-id> resumes it later.
+             ;; Read-only status of prior background sessions by id: `running`
+             ;; (a live room mid-turn), `error` (its last turn aborted or the
+             ;; server was hard-killed mid-turn), `complete` (finished
+             ;; normally), or `unknown`. Background rooms are reaped the moment
+             ;; their turn ends, so a finished/aborted session has no live room
+             ;; — status then comes from the persisted session metadata
+             ;; (:aborted-at / :interrupted-at). The GTD service polls this to
+             ;; badge task rows it dispatched to the agent.
+             session-status
+             (fn [id]
+               (let [busy? (some (fn [[_ room]]
+                                   (let [s (:session room)]
+                                     (and (or (= id (:id s))
+                                              (= id (:provider-session-id s))
+                                              (= id (:cli-session-id s)))
+                                          (get-in room [:agent :busy?]))))
+                                 (:rooms @state))]
+                 (if busy?
+                   "running"
+                   (if-let [sm (session/find-session-by-id id)]
+                     (if (or (:aborted-at sm) (:interrupted-at sm))
+                       "error" "complete")
+                     "unknown"))))
              handle-api!
              (fn [^js req pathname]
-               (cond
-                 (not= pathname "/api/rooms")
-                 (js/Response. "Not found" #js {:status 404})
+               (let [headers (.-headers req)
+                     method  (.-method req)
+                     key (or (some-> (.get headers "authorization")
+                                     (.replace #"(?i)^bearer\s+" ""))
+                             (.get headers "x-xi-client-key"))
+                     authed? (or personal-agent? (auth/approved? key))
+                     json-resp (fn [status obj]
+                                 (js/Response. (js/JSON.stringify obj)
+                                               #js {:status  status
+                                                    :headers #js {"Content-Type" "application/json"}}))]
+                 (cond
+                   (and (= pathname "/api/rooms/status") (= "GET" method))
+                   (if-not authed?
+                     (json-resp 401 #js {:error "unauthorized"})
+                     (let [url (js/URL. (.-url req))
+                           ids (->> (some-> (.get (.-searchParams url) "ids")
+                                            (.split ","))
+                                    seq
+                                    (map #(.trim %))
+                                    (filter #(pos? (.-length %)))
+                                    distinct)
+                           statuses (reduce (fn [o id] (aset o id (session-status id)) o)
+                                            #js {} ids)]
+                       (json-resp 200 #js {:statuses statuses})))
 
-                 (not= "POST" (.-method req))
-                 (js/Response. "Method not allowed" #js {:status 405})
+                   (not= pathname "/api/rooms")
+                   (json-resp 404 #js {:error "not found"})
 
-                 :else
-                 (let [headers (.-headers req)
-                       key (or (some-> (.get headers "authorization")
-                                       (.replace #"(?i)^bearer\s+" ""))
-                               (.get headers "x-xi-client-key"))]
-                   (if (and (not personal-agent?) (not (auth/approved? key)))
-                     (js/Response. (js/JSON.stringify #js {:error "unauthorized"})
-                                   #js {:status  401
-                                        :headers #js {"Content-Type" "application/json"}})
+                   (not= "POST" method)
+                   (json-resp 405 #js {:error "method not allowed"})
+
+                   (not authed?)
+                   (json-resp 401 #js {:error "unauthorized"})
+
+                   :else
+                   (do
                      (-> (.json req)
                          (.then
                           (fn [^js body]

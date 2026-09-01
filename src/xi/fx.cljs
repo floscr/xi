@@ -234,9 +234,18 @@
        (when (:provider-session-id sess)
          (let [title (util/session-title (first-user-text room))
                model (get-in room [:agent :model])
+               ;; The turn that triggered this sync ended aborted when the
+               ;; room's last history entry is the {:kind :aborted} stub
+               ;; turn-end appends. Effects run against post-reduce state, so
+               ;; the stub is already present. Persist that as :aborted-at (so
+               ;; the HTTP status endpoint can report `error` after the room is
+               ;; reaped); a later clean turn's sync drops it.
+               aborted? (= :aborted (:kind (last (:history room))))
                named (cond-> sess
                        (and (nil? (:name sess)) title) (assoc :name title)
-                       model (assoc :model model))
+                       model (assoc :model model)
+                       aborted? (assoc :aborted-at (.toISOString (js/Date.)))
+                       (not aborted?) (dissoc :aborted-at))
                touched (session/touch-session! (->disk-session named))]
            (dispatch! {:type :session/updated :room-id room-id
                        :session (-> touched

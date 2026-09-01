@@ -423,6 +423,7 @@
        :name (util/session-title (:name data))
        :model (:model data)
        :interrupted-at (:interrupted-at data)
+       :aborted-at (:aborted-at data)
        :truncated-from (:truncated-from data)
        :user-messages nil})
     (catch :default _e nil)))
