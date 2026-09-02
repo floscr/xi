@@ -417,7 +417,7 @@
                      (dispatch! {:type :agent/error :room-id room-id :error error}))})
 
 
-(defn- room-client-pid
+(defn room-client-pid
   "Pid of the client driving `room-id` (preferring a TUI client), or nil, from
    the connection registry. Threaded into the tool ctx so chrome-mcp can scope
    to that client's terminal workspace (see xi.ext.chrome-mcp.guard)."

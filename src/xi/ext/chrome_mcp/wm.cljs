@@ -57,19 +57,6 @@
   [args]
   (run-bin (wm-bin) args))
 
-(defn current-workspace
-  "The *name* of the currently-viewed xmonad workspace, read live via
-   `wm current`, or nil if `wm` is unavailable.
-
-   Read dynamically (per operation), NOT cached: the chrome-mcp guard runs in a
-   single long-lived server that serves many sessions from different
-   workspaces, so a value captured once at boot would freeze every later
-   session onto the boot workspace. Names address any workspace — numbered
-   (`1`…`9`) and named (`agents-chrome-mcp`, `paint`, …) alike — and stay valid
-   even as workspaces are added/removed."
-  []
-  (-> (run ["current"]) (.then (fn [s] (some-> s not-empty)))))
-
 (defn chrome-windows
   "→ Promise<[{:wid :workspace :desktop :title …}]> for every MCP-Chrome X11
    window across all workspaces. `:workspace` is the workspace *name* (what we

@@ -86,6 +86,11 @@
                                              :dialog  (cond-> {:type :confirm :message message}
                                                         (:allow-always? copts) (assoc :allow-always? true))}))))}
             gate1    (when tool-gate (fn [tool-call] (tool-gate tool-call gate-ctx)))
+            ;; The PARENT room's driving-client pid: chrome-mcp scopes a turn to
+            ;; that client's terminal workspace. Without it a sub-agent's
+            ;; browser calls would fall back to guessing a workspace and could
+            ;; act where the *user* is looking (see xi.ext.chrome-mcp.guard).
+            client-pid (agent/room-client-pid (get-state) room-id)
             {:keys [promise abort!]}
             ((:start-turn! prov)
              (cond-> (merge {:room-id room-id
@@ -100,6 +105,7 @@
                gate1                  (assoc :tool-gate gate1)
                extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
                extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
+               client-pid             (assoc :client-pid client-pid)
                config-dir             (assoc :env {"CLAUDE_CONFIG_DIR" config-dir})))]
         (swap! registry assoc sub-id {:abort! abort! :room-id room-id})
         (-> promise

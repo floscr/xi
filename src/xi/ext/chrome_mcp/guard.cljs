@@ -16,9 +16,12 @@
    window's workspace name. This is per-session and correct even when the user
    is *looking at* a different workspace — unlike the global `wm current`, which
    only reflects wherever the user's eyes are and was the 'opens on the wrong
-   workspace' bug. When there is no `:client-pid` (e.g. a web client, which has
-   no local terminal window) it falls back to `wm current` — best-effort for a
-   single local user.
+   workspace' bug. When there is no `:client-pid` (e.g. a web client, or a
+   sub-agent turn before the pid was threaded) or it can't be placed, the guard
+   falls back to the last pid-resolved workspace, then to the workspace the
+   agent's Chrome windows already live on — and when nothing resolves it
+   refuses to act. The currently-viewed workspace (`wm current`) is never used
+   as a target: it follows the user's gaze, not the agent.
 
    Invariant: before any page-acting tool (click, navigate, screenshot, …) the
    mcp *selected page* is made a current-workspace page, so those tools are
@@ -92,13 +95,16 @@
 (defn install
   "Return a scoped `forward` fn `(fn [tool args] | [tool args ctx])`, given the
    raw `forward` and the browser's remote-debugging URL (attach mode). Each call
-   resolves this session's TUI-terminal workspace live from `(:client-pid ctx)`
-   (falling back to `wm current`); when `wm` can't resolve one the raw `forward`
-   runs unscoped."
+   resolves this session's TUI-terminal workspace live from `(:client-pid ctx)`,
+   falling back to the last pid-resolved workspace, then to where the agent's
+   Chrome windows already are; when nothing resolves the call is blocked —
+   never forwarded unscoped, never aimed at the viewed workspace."
   [forward browser-url]
   (let [owned-only? (owned-only?*) ;; isolate to windows THIS agent created
-        cdp*   (atom nil)   ;; memoized Promise<cdp-client>
-        owned* (atom {})]   ;; {cdp-window-id → workspace-name} of windows we created
+        cdp*     (atom nil)   ;; memoized Promise<cdp-client>
+        owned*   (atom {})    ;; {cdp-window-id → workspace-name} of windows we created
+        last-ws* (atom nil)]  ;; last workspace resolved from a client pid — the
+                              ;; anchor for pid-less turns (sub-agents, web clients)
     (letfn [(cdp-connect! []
               (reset! cdp* (-> (cdp/connect browser-url)
                                (.catch (fn [e] (reset! cdp* nil) (throw e))))))
@@ -322,15 +328,46 @@
                 (-> (reconcile! ws)
                     (.then (fn [_] (forward tool args))))))
 
+            (workspace-from-windows []
+              ;; → Promise<ws|nil> — where the agent's Chrome already lives: a
+              ;; workspace this process placed a window on (owned*), else the
+              ;; single workspace holding ALL MCP-Chrome windows (unambiguous);
+              ;; nil when there's nothing to anchor to.
+              (if-let [ws (first (vals @owned*))]
+                (js/Promise.resolve ws)
+                (-> (wm/chrome-windows)
+                    (.then (fn [wins]
+                             (let [wss (into #{} (keep :workspace) wins)]
+                               (when (= 1 (count wss)) (first wss)))))
+                    (.catch (fn [_] nil)))))
+
+            (fallback-workspace []
+              ;; → Promise<ws|nil> for turns with no (resolvable) client pid.
+              ;; NEVER `wm current`: the viewed workspace follows the user's
+              ;; eyes, not the agent — anchoring to it was the 'about:blank
+              ;; windows chase my gaze' bug (every action while the user viewed
+              ;; another workspace self-healed a blank window *there*).
+              (if-let [ws @last-ws*]
+                (js/Promise.resolve ws)
+                (workspace-from-windows)))
+
             (resolve-workspace [ctx]
               ;; Owned-only: a fixed per-process sentinel — membership is by
               ;; ownership, not workspace, so we never ask the WM anything.
-              ;; Otherwise: this session's TUI-terminal workspace name
-              ;; (per-session), or the globally-viewed one when no client pid.
+              ;; Otherwise: this session's TUI-terminal workspace name from the
+              ;; driving client's pid, cached in last-ws* so pid-less turns
+              ;; (sub-agents, web clients) stay anchored to the agent's
+              ;; workspace; else where the agent's Chrome windows already are.
+              ;; The user's currently-viewed workspace is never consulted.
               (cond
                 owned-only?       (js/Promise.resolve owned-sentinel)
-                (:client-pid ctx) (wm/workspace-for-pid (:client-pid ctx))
-                :else             (wm/current-workspace)))
+                (:client-pid ctx) (-> (wm/workspace-for-pid (:client-pid ctx))
+                                      (.then (fn [ws]
+                                               (if ws
+                                                 (do (reset! last-ws* ws) ws)
+                                                 (fallback-workspace))))
+                                      (.catch (fn [_] (fallback-workspace))))
+                :else             (fallback-workspace)))
 
             (place-launched! [ws]
               ;; Right after a *cold* launch, Chrome maps its window on the
@@ -376,23 +413,28 @@
                   (.catch (fn [_] :ok)))))
 
             (scoped [tool args & [ctx]]
-              ;; First make sure Chrome is actually running (launch + place its
-              ;; window on `ws` if it was down), then scope. Only scope when the
-              ;; WM can actually see our Chrome's X11 windows: if `wm` is blind
-              ;; (empty — e.g. the attached Chrome has a different WM_CLASS than
-              ;; we filter on), managing/creating windows would spawn
-              ;; unrecognized windows forever, so pass through raw instead.
-              ;; In owned-only mode isolation rides on CDP window ids, not the
-              ;; WM, so we never fall back to the "wm blind" passthrough — doing
-              ;; so would drop isolation and let agents stomp each other's tabs.
+              ;; Anchor every call to the agent's OWN workspace, then make sure
+              ;; Chrome is running (launch + place its window on `ws` if it was
+              ;; down), then scope. When no workspace resolves at all, REFUSE:
+              ;; both guessing with `wm current` and passing through raw act
+              ;; wherever the *user* currently is (viewed workspace / focused
+              ;; window). Same on errors — fail closed, never forward unscoped.
               (-> (resolve-workspace ctx)
                   (.then (fn [ws]
-                           (-> (ensure-chrome! ws)
-                               (.then (fn [_] (if owned-only? nil (wm/chrome-windows))))
-                               (.then (fn [wins]
-                                        (if (and (not owned-only?)
-                                                 (or (nil? ws) (empty? wins)))
-                                          (forward tool args)   ;; wm blind → no scoping
-                                          (dispatch tool args ws)))))))
-                  (.catch (fn [_] (forward tool args)))))]
+                           (if (nil? ws)
+                             (blocked (str "Could not determine this agent's workspace: "
+                                           "no driving terminal client, no previously "
+                                           "resolved workspace, and no unambiguous "
+                                           "existing MCP-Chrome window to anchor to. "
+                                           "Refusing to act on the user's currently-viewed "
+                                           "workspace (fail-safe). Drive the session from "
+                                           "a terminal, or open the shared Chrome on the "
+                                           "agent's workspace first."))
+                             (-> (ensure-chrome! ws)
+                                 (.then (fn [_] (dispatch tool args ws)))))))
+                  (.catch (fn [e]
+                            (blocked (str "Chrome workspace scoping failed ("
+                                          (or (some-> e .-message) e)
+                                          "); refusing to act unscoped (fail-safe). "
+                                          "Retry, or check the shared Chrome."))))))]
       scoped)))

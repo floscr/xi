@@ -103,9 +103,9 @@ XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 Workspace scoping assumes each agent is on its own xmonad workspace. When
 **several agents share one Chrome on one workspace** — e.g. running
 `hn-hiring apply` for several jobs in parallel, each a standalone `xi --prompt`
-process with no driving TUI terminal — they all resolve to the *same* workspace
-(`wm current`) and see the same tabs, so workspace scoping can't tell them
-apart. One agent could then navigate or close another agent's tab.
+process with no driving TUI terminal — they all anchor to the *same* workspace
+(the one the shared Chrome's windows live on) and see the same tabs, so
+workspace scoping can't tell them apart. One agent could then navigate or close another agent's tab.
 
 Set `XI_CHROME_OWN_WINDOWS_ONLY=1` to switch the isolation axis from *workspace*
 to *ownership*: an agent only ever acts on the Chrome windows it created itself.
@@ -169,10 +169,27 @@ PID**:
    PID to its X11 window id → `wm windows --all --json` maps that window to its
    workspace **name**.
 
+**Sub-agent turns carry the parent room's client PID** (`xi.subagent` threads
+`agent/room-client-pid` into the turn's tool ctx), so a background sub-agent's
+browser calls scope to the same terminal workspace as the parent session.
+
 When no `:client-pid` is present (a **web client**, which has no local terminal
-window, or any caller that didn't send a PID) the guard falls back to
-`wm current`. So the PID path is **terminal-only**; web sessions get
-viewed-workspace behavior.
+window, or any caller that didn't send a PID) — or the PID can't be placed —
+the guard falls back, in order, to:
+
+1. the **last PID-resolved workspace** of this server process (cached), then
+2. the workspace the **agent's Chrome windows already live on**: a workspace
+   this process placed a self-created window on (`owned*`), else the single
+   workspace holding *all* MCP-Chrome windows (only when unambiguous).
+
+It **never** falls back to `wm current`: the viewed workspace follows the
+user's eyes, not the agent — anchoring to it made every action taken while the
+user viewed another workspace self-heal an `about:blank` window *on that
+workspace* (windows chasing the user's gaze). When nothing resolves at all, the
+call is **blocked with an explanatory error** — never forwarded unscoped
+(unscoped acts on Chrome's focused window, i.e. wherever the user is), and
+never aimed at the viewed workspace. Errors in scoping fail closed the same
+way.
 
 Workspaces are keyed by **name**, never index: xmonad workspaces grow and
 shrink as they are created/destroyed, so a desktop *index* is unstable — it can
@@ -204,7 +221,7 @@ mcp page  --URL exact-match-->  CDP target
   workspaces identical bounds.
 - **X11 window → workspace**: the window's xmonad workspace **name**, read by
   the dotfiles `wm` CLI (`wm windows --all --class … --json` exposes each
-  window's `:workspace` name; `wm current` is the viewed workspace name;
+  window's `:workspace` name;
   `wm move --window W --to <name>` relocates by name). Names are used
   throughout because workspace indices are unstable (workspaces grow/shrink).
 
