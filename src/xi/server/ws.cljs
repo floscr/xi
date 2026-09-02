@@ -936,6 +936,13 @@
                   (when-let [cids (seq (rm/clients-in-room st room-id))]
                     (let [payload (wire/encode event)]
                       (doseq [cid cids] (send! cid payload)))))))
+            ;; A new prompt into a hidden (dismissed) session un-hides it —
+            ;; fresh activity belongs back in Recent. Clear the flag before
+            ;; the lobby broadcast below (:prompt/submit is lobby-relevant)
+            ;; so the rebroadcast carries the updated :dismissed? state.
+            (when (= :prompt/submit (:type event))
+              (when-let [sid (get-in st [:rooms (:room-id event) :session :id])]
+                (session/undismiss! sid)))
             (when (lobby-relevant (:type event))
               (schedule-lobby-broadcast!))))
 
