@@ -393,8 +393,9 @@
               scope?      (and (seq browser-url) (not (seq (env "XI_CHROME_NO_SCOPE"))))
               ;; `forward` is uniformly variadic `(fn [tool args & [ctx]])`. When
               ;; scoped, the guard reads (:client-pid ctx) to pick this session's
-              ;; TUI-terminal workspace; the style-editor / element-picker call
-              ;; it 2-arg (no ctx) and fall back to `wm current`.
+              ;; TUI-terminal workspace; the style-editor threads the turn's tool
+              ;; ctx through, and the element-picker / design-mode commands wrap
+              ;; `forward` with the invoking room's client pid.
               ;; In attach mode, make sure the shared OS Chrome is actually
               ;; running before any tool call — probe its CDP endpoint and
               ;; launch it (detached) if it's down, so an agent can bootstrap

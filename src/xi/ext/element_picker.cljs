@@ -22,6 +22,7 @@
    picker result is submitted as an ordinary prompt (text + a screenshot)
    into the room."
   (:require [clojure.string :as str]
+            [xi.agent :as agent]
             [xi.image :as image])
   (:require-macros [xi.ext.element-picker-js :refer [inline-picker-js]]))
 
@@ -342,5 +343,12 @@
    :fx
    {:ext.element-picker/run
     (fn [{:keys [dispatch! get-state]} {:keys [room-id prefill]}]
-      (run-picker {:dispatch! dispatch! :get-state get-state
-                   :room-id room-id :prefill prefill :call call :ask! ask!}))}})
+      (let [;; Scope browser calls to this room's driving client, so the
+            ;; chrome guard anchors to *its* terminal workspace — not the
+            ;; server's last-resolved workspace (see xi.ext.chrome-mcp.guard).
+            pid    (agent/room-client-pid (get-state) room-id)
+            scoped (if pid
+                     (fn [tool targs] (call tool targs {:client-pid pid}))
+                     call)]
+        (run-picker {:dispatch! dispatch! :get-state get-state
+                     :room-id room-id :prefill prefill :call scoped :ask! ask!})))}})

@@ -24,6 +24,7 @@
    xi.ext.chrome-mcp (which owns the shared MCP client) via `install`, exactly
    like xi.ext.element-picker."
   (:require [clojure.string :as str]
+            [xi.agent :as agent]
             [xi.ext.chrome-mcp.scope :as scope]
             [xi.image :as image])
   (:require-macros [xi.ext.design-mode-js :refer [inline-design-js]]))
@@ -237,9 +238,11 @@
 
 (defn- stop!
   [{:keys [call dispatch! watch*]} & [{:keys [silent?]}]]
-  (let [{:keys [running? page-id room-id]} @watch*]
-    (swap! watch* assoc :running? false :page-id nil :room-id nil)
-    (when page-id (cleanup! call page-id))
+  (let [{:keys [running? page-id room-id] stored-call :call} @watch*]
+    (swap! watch* assoc :running? false :page-id nil :room-id nil :call nil)
+    ;; Prefer the call captured at start — it's scoped to the workspace design
+    ;; mode actually runs on, even when /design off comes from another room.
+    (when page-id (cleanup! (or stored-call call) page-id))
     (when (and running? (not silent?) dispatch! room-id)
       (status! dispatch! room-id "✦ Design mode off."))
     running?))
@@ -256,7 +259,7 @@
       (.then (fn [choice]
                (if (= choice :cancelled)
                  (status! dispatch! room-id "Design mode cancelled.")
-                 (do (swap! watch* assoc :running? true :page-id choice :room-id room-id)
+                 (do (swap! watch* assoc :running? true :page-id choice :room-id room-id :call call)
                      (-> (inject! call choice)
                          (.then (fn [_]
                                   (status! dispatch! room-id
@@ -290,8 +293,15 @@
      :fx
      {:ext.design-mode/toggle
       (fn [{:keys [dispatch! get-state]} {:keys [room-id args]}]
-        (let [ctx {:dispatch! dispatch! :get-state get-state :room-id room-id
-                   :call call :ask! ask! :watch* watch*}
+        (let [;; Scope browser calls to this room's driving client, so the
+              ;; chrome guard anchors to *its* terminal workspace — not the
+              ;; server's last-resolved workspace (see xi.ext.chrome-mcp.guard).
+              pid    (agent/room-client-pid (get-state) room-id)
+              scoped (if pid
+                       (fn [tool targs] (call tool targs {:client-pid pid}))
+                       call)
+              ctx {:dispatch! dispatch! :get-state get-state :room-id room-id
+                   :call scoped :ask! ask! :watch* watch*}
               off? (contains? #{"off" "stop"} (str/trim (str args)))]
           (cond
             (:running? @watch*) (stop! ctx)

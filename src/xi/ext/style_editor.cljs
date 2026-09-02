@@ -298,4 +298,8 @@
   [call]
   {:tool-definitions [tool-def]
    :tool-registry    {"style_editor"
-                      (fn [args _ctx] (run-editor call args))}})
+                      ;; Thread the turn's tool ctx (carries :client-pid) into
+                      ;; every browser call so the chrome guard scopes to this
+                      ;; session's workspace (see xi.ext.chrome-mcp.guard).
+                      (fn [args ctx]
+                        (run-editor (fn [tool targs] (call tool targs ctx)) args))}})
