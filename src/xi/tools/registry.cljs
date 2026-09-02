@@ -1,6 +1,7 @@
 (ns xi.tools.registry
   "Tool registry — maps tool names to definitions and execute fns."
   (:require [xi.util :as util]
+            [xi.image :as image]
             [xi.tools.read :as read]
             [xi.tools.write :as write]
             [xi.tools.edit :as edit]
@@ -35,14 +36,20 @@
    promise of {:content <blocks> :is-error bool}. Every tool result is capped
    via util/cap-tool-result-content here, so oversized-output trimming is the
    default for any provider that runs tools through this fn — providers never
-   have to remember to cap. Errors are turned into an error tool result."
+   have to remember to cap. Image blocks are resized to fit API pixel limits
+   (image/ensure-content-images-within-limits) so an oversized screenshot
+   (e.g. chrome take_screenshot fullPage) can never poison the session with
+   a permanently rejected message. Errors are turned into an error tool
+   result."
   [exec-fn args ctx]
   ;; Invoke exec-fn inside .then so a synchronous throw becomes a rejected
   ;; promise too (not just an async rejection) — both land in .catch.
   (-> (js/Promise.resolve)
       (.then (fn [_] (exec-fn args ctx)))
       (.then (fn [result]
-               {:content (util/cap-tool-result-content (:content result))
+               {:content (-> (:content result)
+                             (util/cap-tool-result-content)
+                             (image/ensure-content-images-within-limits))
                 :is-error (boolean (:is-error result))}))
       (.catch (fn [err]
                 {:content [{:type "text" :text (str "Tool error: " (.-message err))}]

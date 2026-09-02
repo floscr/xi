@@ -94,6 +94,36 @@
         (try (fs/unlinkSync in-path) (catch :default _))
         image))))
 
+(defn ensure-content-images-within-limits
+  "Resize any oversized image blocks inside a tool-result `content` vector so
+   a tool can never poison the session with an image the API rejects (max
+   8000px per dimension — e.g. a full-page chrome take_screenshot). Handles
+   both the MCP block shape {:type \"image\" :data .. :mimeType ..} and the
+   API shape {:type \"image\" :source {:media_type .. :data ..}}. Non-image
+   blocks and non-sequential content pass through untouched."
+  [content]
+  (if (sequential? content)
+    (mapv (fn [block]
+            (if-not (and (map? block) (= "image" (:type block)))
+              block
+              (cond
+                (:data block)
+                (let [{:keys [data media-type]}
+                      (ensure-within-limits {:data (:data block)
+                                             :media-type (or (:mimeType block) "image/png")})]
+                  (assoc block :data data :mimeType media-type))
+
+                (some-> block :source :data)
+                (let [src (:source block)
+                      {:keys [data media-type]}
+                      (ensure-within-limits {:data (:data src)
+                                             :media-type (or (:media_type src) "image/png")})]
+                  (assoc block :source (assoc src :data data :media_type media-type)))
+
+                :else block)))
+          content)
+    content))
+
 (defn process-images
   "Process a seq of image maps, resizing any that exceed limits.
    Returns a vec of processed image maps."
