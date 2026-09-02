@@ -16,6 +16,24 @@
 ;; sub-id -> {:abort! fn :room-id str}. Process-local; never crosses the wire.
 (defonce ^:private registry (atom {}))
 
+;; sub-id -> {:dir path :remove! fn} — each sub-agent's throwaway
+;; CLAUDE_CONFIG_DIR, KEPT after its turn ends so the transcript inside stays
+;; promotable to a real session (:subagent/promote, xi.ext.subagent). Cleaned
+;; up on promotion (after the transcript is moved out) or room close.
+(defonce ^:private dirs (atom {}))
+
+(defn config-dir
+  "The kept throwaway config dir of a sub-agent, or nil."
+  [sub-id]
+  (get-in @dirs [sub-id :dir]))
+
+(defn cleanup-dir!
+  "Delete a sub-agent's kept throwaway config dir (if any)."
+  [sub-id]
+  (when-let [{:keys [dir remove!]} (get @dirs sub-id)]
+    (swap! dirs dissoc sub-id)
+    (when remove! (remove! dir))))
+
 (defn running?
   "True when a sub-agent turn is still in flight."
   [sub-id]
@@ -43,6 +61,9 @@
    :on-tool-result (fn [{:keys [id content is-error]}]
                      (dispatch! {:type :subagent/tool-result :room-id room-id :sub-id sub-id
                                  :id id :content content :is-error is-error}))
+   :on-session     (fn [session-id]
+                     (dispatch! {:type :subagent/session-init :room-id room-id :sub-id sub-id
+                                 :cli-session-id session-id}))
    :on-error       (fn [error]
                      (dispatch! {:type :subagent/error :room-id room-id :sub-id sub-id :error error}))})
 
@@ -64,12 +85,10 @@
             ;; Run the sub-agent's turn against a throwaway CLAUDE_CONFIG_DIR so
             ;; the Claude CLI session it leaves behind lands in a temp dir, not
             ;; ~/.claude/projects — otherwise it leaks into the recent-sessions
-            ;; list as a top-level chat. The sub-agent's conversation lives in
-            ;; our room-scoped state (mirrored to the web panel), so it never
-            ;; needs a resumable Claude session.
+            ;; list as a top-level chat. The dir is KEPT after the turn (see
+            ;; `dirs`) so the transcript can later be promoted into a real,
+            ;; resumable session when the user opens the sub-agent as a chat.
             config-dir (when make-config-dir! (make-config-dir!))
-            cleanup!   (fn [] (when (and remove-config-dir! config-dir)
-                                (remove-config-dir! config-dir)))
             ;; Tool ctx uses the PARENT room-id: the sub-agent's tools act in
             ;; the parent room (cwd, canvas state, confirm dialogs).
             gate-ctx {:dispatch! dispatch!
@@ -108,17 +127,17 @@
                client-pid             (assoc :client-pid client-pid)
                config-dir             (assoc :env {"CLAUDE_CONFIG_DIR" config-dir})))]
         (swap! registry assoc sub-id {:abort! abort! :room-id room-id})
+        (when config-dir
+          (swap! dirs assoc sub-id {:dir config-dir :remove! remove-config-dir!}))
         (-> promise
             (.then
              (fn [result]
-               (cleanup!)
                (swap! registry dissoc sub-id)
                (dispatch! {:type :subagent/turn-end :room-id room-id :sub-id sub-id
                            :usage (:usage result) :cost (:cost result)
                            :aborted? (boolean (:aborted result))})))
             (.catch
              (fn [err]
-               (cleanup!)
                (swap! registry dissoc sub-id)
                (dispatch! {:type :subagent/error :room-id room-id :sub-id sub-id
                            :error {:type "error" :message (str (.-message err))}})

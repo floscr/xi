@@ -334,7 +334,10 @@
      (let [room (room-of state room-id)
            sessions (list-room-sessions room scope)
            summary (if session-id
-                     (some #(when (= session-id (:session-id %)) %) sessions)
+                     (or (some #(when (= session-id (:session-id %)) %) sessions)
+                         ;; Promoted sub-agent sessions are hidden from the
+                         ;; listings — resolve an explicit id directly.
+                         (session/find-session-by-id session-id))
                      (when (and (<= 1 index) (<= index (count sessions)))
                        (nth sessions (dec index))))]
        (if summary

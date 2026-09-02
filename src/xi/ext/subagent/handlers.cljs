@@ -142,6 +142,48 @@
                                                    (:errored? a)   :error
                                                    :else           :done)))))}))
 
+(defn- session-init
+  "The provider reported the child's CLI session id — remember it so the
+   sub-agent can later be promoted to a full session."
+  [st {:keys [room-id sub-id cli-session-id]}]
+  (when (find-child st room-id sub-id)
+    {:state (update-child st room-id sub-id #(assoc % :cli-session-id cli-session-id))}))
+
+(defn promoted
+  "A sub-agent got promoted to a full session: record the session id on the
+   child and link it into the parent session's :promoted-subagents."
+  [st {:keys [room-id sub-id session-id label]}]
+  (when (find-child st room-id sub-id)
+    {:state (-> st
+                (update-child room-id sub-id #(assoc % :session-id session-id))
+                (update-in [:rooms room-id :session :promoted-subagents]
+                           (fn [ps]
+                             (if (some #(= sub-id (:sub-id %)) ps)
+                               ps
+                               (conj (vec ps) {:sub-id sub-id :label label
+                                               :session-id session-id})))))}))
+
+(defn on-session-resumed
+  "Rehydrate promoted sub-agent stubs from the resumed session's
+   :promoted-subagents so the panel links survive restarts.
+
+   NOT in the shared `handlers` map: on the web, extension handlers install
+   as :local-handlers, which plain-merge OVER the wrapped base map — a
+   :session/resumed entry here would shadow the core resume handler and
+   break resume. The node extension registers it instead (where
+   ext/merge-handlers chains it after core); web clients receive the
+   rehydrated ext state via the :room/joined snapshot."
+  [st {:keys [room-id session]}]
+  (when-let [promoted-subs (seq (:promoted-subagents session))]
+    (let [existing (set (map :id (agents st room-id)))
+          stubs    (->> promoted-subs
+                        (remove #(existing (:sub-id %)))
+                        (map (fn [{:keys [sub-id label session-id]}]
+                               {:id sub-id :label label :status :done
+                                :history [] :session-id session-id})))]
+      (when (seq stubs)
+        {:state (update-in st [:rooms room-id :ext ext-id :agents] (fnil into []) stubs)}))))
+
 (defn- toggle-collapse [st {:keys [room-id]}]
   (when (state/get-room st room-id)
     {:state (update-in st [:rooms room-id :ext ext-id :collapsed?] not)}))
@@ -164,5 +206,7 @@
    :subagent/tool-result     tool-result
    :subagent/error           sub-error
    :subagent/turn-end        turn-end
+   :subagent/session-init    session-init
+   :subagent/promoted        promoted
    :subagent/toggle-collapse toggle-collapse
    :subagent/toggle-child    toggle-child})

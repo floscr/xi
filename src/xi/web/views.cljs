@@ -1979,7 +1979,7 @@
 ;; child's full history once the user expands it. Expanding-by-default made the
 ;; panel re-render every entry of every sub-agent on every streaming delta,
 ;; which stalled the web client with several concurrent agents (PR reviews).
-(defn- subagent-child [dispatch! room-id {:keys [id label task status history result expanded?] :as child}]
+(defn- subagent-child [dispatch! room-id {:keys [id label task status history result expanded? session-id] :as child}]
   (let [open? (boolean expanded?)]
     [:div {:class ["subagent-card" (str "subagent-card--" (name (or status :running)))]
            :replicant/key id}
@@ -1994,6 +1994,17 @@
       [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
       (when-let [d (subagent-duration child)]
         [:span {:class ["subagent-card-dur"]} d])
+      (when-not (= :running status)
+        [:button {:class ["subagent-open"]
+                  :title "Open as chat"
+                  :on {:click (fn [e]
+                                (.stopPropagation e)
+                                (if session-id
+                                  (dispatch! {:type :route/navigate :page :chat
+                                              :session-id session-id})
+                                  (dispatch! {:type :subagent/promote
+                                              :room-id room-id :sub-id id})))}}
+         (icon/icon {:icon-name :message-circle :size :sm})])
       (when (= :running status)
         [:button {:class ["subagent-stop"]
                   :title "Stop sub-agent"

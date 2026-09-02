@@ -693,6 +693,14 @@
                 :on-stop (fn [sub-id]
                            (dispatch! {:type :subagent/abort
                                        :room-id room-id :sub-id sub-id}))
+                :on-open (fn [sub-id]
+                           ;; Promote (first time) + resume the sub-agent's
+                           ;; session into this room, and land back in chat.
+                           (dispatch! {:type :subagent/promote
+                                       :room-id room-id :sub-id sub-id
+                                       :open? true})
+                           (dispatch! {:type :ui/buffer-switch
+                                       :room-id room-id :buffer-id :chat}))
                 :on-close (fn [] (dispatch! {:type :ui/buffer-switch
                                              :room-id room-id :buffer-id :chat}))
                 :on-command-mode (fn [] (tui/set-focus! (.-editor ctx)))})]

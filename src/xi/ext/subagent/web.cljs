@@ -10,8 +10,32 @@
    the spawn handler emits is a no-op here."
   (:require [xi.ext.subagent.handlers :as h]))
 
+(def ^:private ext-id h/ext-id)
+
+(defn- promote
+  "Open-as-chat click: promotion runs server-side (the transcript lives in
+   the server's throwaway config dir), so forward the request and remember
+   which child we want to navigate to once :subagent/promoted comes back."
+  [st {:keys [room-id sub-id] :as ev}]
+  (when-not (:remote? ev)
+    {:state   (assoc-in st [:rooms room-id :ext ext-id :pending-open] sub-id)
+     :effects [[:ws/send ev]]}))
+
+(defn- promoted
+  "Apply the shared promoted handler; when this client initiated the open,
+   navigate to the promoted session's chat page."
+  [st {:keys [room-id sub-id session-id] :as ev}]
+  (let [{st' :state :as res} (h/promoted st ev)
+        st'     (or st' st)
+        pending (get-in st' [:rooms room-id :ext ext-id :pending-open])]
+    (if (and res (= pending sub-id))
+      {:state   (update-in st' [:rooms room-id :ext ext-id] dissoc :pending-open)
+       :effects [[:app/dispatch {:type :route/navigate :page :chat
+                                 :session-id session-id}]]}
+      res)))
+
 (def extension
-  {:id       :subagents
+  {:id       ext-id
    :init     {:room {:agents [] :collapsed? false}}
    :handlers (assoc h/handlers
                     ;; Stop button: the abort must run server-side (the turn
@@ -23,5 +47,8 @@
                     :subagent/abort
                     (fn [_st ev]
                       (when-not (:remote? ev)
-                        {:effects [[:ws/send ev]]})))
-   :fx       {:subagent/start (fn [_ _] nil)}})
+                        {:effects [[:ws/send ev]]}))
+                    :subagent/promote promote
+                    :subagent/promoted promoted)
+   :fx       {:subagent/start    (fn [_ _] nil)
+              :subagent/promote! (fn [_ _] nil)}})

@@ -24,6 +24,7 @@
    handlers live in xi.ext.subagent.handlers so the web half can reuse them."
   (:require [clojure.string :as str]
             [xi.ext.subagent.handlers :as h]
+            [xi.session :as session]
             [xi.subagent :as subagent]))
 
 (def ^:private ext-id h/ext-id)
@@ -47,10 +48,12 @@
 ;; ── State handlers (pure) — see xi.ext.subagent.handlers ─────────────────────
 
 (defn- on-room-close
-  "Abort any running sub-agents when a room is destroyed."
+  "Abort any running sub-agents when a room is destroyed, and drop the
+   throwaway config dirs kept around for promotion."
   [st {:keys [room-id]}]
   (doseq [{:keys [id]} (agents st room-id)]
-    (subagent/abort! id))
+    (subagent/abort! id)
+    (subagent/cleanup-dir! id))
   nil)
 
 (defn- abort-sub
@@ -62,6 +65,71 @@
   [st {:keys [room-id sub-id]}]
   (when (find-child st room-id sub-id)
     {:effects [[:subagent/abort {:sub-id sub-id}]]}))
+
+(defn- promote-sub
+  "Open a sub-agent as a full chat. First open promotes it — the
+   :subagent/promote! effect moves its transcript into a real session —
+   after which the child carries :session-id and opening is just a resume."
+  [st {:keys [room-id sub-id open?]}]
+  (when-let [child (find-child st room-id sub-id)]
+    (cond
+      (:session-id child)
+      (when open?
+        {:effects [[:session/load {:room-id room-id :scope :all
+                                   :session-id (:session-id child)}]]})
+
+      (= :running (:status child))
+      {:effects [[:app/dispatch {:type :ui/status :room-id room-id
+                                 :text "Sub-agent is still running — wait for it to finish before opening it as a chat."}]]}
+
+      :else
+      {:effects [[:subagent/promote! {:room-id room-id :sub-id sub-id
+                                      :open? open?}]]})))
+
+(defn- promote-fx
+  "Promote a finished sub-agent to a real session: move its transcript out of
+   the throwaway config dir, persist the parent → child link, broadcast
+   :subagent/promoted, and (optionally) resume it into this room."
+  [{:keys [dispatch! get-state]} {:keys [room-id sub-id open?]}]
+  (let [st     (get-state)
+        room   (get-in st [:rooms room-id])
+        child  (find-child st room-id sub-id)
+        parent (:session room)
+        cfg    (subagent/config-dir sub-id)
+        saved  (when (and child cfg (:cli-session-id child))
+                 (session/promote-subagent-session!
+                  {:config-dir     cfg
+                   :cwd            (:cwd room)
+                   :cli-session-id (:cli-session-id child)
+                   :label          (:label child)
+                   :origin         {:session-id (:id parent)
+                                    :sub-id     sub-id}}))]
+    (if-not saved
+      (dispatch! {:type :ui/status :room-id room-id
+                  :text "Couldn't open this sub-agent as a chat — no transcript found (non-Claude sub-agents can't be promoted)."})
+      (do
+        (subagent/cleanup-dir! sub-id)
+        ;; Persist the link on the parent so it survives restarts.
+        (when parent
+          (session/update-session!
+           parent
+           {:promoted-subagents
+            (let [ps (vec (:promoted-subagents parent))]
+              (if (some #(= sub-id (:sub-id %)) ps)
+                ps
+                (conj ps {:sub-id sub-id :label (:label child)
+                          :session-id (:id saved)})))}))
+        (dispatch! {:type :subagent/promoted :room-id room-id :sub-id sub-id
+                    :session-id (:id saved) :label (:label child)})
+        (when open?
+          ;; Resolve the freshly saved session into a listing summary
+          ;; (find-session-by-id sees hidden sessions) and resume it here.
+          (when-let [summary (session/find-session-by-id (:id saved))]
+            (dispatch! {:type :session/resumed
+                        :room-id room-id
+                        :session (session/load-session summary)
+                        :summary summary
+                        :messages (session/read-session-messages summary)})))))))
 
 ;; ── Tools (handled in the gate — they need dispatch!/get-state/room-id) ───────
 
@@ -112,11 +180,12 @@
            (str/join
             "\n"
             (map (fn [{:keys [id label status started ended] :as child}]
-                   (let [dur (format-duration (- (or ended now) started))
+                   (let [dur (when started
+                               (format-duration (- (or ended now) started)))
                          snip (recent-snippet child)]
                      (str "  • [" (name status) "] " id
                           (when label (str " — " label))
-                          " (" dur ")"
+                          (when dur (str " (" dur ")"))
                           (when (and (= status :running) snip)
                             (str "\n      … " snip)))))
                  as))))))
@@ -223,7 +292,12 @@
    :tool-gate        tool-gate
    :handlers         (assoc h/handlers
                             :room/close on-room-close
-                            :subagent/abort abort-sub)
+                            :subagent/abort abort-sub
+                            :subagent/promote promote-sub
+                            ;; Chained after the core resume handler by
+                            ;; ext/merge-handlers — reseeds promoted stubs.
+                            :session/resumed h/on-session-resumed)
+   :fx               {:subagent/promote! promote-fx}
    :commands         [{:name "subagents"
                        :description "View this room's background sub-agents"
                        :handler cmd-subagents}]})

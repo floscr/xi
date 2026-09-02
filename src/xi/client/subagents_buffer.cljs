@@ -16,6 +16,8 @@
    Keybindings (on top of the pager's scroll/yank set):
      j/k or ↑/↓  List: select next / previous sub-agent
      ⏎ / Tab     List: open the sub-agent's transcript
+     o           Open the selected / viewed finished sub-agent as a chat
+                 (promotes it to a full session and resumes it here)
      x           Stop the selected / viewed running sub-agent
      q / Esc     Detail: back to list · List: back to chat"
   (:require [clojure.string :as str]
@@ -144,13 +146,14 @@
    opts:
      :get-agents      — (fn []) → current agents vector (read from app state)
      :on-stop         — (fn [sub-id]) stop a running sub-agent
+     :on-open         — (fn [sub-id]) open a finished sub-agent as a chat
      :on-close        — (fn []) q/Escape from the list view
      :on-command-mode — (fn []) ':' focuses the editor
 
    The host must call the returned component's :invalidate whenever the
    agents vector changes identity (streaming deltas), then let the normal
    render pass rebuild the lines."
-  [{:keys [get-agents on-stop on-close on-command-mode]}]
+  [{:keys [get-agents on-stop on-open on-close on-command-mode]}]
   (let [mode      (atom {:view :list})   ;; or {:view :detail :id sub-id}
         ranges    (atom [])
         pager-ref (atom nil)
@@ -197,6 +200,13 @@
                 (open-detail! id set-cursor!)
                 true)
 
+              ;; o: open the selected / viewed finished sub-agent as a chat
+              (= data "o")
+              (let [{:keys [id status]} (if detail? (detail-agent) (agent-at body-cursor))]
+                (when (and id on-open (not= :running status))
+                  (on-open id))
+                true)
+
               ;; x: stop the selected / viewed running sub-agent
               (= data "x")
               (let [{:keys [id status]} (if detail? (detail-agent) (agent-at body-cursor))]
@@ -223,8 +233,9 @@
                                   (render-list agents ranges width)))
                             (render-list agents ranges width))))
             :extra-keys extra-keys
-            :help (pager/help-bar [["j/k" "select"] ["⏎" "open"] ["x" "stop"]
-                                   ["y" "yank"] ["q" "back/close"] [":" "command"]])
+            :help (pager/help-bar [["j/k" "select"] ["⏎" "open"] ["o" "open chat"]
+                                   ["x" "stop"] ["y" "yank"] ["q" "back/close"]
+                                   [":" "command"]])
             :on-close on-close
             :on-command-mode on-command-mode})
         ;; Follow the streaming tail: when the transcript is open and the

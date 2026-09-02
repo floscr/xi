@@ -317,6 +317,37 @@
     (try (fs/rmSync dir #js {:recursive true :force true})
          (catch :default _e nil))))
 
+(defn promote-subagent-session!
+  "Promote a sub-agent's throwaway session into a real, resumable one: move
+   its Claude CLI transcript out of the throwaway CLAUDE_CONFIG_DIR into the
+   real ~/.claude/projects, then create + save Xi session metadata pointing
+   at it. The :subagent-origin marker keeps the promoted session out of the
+   normal session listings (see list-all-sessions) — it is only reachable
+   through its origin session's sub-agents UI.
+   Returns the saved session map, or nil when the transcript is missing
+   (e.g. a non-Claude provider, which keeps no server-side transcript)."
+  [{:keys [config-dir cwd cli-session-id label origin]}]
+  (try
+    (let [src (.join node-path config-dir "projects" (encode-cwd-claude cwd)
+                     (str cli-session-id ".jsonl"))]
+      (when (fs/existsSync src)
+        (let [dest-dir (claude-project-dir cwd)
+              dest (.join node-path dest-dir (str cli-session-id ".jsonl"))]
+          (when-not (fs/existsSync dest-dir)
+            (fs/mkdirSync dest-dir #js {:recursive true}))
+          ;; copy + unlink, not rename — the throwaway dir lives in the OS
+          ;; tmpdir, which may be a different filesystem (tmpfs).
+          (fs/copyFileSync src dest)
+          (fs/unlinkSync src)
+          (-> (create-session cwd)
+              (assoc :cli-session-id cli-session-id
+                     :name label
+                     :subagent-origin origin)
+              (save-session!)))))
+    (catch :default e
+      (js/console.error (str "[session] promote sub-agent failed: " (.-message e)))
+      nil)))
+
 ;; ── Claude CLI Session Reading ────────────────────────────────────────────────
 
 (defn- read-head-lines
@@ -425,6 +456,7 @@
        :interrupted-at (:interrupted-at data)
        :aborted-at (:aborted-at data)
        :truncated-from (:truncated-from data)
+       :subagent-origin (:subagent-origin data)
        :user-messages nil})
     (catch :default _e nil)))
 
@@ -580,6 +612,13 @@
       (swap! dismissed-set conj session-id))
     (not d?)))
 
+(defn undismiss!
+  "Remove session-id from the in-memory dismissed set (no-op when not
+   dismissed). Used to auto-unhide a session the moment it sees new activity —
+   a hidden session the user prompts again clearly belongs back in Recent."
+  [session-id]
+  (swap! dismissed-set disj session-id))
+
 ;; ── Read state (cross-device unread markers) ──────────────────────────────
 ;; Persisted {session-id → seen-response-count}. A session is unread when its
 ;; current assistant-turn count exceeds the seen count. Stored server-side and
@@ -659,6 +698,9 @@
    (annotate-favorites
     (->> (git-project-cwds cwd)
          (mapcat sessions-for-cwd)
+         ;; Promoted sub-agent sessions stay out of the pickers — they are
+         ;; opened through their origin session's sub-agents UI instead.
+         (remove :subagent-origin)
          (sort-by #(or (:last-accessed %) (:timestamp %)))
          reverse
          vec))))
@@ -690,20 +732,29 @@
          reverse
          vec)))
 
+(defn- all-sessions-raw
+  "The briefly-cached raw scan behind list-all-sessions — INCLUDES hidden
+   (:subagent-origin) sessions, so id lookups (find-session-by-id) can still
+   resolve them."
+  []
+  (let [now (js/Date.now)
+        cached @all-sessions-cache]
+    (if (and cached (< (- now (:at cached)) all-sessions-cache-ttl-ms))
+      (:sessions cached)
+      (let [sessions (scan-all-sessions)]
+        (reset! all-sessions-cache {:at now :sessions sessions})
+        sessions))))
+
 (defn list-all-sessions
   "List sessions across ALL CWDs from all sources. Returns vec of session
    summaries, newest first. Each summary includes :cwd. The underlying disk
    scan is cached briefly (see all-sessions-cache) — favorites/dismissed
-   annotation stays per-call so toggles reflect instantly."
+   annotation stays per-call so toggles reflect instantly. Promoted sub-agent
+   sessions (:subagent-origin) are filtered out — they are reachable only
+   through their origin session's sub-agents UI (or a direct id/URL)."
   []
-  (let [now (js/Date.now)
-        cached @all-sessions-cache
-        raw (if (and cached (< (- now (:at cached)) all-sessions-cache-ttl-ms))
-              (:sessions cached)
-              (let [sessions (scan-all-sessions)]
-                (reset! all-sessions-cache {:at now :sessions sessions})
-                sessions))]
-    (annotate-dismissed (annotate-favorites raw))))
+  (annotate-dismissed
+   (annotate-favorites (into [] (remove :subagent-origin) (all-sessions-raw)))))
 
 (defn- list-all-personal-agent-session-files
   "All session metadata files across every named-agent subdir of the
@@ -735,9 +786,10 @@
   "Find a session summary by its ID across all sources. Matches the summary
    id or, for Xi metadata summaries, the underlying CLI session id (Claude
    sessions are deduped out of the listing once Xi metadata references them,
-   so a CLI id must resolve through the Xi summary)."
+   so a CLI id must resolve through the Xi summary). Uses the raw scan, so
+   hidden promoted sub-agent sessions resolve too."
   [session-id]
-  (first (filter (partial summary-matches-id? session-id) (list-all-sessions))))
+  (first (filter (partial summary-matches-id? session-id) (all-sessions-raw))))
 
 (defn find-personal-agent-session-by-id
   "Find a session summary by its ID in the personal-agent sessions dir.
@@ -935,7 +987,12 @@
         (:personal-agent? data) (assoc :personal-agent? true)
         (:agent data) (assoc :agent (:agent data))
         ;; Keep the /truncate lineage link so it survives future saves
-        (:truncated-from data) (assoc :truncated-from (:truncated-from data))))
+        (:truncated-from data) (assoc :truncated-from (:truncated-from data))
+        ;; Keep the sub-agent links so they survive future saves — the origin
+        ;; marker hides a promoted session from listings; the promoted list
+        ;; reseeds the sub-agents panel on resume (xi.ext.subagent.handlers).
+        (:subagent-origin data) (assoc :subagent-origin (:subagent-origin data))
+        (:promoted-subagents data) (assoc :promoted-subagents (:promoted-subagents data))))
 
     :claude
     {:id (:session-id summary)
