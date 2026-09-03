@@ -418,7 +418,6 @@ body {
   display: flex;
   flex-direction: column;
   flex: 1;
-  max-width: 48rem;
   width: 100%;
   margin: 0 auto;
   padding: 0 var(--size-4);
@@ -1042,11 +1041,6 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  /* Center into the same 48rem column as the conversation on larger screens.
-     When the viewport is narrower than the column this collapses to full
-     width (width: 100% wins), so the mobile edge-to-edge composer is
-     unchanged. */
-  max-width: 48rem;
   width: 100%;
   margin-inline: auto;
 }
@@ -1400,7 +1394,6 @@ body {
   padding: var(--size-2) var(--size-4);
   color: var(--fg-2);
   font-size: var(--font-sm);
-  max-width: 48rem;
   width: 100%;
   margin: 0 auto;
 }
@@ -2129,7 +2122,6 @@ body {
 .compose-dock {
   position: relative;
   flex-shrink: 0;
-  max-width: 48rem;
   width: 100%;
   margin-inline: auto;
 }
@@ -2387,7 +2379,6 @@ body {
 
 .gtd-detail {
   padding: var(--size-4) var(--size-5);
-  max-width: 42rem;
 }
 
 .gtd-detail-title {
@@ -3561,7 +3552,6 @@ body {
 
 /* ── Sub-agents panel ─────────────────────────────────────────── */
 .subagents-panel {
-  max-width: 48rem;
   width: 100%;
   margin: var(--size-3) auto 0;
   border: 1px solid var(--border-0);
