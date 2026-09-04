@@ -3,6 +3,23 @@
 Design doc for making file edits safe when **multiple sub-agents edit the same
 file**, and cheaper/more reliable in general.
 
+## Status
+
+**Concurrency safety: shipped.** The problem is closed across every read/edit
+path:
+
+- **Part A** (`591d9fd`) — freshness guard on `edit` + `[file-hash]` on `read`.
+- **read_source freshness** (`69e86aa`) — `[file-hash]` on `read_source`, so
+  edits to *large* files (read via the treesitter outline path) are protected
+  too.
+- **Part C** (`28888d7`) — `:system-prompt` steering Clojure edits to the
+  structural clj-surgeon tools (`clj_replace` et al.), which are inherently
+  concurrency-robust.
+
+**Part B (per-line hashline): deferred as a separate initiative.** See the note
+in its section below — its benefit is edit *token efficiency*, not concurrency
+(already solved), and it collides with the treesitter outline read path.
+
 ## The problem
 
 xi's edit tool (`src/xi/tools/edit.cljs`) is a classic **`str_replace`**:
@@ -68,6 +85,26 @@ rejected with a clear "re-read" instruction.
 
 ### Part B — stateless hashline edit for non-Clojure files
 
+> **Deferred (2026-09-04).** Not built. Parts A + C + read_source freshness
+> already deliver the concurrency safety this doc set out to achieve, so the
+> hashline is now a *separate* bet about edit token-efficiency, not a
+> concurrency fix. Reasons to treat it on its own:
+>
+> 1. **Benefit is token efficiency, not concurrency.** Its win (from The
+>    Harness Problem) is `O(replace)` edit cost + fewer `str_replace` match
+>    failures. The concurrency goal is met without it.
+> 2. **Collides with the treesitter outline.** Large source files return an
+>    *outline* from `read`, not tagged lines; literal code comes from
+>    `read_source`. Per-line anchors would be inconsistent unless both surfaces
+>    are tagged and reconciled with the outline format — a much bigger change.
+> 3. **Taxes every read.** Per-line prefixes add overhead to *all* reads, not
+>    just the ones leading to edits — the opposite of the treesitter ext's
+>    token-saving purpose.
+>
+> If revived, it should be benchmarked (as The Harness Problem did) and
+> designed to cooperate with the outline path. The design below is the
+> reference sketch.
+
 Removes the retry-loop token waste *and* gives per-line staleness detection.
 
 - **On read**, tag lines: `{line}:{hash}|code` (2–3 char content hash), e.g.
@@ -108,10 +145,11 @@ and two agents editing the same form get a clean conflict.
 
 ## Rollout order
 
-1. **Part A** — freshness guard. Small, high-value, low-risk. One commit.
-2. **Part C** — steer Clojure edits to clj-surgeon. Docs + prompt/gate nudge.
-3. **Part B** — stateless hashline for non-Clojure. Larger; do after A proves
-   the freshness plumbing.
+1. **Part A** — freshness guard. ✅ shipped (`591d9fd`).
+2. **read_source freshness** — extend the token to the large-file read path.
+   ✅ shipped (`69e86aa`).
+3. **Part C** — steer Clojure edits to clj-surgeon. ✅ shipped (`28888d7`).
+4. **Part B** — stateless hashline for non-Clojure. ⏸ deferred (see above).
 
 ## Open questions
 
