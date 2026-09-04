@@ -1600,7 +1600,30 @@
 (defonce ^:private pages-ref (atom nil))
 
 (defn- render! [app-state dispatch!]
-  (r/render (el "app") (views/root-view app-state dispatch! @pages-ref))
+  (let [root (el "app")
+        hiccup (views/root-view app-state dispatch! @pages-ref)]
+    (try
+      (r/render root hiccup)
+      (catch :default e
+        ;; A reconcile that throws leaves Replicant's internal rendering? flag
+        ;; stuck true for this element: it's set before reconcile and only
+        ;; cleared on success (replicant.dom/render). Every later render then
+        ;; trips the "Triggered a render while rendering" guard, re-queues via
+        ;; rAF, and loops forever — the URL keeps updating but the DOM freezes
+        ;; until a manual reload. Forget Replicant's cached vdom + stuck flag
+        ;; for the root and rebuild from a clean baseline so one bad render
+        ;; can't wedge the whole client. The logged error is the real culprit
+        ;; (a keying/reconcile bug) — fix that at its source when it recurs.
+        (js/console.error "[xi-web] render failed — recovering:" e)
+        (vswap! r/state dissoc root)
+        (try
+          (r/render root hiccup)
+          (catch :default e2
+            ;; Even the clean rebuild failed (a persistent bug in the current
+            ;; hiccup). Leave the flag cleared so the NEXT state change gets a
+            ;; fresh attempt instead of the infinite rAF warning flood.
+            (js/console.error "[xi-web] recovery render also failed:" e2)
+            (vswap! r/state dissoc root))))))
   (attach-scroll-listener!)
   (js/requestAnimationFrame scroll-to-bottom!))
 
