@@ -28,7 +28,7 @@
 (defn execute
   "Edit a file using exact text replacement.
    Accepts a vec of {:oldText :newText} edits applied against the original file."
-  [{:keys [path edits]} {:keys [cwd]}]
+  [{:keys [path edits expectedHash]} {:keys [cwd]}]
   (try
     (let [resolved (tfs/resolve-path path cwd)
           created? (when-not (tfs/file-exists? resolved)
@@ -36,6 +36,13 @@
                      (fs/writeFileSync resolved "" "utf8")
                      true)
           original (fs/readFileSync resolved "utf8")]
+      (if (and expectedHash (not= expectedHash (util/content-hash original)))
+        {:content [{:type "text"
+                    :text (str "File has changed since it was last read "
+                               "(expected hash " expectedHash ", current "
+                               (util/content-hash original) "). Re-read "
+                               path " before editing.")}]
+         :is-error true}
         (loop [content original
                [edit & remaining] edits
                applied 0]
@@ -45,21 +52,23 @@
                       diff (util/unified-diff original content)
                       info (when created? (str "(created new file)\n"))]
                   {:content [{:type "text"
-                              :text (str display-path "\n" info diff)}]}))
+                              :text (str display-path "\n" info diff
+                                         "\n[file-hash: " (util/content-hash content) "]")}]}))
             (let [result (apply-edit content edit)]
               (if (:error result)
                 {:content [{:type "text" :text (:error result)}]
                  :is-error true}
-                (recur (:ok result) remaining (inc applied)))))))
+                (recur (:ok result) remaining (inc applied))))))))
     (catch :default e
       {:content [{:type "text" :text (str "Error editing file: " (.-message e))}]
        :is-error true})))
 
 (def definition
   {:name "edit"
-   :description "Edit a file using exact text replacement. Each edit specifies oldText (must match exactly) and newText. Edits are applied against the original file, not incrementally."
+   :description "Edit a file using exact text replacement. Each edit specifies oldText (must match exactly) and newText. Edits are applied against the original file, not incrementally. Optionally pass expectedHash (the [file-hash: ...] token from your last read of this file) to reject the edit if the file changed since — this prevents clobbering concurrent edits."
    :input_schema {:type "object"
                   :properties {:path {:type "string" :description "Path to file"}
+                               :expectedHash {:type "string" :description "Optional freshness token from the last read ([file-hash: ...]). If set and the file changed since, the edit is rejected so you re-read first."}
                                :edits {:type "array"
                                        :description "One or more replacements"
                                        :items {:type "object"

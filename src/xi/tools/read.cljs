@@ -1,6 +1,7 @@
 (ns xi.tools.read
   "Read file tool."
   (:require [xi.tools.fs :as tfs]
+            [xi.tools.util :as util]
             ["node:fs" :as fs]))
 
 (defn execute
@@ -21,7 +22,8 @@
                                (str "[showing lines " (inc start) "-" end " of " total "]\n"))
                              result
                              (when truncated?
-                               (str "\n[" (- total end) " more lines, use offset=" end " to continue]")))}]})
+                               (str "\n[" (- total end) " more lines, use offset=" end " to continue]"))
+                             "\n[file-hash: " (util/content-hash content) "]")}]})
     (catch :default e
       {:content [{:type "text" :text (str "Error reading file: " (.-message e))}]
        :is-error true})))

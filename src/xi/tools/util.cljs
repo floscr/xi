@@ -2,7 +2,17 @@
   "Shared utilities for tools."
   (:require [clojure.string :as str]
             ["node:child_process" :as cp]
+            ["node:crypto" :as crypto]
             ["node:path" :as node-path]))
+
+(defn content-hash
+  "Short content-derived freshness token for a file's text. A pure function of
+   the content, so any process computes the same value (safe across sub-agents)."
+  [content]
+  (-> (.createHash crypto "sha1")
+      (.update content "utf8")
+      (.digest "hex")
+      (subs 0 8)))
 
 (defn git-root
   "Return the git repository root for `dir`, or nil if not in a git repo."

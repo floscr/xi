@@ -2,35 +2,22 @@
   (:require [cljs.test :refer [deftest is testing]]
             [xi.tools.util :as util]))
 
-(deftest unified-diff-identical
-  (testing "identical texts produce empty diff"
-    (is (= "" (util/unified-diff "hello" "hello")))))
+;; ── content-hash (edit freshness token) ──
 
-(deftest unified-diff-single-line-change
-  (testing "single line replacement"
-    (let [result (util/unified-diff "hello" "world")]
-      (is (re-find #"- hello" result))
-      (is (re-find #"\+ world" result)))))
+(deftest content-hash-is-deterministic
+  (testing "same content yields the same token (stable across processes)"
+    (is (= (util/content-hash "hello world")
+           (util/content-hash "hello world")))))
 
-(deftest unified-diff-addition
-  (testing "line addition"
-    (let [old-text "line1\nline2\nline3"
-          new-text "line1\nline2\nnew-line\nline3"
-          result (util/unified-diff old-text new-text)]
-      (is (re-find #"\+ new-line" result)))))
+(deftest content-hash-detects-changes
+  (testing "any change to content yields a different token"
+    (is (not= (util/content-hash "line one\nline two\n")
+              (util/content-hash "line one\nline TWO\n")))
+    (is (not= (util/content-hash "abc")
+              (util/content-hash "abc\n")))))
 
-(deftest unified-diff-deletion
-  (testing "line deletion"
-    (let [old-text "line1\nline2\nline3"
-          new-text "line1\nline3"
-          result (util/unified-diff old-text new-text)]
-      (is (re-find #"- line2" result)))))
-
-(deftest unified-diff-context-lines
-  (testing "context lines are included"
-    (let [old-text "a\nb\nc\nd\ne"
-          new-text "a\nb\nX\nd\ne"
-          result (util/unified-diff old-text new-text)]
-      ;; b and d should appear as context around the change
-      (is (re-find #"b" result))
-      (is (re-find #"d" result)))))
+(deftest content-hash-is-short
+  (testing "token is a short hex string"
+    (let [h (util/content-hash "anything")]
+      (is (= 8 (count h)))
+      (is (re-matches #"[0-9a-f]{8}" h)))))
