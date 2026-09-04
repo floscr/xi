@@ -2,6 +2,7 @@
 
 (require '[rewrite-clj.zip :as z]
          '[rewrite-clj.node :as node]
+         '[rewrite-clj.parser :as p]
          '[clojure.string :as str])
 
 (defn parse-safely [code-str label]
@@ -42,6 +43,16 @@
     (catch Exception _
       (str (z/node z)))))
 
+(defn top-level-form-count
+  "Count top-level forms in a code string (whitespace/comments skipped)."
+  [code-str]
+  (try
+    (loop [z (z/of-string code-str) n 1]
+      (if-let [r (z/right z)]
+        (recur r (inc n))
+        n))
+    (catch Exception _ 1)))
+
 (defn -main [& args]
   (let [[filename old-string new-string] args]
     (if (or (nil? filename) (nil? old-string) (nil? new-string))
@@ -69,9 +80,21 @@
                   (println (str (:error new-parse)))
                   (System/exit 1))
 
-                (let [file-zip (z/of-string file-content {:track-position? true})
+                (let [old-form-count (top-level-form-count old-string)]
+                 (if (> old-form-count 1)
+                  (do
+                    (println (str "old-string contains " old-form-count
+                                  " top-level forms. clj-replace matches and replaces a"
+                                  " single form; a multi-form old-string would silently"
+                                  " drop all but the first. Split into " old-form-count
+                                  " separate clj_replace calls (one per form), or use the"
+                                  " edit tool."))
+                    (System/exit 1))
+                  (let [file-zip (z/of-string file-content {:track-position? true})
                       target-sexpr (z/sexpr (:result old-parse))
-                      new-node (z/node (:result new-parse))
+                      new-node (if (> (top-level-form-count new-string) 1)
+                                 (p/parse-string-all (str/trim new-string))
+                                 (z/node (:result new-parse)))
                       matches (walk-and-find file-zip target-sexpr)]
 
                   (cond
@@ -98,6 +121,6 @@
                           result (z/root-string updated-z)]
                       (spit filename result)
                       (println (str "Replaced in " filename " at line " (:line loc) ", col " (:column loc)))
-                      (System/exit 0))))))))))))
+                      (System/exit 0))))))))))))))
 
 (apply -main *command-line-args*)
