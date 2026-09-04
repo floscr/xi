@@ -17,6 +17,7 @@
             [xi.ext.treesitter.langs :as langs]
             [xi.ext.treesitter.skeleton :as skeleton]
             [xi.tools.fs :as tfs]
+            [xi.tools.util :as util]
             ["node:fs" :as fs]))
 
 (def ^:private min-lines
@@ -103,8 +104,10 @@
          (let [entries ((langs/extractor lang) root src)
                syms (skeleton/symbols entries)]
            (if-let [{:keys [start end]} (get syms symbol)]
-             (let [{:keys [text total]} (slice-lines (.toString src "utf8") start end)]
-               (text-result (str "[" path " lines " start "-" end " of " total "]\n" text)))
+             (let [full (.toString src "utf8")
+                   {:keys [text total]} (slice-lines full start end)]
+               (text-result (str "[" path " lines " start "-" end " of " total "]\n" text
+                                 "\n[file-hash: " (util/content-hash full) "]")))
              (error-result
               (str "Symbol not found: " symbol "\nAvailable: "
                    (str/join ", " (sort (keys syms)))))))))))
@@ -125,12 +128,15 @@
                              " — use start_line/end_line instead."))))
 
       (or start_line end_line)
-      (let [{:keys [text start end total]}
-            (slice-lines (fs/readFileSync resolved "utf8") start_line end_line)]
-        (text-result (str "[" path " lines " start "-" end " of " total "]\n" text)))
+      (let [content (fs/readFileSync resolved "utf8")
+            {:keys [text start end total]}
+            (slice-lines content start_line end_line)]
+        (text-result (str "[" path " lines " start "-" end " of " total "]\n" text
+                          "\n[file-hash: " (util/content-hash content) "]")))
 
       :else
-      (text-result (fs/readFileSync resolved "utf8")))))
+      (let [content (fs/readFileSync resolved "utf8")]
+        (text-result (str content "\n[file-hash: " (util/content-hash content) "]"))))))
 
 (def ^:private read-source-def
   {:name "read_source"
