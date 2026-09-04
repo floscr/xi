@@ -2882,6 +2882,45 @@
   ;; safe to leave out of the key.)
   (atom nil))
 
+(defn sidebar-session-groups
+  "Session cards for the drawer sidebar, split into the display groups
+   Recent / Hidden / Earlier (in render order). Busy agents pin to the top,
+   then most-recently-visited. Shared by the rendered sidebar and ALT+j/k
+   keyboard navigation so both agree on order."
+  [state]
+  (let [dismissed-ids (->> (get-in state [:lobby :sessions])
+                           (filter :dismissed?)
+                           (map :session-id)
+                           set)
+        sessions (palette/recent-sessions state)
+        orphans  (orphan-rooms state sessions)
+        cards    (->> (concat orphans (map #(session-status state %) sessions))
+                      (filter :session-id)
+                      (reduce (fn [{:keys [seen acc]} c]
+                                (if (seen (:session-id c))
+                                  {:seen seen :acc acc}
+                                  {:seen (conj seen (:session-id c))
+                                   :acc  (conj acc c)}))
+                              {:seen #{} :acc []})
+                      :acc)
+        cards    (let [{busy true idle false} (group-by #(boolean (:busy? %)) cards)]
+                   (concat busy idle))
+        cards    (map #(assoc % :dismissed? (boolean (dismissed-ids (:session-id %)))) cards)
+        {hidden true visible false} (group-by :dismissed? cards)
+        now      (js/Date.now)
+        started  (get-in state [:lobby :started-at])
+        {recent true earlier false} (group-by #(recent/recent? now started %) visible)]
+    {:recent (vec recent) :hidden (vec hidden) :earlier (vec earlier)}))
+
+(defn sidebar-session-order
+  "Flattened session-ids as shown in the drawer sidebar
+   (Recent \u2192 Hidden \u2192 Earlier). Used by ALT+j/k session navigation."
+  [state]
+  (let [{:keys [recent hidden earlier]} (sidebar-session-groups state)]
+    (->> (concat recent hidden earlier)
+         (keep :session-id)
+         vec)))
+
 (defn- recent-sidebar*
   "The drawer panel: framework sidebar listing recently-used projects above
    recent sessions, both sorted by last visited. Slid in/out by the floating
@@ -2896,43 +2935,12 @@
         render?  (or open? wide?)
         pa?      (get-in state [:lobby :personal-agent?])
         projects (when (and render? (not pa?)) (recent-projects state))
-        ;; Session-ids the user has hidden from Recent this run (reversible,
-        ;; cleared on server restart). They move into the "Hidden" group rather
-        ;; than vanishing; still fully resumable via All sessions / search.
-        dismissed-ids (->> (get-in state [:lobby :sessions])
-                           (filter :dismissed?)
-                           (map :session-id)
-                           set)
-        sessions (when render? (palette/recent-sessions state))
-        orphans  (when render? (orphan-rooms state sessions))
-        ;; Render one card per session-id from a single keyed sequence.
-        ;; Replicant renders BOTH siblings when two share a :replicant/key
-        ;; (it does not dedupe), so any duplicate stacks cards on top of each
-        ;; other — surfacing as doubled spinners. Drop junk entries with no
-        ;; id (their key collapses to a constant) and keep the first card seen
-        ;; per id so every key is unique.
-        cards    (->> (concat orphans (map #(session-status state %) sessions))
-                      (filter :session-id)
-                      (reduce (fn [{:keys [seen acc]} c]
-                                (if (seen (:session-id c))
-                                  {:seen seen :acc acc}
-                                  {:seen (conj seen (:session-id c))
-                                   :acc  (conj acc c)}))
-                              {:seen #{} :acc []})
-                      :acc)
-        ;; Agents currently running (spinner up) pin to the very top of the
-        ;; list — above idle sessions and freshly-created orphan rooms —
-        ;; preserving their relative order within each group (stable partition).
-        cards    (let [{busy true idle false} (group-by #(boolean (:busy? %)) cards)]
-                   (concat busy idle))
-        ;; Tag every card (incl. live/orphan rooms, which don't carry it) with
-        ;; the current hidden state, then peel the hidden ones into their own
-        ;; group; the rest split into Recent vs Earlier by recency.
-        cards    (map #(assoc % :dismissed? (boolean (dismissed-ids (:session-id %)))) cards)
-        {hidden true visible false} (group-by :dismissed? cards)
-        now      (js/Date.now)
-        started  (get-in state [:lobby :started-at])
-        {recent true earlier false} (group-by #(recent/recent? now started %) visible)]
+        ;; Session cards split into Recent / Hidden / Earlier (busy pinned to
+        ;; the top). Shared with ALT+j/k keyboard nav so both agree on order.
+        ;; "Hidden" = dismissed this run (reversible, still fully resumable).
+        {:keys [recent hidden earlier]} (when render? (sidebar-session-groups state))
+        visible  (concat recent earlier)
+        cards    (concat recent hidden earlier)]
     (sidebar/sidebar
      {}
      ;; Keep the card list out of the DOM while the drawer is closed and

@@ -27,6 +27,7 @@
             [xi.quick-replies :as quick-replies]
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
+            [xi.web.keymap :as keymap]
             [xi.web.router :as router]
             [xi.web.views :as views]))
 
@@ -573,6 +574,10 @@
 (defn- web-handlers [routes]
   (merge (router/handlers routes)
          {:room/new              room-new
+          ;; Keyboard insert-mode toggle: `i` focuses the composer, Escape
+          ;; blurs it (both emit their matching DOM effect).
+          :compose/focus         (fn [_ _] {:effects [[:compose/focus]]})
+          :compose/blur          (fn [_ _] {:effects [[:compose/blur]]})
           :room/join             forward
           :room/leave            forward
           :rooms/prune           forward
@@ -1196,6 +1201,11 @@
       (fn []
         (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
           (.focus el #js {:preventScroll true})))))
+   ;; Escape from the composer: drop focus back to the page (normal mode).
+   :compose/blur
+   (fn [_ _]
+     (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
+       (.blur el)))
    ;; After a palette page switch, clear the search box and re-fire `input` so
    ;; ui-runtime.js re-filters the freshly-rendered items and re-highlights the
    ;; first one. Deferred a frame so the Replicant re-render lands first.
@@ -1684,6 +1694,43 @@
           (js/requestAnimationFrame
            (fn [] (.setAttribute meta "content" content))))))))
 
+(defn- session-step!
+  "ALT+j/k: navigate to the next/prev session in sidebar order (no wrap).
+   When no session is active, both directions land on the first session."
+  [st dispatch! dir]
+  (let [order (views/sidebar-session-order st)
+        n     (count order)]
+    (when (pos? n)
+      (let [cur (get-in st [:web/route :session-id])
+            idx (first (keep-indexed (fn [i sid] (when (= sid cur) i)) order))
+            nxt (cond
+                  (nil? idx)    0
+                  (= dir :next) (min (dec n) (inc idx))
+                  :else         (max 0 (dec idx)))
+            sid (nth order nxt)]
+        (when (not= sid cur)
+          (dispatch! {:type :route/navigate :page :chat :session-id sid}))))))
+
+(defn- install-keybindings!
+  "Register the built-in web shortcuts into the view/mode-scoped keymap.
+   Global: ALT+n opens a new chat from any view. Chat pane, normal mode:
+   `i` focuses the composer (enter insert), ALT+j/k step to the next/prev
+   session in sidebar order (no wrap). Chat pane, insert mode: Escape blurs
+   the composer (back to normal). Physical `:code`s so they fire regardless of
+   the character an Alt-combo emits on the active layout."
+  []
+  (keymap/register! {:id :new-chat :code "KeyN" :alt true :view :any :mode :any
+                     :run (fn [_ dispatch! _] (dispatch! {:type :room/new}))})
+  (keymap/register! {:id :session-next :code "KeyJ" :alt true :view :chat :mode :any
+                     :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
+  (keymap/register! {:id :session-prev :code "KeyK" :alt true :view :chat :mode :any
+                     :run (fn [st dispatch! _] (session-step! st dispatch! :prev))})
+  (keymap/register! {:id :compose-focus :code "KeyI" :view :chat :mode :normal
+                     :run (fn [_ dispatch! _] (dispatch! {:type :compose/focus}))})
+  (keymap/register! {:id :compose-blur :code "Escape" :view :chat :mode :insert
+                     :when (fn [_] (keymap/compose-focused?))
+                     :run (fn [_ dispatch! _] (dispatch! {:type :compose/blur}))}))
+
 (defn- real-init! []
   (let [composed  (ext/compose (web-extensions))
         routes    (:routes composed)
@@ -1935,6 +1982,11 @@
                        (fn [_]
                          (dispatch! {:type :client/update
                                      :visible? (= "visible" (.-visibilityState js/document))})))
+    ;; View/mode-scoped keyboard shortcuts (ALT+n new chat, i/Escape insert
+    ;; toggle, ALT+j/k session nav). Registered once, dispatched per keydown.
+    (install-keybindings!)
+    (.addEventListener js/document "keydown"
+                       (fn [^js e] (keymap/handle-keydown @state dispatch! e)))
     (render! @state dispatch!)))
 
 (defn ^:export init! []
