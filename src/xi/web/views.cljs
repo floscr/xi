@@ -2247,12 +2247,23 @@
                               (pending-command-post state room sid))
                (with-post-key "tl-dialog"
                               (dialog-post dispatch! state room history))))
-            (empty-state/empty-state {} (spinner) [:p "Connecting…"]))
-          (when room (subagents-panel dispatch! room))
+            (with-post-key "tl-empty"
+                           (empty-state/empty-state {} (spinner) [:p "Connecting…"])))
+          ;; subagents-panel and quick-replies-row are direct children of
+          ;; .timeline-content, sharing the child list with the keyed h-N post
+          ;; seq above. They toggle nil↔element across a turn (subagents spawn/
+          ;; finish; chips hide while busy). A parent must not mix keyed and
+          ;; unkeyed children — when one of these toggles while the post seq
+          ;; also changes length, Replicant reconciles the tail positionally and
+          ;; throws `removeChild ... not a Node`, wedging the client. Key them so
+          ;; the whole timeline-content child list reconciles by identity.
+          (with-post-key "tl-subagents"
+                         (when room (subagents-panel dispatch! room)))
           ;; Quick-reply chips render inline at the bottom of the feed, right
           ;; after the last response they regard — normal flow content, so they
           ;; can never overlap the message the way the floating footer did.
-          (quick-replies-row dispatch! room busy?)]]
+          (with-post-key "tl-quick-replies"
+                         (quick-replies-row dispatch! room busy?))]]
         (copy-dialog-overlay dispatch! (:web/copy-text state))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))
