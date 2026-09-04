@@ -321,8 +321,23 @@
 
 ;; ── Extension ─────────────────────────────────────────────────────────────
 
+(def ^:private CLOJURE_EDIT_PROMPT
+  (str "## Editing Clojure\n"
+       "For .clj/.cljs/.cljc/.edn files, prefer the structural clj-surgeon "
+       "tools over edit/write. clj_replace matches by code structure (ignoring "
+       "whitespace and formatting) and is scoped to a form, so it is far more "
+       "robust than exact-text edit: it survives reformatting and concurrent "
+       "edits elsewhere in the file, and two agents editing different forms "
+       "never collide (a conflicting same-form edit fails the match cleanly "
+       "instead of clobbering). Use clj_replace to change a form, "
+       "clj_mv/clj_extract/clj_fix_declares to move or reorganize forms, and "
+       "clj_rename_ns for namespace renames. Fall back to edit only for "
+       "non-structural text (comments, strings, docstrings) or when clj_replace "
+       "cannot match."))
+
 (def extension
   {:id               :clj-surgeon
+   :system-prompt    CLOJURE_EDIT_PROMPT
    :handlers         {:agent/tool-result auto-lint}
    :fx               {:clj-surgeon/parmezan parmezan-fx}
    :tool-definitions tool-defs
