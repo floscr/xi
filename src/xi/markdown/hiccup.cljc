@@ -141,6 +141,18 @@
         ;; fallback
         nil))))
 
+(defn- with-block-key
+  "Attach a positional :replicant/key to a rendered markdown block. Streaming
+   re-parses the whole message every frame, so block boundaries shift and merge
+   — an unkeyed sequence then makes Replicant reconcile positionally and, when a
+   middle block drops, call removeChild on a stale node (\"Argument 1 is not an
+   object\"), throwing mid-render. A stable per-index key makes it reconcile
+   position-for-position and trim the tail cleanly instead."
+  [i block]
+  (if (map? (second block))
+    (assoc-in block [1 :replicant/key] i)
+    (into [(first block) {:replicant/key i}] (rest block))))
+
 (defn render
   "Render a full markdown string to hiccup nodes.
    Returns a vector of hiccup block elements."
@@ -149,4 +161,4 @@
     (let [blocks (parse/parse text)]
       (when (seq blocks)
         (into [:div {:class "markdown"}]
-              (keep render-block blocks))))))
+              (map-indexed with-block-key (keep render-block blocks)))))))
