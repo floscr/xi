@@ -2197,13 +2197,14 @@
                           (not (:web/optimistic state))
                           (not (:web/pending-submit state))
                           (not (:web/pending-command state)))
-                 (launch-header
-                  {:model model
-                   :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
-                   :agents-files (get-in room [:agent :agents-files])
-                   :pa? pa?}))
+                 (with-post-key "tl-launch-header"
+                                (launch-header
+                                 {:model model
+                                  :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
+                                  :agents-files (get-in room [:agent :agents-files])
+                                  :pa? pa?})))
                (when (pos? start)
-                 [:div {:class ["load-earlier"]}
+                 [:div {:class ["load-earlier"] :replicant/key "tl-load-earlier"}
                   (button/button
                    {:variant :ghost :size :sm
                     :on-click (fn [_] (dispatch! {:type :timeline/set-window
@@ -2233,9 +2234,19 @@
                                        (assoc :editing? true :edit-text (:text editing))))]
                           (when post [(with-post-key (str "h-" p) post)])))))
                    (range start (inc total)))))
-               (optimistic-post dispatch! state room sid history)
-               (pending-command-post state room sid)
-               (dialog-post dispatch! state room history)))
+               ;; These tail bubbles appear/disappear as a turn progresses
+               ;; (optimistic → real message, pending command clears, dialog
+               ;; answered). They share the parent's child list with the keyed
+               ;; h-N posts above, so they must be keyed too — a mix of keyed
+               ;; and unkeyed siblings makes Replicant reconcile the tail
+               ;; positionally and, when the optimistic bubble is replaced by a
+               ;; real h-N post on send, throw `removeChild ... not a Node`.
+               (with-post-key "tl-optimistic"
+                              (optimistic-post dispatch! state room sid history))
+               (with-post-key "tl-pending-command"
+                              (pending-command-post state room sid))
+               (with-post-key "tl-dialog"
+                              (dialog-post dispatch! state room history))))
             (empty-state/empty-state {} (spinner) [:p "Connecting…"]))
           (when room (subagents-panel dispatch! room))
           ;; Quick-reply chips render inline at the bottom of the feed, right
