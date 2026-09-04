@@ -277,17 +277,47 @@
                nil)]
     (when path (grammars/get-grammar (file-ext path)))))
 
+(def ^:private code-cache-max 400)
+
+(def ^:private hl-cache
+  "grammar-object → (js/Map text→[:code …]). Keyed by grammar identity so the
+   inlined browser grammars (stable objects) act as the outer key."
+  (js/WeakMap.))
+
+(def ^:private plain-code-cache
+  "text → [:code …] for the no-grammar path (Bash results etc.)."
+  (js/Map.))
+
 (defn- highlight-code
   "Tokenize + class-wrap text against a grammar → hiccup [:code ...].
-   Bare URLs inside tokens are linkified so they stay clickable."
+   Bare URLs inside tokens are linkified so they stay clickable.
+   Memoized per (grammar, text): returns the *identical* hiccup object on
+   repeat calls so Replicant's `unchanged?` short-circuits via cljs =’s
+   identical? fast path and skips re-diffing the span subtree."
   [grammar text]
-  (let [tokens (hl/merge-adjacent (hl/tokenize grammar text))]
-    (into [:code]
-          (mapcat (fn [{:keys [type value]}]
-                    (if-let [cls (theme/token-class type)]
-                      [(into [:span {:class cls}] (md/linkify value))]
-                      (md/linkify value)))
-                  tokens))))
+  (let [inner (or (.get hl-cache grammar)
+                  (let [m (js/Map.)] (.set hl-cache grammar m) m))]
+    (or (.get inner text)
+        (let [tokens (hl/merge-adjacent (hl/tokenize grammar text))
+              result (into [:code]
+                           (mapcat (fn [{:keys [type value]}]
+                                     (if-let [cls (theme/token-class type)]
+                                       [(into [:span {:class cls}] (md/linkify value))]
+                                       (md/linkify value)))
+                                   tokens))]
+          (when (>= (.-size inner) code-cache-max) (.clear inner))
+          (.set inner text result)
+          result))))
+
+(defn- plain-code
+  "[:code …] for un-highlighted text, memoized so identical text yields the
+   identical hiccup object (same Replicant short-circuit as highlight-code)."
+  [text]
+  (or (.get plain-code-cache text)
+      (let [result (into [:code] (md/linkify text))]
+        (when (>= (.-size plain-code-cache) code-cache-max) (.clear plain-code-cache))
+        (.set plain-code-cache text result)
+        result)))
 
 (defn- truncate-lines [text n]
   (let [lines (str/split-lines text)]
@@ -383,7 +413,7 @@
            (if (and (contains? #{"Edit" "edit"} name) (not is-error))
              (edit-diff-code grammar shown)
              [:pre {:class ["tool-call-code"]}
-              (if grammar (highlight-code grammar shown) (into [:code] (md/linkify shown)))]))])
+              (if grammar (highlight-code grammar shown) (plain-code shown))]))])
       (when imgs
         [:div {:class ["tool-call-content" "user-images"]}
          (map-indexed
