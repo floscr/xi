@@ -1319,6 +1319,25 @@
                     session-id (assoc :session-id session-id)
                     msg-hash   (assoc :cached-msg-hash msg-hash)
                     msg-count  (assoc :cached-msg-count msg-count)))))
+   ;; Make a session switch paint instantly: flag <html> so the per-post entry
+   ;; animation (fadeSlideIn) is skipped while the target timeline mounts in
+   ;; bulk, then clear the flag once its posts have painted so the next
+   ;; genuinely-new message still animates. Poll by frame for the posts (the
+   ;; authoritative history can land a few frames after the join, especially
+   ;; on an uncached session that renders a spinner first) and bail after a
+   ;; safety cap so an empty session never leaves the flag stuck.
+   :timeline/suppress-anim
+   (fn [_ _]
+     (let [el    js/document.documentElement
+           start (js/Date.now)]
+       (.setAttribute el "data-no-post-anim" "")
+       (letfn [(clear! []
+                 (let [content (.querySelector js/document ".timeline-content")
+                       painted? (boolean (and content (.querySelector content ".post")))]
+                   (if (or painted? (> (- (js/Date.now) start) 2000))
+                     (.removeAttribute el "data-no-post-anim")
+                     (js/requestAnimationFrame clear!))))]
+         (js/requestAnimationFrame clear!))))
    :theme/apply  (fn [_ mode]
                    (let [el js/document.documentElement]
                      ;; Suppress transitions during switch
