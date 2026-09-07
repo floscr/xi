@@ -6,5 +6,13 @@
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
-  "orientation": "any"
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png?v=ccb0fbf7",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }

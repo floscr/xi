@@ -268,11 +268,16 @@
 (defn- serve-static
   "Serve a file from public-dir; SPA-fallback to index.html for extensionless
    router paths (e.g. /chat/...). Returns a Promise<Response>."
-  [public-dir ^js req]
+  [public-dir ^js req personal-agent?]
   (let [path (js/require "node:path")
         url  (js/URL. (.-url req))
         pathname (js/decodeURIComponent (.-pathname url))
         rel  (if (= "/" pathname) "index.html" (.replace pathname #"^/+" ""))
+        ;; Personal mode gets the blue-eyed icon at the same URL (each host
+        ;; only ever runs one mode, so URL-level caching stays consistent).
+        rel  (if (and personal-agent? (= rel "apple-touch-icon.png"))
+               "apple-touch-icon-personal.png"
+               rel)
         ;; Normalize + contain to public-dir (no path traversal)
         full (.normalize path (.join path public-dir rel))
         index (.join path public-dir "index.html")
@@ -802,7 +807,7 @@
                          (handle-api! req pathname)
 
                          (not upgrade?)
-                         (serve-static public-dir req)
+                         (serve-static public-dir req personal-agent?)
 
                          :else
                          ;; Same-host Origin only (port ignored — shadow's
