@@ -29,6 +29,7 @@
             [xi.web.demo :as demo]
             [xi.web.keymap :as keymap]
             [xi.web.router :as router]
+            [xi.session.sidebar :as sidebar]
             [xi.web.views :as views]))
 
 ;; ── Base handlers (browser-safe merge) ───────────────────────────────────────
@@ -1148,6 +1149,15 @@
 (defonce ^:private programmatic-scroll-until (atom 0))
 (defn- mark-programmatic-scroll! []
   (reset! programmatic-scroll-until (+ (js/Date.now) 250)))
+;; Timestamp (ms) until which scrollTop changes are treated as a USER gesture,
+;; refreshed on every touchmove/wheel on the timeline. This overrides the
+;; programmatic window above: while a stream is appending, snap-to-bottom runs
+;; on every content growth and keeps the programmatic window perpetually open,
+;; which used to swallow the user's touch-scroll up (mobile especially — touch
+;; scrolling emits only scroll events) and yank them back to the bottom.
+(defonce ^:private user-scroll-intent-until (atom 0))
+(defn- mark-user-scroll-intent! []
+  (reset! user-scroll-intent-until (+ (js/Date.now) 400)))
 ;; Set at init (see below); referenced by the scroll listener to push the
 ;; scrolled-up flag into state. Declared here so attach-scroll-listener! can
 ;; reach it without a forward reference.
@@ -1522,6 +1532,13 @@
       (reset! tracked-timeline timeline)
       (reset! auto-scroll? true)
       (reset! prev-scroll-top (.-scrollTop timeline))
+      ;; Unambiguous user gestures — only real input devices fire these, never
+      ;; our programmatic snaps — so they mark user intent for the scroll
+      ;; listener above.
+      (.addEventListener timeline "touchmove"
+                         (fn [] (mark-user-scroll-intent!)) #js {:passive true})
+      (.addEventListener timeline "wheel"
+                         (fn [] (mark-user-scroll-intent!)) #js {:passive true})
       (.addEventListener timeline "scroll"
                          (fn []
                            (let [top     (.-scrollTop timeline)
@@ -1539,11 +1556,17 @@
                              ;; programmatic window (a snap + its reflow, e.g.
                              ;; the down-arrow unfreezing the window) is ours,
                              ;; not the user, so it must not disable auto-scroll.
+                             ;; EXCEPT when a touch/wheel gesture is in flight
+                             ;; (user-scroll-intent) — during streaming the
+                             ;; programmatic window is refreshed continuously,
+                             ;; so without the override a mobile user could
+                             ;; never scroll up mid-answer.
                              (cond
                                bottom?
                                (reset! auto-scroll? true)
                                (and (< top (- prev 2))
-                                    (> (js/Date.now) @programmatic-scroll-until))
+                                    (or (<= (js/Date.now) @user-scroll-intent-until)
+                                        (> (js/Date.now) @programmatic-scroll-until)))
                                (reset! auto-scroll? false))
                              ;; Surface "scrolled up" into state so the
                              ;; scroll-to-bottom down-arrow can toggle (shown
@@ -1744,7 +1767,7 @@
   "ALT+j/k: navigate to the next/prev session in sidebar order (no wrap).
    When no session is active, both directions land on the first session."
   [st dispatch! dir]
-  (let [order (views/sidebar-session-order st)
+  (let [order (sidebar/sidebar-session-order st)
         n     (count order)]
     (when (pos? n)
       (let [cur (get-in st [:web/route :session-id])
@@ -1767,6 +1790,8 @@
   []
   (keymap/register! {:id :new-chat :code "KeyN" :alt true :view :any :mode :any
                      :run (fn [_ dispatch! _] (dispatch! {:type :room/new}))})
+  (keymap/register! {:id :sidebar-toggle :code "Backslash" :alt true :view :any :mode :any
+                     :run (fn [_ dispatch! _] (dispatch! {:type :sidebar/toggle}))})
   (keymap/register! {:id :session-next :code "KeyJ" :alt true :view :chat :mode :any
                      :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
   (keymap/register! {:id :session-prev :code "KeyK" :alt true :view :chat :mode :any

@@ -19,6 +19,7 @@
 
    Effects owned by the TUI: :app/quit, :app/reload, :clipboard/copy."
   (:require [clojure.string :as str]
+            [xi.client.sidebar :as sidebar]
             [xi.client.subagents-buffer :as subagents-buffer]
             [xi.client.view :as view]
             [xi.commands :as commands]
@@ -1054,7 +1055,16 @@
     ((:add-child content) view-wrapper)
     (tui/set-bottom-panel! editor-comp)
     (tui/set-focus! editor-comp)
-    ;; Alt+j / Alt+k jump between the user's own prompts (like the web client).
+    ;; Session drawer (Alt+\). Gets first crack at input in xi.tui.core, so
+    ;; while open it owns Alt+j/k (switch sessions); while closed those keys
+    ;; fall through to the prompt-jump below.
+    (tui/set-sidebar!
+     (sidebar/make-sidebar {:get-state get-state
+                            :dispatch! dispatch!
+                            :render!   tui/request-render!
+                            :repaint!  tui/full-repaint!}))
+    ;; Alt+j / Alt+k jump between the user's own prompts (like the web client)
+    ;; when the drawer is closed.
     (tui/set-jump-fn! (fn [dir] (jump-to-prompt! ctx dir)))
 
     ;; Stray stdout/stderr (libraries, warnings) → event ring, so it shows

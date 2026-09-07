@@ -91,6 +91,7 @@
          :content-dirty true     ;; content needs re-render (false = use cached lines)
          :cached-content-lines nil ;; cached output of content render
          :cached-content-width nil ;; width used for cached content
+         :sidebar nil            ;; session drawer component (xi.client.sidebar), or nil
          ;; Mouse selection state
          ;; nil when no selection, map when selecting/selected:
          ;; {:start-row :start-col :end-row :end-col :selecting}
@@ -197,12 +198,20 @@
   "Execute the render pass — viewport-based with alternate screen buffer."
   []
   (let [{:keys [content bottom-panel scroll-offset prev-content-height
-                previous-frame stopped suspended selection]} @tui-state]
+                previous-frame stopped suspended selection sidebar]} @tui-state]
     (when (and content (not stopped) (not suspended))
       (let [width (term/columns)
             height (term/rows)
 
-            ;; Render bottom panel (editor / completion menu)
+            ;; Left session drawer occupies its own column over the viewport
+            ;; region only (bottom panel / status stay full-width). Hidden on
+            ;; terminals too narrow to fit it plus a usable content column.
+            sb-open? (and sidebar ((:open? sidebar)) (> width (+ (:width sidebar) 24)))
+            sb-w (if sb-open? (:width sidebar) 0)
+            sep-w (if sb-open? 1 0)
+            content-width (- width sb-w sep-w)
+
+            ;; Render bottom panel (editor / completion menu) — full width
             bottom-lines (if bottom-panel
                            ((:render bottom-panel) width)
                            [])
@@ -215,13 +224,13 @@
             {:keys [content-dirty cached-content-lines cached-content-width]} @tui-state
             all-content (if (and (not content-dirty)
                                 cached-content-lines
-                                (= cached-content-width width))
+                                (= cached-content-width content-width))
                           cached-content-lines
-                          (let [lines (vec ((:render content) width))]
+                          (let [lines (vec ((:render content) content-width))]
                             (swap! tui-state assoc
                                    :content-dirty false
                                    :cached-content-lines lines
-                                   :cached-content-width width)
+                                   :cached-content-width content-width)
                             lines))
             total-content (count all-content)
 
@@ -244,6 +253,17 @@
               (let [end-idx (- total-content effective-offset)
                     start-idx (max 0 (- end-idx viewport-height))]
                 (subvec all-content start-idx end-idx)))
+
+            ;; Compose the left session drawer over the viewport region
+            viewport-lines
+            (if sb-open?
+              (let [sb-lines ((:render sidebar) sb-w viewport-height)]
+                (mapv (fn [i]
+                        (str (nth sb-lines i "")
+                             (ansi/fg :border "\u2502")
+                             (nth viewport-lines i "")))
+                      (range viewport-height)))
+              viewport-lines)
 
             ;; Status/separator line — shows scroll indicator when scrolled up
             status-line (if (pos? effective-offset)
@@ -394,6 +414,20 @@
   (swap! tui-state assoc :bottom-panel component)
   (request-panel-render!))
 
+(defn set-sidebar!
+  "Register the left session drawer component (xi.client.sidebar). Its
+   :handle-key gets first crack at input, and while :open? it renders as a
+   left column over the chat viewport."
+  [component]
+  (swap! tui-state assoc :sidebar component))
+
+(defn full-repaint!
+  "Force a from-scratch repaint on the next pass (drops the cached grid + frame).
+   Use when layout — not just content — changed, e.g. the sidebar toggling."
+  []
+  (swap! tui-state assoc :previous-grid nil :previous-frame [] :content-dirty true)
+  (request-render!))
+
 ;; ── Input Handling ────────────────────────────────────────────────────────────
 
 (def ^:private ESC-STR (str (char 27)))
@@ -484,6 +518,11 @@
       :else nil)))
 
 (defn- handle-input [data]
+  ;; The session drawer gets first crack: it consumes Alt+\ (toggle) always,
+  ;; and while open it's modal (owns j/k, arrows, x/s/m, Esc).
+  (if (and (:sidebar @tui-state)
+           ((:handle-key (:sidebar @tui-state)) data))
+    nil
   (let [{:keys [focused]} @tui-state]
     (if (:capture-all-input focused)
       ;; Modal component (diff viewer, etc.) captures all input.
@@ -541,7 +580,7 @@
             ;; Don't forward to the editor, which would misinterpret it as "abort" or "tree view".
             (when-not (and was-scrolled (is-escape? data))
               (when (and focused (:handle-input focused))
-                ((:handle-input focused) data)))))))))
+                ((:handle-input focused) data))))))))))
 
 (defn- handle-resize []
   ;; Invalidate all components
@@ -579,6 +618,7 @@
            :content-dirty true
            :cached-content-lines nil
            :cached-content-width nil
+           :sidebar nil
            :selection nil)
     (term/start! terminal handle-input handle-resize)
     content))

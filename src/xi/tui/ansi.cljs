@@ -296,6 +296,11 @@
 (def ^:private REVERSE_ON  (str ESC "7m"))
 (def ^:private REVERSE_OFF (str ESC "27m"))
 
+(defn reverse-video
+  "Wrap text in reverse-video (swapped fg/bg) and reset it."
+  [text]
+  (str REVERSE_ON text REVERSE_OFF))
+
 (defn truncate-to-width
   "Truncate an ANSI-formatted string to max visible columns.
    Adds ellipsis if truncated. ANSI sequences are preserved/closed."
