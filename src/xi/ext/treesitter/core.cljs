@@ -73,24 +73,82 @@
                                      :result (outline-result display-path total text)})))))))))
       (.catch (fn [_] nil))))
 
+(defn- outlinable
+  "→ {:resolved :lang} when path is a supported, present, not-too-big source
+   file, else nil."
+  [path cwd]
+  (let [resolved (tfs/resolve-path path cwd)
+        lang (langs/lang-for resolved)]
+    (when (and lang
+               (p/grammar? lang)
+               (langs/extractor lang)
+               (fs/existsSync resolved)
+               (not (.isDirectory (fs/statSync resolved)))
+               (< (.-size (fs/statSync resolved)) max-bytes))
+      {:resolved resolved :lang lang})))
+
+(defn- head-tail-lines
+  "Parse a head/tail arg list → {:n <requested line count> :file <path>},
+   or nil when it has unknown flags or multiple files (pass through)."
+  [args]
+  (loop [args args n 10 file nil]
+    (if-let [a (first args)]
+      (cond
+        (or (= a "-n") (= a "--lines"))
+        (let [num (js/parseInt (or (second args) "") 10)]
+          (when-not (js/isNaN num)
+            (recur (drop 2 args) (js/Math.abs num) file)))
+        (re-matches #"-n\d+" a) (recur (rest args) (js/parseInt (subs a 2) 10) file)
+        (re-matches #"--lines=\d+" a) (recur (rest args) (js/parseInt (subs a 8) 10) file)
+        (re-matches #"-\d+" a) (recur (rest args) (js/parseInt (subs a 1) 10) file)
+        (str/starts-with? a "-") nil
+        file nil
+        :else (recur (rest args) n a))
+      (when file {:n n :file file}))))
+
+(defn- bash-read-target
+  "File path when a bash command is a plain full-content read of a single
+   file — `cat`/`less`/`more` FILE, or `head`/`tail` requesting ≥ min-lines.
+   Otherwise nil. Commands with pipes, redirects, quoting, globs, or several
+   files pass through: those are targeted or composed reads."
+  [cmd]
+  (when (and (string? cmd)
+             (not (re-find #"[|;&<>`$*?~'\"\\\n]" cmd)))
+    (let [[prog & args] (str/split (str/trim cmd) #"\s+")]
+      (case prog
+        ("cat" "less" "more")
+        (let [files (remove #(str/starts-with? % "-") args)]
+          (when (= 1 (count files)) (first files)))
+        ("head" "tail")
+        (let [{:keys [n file]} (head-tail-lines args)]
+          (when (and file (>= n min-lines)) file))
+        nil))))
+
+(defn- gate-outline
+  "Outline path if it qualifies, else pass tool-call through unchanged."
+  [tool-call path cwd]
+  (if-let [{:keys [resolved lang]} (outlinable path cwd)]
+    (-> (try-outline resolved path lang)
+        (.then (fn [intercepted] (or intercepted tool-call))))
+    tool-call))
+
 (defn- tool-gate
-  "Intercept plain `read` of large supported source files → outline."
+  "Intercept plain reads of large supported source files → outline. Covers
+   both the `read` tool and full-file reads via `bash` (cat etc.) — without
+   the bash branch, `cat file` is a trivial bypass of the read gate."
   [tool-call {:keys [cwd]}]
   (let [{:keys [name arguments]} tool-call
-        {:keys [path offset limit]} arguments]
-    (if (and (= name "read") path (nil? offset) (nil? limit))
-      (let [resolved (tfs/resolve-path path cwd)
-            lang (langs/lang-for resolved)]
-        (if (and lang
-                 (p/grammar? lang)
-                 (langs/extractor lang)
-                 (fs/existsSync resolved)
-                 (not (.isDirectory (fs/statSync resolved)))
-                 (< (.-size (fs/statSync resolved)) max-bytes))
-          (-> (try-outline resolved path lang)
-              (.then (fn [intercepted] (or intercepted tool-call))))
-          tool-call))
-      tool-call)))
+        {:keys [path offset limit command]} arguments]
+    (cond
+      (and (= name "read") path (nil? offset) (nil? limit))
+      (gate-outline tool-call path cwd)
+
+      (= name "bash")
+      (if-let [target (bash-read-target command)]
+        (gate-outline tool-call target cwd)
+        tool-call)
+
+      :else tool-call)))
 
 ;; ── read_source tool ─────────────────────────────────────────────────────────
 
@@ -165,7 +223,9 @@
        "what exists and where. Never open a file with read_source — it is a "
        "follow-up for pulling one definition (read_source(path, symbol)) or a "
        "range you found in the outline; read(path, offset, limit) also works "
-       "for line ranges. Whole-file read_source(path) is a last resort."))
+       "for line ranges. Whole-file read_source(path) is a last resort. "
+       "Plain full-file bash reads (cat/less/more, head/tail with a large -n) "
+       "of such files return the same outline — use read instead of cat."))
 
 (defn create
   "Extension factory — nil (disabled) when the native CLI/grammars are absent."

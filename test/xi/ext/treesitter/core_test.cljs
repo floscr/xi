@@ -75,6 +75,45 @@
                      (done)))
             (.catch (fn [e] (is false (str e)) (done))))))))
 
+(deftest gate-bash-read-test
+  (async done
+    (if-not (p/available?)
+      (do (is true "skipped") (done))
+      (let [ext (core/create nil)
+            gate (:tool-gate ext)
+            big (write-tmp "xi-ts-core-test.ts" (big-ts-source))
+            md (write-tmp "xi-ts-core-test.md" (apply str (repeat 300 "line\n")))
+            bash (fn [cmd] {:name "bash" :arguments {:command cmd}})
+            cat-call (bash (str "cat " big))
+            head-big-call (bash (str "head -n 500 " big))
+            head-small-call (bash (str "head -n 20 " big))
+            piped-call (bash (str "cat " big " | grep fn0"))
+            md-call (bash (str "cat " md))
+            other-call (bash "echo hello")]
+        (-> (js/Promise.all
+             #js [(js/Promise.resolve (gate cat-call {:cwd nil}))
+                  (js/Promise.resolve (gate head-big-call {:cwd nil}))
+                  (js/Promise.resolve (gate head-small-call {:cwd nil}))
+                  (js/Promise.resolve (gate piped-call {:cwd nil}))
+                  (js/Promise.resolve (gate md-call {:cwd nil}))
+                  (js/Promise.resolve (gate other-call {:cwd nil}))])
+            (.then (fn [[cat-g head-big head-small piped md-g other]]
+                     (testing "cat of a large source file → outline"
+                       (is (:intercepted cat-g))
+                       (is (str/includes? (gate-result-text cat-g) "fns:")))
+                     (testing "head asking for many lines → outline"
+                       (is (:intercepted head-big)))
+                     (testing "small/targeted head passes through"
+                       (is (= head-small-call head-small)))
+                     (testing "piped commands pass through (targeted reads)"
+                       (is (= piped-call piped)))
+                     (testing "unsupported file types pass through"
+                       (is (= md-call md-g)))
+                     (testing "non-read bash commands pass through"
+                       (is (= other-call other)))
+                     (done)))
+            (.catch (fn [e] (is false (str e)) (done))))))))
+
 (deftest read-source-test
   (async done
     (if-not (p/available?)

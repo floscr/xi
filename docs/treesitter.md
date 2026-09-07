@@ -89,7 +89,7 @@ through unchanged:
 
 | Condition | Value |
 |---|---|
-| Tool + args | `read` with `path`, no `offset`/`limit` |
+| Tool + args | `read` with `path`, no `offset`/`limit` — or a plain full-file `bash` read (see below) |
 | Language | extension maps to a supported grammar (see below) |
 | Grammar installed | `grammars/<lang>.so` exists |
 | File size | ≥ 120 lines and < 2 MB |
@@ -97,6 +97,22 @@ through unchanged:
 | No errors | any parse/extract failure → silent pass-through |
 
 Thresholds live in `xi.ext.treesitter.core` (`min-lines`, `max-bytes`).
+
+### The bash bypass
+
+Without it, `cat file` via the `bash` tool would be a trivial bypass of the
+read gate (Spotify's shunt plugin guards the same hole with its
+`check-bash-read` hook). The gate also outlines a `bash` call when its
+command is a **plain full-content read of a single file**:
+
+- `cat` / `less` / `more` with exactly one file argument, or
+- `head` / `tail` requesting ≥ `min-lines` lines (`-n N`, `-nN`, `-N`,
+  `--lines=N`).
+
+Anything targeted or composed passes through untouched: pipes
+(`cat f | grep x`), redirects, quoting, globs, multiple files, unknown flags
+(`tail -f`), or a small `head -n 20`. The same file-qualification rules as
+`read` apply (supported language, size, worth-it check).
 
 ## Supported languages
 
