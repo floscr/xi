@@ -88,14 +88,46 @@
                    new-path)]
     {:dropped dropped :path path}))
 
+(defonce ^:private spawn-env-patched? (atom false))
+
+(defn- patch-bun-spawn-env!
+  "Make Bun.spawn/Bun.spawnSync children inherit the LIVE js/process.env.
+
+   Bun (verified on 1.3.13) defaults a child's env to a snapshot of the
+   environ taken at process start — runtime mutations to js/process.env
+   (deletes AND sets) never reach children unless :env is passed explicitly.
+   node:child_process does not have this bug. Without this patch the
+   sanitize below only fixes the in-process view while every js/Bun.spawn
+   tool child keeps the stale inherited env (which is how a stale
+   DEPS_CLJ_TOOLS_DIR silently crashed every bb-based CLI the server ran).
+   Wrapping both entry points covers all call sites, present and future;
+   an explicit caller-supplied :env still wins."
+  []
+  (when (and (exists? js/Bun) (compare-and-set! spawn-env-patched? false true))
+    (letfn [(with-env [opts]
+              (js/Object.assign #js {:env (unchecked-get js/process "env")}
+                                (or opts #js {})))
+            (wrap [orig]
+              (fn [a b]
+                (if (js/Array.isArray a)
+                  (.call orig js/Bun a (with-env b))
+                  (.call orig js/Bun (with-env a)))))]
+      (set! (.-spawn js/Bun) (wrap (.-spawn js/Bun)))
+      (set! (.-spawnSync js/Bun) (wrap (.-spawnSync js/Bun))))))
+
 (defn sanitize-inherited-env!
   "Reconcile js/process.env with a freshly captured login-shell env (see
    `plan-sanitize`): drop orphaned /nix/store vars and refresh PATH.
+
+   Also installs the Bun spawn env patch (see `patch-bun-spawn-env!`) —
+   without it the in-place mutation below is invisible to Bun.spawn children,
+   which keep the stale startup environ.
 
    No-op returning nil if the clean env can't be captured (fail-safe: keep the
    inherited env untouched). Otherwise mutates js/process.env in place, logs a
    one-line summary, and returns {:dropped [k…] :path-refreshed bool}."
   []
+  (patch-bun-spawn-env!)
   (when-let [clean (capture-clean-env)]
     (let [penv (unchecked-get js/process "env")
           {:keys [dropped path]} (plan-sanitize (js->clj penv) clean)]

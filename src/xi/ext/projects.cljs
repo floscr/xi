@@ -124,11 +124,19 @@
    (fn [_ {:keys [client-id]}]
      (let [proc (js/Bun.spawn #js ["project" "select" "--raw"]
                               #js {:stdout "pipe" :stderr "pipe"})]
-       (-> (.text (.-stdout proc))
-           (.then (fn [stdout]
-                    (let [dirs (->> (str/split-lines (str/trim stdout))
+       (-> (js/Promise.all #js [(.text (.-stdout proc)) (.text (.-stderr proc))])
+           (.then (fn [outs]
+                    (let [stdout (aget outs 0)
+                          stderr (aget outs 1)
+                          dirs (->> (str/split-lines (str/trim stdout))
                                     (remove empty?)
                                     vec)]
+                      ;; An empty list means the CLI died before printing
+                      ;; (e.g. a stale env crashing bb) — surface its stderr
+                      ;; instead of silently replying with no projects.
+                      (when (and (empty? dirs) (not (str/blank? stderr)))
+                        (js/console.error "[projects] project select --raw produced no output:"
+                                          (subs stderr 0 (min 2000 (count stderr)))))
                       (-> (js/Promise.all (clj->js (mapv git-dirty? dirs)))
                           (.then (fn [flags]
                                    (let [dirty (into #{} (keep-indexed
