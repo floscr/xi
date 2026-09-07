@@ -1208,14 +1208,18 @@
        (.blur el)))
    ;; After a palette page switch, clear the search box and re-fire `input` so
    ;; ui-runtime.js re-filters the freshly-rendered items and re-highlights the
-   ;; first one. Deferred a frame so the Replicant re-render lands first.
+   ;; first one, then re-focus it. Focus matters on drill-in: the dialog is
+   ;; already open so :palette/reopen's showModal is a no-op (no autofocus), and
+   ;; focus would otherwise stay on the item that was clicked/Tabbed. Deferred a
+   ;; frame so the Replicant re-render lands first.
    :palette/reset-filter
    (fn [_ _]
      (js/requestAnimationFrame
       (fn []
         (when-let [^js input (.querySelector js/document ".command-dialog[open] .command-input")]
           (set! (.-value input) "")
-          (.dispatchEvent input (js/Event. "input" #js {:bubbles true}))))))
+          (.dispatchEvent input (js/Event. "input" #js {:bubbles true}))
+          (.focus input #js {:preventScroll true})))))
    ;; Re-open the command palette after the ui-runtime force-closed it on a
    ;; command-item click (used when drilling into a sub-page). Idempotent:
    ;; __uiCommand.open only calls showModal when the dialog isn't already open.
