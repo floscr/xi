@@ -3375,7 +3375,11 @@
                               (remove :current?)
                               (take 8))
             chat-items   (mapv #(palette-chat-item % dispatch!) recents)
-            project-dirs (:web/project-dirs state)]
+            project-dirs (:web/project-dirs state)
+            pa?          (get-in state [:lobby :personal-agent?])
+            {:keys [recent hidden earlier]} (sidebar-session-groups state)
+            any-visible? (or (seq recent) (seq earlier))
+            any-unread?  (some :unread? (concat recent hidden earlier))]
      (cmd/command-dialog dialog-attrs
      (when (seq chat-items)
        (apply cmd/command-group {:heading "Chats"} chat-items))
@@ -3419,6 +3423,22 @@
        (apply cmd/command-group {:heading "Actions"}
          (for [{:keys [key label icon]} (palette/actions (boolean room))]
            (cmd/command-item {:icon icon :on-click (action-onclick key)} label))))
+     (when (and (not pa?) (or any-visible? any-unread?))
+       (apply cmd/command-group {:heading "Sessions"}
+         (cond-> []
+           any-visible?
+           (conj (cmd/command-item
+                  {:icon :eye-off
+                   :on-click (fn [_] (dispatch! {:type :session/dismiss-all}))}
+                  "Hide all sessions from Recent"))
+           :always
+           (conj (cmd/command-item
+                  {:icon :trash
+                   :on-click (fn [_]
+                               (when any-unread?
+                                 (dispatch! {:type :session/mark-all-read}))
+                               (dispatch! {:type :rooms/prune}))}
+                  "Mark all read & prune inactive rooms")))))
      (when room
        (apply cmd/command-group {:heading "Commands"}
          (for [{:keys [name description]} (palette/expand-commands web-commands)]
