@@ -191,17 +191,6 @@ body {
   transition: none !important;
 }
 
-/* Switching xi sessions should paint instantly: suppress the per-post entry
-   animations (fadeSlideIn) while a session's timeline mounts in bulk. Set on
-   <html> by the :timeline/suppress-anim effect around a switch, then cleared
-   once the posts have painted so a genuinely new message still animates in.
-   Scoped to the entry animations only — spinners (animation: spin) must keep
-   running through the switch. */
-[data-no-post-anim] .post,
-[data-no-post-anim] .tool-call-content {
-  animation: none !important;
-}
-
 .accordion-group {
   display: flex;
   flex-direction: column;

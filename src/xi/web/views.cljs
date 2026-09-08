@@ -796,23 +796,6 @@
         (dispatch! (cond-> {:type :submit/pending :session-id session-id :text text}
                      (seq images) (assoc :images (vec images))))))))
 
-(def ^:private max-quick-commands 7)
-
-(def ^:private default-quick-commands
-  "Fallback commands shown in the quick-access bar before (and alongside) the
-   user's recently-executed ones."
-  ["diff" "commit" "truncate" "summary" "resume" "new" "clear"])
-
-(defn- quick-command-list
-  "Most-recently-executed commands first, then the defaults not already shown,
-   capped at `max-quick-commands`."
-  [recents]
-  (let [recent-set (set recents)]
-    (->> (concat recents (remove recent-set default-quick-commands))
-         distinct
-         (take max-quick-commands)
-         vec)))
-
 (defn- prompt-nav-controls
   "Jump-to-previous-prompt control shown left of the Projects button. Collapsed
    it is a single up-arrow; when the timeline is scrolled up off the bottom a
@@ -856,61 +839,12 @@
                    :on {:click next!}}
           (icon/icon {:icon-name :arrow-down :size :sm})]]))))
 
-(defn- measure-scroll-shadow!
-  "Toggle the edge scroll shadows on the quick-command bar: the left shadow
-   shows while scrolled away from the start, the right while there is more to
-   scroll toward the end."
-  [{:replicant/keys [^js node]}]
-  (let [overflow? (> (.-scrollWidth node) (+ (.-clientWidth node) 1))
-        at-start? (<= (.-scrollLeft node) 1)
-        at-end?   (>= (+ (.-scrollLeft node) (.-clientWidth node))
-                     (- (.-scrollWidth node) 1))
-        cl        (.-classList node)]
-    (.toggle cl "has-overflow-left" (boolean (and overflow? (not at-start?))))
-    (.toggle cl "has-overflow-right" (boolean (and overflow? (not at-end?))))))
-
-(defn- init-scroll-shadow!
-  "On mount, wire the quick-command bar's scroll shadow to its scroll position
-   and size (a ResizeObserver catches viewport/keyboard resizes)."
-  [{:replicant/keys [^js node] :as ctx}]
-  (measure-scroll-shadow! ctx)
-  (.addEventListener node "scroll" (fn [_] (measure-scroll-shadow! ctx)) #js {:passive true})
-  (doto (js/ResizeObserver. (fn [_] (measure-scroll-shadow! ctx)))
-    (.observe node)))
-
-(defn- quick-command-bar [dispatch! room-id recents prompt-nav nav-ctx scrolled-up?]
-  [:div {:class ["quick-commands"]
-         :replicant/on-mount init-scroll-shadow!
-         :replicant/on-render measure-scroll-shadow!}
-   [:div {:class ["quick-cmd-group"]}
-    (when (pos? (or (:count nav-ctx) 0))
-      (prompt-nav-controls dispatch! prompt-nav nav-ctx scrolled-up?))
-    [:button {:class ["quick-cmd"]
-              :on {:click (fn [_] (dispatch! {:type :palette/open-projects}))}}
-     (icon/icon {:icon-name :folder :size :sm})
-     " Projects"]
-    [:button {:class ["quick-cmd"]
-              :on {:click (fn [_] (dispatch! {:type :palette/open-snippets}))}}
-     (icon/icon {:icon-name :file-text :size :sm})
-     " Snippets"]
-    (map (fn [name]
-           [:button {:class ["quick-cmd"]
-                     :replicant/key name
-                     :on {:click (fn [_]
-                                  (dispatch-command! dispatch! room-id name))}}
-            (str "/" name)])
-         (quick-command-list recents))]])
-
 (defn- queue-popover
-  "Popover listing prompts queued while the agent is busy. Each can be removed
-   before the current turn ends and the queue is sent as one combined prompt."
+  "Floating list of prompts queued while the agent is busy, anchored above the
+   queue-count button that toggles it. Each entry can be removed before the
+   current turn ends and the queue is sent as one combined prompt."
   [dispatch! room-id queued]
   [:div {:class ["queue-popover"]}
-   [:div {:class ["queue-popover-header"]}
-    [:span (str (count queued) " queued")]
-    [:button {:class ["icon-btn" "icon-btn--sm"]
-              :on {:click (fn [_] (dispatch! {:type :queue/close-popover}))}}
-     (icon/icon {:icon-name :x :size :sm})]]
    (map-indexed
     (fn [idx {:keys [text images]}]
       [:div {:class ["queue-item"] :replicant/key idx}
@@ -925,6 +859,42 @@
                                            :room-id room-id :index idx}))}}
         (icon/icon {:icon-name :x :size :sm})]])
     queued)])
+
+(defn- floating-actions
+  "Action row rendered inside .compose-frame. On mobile it floats over the
+   timeline just above the composer as frosted icon-only pill groups; on
+   desktop it lays out as a flat labeled bar at the top of the composer card
+   (see the ≥769px CSS — .qc-label spans are hidden on mobile). Left:
+   prompt-nav, Projects, Snippets and a Commands button that opens the palette
+   commands page. Right: while messages are queued, a button showing just the
+   count; tapping it toggles the queue popover (rendered by compose-box)."
+  [dispatch! room-id pa? prompt-nav nav-ctx scrolled-up? queued]
+  (let [qcount (count queued)]
+    (when (or (not pa?) (pos? qcount))
+      [:div {:class ["float-actions"]}
+     (when-not pa?
+       [:div {:class ["fgroup"]}
+        (when (pos? (or (:count nav-ctx) 0))
+          (prompt-nav-controls dispatch! prompt-nav nav-ctx scrolled-up?))
+        [:button {:class ["quick-cmd"] :title "Projects" :aria-label "Projects"
+                  :on {:click (fn [_] (dispatch! {:type :palette/open-projects}))}}
+         (icon/icon {:icon-name :folder :size :sm})
+         [:span {:class ["qc-label"]} "Projects"]]
+        [:button {:class ["quick-cmd"] :title "Snippets" :aria-label "Snippets"
+                  :on {:click (fn [_] (dispatch! {:type :palette/open-snippets}))}}
+         (icon/icon {:icon-name :file-text :size :sm})
+         [:span {:class ["qc-label"]} "Snippets"]]
+        [:button {:class ["quick-cmd"] :title "Commands" :aria-label "Commands"
+                  :on {:click (fn [_] (dispatch! {:type :palette/open-commands}))}}
+         (icon/icon {:icon-name :terminal :size :sm})
+         [:span {:class ["qc-label"]} "Commands"]]])
+     (when (pos? qcount)
+       [:div {:class ["queue-float"]}
+        [:div {:class ["fgroup"]}
+         [:button {:class ["quick-cmd" "queue-num"]
+                   :title "Queued messages" :aria-label "Queued messages"
+                   :on {:click (fn [_] (dispatch! {:type :queue/toggle-popover}))}}
+          (str qcount)]]])])))
 
 (defn- offline-indicator
   "Non-interactive wifi-off glyph shown to the left of the send button while the
@@ -944,7 +914,7 @@
     [:path {:d "M22 8.82a15 15 0 0 0-11.288-3.764"}]
     [:path {:d "m2 2 20 20"}]]])
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? recents queue-open? prompt-nav nav-ctx scrolled-up? offline?]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? queue-open? prompt-nav nav-ctx scrolled-up? offline?]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
@@ -952,16 +922,19 @@
         cmd-open?   (seq cmd-matches)
         has-input?  (seq (str/trim (or draft "")))
         queued      (get-in room [:agent :queued])
-        qcount      (count queued)
-        new?        (nil? session-id)
-        show-quick? (and (not pa?) (not cmd-open?))]
+        new?        (nil? session-id)]
     [:div {:class ["compose-box"]}
-     (when (and busy? queue-open? (pos? qcount))
+     ;; The popover anchors on .compose-box, NOT inside .compose-frame: on
+     ;; desktop the frame's backdrop-filter makes it the containing block for
+     ;; absolutely positioned descendants, so a popover inside it would be
+     ;; clipped away by the frame's overflow:hidden.
+     (when (and queue-open? (seq queued) (not cmd-open?))
        (queue-popover dispatch! room-id queued))
      (compose-image-strip dispatch! images)
      [:div {:class ["compose-frame"]}
-      (when show-quick?
-        (quick-command-bar dispatch! room-id recents prompt-nav nav-ctx scrolled-up?))
+      (when-not cmd-open?
+        (floating-actions dispatch! room-id pa? prompt-nav nav-ctx scrolled-up?
+                          queued))
       (when cmd-open?
         (command-suggestions dispatch! room-id draft-key cmd-matches
                              (min (or cmd-selected 0) (dec (count cmd-matches)))))
@@ -1072,7 +1045,8 @@
        (when busy? (spinner))]
       (if (and busy? (not (command-while-busy? draft)))
         ;; Busy: queue-send button (when there's something to queue) next to
-        ;; the abort button, which carries the queued-message count badge.
+        ;; the abort button. Queued-message access lives in the floating
+        ;; queue-count group above the composer.
         [:div {:class ["compose-actions"]}
          (when offline? (offline-indicator))
          (when (or has-input? (seq images))
@@ -1080,14 +1054,9 @@
                      :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
                                                           images draft-key draft))}}
             (icon/icon {:icon-name :arrow-up :size :md})])
-         [:div {:class ["abort-wrap"]}
-          [:button {:class ["icon-btn"]
-                    :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
-           (icon/icon {:icon-name :circle-x :size :md})]
-          (when (pos? qcount)
-            [:button {:class ["queue-count"]
-                      :on {:click (fn [_] (dispatch! {:type :queue/toggle-popover}))}}
-             (str qcount)])]]
+         [:button {:class ["icon-btn"]
+                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
+          (icon/icon {:icon-name :circle-x :size :md})]]
         [:div {:class ["compose-actions"]}
          (when offline? (offline-indicator))
          [:button {:class ["icon-btn"]
@@ -2279,7 +2248,6 @@
                       dkey (get-in state [:web/drafts dkey]) sid
                       (:web/cmd-selected state)
                       (get-in state [:lobby :personal-agent?])
-                      (:web/recent-commands state)
                       (:web/queue-popover? state)
                       (:web/prompt-nav state)
                       nav-ctx
@@ -3091,6 +3059,31 @@
                                   :text text :draft-key dkey}))}
    label))
 
+(defn- palette-command-item
+  [dispatch! room-id {:keys [name description]}]
+  (cmd/command-item
+   {:icon :terminal
+    :value (str "/" name " " description)
+    :description description
+    :on-click (fn [_] (dispatch-command! dispatch! room-id name))}
+   (str "/" name)))
+
+(defn- palette-commands-page
+  "Slash commands as a palette sub-page (drilled from the floating Commands
+   button). Recently-executed commands first, then the full curated list."
+  [state dispatch!]
+  (let [room-id  (:id (state/active-room state))
+        recents  (:web/recent-commands state)
+        by-name  (into {} (map (juxt :name identity)) web-commands)
+        recent   (keep by-name recents)
+        the-rest (remove (comp (set recents) :name) web-commands)]
+    [:div
+     (when (seq recent)
+       (apply cmd/command-group {:heading "Recent"}
+         (map #(palette-command-item dispatch! room-id %) recent)))
+     (apply cmd/command-group {:heading (if (seq recent) "All commands" "Commands")}
+       (map #(palette-command-item dispatch! room-id %) the-rest))]))
+
 (defn- palette-snippets-page
   "Snippets as a palette sub-page (drilled from the Snippets compose button).
    Spinner while :web/snippet-list loads, then a command-item per snippet
@@ -3250,6 +3243,7 @@
          :files          (palette-files-page state dispatch!)
          :project-insert (palette-project-insert-page state dispatch!)
          :snippets       (palette-snippets-page state dispatch!)
+         :commands       (palette-commands-page state dispatch!)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
            (palette-project-actions state dispatch! (:cwd palette-page)))))
 

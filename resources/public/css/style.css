@@ -160,7 +160,20 @@ body {
    lets chat content scroll behind the frosted buttons. More specific than the
    rule above so the custom-property override actually wins. */
 .topbar--chat + .timeline.timeline--float-footer {
-  --quick-cmd-h: calc(var(--size-1) + var(--size-2) * 2 + 1.25rem);
+  /* Desktop: the action row is a flat bar INSIDE the composer card, so the
+     base behind-the-composer reserve is enough — size it to the bar. */
+  --quick-cmd-h: var(--size-10);
+}
+
+/* Mobile: the action groups FLOAT above the composer, so the last message
+   needs additional clearance: the float row's height plus its gap, on top of
+   the base reserve. */
+@media (max-width: 768px) {
+  .topbar--chat + .timeline.timeline--float-footer {
+    --quick-cmd-h: calc(var(--size-10) + var(--size-2) * 2);
+    padding-bottom: calc(var(--size-2) + var(--quick-cmd-h)
+                         + var(--size-10) + var(--size-2));
+  }
 }
 
 /* ---- Nav group (burger toggle + back arrow as one segmented button) ----
@@ -432,7 +445,6 @@ body {
 /* ---- Post / Message ---- */
 .post {
   padding: var(--size-2) 0;
-  animation: fadeSlideIn 0.2s ease-out;
 }
 
 .post--user {
@@ -591,11 +603,6 @@ body {
 
 .post--tool {
   padding: 0 var(--size-1);
-}
-
-@keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 
 .post-body {
@@ -1070,6 +1077,9 @@ body {
 
 @media (min-width: 769px) {
   .compose-frame {
+    /* Inset the card from the sidebar / browser edges, aligning its sides
+       with the timeline content's inline padding. */
+    margin-inline: var(--size-4);
     border: var(--border-0);
     border-radius: var(--radius-lg);
     overflow: hidden;
@@ -1101,22 +1111,6 @@ body {
      the whole frame — drop its top border so no stray line sits at the top. */
   .compose-frame > .compose-input-row:first-child {
     border-top: none;
-  }
-  /* The command bar sits inside the frame now, so its buttons no longer need
-     their own frosted pill — drop the border, radius and blur so they read as
-     a flat row within the card. */
-  .compose-frame .quick-cmd-group {
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  /* Pull the bar's left padding in by one step so the leading button's glyph
-     (arrow) lines up with the image icon in the input row below it — the
-     button carries size-2 internal padding vs the icon-btn's size-1. */
-  .compose-frame .quick-commands {
-    padding-left: var(--size-2);
   }
 }
 
@@ -1193,36 +1187,14 @@ body {
   flex-shrink: 0;
 }
 
-.abort-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.queue-count {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border: none;
-  border-radius: 9px;
-  background: var(--accent-500, #3b82f6);
-  color: #fff;
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 18px;
-  text-align: center;
-  cursor: pointer;
-}
-
+/* Anchored on .compose-box (NOT inside .compose-frame — the frame's
+   backdrop-filter would make it the containing block and its overflow:hidden
+   would clip the popover away), right-aligned above the composer. */
 .queue-popover {
   position: absolute;
-  bottom: 100%;
-  right: var(--size-3);
-  margin-bottom: var(--size-2);
-  width: min(360px, calc(100vw - 2 * var(--size-3)));
+  bottom: calc(100% + var(--size-2));
+  right: var(--size-2);
+  width: min(320px, calc(100vw - 2 * var(--size-3)));
   max-height: 40vh;
   overflow-y: auto;
   background: var(--bg-0, #fff);
@@ -1232,15 +1204,19 @@ body {
   z-index: 20;
 }
 
-.queue-popover-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--size-2) var(--size-3);
-  border-bottom: var(--border-0);
-  font-size: var(--font-sm);
-  font-weight: 600;
-  color: var(--fg-500, #666);
+/* Mobile: the floating action row hovers above the composer, so lift the
+   popover over it (row height + its gap on top of the base offset). */
+@media (max-width: 768px) {
+  .queue-popover {
+    bottom: calc(100% + var(--size-2) * 2 + var(--size-10));
+  }
+}
+
+/* Desktop: align the popover's right edge with the inset composer card. */
+@media (min-width: 769px) {
+  .queue-popover {
+    right: var(--size-4);
+  }
 }
 
 .queue-item {
@@ -1517,7 +1493,6 @@ body {
 
 .tool-call-content {
   padding: 0 0 var(--size-2);
-  animation: fadeSlideIn 0.15s ease-out;
 }
 
 .tool-call-code {

@@ -108,10 +108,7 @@
                   (conj [:app/dispatch {:type :room/leave}])
 
                   (and (= page :chat) session-id (not already?))
-                  (conj ;; Skip the per-post entry animation while the target
-                        ;; timeline mounts in bulk so the switch is instant.
-                        [:timeline/suppress-anim]
-                        ;; Paint the target's cached history immediately while
+                  (conj ;; Paint the target's cached history immediately while
                         ;; the join round-trips (slow on mobile).
                         [:cache/seed-room {:session-id session-id}]
                         ;; Join through the cache-aware effect so the client
