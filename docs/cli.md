@@ -18,6 +18,7 @@ xi -h
 | `xi prompt <text>` (alias `xi -p`) | One-shot headless run: send a single prompt, print the assistant's response, and exit. No TUI, no server — safe to script, pipe, and run from an agent shell. Reads **stdin** when `<text>` is omitted. See [prompt-mode.md](prompt-mode.md). |
 | `xi join [url]` | Connect a TUI client to the **latest** room on a running server. |
 | `xi create [url]` | Connect a TUI client to a **new** room on a running server. |
+| `xi clients [action]` | Manage the client-key auth store (`~/.config/xi/clients.edn`) from the shell: `list` (default), `pending`, `approve <code>`, `revoke <key-prefix\|name>`. The CLI counterpart to the web pairing banner and the repo's `bb serve:*` tasks — use it to approve pairing codes over ssh on a headless server (no repo checkout needed; a running server admits approvals within ~2s). See [client-auth.md](client-auth.md). |
 | `xi help` | Print the built-in help and exit (also `--help`, `-h`). |
 
 For `join` / `create`, the positional `url` may be a bare `host:port` (it's

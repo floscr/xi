@@ -68,6 +68,10 @@
                    (assoc (approved-clients) client-key
                           (merge info {:approved-at (js/Date.now)}))))
 
+(defn revoke! [client-key]
+  (write-edn-file! (clients-file)
+                   (dissoc (approved-clients) client-key)))
+
 (defn touch!
   "Record :last-seen (and freshen name/platform) for an already-approved key.
    No-op for keys only trusted via the local key file."

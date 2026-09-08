@@ -69,7 +69,22 @@ and derives its display name from the user agent ("iPhone (web)", "Linux
 > [tls-https.md](tls-https.md) for the TLS listener + per-device cert-trust
 > setup.
 
+## CLI
+
+The `xi clients` subcommand manages the store directly — it's part of the
+compiled bundle, so it works on deployed headless servers with no repo
+checkout or babashka (e.g. `ssh <host> xi clients approve <code>`):
+
+```bash
+xi clients pending        # list pending pairing requests (code, name, platform)
+xi clients approve <code> # approve — server admits the client within ~2s
+xi clients                # list approved clients (key prefix, name, last seen)
+xi clients revoke <prefix|name>  # remove an approved client (applies to new connections)
+```
+
 ## bb tasks
+
+Equivalent tasks for working inside the repo:
 
 ```bash
 bb serve:pending          # list pending pairing requests (code, name, platform)
@@ -87,7 +102,7 @@ bb serve:revoke <prefix|name>  # remove an approved client (applies to new conne
 - The TUI never sees a pairing code in practice: it reads/creates
   `~/.config/xi/client-key`, which the server trusts implicitly.
 - The TUI has no UI for approving *other* clients — approval happens via the
-  web banner or `bb serve:approve`.
+  web banner, `xi clients approve`, or `bb serve:approve`.
 - Revocation applies to **new** connections; already-connected sockets stay
   admitted until they disconnect.
 
@@ -99,5 +114,6 @@ src/xi/server/ws.cljs          — handshake, Origin check, clients.edn poll
 src/xi/client/ws_transport.cljs — client side: send hello, queue sends until :auth/ok
 src/xi/web/core.cljs           — web key (localStorage), auth handlers
 src/xi/web/views.cljs          — pairing overlay + approve/deny banner
+src/xi/cli.cljs                — xi clients list / pending / approve / revoke
 bb.edn                         — serve:pending / approve / clients / revoke
 ```

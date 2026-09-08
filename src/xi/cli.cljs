@@ -164,6 +164,11 @@ USAGE
   xi create [flags] [url]    Connect a TUI client to a new room on a server.
   xi sessions [flags]        List saved chats (the web sidebar's Recent set),
                              then exit. Machine-facing; no TUI, no server.
+  xi clients [action]        Manage approved web clients: list (default),
+                             pending, approve <code>, revoke <key-prefix|name>.
+                             Edits ~/.config/xi/clients.edn; a running server
+                             picks approvals up within ~2s. For approving
+                             pairing codes over ssh on a headless server.
   xi help                    Show this help (also --help, -h).
 
 FLAGS
@@ -216,6 +221,7 @@ See docs/cli.md for the full reference.")
           "create"         (recur (next args) (assoc opts :command :create))
           ("prompt" "-p")  (recur (next args) (assoc opts :command :prompt))
           "sessions"       (recur (next args) (assoc opts :command :sessions))
+          "clients"        (recur (next args) (assoc opts :command :clients))
           ("help" "--help" "-h") (recur (next args) (assoc opts :command :help))
           "--json"         (recur (next args) (assoc opts :json? true))
           "--all"          (recur (next args) (assoc opts :all? true))
@@ -246,6 +252,10 @@ See docs/cli.md for the full reference.")
                    (and (= :prompt (:command opts))
                         (not (.startsWith arg "--")))
                    (update opts :prompt-parts (fnil conj []) arg)
+                   ;; Positional action + argument for the clients subcommand
+                   (and (= :clients (:command opts))
+                        (not (.startsWith arg "--")))
+                   (update opts :clients-args (fnil conj []) arg)
                    :else opts)))))))
 
 (defn- resolve-model-opts [{:keys [model]}]
@@ -1023,6 +1033,90 @@ See docs/cli.md for the full reference.")
                  (print-sessions! opts []))
              (print-sessions! opts rows)))))))
 
+(defn- fmt-ts [ts]
+  (if (number? ts)
+    (-> (js/Date. ts) .toISOString (.replace "T" " ") (.slice 0 16))
+    "?"))
+
+(defn- run-clients!
+  "Manage the client-key auth store (~/.config/xi/clients.edn) from the shell —
+   the CLI counterpart to the web pairing banner, for approving devices over
+   ssh on a headless server. The running server polls clients.edn, so an
+   approval is admitted within ~2s with no restart."
+  [{:keys [clients-args]}]
+  (let [[action arg] clients-args
+        die! (fn [& lines]
+               (doseq [l (remove nil? lines)] (.write js/process.stderr (str l "\n")))
+               (js/process.exit 1))]
+    (case (or action "list")
+      "list"
+      (let [clients (auth/approved-clients)]
+        (if (empty? clients)
+          (println "No approved clients (the local TUI key is trusted implicitly).")
+          (doseq [[k {:keys [name platform approved-at last-seen]}] clients]
+            (println (str "  " (subs k 0 (min 8 (count k))) "…  "
+                          (or name "unknown") " (" (or platform "?") ")"
+                          "  approved " (fmt-ts approved-at)
+                          (when last-seen (str "  last seen " (fmt-ts last-seen))))))))
+
+      "pending"
+      (let [pending (auth/read-pending)]
+        (if (empty? pending)
+          (println "No pending clients.")
+          (doseq [[code {:keys [client-name platform requested-at]}] pending]
+            (println (str "  " code "  " (or client-name "unknown")
+                          " (" (or platform "?") ")"
+                          "  requested " (fmt-ts requested-at))))))
+
+      "approve"
+      (let [pending (auth/read-pending)
+            entry   (get pending arg)]
+        (cond
+          (nil? arg)
+          (die! "usage: xi clients approve <code>   (see xi clients pending)")
+
+          (nil? entry)
+          (die! (str "No pending client with code " arg ".")
+                (when (seq pending)
+                  (str "Pending codes: " (str/join ", " (keys pending)))))
+
+          :else
+          (do (auth/approve! (:client-key entry)
+                             {:name     (:client-name entry)
+                              :platform (:platform entry)})
+              (auth/remove-pending! arg)
+              (println (str "Approved " (or (:client-name entry) "unknown")
+                            " (" arg ") — the server admits it within ~2s.")))))
+
+      "revoke"
+      (let [clients (auth/approved-clients)
+            hits    (filter (fn [[k {:keys [name]}]]
+                              (or (and arg (str/starts-with? k arg))
+                                  (= name arg)))
+                            clients)]
+        (cond
+          (nil? arg)
+          (die! "usage: xi clients revoke <key-prefix|name>   (see xi clients list)")
+
+          (empty? hits)
+          (die! (str "No approved client matches " arg "."))
+
+          (> (count hits) 1)
+          (apply die! "Ambiguous — matches:"
+                 (map (fn [[k {:keys [name]}]]
+                        (str "  " (subs k 0 (min 8 (count k))) "…  " (or name "unknown")))
+                      hits))
+
+          :else
+          (let [[k {:keys [name]}] (first hits)]
+            (auth/revoke! k)
+            (println (str "Revoked " (or name "unknown")
+                          " (" (subs k 0 (min 8 (count k))) "…).")))))
+
+      (die! (str "Unknown clients action: " action)
+            "usage: xi clients [list|pending|approve <code>|revoke <key-prefix|name>]"))
+    (js/process.exit 0)))
+
 (defn main [& args]
   (let [{:keys [command] :as opts} (parse-args args)]
     (case command
@@ -1032,5 +1126,6 @@ See docs/cli.md for the full reference.")
       :server     (start-server! opts)
       :prompt     (run-prompt! opts)
       :sessions   (run-sessions! opts)
+      :clients    (run-clients! opts)
       :join       (start-client! (assoc opts :target "latest"))
       :create     (start-client! (assoc opts :target "new")))))
