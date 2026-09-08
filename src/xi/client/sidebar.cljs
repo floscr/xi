@@ -53,36 +53,39 @@
       (< n w) (str s (apply str (repeat (- w n) " ")))
       :else   (if (pos? w) (str (subs s 0 (max 0 (dec w))) "\u2026") ""))))
 
-(defn- row-text
-  "Plain fixed-width text for a session row: marker + name on the left, relative
-   time on the right."
-  [marker {:keys [name timestamp]} w]
-  (let [nm   (or name "New session")
-        rt   (or (sb/format-relative-time timestamp) "")
-        head (str marker " " nm)
-        ;; Reserve room for the right-aligned time (plus a gap + trailing space).
-        maxh (max 0 (- w (count rt) 2))
-        head (if (> (count head) maxh)
-               (str (subs head 0 (max 0 (dec maxh))) "\u2026")
-               head)
-        gap  (max 1 (- w (count head) (count rt) 1))]
-    (fit (str head (apply str (repeat gap " ")) rt) w)))
+(defn- name-text
+  "Plain fixed-width top line for a session card: marker + name."
+  [marker name w]
+  (fit (str marker " " (or name "New session")) w))
 
-(defn- session-line
-  "Colored, fixed-width line for one session card. Selected → reverse video."
+(defn- meta-text
+  "Plain fixed-width second line: relative time · status, indented under the name."
+  [{:keys [timestamp busy? has-dialog? active?]} w]
+  (let [status (cond has-dialog? "needs response"
+                     busy?       "working\u2026"
+                     active?     "active"
+                     :else       nil)
+        parts  (remove str/blank? [(sb/format-relative-time timestamp) status])]
+    (fit (str "    " (str/join " \u00b7 " parts)) w)))
+
+(defn- session-lines
+  "Two colored, fixed-width lines for one session card (name over time·status),
+   mirroring the web sidebar. Selected → reverse video on both lines."
   [{:keys [busy? has-dialog? active? current?] :as card} selected? w]
   (let [marker (cond has-dialog? "!"
                      busy?       "\u2022"
                      active?     "\u2022"
                      current?    "\u203a"
                      :else       " ")
-        text   (row-text marker card w)]
-    (cond
-      selected?   (ansi/reverse-video text)
-      has-dialog? (ansi/fg :warning text)
-      busy?       (ansi/fg :success text)
-      current?    (str ansi/bold text ansi/reset)
-      :else       text)))
+        l1     (name-text marker (:name card) w)
+        l2     (meta-text card w)]
+    (if selected?
+      [(ansi/reverse-video l1) (ansi/reverse-video l2)]
+      [(cond has-dialog? (ansi/fg :warning l1)
+             busy?       (ansi/fg :success l1)
+             current?    (str ansi/bold l1 ansi/reset)
+             :else       l1)
+       (ansi/fg :dim l2)])))
 
 (defn- header-line [label w]
   (ansi/fg :border (fit (str "  " (str/upper-case label)) w)))
@@ -97,11 +100,12 @@
         grp  (fn [label cards]
                (when (seq cards)
                  (into [{:sid nil :line (header-line label w)}]
-                       (map (fn [c]
-                              (let [c (mark c)]
-                                {:sid  (:session-id c)
-                                 :line (session-line c (= (:session-id c) cursor) w)}))
-                            cards))))]
+                       (mapcat (fn [c]
+                                 (let [c        (mark c)
+                                       [l1 l2] (session-lines c (= (:session-id c) cursor) w)]
+                                   [{:sid (:session-id c) :line l1}
+                                    {:sid (:session-id c) :line l2}]))
+                               cards))))]
     (vec (concat (grp "Recent" recent)
                  (grp "Hidden" hidden)
                  (grp "Earlier" earlier)))))
