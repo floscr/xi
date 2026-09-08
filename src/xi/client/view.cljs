@@ -128,7 +128,7 @@
   [tool-name arguments]
   (let [path (case tool-name
                ("read" "write" "edit" "read_source") (arg-file-path arguments)
-               "git_hunk" (get-arg arguments :file)
+               ("git_hunk" "clj_replace") (get-arg arguments :file)
                "git_file_diff" (let [files (get-arg arguments :files)]
                                  (when (= 1 (count files)) (first files)))
                nil)]

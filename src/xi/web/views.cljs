@@ -276,6 +276,7 @@
   (let [path (case tool
                ("Read" "Write" "Edit") (get-arg args :file_path)
                ("read" "write" "edit" "read_source") (get-arg args :path)
+               "clj_replace" (get-arg args :file)
                nil)]
     (when path (grammars/get-grammar (file-ext path)))))
 
@@ -374,6 +375,7 @@
   (case tool
     ("Read" "read" "Write" "write" "Edit" "edit")
     (or (get-arg args :file_path) (get-arg args :path))
+    "clj_replace" (get-arg args :file)
     nil))
 
 (defn- tool-post [dispatch! {:keys [tool arguments result is-error status]}]
@@ -412,7 +414,7 @@
                 (tool-file-path name arguments)
                 (assoc :data-file-path (tool-file-path name arguments)))
          (let [shown (truncate-lines text 100)]
-           (if (and (contains? #{"Edit" "edit"} name) (not is-error))
+           (if (and (contains? #{"Edit" "edit" "clj_replace"} name) (not is-error))
              (edit-diff-code grammar shown)
              [:pre {:class ["tool-call-code"]}
               (if grammar (highlight-code grammar shown) (plain-code shown))]))])

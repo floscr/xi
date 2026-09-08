@@ -9,6 +9,7 @@
   (:require [clojure.string :as str]
             [xi.core.state :as state]
             [xi.tools.fs :as tfs]
+            [xi.tools.util :as tutil]
             ["node:path" :as node-path]
             ["node:fs" :as fs]))
 
@@ -145,9 +146,14 @@
                           :is-error true}))))))))))
 
 (defn- run-replace
-  "Run clj-replace structural replacement. Returns promise of tool result."
+  "Run clj-replace structural replacement. Returns promise of tool result.
+   On success the result text includes a unified diff of the change (same
+   format as the edit tool) so clients render it as a diff."
   [file old-str new-str cwd]
-  (let [script (.join node-path LIB_PATH "replace.clj")]
+  (let [script (.join node-path LIB_PATH "replace.clj")
+        resolved (tfs/resolve-path file (or cwd (.cwd js/process)))
+        before (when (tfs/file-exists? resolved)
+                 (fs/readFileSync resolved "utf8"))]
     (js/Promise.
      (fn [resolve _reject]
        (let [proc (js/Bun.spawn
@@ -174,7 +180,17 @@
                                         (when (seq stderr) stderr))]
                         (resolve
                          (if (= 0 code)
-                           {:content [{:type "text" :text (if (seq output) output "Replaced successfully")}]}
+                           (let [after (when (tfs/file-exists? resolved)
+                                         (fs/readFileSync resolved "utf8"))
+                                 diff (when (and before after (not= before after))
+                                        (tutil/unified-diff before after))
+                                 base (if (seq output)
+                                        (str/trim-newline output)
+                                        "Replaced successfully")]
+                             {:content [{:type "text"
+                                         :text (if (seq diff)
+                                                 (str base "\n" diff)
+                                                 base)}]})
                            {:content [{:type "text" :text (or output "clj-replace failed")}]
                             :is-error true})))))))))))
 
