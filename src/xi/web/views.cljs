@@ -2946,24 +2946,31 @@
    ui.command DOM contract (.command-item) so ui-runtime.js keyboard
    navigation works.
 
-   The empty data-command-value makes these recents show ONLY at the empty
-   query: ui-runtime.js's filter matches an item when the query is empty OR
-   the item value includes the query, so an empty value matches nothing once
-   anything is typed — the whole Chats group then auto-hides and its rows drop
-   out of keyboard nav, leaving the palette to search commands/actions
-   instead of sessions."
-  [{:keys [session-id name has-dialog? busy? unread?]} dispatch!]
-  (let [label (or name "New session")]
-    [:button {:class ["command-item"] :role "option" :type "button"
-              :data-command-value ""
-              :on {:click (fn [_] (dispatch! {:type :route/navigate
-                                              :page :chat
-                                              :session-id session-id}))}}
-     (icon/icon {:icon-name (if has-dialog? :alert-circle :terminal)
-                 :size :sm :class "command-item-icon"})
-     [:span {:class ["command-item-label"]} label]
-     [:div {:class ["command-item-status"]}
-      (card-status-indicator {:busy? busy? :unread? unread?})]]))
+   Two modes, driven by ui-runtime.js's filter:
+   - default (recents): the empty data-command-value makes the row show ONLY
+     at the empty query — an empty value matches nothing once anything is
+     typed, so the whole Chats group auto-hides and its rows drop out of
+     keyboard nav.
+   - :search? — the inverse: data-command-search-only hides the row at the
+     empty query, and a real data-command-value (name + project path) makes
+     it appear as a search result while typing. Used by the Sessions group
+     so every session (incl. Earlier) is reachable by search."
+  ([card dispatch!] (palette-chat-item card dispatch! nil))
+  ([{:keys [session-id name cwd has-dialog? busy? unread?]} dispatch!
+    {:keys [search?]}]
+   (let [label (or name "New session")]
+     [:button (cond-> {:class ["command-item"] :role "option" :type "button"
+                       :data-command-value
+                       (if search? (str label " " (some-> cwd shorten-path)) "")
+                       :on {:click (fn [_] (dispatch! {:type :route/navigate
+                                                       :page :chat
+                                                       :session-id session-id}))}}
+                search? (assoc :data-command-search-only "true"))
+      (icon/icon {:icon-name (if has-dialog? :alert-circle :terminal)
+                  :size :sm :class "command-item-icon"})
+      [:span {:class ["command-item-label"]} label]
+      [:div {:class ["command-item-status"]}
+       (card-status-indicator {:busy? busy? :unread? unread?})]])))
 
 (defn- palette-project-actions
   "Command items for a project's second-level page (Tab-drilled from a project
@@ -3266,10 +3273,19 @@
                            (some #(when (= cur-sid (:session-id %)) %)
                                  (get-in state [:lobby :sessions])))
             cur-fav?     (boolean (:favorite? cur-session))
-            cur-hidden?  (boolean (:dismissed? cur-session))]
+            cur-hidden?  (boolean (:dismissed? cur-session))
+            ;; Search-only tier: every session (Recent + Hidden + Earlier),
+            ;; invisible at the empty query (data-command-search-only) and
+            ;; matched by name/project while typing — so older sessions are
+            ;; reachable without leaving the palette.
+            all-sessions (->> (concat recent hidden earlier)
+                              (remove #(= cur-sid (:session-id %))))]
      (cmd/command-dialog dialog-attrs
      (when (seq chat-items)
        (apply cmd/command-group {:heading "Chats"} chat-items))
+     (when (seq all-sessions)
+       (apply cmd/command-group {:heading "Sessions"}
+         (map #(palette-chat-item % dispatch! {:search? true}) all-sessions)))
      (apply cmd/command-group {:heading "Navigate"}
        (cmd/command-item {:icon :layout-dashboard
                           :on-click (fn [_] (dispatch! {:type :route/navigate :page :home}))}

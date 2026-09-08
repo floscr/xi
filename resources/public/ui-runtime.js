@@ -623,31 +623,23 @@
     })().trim().toLowerCase();
     const list3 = dialog.querySelector(".command-list");
     items(dialog).forEach((function(el) {
-      const match4 = (() => {
-        const or__23426__auto__5 = _EQ_(q1, "");
-        if (or__23426__auto__5) {
-          return or__23426__auto__5;
-        } else {
-          return item_text(el).includes(q1);
-        }
-        ;
-      })();
+      const match4 = _EQ_(q1, "") ? not(el.dataset.commandSearchOnly) : item_text(el).includes(q1);
       return el.hidden = not(match4);
     }));
     Array.from(dialog.querySelectorAll(".command-group")).forEach((function(grp) {
-      const any6 = Array.from(grp.querySelectorAll(".command-item")).some((function(el) {
+      const any5 = Array.from(grp.querySelectorAll(".command-item")).some((function(el) {
         return not(el.hidden);
       }));
-      return grp.hidden = not(any6);
+      return grp.hidden = not(any5);
     }));
-    const vis7 = visible_items(dialog);
-    if (vis7.length === 0) {
+    const vis6 = visible_items(dialog);
+    if (vis6.length === 0) {
       list3.classList.add("command-list--empty");
     } else {
       list3.classList.remove("command-list--empty");
     }
     ;
-    return set_active_BANG_(dialog, vis7.length > 0 ? vis7[0] : null);
+    return set_active_BANG_(dialog, vis6.length > 0 ? vis6[0] : null);
   };
   var find_dialog = function(id) {
     if (truth_(id)) {
@@ -1010,22 +1002,26 @@
     }
     ;
   };
-  var create_icon = function(paths) {
+  var create_icon = function(elements) {
     const ns_uri1 = "http://www.w3.org/2000/svg";
     const svg2 = document.createElementNS(ns_uri1, "svg");
     svg2.setAttribute("viewBox", "0 0 24 24");
-    svg2.setAttribute("width", "16");
-    svg2.setAttribute("height", "16");
+    svg2.setAttribute("width", "18");
+    svg2.setAttribute("height", "18");
     svg2.setAttribute("fill", "none");
     svg2.setAttribute("stroke", "currentColor");
-    svg2.setAttribute("stroke-width", "2");
+    svg2.setAttribute("stroke-width", "1.6");
     svg2.setAttribute("stroke-linecap", "round");
     svg2.setAttribute("stroke-linejoin", "round");
     svg2.setAttribute("style", "flex-shrink:0");
-    paths.forEach((function(d) {
-      const p3 = document.createElementNS(ns_uri1, "path");
-      p3.setAttribute("d", d);
-      return svg2.appendChild(p3);
+    elements.forEach((function(el) {
+      const tag3 = el[0];
+      const attrs4 = el[1];
+      const node5 = document.createElementNS(ns_uri1, tag3);
+      attrs4.forEach((function(pair) {
+        return node5.setAttribute(pair[0], pair[1]);
+      }));
+      return svg2.appendChild(node5);
     }));
     return svg2;
   };
