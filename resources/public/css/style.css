@@ -863,108 +863,107 @@ body {
   max-width: 100%;
 }
 
-/* ---- Quick command bar ---- */
-/* The bottom quick-command bar is flush to the sides and the input row below;
-   its buttons are joined into a single frosted segmented group that matches the
-   floating chat-header chips. The buttons carry their own vertical padding, so
-   the wrapper adds none — keeping the action items visually centered between
-   the frame's top border and the input-row divider. */
-.quick-commands {
-  position: relative;
+/* ---- Floating action groups ---- */
+/* Two frosted pill groups hover over the timeline just above the composer:
+   the left one joins prompt-nav / Projects / Snippets / Commands as icon
+   segments; the right one appears only while messages are queued and shows
+   just the count (see .queue-float). The row itself is click-through so the
+   timeline stays scrollable between the groups. */
+.float-actions {
+  position: absolute;
+  bottom: calc(100% + var(--size-2));
+  left: var(--size-2);
+  right: var(--size-2);
   display: flex;
-  overflow-x: auto;
-  padding: 0 var(--size-3);
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-.quick-commands::-webkit-scrollbar {
-  display: none;
-}
-
-/* Scroll shadows: sticky overlays pinned to the visible left/right edges that
-   fade in only while there is more of the bar to scroll toward that side (the
-   .has-overflow-left / .has-overflow-right classes are toggled from JS — see
-   xi.web.views). Negative margins keep them out of the scrollable width. */
-.quick-commands::before,
-.quick-commands::after {
-  content: "";
-  position: sticky;
-  flex: 0 0 auto;
-  align-self: stretch;
-  width: 2rem;
+  justify-content: space-between;
+  align-items: flex-end;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  z-index: 1;
+  z-index: 15;
 }
 
-.quick-commands::before {
-  left: 0;
-  margin-right: -2rem;
-  background: linear-gradient(to left, transparent, rgba(0, 0, 0, 0.12));
-}
-
-.quick-commands::after {
-  right: 0;
-  margin-left: -2rem;
-  background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.12));
-}
-
-.quick-commands.has-overflow-left::before,
-.quick-commands.has-overflow-right::after {
-  opacity: 1;
-}
-
-/* On narrow screens the bar runs flush to the edges so it can scroll
-   edge-to-edge; on larger screens the composer centers into the conversation
-   column (see .compose-box) and the bar's side padding aligns it with the
-   input row below it. */
-@media (max-width: 768px) {
-  .quick-commands { padding-inline: 0; }
-}
-
-/* Frosted segmented group: translucent fill over a backdrop blur, joined into
-   one flat bar with dividers between segments (mirrors the chat-header
-   nav-group). */
-.quick-cmd-group {
-  flex-shrink: 0;
+.fgroup {
+  pointer-events: auto;
   display: inline-flex;
   align-items: stretch;
   border: var(--border-0);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-full, 9999px);
   overflow: hidden;
-  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, var(--bg-0) 70%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
 }
 
-/* On narrow screens the segmented group runs flush to the edges: drop its
-   rounded corners and side borders so it sits flat against the viewport. */
-@media (max-width: 768px) {
-  .quick-cmd-group {
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
-  }
-}
-
-.quick-cmd-group > .quick-cmd:not(:first-child),
-.quick-cmd-group > .prompt-nav-group:not(:first-child) {
+.fgroup > .quick-cmd:not(:first-child),
+.fgroup > .prompt-nav-group:not(:first-child) {
   border-left: var(--border-0);
 }
 
-/* The prompt-nav control is now a segment of the group: drop its own chrome so
-   it merges seamlessly (its inner up/count/down dividers still render). The
-   pill radius must go too — otherwise the leading up button rounds its corner
-   against the flat segmented bar instead of reading as a square segment. */
-.quick-cmd-group > .prompt-nav-group {
+/* Icon segments: fixed square-ish hit targets, centered glyphs. */
+.fgroup .quick-cmd {
+  justify-content: center;
+  min-width: var(--size-10);
+  height: var(--size-10);
+  padding: 0 var(--size-2);
+}
+
+/* Button labels ("Projects" …) show only in the desktop bar; the mobile
+   floating pills stay icon-only. */
+@media (max-width: 768px) {
+  .qc-label {
+    display: none;
+  }
+}
+
+/* The prompt-nav control is a segment of the group: drop its own pill chrome
+   so it merges seamlessly (its inner up/count/down dividers still render). */
+.fgroup > .prompt-nav-group {
   border: none;
   border-radius: 0;
   background: transparent;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* Queue: right-aligned wrapper for the count button. margin-left:auto keeps
+   it on the right even when the left group is absent (personal-agent mode
+   renders only the queue side). The popover itself anchors on .compose-box,
+   not here — see .queue-popover. */
+.queue-float {
+  pointer-events: auto;
+  margin-left: auto;
+}
+
+/* Desktop: the action row docks back INSIDE the composer card as a flat bar
+   (the old quick-command-bar look) — static row above the input row, groups
+   stripped of their floating pill chrome, buttons back to the roomy labeled
+   segments (.qc-label) the old bar had. */
+@media (min-width: 769px) {
+  .float-actions {
+    position: static;
+    padding: 0 var(--size-2);
+    align-items: center;
+    pointer-events: auto;
+  }
+  .float-actions .fgroup {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+  .float-actions .quick-cmd {
+    min-width: 0;
+    height: auto;
+    padding: var(--size-2) var(--size-3);
+  }
+}
+
+.queue-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--accent-500, #3b82f6);
 }
 
 .quick-cmd {
