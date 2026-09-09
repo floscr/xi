@@ -759,6 +759,13 @@
       ;; Web-only: /skills opens the skills palette page (the TUI's picker
       ;; menu the server command would push doesn't render on web).
       "skills"  (dispatch! {:type :palette/open-skills})
+      ;; /model without args opens the in-palette model picker (the TUI menu
+      ;; the server command would push doesn't render on web); with args it
+      ;; runs the backend command, which sets the model directly.
+      "model"   (if args
+                  (dispatch! {:type :web/command :room-id room-id
+                              :name name :args args})
+                  (dispatch! {:type :palette/open-models}))
       (dispatch! (cond-> {:type :web/command :room-id room-id :name name}
                    args (assoc :args args))))))
 
