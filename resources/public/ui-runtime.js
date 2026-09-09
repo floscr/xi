@@ -417,6 +417,12 @@
     const clone = [...coll];
     return clone.sort(f || compare);
   }
+  function max(x, y, ...more) {
+    if (y == void 0) {
+      return x;
+    }
+    return Math.max(x, y, ...more);
+  }
   function compare(x, y) {
     if (x === y) {
       return 0;
@@ -530,9 +536,46 @@
   var items = function(dialog) {
     return Array.from(dialog.querySelectorAll(".command-item"));
   };
+  var item_order = function(el) {
+    return Number((() => {
+      const or__23426__auto__1 = el.style.order;
+      if (truth_(or__23426__auto__1)) {
+        return or__23426__auto__1;
+      } else {
+        return 0;
+      }
+      ;
+    })());
+  };
   var visible_items = function(dialog) {
-    return items(dialog).filter((function(el) {
+    const vis1 = items(dialog).filter((function(el) {
       return not(el.hidden) && not(el.disabled);
+    }));
+    const container2 = (function(el) {
+      const or__23426__auto__3 = el.closest(".command-group");
+      if (truth_(or__23426__auto__3)) {
+        return or__23426__auto__3;
+      } else {
+        return dialog;
+      }
+      ;
+    });
+    const containers4 = [];
+    vis1.forEach((function(el) {
+      const c5 = container2(el);
+      if (truth_(containers4.includes(c5))) {
+        return null;
+      } else {
+        return containers4.push(c5);
+      }
+      ;
+    }));
+    return containers4.flatMap((function(c) {
+      return vis1.filter((function(el) {
+        return c === container2(el);
+      })).sort((function(a, b) {
+        return item_order(a) - item_order(b);
+      }));
     }));
   };
   var item_text = function(el) {
@@ -552,6 +595,59 @@
       }
       ;
     })().toLowerCase();
+  };
+  var item_label = function(el) {
+    const lbl1 = el.querySelector(".command-item-label");
+    return (() => {
+      const or__23426__auto__2 = (() => {
+        const and__23442__auto__3 = lbl1;
+        if (truth_(and__23442__auto__3)) {
+          return lbl1.textContent;
+        } else {
+          return and__23442__auto__3;
+        }
+        ;
+      })();
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        const or__23426__auto__4 = el.textContent;
+        if (truth_(or__23426__auto__4)) {
+          return or__23426__auto__4;
+        } else {
+          return "";
+        }
+        ;
+      }
+      ;
+    })().toLowerCase();
+  };
+  var match_score = function(el, q) {
+    const label1 = item_label(el);
+    if (_EQ_(label1, q)) {
+      return 0;
+    } else {
+      if (truth_(label1.startsWith(q))) {
+        return 1;
+      } else {
+        if (truth_(label1.split(/[^a-z0-9]+/).some((function(w) {
+          return w.startsWith(q);
+        })))) {
+          return 2;
+        } else {
+          if (truth_(label1.includes(q))) {
+            return 3;
+          } else {
+            if ("else") {
+              return 4;
+            } else {
+              return null;
+            }
+          }
+        }
+      }
+    }
+    ;
   };
   var active_item = function(dialog) {
     return dialog.querySelector(".command-item--active");
@@ -623,23 +719,45 @@
     })().trim().toLowerCase();
     const list3 = dialog.querySelector(".command-list");
     items(dialog).forEach((function(el) {
-      const match4 = _EQ_(q1, "") ? not(el.dataset.commandSearchOnly) : item_text(el).includes(q1);
-      return el.hidden = not(match4);
+      const match4 = (() => {
+        const or__23426__auto__5 = _EQ_(q1, "");
+        if (or__23426__auto__5) {
+          return or__23426__auto__5;
+        } else {
+          return item_text(el).includes(q1);
+        }
+        ;
+      })();
+      el.hidden = not(match4);
+      if (truth_((() => {
+        const or__23426__auto__6 = _EQ_(q1, "");
+        if (or__23426__auto__6) {
+          return or__23426__auto__6;
+        } else {
+          return not(match4);
+        }
+        ;
+      })())) {
+        return el.style.removeProperty("order");
+      } else {
+        return el.style.order = match_score(el, q1);
+      }
+      ;
     }));
     Array.from(dialog.querySelectorAll(".command-group")).forEach((function(grp) {
-      const any5 = Array.from(grp.querySelectorAll(".command-item")).some((function(el) {
+      const any7 = Array.from(grp.querySelectorAll(".command-item")).some((function(el) {
         return not(el.hidden);
       }));
-      return grp.hidden = not(any5);
+      return grp.hidden = not(any7);
     }));
-    const vis6 = visible_items(dialog);
-    if (vis6.length === 0) {
+    const vis8 = visible_items(dialog);
+    if (vis8.length === 0) {
       list3.classList.add("command-list--empty");
     } else {
       list3.classList.remove("command-list--empty");
     }
     ;
-    return set_active_BANG_(dialog, vis6.length > 0 ? vis6[0] : null);
+    return set_active_BANG_(dialog, vis8.length > 0 ? vis8[0] : null);
   };
   var find_dialog = function(id) {
     if (truth_(id)) {
@@ -871,19 +989,39 @@
                   e.preventDefault();
                   return move_active_BANG_(dialog1, "up");
                 } else {
-                  if (truth_(key2 === "Home" && e.metaKey)) {
+                  if (truth_(key2 === "j" && e.altKey)) {
                     e.preventDefault();
-                    return move_active_BANG_(dialog1, "home");
+                    return move_active_BANG_(dialog1, "down");
                   } else {
-                    if (truth_(key2 === "End" && e.metaKey)) {
+                    if (truth_(key2 === "k" && e.altKey)) {
                       e.preventDefault();
-                      return move_active_BANG_(dialog1, "end");
+                      return move_active_BANG_(dialog1, "up");
                     } else {
-                      if (key2 === "Enter") {
+                      if (truth_(key2 === "n" && e.altKey)) {
                         e.preventDefault();
-                        return select_BANG_(dialog1, active_item(dialog1));
+                        return move_active_BANG_(dialog1, "down");
                       } else {
-                        return null;
+                        if (truth_(key2 === "p" && e.altKey)) {
+                          e.preventDefault();
+                          return move_active_BANG_(dialog1, "up");
+                        } else {
+                          if (truth_(key2 === "Home" && e.metaKey)) {
+                            e.preventDefault();
+                            return move_active_BANG_(dialog1, "home");
+                          } else {
+                            if (truth_(key2 === "End" && e.metaKey)) {
+                              e.preventDefault();
+                              return move_active_BANG_(dialog1, "end");
+                            } else {
+                              if (key2 === "Enter") {
+                                e.preventDefault();
+                                return select_BANG_(dialog1, active_item(dialog1));
+                              } else {
+                                return null;
+                              }
+                            }
+                          }
+                        }
                       }
                     }
                   }
@@ -996,7 +1134,7 @@
     if (truth_(or__23426__auto__1)) {
       return or__23426__auto__1;
     } else {
-      const s2 = { "menu": null, "cleanup": null };
+      const s2 = { "menu": null, "cleanup": null, "growthObserver": null };
       window["__uiCtxState"] = s2;
       return s2;
     }
@@ -1031,6 +1169,11 @@
       state1.menu.remove();
       state1.menu = null;
       document.dispatchEvent(new CustomEvent("clj-ui-menu-dismiss"));
+    }
+    ;
+    if (truth_(state1.growthObserver)) {
+      state1.growthObserver.disconnect();
+      state1.growthObserver = null;
     }
     ;
     if (truth_(state1.cleanup)) {
@@ -1145,17 +1288,32 @@
     }));
     return menu1;
   };
+  var clamp_to_viewport_BANG_ = function(menu) {
+    const x1 = parseFloat(menu.style.left);
+    const y2 = parseFloat(menu.style.top);
+    const w3 = menu.offsetWidth;
+    const h4 = menu.offsetHeight;
+    const vw5 = window.innerWidth;
+    const vh6 = window.innerHeight;
+    if (x1 + w3 > vw5 - 8) {
+      menu.style.left = `${max(8, vw5 - w3 - 8) ?? ""}px`;
+    }
+    ;
+    if (y2 + h4 > vh6 - 8) {
+      return menu.style.top = `${max(8, vh6 - h4 - 8) ?? ""}px`;
+    }
+    ;
+  };
   var position_menu_BANG_ = function(menu, x, y) {
     menu.style.left = `${x ?? ""}px`;
     menu.style.top = `${y ?? ""}px`;
     document.body.appendChild(menu);
-    const rect1 = menu.getBoundingClientRect();
-    const vw2 = window.innerWidth;
-    const vh3 = window.innerHeight;
-    const new_x4 = x + rect1.width > vw2 ? vw2 - rect1.width - 8 : x;
-    const new_y5 = y + rect1.height > vh3 ? vh3 - rect1.height - 8 : y;
-    menu.style.left = `${new_x4 ?? ""}px`;
-    return menu.style.top = `${new_y5 ?? ""}px`;
+    clamp_to_viewport_BANG_(menu);
+    const mo1 = new MutationObserver((function(_) {
+      return clamp_to_viewport_BANG_(menu);
+    }));
+    mo1.observe(menu, { "childList": true, "subtree": true });
+    return get_state().growthObserver = mo1;
   };
   var focus_first_item_BANG_ = function(menu) {
     const first_item1 = menu.querySelector(".context-menu-item");
