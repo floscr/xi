@@ -2047,8 +2047,23 @@
                        (fn [^js e] (keymap/handle-keydown @state dispatch! e)))
     (render! @state dispatch!)))
 
+(defn- hide-shadow-hud-when-remote!
+  "Dev builds ship the shadow-cljs devtools client, which shows a red
+  'Reconnecting ...' HUD banner when its websocket (port 9630) is
+  unreachable — always the case when the page is accessed remotely
+  (e.g. via Tailscale) where only 7474 is exposed. Hide the banner on
+  non-localhost hosts; release builds drop this via goog.DEBUG DCE."
+  []
+  (when ^boolean js/goog.DEBUG
+    (let [host (.-hostname js/window.location)]
+      (when-not (contains? #{"localhost" "127.0.0.1" "[::1]"} host)
+        (let [style (js/document.createElement "style")]
+          (set! (.-textContent style) "#shadow-connection-error{display:none !important;}")
+          (.append (.-head js/document) style))))))
+
 (defn ^:export init! []
   (js/console.log "[xi-web] starting")
+  (hide-shadow-hud-when-remote!)
   (r/set-dispatch! (fn [_ _]))
   (if-let [view (.get (js/URLSearchParams. (.-search js/window.location)) "demo")]
     (demo-init! view)
