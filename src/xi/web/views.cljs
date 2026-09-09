@@ -923,6 +923,8 @@
     [:path {:d "M22 8.82a15 15 0 0 0-11.288-3.764"}]
     [:path {:d "m2 2 20 20"}]]])
 
+(declare skill-form-compose)
+
 (defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? queue-open? prompt-nav nav-ctx scrolled-up? offline?]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
@@ -2253,15 +2255,17 @@
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         [:div {:class ["compose-dock"]}
          (when (:web/copy-flash state) (copy-toast))
-         (compose-box dispatch! room busy? (:web/compose-images state)
-                      dkey (get-in state [:web/drafts dkey]) sid
-                      (:web/cmd-selected state)
-                      (get-in state [:lobby :personal-agent?])
-                      (:web/queue-popover? state)
-                      (:web/prompt-nav state)
-                      nav-ctx
-                      (:web/scrolled-up? state)
-                      (false? (:web/connected? state)))]))]))
+         (if-let [form (:web/skill-form state)]
+           (skill-form-compose dispatch! form)
+           (compose-box dispatch! room busy? (:web/compose-images state)
+                        dkey (get-in state [:web/drafts dkey]) sid
+                        (:web/cmd-selected state)
+                        (get-in state [:lobby :personal-agent?])
+                        (:web/queue-popover? state)
+                        (:web/prompt-nav state)
+                        nav-ctx
+                        (:web/scrolled-up? state)
+                        (false? (:web/connected? state))))]))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
@@ -3065,24 +3069,35 @@
                                           :model m :room-id (:id room)}))}
            m))))))
 
+(defn- palette-skill-item [dispatch! {:keys [name description]}]
+  (cmd/command-item
+   {:icon :zap
+    :value (str name " " description)
+    :description description
+    :on-click (fn [_] (dispatch! {:type :skill/select :name name}))}
+   name))
+
 (defn- palette-skill-page
   "On-demand skills as a palette sub-page (drilled from Skills). Spinner while
-   :web/skill-list loads, then a command-item per skill. Selecting loads it via
-   /skill load and closes the palette."
+   :web/skill-list loads, then a command-item per skill. Recently-used skills
+   first (like the commands page), then the rest alphabetically. Selecting
+   loads the skill and closes the palette."
   [state dispatch!]
   (let [skills (:web/skill-list state)]
     (cond
       (nil? skills)  [:div {:class ["command-loading"]} (spinner)]
       (empty? skills) [:div {:class ["command-empty"]} "No skills found"]
       :else
-      (apply cmd/command-group {:heading "Skills"}
-        (for [{:keys [name description]} skills]
-          (cmd/command-item
-           {:icon :zap
-            :value (str name " " description)
-            :description description
-            :on-click (fn [_] (dispatch! {:type :skill/select :name name}))}
-           name))))))
+      (let [recents  (:web/recent-skills state)
+            by-name  (into {} (map (juxt :name identity)) skills)
+            recent   (keep by-name recents)
+            the-rest (remove (comp (set recents) :name) skills)]
+        [:div
+         (when (seq recent)
+           (apply cmd/command-group {:heading "Recent"}
+             (map #(palette-skill-item dispatch! %) recent)))
+         (apply cmd/command-group {:heading (if (seq recent) "All skills" "Skills")}
+           (map #(palette-skill-item dispatch! %) the-rest))]))))
 
 (defn- palette-project-insert-page
   "Project paths as a palette sub-page (drilled from the Projects compose
@@ -3465,6 +3480,112 @@
          {:variant :ghost :size :sm
           :on-click (fn [_] (dispatch! {:type :auth/deny :code code}))}
          "Deny")])]))
+
+;; ── Skill input form ─────────────────────────────────────────────────────────
+
+(defn- humanize-input-name
+  "\"image-upload\" → \"Image upload\"."
+  [s]
+  (let [t (str/replace (or s "") "-" " ")]
+    (if (seq t)
+      (str (str/upper-case (subs t 0 1)) (subs t 1))
+      t)))
+
+(defn- skill-form-stage-images!
+  "Read + downscale picked image files, then stage them on the skill form."
+  [dispatch! files]
+  (when (seq files)
+    (-> (js/Promise.all (to-array (map resize-image-file files)))
+        (.then (fn [results]
+                 (when-let [valid (seq (remove nil? (array-seq results)))]
+                   (dispatch! {:type :skill-form/add-images :images (vec valid)}))))
+        (.catch (fn [err] (js/console.error "[xi-web] skill-form image read failed:" err))))))
+
+(defn- skill-form-image-field
+  "Thumbnails of staged images plus an add button wrapping a hidden file input."
+  [dispatch! images]
+  [:div {:class ["skill-form-images"]}
+   (map-indexed
+    (fn [idx {:keys [data media-type]}]
+      [:div {:replicant/key idx :class ["skill-form-thumb"]}
+       [:img {:src (str "data:" media-type ";base64," data)}]
+       [:button {:class ["skill-form-thumb-remove"] :type "button"
+                 :on {:click (fn [_] (dispatch! {:type :skill-form/remove-image :idx idx}))}}
+        (icon/icon {:icon-name :x :size :sm})]])
+    images)
+   [:label {:class ["skill-form-add-image"]}
+    (icon/icon {:icon-name :image :size :sm})
+    [:span "Add image"]
+    [:input {:type "file" :accept "image/*" :multiple true
+             :style {:display "none"}
+             :on {:change (fn [^js e]
+                            (skill-form-stage-images!
+                             dispatch! (array-seq (.. e -target -files)))
+                            (set! (.. e -target -value) ""))}}]]])
+
+(defn- skill-form-compose
+  "The composer reshaped into a skill input form (replaces .compose-box in the
+   compose dock while :web/skill-form is set). One separated section per
+   dynamic <input /> placeholder: text placeholders get an auto-growing
+   textarea, image-upload an image picker. The first text field is autofocused.
+   Esc pressed twice cancels (the first press arms and shows a hint); Cmd/Ctrl+
+   Enter or the send button submits — values are substituted into the skill
+   body and posted like a normal prompt."
+  [dispatch! form]
+  (let [{:keys [name description inputs values images body armed?]} form
+        first-text (some (fn [{n :name t :type}] (when (not= t :image) n))
+                         inputs)]
+    [:div {:class ["compose-box" "skill-compose"]}
+     [:div {:class ["compose-frame" "skill-compose-frame"]
+            :on {:keydown
+                 (fn [^js e]
+                   (cond
+                     (= "Escape" (.-key e))
+                     (do (.preventDefault e)
+                         (dispatch! {:type :skill-form/escape}))
+
+                     (and (= "Enter" (.-key e))
+                          (or (.-metaKey e) (.-ctrlKey e)))
+                     (do (.preventDefault e)
+                         (when body (dispatch! {:type :skill-form/submit})))))}}
+      [:div {:class ["skill-compose-head"]}
+       (icon/icon {:icon-name :zap :size :sm})
+       [:span {:class ["skill-compose-name"]} name]
+       (when (not-empty description)
+         [:span {:class ["skill-compose-desc"]} description])
+       [:button {:class ["icon-btn" "skill-compose-close"] :type "button"
+                 :title "Cancel skill"
+                 :on {:click (fn [_] (dispatch! {:type :skill-form/cancel}))}}
+        (icon/icon {:icon-name :x :size :sm})]]
+      (for [{in-name :name in-type :type} inputs]
+        [:div {:replicant/key in-name :class ["skill-compose-field"]}
+         [:div {:class ["skill-form-label"]} (humanize-input-name in-name)]
+         (if (= in-type :image)
+           (skill-form-image-field dispatch! images)
+           [:textarea {:class ["skill-form-input"]
+                       :placeholder "…"
+                       :rows 1
+                       :value (get values in-name "")
+                       :replicant/on-mount
+                       (fn [{:replicant/keys [^js node]}]
+                         (when (= in-name first-text)
+                           (.focus node #js {:preventScroll true})))
+                       :on {:input (fn [^js e]
+                                     (dispatch! {:type :skill-form/set-value
+                                                 :name in-name
+                                                 :value (.. e -target -value)}))}}])])
+      [:div {:class ["skill-compose-footer"]}
+       [:span {:class ["skill-compose-hint" (when armed? "skill-compose-hint--armed")]}
+        (if armed?
+          "Press Esc again to cancel"
+          "Esc Esc to cancel")]
+       [:button {:class ["icon-btn" "skill-compose-send"] :type "button"
+                 :disabled (nil? body)
+                 :title "Start skill"
+                 :on {:click (fn [_] (dispatch! {:type :skill-form/submit}))}}
+        (if body
+          (icon/icon {:icon-name :arrow-up :size :md})
+          (spinner))]]]]))
 
 (defn root-view
   "Top-level view, route-driven: the session list at /, a room at /chat/:id.

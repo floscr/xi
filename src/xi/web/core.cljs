@@ -825,26 +825,116 @@
           :skill/web-list-result (fn [st {:keys [skills]}]
                                     {:state (assoc st :web/skill-list skills)})
           :skill/select          (fn [st {:keys [name]}]
-                                    ;; Resolve the target like chat-view does: a
-                                    ;; new chat (route sid nil) must NOT adopt the
-                                    ;; previous room we're still attached to. With
-                                    ;; no matching room, route through
-                                    ;; :submit/pending so the virtual room is
-                                    ;; created first (else the skill loads into
-                                    ;; the old chat, or nowhere).
-                                    (let [text   (str "/skill load " name)
-                                          sid    (get-in st [:web/route :session-id])
-                                          active (state/active-room st)
-                                          room   (when (= (get-in active [:session :id]) sid)
-                                                   active)
-                                          rid    (:id room)]
-                                      {:state (dissoc st :web/skill-list :web/palette-page :web/palette-open?)
-                                       :effects [[:palette/close nil]
-                                                 (if rid
-                                                   [:ws/send {:type :input/submit
-                                                              :room-id rid :text text}]
-                                                   [:app/dispatch {:type :submit/pending
-                                                                   :session-id sid :text text}])]}))
+                                    ;; Skills with dynamic <input /> placeholders
+                                    ;; open a form dialog first; the values are
+                                    ;; substituted into the body on submit (see
+                                    ;; :skill-form/submit). Plain skills load
+                                    ;; directly. Resolve the target like
+                                    ;; chat-view does: a new chat (route sid nil)
+                                    ;; must NOT adopt the previous room we're
+                                    ;; still attached to. With no matching room,
+                                    ;; route through :submit/pending so the
+                                    ;; virtual room is created first (else the
+                                    ;; skill loads into the old chat, or nowhere).
+                                    (let [skill   (some #(when (= (:name %) name) %)
+                                                        (:web/skill-list st))
+                                          ;; Recency (persisted): recently-used
+                                          ;; skills sort first on the next open.
+                                          recents (->> (cons name (remove #(= % name)
+                                                                          (:web/recent-skills st)))
+                                                       (take 8)
+                                                       vec)
+                                          st      (assoc st :web/recent-skills recents)
+                                          record  [:cache/recent-skills {:skills recents}]]
+                                      (if (seq (:inputs skill))
+                                        ;; The form renders in the chat view's
+                                        ;; compose dock (the composer reshapes
+                                        ;; into it), so make sure we're on a
+                                        ;; chat page — selecting a skill from
+                                        ;; home/git-status navigates to a new
+                                        ;; chat first.
+                                        {:state (-> st
+                                                    (dissoc :web/palette-page :web/palette-open?)
+                                                    (assoc :web/skill-form
+                                                           {:name name
+                                                            :description (:description skill)
+                                                            :inputs (vec (:inputs skill))
+                                                            :values {}
+                                                            :images []}))
+                                         :effects (cond-> [[:palette/close nil]
+                                                           [:ws/send {:type :skill/web-get :name name}]
+                                                           record]
+                                                    (not= :chat (get-in st [:web/route :page]))
+                                                    (conj [:app/dispatch {:type :route/navigate
+                                                                          :page :chat :session-id nil}]))}
+                                        (let [text   (str "/skill load " name)
+                                              sid    (get-in st [:web/route :session-id])
+                                              active (state/active-room st)
+                                              room   (when (= (get-in active [:session :id]) sid)
+                                                       active)
+                                              rid    (:id room)]
+                                          {:state (dissoc st :web/skill-list :web/palette-page :web/palette-open?)
+                                           :effects [[:palette/close nil]
+                                                     (if rid
+                                                       [:ws/send {:type :input/submit
+                                                                  :room-id rid :text text}]
+                                                       [:app/dispatch {:type :submit/pending
+                                                                       :session-id sid :text text}])
+                                                     record]}))))
+          :skill/web-get-result  (fn [st {:keys [name body]}]
+                                    (when (= name (get-in st [:web/skill-form :name]))
+                                      {:state (assoc-in st [:web/skill-form :body] body)}))
+          :skill-form/set-value  (fn [st {:keys [name value]}]
+                                    {:state (-> st
+                                                (assoc-in [:web/skill-form :values name] value)
+                                                (update :web/skill-form dissoc :armed?))})
+          :skill-form/add-images (fn [st {:keys [images]}]
+                                    {:state (update-in st [:web/skill-form :images]
+                                                       (fnil into []) images)})
+          :skill-form/remove-image (fn [st {:keys [idx]}]
+                                     {:state (update-in st [:web/skill-form :images]
+                                                        (fn [imgs]
+                                                          (vec (keep-indexed
+                                                                (fn [i img] (when (not= i idx) img))
+                                                                imgs))))})
+          :skill-form/cancel     (fn [st _]
+                                    {:state (dissoc st :web/skill-form)})
+          :skill-form/escape     (fn [st _]
+                                    ;; Esc twice cancels: the first press arms
+                                    ;; (the form shows "Press Esc again to
+                                    ;; cancel"), the second dismisses. Typing
+                                    ;; disarms (see :skill-form/set-value).
+                                    (if (get-in st [:web/skill-form :armed?])
+                                      {:state (dissoc st :web/skill-form)}
+                                      {:state (assoc-in st [:web/skill-form :armed?] true)}))
+          :skill-form/submit     (fn [st _]
+                                    ;; Substitute each <name /> placeholder with
+                                    ;; its value (image placeholders are blanked —
+                                    ;; the images ride along as attachments), then
+                                    ;; submit like a normal prompt with the same
+                                    ;; room resolution as :skill/select.
+                                    (let [{:keys [inputs values images body]} (:web/skill-form st)]
+                                      (when body
+                                        (let [text   (reduce (fn [t {:keys [name type]}]
+                                                               (let [re (js/RegExp. (str "<" name "\\s*/>") "g")
+                                                                     v  (if (= type :image)
+                                                                          ""
+                                                                          (str/trim (or (get values name) "")))]
+                                                                 (.replace t re v)))
+                                                             body inputs)
+                                              sid    (get-in st [:web/route :session-id])
+                                              active (state/active-room st)
+                                              room   (when (= (get-in active [:session :id]) sid)
+                                                       active)
+                                              rid    (:id room)]
+                                          {:state (dissoc st :web/skill-form)
+                                           :effects [(if rid
+                                                       [:ws/send (cond-> {:type :input/submit
+                                                                          :room-id rid :text text}
+                                                                   (seq images) (assoc :images (vec images)))]
+                                                       [:app/dispatch (cond-> {:type :submit/pending
+                                                                               :session-id sid :text text}
+                                                                        (seq images) (assoc :images (vec images)))])]}))))
           :diff/reopen           diff-reopen
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
@@ -1366,6 +1456,7 @@
        (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
+   :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
    ;; Read a session's cached snapshot and feed it into :web/cache so the chat
    ;; view paints from it while the WS join lands.
    :cache/seed-room

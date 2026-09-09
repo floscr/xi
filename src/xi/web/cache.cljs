@@ -156,6 +156,15 @@
 (defn save-recent-commands! [commands]
   (store-set! recent-commands-key (vec commands)))
 
+;; ── Recently-used skills (skills palette page) ───────────────────────────────
+
+(def ^:private recent-skills-key "xi/recent-skills")
+
+(defn load-recent-skills [] (or (store-get recent-skills-key) []))
+
+(defn save-recent-skills! [skills]
+  (store-set! recent-skills-key (vec skills)))
+
 ;; ── Hydrate + persist ────────────────────────────────────────────────────────
 
 (defn hydrate
@@ -171,7 +180,8 @@
                         ;; bar shows. `:web/command-usage` accumulates live
                         ;; recency and is persisted to re-seed both on reload.
                         :web/recent-commands (load-recent-commands)
-                        :web/command-usage (load-recent-commands))
+                        :web/command-usage (load-recent-commands)
+                        :web/recent-skills (load-recent-skills))
       (load-lobby) (assoc :lobby (load-lobby))
       cached       (assoc-in [:web/cache sid] cached))))
 

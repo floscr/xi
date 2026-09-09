@@ -99,25 +99,35 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
         {:frontmatter {} :body content}))
     {:frontmatter {} :body content}))
 
+(defn- parse-inputs
+  "Scan a skill body for self-closing dynamic-input placeholder tags like
+   <description /> or <image-upload />. Returns an ordered, deduped vec of
+   {:name \"description\" :type :text}; <image-upload /> gets :type :image.
+   Skills with inputs open a form in the web client before loading."
+  [body]
+  (->> (re-seq #"<([a-z][a-z0-9-]*)\s*/>" (or body ""))
+       (map second)
+       (distinct)
+       (mapv (fn [n] {:name n
+                      :type (if (= n "image-upload") :image :text)}))))
+
 (defn- scan-skills
-  "Scan SKILLS_DIR for available skill directories.
-   Returns vec of {:name :description :path}."
+  "Scan SKILLS_DIR for available skill directories (symlinks included —
+   anything with a SKILL.md). Returns vec of {:name :description :path :inputs}."
   []
   (if (fs/existsSync SKILLS_DIR)
-    (let [entries (fs/readdirSync SKILLS_DIR #js {:withFileTypes true})]
-      (->> entries
-           (filter #(.isDirectory %))
-           (keep (fn [dirent]
-                   (let [dir-name (.-name dirent)
-                         skill-path (.join node-path SKILLS_DIR dir-name "SKILL.md")]
-                     (when (fs/existsSync skill-path)
-                       (let [content (.toString (fs/readFileSync skill-path "utf-8"))
-                             {:keys [frontmatter]} (parse-frontmatter content)]
-                         {:name (or (get frontmatter "name") dir-name)
-                          :description (or (get frontmatter "description") "")
-                          :path skill-path})))))
-           (sort-by :name)
-           vec))
+    (->> (fs/readdirSync SKILLS_DIR)
+         (keep (fn [dir-name]
+                 (let [skill-path (.join node-path SKILLS_DIR dir-name "SKILL.md")]
+                   (when (fs/existsSync skill-path)
+                     (let [content (.toString (fs/readFileSync skill-path "utf-8"))
+                           {:keys [frontmatter body]} (parse-frontmatter content)]
+                       {:name (or (get frontmatter "name") dir-name)
+                        :description (or (get frontmatter "description") "")
+                        :inputs (parse-inputs body)
+                        :path skill-path})))))
+         (sort-by :name)
+         vec)
     []))
 
 (defn- load-skill-by-name
@@ -136,14 +146,24 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
   [_st {:keys [client-id]}]
   {:effects [[:skill/web-list-reply {:client-id client-id}]]})
 
+(defn- skill-web-get
+  "Roomless handler: forward to the effect that reads one skill's body."
+  [_st {:keys [client-id name]}]
+  {:effects [[:skill/web-get-reply {:client-id client-id :name name}]]})
+
 (defn- server-fx
   "WS-server fx: scan on-demand skills and reply to the requesting client."
   [{:keys [send!]}]
   {:skill/web-list-reply
    (fn [_ {:keys [client-id]}]
      (send! client-id {:type   :skill/web-list-result
-                       :skills (mapv #(select-keys % [:name :description])
-                                     (scan-skills))}))})
+                       :skills (mapv #(select-keys % [:name :description :inputs])
+                                     (scan-skills))}))
+   :skill/web-get-reply
+   (fn [_ {:keys [client-id name]}]
+     (send! client-id {:type :skill/web-get-result
+                       :name name
+                       :body (load-skill-by-name name)}))})
 
 ;; ── Commands ──────────────────────────────────────────────────────────────────
 
@@ -204,9 +224,10 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
                     :subcommands [{:name "list" :description "List available skills"}
                                   {:name "load" :description "Load a skill and auto-post it"}]}]
    :handlers        {:skill/web-list skill-web-list
+                     :skill/web-get skill-web-get
                      :skill/select  skill-select-handler}
    :server-fx       server-fx
-   :roomless-events #{:skill/web-list}
+   :roomless-events #{:skill/web-list :skill/web-get}
    :no-broadcast    #{:skill/select}
    :fx            {:skill/list skill-list-fx
                    :skill/load skill-load-fx}})

@@ -4040,3 +4040,82 @@ body {
   .ig-zoom { right: var(--size-2); bottom: calc(var(--size-2) + env(safe-area-inset-bottom, 0px)); }
   .ig-generate-btn { min-width: 92px; }
 }
+
+/* ---- Skill input form (the composer reshaped, dynamic <input /> placeholders) ---- */
+/* Rendered in the compose dock instead of .compose-box while a skill with
+   inputs is staged. It reuses .compose-frame so it inherits the composer's
+   card treatment (frost, radius, docked edge) and reads as the same surface —
+   just taller, with one separated section per placeholder. */
+.skill-compose-frame {
+  padding: var(--size-2) var(--size-3);
+  padding-bottom: max(var(--size-2), env(safe-area-inset-bottom));
+}
+.keyboard-open .skill-compose-frame { padding-bottom: var(--size-2); }
+@media (max-width: 768px) {
+  .skill-compose-frame { border-top: var(--border-0); }
+}
+.skill-compose-head {
+  display: flex; align-items: center; gap: var(--size-2);
+  padding: var(--size-1) 0;
+  border-bottom: var(--border-0);
+}
+.skill-compose-head > .icon { color: var(--accent); flex-shrink: 0; }
+.skill-compose-name { font-weight: 600; color: var(--fg-0); white-space: nowrap; }
+.skill-compose-desc {
+  flex: 1; min-width: 0;
+  font-size: var(--font-sm); color: var(--fg-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.skill-compose-close { margin-left: auto; flex-shrink: 0; }
+.skill-compose-field + .skill-compose-field { border-top: var(--border-0); }
+.skill-compose-field .skill-form-label { padding: var(--size-3) 0 var(--size-1); }
+.skill-compose-field .skill-form-images { padding-bottom: var(--size-3); }
+.skill-compose-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--size-2);
+  border-top: var(--border-0);
+  padding-top: var(--size-1);
+}
+.skill-compose-hint {
+  font-family: var(--font-mono); font-size: var(--font-xs); color: var(--fg-2);
+}
+.skill-compose-hint--armed { color: var(--warning, var(--accent)); }
+.skill-compose-send:disabled { opacity: 0.5; }
+.skill-form-label {
+  font-family: var(--font-mono); font-size: var(--font-xs); font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-2);
+  padding: var(--size-5) 0 var(--size-2);
+}
+.skill-form-input {
+  display: block; width: 100%; box-sizing: border-box; resize: none;
+  border: none; outline: none; background: transparent; color: var(--fg-0);
+  font-family: var(--font-body); line-height: 1.5;
+  /* 16px minimum prevents iOS auto-zoom on focus */
+  font-size: max(1rem, var(--font-base));
+  padding: var(--size-1) 0 var(--size-3); min-height: 0;
+  field-sizing: content; overflow-y: auto;
+  max-height: calc(12 * 1.5em + 2 * var(--size-3));
+}
+.skill-form-images {
+  display: flex; flex-wrap: wrap; gap: var(--size-2); align-items: center;
+}
+.skill-form-thumb {
+  position: relative; width: 72px; height: 72px;
+  border: var(--border-0); border-radius: var(--radius-md); overflow: hidden;
+  background: var(--bg-1);
+}
+.skill-form-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.skill-form-thumb-remove {
+  position: absolute; top: 2px; right: 2px;
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: rgba(0, 0, 0, 0.55); color: #fff;
+}
+.skill-form-add-image {
+  display: flex; align-items: center; gap: var(--size-2);
+  padding: var(--size-2) var(--size-3); cursor: pointer;
+  border: 1px dashed var(--gray-300); border-radius: var(--radius-md);
+  background: var(--bg-1); color: var(--fg-1); font-size: var(--font-sm);
+}
+.skill-form-add-image:hover { color: var(--fg-0); border-color: var(--gray-500); }
