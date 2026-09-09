@@ -802,6 +802,21 @@ body {
   }
 }
 
+/* User bubbles: code blocks sit on a dark translucent panel over the accent
+   fill regardless of theme, so always use the light-on-dark palette there. */
+.post--user .post-content {
+  --hl-comment:  rgb(160, 170, 195);
+  --hl-string:   rgb(163, 190, 140);
+  --hl-symbol:   rgb(180, 142, 173);
+  --hl-number:   rgb(180, 142, 173);
+  --hl-keyword:  rgb(129, 161, 193);
+  --hl-builtin:  rgb(136, 192, 208);
+  --hl-fn:       rgb(136, 192, 208);
+  --hl-var:      rgb(216, 222, 233);
+  --hl-operator: rgb(129, 161, 193);
+  --hl-punct:    rgb(216, 222, 233);
+}
+
 .hl-comment  { color: var(--hl-comment); font-style: italic; }
 .hl-string   { color: var(--hl-string); }
 .hl-symbol   { color: var(--hl-symbol); }
