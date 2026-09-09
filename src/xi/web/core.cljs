@@ -1906,10 +1906,11 @@
 (defn- install-keybindings!
   "Register the built-in web shortcuts into the view/mode-scoped keymap.
    Global: ALT+n opens a new chat from any view. Chat pane, normal mode:
-   `i` focuses the composer (enter insert), ALT+j/k step to the next/prev
-   session in sidebar order (no wrap). Chat pane, insert mode: Escape blurs
-   the composer (back to normal). Physical `:code`s so they fire regardless of
-   the character an Alt-combo emits on the active layout."
+   `i` focuses the composer (enter insert), `G` scrolls the timeline to the
+   bottom, ALT+j/k step to the next/prev session in sidebar order (no wrap).
+   Chat pane, insert mode: Escape blurs the composer (back to normal).
+   Physical `:code`s so they fire regardless of the character an Alt-combo
+   emits on the active layout."
   []
   (keymap/register! {:id :new-chat :code "KeyN" :alt true :view :any :mode :any
                      :run (fn [_ dispatch! _] (dispatch! {:type :room/new}))})
@@ -1921,6 +1922,8 @@
                      :run (fn [st dispatch! _] (session-step! st dispatch! :prev))})
   (keymap/register! {:id :compose-focus :code "KeyI" :view :chat :mode :normal
                      :run (fn [_ dispatch! _] (dispatch! {:type :compose/focus}))})
+  (keymap/register! {:id :timeline-bottom :code "KeyG" :shift true :view :chat :mode :normal
+                     :run (fn [_ dispatch! _] (dispatch! {:type :timeline/scroll-to-bottom}))})
   (keymap/register! {:id :compose-blur :code "Escape" :view :chat :mode :insert
                      :when (fn [_] (keymap/compose-focused?))
                      :run (fn [_ dispatch! _] (dispatch! {:type :compose/blur}))}))
