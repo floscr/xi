@@ -107,18 +107,22 @@
 (defn git-project-cwds
   "All working-tree paths that belong to the same git repository as `cwd`
    (the main tree plus every linked worktree), main tree first. Falls back to
-   just `[cwd]` when `cwd` isn't a git repo. Used so /resume from the main tree
-   also surfaces sessions recorded inside its worktrees (and vice versa)."
+   just `[cwd]` when `cwd` isn't a git repo — or when the spawn itself throws
+   (git not on PATH, cwd doesn't exist; e.g. the sanitized demo env). Used so
+   /resume from the main tree also surfaces sessions recorded inside its
+   worktrees (and vice versa)."
   [cwd]
-  (let [proc (js/Bun.spawnSync
-              #js ["git" "worktree" "list" "--porcelain"]
-              #js {:stdout "pipe" :stderr "pipe" :cwd cwd})
-        paths (when (zero? (.-exitCode proc))
-                (->> (str/split-lines (str (.toString (.-stdout proc))))
-                     (keep (fn [line]
-                             (when (str/starts-with? line "worktree ")
-                               (subs line (count "worktree ")))))
-                     vec))]
+  (let [paths (try
+                (let [proc (js/Bun.spawnSync
+                            #js ["git" "worktree" "list" "--porcelain"]
+                            #js {:stdout "pipe" :stderr "pipe" :cwd cwd})]
+                  (when (zero? (.-exitCode proc))
+                    (->> (str/split-lines (str (.toString (.-stdout proc))))
+                         (keep (fn [line]
+                                 (when (str/starts-with? line "worktree ")
+                                   (subs line (count "worktree ")))))
+                         vec)))
+                (catch :default _ nil))]
     (if (seq paths)
       (distinct (cons cwd paths))
       [cwd])))
