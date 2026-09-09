@@ -3436,9 +3436,24 @@
                :copy-debug   (fn [_]
                                (copy! dispatch! (commands/debug-text room)))
                :reload       (fn [_] (reload-with-feedback!))))]
-       (apply cmd/command-group {:heading "Actions"}
-         (for [{:keys [key label icon]} (palette/actions (boolean room))]
-           (cmd/command-item {:icon icon :on-click (action-onclick key)} label))))
+       (let [actions (for [{:keys [key label icon]} (palette/actions (boolean room))]
+                       (cmd/command-item {:icon icon :on-click (action-onclick key)} label))
+             ;; The pushover ext seeds every room's [:ext :pushover] state, so
+             ;; its presence means push notifications are configured server-side
+             ;; — only then is the toggle useful (Ctrl+Shift+P on the TUI).
+             push?   (and room (contains? (get-in state [:rooms (:id room) :ext])
+                                          :pushover))
+             push-on? (get-in state [:rooms (:id room) :ext :pushover :enabled?])]
+         (apply cmd/command-group {:heading "Actions"}
+           (cond-> (vec actions)
+             push?
+             (conj (cmd/command-item
+                    {:icon :bell
+                     :on-click (fn [_] (dispatch! {:type :ext.pushover/toggle
+                                                   :room-id (:id room)}))}
+                    (if push-on?
+                      "Push notifications: on"
+                      "Push notifications: off")))))))
      (when cur-sid
        (cmd/command-group {:heading "Current session"}
          (cmd/command-item

@@ -22,6 +22,7 @@
             [xi.core.state :as state]
             [xi.diff :as diff]
             [xi.ext.core :as ext]
+            [xi.ext.pushover :as pushover]
             [xi.config :as config]
             [xi.naming :as naming]
             [xi.quick-replies :as quick-replies]
@@ -936,6 +937,18 @@
                                                                                :session-id sid :text text}
                                                                         (seq images) (assoc :images (vec images)))])]}))))
           :diff/reopen           diff-reopen
+          ;; Push-notification toggle (pushover): the palette item forwards
+          ;; {:room-id …} to the server, which flips the room-scoped toggle and
+          ;; broadcasts the echo back to every client (sender included). We
+          ;; apply the shared pure reducer only on that remote echo so the
+          ;; local mirror + "Push notifications: ON/OFF" status line stay in
+          ;; lock-step with the server (no optimistic double-flip).
+          :ext.pushover/toggle
+          (fn [st ev]
+            (if (:remote? ev)
+              (pushover/toggle st ev)
+              {:effects [[:ws/send {:type :ext.pushover/toggle
+                                    :room-id (:room-id ev)}]]}))
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
           :diff/modify-toggle    diff-modify-toggle

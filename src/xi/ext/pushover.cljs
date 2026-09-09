@@ -50,8 +50,10 @@
         :server     (zero? (visible-clients-in-room st room-id))
         false)))
 
-(defn- toggle
-  "Ctrl+Shift+P → flip the room-scoped push toggle and report the new state."
+(defn toggle
+  "Ctrl+Shift+P (TUI) / palette (web) → flip the room-scoped push toggle and
+   report the new state. Pure, so the web reuses it to mirror the server's
+   broadcast echo."
   [st {:keys [room-id]}]
   (when (state/get-room st room-id)
     (let [st' (update-in st [:rooms room-id :ext ext-id :enabled?] not)
