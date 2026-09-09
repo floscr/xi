@@ -4119,3 +4119,7 @@ body {
   background: var(--bg-1); color: var(--fg-1); font-size: var(--font-sm);
 }
 .skill-form-add-image:hover { color: var(--fg-0); border-color: var(--gray-500); }
+.skill-form-add-image:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+  color: var(--fg-0);
+}

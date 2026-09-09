@@ -3513,7 +3513,17 @@
                  :on {:click (fn [_] (dispatch! {:type :skill-form/remove-image :idx idx}))}}
         (icon/icon {:icon-name :x :size :sm})]])
     images)
-   [:label {:class ["skill-form-add-image"]}
+   ;; A label wrapping a hidden file input isn't keyboard-focusable, so the
+   ;; form would tab straight from the last textarea to the send button.
+   ;; tabindex puts it in the tab order; Enter/Space opens the file picker.
+   [:label {:class ["skill-form-add-image"]
+            :tabindex "0"
+            :role "button"
+            :on {:keydown (fn [^js e]
+                            (when (or (= "Enter" (.-key e)) (= " " (.-key e)))
+                              (.preventDefault e)
+                              (some-> (.querySelector (.-currentTarget e) "input[type=file]")
+                                      (.click))))}}
     (icon/icon {:icon-name :image :size :sm})
     [:span "Add image"]
     [:input {:type "file" :accept "image/*" :multiple true
