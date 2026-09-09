@@ -707,6 +707,48 @@
     }
     ;
   };
+  var move_group_BANG_ = function(dialog, dir) {
+    const vis1 = visible_items(dialog);
+    const len2 = vis1.length;
+    if (len2 > 0) {
+      const group_of3 = (function(el) {
+        const or__23426__auto__4 = (() => {
+          const and__23442__auto__5 = el;
+          if (truth_(and__23442__auto__5)) {
+            return el.closest(".command-group");
+          } else {
+            return and__23442__auto__5;
+          }
+          ;
+        })();
+        if (truth_(or__23426__auto__4)) {
+          return or__23426__auto__4;
+        } else {
+          return dialog;
+        }
+        ;
+      });
+      const groups6 = [];
+      vis1.forEach((function(el) {
+        const g7 = group_of3(el);
+        if (truth_(groups6.includes(g7))) {
+          return null;
+        } else {
+          return groups6.push(g7);
+        }
+        ;
+      }));
+      const glen8 = groups6.length;
+      const cur9 = active_item(dialog);
+      const gidx10 = groups6.indexOf(group_of3(cur9));
+      const next_g11 = dir === "down" ? gidx10 < glen8 - 1 ? gidx10 + 1 : 0 : gidx10 > 0 ? gidx10 - 1 : glen8 - 1;
+      const target12 = groups6[next_g11];
+      return set_active_BANG_(dialog, vis1.find((function(el) {
+        return group_of3(el) === target12;
+      })));
+    }
+    ;
+  };
   var filter_BANG_ = function(dialog, query) {
     const q1 = (() => {
       const or__23426__auto__2 = query;
@@ -989,35 +1031,89 @@
                   e.preventDefault();
                   return move_active_BANG_(dialog1, "up");
                 } else {
-                  if (truth_(key2 === "j" && e.altKey)) {
-                    e.preventDefault();
-                    return move_active_BANG_(dialog1, "down");
-                  } else {
-                    if (truth_(key2 === "k" && e.altKey)) {
-                      e.preventDefault();
-                      return move_active_BANG_(dialog1, "up");
+                  if (truth_((() => {
+                    const and__23442__auto__4 = (() => {
+                      const or__23426__auto__3 = key2 === "J";
+                      if (or__23426__auto__3) {
+                        return or__23426__auto__3;
+                      } else {
+                        return key2 === "j";
+                      }
+                      ;
+                    })();
+                    if (truth_(and__23442__auto__4)) {
+                      const and__23442__auto__5 = e.altKey;
+                      if (truth_(and__23442__auto__5)) {
+                        return e.shiftKey;
+                      } else {
+                        return and__23442__auto__5;
+                      }
+                      ;
                     } else {
-                      if (truth_(key2 === "n" && e.altKey)) {
+                      return and__23442__auto__4;
+                    }
+                    ;
+                  })())) {
+                    e.preventDefault();
+                    return move_group_BANG_(dialog1, "down");
+                  } else {
+                    if (truth_((() => {
+                      const and__23442__auto__7 = (() => {
+                        const or__23426__auto__6 = key2 === "K";
+                        if (or__23426__auto__6) {
+                          return or__23426__auto__6;
+                        } else {
+                          return key2 === "k";
+                        }
+                        ;
+                      })();
+                      if (truth_(and__23442__auto__7)) {
+                        const and__23442__auto__8 = e.altKey;
+                        if (truth_(and__23442__auto__8)) {
+                          return e.shiftKey;
+                        } else {
+                          return and__23442__auto__8;
+                        }
+                        ;
+                      } else {
+                        return and__23442__auto__7;
+                      }
+                      ;
+                    })())) {
+                      e.preventDefault();
+                      return move_group_BANG_(dialog1, "up");
+                    } else {
+                      if (truth_(key2 === "j" && e.altKey)) {
                         e.preventDefault();
                         return move_active_BANG_(dialog1, "down");
                       } else {
-                        if (truth_(key2 === "p" && e.altKey)) {
+                        if (truth_(key2 === "k" && e.altKey)) {
                           e.preventDefault();
                           return move_active_BANG_(dialog1, "up");
                         } else {
-                          if (truth_(key2 === "Home" && e.metaKey)) {
+                          if (truth_(key2 === "n" && e.altKey)) {
                             e.preventDefault();
-                            return move_active_BANG_(dialog1, "home");
+                            return move_active_BANG_(dialog1, "down");
                           } else {
-                            if (truth_(key2 === "End" && e.metaKey)) {
+                            if (truth_(key2 === "p" && e.altKey)) {
                               e.preventDefault();
-                              return move_active_BANG_(dialog1, "end");
+                              return move_active_BANG_(dialog1, "up");
                             } else {
-                              if (key2 === "Enter") {
+                              if (truth_(key2 === "Home" && e.metaKey)) {
                                 e.preventDefault();
-                                return select_BANG_(dialog1, active_item(dialog1));
+                                return move_active_BANG_(dialog1, "home");
                               } else {
-                                return null;
+                                if (truth_(key2 === "End" && e.metaKey)) {
+                                  e.preventDefault();
+                                  return move_active_BANG_(dialog1, "end");
+                                } else {
+                                  if (key2 === "Enter") {
+                                    e.preventDefault();
+                                    return select_BANG_(dialog1, active_item(dialog1));
+                                  } else {
+                                    return null;
+                                  }
+                                }
                               }
                             }
                           }
