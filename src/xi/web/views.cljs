@@ -3132,10 +3132,10 @@
   [dispatch! room-id {:keys [name description]}]
   (cmd/command-item
    {:icon :terminal
-    :value (str "/" name " " description)
+    :value (str name " " description)
     :description description
     :on-click (fn [_] (dispatch-command! dispatch! room-id name))}
-   (str "/" name)))
+   name))
 
 (defn- palette-commands-page
   "Slash commands as a palette sub-page (drilled from the floating Commands
@@ -3437,13 +3437,13 @@
          (for [{:keys [name description]} (palette/expand-commands web-commands)]
            (cmd/command-item
             {:icon :terminal
-             :value (str "/" name " " description)
+             :value (str name " " description)
              ;; /model drills into an in-palette model picker instead of
              ;; running the command (which would close the palette).
              :on-click (if (= name "model")
                          (fn [_] (dispatch! {:type :palette/open-models}))
                          (fn [_] (dispatch-command! dispatch! (:id room) name)))}
-            (str "/" name))))))))))
+            name)))))))))
 
 (defn- auth-overlay
   "Full-screen block while this browser awaits pairing approval (or was
