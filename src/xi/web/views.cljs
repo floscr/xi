@@ -3502,6 +3502,19 @@
                    (dispatch! {:type :skill-form/add-images :images (vec valid)}))))
         (.catch (fn [err] (js/console.error "[xi-web] skill-form image read failed:" err))))))
 
+(defn- handle-skill-form-paste!
+  "Stage clipboard images pasted anywhere inside the skill form (Ctrl+V)."
+  [dispatch! ^js e]
+  (let [items (.. e -clipboardData -items)
+        files (->> (range (.-length items))
+                   (keep (fn [i]
+                           (let [^js item (aget items i)]
+                             (when (str/starts-with? (.-type item) "image/")
+                               (.getAsFile item))))))]
+    (when (seq files)
+      (.preventDefault e)
+      (skill-form-stage-images! dispatch! files))))
+
 (defn- skill-form-image-field
   "Thumbnails of staged images plus an add button wrapping a hidden file input."
   [dispatch! images]
@@ -3548,7 +3561,8 @@
                          inputs)]
     [:div {:class ["compose-box" "skill-compose"]}
      [:div {:class ["compose-frame" "skill-compose-frame"]
-            :on {:keydown
+            :on {:paste (fn [^js e] (handle-skill-form-paste! dispatch! e))
+                 :keydown
                  (fn [^js e]
                    (cond
                      (= "Escape" (.-key e))
@@ -3585,6 +3599,13 @@
                                      (dispatch! {:type :skill-form/set-value
                                                  :name in-name
                                                  :value (.. e -target -value)}))}}])])
+      ;; Skills without an <image-upload /> placeholder still accept image
+      ;; attachments (pasted or picked) — they ride along with the prompt like
+      ;; normal composer attachments.
+      (when-not (some #(= :image (:type %)) inputs)
+        [:div {:class ["skill-compose-field"]}
+         [:div {:class ["skill-form-label"]} "Images"]
+         (skill-form-image-field dispatch! images)])
       [:div {:class ["skill-compose-footer"]}
        [:span {:class ["skill-compose-hint" (when armed? "skill-compose-hint--armed")]}
         (if armed?
