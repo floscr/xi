@@ -53,6 +53,7 @@
    (legacy + kitty CSI-u encodings). Extend as extensions need keys."
   {"alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
    "alt+p"        #{(str ESC "p") (str ESC "[112;3u")}
+   "ctrl+p"       #{(str (char 16)) (str ESC "[112;5u")}
    "ctrl+shift+n" #{(str ESC "[110;6u")}
    "ctrl+shift+p" #{(str ESC "[112;6u")}
    "ctrl+o"       #{(str (char 15)) (str ESC "[111;5u")}

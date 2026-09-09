@@ -34,6 +34,66 @@
       (catch :default e
         {:path abs :error (.-message e)}))))
 
+(def ^:private max-files
+  "Cap the flat file list so a huge monorepo can't wedge the fuzzy finder."
+  20000)
+
+(def ^:private walk-skip-dirs
+  "Directory names pruned from the fallback recursive walk (git ls-files already
+   honours .gitignore, so this only applies outside a git repo)."
+  #{".git" "node_modules" ".shadow-cljs" "target" ".cache" "dist" "build"
+    ".demo-home" ".next" ".cljs-cache"})
+
+(defn- git-list-files
+  "Tracked + untracked-not-ignored files under `abs`, relative to it, via
+   `git ls-files`. Returns a vector of paths, or nil when `abs` isn't a git
+   working tree (or git is unavailable)."
+  [abs]
+  (try
+    (let [proc (js/Bun.spawnSync
+                #js ["git" "-C" abs "ls-files" "--cached" "--others"
+                     "--exclude-standard"]
+                #js {:stdout "pipe" :stderr "pipe"})]
+      (when (zero? (.-exitCode proc))
+        (->> (str/split-lines (str (.toString (.-stdout proc))))
+             (remove str/blank?)
+             vec)))
+    (catch :default _ nil)))
+
+(defn- walk-list-files
+  "Recursive fallback for non-git directories: all files under `abs` (relative),
+   skipping `walk-skip-dirs`. Stops once `max-files` is reached."
+  [abs]
+  (let [out (volatile! [])]
+    (letfn [(walk [dir rel]
+              (when (< (count @out) max-files)
+                (doseq [^js d (try (fs/readdirSync dir #js {:withFileTypes true})
+                                   (catch :default _ #js []))
+                        :while (< (count @out) max-files)]
+                  (let [name (.-name d)
+                        child-rel (if (str/blank? rel) name (str rel "/" name))]
+                    (cond
+                      (.isDirectory d)
+                      (when-not (contains? walk-skip-dirs name)
+                        (walk (.join node-path dir name) child-rel))
+                      (.isFile d)
+                      (vswap! out conj child-rel))))))]
+      (walk abs "")
+      @out)))
+
+(defn list-files
+  "Flat list of files under `cwd` for the fuzzy file finder, relative to it.
+   Prefers `git ls-files` (so .gitignore is honoured); falls back to a recursive
+   walk for non-git directories. Returns {:cwd abs :files [rel ...]} (capped at
+   `max-files`, sorted), or {:cwd abs :error message} on failure."
+  [cwd]
+  (let [abs (.resolve node-path (or cwd (.cwd js/process)))]
+    (try
+      (let [files (or (git-list-files abs) (walk-list-files abs))]
+        {:cwd abs :files (->> files sort (take max-files) vec)})
+      (catch :default e
+        {:cwd abs :error (.-message e)}))))
+
 (def ^:private max-file-bytes
   "Cap the viewer at 2 MB so a stray huge/binary file can't wedge the client."
   (* 2 1024 1024))

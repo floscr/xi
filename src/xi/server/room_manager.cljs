@@ -258,6 +258,12 @@
   [_st {:keys [client-id cwd path]}]
   {:effects [[:file/web-read-reply {:client-id client-id :cwd cwd :path path}]]})
 
+(defn- files-web-tree
+  "Roomless: flat list of the project's files for the web fuzzy file finder,
+   relative to the room's cwd (git-tracked when available)."
+  [_st {:keys [client-id cwd]}]
+  {:effects [[:files/web-tree-reply {:client-id client-id :cwd cwd}]]})
+
 (defn- favorites-toggle
   "Roomless: star/unstar a session by id. The write + lobby rebroadcast happen
    in the :favorites/toggle-reply effect (needs disk access)."
@@ -370,6 +376,7 @@
    :diff/web-load          diff-web-load
    :commits/web-load       commits-web-load
    :files/web-list         files-web-list
+   :files/web-tree         files-web-tree
    :file/web-read          file-web-read
    :favorites/toggle       favorites-toggle
    :dismissed/toggle       dismissed-toggle

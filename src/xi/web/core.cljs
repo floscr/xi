@@ -1173,6 +1173,26 @@
                                                             :text (or text (str "Could not read file:\n" error))})
                                                  (assoc-in [:rooms room-id :ui :active-buffer] :file))}
                                      {:state st}))
+          ;; Instant fuzzy file finder (Ctrl/Cmd+P): open a dedicated palette
+          ;; page seeded with the room's flat file list; the page fuzzy-ranks
+          ;; it client-side per keystroke. Selecting a row reuses :files/open.
+          :palette/open-file-finder
+          (fn [st _]
+            (let [cwd (:cwd (state/active-room st))]
+              {:state (-> st
+                          (assoc :web/palette-page {:kind :file-finder}
+                                 :web/palette-open? true
+                                 :web/palette-drilling? true
+                                 :web/file-finder-query "")
+                          (dissoc :web/file-tree))
+               :effects [[:ws/send {:type :files/web-tree :cwd cwd}]
+                         [:palette/reset-filter nil]
+                         [:palette/reopen nil]]}))
+          :files/web-tree-result (fn [st {:keys [cwd files error]}]
+                                   {:state (assoc st :web/file-tree
+                                                  {:cwd cwd :files (or files []) :error error})})
+          :file-finder/input     (fn [st {:keys [query]}]
+                                   {:state (assoc st :web/file-finder-query query)})
           :palette/open-projects (fn [st _]
                                    {:state (assoc st :web/palette-page {:kind :project-insert}
                                                      :web/palette-open? true
@@ -1916,6 +1936,13 @@
                      :run (fn [_ dispatch! _] (dispatch! {:type :room/new}))})
   (keymap/register! {:id :sidebar-toggle :code "Backslash" :alt true :view :any :mode :any
                      :run (fn [_ dispatch! _] (dispatch! {:type :sidebar/toggle}))})
+  ;; Ctrl/Cmd+P: instant fuzzy file finder (handle-keydown preventDefaults, so
+  ;; the browser's print dialog never opens). :mode :any so it fires while the
+  ;; composer is focused too.
+  (keymap/register! {:id :file-finder :code "KeyP" :ctrl true :view :any :mode :any
+                     :run (fn [_ dispatch! _] (dispatch! {:type :palette/open-file-finder}))})
+  (keymap/register! {:id :file-finder-meta :code "KeyP" :meta true :view :any :mode :any
+                     :run (fn [_ dispatch! _] (dispatch! {:type :palette/open-file-finder}))})
   (keymap/register! {:id :session-next :code "KeyJ" :alt true :view :chat :mode :any
                      :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
   (keymap/register! {:id :session-prev :code "KeyK" :alt true :view :chat :mode :any

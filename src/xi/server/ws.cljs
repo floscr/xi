@@ -565,6 +565,12 @@
         (send! client-id (wire/encode (assoc (files/read-file path cwd)
                                              :type :file/web-read-result))))
 
+      ;; Flat file list for the web fuzzy file finder (Ctrl/Cmd+P).
+      :files/web-tree-reply
+      (fn [_ {:keys [client-id cwd]}]
+        (send! client-id (wire/encode (assoc (files/list-files cwd)
+                                             :type :files/web-tree-result))))
+
       ;; Commands running server-side may emit TUI-owned effects; the
       ;; mirroring client re-derives whitelisted ones locally
       ;; (xi.client.ws-transport), the rest are no-ops here.

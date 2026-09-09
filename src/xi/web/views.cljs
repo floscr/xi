@@ -12,6 +12,7 @@
             [xi.highlight.bundle :as grammars]
             [xi.highlight.theme-css :as theme]
             [xi.diff :as diff]
+            [xi.fuzzy :as fuzzy]
             [xi.palette :as palette]
             [xi.session.sidebar :as sb :refer [format-relative-time session-status
                                                active-first orphan-rooms
@@ -3230,6 +3231,33 @@
                              (dispatch! {:type :files/open :path child})))}
               (if dir? (str name "/") name)))))))))
 
+(defn- palette-file-finder-page
+  "Instant fuzzy file finder as a palette sub-page (Ctrl/Cmd+P). The palette
+   input is the query — the dialog's input listener dispatches
+   :file-finder/input, which fuzzy-ranks the preloaded flat file list
+   client-side (no per-keystroke server round-trip). Rows carry :value = the
+   live query so ui-runtime's own substring filter never re-hides a fuzzy
+   match; selecting opens the file in the :file tab (relative path, resolved
+   server-side against the room cwd)."
+  [state dispatch!]
+  (let [{:keys [files error]} (:web/file-tree state)
+        query (or (:web/file-finder-query state) "")]
+    (cond
+      (nil? (:web/file-tree state)) [:div {:class ["command-loading"]} (spinner)]
+      error [:div {:class ["command-empty"]} error]
+      (empty? files) [:div {:class ["command-empty"]} "No files"]
+      :else
+      (let [ranked (fuzzy/rank query files {:limit 50})]
+        (if (empty? ranked)
+          [:div {:class ["command-empty"]} "No matching files"]
+          (apply cmd/command-group {:heading "Files"}
+            (for [rel ranked]
+              (cmd/command-item
+               {:icon :file-text
+                :value query
+                :on-click (fn [_] (dispatch! {:type :files/open :path rel}))}
+               rel))))))))
+
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
@@ -3269,9 +3297,11 @@
   (let [open?        (boolean (:web/palette-open? state))
         palette-page (:web/palette-page state)
         search-page? (= :search (:kind palette-page))
+        finder-page? (= :file-finder (:kind palette-page))
         dialog-attrs {:id "cmdk" :hotkey "mod+k"
                       :placeholder (cond
                                      search-page? "Search session text…"
+                                     finder-page? "Find file…"
                                      palette-page "Filter actions…"
                                      :else        "Type a command or search…")
                       :attrs {:replicant/key "cmdk"
@@ -3296,9 +3326,12 @@
                                    ;; debounced server search (delegated: input
                                    ;; events bubble from .command-input).
                                    :input (fn [^js e]
-                                            (when search-page?
-                                              (dispatch! {:type :palette/search-input
-                                                          :query (.. e -target -value)})))
+                                            (let [v (.. e -target -value)]
+                                              (cond
+                                                search-page?
+                                                (dispatch! {:type :palette/search-input :query v})
+                                                finder-page?
+                                                (dispatch! {:type :file-finder/input :query v}))))
                                    :close (fn [_] (dispatch! {:type :palette/closed}))}}}]
     (cond
       ;; Closed: render just the dialog shell (observer stays attached via the
@@ -3321,6 +3354,7 @@
          :skill          (palette-skill-page state dispatch!)
          :commits        (palette-commits-page state dispatch!)
          :files          (palette-files-page state dispatch!)
+         :file-finder    (palette-file-finder-page state dispatch!)
          :project-insert (palette-project-insert-page state dispatch!)
          :snippets       (palette-snippets-page state dispatch!)
          :commands       (palette-commands-page state dispatch!)
@@ -3361,13 +3395,18 @@
        (apply cmd/command-group {:heading "Sessions"}
          (map #(palette-chat-item % dispatch! {:search? true}) all-sessions)))
      (apply cmd/command-group {:heading "Navigate"}
-       (cmd/command-item {:icon :layout-dashboard
-                          :on-click (fn [_] (dispatch! {:type :route/navigate :page :home}))}
-         "All projects")
-       (for [item (nav-items-for state :palette)]
-         (cmd/command-item {:icon (:icon item)
-                            :on-click (fn [_] (dispatch! (:event item)))}
-           (:label item))))
+       (cond-> [(cmd/command-item {:icon :layout-dashboard
+                                   :on-click (fn [_] (dispatch! {:type :route/navigate :page :home}))}
+                  "All projects")]
+         ;; Fuzzy file finder needs a room cwd to scope the listing.
+         room (conj (cmd/command-item
+                     {:icon :file-text
+                      :on-click (fn [_] (dispatch! {:type :palette/open-file-finder}))}
+                     "Find file…"))
+         :always (into (for [item (nav-items-for state :palette)]
+                         (cmd/command-item {:icon (:icon item)
+                                            :on-click (fn [_] (dispatch! (:event item)))}
+                           (:label item))))))
      (when (seq project-dirs)
        (apply cmd/command-group {:heading "Projects"}
          (for [d project-dirs]

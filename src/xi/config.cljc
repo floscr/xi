@@ -26,6 +26,7 @@
         [xi.ext.done-notify :as done-notify]
         [xi.ext.events :as events]
         [xi.ext.extensions :as extensions]
+        [xi.ext.file-finder :as file-finder]
         [xi.ext.file-view.core :as file-view]
         [xi.ext.github :as github]
         [xi.ext.github-code-search.core :as github-code-search]
@@ -104,6 +105,7 @@
       pushover/create
       diff/extension
       file-view/extension
+      file-finder/extension
       worktree/create
       kb/extension
       session-search/extension
