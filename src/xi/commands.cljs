@@ -63,10 +63,24 @@
 
 ;; ── Resumed-session messages → history entries (pure) ────────────────────────
 
+(def ^:private attachment-ref-re
+  ;; The provider-only reference lines appended by
+  ;; xi.agent/prompt-with-attachment-paths ("[Attached image: …]" /
+  ;; "[Attached file: …]"). Stripped from the resumed bubble text so it stays
+  ;; clean, matching the live (non-resumed) message.
+  #"(?m)^\[Attached (?:image|file): .*\]$")
+
+(defn- strip-attachment-refs [text]
+  (some-> text
+          (str/replace attachment-ref-re "")
+          str/trimr))
+
 (defn messages->history
   "Convert session blocks (xi.session/read-session-messages) into history
    entries (see xi.agent). Tool results are folded into their tool-call;
-   images attach a count to the following user message."
+   attached images (base64) are reattached to the user message they belong to
+   (they follow that message's text block in the transcript) so a resumed
+   conversation still shows the pictures."
   [messages]
   (let [results-by-id (into {}
                             (comp (filter #(= :tool-result (:type %)))
@@ -75,36 +89,48 @@
         ;; Blocks read from a pre-truncation ancestor session are display-only:
         ;; tag their history entries :no-llm? so xi.agent never replays them.
         flag (fn [entry block]
-               (cond-> entry (:pre-truncation? block) (assoc :no-llm? true)))]
-    (loop [ms (seq messages) out [] img-count 0]
+               (cond-> entry (:pre-truncation? block) (assoc :no-llm? true)))
+        ;; Attach buffered image blocks to the most recent user entry — in the
+        ;; transcript they immediately follow that message's text block.
+        flush-imgs (fn [out imgs]
+                     (if (and (seq imgs) (seq out)
+                              (= :user (:kind (peek out))))
+                       (update out (dec (count out)) merge
+                               {:images imgs :image-count (count imgs)})
+                       out))]
+    (loop [ms (seq messages) out [] imgs []]
       (if-not ms
-        out
+        (flush-imgs out imgs)
         (let [block (first ms)]
           (case (:type block)
             :image
-            (recur (next ms) out (inc img-count))
+            (recur (next ms) out
+                   (conj imgs {:media-type (:media-type block)
+                               :data (:data block)}))
 
             :truncation-divider
             (recur (next ms)
-                   (conj out (status-entry truncation-divider-text))
-                   img-count)
+                   (conj (flush-imgs out imgs) (status-entry truncation-divider-text))
+                   [])
 
             :text
             (case (:role block)
               "user"
               (recur (next ms)
-                     (conj out (flag (cond-> {:kind :user :text (:text block)}
-                                       (pos? img-count) (assoc :image-count img-count))
-                                     block))
-                     0)
+                     (conj (flush-imgs out imgs)
+                           (flag {:kind :user :text (strip-attachment-refs (:text block))}
+                                 block))
+                     [])
               "assistant"
               (recur (next ms)
-                     (conj out (flag {:kind :text :text (:text block) :done? true} block))
-                     img-count)
-              (recur (next ms) out img-count))
+                     (conj (flush-imgs out imgs)
+                           (flag {:kind :text :text (:text block) :done? true} block))
+                     [])
+              (recur (next ms) out imgs))
 
             :tool-use
-            (let [result (get results-by-id (:tool-use-id block))]
+            (let [out (flush-imgs out imgs)
+                  result (get results-by-id (:tool-use-id block))]
               (recur (next ms)
                      (conj out (flag (cond-> {:kind      :tool-call
                                               :id        (:tool-use-id block)
@@ -114,10 +140,10 @@
                                        result (assoc :result (:content result)
                                                      :is-error (boolean (:is-error result))))
                                      block))
-                     img-count))
+                     []))
 
             ;; :tool-result rendered inline with :tool-use; unknown → skip
-            (recur (next ms) out img-count)))))))
+            (recur (next ms) out imgs)))))))
 
 ;; ── Command handlers ─────────────────────────────────────────────────────────
 

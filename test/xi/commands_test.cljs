@@ -331,12 +331,38 @@
     (is (= "cli-1" (get-in state [:rooms "r" :session :provider-session-id]))
         "provider session id mirrored for resume")))
 
-(deftest messages->history-attaches-image-counts
+(deftest messages->history-reattaches-images
+  ;; In the transcript the user's text block comes first, then the image
+  ;; blocks of the same message. They must reattach (with data) to that
+  ;; preceding user entry so a resumed conversation shows the pictures.
   (let [h (commands/messages->history
-           [{:type :image}
-            {:type :image}
-            {:type :text :role "user" :text "see images"}])]
-    (is (= [{:kind :user :text "see images" :image-count 2}] h))))
+           [{:type :text :role "user"
+             :text "see images\n[Attached image: /tmp/a.jpg]"}
+            {:type :image :media-type "image/jpeg" :data "AAAA"}
+            {:type :image :media-type "image/png" :data "BBBB"}])]
+    (is (= [{:kind :user :text "see images"
+             :images [{:media-type "image/jpeg" :data "AAAA"}
+                      {:media-type "image/png" :data "BBBB"}]
+             :image-count 2}]
+           h)
+        "images carry base64 data and the [Attached image: …] ref is stripped"))
+  (testing "image-only message keeps a clean (empty) bubble"
+    (is (= [{:kind :user :text ""
+             :images [{:media-type "image/jpeg" :data "AAAA"}]
+             :image-count 1}]
+           (commands/messages->history
+            [{:type :text :role "user" :text "[Attached image: /tmp/a.jpg]"}
+             {:type :image :media-type "image/jpeg" :data "AAAA"}]))))
+  (testing "images attach to their own message, not the next turn"
+    (is (= [{:kind :user :text "first"
+             :images [{:media-type "image/png" :data "X"}] :image-count 1}
+            {:kind :text :text "reply" :done? true}
+            {:kind :user :text "second"}]
+           (commands/messages->history
+            [{:type :text :role "user" :text "first"}
+             {:type :image :media-type "image/png" :data "X"}
+             {:type :text :role "assistant" :text "reply"}
+             {:type :text :role "user" :text "second"}])))))
 
 ;; ── turn-end session sync (chained) ──────────────────────────────────────────
 
