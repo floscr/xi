@@ -1108,6 +1108,41 @@
                                    {:state (assoc st :web/palette-page {:kind :commands}
                                                      :web/palette-drilling? true)
                                     :effects [[:palette/reopen nil]]})
+          ;; Full-text session search as a palette sub-page (drilled from a
+          ;; project's "Search session text"). The palette input becomes the
+          ;; query: each keystroke lands here via the dialog's input listener,
+          ;; clears stale results (-> spinner) and debounces a server-side
+          ;; search over transcripts scoped to the project cwd.
+          :palette/open-search   (fn [st {:keys [cwd]}]
+                                   {:state (-> st
+                                               (assoc :web/palette-page
+                                                      {:kind :search :cwd cwd
+                                                       :label (get-in st [:web/palette-page :label])}
+                                                      :web/palette-drilling? true)
+                                               (dissoc :web/palette-search))
+                                    :effects [[:palette/reset-filter nil]
+                                              [:palette/reopen nil]]})
+          :palette/search-input  (fn [st {:keys [query]}]
+                                   (when (= :search (get-in st [:web/palette-page :kind]))
+                                     (let [st' (-> st
+                                                   (assoc-in [:web/palette-search :query] query)
+                                                   (update :web/palette-search dissoc :results))]
+                                       (if (str/blank? (str/trim (or query "")))
+                                         {:state st'}
+                                         {:state st'
+                                          :effects [[:palette/search-debounce
+                                                     {:query query
+                                                      :cwd (get-in st [:web/palette-page :cwd])}]]}))))
+          :session/web-search    (fn [_st {:keys [query cwd]}]
+                                   {:effects [[:ws/send {:type :session/web-search
+                                                         :query query :cwd cwd}]]})
+          ;; Stale replies (query no longer matches the live input) are
+          ;; dropped so a slow early reply can't clobber a newer search.
+          :session/web-search-result
+          (fn [st {:keys [query sessions]}]
+            (when (= (str/trim (or query ""))
+                     (str/trim (or (get-in st [:web/palette-search :query]) "")))
+              {:state (assoc-in st [:web/palette-search :results] (vec sessions))}))
           :palette/back          (fn [st _]
                                    {:state (dissoc st :web/palette-page)
                                     :effects [[:palette/reset-filter nil]]})
@@ -1265,6 +1300,16 @@
       (reset! timer
               (js/setTimeout
                (fn [] (dispatch! (assoc payload :type :session/content-search)))
+               180))))
+   ;; Same debounce shape for the palette's full-text search (separate timer
+   ;; so it can't cancel a list-view content search, and vice versa).
+   :palette/search-debounce
+  (let [timer (atom nil)]
+    (fn [{:keys [dispatch!]} payload]
+      (when-let [t @timer] (js/clearTimeout t))
+      (reset! timer
+              (js/setTimeout
+               (fn [] (dispatch! (assoc payload :type :session/web-search)))
                180))))
    ;; Auto-dismiss the "Copied" toast. A fresh copy restarts the timer so the
    ;; toast doesn't blink out mid-flash when the user copies twice in a row.

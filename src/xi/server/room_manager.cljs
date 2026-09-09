@@ -225,6 +225,14 @@
   {:effects [[:session/content-search-reply
               {:client-id client-id :key key :query query :cwd cwd}]]})
 
+(defn- session-web-search
+  "Roomless: full-text search over saved sessions for the command palette's
+   in-panel search — like session-content-search, but the reply carries full
+   summaries with match snippets instead of bare ids."
+  [_st {:keys [client-id query cwd]}]
+  {:effects [[:session/web-search-reply
+              {:client-id client-id :query query :cwd cwd}]]})
+
 (defn- diff-web-load
   "Roomless: return the combined working-tree diff for a CWD (the git-status
    view, which has no room to attach a :diff buffer to)."
@@ -358,6 +366,7 @@
    :sessions/all           sessions-all
    :models/web-list        models-web-list
    :session/content-search session-content-search
+   :session/web-search     session-web-search
    :diff/web-load          diff-web-load
    :commits/web-load       commits-web-load
    :files/web-list         files-web-list

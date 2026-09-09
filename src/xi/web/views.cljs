@@ -2998,13 +2998,50 @@
     (cmd/command-item
      {:icon :code
       :on-click (fn [_] (dispatch! {:type :git-status/open :cwd cwd}))}
-     "Git status")]
+     "Git status")
+    (cmd/command-item
+     {:icon :search
+      :on-click (fn [_] (dispatch! {:type :palette/open-search :cwd cwd}))}
+     "Search session text")]
    (for [item (nav-items-for state :overflow)
          :when (contains? #{nil :project} (:mode item))]
      (cmd/command-item
       {:icon (:icon item)
        :on-click (fn [_] (dispatch! (merge (:event item) {:cwd cwd})))}
       (:label item)))))
+
+(defn- palette-search-page
+  "Full-text session search as a palette sub-page (drilled from a project's
+   \"Search session text\"). The palette input is the query — the dialog's
+   input listener dispatches :palette/search-input, which debounces a
+   server-side search over saved-session names + transcripts scoped to the
+   project cwd. Spinner while a reply is in flight; result rows carry the
+   matched snippet and open the session. Rows set data-command-value to the
+   live query so ui-runtime's filter never hides them (the match lives in the
+   transcript text, not the row label)."
+  [state dispatch!]
+  (let [{:keys [query results]} (:web/palette-search state)]
+    (cond
+      (str/blank? (str/trim (or query "")))
+      [:div {:class ["command-empty"]} "Type to search session text…"]
+
+      (nil? results)
+      [:div {:class ["command-loading"]} (spinner)]
+
+      (empty? results)
+      [:div {:class ["command-empty"]} "No matching sessions"]
+
+      :else
+      (apply cmd/command-group {:heading "Matching sessions"}
+        (for [{:keys [session-id name snippet]} results]
+          (cmd/command-item
+           {:icon :message-circle
+            :value query
+            :description snippet
+            :on-click (fn [_] (dispatch! {:type :route/navigate
+                                          :page :chat
+                                          :session-id session-id}))}
+           (or name "(untitled)")))))))
 
 (defn- palette-model-page
   "Model list as a palette sub-page (drilled from Change model / /model). Shows
@@ -3215,9 +3252,12 @@
   [state dispatch!]
   (let [open?        (boolean (:web/palette-open? state))
         palette-page (:web/palette-page state)
+        search-page? (= :search (:kind palette-page))
         dialog-attrs {:id "cmdk" :hotkey "mod+k"
-                      :placeholder (if palette-page "Filter actions…"
-                                       "Type a command or search…")
+                      :placeholder (cond
+                                     search-page? "Search session text…"
+                                     palette-page "Filter actions…"
+                                     :else        "Type a command or search…")
                       :attrs {:replicant/key "cmdk"
                               ;; Flip :web/palette-open? when the native dialog
                               ;; gains its `open` attribute (opened by
@@ -3235,6 +3275,14 @@
                                             #js {:attributes true
                                                  :attributeFilter #js ["open"]})))
                               :on {:keydown (palette-keydown dispatch! palette-page)
+                                   ;; On the search sub-page the palette input
+                                   ;; is the query — feed keystrokes into the
+                                   ;; debounced server search (delegated: input
+                                   ;; events bubble from .command-input).
+                                   :input (fn [^js e]
+                                            (when search-page?
+                                              (dispatch! {:type :palette/search-input
+                                                          :query (.. e -target -value)})))
                                    :close (fn [_] (dispatch! {:type :palette/closed}))}}}]
     (cond
       ;; Closed: render just the dialog shell (observer stays attached via the
@@ -3260,6 +3308,7 @@
          :project-insert (palette-project-insert-page state dispatch!)
          :snippets       (palette-snippets-page state dispatch!)
          :commands       (palette-commands-page state dispatch!)
+         :search         (palette-search-page state dispatch!)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
            (palette-project-actions state dispatch! (:cwd palette-page)))))
 

@@ -69,7 +69,7 @@
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
   #{:client/update :session/counts :sessions/all :models/web-list
-    :session/content-search
+    :session/content-search :session/web-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
     :favorites/toggle :dismissed/toggle :session/delete :session/mark-read
     :rooms/prune})
@@ -486,6 +486,21 @@
                                        :session-ids (session/content-search
                                                      cwd query
                                                      {:personal-agent? personal-agent?})})))
+
+      ;; Full-text search with result summaries + match snippets, for the
+      ;; command palette's in-panel session search (scoped to a project cwd).
+      :session/web-search-reply
+      (fn [_ {:keys [client-id query cwd]}]
+        (send! client-id
+               (wire/encode
+                {:type     :session/web-search-result
+                 :query    query
+                 :sessions (->> (session/search-sessions
+                                 cwd query {:personal-agent? personal-agent?})
+                                (take 30)
+                                (mapv #(select-keys % [:session-id :name :cwd
+                                                       :last-accessed :timestamp
+                                                       :snippet])))})))
 
       ;; Toggle a session bookmark, then fan a fresh lobby out to every client
       ;; (the :favorites/changed dispatch is lobby-relevant, so the tap
