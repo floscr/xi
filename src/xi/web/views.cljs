@@ -2987,15 +2987,12 @@
 
 (defn- palette-project-actions
   "Command items for a project's second-level page (Tab-drilled from a project
-   row). Mirrors the project three-dots overflow menu — open sessions, new
-   chat, git status — plus any :project-scoped extension nav items."
+   row). Mirrors the project three-dots overflow menu — new chat, git status,
+   search — plus any :project-scoped extension nav items, with open sessions
+   last."
   [state dispatch! cwd]
   (concat
    [(cmd/command-item
-     {:icon :folder-open
-      :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd cwd}))}
-     "Open sessions")
-    (cmd/command-item
      {:icon :plus
       :on-click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}
      "New chat")
@@ -3012,7 +3009,11 @@
      (cmd/command-item
       {:icon (:icon item)
        :on-click (fn [_] (dispatch! (merge (:event item) {:cwd cwd})))}
-      (:label item)))))
+      (:label item)))
+   [(cmd/command-item
+     {:icon :folder-open
+      :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd cwd}))}
+     "Open sessions")]))
 
 (defn- palette-search-page
   "Full-text session search as a palette sub-page (drilled from a project's
