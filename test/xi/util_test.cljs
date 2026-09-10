@@ -92,12 +92,26 @@
     (is (not (util/zen-model? "llama3")))
     (is (not (util/zen-model? nil)))))
 
+;; ── openai-model? ──
+
+(deftest openai-model-prefix
+  (testing "openai/ prefix routes to the Codex provider"
+    (is (util/openai-model? "openai/gpt-5.1-codex"))
+    (is (util/openai-model? "openai/gpt-5-codex")))
+  (testing "bare ids and other providers are not OpenAI Codex"
+    (is (not (util/openai-model? "gpt-5.1-codex")))
+    (is (not (util/openai-model? "opencode/gpt-6-astra")))
+    (is (not (util/openai-model? nil)))))
+
 ;; ── provider-for-model ──
 
 (deftest provider-for-model-routing
   (testing "opencode/ wins over an overlapping claude bare id"
     (is (= :zen (util/provider-for-model "opencode/claude-opus-4-8")))
     (is (= :zen (util/provider-for-model "opencode/big-pickle"))))
+  (testing "openai/ prefix routes to the Codex provider"
+    (is (= :openai (util/provider-for-model "openai/gpt-5.1-codex")))
+    (is (= :openai (util/provider-for-model "openai/gpt-5-codex"))))
   (testing "claude models route to :claude"
     (is (= :claude (util/provider-for-model "claude-opus-4-6")))
     (is (= :claude (util/provider-for-model "sonnet"))))

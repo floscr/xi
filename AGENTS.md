@@ -122,9 +122,15 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
 - **Standalone = not connected.** Server, client, and standalone modes share
   the same state shape and code paths; transports just forward events.
 - **Providers are pluggable** (`xi.provider.claude`, `xi.provider.ollama`,
-  `xi.provider.zen`). Zen (OpenCode Zen gateway) routes `opencode/<id>` models
-  across several API surfaces; chat-completions + Anthropic Messages are
-  implemented today. See [docs/providers-zen.md](docs/providers-zen.md).
+  `xi.provider.openai.codex`, `xi.provider.zen`). Zen (OpenCode Zen gateway)
+  routes `opencode/<id>` models across several API surfaces; chat-completions,
+  Anthropic Messages, and OpenAI Responses (GPT/Grok/Muse, incl. GPT 6 Astra)
+  are implemented today. See [docs/providers-zen.md](docs/providers-zen.md).
+  The OpenAI Codex provider routes `openai/<id>` models (gpt-5.1-codex, …) to
+  the ChatGPT-subscription Codex backend, reusing the `codex` CLI's credentials
+  from `~/.codex/auth.json`. The shared OpenAI Responses SSE + tool-loop
+  machinery lives in `xi.provider.openai.responses`. See
+  [docs/providers-openai.md](docs/providers-openai.md).
 - **shadow-cljs** compiles to a single node script run by **Bun**; the web
   client is a separate `:browser` build served by the same Bun server.
 - Runtime npm deps: only `@anthropic-ai/claude-agent-sdk` (pinned, see above).
@@ -186,10 +192,17 @@ src/xi/
     openai_compat.cljs — shared OpenAI Chat Completions streaming + tool loop
     ollama.cljs        — Ollama provider (thin wrapper over openai_compat)
     zen.cljs           — OpenCode Zen gateway provider (dispatches by wire format)
+    openai/
+      responses.cljs   — shared OpenAI Responses SSE + tool-loop machinery
+                         (used by both the Zen-responses and Codex adapters)
+      auth.cljs        — Codex CLI credential reuse (~/.codex/auth.json + refresh)
+      codex.cljs       — OpenAI ChatGPT-subscription (Codex) provider: routes
+                         `openai/<id>` to chatgpt.com/backend-api/codex/responses
     zen/
       auth.cljs        — Zen API key resolution (env + OpenCode auth.json)
       models.cljs      — Zen id normalization + wire-format routing table
       anthropic.cljs   — Zen Anthropic Messages surface adapter (raw HTTP)
+      responses.cljs   — Zen OpenAI-Responses request shape (over openai/responses)
   server/
     ws.cljs            — Bun WS server + static serving for the web client
     room_manager.cljs  — rooms as pure event handlers (join/attach/auto-destroy)

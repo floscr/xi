@@ -66,6 +66,7 @@
             [xi.summary :as summary]
             [xi.provider.claude :as claude]
             [xi.provider.ollama :as ollama]
+            [xi.provider.openai.codex :as openai-codex]
             [xi.provider.zen :as zen]
             [xi.server.room-manager :as rm]
             [xi.server.ws :as ws]
@@ -79,6 +80,7 @@
 (def providers
   {:claude claude/provider
    :ollama ollama/provider
+   :openai openai-codex/provider
    :zen    zen/provider})
 
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────

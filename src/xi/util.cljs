@@ -100,12 +100,22 @@
    (when (string? model)
      (str/starts-with? model "opencode/"))))
 
+(defn openai-model?
+  "True when `model` names an OpenAI ChatGPT-subscription (Codex) model — the
+   explicit `openai/` prefix routes to the Codex Responses backend."
+  [model]
+  (boolean
+   (when (string? model)
+     (str/starts-with? model "openai/"))))
+
 (defn provider-for-model
-  "Route a model id to a provider keyword: Zen (`opencode/…`) wins, then Claude,
-   else the OpenAI-compatible Ollama path."
+  "Route a model id to a provider keyword: Zen (`opencode/…`) and OpenAI Codex
+   (`openai/…`) prefixes win, then Claude, else the OpenAI-compatible Ollama
+   path."
   [model]
   (cond
     (zen-model? model)    :zen
+    (openai-model? model) :openai
     (claude-model? model) :claude
     :else                 :ollama))
 

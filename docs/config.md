@@ -116,9 +116,11 @@ See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint (`xi.provider.ollama`). |
 | `OPENCODE_API_KEY` | — | OpenCode Zen API key (`xi.provider.zen`). Falls back to `OPENCODE_ZEN_API_KEY`, then `~/.local/share/opencode/auth.json`. Optional — free chat-completions models work without it. |
 | `OPENCODE_ZEN_API_KEY` | — | Alternate name for the Zen API key. |
+| `CODEX_HOME` | `~/.codex` | Directory holding the Codex CLI's `auth.json`, reused by the OpenAI Codex provider (`xi.provider.openai.codex`) for `openai/<model>` ids. Run `codex login` to populate it. |
 
-See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider (models,
-auth, and supported API surfaces).
+See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider and
+[providers-openai.md](providers-openai.md) for the OpenAI Codex
+(ChatGPT-subscription) provider — models, auth, and supported API surfaces.
 
 ### Extensions
 
