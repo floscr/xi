@@ -267,16 +267,21 @@
 
 (defn- serve-static
   "Serve a file from public-dir; SPA-fallback to index.html for extensionless
-   router paths (e.g. /chat/...). Returns a Promise<Response>."
-  [public-dir ^js req personal-agent?]
+   router paths (e.g. /chat/...). Returns a Promise<Response>.
+
+   icon-variant selects which favicon this instance serves at the shared
+   /apple-touch-icon.png URL: \"personal\" and \"hetzner\" map to their
+   -<variant>.png sibling, everything else (incl. \"desktop\") keeps the base
+   file. Each host only ever runs one variant, so URL-level caching stays
+   consistent."
+  [public-dir ^js req icon-variant]
   (let [path (js/require "node:path")
         url  (js/URL. (.-url req))
         pathname (js/decodeURIComponent (.-pathname url))
         rel  (if (= "/" pathname) "index.html" (.replace pathname #"^/+" ""))
-        ;; Personal mode gets the blue-eyed icon at the same URL (each host
-        ;; only ever runs one mode, so URL-level caching stays consistent).
-        rel  (if (and personal-agent? (= rel "apple-touch-icon.png"))
-               "apple-touch-icon-personal.png"
+        rel  (if (and (= rel "apple-touch-icon.png")
+                      (contains? #{"personal" "hetzner"} icon-variant))
+               (str "apple-touch-icon-" icon-variant ".png")
                rel)
         ;; Normalize + contain to public-dir (no path traversal)
         full (.normalize path (.join path public-dir rel))
@@ -327,6 +332,13 @@
    Returns {:fx {…} :start! (fn [app {:keys [port]}] → {:port :stop!})}."
   [{:keys [server-opts personal-agent? ext-system-prompt-parts room-ext-init ext]}]
   (let [sockets (js/Map.)
+        ;; Which favicon this instance serves at /apple-touch-icon.png. XI_ICON
+        ;; overrides (e.g. hetzner--xi sets "hetzner"); otherwise personal-agent
+        ;; hosts get the warm "personal" icon and coding hosts the "desktop" one.
+        icon-variant (or (some-> (aget js/process.env "XI_ICON")
+                                  (.trim)
+                                  (as-> v (when (pos? (.-length v)) v)))
+                         (if personal-agent? "personal" "desktop"))
         send!   (fn [client-id payload]
                   (when-let [ws (.get sockets client-id)]
                     (try (.send ws payload) (catch :default _ nil))))
@@ -828,7 +840,7 @@
                          (handle-api! req pathname)
 
                          (not upgrade?)
-                         (serve-static public-dir req personal-agent?)
+                         (serve-static public-dir req icon-variant)
 
                          :else
                          ;; Same-host Origin only (port ignored — shadow's
