@@ -751,6 +751,13 @@
   [dispatch! room-id slash]
   (let [{:keys [name args]}
         (commands/parse-input (if (str/starts-with? slash "/") slash (str "/" slash)))]
+    ;; Web-only commands (commits/files/skills, and /model without args) open a
+    ;; palette sub-page directly instead of flowing through :web/command, so the
+    ;; :web/command recorder tap never sees them. Record them here so they still
+    ;; land in the palette's Recent list like backend commands do.
+    (when (or (#{"commits" "files" "skills"} name)
+              (and (= name "model") (not args)))
+      (dispatch! {:type :web/record-command :name name}))
     (case name
       ;; Web-only: open the session-commits palette bar instead of running a
       ;; (non-existent) server command.
