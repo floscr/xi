@@ -254,6 +254,7 @@
   [tool args]
   (case tool
     ("Bash" "bash") (get-arg args :command)
+    ("clj")         (get-arg args :code)
     ("Read" "read")  (or (get-arg args :file_path) (get-arg args :path))
     ("Write" "write") (or (get-arg args :file_path) (get-arg args :path))
     ("Edit" "edit")  (or (get-arg args :file_path) (get-arg args :path))
@@ -332,7 +333,7 @@
 
 (def ^:private expanded-tools
   "Tools whose output is shown expanded by default."
-  #{"Bash" "bash" "Edit" "edit" "Write" "write" "web_search" "fetch"})
+  #{"Bash" "bash" "clj" "Edit" "edit" "Write" "write" "web_search" "fetch"})
 
 (defn- edit-diff-code
   "Render an edit tool's unified-diff result with per-line tinting: + lines get
@@ -386,6 +387,7 @@
         text      (util/extract-text-content result)
         grammar   (when (and text (not is-error)) (tool-grammar name arguments))
         bash?     (contains? #{"Bash" "bash"} name)
+        clj-code  (when (= "clj" name) (not-empty (str (get-arg arguments :code))))
         gtd?      (and (= "gtd_capture" name) (not is-error))
         gtd-body  (when gtd? (or (not-empty (get-arg arguments :body))
                                  (get-arg arguments :title)))
@@ -403,6 +405,12 @@
        (cond
          running? (spinner)
          is-error [:span {:class ["error-text"]} " error"])]
+      (when clj-code
+        [:div {:class ["tool-call-content" "tool-call-input"]}
+         [:pre {:class ["tool-call-code"]}
+          (if-let [g (grammars/get-grammar "clj")]
+            (highlight-code g (truncate-lines clj-code 100))
+            (plain-code (truncate-lines clj-code 100)))]])
       (cond
         gtd?
         (when (seq gtd-body)

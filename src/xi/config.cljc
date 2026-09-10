@@ -19,6 +19,7 @@
         [xi.ext.canvas-review :as canvas-review]
         [xi.ext.chrome-mcp :as chrome]
         [xi.ext.clipboard-image :as clipboard-image]
+        [xi.ext.clj :as clj-tool]
         [xi.ext.clj-surgeon :as clj-surgeon]
         [xi.ext.commit :as commit]
         [xi.ext.dictation :as dictation]
@@ -124,6 +125,9 @@
       gtd/extension
       image-graph/extension
       permission-gate/extension
+      ;; clj (sandboxed SCI scripting tool) after the policy gates so its
+      ;; tool calls still pass plan-mode/permission-gate first
+      clj-tool/extension
       todo-intercept/extension
       treesitter/create
       tmp-cleanup-intercept/extension

@@ -100,18 +100,26 @@
     (-> (tool-gate {:name name :arguments arguments})
         (.then
          (fn [gated]
-           (if (nil? gated)
-             {:type "function_call_output" :call_id call_id
-              :output "[error] Blocked by Xi permission gate"}
-             (let [exec-fn (get registry name)]
-               (if exec-fn
-                 (-> (tools/run-tool exec-fn arguments {:cwd cwd})
-                     (.then (fn [{:keys [content is-error]}]
-                              {:type "function_call_output" :call_id call_id
-                               :output (str (when is-error "[error] ")
-                                            (util/extract-text-content content))})))
-                 {:type "function_call_output" :call_id call_id
-                  :output (str "[error] Unknown tool: " name)}))))))))
+  (cond
+    (nil? gated)
+    {:type "function_call_output" :call_id call_id
+     :output "[error] Blocked by Xi permission gate"}
+
+    (:intercepted gated)
+    {:type "function_call_output" :call_id call_id
+     :output (str (when (get-in gated [:result :is-error]) "[error] ")
+                  (util/extract-text-content (get-in gated [:result :content])))}
+
+    :else
+    (let [exec-fn (get registry name)]
+      (if exec-fn
+        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) {:cwd cwd})
+            (.then (fn [{:keys [content is-error]}]
+                     {:type "function_call_output" :call_id call_id
+                      :output (str (when is-error "[error] ")
+                                   (util/extract-text-content content))})))
+        {:type "function_call_output" :call_id call_id
+         :output (str "[error] Unknown tool: " name)}))))))))
 
 ;; ── SSE parsing ──────────────────────────────────────────────────────────────
 

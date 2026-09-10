@@ -16,8 +16,9 @@
   "Bash patterns that are always blocked."
   ["ssh " "scp " "rsync " "sftp "])
 
-(def ^:private GUARDED_PATTERNS
-  "Bash patterns that require extra caution. The Xi server control tasks
+(def GUARDED_PATTERNS
+  "Bash patterns that require extra caution. Public: the clj extension
+   applies the same patterns to (sh …) argv strings. The Xi server control tasks
    (serve:restart / serve:stop) are handled separately (see
    server-control-kind) because running them inline would kill the very
    server hosting this agent mid-command; they still require approval but
@@ -76,10 +77,12 @@
    :result {:content [{:type "text" :text (server-control-result-text kind)}]
             :is-error false}})
 
-(defn- ask-server-control
+(defn ask-server-control
   "Confirm a server-control command; on yes run it detached and return an
    explicit result, on no block (nil). With no :confirm! available (headless,
-   no client), run detached — inline would self-kill the server."
+   no client), run detached — inline would self-kill the server. Public:
+   the clj extension delegates (sh \"bb\" \"serve:restart\") here so the
+   detached-run semantics apply there too."
   [confirm! cmd kind]
   (if confirm!
     (-> (confirm! (str "Guarded command: " cmd))

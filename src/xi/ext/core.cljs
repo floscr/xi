@@ -32,6 +32,10 @@
      :tool-definitions [{:name :description :input_schema}]
      :tool-registry    {name (fn [args ctx] → result|Promise)} — ctx is
                    the provider tool ctx merged with the gate ctx above
+     :remove-tools #{tool-name} — builtin tools to hide from the model
+                   (dropped from the provider tool list; re-read per turn,
+                   so /ext disable restores them). E.g. the clj extension
+                   removes bash.
      :commands     [{:name :description :handler}] — same contract as
                    xi.commands: (fn [state {:keys [room-id args commands]}])
      :roomless-events #{event-type} — event types clients may send without
@@ -126,6 +130,7 @@
                                          (:event-hooks e)))
                                {} exts)
      :tool-gates       (vec (keep :tool-gate exts))
+     :remove-tools     (into #{} (mapcat :remove-tools) exts)
      :roomless-events  (into #{} (mapcat :roomless-events) exts)
      :no-broadcast     (into #{} (mapcat :no-broadcast) exts)
      :originator-only  (into #{} (mapcat :originator-only) exts)

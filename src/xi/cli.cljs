@@ -139,6 +139,7 @@
                               tool-call))
    :extra-tool-definitions (fn [] (:tool-definitions (manager/composed manager)))
    :extra-tool-registry    (fn [] (:tool-registry (manager/composed manager)))
+   :remove-tools           (fn [] (:remove-tools (manager/composed manager)))
    :ask!                   ask!})
 
 (defn- subagent-opts

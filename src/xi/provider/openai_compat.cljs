@@ -76,17 +76,24 @@
     (-> (tool-gate {:name name :arguments arguments})
         (.then
          (fn [gated]
-           (if (nil? gated)
-             {:role "tool" :tool_call_id id
-              :content "Blocked by Xi permission gate"}
-             (let [exec-fn (get registry name)]
-               (if exec-fn
-                 (-> (tools/run-tool exec-fn arguments {:cwd cwd})
-                     (.then (fn [{:keys [content]}]
-                              {:role "tool" :tool_call_id id
-                               :content (util/extract-text-content content)})))
-                 {:role "tool" :tool_call_id id
-                  :content (str "Unknown tool: " name)}))))))))
+  (cond
+    (nil? gated)
+    {:role "tool" :tool_call_id id
+     :content "Blocked by Xi permission gate"}
+
+    (:intercepted gated)
+    {:role "tool" :tool_call_id id
+     :content (util/extract-text-content (get-in gated [:result :content]))}
+
+    :else
+    (let [exec-fn (get registry name)]
+      (if exec-fn
+        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) {:cwd cwd})
+            (.then (fn [{:keys [content]}]
+                     {:role "tool" :tool_call_id id
+                      :content (util/extract-text-content content)})))
+        {:role "tool" :tool_call_id id
+         :content (str "Unknown tool: " name)}))))))))
 
 ;; ── SSE Stream Parsing ──────────────────────────────────────────────────────
 

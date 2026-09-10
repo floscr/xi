@@ -1,6 +1,7 @@
 {:deps {thheller/shadow-cljs {:mvn/version "3.4.9"}
         com.cognitect/transit-cljs {:mvn/version "0.8.280"}
         no.cjohansen/replicant {:mvn/version "2025.12.1"}
+        org.babashka/sci {:mvn/version "0.15.58"}
         com.example.git/clj-ui-framework
         {:git/url "https://git.example.com/floscr/clj-ui-framework.git"
          :git/sha "80eff4c6d4e87099bef8f42730efbf4cc182a069"}}

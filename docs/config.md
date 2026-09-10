@@ -155,6 +155,17 @@ enable/disable of *any* extension (including the `mcp-<id>` wrappers) also
 works via `/ext enable|disable`. See [mcp-servers.md](mcp-servers.md) for the
 full walkthrough.
 
+### clj tool (sandboxed Clojure) allowlist
+
+| Path | Read by | Description |
+| --- | --- | --- |
+| `~/.config/xi/ext/clj.edn` | `xi.ext.clj` | Global config for the sandboxed `clj` scripting tool. An EDN map; `:allow-clis` is a vector of CLI binary names (e.g. `["ffmpeg" "jq"]`) that `(sh …)` may run without a confirm dialog, in every room. `:helper-hints` (default `true`) — set to `false` to stop appending "prefer the builtin helpers" hints to auto-run `(sh …)` results if they degrade model output (auto-run itself stays on). Read once per server process. |
+
+Per-session (room) allowances are managed at runtime instead: approving a
+confirm dialog with "always" or running `/clj allow <cli>` adds the binary to
+the room's session allowlist (it dies with the room). See
+[clj-tool.md](clj-tool.md).
+
 ### Per-extension secrets (gitignored)
 
 | Path | Read by | Description |

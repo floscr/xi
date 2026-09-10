@@ -73,6 +73,7 @@
   [tool-name arguments]
   (case tool-name
     "bash"  (get-arg arguments :command)
+    "clj"   (get-arg arguments :code)
     ("read" "write" "edit") (arg-file-path arguments)
     "ls"    (get-arg arguments :path)
     "grep"  (str (get-arg arguments :pattern)

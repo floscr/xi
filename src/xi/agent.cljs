@@ -443,10 +443,12 @@
                              dispatch, read state, confirm via dialogs, etc.
      :extra-tool-definitions extra tool defs exposed to the provider
      :extra-tool-registry    name → exec-fn for those extra tools
+     :remove-tools           0-arg fn → #{tool-name} of builtin tools to
+                             hide from the model (extension :remove-tools)
      :ask!                   dialog ask! — partially applied into the gate
                              ctx as :confirm! (fn [message] → Promise<bool>)"
   ([providers] (create-fx providers nil))
-  ([providers {:keys [tool-gate extra-tool-definitions extra-tool-registry ask!]}]
+  ([providers {:keys [tool-gate extra-tool-definitions extra-tool-registry remove-tools ask!]}]
   (let [inflight (js/Map.)]
     {:provider/start-turn
      (fn [{:keys [dispatch! get-state]} {:keys [room-id cwd] :as payload}]
@@ -509,6 +511,7 @@
                 gate1                  (assoc :tool-gate gate1)
                 extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
                 extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
+                remove-tools           (assoc :remove-tools remove-tools)
                 client-pid             (assoc :client-pid client-pid)))]
          ;; `handle` identifies this turn in `inflight`. A turn that was
          ;; discarded (see :provider/discard, fired when /new or /clear
