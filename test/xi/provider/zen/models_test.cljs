@@ -33,9 +33,12 @@
 
 (deftest wire-format-responses
   (testing "gpt/grok/muse models use the Responses surface"
+    (is (= :responses (models/wire-format "gpt-6-astra")))
+    (is (= :responses (models/wire-format "opencode/gpt-6-astra")))
     (is (= :responses (models/wire-format "gpt-5.5")))
     (is (= :responses (models/wire-format "opencode/gpt-5-nano")))
     (is (= :responses (models/wire-format "grok-4.6")))
+    (is (= :responses (models/wire-format "muse-spark-1.3")))
     (is (= :responses (models/wire-format "muse-spark-1.2")))))
 
 (deftest wire-format-gemini
@@ -54,6 +57,7 @@
   (testing "opencode/ prefix and known bare ids are Zen"
     (is (models/zen-model? "opencode/big-pickle"))
     (is (models/zen-model? "claude-opus-4-8"))
+    (is (models/zen-model? "gpt-6-astra"))
     (is (models/zen-model? "gpt-5.5"))
     (is (models/zen-model? "gemini-3.1-pro")))
   (testing "unknown bare ids and nil are not"

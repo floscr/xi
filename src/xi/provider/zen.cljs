@@ -9,7 +9,8 @@
                 (DeepSeek, GLM, Kimi, MiniMax, big-pickle, all *-free models)
      :messages  Anthropic Messages       — via xi.provider.zen.anthropic
                 (Claude, Qwen)
-     :responses OpenAI Responses         — not yet implemented (GPT, Grok, Muse)
+     :responses OpenAI Responses         — via xi.provider.zen.responses
+                (GPT, Grok, Muse)
      :gemini    Google generateContent   — not yet implemented (Gemini)
 
    Auth: OPENCODE_API_KEY / OPENCODE_ZEN_API_KEY, else OpenCode's own
@@ -20,7 +21,8 @@
   (:require [xi.provider.openai-compat :as oai]
             [xi.provider.zen.anthropic :as anthropic]
             [xi.provider.zen.auth :as auth]
-            [xi.provider.zen.models :as models]))
+            [xi.provider.zen.models :as models]
+            [xi.provider.zen.responses :as responses]))
 
 (defn- unsupported
   "Return a turn handle that reports an unsupported wire format instead of
@@ -29,7 +31,8 @@
   (let [msg (str "OpenCode Zen model uses the " (name wire)
                  " API surface, which Xi doesn't support yet. "
                  "Supported now: chat-completions (DeepSeek, GLM, Kimi, "
-                 "MiniMax, big-pickle, *-free) and Anthropic (Claude, Qwen).")]
+                 "MiniMax, big-pickle, *-free), Anthropic (Claude, Qwen), "
+                 "and OpenAI Responses (GPT, Grok, Muse).")]
     {:promise (js/Promise.resolve
                (do (when-let [f (:on-error opts)]
                      (f {:type "error" :message msg}))
@@ -64,7 +67,13 @@
         :base-url models/base-url}
        opts)
 
-      ;; :responses / :gemini — follow-up
+      :responses
+      (responses/stream-messages
+       {:api-key  (auth/api-key)
+        :base-url models/base-url}
+       opts)
+
+      ;; :gemini — follow-up
       (unsupported wire opts))))
 
 (def provider

@@ -52,11 +52,11 @@ each model to the right adapter via a static table transcribed from the docs
 | --- | --- | --- | --- |
 | Chat Completions | `POST /zen/v1/chat/completions` | DeepSeek, GLM, Kimi, MiniMax, Big Pickle, all `*-free` | ✅ supported (via `xi.provider.openai-compat`) |
 | Anthropic Messages | `POST /zen/v1/messages` (`x-api-key`) | Claude, Qwen | ✅ supported (via `xi.provider.zen.anthropic`) |
-| OpenAI Responses | `POST /zen/v1/responses` | GPT, Grok, Muse | ⏳ not yet implemented |
+| OpenAI Responses | `POST /zen/v1/responses` | GPT (incl. GPT 6 Astra), Grok, Muse | ✅ supported (via `xi.provider.zen.responses`) |
 | Google | `POST /zen/v1/models/<id>` | Gemini | ⏳ not yet implemented |
 
-Selecting a GPT/Grok/Muse or Gemini model currently surfaces a clear
-"not supported yet" error rather than failing silently.
+Selecting a Gemini model currently surfaces a clear "not supported yet" error
+rather than failing silently.
 
 ## Architecture notes
 
@@ -70,6 +70,16 @@ Selecting a GPT/Grok/Muse or Gemini model currently surfaces a clear
   (tool_use blocks accumulated from `input_json_delta`, executed through Xi's
   registry + tool gate, fed back as `tool_result` blocks). Uses `x-api-key`
   auth (the Zen Anthropic surface rejects bearer-only).
+- `xi.provider.zen.responses` — raw-HTTP OpenAI **Responses API** streaming
+  adapter (GPT/Grok/Muse). Bearer auth. Runs stateless (`store:false`): the
+  streamed output items (reasoning / message / function_call) are echoed back
+  verbatim into each next request's `input`, so item ids and reasoning ↔
+  function_call pairing stay valid across the tool loop; tool calls run through
+  Xi's registry + gate and are fed back as `function_call_output` items. These
+  are reasoning models, so it sends `reasoning.effort` (default `low` — the
+  models reject `none`) with `include: ["reasoning.encrypted_content"]`, and
+  streams reasoning summaries as thinking when a model emits them. Override the
+  effort per turn via the `:reasoning-effort` opt.
 - `xi.provider.zen.auth` / `xi.provider.zen.models` — key resolution and the
   id-normalization + wire-format routing table.
 
