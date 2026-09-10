@@ -254,7 +254,11 @@
     {:state (update-in st [:rooms room-id :history] fold-delta :text text)}))
 
 (defn- thinking-delta [st {:keys [room-id text]}]
-  (when (state/get-room st room-id)
+  ;; Some models (e.g. Opus 4.6-family via the Claude SDK) stream thinking
+  ;; blocks whose deltas are empty strings — the reasoning is withheld and only
+  ;; an encrypted signature is returned. Ignore blank deltas so they don't
+  ;; post empty "Thinking" blocks.
+  (when (and (state/get-room st room-id) (seq text))
     {:state (update-in st [:rooms room-id :history] fold-delta :thinking text)}))
 
 (defn- tool-start [st {:keys [room-id id tool arguments]}]

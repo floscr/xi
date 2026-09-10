@@ -98,7 +98,8 @@
                           #(update % :history agent/fold-delta :text text))}))
 
 (defn- thinking-delta [st {:keys [room-id sub-id text]}]
-  (when (find-child st room-id sub-id)
+  ;; Blank deltas → no entry; see xi.agent/thinking-delta.
+  (when (and (find-child st room-id sub-id) (seq text))
     {:state (update-child st room-id sub-id
                           #(update % :history agent/fold-delta :thinking text))}))
 
