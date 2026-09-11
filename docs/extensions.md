@@ -352,7 +352,7 @@ Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
 |-----------|------|-------------|
 | plan-mode | tool-gate, command, badge | Read-only exploration mode (`/plan`). Blocks writes except tasks/todo.md. |
 | done-notify | handler, keybinding, badge | Desktop notification on turn end. Ctrl+Shift+N toggle, 🔔 badge. |
-| pushover | handler, keybinding, badge (factory) | Pushover push on turn end / confirm dialog when no visible client is attached (server) or the done-notify bell is on (standalone). Ctrl+Shift+P toggle (📲 badge) forces a push even while watching. |
+| pushover | handler, keybinding, badge (factory) | Pushover push on turn end / confirm dialog. Ctrl+Shift+P (or the web palette) cycles a per-room tri-state mode: **auto** (default — push only when away: no visible client on server, done-notify bell on standalone), **on** (force pushes even while watching, 📲 badge), **off** (never push). |
 | dictation | handler, keybinding, badge (factory, client-only) | Voice input via sox/whisper. Alt+R to record. |
 | permission-gate | tool-gate | Confirms writes to sensitive paths and dangerous bash commands. |
 | todo-intercept | tool-gate | Intercepts writes to tasks/todo.md → GTD captures. |

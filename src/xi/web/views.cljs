@@ -3545,7 +3545,7 @@
              ;; — only then is the toggle useful (Ctrl+Shift+P on the TUI).
              push?   (and room (contains? (get-in state [:rooms (:id room) :ext])
                                           :pushover))
-             push-on? (get-in state [:rooms (:id room) :ext :pushover :enabled?])]
+             push-mode (or (get-in state [:rooms (:id room) :ext :pushover :mode]) :auto)]
          (apply cmd/command-group {:heading "Actions"}
            (cond-> (vec actions)
              push?
@@ -3553,9 +3553,11 @@
                     {:icon :bell
                      :on-click (fn [_] (dispatch! {:type :ext.pushover/toggle
                                                    :room-id (:id room)}))}
-                    (if push-on?
-                      "Push notifications: on"
-                      "Push notifications: off")))
+                    (str "Push notifications: "
+                         (case push-mode
+                           :on  "on (always)"
+                           :off "off"
+                           "auto (only when away)"))))
              :always
              (into (let [mode  (or (:web/theme-mode state) "auto")
                          ;; In auto mode the effective theme follows the OS

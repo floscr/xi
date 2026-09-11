@@ -11,10 +11,11 @@
    In server mode the notification carries a deep link (PUSHOVER_URL +
    /chat/<session-id>) so tapping it opens the chat.
 
-   A per-room push toggle (Ctrl+Shift+P, 📲 badge) forces notifications
-   regardless of the above — so a user watching in the TUI can still opt
-   into phone pushes (ping me even while I'm here). Mirrors the done-notify
-   bell's toggle mechanics.
+   A per-room push toggle (Ctrl+Shift+P, 📲 badge) cycles a tri-state mode:
+     :auto (default) — the away-only behavior above,
+     :on             — force pushes even while watching (ping me even here),
+     :off            — never push (fully mute this room).
+   Mirrors the done-notify bell's toggle mechanics.
 
    `extension` is a factory: it returns nil (and compose drops it) unless
    both PUSHOVER_USER_KEY and PUSHOVER_APP_TOKEN are set, so the seam is a
@@ -30,11 +31,11 @@
 
 (def ^:private ext-id :pushover)
 
-(defn- forced?
-  "True when the per-room push toggle is on — forces a notification even
-   when the user is deemed to be watching."
+(defn- push-mode
+  "The room's push mode: :auto (default — notify only when away), :on (force
+   a notification even while watching) or :off (never notify)."
   [st room-id]
-  (boolean (:enabled? (state/room-ext st room-id ext-id))))
+  (or (:mode (state/room-ext st room-id ext-id)) :auto))
 
 (defn- visible-clients-in-room [st room-id]
   (count (filter (fn [[_ client]]
@@ -42,29 +43,42 @@
                  (get-in st [:connection :clients]))))
 
 (defn- should-notify? [st room-id]
-  (or (forced? st room-id)
-      (case (state/mode st)
-        ;; Standalone: piggyback on the done-notify bell toggle.
-        :standalone (boolean (:enabled? (state/room-ext st room-id :done-notify)))
-        ;; Server: notify only when nobody is watching the room.
-        :server     (zero? (visible-clients-in-room st room-id))
-        false)))
+  (case (push-mode st room-id)
+    :off false
+    :on  true
+    ;; :auto — notify only when the user is deemed not to be watching.
+    (case (state/mode st)
+      ;; Standalone: piggyback on the done-notify bell toggle.
+      :standalone (boolean (:enabled? (state/room-ext st room-id :done-notify)))
+      ;; Server: notify only when nobody is watching the room.
+      :server     (zero? (visible-clients-in-room st room-id))
+      false)))
+
+(def ^:private next-mode
+  "Cycle order for the push toggle: auto → on → off → auto."
+  {:auto :on, :on :off, :off :auto})
+
+(defn- mode-label [mode]
+  (case mode
+    :on   "ON (always)"
+    :off  "OFF"
+    "AUTO (only when away)"))
 
 (defn toggle
-  "Ctrl+Shift+P (TUI) / palette (web) → flip the room-scoped push toggle and
-   report the new state. Pure, so the web reuses it to mirror the server's
-   broadcast echo."
+  "Ctrl+Shift+P (TUI) / palette (web) → cycle the room-scoped push mode
+   (auto → on → off) and report the new state. Pure, so the web reuses it to
+   mirror the server's broadcast echo."
   [st {:keys [room-id]}]
   (when (state/get-room st room-id)
-    (let [st' (update-in st [:rooms room-id :ext ext-id :enabled?] not)
-          on? (get-in st' [:rooms room-id :ext ext-id :enabled?])]
+    (let [nxt (next-mode (push-mode st room-id))
+          st' (assoc-in st [:rooms room-id :ext ext-id :mode] nxt)]
       {:state (update-in st' [:rooms room-id :history] conj
                          {:kind :status
-                          :text (str "Push notifications: " (if on? "ON" "OFF"))})})))
+                          :text (str "Push notifications: " (mode-label nxt))})})))
 
 (defn- prompt-badge [state]
   (when-let [room (state/active-room state)]
-    (when (forced? state (:id room)) " 📲")))
+    (when (= :on (push-mode state (:id room))) " 📲")))
 
 (defn- deep-link-url
   "Server-mode deep link to the room's chat (PUSHOVER_URL + /chat/<sid>),
@@ -129,7 +143,7 @@
   (when (and (aget js/process.env "PUSHOVER_USER_KEY")
              (aget js/process.env "PUSHOVER_APP_TOKEN"))
     {:id           ext-id
-     :init         {:room {:enabled? false}}
+     :init         {:room {:mode :auto}}
      :handlers     {:ext.pushover/toggle toggle
                     :agent/turn-end      on-turn-end
                     :ui/dialog-open      on-dialog-open}
