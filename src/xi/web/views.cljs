@@ -3468,7 +3468,32 @@
                                                    :room-id (:id room)}))}
                     (if push-on?
                       "Push notifications: on"
-                      "Push notifications: off")))))))
+                      "Push notifications: off")))
+             :always
+             (into (let [mode  (or (:web/theme-mode state) "auto")
+                         ;; In auto mode the effective theme follows the OS
+                         ;; preference, so resolve it to know what "toggle"
+                         ;; should switch to.
+                         dark? (case mode
+                                 "dark"  true
+                                 "light" false
+                                 (.-matches (js/window.matchMedia
+                                             "(prefers-color-scheme: dark)")))]
+                     (cond-> [(cmd/command-item
+                               {:icon (if dark? :sun :moon)
+                                :value "theme toggle light dark"
+                                :on-click (fn [_]
+                                            (dispatch! {:type :theme/set-mode
+                                                        :mode (if dark? "light" "dark")}))}
+                               (if dark? "Switch to light theme" "Switch to dark theme"))]
+                       (not= mode "auto")
+                       (conj (cmd/command-item
+                              {:icon :monitor
+                               :value "theme auto system"
+                               :on-click (fn [_]
+                                           (dispatch! {:type :theme/set-mode
+                                                       :mode "auto"}))}
+                              "Use system theme")))))))))
      (when cur-sid
        (cmd/command-group {:heading "Current session"}
          (cmd/command-item
