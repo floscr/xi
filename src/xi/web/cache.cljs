@@ -165,6 +165,15 @@
 (defn save-recent-skills! [skills]
   (store-set! recent-skills-key (vec skills)))
 
+;; ── Preferred model (default for new chats) ──────────────────────────────────
+
+(def ^:private preferred-model-key "xi/preferred-model")
+
+(defn load-preferred-model [] (store-get preferred-model-key))
+
+(defn save-preferred-model! [model]
+  (when (string? model) (store-set! preferred-model-key model)))
+
 ;; ── Hydrate + persist ────────────────────────────────────────────────────────
 
 (defn hydrate
@@ -181,7 +190,8 @@
                         ;; recency and is persisted to re-seed both on reload.
                         :web/recent-commands (load-recent-commands)
                         :web/command-usage (load-recent-commands)
-                        :web/recent-skills (load-recent-skills))
+                        :web/recent-skills (load-recent-skills)
+                        :web/preferred-model (load-preferred-model))
       (load-lobby) (assoc :lobby (load-lobby))
       cached       (assoc-in [:web/cache sid] cached))))
 

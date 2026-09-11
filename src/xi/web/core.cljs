@@ -89,7 +89,9 @@
   [st _]
   {:state   (-> st
                 (assoc :web/route {:page :chat :session-id nil})
-                (assoc :web/pending-room {:id (random-uuid) :cwd (room-new-cwd st)})
+                (assoc :web/pending-room (cond-> {:id (random-uuid) :cwd (room-new-cwd st)}
+                                           (:web/preferred-model st)
+                                           (assoc :model (:web/preferred-model st))))
                 (assoc :web/timeline-window nil))
    :effects [[:history/push {:route {:page :chat}}]
              [:compose/focus]]})
@@ -816,7 +818,13 @@
                                           room   (when (= (get-in active [:session :id]) sid)
                                                    active)
                                           rid    (:id room)
-                                          base   (dissoc st :web/model-list :web/palette-page :web/palette-open?)]
+                                          ;; Sticky preference: remember the pick so
+                                          ;; future *new* chats default to it (both
+                                          ;; in-memory and persisted to localStorage).
+                                          base   (-> st
+                                                     (dissoc :web/model-list :web/palette-page :web/palette-open?)
+                                                     (assoc :web/preferred-model model))
+                                          persist [:cache/preferred-model {:model model}]]
                                       (cond
                                         ;; Live room for the viewed session: apply
                                         ;; now, and optimistically reflect the pick
@@ -826,7 +834,8 @@
                                         ;; mirror back.
                                         rid
                                         {:state (assoc-in base [:rooms rid :agent :model] model)
-                                         :effects [[:palette/close nil]
+                                         :effects [persist
+                                                   [:palette/close nil]
                                                    [:ws/send {:type :input/submit
                                                               :room-id rid :text text}]]}
                                         ;; New virtual chat: no server room yet.
@@ -837,13 +846,13 @@
                                         ;; :model (see submit-pending/web-command).
                                         (:web/pending-room base)
                                         {:state (assoc-in base [:web/pending-room :model] model)
-                                         :effects [[:palette/close nil]]}
+                                         :effects [persist [:palette/close nil]]}
                                         ;; Fallback (rare: a cached session whose
                                         ;; room is still joining) — send to the
                                         ;; active room if there is one.
                                         :else
                                         {:state base
-                                         :effects (cond-> [[:palette/close nil]]
+                                         :effects (cond-> [persist [:palette/close nil]]
                                                     (:id active)
                                                     (conj [:ws/send {:type :input/submit
                                                                      :room-id (:id active) :text text}]))})))
@@ -1091,7 +1100,9 @@
           :projects/new-session   (fn [st {:keys [cwd]}]
                                     {:state (-> st
                                                 (assoc :web/route {:page :chat :session-id nil})
-                                                (assoc :web/pending-room {:id (random-uuid) :cwd cwd})
+                                                (assoc :web/pending-room (cond-> {:id (random-uuid) :cwd cwd}
+                                                                           (:web/preferred-model st)
+                                                                           (assoc :model (:web/preferred-model st))))
                                                 (assoc :web/timeline-window nil)
                                                 (assoc :web/sidebar-open? false))
                                      :effects [[:history/push {:route {:page :chat}}]
@@ -1514,6 +1525,7 @@
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
+   :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
    ;; Read a session's cached snapshot and feed it into :web/cache so the chat
    ;; view paints from it while the WS join lands.
    :cache/seed-room
