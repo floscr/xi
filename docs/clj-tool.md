@@ -59,6 +59,11 @@ SCI is allowlist-only: scripts get `clojure.core` (+ `clojure.string` as
 | `(git "status" "--short")` | **pre-approved** git — stdout string on exit 0, throws otherwise; `push`/`clean` refused (→ `(sh "git" …)`) |
 | `(sh "cmd" "arg" …)` | run a real CLI — **gated**, see below |
 
+Path arguments (including glob patterns) expand a leading `~` and a leading
+`$VAR` / `${VAR}` for env vars on the sandbox allowlist — so
+`(glob "$HOME/.cache/**/*.edn")` and `(cat "~/notes.md")` both work. There is
+no JVM: `System/getProperty` and other Java interop don't exist here.
+
 Guards, enforced inside every helper:
 
 - **Reads**: credential paths (`xi.sandbox.core/hidden-paths` — `~/.ssh`,

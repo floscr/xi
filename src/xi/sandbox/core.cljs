@@ -61,11 +61,22 @@
    "NIX_PATH" "NIX_PROFILES"])
 
 (defn expand-home
-  "Expand a leading ~ to the user's home directory."
+  "Expand a leading ~ to the user's home directory, or a leading $VAR /
+   ${VAR} (allowlisted env vars only) to its value. Non-allowlisted or
+   unset vars are left untouched."
   [p]
-  (if (or (= p "~") (str/starts-with? p "~/"))
+  (cond
+    (or (= p "~") (str/starts-with? p "~/"))
     (node-path/join (os/homedir) (subs p 1))
-    p))
+
+    (str/starts-with? p "$")
+    (let [[_ var-name remainder] (re-matches #"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?((?:/.*)?)" p)]
+      (or (when (and var-name (some #{var-name} ENV_ALLOWLIST))
+            (when-some [v (aget js/process.env var-name)]
+              (str v remainder)))
+          p))
+
+    :else p))
 
 (defn path-within?
   "True when child (resolved) equals parent or lives under it."

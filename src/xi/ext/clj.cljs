@@ -247,12 +247,13 @@
      'head   (fn [p & [n]] (vec (take (or n 10) (str/split-lines (read-file opts p)))))
      'tail   (fn [p & [n]] (vec (take-last (or n 10) (str/split-lines (read-file opts p)))))
      'glob   (fn [pattern]
-               (let [cwd (opts-cwd opts)]
+               (let [cwd (opts-cwd opts)
+                     pat (sandbox/expand-home (str pattern))]
                  (->> (if (exists? js/Bun)
-                        (js/Array.from (.scanSync (js/Bun.Glob. (str pattern))
+                        (js/Array.from (.scanSync (js/Bun.Glob. pat)
                                                   #js {:cwd cwd}))
                         ;; node fallback (test target runs under node)
-                        (js/Array.from (fs/globSync (str pattern) #js {:cwd cwd})))
+                        (js/Array.from (fs/globSync pat #js {:cwd cwd})))
                       sort vec)))
      'grep   (grep-fn opts)
      'find   (find-fn opts)
@@ -375,7 +376,8 @@
         "(curl url) → {:status :body} "
         "(git \"status\" \"--short\") → stdout string (pre-approved; push/clean "
         "excluded) (sh \"cmd\" \"arg\" …). "
-        "clojure.core + str/set/walk/edn aliases available. Prefer this over "
+        "clojure.core + str/set/walk/edn aliases available. Paths accept a "
+        "leading ~ or $HOME. Prefer this over "
         "bash pipelines: compute in-script, return small values. "
         "Example: (->> (glob \"src/**/*.cljs\") (filter #(str/includes? (cat %) \"TODO\")))\n"
         "sh runs real CLIs argv-style and needs user approval unless "

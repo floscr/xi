@@ -26,7 +26,14 @@
 (deftest expand-home-test
   (is (str/starts-with? (sandbox/expand-home "~/x") "/"))
   (is (not (str/includes? (sandbox/expand-home "~/x") "~")))
-  (is (= "/abs/x" (sandbox/expand-home "/abs/x"))))
+  (is (= "/abs/x" (sandbox/expand-home "/abs/x")))
+  (testing "$VAR / ${VAR} expansion for allowlisted vars"
+    (is (= (sandbox/expand-home "~/x") (sandbox/expand-home "$HOME/x")))
+    (is (= (sandbox/expand-home "~/x") (sandbox/expand-home "${HOME}/x")))
+    (is (str/starts-with? (sandbox/expand-home "$HOME") "/")))
+  (testing "non-allowlisted vars are left untouched"
+    (is (= "$SECRET_TOKEN/x" (sandbox/expand-home "$SECRET_TOKEN/x")))
+    (is (= "a$HOME/x" (sandbox/expand-home "a$HOME/x")) "only leading $ expands")))
 
 ;; ── bwrap backend ────────────────────────────────────────────────────────────
 
