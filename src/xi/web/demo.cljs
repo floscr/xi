@@ -93,6 +93,9 @@ Time:        1.284 s")
 (def ^:private clj-error-result
   "Error: clj: reading credential paths is blocked: /home/dev/.config/xi/clients.edn (line 2:4)")
 
+(def ^:private clj-shell-result
+  "=> On branch master\nYour branch is up to date with 'origin/master'.\n\nnothing to commit, working tree clean")
+
 (def ^:private final-text
   "Done — the settings page now has a dark mode toggle.
 
@@ -157,6 +160,13 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
     :arguments {:code "(let [f (str (env \"HOME\") \"/.config/xi/clients.edn\")]\n  [(stat f) (when (stat f) (cat f))])"}
     :result clj-error-result
     :is-error true
+    :status :done}
+   {:kind :tool-call
+    :id "t7"
+    :tool "clj"
+    :arguments {:code "(:out (sh \"git\" \"status\"))"}
+    :result clj-shell-result
+    :is-error false
     :status :done}
    {:kind :text
     :text final-text

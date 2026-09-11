@@ -1581,6 +1581,27 @@ body {
   white-space: nowrap;
 }
 
+/* Join the code panel and each result zone into one continuous box: kill the
+   inter-panel gap and flatten the shared edges so consecutive `pre`s read as a
+   single box, with each lower panel's top border acting as the divider line. */
+.tool-call-block--clj .tool-call-content:not(:last-of-type) { padding-bottom: 0; }
+
+.tool-call-block--clj .tool-call-content .tool-call-code {
+  border-radius: 0;
+  border-bottom: none;
+}
+
+.tool-call-block--clj .tool-call-content:first-of-type .tool-call-code {
+  border-top-left-radius: var(--radius-sm);
+  border-top-right-radius: var(--radius-sm);
+}
+
+.tool-call-block--clj .tool-call-content:last-of-type .tool-call-code {
+  border-bottom-left-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+  border-bottom: var(--border-0);
+}
+
 .clj-zone-label {
   font-size: 0.6rem;
   font-weight: 700;

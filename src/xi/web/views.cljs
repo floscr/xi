@@ -5,6 +5,8 @@
    Phase 7a: the online chat view (topbar, timeline of history entries,
    compose input, abort, permission dialogs). Home view + router land in 7b."
   (:require [clojure.string :as str]
+            [cljs.reader :as edn]
+            [cljs.pprint :as pprint]
             [xi.commands :as commands]
             [xi.core.state :as state]
             [xi.markdown.hiccup :as md]
@@ -404,10 +406,34 @@
                 :value  (subs text (+ nl-idx 4))}
         :else  {:value text}))))
 
+(defn- clj-data-value?
+  "True when a clj `=>` value looks like a printed clj data structure worth
+   syntax-highlighting — it opens with a collection/set/keyword/reader delimiter
+   (`[ ( { # :`). Plain command output (multi-line shell text from `(sh …)` /
+   `(cat …)`, printed strings) opens with ordinary characters, so it renders as
+   plain monospace instead and the clj highlighter doesn't spray colours over
+   arbitrary text."
+  [s]
+  (boolean (re-find #"^\s*[\[({#:]" s)))
+
+(defn- pretty-edn
+  "Best-effort pretty-print of an EDN value string so multi-key maps / nested
+   collections render across lines instead of on one wide row. Unknown tagged
+   literals (e.g. `#object[...]`) are preserved via a default reader. Returns
+   the original text unchanged if it can't be parsed as a single EDN form."
+  [text]
+  (try
+    (let [v (edn/read-string {:default (fn [tag val] (tagged-literal tag val))} text)]
+      (str/trim-newline
+       (binding [pprint/*print-right-margin* 80]
+         (with-out-str (pprint/pprint v)))))
+    (catch :default _ text)))
+
 (defn- clj-result-view
   "Render a parsed clj result as separate stdout / value / error zones (the
    'Quiet REPL' block): the returned value sits on its own panel behind a `=>`
-   gutter with clj syntax colouring; errors get a red band + a line:col chip."
+   gutter — clj data structures get syntax colouring, plain command output stays
+   uncoloured; errors get a red band + a line:col chip."
   [text is-error]
   (let [{:keys [stdout value error loc]} (parse-clj-result text is-error)
         g (grammars/get-grammar "clj")]
@@ -423,11 +449,13 @@
           [:div {:class ["clj-result-loc-row"]}
            [:span {:class ["clj-result-loc"]} loc]])])
      (when value
-       [:div {:class ["tool-call-content" "clj-result-value"]}
-        [:pre {:class ["tool-call-code"]}
-         (if g
-           (highlight-code g (truncate-lines value 100))
-           (plain-code (truncate-lines value 100)))]]))))
+       (let [data?  (and g (clj-data-value? value))
+             shown  (truncate-lines (if data? (pretty-edn value) value) 100)]
+         [:div {:class ["tool-call-content" "clj-result-value"]}
+          [:pre {:class ["tool-call-code"]}
+           (if data?
+             (highlight-code g shown)
+             (plain-code shown))]])))))
 
 (defn- tool-post [dispatch! {:keys [tool arguments result is-error status]}]
   (let [name      (util/strip-mcp-prefix tool)
@@ -450,7 +478,8 @@
                                            (str summary)
                                            (first (str/split-lines (str summary))))))))]
     [:div {:class ["post" "post--tool"]}
-     [:details {:class ["tool-call-block"] :open (boolean (expanded-tools name))}
+     [:details {:class (cond-> ["tool-call-block"] clj? (conj "tool-call-block--clj"))
+                :open (boolean (expanded-tools name))}
       [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
