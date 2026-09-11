@@ -209,6 +209,14 @@
       (str/starts-with? a "-") (recur more)
       :else a)))
 
+(def ^:private commit-summary-line-re
+  "git commit's `[<branch> <sha>] subject` summary line. Successful commits
+   record it into the runtime's :commit-outs so eval-code! can guarantee it
+   appears in the tool result — session-commit tracking
+   (xi.fx/session-commit-refs) extracts shas from result text, which would
+   otherwise miss commits that aren't the eval's return value."
+  #"\[[^\]]*?[0-9a-f]{7,40}\][^\n]*")
+
 (defn- git-fn
   "Pre-approved git runner: (git \"status\" \"--short\") → stdout string.
    Throws on non-zero exit and on deny-listed subcommands (GIT_DENY)."
@@ -223,7 +231,12 @@
                         {})))
       (let [{:keys [exit out err]} (spawn-sync! (into ["git"] args) (opts-cwd opts))]
         (if (zero? exit)
-          (str/trimr out)
+          (let [out' (str/trimr out)]
+            (when (= sub "commit")
+              (when-let [outs (:commit-outs @opts)]
+                (when-let [line (re-find commit-summary-line-re out')]
+                  (swap! outs conj line))))
+            out')
           (throw (ex-info (str "git " (str/join " " args) " failed (exit " exit "): "
                                (str/trim (str err "\n" out)))
                           {:exit exit})))))))
@@ -338,10 +351,19 @@
             *print-level*  12]
     (pr-str v)))
 
+(defn- with-commit-lines
+  "Append any recorded `[branch sha]` commit-summary lines that don't already
+   appear in the result text, so session-commit tracking always sees the sha
+   even when the commit's stdout was discarded mid-eval (or truncated away)."
+  [text commit-outs]
+  (let [missed (remove #(str/includes? text %) @commit-outs)]
+    (cond-> text (seq missed) (str "\n" (str/join "\n" missed)))))
+
 (defn- eval-code! [{:keys [code room-id cwd allowed]}]
   (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default))
-        prints (atom "")]
-    (swap! opts assoc :cwd cwd :allowed (set allowed))
+        prints (atom "")
+        commit-outs (atom [])]
+    (swap! opts assoc :cwd cwd :allowed (set allowed) :commit-outs commit-outs)
     (try
       (let [v   (sci/binding [sci/print-fn     #(swap! prints str %)
                               sci/print-err-fn #(swap! prints str %)]
@@ -350,16 +372,19 @@
             text (str out
                       (when (and (seq out) (not (str/ends-with? out "\n"))) "\n")
                       "=> " (format-value v))]
-        {:content [{:type "text" :text (truncate text MAX_RESULT)}]
+        {:content [{:type "text"
+                    :text (with-commit-lines (truncate text MAX_RESULT) commit-outs)}]
          :is-error false})
       (catch :default err
         (let [{:keys [line column]} (ex-data err)
               out @prints]
           {:content [{:type "text"
-                      :text (str (when (seq out) (str (truncate out MAX_RESULT) "\n"))
-                                 "Error: " (.-message err)
-                                 (when line (str " (line " line
-                                                 (when column (str ":" column)) ")")))}]
+                      :text (with-commit-lines
+                             (str (when (seq out) (str (truncate out MAX_RESULT) "\n"))
+                                  "Error: " (.-message err)
+                                  (when line (str " (line " line
+                                                  (when column (str ":" column)) ")")))
+                             commit-outs)}]
            :is-error true})))))
 
 ;; ── Tool ─────────────────────────────────────────────────────────────────────
