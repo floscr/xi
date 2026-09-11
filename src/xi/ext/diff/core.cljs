@@ -152,8 +152,9 @@
   [{:keys [dispatch! state]} {:keys [room-id client-id]}]
   (let [room    (state/get-room state room-id)
         cwd     (or (:cwd room) (.cwd js/process))
-        ;; Collect commits from the session history (git_commit tool + shell
-        ;; `git commit`s), then dedupe and drop dead (amended/rebased) ones
+        ;; Collect commits from the session history (git_commit tool, shell
+        ;; `git commit`s + clj-sandbox `(git "commit" …)` calls), then dedupe
+        ;; and drop dead (amended/rebased) ones
         ;; against the live repo — more precise than a base..HEAD range.
         commits (git/session-commits-from-refs cwd (fx/session-commit-refs room))
         status! (fn [text] (dispatch! {:type :ui/status :room-id room-id :text text}))]

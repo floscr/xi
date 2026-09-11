@@ -83,16 +83,24 @@
    (`[master (root-commit) abc1234]`, `[detached HEAD abc1234]`)."
   #"\[[^\]]*?([0-9a-f]{7,40})\]")
 
+(def ^:private clj-commit-re
+  "Matches a commit made from the clj sandbox: `(git \"commit\" …)` via the
+   pre-approved git helper, or the escalated `(sh \"git\" \"commit\" …)` form."
+  #"\(\s*(?:git\s+\"commit\"|sh\s+\"git\"\s+\"commit\")")
+
 (defn- commit-block?
-  "True when a history entry is a commit action: the git_commit tool, or a
-   bash command that ran `git commit` (amend/fixup included). Tolerant of the
-   mcp__ prefix and casing."
+  "True when a history entry is a commit action: the git_commit tool, a bash
+   command that ran `git commit` (amend/fixup included), or a clj sandbox call
+   whose code ran `(git \"commit\" …)` / `(sh \"git\" \"commit\" …)`. Tolerant
+   of the mcp__ prefix and casing."
   [{:keys [kind tool arguments]}]
   (and (= :tool-call kind)
        (let [t (some-> tool util/strip-mcp-prefix str/lower-case)]
          (or (= t "git_commit")
              (and (= t "bash")
-                  (some-> (:command arguments) str/lower-case (str/includes? "git commit")))))))
+                  (some-> (:command arguments) str/lower-case (str/includes? "git commit")))
+             (and (= t "clj")
+                  (some->> (:code arguments) (re-find clj-commit-re)))))))
 
 (defn- result->text
   "Display text of a tool-result content (a string or a vector of blocks)."
@@ -108,7 +116,8 @@
 (defn session-commit-refs
   "Abbreviated shas of the commits created during the session, in the order
    they were made. Scans the room history for commit blocks (the git_commit
-   tool and shell `git commit`s alike) and pulls each result's `[branch <sha>]`
+   tool, shell `git commit`s, and clj-sandbox `(git \"commit\" …)` calls
+   alike) and pulls each result's `[branch <sha>]`
    summary line. Stays pure: dedup and dead-commit (amended/rebased-away)
    pruning happen in the git layer against the live repo."
   [room]
