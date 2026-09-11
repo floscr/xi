@@ -431,17 +431,18 @@
 
 (defn- clj-result-view
   "Render a parsed clj result as separate stdout / value / error zones (the
-   'Quiet REPL' block): the returned value sits on its own panel behind a `=>`
-   gutter — clj data structures get syntax colouring, plain command output stays
-   uncoloured; errors get a red band + a line:col chip."
+   'Quiet REPL' block): the returned value sits on its own panel — clj data
+   structures get syntax colouring, plain command output stays uncoloured;
+   errors get a red band + a line:col chip."
   [text is-error]
   (let [{:keys [stdout value error loc]} (parse-clj-result text is-error)
         g (grammars/get-grammar "clj")]
     (list
      (when stdout
        [:div {:class ["tool-call-content" "clj-result-stdout"]}
-        [:div {:class ["clj-zone-label"]} "stdout"]
-        [:pre {:class ["tool-call-code"]} (plain-code (truncate-lines stdout 100))]])
+        [:pre {:class ["tool-call-code"]}
+         [:span {:class ["clj-zone-label"]} "stdout"]
+         (plain-code (truncate-lines stdout 100))]])
      (when error
        [:div {:class ["tool-call-content" "clj-result-error"]}
         [:pre {:class ["tool-call-code"]} (plain-code (truncate-lines error 100))]

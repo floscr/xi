@@ -1603,6 +1603,7 @@ body {
 }
 
 .clj-zone-label {
+  display: block;
   font-size: 0.6rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1611,19 +1612,17 @@ body {
   padding-bottom: var(--size-1);
 }
 
-/* Returned value: sits on the code panel behind a `=>` gutter. */
-.clj-result-value pre { position: relative; padding-left: calc(var(--size-2) + 22px); }
-
-.clj-result-value pre::before {
-  content: "=>";
-  position: absolute;
-  left: var(--size-2);
-  color: var(--fg-2);
-  font-weight: 600;
-  user-select: none;
+/* Returned value: a very slight green hue over the code panel. */
+.clj-result-value pre {
+  background: color-mix(in oklch, var(--success, #22c55e) 6%, transparent);
+  border-color: color-mix(in oklch, var(--success, #22c55e) 18%, transparent);
 }
 
-.clj-result-stdout pre { color: var(--fg-1); }
+.clj-result-stdout pre {
+  color: var(--fg-1);
+  background: color-mix(in oklch, #8b5cf6 6%, transparent);
+  border-color: color-mix(in oklch, #8b5cf6 18%, transparent);
+}
 
 /* Error zone: red wash over the code panel + a line:col chip. */
 .clj-result-error pre {
