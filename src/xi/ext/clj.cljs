@@ -216,7 +216,10 @@
           target (resolve-read cwd (or dir "."))
           {:keys [exit out err]} (spawn-sync! ["fd" "--" (str pattern) target] cwd)]
       (if (zero? exit)
-        (vec (str/split-lines (str/trimr out)))
+        ;; fd exits 0 with empty stdout when nothing matches; split-lines on ""
+        ;; yields [""], which reads like a phantom match. Drop blanks so "no
+        ;; matches" is an unambiguous [] (same empty semantics as glob).
+        (into [] (remove str/blank?) (str/split-lines (str/trimr out)))
         (throw (ex-info (str "clj: fd failed: " err) {}))))))
 
 (defn- curl-fn [opts]
