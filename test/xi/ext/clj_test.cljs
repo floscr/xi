@@ -81,6 +81,12 @@
   (let [res (eval! "(str/upper-case \"ab\")")]
     (is (str/includes? (result-text res) "=> \"AB\""))))
 
+(deftest eval-multiline-string-raw
+  (let [res (eval! "\"a\\nb\\nc\"")]
+    ;; multi-line strings render raw (newlines preserved, no escaped \n)
+    (is (str/includes? (result-text res) "=> a\nb\nc"))
+    (is (not (str/includes? (result-text res) "\\n")))))
+
 (deftest eval-error-reported
   (let [res (eval! "(undefined-fn 1)")]
     (is (:is-error res))

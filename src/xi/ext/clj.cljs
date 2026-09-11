@@ -347,9 +347,13 @@
         rt)))
 
 (defn- format-value [v]
-  (binding [*print-length* 200
-            *print-level*  12]
-    (pr-str v)))
+  (if (and (string? v) (str/includes? v "\n"))
+    ;; Print multi-line strings raw so newlines render as line breaks
+    ;; instead of escaped \n (pr-str would escape them).
+    v
+    (binding [*print-length* 200
+              *print-level*  12]
+      (pr-str v))))
 
 (defn- with-commit-lines
   "Append any recorded `[branch sha]` commit-summary lines that don't already
