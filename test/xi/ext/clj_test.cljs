@@ -246,6 +246,19 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "[true true]"))))
 
+(deftest rm-helper
+  (let [res (eval! "(let [d (tmpdir) f (str d \"/r.txt\")]
+                      (spit f \"x\")
+                      [(:file? (stat f)) (do (rm f) (some #{\"r.txt\"} (ls d)))])")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "[true nil]"))))
+
+(deftest rm-helper-force-missing-is-noop
+  ;; (rm f) uses force — deleting a non-existent path is a no-op, not an error.
+  (let [res (eval! "(do (rm (str (tmpdir) \"/does-not-exist.txt\")) :ok)")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) ":ok"))))
+
 (deftest gate-autoruns-stat-with-hint
   (async done
     (-> (js/Promise.resolve
@@ -266,6 +279,31 @@
                  (is (not (:intercepted res)))
                  (is (some #{"wc"} (get-in res [:arguments :_allowed])))
                  (is (str/includes? (str (get-in res [:arguments :_hint])) "str/split-lines"))
+                 (done))))))
+
+(deftest gate-autoruns-rm-with-tmp-note
+  ;; (sh "rm" …) is auto-allowed; a /tmp target adds the "unnecessary" note.
+  (async done
+    (-> (js/Promise.resolve
+         (gate {:name "clj" :arguments {:code "(sh \"rm\" \"-f\" \"/tmp/org-display-test.org\")"}}
+               (gate-ctx)))
+        (.then (fn [res]
+                 (is (not (:intercepted res)))
+                 (is (some #{"rm"} (get-in res [:arguments :_allowed])))
+                 (is (str/includes? (str (get-in res [:arguments :_hint])) "(rm f)"))
+                 (is (str/includes? (str (get-in res [:arguments :_hint])) "temporary"))
+                 (done))))))
+
+(deftest gate-autoruns-rm-rf-without-approval
+  ;; rm -rf is exempted from the guarded confirm in clj — even with no
+  ;; confirm! attached it passes straight through (autorun), not blocked.
+  (async done
+    (-> (js/Promise.resolve
+         (gate {:name "clj" :arguments {:code "(sh \"rm\" \"-rf\" \"/tmp/scratch\")"}}
+               (gate-ctx)))
+        (.then (fn [res]
+                 (is (not (:intercepted res)))
+                 (is (some #{"rm"} (get-in res [:arguments :_allowed])))
                  (done))))))
 
 ;; ── git helper ───────────────────────────────────────────────────────────────────────

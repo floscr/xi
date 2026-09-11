@@ -46,7 +46,7 @@ SCI is allowlist-only: scripts get `clojure.core` (+ `clojure.string` as
 | `(grep re path?)` | ripgrep (`rg -n`), regex or string |
 | `(find pat dir?)` | `fd` |
 | `(spit f s opts?)` | write file (`{:append true}` supported) |
-| `(mkdir d)` `(cp a b)` `(mv a b)` | fs ops |
+| `(mkdir d)` `(cp a b)` `(mv a b)` `(rm f …)` | fs ops (`rm` force-deletes within cwd/tmp, recursive, no-op if missing) |
 | `(tmpdir)` | fresh `/tmp/xi-clj-*` dir — never needs cleanup |
 | `(stat f)` | file metadata → `{:size :dir? :file? :mode :mtime-ms :mtime :ctime}` |
 | `(realpath p)` | canonical path (readlink -f) |
@@ -68,7 +68,7 @@ Guards, enforced inside every helper:
 
 - **Reads**: credential paths (`xi.sandbox.core/hidden-paths` — `~/.ssh`,
   `~/.gnupg`, …) are blocked, symlink-canonicalized.
-- **Writes** (`spit`/`mkdir`/`cp`/`mv`): limited to the room cwd and the OS
+- **Writes** (`spit`/`mkdir`/`cp`/`mv`/`rm`): limited to the room cwd and the OS
   tmp dir.
 - **Env**: only `xi.sandbox.core`'s env allowlist; secret-bearing keys throw.
 - Printed output is captured; results are truncated (30k chars).
@@ -106,6 +106,11 @@ approval dialog. It splits into two tiers:
   bouncing would cost the model a retry turn for no safety gain. The result
   comes back normally with a hint appended ("prefer the builtin helpers
   over sh: `ls` → (ls dir), …") teaching the helper for next time.
+  `rm` is the one write CLI in this tier: `(sh "rm" …)` is auto-allowed —
+  including `rm -rf`, which is exempted from the guarded-pattern confirm here
+  (bash's `rm -rf` stays guarded) — so deleting scratch files never needs
+  approval. The hint points at `(rm f)`; when the target is under `/tmp` it
+  also notes the deletion is usually unnecessary since `/tmp` is temporary.
 - **Hard bounce**: write CLIs (`mkdir`, `cp`, `mv`, `touch`, `sed`, `awk`)
   and network CLIs (`curl`, `wget`) are intercepted with the helper hint
   instead of running — raw `sh` would bypass the helpers' write-path and
@@ -173,10 +178,39 @@ gate still bounces bash commands using shell composition (`;`, `&&`, `|`,
 `$( )`, backticks, multi-line, leading `VAR=`) to the clj tool; single plain
 commands pass.
 
+## The `bb` tool + bb.edn trust
+
+Running this project's build/test/serve tasks is common enough that `bb` gets
+a dedicated tool (alongside `clj`), gated by **trusting the project's `bb.edn`
+by content-hash** instead of allowlisting the bare `bb` CLI.
+
+- **Tool**: `bb` — input `{"task": "test"}` runs `bb test`; `{"args": ["…"]}`
+  appends extra CLI args; omitting `task` runs `bb tasks` (the task list).
+  Output is the captured stdout/stderr, truncated like `(sh …)`.
+- **Trust store**: `~/.config/xi/ext/bb-trust.edn` — `{:shas #{"<sha256>" …}}`.
+  A `bb.edn` is trusted when its sha256 is in the set. Content-addressed, so a
+  copied `bb.edn` is trusted too, and **editing `bb.edn` auto-revokes trust**
+  (the sha no longer matches) until re-trusted.
+- **Granting trust** — two ways:
+  - `/clj trust-bb` — hashes the nearest `bb.edn` (walking up from the room
+    cwd) and records its sha.
+  - The first-run approval dialog for `bb`: its **"always"** answer records the
+    `bb.edn` sha (not the bare `bb` CLI); plain "yes" runs once.
+- **Scope of the hash**: only `bb.edn` itself — its inline tasks, `:init`, and
+  `:requires`. Task code that lives in *separate* files is outside the hash.
+- **Gating parity**: `bb serve:restart`/`serve:stop` still route through
+  `pg/ask-server-control` (detached run) even on a trusted `bb.edn` — trust
+  never lets them run inline and kill the host server. Guarded patterns still
+  confirm. With no client attached, an untrusted `bb.edn` is blocked.
+- `(sh "bb" …)` inside `clj` shares the same trust check: a trusted `bb.edn`
+  makes `bb` an allowed CLI for the eval, and an untrusted one's "always"
+  approval records the sha rather than session-allowlisting the string.
+
 ## Commands & state
 
-- `/clj` — status: global + session allowlists
+- `/clj` — status: global + session allowlists, bb.edn trust state
 - `/clj allow <cli>` / `/clj revoke <cli>` — edit the session allowlist
+- `/clj trust-bb` — trust the current project's `bb.edn` (records its sha)
 - `/clj reset` — drop the room's REPL context (defs, loaded data)
 - `/ext disable clj` / `enable clj` — runtime kill switch
 
