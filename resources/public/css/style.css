@@ -1573,6 +1573,14 @@ body {
 /* No double command: the preview disappears once the code block is shown. */
 .tool-call-block[open] > .tool-call-toggle .clj-head-preview { display: none; }
 
+/* Keep the clj header on one centred line so the `error`/status badge stays
+   inline with `clj` (the [open] rule otherwise top-aligns it for bash). */
+.tool-call-block[open] > .tool-call-toggle:has(.clj-head-preview) { align-items: center; }
+
+.tool-call-block[open] > .tool-call-toggle:has(.clj-head-preview) .tool-call-toggle-label {
+  white-space: nowrap;
+}
+
 .clj-zone-label {
   font-size: 0.6rem;
   font-weight: 700;
@@ -1581,8 +1589,6 @@ body {
   color: var(--fg-2);
   padding-bottom: var(--size-1);
 }
-
-.clj-zone-label--err { color: var(--danger); }
 
 /* Returned value: sits on the code panel behind a `=>` gutter. */
 .clj-result-value pre { position: relative; padding-left: calc(var(--size-2) + 22px); }

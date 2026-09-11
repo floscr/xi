@@ -418,7 +418,6 @@
         [:pre {:class ["tool-call-code"]} (plain-code (truncate-lines stdout 100))]])
      (when error
        [:div {:class ["tool-call-content" "clj-result-error"]}
-        [:div {:class ["clj-zone-label" "clj-zone-label--err"]} "Error"]
         [:pre {:class ["tool-call-code"]} (plain-code (truncate-lines error 100))]
         (when loc
           [:div {:class ["clj-result-loc-row"]}
