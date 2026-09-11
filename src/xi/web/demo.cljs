@@ -84,6 +84,15 @@ Test Suites: 1 passed, 1 total
 Tests:       3 passed, 3 total
 Time:        1.284 s")
 
+(def ^:private clj-vector-result
+  "=> [\"cli.cljs\" \"auth.cljs\" \"agent.cljs\"]")
+
+(def ^:private clj-stdout-result
+  "scanning src…\n=> 63")
+
+(def ^:private clj-error-result
+  "Error: clj: reading credential paths is blocked: /home/dev/.config/xi/clients.edn (line 2:4)")
+
 (def ^:private final-text
   "Done — the settings page now has a dark mode toggle.
 
@@ -127,6 +136,27 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
     :arguments {:command "npm test -- ThemeToggle"}
     :result test-result
     :is-error false
+    :status :done}
+   {:kind :tool-call
+    :id "t4"
+    :tool "clj"
+    :arguments {:code "(->> (glob \"src/**/*.cljs\")\n     (map basename)\n     (take 3))"}
+    :result clj-vector-result
+    :is-error false
+    :status :done}
+   {:kind :tool-call
+    :id "t5"
+    :tool "clj"
+    :arguments {:code "(do (println \"scanning src…\")\n    (count (glob \"src/**/*.cljs\")))"}
+    :result clj-stdout-result
+    :is-error false
+    :status :done}
+   {:kind :tool-call
+    :id "t6"
+    :tool "clj"
+    :arguments {:code "(let [f (str (env \"HOME\") \"/.config/xi/clients.edn\")]\n  [(stat f) (when (stat f) (cat f))])"}
+    :result clj-error-result
+    :is-error true
     :status :done}
    {:kind :text
     :text final-text

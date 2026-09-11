@@ -380,6 +380,56 @@
     "clj_replace" (get-arg args :file)
     nil))
 
+(defn- parse-clj-result
+  "Split a clj tool result string into {:stdout :value :error :loc}.
+   Success text is `<stdout>=> <value>`; error text is
+   `<stdout>Error: <msg> (line X:Y)`."
+  [text is-error]
+  (if is-error
+    (let [lead?  (str/starts-with? text "Error: ")
+          nl-idx (str/index-of text "\nError: ")
+          stdout (when nl-idx (subs text 0 nl-idx))
+          err    (cond lead?  (subs text (count "Error: "))
+                       nl-idx (subs text (+ nl-idx 1 (count "Error: ")))
+                       :else  text)
+          loc-m  (re-find #"\s*\(line \d+(?::\d+)?\)\s*$" err)
+          loc    (when loc-m (str/replace (str/trim loc-m) #"[()]" ""))
+          msg    (if loc-m (subs err 0 (- (count err) (count loc-m))) err)]
+      {:stdout (not-empty stdout) :error (str/trim msg) :loc loc})
+    (let [lead?  (str/starts-with? text "=> ")
+          nl-idx (str/index-of text "\n=> ")]
+      (cond
+        lead?  {:value (subs text 3)}
+        nl-idx {:stdout (not-empty (subs text 0 nl-idx))
+                :value  (subs text (+ nl-idx 4))}
+        :else  {:value text}))))
+
+(defn- clj-result-view
+  "Render a parsed clj result as separate stdout / value / error zones (the
+   'Quiet REPL' block): the returned value sits on its own panel behind a `=>`
+   gutter with clj syntax colouring; errors get a red band + a line:col chip."
+  [text is-error]
+  (let [{:keys [stdout value error loc]} (parse-clj-result text is-error)
+        g (grammars/get-grammar "clj")]
+    (list
+     (when stdout
+       [:div {:class ["tool-call-content" "clj-result-stdout"]}
+        [:div {:class ["clj-zone-label"]} "stdout"]
+        [:pre {:class ["tool-call-code"]} (plain-code (truncate-lines stdout 100))]])
+     (when error
+       [:div {:class ["tool-call-content" "clj-result-error"]}
+        [:div {:class ["clj-zone-label" "clj-zone-label--err"]} "Error"]
+        [:pre {:class ["tool-call-code"]} (plain-code (truncate-lines error 100))]
+        (when loc
+          [:div {:class ["clj-result-loc-row"]}
+           [:span {:class ["clj-result-loc"]} loc]])])
+     (when value
+       [:div {:class ["tool-call-content" "clj-result-value"]}
+        [:pre {:class ["tool-call-code"]}
+         (if g
+           (highlight-code g (truncate-lines value 100))
+           (plain-code (truncate-lines value 100)))]]))))
+
 (defn- tool-post [dispatch! {:keys [tool arguments result is-error status]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments)
@@ -387,21 +437,27 @@
         text      (util/extract-text-content result)
         grammar   (when (and text (not is-error)) (tool-grammar name arguments))
         bash?     (contains? #{"Bash" "bash"} name)
-        clj-code  (when (= "clj" name) (not-empty (str (get-arg arguments :code))))
+        clj?      (= "clj" name)
+        clj-code  (when clj? (not-empty (str (get-arg arguments :code))))
+        clj-preview (when clj-code (first (str/split-lines clj-code)))
         gtd?      (and (= "gtd_capture" name) (not is-error))
         gtd-body  (when gtd? (or (not-empty (get-arg arguments :body))
                                  (get-arg arguments :title)))
         imgs      (seq (result-images result))
-        label     (str name (when (seq summary)
-                              (str " " (if bash?
-                                         (str summary)
-                                         (first (str/split-lines (str summary)))))))]
+        label     (if clj?
+                    name
+                    (str name (when (seq summary)
+                                (str " " (if bash?
+                                           (str summary)
+                                           (first (str/split-lines (str summary))))))))]
     [:div {:class ["post" "post--tool"]}
      [:details {:class ["tool-call-block"] :open (boolean (expanded-tools name))}
       [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
        [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))} label]
+       (when clj-preview
+         [:span {:class ["clj-head-preview"]} clj-preview])
        (cond
          running? (spinner)
          is-error [:span {:class ["error-text"]} " error"])]
@@ -418,6 +474,9 @@
            [:div {:class ["post-content"]} (md/render gtd-body)]])
         ;; When the result carries an image (view_image, screenshots) the text is
         ;; just a "Viewed image: /path" caption — drop it and show only the image.
+        (and clj? (seq text))
+        (clj-result-view text is-error)
+
         (and (seq text) (not imgs))
         [:div (cond-> {:class ["tool-call-content"]}
                 (tool-file-path name arguments)

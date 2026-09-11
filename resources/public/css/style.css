@@ -1551,6 +1551,72 @@ body {
   background: color-mix(in srgb, var(--danger) 7%, transparent);
 }
 
+/* ---- clj blocks: "Quiet REPL" ----
+   The header is just `clj` + a dim one-line preview of the code that hides the
+   moment the block is expanded, so the command is never rendered twice. The
+   returned value, stdout and errors each get their own zone. */
+.clj-head-preview {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keep the short `clj` label at its intrinsic width so the preview gets the
+   remaining space (the label otherwise flexes to fill the row). */
+.tool-call-toggle:has(.clj-head-preview) .tool-call-toggle-label { flex: 0 0 auto; }
+
+/* No double command: the preview disappears once the code block is shown. */
+.tool-call-block[open] > .tool-call-toggle .clj-head-preview { display: none; }
+
+.clj-zone-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-2);
+  padding-bottom: var(--size-1);
+}
+
+.clj-zone-label--err { color: var(--danger); }
+
+/* Returned value: sits on the code panel behind a `=>` gutter. */
+.clj-result-value pre { position: relative; padding-left: calc(var(--size-2) + 22px); }
+
+.clj-result-value pre::before {
+  content: "=>";
+  position: absolute;
+  left: var(--size-2);
+  color: var(--fg-2);
+  font-weight: 600;
+  user-select: none;
+}
+
+.clj-result-stdout pre { color: var(--fg-1); }
+
+/* Error zone: red wash over the code panel + a line:col chip. */
+.clj-result-error pre {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg-1));
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
+.clj-result-loc-row { padding-top: var(--size-1); }
+
+.clj-result-loc {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: var(--font-xs);
+  color: var(--danger);
+  background: var(--bg-0);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: var(--radius-xs);
+  padding: 1px 6px;
+}
+
 /* ---- Thinking blocks ---- */
 .thinking-block { margin: var(--size-1) 0; }
 
