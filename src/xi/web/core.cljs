@@ -238,16 +238,19 @@
    to join first (a navigation back to a session, a reconnect). Both a fresh
    room and an existing session carry a non-nil session id, so the token is
    the only reliable way to correlate the reply with our own request."
-  [st {:keys [session-id text images]}]
-  (let [pending  (:web/pending-room st)
-        virtual? (and (nil? session-id) (some? pending))
-        cwd      (:cwd pending)
-        model    (:model pending)
-        token    (str (:id pending))]
+  [st {:keys [session-id text images model]}]
+  (let [pending    (:web/pending-room st)
+        virtual?   (and (nil? session-id) (some? pending))
+        cwd        (:cwd pending)
+        ;; Model to run the eventual turn on: an explicit resubmit model
+        ;; (retry / edit) wins over the pending room's launch model.
+        join-model (or model (:model pending))
+        token      (str (:id pending))]
     (cond-> {:state (-> st
                         (assoc :web/pending-submit
                                (cond-> {:session-id session-id :text text}
                                  virtual?     (assoc :join-token token)
+                                 model        (assoc :model model)
                                  (seq images) (assoc :images images)))
                         ;; Show the user's bubble instantly, before the
                         ;; :room/join round-trips. room-id is nil (no room
@@ -260,8 +263,8 @@
                         (dissoc :web/pending-room))}
       virtual?
       (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
-                                   cwd   (assoc :cwd cwd)
-                                   model (assoc :model model))]]))))
+                                   cwd        (assoc :cwd cwd)
+                                   join-model (assoc :model join-model))]]))))
 
 (defn- submit-clear-pending [st _]
   {:state (dissoc st :web/pending-submit)})
@@ -514,6 +517,16 @@
     {:state (assoc-in st [:web/content-matches key] (set session-ids))}
     {:state st}))
 
+(defn- viewed-room-model
+  "The model currently shown for the viewed chat — mirrors chat-view's
+   resolution. A resubmit (retry / edit) carries this so the fork runs on the
+   latest picked model, even if the earlier /model pick's server round-trip
+   hasn't settled or landed on this room yet."
+  [st active sid]
+  (or (get-in active [:agent :model])
+      (get-in st [:web/cache sid :model])
+      (get-in st [:web/pending-room :model])))
+
 (defn- bubble-edit-save
   "Commit an inline bubble edit: fork the conversation at the edited message
    (truncate history to before it, like /tree edit) and resubmit the edited
@@ -524,14 +537,17 @@
         active  (state/active-room st)
         sid     (get-in st [:web/route :session-id])
         room-id (when (= (get-in active [:session :id]) sid) (:id active))
+        model   (viewed-room-model st active sid)
         t       (str/trim (or text ""))]
     (cond-> {:state (dissoc st :web/editing-bubble)}
       (seq t)
       (assoc :effects
              [[:app/dispatch {:type :tree/navigate :room-id room-id :index index}]
               (if room-id
-                [:app/dispatch {:type :input/submit :room-id room-id :text t}]
-                [:app/dispatch {:type :submit/pending :session-id sid :text t}])]))))
+                [:app/dispatch (cond-> {:type :input/submit :room-id room-id :text t}
+                                 model (assoc :model model))]
+                [:app/dispatch (cond-> {:type :submit/pending :session-id sid :text t}
+                                 model (assoc :model model))])]))))
 
 (defn- bubble-retry
   "Resend a user message unchanged at its node point: fork the conversation at
@@ -542,14 +558,17 @@
   (let [active  (state/active-room st)
         sid     (get-in st [:web/route :session-id])
         room-id (when (= (get-in active [:session :id]) sid) (:id active))
+        model   (viewed-room-model st active sid)
         t       (str/trim (or text ""))]
     (cond-> {:state (dissoc st :web/bubble-menu)}
       (seq t)
       (assoc :effects
              [[:app/dispatch {:type :tree/navigate :room-id room-id :index index}]
               (if room-id
-                [:app/dispatch {:type :input/submit :room-id room-id :text t}]
-                [:app/dispatch {:type :submit/pending :session-id sid :text t}])]))))
+                [:app/dispatch (cond-> {:type :input/submit :room-id room-id :text t}
+                                 model (assoc :model model))]
+                [:app/dispatch (cond-> {:type :submit/pending :session-id sid :text t}
+                                 model (assoc :model model))])]))))
 
 (defn- prompt-nav-step
   "Move the prompt-nav cursor one step (:prompt-nav/prev = older, :next = newer)
@@ -799,9 +818,14 @@
                                           rid    (:id room)
                                           base   (dissoc st :web/model-list :web/palette-page :web/palette-open?)]
                                       (cond
-                                        ;; Live room for the viewed session: apply now.
+                                        ;; Live room for the viewed session: apply
+                                        ;; now, and optimistically reflect the pick
+                                        ;; on the client room so the launch header /
+                                        ;; a retry pick it up instantly instead of
+                                        ;; waiting for the /model round-trip to
+                                        ;; mirror back.
                                         rid
-                                        {:state base
+                                        {:state (assoc-in base [:rooms rid :agent :model] model)
                                          :effects [[:palette/close nil]
                                                    [:ws/send {:type :input/submit
                                                               :room-id rid :text text}]]}
@@ -1589,7 +1613,7 @@
   (fn [event state]
     (when (and (= :room/joined (:type event))
                (:web/pending-submit state))
-      (let [{:keys [session-id text images join-token]} (:web/pending-submit state)
+      (let [{:keys [session-id text images join-token model]} (:web/pending-submit state)
             joined-sid   (get-in event [:room :session :id])
             joined-token (:join-token event)
             room-id      (:room-id event)]
@@ -1598,6 +1622,7 @@
                 (or (nil? session-id) (= session-id joined-sid)))
           (dispatch! {:type :submit/clear-pending})
           (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
+                       model        (assoc :model model)
                        (seq images) (assoc :images (vec images)))))))))
 
 (defn- pending-command-tap

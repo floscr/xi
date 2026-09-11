@@ -77,6 +77,40 @@
     (is (empty? effects))
     (is (= [] (history state)))))
 
+(deftest input-submit-with-model-applies-before-turn
+  ;; A retry / edit-save from the web bubble menu rides a :model on the
+  ;; resubmission — the user may have picked a new model after the original
+  ;; turn, so the fork must run on the picked model, not the room's prior one.
+  (let [{:keys [state effects]} (handle (with-room)
+                                        {:type :input/submit :room-id "r"
+                                         :text "retry me" :model "opencode/grok"})]
+    (is (= "opencode/grok" (get-in state [:rooms "r" :agent :model]))
+        "picked model applied to the room before the fork's turn")
+    (is (= :zen (get-in state [:rooms "r" :agent :provider]))
+        "provider re-routed for the new model")
+    (is (= [[:app/dispatch {:type :prompt/submit :room-id "r" :text "retry me"}]]
+           effects))))
+
+(deftest input-submit-same-model-leaves-state
+  ;; Resubmitting with the model the room already runs is a no-op on state —
+  ;; only the effect fires, so we never rewrite the room needlessly.
+  (let [{:keys [state effects]} (handle (with-room)
+                                        {:type :input/submit :room-id "r"
+                                         :text "retry me" :model "claude-sonnet-4-5"})]
+    (is (nil? state) "unchanged model → no :state in result")
+    (is (= [[:app/dispatch {:type :prompt/submit :room-id "r" :text "retry me"}]]
+           effects))))
+
+(deftest input-submit-command-with-model-applies
+  ;; The model must apply even when the resubmission routes to a command.
+  (let [{:keys [state effects]} (handle (with-room)
+                                        {:type :input/submit :room-id "r"
+                                         :text "/help" :model "opencode/grok"})]
+    (is (= "opencode/grok" (get-in state [:rooms "r" :agent :model])))
+    (is (= [[:app/dispatch {:type :command/run :room-id "r"
+                            :name "help" :args nil}]]
+           effects))))
+
 ;; ── commands ─────────────────────────────────────────────────────────────────
 
 (deftest unknown-command-appends-status

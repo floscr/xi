@@ -372,16 +372,28 @@
 (defn- input-submit
   "Raw editor submission — route to a command or a prompt. Pending images
    (room :ui :pending-images) ride along on prompts via :image/process.
-   Event-level :images (from clipboard-image hook) merge with pending."
-  [st {:keys [room-id text images client-id]}]
+   Event-level :images (from clipboard-image hook) merge with pending.
+
+   An optional :model rides along on resubmissions (retry / edit-save from
+   the web bubble menu): the user may have picked a new model after the
+   original turn, so apply it to the room before the fork's turn starts —
+   otherwise the fork would reuse the room's prior model."
+  [st {:keys [room-id text images client-id model]}]
   (when-let [room (state/get-room st room-id)]
-    (let [parsed (parse-input text)
+    (let [model-change? (and model (not= model (get-in room [:agent :model])))
+          st     (cond-> st
+                   model-change?
+                   (-> (assoc-in [:rooms room-id :agent :model] model)
+                       (assoc-in [:rooms room-id :agent :provider]
+                                 (util/provider-for-model model))))
+          parsed (parse-input text)
           images (into (vec (get-in room [:ui :pending-images])) images)]
       (cond
         (= :command (:type parsed))
-        {:effects [[:app/dispatch (cond-> {:type :command/run :room-id room-id
-                                           :name (:name parsed) :args (:args parsed)}
-                                    client-id (assoc :client-id client-id))]]}
+        (cond-> {:effects [[:app/dispatch (cond-> {:type :command/run :room-id room-id
+                                                   :name (:name parsed) :args (:args parsed)}
+                                            client-id (assoc :client-id client-id))]]}
+          model-change? (assoc :state st))
 
         ;; Prompt — possibly images-only (nil text → provider omits the
         ;; empty text content block; only image blocks are sent).
@@ -391,8 +403,9 @@
             {:state   (assoc-in st [:rooms room-id :ui :pending-images] [])
              :effects [[:image/process {:room-id room-id :text prompt-text
                                         :images images}]]}
-            {:effects [[:app/dispatch {:type :prompt/submit :room-id room-id
-                                       :text prompt-text}]]}))
+            (cond-> {:effects [[:app/dispatch {:type :prompt/submit :room-id room-id
+                                               :text prompt-text}]]}
+              model-change? (assoc :state st))))
 
         :else nil))))
 
