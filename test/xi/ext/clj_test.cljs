@@ -87,6 +87,23 @@
     (is (str/includes? (result-text res) "=> a\nb\nc"))
     (is (not (str/includes? (result-text res) "\\n")))))
 
+(deftest eval-multiline-string-vector-raw
+  (let [res (eval! "[\"a\\n1\" \"b\\n2\"]")]
+    ;; a vector of multi-line strings renders each raw, no escaped \n or brackets
+    (is (str/includes? (result-text res) "=> a\n1\nb\n2"))
+    (is (not (str/includes? (result-text res) "\\n")))
+    (is (not (str/includes? (result-text res) "[\"")))))
+
+(deftest eval-short-string-vector-pr-str
+  (let [res (eval! "[\"c.txt\" \"c\" \"/a/b\"]")]
+    ;; no element spans lines, so it stays a readable pr-str vector
+    (is (str/includes? (result-text res) "=> [\"c.txt\" \"c\" \"/a/b\"]"))))
+
+(deftest eval-mixed-vector-pr-str
+  (let [res (eval! "[\"a\" 1]")]
+    ;; not all-strings, so it stays a normal pr-str vector
+    (is (str/includes? (result-text res) "=> [\"a\" 1]"))))
+
 (deftest eval-error-reported
   (let [res (eval! "(undefined-fn 1)")]
     (is (:is-error res))

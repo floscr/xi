@@ -347,10 +347,22 @@
         rt)))
 
 (defn- format-value [v]
-  (if (and (string? v) (str/includes? v "\n"))
+  (cond
     ;; Print multi-line strings raw so newlines render as line breaks
     ;; instead of escaped \n (pr-str would escape them).
+    (and (string? v) (str/includes? v "\n"))
     v
+
+    ;; A collection of multi-line strings (e.g. per-file grep dumps): render
+    ;; each element raw, one after another, so newlines show as line breaks
+    ;; instead of a single crammed pr-str vector with escaped \n. Only kicks in
+    ;; when an element actually spans lines, so short string vectors like
+    ;; ["c.txt" "c" "/a/b"] keep their readable pr-str form.
+    (and (sequential? v) (every? string? v)
+         (some #(str/includes? % "\n") v))
+    (str/join "\n" v)
+
+    :else
     (binding [*print-length* 200
               *print-level*  12]
       (pr-str v))))
