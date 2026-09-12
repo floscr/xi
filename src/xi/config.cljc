@@ -36,7 +36,7 @@
         [xi.ext.kb :as kb]
         [xi.ext.mcp :as mcp]
         [xi.ext.permission-gate :as permission-gate]
-        [xi.ext.perplexity :as perplexity]
+        [xi.ext.freesearch :as freesearch]
         [xi.ext.plan-mode :as plan-mode]
         [xi.ext.process-manager :as process-manager]
         [xi.ext.product-search.core :as product-search]
@@ -111,7 +111,7 @@
       kb/extension
       session-search/extension
       web/extension
-      perplexity/extension
+      freesearch/extension
       product-search/extension
       commit/extension
       resume/create
