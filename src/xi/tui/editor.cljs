@@ -6,7 +6,8 @@
             [xi.tui.ansi :as ansi]
             [xi.tui.core :as tui]
             [xi.tui.snippets :as snippets]
-            [xi.tui.terminal :as term])
+            [xi.tui.terminal :as term]
+            [xi.util :as util])
   (:require-macros [xi.config-macros :refer [deftui-opt]]))
 
 (deftui-opt prompt-max-visible-lines 10
@@ -811,7 +812,18 @@
                                content (-> data
                                            (str/replace paste-start-seq "")
                                            (str/replace paste-end-seq ""))]
-                           (insert-text-bulk content))
+                           ;; Long / code-like pastes get wrapped in a bare ```
+                           ;; fence, with newlines so the fences sit on their own
+                           ;; lines relative to the cursor position.
+                           (if (util/paste-should-fence? content)
+                             (let [{:keys [lines cursor-line cursor-col]} @state
+                                   line (nth lines cursor-line)]
+                               (insert-text-bulk
+                                (util/fence-paste
+                                 content
+                                 {:at-line-start? (empty? (subs line 0 cursor-col))
+                                  :at-line-end? (empty? (subs line cursor-col))})))
+                             (insert-text-bulk content)))
 
                          ;; Shift+Tab — cycle the active word completion backward
                          (and (is-shift-tab? data) (word-completion-active?))

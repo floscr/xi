@@ -249,3 +249,39 @@
           out (util/cap-tool-result-content content)]
       (is (some #(= img %) out))
       (is (<= (total-text out) max-chars)))))
+
+;; ── paste fencing ──
+
+(deftest paste-should-fence-short-prose
+  (testing "a short single-line prose paste is not fenced"
+    (is (not (util/paste-should-fence? "just a quick note here")))))
+
+(deftest paste-should-fence-by-length
+  (testing ">= 500 chars is always fenced"
+    (is (util/paste-should-fence? (apply str (repeat 500 "a"))))
+    (is (not (util/paste-should-fence? (apply str (repeat 499 "a")))))))
+
+(deftest paste-should-fence-by-paragraphs
+  (testing "more than 2 paragraphs is fenced"
+    (is (util/paste-should-fence? "one\n\ntwo\n\nthree"))
+    (is (not (util/paste-should-fence? "one\n\ntwo")))))
+
+(deftest paste-should-fence-code-like
+  (testing "code-punctuation-heavy text is fenced even when short"
+    (is (util/paste-should-fence? "fn(a){b();c();}"))
+    (is (not (util/paste-should-fence? "hello world")))))
+
+(deftest fence-paste-standalone-line
+  (testing "cursor alone on its line gets no extra newlines"
+    (is (= "```\nx();\n```"
+           (util/fence-paste "x();" {:at-line-start? true :at-line-end? true})))))
+
+(deftest fence-paste-mid-sentence
+  (testing "cursor mid-line gets leading and trailing newlines"
+    (is (= "\n```\nx();\n```\n"
+           (util/fence-paste "x();" {:at-line-start? false :at-line-end? false})))))
+
+(deftest fence-paste-trims-body-newlines
+  (testing "surrounding newlines in the paste body are trimmed"
+    (is (= "```\nx();\n```"
+           (util/fence-paste "\n\nx();\n\n" {:at-line-start? true :at-line-end? true})))))

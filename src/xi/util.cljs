@@ -3,6 +3,45 @@
    Functions here must be pure — no side effects, no I/O, no atoms."
   (:require [clojure.string :as str]))
 
+(def ^:private paste-fence-min-chars
+  "Pastes at least this long are wrapped in a code fence regardless of shape."
+  500)
+
+(defn paste-code-like?
+  "Heuristic: does `text` look like source code? True when it carries several
+   code-punctuation tokens (braces, brackets, parens, semicolons, `=>`, `::`)."
+  [text]
+  (>= (count (re-seq #"[{}\[\]();]|=>|::" (str text))) 5))
+
+(defn paste-paragraph-count
+  "Number of non-blank paragraphs (blocks separated by blank lines) in `text`."
+  [text]
+  (->> (str/split (str text) #"\n[ \t]*\n")
+       (remove str/blank?)
+       count))
+
+(defn paste-should-fence?
+  "Decide whether a pasted blob should be wrapped in a bare ``` code fence.
+   Wraps when the paste spans more than 2 paragraphs, looks like code, or is at
+   least 500 characters."
+  [text]
+  (let [text (str text)]
+    (or (>= (count text) paste-fence-min-chars)
+        (> (paste-paragraph-count text) 2)
+        (paste-code-like? text))))
+
+(defn fence-paste
+  "Wrap `text` in a bare ``` code fence. Adds a leading newline unless the
+   cursor is already at the start of its line, and a trailing newline unless it
+   is at the end of its line, so the fences always sit on their own lines."
+  [text {:keys [at-line-start? at-line-end?]}]
+  (let [body (-> (str text)
+                 (str/replace #"^\n+" "")
+                 (str/replace #"\n+$" ""))
+        lead (if at-line-start? "" "\n")
+        trail (if at-line-end? "" "\n")]
+    (str lead "```\n" body "\n```" trail)))
+
 (defn truncate
   "Truncate string s to max-len characters, appending ... if truncated."
   [s max-len]

@@ -730,16 +730,40 @@
                    (dispatch! {:type :compose/add-images :images (vec valid)}))))
         (.catch (fn [err] (js/console.error "[xi-web] attachment read failed:" err))))))
 
-(defn- handle-compose-paste! [dispatch! ^js e]
+(defn- handle-compose-paste! [dispatch! draft-key ^js e]
   (let [items (.. e -clipboardData -items)
         files (->> (range (.-length items))
                    (keep (fn [i]
                            (let [^js item (aget items i)]
                              (when (str/starts-with? (.-type item) "image/")
                                (.getAsFile item))))))]
-    (when (seq files)
-      (.preventDefault e)
-      (add-files! dispatch! files))))
+    (if (seq files)
+      (do (.preventDefault e)
+          (add-files! dispatch! files))
+      ;; Long / code-like text pastes get wrapped in a bare ``` fence at the
+      ;; cursor, with newlines added so the fences sit on their own lines.
+      (let [text (some-> (.-clipboardData e) (.getData "text"))]
+        (when (and (seq text) (util/paste-should-fence? text))
+          (.preventDefault e)
+          (let [^js ta (.-target e)
+                value (.-value ta)
+                start (.-selectionStart ta)
+                end (.-selectionEnd ta)
+                before (subs value 0 start)
+                after (subs value end)
+                insertion (util/fence-paste
+                           text
+                           {:at-line-start? (or (empty? before)
+                                                (str/ends-with? before "\n"))
+                            :at-line-end? (or (empty? after)
+                                              (str/starts-with? after "\n"))})
+                new-value (str before insertion after)
+                caret (+ (count before) (count insertion))]
+            (set! (.-value ta) new-value)
+            (.setSelectionRange ta caret caret)
+            (dispatch! {:type :compose/set-draft
+                        :draft-key draft-key
+                        :text new-value})))))))
 
 (defn- compose-image-strip [dispatch! images]
   (when (seq images)
@@ -1081,7 +1105,7 @@
                                (dispatch! {:type :compose/set-draft
                                            :draft-key draft-key
                                            :text (.. e -target -value)}))
-                      :paste (fn [^js e] (handle-compose-paste! dispatch! e))
+                      :paste (fn [^js e] (handle-compose-paste! dispatch! draft-key e))
                       ;; iOS Safari's soft-keyboard Return key does not fire a
                       ;; keydown with key==="Enter" in a textarea; it fires a
                       ;; beforeinput with inputType "insertLineBreak". Handle it
