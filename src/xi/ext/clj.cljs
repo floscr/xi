@@ -164,18 +164,21 @@
 
 (defn- spawn-sync!
   "Run argv synchronously (under setsid, like the bash tool — no tty).
+   Optional `input` string is written to the child's stdin.
    Returns {:exit n :out s :err s}, output truncated."
-  [argv cwd]
-  (let [r (cp/spawnSync "setsid" (clj->js argv)
-                        #js {:cwd cwd
-                             :encoding "utf8"
-                             :timeout SH_TIMEOUT
-                             :stdio #js ["ignore" "pipe" "pipe"]})]
-    {:exit (or (.-status r) (if (.-signal r) -1 0))
-     :out  (truncate (or (.-stdout r) "") MAX_SH_OUTPUT)
-     :err  (truncate (str (or (.-stderr r) "")
-                          (when-let [e (.-error r)] (.-message e)))
-                     MAX_SH_OUTPUT)}))
+  ([argv cwd] (spawn-sync! argv cwd nil))
+  ([argv cwd input]
+   (let [opts #js {:cwd cwd
+                   :encoding "utf8"
+                   :timeout SH_TIMEOUT
+                   :stdio (if input #js ["pipe" "pipe" "pipe"] #js ["ignore" "pipe" "pipe"])}
+         _    (when input (set! (.-input opts) input))
+         r    (cp/spawnSync "setsid" (clj->js argv) opts)]
+     {:exit (or (.-status r) (if (.-signal r) -1 0))
+      :out  (truncate (or (.-stdout r) "") MAX_SH_OUTPUT)
+      :err  (truncate (str (or (.-stderr r) "")
+                           (when-let [e (.-error r)] (.-message e)))
+                      MAX_SH_OUTPUT)})))
 
 (defn- sh-fn [opts]
   (fn [& argv]
@@ -297,6 +300,34 @@
                                (str/trim (str err "\n" out)))
                           {:exit exit})))))))
 
+(defn- jq-fn
+  "Pre-approved jq runner — pipes JSON to jq on stdin, no tmp file needed.
+   (jq filter input) → parsed Clojure data. `input` is a JSON string, or any
+   Clojure value (encoded to JSON). By default jq's output (newline-delimited
+   JSON) is parsed with keywordized keys: one value → the value, many → a
+   vector, none → nil. Opts map: {:raw true} returns jq -r raw text as a
+   trimmed string instead of parsing; {:args [...]} adds extra jq flags."
+  [opts]
+  (fn jq*
+    ([filt input] (jq* filt input nil))
+    ([filt input {:keys [raw args]}]
+     (let [json (if (string? input) input (js/JSON.stringify (clj->js input)))
+           argv (cond-> ["jq" (if raw "-r" "-c")]
+                  (seq args) (into args)
+                  :always    (conj (str filt)))
+           {:keys [exit out err]} (spawn-sync! argv (opts-cwd opts) json)]
+       (if (zero? exit)
+         (if raw
+           (str/trimr out)
+           (let [vs (->> (str/split-lines (str/trimr out))
+                         (remove str/blank?)
+                         (mapv #(js->clj (js/JSON.parse %) :keywordize-keys true)))]
+             (case (count vs)
+               0 nil
+               1 (first vs)
+               vs)))
+         (throw (ex-info (str "clj: jq failed: " (str/trim err)) {})))))))
+
 (defn- helper-fns
   "The 'user-namespace helpers injected into the SCI ctx. `cat` and `find`
    shadow clojure.core (overridden in the 'clojure.core sci namespace)."
@@ -375,6 +406,7 @@
      'now    (fn [] (.toISOString (js/Date.)))
      'cwd    (fn [] (opts-cwd opts))
      'curl   (curl-fn opts)
+     'jq     (jq-fn opts)
      'git    (git-fn opts)
      'env    (fn [k]
                (let [scrubbed (sandbox/scrub-env)]
@@ -476,6 +508,7 @@
         "(mv a b) (rm f) (tmpdir) (cwd) (env k) (stat f) → {:size :mtime-ms …} "
         "(realpath p) (which c) (basename p) (dirname p) (touch f) (now) "
         "(curl url) → {:status :body} "
+        "(jq \".foo[]\" json-or-data) → parsed result, no tmp file (opts {:raw true}) "
         "(git \"status\" \"--short\") → stdout string (pre-approved; push/clean "
         "excluded) (sh \"cmd\" \"arg\" …). "
         "clojure.core + str/set/walk/edn aliases available. Paths accept a "
@@ -933,7 +966,9 @@
        "tool (sandboxed Clojure REPL). File ops use the builtin helpers "
        "(cat ls glob grep find head tail spit mkdir cp mv rm tmpdir cwd stat "
        "realpath which basename dirname touch now); HTTP "
-       "via (curl url) → {:status :body}; git via the pre-approved (git …) "
+       "via (curl url) → {:status :body}; JSON via the pre-approved (jq "
+       "filter json-or-data) helper — pipes to jq on stdin (no tmp file) and "
+       "parses the result to Clojure data; git via the pre-approved (git …) "
        "helper — (git \"log\" \"--oneline\" \"-15\") → stdout string, no "
        "approval needed (push/clean excluded); other real "
        "CLIs run via (sh \"cmd\" \"arg\" …) — argv-style, one command, no "

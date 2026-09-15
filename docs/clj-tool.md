@@ -56,6 +56,7 @@ SCI is allowlist-only: scripts get `clojure.core` (+ `clojure.string` as
 | `(now)` | current time as ISO-8601 string |
 | `(cwd)` `(env "KEY")` | cwd; env restricted to the sandbox env allowlist |
 | `(curl url opts?)` | HTTP request → `{:status :body}` — http(s) only (no `file://`); opts: `{:method :headers :body :max-time}` |
+| `(jq filter input opts?)` | **pre-approved** jq — pipes `input` (a JSON string, or any Clojure value, encoded to JSON) to jq on stdin (no tmp file). Default parses jq's output → Clojure data (keywordized keys; one value → the value, many → a vector, none → nil). Opts: `{:raw true}` returns `jq -r` text as a trimmed string; `{:args ["--arg" "k" "v"]}` adds flags |
 | `(git "status" "--short")` | **pre-approved** git — stdout string on exit 0, throws otherwise; `push`/`clean` refused (→ `(sh "git" …)`) |
 | `(sh "cmd" "arg" …)` | run a real CLI — **gated**, see below |
 
