@@ -450,15 +450,19 @@
           [:div {:class ["clj-result-loc-row"]}
            [:span {:class ["clj-result-loc"]} loc]])])
      (when value
-       (let [data?  (and g (clj-data-value? value))
+       (let [value  (str/replace value #"^(?:[ \t]*\r?\n)+" "")
+             data?  (and g (clj-data-value? value))
              shown  (truncate-lines (if data? (pretty-edn value) value) 100)]
-         [:div {:class ["tool-call-content" "clj-result-value"]}
-          [:pre {:class ["tool-call-code"]}
-           (if data?
-             (highlight-code g shown)
-             (plain-code shown))]])))))
+         ;; When there's stdout, a bare `nil` value is just noise — hide it.
+         (when-not (and stdout (= "nil" (str/trim value)))
+           [:div {:class ["tool-call-content" "clj-result-value"]}
+            [:pre {:class ["tool-call-code"]}
+             (if data?
+               (highlight-code g shown)
+               (plain-code shown))]]))))))
 
-(defn- tool-post [dispatch! {:keys [tool arguments result is-error status]}]
+(defn- tool-post [dispatch! {:keys [tool arguments result is-error status
+                                    permission resolved-permission]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments)
         running?  (= :running status)
@@ -515,6 +519,30 @@
              (edit-diff-code grammar shown)
              [:pre {:class ["tool-call-code"]}
               (if grammar (highlight-code grammar shown) (plain-code shown))]))])
+      ;; A permission gate fired for this (still-running) tool call: render the
+      ;; ask as a zone inside the same grey box, joined to the code above.
+      (when-let [{:keys [dialog answer!]} permission]
+        (let [{:keys [message text allow-always?]} dialog]
+          [:div {:class ["tool-call-content"]}
+           [:div {:class ["tool-call-permission"]}
+            [:div {:class ["tool-call-permission-msg"]} (or message text)]
+            [:div {:class ["tool-call-permission-actions"]}
+             [:button {:class ["confirm-btn" "confirm-btn--deny"]
+                       :on {:click (fn [_] (answer! false))}} "Deny"]
+             (when allow-always?
+               [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                         :on {:click (fn [_] (answer! :always))}} "Always"])
+             [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                       :on {:click (fn [_] (answer! true))}} "Allow"]]]]))
+      ;; Answered: a compact decision pill, still part of the same grey box.
+      (when-let [{:keys [value label]} resolved-permission]
+        (let [deny? (not value)]
+          [:div {:class ["tool-call-content"]}
+           [:div {:class ["tool-call-permission" "tool-call-permission--resolved"]}
+            [:div {:class ["dialog-decision"
+                           (if deny? "dialog-decision--deny" "dialog-decision--allow")]}
+             (icon/icon {:icon-name (if deny? :x :check) :size :sm})
+             [:span label]]]]))
       (when imgs
         [:div {:class ["tool-call-content" "user-images"]}
          (map-indexed
@@ -1281,8 +1309,9 @@
    normal answer via .post--dialog so the user sees it needs a response.
    On answer we log the decision into :web/resolved-dialogs (anchored to the
    current history length) so the bubble persists as a static record."
-  [dispatch! state room history]
-  (when-let [{:keys [id type message text options allow-always?]} (first (get-in room [:ui :dialogs]))]
+  [dispatch! state room history suppress-id]
+  (when-let [{:keys [id type message text options allow-always?]}
+             (first (remove #(= suppress-id (:id %)) (get-in room [:ui :dialogs])))]
     (let [room-id (:id room)
           answer! (fn [value]
                     ;; Optimistically log the decision and drop the live dialog
@@ -2301,7 +2330,43 @@
                   ;; "Show earlier" able to reveal further back.
                   start   (if-let [fs (:web/frozen-window-start state)]
                             (min fs natural)
-                            natural)]
+                            natural)
+                  ;; Permission-gate correlation: the gate fires while its
+                  ;; tool-call is already in history as a :running entry (and
+                  ;; gating serializes the turn, so there's exactly one). Attach
+                  ;; the first pending :confirm dialog to that tool block so the
+                  ;; ask renders as a zone inside the same grey box.
+                  resolved-list (get-in state [:web/resolved-dialogs (:id room)])
+                  resolved-by-tool (into {} (keep (fn [e] (when-let [t (:tool-id e)] [t e]))
+                                                  resolved-list))
+                  pending-dialog (first (get-in room [:ui :dialogs]))
+                  ;; Scan only the rendered window [start, total): if the
+                  ;; running tool were scrolled off we must NOT suppress the
+                  ;; standalone dialog, or its answer buttons would vanish.
+                  perm-tool-idx (when (= :confirm (:type pending-dialog))
+                                  (->> (range (dec total) (dec start) -1)
+                                       (filter (fn [i]
+                                                 (let [e (nth entries i)]
+                                                   (and (= :tool-call (:kind e))
+                                                        (= :running (:status e))))))
+                                       first))
+                  perm-answer!
+                  (when perm-tool-idx
+                    (let [{:keys [id type message text]} pending-dialog
+                          room-id (:id room)
+                          tool-id (:id (nth entries perm-tool-idx))]
+                      (fn [value]
+                        (dispatch! {:type :web/dialog-resolved
+                                    :room-id room-id :dialog-id id
+                                    :entry {:key id :anchor (count history)
+                                            :tool-id tool-id
+                                            :message (or message text) :type type
+                                            :value value
+                                            :label (dialog-decision-label type nil value)}})
+                        (dispatch! {:type :ui/dialog-response
+                                    :room-id room-id :dialog-id id :value value})
+                        (dispatch! {:type :ui/dialog-close
+                                    :room-id room-id :dialog-id id}))))]
               (list
                (when (and (zero? total)
                           (not (:web/optimistic state))
@@ -2325,9 +2390,11 @@
                      ;; Answered dialogs live in a web-only log, each anchored
                      ;; to the history length at answer time so its static
                      ;; bubble stays in chronological place as the turn resumes.
-                     by-anchor (group-by :anchor (get-in state [:web/resolved-dialogs (:id room)]))
+                     ;; Ones tagged :tool-id render inside their tool block
+                     ;; instead (see resolved-by-tool), so drop them here.
+                     by-anchor (group-by :anchor resolved-list)
                      rposts    (fn [p] (map (fn [e] (resolved-dialog-post (:key e) e))
-                                            (get by-anchor p)))]
+                                            (remove :tool-id (get by-anchor p))))]
                  (concat
                   ;; Resolved bubbles anchored above the visible window: pin at top.
                   (mapcat rposts (sort (filter #(< % start) (keys by-anchor))))
@@ -2341,7 +2408,13 @@
                                      dispatch!
                                      (cond-> (assoc entry :history-index p)
                                        (and (= :user (:kind entry)) (= p (:index editing)))
-                                       (assoc :editing? true :edit-text (:text editing))))]
+                                       (assoc :editing? true :edit-text (:text editing))
+                                       (= p perm-tool-idx)
+                                       (assoc :permission {:dialog pending-dialog
+                                                           :answer! perm-answer!})
+                                       (resolved-by-tool (:id entry))
+                                       (assoc :resolved-permission
+                                              (resolved-by-tool (:id entry)))))]
                           (when post [(with-post-key (str "h-" p) post)])))))
                    (range start (inc total)))))
                ;; These tail bubbles appear/disappear as a turn progresses
@@ -2356,7 +2429,8 @@
                (with-post-key "tl-pending-command"
                               (pending-command-post state room sid))
                (with-post-key "tl-dialog"
-                              (dialog-post dispatch! state room history))))
+                              (dialog-post dispatch! state room history
+                                           (when perm-tool-idx (:id pending-dialog))))))
             (with-post-key "tl-empty"
                            (empty-state/empty-state {} (spinner) [:p "Connecting…"])))
           ;; subagents-panel and quick-replies-row are direct children of

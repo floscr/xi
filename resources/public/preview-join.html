@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join tool-call + permission — preview</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body { overflow: auto; position: static; height: auto; }
+  html { position: static; height: auto; overflow: auto; }
+  .preview-wrap { max-width: 620px; margin: 0 auto; padding: 32px 20px 80px; }
+  .preview-wrap h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--fg-2); margin: 40px 0 14px; font-weight: 700; }
+  .preview-wrap h2:first-child { margin-top: 0; }
+  .preview-note { font-size: 13px; color: var(--fg-1); margin: 0 0 18px; line-height: 1.5; }
+  .timeline-content { display: flex; flex-direction: column; gap: 4px; }
+  /* keep details open for the mock */
+  details[open] > summary .tool-call-toggle-icon svg { transform: rotate(90deg); }
+</style>
+</head>
+<body>
+<div class="preview-wrap">
+
+  <!-- ══════════════════ BEFORE ══════════════════ -->
+  <h2>Before — two separate blocks</h2>
+  <p class="preview-note">The <code>clj</code> tool-call block and the permission bubble
+     float apart with a gap; nothing visually ties the request to the call that raised it.</p>
+  <div class="timeline-content">
+
+    <!-- clj tool call (expanded, running) -->
+    <div class="post post--tool">
+      <details class="tool-call-block tool-call-block--clj" open>
+        <summary class="tool-call-toggle">
+          <span class="tool-call-toggle-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+          <span class="tool-call-toggle-label">clj</span>
+          <span class="agent-status-spinner" style="width:13px;height:13px;border-width:2px;display:inline-block;border-radius:50%;border:2px solid var(--bg-2);border-top-color:var(--accent);animation:spin .7s linear infinite;"></span>
+        </summary>
+        <div class="tool-call-content tool-call-input">
+          <pre class="tool-call-code">(<span style="color:var(--hl-keyword,#7c3aed)">sh</span> <span style="color:var(--hl-string,#16a34a)">"hey"</span> <span style="color:var(--hl-string,#16a34a)">"re:deploy-pi"</span> <span style="color:var(--hl-string,#16a34a)">"--no-build"</span>)</pre>
+        </div>
+      </details>
+    </div>
+
+    <!-- resolved permission bubble -->
+    <div class="post post--assistant post--dialog post--dialog-resolved">
+      <div class="post-body dialog-bubble dialog-bubble--resolved">
+        <div class="dialog-message">clj: allow running <code>hey</code>?</div>
+        <div class="dialog-decision dialog-decision--allow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Allowed</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ══════════════════ AFTER (pending) ══════════════════ -->
+  <h2>After — joined, awaiting decision</h2>
+  <p class="preview-note">The permission prompt becomes just another <strong>zone inside the same
+     grey tool-call box</strong> — like the stdout / return / error zones: same grey panel, no
+     gap, a hairline divider separates the code from the ask. The buttons sit inline.</p>
+  <div class="timeline-content">
+
+    <div class="post post--tool">
+      <details class="tool-call-block tool-call-block--clj" open>
+        <summary class="tool-call-toggle">
+          <span class="tool-call-toggle-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+          <span class="tool-call-toggle-label">clj</span>
+        </summary>
+        <div class="tool-call-content tool-call-input">
+          <pre class="tool-call-code">(<span style="color:var(--hl-keyword,#7c3aed)">sh</span> <span style="color:var(--hl-string,#16a34a)">"hey"</span> <span style="color:var(--hl-string,#16a34a)">"re:deploy-pi"</span> <span style="color:var(--hl-string,#16a34a)">"--no-build"</span>)</pre>
+        </div>
+        <!-- permission as a joined zone in the grey box -->
+        <div class="tool-call-content">
+          <div class="tool-call-permission">
+            <div class="tool-call-permission-msg">Allow running <code>hey</code>?</div>
+            <div class="tool-call-permission-actions">
+              <button class="confirm-btn confirm-btn--deny">Deny</button>
+              <button class="confirm-btn confirm-btn--allow">Always</button>
+              <button class="confirm-btn confirm-btn--allow">Allow</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+  </div>
+
+
+  <!-- ══════════════════ AFTER (resolved) ══════════════════ -->
+  <h2>After — joined, resolved</h2>
+  <p class="preview-note">Once answered the zone collapses to a compact decision pill,
+     still part of the same grey box.</p>
+  <div class="timeline-content">
+
+    <div class="post post--tool">
+      <details class="tool-call-block tool-call-block--clj" open>
+        <summary class="tool-call-toggle">
+          <span class="tool-call-toggle-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+          <span class="tool-call-toggle-label">clj</span>
+        </summary>
+        <div class="tool-call-content tool-call-input">
+          <pre class="tool-call-code">(<span style="color:var(--hl-keyword,#7c3aed)">sh</span> <span style="color:var(--hl-string,#16a34a)">"hey"</span> <span style="color:var(--hl-string,#16a34a)">"re:deploy-pi"</span> <span style="color:var(--hl-string,#16a34a)">"--no-build"</span>)</pre>
+        </div>
+        <div class="tool-call-content">
+          <div class="tool-call-permission tool-call-permission--resolved">
+            <div class="dialog-decision dialog-decision--allow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Allowed</span>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+  </div>
+</div>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── proposed: permission as a zone inside the grey tool-call box ──
+   Styled exactly like the stdout/return/error result zones: a grey
+   `--bg-1` panel (same as .tool-call-code) that the existing
+   .tool-call-block--clj join rules flatten onto the code above, so the
+   code and the ask read as one continuous box with a hairline divider. */
+.tool-call-permission {
+  margin: 0;
+  padding: var(--size-2);
+  font-size: var(--font-sm);
+  color: var(--fg-0);
+  background-color: var(--bg-1);
+  border: var(--border-0);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+.tool-call-permission-msg {
+  color: var(--fg-0);
+}
+.tool-call-permission-actions {
+  display: flex;
+  gap: var(--size-2);
+  flex-wrap: wrap;
+}
+.tool-call-permission--resolved {
+  padding: var(--size-1) var(--size-2);
+}
+</style>
+</body>
+</html>

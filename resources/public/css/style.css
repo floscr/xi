@@ -1612,10 +1612,10 @@ body {
   padding-bottom: var(--size-1);
 }
 
-/* Returned value: a very slight green hue over the code panel. */
+/* Returned value: a very slight blue hue over the code panel. */
 .clj-result-value pre {
-  background: color-mix(in oklch, var(--success, #22c55e) 6%, transparent);
-  border-color: color-mix(in oklch, var(--success, #22c55e) 18%, transparent);
+  background: color-mix(in oklch, #3b82f6 6%, transparent);
+  border-color: color-mix(in oklch, #3b82f6 18%, transparent);
 }
 
 .clj-result-stdout pre {
@@ -1641,6 +1641,41 @@ body {
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
   border-radius: var(--radius-xs);
   padding: 1px 6px;
+}
+
+/* ---- Tool permission gate: the ask as a zone in the grey box ----
+   When a tool call raises a permission prompt it renders as another
+   .tool-call-content zone inside the same grey tool-call box — styled like
+   .tool-call-code (grey --bg-1 panel), joined to the code/result above via the
+   --clj seam rules so the whole thing reads as one continuous box. */
+.tool-call-permission {
+  margin: 0;
+  padding: var(--size-2);
+  font-size: var(--font-sm);
+  color: var(--fg-0);
+  background-color: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+.tool-call-permission-msg { color: var(--fg-0); }
+
+.tool-call-permission-actions {
+  display: flex;
+  gap: var(--size-2);
+  flex-wrap: wrap;
+}
+
+.tool-call-permission--resolved { padding: var(--size-1) var(--size-2); }
+
+/* Joined to the panel above (clj block): flatten the shared top edge so the
+   code/result and the ask meet on a single hairline divider. */
+.tool-call-block--clj .tool-call-content:not(:first-of-type) .tool-call-permission {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 /* ---- Thinking blocks ---- */
