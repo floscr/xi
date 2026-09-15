@@ -129,6 +129,11 @@
               (cond-> {:model   TITLE_MODEL
                        :prompt  (str TITLE_PROMPT_PREFIX input)
                        :cwd     cwd
+                       ;; Title generation is a throwaway text-only turn: skip
+                       ;; the MCP tool bridge so this concurrent CLI subprocess
+                       ;; doesn't race the first user turn's tool handshake
+                       ;; (which surfaced as "No such tool available").
+                       :no-tools? true
                        :on-text (fn [t] (swap! chunks conj t))}
                 config-dir (assoc :env {"CLAUDE_CONFIG_DIR" config-dir})))]
          (-> promise

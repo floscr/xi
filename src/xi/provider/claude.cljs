@@ -289,14 +289,20 @@
 
         cwd (or (:cwd opts) (.cwd js/process))
         resume-id (:resume-session-id opts)
-        mcp-server (build-mcp-server
-                    (cond-> {:cwd cwd
-                             :client-pid (:client-pid opts)
-                             :tool-gate (:tool-gate opts)
-                             :extra-tool-definitions (:extra-tool-definitions opts)
-                             :extra-tool-registry (:extra-tool-registry opts)
-                             :remove-tools (:remove-tools opts)}
-                      (:personal-agent? opts) (assoc :only-tools PERSONAL_AGENT_TOOLS)))
+        ;; A text-only turn (:no-tools?, e.g. title generation) skips the MCP
+        ;; bridge entirely: it needs no tools, and building/attaching a second
+        ;; xi-tools server concurrently with the first user turn made that
+        ;; turn's first tool calls fail with "No such tool available" until the
+        ;; extra CLI subprocess's MCP handshake finished (see docs).
+        mcp-server (when-not (:no-tools? opts)
+                     (build-mcp-server
+                      (cond-> {:cwd cwd
+                               :client-pid (:client-pid opts)
+                               :tool-gate (:tool-gate opts)
+                               :extra-tool-definitions (:extra-tool-definitions opts)
+                               :extra-tool-registry (:extra-tool-registry opts)
+                               :remove-tools (:remove-tools opts)}
+                        (:personal-agent? opts) (assoc :only-tools PERSONAL_AGENT_TOOLS))))
         query-opts (let [base (clj->js
                                (cond-> {:cwd cwd
                                         :permissionMode "bypassPermissions"
@@ -304,7 +310,9 @@
                                         :includePartialMessages true
                                         ;; Whitelist approach: disable ALL builtins
                                         :tools []
-                                        :allowedTools [(str MCP_TOOL_PREFIX "*")]
+                                        :allowedTools (if (:no-tools? opts)
+                                                        []
+                                                        [(str MCP_TOOL_PREFIX "*")])
                                         ;; Ignore filesystem MCP config
                                         ;; (~/.claude.json). Without this the
                                         ;; SDK merges the user's native MCP
@@ -343,8 +351,9 @@
 
                                  resume-id
                                  (assoc :resume resume-id)))]
-                     (unchecked-set base "mcpServers"
-                                    (js-obj MCP_SERVER_NAME mcp-server))
+                     (when mcp-server
+                       (unchecked-set base "mcpServers"
+                                      (js-obj MCP_SERVER_NAME mcp-server)))
                      base)
 
         images (:images opts)
