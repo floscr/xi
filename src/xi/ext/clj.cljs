@@ -715,8 +715,9 @@
 
 (def ^:private REMOTE_CLIS
   "Never allowed via (sh …) — parity with the permission gate's blocked
-   bash commands."
-  #{"ssh" "scp" "rsync" "sftp"})
+   bash commands. `ssh` is intentionally excluded: it goes through the normal
+   per-CLI approval prompt instead of being hard-blocked."
+  #{"scp" "rsync" "sftp"})
 
 (defn- confirm-all!
   "Confirm each prompt in turn; resolves false on the first deny."

@@ -174,10 +174,21 @@
          (:commands (clj-ext/scan-sh-calls "(sh \"git\" \"status\" \"--short\")")))))
 
 (deftest gate-blocks-remote-clis
-  (let [res (gate {:name "clj" :arguments {:code "(sh \"ssh\" \"host\" \"ls\")"}}
+  (let [res (gate {:name "clj" :arguments {:code "(sh \"scp\" \"a\" \"b\")"}}
                   (gate-ctx))]
     (is (:intercepted res))
     (is (str/includes? (intercepted-text res) "remote shell"))))
+
+(deftest gate-asks-approval-for-ssh
+  (async done
+    (let [ctx (assoc (gate-ctx) :confirm! (fn [_ & _] (js/Promise.resolve false)))
+          res (gate {:name "clj" :arguments {:code "(sh \"ssh\" \"host\" \"ls\")"}}
+                     ctx)]
+      (-> (js/Promise.resolve res)
+          (.then (fn [r]
+                   (is (:intercepted r))
+                   (is (str/includes? (intercepted-text r) "user denied"))
+                   (done)))))))
 
 (deftest extension-removes-bash
   (is (contains? (:remove-tools clj-ext/extension) "bash")))
