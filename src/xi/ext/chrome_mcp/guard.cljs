@@ -19,9 +19,10 @@
    workspace' bug. When there is no `:client-pid` (e.g. a web client, or a
    sub-agent turn before the pid was threaded) or it can't be placed, the guard
    falls back to the last pid-resolved workspace, then to the workspace the
-   agent's Chrome windows already live on — and when nothing resolves it
-   refuses to act. The currently-viewed workspace (`wm current`) is never used
-   as a target: it follows the user's gaze, not the agent.
+   agent's Chrome windows already live on, then to a dedicated workspace name
+   (`XI_CHROME_WORKSPACE`) if configured — and when nothing resolves it refuses
+   to act. The currently-viewed workspace (`wm current`) is never used as a
+   target: it follows the user's gaze, not the agent.
 
    Invariant: before any page-acting tool (click, navigate, screenshot, …) the
    mcp *selected page* is made a current-workspace page, so those tools are
@@ -85,6 +86,16 @@
 (defn- owned-only?* []
   (boolean (some-> (env "XI_CHROME_OWN_WINDOWS_ONLY") str/trim not-empty)))
 
+;; A dedicated xmonad workspace *name* the agent may act on when no driving
+;; terminal resolves (e.g. a web client, which has no local terminal window, or
+;; a server-started session). It is the last-resort anchor in the fallback
+;; chain — real TUI sessions still resolve their own workspace per client PID,
+;; so this only applies when nothing else does. Unlike `wm current`, it is a
+;; fixed designated workspace, so pid-less turns act there instead of chasing
+;; the user's gaze (or being refused outright).
+(defn- configured-ws* []
+  (some-> (env "XI_CHROME_WORKSPACE") str/trim not-empty))
+
 ;; A synthetic workspace name used purely as the membership key in
 ;; owned-windows-only mode. Never a real xmonad workspace, so only windows this
 ;; process explicitly records under it count as "ours".
@@ -97,8 +108,9 @@
    raw `forward` and the browser's remote-debugging URL (attach mode). Each call
    resolves this session's TUI-terminal workspace live from `(:client-pid ctx)`,
    falling back to the last pid-resolved workspace, then to where the agent's
-   Chrome windows already are; when nothing resolves the call is blocked —
-   never forwarded unscoped, never aimed at the viewed workspace."
+   Chrome windows already are, then to a configured `XI_CHROME_WORKSPACE`; when
+   nothing resolves the call is blocked — never forwarded unscoped, never aimed
+   at the viewed workspace."
   [forward browser-url]
   (let [owned-only? (owned-only?*) ;; isolate to windows THIS agent created
         cdp*     (atom nil)   ;; memoized Promise<cdp-client>
@@ -347,9 +359,13 @@
               ;; eyes, not the agent — anchoring to it was the 'about:blank
               ;; windows chase my gaze' bug (every action while the user viewed
               ;; another workspace self-healed a blank window *there*).
+              ;; Last resort: a dedicated workspace name (XI_CHROME_WORKSPACE)
+              ;; so web-client / server-started turns act on a fixed designated
+              ;; workspace instead of being refused.
               (if-let [ws @last-ws*]
                 (js/Promise.resolve ws)
-                (workspace-from-windows)))
+                (-> (workspace-from-windows)
+                    (.then (fn [ws] (or ws (configured-ws*)))))))
 
             (resolve-workspace [ctx]
               ;; Owned-only: a fixed per-process sentinel — membership is by
@@ -428,8 +444,10 @@
                                            "existing MCP-Chrome window to anchor to. "
                                            "Refusing to act on the user's currently-viewed "
                                            "workspace (fail-safe). Drive the session from "
-                                           "a terminal, or open the shared Chrome on the "
-                                           "agent's workspace first."))
+                                           "a terminal, open the shared Chrome on the "
+                                           "agent's workspace first, or set "
+                                           "XI_CHROME_WORKSPACE to a dedicated workspace "
+                                           "name for web/headless-driven sessions."))
                              (-> (ensure-chrome! ws)
                                  (.then (fn [_] (dispatch tool args ws)))))))
                   (.catch (fn [e]

@@ -31,7 +31,10 @@
      XI_CHROME_MCP_ARGS     extra CLI args for chrome-devtools-mcp (space-split)
      XI_CHROME_LAUNCH_BIN   absolute path to the launcher used to start the
                             shared OS Chrome when it isn't running (attach mode;
-                            default dotfiles `browser` bin)"
+                            default dotfiles `browser` bin)
+     XI_CHROME_WORKSPACE    dedicated xmonad workspace name to act on when no
+                            driving terminal resolves (web-client / server-
+                            started sessions); last-resort scoping anchor"
   (:require [clojure.string :as str]
             [xi.ext.chrome-mcp.guard :as guard]
             [xi.ext.chrome-mcp.launch :as launch]
