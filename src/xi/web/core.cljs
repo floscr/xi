@@ -1050,15 +1050,29 @@
           ;; instant response, then forward: the server unlinks the on-disk
           ;; file, closes any lingering idle room, and rebroadcasts an
           ;; authoritative :lobby/state.
+          ;;
+          ;; If we're currently VIEWING the session being deleted, leave its
+          ;; room BEFORE the delete and navigate home. Otherwise the server
+          ;; sees a client still attached and — rather than closing the room —
+          ;; swaps it to a fresh blank session (see room_manager/session-delete),
+          ;; which resurfaces in the lobby as a phantom "New session" card.
+          ;; Leaving first makes the room clientless, so room-leave closes it
+          ;; outright and the delete just unlinks the file.
           :session/delete        (fn [st {:keys [session-id]}]
-                                   (let [drop (fn [ss] (vec (remove #(= (:session-id %) session-id) ss)))]
+                                   (let [drop (fn [ss] (vec (remove #(= (:session-id %) session-id) ss)))
+                                         viewing? (and (= :chat (get-in st [:web/route :page]))
+                                                       (= session-id (get-in st [:web/route :session-id])))]
                                      {:state (-> st
                                                  (dissoc :web/session-menu)
                                                  (update-in [:lobby :sessions] drop)
                                                  (update :web/project-sessions drop)
                                                  (update :web/all-sessions #(some-> % drop)))
-                                      :effects [[:ws/send {:type :session/delete
-                                                           :session-id session-id}]]}))
+                                      :effects (cond-> []
+                                                 viewing? (conj [:ws/send {:type :room/leave}])
+                                                 true     (conj [:ws/send {:type :session/delete
+                                                                           :session-id session-id}])
+                                                 viewing? (conj [:app/dispatch {:type :route/navigate
+                                                                                :page :home}]))}))
           ;; Projects
           :projects/web-list     (fn [st _ev]
                                     {:state (assoc st :web/projects-loading? true)
