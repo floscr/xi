@@ -35,6 +35,7 @@
         [xi.ext.image-graph :as image-graph]
         [xi.ext.kb :as kb]
         [xi.ext.mcp :as mcp]
+        [xi.ext.memory-intercept :as memory-intercept]
         [xi.ext.permission-gate :as permission-gate]
         [xi.ext.freesearch :as freesearch]
         [xi.ext.plan-mode :as plan-mode]
@@ -129,6 +130,7 @@
       ;; tool calls still pass plan-mode/permission-gate first
       clj-tool/extension
       todo-intercept/extension
+      memory-intercept/extension
       treesitter/create
       tmp-cleanup-intercept/extension
       terminal-title/extension
