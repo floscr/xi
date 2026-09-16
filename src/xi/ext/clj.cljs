@@ -421,14 +421,55 @@
 
 (def ^:private PRELUDE
   "(require '[clojure.string :as str] '[clojure.set :as set]
-            '[clojure.walk :as walk] '[clojure.edn :as edn])")
+            '[clojure.walk :as walk] '[clojure.edn :as edn]
+            '[clojure.data.json :as json] '[cheshire.core])")
+
+(defn- json-transform
+  "Apply data.json-style :key-fn / :value-fn to already js->clj'd data."
+  [data key-fn value-fn]
+  (walk/postwalk
+   (fn [x]
+     (if (map? x)
+       (reduce-kv
+        (fn [m k v]
+          (let [k' (if key-fn (key-fn k) k)]
+            (assoc m k' (if value-fn (value-fn k' v) v))))
+        {} x)
+       x))
+   data))
+
+(def ^:private json-data-namespace
+  "clojure.data.json shim backed by the host's js/JSON."
+  {'read-str (fn [s & {:keys [key-fn value-fn]}]
+               (cond-> (js->clj (js/JSON.parse s))
+                 (or key-fn value-fn) (json-transform key-fn value-fn)))
+   'write-str (fn [x & _] (js/JSON.stringify (clj->js x)))
+   'json-str (fn [x & _] (js/JSON.stringify (clj->js x)))})
+
+(def ^:private cheshire-namespace
+  "cheshire.core shim backed by the host's js/JSON."
+  (let [parse (fn [s & [key-fn]]
+                (cond
+                  (nil? s) nil
+                  (true? key-fn) (js->clj (js/JSON.parse s) :keywordize-keys true)
+                  (fn? key-fn) (json-transform (js->clj (js/JSON.parse s)) key-fn nil)
+                  :else (js->clj (js/JSON.parse s))))
+        gen (fn [x & _] (js/JSON.stringify (clj->js x)))]
+    {'parse-string parse
+     'parse-string-strict parse
+     'decode parse
+     'generate-string gen
+     'encode gen}))
 
 (defn- make-ctx [opts]
   (let [helpers (helper-fns opts)
         ctx (sci/init {:namespaces
                        {'user helpers
                         ;; shadow the core vars our helpers collide with
-                        'clojure.core (select-keys helpers '[cat find])}})]
+                        'clojure.core (select-keys helpers '[cat find])
+                        'clojure.data.json json-data-namespace
+                        'cheshire.core cheshire-namespace}
+                       :classes {'Math js/Math}})]
     (sci/eval-string* ctx PRELUDE)
     ctx))
 
@@ -969,7 +1010,9 @@
        "realpath which basename dirname touch now); HTTP "
        "via (curl url) → {:status :body}; JSON via the pre-approved (jq "
        "filter json-or-data) helper — pipes to jq on stdin (no tmp file) and "
-       "parses the result to Clojure data; git via the pre-approved (git …) "
+       "parses the result to Clojure data, or via the pre-required "
+       "clojure.data.json (as `json`) / cheshire.core namespaces; git via the "
+       "pre-approved (git …) "
        "helper — (git \"log\" \"--oneline\" \"-15\") → stdout string, no "
        "approval needed (push/clean excluded); other real "
        "CLIs run via (sh \"cmd\" \"arg\" …) — argv-style, one command, no "

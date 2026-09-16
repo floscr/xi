@@ -117,6 +117,30 @@
   (let [res (eval! "(inc xi-test-x)" {:room-id :persist})]
     (is (str/includes? (result-text res) "=> 42"))))
 
+;; ── JSON namespaces ────────────────────────────────────────────────────────────
+
+(deftest json-read-str
+  (let [res (eval! "(json/read-str \"{\\\"a\\\":1,\\\"b\\\":[2,3]}\")")]
+    (is (not (:is-error res)))
+    (is (str/includes? (result-text res) "=> {\"a\" 1, \"b\" [2 3]}"))))
+
+(deftest json-read-str-keywordize
+  (let [res (eval! "(json/read-str \"{\\\"a\\\":1}\" :key-fn keyword)")]
+    (is (str/includes? (result-text res) "=> {:a 1}"))))
+
+(deftest json-write-str
+  (let [res (eval! "(= (json/read-str (json/write-str {\"a\" 1 \"b\" [2 3]})) {\"a\" 1 \"b\" [2 3]})")]
+    (is (str/includes? (result-text res) "=> true"))))
+
+(deftest cheshire-parse-string
+  (let [res (eval! "(cheshire.core/parse-string \"{\\\"a\\\":1}\" true)")]
+    (is (not (:is-error res)))
+    (is (str/includes? (result-text res) "=> {:a 1}"))))
+
+(deftest cheshire-generate-string
+  (let [res (eval! "(= (cheshire.core/parse-string (cheshire.core/generate-string {:a 1}) true) {:a 1})")]
+    (is (str/includes? (result-text res) "=> true"))))
+
 ;; ── fs helpers ───────────────────────────────────────────────────────────────
 
 (deftest tmpdir-and-file-roundtrip
