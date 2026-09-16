@@ -563,14 +563,25 @@
                                       :description "Clojure code; multiple forms ok, last value is returned"}}
                   :required ["code"]}})
 
+(defn- defer
+  "Resolve after one event-loop turn (a macrotask). Yields control so a
+   pending render / WS snapshot can paint before a blocking synchronous eval
+   (spawnSync) seizes the single-threaded loop — otherwise the just-answered
+   approval dialog stays frozen on screen for the whole command."
+  []
+  (js/Promise. (fn [resolve _] (js/setTimeout resolve 0))))
+
 (defn- clj-tool [args {:keys [cwd]}]
-  (let [res (eval-code! {:code    (str (:code args))
-                         :room-id (:_room-id args)
-                         :allowed (:_allowed args)
-                         :cwd     (or cwd (.cwd js/process))})]
-    (if-let [hint (not-empty (str (:_hint args)))]
-      (update-in res [:content 0 :text] str "\n\n" hint)
-      res)))
+  (-> (defer)
+      (.then
+       (fn [_]
+         (let [res (eval-code! {:code    (str (:code args))
+                                :room-id (:_room-id args)
+                                :allowed (:_allowed args)
+                                :cwd     (or cwd (.cwd js/process))})]
+           (if-let [hint (not-empty (str (:_hint args)))]
+             (update-in res [:content 0 :text] str "\n\n" hint)
+             res))))))
 
 ;; ── bb tool ────────────────────────────────────────────────────────────────
 
@@ -596,14 +607,17 @@
                   :required []}})
 
 (defn- bb-tool [args {:keys [cwd]}]
-  (let [argv (bb-argv args)
-        {:keys [exit out err]} (spawn-sync! argv (or cwd (.cwd js/process)))
-        body (str/trim (str out (when (seq err) (str "\n" err))))]
-    {:content [{:type "text"
-                :text (str "$ " (str/join " " argv) "\n"
-                           (if (str/blank? body) "(no output)" body)
-                           (when-not (zero? exit) (str "\n[exit " exit "]")))}]
-     :is-error (not (zero? exit))}))
+  (-> (defer)
+      (.then
+       (fn [_]
+         (let [argv (bb-argv args)
+               {:keys [exit out err]} (spawn-sync! argv (or cwd (.cwd js/process)))
+               body (str/trim (str out (when (seq err) (str "\n" err))))]
+           {:content [{:type "text"
+                       :text (str "$ " (str/join " " argv) "\n"
+                                  (if (str/blank? body) "(no output)" body)
+                                  (when-not (zero? exit) (str "\n[exit " exit "]")))}]
+            :is-error (not (zero? exit))})))))
 
 ;; ── Tool gate: pre-scan (sh …) calls, approve CLIs ───────────────────────────
 
