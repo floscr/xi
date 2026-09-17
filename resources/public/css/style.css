@@ -757,6 +757,52 @@ body {
   font-weight: 600;
 }
 
+/* ---- Table plain-text toggle ---------------------------------------------
+   Each rendered markdown table (xi.markdown.hiccup) is wrapped in
+   .md-table-wrap with a small toggle button. Clicking the button flips the
+   .as-text class on the wrapper (pure DOM, not app state — not persisted).
+   In text mode the grid is flattened into one entry per row: first column
+   bold as a heading, remaining columns muted on their own lines. Copies
+   cleanly as plain text instead of a mangled grid. */
+.md-table-wrap { position: relative; margin: var(--size-2) 0; }
+
+.md-table-toggle {
+  display: inline-flex; align-items: center; gap: 0.35em;
+  font: inherit; font-size: var(--font-xs);
+  color: var(--fg-2); background: var(--bg-1);
+  border: var(--border-0); border-radius: var(--radius-sm);
+  padding: 0.1em 0.5em; margin-bottom: 0.35em;
+  cursor: pointer; user-select: none; line-height: 1.5;
+}
+.md-table-toggle:hover { color: var(--fg-0); background: var(--bg-2); }
+.md-table-toggle::before { content: "\25A6"; }        /* ▦ grid glyph */
+.md-table-toggle::after  { content: "Text"; }
+.md-table-wrap.as-text .md-table-toggle::after { content: "Grid"; }
+
+/* text mode: flatten the table into bulleted, muted-label lines (Option D) */
+.md-table-wrap.as-text .md-table {
+  display: block; border: 0; overflow: visible;
+  white-space: normal; font-size: var(--font-xs);
+}
+.md-table-wrap.as-text .md-table thead { display: none; }
+.md-table-wrap.as-text .md-table tbody,
+.md-table-wrap.as-text .md-table tr,
+.md-table-wrap.as-text .md-table td { display: block; }
+.md-table-wrap.as-text .md-table tr {
+  padding: 0.35em 0 0.4em 0.9em; margin: 0;
+  border: 0; border-left: 2px solid var(--fg-2);
+}
+.md-table-wrap.as-text .md-table tr:hover { border-left-color: var(--accent); }
+.md-table-wrap.as-text .md-table td {
+  border: 0; padding: 0; white-space: normal; text-align: left !important;
+}
+.md-table-wrap.as-text .md-table td:first-child {
+  font-weight: 600; margin-bottom: 0.1em;
+}
+.md-table-wrap.as-text .md-table td:not(:first-child) {
+  color: var(--fg-2); font-size: 0.95em;
+}
+
 .error-text { color: var(--danger); }
 .status-text { color: var(--fg-2); font-style: italic; }
 

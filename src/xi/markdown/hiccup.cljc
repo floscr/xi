@@ -124,16 +124,22 @@
                              :right {:style {:text-align "right"}}
                              :center {:style {:text-align "center"}}
                              {}))]
-          [:table {:class "md-table"}
-           [:thead
-            (into [:tr]
-                  (map-indexed (fn [i c] (into [:th (cell-attrs i)] (render-inline c)))
-                               header))]
-           (into [:tbody]
-                 (for [r rows]
-                   (into [:tr]
-                         (map-indexed (fn [i c] (into [:td (cell-attrs i)] (render-inline c)))
-                                      r))))])
+          [:div {:class "md-table-wrap"}
+           [:button {:class "md-table-toggle" :type "button"
+                     :title "Toggle plain-text view"
+                     :on {:click (fn [e]
+                                   (.. e -currentTarget -parentNode -classList
+                                       (toggle "as-text")))}}]
+           [:table {:class "md-table"}
+            [:thead
+             (into [:tr]
+                   (map-indexed (fn [i c] (into [:th (cell-attrs i)] (render-inline c)))
+                                header))]
+            (into [:tbody]
+                  (for [r rows]
+                    (into [:tr]
+                          (map-indexed (fn [i c] (into [:td (cell-attrs i)] (render-inline c)))
+                                       r))))]])
 
         :hr
         [:hr]
