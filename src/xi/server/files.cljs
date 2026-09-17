@@ -47,15 +47,21 @@
 (defn- git-list-files
   "Tracked + untracked-not-ignored files under `abs`, relative to it, via
    `git ls-files`. Returns a vector of paths, or nil when `abs` isn't a git
-   working tree (or git is unavailable)."
+   working tree (or git is unavailable).
+
+   Paths whose names contain special characters (non-ASCII, control chars, …)
+   are returned by git wrapped in double quotes with backslash-octal escapes
+   (e.g. \"…/\\342\\206\\222chroma-alias.ch\" for a literal `→chroma-alias.ch`).
+   Those quoted entries are dropped — they're noise in the fuzzy finder and the
+   escaped path can't be opened cleanly anyway."
   [abs]
   (try
     (let [proc (js/Bun.spawnSync
-                #js ["git" "-C" abs "ls-files" "--cached" "--others"
+                #js ["git" "-C" abs "ls-files" "-z" "--cached" "--others"
                      "--exclude-standard"]
                 #js {:stdout "pipe" :stderr "pipe"})]
       (when (zero? (.-exitCode proc))
-        (->> (str/split-lines (str (.toString (.-stdout proc))))
+        (->> (str/split (str (.toString (.-stdout proc))) #"\u0000")
              (remove str/blank?)
              vec)))
     (catch :default _ nil)))
