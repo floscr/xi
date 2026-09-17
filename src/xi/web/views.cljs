@@ -333,10 +333,6 @@
       (str (str/join "\n" (take n lines))
            "\n… (" (- (count lines) n) " more lines)"))))
 
-(def ^:private expanded-tools
-  "Tools whose output is shown expanded by default."
-  #{"Bash" "bash" "clj" "Edit" "edit" "Write" "write" "web_search" "fetch"})
-
 (defn- edit-diff-code
   "Render an edit tool's unified-diff result with per-line tinting: + lines get
    a subtle green wash, - lines a subtle red one, over the code box. The
@@ -484,7 +480,7 @@
                                            (first (str/split-lines (str summary))))))))]
     [:div {:class ["post" "post--tool"]}
      [:details {:class (cond-> ["tool-call-block"] clj? (conj "tool-call-block--clj"))
-                :open (boolean (expanded-tools name))}
+                :open true}
       [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
