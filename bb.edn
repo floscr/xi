@@ -26,8 +26,11 @@
           ;; reap-stray-serve!'s `--headless$` pgrep still matches only the real
           ;; server, not the `tee`/wrapper shell.
           (def serve-log "/tmp/xi-serve.log")
+          ;; The banner must stay a SINGLE physical line: tmux send-keys turns a
+          ;; literal newline into Enter, which would split the command at the
+          ;; prompt. printf escapes the blank separator line instead.
           (defn logged [cmd log]
-            (str "echo \"\n=== xi-serve start $(date -Is) ===\" >> " log "; "
+            (str "printf '\\n=== xi-serve start %s ===\\n' \"$(date -Is)\" >> " log "; "
                  cmd " 2>&1 | tee -a " log))
           (def serve-config {:session "xi-serve"
                              :windows [["watch" "npx shadow-cljs watch main web"]
