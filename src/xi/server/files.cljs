@@ -49,11 +49,10 @@
    `git ls-files`. Returns a vector of paths, or nil when `abs` isn't a git
    working tree (or git is unavailable).
 
-   Paths whose names contain special characters (non-ASCII, control chars, …)
-   are returned by git wrapped in double quotes with backslash-octal escapes
-   (e.g. \"…/\\342\\206\\222chroma-alias.ch\" for a literal `→chroma-alias.ch`).
-   Those quoted entries are dropped — they're noise in the fuzzy finder and the
-   escaped path can't be opened cleanly anyway."
+   Uses -z (NUL-delimited) so paths with special characters (non-ASCII,
+   control chars, …) come through verbatim instead of git's default quoted +
+   backslash-octal form (e.g. a literal `→chroma-alias.ch` rather than the
+   escaped form git prints without -z)."
   [abs]
   (try
     (let [proc (js/Bun.spawnSync
@@ -87,16 +86,48 @@
       (walk abs "")
       @out)))
 
+(defn- git-recency-order
+  "Relative paths ordered by recent git activity — working-tree changes first,
+   then files touched by the last 300 commits — deduped, most-recent first.
+   Used to float the files you're actually editing to the top of the finder
+   (an empty query preserves this order). Returns nil outside a git tree.
+   All git invocations use -z so special-char paths match the -z `git ls-files`
+   listing verbatim."
+  [abs]
+  (letfn [(run [args]
+            (try
+              (let [proc (js/Bun.spawnSync
+                          (into-array (concat ["git" "-C" abs] args))
+                          #js {:stdout "pipe" :stderr "pipe"})]
+                (when (zero? (.-exitCode proc))
+                  (str/split (str (.toString (.-stdout proc))) #"\u0000")))
+              (catch :default _ nil)))]
+    (let [changed (run ["diff" "-z" "--name-only" "HEAD"])
+          recent  (run ["log" "-z" "--name-only" "--pretty=format:"
+                        "-n" "300"])]
+      (when (or changed recent)
+        (->> (concat changed recent)
+             (remove str/blank?)
+             distinct
+             vec)))))
+
 (defn list-files
   "Flat list of files under `cwd` for the fuzzy file finder, relative to it.
    Prefers `git ls-files` (so .gitignore is honoured); falls back to a recursive
-   walk for non-git directories. Returns {:cwd abs :files [rel ...]} (capped at
-   `max-files`, sorted), or {:cwd abs :error message} on failure."
+   walk for non-git directories. Ordered by recent git activity (see
+   `git-recency-order`) so the files you're actively editing surface first when
+   the finder opens with an empty query; the rest fall back to alphabetical.
+   Returns {:cwd abs :files [rel ...]} (capped at `max-files`), or
+   {:cwd abs :error message} on failure."
   [cwd]
   (let [abs (.resolve node-path (or cwd (.cwd js/process)))]
     (try
-      (let [files (or (git-list-files abs) (walk-list-files abs))]
-        {:cwd abs :files (->> files sort (take max-files) vec)})
+      (let [files (or (git-list-files abs) (walk-list-files abs))
+            rank  (into {} (map-indexed (fn [i f] [f i])
+                                        (git-recency-order abs)))
+            n     (count rank)
+            ordered (sort-by (fn [f] [(get rank f n) f]) files)]
+        {:cwd abs :files (->> ordered (take max-files) vec)})
       (catch :default e
         {:cwd abs :error (.-message e)}))))
 
