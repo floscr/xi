@@ -14,6 +14,7 @@
    :name-fn        "hl-fn"
    :name-var       "hl-var"
    :operator       "hl-operator"
+   :reader         "hl-reader"
    :punctuation    "hl-punct"
    :text           nil})
 

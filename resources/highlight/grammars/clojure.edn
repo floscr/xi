@@ -7,6 +7,7 @@
    {:pattern "'(?!#)[\\w!$%*+<=>?/.#-]+" :token :string-symbol}
    {:pattern "\\\\(.|[a-z]+)" :token :string-char}
    {:pattern "::?#?(?!#)[\\w!$%*+<=>?/.#-]+" :token :string-symbol}
+   {:pattern "#" :token :reader}
    {:pattern "~@|[`\\'#^~&@]" :token :operator}
    {:pattern "(quote|loop|new|var|let|def|if|do|fn|\\.) " :token :keyword}
    {:pattern "(definterface|defprotocol|defproject|defstruct|definline|defmethod|defrecord|defmulti|defmacro|defonce|declare|deftype|defn-|def-|defn|ns) " :token :keyword-decl}

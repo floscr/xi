@@ -771,6 +771,7 @@ body {
   --hl-fn:       #005cc5;
   --hl-var:      #24292e;
   --hl-operator: #d73a49;
+  --hl-reader:   #6f42c1;
   --hl-punct:    #586069;
 }
 
@@ -784,6 +785,7 @@ body {
   --hl-fn:       rgb(136, 192, 208);
   --hl-var:      rgb(216, 222, 233);
   --hl-operator: rgb(129, 161, 193);
+  --hl-reader:   rgb(180, 142, 173);
   --hl-punct:    rgb(216, 222, 233);
 }
 
@@ -798,6 +800,7 @@ body {
     --hl-fn:       rgb(136, 192, 208);
     --hl-var:      rgb(216, 222, 233);
     --hl-operator: rgb(129, 161, 193);
+    --hl-reader:   rgb(180, 142, 173);
     --hl-punct:    rgb(216, 222, 233);
   }
 }
@@ -814,6 +817,7 @@ body {
   --hl-fn:       rgb(136, 192, 208);
   --hl-var:      rgb(216, 222, 233);
   --hl-operator: rgb(129, 161, 193);
+  --hl-reader:   rgb(180, 142, 173);
   --hl-punct:    rgb(216, 222, 233);
 }
 
@@ -826,6 +830,7 @@ body {
 .hl-fn       { color: var(--hl-fn); }
 .hl-var      { color: var(--hl-var); }
 .hl-operator { color: var(--hl-operator); }
+.hl-reader   { color: var(--hl-reader); font-weight: 600; }
 .hl-punct    { color: var(--hl-punct); }
 
 /* ---- Slash command dropdown ---- */

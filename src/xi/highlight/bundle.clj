@@ -1,7 +1,12 @@
 (ns xi.highlight.bundle
   "Compile-time macro that reads grammar EDN files and embeds them
    into the ClojureScript bundle. Used by the web client where
-   Node.js fs APIs are not available."
+   Node.js fs APIs are not available.
+
+   NOTE: the grammar EDN under resources/highlight/grammars/ is read at
+   *macro-expansion time*, so editing a grammar file does NOT retrigger a
+   web-build recompile on its own — shadow only watches source namespaces.
+   Touch this namespace (or run a clean web build) to pick up grammar edits."
   (:require [clojure.java.io :as io]
             [clojure.edn :as edn]))
 

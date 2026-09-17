@@ -25,6 +25,7 @@
    :name-fn       "\033[38;2;136;192;208m"   ;; teal
    :name-var      "\033[38;2;216;222;233m"   ;; light gray (default fg)
    :operator      "\033[38;2;129;161;193m"   ;; blue
+   :reader        "\033[38;2;180;142;173m"   ;; purple (reader dispatch #)
    :punctuation   "\033[38;2;216;222;233m"   ;; light gray
    :text          nil})                       ;; no color (inherit)
 
@@ -42,6 +43,7 @@
    :name-fn       "\033[38;2;20;110;120m"     ;; teal
    :name-var      "\033[38;2;59;66;82m"       ;; dark gray (default fg)
    :operator      "\033[38;2;40;90;150m"      ;; blue
+   :reader        "\033[38;2;140;80;140m"     ;; purple (reader dispatch #)
    :punctuation   "\033[38;2;59;66;82m"       ;; dark gray
    :text          nil})                        ;; no color (inherit)
 

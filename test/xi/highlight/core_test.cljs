@@ -28,7 +28,14 @@
 
   (testing "tokenizes Clojure keywords as string-symbol (chroma convention)"
     (let [tokens (hl/tokenize (grammars/get-grammar "clojure") ":foo")]
-      (is (some #(= :string-symbol (:type %)) tokens)))))
+      (is (some #(= :string-symbol (:type %)) tokens))))
+
+  (testing "reader-dispatch # gets its own :reader token (not :operator)"
+    (let [tokens (hl/tokenize (grammars/get-grammar "clojure") "(filter #(str/blank? %) xs)")
+          hash-toks (filter #(= "#" (:value %)) tokens)]
+      (is (seq hash-toks) "has a # token")
+      (is (every? #(= :reader (:type %)) hash-toks) "# is :reader")
+      (is (not (some #(= :operator (:type %)) hash-toks)) "# is not :operator"))))
 
 (deftest tokenize-json
   (testing "tokenizes JSON values"
