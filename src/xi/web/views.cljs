@@ -1412,9 +1412,12 @@
    Optional opts: :highlight — a set of :sel-idx to spotlight (review canvas);
    :reviewed — a set of :sel-idx marked as already-reviewed (review canvas);
    :line-suffix — (fn [sel-idx]) → hiccup|nil, rendered right after that line
-   (review canvas inline comment threads)."
+   (review canvas inline comment threads);
+   :collapsed — a set of filenames whose bodies are collapsed. When this opt is
+   present (even as an empty set) file headers become clickable and dispatch
+   :diff/toggle-file to fold/unfold their body."
   ([dispatch! rows range toolbar] (diff-rows-view dispatch! rows range toolbar nil))
-  ([dispatch! rows range toolbar {:keys [highlight reviewed line-suffix]}]
+  ([dispatch! rows range toolbar {:keys [highlight reviewed line-suffix collapsed]}]
   (let [grammar-cache (atom {})
         grammar-for (fn [f] (or (@grammar-cache f)
                                 (let [g (diff-file-grammar f)]
@@ -1434,15 +1437,28 @@
                 status-label (case status
                                :added "added" :deleted "deleted"
                                :renamed "renamed" :binary "binary" nil)
-                body-rows (rest group)]
-            [:div {:class ["diff-file"] :replicant/key filename}
-             [:div {:class ["diff-file-header"]}
+                body-rows (rest group)
+                collapse?  (some? collapsed)
+                folded?    (boolean (and collapsed (contains? collapsed filename)))]
+            [:div {:class ["diff-file"
+                           (when folded? "diff-file--collapsed")]
+                   :replicant/key filename}
+             [:div (cond-> {:class ["diff-file-header"
+                                    (when collapse? "diff-file-header--clickable")]}
+                     collapse?
+                     (assoc :on {:click (fn [_] (dispatch! {:type :diff/toggle-file
+                                                            :filename filename}))}))
+              (when collapse?
+                [:span {:class ["diff-file-caret"]}
+                 (icon/icon {:icon-name (if folded? :chevron-right :chevron-down)
+                             :size :sm})])
               [:span {:class ["diff-file-name"]} filename]
               (when status-label
                 [:span {:class ["diff-file-status"
                                 (str "diff-file-status--" (name status))]}
                  status-label])]
-             [:div {:class ["diff-file-body"]}
+             (when-not folded?
+               [:div {:class ["diff-file-body"]}
               (map-indexed
                (fn [ri {:keys [row header line sel-idx] :as r}]
                  (let [k (str fi "-" ri)]
@@ -1462,7 +1478,7 @@
                          (diff-line-view dispatch! (grammar-for (:filename r))
                                          selected? line sel-idx (str "l" k) hl? rev?)))
                      nil)))
-               body-rows)]]))
+               body-rows)])]))
         file-groups)
        (empty-state/empty-state {} "No changes."))
      toolbar])))
@@ -1731,7 +1747,7 @@
    interactive unified-diff viewer (line selection, Explain / Modify);
    difftastic diffs are read-only structural text colored from their ANSI
    (red = removed, green = added)."
-  [dispatch! room-id diff-buffer sel modify?]
+  [dispatch! room-id diff-buffer sel modify? collapsed]
   (let [engine (or (:engine diff-buffer) :git)]
     [:div {:class ["diff-tab"]}
      (diff-method-bar dispatch! room-id diff-buffer engine)
@@ -1743,7 +1759,8 @@
              range (diff/selection-range sel)]
          (diff-rows-view dispatch! rows range
                          (when range
-                           (diff-action-bar dispatch! room-id rows range modify?)))))]))
+                           (diff-action-bar dispatch! room-id rows range modify?))
+                         {:collapsed (or collapsed #{})})))]))
 
 (def ^:private markdown-exts
   "Extensions rendered as formatted markdown (HTML markup) instead of
@@ -2308,7 +2325,8 @@
        :diff
        (diff-tab-view dispatch! (:id room) (:diff buffers)
                       (:web/diff-sel state)
-                      (:web/diff-modify? state))
+                      (:web/diff-modify? state)
+                      (:web/diff-collapsed state))
 
        :file
        (file-tab-view (:file buffers))

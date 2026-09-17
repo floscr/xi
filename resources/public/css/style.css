@@ -2734,6 +2734,21 @@ body {
   color: var(--fg-0);
 }
 
+.diff-file-header--clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.diff-file-header--clickable:hover {
+  background: var(--bg-2);
+}
+
+.diff-file-caret {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-2);
+}
+
 .diff-file-status {
   font-weight: 500;
   font-size: var(--font-xs);

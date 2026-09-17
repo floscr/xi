@@ -351,6 +351,16 @@
 (defn- diff-clear-selection [st _]
   {:state (dissoc st :web/diff-sel :web/diff-modify?)})
 
+(defn- diff-toggle-file
+  "Fold/unfold a file's body in the diff view by toggling its filename in the
+   `:web/diff-collapsed` set."
+  [st {:keys [filename]}]
+  {:state (update st :web/diff-collapsed
+                  (fn [s] (let [s (or s #{})]
+                            (if (contains? s filename)
+                              (disj s filename)
+                              (conj s filename)))))})
+
 (defn- diff-modify-toggle [st _]
   {:state (update st :web/diff-modify? not)})
 
@@ -984,6 +994,7 @@
                                     :room-id (:room-id ev)}]]}))
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
+          :diff/toggle-file      diff-toggle-file
           :diff/modify-toggle    diff-modify-toggle
           :diff/explain          diff-explain
           :diff/modify-submit    diff-modify-submit
