@@ -470,7 +470,10 @@
                         'clojure.core (select-keys helpers '[cat find])
                         'clojure.data.json json-data-namespace
                         'cheshire.core cheshire-namespace}
-                       :classes {'Math js/Math}})]
+                       :classes {'Math js/Math
+                                 'js/Error js/Error
+                                 'Exception js/Error
+                                 'Throwable js/Error}})]
     (sci/eval-string* ctx PRELUDE)
     ctx))
 
