@@ -17,9 +17,21 @@
           (def config {:session "xi"
                        :windows [["watch" "npx shadow-cljs watch main web"]]
                        :print   ["Web: http://localhost:7474"]})
+          ;; Persist the headless server's stdout+stderr to a logfile so a
+          ;; crash trace survives a `bb serve:restart` (the tmux pane scrollback
+          ;; is overwritten on restart, and there is no other log). Logs go to
+          ;; /tmp so they are temporal — self-cleaned on machine reboot — and
+          ;; out of ~/.config. `tee -a` appends across restarts (each run marked
+          ;; by a banner); bun's argv is unchanged (`… --headless`) so
+          ;; reap-stray-serve!'s `--headless$` pgrep still matches only the real
+          ;; server, not the `tee`/wrapper shell.
+          (def serve-log "/tmp/xi-serve.log")
+          (defn logged [cmd log]
+            (str "echo \"\n=== xi-serve start $(date -Is) ===\" >> " log "; "
+                 cmd " 2>&1 | tee -a " log))
           (def serve-config {:session "xi-serve"
                              :windows [["watch" "npx shadow-cljs watch main web"]
-                                       ["server" "bun target/main.js server --headless"]]
+                                       ["server" (logged "bun target/main.js server --headless" serve-log)]]
                              :env-file ".env"})
           (def pa-serve-config {:session "xi-pa"
                                 :windows [["server" "bun target/main.js server --headless --personal-agent-only --port 7475"]]})
@@ -249,6 +261,12 @@
            (reap-stray-serve!)
            (td/restart (assoc serve-config :print [(str "Web: http://" ip ":7474")])))}
 
+  serve:logs
+  {:doc "Print the persisted headless server log (/tmp, survives restarts, self-cleans on reboot). Pass a number for line count."
+   :task (let [n (or (first *command-line-args*) "120")]
+           (println (str "── " serve-log " (last " n " lines; runs delimited by '=== xi-serve start …') ──"))
+           (shell {:continue true} "tail" "-n" n serve-log))}
+
   demo:seed
   {:doc "(Re)build the isolated demo HOME (.demo-home) with seed sessions"
    :task (shell "bun" "scripts/demo-seed.mjs")}
@@ -324,5 +342,6 @@
            (println "  - port 7474 already listening? Don't start a server — use http://localhost:7474.")
            (println "  - changed server-side cljs (xi.server/core/agent/ext/provider)? bb serve:restart.")
            (println "  - changed web client cljs? Just refresh the browser (hot-reload).")
-           (println "  - need logs? bb dev:logs / bb serve:* panes above, or `bb check` again.")
+           (println "  - need logs? `bb serve:logs` (/tmp/xi-serve.log, survives restarts),")
+           (println "    bb dev:logs / the serve:* panes above, or `bb check` again.")
            (println "  - never `kill <pid>` a watch/server — use the matching bb *:stop / *:restart task."))}}}
