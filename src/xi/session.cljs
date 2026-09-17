@@ -275,17 +275,6 @@
           (invalidate-listing-cache!))))
     (catch :default _e nil)))
 
-(defn delete-session!
-  "Delete a session by its summary map (must contain :filepath and :source).
-   For :xi sessions, also deletes associated JSONL data file if present.
-   Returns true if deleted, false if file not found."
-  [summary]
-  (let [filepath (:filepath summary)]
-    (if (and filepath (fs/existsSync filepath))
-      (do (fs/unlinkSync filepath)
-          (invalidate-listing-cache!)
-          true)
-      false)))
 
 (defn- claude-config-dir
   "The Claude CLI config dir the SDK reads — CLAUDE_CONFIG_DIR or ~/.claude."
@@ -524,6 +513,32 @@
 ;; ── Favorites (source-agnostic bookmarks) ─────────────────────────────────────
 ;; Favorites live in one JSON file keyed by the summary's :session-id, so
 ;; Xi/Claude sessions can all be starred without editing their own files.
+
+
+(defn delete-session!
+  "Delete a session by its summary map (must contain :filepath and :source).
+   Returns true if the primary file was deleted, false if it was not found.
+
+   For :xi sessions the :filepath is only the metadata file — the actual
+   conversation lives in a Claude CLI transcript under ~/.claude/projects,
+   referenced by :cli-session-id. That transcript MUST be removed too: the
+   session listing dedups a Claude transcript out only while an Xi meta
+   references it (see scan-all-sessions), so unlinking the meta alone leaves
+   the orphaned transcript to resurface as a standalone Claude card — the
+   deleted session appears to come back. The canvas sidecar is removed as
+   well so no stray review canvas is left behind."
+  [summary]
+  (let [filepath   (:filepath summary)
+        transcript (when (= :xi (:source summary))
+                     (find-claude-transcript (:cwd summary) (:cli-session-id summary)))
+        canvas     (when (and filepath (str/ends-with? filepath ".json"))
+                     (str (subs filepath 0 (- (count filepath) 5)) ".canvas.edn"))
+        rm!        (fn [f] (when (and f (fs/existsSync f)) (fs/unlinkSync f)))
+        deleted?   (boolean (rm! filepath))]
+    (rm! transcript)
+    (rm! canvas)
+    (when deleted? (invalidate-listing-cache!))
+    deleted?))
 
 (defn load-favorites
   "Set of favorited session-ids from ~/.config/xi/favorites.json (or #{})."
