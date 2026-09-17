@@ -40,7 +40,8 @@
             ["node:crypto" :as crypto]
             ["node:fs" :as fs]
             ["node:os" :as os]
-            ["node:path" :as node-path]))
+            ["node:path" :as node-path]
+            ["node:worker_threads" :as wt]))
 
 (def ^:private ext-id :clj)
 
@@ -563,22 +564,78 @@
                                       :description "Clojure code; multiple forms ok, last value is returned"}}
                   :required ["code"]}})
 
-(defn- defer
-  "Resolve after one event-loop turn (a macrotask). Yields control so a
-   pending render / WS snapshot can paint before a blocking synchronous eval
-   (spawnSync) seizes the single-threaded loop — otherwise the just-answered
-   approval dialog stays frozen on screen for the whole command."
-  []
-  (js/Promise. (fn [resolve _] (js/setTimeout resolve 0))))
+;; ── Worker client (main thread) ──────────────────────────────────────────────
+;; The clj/bb tools do not eval inline: they post a request to a single
+;; long-lived worker thread (target/main.js re-entered via xi.cli/main's
+;; isMainThread guard → xi.ext.clj-worker) and await the reply. The blocking
+;; synchronous spawnSync inside an eval then stalls only that worker thread,
+;; never the server's single event loop, so other rooms / WS clients / HTTP
+;; stay responsive while a shell command runs.
+
+(defn- room-key
+  "Normalize a room-id to a stable string key for the worker's per-room SCI
+   runtimes (keywords don't survive structured clone across the thread)."
+  [room-id]
+  (or (some-> room-id name) "default"))
+
+(defonce ^:private worker (atom nil))
+(defonce ^:private pending (atom {}))       ;; id → resolve fn
+(defonce ^:private next-id (atom 0))
+
+(defn- settle-worker-death!
+  "The worker crashed/exited with evals in flight — resolve each pending call
+   with an error result so the tool returns cleanly instead of hanging."
+  [reason]
+  (reset! worker nil)
+  (let [ps @pending]
+    (reset! pending {})
+    (doseq [[_ resolve] ps]
+      (resolve #js {:text (str "clj/bb worker stopped: " reason
+                               " — retry the command.")
+                    :isError true}))))
+
+(defn- ensure-worker! []
+  (or @worker
+      (let [w (wt/Worker. (aget js/process.argv 1))]
+        (.on w "message"
+             (fn [^js m]
+               (let [id (.-id m)]
+                 (when-let [resolve (get @pending id)]
+                   (swap! pending dissoc id)
+                   (resolve m)))))
+        (.on w "error" (fn [^js e] (settle-worker-death! (.-message e))))
+        (.on w "exit"  (fn [code] (when (seq @pending)
+                                    (settle-worker-death! (str "exit " code)))))
+        (reset! worker w)
+        w)))
+
+(defn- run-in-worker
+  "Post a request message to the worker and return a Promise of its JS reply."
+  [^js msg]
+  (js/Promise.
+   (fn [resolve _]
+     (let [id (swap! next-id inc)
+           w  (ensure-worker!)]
+       (aset msg "id" id)
+       (swap! pending assoc id resolve)
+       (.postMessage w msg)))))
+
+(defn- reset-worker-runtime! [room-id]
+  (when-let [w @worker]
+    (.postMessage w #js {:id     (swap! next-id inc)
+                         :kind   "reset"
+                         :roomId (room-key room-id)})))
 
 (defn- clj-tool [args {:keys [cwd]}]
-  (-> (defer)
+  (-> (run-in-worker #js {:kind    "clj"
+                          :code    (str (:code args))
+                          :roomId  (room-key (:_room-id args))
+                          :allowed (clj->js (vec (:_allowed args)))
+                          :cwd     (or cwd (.cwd js/process))})
       (.then
-       (fn [_]
-         (let [res (eval-code! {:code    (str (:code args))
-                                :room-id (:_room-id args)
-                                :allowed (:_allowed args)
-                                :cwd     (or cwd (.cwd js/process))})]
+       (fn [^js m]
+         (let [res {:content  [{:type "text" :text (.-text m)}]
+                    :is-error (boolean (.-isError m))}]
            (if-let [hint (not-empty (str (:_hint args)))]
              (update-in res [:content 0 :text] str "\n\n" hint)
              res))))))
@@ -607,17 +664,49 @@
                   :required []}})
 
 (defn- bb-tool [args {:keys [cwd]}]
-  (-> (defer)
+  (-> (run-in-worker #js {:kind "bb"
+                          :task (some-> (:task args) str)
+                          :args (clj->js (mapv str (:args args)))
+                          :cwd  (or cwd (.cwd js/process))})
       (.then
-       (fn [_]
-         (let [argv (bb-argv args)
-               {:keys [exit out err]} (spawn-sync! argv (or cwd (.cwd js/process)))
-               body (str/trim (str out (when (seq err) (str "\n" err))))]
-           {:content [{:type "text"
-                       :text (str "$ " (str/join " " argv) "\n"
-                                  (if (str/blank? body) "(no output)" body)
-                                  (when-not (zero? exit) (str "\n[exit " exit "]")))}]
-            :is-error (not (zero? exit))})))))
+       (fn [^js m]
+         {:content  [{:type "text" :text (.-text m)}]
+          :is-error (boolean (.-isError m))}))))
+
+;; ── Worker: eval side (worker thread) ────────────────────────────────────────
+;; Runs on the worker thread (xi.ext.clj-worker → here). Handles one request
+;; message and returns a JS reply object. The blocking spawnSync inside
+;; eval-code! / spawn-sync! stalls only this worker thread. The worker holds
+;; its own long-lived `runtimes` atom, so (def x …) persists across evals.
+
+(defn eval-message
+  "Worker-thread handler: process one request map (JS object) → JS reply
+   #js {:id :text :isError} (or #js {:id :ok true} for a reset)."
+  [^js m]
+  (let [id  (.-id m)
+        cwd (or (.-cwd m) (.cwd js/process))]
+    (case (.-kind m)
+      "clj"
+      (let [res (eval-code! {:code    (str (.-code m))
+                             :room-id (.-roomId m)
+                             :allowed (js->clj (.-allowed m))
+                             :cwd     cwd})]
+        #js {:id      id
+             :text    (get-in res [:content 0 :text])
+             :isError (boolean (:is-error res))})
+
+      "bb"
+      (let [argv (bb-argv {:task (.-task m) :args (js->clj (.-args m))})
+            {:keys [exit out err]} (spawn-sync! argv cwd)
+            body (str/trim (str out (when (seq err) (str "\n" err))))
+            text (str "$ " (str/join " " argv) "\n"
+                      (if (str/blank? body) "(no output)" body)
+                      (when-not (zero? exit) (str "\n[exit " exit "]")))]
+        #js {:id id :text text :isError (not (zero? exit))})
+
+      "reset"
+      (do (swap! runtimes dissoc (.-roomId m))
+          #js {:id id :ok true}))))
 
 ;; ── Tool gate: pre-scan (sh …) calls, approve CLIs ───────────────────────────
 
@@ -1002,7 +1091,8 @@
       {:state (status-line st room-id (status-text st room-id))})))
 
 (defn- reset-runtime-fx [_ {:keys [room-id]}]
-  (swap! runtimes dissoc room-id))
+  ;; The live runtimes are in the worker thread; forward the reset there.
+  (reset-worker-runtime! room-id))
 
 (defn- ext-status [st {:keys [room-id text]}]
   {:state (status-line st room-id text)})
@@ -1055,4 +1145,8 @@
    :commands         [{:name "clj"
                        :description "Sandboxed Clojure tool — status, allow/revoke CLIs, trust bb.edn, reset REPL"
                        :handler command}]
-   :on-disable       (fn [] (reset! runtimes {}))})
+   :on-disable       (fn []
+                       (reset! runtimes {})
+                       (when-let [w @worker]
+                         (reset! worker nil)
+                         (.terminate w)))})

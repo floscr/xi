@@ -58,6 +58,7 @@
             [xi.config :as config]
             [xi.env :as env]
             [xi.ext.core :as ext]
+            [xi.ext.clj-worker :as clj-worker]
             [xi.ext.manager :as manager]
             [xi.ext.mcp :as mcp]
             [xi.fx :as fx]
@@ -75,7 +76,8 @@
             [xi.subagent :as subagent]
             [xi.system-prompt :as system-prompt]
             ["node:fs" :as fs]
-            ["node:path" :as node-path]))
+            ["node:path" :as node-path]
+            ["node:worker_threads" :as wt]))
 
 (def providers
   {:claude claude/provider
@@ -1121,14 +1123,18 @@ See docs/cli.md for the full reference.")
     (js/process.exit 0)))
 
 (defn main [& args]
-  (let [{:keys [command] :as opts} (parse-args args)]
-    (case command
-      :help       (do (.write js/process.stdout (str HELP_TEXT "\n"))
-                      (js/process.exit 0))
-      :standalone (start-standalone-or-join! opts)
-      :server     (start-server! opts)
-      :prompt     (run-prompt! opts)
-      :sessions   (run-sessions! opts)
-      :clients    (run-clients! opts)
-      :join       (start-client! (assoc opts :target "latest"))
-      :create     (start-client! (assoc opts :target "new")))))
+  (if-not wt/isMainThread
+    ;; Loaded as a node:worker_threads Worker (same bundle) — become the
+    ;; clj/bb eval worker instead of running the CLI. See xi.ext.clj-worker.
+    (clj-worker/install!)
+    (let [{:keys [command] :as opts} (parse-args args)]
+      (case command
+        :help       (do (.write js/process.stdout (str HELP_TEXT "\n"))
+                        (js/process.exit 0))
+        :standalone (start-standalone-or-join! opts)
+        :server     (start-server! opts)
+        :prompt     (run-prompt! opts)
+        :sessions   (run-sessions! opts)
+        :clients    (run-clients! opts)
+        :join       (start-client! (assoc opts :target "latest"))
+        :create     (start-client! (assoc opts :target "new"))))))
