@@ -242,9 +242,9 @@ body {
   content: "";
 }
 
-.accordion-trigger:hover {
+@media (hover: hover){.accordion-trigger:hover{
   background: var(--bg-1);
-}
+}}
 
 .accordion-trigger-text {
   flex: 1;
@@ -426,10 +426,10 @@ body {
   text-decoration: none;
 }
 
-.breadcrumb-item a:hover {
+@media (hover: hover){.breadcrumb-item a:hover{
   color: var(--fg-0);
   text-decoration: underline;
-}
+}}
 
 .breadcrumb-item--active {
   color: var(--fg-0);
@@ -456,26 +456,26 @@ body {
   background: var(--accent);
   color: var(--fg-on-accent);
 }
-.btn-primary:hover:not(:disabled) {
+@media (hover: hover){.btn-primary:hover:not(:disabled){
   filter: brightness(1.1);
-}
+}}
 
 .btn-secondary {
   background: var(--bg-1);
   color: var(--fg-0);
   border: var(--border-0);
 }
-.btn-secondary:hover:not(:disabled) {
+@media (hover: hover){.btn-secondary:hover:not(:disabled){
   background: var(--bg-2);
-}
+}}
 
 .btn-ghost {
   background: transparent;
   color: var(--fg-0);
 }
-.btn-ghost:hover:not(:disabled) {
+@media (hover: hover){.btn-ghost:hover:not(:disabled){
   background: var(--bg-1);
-}
+}}
 
 /* Pressed state for segmented toggles (e.g. ui.grid layout-toggle). */
 .btn.btn-toggled {
@@ -487,17 +487,17 @@ body {
   background: var(--danger);
   color: var(--fg-on-danger);
 }
-.btn-danger:hover:not(:disabled) {
+@media (hover: hover){.btn-danger:hover:not(:disabled){
   filter: brightness(1.1);
-}
+}}
 
 .btn-success {
   background: var(--success);
   color: var(--fg-on-success);
 }
-.btn-success:hover:not(:disabled) {
+@media (hover: hover){.btn-success:hover:not(:disabled){
   filter: brightness(1.1);
-}
+}}
 
 .btn-link {
   background: transparent;
@@ -507,9 +507,9 @@ body {
   padding: 0;
   border: none;
 }
-.btn-link:hover:not(:disabled) {
+@media (hover: hover){.btn-link:hover:not(:disabled){
   filter: brightness(1.2);
-}
+}}
 
 /* Link buttons rendered as <a> need reset styles */
 a.btn {
@@ -600,14 +600,14 @@ a.btn-link {
   transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
-a.button-group-item:hover {
+@media (hover: hover){a.button-group-item:hover{
   text-decoration: none;
-}
+}}
 
-.button-group-item:hover {
+@media (hover: hover){.button-group-item:hover{
   background: var(--bg-1);
   color: var(--fg-0);
-}
+}}
 
 .button-group-item:focus-visible {
   outline: 2px solid var(--accent);
@@ -663,9 +663,9 @@ a.button-group-item:hover {
   height: var(--size-8);
 }
 
-.button-group-boxed .button-group-item:hover {
+@media (hover: hover){.button-group-boxed .button-group-item:hover{
   background: var(--bg-1);
-}
+}}
 
 .button-group-boxed .button-group-item.is-active {
   background: var(--bg-0);
@@ -754,9 +754,9 @@ a.button-group-item:hover {
   position: relative;
 }
 
-.cal-day:hover:not(:disabled):not(.cal-day-selected) {
+@media (hover: hover){.cal-day:hover:not(:disabled):not(.cal-day-selected){
   background: var(--bg-2);
-}
+}}
 
 .cal-day:focus-visible {
   outline: 2px solid var(--accent);
@@ -775,9 +775,9 @@ a.button-group-item:hover {
   opacity: 0.5;
 }
 
-.cal-day-outside:hover:not(:disabled) {
+@media (hover: hover){.cal-day-outside:hover:not(:disabled){
   opacity: 0.7;
-}
+}}
 
 /* Today highlight */
 .cal-day-today {
@@ -792,10 +792,10 @@ a.button-group-item:hover {
   font-weight: 600;
 }
 
-.cal-day-selected:hover:not(:disabled) {
+@media (hover: hover){.cal-day-selected:hover:not(:disabled){
   background: var(--accent);
   filter: brightness(1.1);
-}
+}}
 
 /* Today + Selected */
 .cal-day-today.cal-day-selected {
@@ -809,9 +809,9 @@ a.button-group-item:hover {
   cursor: not-allowed;
 }
 
-.cal-day-disabled:hover {
+@media (hover: hover){.cal-day-disabled:hover{
   background: transparent;
-}
+}}
 
 
 /* ── Calendar Events ──────────────────────────────────────────────── */
@@ -885,9 +885,109 @@ a.button-group-item:hover {
   opacity: 0.4;
 }
 
-.cal-event-day:hover:not(.cal-day-outside) {
+@media (hover: hover){.cal-event-day:hover:not(.cal-day-outside){
   background: var(--bg-2);
+}}
+
+/* ── Dots Indicator Mode ─────────────────────────────────────────── */
+/* Airy, borderless day cell for mobile calendars: centered number in a
+   circular hit target with a compact row of coloured event dots below.
+   Opt in via (event-day-cell {:indicator :dots}); pills mode is unchanged. */
+
+.cal-grid-dots {
+  gap: 0;
 }
+
+/* Kill the grid lines and outside-day fill inherited from the base event
+   grid (those rules match .cal-grid-events .cal-day at higher specificity). */
+.cal-grid-dots .cal-day {
+  border: none;
+  background: transparent;
+}
+
+.cal-event-day-dots {
+  border: none;
+  aspect-ratio: 1 / 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-1);
+  padding: var(--size-1);
+  overflow: visible;
+}
+
+.cal-event-day-dots .cal-day-number {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--fg-0);
+  width: var(--size-8);
+  height: var(--size-8);
+  margin-bottom: 0;
+  border-radius: 9999px;
+  transition: background 0.15s, color 0.15s;
+}
+
+/* Today: filled accent circle */
+.cal-event-day-dots.cal-day-today .cal-day-number {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-weight: 600;
+}
+
+/* Selected: soft accent tint (whole-cell fill from base is cancelled) */
+.cal-event-day-dots.cal-day-selected {
+  background: transparent;
+}
+
+.cal-event-day-dots.cal-day-selected .cal-day-number {
+  background: var(--accent-100);
+  color: var(--accent-800);
+  font-weight: 600;
+}
+
+.cal-event-day-dots.cal-day-today.cal-day-selected .cal-day-number {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.cal-event-day-dots.cal-day-outside .cal-day-number {
+  color: var(--fg-2);
+  opacity: 0.4;
+}
+
+/* Hover moves onto the number circle, not the whole cell */
+@media (hover: hover){.cal-event-day-dots:hover:not(.cal-day-outside){
+  background: transparent;
+}}
+
+@media (hover: hover){.cal-event-day-dots:hover:not(.cal-day-outside):not(.cal-day-today):not(.cal-day-selected) .cal-day-number{
+  background: var(--bg-2);
+}}
+
+.cal-day-dots {
+  display: flex;
+  gap: var(--size-1);
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--size-1) * 1.5);
+  width: 100%;
+}
+
+.cal-day-dot {
+  width: calc(var(--size-1) * 1.5);
+  height: calc(var(--size-1) * 1.5);
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+/* Use the theme-aware semantic tokens (they lighten to -400 in dark mode)
+   so month-grid dots stay legible on a dark background, matching the
+   ticker and agenda dots. */
+.cal-day-dot.cal-event-accent { background: var(--accent); }
+.cal-day-dot.cal-event-danger { background: var(--danger); }
+.cal-day-dot.cal-event-success { background: var(--success); }
+.cal-day-dot.cal-event-warning { background: var(--warning); }
+.cal-day-dot.cal-event-default { background: var(--fg-2); }
 
 /* ── Day Events Container ────────────────────────────────────────── */
 
@@ -919,9 +1019,9 @@ a.button-group-item:hover {
   border-left: 3px solid transparent;
 }
 
-.cal-event-pill:hover {
+@media (hover: hover){.cal-event-pill:hover{
   filter: brightness(0.95);
-}
+}}
 
 .cal-event-done {
   opacity: 0.45;
@@ -938,6 +1038,51 @@ a.button-group-item:hover {
 .cal-event-title {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Task (to-do / repeating) items render as a flat checkbox row instead of a
+   solid color pill. */
+.cal-event-pill.cal-event-task,
+.cal-week-alldayevent.cal-week-alldayevent-task {
+  background: transparent;
+  color: var(--fg-1);
+  border-left-color: transparent;
+  font-weight: 500;
+}
+
+.cal-task-check {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 1.5px solid var(--fg-2);
+  border-radius: var(--radius-sm);
+  position: relative;
+}
+
+.cal-task-check-clickable {
+  cursor: pointer;
+}
+
+@media (hover: hover){.cal-task-check-clickable:hover{
+  border-color: var(--accent);
+}}
+
+.cal-task-check-done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cal-task-check-done::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 4px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 /* ── Event Color Variants ────────────────────────────────────────── */
@@ -1032,6 +1177,45 @@ a.button-group-item:hover {
   }
 }
 
+/* ── Dot dark-mode fix ───────────────────────────────────────────────
+   Dots (.cal-*-dot) reuse the .cal-event-<color> modifier, so the pill
+   dark overrides above (equal specificity, later in source) would repaint
+   them near-black (--*-950). Re-assert the dot colours with higher
+   specificity so they stay legible on a dark background. */
+[data-theme="dark"] .cal-day-dot.cal-event-accent,
+[data-theme="dark"] .cal-ticker-dot.cal-event-accent,
+[data-theme="dark"] .cal-agenda-dot.cal-event-accent { background: var(--accent-400); }
+[data-theme="dark"] .cal-day-dot.cal-event-danger,
+[data-theme="dark"] .cal-ticker-dot.cal-event-danger,
+[data-theme="dark"] .cal-agenda-dot.cal-event-danger { background: var(--danger-400); }
+[data-theme="dark"] .cal-day-dot.cal-event-success,
+[data-theme="dark"] .cal-ticker-dot.cal-event-success,
+[data-theme="dark"] .cal-agenda-dot.cal-event-success { background: var(--success-400); }
+[data-theme="dark"] .cal-day-dot.cal-event-warning,
+[data-theme="dark"] .cal-ticker-dot.cal-event-warning,
+[data-theme="dark"] .cal-agenda-dot.cal-event-warning { background: var(--warning-400); }
+[data-theme="dark"] .cal-day-dot.cal-event-default,
+[data-theme="dark"] .cal-ticker-dot.cal-event-default,
+[data-theme="dark"] .cal-agenda-dot.cal-event-default { background: var(--gray-400); }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cal-day-dot.cal-event-accent,
+  :root:not([data-theme="light"]) .cal-ticker-dot.cal-event-accent,
+  :root:not([data-theme="light"]) .cal-agenda-dot.cal-event-accent { background: var(--accent-400); }
+  :root:not([data-theme="light"]) .cal-day-dot.cal-event-danger,
+  :root:not([data-theme="light"]) .cal-ticker-dot.cal-event-danger,
+  :root:not([data-theme="light"]) .cal-agenda-dot.cal-event-danger { background: var(--danger-400); }
+  :root:not([data-theme="light"]) .cal-day-dot.cal-event-success,
+  :root:not([data-theme="light"]) .cal-ticker-dot.cal-event-success,
+  :root:not([data-theme="light"]) .cal-agenda-dot.cal-event-success { background: var(--success-400); }
+  :root:not([data-theme="light"]) .cal-day-dot.cal-event-warning,
+  :root:not([data-theme="light"]) .cal-ticker-dot.cal-event-warning,
+  :root:not([data-theme="light"]) .cal-agenda-dot.cal-event-warning { background: var(--warning-400); }
+  :root:not([data-theme="light"]) .cal-day-dot.cal-event-default,
+  :root:not([data-theme="light"]) .cal-ticker-dot.cal-event-default,
+  :root:not([data-theme="light"]) .cal-agenda-dot.cal-event-default { background: var(--gray-400); }
+}
+
 /* ── Event More Indicator ────────────────────────────────────────── */
 
 .cal-event-more {
@@ -1042,9 +1226,9 @@ a.button-group-item:hover {
   font-weight: 500;
 }
 
-.cal-event-more:hover {
+@media (hover: hover){.cal-event-more:hover{
   color: var(--fg-1);
-}
+}}
 
 /* ── Ticker Strip ────────────────────────────────────────────────── */
 
@@ -1082,9 +1266,9 @@ a.button-group-item:hover {
   flex-shrink: 0;
 }
 
-.cal-ticker-day:hover {
+@media (hover: hover){.cal-ticker-day:hover{
   background: var(--bg-2);
-}
+}}
 
 .cal-ticker-day-name {
   font-size: var(--font-xs);
@@ -1200,9 +1384,9 @@ a.button-group-item:hover {
   transition: background 0.12s;
 }
 
-.cal-agenda-event:hover {
+@media (hover: hover){.cal-agenda-event:hover{
   background: var(--bg-2);
-}
+}}
 
 .cal-agenda-event-done {
   opacity: 0.45;
@@ -1255,6 +1439,121 @@ a.button-group-item:hover {
   font-size: var(--font-sm);
 }
 
+/* ── Day Timeline ────────────────────────────────────────────────── */
+
+.cal-day-timeline {
+  position: relative;
+  padding: var(--size-4) var(--size-2) var(--size-6);
+}
+
+.cal-timeline-track {
+  position: relative;
+}
+
+/* Hour rows: a left-aligned time label plus a full-width separator line,
+   vertically centered on the hour boundary. */
+.cal-timeline-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.cal-timeline-time {
+  width: var(--size-12);
+  flex-shrink: 0;
+  padding-right: var(--size-3);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  color: var(--fg-2);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-timeline-line {
+  flex: 1;
+  height: 0;
+  border-top: 1px solid var(--gray-200);
+}
+
+/* Event cards positioned by start time (top) and duration (height).
+   Swiss minimal-grid treatment: borderless, a thin colored left rule, and a
+   faint left-to-right tint instead of a filled card. */
+.cal-timeline-event {
+  position: absolute;
+  left: var(--size-12);
+  right: var(--size-2);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  min-height: var(--size-7);
+  padding: var(--size-2) var(--size-3);
+  border-radius: var(--radius-sm);
+  border-left-width: 2px;
+  border-left-style: solid;
+  overflow: hidden;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+
+@media (hover: hover){.cal-timeline-event:hover{
+  filter: brightness(0.97);
+}}
+
+.cal-timeline-event-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--size-2);
+}
+
+.cal-timeline-event-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-timeline-event-dur {
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  opacity: 0.55;
+}
+
+/* "Now" indicator line — thin accent rule. */
+.cal-timeline-now {
+  position: absolute;
+  left: var(--size-12);
+  right: 0;
+  height: 0;
+  z-index: 3;
+  border-top: 1.5px solid var(--accent-500);
+  pointer-events: none;
+}
+
+.cal-timeline-now-dot {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: var(--size-2);
+  height: var(--size-2);
+  border-radius: 50%;
+  background: var(--accent-500);
+  transform: translate(-50%, -50%);
+}
+
 /* ── Responsive ──────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
@@ -1266,6 +1565,13 @@ a.button-group-item:hover {
     width: var(--size-5);
     height: var(--size-5);
     font-size: var(--font-xs);
+  }
+
+  /* Dots mode keeps a comfortable circular tap target on mobile */
+  .cal-event-day-dots .cal-day-number {
+    width: var(--size-7);
+    height: var(--size-7);
+    font-size: var(--font-sm);
   }
 
   .cal-event-pill {
@@ -1296,6 +1602,288 @@ a.button-group-item:hover {
 
   .cal-agenda-day-header {
     padding: var(--size-2) var(--size-3) var(--size-1);
+  }
+
+  .cal-timeline-time {
+    width: var(--size-11);
+    font-size: var(--font-xs);
+  }
+
+  .cal-timeline-event,
+  .cal-timeline-now {
+    left: var(--size-11);
+  }
+}
+
+/* ── Week timeline ───────────────────────────────────────────────── */
+/* A 7-day grid: sticky day headers, an all-day bar row, and a scrollable
+   hour grid with per-day event columns. Same minimal treatment as the
+   single-day timeline (thin colored left rule, faint tint). */
+
+.cal-week {
+  --cal-week-gutter: var(--size-14);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Sticky top bar — holds the header + all-day rows inside the scroll
+   container so they share its scrollbar-reduced width (columns stay aligned). */
+.cal-week-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--bg-0);
+}
+
+/* Header row — day names + numbers, aligned to the day columns. */
+.cal-week-header {
+  display: flex;
+  border-bottom: var(--border-0);
+}
+
+.cal-week-corner {
+  width: var(--cal-week-gutter);
+  flex-shrink: 0;
+}
+
+.cal-week-headcols,
+.cal-week-alldaycols,
+.cal-week-daycols {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.cal-week-headcell {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-3);
+  border-left: var(--border-0);
+}
+
+.cal-week-headname {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--fg-2);
+}
+
+.cal-week-headnum {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-week-headcell.is-today .cal-week-headname,
+.cal-week-headcell.is-today .cal-week-headnum {
+  color: var(--accent-600);
+}
+
+/* All-day row — horizontal bars for events without a start time. */
+.cal-week-allday {
+  display: flex;
+  min-height: var(--size-9);
+  border-bottom: var(--border-0);
+}
+
+.cal-week-allday-label {
+  width: var(--cal-week-gutter);
+  flex-shrink: 0;
+  padding: var(--size-2) var(--size-2) 0 0;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  text-align: right;
+}
+
+.cal-week-alldaycol {
+  border-left: var(--border-0);
+  padding: var(--size-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+}
+
+.cal-week-alldaycol.is-today,
+.cal-week-daycol.is-today {
+  background: var(--gray-100);
+}
+
+[data-theme="dark"] .cal-week-alldaycol.is-today,
+[data-theme="dark"] .cal-week-daycol.is-today {
+  background: var(--gray-800);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cal-week-alldaycol.is-today,
+  :root:not([data-theme="light"]) .cal-week-daycol.is-today {
+    background: var(--gray-800);
+  }
+}
+
+.cal-week-alldayevent {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  padding: var(--size-1) var(--size-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.cal-week-alldayevent-dot {
+  width: var(--size-2);
+  height: var(--size-2);
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+.cal-week-alldayevent-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Scrollable hour grid. */
+.cal-week-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.cal-week-grid {
+  display: flex;
+  position: relative;
+}
+
+.cal-week-gutter {
+  width: var(--cal-week-gutter);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.cal-week-hour {
+  position: absolute;
+  right: var(--size-2);
+  transform: translateY(-50%);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-week-canvas {
+  flex: 1;
+  position: relative;
+}
+
+.cal-week-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: var(--border-0);
+  pointer-events: none;
+}
+
+.cal-week-daycols {
+  position: absolute;
+  inset: 0;
+}
+
+.cal-week-daycol {
+  position: relative;
+  border-left: var(--border-0);
+}
+
+/* Timed event cards — positioned by start time (top) and duration (height). */
+.cal-week-event {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  min-height: var(--size-6);
+  padding: var(--size-1) var(--size-2);
+  border-radius: var(--radius-sm);
+  border-left-width: 2px;
+  border-left-style: solid;
+  overflow: hidden;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+
+@media (hover: hover){.cal-week-event:hover{
+  filter: brightness(0.97);
+}}
+
+.cal-week-event-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--size-1);
+}
+
+.cal-week-event-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-week-event-dur {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0.55;
+}
+
+/* "Now" indicator — thin red rule spanning the week, dot on today's column. */
+.cal-week-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 3;
+  border-top: 1.5px solid var(--danger-500);
+  pointer-events: none;
+}
+
+.cal-week-now-dot {
+  position: absolute;
+  top: 50%;
+  width: var(--size-2);
+  height: var(--size-2);
+  border-radius: 50%;
+  background: var(--danger-500);
+  transform: translate(-50%, -50%);
+}
+
+@media (max-width: 768px) {
+  .cal-week {
+    --cal-week-gutter: var(--size-11);
+  }
+
+  .cal-week-headname {
+    font-size: var(--font-xs);
+  }
+
+  .cal-week-headcell {
+    flex-direction: column;
+    gap: 0;
+    padding: var(--size-1);
   }
 }
 
@@ -1351,10 +1939,10 @@ a.button-group-item:hover {
   transition: transform 150ms ease, background 150ms ease;
 }
 
-.camera-capture-btn:hover {
+@media (hover: hover){.camera-capture-btn:hover{
   transform: scale(1.08);
   background: rgba(255, 255, 255, 0.35);
-}
+}}
 
 .camera-capture-btn:active {
   transform: scale(0.95);
@@ -1390,9 +1978,9 @@ a.button-group-item:hover {
   transition: background 200ms ease;
 }
 
-.camera-placeholder:hover {
+@media (hover: hover){.camera-placeholder:hover{
   background: rgba(255, 255, 255, 0.05);
-}
+}}
 
 
 .card {
@@ -1593,9 +2181,9 @@ a.button-group-item:hover {
   transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
-.chip:hover:not(.chip-active) {
+@media (hover: hover){.chip:hover:not(.chip-active){
   background: var(--bg-2);
-}
+}}
 
 .chip-active {
   background: var(--accent);
@@ -1682,9 +2270,9 @@ a.button-group-item:hover {
   flex-shrink: 0;
 }
 
-.command-search-back:hover {
+@media (hover: hover){.command-search-back:hover{
   color: var(--fg-0);
-}
+}}
 
 .command-input {
   flex: 1;
@@ -1709,7 +2297,11 @@ a.button-group-item:hover {
      (basis 0) contributes nothing to the dialog's auto-height, so the dialog
      collapses to just the search row and the list never gets room. `flex-basis:
      auto` makes the list content count toward the dialog height; `min-height: 0`
-     still lets it shrink and scroll once max-height is hit. */
+     still lets it shrink and scroll once max-height is hit. Column flex so the
+     JS runtime can reorder whole .command-group blocks via `order` while
+     searching (command--searching), floating the best-matching group up. */
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -1742,6 +2334,17 @@ a.button-group-item:hover {
 /* Hide groups whose items are all filtered out (set by the JS runtime). */
 .command-group[hidden] {
   display: none;
+}
+
+/* While searching, the runtime collapses the groups into one flat ranked list:
+   headings hide and the group blocks are reordered by best match score, so the
+   result reads as a single ranked list rather than fixed-order sections. */
+.command-list--searching .command-group-heading {
+  display: none;
+}
+
+.command-list--searching .command-group {
+  padding-bottom: 0;
 }
 
 /* ── Item ────────────────────────────────────────────────────────── */
@@ -1914,7 +2517,12 @@ a.button-group-item:hover {
   border: var(--border-0);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-3);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Never taller than the viewport — scroll instead of overflowing.
+     dvh tracks mobile browser chrome; vh is the fallback. */
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
   animation: context-menu-in 0.12s ease;
   list-style: none;
   margin: 0;
@@ -1944,21 +2552,27 @@ a.button-group-item:hover {
   white-space: nowrap;
 }
 
-.context-menu-item:hover,
-.context-menu-item:focus-visible {
+.context-menu-item:focus-visible{
   background: var(--bg-2);
   outline: none;
 }
+@media (hover: hover){.context-menu-item:hover{
+  background: var(--bg-2);
+  outline: none;
+}}
 
 .context-menu-item--danger {
   color: var(--danger-600);
 }
 
-.context-menu-item--danger:hover,
-.context-menu-item--danger:focus-visible {
+.context-menu-item--danger:focus-visible{
   background: var(--danger-50);
   color: var(--danger-700);
 }
+@media (hover: hover){.context-menu-item--danger:hover{
+  background: var(--danger-50);
+  color: var(--danger-700);
+}}
 
 /* ── Confirm ─────────────────────────────────────────────────────── */
 
@@ -1994,11 +2608,14 @@ a.button-group-item:hover {
   color: var(--danger-400);
 }
 
-[data-theme="dark"] .context-menu-item--danger:hover,
-[data-theme="dark"] .context-menu-item--danger:focus-visible {
+[data-theme="dark"] .context-menu-item--danger:focus-visible{
   background: var(--danger-950);
   color: var(--danger-300);
 }
+@media (hover: hover){[data-theme="dark"] .context-menu-item--danger:hover{
+  background: var(--danger-950);
+  color: var(--danger-300);
+}}
 
 [data-theme="dark"] .context-menu-separator {
   background: var(--gray-800);
@@ -2009,16 +2626,597 @@ a.button-group-item:hover {
     color: var(--danger-400);
   }
 
-  :root:not([data-theme="light"]) .context-menu-item--danger:hover,
-  :root:not([data-theme="light"]) .context-menu-item--danger:focus-visible {
+  :root:not([data-theme="light"]) .context-menu-item--danger:focus-visible{
     background: var(--danger-950);
     color: var(--danger-300);
   }
+@media (hover: hover){:root:not([data-theme="light"]) .context-menu-item--danger:hover{
+    background: var(--danger-950);
+    color: var(--danger-300);
+  }}
 
   :root:not([data-theme="light"]) .context-menu-separator {
     background: var(--gray-800);
   }
 }
+
+
+/* ── DialKit — live tuning panel ──────────────────────────────────── */
+/* Runtime: src/ui/js/dial.cljs (window.__uiDial).                     */
+
+/* ── Root container (stacks panels, draggable) ────────────────────── */
+
+.dialkit-root {
+  position: fixed;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  width: 264px;
+  max-height: calc(100vh - var(--size-6));
+  font-size: var(--font-sm);
+  color: var(--fg-0);
+}
+
+/* ── Panel ─────────────────────────────────────────────────────────── */
+
+.dial-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-0);
+  border: var(--border-1);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+
+.dial-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-2) var(--size-2) var(--size-3);
+  background: var(--bg-1);
+  border-bottom: var(--border-0);
+  cursor: grab;
+  user-select: none;
+}
+
+.dial-panel-head:active { cursor: grabbing; }
+
+.dial-panel-title {
+  font-weight: 600;
+  font-size: var(--font-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dial-panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.dial-version {
+  max-width: 82px;
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  background: var(--bg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+}
+
+.dial-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: var(--font-sm);
+  line-height: 1;
+  color: var(--fg-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+@media (hover: hover){.dial-tool:hover{ background: var(--bg-2); color: var(--fg-0); }}
+
+.dial-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  padding: var(--size-3);
+  overflow-y: auto;
+}
+
+/* ── Minimized-to-icon state ───────────────────────────────────────── */
+
+.dial-panel-icon {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-11);
+  height: var(--size-11);
+  font-size: var(--font-md);
+  line-height: 1;
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: var(--border-1);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  cursor: pointer;
+}
+
+@media (hover: hover){.dial-panel-icon:hover{ background: var(--bg-2); }}
+
+.dial-panel.is-iconified {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  overflow: visible;
+  align-items: flex-end;
+}
+
+.dial-panel.pos-left.is-iconified { align-items: flex-start; }
+
+.dial-panel.is-iconified .dial-panel-head,
+.dial-panel.is-iconified .dial-panel-body { display: none; }
+
+.dial-panel.is-iconified .dial-panel-icon { display: inline-flex; }
+
+/* ── Row + label ───────────────────────────────────────────────────── */
+
+.dial-row {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  align-items: center;
+  gap: var(--size-2);
+  min-height: 24px;
+}
+
+.dial-row--action { grid-template-columns: 1fr; }
+.dial-row--slider { grid-template-columns: 1fr; }
+
+.dial-label {
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Slider ────────────────────────────────────────────────────────── */
+
+.dial-slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--size-10);
+  padding: 0 var(--size-3);
+  gap: var(--size-2);
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  cursor: ew-resize;
+  outline: none;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.dial-slider:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+
+.dial-slider-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--bg-2);
+  pointer-events: none;
+}
+
+.dial-slider-label {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-sm);
+  color: var(--fg-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+@media (hover: hover){.dial-slider:hover .dial-slider-label{ color: var(--fg-0); }}
+
+.dial-num {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  width: 64px;
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--fg-0);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  outline: none;
+  padding: var(--size-1) var(--size-2);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (hover: hover){.dial-num:hover{ background: var(--bg-2); color: var(--fg-0); }}
+
+.dial-num:focus {
+  cursor: text;
+  text-align: left;
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ── Toggle ────────────────────────────────────────────────────────── */
+
+.dial-switch { justify-self: start; }
+
+/* ── Text / select ─────────────────────────────────────────────────── */
+
+.dial-text {
+  width: 100%;
+  font-size: var(--font-xs);
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  resize: none;
+  line-height: var(--size-4);
+  font-family: inherit;
+}
+
+/* Compact clj-ui select to match the panel's dense rows. */
+.dial-select .select-trigger {
+  font-size: var(--font-xs);
+  padding: var(--size-1) var(--size-6) var(--size-1) var(--size-2);
+  background-color: var(--bg-1);
+}
+
+/* ── Color ─────────────────────────────────────────────────────────── */
+
+.dial-row--color { grid-template-columns: 1fr; }
+
+.dial-color {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  width: 100%;
+}
+
+/* format segmented control */
+.dial-color-formats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+}
+
+.dial-color-format {
+  height: 24px;
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+@media (hover: hover){.dial-color-format:hover{ color: var(--fg-0); }}
+
+.dial-color-format[data-active="true"] {
+  color: var(--fg-0);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-0);
+}
+
+/* 2D saturation / value plane */
+.dial-color-plane {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  border-radius: var(--radius-sm);
+  border: var(--border-0);
+  cursor: crosshair;
+  outline: none;
+  touch-action: none;
+  overflow: hidden;
+}
+
+.dial-color-plane:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+
+.dial-color-marker {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* hue + opacity tracks */
+.dial-color-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+}
+
+.dial-color-track-row {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: var(--size-2);
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+}
+
+.dial-color-track {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  border: var(--border-0);
+  cursor: pointer;
+  outline: none;
+}
+
+.dial-color-track:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+
+.dial-color-hue {
+  background: linear-gradient(to right,
+    hsl(0, 100%, 50%), hsl(60, 100%, 50%), hsl(120, 100%, 50%),
+    hsl(180, 100%, 50%), hsl(240, 100%, 50%), hsl(300, 100%, 50%), hsl(360, 100%, 50%));
+}
+
+.dial-color-opacity {
+  --dial-color-solid: #000;
+  background-color: #fff;
+  background-image:
+    linear-gradient(to right, transparent, var(--dial-color-solid)),
+    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%),
+    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%);
+  background-size: 100% 100%, 8px 8px, 8px 8px;
+  background-position: 0 0, 0 0, 4px 4px;
+}
+
+.dial-color-track::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-0);
+  cursor: pointer;
+}
+
+.dial-color-track::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-0);
+  cursor: pointer;
+}
+
+/* css value input */
+.dial-color-input {
+  width: 100%;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono, monospace);
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  padding: var(--size-1) var(--size-2);
+  outline: none;
+}
+
+.dial-color-input:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* ── Image ─────────────────────────────────────────────────────────── */
+
+.dial-image { display: flex; flex-direction: column; gap: var(--size-2); width: 100%; }
+
+.dial-image-grid { display: flex; flex-wrap: wrap; gap: var(--size-1); }
+
+.dial-image-opt {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background-size: cover;
+  background-position: center;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.dial-image-opt.is-active { border-color: var(--accent); }
+
+.dial-image-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--size-2);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  background: var(--bg-1);
+  border: 1px dashed var(--gray-400);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.dial-image-drop.is-over { border-color: var(--accent); color: var(--accent); }
+
+/* ── XY pad ────────────────────────────────────────────────────────── */
+
+.dial-pad {
+  position: relative;
+  aspect-ratio: 1;
+  width: 100%;
+  max-width: 120px;
+  background:
+    linear-gradient(var(--bg-2) 1px, transparent 1px) 0 0 / 100% 25%,
+    linear-gradient(90deg, var(--bg-2) 1px, transparent 1px) 0 0 / 25% 100%,
+    var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.dial-pad-dot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: var(--accent);
+  border: 2px solid var(--bg-0);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.dial-pad-meta {
+  grid-column: 1 / -1;
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-2);
+}
+
+/* ── Transition editor ─────────────────────────────────────────────── */
+
+.dial-transition {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+.dial-seg {
+  display: inline-flex;
+  align-self: start;
+  background: var(--bg-2);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+
+.dial-seg-btn {
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+@media (hover: hover){.dial-seg-btn:hover{ color: var(--fg-0); }}
+
+.dial-curve {
+  width: 100%;
+  height: 90px;
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+}
+
+.dial-fields { display: flex; flex-wrap: wrap; gap: var(--size-2); }
+
+.dial-field { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-xs); color: var(--fg-1); }
+
+.dial-field input {
+  width: 64px;
+  font-size: var(--font-xs);
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+}
+
+/* ── Action ────────────────────────────────────────────────────────── */
+
+.dial-action {
+  width: 100%;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+@media (hover: hover){.dial-action:hover{ background: var(--bg-2); }}
+
+/* ── Folder ────────────────────────────────────────────────────────── */
+
+.dial-folder { grid-column: 1 / -1; display: flex; flex-direction: column; }
+
+.dial-folder-head {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--size-1) 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dial-chevron {
+  display: inline-block;
+  width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transform: rotate(90deg);
+  transition: transform 0.12s ease;
+}
+
+.dial-folder.is-collapsed .dial-chevron { transform: rotate(0deg); }
+
+.dial-folder-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  padding: var(--size-2) 0;
+}
+
+.dial-folder.is-collapsed .dial-folder-body { display: none; }
 
 
 /* ── Shared dialog inner styles ───────────────────────────────────── */
@@ -2166,22 +3364,30 @@ a.button-group-item:hover {
   flex-direction: column;
 }
 
-.drop-zone:hover,
-.drop-zone-active {
+.drop-zone-active{
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 5%, var(--bg-0));
 }
+@media (hover: hover){.drop-zone:hover{
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-0));
+}}
 
 .drop-zone-md { min-height: 120px; }
 .drop-zone-lg { min-height: 240px; }
 
-.drop-zone-disabled,
-.drop-zone-disabled:hover {
+.drop-zone-disabled{
   opacity: 0.5;
   cursor: not-allowed;
   border-color: var(--fg-2);
   background: none;
 }
+@media (hover: hover){.drop-zone-disabled:hover{
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: var(--fg-2);
+  background: none;
+}}
 
 .drop-zone-disabled .drop-zone-empty {
   cursor: not-allowed;
@@ -2251,10 +3457,10 @@ a.button-group-item:hover {
   transition: border-color 150ms ease, color 150ms ease;
 }
 
-.drop-zone-add:hover {
+@media (hover: hover){.drop-zone-add:hover{
   border-color: var(--accent);
   color: var(--accent);
-}
+}}
 
 /* Full-page drop overlay */
 
@@ -2342,14 +3548,16 @@ a.button-group-item:hover {
   cursor: pointer;
 }
 
-.fb-item:hover {
+@media (hover: hover){.fb-item:hover{
   background: var(--bg-1);
-}
+}}
 
-.fb-item-selected,
-.fb-item-selected:hover {
+.fb-item-selected{
   background: var(--bg-2);
 }
+@media (hover: hover){.fb-item-selected:hover{
+  background: var(--bg-2);
+}}
 
 /* ── Grid Tile ────────────────────────────────────────────────────── */
 
@@ -2406,9 +3614,9 @@ a.button-group-item:hover {
   cursor: pointer;
 }
 
-.fb-list-header-cell-sortable:hover {
+@media (hover: hover){.fb-list-header-cell-sortable:hover{
   color: var(--fg-0);
-}
+}}
 
 .fb-list-header-cell-active {
   color: var(--fg-0);
@@ -2499,10 +3707,10 @@ a.button-group-item:hover {
   transition: background-color 150ms ease, color 150ms ease;
 }
 
-.fb-view-toggle-btn:hover {
+@media (hover: hover){.fb-view-toggle-btn:hover{
   background: var(--bg-1);
   color: var(--fg-0);
-}
+}}
 
 .fb-view-toggle-btn-active {
   background: var(--bg-2);
@@ -2571,9 +3779,9 @@ a.button-group-item:hover {
   cursor: pointer;
 }
 
-.fb-table-th-sortable:hover {
+@media (hover: hover){.fb-table-th-sortable:hover{
   color: var(--fg-0);
-}
+}}
 
 .fb-table-th-active {
   color: var(--fg-0);
@@ -2604,18 +3812,18 @@ a.button-group-item:hover {
 }
 
 /* Row hover */
-.fb-table-row:hover > .fb-table-cell {
+@media (hover: hover){.fb-table-row:hover > .fb-table-cell{
   background: var(--bg-1);
-}
+}}
 
 /* Selected row */
 .fb-table-row-selected > .fb-table-cell {
   background: var(--bg-2);
 }
 
-.fb-table-row-selected:hover > .fb-table-cell {
+@media (hover: hover){.fb-table-row-selected:hover > .fb-table-cell{
   background: var(--bg-2);
-}
+}}
 
 /* Clickable row */
 .fb-table-row-clickable > .fb-table-cell {
@@ -2712,10 +3920,10 @@ a.button-group-item:hover {
   flex-shrink: 0;
 }
 
-.fp-item-remove:hover {
+@media (hover: hover){.fp-item-remove:hover{
   color: var(--fg-0);
   background: var(--bg-1);
-}
+}}
 
 
 /* ── Form field wrapper ─────────────────────────────────────────── */
@@ -2960,10 +4168,10 @@ a.button-group-item:hover {
     border-color 150ms ease;
 }
 
-.form-file::file-selector-button:hover {
+@media (hover: hover){.form-file::file-selector-button:hover{
   background: var(--bg-1);
   border-color: var(--accent);
-}
+}}
 
 .form-file:disabled {
   opacity: 0.5;
@@ -2994,9 +4202,9 @@ a.button-group-item:hover {
   transition: transform 150ms ease;
 }
 
-.form-range::-webkit-slider-thumb:hover {
+@media (hover: hover){.form-range::-webkit-slider-thumb:hover{
   transform: scale(1.1);
-}
+}}
 
 .form-range::-moz-range-thumb {
   width: 1.25rem;
@@ -3363,9 +4571,9 @@ a.button-group-item:hover {
   transition: background 0.15s;
 }
 
-.lightbox-close:hover {
+@media (hover: hover){.lightbox-close:hover{
   background: rgba(255, 255, 255, 0.2);
-}
+}}
 
 /* ── Thumbnail ───────────────────────────────────────────────────── */
 
@@ -3374,11 +4582,11 @@ a.button-group-item:hover {
   transition: opacity 0.1s;
 }
 
-.lightbox-thumb:hover {
+@media (hover: hover){.lightbox-thumb:hover{
   opacity: 0.85;
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
+}}
 
 
 /* ── Markdown Docs ────────────────────────────────────────────────── */
@@ -3516,10 +4724,10 @@ summary,
   transition: background-color 150ms ease, color 150ms ease;
 }
 
-.pagination-item a:hover {
+@media (hover: hover){.pagination-item a:hover{
   background: var(--bg-1);
   color: var(--fg-0);
-}
+}}
 
 .pagination-item--active a,
 .pagination-item--active span {
@@ -3532,6 +4740,267 @@ summary,
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+
+/* Panels — resizable panel groups (ui.panels + ui.js.panels runtime) */
+
+.ui-panels-group {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: clip;
+}
+
+.ui-panels-group[data-orientation="vertical"] {
+  flex-direction: column;
+}
+
+/* Nested groups: only the root clips */
+.ui-panels-group .ui-panels-group {
+  overflow: visible;
+}
+
+/* ── Sized panels ──────────────────────────────────────────────── */
+
+.ui-panels-panel {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+
+[data-orientation="horizontal"] > .ui-panels-panel { flex-direction: row; }
+[data-orientation="vertical"] > .ui-panels-panel { flex-direction: column; }
+
+/* Content anchors to the edge away from the resize seam */
+.ui-panels-panel[data-edge="end"] { justify-content: flex-start; }
+.ui-panels-panel[data-edge="start"] { justify-content: flex-end; }
+
+/* Clip while resizing/folding/collapsed so content slides under the seam */
+.ui-panels-panel[data-resizing],
+.ui-panels-panel[data-folding],
+.ui-panels-panel[data-collapsed] {
+  overflow: clip;
+}
+
+.ui-panels-content {
+  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+[data-orientation="horizontal"] > .ui-panels-panel > .ui-panels-content { height: 100%; }
+[data-orientation="vertical"] > .ui-panels-panel > .ui-panels-content { width: 100%; }
+
+/* ── Fill panel ────────────────────────────────────────────────── */
+
+.ui-panels-fill {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ui-panels-fill[data-pin] {
+  display: flex;
+}
+
+[data-orientation="horizontal"] > .ui-panels-fill[data-pin] { flex-direction: row; }
+[data-orientation="vertical"] > .ui-panels-fill[data-pin] { flex-direction: column; }
+
+.ui-panels-fill-inner {
+  flex-shrink: 0;
+}
+
+[data-orientation="horizontal"] > .ui-panels-fill > .ui-panels-fill-inner {
+  height: 100%;
+  width: 100%;
+}
+
+[data-orientation="vertical"] > .ui-panels-fill > .ui-panels-fill-inner {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Separator slot: zero-size in flow, grip centered on the seam ── */
+
+.ui-panels-separator {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+}
+
+[data-orientation="horizontal"] > .ui-panels-separator {
+  width: 0;
+  flex-direction: row;
+}
+
+[data-orientation="vertical"] > .ui-panels-separator {
+  height: 0;
+  flex-direction: column;
+}
+
+/* ── Grips (separator + panel edge) ────────────────────────────── */
+
+.ui-panels-grip {
+  position: relative;
+  flex-shrink: 0;
+  touch-action: none;
+  outline: none;
+}
+
+[data-orientation="horizontal"] > .ui-panels-separator > .ui-panels-grip {
+  width: var(--size-2);
+  cursor: col-resize;
+}
+
+[data-orientation="vertical"] > .ui-panels-separator > .ui-panels-grip {
+  height: var(--size-2);
+  cursor: row-resize;
+}
+
+/* Visible seam line, thickens + tints on interaction */
+.ui-panels-separator > .ui-panels-grip::before {
+  content: "";
+  position: absolute;
+  background: var(--gray-200);
+  transition: background 0.15s ease, width 0.15s ease, height 0.15s ease;
+}
+
+[data-orientation="horizontal"] > .ui-panels-separator > .ui-panels-grip::before {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+}
+
+[data-orientation="vertical"] > .ui-panels-separator > .ui-panels-grip::before {
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 1px;
+}
+
+@media (hover: hover) {
+  .ui-panels-separator > .ui-panels-grip:hover::before {
+    background: var(--gray-400);
+  }
+}
+
+.ui-panels-separator > .ui-panels-grip:focus-visible::before,
+.ui-panels-separator > .ui-panels-grip[data-resizing]::before {
+  background: var(--accent-500);
+}
+
+[data-orientation="horizontal"] > .ui-panels-separator > .ui-panels-grip:focus-visible::before,
+[data-orientation="horizontal"] > .ui-panels-separator > .ui-panels-grip[data-resizing]::before {
+  width: 3px;
+}
+
+[data-orientation="vertical"] > .ui-panels-separator > .ui-panels-grip:focus-visible::before,
+[data-orientation="vertical"] > .ui-panels-separator > .ui-panels-grip[data-resizing]::before {
+  height: 3px;
+}
+
+/* Dark mode: lighter seam line */
+[data-theme="dark"] .ui-panels-separator > .ui-panels-grip::before {
+  background: var(--gray-800);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ui-panels-separator > .ui-panels-grip::before {
+    background: var(--gray-800);
+  }
+}
+
+@media (hover: hover) {
+  [data-theme="dark"] .ui-panels-separator > .ui-panels-grip:hover::before {
+    background: var(--gray-600);
+  }
+}
+
+/* ── Edge grip (separator-less drag on a bare panel edge) ──────── */
+
+.ui-panels-edge {
+  position: absolute;
+  z-index: 1;
+}
+
+/* Hidden when a real separator handles the seam */
+.ui-panels-panel:not([data-bare]) > .ui-panels-edge {
+  display: none;
+}
+
+[data-orientation="horizontal"] > .ui-panels-panel > .ui-panels-edge {
+  top: 0;
+  bottom: 0;
+  width: var(--size-2);
+  cursor: col-resize;
+}
+
+[data-orientation="vertical"] > .ui-panels-panel > .ui-panels-edge {
+  left: 0;
+  right: 0;
+  height: var(--size-2);
+  cursor: row-resize;
+}
+
+[data-orientation="horizontal"] > .ui-panels-panel[data-edge="end"] > .ui-panels-edge { right: 0; }
+[data-orientation="horizontal"] > .ui-panels-panel[data-edge="start"] > .ui-panels-edge { left: 0; }
+[data-orientation="vertical"] > .ui-panels-panel[data-edge="end"] > .ui-panels-edge { bottom: 0; }
+[data-orientation="vertical"] > .ui-panels-panel[data-edge="start"] > .ui-panels-edge { top: 0; }
+
+/* Edge feedback: accent line at the seam on hover/drag/focus */
+.ui-panels-edge::before {
+  content: "";
+  position: absolute;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+[data-orientation="horizontal"] > .ui-panels-panel > .ui-panels-edge::before {
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+[data-orientation="vertical"] > .ui-panels-panel > .ui-panels-edge::before {
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+
+[data-orientation="horizontal"] > .ui-panels-panel[data-edge="end"] > .ui-panels-edge::before { right: 0; }
+[data-orientation="horizontal"] > .ui-panels-panel[data-edge="start"] > .ui-panels-edge::before { left: 0; }
+[data-orientation="vertical"] > .ui-panels-panel[data-edge="end"] > .ui-panels-edge::before { bottom: 0; }
+[data-orientation="vertical"] > .ui-panels-panel[data-edge="start"] > .ui-panels-edge::before { top: 0; }
+
+@media (hover: hover) {
+  .ui-panels-edge:hover::before {
+    background: var(--accent-300);
+  }
+}
+
+.ui-panels-edge:focus-visible::before,
+.ui-panels-edge[data-resizing]::before {
+  background: var(--accent-500);
+}
+
+/* ── Touch: bigger hit areas ───────────────────────────────────── */
+
+@media (pointer: coarse) {
+  [data-orientation="horizontal"] > .ui-panels-separator > .ui-panels-grip,
+  [data-orientation="horizontal"] > .ui-panels-panel > .ui-panels-edge {
+    width: var(--size-5);
+  }
+
+  [data-orientation="vertical"] > .ui-panels-separator > .ui-panels-grip,
+  [data-orientation="vertical"] > .ui-panels-panel > .ui-panels-edge {
+    height: var(--size-5);
+  }
 }
 
 
@@ -3724,9 +5193,9 @@ summary,
   transition: background 0.15s, color 0.15s;
 }
 
-.player-bar-icon-btn:hover {
+@media (hover: hover){.player-bar-icon-btn:hover{
   background: var(--bg-2);
-}
+}}
 
 .player-bar-icon-btn.active {
   color: var(--accent);
@@ -3761,9 +5230,9 @@ summary,
   transition: filter 0.15s;
 }
 
-.player-bar-play-btn:hover {
+@media (hover: hover){.player-bar-play-btn:hover{
   filter: brightness(0.85);
-}
+}}
 
 .player-bar-play-btn svg {
   width: var(--size-4);
@@ -4207,11 +5676,14 @@ summary,
   white-space: nowrap;
 }
 
-.select-option:hover,
-.select-option:focus-visible {
+.select-option:focus-visible{
   background: var(--bg-2);
   outline: none;
 }
+@media (hover: hover){.select-option:hover{
+  background: var(--bg-2);
+  outline: none;
+}}
 
 .select-option--selected {
   color: var(--accent);
@@ -4315,9 +5787,9 @@ summary,
   min-height: var(--size-10);
 }
 
-.sidebar-brand:hover {
+@media (hover: hover){.sidebar-brand:hover{
   background: var(--bg-1);
-}
+}}
 
 .sidebar-brand-icon {
   display: flex;
@@ -4480,10 +5952,10 @@ a.sidebar-menu-item {
   color: var(--fg-1);
 }
 
-.sidebar-menu-item:hover {
+@media (hover: hover){.sidebar-menu-item:hover{
   background: var(--bg-1);
   color: var(--fg-0);
-}
+}}
 
 .sidebar-menu-item-active {
   background: var(--bg-1);
@@ -4491,9 +5963,9 @@ a.sidebar-menu-item {
   font-weight: 500;
 }
 
-.sidebar-menu-item-active:hover {
+@media (hover: hover){.sidebar-menu-item-active:hover{
   background: var(--bg-2);
-}
+}}
 
 .sidebar-menu-item-icon {
   display: flex;
@@ -4617,10 +6089,10 @@ a.sidebar-menu-item {
   content: "";
 }
 
-.sidebar-collapsible > summary:hover {
+@media (hover: hover){.sidebar-collapsible > summary:hover{
   background: var(--bg-1);
   color: var(--fg-0);
-}
+}}
 
 .sidebar-collapsible-chevron {
   display: block;
@@ -4666,10 +6138,10 @@ a.sidebar-menu-item {
   transition: background-color 150ms ease, color 150ms ease;
 }
 
-.sidebar-mobile-toggle:hover {
+@media (hover: hover){.sidebar-mobile-toggle:hover{
   background: var(--bg-1);
   color: var(--fg-0);
-}
+}}
 
 .sidebar-mobile-toggle:focus-visible {
   outline: 2px solid var(--accent);
@@ -5001,9 +6473,9 @@ a.sidebar-menu-item {
   border-bottom: none;
 }
 
-.table tbody tr:hover {
+@media (hover: hover){.table tbody tr:hover{
   background: var(--bg-1);
-}
+}}
 
 .table--striped tbody tr:nth-child(even) {
   background: var(--bg-1);
@@ -5067,9 +6539,9 @@ a.sidebar-menu-item {
   transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
 
-.tabs-trigger:hover {
+@media (hover: hover){.tabs-trigger:hover{
   color: var(--fg-0);
-}
+}}
 
 /* The hidden radio takes keyboard focus; ring is drawn on its label. */
 .tabs-input:focus-visible + .tabs-trigger {
@@ -5207,9 +6679,9 @@ a.sidebar-menu-item {
   line-height: 1;
 }
 
-.tag-pill-remove:hover {
+@media (hover: hover){.tag-pill-remove:hover{
   color: var(--danger);
-}
+}}
 
 /* ── Input field ─────────────────────────────────────────────────── */
 
@@ -5249,9 +6721,9 @@ a.sidebar-menu-item {
   border-radius: var(--radius-sm);
 }
 
-.tag-input-clear:hover {
+@media (hover: hover){.tag-input-clear:hover{
   color: var(--danger);
-}
+}}
 
 /* ── Dropdown ────────────────────────────────────────────────────── */
 
@@ -5277,10 +6749,12 @@ a.sidebar-menu-item {
   cursor: pointer;
 }
 
-.tag-dropdown-item:hover,
-.tag-dropdown-item-active {
+.tag-dropdown-item-active{
   background: var(--bg-1);
 }
+@media (hover: hover){.tag-dropdown-item:hover{
+  background: var(--bg-1);
+}}
 
 .tag-dropdown-empty {
   padding: var(--size-3);
@@ -5319,10 +6793,10 @@ a.sidebar-menu-item {
   padding: 0;
 }
 
-.theme-toggle-btn:hover:not(.theme-toggle-btn-active) {
+@media (hover: hover){.theme-toggle-btn:hover:not(.theme-toggle-btn-active){
   color: var(--fg-1);
   background: var(--bg-2);
-}
+}}
 
 .theme-toggle-btn-active {
   background: var(--bg-0);
@@ -5565,9 +7039,9 @@ a.sidebar-menu-item {
   padding: 0;
 }
 
-.toolbar-group-boxed > .btn:hover:not(:disabled) {
+@media (hover: hover){.toolbar-group-boxed > .btn:hover:not(:disabled){
   background: var(--bg-1);
-}
+}}
 
 .toolbar-group-boxed > .btn.btn-toggled {
   background: var(--bg-0);
@@ -5705,8 +7179,8 @@ a.sidebar-menu-item {
   border-radius: 9999px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+@media (hover: hover){::-webkit-scrollbar-thumb:hover{
   background: var(--fg-2);
-}
+}}
 
 
