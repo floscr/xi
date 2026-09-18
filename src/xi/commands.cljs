@@ -423,7 +423,7 @@
                               :commands  commands
                               :client-id client-id})
           ;; Mirrored (:remote?) command the client has no code for — it's a
-          ;; server-side extension command (/commit, /gtd, …). The server ran
+          ;; server-side extension command (/commit, /kb, …). The server ran
           ;; the real work and broadcasts the resulting events separately, so
           ;; the client must stay silent; only a client that is authoritative
           ;; (standalone/server) reports a genuinely unknown command.

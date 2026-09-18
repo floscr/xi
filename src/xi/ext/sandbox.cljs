@@ -22,7 +22,7 @@
    so a link created inside cwd can't launder reads/writes outside it.
 
    Known gap (v1, by design): extension tools that spawn their own
-   processes (commit, gtd, …) are curated code and not wrapped."
+   processes (commit, …) are curated code and not wrapped."
   (:require [clojure.string :as str]
             [xi.core.state :as state]
             [xi.sandbox.core :as sandbox]

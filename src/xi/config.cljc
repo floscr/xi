@@ -31,7 +31,6 @@
         [xi.ext.file-view.core :as file-view]
         [xi.ext.github :as github]
         [xi.ext.github-code-search.core :as github-code-search]
-        [xi.ext.gtd :as gtd]
         [xi.ext.image-graph :as image-graph]
         [xi.ext.kb :as kb]
         [xi.ext.mcp :as mcp]
@@ -53,7 +52,6 @@
         [xi.ext.subagent :as subagent]
         [xi.ext.terminal-title :as terminal-title]
         [xi.ext.tmp-cleanup-intercept :as tmp-cleanup-intercept]
-        [xi.ext.todo-intercept :as todo-intercept]
         [xi.ext.treesitter.core :as treesitter]
         [xi.ext.web :as web]
         [xi.ext.worktree.core :as worktree]]
@@ -62,7 +60,6 @@
         [xi.ext.diff.web :as diff-web]
         [xi.ext.file-view.web :as file-view-web]
         [xi.ext.github.web :as github-web]
-        [xi.ext.gtd.web :as gtd-web]
         [xi.ext.image-graph.web :as image-graph-web]
         [xi.ext.subagent.web :as subagent-web]])))
 
@@ -123,13 +120,11 @@
       clj-surgeon/extension
       github/extension
       github-code-search/extension
-      gtd/extension
       image-graph/extension
       permission-gate/extension
       ;; clj (sandboxed SCI scripting tool) after the policy gates so its
       ;; tool calls still pass plan-mode/permission-gate first
       clj-tool/extension
-      todo-intercept/extension
       memory-intercept/extension
       treesitter/create
       tmp-cleanup-intercept/extension
@@ -160,7 +155,6 @@
      "Browser-safe extension web halves, composed by xi.web.core."
      [diff-web/extension
       file-view-web/extension
-      gtd-web/extension
       github-web/extension
       canvas-review-web/extension
       image-graph-web/extension

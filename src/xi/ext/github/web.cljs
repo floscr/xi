@@ -34,8 +34,7 @@
 
 (defn- pr-review
   "Open a fresh agent room in the PR's project and seed a review prompt; the
-   pending-submit tap fires it once :room/joined arrives (mirrors
-   gtd-web-start-task)."
+   pending-submit tap fires it once :room/joined arrives."
   [st {:keys [cwd number title]}]
   {:state   (-> st
                 (assoc :web/route {:page :chat})

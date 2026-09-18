@@ -130,7 +130,6 @@ See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider and
 | `PUSHOVER_APP_TOKEN` | — | pushover | Pushover application token. |
 | `PUSHOVER_URL` | — | pushover | Optional URL attached to the push. |
 | `GITHUB_USER_SESSION` | — | github-code-search | GitHub session cookie for github.com code search. |
-| `ORG_CLI_DIR` | `~/Code/Projects/org-mode-agenda-cli` | gtd, todo-intercept | Path to the org-mode agenda CLI. |
 | `WINDOWID` | — | done-notify | Terminal window id used to focus on notification. |
 | `XI_PRODUCT_SEARCH_CHROME` | auto-detected | product-search | Path to the Chrome/Chromium binary used to drive the `amazon_search` / `willhaben_search` / `geizhals_search` headless browser. Falls back to the legacy `XI_AMAZON_CHROME`, then common install paths and `google-chrome-stable` on `PATH`. |
 | `XI_AMAZON_CHROME` | — | product-search | Legacy fallback for `XI_PRODUCT_SEARCH_CHROME`. |

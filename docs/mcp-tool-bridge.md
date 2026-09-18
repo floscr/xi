@@ -60,7 +60,7 @@ becomes an MCP tool:
 
 Extensions extend the tool surface per assembly via
 `:extra-tool-definitions` / `:extra-tool-registry` (e.g. `kb_*`,
-`web_search`, `gtd_*` — see [extensions.md](extensions.md)).
+`web_search` — see [extensions.md](extensions.md)).
 
 In personal-agent mode (`:personal-agent?`), the definitions are filtered
 to `PERSONAL_AGENT_TOOLS` (`web_search` only).

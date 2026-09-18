@@ -130,7 +130,7 @@ No on-enter callback — chain a `:route/navigate` handler:
   `:event` on click.
 - Replicant: seq-rendered siblings need `:replicant/key`.
 
-Canonical examples: `src/xi/ext/gtd/web.cljs`, `src/xi/ext/github/web.cljs`.
+Canonical example: `src/xi/ext/github/web.cljs`.
 
 ## 6. Verify
 

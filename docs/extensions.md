@@ -270,7 +270,7 @@ The two halves share an `:id` and talk over the same WS events
   only in a matching topbar context; the context's `:cwd`/`:room-id`/`:number`
   are merged into the `:event` on click.
 - **`:taps`** — `(fn [dispatch!] → (fn [event state]))` factories, added via
-  `add-tap!` at init (e.g. GTD's fire-pending-task-after-`:room/joined`).
+  `add-tap!` at init (e.g. github's fire-pending-submit-after-`:room/joined`).
 
 ### Routing hooks
 
@@ -279,15 +279,14 @@ handler after the base router handler (`ext/merge-handlers`), syncing
 drill-down state from the route and emitting fetch effects:
 
 ```clojure
-(defn- on-navigate [st {:keys [page file task-id]}]
-  (when (= page :gtd)
-    {:state   (assoc st :web/gtd-file file :web/gtd-task-id task-id)
-     :effects (when (empty? (:web/gtd-tasks st))
-                [[:app/dispatch {:type :gtd/web-list}]])}))
+(defn- on-navigate [st {:keys [page cwd]}]
+  (when (= page :pr-list)
+    {:state   (assoc st :web/pr-cwd cwd)
+     :effects (when (empty? (:web/pulls st))
+                [[:app/dispatch {:type :pr/web-list}]])}))
 ```
 
-Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
-(/pulls PR list/detail/diff pages).
+Example: `xi.ext.github.web` (/pulls PR list/detail/diff pages).
 
 ## Writing a New Extension
 
@@ -355,7 +354,6 @@ Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
 | pushover | handler, keybinding, badge (factory) | Pushover push on turn end / confirm dialog. Ctrl+Shift+P (or the web palette) cycles a per-room tri-state mode: **auto** (default — push only when away: no visible client on server, done-notify bell on standalone), **on** (force pushes even while watching, 📲 badge), **off** (never push). |
 | dictation | handler, keybinding, badge (factory, client-only) | Voice input via sox/whisper. Alt+R to record. |
 | permission-gate | tool-gate | Confirms writes to sensitive paths and dangerous bash commands. |
-| todo-intercept | tool-gate | Intercepts writes to tasks/todo.md → GTD captures. |
 | kb | tools | Knowledge base search/get/store via `kb` CLI. |
 | web | tools | Fetch URLs with HTML→markdown, Jina fallback, feed parsing. |
 | perplexity | tools, command | Web search via Perplexity; `/perplexity-login` to authenticate. |
@@ -363,7 +361,6 @@ Examples: `xi.ext.gtd.web` (/gtd pages, task launcher), `xi.ext.github.web`
 | commit | tools, command | Git workflow; `/commit` builds a prompt from live overview. |
 | review | command | Code review; `/review [staged\|<ref>]` embeds the code-review methodology (four-phase, severity labels) and submits a diff for review. Augments the prompt with project-type guidance auto-detected by marker files (clojure, typescript) plus an optional per-profile override (`bb profile:review-prompt`; `:review-prompt` / `:review-replace`). |
 | clj-surgeon | tools, handler | Structural Clojure refactoring. Auto-fixes parens after write/edit to .clj files. |
-| gtd | tools, command, handler, system-prompt, web | GTD task management. `/gtd` picker, `/gtd recommend`, `/gtd cleanup`. Web half: /gtd pages + task launcher. |
 | github | handler, web | Roomless PR browsing via `gh`. Web half: /pulls list/detail/diff pages + review-with-agent. |
 | terminal-title | handler | Sets terminal title from session name/cwd via ANSI escape. |
 | clipboard-image | event-hook | Converts pasted clipboard image paths to inline base64. |

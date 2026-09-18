@@ -93,7 +93,7 @@
         ;; The room we're leaving is a brand-new session the user never sent
         ;; a message in (no history) and left an empty prompt for. Switching
         ;; straight to another chat would orphan it as an idle "active" room
-        ;; in the lobby, so close it on the way out. (The :home/:gtd branch
+        ;; in the lobby, so close it on the way out. (The roomless-page branch
         ;; below already leaves the room, so we only need this for chat→chat.)
         leaving-empty-new?
         (and active-room (not already?)
@@ -165,7 +165,7 @@
                 (and (roomless page) active-sid)
                 (assoc :web/pending-read active-sid)
                 ;; Leaving the virtual new chat for a real destination (a
-                ;; session, home, or gtd): drop its pending-room so its draft
+                ;; session or home): drop its pending-room so its draft
                 ;; can't resurface in another chat. A fresh virtual chat gets a
                 ;; new pending-room (with a new id) via :room/new.
                 (or (not= page :chat) session-id)

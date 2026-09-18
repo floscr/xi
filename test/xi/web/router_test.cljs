@@ -2,13 +2,11 @@
   (:require [cljs.test :refer [deftest is testing]]
             [xi.core.state :as state]
             [xi.ext.github.web :as github-web]
-            [xi.ext.gtd.web :as gtd-web]
             [xi.web.router :as router]))
 
 ;; Router functions take the composed extension route table — exercise them
-;; with the real extension routes (the /gtd and /pulls routes live there now).
-(def ^:private routes (merge (:routes gtd-web/extension)
-                             (:routes github-web/extension)))
+;; with the real extension routes (the /pulls routes live there now).
+(def ^:private routes (:routes github-web/extension))
 
 ;; ── parse-path ───────────────────────────────────────────────────────────────
 
@@ -31,16 +29,6 @@
     (is (= {:page :home :dir "/home/user/code"}
            (router/parse-path routes (str "/projects/" (js/encodeURIComponent "/home/user/code")))))))
 
-(deftest parse-path-gtd
-  (testing "bare /gtd"
-    (is (= {:page :gtd} (router/parse-path routes "/gtd"))))
-  (testing "file drill-down"
-    (is (= {:page :gtd :file "inbox.org"}
-           (router/parse-path routes "/gtd/inbox.org"))))
-  (testing "task detail"
-    (is (= {:page :gtd :file "inbox.org" :task-id "abcdef01-1234-5678-9abc-000000000000"}
-           (router/parse-path routes "/gtd/inbox.org/abcdef01-1234-5678-9abc-000000000000")))))
-
 (deftest parse-path-pulls
   (testing "pr list for a project"
     (is (= {:page :pr-list :cwd "/home/user/code"}
@@ -53,7 +41,7 @@
            (router/parse-path routes (str "/pulls/42/diff/" (js/encodeURIComponent "/home/user/code")))))))
 
 (deftest roomless-pages-from-routes
-  (is (= #{:home :gtd} (router/roomless-pages routes)))
+  (is (= #{:home} (router/roomless-pages routes)))
   (is (= #{:home} (router/roomless-pages {}))))
 
 ;; ── route->path ──────────────────────────────────────────────────────────────
@@ -67,20 +55,13 @@
     (is (= (str "/projects/" (js/encodeURIComponent "/home/user"))
            (router/route->path routes {:page :home :dir "/home/user"}))))
   (testing "all sessions"
-    (is (= "/projects/all" (router/route->path routes {:page :home :dir :all}))))
-  (testing "gtd file"
-    (is (= (str "/gtd/" (js/encodeURIComponent "inbox.org"))
-           (router/route->path routes {:page :gtd :file "inbox.org"}))))
-  (testing "gtd task"
-    (is (= (str "/gtd/" (js/encodeURIComponent "inbox.org") "/task-uuid")
-           (router/route->path routes {:page :gtd :file "inbox.org" :task-id "task-uuid"})))))
+    (is (= "/projects/all" (router/route->path routes {:page :home :dir :all})))))
 
 (deftest parse-roundtrips
   (doseq [[label route] [["home"        {:page :home}]
                           ["chat"        {:page :chat :session-id "sid1"}]
                           ["project dir" {:page :home :dir "/home/user/code"}]
                           ["all sessions" {:page :home :dir :all}]
-                          ["gtd"         {:page :gtd :file "inbox.org"}]
                           ["pr detail"   {:page :pr-detail :number 7 :cwd "/home/user"}]]]
     (testing (str label " → path → parse")
       (is (= route (router/parse-path routes (router/route->path routes route)))))))
@@ -160,20 +141,6 @@
   (let [st (assoc (state/initial-state) :web/timeline-window {:offset 10 :size 50})
         {:keys [state]} (router/navigate roomless st {:page :home})]
     (is (nil? (:web/timeline-window state)))))
-
-(deftest navigate-gtd-syncs-file-and-task
-  (testing "the GTD ext handler (chained after base navigate) syncs drill-down state"
-    (let [on-nav (get-in gtd-web/extension [:handlers :route/navigate])
-          {:keys [state effects]} (on-nav (state/initial-state)
-                                          {:type :route/navigate :page :gtd
-                                           :file "work.org" :task-id "tid-1"})]
-      (is (= "work.org" (:web/gtd-file state)))
-      (is (= "tid-1" (:web/gtd-task-id state)))
-      (is (has-dispatch? effects :gtd/web-list)
-          "fetches the task list when none is cached")))
-  (testing "non-gtd navigation is a no-op for the ext handler"
-    (let [on-nav (get-in gtd-web/extension [:handlers :route/navigate])]
-      (is (nil? (on-nav (state/initial-state) {:type :route/navigate :page :home}))))))
 
 (deftest navigate-leaving-chat-remembers-session
   (testing "pending-read set when leaving a chat"

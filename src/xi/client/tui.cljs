@@ -340,7 +340,7 @@
   "The curated palette commands (ordering, descriptions, subcommand
    expansions) followed by every other assembly command not in the curated
    set — the TUI shows ALL commands (built-ins + extensions, e.g. /reload,
-   /gtd, /skill), while the web palette sticks to the curated subset."
+   /skill), while the web palette sticks to the curated subset."
   [cmd-list]
   (let [curated-names (into #{} (map :name) palette/palette-commands)]
     (into (vec palette/palette-commands)

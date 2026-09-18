@@ -120,7 +120,7 @@
 
 (deftest mirrored-unknown-command-stays-silent
   ;; A :remote? command the client has no code for is a server-side extension
-  ;; command (/commit, /gtd, …); the client must not report it as unknown.
+  ;; command (/commit, /kb, …); the client must not report it as unknown.
   (let [{:keys [state]} (handle (with-room)
                                 {:type :command/run :room-id "r" :name "commit" :remote? true})]
     (is (= [] (history state)))))

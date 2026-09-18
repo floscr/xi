@@ -12,8 +12,8 @@
    The model drives the canvas through five tools (canvas_review_*). Tools
    only receive {:cwd}, so they can't touch app state directly — instead the
    :tool-gate intercepts each call, dispatches a pure state-mutating event, and
-   short-circuits with {:intercepted true :result …} (the todo-intercept
-   pattern). Canvas state lives room-scoped at [:rooms rid :ext :canvas-review]
+   short-circuits with {:intercepted true :result …} (the tool-gate
+   intercept pattern). Canvas state lives room-scoped at [:rooms rid :ext :canvas-review]
    and mirrors to every client, so the canvas builds up live as the model works.
 
    Node/server half. The browser half (xi.ext.canvas-review.web) renders the

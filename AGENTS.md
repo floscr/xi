@@ -237,7 +237,7 @@ src/xi/
                          (native/xi-treesitter, `bb treesitter:install`), plus a
                          read_source tool for literal code — see docs/treesitter.md
     *.cljs             — extensions: kb, web, perplexity, github_code_search,
-                         commit, clj_surgeon, gtd, permission_gate, todo_intercept,
+                         commit, clj_surgeon, permission_gate,
                          plan_mode, done_notify, pushover, dictation,
                          resume (/trim /rollover /lineage — see docs/resume.md),
                          terminal_title, clipboard_image, projects, skills, events,

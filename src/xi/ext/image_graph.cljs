@@ -17,7 +17,7 @@
    HTTP /api routes (which an <img src> can't send).
 
    Everything I/O runs in server-fx replying to the requesting client; the
-   roomless handlers just forward (mirrors the gtd/projects web pattern)."
+   roomless handlers just forward (mirrors the projects web pattern)."
   (:require [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:os" :as os]

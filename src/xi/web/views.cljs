@@ -263,7 +263,6 @@
     ("Grep" "grep")  (get-arg args :pattern)
     ("Glob" "find")  (get-arg args :pattern)
     ("ls")           (get-arg args :path)
-    "gtd_capture"    (get-arg args :title)
     "git_commit"     (get-arg args :message)
     (let [v (some (fn [k] (let [x (get-arg args k)]
                             (when (and (string? x) (seq x)) x)))
@@ -468,9 +467,6 @@
         clj?      (= "clj" name)
         clj-code  (when clj? (not-empty (str (get-arg arguments :code))))
         clj-preview (when clj-code (first (str/split-lines clj-code)))
-        gtd?      (and (= "gtd_capture" name) (not is-error))
-        gtd-body  (when gtd? (or (not-empty (get-arg arguments :body))
-                                 (get-arg arguments :title)))
         imgs      (seq (result-images result))
         label     (if clj?
                     name
@@ -497,10 +493,6 @@
             (highlight-code g (truncate-lines clj-code 100))
             (plain-code (truncate-lines clj-code 100)))]])
       (cond
-        gtd?
-        (when (seq gtd-body)
-          [:div {:class ["tool-call-content"]}
-           [:div {:class ["post-content"]} (md/render gtd-body)]])
         ;; When the result carries an image (view_image, screenshots) the text is
         ;; just a "Viewed image: /path" caption — drop it and show only the image.
         (and clj? (seq text))

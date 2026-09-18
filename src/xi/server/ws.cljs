@@ -288,7 +288,7 @@
         index (.join path public-dir "index.html")
         has-ext? (re-find #"\.[a-zA-Z0-9]+$" rel)
         ;; SPA route prefixes — always fall back to index.html
-        spa-route? (re-find #"^(chat|gtd)(/|$)" rel)
+        spa-route? (re-find #"^(chat)(/|$)" rel)
         ;; No Cache-Control means iOS/WebKit applies aggressive heuristic
         ;; caching, so edited CSS/JS can stay stale for a long time. Force
         ;; revalidation on every request to keep the PWA in sync with builds.

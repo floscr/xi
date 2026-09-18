@@ -63,7 +63,7 @@ Defined in `xi.commands/built-in-commands`:
 | `/reload` | Restart Xi (picks up recompiled code) |
 | `/quit` | Exit Xi |
 
-Extensions add more (e.g. `/plan`, `/commit`, `/gtd`, `/kb` — see
+Extensions add more (e.g. `/plan`, `/commit`, `/kb` — see
 [extensions.md](extensions.md)).
 
 ## Extension commands

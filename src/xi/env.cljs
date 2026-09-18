@@ -5,7 +5,7 @@
    session launched it. On NixOS a `nixos-rebuild` / home-manager switch made
    *after* that launch leaves the process carrying env vars that point at old
    `/nix/store` paths the current generation no longer sets — most damagingly
-   `DEPS_CLJ_TOOLS_DIR`, which makes every babashka tool (kb, gtd, review, …)
+   `DEPS_CLJ_TOOLS_DIR`, which makes every babashka tool (kb, review, …)
    try to install clojure-tools into the read-only store and crash. Since tool
    subprocesses spawn with `js/process.env`, that stale env poisons all of them.
 
