@@ -141,6 +141,26 @@
   (let [res (eval! "(= (cheshire.core/parse-string (cheshire.core/generate-string {:a 1}) true) {:a 1})")]
     (is (str/includes? (result-text res) "=> true"))))
 
+;; ── numeric parsing (parse-long / Long/parseLong) ────────────────────────────
+
+(deftest parse-long-fn
+  (let [res (eval! "(parse-long \"42\")")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> 42"))))
+
+(deftest parse-long-invalid-nil
+  (let [res (eval! "(parse-long \"nope\")")]
+    (is (str/includes? (result-text res) "=> nil"))))
+
+(deftest parse-double-fn
+  (let [res (eval! "(parse-double \"3.5\")")]
+    (is (str/includes? (result-text res) "=> 3.5"))))
+
+(deftest long-parse-long-static
+  (let [res (eval! "(Long/parseLong \"1024\")")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> 1024"))))
+
 ;; ── fs helpers ───────────────────────────────────────────────────────────────
 
 (deftest tmpdir-and-file-roundtrip

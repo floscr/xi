@@ -466,11 +466,24 @@
   (let [helpers (helper-fns opts)
         ctx (sci/init {:namespaces
                        {'user helpers
-                        ;; shadow the core vars our helpers collide with
-                        'clojure.core (select-keys helpers '[cat find])
+                        ;; shadow the core vars our helpers collide with, plus
+                        ;; the parse-* fns SCI's built-in core lacks (backed by
+                        ;; the host cljs.core implementations).
+                        'clojure.core (merge (select-keys helpers '[cat find])
+                                             {'parse-long    parse-long
+                                              'parse-double  parse-double
+                                              'parse-boolean parse-boolean
+                                              'parse-uuid    parse-uuid})
                         'clojure.data.json json-data-namespace
                         'cheshire.core cheshire-namespace}
                        :classes {'Math js/Math
+                                 ;; JVM-style numeric parsing statics so code
+                                 ;; like (Long/parseLong s) resolves.
+                                 'Long    #js {:parseLong   (fn [s & [radix]]
+                                                              (js/parseInt s (or radix 10)))}
+                                 'Integer #js {:parseInt    (fn [s & [radix]]
+                                                              (js/parseInt s (or radix 10)))}
+                                 'Double  #js {:parseDouble (fn [s] (js/parseFloat s))}
                                  'js/Error js/Error
                                  'Exception js/Error
                                  'Throwable js/Error}})]
