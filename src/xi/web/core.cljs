@@ -31,6 +31,7 @@
             [xi.web.keymap :as keymap]
             [xi.web.router :as router]
             [xi.session.sidebar :as sidebar]
+            [xi.session.recent :as recent]
             [xi.web.views :as views]))
 
 ;; ── Base handlers (browser-safe merge) ───────────────────────────────────────
@@ -1998,9 +1999,27 @@
         (when (not= sid cur)
           (dispatch! {:type :route/navigate :page :chat :session-id sid}))))))
 
+(defn- jump-to-newest-unread!
+  "ALT+u: jump to the most recently active *finished* session that still has
+   unread output (the purple unread dot) — an agent that completed its turn
+   while you were elsewhere. Busy/running sessions are skipped (not finished
+   yet); the current session is skipped too, so repeated presses cycle through
+   unread finished agents newest-first. No-op when nothing qualifies."
+  [st dispatch!]
+  (let [{:keys [recent hidden earlier]} (sidebar/sidebar-session-groups st)
+        cur (get-in st [:web/route :session-id])
+        sid (->> (concat recent hidden earlier)
+                 (filter #(and (:unread? %) (not (:busy? %))))
+                 (remove #(= (:session-id %) cur))
+                 (sort-by #(recent/->ms (:timestamp %)) >)
+                 (some :session-id))]
+    (when sid
+      (dispatch! {:type :route/navigate :page :chat :session-id sid}))))
+
 (defn- install-keybindings!
   "Register the built-in web shortcuts into the view/mode-scoped keymap.
-   Global: ALT+n opens a new chat from any view. Chat pane, normal mode:
+   Global: ALT+n opens a new chat from any view; ALT+u jumps to the newest
+   finished agent with unread output (the purple dot). Chat pane, normal mode:
    `i` focuses the composer (enter insert), `G` scrolls the timeline to the
    bottom, ALT+j/k step to the next/prev session in sidebar order (no wrap).
    Chat pane, insert mode: Escape blurs the composer (back to normal).
@@ -2011,6 +2030,8 @@
                      :run (fn [_ dispatch! _] (dispatch! {:type :room/new}))})
   (keymap/register! {:id :sidebar-toggle :code "Backslash" :alt true :view :any :mode :any
                      :run (fn [_ dispatch! _] (dispatch! {:type :sidebar/toggle}))})
+  (keymap/register! {:id :jump-newest-unread :code "KeyU" :alt true :view :any :mode :any
+                     :run (fn [st dispatch! _] (jump-to-newest-unread! st dispatch!))})
   ;; Ctrl/Cmd+P: instant fuzzy file finder (handle-keydown preventDefaults, so
   ;; the browser's print dialog never opens). :mode :any so it fires while the
   ;; composer is focused too.
