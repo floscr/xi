@@ -958,6 +958,11 @@
                                     (some #(str/includes? cmd %) pg/GUARDED_PATTERNS)))
                           (remove #(str/starts-with? % "rm ")))]
         (cond
+          ;; sudo is never allowed from the agent — hard block, no confirm.
+          (or (contains? (:literals scan) "sudo")
+              (some #(str/includes? % "sudo ") (:commands scan)))
+          (blocked "clj: `sudo` is never allowed from the agent.")
+
           (seq remote)
           (blocked (str "clj: remote shell commands ("
                         (str/join ", " (sort remote))

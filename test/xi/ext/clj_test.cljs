@@ -217,6 +217,18 @@
   (is (= ["git status --short"]
          (:commands (clj-ext/scan-sh-calls "(sh \"git\" \"status\" \"--short\")")))))
 
+(deftest gate-blocks-sudo
+  (let [res (gate {:name "clj" :arguments {:code "(sh \"sudo\" \"rm\" \"-rf\" \"/\")"}}
+                  (gate-ctx))]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "sudo"))))
+
+(deftest gate-blocks-sudo-nested-in-command
+  (let [res (gate {:name "clj" :arguments {:code "(sh \"env\" \"sudo\" \"whoami\")"}}
+                  (gate-ctx))]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "sudo"))))
+
 (deftest gate-blocks-remote-clis
   (let [res (gate {:name "clj" :arguments {:code "(sh \"scp\" \"a\" \"b\")"}}
                   (gate-ctx))]
