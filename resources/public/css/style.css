@@ -2148,6 +2148,14 @@ body {
   color: var(--accent);
 }
 
+.launch-value--clickable {
+  cursor: pointer;
+}
+
+.launch-value--clickable:hover {
+  text-decoration: underline;
+}
+
 .launch-hint {
   color: var(--fg-2);
 }

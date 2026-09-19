@@ -2019,7 +2019,7 @@
    launch header (Xi banner, model, cwd, AGENTS.md files). Works for a virtual
    (not-yet-joined) room too: model/agents-files are simply omitted until the
    first prompt creates the real room."
-  [{:keys [model cwd agents-files pa?]}]
+  [{:keys [model cwd agents-files pa? dispatch!]}]
   [:div {:class ["launch-header"]}
    [:div {:class ["launch-title"]}
     [:span {:class ["launch-brand"]} "Xi"]
@@ -2028,7 +2028,9 @@
    (when model
      [:div {:class ["launch-meta"]}
       [:span {:class ["launch-label"]} "Model: "]
-      [:span {:class ["launch-value"]} model]])
+      [:span {:class ["launch-value" "launch-value--clickable"]
+             :on {:click (fn [_] (dispatch! {:type :palette/open-models}))}}
+       model]])
    (when cwd
      [:div {:class ["launch-meta"]}
       [:span {:class ["launch-label"]} "cwd: "]
@@ -2383,7 +2385,8 @@
                                  {:model model
                                   :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
                                   :agents-files (get-in room [:agent :agents-files])
-                                  :pa? pa?})))
+                                  :pa? pa?
+                                  :dispatch! dispatch!})))
                (when (pos? start)
                  [:div {:class ["load-earlier"] :replicant/key "tl-load-earlier"}
                   (button/button
