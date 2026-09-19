@@ -94,6 +94,10 @@ The permission gate (`ext/permission_gate.cljs`) blocks:
 
 - **Writes to sensitive paths**: `/Mail/`, `/.ssh/`, `/.gnupg/`, `/.password-store/`
 - **Writes to protected paths**: `.env`, `.git/`, `node_modules/`
+- **Writes/edits outside the project repo**: any `write`/`edit` whose path
+  resolves outside the working dir (project repo) and the OS tmp dir requires
+  confirmation. Symlinks are canonicalized so the check can't be laundered
+  through a link created inside the repo; the tmp dir is always allowed.
 - **Dangerous bash patterns**: `rm -rf`, `sudo`, `chmod -R`, `dd if=`, etc.
 
 To add a blocked pattern, edit the pattern/path lists in

@@ -6,7 +6,9 @@
    it (nil → 'Blocked by Xi permission gate') on no. With no client
    attached, :confirm! resolves to its safe default (false), so guarded
    operations are blocked in headless server mode."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xi.sandbox.core :as sandbox]
+            ["os" :as os]))
 
 (def ^:private BLOCKED_PATHS
   "Paths that should never be written to without confirmation."
@@ -36,6 +38,20 @@
   "True when path matches any of the patterns."
   [path patterns]
   (some #(str/includes? (str path) %) patterns))
+
+(defn- outside-project?
+  "True when path resolves outside both the project repo (working dir) and the
+   OS tmp dir — i.e. a write/edit that escapes the repo. Tmp is always allowed.
+   Symlinks are canonicalized (sandbox/real-resolve) so the check can't be
+   laundered through a link created inside cwd."
+  [cwd path]
+  (boolean
+   (when (and cwd path (not (str/blank? (str path))))
+     (let [resolved (sandbox/real-resolve cwd (str path))
+           real-cwd (sandbox/real-resolve cwd ".")
+           tmp      (sandbox/real-resolve cwd (os/tmpdir))]
+       (not (or (sandbox/path-within? resolved real-cwd)
+                (sandbox/path-within? resolved tmp)))))))
 
 (defn server-control-kind
   "When cmd runs the host-server bb control task that would kill the very
@@ -102,7 +118,7 @@
 (defn- tool-gate
   "Guard dangerous operations with user confirmation. Tool names may be
    PascalCase (from the SDK) or lowercase."
-  [tool-call {:keys [confirm!]}]
+  [tool-call {:keys [confirm! cwd]}]
   (let [{:keys [name arguments]} tool-call
         lname (str/lower-case (or name ""))]
     (case lname
@@ -114,6 +130,9 @@
 
           (blocked-path? path BLOCKED_WRITE_PATHS)
           (ask-confirmation tool-call confirm! (str "Write to protected path: " path))
+
+          (outside-project? cwd path)
+          (ask-confirmation tool-call confirm! (str "Write outside the project repo: " path))
 
           :else tool-call))
 

@@ -353,7 +353,7 @@ Example: `xi.ext.github.web` (/pulls PR list/detail/diff pages).
 | done-notify | handler, keybinding, badge | Desktop notification on turn end. Ctrl+Shift+N toggle, 🔔 badge. |
 | pushover | handler, keybinding, badge (factory) | Pushover push on turn end / confirm dialog. Ctrl+Shift+P (or the web palette) cycles a per-room tri-state mode: **auto** (default — push only when away: no visible client on server, done-notify bell on standalone), **on** (force pushes even while watching, 📲 badge), **off** (never push). |
 | dictation | handler, keybinding, badge (factory, client-only) | Voice input via sox/whisper. Alt+R to record. |
-| permission-gate | tool-gate | Confirms writes to sensitive paths and dangerous bash commands. |
+| permission-gate | tool-gate | Confirms writes to sensitive/protected paths, writes/edits outside the project repo (tmp allowed), and dangerous bash commands. |
 | kb | tools | Knowledge base search/get/store via `kb` CLI. |
 | web | tools | Fetch URLs with HTML→markdown, Jina fallback, feed parsing. |
 | perplexity | tools, command | Web search via Perplexity; `/perplexity-login` to authenticate. |

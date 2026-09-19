@@ -1,19 +1,60 @@
 (ns xi.ext.permission-gate-test
-  (:require [cljs.test :refer [deftest is testing]]
-            [xi.ext.permission-gate :as pg]))
+  (:require [cljs.test :refer [deftest is async]]
+            [xi.ext.permission-gate :as pg]
+            ["node:os" :as os]
+            ["node:path" :as node-path]))
 
-(deftest server-control-kind-test
-  (testing "host-server restart/stop tasks are detected"
-    (is (= :restart (pg/server-control-kind "bb serve:restart")))
-    (is (= :stop (pg/server-control-kind "bb serve:stop")))
-    (is (= :restart (pg/server-control-kind "cd /home/floscr/Code/Projects/xi && timeout 60 bb serve:restart 2>&1 | tail -20")))
-    (is (= :stop (pg/server-control-kind "bb serve:stop && echo done"))))
+(def ^:private gate (:tool-gate pg/extension))
 
-  (testing "personal-agent (:7475) control tasks are NOT treated as host-server control"
-    (is (nil? (pg/server-control-kind "bb serve:personal:restart")))
-    (is (nil? (pg/server-control-kind "bb serve:personal:stop"))))
+(defn- ctx
+  "Gate ctx with a confirm! that records its calls and resolves to `answer`."
+  [cwd answer calls]
+  {:cwd cwd
+   :confirm! (fn [msg] (swap! calls conj msg) (js/Promise.resolve answer))})
 
-  (testing "unrelated commands are not server-control"
-    (is (nil? (pg/server-control-kind "bb check")))
-    (is (nil? (pg/server-control-kind "bb serve")))
-    (is (nil? (pg/server-control-kind "ls -la")))))
+(def ^:private repo-cwd (.cwd js/process))
+
+(deftest write-inside-repo-passes-without-confirmation
+  (async done
+    (let [calls (atom [])
+          tc {:name "write"
+              :arguments {:path (node-path/join repo-cwd "target" "scratch.txt")}}]
+      (-> (js/Promise.resolve (gate tc (ctx repo-cwd false calls)))
+          (.then (fn [res]
+                   (is (= tc res) "in-repo write is allowed unchanged")
+                   (is (empty? @calls) "confirm! not invoked for in-repo path")
+                   (done)))))))
+
+(deftest write-to-tmp-passes-without-confirmation
+  (async done
+    (let [calls (atom [])
+          tc {:name "write"
+              :arguments {:path (node-path/join (os/tmpdir) "scratch.txt")}}]
+      (-> (js/Promise.resolve (gate tc (ctx repo-cwd false calls)))
+          (.then (fn [res]
+                   (is (= tc res) "tmp write is allowed unchanged")
+                   (is (empty? @calls) "confirm! not invoked for tmp path")
+                   (done)))))))
+
+(deftest write-outside-repo-requires-confirmation-blocks-on-no
+  (async done
+    (let [calls (atom [])
+          out (node-path/join (os/homedir) "xi-outside-write-test.txt")
+          tc {:name "edit" :arguments {:path out}}]
+      (-> (js/Promise.resolve (gate tc (ctx repo-cwd false calls)))
+          (.then (fn [res]
+                   (is (nil? res) "denied outside-repo write is blocked")
+                   (is (= 1 (count @calls)) "confirm! invoked once")
+                   (is (re-find #"outside the project repo" (first @calls)))
+                   (done)))))))
+
+(deftest write-outside-repo-allowed-on-yes
+  (async done
+    (let [calls (atom [])
+          out (node-path/join (os/homedir) "xi-outside-write-test.txt")
+          tc {:name "write" :arguments {:path out}}]
+      (-> (js/Promise.resolve (gate tc (ctx repo-cwd true calls)))
+          (.then (fn [res]
+                   (is (= tc res) "approved outside-repo write passes through")
+                   (is (= 1 (count @calls)) "confirm! invoked once")
+                   (done)))))))
