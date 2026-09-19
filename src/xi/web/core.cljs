@@ -2205,6 +2205,27 @@
       (dispatch! {:type :web/set-wide :wide? (.-matches mql)})
       (.addEventListener mql "change"
                          (fn [e] (dispatch! {:type :web/set-wide :wide? (.-matches e)}))))
+    ;; Disable iOS back/forward edge-swipe navigation in the home-screen PWA.
+    ;; In standalone mode WebKit cancels the system navigation gesture when the
+    ;; page preventDefaults a touchstart that begins at the screen edge — so
+    ;; block touches starting in a narrow strip on either edge. Only active in
+    ;; standalone: browser Safari's gesture can't be cancelled anyway, and the
+    ;; blocker would just break edge scrolling/taps there. Note preventDefault
+    ;; on touchstart also suppresses scrolling and the synthesized click for
+    ;; that touch, so the strip stays narrow (bezel territory).
+    (when (or (true? (.-standalone js/navigator))
+              (.-matches (.matchMedia js/window "(display-mode: standalone)")))
+      (let [edge-px 24]
+        (.addEventListener
+         js/document "touchstart"
+         (fn [e]
+           (when-let [t (aget (.-touches e) 0)]
+             (let [x (.-clientX t)
+                   w (or (.-innerWidth js/window) 0)]
+               (when (and (.-cancelable e)
+                          (or (<= x edge-px) (>= x (- w edge-px))))
+                 (.preventDefault e)))))
+         #js {:passive false})))
     ;; Left-edge swipe to open the sidebar; swipe left again to close it.
     ;;
     ;; iOS/WebKit reserves the extreme left edge (~first 20px) for its own
