@@ -362,6 +362,18 @@
                               (disj s filename)
                               (conj s filename)))))})
 
+(defn- diff-toggle-all
+  "Collapse or expand every file body in the diff view at once. When all of the
+   diff's `filenames` are already in `:web/diff-collapsed`, clear them (expand
+   all); otherwise add them all (collapse all)."
+  [st {:keys [filenames]}]
+  {:state (update st :web/diff-collapsed
+                  (fn [s]
+                    (let [s (or s #{})]
+                      (if (every? s filenames)
+                        (apply disj s filenames)
+                        (into s filenames)))))})
+
 (defn- diff-modify-toggle [st _]
   {:state (update st :web/diff-modify? not)})
 
@@ -996,6 +1008,7 @@
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
           :diff/toggle-file      diff-toggle-file
+          :diff/toggle-all       diff-toggle-all
           :diff/modify-toggle    diff-modify-toggle
           :diff/explain          diff-explain
           :diff/modify-submit    diff-modify-submit

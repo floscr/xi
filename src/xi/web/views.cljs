@@ -1643,7 +1643,7 @@
    as a dynamic option, and a trailing \"Pick a commit…\" entry opens the
    commits command bar to choose another. The engine toggle reuses the active
    method, so flipping git/difftastic keeps the same commit in view."
-  [dispatch! room-id diff-buffer engine]
+  [dispatch! room-id diff-buffer engine collapse-opts]
   (let [commit  (:commit diff-buffer)
         engine  (or engine :git)
         method  (if commit
@@ -1652,7 +1652,8 @@
         options (cond-> diff-methods
                   commit  (conj {:value (str "commit:" (:sha commit))
                                  :label (str "Commit " (:short commit))})
-                  :always (conj {:value "__pick-commit__" :label "Pick a commit…"}))]
+                  :always (conj {:value "__pick-commit__" :label "Pick a commit…"}))
+        {:keys [filenames all-collapsed?]} collapse-opts]
     [:div {:class ["diff-method-bar"]}
      (form/form-select
       {:options   options
@@ -1667,7 +1668,16 @@
        :value     (name engine)
        :on-change (fn [v]
                     (dispatch! {:type :diff/reopen :room-id room-id
-                                :method method :engine (keyword v)}))})]))
+                                :method method :engine (keyword v)}))})
+     (when (seq filenames)
+       (let [label (if all-collapsed? "Expand all files" "Collapse all files")]
+         (button/button
+          {:variant :ghost :size :sm
+           :class "diff-collapse-all"
+           :icon (if all-collapsed? :chevron-right :chevron-down)
+           :attrs {:aria-label label :title label}
+           :on-click (fn [_] (dispatch! {:type :diff/toggle-all
+                                         :filenames filenames}))})))]))
 
 (defn- commit-info-header
   "Message + metadata for a single-commit diff, shown above the diff body. The
@@ -1736,19 +1746,26 @@
    difftastic diffs are read-only structural text colored from their ANSI
    (red = removed, green = added)."
   [dispatch! room-id diff-buffer sel modify? collapsed]
-  (let [engine (or (:engine diff-buffer) :git)]
+  (let [engine (or (:engine diff-buffer) :git)
+        git?   (not= engine :difft)
+        rows   (when git? (diff/diff-rows (diff/parse-diff-text (:text diff-buffer))))
+        filenames (when git?
+                    (into [] (comp (filter #(= :file (:row %))) (map :filename)) rows))
+        collapsed (or collapsed #{})]
     [:div {:class ["diff-tab"]}
-     (diff-method-bar dispatch! room-id diff-buffer engine)
+     (diff-method-bar dispatch! room-id diff-buffer engine
+                      (when (seq filenames)
+                        {:filenames filenames
+                         :all-collapsed? (every? collapsed filenames)}))
      (when-let [c (:commit diff-buffer)]
        (commit-info-header c))
      (if (= engine :difft)
        (into [:pre {:class ["diff-difft"]}] (difft-spans (:text diff-buffer)))
-       (let [rows  (diff/diff-rows (diff/parse-diff-text (:text diff-buffer)))
-             range (diff/selection-range sel)]
+       (let [range (diff/selection-range sel)]
          (diff-rows-view dispatch! rows range
                          (when range
                            (diff-action-bar dispatch! room-id rows range modify?))
-                         {:collapsed (or collapsed #{})})))]))
+                         {:collapsed collapsed})))]))
 
 (def ^:private markdown-exts
   "Extensions rendered as formatted markdown (HTML markup) instead of
