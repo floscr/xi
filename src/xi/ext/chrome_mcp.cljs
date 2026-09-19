@@ -34,7 +34,8 @@
                             default dotfiles `browser` bin)
      XI_CHROME_WORKSPACE    dedicated xmonad workspace name to act on when no
                             driving terminal resolves (web-client / server-
-                            started sessions); last-resort scoping anchor"
+                            started sessions); last-resort scoping anchor,
+                            defaults to `mcp` when unset"
   (:require [clojure.string :as str]
             [xi.ext.chrome-mcp.guard :as guard]
             [xi.ext.chrome-mcp.launch :as launch]

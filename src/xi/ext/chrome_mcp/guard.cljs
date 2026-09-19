@@ -19,10 +19,12 @@
    workspace' bug. When there is no `:client-pid` (e.g. a web client, or a
    sub-agent turn before the pid was threaded) or it can't be placed, the guard
    falls back to the last pid-resolved workspace, then to the workspace the
-   agent's Chrome windows already live on, then to a dedicated workspace name
-   (`XI_CHROME_WORKSPACE`) if configured — and when nothing resolves it refuses
-   to act. The currently-viewed workspace (`wm current`) is never used as a
-   target: it follows the user's gaze, not the agent.
+   agent's Chrome windows already live on, then to a dedicated workspace name —
+   `XI_CHROME_WORKSPACE` if configured, else the default `mcp` workspace — so
+   web-client / headless server-started turns act on a fixed designated
+   workspace instead of being refused. The currently-viewed workspace
+   (`wm current`) is never used as a target: it follows the user's gaze, not
+   the agent.
 
    Invariant: before any page-acting tool (click, navigate, screenshot, …) the
    mcp *selected page* is made a current-workspace page, so those tools are
@@ -86,15 +88,25 @@
 (defn- owned-only?* []
   (boolean (some-> (env "XI_CHROME_OWN_WINDOWS_ONLY") str/trim not-empty)))
 
+;; The default workspace *name* used as the ultimate last-resort anchor when no
+;; driving terminal resolves and XI_CHROME_WORKSPACE is unset. Web-client /
+;; headless server-started sessions have no local terminal PID, so on a fresh
+;; server (no prior TUI turn, no existing MCP-Chrome window) nothing else
+;; resolves — rather than refuse, act on a dedicated `mcp` workspace, moving the
+;; agent's Chrome windows there. Overridable via XI_CHROME_WORKSPACE.
+(def ^:private default-ws
+  (or (some-> (env "XI_CHROME_WORKSPACE") str/trim not-empty)
+      "mcp"))
+
 ;; A dedicated xmonad workspace *name* the agent may act on when no driving
 ;; terminal resolves (e.g. a web client, which has no local terminal window, or
 ;; a server-started session). It is the last-resort anchor in the fallback
 ;; chain — real TUI sessions still resolve their own workspace per client PID,
 ;; so this only applies when nothing else does. Unlike `wm current`, it is a
 ;; fixed designated workspace, so pid-less turns act there instead of chasing
-;; the user's gaze (or being refused outright).
-(defn- configured-ws* []
-  (some-> (env "XI_CHROME_WORKSPACE") str/trim not-empty))
+;; the user's gaze. Falls back to the `mcp` workspace when unset, so pid-less
+;; turns are never refused outright.
+(defn- configured-ws* [] default-ws)
 
 ;; A synthetic workspace name used purely as the membership key in
 ;; owned-windows-only mode. Never a real xmonad workspace, so only windows this
@@ -340,32 +352,17 @@
                 (-> (reconcile! ws)
                     (.then (fn [_] (forward tool args))))))
 
-            (workspace-from-windows []
-              ;; → Promise<ws|nil> — where the agent's Chrome already lives: a
-              ;; workspace this process placed a window on (owned*), else the
-              ;; single workspace holding ALL MCP-Chrome windows (unambiguous);
-              ;; nil when there's nothing to anchor to.
-              (if-let [ws (first (vals @owned*))]
-                (js/Promise.resolve ws)
-                (-> (wm/chrome-windows)
-                    (.then (fn [wins]
-                             (let [wss (into #{} (keep :workspace) wins)]
-                               (when (= 1 (count wss)) (first wss)))))
-                    (.catch (fn [_] nil)))))
-
             (fallback-workspace []
-              ;; → Promise<ws|nil> for turns with no (resolvable) client pid.
-              ;; NEVER `wm current`: the viewed workspace follows the user's
-              ;; eyes, not the agent — anchoring to it was the 'about:blank
-              ;; windows chase my gaze' bug (every action while the user viewed
-              ;; another workspace self-healed a blank window *there*).
-              ;; Last resort: a dedicated workspace name (XI_CHROME_WORKSPACE)
-              ;; so web-client / server-started turns act on a fixed designated
-              ;; workspace instead of being refused.
-              (if-let [ws @last-ws*]
-                (js/Promise.resolve ws)
-                (-> (workspace-from-windows)
-                    (.then (fn [ws] (or ws (configured-ws*)))))))
+              ;; → Promise<ws> for turns with no (resolvable) client pid (web
+              ;; client / headless server). Prefer the last PID-resolved
+              ;; workspace (so web/sub-agent turns in a session that ALSO has a
+              ;; driving terminal follow it), else the dedicated `mcp` workspace
+              ;; (XI_CHROME_WORKSPACE override). NEVER `wm current` (chases the
+              ;; user's gaze) and — unlike PID-driven turns — NEVER a stray
+              ;; existing window's workspace: a headless/web session must always
+              ;; land on its own fixed workspace, not wherever a Chrome window
+              ;; happens to sit.
+              (js/Promise.resolve (or @last-ws* (configured-ws*))))
 
             (resolve-workspace [ctx]
               ;; Owned-only: a fixed per-process sentinel — membership is by
@@ -373,7 +370,7 @@
               ;; Otherwise: this session's TUI-terminal workspace name from the
               ;; driving client's pid, cached in last-ws* so pid-less turns
               ;; (sub-agents, web clients) stay anchored to the agent's
-              ;; workspace; else where the agent's Chrome windows already are.
+              ;; workspace; else the dedicated `mcp` workspace (fallback).
               ;; The user's currently-viewed workspace is never consulted.
               (cond
                 owned-only?       (js/Promise.resolve owned-sentinel)
@@ -437,17 +434,15 @@
               ;; window). Same on errors — fail closed, never forward unscoped.
               (-> (resolve-workspace ctx)
                   (.then (fn [ws]
+                           ;; ws is never nil now: fallback-workspace bottoms
+                           ;; out at the default `mcp` workspace. Kept as a
+                           ;; defensive guard — fail closed, never unscoped.
                            (if (nil? ws)
-                             (blocked (str "Could not determine this agent's workspace: "
-                                           "no driving terminal client, no previously "
-                                           "resolved workspace, and no unambiguous "
-                                           "existing MCP-Chrome window to anchor to. "
-                                           "Refusing to act on the user's currently-viewed "
-                                           "workspace (fail-safe). Drive the session from "
-                                           "a terminal, open the shared Chrome on the "
-                                           "agent's workspace first, or set "
-                                           "XI_CHROME_WORKSPACE to a dedicated workspace "
-                                           "name for web/headless-driven sessions."))
+                             (blocked (str "Could not determine this agent's workspace "
+                                           "and refusing to act unscoped (fail-safe). "
+                                           "Set XI_CHROME_WORKSPACE to a dedicated "
+                                           "workspace name for web/headless-driven "
+                                           "sessions."))
                              (-> (ensure-chrome! ws)
                                  (.then (fn [_] (dispatch tool args ws)))))))
                   (.catch (fn [e]

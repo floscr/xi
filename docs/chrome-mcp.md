@@ -42,7 +42,7 @@ the 29 browser tools aren't advertised on every turn by default.
 | `XI_CHROME_MCP_TIMEOUT_MS` | Per-call cap (ms) on a chrome-devtools-mcp JSON-RPC request, so a wedged child / stalled stdio pipe surfaces as an error tool-result instead of hanging the turn forever. Default `120000` (generous, so it only fires on a true wedge, never on a legit-slow op); `<= 0` disables. |
 | `XI_CHROME_LAUNCH_BIN` | Absolute path to the launcher used to **start the shared OS Chrome** when it isn't running (attach mode only). Default: the dotfiles `browser` bin (`google-chrome-stable --remote-debugging-port=9222 …`). Must be absolute — the server's PATH doesn't include dotfiles/bin. |
 | `XI_CHROME_NO_SCOPE` | Disable workspace scoping even in attach mode (any non-empty value). |
-| `XI_CHROME_WORKSPACE` | A dedicated xmonad workspace **name** used as the last-resort anchor when no driving terminal resolves — e.g. **web-client** or server-started sessions that have no local terminal PID. Without it such turns are refused (fail-safe); with it they act on this fixed workspace. Real TUI sessions still resolve their own workspace per client PID, so this only applies when nothing else does. |
+| `XI_CHROME_WORKSPACE` | A dedicated xmonad workspace **name** used as the last-resort anchor when no driving terminal resolves — e.g. **web-client** or server-started sessions that have no local terminal PID. **Defaults to `mcp`** when unset, so such turns act on (and create their windows on) a dedicated `mcp` workspace instead of being refused; set this to point them at a different workspace name. Real TUI sessions still resolve their own workspace per client PID, so this only applies when nothing else does. |
 | `XI_CHROME_OWN_WINDOWS_ONLY` | Isolate by **window ownership** instead of xmonad workspace (any non-empty value). Each agent only ever acts on Chrome windows *it* created — for several agents sharing one Chrome on one workspace (see [Owned-windows-only mode](#owned-windows-only-mode)). |
 | `XI_CHROME_WM_CLASS` | WM_CLASS substring identifying the shared Chrome for scoping (default `chrome-profile-stable`). |
 | `XI_CHROME_WM_BIN` | Absolute path to the dotfiles `wm` CLI used for scoping (default `/home/floscr/.config/dotfiles/bin/wm`). Must be absolute — the server's PATH doesn't include dotfiles/bin. |
@@ -178,26 +178,32 @@ When no `:client-pid` is present (a **web client**, which has no local terminal
 window, or any caller that didn't send a PID) — or the PID can't be placed —
 the guard falls back, in order, to:
 
-1. the **last PID-resolved workspace** of this server process (cached), then
-2. the workspace the **agent's Chrome windows already live on**: a workspace
-   this process placed a self-created window on (`owned*`), else the single
-   workspace holding *all* MCP-Chrome windows (only when unambiguous), then
-3. a **dedicated configured workspace** name, `XI_CHROME_WORKSPACE`, if set.
-   This is the knob for web-client / server-started sessions: they have no
-   local terminal PID, so on a fresh server (no prior TUI turn, no existing
-   MCP-Chrome window) steps 1–2 yield nothing and the call would otherwise be
-   refused. Point it at a workspace name you reserve for the agent and those
-   turns act there instead. It is a *fixed* designated workspace, never `wm
-   current`, so it does not chase the user's gaze.
+1. the **last PID-resolved workspace** of this server process (cached), so
+   web-client / sub-agent turns in a session that *also* has a driving terminal
+   follow that terminal's workspace, then
+2. a **dedicated workspace** name — `XI_CHROME_WORKSPACE` if set, else the
+   default **`mcp`** workspace.
+
+The dedicated workspace is the anchor for **headless / web-only** sessions:
+they have no local terminal PID, so step 1 never resolves and the guard always
+lands on the `mcp` workspace (moving the agent's Chrome windows there), never on
+wherever a stray Chrome window happens to sit. Set `XI_CHROME_WORKSPACE` to
+reserve a different name. It is a *fixed* designated workspace, never `wm
+current`, so it does not chase the user's gaze.
+
+Note the fallback **deliberately ignores existing Chrome windows on other
+workspaces** — a headless/web session must always act on its own fixed
+workspace, not adopt a window the user (or a prior terminal turn) left
+elsewhere.
 
 It **never** falls back to `wm current`: the viewed workspace follows the
 user's eyes, not the agent — anchoring to it made every action taken while the
 user viewed another workspace self-heal an `about:blank` window *on that
-workspace* (windows chasing the user's gaze). When nothing resolves at all, the
-call is **blocked with an explanatory error** — never forwarded unscoped
-(unscoped acts on Chrome's focused window, i.e. wherever the user is), and
-never aimed at the viewed workspace. Errors in scoping fail closed the same
-way.
+workspace* (windows chasing the user's gaze). Because the fallback always
+resolves a workspace, a call is never refused for lack of one; if scoping errors
+out it fails closed — **blocked**, never forwarded unscoped (unscoped acts on
+Chrome's focused window, i.e. wherever the user is), and never aimed at the
+viewed workspace.
 
 Workspaces are keyed by **name**, never index: xmonad workspaces grow and
 shrink as they are created/destroyed, so a desktop *index* is unstable — it can
