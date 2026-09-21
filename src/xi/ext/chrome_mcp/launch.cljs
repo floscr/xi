@@ -18,12 +18,17 @@
 
 (defn- env [k] (aget js/process.env k))
 
-(defn- launch-bin
-  "Absolute path to the Chrome launcher. Overridable via XI_CHROME_LAUNCH_BIN.
-   Must be absolute — the long-lived server's PATH doesn't include dotfiles/bin."
+(defn- launch-cmd
+  "Command line `[bin & args]` for the Chrome launcher. Overridable via
+   XI_CHROME_LAUNCH_BIN, which may include arguments (whitespace-split, no
+   quoting — so paths in it must not contain spaces), e.g.
+   `google-chrome-stable --remote-debugging-port=9333 --user-data-dir=…`.
+   The binary should be absolute when the caller's PATH can't resolve it —
+   the long-lived server's PATH doesn't include dotfiles/bin."
   []
-  (or (some-> (env "XI_CHROME_LAUNCH_BIN") str/trim not-empty)
-      "/home/floscr/.config/dotfiles/bin/browser"))
+  (let [s (or (some-> (env "XI_CHROME_LAUNCH_BIN") str/trim not-empty)
+              "/home/floscr/.config/dotfiles/bin/browser")]
+    (remove str/blank? (str/split s #"\s+"))))
 
 (defn- sleep [ms] (js/Promise. (fn [res] (js/setTimeout res ms))))
 
@@ -46,7 +51,8 @@
    the normal connection error."
   []
   (try
-    (let [child (.spawn child-process (launch-bin) #js []
+    (let [[bin & args] (launch-cmd)
+          child (.spawn child-process bin (into-array args)
                         #js {:detached true :stdio "ignore" :env js/process.env})]
       (.unref child)
       true)

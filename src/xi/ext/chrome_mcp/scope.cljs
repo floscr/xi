@@ -69,9 +69,14 @@
 
 (defn empty-page-url?
   "URL of a contentless page (blank tab or Chrome's New Tab) — safe to reuse by
-   navigating it in place instead of stacking yet another tab beside it."
+   navigating it in place instead of stacking yet another tab beside it.
+   Includes the guard's own marked blanks (`about:blank#xi-…`), which carry a
+   unique fragment purely so they can be correlated across sources."
   [u]
-  (contains? #{"about:blank" "chrome://newtab/"} (norm-url u)))
+  (let [u (norm-url u)]
+    (boolean (and u (or (= u "chrome://newtab/")
+                        (= u "about:blank")
+                        (str/starts-with? u "about:blank#"))))))
 
 (defn- titles-loosely-equal?
   "Titles from two sources for the same tab; exact, else one contains the other
@@ -102,17 +107,34 @@
 
 (defn- correlate-pages->wid
   "Map each mcp page id → CDP window-id. Prefer positional correlation (robust
-   for about:blank and duplicate URLs); fall back to unique-URL matching when
-   the two lists don't line up (different length or a URL contradiction)."
-  [pages cdp-targets]
+   for about:blank and duplicate URLs); fall back to URL matching when the two
+   lists don't line up (different length or a URL contradiction).
+
+   URL fallback ties (the same URL open in several windows — e.g. a stale
+   window from a previous agent run showing the page this agent just navigated
+   to) are broken by ownership + mcp selection: the chrome-devtools-mcp
+   instance is per-process, so its [selected] page is *this* agent's page —
+   map it to an owned window when one shows that URL, and map non-selected
+   pages away from owned windows. Single-URL matches stay exact."
+  [pages cdp-targets owned-wids]
   (if (pages-aligned? pages cdp-targets)
     (into {} (map (fn [p t] [(:id p) (:window-id t)]) pages cdp-targets))
-    (let [url->wid (reduce (fn [m {:keys [url window-id]}]
-                             (let [u (norm-url url)]
-                               (cond-> m (and u (not (contains? m u)))
-                                       (assoc u window-id))))
-                           {} cdp-targets)]
-      (into {} (map (fn [{:keys [id url]}] [id (get url->wid (norm-url url))]) pages)))))
+    (let [owned?    (set owned-wids)
+          url->wids (reduce (fn [m {:keys [url window-id]}]
+                              (let [u (norm-url url)]
+                                (cond-> m u (update u (fnil conj []) window-id))))
+                            {} cdp-targets)]
+      (into {}
+            (map (fn [{:keys [id url selected?]}]
+                   (let [wids (distinct (get url->wids (norm-url url)))]
+                     [id (cond
+                           (empty? wids)      nil
+                           (= 1 (count wids)) (first wids)
+                           selected?          (or (first (filter owned? wids))
+                                                  (first wids))
+                           :else              (or (first (remove owned? wids))
+                                                  (first wids)))])))
+            pages))))
 
 (defn- window->workspace
   "Map each CDP windowId → xmonad workspace *name* by matching any of the
@@ -161,7 +183,7 @@
    the guard opens a new tab in one of these to reuse an existing window instead
    of spawning a fresh one."
   [{:keys [pages cdp-targets wm-windows launch-workspace owned-window-workspaces]}]
-  (let [page->wid (correlate-pages->wid pages cdp-targets)
+  (let [page->wid (correlate-pages->wid pages cdp-targets (keys owned-window-workspaces))
         wid->ws (merge (window->workspace cdp-targets wm-windows)
                        owned-window-workspaces)
         page->ws (into {} (map (fn [{:keys [id]}]

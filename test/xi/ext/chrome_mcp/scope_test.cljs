@@ -146,6 +146,52 @@
       (is (= #{6} (:in-workspace r)) "the owned blank is ours; Shovels ('shovels') is not")
       (is (true? (:selected-in? r))))))
 
+(deftest classify-marked-blank-unaligned-test
+  (testing "a guard-created marked blank (about:blank#xi-…) is recognized via
+            unique-URL correlation even when the mcp page order does not match
+            the CDP target order (positional alignment broken) and a bare
+            bootstrap about:blank sits next to it"
+    (let [s {:pages [{:id 1 :title "Example Domain" :url "https://example.com/" :selected? true}
+                     {:id 2 :title "about:blank" :url "about:blank" :selected? false}
+                     {:id 3 :title "about:blank#xi-42-1" :url "about:blank#xi-42-1" :selected? false}]
+             ;; CDP reports the same targets in a DIFFERENT order
+             :cdp-targets [{:url "about:blank" :title "about:blank" :window-id 100}
+                           {:url "https://example.com/" :title "Example Domain" :window-id 200}
+                           {:url "about:blank#xi-42-1" :title "" :window-id 300}]
+             :wm-windows []
+             :launch-workspace "__xi-owned-window__"
+             :owned-window-workspaces {300 "__xi-owned-window__"}}
+          r (scope/classify s)]
+      (is (= #{3} (:in-workspace r)) "only the marked blank in the owned window is ours")
+      (is (= #{300} (:in-workspace-window-ids r))))))
+
+(deftest classify-duplicate-url-owned-tiebreak-test
+  (testing "URL-fallback ties (same URL in a stale foreign window AND the
+            agent's own window) map the mcp-selected page to the owned window
+            and the non-selected twin away from it"
+    (let [s {:pages [{:id 1 :title "Example Domain" :url "https://example.com/" :selected? false}
+                     {:id 2 :title "about:blank" :url "about:blank" :selected? false}
+                     {:id 5 :title "Example Domain" :url "https://example.com/" :selected? true}]
+             ;; order differs from mcp -> positional alignment is out;
+             ;; example.com appears in TWO windows (stale 200, owned 300)
+             :cdp-targets [{:url "https://example.com/" :title "Example Domain" :window-id 200}
+                           {:url "about:blank" :title "about:blank" :window-id 100}
+                           {:url "https://example.com/" :title "Example Domain" :window-id 300}]
+             :wm-windows []
+             :launch-workspace "__xi-owned-window__"
+             :owned-window-workspaces {300 "__xi-owned-window__"}}
+          r (scope/classify s)]
+      (is (= #{5} (:in-workspace r)) "only the selected page maps to the owned window")
+      (is (true? (:selected-in? r)))
+      (is (nil? (get-in r [:page->workspace 1])) "foreign twin is not attributed to the owned window"))))
+
+(deftest empty-page-url-test
+  (is (true? (scope/empty-page-url? "about:blank")))
+  (is (true? (scope/empty-page-url? "chrome://new-tab-page/")))
+  (is (true? (scope/empty-page-url? "about:blank#xi-42-7")) "marked blanks are still empty pages")
+  (is (false? (scope/empty-page-url? "https://example.com/")))
+  (is (false? (scope/empty-page-url? nil))))
+
 (deftest filter-list-pages-text-test
   (let [text (str "## Pages\n"
                   "6: Shovels (https://app.shovels.ai/)\n"

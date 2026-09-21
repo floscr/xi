@@ -113,6 +113,19 @@
 ;; process explicitly records under it count as "ours".
 (def ^:private owned-sentinel "__xi-owned-window__")
 
+;; Blank windows the guard creates get a unique fragment (`about:blank#xi-…`)
+;; instead of a bare about:blank. Correlating mcp pages to CDP windows by list
+;; POSITION is no longer reliable (chrome-devtools-mcp orders its page list
+;; differently from Target.getTargets), and the URL fallback can't tell two
+;; bare about:blank pages apart — so a guard-created window next to Chrome's
+;; bootstrap blank tab was never recognized as ours, and every call self-healed
+;; yet another blank window. The fragment makes the URL unique across both
+;; sources, so URL correlation is exact. `scope/empty-page-url?` still treats
+;; marked blanks as empty (reusable) pages.
+(def ^:private blank-nonce* (atom 0))
+(defn- marked-blank-url []
+  (str "about:blank#xi-" js/process.pid "-" (swap! blank-nonce* inc)))
+
 ;; ── install ──────────────────────────────────────────────────────────────────
 
 (defn install
@@ -177,15 +190,16 @@
                 (step 12)))
 
             (ensure-window! [ws]
-              ;; open a new Chrome window, record it as owned on `ws`, move it
-              ;; there, and select it in mcp
+              ;; open a new Chrome window (marked blank URL, so classify can
+              ;; correlate it), record it as owned on `ws`, move it there, and
+              ;; select it in mcp
               (if owned-only?
                 ;; Owned-only: no workspace placement — just create the window,
                 ;; adopt it by its CDP window id (that's the whole isolation),
                 ;; and select it. No wm calls (wm is intentionally unused here).
                 (-> (cdp-client)
                     (.then (fn [c]
-                             (-> (cdp/create-window c "about:blank")
+                             (-> (cdp/create-window c (marked-blank-url))
                                  (.then (fn [tid] (cdp/window-for-target c tid)))
                                  (.then (fn [win-id]
                                           (when win-id (swap! owned* assoc win-id ws)))))))
@@ -195,7 +209,7 @@
                     (.then (fn [before]
                              (-> (cdp-client)
                                  (.then (fn [c]
-                                          (-> (cdp/create-window c "about:blank")
+                                          (-> (cdp/create-window c (marked-blank-url))
                                               (.then (fn [tid] (cdp/window-for-target c tid)))
                                               (.then (fn [win-id]
                                                        (when win-id (swap! owned* assoc win-id ws)))))))
@@ -320,7 +334,10 @@
               ;; (open a tab in it via CDP with an explicit windowId — cheap, no
               ;; flash); only when `ws` has no window do we spawn a fresh OS
               ;; window.
-              (let [url (or (:url args) "about:blank")]
+              (let [url (or (:url args) "about:blank")
+                    ;; a requested blank gets the unique marker so the new
+                    ;; page stays correlatable next to other blank tabs
+                    url (if (= "about:blank" (str/trim url)) (marked-blank-url) url)]
                 (-> (classify ws)
                     (.then (fn [{:keys [scope text]}]
                              (let [pages    (scope/parse-pages text)
