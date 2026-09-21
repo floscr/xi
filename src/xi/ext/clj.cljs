@@ -478,6 +478,96 @@
      'generate-string gen
      'encode gen}))
 
+(defn- format-sign [neg? flags]
+  (cond neg?                        "-"
+        (str/includes? flags "+") "+"
+        (str/includes? flags " ") " "
+        :else                      ""))
+
+(defn- format-pad
+  "Pad `body` (prefixed by `sign` for numbers) to `width`, honoring the -/0 flags."
+  [body sign flags width]
+  (let [width (if (seq width) (js/parseInt width 10) 0)
+        left? (str/includes? flags "-")
+        zero? (and (str/includes? flags "0") (not left?))
+        pad-n (max 0 (- width (count sign) (count body)))]
+    (cond
+      left? (str sign body (str/join (repeat pad-n " ")))
+      zero? (str sign (str/join (repeat pad-n "0")) body)
+      :else (str (str/join (repeat pad-n " ")) sign body))))
+
+(defn- sandbox-format
+  "sprintf-like `format` for the sandbox — SCI/goog's format lacks hex (%x) and
+   several other conversions. Supports %s %S %d %i %u %o %x %X %e %E %f %g %G %c
+   %b %B %% with -/+/space/0/# flags, width and .precision."
+  [fmt & args]
+  (let [remaining (atom args)
+        next-arg! (fn [] (let [[a & r] @remaining] (reset! remaining r) a))]
+    (str/replace
+     fmt
+     #"%([-+ 0#]*)(\d+)?(?:\.(\d+))?([%sSdiouxXeEfgGcbB])"
+     (fn [[whole flags width prec conv]]
+       (let [flags (or flags "")]
+         (if (= conv "%")
+           "%"
+           (let [v (next-arg!)]
+             (case conv
+               ("s" "S")
+               (let [s (if (nil? v) "null" (str v))
+                     s (if (= conv "S") (str/upper-case s) s)
+                     s (if (seq prec) (subs s 0 (min (count s) (js/parseInt prec 10))) s)
+                     left? (str/includes? flags "-")
+                     width (if (seq width) (js/parseInt width 10) 0)
+                     pad-n (max 0 (- width (count s)))]
+                 (if left?
+                   (str s (str/join (repeat pad-n " ")))
+                   (str (str/join (repeat pad-n " ")) s)))
+
+               ("d" "i" "u" "o" "x" "X")
+               (let [n      (js/Math.trunc v)
+                     neg?   (neg? n)
+                     mag    (js/Math.abs n)
+                     digits (case conv
+                              ("d" "i" "u") (.toString mag 10)
+                              "o"           (.toString mag 8)
+                              "x"           (.toString mag 16)
+                              "X"           (str/upper-case (.toString mag 16)))
+                     digits (if (seq prec)
+                              (let [p (js/parseInt prec 10)]
+                                (str (str/join (repeat (max 0 (- p (count digits))) "0")) digits))
+                              digits)
+                     prefix (if (and (str/includes? flags "#") (not (zero? mag)))
+                              (case conv "x" "0x" "X" "0X" "o" "0" "")
+                              "")]
+                 (format-pad (str prefix digits) (format-sign neg? flags) flags width))
+
+               ("f" "e" "E" "g" "G")
+               (let [p    (if (seq prec) (js/parseInt prec 10) 6)
+                     neg? (neg? v)
+                     mag  (js/Math.abs v)
+                     body (case conv
+                            "f"       (.toFixed mag p)
+                            ("e" "E") (.toExponential mag p)
+                            ("g" "G") (.toPrecision mag (max 1 p)))
+                     body (if (or (= conv "E") (= conv "G")) (str/upper-case body) body)]
+                 (format-pad body (format-sign neg? flags) flags width))
+
+               "c"
+               (let [s     (if (number? v) (js/String.fromCharCode v) (str v))
+                     left? (str/includes? flags "-")
+                     width (if (seq width) (js/parseInt width 10) 0)
+                     pad-n (max 0 (- width (count s)))]
+                 (if left?
+                   (str s (str/join (repeat pad-n " ")))
+                   (str (str/join (repeat pad-n " ")) s)))
+
+               ("b" "B")
+               (let [s (if v "true" "false")
+                     s (if (= conv "B") (str/upper-case s) s)]
+                 (format-pad s "" flags width))
+
+               whole))))))))
+
 (defn- make-ctx [opts]
   (let [helpers (helper-fns opts)
         ctx (sci/init {:namespaces
@@ -489,7 +579,8 @@
                                              {'parse-long    parse-long
                                               'parse-double  parse-double
                                               'parse-boolean parse-boolean
-                                              'parse-uuid    parse-uuid})
+                                              'parse-uuid    parse-uuid
+                                              'format        sandbox-format})
                         'clojure.data.json json-data-namespace
                         'cheshire.core cheshire-namespace}
                        :classes {'Math js/Math

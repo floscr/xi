@@ -194,6 +194,29 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "=> 1024"))))
 
+;; ── format ───────────────────────────────────────────────────────────────────
+
+(deftest format-hex-padded
+  ;; the motivating case: %02x for sha-digest hex bytes
+  (let [res (eval! "(apply str (map #(format \"%02x\" %) [0 15 255 171]))")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> \"000fffab\""))))
+
+(deftest format-basic-specifiers
+  (let [res (eval! "(format \"%s=%d %.2f %x %X\" \"a\" 5 3.14159 255 255)")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> \"a=5 3.14 ff FF\""))))
+
+(deftest format-width-and-flags
+  (let [res (eval! "(format \"[%5d][%-5d][%05d][%+d]\" 42 42 42 42)")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> \"[   42][42   ][00042][+42]\""))))
+
+(deftest format-percent-literal
+  (let [res (eval! "(format \"100%% %s\" \"done\")")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> \"100% done\""))))
+
 ;; ── fs helpers ───────────────────────────────────────────────────────────────
 
 (deftest tmpdir-and-file-roundtrip
