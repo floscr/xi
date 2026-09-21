@@ -93,10 +93,13 @@
 
 (deftest input-submit-same-model-leaves-state
   ;; Resubmitting with the model the room already runs is a no-op on state —
-  ;; only the effect fires, so we never rewrite the room needlessly.
-  (let [{:keys [state effects]} (handle (with-room)
-                                        {:type :input/submit :room-id "r"
-                                         :text "retry me" :model "claude-sonnet-4-5"})]
+  ;; only the effect fires, so we never rewrite the room needlessly. Assert on
+  ;; the raw handler's result, since handle-event always normalizes :state to
+  ;; the incoming state.
+  (let [handler (:input/submit commands/handlers)
+        {:keys [state effects]} (handler (with-room)
+                                         {:type :input/submit :room-id "r"
+                                          :text "retry me" :model "claude-sonnet-4-5"})]
     (is (nil? state) "unchanged model → no :state in result")
     (is (= [[:app/dispatch {:type :prompt/submit :room-id "r" :text "retry me"}]]
            effects))))

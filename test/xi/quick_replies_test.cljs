@@ -1,5 +1,6 @@
 (ns xi.quick-replies-test
   (:require [cljs.test :refer [deftest is testing]]
+            [xi.config :as config]
             [xi.quick-replies :as qr]))
 
 (deftest last-assistant-text-test
@@ -62,7 +63,8 @@
 (def ^:private suggested (:quick-replies/suggested qr/handlers))
 
 (deftest maybe-suggest-test
-  (let [room-id "r"
+  (with-redefs [config/quick-replies? true]
+   (let [room-id "r"
         base    {:rooms {room-id {:cwd "/tmp"}}}]
     (testing "clears stale chips, bumps gen, emits gen-tagged generate for a decision"
       (let [st (-> base
@@ -95,7 +97,7 @@
             {:keys [effects]} (qr/maybe-suggest st {:room-id room-id :aborted? true})]
         (is (empty? effects))))
     (testing "unknown room → nil"
-      (is (nil? (qr/maybe-suggest base {:room-id "nope"}))))))
+      (is (nil? (qr/maybe-suggest base {:room-id "nope"})))))))
 
 (deftest suggested-test
   (let [room-id "r"
