@@ -6,15 +6,22 @@
             ["node:os" :as os]
             ["node:path" :as node-path]))
 
-(def ^:private run-clj
-  (get (:tool-registry clj-ext/extension) "clj"))
-
 (defn- result-text [res]
   (-> res :content first :text))
 
-(defn- eval! [code & [{:keys [allowed cwd room-id]}]]
-  (run-clj {:code code :_allowed (or allowed []) :_room-id (or room-id :test)}
-           {:cwd (or cwd (os/tmpdir))}))
+(defn- eval!
+  "Evaluate synchronously via the worker-side entry (xi.ext.clj/eval-message).
+   The real clj tool goes through a worker thread (spawned off process.argv[1]
+   by xi.cli's isMainThread guard), which doesn't exist in the test bundle."
+  [code & [{:keys [allowed cwd room-id]}]]
+  (clj-ext/reply->result
+   (clj-ext/eval-message #js {:id      0
+                              :kind    "clj"
+                              :code    code
+                              :roomId  (str (or room-id :test))
+                              :allowed (clj->js (or allowed []))
+                              :cwd     (or cwd (os/tmpdir))})
+   nil))
 
 ;; ── scan-sh-calls (gate pre-scan) ────────────────────────────────────────────
 
@@ -189,9 +196,20 @@
     (is (str/includes? (result-text res) "not approved"))))
 
 (deftest sh-runs-when-allowed
-  (let [res (eval! "(:out (sh \"echo\" \"hi\"))" {:allowed ["echo"]})]
+  (let [res (eval! "(sh \"echo\" \"hi\")" {:allowed ["echo"]})]
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "hi"))))
+
+(deftest sh-returns-stdout-string
+  (let [res (eval! "(str/trim (sh \"echo\" \"  hi  \"))" {:allowed ["echo"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> \"hi\""))))
+
+(deftest sh-throws-on-nonzero-exit
+  (let [res (eval! "(try (sh \"false\") (catch :default e (:exit (ex-data e))))"
+                   {:allowed ["false"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> 1"))))
 
 ;; ── tool gate ──────────────────────────────────────────────────────────────────
 
@@ -282,9 +300,11 @@
     (is (str/includes? (intercepted-text res) "builtin helper"))))
 
 (deftest clj-tool-appends-hint
-  (let [res (run-clj {:code "(+ 1 2)" :_allowed [] :_room-id :test
-                      :_hint "hint: use (ls dir)"}
-                     {:cwd (os/tmpdir)})]
+  (let [res (clj-ext/reply->result
+             (clj-ext/eval-message #js {:id 0 :kind "clj" :code "(+ 1 2)"
+                                        :roomId "test" :allowed #js []
+                                        :cwd (os/tmpdir)})
+             "hint: use (ls dir)")]
     (is (str/includes? (result-text res) "3"))
     (is (str/includes? (result-text res) "hint: use (ls dir)"))))
 

@@ -181,7 +181,11 @@
                            (when-let [e (.-error r)] (.-message e)))
                       MAX_SH_OUTPUT)})))
 
-(defn- sh-fn [opts]
+(defn- sh-fn
+  "(sh \"cmd\" \"arg\" …) → stdout string on exit 0 (falls back to stderr when
+   stdout is empty — ffmpeg-style tools); throws ex-info with
+   {:exit :out :err} on non-zero exit. Mirrors the git helper."
+  [opts]
   (fn [& argv]
     (let [{:keys [allowed]} @opts
           bin (first argv)]
@@ -199,7 +203,13 @@
                              "user can run /clj allow " bin) {}))
 
         :else
-        (spawn-sync! argv (opts-cwd opts))))))
+        (let [{:keys [exit out err]} (spawn-sync! argv (opts-cwd opts))]
+          (if (zero? exit)
+            (let [out' (str/trimr out)]
+              (if (str/blank? out') (str/trimr err) out'))
+            (throw (ex-info (str "sh: " (str/join " " argv) " failed (exit " exit "): "
+                                 (str/trim (str err "\n" out)))
+                            {:exit exit :out out :err err}))))))))
 
 (defn- grep-fn [opts]
   (fn [pattern & [p]]
@@ -568,7 +578,8 @@
         "(curl url) → {:status :body} "
         "(jq \".foo[]\" json-or-data) → parsed result, no tmp file (opts {:raw true}) "
         "(git \"status\" \"--short\") → stdout string (pre-approved; push/clean "
-        "excluded) (sh \"cmd\" \"arg\" …). "
+        "excluded) (sh \"cmd\" \"arg\" …) → stdout string, throws on "
+        "non-zero exit ({:exit :out :err} in ex-data). "
         "clojure.core + str/set/walk/edn aliases available. Paths accept a "
         "leading ~ or $HOME. Prefer this over "
         "bash pipelines: compute in-script, return small values. "
@@ -642,19 +653,23 @@
                          :kind   "reset"
                          :roomId (room-key room-id)})))
 
+(defn reply->result
+  "Worker reply #js {:text :isError} → tool result map, appending the gate's
+   helper hint when present. Public for tests."
+  [^js m hint]
+  (let [res {:content  [{:type "text" :text (.-text m)}]
+             :is-error (boolean (.-isError m))}]
+    (if-let [hint (not-empty (str hint))]
+      (update-in res [:content 0 :text] str "\n\n" hint)
+      res)))
+
 (defn- clj-tool [args {:keys [cwd]}]
   (-> (run-in-worker #js {:kind    "clj"
                           :code    (str (:code args))
                           :roomId  (room-key (:_room-id args))
                           :allowed (clj->js (vec (:_allowed args)))
                           :cwd     (or cwd (.cwd js/process))})
-      (.then
-       (fn [^js m]
-         (let [res {:content  [{:type "text" :text (.-text m)}]
-                    :is-error (boolean (.-isError m))}]
-           (if-let [hint (not-empty (str (:_hint args)))]
-             (update-in res [:content 0 :text] str "\n\n" hint)
-             res))))))
+      (.then (fn [^js m] (reply->result m (:_hint args))))))
 
 ;; ── bb tool ────────────────────────────────────────────────────────────────
 
@@ -1140,7 +1155,8 @@
        "pre-approved (git …) "
        "helper — (git \"log\" \"--oneline\" \"-15\") → stdout string, no "
        "approval needed (push/clean excluded); other real "
-       "CLIs run via (sh \"cmd\" \"arg\" …) — argv-style, one command, no "
+       "CLIs run via (sh \"cmd\" \"arg\" …) → stdout string, throws on "
+       "non-zero exit — argv-style, one command, no "
        "pipes or shell strings (compose results in Clojure instead). "
        "The REPL "
        "persists across your tool calls: (def x …) once, reuse it later "

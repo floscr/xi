@@ -164,7 +164,7 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
    {:kind :tool-call
     :id "t7"
     :tool "clj"
-    :arguments {:code "(:out (sh \"git\" \"status\"))"}
+    :arguments {:code "(sh \"git\" \"status\")"}
     :result clj-shell-result
     :is-error false
     :status :done}

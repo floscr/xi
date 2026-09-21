@@ -34,7 +34,7 @@
     (is (= ["bbb2222"]
            (fx/session-commit-refs
             {:history [(clj-call "(sh \"git\" \"commit\" \"-m\" \"escalated\")"
-                                 "=> {:exit 0}\n[master bbb2222] escalated")]}))))
+                                 "=> \"[master bbb2222] escalated\"")]}))))
 
   (testing "clj calls that don't commit are ignored"
     (is (= []
