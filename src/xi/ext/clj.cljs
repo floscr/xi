@@ -546,11 +546,24 @@
   "When SCI blocked a raw Java/JS method call (e.g. `(.contains s \"x\")`),
    return a hint pointing at the clojure.string / clojure.core equivalent;
    otherwise nil. The sandbox only allows an allowlist of interop, so most
-   `(.method obj …)` forms fail with a \"… not allowed!\" message."
+   `(.method obj …)` forms fail with a \"… not allowed!\" message, and a few
+   (like Java-style exception accessors) fail with \"Could not find instance
+   method: …\"."
   [^js err]
   (let [msg (str (.-message err))]
-    (when (and (str/includes? msg "not allowed!")
-               (re-find #"Method \S" msg))
+    (cond
+      ;; Java-style exception accessors: (.getMessage e) / (.getCause e). The
+      ;; wording differs by exception type — a plain js/Error yields "Could not
+      ;; find instance method: getMessage", an ExceptionInfo "Method getMessage
+      ;; on function … not allowed!" — so match the accessor name in either.
+      (re-find #"(?:instance method: |Method )(?:getMessage|getCause|getLocalizedMessage)\b" msg)
+      (str "Hint: clj runs in a sandbox (ClojureScript/SCI, not the JVM) — "
+           "Java interop like (.getMessage e) doesn't exist. Use the portable "
+           "(ex-message e) for the message and (ex-cause e) for the cause, and "
+           "catch with (catch :default e …) rather than (catch Exception e …).")
+
+      (and (str/includes? msg "not allowed!")
+           (re-find #"Method \S" msg))
       (str "Hint: clj runs in a sandbox — raw interop (.method obj …) is "
            "blocked. Use clojure.string / clojure.core instead, e.g. "
            "(str/includes? s \"x\") for .contains, (str/starts-with? s \"x\") "

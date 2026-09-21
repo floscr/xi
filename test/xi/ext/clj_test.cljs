@@ -138,6 +138,13 @@
 (deftest eval-no-js-interop
   (is (:is-error (eval! "(js/process.exit 1)"))))
 
+(deftest eval-getmessage-hints-ex-message
+  ;; Java-style (.getMessage e) doesn't exist in the CLJS/SCI sandbox; the
+  ;; error result should point at the portable (ex-message e).
+  (let [res (eval! "(try (throw (ex-info \"boom\" {})) (catch :default e (.getMessage e)))")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "(ex-message e)"))))
+
 (deftest repl-persistence
   (eval! "(def xi-test-x 41)" {:room-id :persist})
   (let [res (eval! "(inc xi-test-x)" {:room-id :persist})]
