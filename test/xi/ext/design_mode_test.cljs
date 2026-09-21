@@ -20,9 +20,9 @@
 
 (deftest injection-fn-embeds-config-and-script
   (let [js (injection-fn)]
-    (testing "sets the design config with the Claude palette"
+    (testing "sets the design config with the clj-ui-framework palette"
       (is (str/includes? js "__XI_DESIGN_CFG__"))
-      (is (str/includes? js "#D97757")))
+      (is (str/includes? js "oklch")))
     (testing "is an arrow function that returns"
       (is (str/starts-with? (str/trim js) "() =>"))
       (is (str/includes? js "return true")))
@@ -33,10 +33,12 @@
 
 (deftest poll-fn-pushes-agents-and-drains-both-queues
   (let [js (poll-fn "[{\"id\":\"design-1\"}]")]
-    (testing "reads the active flag and splice-drains both queues atomically"
+    (testing "reads the active flag and splice-drains all queues atomically"
       (is (str/includes? js "__xiDesignActive"))
       (is (str/includes? js "__xiDesignQueue"))
       (is (str/includes? js "__xiDesignCommitQueue"))
+      (is (str/includes? js "__xiDesignPickQueue"))
+      (is (str/includes? js "p: p"))
       (is (str/includes? js "splice(0)")))
     (testing "pushes the agent list into the page and re-renders the dock"
       (is (str/includes? js "window.__xiDesignAgents = incoming"))
@@ -49,6 +51,7 @@
   (is (str/includes? cleanup-fn "delete window.__xiDesignActive"))
   (is (str/includes? cleanup-fn "delete window.__xiDesignQueue"))
   (is (str/includes? cleanup-fn "delete window.__xiDesignCommitQueue"))
+  (is (str/includes? cleanup-fn "delete window.__xiDesignPickQueue"))
   (is (str/includes? cleanup-fn "delete window.__xiDesignAgents"))
   (is (str/includes? cleanup-fn "__xi-design-agents-btn")))
 
@@ -68,16 +71,46 @@
   (let [st {:rooms {"r1" {:ext {:subagents
                                 {:agents [{:id "design-1" :label "Design: bigger" :status :done}
                                           {:id "design-2" :label "Design: colour" :status :running}
+                                          {:id "design-3" :label "Choices: cta" :status :done
+                                           :result (str "Here are directions:\n```json\n"
+                                                        "[{\"label\":\"A\",\"note\":\"n\",\"html\":\"<div>A</div>\"}]"
+                                                        "\n```")}
                                           {:id "commit-1" :label "Commit: bigger" :status :done}]}}}}}
         out (dm/page-agents st "r1"
                             [{:sub-id "design-1" :commit-sub-id "commit-1"}
-                             {:sub-id "design-2" :commit-sub-id nil}])]
-    (testing "a committed agent reports commit=committed"
-      (is (= {:id "design-1" :label "Design: bigger" :status "done" :commit "committed"}
+                             {:sub-id "design-2" :commit-sub-id nil}
+                             {:sub-id "design-3" :commit-sub-id nil :mode "choices"}])]
+    (testing "a committed edit agent reports kind=edit, commit=committed"
+      (is (= {:id "design-1" :label "Design: bigger" :status "done" :kind "edit" :commit "committed"}
              (first out))))
-    (testing "a running agent with no commit reports commit=nil"
-      (is (= {:id "design-2" :label "Design: colour" :status "running" :commit nil}
-             (second out))))))
+    (testing "a running edit agent with no commit reports commit=nil"
+      (is (= {:id "design-2" :label "Design: colour" :status "running" :kind "edit" :commit nil}
+             (second out))))
+    (testing "a done choices agent reports kind=choices with parsed directions"
+      (is (= {:id "design-3" :label "Choices: cta" :status "done" :kind "choices"
+              :choices [{:label "A" :note "n" :html "<div>A</div>"}]}
+             (nth out 2))))))
+
+(deftest parse-choices-extracts-fenced-json-directions
+  (testing "parses the trailing fenced JSON array of directions"
+    (is (= [{:label "A" :html "<div>A</div>"}]
+           (dm/parse-choices "blah\n```json\n[{\"label\":\"A\",\"html\":\"<div>A</div>\"}]\n```"))))
+  (testing "nil on blank or unparseable input"
+    (is (nil? (dm/parse-choices "")))
+    (is (nil? (dm/parse-choices "no json here")))))
+
+(deftest choices-prompt-asks-for-directions-not-edits
+  (let [p (dm/choices-prompt req "/home/u/.config/xi/uploads/abc.png")]
+    (testing "carries element context"
+      (is (str/includes? p "#app > main > button.cta"))
+      (is (str/includes? p "<button class=\"cta\">Go</button>")))
+    (testing "asks for multiple self-contained directions as fenced JSON"
+      (is (str/includes? p "directions"))
+      (is (str/includes? p "self-contained"))
+      (is (str/includes? p "json")))
+    (testing "tells the agent NOT to edit source in this step"
+      (is (str/includes? p "do NOT"))
+      (is (str/includes? p "proposes options")))))
 
 (deftest parse-eval-return-extracts-poll-payload
   (testing "parses active flag + queued requests from the fenced JSON wrapper"
@@ -104,7 +137,10 @@
       (is (<= (count label) 60))))
   (testing "falls back to the selector, then a generic label"
     (is (= "Design: button.cta" (dm/request-label {:selector "button.cta" :message "  "})))
-    (is (= "Design: element" (dm/request-label {})))))
+    (is (= "Design: element" (dm/request-label {}))))
+  (testing "choices requests get a Choices: prefix"
+    (is (= "Choices: button.cta"
+           (dm/request-label {:selector "button.cta" :mode "choices"})))))
 
 (deftest build-prompt-carries-element-context
   (let [p (dm/build-prompt req "/home/u/.config/xi/uploads/abc.png")]

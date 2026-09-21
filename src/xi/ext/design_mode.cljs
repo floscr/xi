@@ -37,25 +37,30 @@
 (def ^:private design-js (inline-design-js))
 
 (def ^:private colors
-  "Claude-flavored palette for the injected UI: warm ivory surfaces, coral
-   accent, soft borders."
-  {:surface      "#FAF9F5"
-   :surfaceMuted "#F0EEE6"
-   :text         "#1F1E1D"
-   :textMuted    "#6E6B64"
-   :textFaint    "#9C9A93"
-   :border       "#E8E5DE"
-   :accent       "#D97757"
-   :accentBg     "rgba(217, 119, 87, 0.10)"})
+  "clj-ui-framework light-theme tokens for the injected UI, so the design
+   overlay matches xi's web client: neutral gray surfaces, violet accent,
+   subtle borders. Values mirror resources/public/theme.css :root."
+  {:surface      "oklch(0.975 0.003 285)"       ; --bg-0  (gray-50)
+   :surfaceMuted "oklch(0.955 0.005 285)"       ; --bg-1  (gray-100)
+   :text         "oklch(0.145 0.011 285)"       ; --fg-0  (gray-950)
+   :textMuted    "oklch(0.425 0.035 285)"       ; --fg-1  (gray-600)
+   :textFaint    "oklch(0.690 0.025 285)"       ; --fg-2  (gray-400)
+   :border       "oklch(0.915 0.010 285)"       ; --border-0 color (gray-200)
+   :accent       "oklch(0.595 0.230 286)"       ; --accent (accent-500)
+   :accentBg     "oklch(0.595 0.230 286 / 0.12)" ; translucent accent tint
+   :danger       "oklch(0.610 0.226 25)"        ; --danger (danger-500)
+   :success      "oklch(0.705 0.185 152)"})
 
 (def ^:private cleanup-js
   (str "(function() {"
        "var ids = ['__xi-design-pill','__xi-design-overlay','__xi-design-hl',"
        "'__xi-design-tip','__xi-design-pop','__xi-design-toast','__xi-design-dock',"
-       "'__xi-design-agents-btn','__xi-design-agents-pop','__xi-design-style'];"
+       "'__xi-design-agents-btn','__xi-design-agents-pop','__xi-design-choices-modal',"
+       "'__xi-design-style'];"
        "for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.remove(); }"
        "delete window.__xiDesignActive; delete window.__xiDesignQueue; delete window.__XI_DESIGN_CFG__;"
-       "delete window.__xiDesignCommitQueue; delete window.__xiDesignAgents; delete window.__xiDesignRender;"
+       "delete window.__xiDesignCommitQueue; delete window.__xiDesignPickQueue;"
+       "delete window.__xiDesignAgents; delete window.__xiDesignRender;"
        "})();"))
 
 ;; ── JS run in the page (via chrome-devtools-mcp evaluate_script) ─────────────
@@ -90,7 +95,8 @@
        " if (window.__xiDesignRender) window.__xiDesignRender();"
        " var q = (window.__xiDesignQueue || []).splice(0);"
        " var c = (window.__xiDesignCommitQueue || []).splice(0);"
-       " return { active: !!window.__xiDesignActive, q: q, c: c }; }"))
+       " var p = (window.__xiDesignPickQueue || []).splice(0);"
+       " return { active: !!window.__xiDesignActive, q: q, c: c, p: p }; }"))
 
 (def ^:private cleanup-fn
   (str "() => { " cleanup-js " return true; }"))
@@ -124,11 +130,13 @@
 
 (defn request-label
   "Short human label for a queued request — the instruction's first line
-   (truncated), falling back to the element selector."
-  [{:keys [message selector]}]
+   (truncated), falling back to the element selector. Choices requests get a
+   distinct prefix so they read as options-generators in the dock."
+  [{:keys [message selector mode]}]
   (let [t (some-> message str/trim not-empty str/split-lines first)
-        t (or t selector "element")]
-    (str "Design: " (if (> (count t) 44) (str (subs t 0 44) "…") t))))
+        t (or t selector "element")
+        t (if (> (count t) 44) (str (subs t 0 44) "…") t)]
+    (str (if (= mode "choices") "Choices: " "Design: ") t)))
 
 (defn build-prompt
   "The sub-agent's prompt for one design request: the user's instruction plus
@@ -161,6 +169,46 @@
        "using it, and their dev server hot-reloads the page.\n"
        "- Finish with one concise line: what changed, in which file(s)."))
 
+(defn choices-prompt
+  "The sub-agent's prompt for a *choices* request: instead of editing source,
+   generate a few self-contained design alternatives for the picked element and
+   emit them as a trailing fenced JSON block the browser dialog can preview."
+  [{:keys [url selector outerHTML computedStyles boundingRect message]} shot-path]
+  (str "Design-mode CHOICES request: the user picked an element on the live "
+       "page and wants to see a few design directions to choose from — do NOT "
+       "edit any source files yet.\n\n"
+       "User guidance: "
+       (if (str/blank? message)
+         "(none given — propose tasteful, distinct directions for this element)"
+         message)
+       "\nPage URL: " url "\n\n"
+       "## Picked element\n"
+       "Selector: `" selector "`\n\n"
+       "```html\n" outerHTML "\n```\n\n"
+       "Computed styles: " (js/JSON.stringify (clj->js computedStyles)) "\n"
+       (when boundingRect
+         (str "Bounding rect (page coords): "
+              (js/JSON.stringify (clj->js boundingRect)) "\n"))
+       (when shot-path
+         (str "Screenshot of the page at pick time: " shot-path
+              " (view it if visual context helps)\n"))
+       "\n## What to produce\n"
+       "- Design **3 distinct directions** for THIS element — vary layout, "
+       "spacing, type, colour, mood — each a clear alternative, not a tweak.\n"
+       "- Each direction is a **fully self-contained HTML fragment** that "
+       "renders the element on its own: inline `<style>`/style attributes, no "
+       "external CSS/JS, safe to drop into an iframe as a preview. Give it a "
+       "neutral padded backdrop so it reads as a card.\n"
+       "- Keep each fragment small (well under 4 KB).\n"
+       "- Do NOT touch the real page or any project files — this step only "
+       "proposes options; the user picks one and a follow-up agent implements "
+       "it.\n"
+       "\n## Output format (required)\n"
+       "Finish your final message with a single fenced ```json block: a JSON "
+       "array of exactly the directions, each `{\"label\": short name, "
+       "\"note\": one-line description, \"html\": the self-contained fragment}`. "
+       "Emit nothing after that block."))
+
 (defn commit-prompt
   "The follow-up commit sub-agent's prompt for one completed design change.
    Carries the original agent's result summary so a fresh context can find and
@@ -180,26 +228,48 @@
        "- Do NOT commit unrelated changes, and do NOT push.\n"
        "- Finish with one line: the commit hash and subject."))
 
+(defn parse-choices
+  "Parse the trailing fenced JSON array of {label note html} alternatives from a
+   choices sub-agent's result text. Returns a vector (possibly empty) or nil."
+  [text]
+  (when-not (str/blank? text)
+    (let [body (str/trim (fenced-body text))]
+      (try
+        (let [v (js->clj (js/JSON.parse body) :keywordize-keys true)]
+          (when (vector? v) v))
+        (catch :default _ nil)))))
+
 (defn page-agents
-  "The tracked design sub-agents as a compact list for the page:
-   {id label status commit}. `status` is the sub-agent's status name;
-   `commit` reflects the follow-up commit agent (nil | \"committing\" |
-   \"committed\" | \"error\"). `tracked` is the watcher's ordered
-   [{:sub-id :commit-sub-id}] list."
+  "The tracked design sub-agents as a compact list for the page. Edit agents
+   carry {id label status kind:\"edit\" commit}; choices agents carry
+   {id label status kind:\"choices\" choices}. `status` is the sub-agent's
+   status name; `commit` reflects the follow-up commit agent (nil |
+   \"committing\" | \"committed\" | \"error\"). `choices` is the parsed list of
+   alternatives once the choices agent is done. `tracked` is the watcher's
+   ordered [{:sub-id :commit-sub-id :mode}] list."
   [state room-id tracked]
   (let [all (into {} (map (juxt :id identity)) (sah/agents state room-id))]
-    (mapv (fn [{:keys [sub-id commit-sub-id]}]
-            (let [a (get all sub-id)
-                  c (get all commit-sub-id)]
-              {:id     sub-id
-               :label  (or (:label a) "agent")
-               :status (name (or (:status a) :running))
-               :commit (cond
-                         (nil? commit-sub-id)   nil
-                         (= (:status c) :done)  "committed"
-                         (= (:status c) :error) "error"
-                         (:errored? c)          "error"
-                         :else                  "committing")}))
+    (mapv (fn [{:keys [sub-id commit-sub-id mode]}]
+            (let [a      (get all sub-id)
+                  status (name (or (:status a) :running))
+                  base   {:id     sub-id
+                          :label  (or (:label a) "agent")
+                          :status status}]
+              (if (= mode "choices")
+                (assoc base
+                       :kind    "choices"
+                       :choices (if (= status "done")
+                                  (or (parse-choices (:result a)) [])
+                                  []))
+                (let [c (get all commit-sub-id)]
+                  (assoc base
+                         :kind   "edit"
+                         :commit (cond
+                                   (nil? commit-sub-id)   nil
+                                   (= (:status c) :done)  "committed"
+                                   (= (:status c) :error) "error"
+                                   (:errored? c)          "error"
+                                   :else                  "committing"))))))
           tracked)))
 
 ;; ── Feedback ─────────────────────────────────────────────────────────────────
@@ -236,18 +306,23 @@
   [{:keys [call dispatch! watch*]} {:keys [page-id room-id]} req]
   (-> (capture-screenshot call page-id)
       (.then (fn [shot]
-               (let [path   (when shot
-                              (image/persist-image! {:data shot :media-type "image/png"}))
-                     label  (request-label req)
-                     sub-id (sah/gen-id "design")]
+               (let [path     (when shot
+                               (image/persist-image! {:data shot :media-type "image/png"}))
+                     mode     (or (:mode req) "edit")
+                     choices? (= mode "choices")
+                     label    (request-label req)
+                     sub-id   (sah/gen-id "design")]
                  (swap! watch* update :agents (fnil conj [])
-                        {:sub-id sub-id :commit-sub-id nil})
+                        {:sub-id sub-id :commit-sub-id nil :mode mode :req req})
                  (dispatch! {:type   :subagent/spawn
                              :room-id room-id
                              :sub-id sub-id
                              :label  label
-                             :task   (str "Design change on " (:selector req))
-                             :prompt (build-prompt req path)})
+                             :task   (str (if choices? "Design choices for " "Design change on ")
+                                          (:selector req))
+                             :prompt (if choices?
+                                       (choices-prompt req path)
+                                       (build-prompt req path))})
                  (status! dispatch! room-id (str "✦ " label " — sub-agent spawned.")))))))
 
 (defn- handle-commit!
@@ -274,6 +349,30 @@
                     :prompt (commit-prompt {:label (:label agent) :result (:result agent)})})
         (status! dispatch! room-id (str "✦ Committing " (or (:label agent) id) "…"))))))
 
+(defn- handle-pick!
+  "One drained pick ({:id <choices sub-id> :index n}) → enqueue a normal edit
+   request that applies the chosen variant to source, reusing handle-request!
+   (which spawns an edit sub-agent + the usual Commit flow). No-op unless the
+   choices agent is done and the index resolves to a variant."
+  [{:keys [get-state] :as ctx} {:keys [room-id] :as w} {:keys [id index]}]
+  (let [state   (get-state)
+        agent   (sah/find-child state room-id id)
+        tracked (some #(when (= (:sub-id %) id) %) (:agents w))
+        choices (parse-choices (:result agent))
+        chosen  (when (and choices (nat-int? index)) (nth choices index nil))
+        req     (:req tracked)]
+    (when (and chosen req)
+      (let [msg (str "Apply this chosen design direction to the element in the "
+                     "source — make it real, matching the project's components "
+                     "and styling conventions.\n\n"
+                     "Direction: " (or (:label chosen) (str "option " (inc index)))
+                     (when-not (str/blank? (:note chosen))
+                       (str "\nNotes: " (:note chosen)))
+                     "\n\nReference markup for the chosen direction (a preview "
+                     "mock — adapt it, don't paste verbatim if the source uses a "
+                     "framework):\n```html\n" (:html chosen) "\n```")]
+        (handle-request! ctx w (assoc req :mode "edit" :message msg))))))
+
 (defn- tick!
   "One watcher beat: poll the page. Re-inject when the resident script is gone
    (navigation/reload — this is what makes the mode persistent), drain the
@@ -287,9 +386,10 @@
         (-> (call "evaluate_script" {:function (poll-fn agents-json) :pageId page-id})
             (.then (fn [res]
                      (when-not (:is-error res)
-                       (let [{:keys [active q c]} (parse-eval-return res)]
+                       (let [{:keys [active q c p]} (parse-eval-return res)]
                          (doseq [req q] (handle-request! ctx w req))
                          (doseq [cm c] (handle-commit! ctx w cm))
+                         (doseq [pk p] (handle-pick! ctx w pk))
                          (when-not active
                            (inject! call page-id))))))
             (.catch (fn [_] nil))

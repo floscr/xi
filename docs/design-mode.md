@@ -14,24 +14,32 @@ working while changes land. Progress shows in the Sub-agents panel.
 Ctrl+Shift+D       keybinding for /design (TUI/web)
 
 — then, in the browser —
-Ctrl+I / Ctrl+B    toggle element picking (or click the ✦ Design pill)
+Ctrl+I / Ctrl+B    toggle element picking (or click the Design pill)
 click element      popover: type what you want changed
-Enter              queue it — a sub-agent picks it up; keep browsing
+Enter / Send       queue it — a sub-agent picks it up; keep browsing
+Choices            generate 3 design directions to choose from instead
 Esc                popover → picking → browsing (mode stays on)
 agents button      spinner while agents work; click for the list + Commit
 ```
 
+The popover has two actions: **Send** applies the change directly (a sub-agent
+edits the source); **Choices** (left of Send) instead asks a sub-agent to
+generate a few *design directions* for the element — like the design-directions
+skill — which you preview and pick from in a dialog. Any typed text is optional
+guidance for either action.
+
 ## The agents dock (spinner · list · commit)
 
-Left of the ✦ Design pill sits an **agents button**. It appears once you've
+Left of the Design pill sits an **agents button**. It appears once you've
 queued at least one request and reflects the design sub-agents' progress:
 
 - **Spinner** while any design agent (or its commit) is working; otherwise a
-  static ✦, always with a running count.
+  static sparkle icon, always with a running count.
 - **Click it** to open a list of the design agents spawned this session — each
   row shows a status dot, the request label, and a per-state control:
   - *running* → a spinner
-  - *done* → a **Commit** button
+  - *done* (edit agent) → a **Commit** button
+  - *done* (choices agent) → a **View N** button that opens the choices dialog
   - *committing* → a spinner
   - *committed* → a ✓ checkmark
   - *error* → an error label
@@ -48,6 +56,27 @@ agents' current status (`window.__xiDesignAgents`) into the page and calls
 spawned *by this design session* appear here (commit agents are tracked against
 their originating row, not listed separately).
 
+## Design choices (generate directions → pick one)
+
+Clicking **Choices** in the popover queues a request tagged `mode:"choices"`.
+Instead of editing source, the sub-agent generates **3 self-contained design
+directions** for the picked element and emits them as a trailing fenced-JSON
+block (`[{label, note, html}]`) — mirroring the design-directions skill, but
+scoped to one element.
+
+The watcher parses those directions from the agent's result and surfaces them on
+its dock row as a **View N** button. Clicking it opens a **dialog over the
+page**: each direction renders in a sandboxed iframe preview card (its `html`
+as `srcdoc`) with a label, note, and **Pick this** button.
+
+Picking a direction round-trips back through `window.__xiDesignPickQueue`
+(same pattern as the commit queue). The watcher drains it and enqueues a normal
+`mode:"edit"` request whose instruction is "apply this chosen direction" plus
+the direction's markup and the original element context. That reuses the
+standard edit path — a fresh edit sub-agent implements the winner in the real
+source, appearing as its own dock row with the usual **Commit** button. So the
+full arc is: *Choices → View → Pick → edit agent → Commit*.
+
 ## How it works
 
 Like the element picker, this is **not a standalone extension** — it's
@@ -63,10 +92,12 @@ tools use. It requires `XI_CHROME_TOOLS`.
   → evaluate_script      inject resident design script (cleanup + config + design.js)
   → watcher loop         evaluate_script every ~700ms:
       · pushes tracked agent statuses → window.__xiDesignAgents (+ re-render)
-      · drains window.__xiDesignQueue → per request:
+      · drains window.__xiDesignQueue → per request (mode edit|choices):
           take_screenshot → image/persist-image! → :subagent/spawn (tracked)
       · drains window.__xiDesignCommitQueue → per commit:
           :subagent/spawn a commit agent (prompt = original agent's result)
+      · drains window.__xiDesignPickQueue → per pick:
+          re-enqueue the chosen direction as a mode:edit request
       · re-injects when window.__xiDesignActive is gone
 ```
 
@@ -97,7 +128,7 @@ toggles the single active instance off.
 
 Same toolchain as the picker: `resources/design-mode/design.cljs` is compiled
 with squint → esbuild into `resources/design-mode/design.js`, a **committed,
-generated** self-contained IIFE (~11KB) injected as a string via
+generated** self-contained IIFE (~20KB) injected as a string via
 `evaluate_script`. Regenerate after editing:
 
 ```bash
@@ -111,10 +142,11 @@ track `design.js` as a source dependency — after `bb design:build`, touch
 
 ### The UI
 
-Styled after Claude: warm ivory surfaces (`#FAF9F5`), coral accent (`#D97757`),
-serif headings, soft borders and shadows. The resident **✦ Design** pill sits
-bottom-right (coral while picking); submissions confirm with a small
-"✦ Sent — a sub-agent is on it" toast. While the mode is on, Ctrl+I and
+Styled to match xi's web client via the clj-ui-framework light-theme tokens
+(`resources/public/theme.css`): neutral gray surfaces, violet accent, sans-serif
+text, monoline lucide icons and subtle borders/shadows. The resident **Design**
+pill sits bottom-right (violet accent while picking); submissions confirm with a
+small "Sent — a sub-agent is on it" toast. While the mode is on, Ctrl+I and
 Ctrl+B are swallowed by design mode (rich-text editors won't see them as
 italic/bold); everything else passes through untouched.
 
