@@ -42,7 +42,7 @@
   [path patterns]
   (some #(str/includes? (str path) %) patterns))
 
-(defn- outside-project?
+(defn outside-project?
   "True when path resolves outside both the project repo (working dir) and the
    OS tmp dir — i.e. a write/edit that escapes the repo. Tmp is always allowed.
    Symlinks are canonicalized (sandbox/real-resolve) so the check can't be
@@ -77,21 +77,24 @@
     {:state (update-in st [:rooms room-id :ext ext-id :allowed-write-repos]
                        (fnil conj #{}) (str repo))}))
 
-(defn- ask-outside-write
-  "Confirm a write/edit outside the project repo. When the target sits inside
-   another git repo the dialog offers a third option — [r] allow all writes to
-   that repo — which records the repo root in room ext state so later writes
-   under it skip the dialog."
-  [tool-call {:keys [confirm! dispatch! get-state room-id cwd]} path]
+(defn approve-write-path
+  "Approve a single write to `path` outside the project repo. Returns a promise
+   resolving to the approved root (the repo root when the user picks [r], else
+   the resolved path) or nil when denied. Auto-approves (no prompt) when the
+   path already sits under a stored allowed-write-repo, or when no confirmer is
+   attached (headless). On the [r] allow-repo answer records the repo root in
+   room ext state so later writes under it skip the dialog. Reused by the clj
+   tool's builtin write helpers so they prompt instead of hard-rejecting."
+  [{:keys [confirm! dispatch! get-state room-id cwd]} path]
   (let [resolved (sandbox/real-resolve cwd (str path))
         repo     (git-repo-root resolved)
         allowed  (when get-state
                    (:allowed-write-repos (state/room-ext (get-state) room-id ext-id)))]
     (cond
       (some #(sandbox/path-within? resolved %) allowed)
-      tool-call
+      (js/Promise.resolve (or repo resolved))
 
-      (not confirm!) tool-call
+      (not confirm!) (js/Promise.resolve (or repo resolved))
 
       :else
       (-> (confirm! (str "Write outside the project repo: " path
@@ -103,9 +106,18 @@
                      (do (when dispatch!
                            (dispatch! {:type :ext.permission-gate/allow-repo
                                        :room-id room-id :repo repo}))
-                         tool-call)
-                     answer tool-call
+                         repo)
+                     answer resolved
                      :else  nil)))))))
+
+(defn- ask-outside-write
+  "Confirm a write/edit outside the project repo. When the target sits inside
+   another git repo the dialog offers a third option — [r] allow all writes to
+   that repo — which records the repo root in room ext state so later writes
+   under it skip the dialog."
+  [tool-call ctx path]
+  (-> (approve-write-path ctx path)
+      (.then (fn [root] (when root tool-call)))))
 
 (defn server-control-kind
   "When cmd runs the host-server bb control task that would kill the very

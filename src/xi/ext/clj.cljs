@@ -129,6 +129,10 @@
       (str (subs s 0 max-len) "\n… [truncated to " max-len " chars]")
       s)))
 
+
+(defn- opts-cwd [opts]
+  (or (:cwd @opts) (.cwd js/process)))
+
 (defn- resolve-read
   "Canonicalize p against cwd; throw on credential paths."
   [cwd p]
@@ -138,14 +142,18 @@
     resolved))
 
 (defn- resolve-write
-  "Canonicalize p against cwd; only the working dir and the OS tmp dir are
-   writable from clj scripts."
-  [cwd p]
-  (let [resolved (sandbox/real-resolve cwd (str p))
+  "Canonicalize p against cwd; only the working dir, the OS tmp dir, and any
+   out-of-repo roots the user pre-approved at the gate (`:allowed-writes` in
+   opts) are writable from clj scripts."
+  [opts p]
+  (let [cwd      (opts-cwd opts)
+        resolved (sandbox/real-resolve cwd (str p))
         real-cwd (sandbox/real-resolve cwd ".")
-        tmp      (sandbox/real-resolve cwd (os/tmpdir))]
+        tmp      (sandbox/real-resolve cwd (os/tmpdir))
+        allowed  (:allowed-writes @opts)]
     (if (or (sandbox/path-within? resolved real-cwd)
-            (sandbox/path-within? resolved tmp))
+            (sandbox/path-within? resolved tmp)
+            (some #(sandbox/path-within? resolved %) allowed))
       resolved
       (throw (ex-info (str "clj: writes are limited to the working dir and "
                            (os/tmpdir) ": " p) {})))))
@@ -154,8 +162,6 @@
 ;; All close over the per-room opts atom {:cwd … :allowed #{…}} which is
 ;; refreshed before every eval (the SCI ctx itself is long-lived).
 
-(defn- opts-cwd [opts]
-  (or (:cwd @opts) (.cwd js/process)))
 
 (defn- read-file [opts p]
   (fs/readFileSync (resolve-read (opts-cwd opts) p) "utf8"))
@@ -347,7 +353,7 @@
     {'cat    cat'
      'slurp  cat'
      'spit   (fn [p s & [{:keys [append]}]]
-               (fs/writeFileSync (resolve-write (opts-cwd opts) p) (str s)
+               (fs/writeFileSync (resolve-write opts p) (str s)
                                  #js {:flag (if append "a" "w")})
                nil)
      'ls     (fn [& [p]]
@@ -369,21 +375,21 @@
      'grep   (grep-fn opts)
      'find   (find-fn opts)
      'mkdir  (fn [p]
-               (let [dir (resolve-write (opts-cwd opts) p)]
+               (let [dir (resolve-write opts p)]
                  (fs/mkdirSync dir #js {:recursive true})
                  dir))
      'cp     (fn [from to]
                (fs/cpSync (resolve-read (opts-cwd opts) from)
-                          (resolve-write (opts-cwd opts) to)
+                          (resolve-write opts to)
                           #js {:recursive true})
                nil)
      'mv     (fn [from to]
-               (fs/renameSync (resolve-write (opts-cwd opts) from)
-                              (resolve-write (opts-cwd opts) to))
+               (fs/renameSync (resolve-write opts from)
+                              (resolve-write opts to))
                nil)
      'rm     (fn [& paths]
                (doseq [p paths]
-                 (fs/rmSync (resolve-write (opts-cwd opts) p)
+                 (fs/rmSync (resolve-write opts p)
                             #js {:force true :recursive true}))
                nil)
      'tmpdir (fn [] (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-clj-")))
@@ -408,7 +414,7 @@
                            (when (fs/existsSync p) p)))
                        (str/split (or (aget js/process.env "PATH") "") #":"))))
      'touch  (fn [p]
-               (let [f (resolve-write (opts-cwd opts) p)
+               (let [f (resolve-write opts p)
                      now (js/Date.)]
                  (if (fs/existsSync f)
                    (fs/utimesSync f now now)
@@ -551,11 +557,12 @@
            "for .startsWith, (str/lower-case s) for .toLowerCase, "
            "(str/split s #\",\") for .split."))))
 
-(defn- eval-code! [{:keys [code room-id cwd allowed]}]
+(defn- eval-code! [{:keys [code room-id cwd allowed allowed-writes]}]
   (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default))
         prints (atom "")
         commit-outs (atom [])]
-    (swap! opts assoc :cwd cwd :allowed (set allowed) :commit-outs commit-outs)
+    (swap! opts assoc :cwd cwd :allowed (set allowed)
+           :allowed-writes (set allowed-writes) :commit-outs commit-outs)
     (try
       (let [v   (sci/binding [sci/print-fn     #(swap! prints str %)
                               sci/print-err-fn #(swap! prints str %)]
@@ -602,7 +609,10 @@
         "bash pipelines: compute in-script, return small values. "
         "Example: (->> (glob \"src/**/*.cljs\") (filter #(str/includes? (cat %) \"TODO\")))\n"
         "sh runs real CLIs argv-style and needs user approval unless "
-        "allowlisted; writes are limited to the working dir and /tmp.")
+        "allowlisted; writes land in the working dir and /tmp freely — "
+        "spit/mv/cp/mkdir/touch/rm to a literal path outside the repo raise "
+        "an approval dialog (like the write/edit tools), a dynamic out-of-repo "
+        "path is rejected.")
    :input_schema {:type "object"
                   :properties {:code {:type "string"
                                       :description "Clojure code; multiple forms ok, last value is returned"}}
@@ -685,6 +695,7 @@
                           :code    (str (:code args))
                           :roomId  (room-key (:_room-id args))
                           :allowed (clj->js (vec (:_allowed args)))
+                          :allowedWrites (clj->js (vec (:_allowed-writes args)))
                           :cwd     (or cwd (.cwd js/process))})
       (.then (fn [^js m] (reply->result m (:_hint args))))))
 
@@ -738,6 +749,7 @@
       (let [res (eval-code! {:code    (str (.-code m))
                              :room-id (.-roomId m)
                              :allowed (js->clj (.-allowed m))
+                             :allowed-writes (js->clj (.-allowedWrites m))
                              :cwd     cwd})]
         #js {:id      id
              :text    (get-in res [:content 0 :text])
@@ -790,6 +802,43 @@
                                 @calls))})
     (catch :default err
       {:parse-error (.-message err)})))
+
+(def ^:private WRITE_HELPER_TARGETS
+  "clj builtin write helpers -> the 0-based arg positions whose literal string
+   values are write targets (:all = every arg, for rm's varargs). The gate uses
+   this to spot out-of-repo writes and raise an approval dialog, mirroring how
+   the write/edit tools gate writes that escape the project."
+  {'spit  [0]
+   'mv    [0 1]
+   'cp    [1]
+   'mkdir [0]
+   'touch [0]
+   'rm    :all})
+
+(defn scan-write-paths
+  "Parse code (edamame) and collect the literal string write-target paths passed
+   to the builtin write helpers (spit/mv/cp/mkdir/touch/rm). Dynamic (computed)
+   args are invisible and can't be pre-approved — those still hard-reject in the
+   worker when out of repo. Returns a distinct vector of path strings (empty on
+   parse error)."
+  [code]
+  (try
+    (let [forms (e/parse-string-all code {:all true
+                                          :auto-resolve {:current 'user}
+                                          :readers (fn [_] identity)})
+          paths (atom [])]
+      (walk/postwalk
+       (fn [f]
+         (when (and (seq? f) (contains? WRITE_HELPER_TARGETS (first f)))
+           (let [args  (vec (rest f))
+                 pos   (WRITE_HELPER_TARGETS (first f))
+                 picks (if (= :all pos) args (map #(nth args % nil) pos))]
+             (doseq [a picks]
+               (when (string? a) (swap! paths conj a)))))
+         f)
+       forms)
+      (vec (distinct @paths)))
+    (catch :default _ [])))
 
 (defn- blocked [text]
   {:intercepted true
@@ -919,7 +968,32 @@
           (js/Promise.resolve true)
           prompts))
 
-(defn- gate-clj [tool-call {:keys [get-state room-id confirm! dispatch! cwd]}]
+(defn- approve-writes
+  "Approve each out-of-repo write `path` via the permission gate's outside-write
+   flow (pg/approve-write-path) — a dialog offering [y]/[n]/[r allow repo], auto
+   allowed when the path already sits under an approved repo. Returns a promise
+   of {:approved #{roots} :denied path|nil}; resolves :denied on the first
+   refusal. Paths already covered by a just-approved root are skipped so a
+   two-path mv into one repo prompts only once."
+  [paths ctx cwd]
+  (reduce
+   (fn [chain path]
+     (.then chain
+            (fn [{:keys [approved denied] :as acc}]
+              (let [resolved (sandbox/real-resolve cwd (str path))]
+                (cond
+                  denied acc
+                  (some #(sandbox/path-within? resolved %) approved) acc
+                  :else
+                  (-> (pg/approve-write-path ctx path)
+                      (.then (fn [root]
+                               (if root
+                                 (update acc :approved conj root)
+                                 (assoc acc :denied path))))))))))
+   (js/Promise.resolve {:approved #{} :denied nil})
+   paths))
+
+(defn- gate-clj [tool-call {:keys [get-state room-id confirm! dispatch! cwd] :as ctx}]
   (let [code    (str (get-in tool-call [:arguments :code]))
         scan    (scan-sh-calls code)
         session (set (:allowed-clis (state/room-ext (get-state) room-id ext-id)))
@@ -988,7 +1062,12 @@
             guarded  (->> (:commands scan)
                           (filter (fn [cmd]
                                     (some #(str/includes? cmd %) pg/GUARDED_PATTERNS)))
-                          (remove #(str/starts-with? % "rm ")))]
+                          (remove #(str/starts-with? % "rm ")))
+            ;; Literal write-target paths that escape the repo (+tmp). These get
+            ;; the same approval dialog the write/edit tools use, then are
+            ;; injected so the worker's resolve-write allows them.
+            outside-writes (filter #(pg/outside-project? cwd %)
+                                   (scan-write-paths code))]
         (cond
           ;; sudo is never allowed from the agent — hard block, no confirm.
           (or (contains? (:literals scan) "sudo")
@@ -1017,31 +1096,42 @@
                         ". Helpers run in-process with no approval needed."))
 
           :else
-          ;; Guarded patterns (rm -rf, sudo, git push, kill …) need a confirm
-          ;; even when the CLI itself is allowlisted — parity with the bash
-          ;; gate. No confirm! (headless) passes through, like the bash gate.
-          (-> (if (and (seq guarded) confirm!)
-                (confirm-all! confirm! (map #(str "Guarded command: " %) guarded))
-                (js/Promise.resolve true))
+          ;; First clear any out-of-repo builtin writes (spit/mv/cp/…) through
+          ;; the outside-write dialog, then run the guarded/CLI approval.
+          (-> (approve-writes outside-writes ctx cwd)
               (.then
-               (fn [ok?]
-                 (cond
-                   (not ok?)
-                   (blocked "clj: user denied a guarded command")
+               (fn [{writes :approved wdenied :denied}]
+                 (if wdenied
+                   (blocked (str "clj: user denied writing outside the repo: " wdenied))
+                   (let [inject-w (fn [allowed hint]
+                                    (cond-> (inject allowed hint)
+                                      (seq writes) (update :arguments assoc
+                                                           :_allowed-writes (vec writes))))]
+                     ;; Guarded patterns (rm -rf, sudo, git push, kill …) need a
+                     ;; confirm even when the CLI itself is allowlisted — parity
+                     ;; with the bash gate. No confirm! (headless) passes through.
+                     (-> (if (and (seq guarded) confirm!)
+                           (confirm-all! confirm! (map #(str "Guarded command: " %) guarded))
+                           (js/Promise.resolve true))
+                         (.then
+                          (fn [ok?]
+                            (cond
+                              (not ok?)
+                              (blocked "clj: user denied a guarded command")
 
-                   (empty? needed') (inject (into base autorun) hint)
+                              (empty? needed') (inject-w (into base autorun) hint)
 
-                   (not confirm!)
-                   (blocked (str "clj: these CLIs need approval but no client is "
-                                 "attached to confirm: " (str/join ", " needed')))
+                              (not confirm!)
+                              (blocked (str "clj: these CLIs need approval but no client is "
+                                            "attached to confirm: " (str/join ", " needed')))
 
-                   :else
-                   (-> (approve-clis! confirm! dispatch! room-id cwd needed')
-                       (.then (fn [{:keys [approved denied]}]
-                                (if denied
-                                  (blocked (str "clj: user denied running `" denied "`"))
-                                  (inject (into (into base autorun) approved)
-                                          hint))))))))))))))
+                              :else
+                              (-> (approve-clis! confirm! dispatch! room-id cwd needed')
+                                  (.then (fn [{:keys [approved denied]}]
+                                           (if denied
+                                             (blocked (str "clj: user denied running `" denied "`"))
+                                             (inject-w (into (into base autorun) approved)
+                                                       hint)))))))))))))))))))
 
 (defn- gate-bb [tool-call {:keys [cwd confirm!]}]
   (let [cmd (str/join " " (bb-argv (:arguments tool-call)))

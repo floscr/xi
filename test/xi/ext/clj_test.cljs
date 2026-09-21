@@ -13,13 +13,14 @@
   "Evaluate synchronously via the worker-side entry (xi.ext.clj/eval-message).
    The real clj tool goes through a worker thread (spawned off process.argv[1]
    by xi.cli's isMainThread guard), which doesn't exist in the test bundle."
-  [code & [{:keys [allowed cwd room-id]}]]
+  [code & [{:keys [allowed allowed-writes cwd room-id]}]]
   (clj-ext/reply->result
    (clj-ext/eval-message #js {:id      0
                               :kind    "clj"
                               :code    code
                               :roomId  (str (or room-id :test))
                               :allowed (clj->js (or allowed []))
+                              :allowedWrites (clj->js (or allowed-writes []))
                               :cwd     (or cwd (os/tmpdir))})
    nil))
 
@@ -51,6 +52,24 @@
   (let [scan (clj-ext/scan-sh-calls "(+ 1 2)")]
     (is (= #{} (:literals scan)))
     (is (not (:dynamic? scan)))))
+
+;; ── scan-write-paths (write-helper gate pre-scan) ────────────────────────────
+
+(deftest scan-write-paths-literals
+  (testing "each write helper's target arg positions are collected"
+    (is (= ["/a/b.txt"] (clj-ext/scan-write-paths "(spit \"/a/b.txt\" \"x\")")))
+    (is (= ["/a" "/b"]  (clj-ext/scan-write-paths "(mv \"/a\" \"/b\")")))
+    (is (= ["/dst"]     (clj-ext/scan-write-paths "(cp \"/src\" \"/dst\")")))
+    (is (= ["/d"]       (clj-ext/scan-write-paths "(mkdir \"/d\")")))
+    (is (= ["/t"]       (clj-ext/scan-write-paths "(touch \"/t\")")))
+    (is (= ["/x" "/y"]  (clj-ext/scan-write-paths "(rm \"/x\" \"/y\")")))))
+
+(deftest scan-write-paths-ignores-dynamic
+  (testing "computed (non-string) paths are invisible to the static scan"
+    (is (= [] (clj-ext/scan-write-paths "(spit p \"x\")")))
+    (is (= [] (clj-ext/scan-write-paths "(mv from to)")))
+    (is (= [] (clj-ext/scan-write-paths "(+ 1 2)")))
+    (is (= [] (clj-ext/scan-write-paths "(spit")))))
 
 ;; ── chained bash detection ───────────────────────────────────────────────────
 
@@ -182,6 +201,20 @@
   (let [res (eval! (str "(spit \"" (os/homedir) "/xi-clj-escape.txt\" \"nope\")"))]
     (is (:is-error res))
     (is (str/includes? (result-text res) "writes are limited"))))
+
+(deftest write-outside-cwd-allowed-when-approved
+  (testing "a gate-approved out-of-repo root (:allowed-writes) is writable"
+    (let [dir (fs/mkdtempSync (node-path/join (os/homedir) ".xi-clj-test-"))
+          f   (node-path/join dir "ok.txt")]
+      (try
+        (let [res (eval! (str "(spit \"" f "\" \"nope\")"))]
+          (is (:is-error res))
+          (is (str/includes? (result-text res) "writes are limited")))
+        (let [res (eval! (str "(spit \"" f "\" \"hi\")") {:allowed-writes [dir]})]
+          (is (not (:is-error res)) (result-text res))
+          (is (= "hi" (fs/readFileSync f "utf8"))))
+        (finally
+          (fs/rmSync dir #js {:recursive true :force true}))))))
 
 (deftest read-credentials-blocked
   (let [res (eval! (str "(cat \"" (os/homedir) "/.ssh/id_rsa\")"))]

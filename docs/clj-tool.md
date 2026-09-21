@@ -69,8 +69,16 @@ Guards, enforced inside every helper:
 
 - **Reads**: credential paths (`xi.sandbox.core/hidden-paths` — `~/.ssh`,
   `~/.gnupg`, …) are blocked, symlink-canonicalized.
-- **Writes** (`spit`/`mkdir`/`cp`/`mv`/`rm`): limited to the room cwd and the OS
-  tmp dir.
+- **Writes** (`spit`/`mkdir`/`cp`/`mv`/`touch`/`rm`): the room cwd and the OS
+  tmp dir are writable freely. A **literal** path that escapes both raises the
+  same outside-repo approval dialog the `write`/`edit` tools use — [y]/[n], plus
+  [r] *allow all writes to this repo* when the target sits inside another git
+  repo (the grant is shared with, and persists like, the permission-gate's
+  `allowed-write-repos`). The gate statically scans the code for these helpers'
+  write-target args, approves the out-of-repo ones, and injects the approved
+  roots into the worker so its `resolve-write` allows them. A **dynamic**
+  (computed, non-string) out-of-repo path can't be pre-approved and still
+  hard-rejects ("writes are limited to the working dir and …").
 - **Env**: only `xi.sandbox.core`'s env allowlist; secret-bearing keys throw.
 - Printed output is captured; results are truncated (30k chars).
 
