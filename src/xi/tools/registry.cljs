@@ -9,6 +9,7 @@
             [xi.tools.grep :as grep]
             [xi.tools.find :as find]
             [xi.tools.ls :as ls]
+            [xi.tools.sleep :as sleep]
             [xi.tools.view :as view]))
 
 (def ^:private builtin-tools
@@ -19,6 +20,7 @@
    {:def grep/definition  :exec grep/execute}
    {:def find/definition  :exec find/execute}
    {:def ls/definition    :exec ls/execute}
+   {:def sleep/definition :exec sleep/execute}
    {:def view/definition  :exec view/execute}])
 
 (defn tool-definitions
