@@ -510,7 +510,7 @@
       ;; A permission gate fired for this (still-running) tool call: render the
       ;; ask as a zone inside the same grey box, joined to the code above.
       (when-let [{:keys [dialog answer!]} permission]
-        (let [{:keys [message text allow-always?]} dialog]
+        (let [{:keys [message text allow-always? allow-repo?]} dialog]
           [:div {:class ["tool-call-content"]}
            [:div {:class ["tool-call-permission"]}
             [:div {:class ["tool-call-permission-msg"]} (or message text)]
@@ -520,6 +520,9 @@
              (when allow-always?
                [:button {:class ["confirm-btn" "confirm-btn--allow"]
                          :on {:click (fn [_] (answer! :always))}} "Always"])
+             (when allow-repo?
+               [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                         :on {:click (fn [_] (answer! :repo))}} "Allow repo"])
              [:button {:class ["confirm-btn" "confirm-btn--allow"]
                        :on {:click (fn [_] (answer! true))}} "Allow"]]]]))
       ;; Answered: a compact decision pill, still part of the same grey box.
@@ -1266,7 +1269,10 @@
   "Human label for the choice the user made on a now-resolved dialog."
   [type options value]
   (case type
-    :confirm    (cond (= value :always) "Always allowed" value "Allowed" :else "Denied")
+    :confirm    (cond (= value :always) "Always allowed"
+                      (= value :repo)   "Repo writes allowed"
+                      value             "Allowed"
+                      :else             "Denied")
     :select     (or (some #(when (= (:value %) value) (:label %)) options)
                     (str value))
     :alert      "Dismissed"
@@ -1298,7 +1304,7 @@
    On answer we log the decision into :web/resolved-dialogs (anchored to the
    current history length) so the bubble persists as a static record."
   [dispatch! state room history suppress-id]
-  (when-let [{:keys [id type message text options allow-always?]}
+  (when-let [{:keys [id type message text options allow-always? allow-repo?]}
              (first (remove #(= suppress-id (:id %)) (get-in room [:ui :dialogs])))]
     (let [room-id (:id room)
           answer! (fn [value]
@@ -1344,6 +1350,9 @@
               (when allow-always?
                 [:button {:class ["confirm-btn" "confirm-btn--allow"]
                           :on {:click (fn [_] (answer! :always))}} "Always"])
+              (when allow-repo?
+                [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                          :on {:click (fn [_] (answer! :repo))}} "Allow repo"])
               [:button {:class ["confirm-btn" "confirm-btn--allow"]
                         :on {:click (fn [_] (answer! true))}} "Allow"]))])]])))
 

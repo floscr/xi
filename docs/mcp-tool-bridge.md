@@ -98,6 +98,12 @@ The permission gate (`ext/permission_gate.cljs`) blocks:
   resolves outside the working dir (project repo) and the OS tmp dir requires
   confirmation. Symlinks are canonicalized so the check can't be laundered
   through a link created inside the repo; the tmp dir is always allowed.
+  When the target sits inside another git repo (a `.git` entry is found
+  walking up from the path), the confirm dialog offers a third option —
+  `[r]` in the TUI, "Allow repo" in the web client — that allows **all**
+  writes under that repo root for the rest of the room's session. Allowed
+  roots live room-scoped under `[:rooms rid :ext :permission-gate
+  :allowed-write-repos]`.
 - **Dangerous bash patterns**: `rm -rf`, `sudo`, `chmod -R`, `dd if=`, etc.
 
 To add a blocked pattern, edit the pattern/path lists in

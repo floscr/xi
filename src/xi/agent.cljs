@@ -471,7 +471,8 @@
                                        (ask! {:dispatch! dispatch! :state (get-state)}
                                              {:room-id room-id
                                               :dialog  (cond-> {:type :confirm :message message}
-                                                         (:allow-always? opts) (assoc :allow-always? true))}))))}
+                                                         (:allow-always? opts) (assoc :allow-always? true)
+                                                         (:allow-repo? opts)   (assoc :allow-repo? true))}))))}
              gate1 (when tool-gate
                      (fn [tool-call] (tool-gate tool-call gate-ctx)))
              ;; The turn's cwd doesn't exist on this host (e.g. a Pi session

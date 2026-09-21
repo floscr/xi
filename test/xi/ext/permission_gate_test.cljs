@@ -48,6 +48,23 @@
                    (is (re-find #"outside the project repo" (first @calls)))
                    (done)))))))
 
+(deftest write-outside-repo-skips-confirm-when-repo-allowed
+  (async done
+    (let [calls (atom [])
+          home  (os/homedir)
+          out   (node-path/join home "xi-outside-write-test.txt")
+          tc    {:name "write" :arguments {:path out}}
+          st    {:rooms {"r" {:ext {:permission-gate
+                                    {:allowed-write-repos #{home}}}}}}
+          ctx'  (assoc (ctx repo-cwd false calls)
+                       :room-id "r"
+                       :get-state (fn [] st))]
+      (-> (js/Promise.resolve (gate tc ctx'))
+          (.then (fn [res]
+                   (is (= tc res) "write under an allowed repo passes through")
+                   (is (empty? @calls) "confirm! not invoked for allowed repo")
+                   (done)))))))
+
 (deftest write-outside-repo-allowed-on-yes
   (async done
     (let [calls (atom [])

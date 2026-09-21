@@ -416,12 +416,14 @@
    line. Enter = yes, Esc = no. The message word-wraps to the terminal width so
    long guarded commands no longer overflow and corrupt the layout, and the
    editor stays visible below the dialog for context."
-  [{:keys [message prompt allow-always?]} respond! editor]
+  [{:keys [message prompt allow-always? allow-repo?]} respond! editor]
   (let [text (or message prompt "Confirm?")
         hint (str "  " (ansi/fg :accent "[y]") "es   "
                   (ansi/fg :accent "[n]") "o   "
                   (when allow-always?
                     (str (ansi/fg :accent "[a]") "llow always   "))
+                  (when allow-repo?
+                    (str (ansi/fg :accent "[r]") " allow repo writes   "))
                   (ansi/fg :dim "(Enter=yes, Esc=no)"))]
     {:type :dialog
      :render (fn [width]
@@ -436,6 +438,7 @@
                        (#{"y" "Y"} data) (respond! true)
                        (#{"n" "N"} data) (respond! false)
                        (and allow-always? (#{"a" "A"} data)) (respond! :always)
+                       (and allow-repo? (#{"r" "R"} data))   (respond! :repo)
                        (enter? data)     (respond! true)
                        (escape? data)    (respond! false)
                        :else nil))}))

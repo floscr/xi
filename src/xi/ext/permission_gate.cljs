@@ -7,8 +7,11 @@
    attached, :confirm! resolves to its safe default (false), so guarded
    operations are blocked in headless server mode."
   (:require [clojure.string :as str]
+            [xi.core.state :as state]
             [xi.sandbox.core :as sandbox]
-            ["os" :as os]))
+            ["fs" :as fs]
+            ["os" :as os]
+            ["path" :as node-path]))
 
 (def ^:private BLOCKED_PATHS
   "Paths that should never be written to without confirmation."
@@ -52,6 +55,57 @@
            tmp      (sandbox/real-resolve cwd (os/tmpdir))]
        (not (or (sandbox/path-within? resolved real-cwd)
                 (sandbox/path-within? resolved tmp)))))))
+
+(def ^:private ext-id :permission-gate)
+
+(defn- git-repo-root
+  "Walk up from path's parent directory looking for a .git entry (dir or
+   worktree file); return the repo root, or nil when not inside a git repo.
+   Works for not-yet-existing paths — missing intermediate dirs just fail
+   the .git check and the walk continues upward."
+  [path]
+  (loop [dir (node-path/dirname (str path))]
+    (cond
+      (fs/existsSync (node-path/join dir ".git")) dir
+      (= dir (node-path/dirname dir)) nil
+      :else (recur (node-path/dirname dir)))))
+
+(defn- allow-repo
+  "Remember a repo root whose writes the user allowed for this room."
+  [st {:keys [room-id repo]}]
+  (when (and room-id (seq (str repo)))
+    {:state (update-in st [:rooms room-id :ext ext-id :allowed-write-repos]
+                       (fnil conj #{}) (str repo))}))
+
+(defn- ask-outside-write
+  "Confirm a write/edit outside the project repo. When the target sits inside
+   another git repo the dialog offers a third option — [r] allow all writes to
+   that repo — which records the repo root in room ext state so later writes
+   under it skip the dialog."
+  [tool-call {:keys [confirm! dispatch! get-state room-id cwd]} path]
+  (let [resolved (sandbox/real-resolve cwd (str path))
+        repo     (git-repo-root resolved)
+        allowed  (when get-state
+                   (:allowed-write-repos (state/room-ext (get-state) room-id ext-id)))]
+    (cond
+      (some #(sandbox/path-within? resolved %) allowed)
+      tool-call
+
+      (not confirm!) tool-call
+
+      :else
+      (-> (confirm! (str "Write outside the project repo: " path
+                         (when repo (str " (repo: " repo ")")))
+                    (when repo {:allow-repo? true}))
+          (.then (fn [answer]
+                   (cond
+                     (= answer :repo)
+                     (do (when dispatch!
+                           (dispatch! {:type :ext.permission-gate/allow-repo
+                                       :room-id room-id :repo repo}))
+                         tool-call)
+                     answer tool-call
+                     :else  nil)))))))
 
 (defn server-control-kind
   "When cmd runs the host-server bb control task that would kill the very
@@ -118,7 +172,7 @@
 (defn- tool-gate
   "Guard dangerous operations with user confirmation. Tool names may be
    PascalCase (from the SDK) or lowercase."
-  [tool-call {:keys [confirm! cwd]}]
+  [tool-call {:keys [confirm! cwd] :as ctx}]
   (let [{:keys [name arguments]} tool-call
         lname (str/lower-case (or name ""))]
     (case lname
@@ -132,7 +186,7 @@
           (ask-confirmation tool-call confirm! (str "Write to protected path: " path))
 
           (outside-project? cwd path)
-          (ask-confirmation tool-call confirm! (str "Write outside the project repo: " path))
+          (ask-outside-write tool-call ctx path)
 
           :else tool-call))
 
@@ -156,5 +210,7 @@
       tool-call)))
 
 (def extension
-  {:id        :permission-gate
+  {:id        ext-id
+   :init      {:room {:allowed-write-repos #{}}}
+   :handlers  {:ext.permission-gate/allow-repo allow-repo}
    :tool-gate tool-gate})
