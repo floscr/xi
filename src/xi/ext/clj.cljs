@@ -536,6 +536,21 @@
   (let [missed (remove #(str/includes? text %) @commit-outs)]
     (cond-> text (seq missed) (str "\n" (str/join "\n" missed)))))
 
+(defn- interop-hint
+  "When SCI blocked a raw Java/JS method call (e.g. `(.contains s \"x\")`),
+   return a hint pointing at the clojure.string / clojure.core equivalent;
+   otherwise nil. The sandbox only allows an allowlist of interop, so most
+   `(.method obj …)` forms fail with a \"… not allowed!\" message."
+  [^js err]
+  (let [msg (str (.-message err))]
+    (when (and (str/includes? msg "not allowed!")
+               (re-find #"Method \S" msg))
+      (str "Hint: clj runs in a sandbox — raw interop (.method obj …) is "
+           "blocked. Use clojure.string / clojure.core instead, e.g. "
+           "(str/includes? s \"x\") for .contains, (str/starts-with? s \"x\") "
+           "for .startsWith, (str/lower-case s) for .toLowerCase, "
+           "(str/split s #\",\") for .split."))))
+
 (defn- eval-code! [{:keys [code room-id cwd allowed]}]
   (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default))
         prints (atom "")
@@ -560,7 +575,9 @@
                              (str (when (seq out) (str (truncate out MAX_RESULT) "\n"))
                                   "Error: " (.-message err)
                                   (when line (str " (line " line
-                                                  (when column (str ":" column)) ")")))
+                                                  (when column (str ":" column)) ")"))
+                                  (when-let [hint (interop-hint err)]
+                                    (str "\n\n" hint)))
                              commit-outs)}]
            :is-error true})))))
 
