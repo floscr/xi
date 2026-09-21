@@ -18,7 +18,35 @@ Ctrl+I / Ctrl+B    toggle element picking (or click the ✦ Design pill)
 click element      popover: type what you want changed
 Enter              queue it — a sub-agent picks it up; keep browsing
 Esc                popover → picking → browsing (mode stays on)
+agents button      spinner while agents work; click for the list + Commit
 ```
+
+## The agents dock (spinner · list · commit)
+
+Left of the ✦ Design pill sits an **agents button**. It appears once you've
+queued at least one request and reflects the design sub-agents' progress:
+
+- **Spinner** while any design agent (or its commit) is working; otherwise a
+  static ✦, always with a running count.
+- **Click it** to open a list of the design agents spawned this session — each
+  row shows a status dot, the request label, and a per-state control:
+  - *running* → a spinner
+  - *done* → a **Commit** button
+  - *committing* → a spinner
+  - *committed* → a ✓ checkmark
+  - *error* → an error label
+- Clicking **Commit** sends a follow-up commit request for that agent. The
+  watcher spawns a second sub-agent whose prompt carries the original agent's
+  result summary; it reviews the working tree and creates one
+  Conventional-Commit for that change (no push). The row shows a spinner while
+  it runs and a ✓ when it lands.
+
+The list and button are driven by the watcher: each poll pushes the tracked
+agents' current status (`window.__xiDesignAgents`) into the page and calls
+`window.__xiDesignRender`; Commit clicks are queued in
+`window.__xiDesignCommitQueue` and drained on the next poll. Only agents
+spawned *by this design session* appear here (commit agents are tracked against
+their originating row, not listed separately).
 
 ## How it works
 
@@ -34,8 +62,11 @@ tools use. It requires `XI_CHROME_TOOLS`.
   → list_pages           parse tabs; if >1, ask which (select_page)
   → evaluate_script      inject resident design script (cleanup + config + design.js)
   → watcher loop         evaluate_script every ~700ms:
+      · pushes tracked agent statuses → window.__xiDesignAgents (+ re-render)
       · drains window.__xiDesignQueue → per request:
-          take_screenshot → image/persist-image! → :subagent/spawn
+          take_screenshot → image/persist-image! → :subagent/spawn (tracked)
+      · drains window.__xiDesignCommitQueue → per commit:
+          :subagent/spawn a commit agent (prompt = original agent's result)
       · re-injects when window.__xiDesignActive is gone
 ```
 

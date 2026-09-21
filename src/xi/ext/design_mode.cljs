@@ -26,6 +26,7 @@
   (:require [clojure.string :as str]
             [xi.agent :as agent]
             [xi.ext.chrome-mcp.scope :as scope]
+            [xi.ext.subagent.handlers :as sah]
             [xi.image :as image])
   (:require-macros [xi.ext.design-mode-js :refer [inline-design-js]]))
 
@@ -50,9 +51,11 @@
 (def ^:private cleanup-js
   (str "(function() {"
        "var ids = ['__xi-design-pill','__xi-design-overlay','__xi-design-hl',"
-       "'__xi-design-tip','__xi-design-pop','__xi-design-toast'];"
+       "'__xi-design-tip','__xi-design-pop','__xi-design-toast','__xi-design-dock',"
+       "'__xi-design-agents-btn','__xi-design-agents-pop','__xi-design-style'];"
        "for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.remove(); }"
        "delete window.__xiDesignActive; delete window.__xiDesignQueue; delete window.__XI_DESIGN_CFG__;"
+       "delete window.__xiDesignCommitQueue; delete window.__xiDesignAgents; delete window.__xiDesignRender;"
        "})();"))
 
 ;; ── JS run in the page (via chrome-devtools-mcp evaluate_script) ─────────────
@@ -71,11 +74,23 @@
        design-js "\n"
        "return true;\n}"))
 
-(def ^:private poll-fn
-  "One round-trip: is the script still installed (page not navigated), and
-   drain any queued requests atomically (splice empties in place)."
-  (str "() => { const q = (window.__xiDesignQueue || []).splice(0);"
-       " return { active: !!window.__xiDesignActive, q: q }; }"))
+(defn- poll-fn
+  "One round-trip: push the current design-agent list into the page (merging
+   any client-side optimistic commit flag the watcher hasn't observed yet),
+   re-render the dock, report whether the script is still installed (page not
+   navigated), and splice-drain both the request and commit queues atomically.
+   `agents-json` is a JSON array literal of {id label status commit}."
+  [agents-json]
+  (str "() => {"
+       " var incoming = " agents-json ";"
+       " var prev = window.__xiDesignAgents || [];"
+       " var byId = {}; prev.forEach(function(a){ byId[a.id] = a; });"
+       " incoming.forEach(function(a){ var p = byId[a.id]; if (p && !a.commit && p.commit) { a.commit = p.commit; } });"
+       " window.__xiDesignAgents = incoming;"
+       " if (window.__xiDesignRender) window.__xiDesignRender();"
+       " var q = (window.__xiDesignQueue || []).splice(0);"
+       " var c = (window.__xiDesignCommitQueue || []).splice(0);"
+       " return { active: !!window.__xiDesignActive, q: q, c: c }; }"))
 
 (def ^:private cleanup-fn
   (str "() => { " cleanup-js " return true; }"))
@@ -146,6 +161,47 @@
        "using it, and their dev server hot-reloads the page.\n"
        "- Finish with one concise line: what changed, in which file(s)."))
 
+(defn commit-prompt
+  "The follow-up commit sub-agent's prompt for one completed design change.
+   Carries the original agent's result summary so a fresh context can find and
+   commit exactly those changes."
+  [{:keys [label result]}]
+  (str "A design change was just made in this project by another agent. Its "
+       "summary:\n\n"
+       (if (str/blank? result)
+         (str "(no summary given \u2014 inspect `git status` / `git diff` to see what "
+              "changed for: " (or label "the design request") ")")
+         result)
+       "\n\n## Task\n"
+       "Commit these changes to git:\n"
+       "- Review the uncommitted changes (`git status`, `git diff`).\n"
+       "- Stage the file(s) for THIS change and create ONE commit with a concise "
+       "Conventional-Commit message describing it.\n"
+       "- Do NOT commit unrelated changes, and do NOT push.\n"
+       "- Finish with one line: the commit hash and subject."))
+
+(defn page-agents
+  "The tracked design sub-agents as a compact list for the page:
+   {id label status commit}. `status` is the sub-agent's status name;
+   `commit` reflects the follow-up commit agent (nil | \"committing\" |
+   \"committed\" | \"error\"). `tracked` is the watcher's ordered
+   [{:sub-id :commit-sub-id}] list."
+  [state room-id tracked]
+  (let [all (into {} (map (juxt :id identity)) (sah/agents state room-id))]
+    (mapv (fn [{:keys [sub-id commit-sub-id]}]
+            (let [a (get all sub-id)
+                  c (get all commit-sub-id)]
+              {:id     sub-id
+               :label  (or (:label a) "agent")
+               :status (name (or (:status a) :running))
+               :commit (cond
+                         (nil? commit-sub-id)   nil
+                         (= (:status c) :done)  "committed"
+                         (= (:status c) :error) "error"
+                         (:errored? c)          "error"
+                         :else                  "committing")}))
+          tracked)))
+
 ;; ── Feedback ─────────────────────────────────────────────────────────────────
 
 (defn- status! [dispatch! room-id text]
@@ -174,39 +230,72 @@
 (defn- handle-request!
   "One drained queue entry → screenshot → spawn a background sub-agent.
    User-initiated (they typed the request in the browser), so this dispatches
-   :subagent/spawn directly — no confirmation gate, same as /review."
-  [{:keys [call dispatch!]} {:keys [page-id room-id]} req]
+   :subagent/spawn directly — no confirmation gate, same as /review. The
+   spawned sub-id is tracked in `watch*` so it surfaces in the browser dock's
+   agent list (and can later be committed)."
+  [{:keys [call dispatch! watch*]} {:keys [page-id room-id]} req]
   (-> (capture-screenshot call page-id)
       (.then (fn [shot]
-               (let [path (when shot
-                            (image/persist-image! {:data shot :media-type "image/png"}))
-                     label (request-label req)]
+               (let [path   (when shot
+                              (image/persist-image! {:data shot :media-type "image/png"}))
+                     label  (request-label req)
+                     sub-id (sah/gen-id "design")]
+                 (swap! watch* update :agents (fnil conj [])
+                        {:sub-id sub-id :commit-sub-id nil})
                  (dispatch! {:type   :subagent/spawn
                              :room-id room-id
+                             :sub-id sub-id
                              :label  label
                              :task   (str "Design change on " (:selector req))
                              :prompt (build-prompt req path)})
                  (status! dispatch! room-id (str "✦ " label " — sub-agent spawned.")))))))
+
+(defn- handle-commit!
+  "One drained commit request ({:id <design sub-id>}) → spawn a follow-up
+   sub-agent that commits the completed design change. No-op unless the target
+   agent is done and hasn't already been committed; the commit agent's id is
+   recorded so the dock can show its committing → committed progress."
+  [{:keys [dispatch! get-state watch*]} {:keys [room-id]} {:keys [id]}]
+  (let [state (get-state)
+        agent (sah/find-child state room-id id)
+        tracked (some #(when (= (:sub-id %) id) %) (:agents @watch*))]
+    (when (and agent (= (:status agent) :done)
+               tracked (not (:commit-sub-id tracked)))
+      (let [commit-sub-id (sah/gen-id "commit")]
+        (swap! watch* update :agents
+               (fn [as] (mapv (fn [a] (if (= (:sub-id a) id)
+                                        (assoc a :commit-sub-id commit-sub-id) a))
+                              as)))
+        (dispatch! {:type   :subagent/spawn
+                    :room-id room-id
+                    :sub-id commit-sub-id
+                    :label  (str "Commit: " (or (:label agent) id))
+                    :task   (str "Commit design change " id)
+                    :prompt (commit-prompt {:label (:label agent) :result (:result agent)})})
+        (status! dispatch! room-id (str "✦ Committing " (or (:label agent) id) "…"))))))
 
 (defn- tick!
   "One watcher beat: poll the page. Re-inject when the resident script is gone
    (navigation/reload — this is what makes the mode persistent), drain the
    request queue, then schedule the next beat. Transient errors (mid-navigation
    evals) are skipped and retried on the next tick."
-  [{:keys [call watch*] :as ctx}]
+  [{:keys [call watch* get-state room-id] :as ctx}]
   (let [{:keys [running? page-id] :as w} @watch*]
     (when running?
-      (-> (call "evaluate_script" {:function poll-fn :pageId page-id})
-          (.then (fn [res]
-                   (when-not (:is-error res)
-                     (let [{:keys [active q]} (parse-eval-return res)]
-                       (doseq [req q] (handle-request! ctx w req))
-                       (when-not active
-                         (inject! call page-id))))))
-          (.catch (fn [_] nil))
-          (.then (fn [_]
-                   (when (:running? @watch*)
-                     (js/setTimeout #(tick! ctx) poll-interval-ms))))))))
+      (let [agents-json (js/JSON.stringify
+                         (clj->js (page-agents (get-state) room-id (:agents w))))]
+        (-> (call "evaluate_script" {:function (poll-fn agents-json) :pageId page-id})
+            (.then (fn [res]
+                     (when-not (:is-error res)
+                       (let [{:keys [active q c]} (parse-eval-return res)]
+                         (doseq [req q] (handle-request! ctx w req))
+                         (doseq [cm c] (handle-commit! ctx w cm))
+                         (when-not active
+                           (inject! call page-id))))))
+            (.catch (fn [_] nil))
+            (.then (fn [_]
+                     (when (:running? @watch*)
+                       (js/setTimeout #(tick! ctx) poll-interval-ms)))))))))
 
 ;; ── Start / stop ─────────────────────────────────────────────────────────────
 
@@ -239,7 +328,7 @@
 (defn- stop!
   [{:keys [call dispatch! watch*]} & [{:keys [silent?]}]]
   (let [{:keys [running? page-id room-id] stored-call :call} @watch*]
-    (swap! watch* assoc :running? false :page-id nil :room-id nil :call nil)
+    (swap! watch* assoc :running? false :page-id nil :room-id nil :call nil :agents [])
     ;; Prefer the call captured at start — it's scoped to the workspace design
     ;; mode actually runs on, even when /design off comes from another room.
     (when page-id (cleanup! (or stored-call call) page-id))
@@ -259,7 +348,7 @@
       (.then (fn [choice]
                (if (= choice :cancelled)
                  (status! dispatch! room-id "Design mode cancelled.")
-                 (do (swap! watch* assoc :running? true :page-id choice :room-id room-id :call call)
+                 (do (swap! watch* assoc :running? true :page-id choice :room-id room-id :call call :agents [])
                      (-> (inject! call choice)
                          (.then (fn [_]
                                   (status! dispatch! room-id
@@ -279,7 +368,7 @@
    chooser; absent (headless, no dialogs) it falls back to the selected page.
    `:shutdown!` stops the watcher loop (chrome-mcp calls it from :on-shutdown)."
   [call & [ask!]]
-  (let [watch* (atom {:running? false :page-id nil :room-id nil})]
+  (let [watch* (atom {:running? false :page-id nil :room-id nil :agents []})]
     {:commands
      [{:name        "design"
        :description "Toggle browser design mode — pick elements with Ctrl+I/Ctrl+B, changes run in sub-agents"

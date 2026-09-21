@@ -140,10 +140,19 @@
             overlay (mk "__xi-design-overlay"
                         "position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;cursor:crosshair;display:none;")
             pill    (mk "__xi-design-pill"
-                        (str "position:fixed;bottom:16px;right:16px;z-index:2147483646;"
-                             "display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;"
+                        (str "display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;"
                              "background:" (.-surface C) ";color:" (.-text C) ";border:1px solid " (.-border C)
                              ";padding:7px 14px;border-radius:999px;font:13px/1.4 " sans ";"
+                             "box-shadow:0 4px 24px rgba(30,30,28,0.14),0 1px 3px rgba(30,30,28,0.08);"))
+            ;; The dock holds the agents button (left) + the pill (right),
+            ;; bottom-right. The agents button surfaces the design sub-agents:
+            ;; a spinner while any is working, a list on click, per-agent commit.
+            dock    (mk "__xi-design-dock"
+                        "position:fixed;bottom:16px;right:16px;z-index:2147483646;display:flex;align-items:center;gap:10px;")
+            agents-btn (mk "__xi-design-agents-btn"
+                        (str "display:none;align-items:center;gap:6px;cursor:pointer;user-select:none;"
+                             "background:" (.-surface C) ";color:" (.-text C) ";border:1px solid " (.-border C)
+                             ";padding:6px 12px;border-radius:999px;font:13px/1.4 " sans ";"
                              "box-shadow:0 4px 24px rgba(30,30,28,0.14),0 1px 3px rgba(30,30,28,0.08);"))]
 
         (letfn [(pill-idle []
@@ -297,11 +306,148 @@
                                              (do (.preventDefault e)
                                                  (close-popover)
                                                  (update-hl nil)
-                                                 (show-toast "Re-pick \u2014 click another element"))))))))]
+                                                 (show-toast "Re-pick \u2014 click another element"))))))))
+
+                ;; ── Design-agents dock (spinner + list + per-agent commit) ──────
+
+                (spinner-html [size]
+                  (str "<span style=\"display:inline-block;width:" size "px;height:" size "px;"
+                       "border:2px solid " (.-border C) ";border-top-color:" (.-accent C)
+                       ";border-radius:50%;animation:__xiDesignSpin 0.7s linear infinite;\"></span>"))
+
+                (working? [a]
+                  (or (= (.-status a) "running") (= (.-commit a) "committing")))
+
+                (list-sig [arr]
+                  (.join (.map arr (fn [a] (str (.-id a) ":" (.-status a) ":" (or (.-commit a) "")))) "|"))
+
+                (render-agents-btn []
+                  (let [arr (or js/window.__xiDesignAgents #js [])
+                        n   (.-length arr)]
+                    (if (= n 0)
+                      (do (set! (.. agents-btn -style -display) "none")
+                          (set! (.-agentsSig state) nil))
+                      (let [busy (.some arr (fn [a] (working? a)))
+                            sig  (str n ":" busy)]
+                        (set! (.. agents-btn -style -display) "flex")
+                        (when (not= sig (.-agentsSig state))
+                          (set! (.-agentsSig state) sig)
+                          (set! (.-innerHTML agents-btn)
+                                (str (if busy
+                                       (spinner-html 13)
+                                       (str "<span style=\"color:" (.-accent C) ";font-size:13px;\">\u2726</span>"))
+                                     "<span style=\"font-family:" serif ";font-weight:600;\">"
+                                     (if busy "Working" "Agents") "</span>"
+                                     "<span style=\"color:" (.-textFaint C) ";font-size:11.5px;\">" n "</span>")))))))
+
+                (agent-row-html [a]
+                  (let [status (.-status a)
+                        commit (.-commit a)
+                        right  (cond
+                                 (= status "running")   (spinner-html 12)
+                                 (= status "error")     (str "<span style=\"color:#c0392b;font-size:11.5px;\">error</span>")
+                                 (= commit "committed") (str "<span style=\"color:" (.-accent C) ";font-size:15px;line-height:1;\">\u2713</span>")
+                                 (= commit "committing") (spinner-html 12)
+                                 (= commit "error")     (str "<span style=\"color:#c0392b;font-size:11.5px;\">commit failed</span>")
+                                 (= status "done")      (str "<button data-commit-id=\"" (esc (.-id a)) "\" "
+                                                             "style=\"padding:4px 11px;border-radius:8px;border:1px solid " (.-border C)
+                                                             ";background:" (.-accent C) ";color:#fff;cursor:pointer;"
+                                                             "font-size:12px;font-weight:600;font-family:inherit;\">Commit</button>")
+                                 (= status "stopped")   (str "<span style=\"color:" (.-textFaint C) ";font-size:11.5px;\">stopped</span>")
+                                 :else "")
+                        dot    (cond (= status "running") (.-accent C)
+                                     (= status "error")   "#c0392b"
+                                     (= status "done")    "#3a9d5d"
+                                     :else (.-textFaint C))]
+                    (str "<div style=\"display:flex;align-items:center;gap:9px;padding:8px 2px;border-top:1px solid " (.-border C) ";\">"
+                         "<span style=\"width:7px;height:7px;border-radius:50%;flex:none;background:" dot ";\"></span>"
+                         "<span style=\"flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;\">"
+                         (esc (or (.-label a) "agent")) "</span>"
+                         "<span style=\"flex:none;display:flex;align-items:center;min-height:22px;\">" right "</span>"
+                         "</div>")))
+
+                (render-agents-list []
+                  (when-let [pop (.-agentsPop state)]
+                    (let [arr  (or js/window.__xiDesignAgents #js [])
+                          sig  (list-sig arr)
+                          body (.getElementById doc "__xi-design-agents-list")]
+                      (when (and body (not= sig (.-agentsListSig state)))
+                        (set! (.-agentsListSig state) sig)
+                        (set! (.-innerHTML body)
+                              (if (= 0 (.-length arr))
+                                (str "<div style=\"color:" (.-textFaint C) ";font-size:12.5px;padding:8px 2px;\">No design agents yet.</div>")
+                                (.join (.map arr (fn [a] (agent-row-html a))) "")))
+                        (doseq [btn (js/Array.from (.querySelectorAll body "[data-commit-id]"))]
+                          (.addEventListener btn "click"
+                                             (fn [e]
+                                               (.stopPropagation e)
+                                               (request-commit (.getAttribute btn "data-commit-id")))))))))
+
+                (render-agents []
+                  (render-agents-btn)
+                  (render-agents-list))
+
+                (request-commit [id]
+                  (when-not js/window.__xiDesignCommitQueue
+                    (set! js/window.__xiDesignCommitQueue #js []))
+                  (.push js/window.__xiDesignCommitQueue #js {:id id :ts (js/Date.now)})
+                  ;; Optimistic: flip to committing until the watcher confirms.
+                  (let [arr (or js/window.__xiDesignAgents #js [])]
+                    (.forEach arr (fn [a] (when (= (.-id a) id) (set! (.-commit a) "committing")))))
+                  (set! (.-agentsSig state) nil)
+                  (set! (.-agentsListSig state) nil)
+                  (render-agents))
+
+                (close-agents-pop []
+                  (when-let [p (.-agentsPop state)]
+                    (.remove p)
+                    (set! (.-agentsPop state) nil)
+                    (set! (.-agentsListSig state) nil)))
+
+                (open-agents-pop []
+                  (let [pop (.createElement doc "div")]
+                    (set! (.-id pop) "__xi-design-agents-pop")
+                    (set! (.. pop -style -cssText)
+                          (str "position:fixed;right:16px;bottom:62px;z-index:2147483647;width:322px;"
+                               "max-height:60vh;overflow:auto;background:" (.-surface C) ";color:" (.-text C)
+                               ";border:1px solid " (.-border C) ";border-radius:14px;padding:12px 14px;font-family:" sans ";"
+                               "box-shadow:0 8px 40px rgba(30,30,28,0.18),0 2px 8px rgba(30,30,28,0.08);"))
+                    (set! (.-innerHTML pop)
+                          (str "<div style=\"display:flex;align-items:baseline;gap:7px;margin-bottom:4px;\">"
+                               "<span style=\"color:" (.-accent C) ";font-size:14px;\">\u2726</span>"
+                               "<span style=\"font-family:" serif ";font-size:15px;font-weight:600;\">Design agents</span></div>"
+                               "<div id=\"__xi-design-agents-list\"></div>"))
+                    (.appendChild root pop)
+                    (set! (.-agentsPop state) pop)
+                    (render-agents-list)))
+
+                (toggle-agents-pop []
+                  (if (.-agentsPop state) (close-agents-pop) (open-agents-pop)))]
 
           ;; ── Event wiring ──────────────────────────────────────────────────
 
           (style-pill false)
+
+          ;; Spinner keyframes (inline styles can't declare @keyframes).
+          (let [sheet (.createElement doc "style")]
+            (set! (.-id sheet) "__xi-design-style")
+            (set! (.-textContent sheet) "@keyframes __xiDesignSpin{to{transform:rotate(360deg)}}")
+            (.appendChild root sheet))
+
+          ;; Reparent the pill + agents button into the bottom-right dock
+          ;; (agents button on the left, pill on the right).
+          (.appendChild dock agents-btn)
+          (.appendChild dock pill)
+
+          (when-not js/window.__xiDesignCommitQueue
+            (set! js/window.__xiDesignCommitQueue #js []))
+          ;; The watcher pushes the agent list into __xiDesignAgents each poll
+          ;; and calls this to re-render the dock + open list.
+          (set! js/window.__xiDesignRender render-agents)
+          (render-agents)
+
+          (.addEventListener agents-btn "click"
+                             (fn [e] (.stopPropagation e) (toggle-agents-pop)))
           (.addEventListener pill "click" (fn [] (toggle-picking)))
 
           (.addEventListener overlay "mousemove"
