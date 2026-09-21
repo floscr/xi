@@ -2230,6 +2230,26 @@ body {
   opacity: 0.85;
 }
 
+/* :form dialog — one labeled textarea per field (skill inputs etc.) */
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-3);
+  min-width: min(28rem, 100%);
+}
+
+.dialog-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+}
+
+.dialog-form-label {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-1);
+}
+
 .dialog-decision {
   display: inline-flex;
   align-items: center;

@@ -437,7 +437,7 @@
       (and get-state (tool-allowed? (get-state) room-id (:name tool-call))) tool-call
       :else
       (-> (confirm! (gate-message server tool (:arguments tool-call))
-                    {:allow-always? true})
+                    {:options [:yes :no :always]})
           (.then (fn [ans]
                    (cond
                      (= ans :always)

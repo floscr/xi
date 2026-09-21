@@ -96,7 +96,7 @@
       :else
       (-> (confirm! (str "Write outside the project repo: " path
                          (when repo (str " (repo: " repo ")")))
-                    (when repo {:allow-repo? true}))
+                    (when repo {:options [:yes :no :allow-repo]}))
           (.then (fn [answer]
                    (cond
                      (= answer :repo)

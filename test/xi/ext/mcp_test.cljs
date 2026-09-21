@@ -118,8 +118,8 @@
                                               (reset! opts-seen opts)
                                               (js/Promise.resolve :always))})]
         (is (= tc gated) ":always lets the call proceed")
-        (is (= {:allow-always? true} @opts-seen)
-            "the gate offers the allow-always option")
+        (is (= {:options [:yes :no :always]} @opts-seen)
+            "the gate offers the always option")
         (is (= [{:type :mcp/allow-tool :room-id "r1" :tool "mcp__render__list_logs"}]
                @dispatched)
             ":always dispatches the per-session remember event")

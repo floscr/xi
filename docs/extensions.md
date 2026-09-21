@@ -131,11 +131,42 @@ A 2-arg function that intercepts tool execution:
 - May return a Promise for async operations (e.g., confirmation dialogs).
 
 The gate ctx: `{:dispatch! :get-state :room-id :cwd :confirm!}`.
-`:confirm!` is `(fn [message] → Promise<bool>)` — raises a TUI dialog;
-resolves to `false` (safe default) when no client is attached.
+`:confirm!` is `(fn [message] → Promise<bool>)` — raises a confirm dialog;
+resolves to `false` (safe default) when no client is attached. A second
+arg `{:options [:yes :no :always …]}` adds extra choices as data — option
+keywords from `xi.dialog/confirm-option` (e.g. `:always` resolves
+`:always`, `:allow-repo` resolves `:repo`); the TUI and web render the
+dialog generically from that vector, so no template changes are needed.
 
 Tool exec-fns only receive `{:cwd}` — they have no access to dispatch,
 state, or dialogs. Approval/interception must happen in the gate.
+
+## Dialogs
+
+Dialogs are **data**, not templates. `ext/create-dialogs` returns `ask!`:
+
+```clojure
+(ask! {:dispatch! … :state …} {:room-id … :dialog {…}}) → Promise<answer>
+```
+
+It pushes the dialog map into the room's `[:ui :dialogs]`; the TUI and web
+render it generically from the data, and the promise resolves with the
+user's answer (or a safe default — `false`/`nil` — when the server is truly
+headless). Dialog types:
+
+- `{:type :confirm :message … :options [:yes :no :always …]}` — option
+  keywords come from `xi.dialog/confirm-option` (label, key hint, resolved
+  value); resolves to that option's value (`true`/`false`/`:always`/…).
+  Omitting `:options` defaults to `[:yes :no]`.
+- `{:type :form :message … :fields [{:name "topic"} …]}` — a multi-field
+  text form (Enter/Tab moves between fields in the TUI; textareas on web).
+  Field labels default to a humanized `:name`
+  (`xi.dialog/form-fields`). Resolves to a map of field name → entered
+  string, or `nil` on cancel. Used by the skills extension to collect
+  `<input />` placeholder values for `/skill load`.
+
+Adding a new option keyword or dialog field requires no renderer changes —
+both clients build the UI from the dialog map.
 
 ## Event Hooks
 
@@ -365,6 +396,6 @@ Example: `xi.ext.github.web` (/pulls PR list/detail/diff pages).
 | terminal-title | handler | Sets terminal title from session name/cwd via ANSI escape. |
 | clipboard-image | event-hook | Converts pasted clipboard image paths to inline base64. |
 | projects | command, handler, keybinding | Project path picker. `/project` or Alt+P. |
-| skills | system-prompt, command | Injects tool knowledge based on project markers; `/skill list\|load`. |
+| skills | system-prompt, command (factory) | Injects tool knowledge based on project markers; `/skill list\|load`. Skills with `<input />` placeholders raise a `:form` dialog to collect values before submitting. |
 | chrome | tools (factory) | Proxies `chrome-devtools-mcp` as xi tools (opt-in via `XI_CHROME_TOOLS`). See [chrome-mcp.md](chrome-mcp.md). |
 | element_picker | command + fx | `/pick` a DOM element in the MCP-controlled Chrome → sends its HTML, selector, styles + a screenshot as the next prompt. Installed into `chrome` (shares its MCP client). See [element-picker.md](element-picker.md). |

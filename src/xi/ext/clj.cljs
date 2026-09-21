@@ -775,7 +775,7 @@
               (if (:denied acc)
                 acc
                 (-> (confirm! (str "clj: allow running `" cli "`?")
-                              {:allow-always? true})
+                              {:options [:yes :no :always]})
                     (.then (fn [answer]
                              (cond
                                (= answer :always)
@@ -1039,7 +1039,7 @@
 
       :else
       (-> (confirm! (str "Trust bb.edn at " (find-bb-edn dir) " and allow `bb` tasks?")
-                    {:allow-always? true})
+                    {:options [:yes :no :always]})
           (.then (fn [answer]
                    (cond
                      (= answer :always) (do (trust-bb! dir) tool-call)

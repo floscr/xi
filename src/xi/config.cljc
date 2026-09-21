@@ -141,7 +141,7 @@
       process-manager/extension
       subagent/extension
       projects/extension
-      skills/extension
+      skills/create
       snippets/extension
       events/create]))
 

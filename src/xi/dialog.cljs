@@ -1,0 +1,63 @@
+(ns xi.dialog
+  "Dialogs as data.
+
+   A :confirm dialog carries :options — a vector of option keywords, e.g.
+   [:yes :no :allow-repo] — instead of per-option boolean flags. The TUI and
+   web renderers iterate the normalized options generically, so adding a new
+   confirm choice means adding one entry to `confirm-option` (and emitting it
+   from the gate that wants it), not editing every dialog template.
+
+   A :form dialog carries :fields — a vector of {:name … :label …} maps —
+   and resolves to a map of field name → entered text (or nil on cancel).
+   Emitters only need a field's :name; :label defaults to a humanized name."
+  (:require [clojure.string :as str]))
+
+(def confirm-option
+  "Canonical confirm options, keyed by the keyword that appears in a dialog's
+   :options vector. :value is what the dialog resolves to (callers branch on
+   it), :key the TUI shortcut, :label the button/hint text, :resolved-label
+   the text of the decision pill once answered."
+  {:yes        {:value true    :key "y" :label "Allow"
+                :resolved-label "Allowed"}
+   :no         {:value false   :key "n" :label "Deny"
+                :resolved-label "Denied"}
+   :always     {:value :always :key "a" :label "Always"
+                :resolved-label "Always allowed"}
+   :allow-repo {:value :repo   :key "r" :label "Allow repo writes"
+                :resolved-label "Repo writes allowed"}})
+
+(def default-confirm-options [:yes :no])
+
+(defn confirm-options
+  "Normalized options for a :confirm dialog: keywords are looked up in
+   `confirm-option` (unknown ones dropped), maps pass through as-is. A dialog
+   without :options gets the plain yes/no pair."
+  [dialog]
+  (into []
+        (keep #(if (keyword? %) (confirm-option %) %))
+        (or (seq (:options dialog)) default-confirm-options)))
+
+(defn resolved-label
+  "Decision-pill label for an answered :confirm dialog."
+  [dialog value]
+  (or (some #(when (= (:value %) value) (:resolved-label %))
+            (confirm-options dialog))
+      (if value "Allowed" "Denied")))
+
+(defn humanize-name
+  "\"commit-message\" → \"Commit message\"."
+  [s]
+  (let [t (str/replace (or s "") "-" " ")]
+    (if (seq t)
+      (str (str/upper-case (subs t 0 1)) (subs t 1))
+      t)))
+
+(defn form-fields
+  "Normalized fields for a :form dialog: each entry gets a :label (defaulting
+   to the humanized :name). Entries without a :name are dropped."
+  [dialog]
+  (into []
+        (keep (fn [{:keys [name label] :as field}]
+                (when (seq (str name))
+                  (assoc field :label (or label (humanize-name name))))))
+        (:fields dialog)))

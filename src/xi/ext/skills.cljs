@@ -130,14 +130,32 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
          vec)
     []))
 
+(defn- find-skill
+  "Find a skill by name and read its body. Returns the scan-skills map with
+   :body added, or nil."
+  [skill-name]
+  (when-let [skill (some #(when (= (:name %) skill-name) %) (scan-skills))]
+    (let [content (.toString (fs/readFileSync (:path skill) "utf-8"))
+          {:keys [body]} (parse-frontmatter content)]
+      (assoc skill :body body))))
+
 (defn- load-skill-by-name
   "Load a skill by name. Returns the full content (body after frontmatter) or nil."
   [skill-name]
-  (let [skills (scan-skills)]
-    (when-let [skill (some #(when (= (:name %) skill-name) %) skills)]
-      (let [content (.toString (fs/readFileSync (:path skill) "utf-8"))
-            {:keys [body]} (parse-frontmatter content)]
-        body))))
+  (:body (find-skill skill-name)))
+
+(defn- substitute-inputs
+  "Replace each <name /> placeholder in `body` with its value from `values`
+   (a map of input name → text). :image inputs are blanked — the TUI has no
+   attachment support in dialogs."
+  [body inputs values]
+  (reduce (fn [t {:keys [name type]}]
+            (let [re (js/RegExp. (str "<" name "\\s*/>") "g")
+                  v  (if (= type :image)
+                       ""
+                       (str/trim (or (get values name) "")))]
+              (.replace t re v)))
+          body inputs))
 
 ;; ── Web skill menu (roomless) ──────────────────────────────────────────────────
 
@@ -201,21 +219,41 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
                           :text (str "No skills found in " SKILLS_DIR)}}))))
 
 (defn- skill-load-fx
-  "Load a skill's content and submit it as a prompt."
-  [{:keys [dispatch!]} {:keys [room-id name]}]
+  "Load a skill's content and submit it as a prompt. Skills with dynamic
+   <input /> placeholders first open a :form dialog (rendered generically by
+   the TUI and web from its :fields data); the entered values are substituted
+   into the body before submitting. Cancelling the dialog aborts the load."
+  [ask! {:keys [dispatch!] :as fx-ctx} {:keys [room-id name]}]
   (if (str/blank? name)
     (dispatch! {:type :history/append :room-id room-id
                 :entry {:kind :status
                         :text "Usage: /skill load <name>\nUse /skill list to see available skills."}})
-    (if-let [content (load-skill-by-name (str/trim name))]
-      (dispatch! {:type :prompt/submit :room-id room-id :text content})
+    (if-let [{:keys [body inputs] :as skill} (find-skill (str/trim name))]
+      (let [text-inputs (filterv #(not= :image (:type %)) inputs)]
+        (if (and ask! (seq text-inputs))
+          (-> (ask! fx-ctx
+                    {:room-id room-id
+                     :dialog {:type    :form
+                              :message (str "Skill: " (:name skill))
+                              :fields  (mapv #(select-keys % [:name]) text-inputs)}})
+              (.then (fn [values]
+                       (when values
+                         (dispatch! {:type :prompt/submit :room-id room-id
+                                     :text (substitute-inputs body inputs values)})))))
+          (dispatch! {:type :prompt/submit :room-id room-id
+                      :text (substitute-inputs body inputs {})})))
       (dispatch! {:type :history/append :room-id room-id
                   :entry {:kind :status
                           :text (str "Skill '" (str/trim name) "' not found. Use /skill list to see available skills.")}}))))
 
 ;; ── Extension ─────────────────────────────────────────────────────────────────
 
-(def extension
+(defn create
+  "Factory: the skills extension. Takes the per-surface ctx for :ask! (the
+   dialog opener from ext/create-dialogs) — used to raise the :form dialog
+   for skills with <input /> placeholders. Without ask! (headless) inputs
+   are blanked and the skill loads directly."
+  [{:keys [ask!]}]
   {:id            :skills
    :system-prompt load-skill-prompts
    :commands      [{:name "skill"
@@ -230,4 +268,4 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
    :roomless-events #{:skill/web-list :skill/web-get}
    :no-broadcast    #{:skill/select}
    :fx            {:skill/list skill-list-fx
-                   :skill/load skill-load-fx}})
+                   :skill/load (partial skill-load-fx ask!)}})

@@ -13,6 +13,7 @@
             [xi.highlight.core :as hl]
             [xi.highlight.bundle :as grammars]
             [xi.highlight.theme-css :as theme]
+            [xi.dialog :as dlg]
             [xi.diff :as diff]
             [xi.fuzzy :as fuzzy]
             [xi.palette :as palette]
@@ -456,6 +457,22 @@
                (highlight-code g shown)
                (plain-code shown))]]))))))
 
+(defn- confirm-buttons
+  "Answer buttons for a :confirm dialog, driven by its normalized :options
+   data (xi.dialog) instead of hardcoded per-option markup. Deny-style
+   options render first, plain Allow last, extras in between."
+  [dialog answer!]
+  (for [{:keys [value label]} (sort-by (fn [{:keys [value]}]
+                                         (cond (false? value) 0
+                                               (true? value)  2
+                                               :else          1))
+                                       (dlg/confirm-options dialog))]
+    [:button {:class ["confirm-btn" (if (false? value)
+                                      "confirm-btn--deny"
+                                      "confirm-btn--allow")]
+              :on {:click (fn [_] (answer! value))}}
+     label]))
+
 (defn- tool-post [dispatch! {:keys [tool arguments result is-error status
                                     permission resolved-permission]}]
   (let [name      (util/strip-mcp-prefix tool)
@@ -510,21 +527,12 @@
       ;; A permission gate fired for this (still-running) tool call: render the
       ;; ask as a zone inside the same grey box, joined to the code above.
       (when-let [{:keys [dialog answer!]} permission]
-        (let [{:keys [message text allow-always? allow-repo?]} dialog]
+        (let [{:keys [message text]} dialog]
           [:div {:class ["tool-call-content"]}
            [:div {:class ["tool-call-permission"]}
             [:div {:class ["tool-call-permission-msg"]} (or message text)]
             [:div {:class ["tool-call-permission-actions"]}
-             [:button {:class ["confirm-btn" "confirm-btn--deny"]
-                       :on {:click (fn [_] (answer! false))}} "Deny"]
-             (when allow-always?
-               [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                         :on {:click (fn [_] (answer! :always))}} "Always"])
-             (when allow-repo?
-               [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                         :on {:click (fn [_] (answer! :repo))}} "Allow repo"])
-             [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                       :on {:click (fn [_] (answer! true))}} "Allow"]]]]))
+             (confirm-buttons dialog answer!)]]]))
       ;; Answered: a compact decision pill, still part of the same grey box.
       (when-let [{:keys [value label]} resolved-permission]
         (let [deny? (not value)]
@@ -1265,18 +1273,51 @@
                       (answer! final)))}
        "Submit")]]))
 
+(defn- form-dialog-body
+  "One textarea per :form dialog field (see xi.dialog/form-fields). Transient
+   values live in app state under :web/dialog-form keyed by field name;
+   Submit answers with the values map, Cancel answers nil."
+  [dispatch! state dialog answer!]
+  (let [values (:web/dialog-form state)
+        fields (dlg/form-fields dialog)
+        done!  (fn [value]
+                 (dispatch! {:type :web/dialog-form-reset})
+                 (answer! value))]
+    [:div {:class ["dialog-form"]}
+     (for [{:keys [name label]} fields]
+       [:div {:replicant/key name :class ["dialog-form-field"]}
+        [:div {:class ["dialog-form-label"]} label]
+        (form/form-textarea-auto
+         {:value     (str (get values name))
+          :max-rows  6
+          :attrs     {:value (str (get values name))}
+          :on-change (fn [^js e]
+                       (dispatch! {:type :web/dialog-form-set
+                                   :patch {name (.. e -target -value)}}))})])
+     [:div {:class ["confirm-actions"]}
+      (button/button
+       {:variant :ghost :size :sm
+        :on-click (fn [_] (done! nil))}
+       "Cancel")
+      (button/button
+       {:variant :primary :size :sm
+        :on-click (fn [_]
+                    (done! (into {}
+                                 (map (fn [{:keys [name]}]
+                                        [name (str (get values name))]))
+                                 fields)))}
+       "Submit")]]))
+
 (defn- dialog-decision-label
   "Human label for the choice the user made on a now-resolved dialog."
   [type options value]
   (case type
-    :confirm    (cond (= value :always) "Always allowed"
-                      (= value :repo)   "Repo writes allowed"
-                      value             "Allowed"
-                      :else             "Denied")
+    :confirm    (dlg/resolved-label {:options options} value)
     :select     (or (some #(when (= (:value %) value) (:label %)) options)
                     (str value))
     :alert      "Dismissed"
     :cwd-select (str value)
+    :form       (if value "Submitted" "Cancelled")
     (str value)))
 
 (defn- resolved-dialog-post
@@ -1304,7 +1345,7 @@
    On answer we log the decision into :web/resolved-dialogs (anchored to the
    current history length) so the bubble persists as a static record."
   [dispatch! state room history suppress-id]
-  (when-let [{:keys [id type message text options allow-always? allow-repo?]}
+  (when-let [{:keys [id type message text options] :as live-dialog}
              (first (remove #(= suppress-id (:id %)) (get-in room [:ui :dialogs])))]
     (let [room-id (:id room)
           answer! (fn [value]
@@ -1332,8 +1373,9 @@
       [:div {:class ["post" "post--assistant" "post--dialog"]}
        [:div {:class ["post-body" "dialog-bubble"]}
         [:div {:class ["dialog-message"]} (or message text)]
-        (if (= type :cwd-select)
-          (cwd-select-body dispatch! state options answer!)
+        (case type
+          :cwd-select (cwd-select-body dispatch! state options answer!)
+          :form       (form-dialog-body dispatch! state live-dialog answer!)
           [:div {:class ["dialog-actions"]}
            (case type
              :select
@@ -1344,17 +1386,7 @@
              [:button {:class ["confirm-btn" "confirm-btn--allow"]
                        :on {:click (fn [_] (answer! nil))}} "OK"]
              ;; :confirm (default)
-             (list
-              [:button {:class ["confirm-btn" "confirm-btn--deny"]
-                        :on {:click (fn [_] (answer! false))}} "Deny"]
-              (when allow-always?
-                [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                          :on {:click (fn [_] (answer! :always))}} "Always"])
-              (when allow-repo?
-                [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                          :on {:click (fn [_] (answer! :repo))}} "Allow repo"])
-              [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                        :on {:click (fn [_] (answer! true))}} "Allow"]))])]])))
+             (confirm-buttons live-dialog answer!))])]])))
 
 ;; ── Diff view ────────────────────────────────────────────────────────────────
 
@@ -2386,7 +2418,7 @@
                                        first))
                   perm-answer!
                   (when perm-tool-idx
-                    (let [{:keys [id type message text]} pending-dialog
+                    (let [{:keys [id type message text options]} pending-dialog
                           room-id (:id room)
                           tool-id (:id (nth entries perm-tool-idx))]
                       (fn [value]
@@ -2396,7 +2428,7 @@
                                             :tool-id tool-id
                                             :message (or message text) :type type
                                             :value value
-                                            :label (dialog-decision-label type nil value)}})
+                                            :label (dialog-decision-label type options value)}})
                         (dispatch! {:type :ui/dialog-response
                                     :room-id room-id :dialog-id id :value value})
                         (dispatch! {:type :ui/dialog-close
@@ -3801,14 +3833,6 @@
 
 ;; ── Skill input form ─────────────────────────────────────────────────────────
 
-(defn- humanize-input-name
-  "\"image-upload\" → \"Image upload\"."
-  [s]
-  (let [t (str/replace (or s "") "-" " ")]
-    (if (seq t)
-      (str (str/upper-case (subs t 0 1)) (subs t 1))
-      t)))
-
 (defn- skill-form-stage-images!
   "Read + downscale picked image files, then stage them on the skill form."
   [dispatch! files]
@@ -3901,7 +3925,7 @@
         (icon/icon {:icon-name :x :size :sm})]]
       (for [{in-name :name in-type :type} inputs]
         [:div {:replicant/key in-name :class ["skill-compose-field"]}
-         [:div {:class ["skill-form-label"]} (humanize-input-name in-name)]
+         [:div {:class ["skill-form-label"]} (dlg/humanize-name in-name)]
          (if (= in-type :image)
            (skill-form-image-field dispatch! images)
            [:textarea {:class ["skill-form-input"]

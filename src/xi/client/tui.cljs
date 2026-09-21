@@ -25,6 +25,7 @@
             [xi.commands :as commands]
             [xi.core.log :as log]
             [xi.core.state :as state]
+            [xi.dialog :as dialog]
             [xi.palette :as palette]
             [xi.session :as session]
             [xi.tui.ansi :as ansi]
@@ -416,15 +417,17 @@
    line. Enter = yes, Esc = no. The message word-wraps to the terminal width so
    long guarded commands no longer overflow and corrupt the layout, and the
    editor stays visible below the dialog for context."
-  [{:keys [message prompt allow-always? allow-repo?]} respond! editor]
-  (let [text (or message prompt "Confirm?")
-        hint (str "  " (ansi/fg :accent "[y]") "es   "
-                  (ansi/fg :accent "[n]") "o   "
-                  (when allow-always?
-                    (str (ansi/fg :accent "[a]") "llow always   "))
-                  (when allow-repo?
-                    (str (ansi/fg :accent "[r]") " allow repo writes   "))
-                  (ansi/fg :dim "(Enter=yes, Esc=no)"))]
+  [{:keys [message prompt] :as dlg} respond! editor]
+  (let [text    (or message prompt "Confirm?")
+        options (dialog/confirm-options dlg)
+        by-key  (into {} (mapcat (fn [{:keys [key value]}]
+                                   [[key value] [(str/upper-case key) value]]))
+                      options)
+        hint    (str "  "
+                     (str/join "   " (map (fn [{:keys [key label]}]
+                                            (str (ansi/fg :accent (str "[" key "]")) " " label))
+                                          options))
+                     "   " (ansi/fg :dim "(Enter=yes, Esc=no)"))]
     {:type :dialog
      :render (fn [width]
                (let [wrapped (ansi/wrap-text text (max 1 (- width 2)))
@@ -435,12 +438,9 @@
                  (into box (when editor ((:render editor) width)))))
      :handle-input (fn [data]
                      (cond
-                       (#{"y" "Y"} data) (respond! true)
-                       (#{"n" "N"} data) (respond! false)
-                       (and allow-always? (#{"a" "A"} data)) (respond! :always)
-                       (and allow-repo? (#{"r" "R"} data))   (respond! :repo)
-                       (enter? data)     (respond! true)
-                       (escape? data)    (respond! false)
+                       (contains? by-key data) (respond! (get by-key data))
+                       (enter? data)  (respond! true)
+                       (escape? data) (respond! false)
                        :else nil))}))
 
 (defn- build-cwd-select-dialog
@@ -493,11 +493,79 @@
                          (respond! (:value choice))))
                      :else nil))})
 
+(defn- form-backspace? [d] (or (= d (str (char 127))) (= d (str (char 8)))))
+(defn- form-arrow-up? [d] (= d (str ESC "[A")))
+(defn- form-arrow-down? [d] (= d (str ESC "[B")))
+(defn- form-tab? [d] (= d "\t"))
+(defn- form-printable? [d]
+  (and (seq d)
+       (not (str/starts-with? d ESC))
+       (not (form-backspace? d))
+       (>= (.charCodeAt d 0) 32)))
+
+(defn- build-form-dialog
+  "A multi-field text form dialog (:type :form). The fields come from the
+   dialog's :fields data (normalized by xi.dialog/form-fields) — typing edits
+   the active field, Enter advances (submitting on the last field), Tab/arrows
+   switch fields, Esc cancels (answers nil). Resolves to a map of field name
+   → entered text."
+  [{:keys [message] :as dlg} respond!]
+  (let [fields (dialog/form-fields dlg)
+        n      (count fields)
+        !form  (atom {:idx 0 :values {}})]
+    {:type :dialog
+     :render
+     (fn [width]
+       (let [{:keys [idx values]} @!form]
+         (into [(ansi/fg :border (apply str (repeat width "─")))
+                (str "  " (or message "Fill in:"))]
+               (concat
+                (mapcat
+                 (fn [i {:keys [name label]}]
+                   (let [active? (= i idx)
+                         v       (str (get values name))
+                         lines   (ansi/wrap-text (str v (when active? "▌"))
+                                                 (max 1 (- width 4)))]
+                     (cons (str "  " (ansi/fg (if active? :accent :dim)
+                                              (str label ":")))
+                           (map #(str "    " %) (if (seq lines) lines [""])))))
+                 (range) fields)
+                [(str "  " (ansi/fg :dim "(Enter=next/submit, Tab=switch field, Esc=cancel)"))]))))
+     :handle-input
+     (fn [data]
+       (let [{:keys [idx]} @!form
+             fname (:name (get fields idx))
+             last? (>= idx (dec n))]
+         (cond
+           (escape? data) (respond! nil)
+           (enter? data)  (if last?
+                            (respond! (:values @!form))
+                            (do (swap! !form update :idx inc)
+                                (tui/request-panel-render!)))
+           (or (form-tab? data) (form-arrow-down? data))
+           (when (pos? n)
+             (swap! !form update :idx #(mod (inc %) n))
+             (tui/request-panel-render!))
+           (form-arrow-up? data)
+           (when (pos? n)
+             (swap! !form update :idx #(mod (dec %) n))
+             (tui/request-panel-render!))
+           (form-backspace? data)
+           (when fname
+             (swap! !form update-in [:values fname]
+                    #(let [s (str %)] (subs s 0 (max 0 (dec (count s))))))
+             (tui/request-panel-render!))
+           (form-printable? data)
+           (when fname
+             (swap! !form update-in [:values fname] #(str % data))
+             (tui/request-panel-render!))
+           :else nil)))}))
+
 (defn- build-dialog
   "A focused component for the active dialog. Dispatches the answer via
    :ui/dialog-response, which the dialog owner (xi.ext.core/create-dialogs)
-   resolves. :cwd-select and :select offer a numbered list; everything else
-   is a y/n confirm."
+   resolves. :cwd-select and :select offer a numbered list; :form is a
+   multi-field text form; everything else is a y/n confirm."
   [{:keys [id type] :as dialog} room-id dispatch! editor]
   (let [respond! (fn [value]
                    (dispatch! {:type :ui/dialog-response
@@ -512,6 +580,7 @@
     (case type
       :cwd-select (build-cwd-select-dialog dialog respond!)
       :select     (build-select-dialog dialog respond!)
+      :form       (build-form-dialog dialog respond!)
       (build-confirm-dialog dialog respond! editor))))
 
 ;; ── Render sync helpers ──────────────────────────────────────────────────────

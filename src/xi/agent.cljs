@@ -462,8 +462,9 @@
                        ;; Raise a confirm dialog and resolve to the answer.
                        ;; ask! resolves to a safe default (false) when no
                        ;; client is attached (see xi.ext.core/create-dialogs).
-                       ;; With {:allow-always? true} the dialog offers a third
-                       ;; option that resolves to :always (allow + remember).
+                       ;; opts may carry {:options [:yes :no :always …]} —
+                       ;; option keywords from xi.dialog/confirm-option; the
+                       ;; renderers build their buttons/keys from that data.
                        :confirm!  (when ask!
                                     (fn confirm!
                                       ([message] (confirm! message nil))
@@ -471,8 +472,7 @@
                                        (ask! {:dispatch! dispatch! :state (get-state)}
                                              {:room-id room-id
                                               :dialog  (cond-> {:type :confirm :message message}
-                                                         (:allow-always? opts) (assoc :allow-always? true)
-                                                         (:allow-repo? opts)   (assoc :allow-repo? true))}))))}
+                                                         (:options opts) (assoc :options (:options opts)))}))))}
              gate1 (when tool-gate
                      (fn [tool-call] (tool-gate tool-call gate-ctx)))
              ;; The turn's cwd doesn't exist on this host (e.g. a Pi session
