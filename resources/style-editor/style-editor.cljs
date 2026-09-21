@@ -354,7 +354,7 @@
                     applyb  (mk "button"
                                 (str "padding:7px 14px;border-radius:6px;border:none;background:" (.-primary C)
                                      ";color:white;cursor:pointer;font-size:13px;font-weight:600;"))]
-                (set! (.-textContent hint) "⌘/Ctrl+Enter apply · Esc cancel")
+                (set! (.-textContent hint) "⌘/Ctrl+Enter apply · Cancel to discard")
                 (set! (.-textContent cancel) "Cancel")
                 (set! (.-textContent applyb) "Apply")
                 (.addEventListener cancel "click" do-cancel)
@@ -384,15 +384,10 @@
                                        (set! (.. panel -style -right) "auto"))))
                 (.addEventListener doc "mouseup" (fn [] (set! (.-on drag) false))))
 
-              ;; ── Keyboard: Esc cancel · Ctrl/Cmd+Enter apply ──────────────
+              ;; ── Keyboard: Ctrl/Cmd+Enter apply (Esc intentionally ignored) ──
               (let [kd (fn kd [e]
-                         (cond
-                           (= (.-key e) "Escape")
-                           (do (.preventDefault e)
-                               (.removeEventListener doc "keydown" kd true)
-                               (do-cancel))
-                           (and (= (.-key e) "Enter") (or (.-ctrlKey e) (.-metaKey e)))
-                           (do (.preventDefault e)
-                               (.removeEventListener doc "keydown" kd true)
-                               (do-apply))))]
+                         (when (and (= (.-key e) "Enter") (or (.-ctrlKey e) (.-metaKey e)))
+  (.preventDefault e)
+  (.removeEventListener doc "keydown" kd true)
+  (do-apply)))]
                 (.addEventListener doc "keydown" kd true)))))))))
