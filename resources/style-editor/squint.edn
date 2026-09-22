@@ -1,3 +1,0 @@
-{:paths ["." "/home/floscr/Code/Projects/clj-ui-framework/src/ui/js"]
- :output-dir ".compiled"
- :extension "mjs"}

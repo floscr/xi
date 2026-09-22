@@ -1,1 +1,4 @@
 .compiled/
+# Generated at build time by `bb style-editor:build` (resolves the pinned
+# clj-ui-framework gitlib path for the dialkit runtime).
+squint.edn

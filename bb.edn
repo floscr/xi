@@ -14,6 +14,19 @@
             (spit (xi-config-file name) (str (pr-str m) "\n")))
           (defn fmt-ts [ms]
             (when ms (str (java.util.Date. (long ms)))))
+          ;; Resolve the pinned clj-ui-framework gitlib checkout (from deps.edn's
+          ;; :git/sha), fetching it into the gitlibs cache if absent — so the
+          ;; browser-overlay build steps need no local framework checkout.
+          (defn clj-ui-framework-dir []
+            (let [sha  (-> (slurp "deps.edn") edn/read-string
+                           (get-in [:deps 'com.example.git/clj-ui-framework :git/sha]))
+                  base (or (System/getenv "GITLIBS")
+                           (str (System/getProperty "user.home") "/.gitlibs"))
+                  dir  (str base "/libs/com.example.git/clj-ui-framework/" sha)]
+              (when-not (.exists (java.io.File. dir))
+                (println "Fetching clj-ui-framework" sha "into gitlibs cache …")
+                (clojure "-P"))
+              dir))
           (def config {:session "xi"
                        :windows [["watch" "npx shadow-cljs watch main web"]]
                        :print   ["Web: http://localhost:7474"]})
@@ -124,7 +137,8 @@
 
   dialkit:css
   {:doc "Regenerate resources/dialkit/dial.css from clj-ui-framework's dial.css + resolved theme tokens"
-   :task (shell "bb" "scripts/gen-dialkit-css.clj")}
+   :task (shell {:extra-env {"CLJ_UI_FRAMEWORK" (clj-ui-framework-dir)}}
+                "bb" "scripts/gen-dialkit-css.clj")}
 
   picker:build
   {:doc "Compile the element-picker (squint → esbuild) to resources/element-picker/picker.js"
@@ -144,7 +158,14 @@
 
   style-editor:build
   {:doc "Compile the style-editor (squint → esbuild) to resources/style-editor/style-editor.js"
-   :task (let [dir "resources/style-editor"]
+   :task (let [dir "resources/style-editor"
+               fw  (clj-ui-framework-dir)]
+           ;; squint.edn is generated (gitignored): the dialkit runtime the
+           ;; overlay `(:require [dial])`s lives in the pinned clj-ui-framework
+           ;; gitlib, not a local checkout.
+           (spit (str dir "/squint.edn")
+                 (str (pr-str {:paths ["." (str fw "/src/ui/js")]
+                               :output-dir ".compiled" :extension "mjs"}) "\n"))
            (shell {:dir dir} "npx" "squint" "compile")
            (shell {:dir dir} "npx" "esbuild" ".compiled/style-editor.mjs"
                   "--bundle" "--format=iife" "--minify" "--outfile=style-editor.js"

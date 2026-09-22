@@ -13,22 +13,57 @@
 ;; .dialkit-root, then append dial.css verbatim.
 ;;
 ;; Nothing here is hand-maintained: rerun `bb dialkit:css` after bumping the
-;; clj-ui-framework checkout to pick up token/CSS changes.
+;; clj-ui-framework pin to pick up token/CSS changes.
+;;
+;; The framework source is resolved from the pinned gitlib (no local checkout
+;; required): `bb dialkit:css` passes CLJ_UI_FRAMEWORK = the gitlib dir for the
+;; deps.edn :git/sha. dist/theme.css is a gitignored build artifact absent from
+;; the gitlib, so when it is missing we regenerate the :root / dark token blocks
+;; from the committed src/theme/tokens.edn via the framework's own ui.css.gen.
+;; Set CLJ_UI_FRAMEWORK to a local checkout to regenerate against uncommitted
+;; framework edits.
 
 (require '[clojure.string :as str]
+         '[clojure.edn :as edn]
          '[clojure.java.io :as io])
 
-(def framework "/home/floscr/Code/Projects/clj-ui-framework")
-(def theme-css (str framework "/dist/theme.css"))
+(defn framework-dir []
+  (or (System/getenv "CLJ_UI_FRAMEWORK")
+      (let [sha  (-> (slurp "deps.edn") edn/read-string
+                     (get-in [:deps 'com.example.git/clj-ui-framework :git/sha]))
+            base (or (System/getenv "GITLIBS")
+                     (str (System/getProperty "user.home") "/.gitlibs"))]
+        (str base "/libs/com.example.git/clj-ui-framework/" sha))))
+
+(def framework (framework-dir))
 (def dial-css  (str framework "/src/ui/dial.css"))
 (def out-file  "resources/dialkit/dial.css")
+
+(defn theme-css-str
+  "The framework theme CSS: prefer a built dist/theme.css (local checkout);
+   otherwise regenerate the :root / dark token blocks from the committed
+   tokens.edn via the framework's own ui.css.gen (gitlib has no dist/)."
+  []
+  (let [dist (str framework "/dist/theme.css")]
+    (if (.exists (io/file dist))
+      (slurp dist)
+      (let [tokens-edn (str framework "/src/theme/tokens.edn")]
+        (load-file (str framework "/src/ui/css/gen.clj"))
+        (let [read-tokens       (resolve 'ui.css.gen/read-tokens)
+              tokens->css-block (resolve 'ui.css.gen/tokens->css-block)
+              generate-scales   (resolve 'ui.css.gen/generate-scales)
+              {:keys [tokens themes scales]} (read-tokens tokens-edn)]
+          (str ":root {\n" (tokens->css-block tokens) "\n"
+               (generate-scales scales) "\n}\n\n"
+               "[data-theme=\"dark\"] {\n"
+               (tokens->css-block (:dark themes)) "\n}\n"))))))
 
 (defn parse-decls [body]
   (into {} (for [m (re-seq #"(--[a-zA-Z0-9-]+)\s*:\s*([^;]+);" body)]
              [(nth m 1) (str/trim (nth m 2))])))
 
 (defn -main []
-  (let [theme   (slurp theme-css)
+  (let [theme   (theme-css-str)
         dialcss (slurp dial-css)
         blocks  (re-seq #"(?s)([^{}]+)\{([^{}]*)\}" theme)
         root    (atom {})
