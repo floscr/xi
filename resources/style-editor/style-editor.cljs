@@ -67,6 +67,19 @@
                 (.includes (.toLowerCase prop) "color") "color"
                 :else                                   "range"))
 
+            ;; Default range unit: parse it off the element's computed value —
+            ;; unitless properties compute to bare numbers ("400", "0.5"),
+            ;; lengths to "12px", percentages to "50%" — so value and unit stay
+            ;; self-consistent. line-height is the exception: it computes to px
+            ;; even when authored unitless, so appending the parsed px to an
+            ;; agent's ratio-scale slider would collapse the line box; default
+            ;; it to the unitless ratio instead (the seed converts px → ratio).
+            (default-unit [prop cs]
+              (if (= prop "lineHeight")
+                ""
+                (let [m (.match (str (aget cs prop)) #"^-?\d*\.?\d+([a-z%]*)$")]
+                  (if m (aget m 1) "px"))))
+
             ;; Merge class selectors from `el` up the tree into `out`
             ;; (closest first, deduped), so the agent can pick a shared class.
             (class-candidates-into [out el]
@@ -114,7 +127,7 @@
                                        (when multi? (str "  ·  " csel)))
                             k    (uniq-key label)
                             st   #js {:key k :property prop :type type
-                                      :unit (or (.-unit c) "px") :css ""
+                                      :unit (or (.-unit c) (default-unit prop cs)) :css ""
                                       :target tgt :selector csel
                                       :classSel (first-class tgt)
                                       :extraOrig (js/Map.)
@@ -131,7 +144,7 @@
                             (aset config k #js [v 0 100 1]))
 
                           :else
-                          (let [unit  (or (.-unit c) "px")
+                          (let [unit  (or (.-unit c) (default-unit prop cs))
                                 raw   (js/parseFloat (aget cs prop))
                                 ;; getComputedStyle resolves line-height to px;
                                 ;; convert back to the unitless ratio so an

@@ -263,7 +263,14 @@
         "tune several elements and properties at once. Blocks until the user "
         "clicks Apply or Cancel. Requires the chrome browser tools "
         "(XI_CHROME_TOOLS). Use camelCase CSS property names (e.g. borderRadius, "
-        "backgroundColor).")
+        "backgroundColor). Mind CSS units on range controls: when `unit` is "
+        "omitted it is inferred from the element's current computed value "
+        "(unitless properties like fontWeight/opacity/zIndex compute to bare "
+        "numbers → no unit; lengths → px), and lineHeight always defaults to "
+        "the unitless ratio — so a lineHeight slider needs ratio-scale "
+        "min/max/step (e.g. min 1, max 2.5, step 0.05), NOT px values. Pass "
+        "`unit` explicitly (\"em\", \"%\", \"rem\", \"px\", \"\") to override "
+        "the inference, and always scale min/max/step to the unit in effect.")
    :input_schema
    {:type "object"
     :properties
@@ -289,7 +296,7 @@
                    "max"      {:type "number" :description "Range maximum (range only)."}
                    "step"     {:type "number" :description "Range step (range only)."}
                    "unit"     {:type "string"
-                               :description "Range unit appended to the value (range only; default \"px\")."}}
+                               :description "Range unit appended to the value (range only). If omitted, inferred from the element's computed value (bare number → no unit, \"12px\" → px, \"50%\" → %); lineHeight always defaults to the unitless ratio. Pass explicitly (\"em\", \"rem\", \"%\", \"px\", \"\") to override. min/max/step must match the unit in effect — a unitless lineHeight wants e.g. min 1 max 2.5 step 0.05."}}
                   :required ["property"]}}}
     :required ["controls"]}})
 
