@@ -40,21 +40,24 @@
 (def ^:private dialkit-css (inline-dialkit-css))
 
 (def ^:private colors
-  "clj-ui-framework light-theme tokens for the injected overlay chrome (pill,
-   dock, toast, choices modal), so it matches xi's web client: neutral gray
-   surfaces, violet accent, subtle borders. Values mirror
-   resources/public/theme.css :root. (The anchored prompt popover instead
-   reuses dialkit's dark panel tokens/classes via `dialkit-css`.)"
-  {:surface      "oklch(0.975 0.003 285)"       ; --bg-0  (gray-50)
-   :surfaceMuted "oklch(0.955 0.005 285)"       ; --bg-1  (gray-100)
-   :text         "oklch(0.145 0.011 285)"       ; --fg-0  (gray-950)
-   :textMuted    "oklch(0.425 0.035 285)"       ; --fg-1  (gray-600)
-   :textFaint    "oklch(0.690 0.025 285)"       ; --fg-2  (gray-400)
-   :border       "oklch(0.915 0.010 285)"       ; --border-0 color (gray-200)
-   :accent       "oklch(0.595 0.230 286)"       ; --accent (accent-500)
-   :accentBg     "oklch(0.595 0.230 286 / 0.12)" ; translucent accent tint
-   :danger       "oklch(0.610 0.226 25)"        ; --danger (danger-500)
-   :success      "oklch(0.705 0.185 152)"})
+  "Dark HUD tokens for the injected overlay chrome (pill, dock, toast, agents
+   pop, choices modal): flat panels on dialkit's --bg-0 surface (matching the
+   anchored prompt popover, which reuses dialkit's dark panel tokens/classes
+   via `dialkit-css`), hairline borders instead of drop shadows, violet accent
+   with glow, green for live/success."
+  {:surface      "oklch(0.145 0.011 285)"       ; dialkit --bg-0 (popover bg)
+   :surfaceMuted "oklch(1 0 0 / 0.06)"          ; raised card on the surface
+   :text         "oklch(0.965 0.005 286)"
+   :textMuted    "oklch(0.68 0.03 286)"
+   :textFaint    "oklch(0.58 0.04 288)"
+   :border       "oklch(1 0 0 / 0.09)"          ; hairline panel border
+   :accent       "oklch(0.63 0.19 289)"         ; violet
+   :accentBright "oklch(0.71 0.16 290)"         ; violet (gradient top / glow)
+   :accentBg     "oklch(0.63 0.19 289 / 0.15)"  ; translucent accent tint
+   :accentBorder "oklch(0.63 0.19 289 / 0.6)"   ; active pill border
+   :accentGlow   "oklch(0.63 0.19 289 / 0.4)"   ; button/pill glow
+   :danger       "oklch(0.70 0.19 22)"
+   :success      "oklch(0.77 0.15 163)"})
 
 (def ^:private cleanup-js
   (str "(function() {"

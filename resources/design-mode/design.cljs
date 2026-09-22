@@ -34,6 +34,13 @@
         root  (.-documentElement doc)
         sans  "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
         mono  "ui-monospace, 'SF Mono', Menlo, monospace"
+        ;; HUD chrome: flat dark panels on the same surface as the dialkit
+        ;; popover (--bg-0), no drop shadows — hairline borders carry the edge.
+        panel-bg (str "background:" (.-surface C)
+                      ";border:1px solid " (.-border C) ";")
+        btn-primary (str "background:linear-gradient(180deg," (.-accentBright C) "," (.-accent C)
+                         ");color:#fff;border:none;box-shadow:0 2px 12px " (.-accentGlow C)
+                         ",inset 0 1px 0 oklch(1 0 0 / 0.25);")
         ;; Inline lucide monoline icons (currentColor via stroke) — the web
         ;; client is icon-driven, so the overlay uses the same visual language
         ;; instead of a filled display glyph.
@@ -49,9 +56,8 @@
                            "<path d=\"M20 3v4\"/><path d=\"M22 5h-4\"/>"
                            "<path d=\"M4 17v2\"/><path d=\"M5 18H3\"/>")
         check-path "<path d=\"M20 6 9 17l-5-5\"/>"
-        spark       (svg-icon sparkles-path 15 (.-accent C))
-        spark-white (svg-icon sparkles-path 15 "#fff")
-        check-ok    (svg-icon check-path 16 (.-success C))
+        spark    (svg-icon sparkles-path 15 (.-accentBright C))
+        check-ok (svg-icon check-path 16 (.-success C))
         state #js {:picking false :hovered nil :selected nil :popover nil :toastTimer nil}]
 
     ;; ── Pure helpers (shared shape with the element picker) ───────────────
@@ -151,27 +157,27 @@
                              ";border-radius:4px;transition:all 60ms ease-out;display:none;"))
             tip     (mk "__xi-design-tip"
                         (str "position:fixed;pointer-events:none;z-index:2147483646;"
-                             "background:" (.-text C) ";color:" (.-surface C)
+                             panel-bg "color:" (.-text C)
                              ";padding:4px 9px;border-radius:6px;font:11.5px/1.4 " mono ";"
-                             "box-shadow:0 4px 6px rgba(0,0,0,0.1),0 2px 4px rgba(0,0,0,0.06);display:none;max-width:420px;"
+                             "display:none;max-width:420px;"
                              "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"))
             overlay (mk "__xi-design-overlay"
                         "position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;cursor:crosshair;display:none;")
             pill    (mk "__xi-design-pill"
                         (str "display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;"
-                             "background:" (.-surface C) ";color:" (.-text C) ";border:1px solid " (.-border C)
-                             ";padding:7px 13px;border-radius:8px;font:13px/1.4 " sans ";"
-                             "box-shadow:0 4px 6px rgba(0,0,0,0.1),0 2px 4px rgba(0,0,0,0.06);"))
+                             panel-bg "color:" (.-text C)
+                             ";padding:9px 15px;border-radius:999px;font:12px/1.4 " sans ";"
+                             "transition:border-color 150ms ease,box-shadow 150ms ease;"))
             ;; The dock holds the agents button (left) + the pill (right),
             ;; bottom-right. The agents button surfaces the design sub-agents:
             ;; a spinner while any is working, a list on click, per-agent commit.
             dock    (mk "__xi-design-dock"
                         "position:fixed;bottom:16px;right:16px;z-index:2147483646;display:flex;align-items:center;gap:10px;")
             agents-btn (mk "__xi-design-agents-btn"
-                        (str "display:none;align-items:center;gap:6px;cursor:pointer;user-select:none;"
-                             "background:" (.-surface C) ";color:" (.-text C) ";border:1px solid " (.-border C)
-                             ";padding:6px 12px;border-radius:8px;font:13px/1.4 " sans ";"
-                             "box-shadow:0 4px 6px rgba(0,0,0,0.1),0 2px 4px rgba(0,0,0,0.06);"))]
+                        (str "display:none;align-items:center;gap:7px;cursor:pointer;user-select:none;"
+                             panel-bg "color:" (.-text C)
+                             ";padding:9px 15px;border-radius:999px;font:12px/1.4 " sans ";"
+                             "transition:border-color 150ms ease;"))]
 
         (letfn [(pill-idle []
                   (set! (.-innerHTML pill)
@@ -181,19 +187,19 @@
 
                 (pill-picking []
                   (set! (.-innerHTML pill)
-                        (str spark-white
+                        (str spark
                              "<span style=\"font-weight:600;\">Pick an element</span>"
-                             "<span style=\"opacity:0.85;font-size:11.5px;\">Esc to stop</span>")))
+                             "<span style=\"color:" (.-textFaint C) ";font-size:11px;\">Esc to stop</span>")))
 
                 (style-pill [picking?]
+                  ;; Active = violet border + glow on the same dark surface
+                  ;; (not a filled pill).
                   (if picking?
-                    (do (set! (.. pill -style -background) (.-accent C))
-                        (set! (.. pill -style -color) "#fff")
-                        (set! (.. pill -style -borderColor) (.-accent C))
+                    (do (set! (.. pill -style -borderColor) (.-accentBorder C))
+                        (set! (.. pill -style -boxShadow) (str "0 0 16px " (.-accentGlow C)))
                         (pill-picking))
-                    (do (set! (.. pill -style -background) (.-surface C))
-                        (set! (.. pill -style -color) (.-text C))
-                        (set! (.. pill -style -borderColor) (.-border C))
+                    (do (set! (.. pill -style -borderColor) (.-border C))
+                        (set! (.. pill -style -boxShadow) "none")
                         (pill-idle))))
 
                 (update-hl [el]
@@ -237,11 +243,11 @@
                 (show-toast [text]
                   (when-let [old (.getElementById doc "__xi-design-toast")] (.remove old))
                   (let [toast (mk "__xi-design-toast"
-                                  (str "position:fixed;bottom:64px;right:16px;z-index:2147483646;"
+                                  (str "position:fixed;bottom:68px;right:16px;z-index:2147483646;"
                                        "pointer-events:none;display:flex;align-items:center;gap:8px;"
-                                       "background:" (.-surface C) ";color:" (.-text C)
-                                       ";border:1px solid " (.-border C) ";padding:9px 16px;border-radius:10px;"
-                                       "font:13px/1.4 " sans ";box-shadow:0 4px 6px rgba(0,0,0,0.1),0 2px 4px rgba(0,0,0,0.06);"
+                                       panel-bg "color:" (.-text C)
+                                       ";padding:10px 16px;border-radius:12px;"
+                                       "font:12.5px/1.4 " sans ";"
                                        "opacity:0;transform:translateY(4px);"
                                        "transition:opacity 180ms ease,transform 180ms ease;"))]
                     (set! (.-innerHTML toast)
@@ -305,7 +311,7 @@
                            "<button id=\"__xi-design-choices\" class=\"dial-action\" "
                            "style=\"width:auto;padding:7px 14px;font-size:13px;font-weight:600;\">Choices</button>"
                            "<button id=\"__xi-design-send\" style=\"margin-left:auto;padding:7px 16px;"
-                           "border-radius:var(--radius-sm);border:none;background:var(--accent);color:#fff;"
+                           "border-radius:var(--radius-sm);" btn-primary
                            "cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;\">Send</button>"
                            "</div></div></div>"))
                     (.appendChild root pop)
@@ -341,8 +347,8 @@
 
                 (spinner-html [size]
                   (str "<span style=\"display:inline-block;width:" size "px;height:" size "px;"
-                       "border:2px solid " (.-border C) ";border-top-color:" (.-accent C)
-                       ";border-radius:50%;animation:__xiDesignSpin 0.7s linear infinite;\"></span>"))
+                       "border:2px solid " (.-accentBg C) ";border-top-color:" (.-accentBright C)
+                       ";border-radius:50%;animation:__xiDesignSpin 1s linear infinite;\"></span>"))
 
                 (working? [a]
                   (or (= (.-status a) "running") (= (.-commit a) "committing")))
@@ -365,7 +371,8 @@
                                 (str (if busy (spinner-html 13) spark)
                                      "<span style=\"font-weight:600;\">"
                                      (if busy "Working" "Agents") "</span>"
-                                     "<span style=\"color:" (.-textFaint C) ";font-size:11.5px;\">" n "</span>")))))))
+                                     "<span style=\"background:" (.-accentBg C) ";color:" (.-accentBright C)
+                                     ";border-radius:999px;padding:1px 7px;font-size:10.5px;font-weight:600;\">" n "</span>")))))))
 
                 (agent-row-html [a]
                   (let [status (.-status a)
@@ -379,24 +386,27 @@
                                  (= status "stopped")   (str "<span style=\"color:" (.-textFaint C) ";font-size:11.5px;\">stopped</span>")
                                  (= kind "choices")     (if (> n-ch 0)
                                                           (str "<button data-choices-id=\"" (esc (.-id a)) "\" "
-                                                               "style=\"padding:4px 11px;border-radius:6px;border:1px solid " (.-border C)
-                                                               ";background:" (.-surface C) ";color:" (.-text C) ";cursor:pointer;"
+                                                               "style=\"padding:4px 11px;border-radius:8px;border:1px solid oklch(1 0 0 / 0.12)"
+                                                               ";background:transparent;color:" (.-textMuted C) ";cursor:pointer;"
                                                                "font-size:12px;font-weight:600;font-family:inherit;\">View " n-ch "</button>")
                                                           (str "<span style=\"color:" (.-textFaint C) ";font-size:11.5px;\">no options</span>"))
                                  (= commit "committed") check-ok
                                  (= commit "committing") (spinner-html 12)
                                  (= commit "error")     (str "<span style=\"color:" (.-danger C) ";font-size:11.5px;\">commit failed</span>")
                                  (= status "done")      (str "<button data-commit-id=\"" (esc (.-id a)) "\" "
-                                                             "style=\"padding:4px 11px;border-radius:6px;border:none"
-                                                             ";background:" (.-accent C) ";color:#fff;cursor:pointer;"
+                                                             "style=\"padding:5px 13px;border-radius:8px;" btn-primary
+                                                             "cursor:pointer;"
                                                              "font-size:12px;font-weight:600;font-family:inherit;\">Commit</button>")
                                  :else "")
-                        dot    (cond (= status "running") (.-accent C)
+                        dot    (cond (= status "running") (.-success C)
                                      (= status "error")   (.-danger C)
                                      (= status "done")    (.-success C)
-                                     :else (.-textFaint C))]
-                    (str "<div style=\"display:flex;align-items:center;gap:9px;padding:8px 2px;border-top:1px solid " (.-border C) ";\">"
-                         "<span style=\"width:7px;height:7px;border-radius:50%;flex:none;background:" dot ";\"></span>"
+                                     :else (.-textFaint C))
+                        dot-glow (if (= status "running")
+                                   (str "box-shadow:0 0 8px " dot ";")
+                                   "")]
+                    (str "<div style=\"display:flex;align-items:center;gap:9px;padding:8px 2px;border-top:1px solid oklch(1 0 0 / 0.05);\">"
+                         "<span style=\"width:7px;height:7px;border-radius:50%;flex:none;background:" dot ";" dot-glow "\"></span>"
                          "<span style=\"flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;\">"
                          (esc (or (.-label a) "agent")) "</span>"
                          "<span style=\"flex:none;display:flex;align-items:center;min-height:22px;\">" right "</span>"
@@ -455,8 +465,8 @@
                     (set! (.-choicesId state) nil)))
 
                 (choices-card-html [ch i]
-                  (str "<div style=\"border:1px solid " (.-border C) ";border-radius:10px;overflow:hidden;"
-                       "display:flex;flex-direction:column;background:" (.-surface C) ";\">"
+                  (str "<div style=\"border:1px solid " (.-border C) ";border-radius:12px;overflow:hidden;"
+                       "display:flex;flex-direction:column;background:" (.-surfaceMuted C) ";\">"
                        "<div style=\"height:200px;overflow:hidden;background:#fff;border-bottom:1px solid " (.-border C) ";\">"
                        "<iframe sandbox=\"\" style=\"width:100%;height:100%;border:none;pointer-events:none;\" "
                        "srcdoc=\"" (esc (or (.-html ch) "")) "\"></iframe></div>"
@@ -469,7 +479,7 @@
                                 (esc note) "</div>")
                            ""))
                        "<button data-pick-index=\"" i "\" style=\"margin-top:4px;padding:7px 14px;"
-                       "border-radius:6px;border:none;background:" (.-accent C) ";color:#fff;cursor:pointer;"
+                       "border-radius:8px;" btn-primary "cursor:pointer;"
                        "font-size:13px;font-weight:600;font-family:inherit;\">Pick this</button>"
                        "</div></div>"))
 
@@ -483,13 +493,14 @@
                             panel    (.createElement doc "div")]
                         (set! (.-id backdrop) "__xi-design-choices-modal")
                         (set! (.. backdrop -style -cssText)
-                              (str "position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,0.5);"
+                              (str "position:fixed;inset:0;z-index:2147483647;background:oklch(0 0 0 / 0.6);"
+                                   "-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);"
                                    "display:flex;align-items:center;justify-content:center;padding:24px;"
                                    "font-family:" sans ";"))
                         (set! (.. panel -style -cssText)
-                              (str "background:" (.-surface C) ";color:" (.-text C) ";border:1px solid " (.-border C)
-                                   ";border-radius:12px;padding:18px 20px;width:min(880px,100%);max-height:86vh;"
-                                   "overflow:auto;box-shadow:0 20px 40px rgba(0,0,0,0.25);"))
+                              (str panel-bg "color:" (.-text C)
+                                   ";border-radius:14px;padding:18px 20px;width:min(880px,100%);max-height:86vh;"
+                                   "overflow:auto;"))
                         (set! (.-innerHTML panel)
                               (str "<div style=\"display:flex;align-items:center;gap:8px;margin-bottom:14px;\">"
                                    spark
@@ -524,10 +535,9 @@
                   (let [pop (.createElement doc "div")]
                     (set! (.-id pop) "__xi-design-agents-pop")
                     (set! (.. pop -style -cssText)
-                          (str "position:fixed;right:16px;bottom:62px;z-index:2147483647;width:322px;"
-                               "max-height:60vh;overflow:auto;background:" (.-surface C) ";color:" (.-text C)
-                               ";border:1px solid " (.-border C) ";border-radius:10px;padding:12px 14px;font-family:" sans ";"
-                               "box-shadow:0 10px 15px rgba(0,0,0,0.1),0 4px 6px rgba(0,0,0,0.05);"))
+                          (str "position:fixed;right:16px;bottom:68px;z-index:2147483647;width:340px;"
+                               "max-height:60vh;overflow:auto;" panel-bg "color:" (.-text C)
+                               ";border-radius:14px;padding:12px 14px;font-family:" sans ";"))
                     (set! (.-innerHTML pop)
                           (str "<div style=\"display:flex;align-items:baseline;gap:7px;margin-bottom:4px;\">"
                                spark

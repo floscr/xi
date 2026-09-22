@@ -142,11 +142,16 @@ track `design.js` as a source dependency — after `bb design:build`, touch
 
 ### The UI
 
-Styled to match xi's web client via the clj-ui-framework light-theme tokens
-(`resources/public/theme.css`): neutral gray surfaces, violet accent, sans-serif
-text, monoline lucide icons and subtle borders/shadows. The resident **Design**
-pill sits bottom-right (violet accent while picking); submissions confirm with a
-small "Sent — a sub-agent is on it" toast.
+Styled as a **dark HUD** (picked via the design-directions skill): flat panels
+on dialkit's `--bg-0` surface — `oklch(0.145 0.011 285)`, the same background
+as the prompt popover — with hairline `oklch(1 0 0 / 0.09)` borders instead of
+drop shadows, violet accent with a soft glow, green live/success dots, monoline
+lucide icons. It reads as a devtools instrument floating above any page, light
+or dark. The resident **Design** pill is a capsule bottom-right (violet border
++ glow while picking); primary actions (Send/Commit/Pick this) use a violet
+gradient with glow; submissions confirm with a small "Sent — a sub-agent is on
+it" toast. All colors are oklch, defined in the `colors` map in
+`src/xi/ext/design_mode.cljs`.
 
 The **anchored prompt popover** is composed from dialkit's panel pieces —
 `.dial-panel` / `.dial-panel-head` / `.dial-panel-body` / `.dial-action` and the
