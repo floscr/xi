@@ -54,6 +54,9 @@
 .dial-panel {
   display: flex;
   flex-direction: column;
+  /* Shrinkable within .dialkit-root's max-height so the body scrolls
+     instead of the panel overflowing the viewport. */
+  min-height: 0;
   background: var(--bg-0);
   border: var(--border-1);
   border-radius: var(--radius-md);
@@ -122,7 +125,29 @@
   flex-direction: column;
   gap: var(--size-2);
   padding: var(--size-3);
+  /* min-height: 0 lets the body shrink below its content inside the
+     panel's flex column, which is what actually engages overflow-y. */
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  /* Thin, subtle scrollbar (scoped copy of utilities.css — dial.css is
+     also injected standalone into pages that don't load the framework). */
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-2) transparent;
+}
+
+.dial-panel-body::-webkit-scrollbar { width: 4px; height: 4px; }
+.dial-panel-body::-webkit-scrollbar-track { background: transparent; }
+.dial-panel-body::-webkit-scrollbar-thumb {
+  background: var(--bg-2);
+  border-radius: 9999px;
+}
+.dial-panel-body::-webkit-scrollbar-thumb:hover { background: var(--fg-2); }
+
+/* Rows keep their natural height — without this, flex squishes them
+   together (down to min-height) before the body's scrollbar kicks in. */
+.dial-panel-body > * {
+  flex-shrink: 0;
 }
 
 /* ── Minimized-to-icon state ───────────────────────────────────────── */
