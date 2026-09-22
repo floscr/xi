@@ -316,20 +316,28 @@
                 (when (> (count (str/split-lines args-summary)) 21)
                   (str "\n" (ansi/fg :dim "..."))))))))
 
+(defn- strip-file-hash
+  "Drop the trailing [file-hash: ...] freshness token from tool output — it's
+   an agent-only guard and needn't be shown in the TUI."
+  [text]
+  (when text
+    (str/replace text #"\n?\[file-hash: [0-9a-f]+\]\s*\z" "")))
+
 (defn- result-text
   "Extract display text from a tool result content (string or blocks)."
   [content]
-  (cond
-    (string? content) content
-    (sequential? content)
-    (->> content
-         (keep (fn [b]
-                 (cond
-                   (string? b) b
-                   (= "text" (:type b)) (:text b)
-                   :else nil)))
-         (str/join "\n"))
-    :else nil))
+  (strip-file-hash
+   (cond
+     (string? content) content
+     (sequential? content)
+     (->> content
+          (keep (fn [b]
+                  (cond
+                    (string? b) b
+                    (= "text" (:type b)) (:text b)
+                    :else nil)))
+          (str/join "\n"))
+     :else nil)))
 
 (defn- pretty-json
   "If `text` is a JSON object or array, return it pretty-printed with 2-space
