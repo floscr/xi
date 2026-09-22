@@ -194,6 +194,16 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "=> 1024"))))
 
+(deftest sleep-helper
+  (let [res (eval! "(sleep 1)")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> nil"))))
+
+(deftest thread-sleep-static
+  (let [res (eval! "(Thread/sleep 1)")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> nil"))))
+
 ;; ── format ───────────────────────────────────────────────────────────────────
 
 (deftest format-hex-padded

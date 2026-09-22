@@ -345,6 +345,17 @@
                vs)))
          (throw (ex-info (str "clj: jq failed: " (str/trim err)) {})))))))
 
+(defn- blocking-sleep
+  "Synchronously block for `ms` milliseconds. Safe because clj eval runs in a
+   dedicated worker_threads worker, never the server's main event loop. Backs
+   both the `sleep` helper and `Thread/sleep`."
+  [ms]
+  (let [ms (max 0 (or ms 0))]
+    (if (and (exists? js/Bun) (fn? (.-sleepSync js/Bun)))
+      (js/Bun.sleepSync ms)
+      (js/Atomics.wait (js/Int32Array. (js/SharedArrayBuffer. 4)) 0 0 ms)))
+  nil)
+
 (defn- helper-fns
   "The 'user-namespace helpers injected into the SCI ctx. `cat` and `find`
    shadow clojure.core (overridden in the 'clojure.core sci namespace)."
@@ -425,6 +436,7 @@
      'curl   (curl-fn opts)
      'jq     (jq-fn opts)
      'git    (git-fn opts)
+     'sleep  blocking-sleep
      'env    (fn [k]
                (let [scrubbed (sandbox/scrub-env)]
                  (or (aget scrubbed (str k))
@@ -584,6 +596,9 @@
                         'clojure.data.json json-data-namespace
                         'cheshire.core cheshire-namespace}
                        :classes {'Math js/Math
+                           ;; JVM-style Thread/sleep, backed by a synchronous
+                           ;; worker-thread block (see blocking-sleep).
+                           'Thread  #js {:sleep blocking-sleep}
                                  ;; JVM-style numeric parsing statics so code
                                  ;; like (Long/parseLong s) resolves.
                                  'Long    #js {:parseLong   (fn [s & [radix]]
