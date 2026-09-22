@@ -165,19 +165,22 @@
                         "position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;cursor:crosshair;display:none;")
             pill    (mk "__xi-design-pill"
                         (str "display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;"
-                             panel-bg "color:" (.-text C)
-                             ";padding:9px 15px;border-radius:999px;font:12px/1.4 " sans ";"
-                             "transition:border-color 150ms ease,box-shadow 150ms ease;"))
-            ;; The dock holds the agents button (left) + the pill (right),
-            ;; bottom-right. The agents button surfaces the design sub-agents:
+                             "color:" (.-text C)
+                             ";padding:9px 15px;font:12px/1.4 " sans ";"))
+            ;; The dock is ONE capsule group holding the agents button (left)
+            ;; + the pill (right) as borderless segments split by a hairline
+            ;; divider. The agents button surfaces the design sub-agents:
             ;; a spinner while any is working, a list on click, per-agent commit.
             dock    (mk "__xi-design-dock"
-                        "position:fixed;bottom:16px;right:16px;z-index:2147483646;display:flex;align-items:center;gap:10px;")
+                        (str "position:fixed;bottom:16px;right:16px;z-index:2147483646;"
+                             "display:flex;align-items:center;"
+                             panel-bg "border-radius:999px;"
+                             "transition:border-color 150ms ease,box-shadow 150ms ease;"))
             agents-btn (mk "__xi-design-agents-btn"
                         (str "display:none;align-items:center;gap:7px;cursor:pointer;user-select:none;"
-                             panel-bg "color:" (.-text C)
-                             ";padding:9px 15px;border-radius:999px;font:12px/1.4 " sans ";"
-                             "transition:border-color 150ms ease;"))]
+                             "color:" (.-text C)
+                             ";padding:9px 15px;font:12px/1.4 " sans ";"
+                             "border-right:1px solid " (.-border C) ";"))]
 
         (letfn [(pill-idle []
                   (set! (.-innerHTML pill)
@@ -192,14 +195,14 @@
                              "<span style=\"color:" (.-textFaint C) ";font-size:11px;\">Esc to stop</span>")))
 
                 (style-pill [picking?]
-                  ;; Active = violet border + glow on the same dark surface
-                  ;; (not a filled pill).
+                  ;; Active = violet border + glow on the whole dock capsule
+                  ;; (the pill is just a segment of it, not its own panel).
                   (if picking?
-                    (do (set! (.. pill -style -borderColor) (.-accentBorder C))
-                        (set! (.. pill -style -boxShadow) (str "0 0 16px " (.-accentGlow C)))
+                    (do (set! (.. dock -style -borderColor) (.-accentBorder C))
+                        (set! (.. dock -style -boxShadow) (str "0 0 16px " (.-accentGlow C)))
                         (pill-picking))
-                    (do (set! (.. pill -style -borderColor) (.-border C))
-                        (set! (.. pill -style -boxShadow) "none")
+                    (do (set! (.. dock -style -borderColor) (.-border C))
+                        (set! (.. dock -style -boxShadow) "none")
                         (pill-idle))))
 
                 (update-hl [el]
