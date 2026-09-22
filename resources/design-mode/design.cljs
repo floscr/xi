@@ -58,7 +58,9 @@
         check-path "<path d=\"M20 6 9 17l-5-5\"/>"
         spark    (svg-icon sparkles-path 15 (.-accentBright C))
         check-ok (svg-icon check-path 16 (.-success C))
-        state #js {:picking false :hovered nil :selected nil :popover nil :toastTimer nil}]
+        chev-up   (svg-icon "<path d=\"m18 15-6-6-6 6\"/>" 13 "currentColor")
+        chev-down (svg-icon "<path d=\"m6 9 6 6 6-6\"/>" 13 "currentColor")
+        state #js {:picking false :hovered nil :selected nil :selStack nil :popover nil :toastTimer nil}]
 
     ;; ── Pure helpers (shared shape with the element picker) ───────────────
 
@@ -225,7 +227,8 @@
                   (when-let [p (.-popover state)]
                     (.remove p)
                     (set! (.-popover state) nil))
-                  (set! (.-selected state) nil))
+                  (set! (.-selected state) nil)
+                  (set! (.-selStack state) nil))
 
                 (stop-picking []
                   (close-popover)
@@ -273,13 +276,55 @@
                                   "Generating options \u2014 a sub-agent is on it"
                                   "Sent \u2014 a sub-agent is on it"))))
 
+                ;; ── Target grow/shrink (widen selection to ancestors) ──────────
+
+                (target-info-html [el]
+                  (str (esc (info el))
+                       "<br/><span style=\"color:var(--fg-2);\">" (esc (selector el)) "</span>"))
+
+                (can-grow? []
+                  (let [el (.-selected state)
+                        p  (and el (.-parentElement el))]
+                    (and p (not= p root))))
+
+                (refresh-target []
+                  (when-let [el (.-selected state)]
+                    ;; Adapt the highlight box to the new target's rect (the
+                    ;; tip stays hidden while the popover is open).
+                    (update-hl el)
+                    (set! (.. tip -style -display) "none")
+                    (when-let [t (.getElementById doc "__xi-design-target")]
+                      (set! (.-innerHTML t) (target-info-html el)))
+                    (when-let [b (.getElementById doc "__xi-design-grow")]
+                      (set! (.. b -style -opacity) (if (can-grow?) "1" "0.35")))
+                    (when-let [b (.getElementById doc "__xi-design-shrink")]
+                      (set! (.. b -style -opacity)
+                            (if (pos? (.-length (or (.-selStack state) #js []))) "1" "0.35")))))
+
+                (grow-target []
+                  (when (can-grow?)
+                    (let [el (.-selected state)]
+                      (when-not (.-selStack state) (set! (.-selStack state) #js []))
+                      (.push (.-selStack state) el)
+                      (set! (.-selected state) (.-parentElement el))
+                      (refresh-target))))
+
+                (shrink-target []
+                  (let [stk (.-selStack state)]
+                    (when (and stk (pos? (.-length stk)))
+                      (set! (.-selected state) (.pop stk))
+                      (refresh-target))))
+
                 (open-popover []
                   (let [el    (.-selected state)
                         pop   (.createElement doc "div")
                         r     (.getBoundingClientRect el)
                         vw    (.-innerWidth js/window)
                         vh    (.-innerHeight js/window)
-                        w     360]
+                        w     360
+                        tbtn  (str "flex:1;display:flex;align-items:center;justify-content:center;"
+                                   "width:26px;padding:0;background:var(--bg-1);color:var(--fg-1);"
+                                   "border:var(--border-1);border-radius:var(--radius-sm);cursor:pointer;")]
                     (set! (.-id pop) "__xi-design-pop")
                     ;; Reuse dialkit's panel chrome + tokens (.dial-panel /
                     ;; .dial-panel-head / .dial-panel-body / .dial-action, and
@@ -298,11 +343,16 @@
                            (svg-icon sparkles-path 15 "var(--accent)")
                            "<span>Describe the change</span></span></div>"
                            "<div class=\"dial-panel-body\" style=\"gap:10px;\">"
-                           "<div style=\"font:11.5px/1.5 var(--font-mono);padding:7px 10px;"
+                           "<div style=\"display:flex;align-items:stretch;gap:6px;\">"
+                           "<div id=\"__xi-design-target\" style=\"flex:1;min-width:0;"
+                           "font:11.5px/1.5 var(--font-mono);padding:7px 10px;"
                            "background:var(--bg-1);border-radius:var(--radius-sm);color:var(--fg-1);"
                            "word-break:break-all;max-height:56px;overflow:hidden;\">"
-                           (esc (info el))
-                           "<br/><span style=\"color:var(--fg-2);\">" (esc (selector el)) "</span></div>"
+                           (target-info-html el) "</div>"
+                           "<div style=\"display:flex;flex-direction:column;gap:4px;\">"
+                           "<button id=\"__xi-design-grow\" title=\"Widen target (parent element)\" style=\"" tbtn "\">" chev-up "</button>"
+                           "<button id=\"__xi-design-shrink\" title=\"Narrow target (back)\" style=\"" tbtn "\">" chev-down "</button>"
+                           "</div></div>"
                            "<textarea id=\"__xi-design-msg\" placeholder=\"e.g. more padding, warmer background\u2026\""
                            " style=\"width:100%;height:64px;resize:none;background:var(--bg-1);"
                            "color:var(--fg-0);border:var(--border-1);border-radius:var(--radius-sm);"
@@ -333,6 +383,11 @@
                                          (fn [] (submit (.trim (.-value msg-el)) "edit")))
                       (.addEventListener (.getElementById doc "__xi-design-choices") "click"
                                          (fn [] (submit (.trim (.-value msg-el)) "choices")))
+                      (.addEventListener (.getElementById doc "__xi-design-grow") "click"
+                                         (fn [] (grow-target)))
+                      (.addEventListener (.getElementById doc "__xi-design-shrink") "click"
+                                         (fn [] (shrink-target)))
+                      (refresh-target)
                       (.addEventListener msg-el "keydown"
                                          (fn [e]
                                            (.stopPropagation e)
@@ -600,6 +655,7 @@
                                (.stopPropagation e)
                                (when-not (or (.-selected state) (not (.-hovered state)))
                                  (set! (.-selected state) (.-hovered state))
+                                 (set! (.-selStack state) #js [])
                                  (set! (.. hl -style -borderColor) (.-accent C))
                                  (set! (.. tip -style -display) "none")
                                  (open-popover))))
