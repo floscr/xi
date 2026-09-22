@@ -270,8 +270,9 @@ const vw79 = window.innerWidth;
 const vh80 = window.innerHeight;
 const w81 = 360;
 pop77.id = "__xi-design-pop";
-pop77.style.cssText = `${"position:fixed;z-index:2147483647;width:"}${w81}${"px;"}${"background:"}${C2.surface??''}${";color:"}${C2.text??''}${";border:1px solid "}${C2.border??''}${";border-radius:10px;padding:14px;"}${"box-shadow:0 10px 15px rgba(0,0,0,0.1),0 4px 6px rgba(0,0,0,0.05);"}${"font-family:"}${sans5}${";"}`;
-pop77.innerHTML = `${"<div style=\"display:flex;align-items:baseline;gap:7px;margin-bottom:10px;\">"}${spark10??''}${"<span style=\"font-size:15px;font-weight:600;\">Describe the change</span>"}${"</div>"}${"<div style=\"font:11.5px/1.5 "}${mono6}${";padding:7px 10px;margin-bottom:10px;"}${"background:"}${C2.surfaceMuted??''}${";border-radius:8px;color:"}${C2.textMuted??''}${";word-break:break-all;max-height:56px;overflow:hidden;\">"}${esc3(info5(el76))??''}${"<br/><span style=\"color:"}${C2.textFaint??''}${";\">"}${esc3(selector4(el76))??''}${"</span></div>"}${"<textarea id=\"__xi-design-msg\" placeholder=\"e.g. more padding, warmer background…\""}${" style=\"width:100%;height:64px;resize:none;background:"}${C2.surface??''}${";color:"}${C2.text??''}${";border:1px solid "}${C2.border??''}${";border-radius:8px;padding:9px 11px;font-size:13.5px;font-family:inherit;"}${"line-height:1.45;outline:none;box-sizing:border-box;\"></textarea>"}${"<div style=\"font-size:11px;color:"}${C2.textFaint??''}${";margin-top:8px;\">"}${"Enter to send · Esc to re-pick</div>"}${"<div style=\"display:flex;align-items:center;gap:8px;margin-top:10px;\">"}${"<button id=\"__xi-design-choices\" style=\"padding:7px 14px;border-radius:6px;"}${"border:1px solid "}${C2.border??''}${";background:"}${C2.surface??''}${";color:"}${C2.text??''}${";cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;\">Choices</button>"}${"<button id=\"__xi-design-send\" style=\"margin-left:auto;padding:7px 16px;border-radius:6px;border:none;"}${"background:"}${C2.accent??''}${";color:#fff;cursor:pointer;font-size:13px;"}${"font-weight:600;font-family:inherit;\">Send</button>"}${"</div>"}`;
+pop77.className = "dialkit-root";
+pop77.style.cssText = `${"position:fixed;z-index:2147483647;width:"}${w81}${"px;"}${"font-family:"}${sans5}${";"}`;
+pop77.innerHTML = `${"<div class=\"dial-panel\">"}${"<div class=\"dial-panel-head\" style=\"cursor:default;\">"}${"<span class=\"dial-panel-title\" style=\"display:flex;align-items:center;gap:7px;font-size:13px;\">"}${svg_icon7(sparkles_path8, 15, "var(--accent)")??''}${"<span>Describe the change</span></span></div>"}${"<div class=\"dial-panel-body\" style=\"gap:10px;\">"}${"<div style=\"font:11.5px/1.5 var(--font-mono);padding:7px 10px;"}${"background:var(--bg-1);border-radius:var(--radius-sm);color:var(--fg-1);"}${"word-break:break-all;max-height:56px;overflow:hidden;\">"}${esc3(info5(el76))??''}${"<br/><span style=\"color:var(--fg-2);\">"}${esc3(selector4(el76))??''}${"</span></div>"}${"<textarea id=\"__xi-design-msg\" placeholder=\"e.g. more padding, warmer background…\""}${" style=\"width:100%;height:64px;resize:none;background:var(--bg-1);"}${"color:var(--fg-0);border:var(--border-1);border-radius:var(--radius-sm);"}${"padding:9px 11px;font-size:13.5px;font-family:inherit;"}${"line-height:1.45;outline:none;box-sizing:border-box;\"></textarea>"}${"<div style=\"font-size:11px;color:var(--fg-2);\">"}${"Enter to send · Esc to re-pick</div>"}${"<div style=\"display:flex;align-items:center;gap:8px;\">"}${"<button id=\"__xi-design-choices\" class=\"dial-action\" "}${"style=\"width:auto;padding:7px 14px;font-size:13px;font-weight:600;\">Choices</button>"}${"<button id=\"__xi-design-send\" style=\"margin-left:auto;padding:7px 16px;"}${"border-radius:var(--radius-sm);border:none;background:var(--accent);color:#fff;"}${"cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;\">Send</button>"}${"</div></div></div>"}`;
 root4.appendChild(pop77);
 state13.popover = pop77;
 const ph82 = pop77.getBoundingClientRect().height;
@@ -589,7 +590,13 @@ return open_agents_pop65()};
 style_pill43(false);
 const sheet133 = doc3.createElement("style");
 sheet133.id = "__xi-design-style";
-sheet133.textContent = "@keyframes __xiDesignSpin{to{transform:rotate(360deg)}}";
+sheet133.textContent = `${"@keyframes __xiDesignSpin{to{transform:rotate(360deg)}}\n"}${(() => {
+const or__23542__auto__134 = cfg1.dialkitCss;
+if (squint_core.truth_(or__23542__auto__134)) {
+return or__23542__auto__134} else {
+return ""};
+
+})()??''}`;
 root4.appendChild(sheet133);
 dock39.appendChild(agents_btn40);
 dock39.appendChild(pill38);
@@ -611,21 +618,21 @@ overlay37.addEventListener("mousemove", (function (e) {
 if (squint_core.truth_(state13.selected)) {
 return null} else {
 overlay37.style.pointerEvents = "none";
-const el134 = doc3.elementFromPoint(e.clientX, e.clientY);
+const el135 = doc3.elementFromPoint(e.clientX, e.clientY);
 overlay37.style.pointerEvents = "auto";
 if (squint_core.truth_((() => {
-const and__23573__auto__135 = el134;
-if (squint_core.truth_(and__23573__auto__135)) {
-const or__23542__auto__136 = squint_core.not(el134.id);
-if (or__23542__auto__136) {
-return or__23542__auto__136} else {
-return !(0 === el134.id.indexOf("__xi-design"))};
+const and__23573__auto__136 = el135;
+if (squint_core.truth_(and__23573__auto__136)) {
+const or__23542__auto__137 = squint_core.not(el135.id);
+if (or__23542__auto__137) {
+return or__23542__auto__137} else {
+return !(0 === el135.id.indexOf("__xi-design"))};
 } else {
-return and__23573__auto__135};
+return and__23573__auto__136};
 
 })())) {
-state13.hovered = el134;
-return update_hl44(el134);
+state13.hovered = el135;
+return update_hl44(el135);
 };
 };
 
@@ -634,9 +641,9 @@ overlay37.addEventListener("click", (function (e) {
 e.preventDefault();
 e.stopPropagation();
 if (squint_core.truth_((() => {
-const or__23542__auto__137 = state13.selected;
-if (squint_core.truth_(or__23542__auto__137)) {
-return or__23542__auto__137} else {
+const or__23542__auto__138 = state13.selected;
+if (squint_core.truth_(or__23542__auto__138)) {
+return or__23542__auto__138} else {
 return squint_core.not(state13.hovered)};
 
 })())) {
@@ -648,27 +655,27 @@ return open_popover51();
 };
 
 }));
-const key_handler138 = (function key_handler (e) {
+const key_handler139 = (function key_handler (e) {
 if (squint_core.not(window.__xiDesignActive)) {
 return doc3.removeEventListener("keydown", key_handler, true)} else {
 if (squint_core.truth_((() => {
-const and__23573__auto__139 = e.ctrlKey;
-if (squint_core.truth_(and__23573__auto__139)) {
+const and__23573__auto__140 = e.ctrlKey;
+if (squint_core.truth_(and__23573__auto__140)) {
 return (squint_core.not(e.shiftKey) && (squint_core.not(e.altKey) && (squint_core.not(e.metaKey) && (() => {
-const k140 = (() => {
-const or__23542__auto__141 = e.key;
-if (squint_core.truth_(or__23542__auto__141)) {
-return or__23542__auto__141} else {
+const k141 = (() => {
+const or__23542__auto__142 = e.key;
+if (squint_core.truth_(or__23542__auto__142)) {
+return or__23542__auto__142} else {
 return ""};
 
 })().toLowerCase();
-const or__23542__auto__142 = (k140 === "i");
-if (or__23542__auto__142) {
-return or__23542__auto__142} else {
-return (k140 === "b")};
+const or__23542__auto__143 = (k141 === "i");
+if (or__23542__auto__143) {
+return or__23542__auto__143} else {
+return (k141 === "b")};
 
 })())))} else {
-return and__23573__auto__139};
+return and__23573__auto__140};
 
 })())) {
 e.preventDefault();
@@ -687,4 +694,4 @@ return stop_picking46()};
 return null}}};
 
 });
-doc3.addEventListener("keydown", key_handler138, true)};
+doc3.addEventListener("keydown", key_handler139, true)};

@@ -89,16 +89,20 @@ Control types:
 
 - **range** — a slider initialized from the element's *computed* value; emits
   `<value><unit>` (e.g. `18px`).
-- **color** — a native color swatch + an alpha slider; emits an `rgba(…)` string,
-  so "background color" *and* "background opacity" are one control.
+- **color** — a hue/saturation plane + opacity track with hex / rgb / hsl
+  formats; emits a color string (`rgba(…)` when the alpha is < 1), so
+  "background color" *and* "background opacity" are one control.
 - **opacity** — a 0–100 slider mapped to the element `opacity` (0–1).
 
-The panel is draggable by its header; **⌘/Ctrl+Enter** applies, **Esc** cancels
-(which restores the element's original inline styles).
+The panel itself is **[dialkit](frontend.md)** (`window.__uiDial` from
+clj-ui-framework, bundled into the injected script) — a leva-style floating,
+draggable value-tuning panel. It is draggable by its header; commit and discard
+are the **✓ Apply** / **✕ Cancel** buttons at the bottom (Cancel restores the
+element's original inline styles).
 
-Below the controls the panel also has:
+Alongside the controls the panel also has:
 
-- **Apply to a shared class rule** — a checkbox (default *on* when the element
+- **Apply to shared class** — a toggle (default *on* when the element
   has a class). It drives **both** the live preview and the committed scope:
   - *checked* — the preview live-applies to **every element sharing the
    target's base class** (the target's first class token), so you see the
@@ -151,11 +155,23 @@ Same toolchain as the element picker (and same reasons — the script is injecte
 as a *string* into an arbitrary page, so it must be one self-contained blob with
 no `import`s). Source at `resources/style-editor/style-editor.cljs`, compiled
 with squint → esbuild into `resources/style-editor/style-editor.js` — a
-**committed, generated** artifact (~7KB).
+**committed, generated** artifact (~37KB, since the dialkit panel it `require`s
+is bundled in). The overlay pulls in dialkit by requiring the framework's `dial`
+namespace directly — `resources/style-editor/squint.edn` adds
+clj-ui-framework's `src/ui/js` to `:paths`, and esbuild `--bundle` tree-shakes
+and links it (plus `squint-cljs`) into the IIFE. No vendoring.
+
+dialkit is token-driven CSS. Since the target page doesn't load
+clj-ui-framework's stylesheet, the node ext injects a `<style>` first: the
+tokens dial.css uses are resolved (dark theme) and scoped to `.dialkit-root` by
+`bb dialkit:css` into `resources/dialkit/dial.css`, inlined via the
+`inline-dialkit-css` macro (`src/xi/ext/dialkit_css.clj`). Rerun `bb dialkit:css`
+after bumping the clj-ui-framework checkout.
 
 Regenerate after editing the `.cljs`:
 
 ```bash
+bb dialkit:css          # regenerate the injectable dialkit stylesheet (only after a framework bump)
 bb style-editor:build   # squint compile + esbuild → resources/style-editor/style-editor.js
 ```
 
@@ -185,7 +201,10 @@ XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 | `src/xi/ext/style_editor_js.clj` | Compile-time macro inlining `style-editor.js`. |
 | `resources/style-editor/style-editor.cljs` | Browser-side source (squint ClojureScript). |
 | `resources/style-editor/style-editor.js` | **Generated** self-contained IIFE (squint → esbuild); committed. |
-| `resources/style-editor/squint.edn` | squint config for the build. |
+| `resources/style-editor/squint.edn` | squint config for the build (adds clj-ui-framework `src/ui/js` to `:paths` for `dial`). |
+| `resources/dialkit/dial.css` | **Generated** injectable dialkit stylesheet (`bb dialkit:css`); committed. |
+| `scripts/gen-dialkit-css.clj` | Resolves clj-ui-framework tokens + dial.css → `resources/dialkit/dial.css`. |
+| `src/xi/ext/dialkit_css.clj` | Compile-time macro inlining `resources/dialkit/dial.css`. |
 | `test/xi/ext/style_editor_test.cljs` | Unit tests (config, injection, parsing, formatting, install). |
 
 The tool is wired into `xi.ext.chrome-mcp` (`src/xi/ext/chrome_mcp.cljs`), which owns the

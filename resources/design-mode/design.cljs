@@ -272,38 +272,42 @@
                         vh    (.-innerHeight js/window)
                         w     360]
                     (set! (.-id pop) "__xi-design-pop")
+                    ;; Reuse dialkit's panel chrome + tokens (.dial-panel /
+                    ;; .dial-panel-head / .dial-panel-body / .dial-action, and
+                    ;; the --bg-*/--fg-*/--accent/--radius-* vars). The root is
+                    ;; .dialkit-root so the tokens resolve; we only override
+                    ;; its fixed position + width for element anchoring.
+                    (set! (.-className pop) "dialkit-root")
                     (set! (.. pop -style -cssText)
                           (str "position:fixed;z-index:2147483647;width:" w "px;"
-                               "background:" (.-surface C) ";color:" (.-text C)
-                               ";border:1px solid " (.-border C) ";border-radius:10px;padding:14px;"
-                               "box-shadow:0 10px 15px rgba(0,0,0,0.1),0 4px 6px rgba(0,0,0,0.05);"
                                "font-family:" sans ";"))
                     (set! (.-innerHTML pop)
                           (str
-                           "<div style=\"display:flex;align-items:baseline;gap:7px;margin-bottom:10px;\">"
-                           spark
-                           "<span style=\"font-size:15px;font-weight:600;\">Describe the change</span>"
-                           "</div>"
-                           "<div style=\"font:11.5px/1.5 " mono ";padding:7px 10px;margin-bottom:10px;"
-                           "background:" (.-surfaceMuted C) ";border-radius:8px;color:" (.-textMuted C)
-                           ";word-break:break-all;max-height:56px;overflow:hidden;\">"
+                           "<div class=\"dial-panel\">"
+                           "<div class=\"dial-panel-head\" style=\"cursor:default;\">"
+                           "<span class=\"dial-panel-title\" style=\"display:flex;align-items:center;gap:7px;font-size:13px;\">"
+                           (svg-icon sparkles-path 15 "var(--accent)")
+                           "<span>Describe the change</span></span></div>"
+                           "<div class=\"dial-panel-body\" style=\"gap:10px;\">"
+                           "<div style=\"font:11.5px/1.5 var(--font-mono);padding:7px 10px;"
+                           "background:var(--bg-1);border-radius:var(--radius-sm);color:var(--fg-1);"
+                           "word-break:break-all;max-height:56px;overflow:hidden;\">"
                            (esc (info el))
-                           "<br/><span style=\"color:" (.-textFaint C) ";\">" (esc (selector el)) "</span></div>"
+                           "<br/><span style=\"color:var(--fg-2);\">" (esc (selector el)) "</span></div>"
                            "<textarea id=\"__xi-design-msg\" placeholder=\"e.g. more padding, warmer background\u2026\""
-                           " style=\"width:100%;height:64px;resize:none;background:" (.-surface C)
-                           ";color:" (.-text C) ";border:1px solid " (.-border C)
-                           ";border-radius:8px;padding:9px 11px;font-size:13.5px;font-family:inherit;"
+                           " style=\"width:100%;height:64px;resize:none;background:var(--bg-1);"
+                           "color:var(--fg-0);border:var(--border-1);border-radius:var(--radius-sm);"
+                           "padding:9px 11px;font-size:13.5px;font-family:inherit;"
                            "line-height:1.45;outline:none;box-sizing:border-box;\"></textarea>"
-                           "<div style=\"font-size:11px;color:" (.-textFaint C) ";margin-top:8px;\">"
+                           "<div style=\"font-size:11px;color:var(--fg-2);\">"
                            "Enter to send \u00B7 Esc to re-pick</div>"
-                           "<div style=\"display:flex;align-items:center;gap:8px;margin-top:10px;\">"
-                           "<button id=\"__xi-design-choices\" style=\"padding:7px 14px;border-radius:6px;"
-                           "border:1px solid " (.-border C) ";background:" (.-surface C) ";color:" (.-text C)
-                           ";cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;\">Choices</button>"
-                           "<button id=\"__xi-design-send\" style=\"margin-left:auto;padding:7px 16px;border-radius:6px;border:none;"
-                           "background:" (.-accent C) ";color:#fff;cursor:pointer;font-size:13px;"
-                           "font-weight:600;font-family:inherit;\">Send</button>"
-                           "</div>"))
+                           "<div style=\"display:flex;align-items:center;gap:8px;\">"
+                           "<button id=\"__xi-design-choices\" class=\"dial-action\" "
+                           "style=\"width:auto;padding:7px 14px;font-size:13px;font-weight:600;\">Choices</button>"
+                           "<button id=\"__xi-design-send\" style=\"margin-left:auto;padding:7px 16px;"
+                           "border-radius:var(--radius-sm);border:none;background:var(--accent);color:#fff;"
+                           "cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;\">Send</button>"
+                           "</div></div></div>"))
                     (.appendChild root pop)
                     (set! (.-popover state) pop)
                     ;; Anchor near the element, clamped to the viewport.
@@ -540,10 +544,14 @@
 
           (style-pill false)
 
-          ;; Spinner keyframes (inline styles can't declare @keyframes).
+          ;; Spinner keyframes (inline styles can't declare @keyframes) plus
+          ;; the dialkit component CSS (.dial-* classes + resolved dark-theme
+          ;; tokens) the popover reuses — supplied by the node side.
           (let [sheet (.createElement doc "style")]
             (set! (.-id sheet) "__xi-design-style")
-            (set! (.-textContent sheet) "@keyframes __xiDesignSpin{to{transform:rotate(360deg)}}")
+            (set! (.-textContent sheet)
+                  (str "@keyframes __xiDesignSpin{to{transform:rotate(360deg)}}\n"
+                       (or (.-dialkitCss cfg) "")))
             (.appendChild root sheet))
 
           ;; Reparent the pill + agents button into the bottom-right dock

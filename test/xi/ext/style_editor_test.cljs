@@ -20,8 +20,6 @@
     (testing "carries the controls with camelCase properties"
       (is (= "borderRadius" (get-in m [:controls 0 :property])))
       (is (= "color" (get-in m [:controls 1 :type]))))
-    (testing "includes the color palette"
-      (is (contains? (:colors m) :primary)))
     (testing "defaults a blank title"
       (let [m2 (js->clj (js/JSON.parse (config-json "a" "" [{:property "opacity"}]))
                         :keywordize-keys true)]

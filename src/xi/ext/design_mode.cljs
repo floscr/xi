@@ -28,7 +28,8 @@
             [xi.ext.chrome-mcp.scope :as scope]
             [xi.ext.subagent.handlers :as sah]
             [xi.image :as image])
-  (:require-macros [xi.ext.design-mode-js :refer [inline-design-js]]))
+  (:require-macros [xi.ext.design-mode-js :refer [inline-design-js]]
+                   [xi.ext.dialkit-css :refer [inline-dialkit-css]]))
 
 ;; ── Config ───────────────────────────────────────────────────────────────────
 
@@ -36,10 +37,14 @@
 
 (def ^:private design-js (inline-design-js))
 
+(def ^:private dialkit-css (inline-dialkit-css))
+
 (def ^:private colors
-  "clj-ui-framework light-theme tokens for the injected UI, so the design
-   overlay matches xi's web client: neutral gray surfaces, violet accent,
-   subtle borders. Values mirror resources/public/theme.css :root."
+  "clj-ui-framework light-theme tokens for the injected overlay chrome (pill,
+   dock, toast, choices modal), so it matches xi's web client: neutral gray
+   surfaces, violet accent, subtle borders. Values mirror
+   resources/public/theme.css :root. (The anchored prompt popover instead
+   reuses dialkit's dark panel tokens/classes via `dialkit-css`.)"
   {:surface      "oklch(0.975 0.003 285)"       ; --bg-0  (gray-50)
    :surfaceMuted "oklch(0.955 0.005 285)"       ; --bg-1  (gray-100)
    :text         "oklch(0.145 0.011 285)"       ; --fg-0  (gray-950)
@@ -67,7 +72,8 @@
 
 (defn- config-json []
   (js/JSON.stringify (clj->js {:maxHTML 15000
-                               :colors colors})))
+                               :colors colors
+                               :dialkitCss dialkit-css})))
 
 (defn- injection-fn
   "A JS arrow-function declaration for evaluate_script: clear any stale design

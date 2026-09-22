@@ -146,9 +146,20 @@ Styled to match xi's web client via the clj-ui-framework light-theme tokens
 (`resources/public/theme.css`): neutral gray surfaces, violet accent, sans-serif
 text, monoline lucide icons and subtle borders/shadows. The resident **Design**
 pill sits bottom-right (violet accent while picking); submissions confirm with a
-small "Sent — a sub-agent is on it" toast. While the mode is on, Ctrl+I and
-Ctrl+B are swallowed by design mode (rich-text editors won't see them as
-italic/bold); everything else passes through untouched.
+small "Sent — a sub-agent is on it" toast.
+
+The **anchored prompt popover** is composed from dialkit's panel pieces —
+`.dial-panel` / `.dial-panel-head` / `.dial-panel-body` / `.dial-action` and the
+resolved dark-theme tokens (`--bg-*` / `--fg-*` / `--accent` / `--radius-*`) —
+so it reads as a dialkit surface. The CSS is the same generated
+`resources/dialkit/dial.css` the style editor uses (`bb dialkit:css`); the node
+side inlines it (`inline-dialkit-css`) and hands it to the overlay via
+`window.__XI_DESIGN_CFG__.dialkitCss`, which the script injects alongside the
+spinner keyframes.
+
+While the mode is on, Ctrl+I and Ctrl+B are swallowed by design mode (rich-text
+editors won't see them as italic/bold); everything else passes through
+untouched.
 
 ## Enabling it
 
@@ -167,6 +178,7 @@ XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 | `resources/design-mode/design.cljs` | Browser-side resident script (squint ClojureScript). |
 | `resources/design-mode/design.js` | **Generated** self-contained IIFE (squint → esbuild); committed. |
 | `resources/design-mode/squint.edn` | squint config for the design-mode build. |
+| `resources/dialkit/dial.css` | **Generated** dialkit CSS (`bb dialkit:css`) inlined into the overlay for the popover. |
 | `test/xi/ext/design_mode_test.cljs` | Unit tests (injection, poll parsing, prompt building, install). |
 
 Wired into `xi.ext.chrome-mcp` (`src/xi/ext/chrome_mcp.cljs`), which owns the

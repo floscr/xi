@@ -18,7 +18,8 @@
            → inject panel → poll for commit/cancel
            → return committed {property → cssValue}"
   (:require [clojure.string :as str])
-  (:require-macros [xi.ext.style-editor-js :refer [inline-style-editor-js]]))
+  (:require-macros [xi.ext.style-editor-js :refer [inline-style-editor-js]]
+                   [xi.ext.dialkit-css :refer [inline-dialkit-css]]))
 
 ;; ── Config ───────────────────────────────────────────────────────────────────
 
@@ -26,20 +27,21 @@
 (def ^:private poll-interval-ms 400)
 
 (def ^:private editor-js (inline-style-editor-js))
+(def ^:private dialkit-css (inline-dialkit-css))
 
-(def ^:private colors
-  {:primary "#6366f1"
-   :bg "#1e1e2e"
-   :bgLight "#313244"
-   :text "#cdd6f4"
-   :textMuted "#a6adc8"
-   :textDim "#6c7086"
-   :accent "#89b4fa"
-   :border "#45475a"})
+;; A <style> tag carrying the dialkit stylesheet, injected once before the
+;; panel mounts (the target page doesn't load clj-ui-framework's CSS).
+(def ^:private css-js
+  (str "(function(){var id='__xi-dialkit-css';"
+       "if(!document.getElementById(id)){"
+       "var s=document.createElement('style');s.id=id;"
+       "s.textContent=" (js/JSON.stringify dialkit-css) ";"
+       "document.head.appendChild(s);}})();"))
 
 (def ^:private cleanup-js
   (str "(function() {"
-       "var el = document.getElementById('__xi-style-editor'); if (el) el.remove();"
+       "if (window.__xiStyleEditorDial) { try { window.__xiStyleEditorDial.destroy(); } catch (e) {} }"
+       "delete window.__xiStyleEditorDial;"
        "delete window.__xiStyleEditorActive; delete window.__xiStyleEditorResult;"
        "delete window.__xiStyleEditorCancelled;"
        "})();"))
@@ -49,8 +51,7 @@
 (defn- config-json [selector title controls]
   (js/JSON.stringify (clj->js {:selector (or (not-empty selector) nil)
                                :title (or (not-empty title) "Style editor")
-                               :controls controls
-                               :colors colors})))
+                               :controls controls})))
 
 (defn- injection-fn
   "A JS arrow-function for evaluate_script: clear any stale editor, set the
@@ -58,6 +59,7 @@
   [selector title controls]
   (str "() => {\n"
        cleanup-js "\n"
+       css-js "\n"
        "window.__XI_STYLE_EDITOR_CFG__ = " (config-json selector title controls) ";\n"
        editor-js "\n"
        "return true;\n}"))

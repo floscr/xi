@@ -122,6 +122,10 @@
   {:doc "Regenerate resources/chrome/tools.edn from chrome-devtools-mcp's live tools/list"
    :task (shell "node" "scripts/sync-chrome-tools.mjs")}
 
+  dialkit:css
+  {:doc "Regenerate resources/dialkit/dial.css from clj-ui-framework's dial.css + resolved theme tokens"
+   :task (shell "bb" "scripts/gen-dialkit-css.clj")}
+
   picker:build
   {:doc "Compile the element-picker (squint → esbuild) to resources/element-picker/picker.js"
    :task (let [dir "resources/element-picker"]
