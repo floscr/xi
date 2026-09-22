@@ -132,11 +132,15 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
 
 (defn- find-skill
   "Find a skill by name and read its body. Returns the scan-skills map with
-   :body added, or nil."
+   :body added, or nil. Substitutes `$SKILL` in the body with the skill's own
+   directory so skills can reference bundled helper scripts by absolute path
+   (e.g. `bb $SKILL/cli.clj`) regardless of where the dir is symlinked from."
   [skill-name]
   (when-let [skill (some #(when (= (:name %) skill-name) %) (scan-skills))]
     (let [content (.toString (fs/readFileSync (:path skill) "utf-8"))
-          {:keys [body]} (parse-frontmatter content)]
+          {:keys [body]} (parse-frontmatter content)
+          skill-dir (.dirname node-path (:path skill))
+          body (str/replace body "$SKILL" skill-dir)]
       (assoc skill :body body))))
 
 (defn- load-skill-by-name
