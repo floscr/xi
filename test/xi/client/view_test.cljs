@@ -1,5 +1,6 @@
 (ns xi.client.view-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.client.view :as view]))
 
 ;; ── format-tool-args ─────────────────────────────────────────────────────────
@@ -88,3 +89,20 @@
   (testing "palette codes with no text between them are dropped"
     (is (= (str difft-del-fg "x" "\033[0m")
            (view/retint-difft "\033[91;1m\033[2m\033[0m\033[91mx\033[0m")))))
+
+;; ── buffer-display-text ──────────────────────────────────────────────────────
+
+(deftest buffer-display-text-highlights-file-buffers
+  (testing "a file buffer (carrying :path) is syntax-highlighted"
+    (let [text "(defn foo [x] x)"
+          out  (view/buffer-display-text {:path "src/foo.clj" :text text})]
+      (is (not= text out) "highlighted output differs from raw")
+      (is (str/includes? out "\033[") "contains ANSI color codes")))
+  (testing "an unknown extension has no grammar → text passes through"
+    (let [text "just some words"]
+      (is (= text (view/buffer-display-text {:path "notes.xyz" :text text})))))
+  (testing "a buffer without :path is not highlighted"
+    (let [text "(defn foo [x] x)"]
+      (is (= text (view/buffer-display-text {:text text})))))
+  (testing "blank text → empty string"
+    (is (= "" (view/buffer-display-text {:path "src/foo.clj" :text ""})))))

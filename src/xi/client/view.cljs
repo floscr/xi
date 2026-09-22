@@ -546,21 +546,34 @@
    Add an engine by adding a key here rather than branching in buffer-view."
   {:difft retint-difft})
 
+(defn- highlight-buffer-text
+  "Syntax-highlight a file buffer's text using the grammar for its :path
+   extension. Returns the text unchanged when no grammar matches."
+  [path text]
+  (if-let [grammar (some-> path file-ext hl-grammars/get-grammar)]
+    (highlight-text grammar text)
+    text))
+
 (defn buffer-display-text
-  "A buffer's raw text with its per-engine renderer applied (e.g. difft
+  "A buffer's display text: syntax-highlighted when it carries a file :path,
+   otherwise its raw text with any per-engine renderer applied (e.g. difft
    retints its palette codes into the TUI theme). Blank text → empty string."
-  [{:keys [text engine]}]
+  [{:keys [text engine path]}]
   (let [render (get buffer-text-renderers engine identity)]
-    (if (str/blank? text) "" (render text))))
+    (cond
+      (str/blank? text) ""
+      path              (highlight-buffer-text path (render text))
+      :else             (render text))))
 
 (defn buffer-view
   "Generic text buffer view ({:title :text} from room :ui :buffers).
-   The buffer's :engine selects a text renderer from buffer-text-renderers
+   File buffers (carrying a :path) are syntax-highlighted; otherwise the
+   buffer's :engine selects a text renderer from buffer-text-renderers
    (e.g. difft retints its palette codes into the TUI theme)."
-  [{:keys [title text engine]}]
+  [{:keys [title] :as buf}]
   (let [c (tui/make-container)
-        render (get buffer-text-renderers engine identity)
-        body (if (str/blank? text) "(empty)" (render text))]
+        rendered (buffer-display-text buf)
+        body (if (str/blank? rendered) "(empty)" rendered)]
     (node/append-children! c
       [(node/text (ansi/fg :bold (or title "Buffer")))
        (node/spacer)
