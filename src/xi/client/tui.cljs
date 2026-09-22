@@ -790,11 +790,14 @@
 
 (defn- pager-buffer?
   "A buffer that should be shown in a focused pager (scroll keybindings +
-   help toolbar): the diff/difft buffers, identified by their :engine key.
-   The system-prompt buffer stays on the static view so ctrl+o (an editor
-   keybinding) keeps working; :chat and :logs have their own views."
+   help toolbar): the diff/difft buffers (identified by their :engine key)
+   and file buffers (identified by their :path), so viewing a file gets the
+   same vim navigation as the diff buffer. The system-prompt buffer stays on
+   the static view so ctrl+o (an editor keybinding) keeps working; :chat and
+   :logs have their own views."
   [buf]
-  (contains? buf :engine))
+  (or (contains? buf :engine)
+      (contains? buf :path)))
 
 (defn- pager-active?
   "True when the active buffer renders as a focused pager: a pager buffer
