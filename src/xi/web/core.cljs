@@ -776,12 +776,36 @@
                 (if su
                   (let [room  (state/active-room st)
                         total (count (:history room))
-                        win   (or (:web/timeline-window st) views/initial-window-size)]
+                        win   (or (:web/timeline-window st) views/initial-window-size)
+                        nat   (max 0 (- total win))
+                        ;; Monotonic: a send may already have frozen the edge
+                        ;; lower (see :web/freeze-window). Never RAISE it — that
+                        ;; would drop the nodes it was pinning and re-introduce
+                        ;; the very jump we're avoiding.
+                        cur   (:web/frozen-window-start st)]
                     {:state (assoc st :web/scrolled-up? true
-                                      :web/frozen-window-start (max 0 (- total win)))})
+                                      :web/frozen-window-start (if cur (min cur nat) nat))})
                   {:state (-> st
                               (assoc :web/scrolled-up? false)
                               (dissoc :web/frozen-window-start))}))))
+          ;; Freeze the render window's top edge at its current position
+          ;; (mirrors :web/set-scrolled-up). Dispatched on send: as the new
+          ;; message and the streamed turn append BELOW while the user sits at
+          ;; the bottom, the window would otherwise slide and drop DOM nodes
+          ;; above the viewport — which, on Safari/iOS (no scroll anchoring),
+          ;; yanks the scroll and flickers, most visibly when a tall block
+          ;; (e.g. a commit tool-call) rolls off the top. Monotonic min: never
+          ;; raise an existing (scrolled-up) freeze, so this can only hold or
+          ;; reveal more, never drop nodes. Re-tightens on navigation / the
+          ;; scroll-to-bottom arrow, which clear :web/frozen-window-start.
+          :web/freeze-window
+          (fn [st _]
+            (let [room  (state/active-room st)
+                  total (count (:history room))
+                  win   (or (:web/timeline-window st) views/initial-window-size)
+                  nat   (max 0 (- total win))
+                  cur   (:web/frozen-window-start st)]
+              {:state (assoc st :web/frozen-window-start (if cur (min cur nat) nat))}))
           :bubble/edit-save      bubble-edit-save
           :bubble/retry          bubble-retry
           :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
@@ -1143,6 +1167,7 @@
                                                                            (:web/preferred-model st)
                                                                            (assoc :model (:web/preferred-model st))))
                                                 (assoc :web/timeline-window nil)
+                                                (dissoc :web/frozen-window-start)
                                                 (assoc :web/sidebar-open? false))
                                      :effects [[:history/push {:route {:page :chat}}]
                                                [:compose/focus]]})
@@ -1737,6 +1762,10 @@
         ;; if the user had scrolled up into history — re-enable the auto-scroll
         ;; gate so the post-render scroll-to-bottom snaps to the new bubble.
         (reset! auto-scroll? true)
+        ;; Pin the window's top edge so the new message + streamed turn append
+        ;; below without sliding the window and dropping tall top nodes
+        ;; (e.g. the just-made commit block) — which flickers on iOS/Safari.
+        (dispatch! {:type :web/freeze-window})
         (dispatch! {:type :web/optimistic-set
                   :room-id (:room-id event)
                   :session-id (get-in state [:web/route :session-id])
