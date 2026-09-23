@@ -1586,6 +1586,19 @@ body {
   overflow-y: auto;
 }
 
+/* Linkified URLs inside code blocks (tool output, inline code) — without this
+   they fall back to the browser's default blue, which reads poorly on the
+   dark code panels. Match the accent styling used for prose links. */
+code a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+code a:hover {
+  text-decoration-color: var(--accent);
+}
+
 /* ---- Edit tool diff: per-line +/- tint over the code box ---- */
 .tool-call-diff .tool-diff-line {
   display: block;
