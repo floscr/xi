@@ -240,7 +240,10 @@
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]
      (let [room (room-of state room-id)
            sess (:session room)]
-       (when (:provider-session-id sess)
+       ;; Skip persisting a session the user deleted while its room was still
+       ;; keep-alive (see room-manager/session-delete) — re-writing the file on
+       ;; turn-end would resurrect the card the delete just removed.
+       (when (and (:provider-session-id sess) (not (:deleted? sess)))
          (let [title (util/session-title (first-user-text room))
                model (get-in room [:agent :model])
                ;; The turn that triggered this sync ended aborted when the
@@ -268,7 +271,7 @@
    (fn [{:keys [state]} {:keys [room-id]}]
      (let [room (room-of state room-id)
            sess (:session room)]
-       (when (:provider-session-id sess)
+       (when (and (:provider-session-id sess) (not (:deleted? sess)))
          (let [title (util/session-title (first-user-text room))
                model (get-in room [:agent :model])
                named (cond-> sess

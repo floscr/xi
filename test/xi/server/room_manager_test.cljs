@@ -258,9 +258,14 @@
   (testing "a room mid-turn is left running — a lobby delete must not kill a live turn"
     (let [st (apply-events (state-with-sessioned-room)
                            {:type :agent/busy :room-id "r1" :busy? true})
-          {:keys [effects]} (handle st {:type :session/delete :client-id "c1"
-                                        :session-id "s1"})]
-      (is (= [[:session/delete-reply {:session-id "s1"}]] effects)))))
+          {:keys [state effects]} (handle st {:type :session/delete :client-id "c1"
+                                              :session-id "s1"})]
+      (is (= [[:session/delete-reply {:session-id "s1"}]] effects)
+          "only unlinks — never closes or swaps a live turn's room")
+      (is (true? (get-in state [:rooms "r1" :session :deleted?]))
+          "flags the kept-alive room's session deleted so it stops re-surfacing")
+      (is (empty? (rm/room-summaries state))
+          "deleted session's live room is dropped from the lobby card list"))))
 
 (deftest session-delete-no-live-room
   (testing "no matching live room → just the unlink effect"

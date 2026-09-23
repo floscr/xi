@@ -67,9 +67,12 @@
        (empty? (get-in room [:ui :dialogs]))))
 
 (defn room-summaries
-  "Lobby-facing room list, newest first."
+  "Lobby-facing room list, newest first. Rooms whose session was deleted
+   while still keep-alive (see session-delete) are dropped so the deleted
+   card doesn't reappear in the lobby while the turn finishes."
   [st]
   (->> (vals (:rooms st))
+       (remove #(get-in % [:session :deleted?]))
        (map (fn [room]
               {:id           (:id room)
                :clients      (count (clients-in-room st (:id room)))
@@ -304,17 +307,28 @@
    session (:session/new, no save) rather than closing the room out from
    under it; a clientless room is simply closed.
 
-   keep-alive? rooms are still left alone — a running turn, a pending dialog,
+   keep-alive? rooms can't be torn down — a running turn, a pending dialog,
    live background processes, or a running sub-agent must not be killed by a
-   lobby delete (the deleted file stays gone; the live room just outlives it)."
+   lobby delete. But leaving them fully untouched made the delete silently
+   fail on an active room: the live room keeps emitting its lobby card
+   (room-summaries) and re-persists the file on the next :session/sync, so
+   the card flashes away (optimistic local drop) and immediately reappears
+   from the authoritative rebroadcast. Instead we flag the room's session
+   :deleted?, which suppresses its lobby card and skips its sync-persist while
+   the turn finishes on its own; the room is reaped normally once it's no
+   longer keep-alive."
   [st {:keys [session-id]}]
-  (let [match-rids (for [[rid room] (:rooms st)
-                         :when (and (= session-id (get-in room [:session :id]))
-                                    (not (keep-alive? room)))]
-                     rid)
+  (let [all-rids (for [[rid room] (:rooms st)
+                       :when (= session-id (get-in room [:session :id]))]
+                   rid)
+        {kept true live false}
+        (group-by #(keep-alive? (get-in st [:rooms %])) all-rids)
         {closable false attached true}
-        (group-by #(boolean (seq (clients-in-room st %))) match-rids)]
-    {:effects (-> [[:session/delete-reply {:session-id session-id}]]
+        (group-by #(boolean (seq (clients-in-room st %))) live)]
+    {:state (reduce (fn [s rid]
+                      (assoc-in s [:rooms rid :session :deleted?] true))
+                    st kept)
+     :effects (-> [[:session/delete-reply {:session-id session-id}]]
                   (into (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
                         closable)
                   (into (map (fn [rid] [:session/new {:room-id rid :save-current? false}]))
