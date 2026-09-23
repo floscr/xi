@@ -806,15 +806,6 @@
                   nat   (max 0 (- total win))
                   cur   (:web/frozen-window-start st)]
               {:state (assoc st :web/frozen-window-start (if cur (min cur nat) nat))}))
-          ;; Release the pinned top edge so the window re-tightens to the last
-          ;; window instead of growing unbounded across a long session (see
-          ;; window-retighten-tap). Dropping the now-offscreen top nodes while
-          ;; snapping to the bottom is seamless — unlike the per-delta drops
-          ;; DURING a streaming turn that :web/freeze-window prevents.
-          :timeline/retighten
-          (fn [st _]
-            {:state    (dissoc st :web/frozen-window-start)
-             :effects  [[:timeline/scroll-bottom {}]]})
           :bubble/edit-save      bubble-edit-save
           :bubble/retry          bubble-retry
           :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
@@ -1664,24 +1655,6 @@
         (when (and ended (= ended viewed))
           (dispatch! {:type :session/mark-read :session-id ended}))))))
 
-(defn- window-retighten-tap
-  "At turn-end, release the pinned window edge (:web/freeze-window sets it on
-   send) so the timeline re-tightens to the last window instead of growing
-   unbounded across a long session — bounded DOM keeps renders fast and the
-   auto-scroll snap reliable. Only when the user is parked at the bottom, so we
-   never yank away history they've scrolled up to read; the freeze re-applies
-   on the next send."
-  [dispatch!]
-  (fn [event state]
-    (when (and (= :agent/turn-end (:type event))
-               (:web/frozen-window-start state)
-               (not (:web/scrolled-up? state))
-               ;; Only the VIEWED room's turn-end — a background room finishing
-               ;; must not re-tighten (and drop nodes in) a room that may still
-               ;; be streaming.
-               (= (:room-id event) (:id (state/active-room state))))
-      (dispatch! {:type :timeline/retighten}))))
-
 (defn- fill-url-tap
   "After joining a fresh room (URL has no session id yet), replace the URL
    with the real session id so reload resumes the same session.
@@ -2178,7 +2151,6 @@
     ((:set-dispatch! transport) dispatch!)
     (add-tap! cache/persist-tap)
     (add-tap! (mark-read-on-turn-tap dispatch!))
-    (add-tap! (window-retighten-tap dispatch!))
     (add-tap! (request-projects-tap dispatch!))
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
