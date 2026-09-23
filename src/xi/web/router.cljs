@@ -149,12 +149,8 @@
                   (conj [:sidebar/repaint]))]
     {:state   (cond-> (assoc st :web/route route
                             ;; reset the virtualized timeline window on every
-                            ;; navigation so a new session starts compact — and
-                            ;; drop any pinned top edge (:web/frozen-window-start)
-                            ;; so the new session re-tightens to the last window
-                            ;; instead of inheriting the previous chat's freeze.
-                            :web/timeline-window nil
-                            :web/frozen-window-start nil)
+                            ;; navigation so a new session starts compact
+                            :web/timeline-window nil)
                 ;; Close the recent-sessions drawer on a real navigation, but
                 ;; NOT on the post-join URL sync (already? — a virtual new chat
                 ;; getting its real session id after the first message). That
