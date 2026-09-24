@@ -55,6 +55,7 @@ SCI is allowlist-only: scripts get `clojure.core` (+ `clojure.string` as
 | `(touch f)` | create file / bump mtime (write-guarded) |
 | `(now)` | current time as ISO-8601 string |
 | `(cwd)` `(env "KEY")` | cwd; env restricted to the sandbox env allowlist |
+| `(ports port?)` | **pre-approved** listening-socket lister (`ss -lntupH` under the hood) — `(ports)` → vector of `{:proto :addr :port :process :pid}` for every listening TCP/UDP socket; `(ports 7474)` filters to that port. `:process`/`:pid` are nil for sockets owned by other users |
 | `(curl url opts?)` | HTTP request → `{:status :body}` — http(s) only (no `file://`); opts: `{:method :headers :body :max-time}` |
 | `(jq filter input opts?)` | **pre-approved** jq — pipes `input` (a JSON string, or any Clojure value, encoded to JSON) to jq on stdin (no tmp file). Default parses jq's output → Clojure data (keywordized keys; one value → the value, many → a vector, none → nil). Opts: `{:raw true}` returns `jq -r` text as a trimmed string; `{:args ["--arg" "k" "v"]}` adds flags |
 | `(git "status" "--short")` | **pre-approved** git — stdout string on exit 0, throws otherwise; `push`/`clean` refused (→ `(sh "git" …)`) |
@@ -135,7 +136,8 @@ approval dialog. It splits into two tiers:
 
 - **Auto-run + hint** (`SAFE_AUTORUN`): read-only CLIs (`ls`, `cat`, `head`,
   `tail`, `grep`/`rg`, `find`/`fd`, `pwd`, `echo`, `mktemp`, `git`, `stat`,
-  `du`, `readlink`/`realpath`, `which`, `basename`, `dirname`, `date`, and
+  `du`, `readlink`/`realpath`, `which`, `basename`, `dirname`, `date`,
+  `ss`/`netstat`/`lsof`, and
   the text-pipeline CLIs `wc`, `sort`, `uniq`, `cut`, `tr`) run anyway —
   bouncing would cost the model a retry turn for no safety gain. The result
   comes back normally with a hint appended ("prefer the builtin helpers

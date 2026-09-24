@@ -372,6 +372,36 @@
                vs)))
          (throw (ex-info (str "clj: jq failed: " (str/trim err)) {})))))))
 
+(defn parse-ss-line
+  "Parse one `ss -lntupH` output line → {:proto :addr :port :process :pid}.
+   :process/:pid are nil when ss can't see the owning process (not ours)."
+  [line]
+  (let [fields (str/split (str/trim line) #"\s+")
+        local  (nth fields 4 "")
+        i      (str/last-index-of local ":")
+        [_ pname pid] (re-find #"\(\"([^\"]+)\",pid=(\d+)" line)]
+    {:proto   (first fields)
+     :addr    (if i (subs local 0 i) local)
+     :port    (when i (js/parseInt (subs local (inc i)) 10))
+     :process pname
+     :pid     (when pid (js/parseInt pid 10))}))
+
+(defn- ports-fn
+  "Pre-approved listening-socket lister (the `ss`/`netstat` agents keep
+   reaching for). (ports) → vector of {:proto :addr :port :process :pid} for
+   every listening TCP/UDP socket; (ports 7474) filters to that port."
+  [opts]
+  (fn ports*
+    ([] (ports* nil))
+    ([port]
+     (let [{:keys [exit out err]} (spawn-sync! ["ss" "-lntupH"] (opts-cwd opts))]
+       (if (zero? exit)
+         (let [rows (->> (str/split-lines (str/trimr out))
+                         (remove str/blank?)
+                         (mapv parse-ss-line))]
+           (if port (filterv #(= port (:port %)) rows) rows))
+         (throw (ex-info (str "clj: ss failed: " (str/trim err)) {})))))))
+
 (defn- blocking-sleep
   "Synchronously block for `ms` milliseconds. Safe because clj eval runs in a
    dedicated worker_threads worker, never the server's main event loop. Backs
@@ -464,6 +494,7 @@
      'now    (fn [] (.toISOString (js/Date.)))
      'cwd    (fn [] (opts-cwd opts))
      'curl   (curl-fn opts)
+     'ports  (ports-fn opts)
      'jq     (jq-fn opts)
      'git    (git-fn opts)
      'sleep  blocking-sleep
@@ -750,6 +781,7 @@
         "(mv a b) (rm f) (tmpdir) (cwd) (env k) (stat f) → {:size :mtime-ms …} "
         "(realpath p) (which c) (basename p) (dirname p) (touch f) (now) "
         "(curl url) → {:status :body} "
+        "(ports) / (ports 7474) → listening sockets as {:proto :addr :port :process :pid} "
         "(jq \".foo[]\" json-or-data) → parsed result, no tmp file (opts {:raw true}) "
         "(git \"status\" \"--short\") → stdout string (pre-approved; push/clean "
         "excluded) (sh \"cmd\" \"arg\" …) → stdout string, throws on "
@@ -1174,6 +1206,9 @@
    "dirname"  "(dirname p)"
    "touch"    "(touch f)"
    "date"     "(now)"
+   "ss"       "(ports) / (ports 7474) → listening sockets as data"
+   "netstat"  "(ports)"
+   "lsof"     "(ports) — for listening sockets"
    "wc"       "(count (str/split-lines (cat f)))"
    "sort"     "(sort …) in Clojure"
    "uniq"     "(distinct …) in Clojure"
@@ -1197,7 +1232,7 @@
    notes the deletion is usually unnecessary."
   #{"ls" "cat" "head" "tail" "grep" "rg" "find" "fd" "pwd" "echo" "mktemp"
     "stat" "du" "readlink" "realpath" "which" "basename" "dirname" "date"
-    "wc" "sort" "uniq" "cut" "tr" "git" "rm"})
+    "wc" "sort" "uniq" "cut" "tr" "git" "rm" "ss" "netstat" "lsof"})
 
 (def ^:private REMOTE_CLIS
   "Never allowed via (sh …) — parity with the permission gate's blocked
@@ -1584,7 +1619,9 @@
        "tool (sandboxed Clojure REPL). File ops use the builtin helpers "
        "(cat ls glob grep find head tail spit mkdir cp mv rm tmpdir cwd stat "
        "realpath which basename dirname touch now); HTTP "
-       "via (curl url) → {:status :body}; JSON via the pre-approved (jq "
+       "via (curl url) → {:status :body}; listening ports via (ports) / "
+       "(ports 7474) → {:proto :addr :port :process :pid} maps (no ss/lsof "
+       "needed); JSON via the pre-approved (jq "
        "filter json-or-data) helper — pipes to jq on stdin (no tmp file) and "
        "parses the result to Clojure data, or via the pre-required "
        "clojure.data.json (as `json`) / cheshire.core namespaces; git via the "

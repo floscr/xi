@@ -501,6 +501,17 @@
   (let [res (eval! "[(boolean (which \"git\")) (which \"definitely-not-a-cli-xyz\")]")]
     (is (str/includes? (result-text res) "[true nil]"))))
 
+(deftest parse-ss-line-tcp-with-process
+  (let [row (clj-ext/parse-ss-line
+             "tcp   LISTEN 0      4096   127.0.0.1:7474    0.0.0.0:*    users:((\"bun\",pid=1234,fd=20))")]
+    (is (= {:proto "tcp" :addr "127.0.0.1" :port 7474 :process "bun" :pid 1234}
+           row))))
+
+(deftest parse-ss-line-ipv6-no-process
+  (let [row (clj-ext/parse-ss-line "tcp   LISTEN 0      511    [::]:8100    [::]:*")]
+    (is (= {:proto "tcp" :addr "[::]" :port 8100 :process nil :pid nil}
+           row))))
+
 (deftest touch-and-realpath
   (let [res (eval! "(let [d (tmpdir) f (str d \"/t.txt\")]
                       (touch f)
