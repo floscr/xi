@@ -134,12 +134,24 @@
   (or (:cwd @opts) (.cwd js/process)))
 
 (defn- resolve-read
-  "Canonicalize p against cwd; throw on credential paths."
-  [cwd p]
-  (let [resolved (sandbox/real-resolve cwd (str p))]
+  "Canonicalize p against cwd; throw on credential paths and on reads that
+   escape the working dir, the OS tmp dir, and any gate-approved roots
+   (:allowed-reads, plus :allowed-writes since a write grant implies read)."
+  [opts p]
+  (let [cwd      (opts-cwd opts)
+        resolved (sandbox/real-resolve cwd (str p))
+        real-cwd (sandbox/real-resolve cwd ".")
+        tmp      (sandbox/real-resolve cwd (os/tmpdir))
+        allowed  (into (set (:allowed-reads @opts)) (:allowed-writes @opts))]
     (when (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths))
       (throw (ex-info (str "clj: reading credential paths is blocked: " p) {})))
-    resolved))
+    (if (or (sandbox/path-within? resolved real-cwd)
+            (sandbox/path-within? resolved tmp)
+            (some #(sandbox/path-within? resolved %) allowed))
+      resolved
+      (throw (ex-info (str "clj: reads are limited to the working dir and "
+                           (os/tmpdir)
+                           " (out-of-repo paths need gate approval): " p) {})))))
 
 (defn- resolve-write
   "Canonicalize p against cwd; only the working dir, the OS tmp dir, and any
@@ -158,13 +170,28 @@
       (throw (ex-info (str "clj: writes are limited to the working dir and "
                            (os/tmpdir) ": " p) {})))))
 
+(defn- glob-base
+  "The literal directory prefix of a glob pattern — everything before the first
+   glob metacharacter, trimmed to its last path segment (\".\" when there is
+   none). Used to confine glob to the same roots as the other read helpers: an
+   absolute (`/etc/**`) or `../`-escaping pattern would otherwise slip past the
+   repo boundary, since glob doesn't route through resolve-read."
+  [pat]
+  (let [meta   (->> ["*" "?" "[" "{"]
+                    (keep #(str/index-of pat %))
+                    (reduce min (count pat)))
+        prefix (subs pat 0 meta)]
+    (if (str/includes? prefix "/")
+      (subs prefix 0 (str/last-index-of prefix "/"))
+      ".")))
+
 ;; ── Script-visible helpers ───────────────────────────────────────────────────
 ;; All close over the per-room opts atom {:cwd … :allowed #{…}} which is
 ;; refreshed before every eval (the SCI ctx itself is long-lived).
 
 
 (defn- read-file [opts p]
-  (fs/readFileSync (resolve-read (opts-cwd opts) p) "utf8"))
+  (fs/readFileSync (resolve-read opts p) "utf8"))
 
 (defn- regex->str [pattern]
   (if (regexp? pattern) (.-source pattern) (str pattern)))
@@ -220,7 +247,7 @@
 (defn- grep-fn [opts]
   (fn [pattern & [p]]
     (let [cwd    (opts-cwd opts)
-          target (resolve-read cwd (or p "."))
+          target (resolve-read opts (or p "."))
           {:keys [exit out err]}
           (spawn-sync! ["rg" "-n" "--no-heading" "--max-count" "500"
                         "-e" (regex->str pattern) target]
@@ -233,7 +260,7 @@
 (defn- find-fn [opts]
   (fn [pattern & [dir]]
     (let [cwd (opts-cwd opts)
-          target (resolve-read cwd (or dir "."))
+          target (resolve-read opts (or dir "."))
           {:keys [exit out err]} (spawn-sync! ["fd" "--" (str pattern) target] cwd)]
       (if (zero? exit)
         ;; fd exits 0 with empty stdout when nothing matches; split-lines on ""
@@ -368,7 +395,7 @@
                                  #js {:flag (if append "a" "w")})
                nil)
      'ls     (fn [& [p]]
-               (let [dir (resolve-read (opts-cwd opts) (or p "."))]
+               (let [dir (resolve-read opts (or p "."))]
                  (->> (fs/readdirSync dir #js {:withFileTypes true})
                       (mapv #(str (.-name %) (when (.isDirectory %) "/")))
                       sort vec)))
@@ -377,6 +404,9 @@
      'glob   (fn [pattern]
                (let [cwd (opts-cwd opts)
                      pat (sandbox/expand-home (str pattern))]
+                 ;; Confine glob to the allowed roots: resolve-read on the
+                 ;; pattern's literal base dir throws when it escapes the repo.
+                 (resolve-read opts (glob-base pat))
                  (->> (if (exists? js/Bun)
                         (js/Array.from (.scanSync (js/Bun.Glob. pat)
                                                   #js {:cwd cwd}))
@@ -390,7 +420,7 @@
                  (fs/mkdirSync dir #js {:recursive true})
                  dir))
      'cp     (fn [from to]
-               (fs/cpSync (resolve-read (opts-cwd opts) from)
+               (fs/cpSync (resolve-read opts from)
                           (resolve-write opts to)
                           #js {:recursive true})
                nil)
@@ -405,7 +435,7 @@
                nil)
      'tmpdir (fn [] (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-clj-")))
      'stat   (fn [p]
-               (let [s (fs/statSync (resolve-read (opts-cwd opts) p))]
+               (let [s (fs/statSync (resolve-read opts p))]
                  {:size     (.-size s)
                   :dir?     (.isDirectory s)
                   :file?    (.isFile s)
@@ -413,7 +443,7 @@
                   :mtime-ms (js/Math.round (.-mtimeMs s))
                   :mtime    (.toISOString (.-mtime s))
                   :ctime    (.toISOString (.-ctime s))}))
-     'realpath (fn [p] (fs/realpathSync (resolve-read (opts-cwd opts) p)))
+     'realpath (fn [p] (fs/realpathSync (resolve-read opts p)))
      'basename (fn [p & [ext]] (if ext (node-path/basename (str p) (str ext))
                                        (node-path/basename (str p))))
      'dirname  (fn [p] (node-path/dirname (str p)))
@@ -676,12 +706,13 @@
            "for .startsWith, (str/lower-case s) for .toLowerCase, "
            "(str/split s #\",\") for .split."))))
 
-(defn- eval-code! [{:keys [code room-id cwd allowed allowed-writes]}]
+(defn- eval-code! [{:keys [code room-id cwd allowed allowed-writes allowed-reads]}]
   (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default))
         prints (atom "")
         commit-outs (atom [])]
     (swap! opts assoc :cwd cwd :allowed (set allowed)
-           :allowed-writes (set allowed-writes) :commit-outs commit-outs)
+           :allowed-writes (set allowed-writes)
+           :allowed-reads (set allowed-reads) :commit-outs commit-outs)
     (try
       (let [v   (sci/binding [sci/print-fn     #(swap! prints str %)
                               sci/print-err-fn #(swap! prints str %)]
@@ -728,10 +759,11 @@
         "bash pipelines: compute in-script, return small values. "
         "Example: (->> (glob \"src/**/*.cljs\") (filter #(str/includes? (cat %) \"TODO\")))\n"
         "sh runs real CLIs argv-style and needs user approval unless "
-        "allowlisted; writes land in the working dir and /tmp freely — "
-        "spit/mv/cp/mkdir/touch/rm to a literal path outside the repo raise "
-        "an approval dialog (like the write/edit tools), a dynamic out-of-repo "
-        "path is rejected.")
+        "allowlisted; reads and writes are confined to the working dir and "
+        "/tmp — a literal path outside the repo (cat/ls/glob/grep/… to read, "
+        "spit/mv/cp/mkdir/touch/rm to write) raises an approval dialog (like "
+        "the read/write/edit tools), and a dynamic out-of-repo path is "
+        "rejected. Credential paths (~/.ssh, auth files) are always blocked.")
    :input_schema {:type "object"
                   :properties {:code {:type "string"
                                       :description "Clojure code; multiple forms ok, last value is returned"}}
@@ -815,6 +847,7 @@
                           :roomId  (room-key (:_room-id args))
                           :allowed (clj->js (vec (:_allowed args)))
                           :allowedWrites (clj->js (vec (:_allowed-writes args)))
+                          :allowedReads  (clj->js (vec (:_allowed-reads args)))
                           :cwd     (or cwd (.cwd js/process))})
       (.then (fn [^js m] (reply->result m (:_hint args))))))
 
@@ -869,6 +902,7 @@
                              :room-id (.-roomId m)
                              :allowed (js->clj (.-allowed m))
                              :allowed-writes (js->clj (.-allowedWrites m))
+                             :allowed-reads (js->clj (.-allowedReads m))
                              :cwd     cwd})]
         #js {:id      id
              :text    (get-in res [:content 0 :text])
@@ -903,6 +937,22 @@
    'touch [0]
    'rm    :all})
 
+(def ^:private READ_HELPER_TARGETS
+  "clj builtin read helpers -> the 0-based arg positions whose literal string
+   values are read targets. The gate uses this to spot out-of-repo reads and
+   raise an approval dialog, mirroring the write-target gating. (glob is scanned
+   separately since its arg is a pattern, not a plain path — see scan-rules.)"
+  {'cat      [0]
+   'slurp    [0]
+   'ls       [0]
+   'head     [0]
+   'tail     [0]
+   'stat     [0]
+   'realpath [0]
+   'grep     [1]
+   'find     [1]
+   'cp       [0]})
+
 (def ^:private SCAN_OPTS
   {:all true :auto-resolve {:current 'user} :readers (fn [_] identity)})
 
@@ -923,7 +973,26 @@
                  (reduce (fn [a p]
                            (cond-> a
                              (string? p) (update :writes conj {:head head :path p})))
-                         acc picks)))}])
+                         acc picks)))}
+   ;; builtin read helpers: record each literal read-target path so the gate can
+   ;; approve out-of-repo reads (mirrors the write-target collection above).
+   {:heads   (set (keys READ_HELPER_TARGETS))
+    :collect (fn [acc head args]
+               (let [picks (map #(nth args % nil) (READ_HELPER_TARGETS head))]
+                 (reduce (fn [a p]
+                           (cond-> a
+                             (string? p) (update :reads conj {:head head :path p})))
+                         acc picks)))}
+   ;; glob: its literal arg is a pattern, not a path — record the pattern's
+   ;; literal base dir so out-of-repo globs (`/etc/**`, `../x/*`) are gated too.
+   {:heads   #{'glob}
+    :collect (fn [acc _head args]
+               (let [p (first args)]
+                 (cond-> acc
+                   (string? p)
+                   (update :reads conj
+                           {:head 'glob
+                            :path (glob-base (sandbox/expand-home p))}))))}])
 
 (defn scan-code
   "Parse `code` once (edamame) and postwalk it once, dispatching every list form
@@ -934,7 +1003,7 @@
   [code]
   (try
     (let [forms (e/parse-string-all code SCAN_OPTS)
-          acc   (atom {:sh-calls [] :writes []})]
+          acc   (atom {:sh-calls [] :writes [] :reads []})]
       (walk/postwalk
        (fn [f]
          (when (seq? f)
@@ -972,6 +1041,12 @@
   [scan]
   (into [] (comp (map :path) (distinct)) (:writes scan)))
 
+(defn- read-paths-of
+  "Distinct literal read-target paths (cat/slurp/ls/head/tail/stat/realpath/
+   grep/find/cp-source/glob-base) from a scan-code result, in first-seen order."
+  [scan]
+  (into [] (comp (map :path) (distinct)) (:reads scan)))
+
 (defn- rm-targets-of
   "Distinct literal paths passed to the builtin (rm …) helper, from a scan-code
    result. Directory targets among these are gated as recursive tree deletes."
@@ -992,6 +1067,13 @@
   [code]
   (let [scan (scan-code code)]
     (if (:parse-error scan) [] (write-paths-of scan))))
+
+(defn scan-read-paths
+  "Literal read-target paths in `code` (see read-paths-of); empty on parse
+   error. For callers/tests that scan a snippet directly."
+  [code]
+  (let [scan (scan-code code)]
+    (if (:parse-error scan) [] (read-paths-of scan))))
 
 (defn- existing-dir?
   "True when p (resolved against cwd) is an existing directory — i.e. an (rm p)
@@ -1131,6 +1213,31 @@
           (js/Promise.resolve true)
           prompts))
 
+(defn- approve-reads
+  "Approve each out-of-repo read `path` via pg/approve-read-path — a dialog
+   offering [y]/[n]/[r allow repo], auto-allowed when the path already sits
+   under an approved read (or write) repo. Returns a promise of
+   {:approved #{roots} :denied path|nil}; resolves :denied on the first refusal.
+   Paths already covered by a just-approved root are skipped so several reads
+   into one repo prompt only once."
+  [paths ctx cwd]
+  (reduce
+   (fn [chain path]
+     (.then chain
+            (fn [{:keys [approved denied] :as acc}]
+              (let [resolved (sandbox/real-resolve cwd (str path))]
+                (cond
+                  denied acc
+                  (some #(sandbox/path-within? resolved %) approved) acc
+                  :else
+                  (-> (pg/approve-read-path ctx path)
+                      (.then (fn [root]
+                               (if root
+                                 (update acc :approved conj root)
+                                 (assoc acc :denied path))))))))))
+   (js/Promise.resolve {:approved #{} :denied nil})
+   paths))
+
 (defn- approve-writes
   "Approve each out-of-repo write `path` via the permission gate's outside-write
    flow (pg/approve-write-path) — a dialog offering [y]/[n]/[r allow repo], auto
@@ -1267,7 +1374,12 @@
             ;; injected so the worker's resolve-write allows them.
             outside-writes (->> (write-paths-of scan)
                                 (filter #(pg/outside-project? cwd %))
-                                (remove (set rm-dirs)))]
+                                (remove (set rm-dirs)))
+            ;; Literal read-target paths that escape the repo (+tmp). Same
+            ;; approval dialog as writes, then injected so resolve-read allows
+            ;; them. A write-approved root implies read, so drop those overlaps.
+            outside-reads (->> (read-paths-of scan)
+                               (filter #(pg/outside-project? cwd %)))]
         (cond
           ;; sudo is never allowed from the agent — hard block, no confirm.
           (or (contains? (:literals sh) "sudo")
@@ -1296,8 +1408,13 @@
                         ". Helpers run in-process with no approval needed."))
 
           :else
-          ;; First clear any out-of-repo builtin writes (spit/mv/cp/…) through
-          ;; the outside-write dialog, then run the guarded/CLI approval.
+          ;; First clear any out-of-repo builtin reads (cat/ls/grep/…) through
+          ;; the outside-read dialog, then the writes, then guarded/CLI approval.
+          (-> (approve-reads outside-reads ctx cwd)
+              (.then
+               (fn [{reads :approved rdenied :denied}]
+                 (if rdenied
+                   (blocked (str "clj: user denied reading outside the repo: " rdenied))
           (-> (approve-writes outside-writes ctx cwd)
               (.then
                (fn [{writes :approved wdenied :denied}]
@@ -1315,7 +1432,9 @@
                                   inject-w (fn [allowed hint]
                                              (cond-> (inject allowed hint)
                                                (seq writes) (update :arguments assoc
-                                                                    :_allowed-writes (vec writes))))]
+                                                                    :_allowed-writes (vec writes))
+                                               (seq reads) (update :arguments assoc
+                                                                   :_allowed-reads (vec reads))))]
                               ;; Guarded patterns (rm -rf, sudo, git push, kill …)
                               ;; need a confirm even when the CLI itself is
                               ;; allowlisted — parity with the bash gate. No
@@ -1341,7 +1460,7 @@
                                                     (if denied
                                                       (blocked (str "clj: user denied running `" denied "`"))
                                                       (inject-w (into (into base autorun) approved)
-                                                                hint)))))))))))))))))))))))
+                                                                hint)))))))))))))))))))))))))))
 
 (defn- gate-bb [tool-call {:keys [cwd confirm!]}]
   (let [cmd (str/join " " (bb-argv (:arguments tool-call)))

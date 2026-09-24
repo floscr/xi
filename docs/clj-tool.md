@@ -67,8 +67,21 @@ no JVM: `System/getProperty` and other Java interop don't exist here.
 
 Guards, enforced inside every helper:
 
-- **Reads**: credential paths (`xi.sandbox.core/hidden-paths` — `~/.ssh`,
-  `~/.gnupg`, …) are blocked, symlink-canonicalized.
+- **Reads** (`cat`/`slurp`/`ls`/`head`/`tail`/`stat`/`realpath`/`grep`/`find`/
+  `glob`/`cp`-source): the room cwd and the OS tmp dir are readable freely. A
+  **literal** path that escapes both raises the same outside-repo approval
+  dialog the `read` tool uses — [y]/[n], plus [r] *allow all reads from this
+  repo* when the target sits inside another git repo (the grant persists like
+  the permission-gate's `allowed-read-repos`; a `write`-repo grant implies read,
+  so an already-approved write repo is auto-allowed). The gate statically scans
+  the code for these helpers' read-target args (for `glob`, the literal base dir
+  before the first `* ? [ {` metacharacter, so `/etc/**` and `../x/*` are gated
+  too), approves the out-of-repo ones, and injects the approved roots into the
+  worker so its `resolve-read` allows them. A **dynamic** (computed, non-string)
+  out-of-repo path can't be pre-approved and still hard-rejects ("reads are
+  limited to the working dir and …"). Credential paths
+  (`xi.sandbox.core/hidden-paths` — `~/.ssh`, `~/.gnupg`, …) are always blocked,
+  symlink-canonicalized, even inside an approved repo.
 - **Writes** (`spit`/`mkdir`/`cp`/`mv`/`touch`/`rm`): the room cwd and the OS
   tmp dir are writable freely. A **literal** path that escapes both raises the
   same outside-repo approval dialog the `write`/`edit` tools use — [y]/[n], plus

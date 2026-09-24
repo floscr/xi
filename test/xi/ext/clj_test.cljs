@@ -13,7 +13,7 @@
   "Evaluate synchronously via the worker-side entry (xi.ext.clj/eval-message).
    The real clj tool goes through a worker thread (spawned off process.argv[1]
    by xi.cli's isMainThread guard), which doesn't exist in the test bundle."
-  [code & [{:keys [allowed allowed-writes cwd room-id]}]]
+  [code & [{:keys [allowed allowed-writes allowed-reads cwd room-id]}]]
   (clj-ext/reply->result
    (clj-ext/eval-message #js {:id      0
                               :kind    "clj"
@@ -21,6 +21,7 @@
                               :roomId  (str (or room-id :test))
                               :allowed (clj->js (or allowed []))
                               :allowedWrites (clj->js (or allowed-writes []))
+                              :allowedReads  (clj->js (or allowed-reads []))
                               :cwd     (or cwd (os/tmpdir))})
    nil))
 
@@ -70,6 +71,33 @@
     (is (= [] (clj-ext/scan-write-paths "(mv from to)")))
     (is (= [] (clj-ext/scan-write-paths "(+ 1 2)")))
     (is (= [] (clj-ext/scan-write-paths "(spit")))))
+
+;; ── scan-read-paths (read-helper gate pre-scan) ──────────────────────────────
+
+(deftest scan-read-paths-literals
+  (testing "each read helper's target arg positions are collected"
+    (is (= ["/a/b.txt"] (clj-ext/scan-read-paths "(cat \"/a/b.txt\")")))
+    (is (= ["/a/b.txt"] (clj-ext/scan-read-paths "(slurp \"/a/b.txt\")")))
+    (is (= ["/d"]       (clj-ext/scan-read-paths "(ls \"/d\")")))
+    (is (= ["/f"]       (clj-ext/scan-read-paths "(head \"/f\")")))
+    (is (= ["/f"]       (clj-ext/scan-read-paths "(tail \"/f\")")))
+    (is (= ["/f"]       (clj-ext/scan-read-paths "(stat \"/f\")")))
+    (is (= ["/f"]       (clj-ext/scan-read-paths "(realpath \"/f\")")))
+    (is (= ["/d"]       (clj-ext/scan-read-paths "(grep #\"x\" \"/d\")")))
+    (is (= ["/d"]       (clj-ext/scan-read-paths "(find \"x\" \"/d\")")))
+    (is (= ["/src"]     (clj-ext/scan-read-paths "(cp \"/src\" \"/dst\")")))))
+
+(deftest scan-read-paths-glob-base
+  (testing "glob's literal base dir (before the first metachar) is the read target"
+    (is (= ["/etc"]     (clj-ext/scan-read-paths "(glob \"/etc/**/*.conf\")")))
+    (is (= ["../src"]   (clj-ext/scan-read-paths "(glob \"../src/*.cljs\")")))
+    (is (= ["."]        (clj-ext/scan-read-paths "(glob \"*.txt\")")))))
+
+(deftest scan-read-paths-ignores-dynamic
+  (testing "computed (non-string) paths are invisible to the static scan"
+    (is (= [] (clj-ext/scan-read-paths "(cat p)")))
+    (is (= [] (clj-ext/scan-read-paths "(ls dir)")))
+    (is (= [] (clj-ext/scan-read-paths "(+ 1 2)")))))
 
 ;; ── chained bash detection ───────────────────────────────────────────────────
 
@@ -261,6 +289,51 @@
     (is (:is-error res))
     (is (str/includes? (result-text res) "blocked"))))
 
+(deftest read-outside-cwd-blocked
+  (testing "a builtin read escaping the working dir is refused at runtime"
+    (let [res (eval! (str "(ls \"" (os/homedir) "\")"))]
+      (is (:is-error res))
+      (is (str/includes? (result-text res) "reads are limited")))))
+
+(deftest read-parent-dir-blocked
+  (testing "a `..` traversal above the working dir is refused at runtime"
+    (let [res (eval! "(ls \"..\")")]
+      (is (:is-error res))
+      (is (str/includes? (result-text res) "reads are limited")))))
+
+(deftest read-outside-cwd-allowed-when-approved
+  (testing "a gate-approved out-of-repo root (:allowed-reads) is readable"
+    (let [dir (fs/mkdtempSync (node-path/join (os/homedir) ".xi-clj-rtest-"))
+          f   (node-path/join dir "data.txt")]
+      (fs/writeFileSync f "payload")
+      (try
+        (let [res (eval! (str "(cat \"" f "\")"))]
+          (is (:is-error res))
+          (is (str/includes? (result-text res) "reads are limited")))
+        (let [res (eval! (str "(cat \"" f "\")") {:allowed-reads [dir]})]
+          (is (not (:is-error res)) (result-text res))
+          (is (str/includes? (result-text res) "payload")))
+        (finally
+          (fs/rmSync dir #js {:recursive true :force true}))))))
+
+(deftest read-allowed-under-write-grant
+  (testing "an :allowed-writes root also grants reads (write implies read)"
+    (let [dir (fs/mkdtempSync (node-path/join (os/homedir) ".xi-clj-wr-"))
+          f   (node-path/join dir "data.txt")]
+      (fs/writeFileSync f "payload")
+      (try
+        (let [res (eval! (str "(cat \"" f "\")") {:allowed-writes [dir]})]
+          (is (not (:is-error res)) (result-text res))
+          (is (str/includes? (result-text res) "payload")))
+        (finally
+          (fs/rmSync dir #js {:recursive true :force true}))))))
+
+(deftest glob-outside-cwd-blocked
+  (testing "a glob whose base dir escapes the working dir is refused"
+    (let [res (eval! (str "(glob \"" (os/homedir) "/*\")"))]
+      (is (:is-error res))
+      (is (str/includes? (result-text res) "reads are limited")))))
+
 ;; ── sh runtime allowlist ─────────────────────────────────────────────────────
 
 (deftest sh-blocked-without-approval
@@ -350,6 +423,35 @@
   (let [res (eval! "(curl \"file:///etc/passwd\")")]
     (is (:is-error res))
     (is (str/includes? (result-text res) "http(s)"))))
+
+(deftest gate-confirms-outside-read
+  ;; A builtin read escaping the repo prompts; a deny blocks the whole eval.
+  (async done
+    (let [ctx (assoc (gate-ctx) :cwd (os/tmpdir)
+                     :confirm! (fn [_ & _] (js/Promise.resolve false)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj"
+                  :arguments {:code (str "(cat \"" (os/homedir) "/xi-gate-read.txt\")")}}
+                 ctx))
+          (.then (fn [r]
+                   (is (:intercepted r))
+                   (is (str/includes? (intercepted-text r) "denied reading outside"))
+                   (done)))))))
+
+(deftest gate-approves-outside-read-injects-allowed-reads
+  ;; Approving the out-of-repo read lets the call through with the approved
+  ;; root injected as :_allowed-reads so the worker's resolve-read allows it.
+  (async done
+    (let [ctx (assoc (gate-ctx) :cwd (os/tmpdir)
+                     :confirm! (fn [_ & _] (js/Promise.resolve true)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj"
+                  :arguments {:code (str "(cat \"" (os/homedir) "/xi-gate-read.txt\")")}}
+                 ctx))
+          (.then (fn [r]
+                   (is (not (:intercepted r)))
+                   (is (seq (get-in r [:arguments :_allowed-reads])))
+                   (done)))))))
 
 (deftest gate-autoruns-ls-with-hint
   ;; safe read-only CLIs run anyway (no bounce, no approval) — the tool-call

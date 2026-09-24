@@ -78,6 +78,13 @@
     {:state (update-in st [:rooms room-id :ext ext-id :allowed-write-repos]
                        (fnil conj #{}) (str repo))}))
 
+(defn- allow-read-repo
+  "Remember a repo root whose reads the user allowed for this room."
+  [st {:keys [room-id repo]}]
+  (when (and room-id (seq (str repo)))
+    {:state (update-in st [:rooms room-id :ext ext-id :allowed-read-repos]
+                       (fnil conj #{}) (str repo))}))
+
 (defn approve-write-path
   "Approve a single write to `path` outside the project repo. Returns a promise
    resolving to the approved root (the repo root when the user picks [r], else
@@ -106,6 +113,41 @@
                      (= answer :repo)
                      (do (when dispatch!
                            (dispatch! {:type :ext.permission-gate/allow-repo
+                                       :room-id room-id :repo repo}))
+                         repo)
+                     answer resolved
+                     :else  nil)))))))
+
+(defn approve-read-path
+  "Approve a single read of `path` outside the project repo. Returns a promise
+   resolving to the approved root (the repo root when the user picks [r], else
+   the resolved path) or nil when denied. Auto-approves (no prompt) when the
+   path already sits under a stored allowed-read-repo OR allowed-write-repo (a
+   write grant implies read), or when no confirmer is attached (headless). On
+   the [r] answer records the repo root in room ext state so later reads under
+   it skip the dialog. Used by the clj tool's builtin read helpers so
+   out-of-repo reads prompt instead of hard-rejecting."
+  [{:keys [confirm! dispatch! get-state room-id cwd]} path]
+  (let [resolved (sandbox/real-resolve cwd (str path))
+        repo     (git-repo-root resolved)
+        st       (when get-state (state/room-ext (get-state) room-id ext-id))
+        allowed  (into (set (:allowed-read-repos st))
+                       (:allowed-write-repos st))]
+    (cond
+      (some #(sandbox/path-within? resolved %) allowed)
+      (js/Promise.resolve (or repo resolved))
+
+      (not confirm!) (js/Promise.resolve (or repo resolved))
+
+      :else
+      (-> (confirm! (str "Read outside the project repo: " path
+                         (when repo (str " (repo: " repo ")")))
+                    (when repo {:options [:yes :no :allow-repo]}))
+          (.then (fn [answer]
+                   (cond
+                     (= answer :repo)
+                     (do (when dispatch!
+                           (dispatch! {:type :ext.permission-gate/allow-read-repo
                                        :room-id room-id :repo repo}))
                          repo)
                      answer resolved
@@ -224,6 +266,7 @@
 
 (def extension
   {:id        ext-id
-   :init      {:room {:allowed-write-repos #{}}}
-   :handlers  {:ext.permission-gate/allow-repo allow-repo}
+   :init      {:room {:allowed-write-repos #{} :allowed-read-repos #{}}}
+   :handlers  {:ext.permission-gate/allow-repo      allow-repo
+               :ext.permission-gate/allow-read-repo allow-read-repo}
    :tool-gate tool-gate})
