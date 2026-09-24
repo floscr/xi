@@ -309,9 +309,9 @@ by content-hash** instead of allowlisting the bare `bb` CLI.
 
 Session state lives room-scoped at `[:rooms rid :ext :clj]`
 (`{:allowed-clis #{…}}`), mirrored to clients. The SCI contexts themselves are
-runtime objects that live in the eval worker thread (`runtimes` atom, keyed by
-room), dropped on `/clj reset`, room destroy is irrelevant (they're rebuilt
-lazily), and cleared on `/ext disable clj` (which also terminates the worker).
+runtime objects that live in the room's eval worker thread; `/clj reset` and
+room destroy (`:room/close`) terminate that worker (a fresh one spawns lazily
+on the next eval), and `/ext disable clj` terminates all of them.
 
 ## Implementation notes
 
@@ -321,19 +321,22 @@ lazily), and cleared on `/ext disable clj` (which also terminates the worker).
   helpers use sync `node:fs` / `child_process.spawnSync` (works under Bun
   and under node, where the test target runs). This is what makes scripts
   plain imperative Clojure with no promise plumbing.
-- **Eval runs in a worker thread.** Because `sh`/`bb` shell out via that
-  synchronous `spawnSync`, running eval on the server's single event loop
+- **Eval runs in a per-room worker thread.** Because `sh`/`bb` shell out via
+  that synchronous `spawnSync`, running eval on the server's single event loop
   froze every room / WS client / HTTP request for the command's whole
   duration (up to the 120s `sh` timeout) — a long or hung command read as a
-  server "crash". The `clj`/`bb` tools now post the request to one long-lived
-  worker thread and await the reply: `target/main.js` re-enters itself as a
-  `node:worker_threads` Worker (dispatched by `xi.cli/main`'s `isMainThread`
-  guard → `xi.ext.clj-worker` → `xi.ext.clj/eval-message`), so a blocking
-  command stalls only that worker and the server stays responsive. The worker
-  holds its own per-room `runtimes` atom, so `(def x …)` still persists across
-  evals; `/clj reset` and `/ext disable clj` forward through to it, and a
-  crashed/exited worker resolves any in-flight evals with an error and
-  respawns lazily on the next call.
+  server "crash". The `clj`/`bb` tools post the request to the room's
+  long-lived worker thread and await the reply: `target/main.js` re-enters
+  itself as a `node:worker_threads` Worker (dispatched by `xi.cli/main`'s
+  `isMainThread` guard → `xi.ext.clj-worker` → `xi.ext.clj/eval-message`).
+  Workers are **one per room** (~85MB RSS each, spawned lazily on first use,
+  terminated on `:room/close`): a blocking eval — `process/wait`,
+  `poll-until`, a slow `bb test` — stalls only its own room, never other
+  rooms' `clj`/`bb` calls. Each worker holds its own `runtimes` atom, so
+  `(def x …)` persists across evals within the room; `/clj reset` and
+  `/ext disable clj` terminate the worker, and a crashed/exited worker
+  resolves any in-flight evals with an error and respawns lazily on the next
+  call.
 - The gate injects per-call data by *modifying the tool-call arguments* —
   supported since the providers execute `(or (:arguments gated) args)`.
   All three provider tool loops (claude, openai_compat, openai/responses)
@@ -349,12 +352,11 @@ lazily), and cleared on `/ext disable clj` (which also terminates the worker).
 ## Known limitations / future work
 
 - **No hard timeout on eval** — eval already runs off the main event loop in a
-  worker thread (see Implementation notes), so a blocking `sh` no longer
-  freezes the server. But the worker is not yet force-terminated on a runaway
-  eval: an infinite loop hangs the worker and serializes later `clj`/`bb`
-  calls behind it until the process restarts. Hardening option: a per-eval
-  watchdog that terminates + respawns the worker (losing that worker's REPL
-  state).
+  per-room worker thread (see Implementation notes), so a blocking `sh` no
+  longer freezes the server, and since workers are per room a hung eval only
+  serializes that room's later `clj`/`bb` calls behind it (other rooms are
+  unaffected). Hardening option: a per-eval watchdog that terminates +
+  respawns the room's worker (losing its REPL state).
 - **Live rules** (planned, not built): scan user prompts for "do not touch X"
   phrasings and offer to inject deny-glob rules enforced in the path guards
   and the builtin-tool gate; `/rule add|list|rm`.

@@ -823,12 +823,14 @@
                   :required ["code"]}})
 
 ;; ── Worker client (main thread) ──────────────────────────────────────────────
-;; The clj/bb tools do not eval inline: they post a request to a single
+;; The clj/bb tools do not eval inline: they post a request to the room's
 ;; long-lived worker thread (target/main.js re-entered via xi.cli/main's
 ;; isMainThread guard → xi.ext.clj-worker) and await the reply. The blocking
 ;; synchronous spawnSync inside an eval then stalls only that worker thread,
-;; never the server's single event loop, so other rooms / WS clients / HTTP
-;; stay responsive while a shell command runs.
+;; never the server's single event loop. Workers are per room: a blocking
+;; eval (process/wait, poll-until, a slow bb task) stalls only its own room —
+;; other rooms' clj/bb calls and WS clients stay responsive. A room's worker
+;; is spawned lazily on first use and terminated on :room/close / /clj reset.
 
 (defn- room-key
   "Normalize a room-id to a stable string key for the worker's per-room SCI
@@ -836,7 +838,7 @@
   [room-id]
   (or (some-> room-id name) "default"))
 
-(defonce ^:private worker (atom nil))
+(defonce ^:private workers (atom {}))       ;; room-key str → Worker
 (defonce ^:private pending (atom {}))       ;; id → {:resolve fn :room-key str :abort Int32Array|nil}
 (defonce ^:private next-id (atom 0))
 
@@ -848,13 +850,14 @@
 (defonce ^:private room-ids (atom {}))      ;; room-key str → room-id
 
 (defn- settle-worker-death!
-  "The worker crashed/exited with evals in flight — resolve each pending call
-   with an error result so the tool returns cleanly instead of hanging."
-  [reason]
-  (reset! worker nil)
-  (let [ps @pending]
-    (reset! pending {})
-    (doseq [[_ {:keys [resolve]}] ps]
+  "A room's worker died (crash / exit / terminate) with evals possibly in
+   flight — drop it and resolve each of its pending calls with an error
+   result so the tool returns cleanly instead of hanging."
+  [rk reason]
+  (swap! workers dissoc rk)
+  (let [mine (filter (fn [[_ entry]] (= rk (:room-key entry))) @pending)]
+    (swap! pending #(apply dissoc % (map first mine)))
+    (doseq [[_ {:keys [resolve]}] mine]
       (resolve #js {:text (str "clj/bb worker stopped: " reason
                                " — retry the command.")
                     :isError true}))))
@@ -879,8 +882,13 @@
                     :room-id rid :pid (.-pid m)})
         nil))))
 
-(defn- ensure-worker! []
-  (or @worker
+(defn- ensure-worker!
+  "Get or lazily spawn the room's dedicated worker thread. The error/exit
+   handlers only settle when this worker is still the room's registered one —
+   an explicit terminate (reset, room close) settles first, so the late exit
+   event of the old worker must not touch its replacement."
+  [rk]
+  (or (get @workers rk)
       (let [w (wt/Worker. (aget js/process.argv 1))]
         (.on w "message"
              (fn [^js m]
@@ -890,34 +898,41 @@
                    (when-let [{:keys [resolve]} (get @pending id)]
                      (swap! pending dissoc id)
                      (resolve m))))))
-        (.on w "error" (fn [^js e] (settle-worker-death! (.-message e))))
-        (.on w "exit"  (fn [code] (when (seq @pending)
-                                    (settle-worker-death! (str "exit " code)))))
-        (reset! worker w)
+        (.on w "error" (fn [^js e] (when (identical? w (get @workers rk))
+                                     (settle-worker-death! rk (.-message e)))))
+        (.on w "exit"  (fn [code] (when (identical? w (get @workers rk))
+                                    (settle-worker-death! rk (str "exit " code)))))
+        (swap! workers assoc rk w)
         w)))
 
+(defn- terminate-worker!
+  "Kill a room's worker (room closed, /clj reset, extension disabled): settle
+   its in-flight evals, drop the mapping, terminate the thread. The room's
+   REPL state ((def …)s) dies with it; the next eval spawns a fresh worker."
+  [room-id reason]
+  (let [rk (room-key room-id)]
+    (when-let [^js w (get @workers rk)]
+      (settle-worker-death! rk reason)
+      (.terminate w))))
+
 (defn- run-in-worker
-  "Post a request message to the worker and return a Promise of its JS reply.
-   clj evals get a per-eval abort flag (Int32Array over a SharedArrayBuffer,
-   shared with the worker) so a turn-end can wake their blocking sleeps."
+  "Post a request message to its room's worker and return a Promise of the JS
+   reply. clj evals get a per-eval abort flag (Int32Array over a
+   SharedArrayBuffer, shared with the worker) so a turn-end can wake their
+   blocking sleeps."
   [^js msg]
   (js/Promise.
    (fn [resolve _]
      (let [id  (swap! next-id inc)
-           w   (ensure-worker!)
+           rk  (or (.-roomId msg) "default")
+           w   (ensure-worker! rk)
            sab (when (= "clj" (.-kind msg)) (js/SharedArrayBuffer. 4))]
        (aset msg "id" id)
        (when sab (aset msg "abortSab" sab))
        (swap! pending assoc id {:resolve  resolve
-                                :room-key (.-roomId msg)
+                                :room-key rk
                                 :abort    (when sab (js/Int32Array. sab))})
        (.postMessage w msg)))))
-
-(defn- reset-worker-runtime! [room-id]
-  (when-let [w @worker]
-    (.postMessage w #js {:id     (swap! next-id inc)
-                         :kind   "reset"
-                         :roomId (room-key room-id)})))
 
 (defn reply->result
   "Worker reply #js {:text :isError} → tool result map, appending the gate's
@@ -964,10 +979,11 @@
                   :required []}})
 
 (defn- bb-tool [args {:keys [cwd]}]
-  (-> (run-in-worker #js {:kind "bb"
-                          :task (some-> (:task args) str)
-                          :args (clj->js (mapv str (:args args)))
-                          :cwd  (or cwd (.cwd js/process))})
+  (-> (run-in-worker #js {:kind   "bb"
+                          :roomId (room-key (:_room-id args))
+                          :task   (some-> (:task args) str)
+                          :args   (clj->js (mapv str (:args args)))
+                          :cwd    (or cwd (.cwd js/process))})
       (.then
        (fn [^js m]
          {:content  [{:type "text" :text (.-text m)}]
@@ -981,7 +997,7 @@
 
 (defn eval-message
   "Worker-thread handler: process one request map (JS object) → JS reply
-   #js {:id :text :isError} (or #js {:id :ok true} for a reset)."
+   #js {:id :text :isError}."
   [^js m]
   (let [id  (.-id m)
         cwd (or (.-cwd m) (.cwd js/process))]
@@ -1007,11 +1023,7 @@
             text (str "$ " (str/join " " argv) "\n"
                       (if (str/blank? body) "(no output)" body)
                       (when-not (zero? exit) (str "\n[exit " exit "]")))]
-        #js {:id id :text text :isError (not (zero? exit))})
-
-      "reset"
-      (do (swap! runtimes dissoc (.-roomId m))
-          #js {:id id :ok true}))))
+        #js {:id id :text text :isError (not (zero? exit))}))))
 
 ;; ── Tool gate: pre-scan (sh …) calls, approve CLIs ───────────────────────────
 
@@ -1618,8 +1630,10 @@
                                                       (inject-w (into (into base autorun) approved)
                                                                 hint)))))))))))))))))))))))))))
 
-(defn- gate-bb [tool-call {:keys [cwd confirm!]}]
-  (let [cmd (str/join " " (bb-argv (:arguments tool-call)))
+(defn- gate-bb [tool-call {:keys [cwd confirm! room-id]}]
+  (let [;; bb runs in the room's eval worker — route it there (see bb-tool).
+        tool-call (update tool-call :arguments assoc :_room-id room-id)
+        cmd (str/join " " (bb-argv (:arguments tool-call)))
         dir (or cwd (.cwd js/process))]
     (cond
       ;; serve:restart / serve:stop would kill the server hosting this agent —
@@ -1719,8 +1733,17 @@
       {:state (status-line st room-id (status-text st room-id))})))
 
 (defn- reset-runtime-fx [_ {:keys [room-id]}]
-  ;; The live runtimes are in the worker thread; forward the reset there.
-  (reset-worker-runtime! room-id))
+  ;; The room's live runtime is its worker thread — terminate it; the next
+  ;; eval spawns a fresh one with a clean SCI context.
+  (terminate-worker! room-id "REPL reset"))
+
+(defn- on-room-close
+  "Room destroyed — terminate its dedicated eval worker (and its REPL state)."
+  [_st {:keys [room-id]}]
+  {:effects [[:ext.clj/terminate-worker {:room-id room-id}]]})
+
+(defn- terminate-worker-fx [_ {:keys [room-id]}]
+  (terminate-worker! room-id "room closed"))
 
 (defn- on-turn-end
   "Turn ended (incl. ESC abort): wake any still-blocked clj evals for this
@@ -1793,10 +1816,12 @@
    :init             {:room {:allowed-clis #{}}}
    :handlers         {:ext.clj/allow-cli allow-cli
                       :ext.clj/status    ext-status
-                      :agent/turn-end    on-turn-end}
-   :fx               {:ext.clj/reset-runtime reset-runtime-fx
-                      :ext.clj/trust-bb      trust-bb-fx
-                      :ext.clj/abort-evals   abort-evals-fx}
+                      :agent/turn-end    on-turn-end
+                      :room/close        on-room-close}
+   :fx               {:ext.clj/reset-runtime    reset-runtime-fx
+                      :ext.clj/trust-bb         trust-bb-fx
+                      :ext.clj/abort-evals      abort-evals-fx
+                      :ext.clj/terminate-worker terminate-worker-fx}
    :tool-definitions [tool-def bb-tool-def]
    :tool-registry    {"clj" clj-tool
                       "bb"  bb-tool}
@@ -1808,6 +1833,5 @@
                        :handler command}]
    :on-disable       (fn []
                        (reset! runtimes {})
-                       (when-let [w @worker]
-                         (reset! worker nil)
-                         (.terminate w)))})
+                       (doseq [rk (keys @workers)]
+                         (terminate-worker! rk "extension disabled")))})
