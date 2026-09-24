@@ -150,6 +150,11 @@ approval dialog. It splits into two tiers:
   The builtin `(rm …)` helper is the same: deleting a **file** is auto-run,
   but deleting an existing **directory** (a recursive tree delete) always
   raises a confirm — see *Directory deletion* below.
+  `ss` auto-runs only for its read-only uses: `-K`/`--kill` (destroys
+  matching sockets) and `-D`/`--diag` (writes a raw socket dump to an
+  arbitrary file, bypassing the write guards) escalate to the normal
+  per-CLI approval dialog instead (`ss-escalated-command?`, bundled short
+  flags like `-tK` included).
 - **Hard bounce**: write CLIs (`mkdir`, `cp`, `mv`, `touch`, `sed`, `awk`)
   and network CLIs (`curl`, `wget`) are intercepted with the helper hint
   instead of running — raw `sh` would bypass the helpers' write-path and

@@ -466,6 +466,42 @@
                  (is (str/includes? (str (get-in res [:arguments :_hint])) "(ls dir)"))
                  (done))))))
 
+(deftest ss-escalated-command-detection
+  (is (clj-ext/ss-escalated-command? "ss -K dport = :443"))
+  (is (clj-ext/ss-escalated-command? "ss --kill state established"))
+  (is (clj-ext/ss-escalated-command? "ss -tK"))
+  (is (clj-ext/ss-escalated-command? "ss -D /tmp/dump"))
+  (is (clj-ext/ss-escalated-command? "ss --diag=/tmp/dump"))
+  (is (not (clj-ext/ss-escalated-command? "ss -lntup")))
+  (is (not (clj-ext/ss-escalated-command? "ss -ltnpH")))
+  ;; long flags with K/D letters don't false-positive the short-flag match
+  (is (not (clj-ext/ss-escalated-command? "ss --tcp")))
+  ;; other CLIs are not ss
+  (is (not (clj-ext/ss-escalated-command? "lsof -K"))))
+
+(deftest gate-autoruns-readonly-ss-with-hint
+  (async done
+    (-> (js/Promise.resolve
+         (gate {:name "clj" :arguments {:code "(sh \"ss\" \"-ltnp\")"}}
+               (gate-ctx)))
+        (.then (fn [res]
+                 (is (not (:intercepted res)))
+                 (is (some #{"ss"} (get-in res [:arguments :_allowed])))
+                 (is (str/includes? (str (get-in res [:arguments :_hint])) "(ports)"))
+                 (done))))))
+
+(deftest gate-escalates-ss-kill-to-approval
+  ;; ss -K destroys sockets — not auto-run; goes through the approval flow.
+  (async done
+    (let [ctx (assoc (gate-ctx) :confirm! (fn [_ & _] (js/Promise.resolve false)))
+          res (gate {:name "clj" :arguments {:code "(sh \"ss\" \"-K\" \"dport\" \"=\" \":443\")"}}
+                    ctx)]
+      (-> (js/Promise.resolve res)
+          (.then (fn [r]
+                   (is (:intercepted r))
+                   (is (str/includes? (intercepted-text r) "user denied"))
+                   (done)))))))
+
 (deftest gate-bounces-write-clis
   ;; write CLIs keep the hard bounce — raw sh would bypass the helpers'
   ;; write-path guard.

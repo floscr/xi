@@ -295,6 +295,20 @@
          {:status status :body (or body' "")}
          (throw (ex-info (str "clj: curl failed: " (:err res)) {})))))))
 
+(defn ss-escalated-command?
+  "True when an `ss` command uses a flag that isn't read-only: -K/--kill
+   destroys matching sockets (SOCK_DESTROY), -D/--diag writes raw socket
+   dumps to an arbitrary file, bypassing the sandbox's write guards. These
+   escalate to the normal approval flow instead of auto-running. Handles
+   bundled short flags (-tK)."
+  [cmd]
+  (let [[bin & args] (str/split cmd #"\s+")]
+    (and (= bin "ss")
+         (boolean (some #(or (re-matches #"-[^-]*[KD].*" %)
+                             (str/starts-with? % "--kill")
+                             (str/starts-with? % "--diag"))
+                        args)))))
+
 (def GIT_DENY
   "Git subcommands the `git` helper refuses — route through (sh \"git\" …)
    and its approval/guard flow instead. push mutates the remote (guarded),
@@ -1361,9 +1375,13 @@
                                                    (git-subcommand
                                                     (rest (str/split cmd #"\s+"))))))
                                  (:commands sh))
+            ;; ss is auto-run for its read-only uses, but -K/--kill and
+            ;; -D/--diag mutate (kill sockets / write files) — escalate.
+            ss-escalated? (some ss-escalated-command? (:commands sh))
             shadowed (filter (fn [bin]
                                (and (contains? HELPER_EQUIV bin)
-                                    (or (not= "git" bin) (not git-escalated?))))
+                                    (or (not= "git" bin) (not git-escalated?))
+                                    (or (not= "ss" bin) (not ss-escalated?))))
                              needed)
             ;; Safe read-only CLIs run anyway — result + helper hint — so
             ;; the model doesn't lose a turn; the rest of shadowed bounces.
