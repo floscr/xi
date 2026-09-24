@@ -17,6 +17,13 @@
    elements at once. A control's element is `control.selector` (or the
    top-level default `selector` when the control omits one).
 
+   A control's `property` may also be a CSS custom property (--text-primary,
+   typically with selector :root) — reads/writes go through getPropertyValue
+   / setProperty instead of the camelCase style object, so theme variables can
+   be tuned directly. Sites that color text via `color: var(--x)` per element
+   don't respond to tuning `color` on an ancestor (nothing inherits it); the
+   variable itself is the tunable surface.
+
    Contract:
      input   window.__XI_STYLE_EDITOR_CFG__
                {:selector str?           default selector for controls
@@ -47,24 +54,56 @@
     (letfn [(pad2 [s] (if (= 1 (.-length s)) (str "0" s) s))
             (to-hex [n]
               (pad2 (.toString (js/Math.round (js/Math.max 0 (js/Math.min 255 n))) 16)))
+            (hex->rgb [h]
+              (let [h (if (< (.-length h) 6)
+                        (.join (.map (.split h "") (fn [c] (str c c))) "")
+                        h)
+                    n (fn [i] (js/parseInt (.slice h i (+ i 2)) 16))]
+                #js {:r (n 0) :g (n 2) :b (n 4)
+                     :a (if (>= (.-length h) 8) (/ (n 6) 255) 1)}))
             (parse-rgb [s]
-              (let [m (and s (.match s #"rgba?\(([^)]+)\)"))]
-                (if m
-                  (let [p (.map (.split (aget m 1) ",")
-                                (fn [x] (js/parseFloat (.trim x))))]
-                    #js {:r (or (aget p 0) 0) :g (or (aget p 1) 0)
-                         :b (or (aget p 2) 0)
-                         :a (if (> (.-length p) 3) (aget p 3) 1)})
-                  #js {:r 0 :g 0 :b 0 :a 1})))
+              (let [s  (.trim (str (or s "")))
+                    hm (.match s #"^#([0-9a-fA-F]{3,8})$")
+                    m  (.match s #"rgba?\(([^)]+)\)")]
+                (cond
+                  hm (hex->rgb (aget hm 1))
+                  ;; legacy "r, g, b" and modern "r g b / a" syntax
+                  m  (let [p (.map (.split (.trim (aget m 1)) #"[\s,\/]+")
+                                   (fn [x] (js/parseFloat x)))]
+                       #js {:r (or (aget p 0) 0) :g (or (aget p 1) 0)
+                            :b (or (aget p 2) 0)
+                            :a (if (> (.-length p) 3) (aget p 3) 1)})
+                  :else #js {:r 0 :g 0 :b 0 :a 1})))
             (rgba-str [c]
               (str "rgba(" (js/Math.round (.-r c)) ", " (js/Math.round (.-g c)) ", "
                    (js/Math.round (.-b c)) ", " (.-a c) ")"))
 
-            (infer-type [prop declared]
+            ;; CSS custom properties ("--text-primary") can't go through the
+            ;; camelCase object interface — they need getPropertyValue /
+            ;; setProperty. These helpers branch on the "--" prefix so every
+            ;; read/write site handles both.
+            (custom-prop? [prop] (.startsWith (str prop) "--"))
+            (read-computed [cs prop]
+              (if (custom-prop? prop)
+                (.trim (.getPropertyValue cs prop))
+                (aget cs prop)))
+            (read-inline [el prop]
+              (if (custom-prop? prop)
+                (.getPropertyValue (.-style el) prop)
+                (aget (.-style el) prop)))
+            (write-style! [el prop v]
+              (if (custom-prop? prop)
+                (.setProperty (.-style el) prop v)
+                (aset (.-style el) prop v)))
+
+            (infer-type [prop declared val]
               (cond
                 (not-empty declared)                    declared
                 (= prop "opacity")                      "opacity"
                 (.includes (.toLowerCase prop) "color") "color"
+                ;; custom props don't carry "color" in the name reliably —
+                ;; sniff the value instead
+                (and val (.match (str val) #"^(#[0-9a-fA-F]{3,8}$|rgba?\(|hsla?\()")) "color"
                 :else                                   "range"))
 
             ;; Default range unit: parse it off the element's computed value —
@@ -77,7 +116,7 @@
             (default-unit [prop cs]
               (if (= prop "lineHeight")
                 ""
-                (let [m (.match (str (aget cs prop)) #"^-?\d*\.?\d+([a-z%]*)$")]
+                (let [m (.match (str (read-computed cs prop)) #"^-?\d*\.?\d+([a-z%]*)$")]
                   (if m (aget m 1) "px"))))
 
             ;; Merge class selectors from `el` up the tree into `out`
@@ -120,7 +159,7 @@
                       (.push missing #js {:selector (or csel "") :property (.-property c)})
                       (let [cs   (js/getComputedStyle tgt)
                             prop (.-property c)
-                            type (infer-type prop (.-type c))
+                            type (infer-type prop (.-type c) (read-computed cs prop))
                             ;; Tag the label with its selector when multiple
                             ;; elements are tuned, so each row is unambiguous.
                             label (str (or (.-label c) prop)
@@ -131,10 +170,10 @@
                                       :target tgt :selector csel
                                       :classSel (first-class tgt)
                                       :extraOrig (js/Map.)
-                                      :orig (aget (.-style tgt) prop)}]
+                                      :orig (read-inline tgt prop)}]
                         (cond
                           (= type "color")
-                          (let [c0 (parse-rgb (aget cs prop))]
+                          (let [c0 (parse-rgb (read-computed cs prop))]
                             (aset config k #js {:type "color" :label label
                                                 :default (rgba-str c0)}))
 
@@ -145,7 +184,7 @@
 
                           :else
                           (let [unit  (or (.-unit c) (default-unit prop cs))
-                                raw   (js/parseFloat (aget cs prop))
+                                raw   (js/parseFloat (read-computed cs prop))
                                 ;; getComputedStyle resolves line-height to px;
                                 ;; convert back to the unitless ratio so an
                                 ;; unitless control starts in range instead of
@@ -216,13 +255,13 @@
                               keep (js/Set. set)]
                           (doseq [el set]
                             (when (and (not (identical? el tgt)) (not (.has m el)))
-                              (.set m el (aget (.-style el) prop)))
-                            (aset (.-style el) prop css))
+                              (.set m el (read-inline el prop)))
+                            (write-style! el prop css))
                           (doseq [el (js/Array.from (.keys m))]
                             (when-not (.has keep el)
-                              (aset (.-style el) prop (.get m el))
+                              (write-style! el prop (.get m el))
                               (.delete m el)))
-                          (aset (.-style tgt) prop css)))
+                          (write-style! tgt prop css)))
 
                       ;; Recompute + apply every control from a dial values map.
                       (apply-all! [vals]
@@ -254,10 +293,10 @@
 
                       (do-cancel []
                         (doseq [st meta]
-                          (aset (.-style (.-target st)) (.-property st) (.-orig st))
+                          (write-style! (.-target st) (.-property st) (.-orig st))
                           (let [m (.-extraOrig st) prop (.-property st)]
                             (doseq [el (js/Array.from (.keys m))]
-                              (aset (.-style el) prop (.get m el)))))
+                              (write-style! el prop (.get m el)))))
                         (cleanup!)
                         (set! js/window.__xiStyleEditorCancelled true))]
 

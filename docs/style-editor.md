@@ -52,7 +52,7 @@ Each control:
 
 | Key | Type | Notes |
 |-----|------|-------|
-| `property` | string (required) | CSS property in **camelCase** (`borderRadius`, `backgroundColor`, `opacity`). |
+| `property` | string (required) | CSS property in **camelCase** (`borderRadius`, `backgroundColor`, `opacity`), or a **CSS custom property** (`--text-primary`) — see below. |
 | `label` | string | Human label (defaults to the property name). |
 | `type` | `"range"` \| `"color"` \| `"opacity"` | Omit to infer: `opacity` → opacity slider, anything with `color` → color picker, else a range slider. |
 | `min` `max` `step` | number | Range bounds (range only). Defaults: `min` 0, `max` `max(100, current)`, `step` 1. |
@@ -78,6 +78,16 @@ the picked element's HTML / class list) before calling the tool. Reasons:
 
 Fall back to the positional selector only when the element genuinely has no
 usable class.
+
+**Tune the CSS variable when the value is authored as `var(--x)`.** On
+token-driven sites (very common for colors) each element resolves
+`color: var(--text-primary)` itself, so tuning `color` on an ancestor like
+`body` is a visual no-op — nothing inherits it. Pass the custom property
+directly as the control's `property` (e.g. `--text-primary`) with the selector
+where the variable is defined (usually `:root`); reads/writes go through
+`getPropertyValue` / `setProperty`, and every consumer updates live. Type
+inference sniffs the variable's value (hex / `rgb(…)` / `hsl(…)` → color
+picker), but passing `type` explicitly is still safest.
 
 **One control per element.** When the properties you're tuning live on different
 elements, give each control its own `selector` (the top-level `selector` is just

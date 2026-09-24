@@ -263,7 +263,13 @@
         "tune several elements and properties at once. Blocks until the user "
         "clicks Apply or Cancel. Requires the chrome browser tools "
         "(XI_CHROME_TOOLS). Use camelCase CSS property names (e.g. borderRadius, "
-        "backgroundColor). Mind CSS units on range controls: when `unit` is "
+        "backgroundColor). A property may also be a CSS custom property (e.g. "
+        "--text-primary, usually paired with selector :root). IMPORTANT: when "
+        "the visual value you want to tune is authored as var(--x) in the "
+        "site's CSS (theme tokens — very common for colors), tune the VARIABLE "
+        "itself, not a consuming property on an ancestor: setting e.g. `color` "
+        "on body does nothing when descendants each resolve var(--x) "
+        "themselves. Mind CSS units on range controls: when `unit` is "
         "omitted it is inferred from the element's current computed value "
         "(unitless properties like fontWeight/opacity/zIndex compute to bare "
         "numbers → no unit; lengths → px), and lineHeight always defaults to "
@@ -284,7 +290,7 @@
                  {:type "object"
                   :properties
                   {"property" {:type "string"
-                               :description "CSS property in camelCase (e.g. borderRadius, backgroundColor, opacity)."}
+                               :description "CSS property in camelCase (e.g. borderRadius, backgroundColor, opacity), or a CSS custom property (e.g. --text-primary — pair it with the selector where the variable is defined, usually :root). Prefer the custom property whenever the site derives the visual value from var(--x)."}
                    "selector" {:type "string"
                                :description "CSS selector of the element THIS control tunes. Defaults to the top-level `selector`."}
                    "label"    {:type "string"
