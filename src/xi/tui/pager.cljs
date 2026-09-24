@@ -109,6 +109,9 @@
                          through). ctx keys: :cursor (absolute line index),
                          :body-cursor (relative to the lines-fn body; nil while
                          above it / before first render), :set-cursor! (fn [n]),
+                         :invalidate! (0-arg: drop the cached body so lines-fn
+                         re-runs — use when a key mutates lines-fn output),
+                         :file-starts (absolute jump positions),
                          :jump-next-file! / :jump-prev-file! (0-arg fns over
                          the :file-starts jump positions).
                          Optional — lets specializations (e.g. the sub-agents
@@ -150,6 +153,13 @@
               (when (not= new-top top)
                 (tui/scroll-line-to-top! (max 0 new-top))))))
 
+        ;; Scroll so the cursor sits at the vertical middle of the viewport
+        ;; (vim `zz`), clamped at the content top. Used by jump navigation.
+        center-cursor!
+        (fn []
+          (when-let [c (:cursor @state)]
+            (tui/scroll-line-to-top! (max 0 (- c (quot (tui/viewport-height) 2))))))
+
         set-cursor!
         (fn [n]
           (if (pos? (line-count))
@@ -169,13 +179,13 @@
         (fn [positions]
           (let [c (or (:cursor @state) (cursor-lo))
                 target (first (filter #(> % c) positions))]
-            (when target (set-cursor! target))))
+            (when target (set-cursor! target) (center-cursor!))))
 
         jump-prev!
         (fn [positions]
           (let [c (or (:cursor @state) (cursor-lo))
                 target (last (filter #(< % c) positions))]
-            (when target (set-cursor! target))))
+            (when target (set-cursor! target) (center-cursor!))))
 
         toggle-visual!
         (fn []
@@ -208,7 +218,14 @@
           (when f
             (when-let [text (selection-text)]
               (swap! state assoc :anchor nil)
-              (f text))))]
+              (f text))))
+
+        ;; Drop the cached body so the next render re-runs lines-fn (used when a
+        ;; host key mutates what lines-fn produces, e.g. collapsing a file).
+        invalidate!
+        (fn []
+          (swap! state assoc :cached-width nil :cached-lines nil :display-cache nil)
+          (tui/request-render!))]
 
     {:type :pager
      :capture-all-input true
@@ -235,6 +252,8 @@
                               {:cursor c
                                :body-cursor (when (and c (>= c hl)) (- c hl))
                                :set-cursor! set-cursor!
+                               :invalidate! invalidate!
+                               :file-starts (:file-starts @state)
                                :jump-next-file! #(jump-next! (:file-starts @state))
                                :jump-prev-file! #(jump-prev! (:file-starts @state))})))
            nil
@@ -311,8 +330,7 @@
 
            :else nil)))
 
-     :invalidate
-     (fn [] (swap! state assoc :cached-width nil :cached-lines nil :display-cache nil))
+     :invalidate invalidate!
 
      :render
      (fn [width]

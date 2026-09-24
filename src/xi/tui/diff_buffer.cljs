@@ -8,8 +8,9 @@
      Ctrl-d/Ctrl-u     Half-page scroll
      Page Up/Down      Full-page scroll
      gg / G            Top / bottom
-     ]c / [c           Next / previous change
-     ]f / [f           Next / previous file
+     ]c / [c           Next / previous change (re-centers)
+     ]f / [f           Next / previous file (re-centers)
+     Tab               Fold / unfold the file under the cursor
      :                 Enter command mode (focus editor)
      q / Escape        Close diff view"
   (:require [clojure.string :as str]
@@ -56,8 +57,11 @@
             :line-locs [{:file str :line int}|nil]} — line-locs is parallel to
    :lines and maps each code line to its file + line number (new side when
    present, old side for deletions); header/blank lines carry nil (file
-   headers carry {:file f} so an edit jump still lands in the right file)."
-  [parsed-files width]
+   headers carry {:file f} so an edit jump still lands in the right file).
+
+   `collapsed` is a set of filenames whose hunk bodies are folded away — only
+   the file header (with a ▸ caret) is emitted for those."
+  [parsed-files width collapsed]
   (let [file-header-bg (hl-theme/diff-header-bg)
         add-bg (hl-theme/diff-add-bg)
         del-bg (hl-theme/diff-del-bg)
@@ -88,57 +92,63 @@
                          :renamed "renamed"
                          "modified")]
 
-        ;; Blank line + file header
-        (emit! "")
-        (emit! (ansi/apply-bg-to-line
-                (str " " (ansi/fg :bold filename)
-                     (ansi/fg :dim (str " ── " status-str " ")))
-                width file-header-bg)
-               {:file true :loc {:file filename}})
+        ;; Blank line + file header (caret reflects collapse state)
+        (let [folded? (contains? collapsed filename)]
+          (emit! "")
+          (emit! (ansi/apply-bg-to-line
+                  (str " " (ansi/fg :dim (if folded? "▸" "▾")) " "
+                       (ansi/fg :bold filename)
+                       (ansi/fg :dim (str " ── " status-str " ")))
+                  width file-header-bg)
+                 {:file true :loc {:file filename}})
 
-        (if (= :binary status)
-          (emit! (ansi/fg :dim "  Binary file"))
+          (cond
+            folded? nil
 
-          ;; Render hunks
-          (doseq [hunk hunks]
-            ;; Hunk header
-            (emit! (str " " (ansi/fg hunk-header-fg (:header hunk))))
+            (= :binary status)
+            (emit! (ansi/fg :dim "  Binary file"))
 
-            ;; Line number column widths for this hunk
-            (let [all-old (keep :old-line (:lines hunk))
-                  all-new (keep :new-line (:lines hunk))
-                  max-old (if (seq all-old) (apply max all-old) 0)
-                  max-new (if (seq all-new) (apply max all-new) 0)
-                  old-w (max 3 (count (str max-old)))
-                  new-w (max 3 (count (str max-new)))]
+            ;; Render hunks
+            :else
+            (doseq [hunk hunks]
+              ;; Hunk header
+              (emit! (str " " (ansi/fg hunk-header-fg (:header hunk))))
 
-              (doseq [dl (:lines hunk)]
-                (when (not= :meta (:type dl))
-                  (let [;; Line numbers
-                        old-str (if-let [n (:old-line dl)]
-                                  (right-align (str n) old-w)
-                                  (apply str (repeat old-w " ")))
-                        new-str (if-let [n (:new-line dl)]
-                                  (right-align (str n) new-w)
-                                  (apply str (repeat new-w " ")))
-                        ;; Gutter
-                        gutter (str (ansi/fg line-nr-fg (str old-str " " new-str))
-                                    (ansi/fg separator-fg " │"))
-                        ;; Prefix
-                        prefix (case (:type dl) :add "+" :delete "-" " ")
-                        ;; Highlighted code
-                        code (highlight-code grammar (:text dl))
-                        ;; Build full line
-                        raw-line (str gutter prefix code)
-                        ;; Apply diff background for add/delete
-                        bg (case (:type dl) :add add-bg :delete del-bg nil)
-                        final-line (if bg
-                                     (ansi/apply-bg-to-line raw-line width bg)
-                                     raw-line)]
-                    (emit! final-line
-                           (cond-> {:loc {:file filename
-                                          :line (or (:new-line dl) (:old-line dl))}}
-                             (#{:add :delete} (:type dl)) (assoc :change true)))))))))))
+              ;; Line number column widths for this hunk
+              (let [all-old (keep :old-line (:lines hunk))
+                    all-new (keep :new-line (:lines hunk))
+                    max-old (if (seq all-old) (apply max all-old) 0)
+                    max-new (if (seq all-new) (apply max all-new) 0)
+                    old-w (max 3 (count (str max-old)))
+                    new-w (max 3 (count (str max-new)))]
+
+                (doseq [dl (:lines hunk)]
+                  (when (not= :meta (:type dl))
+                    (let [;; Line numbers
+                          old-str (if-let [n (:old-line dl)]
+                                    (right-align (str n) old-w)
+                                    (apply str (repeat old-w " ")))
+                          new-str (if-let [n (:new-line dl)]
+                                    (right-align (str n) new-w)
+                                    (apply str (repeat new-w " ")))
+                          ;; Gutter
+                          gutter (str (ansi/fg line-nr-fg (str old-str " " new-str))
+                                      (ansi/fg separator-fg " │"))
+                          ;; Prefix
+                          prefix (case (:type dl) :add "+" :delete "-" " ")
+                          ;; Highlighted code
+                          code (highlight-code grammar (:text dl))
+                          ;; Build full line
+                          raw-line (str gutter prefix code)
+                          ;; Apply diff background for add/delete
+                          bg (case (:type dl) :add add-bg :delete del-bg nil)
+                          final-line (if bg
+                                       (ansi/apply-bg-to-line raw-line width bg)
+                                       raw-line)]
+                      (emit! final-line
+                             (cond-> {:loc {:file filename
+                                            :line (or (:new-line dl) (:old-line dl))}}
+                               (#{:add :delete} (:type dl)) (assoc :change true))))))))))))
 
     ;; Trailing blank line
     (emit! "")
@@ -178,6 +188,8 @@
            on-edit]}]
   (let [parsed (diff/parse-diff-text diff-text)
         line-locs (atom [])
+        ;; Set of filenames whose hunk bodies are folded away (Tab toggles).
+        collapsed (atom #{})
         file-count (count parsed)
         add-count (reduce + (for [f parsed, h (:hunks f), l (:lines h)
                                   :when (= :add (:type l))] 1))
@@ -193,17 +205,34 @@
                        "  " (ansi/fg :green (str "+" add-count))
                        "  " (ansi/fg :red (str "-" del-count))))])
       :lines-fn (fn [width]
-                  (let [rendered (render-diff-lines parsed width)]
+                  (let [rendered (render-diff-lines parsed width @collapsed)]
                     (reset! line-locs (:line-locs rendered))
                     rendered))
-      ;; v: open the file under the cursor in $EDITOR (host-provided).
-      :extra-keys (when on-edit
-                    (fn [data {:keys [body-cursor]}]
-                      (when (and (= data "v") body-cursor)
-                        (when-let [loc (loc-at @line-locs body-cursor)]
-                          (on-edit loc)
-                          true))))
-      :help (pager/help-bar [["j/k" "move"] ["v" "edit"] ["V/y" "select/yank"]
+      :extra-keys
+      (fn [data {:keys [body-cursor cursor set-cursor! invalidate! file-starts]}]
+        (cond
+          ;; v: open the file under the cursor in $EDITOR (host-provided).
+          (and on-edit (= data "v") body-cursor)
+          (when-let [loc (loc-at @line-locs body-cursor)]
+            (on-edit loc)
+            true)
+
+          ;; Tab: fold/unfold the file under the cursor. Keep the cursor on the
+          ;; file's header line — its index is unaffected by folding the lines
+          ;; that follow it — so the view stays put.
+          (and (= data "\t") body-cursor)
+          (when-let [filename (:file (loc-at @line-locs body-cursor))]
+            (swap! collapsed (fn [s] (if (contains? s filename)
+                                       (disj s filename)
+                                       (conj s filename))))
+            (when-let [header (last (filter #(<= % cursor) file-starts))]
+              (set-cursor! header))
+            (invalidate!)
+            true)
+
+          :else nil))
+      :help (pager/help-bar [["j/k" "move"] ["v" "edit"] ["Tab" "fold"]
+                             ["V/y" "select/yank"]
                              ["e" "explain"] ["\u23ce" "prompt"]
                              ["]c/[c" "changes"] ["]f/[f" "files"]
                              ["gg/G" "top/bottom"] ["q" "close"] [":" "command"]])
