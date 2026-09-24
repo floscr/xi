@@ -466,6 +466,61 @@
                  (is (some #{"rm"} (get-in res [:arguments :_allowed])))
                  (done))))))
 
+(defn- mk-tmp-dir []
+  (fs/mkdtempSync (node-path/join (os/tmpdir) "clj-gate-")))
+
+(deftest gate-confirms-rm-directory
+  ;; The builtin (rm dir) on an existing directory is a recursive tree
+  ;; deletion — it must prompt, and a deny blocks the whole eval.
+  (async done
+    (let [dir     (mk-tmp-dir)
+          prompts (atom [])
+          ctx     (assoc (gate-ctx) :cwd (os/tmpdir)
+                         :confirm! (fn [msg & _]
+                                     (swap! prompts conj msg)
+                                     (js/Promise.resolve false)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code (str "(rm \"" dir "\")")}} ctx))
+          (.then (fn [res]
+                   (is (:intercepted res))
+                   (is (str/includes? (intercepted-text res) "directory deletion"))
+                   (is (some #(str/includes? % "Recursively delete directory") @prompts))
+                   (fs/rmSync dir #js {:recursive true :force true})
+                   (done)))))))
+
+(deftest gate-allows-rm-directory-on-confirm
+  ;; Approving the deletion lets the (rm dir) through (not intercepted).
+  (async done
+    (let [dir (mk-tmp-dir)
+          ctx (assoc (gate-ctx) :cwd (os/tmpdir)
+                     :confirm! (fn [_ & _] (js/Promise.resolve true)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code (str "(rm \"" dir "\")")}} ctx))
+          (.then (fn [res]
+                   (is (not (:intercepted res)))
+                   (fs/rmSync dir #js {:recursive true :force true})
+                   (done)))))))
+
+(deftest gate-autoruns-rm-file-no-directory-prompt
+  ;; (rm file) on a plain file stays auto-allowed — no deletion prompt, even
+  ;; with a confirm! attached (only directories are gated).
+  (async done
+    (let [dir     (mk-tmp-dir)
+          f       (node-path/join dir "scratch.txt")
+          _       (fs/writeFileSync f "x")
+          prompts (atom [])
+          ctx     (assoc (gate-ctx) :cwd (os/tmpdir)
+                         :confirm! (fn [msg & _]
+                                     (swap! prompts conj msg)
+                                     (js/Promise.resolve true)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code (str "(rm \"" f "\")")}} ctx))
+          (.then (fn [res]
+                   (is (not (:intercepted res)))
+                   (is (empty? @prompts))
+                   (fs/rmSync dir #js {:recursive true :force true})
+                   (done)))))))
+
 ;; ── git helper ───────────────────────────────────────────────────────────────────────
 
 (deftest git-subcommand-detection

@@ -29,6 +29,7 @@
    server hosting this agent mid-command; they still require approval but
    run detached and return an explicit result."
   ["rm -rf" "rm -r" "sudo " "chmod -R" "chown -R"
+   "fs/delete-dir" "fs/delete-tree"
    "> /dev/" "mkfs" "dd if=" ":(){ " "fork bomb"
    "git push"
    "kill " "kill -" "pkill" "killall"])

@@ -75,3 +75,21 @@
                    (is (= tc res) "approved outside-repo write passes through")
                    (is (= 1 (count @calls)) "confirm! invoked once")
                    (done)))))))
+
+(deftest fs-delete-dir-is-a-guarded-pattern
+  (is (some #{"fs/delete-dir"} pg/GUARDED_PATTERNS))
+  (is (some #{"fs/delete-tree"} pg/GUARDED_PATTERNS)))
+
+(deftest bash-fs-delete-tree-requires-confirmation
+  ;; A babashka/clojure dir-tree deletion shelled from bash is guarded like
+  ;; rm -rf — denying it blocks the command.
+  (async done
+    (let [calls (atom [])
+          tc {:name "bash"
+              :arguments {:command "bb -e '(babashka.fs/delete-tree \"build\")'"}}]
+      (-> (js/Promise.resolve (gate tc (ctx repo-cwd false calls)))
+          (.then (fn [res]
+                   (is (nil? res) "denied fs/delete-tree command is blocked")
+                   (is (= 1 (count @calls)) "confirm! invoked once")
+                   (is (re-find #"Guarded command" (first @calls)))
+                   (done)))))))

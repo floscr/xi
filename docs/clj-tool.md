@@ -79,6 +79,18 @@ Guards, enforced inside every helper:
   roots into the worker so its `resolve-write` allows them. A **dynamic**
   (computed, non-string) out-of-repo path can't be pre-approved and still
   hard-rejects ("writes are limited to the working dir and …").
+- **Directory deletion**: the builtin `(rm dir)` recursively deletes a whole
+  tree, so the gate statically scans `rm`'s literal path args and, for any that
+  resolve to an **existing directory**, raises a confirm before the eval runs —
+  the prompt calls out when the target is *outside the project repo*. Files are
+  unaffected (auto-run). A `[y]` on an out-of-repo directory also injects it as
+  an approved write root so `resolve-write` permits the delete. With no client
+  attached (headless) the confirm passes through, but an out-of-repo directory
+  still hard-rejects since it was never approved. **Dynamic** (computed) `rm`
+  paths are invisible to this scan — an in-repo dynamic directory delete isn't
+  pre-confirmed (same gap as dynamic writes). Shelling a dir delete out —
+  `(sh "bb" "-e" "(fs/delete-tree …)")` or a bash `fs/delete-dir`/`fs/delete-tree`
+  — is caught separately as a guarded pattern.
 - **Env**: only `xi.sandbox.core`'s env allowlist; secret-bearing keys throw.
 - Printed output is captured; results are truncated (30k chars).
 
@@ -120,6 +132,9 @@ approval dialog. It splits into two tiers:
   (bash's `rm -rf` stays guarded) — so deleting scratch files never needs
   approval. The hint points at `(rm f)`; when the target is under `/tmp` it
   also notes the deletion is usually unnecessary since `/tmp` is temporary.
+  The builtin `(rm …)` helper is the same: deleting a **file** is auto-run,
+  but deleting an existing **directory** (a recursive tree delete) always
+  raises a confirm — see *Directory deletion* below.
 - **Hard bounce**: write CLIs (`mkdir`, `cp`, `mv`, `touch`, `sed`, `awk`)
   and network CLIs (`curl`, `wget`) are intercepted with the helper hint
   instead of running — raw `sh` would bypass the helpers' write-path and
@@ -176,7 +191,8 @@ mirrored in the clj gate (reusing `xi.ext.permission-gate` publics):
   `pg/ask-server-control`: confirmed, then run *detached* with an immediate
   explicit result. Critical here: `sh` is synchronous, so running it inline
   would kill the server hosting the agent mid-eval.
-- **Guarded patterns** (`rm -rf`, `sudo`, `git push`, `kill …`) — confirm
+- **Guarded patterns** (`rm -rf`, `fs/delete-dir` / `fs/delete-tree`, `sudo`,
+  `git push`, `kill …`) — confirm
   dialog even when the CLI is allowlisted. Pattern-matched on each call's
   joined literal argv (`:commands` from the pre-scan); dynamic args are
   invisible to this check — known gap, same class as bash string matching.

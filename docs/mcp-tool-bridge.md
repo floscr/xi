@@ -104,7 +104,8 @@ The permission gate (`ext/permission_gate.cljs`) blocks:
   writes under that repo root for the rest of the room's session. Allowed
   roots live room-scoped under `[:rooms rid :ext :permission-gate
   :allowed-write-repos]`.
-- **Dangerous bash patterns**: `rm -rf`, `sudo`, `chmod -R`, `dd if=`, etc.
+- **Dangerous bash patterns**: `rm -rf`, `fs/delete-dir` / `fs/delete-tree`,
+  `sudo`, `chmod -R`, `dd if=`, etc.
 
 To add a blocked pattern, edit the pattern/path lists in
 `ext/permission_gate.cljs`.

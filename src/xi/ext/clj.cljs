@@ -891,37 +891,6 @@
 
 (def ^:private SHELLS #{"bash" "sh" "zsh" "fish" "dash"})
 
-(defn scan-sh-calls
-  "Parse code (edamame) and collect (sh …) call sites. Returns
-   {:parse-error msg} on unreadable code, else
-   {:literals #{bin…} :commands [\"bin arg…\"] :dynamic? bool :shell-c? bool}.
-   :commands joins each call's literal string args — used for the guarded /
-   server-control pattern checks (dynamic args are invisible to it; the
-   binary itself must still be an approved literal)."
-  [code]
-  (try
-    (let [forms (e/parse-string-all code {:all true
-                                          :auto-resolve {:current 'user}
-                                          :readers (fn [_] identity)})
-          calls (atom [])]
-      (walk/postwalk (fn [f]
-                       (when (and (seq? f) (= 'sh (first f)))
-                         (swap! calls conj (vec (rest f))))
-                       f)
-                     forms)
-      {:literals (set (filter string? (map first @calls)))
-       :commands (into []
-                       (comp (filter #(string? (first %)))
-                             (map #(str/join " " (filter string? %))))
-                       @calls)
-       :dynamic? (boolean (some (complement string?) (map first @calls)))
-       :shell-c? (boolean (some (fn [args]
-                                  (and (contains? SHELLS (first args))
-                                       (some #{"-c"} (filter string? args))))
-                                @calls))})
-    (catch :default err
-      {:parse-error (.-message err)})))
-
 (def ^:private WRITE_HELPER_TARGETS
   "clj builtin write helpers -> the 0-based arg positions whose literal string
    values are write targets (:all = every arg, for rm's varargs). The gate uses
@@ -934,30 +903,105 @@
    'touch [0]
    'rm    :all})
 
-(defn scan-write-paths
-  "Parse code (edamame) and collect the literal string write-target paths passed
-   to the builtin write helpers (spit/mv/cp/mkdir/touch/rm). Dynamic (computed)
-   args are invisible and can't be pre-approved — those still hard-reject in the
-   worker when out of repo. Returns a distinct vector of path strings (empty on
-   parse error)."
+(def ^:private SCAN_OPTS
+  {:all true :auto-resolve {:current 'user} :readers (fn [_] identity)})
+
+(def ^:private scan-rules
+  "Single-pass gate-scan rules. Each rule fires on a set of head symbols and
+   folds the matched (head arg…) list form into the scan accumulator. To collect
+   a new class of call site for the gate, add a rule here — the code is still
+   parsed and walked exactly once (see scan-code)."
+  [;; (sh …) call sites: keep the raw arg vectors for the CLI / guarded checks.
+   {:heads   #{'sh}
+    :collect (fn [acc _head args] (update acc :sh-calls conj args))}
+   ;; builtin write helpers: record each literal write-target path tagged with
+   ;; the helper it came from (so rm targets can be singled out for dir-delete).
+   {:heads   (set (keys WRITE_HELPER_TARGETS))
+    :collect (fn [acc head args]
+               (let [pos   (WRITE_HELPER_TARGETS head)
+                     picks (if (= :all pos) args (map #(nth args % nil) pos))]
+                 (reduce (fn [a p]
+                           (cond-> a
+                             (string? p) (update :writes conj {:head head :path p})))
+                         acc picks)))}])
+
+(defn scan-code
+  "Parse `code` once (edamame) and postwalk it once, dispatching every list form
+   through `scan-rules`. Returns {:parse-error msg} on unreadable code, else the
+   raw accumulated scan {:sh-calls [[arg…]…] :writes [{:head h :path p}…]}. The
+   derived views below (scan-sh-calls / scan-write-paths / rm targets) read from
+   this, so one gate pass parses the code a single time."
   [code]
   (try
-    (let [forms (e/parse-string-all code {:all true
-                                          :auto-resolve {:current 'user}
-                                          :readers (fn [_] identity)})
-          paths (atom [])]
+    (let [forms (e/parse-string-all code SCAN_OPTS)
+          acc   (atom {:sh-calls [] :writes []})]
       (walk/postwalk
        (fn [f]
-         (when (and (seq? f) (contains? WRITE_HELPER_TARGETS (first f)))
-           (let [args  (vec (rest f))
-                 pos   (WRITE_HELPER_TARGETS (first f))
-                 picks (if (= :all pos) args (map #(nth args % nil) pos))]
-             (doseq [a picks]
-               (when (string? a) (swap! paths conj a)))))
+         (when (seq? f)
+           (let [head (first f)
+                 args (vec (rest f))]
+             (doseq [{:keys [heads collect]} scan-rules
+                     :when (contains? heads head)]
+               (swap! acc collect head args))))
          f)
        forms)
-      (vec (distinct @paths)))
-    (catch :default _ [])))
+      @acc)
+    (catch :default err {:parse-error (.-message err)})))
+
+(defn- sh-summary
+  "Derive the (sh …) view {:literals :commands :dynamic? :shell-c?} from a
+   scan-code result. :commands joins each call's literal string args — used for
+   the guarded / server-control pattern checks (dynamic args are invisible to
+   it; the binary itself must still be an approved literal)."
+  [scan]
+  (let [calls (:sh-calls scan)]
+    {:literals (set (filter string? (map first calls)))
+     :commands (into []
+                     (comp (filter #(string? (first %)))
+                           (map #(str/join " " (filter string? %))))
+                     calls)
+     :dynamic? (boolean (some (complement string?) (map first calls)))
+     :shell-c? (boolean (some (fn [args]
+                                (and (contains? SHELLS (first args))
+                                     (some #{"-c"} (filter string? args))))
+                              calls))}))
+
+(defn- write-paths-of
+  "Distinct literal write-target paths (spit/mv/cp/mkdir/touch/rm) from a
+   scan-code result, in first-seen order."
+  [scan]
+  (into [] (comp (map :path) (distinct)) (:writes scan)))
+
+(defn- rm-targets-of
+  "Distinct literal paths passed to the builtin (rm …) helper, from a scan-code
+   result. Directory targets among these are gated as recursive tree deletes."
+  [scan]
+  (into [] (comp (filter #(= 'rm (:head %))) (map :path) (distinct)) (:writes scan)))
+
+(defn scan-sh-calls
+  "The (sh …) scan view (see sh-summary), parsing `code` via scan-code. Returns
+   {:parse-error msg} on unreadable code. For callers/tests that scan a snippet
+   directly; the gate derives this from a single shared scan-code pass."
+  [code]
+  (let [scan (scan-code code)]
+    (if (:parse-error scan) scan (sh-summary scan))))
+
+(defn scan-write-paths
+  "Literal write-target paths in `code` (see write-paths-of); empty on parse
+   error. For callers/tests that scan a snippet directly."
+  [code]
+  (let [scan (scan-code code)]
+    (if (:parse-error scan) [] (write-paths-of scan))))
+
+(defn- existing-dir?
+  "True when p (resolved against cwd) is an existing directory — i.e. an (rm p)
+   would be a recursive directory tree deletion."
+  [cwd p]
+  (try
+    (let [resolved (sandbox/real-resolve cwd (str p))]
+      (and (fs/existsSync resolved)
+           (.isDirectory (fs/statSync resolved))))
+    (catch :default _ false)))
 
 (defn- blocked [text]
   {:intercepted true
@@ -1112,9 +1156,40 @@
    (js/Promise.resolve {:approved #{} :denied nil})
    paths))
 
+(defn- confirm-rm-dirs
+  "Confirm each builtin (rm dir) that would recursively delete an existing
+   directory. The prompt calls out when the target is OUTSIDE the project repo.
+   Returns a promise of {:ok? bool :approved-roots #{resolved-out-of-repo-dirs}};
+   resolves :ok? false on the first deny. With no confirm! attached (headless),
+   directory deletions pass through (parity with the clj gate's other guarded
+   confirms); out-of-repo dirs stay blocked by resolve-write since they're not
+   injected as approved write roots."
+  [confirm! cwd dirs]
+  (reduce
+   (fn [chain p]
+     (.then chain
+            (fn [{:keys [ok?] :as acc}]
+              (let [outside? (pg/outside-project? cwd p)]
+                (cond
+                  (not ok?)  acc
+                  (not confirm!) acc
+                  :else
+                  (-> (confirm! (str "Recursively delete directory `" p "`"
+                                     (when outside? " — OUTSIDE the project repo")
+                                     "?"))
+                      (.then (fn [yes?]
+                               (if yes?
+                                 (cond-> acc
+                                   outside? (update :approved-roots conj
+                                                    (sandbox/real-resolve cwd (str p))))
+                                 (assoc acc :ok? false))))))))))
+   (js/Promise.resolve {:ok? true :approved-roots #{}})
+   dirs))
+
 (defn- gate-clj [tool-call {:keys [get-state room-id confirm! dispatch! cwd] :as ctx}]
   (let [code    (str (get-in tool-call [:arguments :code]))
-        scan    (scan-sh-calls code)
+        scan    (scan-code code)
+        sh      (sh-summary scan)
         session (set (:allowed-clis (state/room-ext (get-state) room-id ext-id)))
         ;; A trusted bb.edn (sha in the trust store) makes `bb` an allowed CLI
         ;; for (sh "bb" …), same as the dedicated bb tool.
@@ -1129,12 +1204,12 @@
       (:parse-error scan)
       (blocked (str "clj: parse error — " (:parse-error scan)))
 
-      (:shell-c? scan)
+      (:shell-c? sh)
       (blocked (str "clj: (sh \"bash\" \"-c\" …) is not allowed — write the "
                     "pipeline in Clojure instead (cat/grep/glob + clojure.core)."))
 
       :else
-      (let [needed   (remove base (sort (:literals scan)))
+      (let [needed   (remove base (sort (:literals sh)))
             ;; (sh "git" …) bounces to the pre-approved (git …) helper —
             ;; unless a deny-listed subcommand (push, clean) is involved,
             ;; which the helper refuses; those go through approval instead.
@@ -1143,7 +1218,7 @@
                                         (contains? GIT_DENY
                                                    (git-subcommand
                                                     (rest (str/split cmd #"\s+"))))))
-                                 (:commands scan))
+                                 (:commands sh))
             shadowed (filter (fn [bin]
                                (and (contains? HELPER_EQUIV bin)
                                     (or (not= "git" bin) (not git-escalated?))))
@@ -1157,7 +1232,7 @@
                              (and (str/starts-with? cmd "rm ")
                                   (or (str/includes? cmd "/tmp/")
                                       (str/includes? cmd (str (os/tmpdir))))))
-                           (:commands scan))
+                           (:commands sh))
             hint     (when (helper-hints?)
                        (not-empty
                         (str/join
@@ -1173,24 +1248,30 @@
                                   "unnecessary — /tmp is temporary and cleared "
                                   "automatically; skip the rm unless you need "
                                   "the space back."))]))))
-            remote   (filter REMOTE_CLIS (:literals scan))
-            sc-cmd   (first (filter pg/server-control-kind (:commands scan)))
+            remote   (filter REMOTE_CLIS (:literals sh))
+            sc-cmd   (first (filter pg/server-control-kind (:commands sh)))
             ;; `rm` is auto-allowed from clj (SAFE_AUTORUN) — including rm -rf,
             ;; so drop rm commands from the guarded confirm here. bash's rm -rf
             ;; stays guarded (GUARDED_PATTERNS is unchanged).
-            guarded  (->> (:commands scan)
+            guarded  (->> (:commands sh)
                           (filter (fn [cmd]
                                     (some #(str/includes? cmd %) pg/GUARDED_PATTERNS)))
                           (remove #(str/starts-with? % "rm ")))
+            ;; Builtin (rm dir) targets that are existing directories — a
+            ;; recursive tree deletion. Gate each with its own confirm (handled
+            ;; below, in or out of repo), so they're excluded from the generic
+            ;; outside-write approval to avoid double-prompting.
+            rm-dirs  (filter #(existing-dir? cwd %) (rm-targets-of scan))
             ;; Literal write-target paths that escape the repo (+tmp). These get
             ;; the same approval dialog the write/edit tools use, then are
             ;; injected so the worker's resolve-write allows them.
-            outside-writes (filter #(pg/outside-project? cwd %)
-                                   (scan-write-paths code))]
+            outside-writes (->> (write-paths-of scan)
+                                (filter #(pg/outside-project? cwd %))
+                                (remove (set rm-dirs)))]
         (cond
           ;; sudo is never allowed from the agent — hard block, no confirm.
-          (or (contains? (:literals scan) "sudo")
-              (some #(str/includes? % "sudo ") (:commands scan)))
+          (or (contains? (:literals sh) "sudo")
+              (some #(str/includes? % "sudo ") (:commands sh)))
           (blocked "clj: `sudo` is never allowed from the agent.")
 
           (seq remote)
@@ -1222,35 +1303,45 @@
                (fn [{writes :approved wdenied :denied}]
                  (if wdenied
                    (blocked (str "clj: user denied writing outside the repo: " wdenied))
-                   (let [inject-w (fn [allowed hint]
-                                    (cond-> (inject allowed hint)
-                                      (seq writes) (update :arguments assoc
-                                                           :_allowed-writes (vec writes))))]
-                     ;; Guarded patterns (rm -rf, sudo, git push, kill …) need a
-                     ;; confirm even when the CLI itself is allowlisted — parity
-                     ;; with the bash gate. No confirm! (headless) passes through.
-                     (-> (if (and (seq guarded) confirm!)
-                           (confirm-all! confirm! (map #(str "Guarded command: " %) guarded))
-                           (js/Promise.resolve true))
-                         (.then
-                          (fn [ok?]
-                            (cond
-                              (not ok?)
-                              (blocked "clj: user denied a guarded command")
+                   ;; Confirm every recursive (rm dir) tree deletion before it
+                   ;; runs; out-of-repo dirs the user OKs are injected as write
+                   ;; roots so resolve-write lets them through.
+                   (-> (confirm-rm-dirs confirm! cwd rm-dirs)
+                       (.then
+                        (fn [{rm-ok? :ok? rm-roots :approved-roots}]
+                          (if-not rm-ok?
+                            (blocked "clj: user denied a directory deletion")
+                            (let [writes   (into (set writes) rm-roots)
+                                  inject-w (fn [allowed hint]
+                                             (cond-> (inject allowed hint)
+                                               (seq writes) (update :arguments assoc
+                                                                    :_allowed-writes (vec writes))))]
+                              ;; Guarded patterns (rm -rf, sudo, git push, kill …)
+                              ;; need a confirm even when the CLI itself is
+                              ;; allowlisted — parity with the bash gate. No
+                              ;; confirm! (headless) passes through.
+                              (-> (if (and (seq guarded) confirm!)
+                                    (confirm-all! confirm! (map #(str "Guarded command: " %) guarded))
+                                    (js/Promise.resolve true))
+                                  (.then
+                                   (fn [ok?]
+                                     (cond
+                                       (not ok?)
+                                       (blocked "clj: user denied a guarded command")
 
-                              (empty? needed') (inject-w (into base autorun) hint)
+                                       (empty? needed') (inject-w (into base autorun) hint)
 
-                              (not confirm!)
-                              (blocked (str "clj: these CLIs need approval but no client is "
-                                            "attached to confirm: " (str/join ", " needed')))
+                                       (not confirm!)
+                                       (blocked (str "clj: these CLIs need approval but no client is "
+                                                     "attached to confirm: " (str/join ", " needed')))
 
-                              :else
-                              (-> (approve-clis! confirm! dispatch! room-id cwd needed')
-                                  (.then (fn [{:keys [approved denied]}]
-                                           (if denied
-                                             (blocked (str "clj: user denied running `" denied "`"))
-                                             (inject-w (into (into base autorun) approved)
-                                                       hint)))))))))))))))))))
+                                       :else
+                                       (-> (approve-clis! confirm! dispatch! room-id cwd needed')
+                                           (.then (fn [{:keys [approved denied]}]
+                                                    (if denied
+                                                      (blocked (str "clj: user denied running `" denied "`"))
+                                                      (inject-w (into (into base autorun) approved)
+                                                                hint)))))))))))))))))))))))
 
 (defn- gate-bb [tool-call {:keys [cwd confirm!]}]
   (let [cmd (str/join " " (bb-argv (:arguments tool-call)))
