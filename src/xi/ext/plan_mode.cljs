@@ -41,7 +41,6 @@
         "write" (when (plan-file? (:path arguments)) tool-call)
         "edit"  (when (plan-file? (:path arguments)) tool-call)
         "bash"  (when (read-only-bash? (:command arguments)) tool-call)
-        "start_process" nil
         ;; read / grep / find / ls / everything else: allowed
         tool-call))))
 

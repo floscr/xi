@@ -134,10 +134,10 @@
       mcp/create
       render/create
       ;; sandbox after the policy gates (plan-mode, permission-gate) so
-      ;; blocks/confirms run first, but BEFORE process-manager: its gate
-      ;; executes bash itself, and backgrounded commands must not reach
-      ;; process-manager's unsandboxed spawn while the sandbox is on
+      ;; blocks/confirms run first
       ext-sandbox/extension
+      ;; registry-only: tracks processes spawned by clj's `process` namespace
+      ;; (/ps, /kill, room keep-alive); spawning is gated in clj-tool
       process-manager/extension
       subagent/extension
       projects/extension

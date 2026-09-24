@@ -34,6 +34,7 @@
             [edamame.core :as e]
             [sci.core :as sci]
             [xi.core.state :as state]
+            [xi.ext.clj-process :as proc]
             [xi.ext.permission-gate :as pg]
             [xi.sandbox.core :as sandbox]
             ["node:child_process" :as cp]
@@ -416,16 +417,9 @@
            (if port (filterv #(= port (:port %)) rows) rows))
          (throw (ex-info (str "clj: ss failed: " (str/trim err)) {})))))))
 
-(defn- blocking-sleep
-  "Synchronously block for `ms` milliseconds. Safe because clj eval runs in a
-   dedicated worker_threads worker, never the server's main event loop. Backs
-   both the `sleep` helper and `Thread/sleep`."
-  [ms]
-  (let [ms (max 0 (or ms 0))]
-    (if (and (exists? js/Bun) (fn? (.-sleepSync js/Bun)))
-      (js/Bun.sleepSync ms)
-      (js/Atomics.wait (js/Int32Array. (js/SharedArrayBuffer. 4)) 0 0 ms)))
-  nil)
+;; blocking-sleep lives in xi.ext.clj-process (shared with the process ns);
+;; the `sleep` helper and `Thread/sleep` use the abortable variant so an
+;; ESC/turn-end wakes them instead of blocking the worker to the bitter end.
 
 (defn- helper-fns
   "The 'user-namespace helpers injected into the SCI ctx. `cat` and `find`
@@ -511,7 +505,7 @@
      'ports  (ports-fn opts)
      'jq     (jq-fn opts)
      'git    (git-fn opts)
-     'sleep  blocking-sleep
+     'sleep  (fn [ms] (proc/sleep-abortable opts ms))
      'env    (fn [k]
                (let [scrubbed (sandbox/scrub-env)]
                  (or (aget scrubbed (str k))
@@ -669,11 +663,14 @@
                                               'parse-uuid    parse-uuid
                                               'format        sandbox-format})
                         'clojure.data.json json-data-namespace
-                        'cheshire.core cheshire-namespace}
+                        'cheshire.core cheshire-namespace
+                        ;; background processes: (process/start "cmd") etc.,
+                        ;; command strings gated + enforced via :allowed-bg.
+                        'process (proc/sci-namespace opts)}
                        :classes {'Math js/Math
                            ;; JVM-style Thread/sleep, backed by a synchronous
-                           ;; worker-thread block (see blocking-sleep).
-                           'Thread  #js {:sleep blocking-sleep}
+                           ;; (abortable) worker-thread block.
+                           'Thread  #js {:sleep (fn [ms] (proc/sleep-abortable opts ms))}
                                  ;; JVM-style numeric parsing statics so code
                                  ;; like (Long/parseLong s) resolves.
                                  'Long    #js {:parseLong   (fn [s & [radix]]
@@ -751,13 +748,18 @@
            "for .startsWith, (str/lower-case s) for .toLowerCase, "
            "(str/split s #\",\") for .split."))))
 
-(defn- eval-code! [{:keys [code room-id cwd allowed allowed-writes allowed-reads]}]
+(defn- eval-code! [{:keys [code room-id cwd allowed allowed-writes allowed-reads
+                           allowed-bg abort-arr]}]
   (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default))
         prints (atom "")
         commit-outs (atom [])]
     (swap! opts assoc :cwd cwd :allowed (set allowed)
            :allowed-writes (set allowed-writes)
-           :allowed-reads (set allowed-reads) :commit-outs commit-outs)
+           :allowed-reads (set allowed-reads)
+           :allowed-bg (set allowed-bg)
+           :abort-arr abort-arr
+           :room-id (or room-id :default)
+           :commit-outs commit-outs)
     (try
       (let [v   (sci/binding [sci/print-fn     #(swap! prints str %)
                               sci/print-err-fn #(swap! prints str %)]
@@ -809,7 +811,12 @@
         "/tmp — a literal path outside the repo (cat/ls/glob/grep/… to read, "
         "spit/mv/cp/mkdir/touch/rm to write) raises an approval dialog (like "
         "the read/write/edit tools), and a dynamic out-of-repo path is "
-        "rejected. Credential paths (~/.ssh, auth files) are always blocked.")
+        "rejected. Credential paths (~/.ssh, auth files) are always blocked. "
+        "Long-running commands: (process/start \"cmd\") → {:pid :log} runs "
+        "detached (dev servers, watchers, slow builds); (process/wait pid) "
+        "blocks until exit; (process/output pid) tails its log; "
+        "(process/list) / (process/stop pid) manage them; "
+        "(process/poll-until \"cmd\" {:until …}) waits on external state.")
    :input_schema {:type "object"
                   :properties {:code {:type "string"
                                       :description "Clojure code; multiple forms ok, last value is returned"}}
@@ -830,8 +837,15 @@
   (or (some-> room-id name) "default"))
 
 (defonce ^:private worker (atom nil))
-(defonce ^:private pending (atom {}))       ;; id → resolve fn
+(defonce ^:private pending (atom {}))       ;; id → {:resolve fn :room-key str :abort Int32Array|nil}
 (defonce ^:private next-id (atom 0))
+
+;; The worker mirrors process/start registrations back to the main thread as
+;; `processEvent` messages; dispatching them into app state needs the app's
+;; dispatch! and the original room-id (the worker only sees the string room
+;; key). Both are captured by gate-clj on each gated call.
+(defonce ^:private app-dispatch! (atom nil))
+(defonce ^:private room-ids (atom {}))      ;; room-key str → room-id
 
 (defn- settle-worker-death!
   "The worker crashed/exited with evals in flight — resolve each pending call
@@ -840,20 +854,42 @@
   (reset! worker nil)
   (let [ps @pending]
     (reset! pending {})
-    (doseq [[_ resolve] ps]
+    (doseq [[_ {:keys [resolve]}] ps]
       (resolve #js {:text (str "clj/bb worker stopped: " reason
                                " — retry the command.")
                     :isError true}))))
+
+(defn- on-process-event
+  "Worker → main mirror of a background-process register/deregister: translate
+   the room key back to a room-id and dispatch the process-manager event so
+   room state (/ps, /kill, keep-alive) tracks worker-spawned processes."
+  [^js m]
+  (when-let [dispatch! @app-dispatch!]
+    (when-let [rid (get @room-ids (.-roomKey m))]
+      (case (.-processEvent m)
+        "register"
+        (dispatch! {:type    :ext.process-manager/register
+                    :room-id rid
+                    :process {:pid     (.-pid m)
+                              :command (.-command m)
+                              :started (.-started m)
+                              :logfile (.-logfile m)}})
+        "deregister"
+        (dispatch! {:type :ext.process-manager/deregister
+                    :room-id rid :pid (.-pid m)})
+        nil))))
 
 (defn- ensure-worker! []
   (or @worker
       (let [w (wt/Worker. (aget js/process.argv 1))]
         (.on w "message"
              (fn [^js m]
-               (let [id (.-id m)]
-                 (when-let [resolve (get @pending id)]
-                   (swap! pending dissoc id)
-                   (resolve m)))))
+               (if (.-processEvent m)
+                 (on-process-event m)
+                 (let [id (.-id m)]
+                   (when-let [{:keys [resolve]} (get @pending id)]
+                     (swap! pending dissoc id)
+                     (resolve m))))))
         (.on w "error" (fn [^js e] (settle-worker-death! (.-message e))))
         (.on w "exit"  (fn [code] (when (seq @pending)
                                     (settle-worker-death! (str "exit " code)))))
@@ -861,14 +897,20 @@
         w)))
 
 (defn- run-in-worker
-  "Post a request message to the worker and return a Promise of its JS reply."
+  "Post a request message to the worker and return a Promise of its JS reply.
+   clj evals get a per-eval abort flag (Int32Array over a SharedArrayBuffer,
+   shared with the worker) so a turn-end can wake their blocking sleeps."
   [^js msg]
   (js/Promise.
    (fn [resolve _]
-     (let [id (swap! next-id inc)
-           w  (ensure-worker!)]
+     (let [id  (swap! next-id inc)
+           w   (ensure-worker!)
+           sab (when (= "clj" (.-kind msg)) (js/SharedArrayBuffer. 4))]
        (aset msg "id" id)
-       (swap! pending assoc id resolve)
+       (when sab (aset msg "abortSab" sab))
+       (swap! pending assoc id {:resolve  resolve
+                                :room-key (.-roomId msg)
+                                :abort    (when sab (js/Int32Array. sab))})
        (.postMessage w msg)))))
 
 (defn- reset-worker-runtime! [room-id]
@@ -894,6 +936,7 @@
                           :allowed (clj->js (vec (:_allowed args)))
                           :allowedWrites (clj->js (vec (:_allowed-writes args)))
                           :allowedReads  (clj->js (vec (:_allowed-reads args)))
+                          :allowedBg     (clj->js (vec (:_allowed-bg args)))
                           :cwd     (or cwd (.cwd js/process))})
       (.then (fn [^js m] (reply->result m (:_hint args))))))
 
@@ -949,6 +992,9 @@
                              :allowed (js->clj (.-allowed m))
                              :allowed-writes (js->clj (.-allowedWrites m))
                              :allowed-reads (js->clj (.-allowedReads m))
+                             :allowed-bg (js->clj (.-allowedBg m))
+                             :abort-arr (when-let [sab (.-abortSab m)]
+                                          (js/Int32Array. sab))
                              :cwd     cwd})]
         #js {:id      id
              :text    (get-in res [:content 0 :text])
@@ -1029,6 +1075,16 @@
                            (cond-> a
                              (string? p) (update :reads conj {:head head :path p})))
                          acc picks)))}
+   ;; background-process starts: (process/start "cmd") / (process/poll-until
+   ;; "cmd" …) run shell command strings, so collect the literals for the same
+   ;; gating sh gets (sudo/remote/guarded/CLI approval). Non-literal commands
+   ;; are flagged and blocked — the worker only runs approved exact strings.
+   {:heads   #{'process/start 'process/poll-until}
+    :collect (fn [acc _head args]
+               (let [c (first args)]
+                 (if (string? c)
+                   (update acc :bg conj c)
+                   (assoc acc :bg-dynamic? true))))}
    ;; glob: its literal arg is a pattern, not a path — record the pattern's
    ;; literal base dir so out-of-repo globs (`/etc/**`, `../x/*`) are gated too.
    {:heads   #{'glob}
@@ -1049,7 +1105,7 @@
   [code]
   (try
     (let [forms (e/parse-string-all code SCAN_OPTS)
-          acc   (atom {:sh-calls [] :writes [] :reads []})]
+          acc   (atom {:sh-calls [] :writes [] :reads [] :bg []})]
       (walk/postwalk
        (fn [f]
          (when (seq? f)
@@ -1188,6 +1244,21 @@
                   "in-script and return small values. Bash remains available "
                   "for single simple commands."))
     tool-call))
+
+(defn bg-command-clis
+  "Leading CLI names of background shell command strings (process/start /
+   poll-until run whole bash command lines, unlike argv-style sh): strip
+   quoted segments, split on shell separators, skip VAR= env prefixes, take
+   each segment's first word. These join the sh literals for CLI approval."
+  [cmds]
+  (->> cmds
+       (mapcat (fn [cmd] (str/split (strip-quoted (str cmd)) #"[;|&\n]+")))
+       (keep (fn [seg]
+               (->> (str/split (str/trim seg) #"\s+")
+                    (remove #(re-matches #"[A-Za-z_][A-Za-z0-9_]*=.*" %))
+                    first
+                    not-empty)))
+       set))
 
 (def ^:private HELPER_EQUIV
   "CLIs that have a builtin helper — (sh …) to these is bounced with a hint
@@ -1346,6 +1417,13 @@
   (let [code    (str (get-in tool-call [:arguments :code]))
         scan    (scan-code code)
         sh      (sh-summary scan)
+        bg      (vec (:bg scan))
+        bg-clis (bg-command-clis bg)
+        ;; Capture dispatch! + the room-key ↔ room-id mapping so the worker's
+        ;; processEvent mirrors (process/start registrations) can be
+        ;; dispatched into app state (see on-process-event).
+        _       (when dispatch! (reset! app-dispatch! dispatch!))
+        _       (when room-id (swap! room-ids assoc (room-key room-id) room-id))
         session (set (:allowed-clis (state/room-ext (get-state) room-id ext-id)))
         ;; A trusted bb.edn (sha in the trust store) makes `bb` an allowed CLI
         ;; for (sh "bb" …), same as the dedicated bb tool.
@@ -1355,6 +1433,7 @@
                   (cond-> (update tool-call :arguments assoc
                                   :_room-id room-id
                                   :_allowed (vec allowed))
+                    (seq bg) (update :arguments assoc :_allowed-bg bg)
                     hint (update :arguments assoc :_hint hint)))]
     (cond
       (:parse-error scan)
@@ -1363,6 +1442,16 @@
       (:shell-c? sh)
       (blocked (str "clj: (sh \"bash\" \"-c\" …) is not allowed — write the "
                     "pipeline in Clojure instead (cat/grep/glob + clojure.core)."))
+
+      (:bg-dynamic? scan)
+      (blocked (str "clj: process/start / process/poll-until need a literal "
+                    "command string in this eval — a dynamically built "
+                    "command can't be approved by the gate."))
+
+      (some #(re-find #"\$\(|`" %) bg)
+      (blocked (str "clj: command substitution ($(…) / backticks) is not "
+                    "allowed in background commands — run the inner command "
+                    "separately and interpolate its result in Clojure."))
 
       :else
       (let [needed   (remove base (sort (:literals sh)))
@@ -1387,7 +1476,13 @@
             ;; the model doesn't lose a turn; the rest of shadowed bounces.
             autorun  (filter #(contains? SAFE_AUTORUN %) shadowed)
             blockers (remove (set autorun) shadowed)
-            needed'  (remove (set autorun) needed)
+            ;; bg CLIs skip the helper bounce (a background `npm run dev` has
+            ;; no helper equivalent) but still need per-CLI user approval.
+            bg-needed (->> bg-clis
+                           (remove base)
+                           (remove #(contains? SAFE_AUTORUN %))
+                           sort)
+            needed'  (distinct (concat (remove (set autorun) needed) bg-needed))
             tmp-rm?  (some (fn [cmd]
                              (and (str/starts-with? cmd "rm ")
                                   (or (str/includes? cmd "/tmp/")
@@ -1408,15 +1503,22 @@
                                   "unnecessary — /tmp is temporary and cleared "
                                   "automatically; skip the rm unless you need "
                                   "the space back."))]))))
-            remote   (filter REMOTE_CLIS (:literals sh))
-            sc-cmd   (first (filter pg/server-control-kind (:commands sh)))
+            remote   (filter REMOTE_CLIS (into (:literals sh) bg-clis))
+            sc-cmd   (first (filter pg/server-control-kind
+                                    (concat (:commands sh) bg)))
             ;; `rm` is auto-allowed from clj (SAFE_AUTORUN) — including rm -rf,
             ;; so drop rm commands from the guarded confirm here. bash's rm -rf
             ;; stays guarded (GUARDED_PATTERNS is unchanged).
-            guarded  (->> (:commands sh)
-                          (filter (fn [cmd]
-                                    (some #(str/includes? cmd %) pg/GUARDED_PATTERNS)))
-                          (remove #(str/starts-with? % "rm ")))
+            guarded  (concat
+                      (->> (:commands sh)
+                           (filter (fn [cmd]
+                                     (some #(str/includes? cmd %) pg/GUARDED_PATTERNS)))
+                           (remove #(str/starts-with? % "rm ")))
+                      ;; bg command lines keep the rm guard — a background
+                      ;; `rm -rf` runs through bash, not the confined helper.
+                      (filter (fn [cmd]
+                                (some #(str/includes? cmd %) pg/GUARDED_PATTERNS))
+                              bg))
             ;; Builtin (rm dir) targets that are existing directories — a
             ;; recursive tree deletion. Gate each with its own confirm (handled
             ;; below, in or out of repo), so they're excluded from the generic
@@ -1436,7 +1538,8 @@
         (cond
           ;; sudo is never allowed from the agent — hard block, no confirm.
           (or (contains? (:literals sh) "sudo")
-              (some #(str/includes? % "sudo ") (:commands sh)))
+              (contains? bg-clis "sudo")
+              (some #(str/includes? % "sudo ") (concat (:commands sh) bg)))
           (blocked "clj: `sudo` is never allowed from the agent.")
 
           (seq remote)
@@ -1619,6 +1722,21 @@
   ;; The live runtimes are in the worker thread; forward the reset there.
   (reset-worker-runtime! room-id))
 
+(defn- on-turn-end
+  "Turn ended (incl. ESC abort): wake any still-blocked clj evals for this
+   room — their abortable sleeps (process/wait, poll-until, sleep) throw so
+   the blocked eval unwinds instead of outliving its turn."
+  [_st {:keys [room-id]}]
+  {:effects [[:ext.clj/abort-evals {:room-id room-id}]]})
+
+(defn- abort-evals-fx [_ {:keys [room-id]}]
+  (let [rk (room-key room-id)]
+    (doseq [[_ entry] @pending
+            :let [^js abort (:abort entry)]
+            :when (and abort (= rk (:room-key entry)))]
+      (js/Atomics.store abort 0 1)
+      (js/Atomics.notify abort 0))))
+
 (defn- ext-status [st {:keys [room-id text]}]
   {:state (status-line st room-id text)})
 
@@ -1655,15 +1773,30 @@
        "Run this project's Babashka tasks (build, test, check, …) with the "
        "dedicated `bb` tool ({\"task\":\"test\"}, or no task to list tasks) — "
        "it needs the project's bb.edn trusted once (/clj trust-bb, or approve "
-       "when prompted)."))
+       "when prompted). "
+       "Background processes (dev servers, watchers, slow builds — anything "
+       "that outlives the eval) use the `process` namespace: "
+       "(process/start \"npm run dev\") → {:pid :log} spawns detached with "
+       "output to the :log file; (process/wait pid) (optional timeout-ms, "
+       "default 120s — re-call to keep waiting) blocks until exit → "
+       "{:status :exited/:running :exit :output}; (process/output pid) → last "
+       "log lines; (process/list) → tracked processes; (process/stop pid) "
+       "kills one. To wait on something external you did not start, "
+       "(process/poll-until \"cmd\" {:until :exit-zero|:stdout-matches|"
+       ":stdout-not-matches :pattern \"re\" :interval-ms 5000 :timeout-ms "
+       "120000}) reruns cmd until the condition holds. NEVER (sleep n) to "
+       "wait a process out — wait/poll-until instead. Both start and "
+       "poll-until take literal shell command strings, gated like sh."))
 
 (def extension
   {:id               ext-id
    :init             {:room {:allowed-clis #{}}}
    :handlers         {:ext.clj/allow-cli allow-cli
-                      :ext.clj/status    ext-status}
+                      :ext.clj/status    ext-status
+                      :agent/turn-end    on-turn-end}
    :fx               {:ext.clj/reset-runtime reset-runtime-fx
-                      :ext.clj/trust-bb      trust-bb-fx}
+                      :ext.clj/trust-bb      trust-bb-fx
+                      :ext.clj/abort-evals   abort-evals-fx}
    :tool-definitions [tool-def bb-tool-def]
    :tool-registry    {"clj" clj-tool
                       "bb"  bb-tool}

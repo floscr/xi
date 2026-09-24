@@ -13,7 +13,7 @@
   "Evaluate synchronously via the worker-side entry (xi.ext.clj/eval-message).
    The real clj tool goes through a worker thread (spawned off process.argv[1]
    by xi.cli's isMainThread guard), which doesn't exist in the test bundle."
-  [code & [{:keys [allowed allowed-writes allowed-reads cwd room-id]}]]
+  [code & [{:keys [allowed allowed-writes allowed-reads allowed-bg cwd room-id]}]]
   (clj-ext/reply->result
    (clj-ext/eval-message #js {:id      0
                               :kind    "clj"
@@ -22,6 +22,7 @@
                               :allowed (clj->js (or allowed []))
                               :allowedWrites (clj->js (or allowed-writes []))
                               :allowedReads  (clj->js (or allowed-reads []))
+                              :allowedBg     (clj->js (or allowed-bg []))
                               :cwd     (or cwd (os/tmpdir))})
    nil))
 
@@ -716,3 +717,113 @@
                  (is (str/includes? (intercepted-text res) "need approval"))
                  (is (not (str/includes? (intercepted-text res) "builtin helper")))
                  (done))))))
+
+;; ── background processes (process/… namespace) ──────────────────────────
+
+(deftest scan-collects-bg-literals
+  (let [scan (clj-ext/scan-code
+              "(process/start \"npm run dev\") (process/poll-until \"curl -sf x\")")]
+    (is (= ["npm run dev" "curl -sf x"] (:bg scan)))
+    (is (not (:bg-dynamic? scan)))))
+
+(deftest scan-flags-dynamic-bg-command
+  (is (:bg-dynamic? (clj-ext/scan-code "(let [c \"x\"] (process/start c))"))))
+
+(deftest gate-blocks-dynamic-bg-command
+  (let [res (gate {:name "clj" :arguments {:code "(process/start (str \"npm \" x))"}}
+                  (gate-ctx))]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "literal"))))
+
+(deftest gate-blocks-bg-command-substitution
+  (let [res (gate {:name "clj" :arguments {:code "(process/start \"echo $(whoami)\")"}}
+                  (gate-ctx))]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "substitution"))))
+
+(deftest gate-blocks-bg-sudo
+  (let [res (gate {:name "clj" :arguments {:code "(process/start \"sudo systemctl restart x\")"}}
+                  (gate-ctx))]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "sudo"))))
+
+(deftest gate-blocks-bg-remote-cli
+  (let [res (gate {:name "clj" :arguments {:code "(process/start \"rsync -av a b\")"}}
+                  (gate-ctx))]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "remote shell"))))
+
+(deftest gate-approves-bg-command-injects-allowed-bg
+  ;; Approving the bg command's CLI lets the call through with the literal
+  ;; command injected as :_allowed-bg, which the worker enforces.
+  (async done
+    (let [ctx (assoc (gate-ctx) :confirm! (fn [_ & _] (js/Promise.resolve true)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code "(process/start \"npm run dev\")"}}
+                 ctx))
+          (.then (fn [res]
+                   (is (not (:intercepted res)))
+                   (is (= ["npm run dev"] (get-in res [:arguments :_allowed-bg])))
+                   (done)))))))
+
+(deftest gate-bg-safe-cli-passes-without-approval
+  ;; A SAFE_AUTORUN leading CLI (sleep isn't one — use tail) doesn't need a
+  ;; confirm; headless ctx would block if approval were required.
+  (async done
+    (-> (js/Promise.resolve
+         (gate {:name "clj" :arguments {:code "(process/start \"tail -f /tmp/x.log\")"}}
+               (gate-ctx)))
+        (.then (fn [res]
+                 (is (not (:intercepted res)))
+                 (is (= ["tail -f /tmp/x.log"] (get-in res [:arguments :_allowed-bg])))
+                 (done))))))
+
+(deftest bg-command-clis-extraction
+  (is (= #{"npm"} (clj-ext/bg-command-clis ["npm run dev"])))
+  (is (= #{"cd" "npm"} (clj-ext/bg-command-clis ["cd web && npm start"])))
+  (is (= #{"node"} (clj-ext/bg-command-clis ["PORT=3000 node server.js"])))
+  (is (= #{"echo" "wc"} (clj-ext/bg-command-clis ["echo hi | wc -c"]))))
+
+(deftest worker-refuses-unapproved-bg-command
+  (let [res (eval! "(process/start \"echo hi\")")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "approved"))))
+
+(deftest process-start-wait-roundtrip
+  (let [res (eval! (str "(let [{:keys [pid]} (process/start \"sleep 0.2; echo done\")]"
+                        "  (process/wait pid 5000))")
+                   {:allowed-bg ["sleep 0.2; echo done"]})]
+    (is (not (:is-error res)) (result-text res))
+    (let [text (result-text res)]
+      (is (str/includes? text ":status :exited"))
+      (is (str/includes? text ":exit 0"))
+      (is (str/includes? text "done")))))
+
+(deftest process-list-and-stop
+  (let [start (eval! "(:pid (process/start \"sleep 30\"))"
+                     {:allowed-bg ["sleep 30"] :room-id :bg-test})
+        _     (is (not (:is-error start)) (result-text start))
+        listed (eval! "(mapv :command (process/list))" {:room-id :bg-test})
+        stopped (eval! "(let [{:keys [pid]} (first (process/list))] (process/stop pid))"
+                       {:room-id :bg-test})]
+    (is (str/includes? (result-text listed) "sleep 30"))
+    (is (str/includes? (result-text stopped) ":killed? true"))))
+
+(deftest process-stop-unknown-pid-errors
+  (let [res (eval! "(process/stop 999999999)")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "unknown pid"))))
+
+(deftest poll-until-stdout-matches
+  (let [res (eval! "(process/poll-until \"echo ready\" {:until :stdout-matches :pattern \"ready\" :interval-ms 50 :timeout-ms 2000})"
+                   {:allowed-bg ["echo ready"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) ":met? true"))))
+
+(deftest poll-until-times-out
+  (let [res (eval! "(process/poll-until \"false\" {:interval-ms 20 :timeout-ms 100})"
+                   {:allowed-bg ["false"]})]
+    (is (not (:is-error res)) (result-text res))
+    (let [text (result-text res)]
+      (is (str/includes? text ":met? false"))
+      (is (str/includes? text ":note")))))

@@ -193,6 +193,54 @@ is present, so escalation isn’t a dead loop. Subcommand detection skips
 option-with-value globals (`-C`, `-c`, `--git-dir`, …) so `git -C dir push`
 can’t sneak past.
 
+## Background processes (`process/…`)
+
+Long-running commands — dev servers, watchers, slow builds, anything that
+outlives a single eval — use the `process` namespace instead of `(sh …)`
+(which is synchronous and times out) or `(sleep n)` guessing games:
+
+| Call | Does |
+| --- | --- |
+| `(process/start "npm run dev")` | spawn detached → `{:pid :log}` (log = capture file) |
+| `(process/wait pid timeout-ms?)` | block until exit → `{:status :exited :exit :output}`, or `{:status :running …}` after the timeout (default 120s — call again to keep waiting) |
+| `(process/output pid n?)` | last n log lines (default 50) |
+| `(process/list)` | this room's processes → `[{:pid :command :alive? :uptime-ms :log :exit} …]` |
+| `(process/stop pid)` | SIGTERM the process group → `{:pid :killed? :command}` |
+| `(process/poll-until "cmd" opts?)` | rerun `cmd` until a condition holds → `{:met? :attempts :exit :output}`; opts `{:until :exit-zero\|:stdout-matches\|:stdout-not-matches :pattern "re" :interval-ms 5000 :timeout-ms 120000}` — for waiting on external state you didn't spawn |
+
+`process/start` and `process/poll-until` take a **literal shell command
+string** (bash), and are gated exactly like the rest of the tool: the
+pre-scan collects the literals, walks them through the same checks as bash
+commands (sudo → block, remote shells → block, `bb serve:*` → server-control
+confirm + detached, guarded patterns → confirm, unknown CLIs → per-binary
+approval with `SAFE_AUTORUN` passing free), and injects the approved strings
+into the call (`:_allowed-bg`). The worker re-checks membership at runtime,
+so a **dynamically computed** command was never approved and is rejected with
+instructions to use a literal; command substitution (`$( )`, backticks) in
+the literal is blocked at the gate for the same reason. `process/stop`/`wait`
+/`output` only accept pids returned by `process/start` in this room — the
+sandbox can't signal arbitrary system pids.
+
+Mechanics: the command is spawned detached (own process group, `.unref`)
+wrapped as `{ cmd } > logfile 2>&1; echo $? > logfile.exit` — stdout/stderr
+go to a tmp logfile and the exit code to a `.exit` sidecar. Liveness and
+outcome are read from those files, which matters because eval is synchronous:
+while `wait` blocks the worker, node can't reap a dead child (it lingers as a
+zombie and `kill(pid, 0)` still succeeds), so the sidecar — written by the
+shell itself — is the authoritative exit signal. A trailing `&` in the
+command is stripped (detachment is built in).
+
+`wait` and `poll-until` sleep abortably: when the turn ends (ESC / abort),
+the main thread flags a per-eval `SharedArrayBuffer` and the worker's
+`Atomics.wait` wakes and throws, so a blocked wait can't outlive its turn.
+Started processes themselves keep running — they're detached by design.
+
+Processes are mirrored to the main thread and show up in the
+`process-manager` extension's registry: `/ps` lists them, `/kill <pid|%n>`
+stops one, and a room with live processes is kept alive instead of
+auto-destroyed. `process-manager` no longer exposes any tools of its own —
+spawning happens only through `clj`, inside the gate.
+
 ## No bash tool
 
 Adding the tool isn't enough — the model keeps reaching for the familiar
@@ -293,7 +341,10 @@ lazily), and cleared on `/ext disable clj` (which also terminates the worker).
 - `cat`/`find` shadow `clojure.core/cat`/`find` (overridden in the sci
   `clojure.core` namespace) — the shell meaning is what agents expect.
 - Tests: `test/xi/ext/clj_test.cljs` (pre-scan extraction, eval, persistence,
-  path guards, sh allowlist).
+  path guards, sh allowlist, background-process gating + lifecycle).
+- The `process/*` machinery lives in `xi.ext.clj-process` (worker side);
+  registry mirroring reaches the main thread via `parentPort` messages
+  translated into `:ext.process-manager/register`/`deregister` events.
 
 ## Known limitations / future work
 
