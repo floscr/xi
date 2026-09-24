@@ -624,14 +624,18 @@
                        (= :running (:status last-entry))))))))
 
 (defn- terminal-title
-  "Terminal title for a room: \"Xi: <label>\", prefixed with ⟳ (U+27F3) while the
-   agent is busy. xmonad's ewwLogHook greps that marker to spin the workspace
-   indicator in eww. Set client-side so it reaches the real terminal window
-   (a server extension would write to the headless server's detached stdout)."
+  "Terminal title for a room: \"Xi: <label>\", prefixed with ⧗ (U+29D7) while a
+   dialog awaits an answer, else ⟳ (U+27F3) while the agent is busy. xmonad's
+   ewwLogHook greps those markers to highlight the workspace indicator in eww.
+   Set client-side so it reaches the real terminal window (a server extension
+   would write to the headless server's detached stdout)."
   [room]
   (when-let [label (or (get-in room [:session :name])
                        (some-> (:cwd room) (str/split #"/") last))]
-    (str (when (get-in room [:agent :busy?]) "\u27f3 ") "Xi: " label)))
+    (str (cond
+           (seq (get-in room [:ui :dialogs])) "\u29d7 "
+           (get-in room [:agent :busy?])      "\u27f3 ")
+         "Xi: " label)))
 
 (defn- sync-chat! [^js ctx room loader]
   (let [history-changed? (sync-history! ctx (:history room))
