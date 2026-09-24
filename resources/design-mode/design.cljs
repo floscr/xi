@@ -517,16 +517,71 @@
                   (show-toast "Applying \u2014 a sub-agent is on it"))
 
                 (close-choices-modal []
+                  (close-choice-full)
                   (when-let [m (.-choicesModal state)]
                     (.remove m)
                     (set! (.-choicesModal state) nil)
                     (set! (.-choicesId state) nil)))
 
+                (close-choice-full []
+                  (when-let [f (.-choiceFull state)]
+                    (.remove f)
+                    (set! (.-choiceFull state) nil)))
+
+                (open-choice-full [id ch i]
+                  ;; Full-screen view of one choice: the iframe keeps sandbox=""
+                  ;; but gets pointer events, so it scrolls natively.
+                  (close-choice-full)
+                  (let [ov    (.createElement doc "div")
+                        label (or (.-label ch) (str "Option " (inc i)))
+                        note  (.-note ch)]
+                    (set! (.-id ov) "__xi-design-choice-full")
+                    (set! (.. ov -style -cssText)
+                          (str "position:fixed;inset:0;z-index:2147483647;background:oklch(0 0 0 / 0.72);"
+                               "-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);"
+                               "display:flex;flex-direction:column;padding:18px;gap:12px;"
+                               "font-family:" sans ";"))
+                    (set! (.-innerHTML ov)
+                          (str "<div style=\"display:flex;align-items:center;gap:10px;color:" (.-text C)
+                               ";min-height:34px;\">"
+                               "<button id=\"__xi-design-full-back\" style=\"background:none;border:1px solid "
+                               (.-border C) ";border-radius:8px;color:" (.-textMuted C)
+                               ";cursor:pointer;padding:6px 12px;font-size:12.5px;font-weight:600;"
+                               "font-family:inherit;\">\u2190 Back</button>"
+                               "<span style=\"font-size:15px;font-weight:600;flex:none;\">" (esc label) "</span>"
+                               (if (not-empty note)
+                                 (str "<span style=\"font-size:12.5px;color:" (.-textMuted C)
+                                      ";overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                                      "min-width:0;flex:1;\">" (esc note) "</span>")
+                                 "<span style=\"flex:1;\"></span>")
+                               "<button id=\"__xi-design-full-pick\" style=\"flex:none;padding:7px 18px;"
+                               "border-radius:8px;" btn-primary "cursor:pointer;font-size:13px;"
+                               "font-weight:600;font-family:inherit;\">Pick this</button>"
+                               "<button id=\"__xi-design-full-close\" style=\"flex:none;background:none;border:none;"
+                               "cursor:pointer;color:" (.-textMuted C) ";font-size:22px;line-height:1;"
+                               "font-family:inherit;padding:2px 6px;\">\u00D7</button></div>"
+                               "<iframe sandbox=\"\" style=\"flex:1;width:100%;border:none;border-radius:12px;"
+                               "background:#fff;\" srcdoc=\"" (esc (or (.-html ch) "")) "\"></iframe>"))
+                    (.appendChild root ov)
+                    (set! (.-choiceFull state) ov)
+                    (.addEventListener (.getElementById doc "__xi-design-full-back") "click"
+                                       (fn [e] (.stopPropagation e) (close-choice-full)))
+                    (.addEventListener (.getElementById doc "__xi-design-full-close") "click"
+                                       (fn [e] (.stopPropagation e) (close-choice-full)))
+                    (.addEventListener (.getElementById doc "__xi-design-full-pick") "click"
+                                       (fn [e] (.stopPropagation e) (request-pick id i)))))
+
                 (choices-card-html [ch i]
                   (str "<div style=\"border:1px solid " (.-border C) ";border-radius:12px;overflow:hidden;"
                        "display:flex;flex-direction:column;background:" (.-surfaceMuted C) ";\">"
-                       "<div style=\"height:200px;overflow:hidden;background:#fff;border-bottom:1px solid " (.-border C) ";\">"
-                       "<iframe sandbox=\"\" style=\"width:100%;height:100%;border:none;pointer-events:none;\" "
+                       ;; Preview: the iframe itself is inert (pointer-events:none) so the
+                       ;; wrapper scrolls it — give the iframe a tall fixed height and let
+                       ;; the wrapper overflow:auto; overscroll-contain keeps the wheel
+                       ;; from chaining to the page behind the modal.
+                       "<div data-expand-index=\"" i "\" title=\"Click to expand\" "
+                       "style=\"height:200px;overflow:auto;overscroll-behavior:contain;"
+                       "background:#fff;border-bottom:1px solid " (.-border C) ";cursor:zoom-in;\">"
+                       "<iframe sandbox=\"\" style=\"width:100%;height:1200px;border:none;pointer-events:none;display:block;\" "
                        "srcdoc=\"" (esc (or (.-html ch) "")) "\"></iframe></div>"
                        "<div style=\"padding:11px 13px;display:flex;flex-direction:column;gap:6px;\">"
                        "<div style=\"font-size:13.5px;font-weight:600;\">"
@@ -558,7 +613,7 @@
                         (set! (.. panel -style -cssText)
                               (str panel-bg "color:" (.-text C)
                                    ";border-radius:14px;padding:18px 20px;width:min(880px,100%);max-height:86vh;"
-                                   "overflow:auto;"))
+                                   "overflow:auto;overscroll-behavior:contain;"))
                         (set! (.-innerHTML panel)
                               (str "<div style=\"display:flex;align-items:center;gap:8px;margin-bottom:14px;\">"
                                    spark
@@ -575,13 +630,23 @@
                         (set! (.-choicesId state) id)
                         (.addEventListener backdrop "click"
                                            (fn [e] (when (= (.-target e) backdrop) (close-choices-modal))))
+                        ;; Wheel over the backdrop padding must not scroll the page.
+                        (.addEventListener backdrop "wheel"
+                                           (fn [e] (when (= (.-target e) backdrop) (.preventDefault e)))
+                                           #js {:passive false})
                         (.addEventListener (.getElementById doc "__xi-design-choices-close") "click"
                                            (fn [e] (.stopPropagation e) (close-choices-modal)))
                         (doseq [btn (js/Array.from (.querySelectorAll panel "[data-pick-index]"))]
                           (.addEventListener btn "click"
                                              (fn [e]
                                                (.stopPropagation e)
-                                               (request-pick id (js/parseInt (.getAttribute btn "data-pick-index") 10)))))))))
+                                               (request-pick id (js/parseInt (.getAttribute btn "data-pick-index") 10)))))
+                        (doseq [pv (js/Array.from (.querySelectorAll panel "[data-expand-index]"))]
+                          (.addEventListener pv "click"
+                                             (fn [e]
+                                               (.stopPropagation e)
+                                               (let [i (js/parseInt (.getAttribute pv "data-expand-index") 10)]
+                                                 (open-choice-full id (aget chs i) i)))))))))
 
                 (close-agents-pop []
                   (when-let [p (.-agentsPop state)]
@@ -673,6 +738,12 @@
                            (let [k (.toLowerCase (or (.-key e) ""))]
                              (or (= k "i") (= k "b"))))
                       (do (.preventDefault e) (.stopPropagation e) (toggle-picking))
+
+                      (and (= (.-key e) "Escape") (.-choiceFull state))
+                      (do (.preventDefault e) (.stopPropagation e) (close-choice-full))
+
+                      (and (= (.-key e) "Escape") (.-choicesModal state))
+                      (do (.preventDefault e) (.stopPropagation e) (close-choices-modal))
 
                       (and (= (.-key e) "Escape") (.-picking state))
                       (do (.preventDefault e)
