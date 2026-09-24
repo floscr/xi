@@ -35,6 +35,7 @@
             [sci.core :as sci]
             [xi.core.state :as state]
             [xi.ext.clj-process :as proc]
+            [xi.ext.clj-socket :as sock]
             [xi.ext.permission-gate :as pg]
             [xi.sandbox.core :as sandbox]
             ["node:child_process" :as cp]
@@ -666,7 +667,11 @@
                         'cheshire.core cheshire-namespace
                         ;; background processes: (process/start "cmd") etc.,
                         ;; command strings gated + enforced via :allowed-bg.
-                        'process (proc/sci-namespace opts)}
+                        'process (proc/sci-namespace opts)
+                        ;; synchronous loopback TCP sockets:
+                        ;; (socket/connect "127.0.0.1" 7474) … see
+                        ;; xi.ext.clj-socket.
+                        'socket (sock/sci-namespace opts)}
                        :classes {'Math js/Math
                            ;; JVM-style Thread/sleep, backed by a synchronous
                            ;; (abortable) worker-thread block.
@@ -816,7 +821,13 @@
         "detached (dev servers, watchers, slow builds); (process/wait pid) "
         "blocks until exit; (process/output pid) tails its log; "
         "(process/list) / (process/stop pid) manage them; "
-        "(process/poll-until \"cmd\" {:until …}) waits on external state.")
+        "(process/poll-until \"cmd\" {:until …}) waits on external state. "
+        "Raw TCP to local services (nREPL, daemons — loopback only): "
+        "(socket/connect \"127.0.0.1\" port) → handle; (socket/write s str-or-bytes); "
+        "(socket/read s) blocks for the next chunk, {:n k} exactly k bytes, "
+        "{:until \"\\n\"} through a delimiter (consumed, not returned), "
+        "{:bytes? true} → byte vector, {:timeout-ms 30000}; (socket/close s). "
+        "Sockets persist across calls like the rest of the REPL.")
    :input_schema {:type "object"
                   :properties {:code {:type "string"
                                       :description "Clojure code; multiple forms ok, last value is returned"}}
@@ -1809,7 +1820,15 @@
        ":stdout-not-matches :pattern \"re\" :interval-ms 5000 :timeout-ms "
        "120000}) reruns cmd until the condition holds. NEVER (sleep n) to "
        "wait a process out — wait/poll-until instead. Both start and "
-       "poll-until take literal shell command strings, gated like sh."))
+       "poll-until take literal shell command strings, gated like sh. "
+       "Raw TCP to loopback services (nREPL, mpv/daemon IPC — remote hosts "
+       "are refused) via the `socket` namespace: (socket/connect "
+       "\"127.0.0.1\" port) → handle; (socket/write s str-or-byte-seq); "
+       "(socket/read s) blocks for the next chunk — opts {:n k} exactly k "
+       "bytes, {:until \"\\n\"} through a delimiter (consumed, not "
+       "returned), {:bytes? true} → byte vector, {:timeout-ms 30000}; "
+       "(socket/close s); sockets persist across your tool calls like the "
+       "rest of the REPL."))
 
 (def extension
   {:id               ext-id

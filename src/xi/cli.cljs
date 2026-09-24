@@ -59,6 +59,7 @@
             [xi.env :as env]
             [xi.ext.core :as ext]
             [xi.ext.clj-worker :as clj-worker]
+            [xi.ext.clj-socket :as clj-socket]
             [xi.ext.manager :as manager]
             [xi.ext.mcp :as mcp]
             [xi.fx :as fx]
@@ -1124,9 +1125,12 @@ See docs/cli.md for the full reference.")
 
 (defn main [& args]
   (if-not wt/isMainThread
-    ;; Loaded as a node:worker_threads Worker (same bundle) — become the
-    ;; clj/bb eval worker instead of running the CLI. See xi.ext.clj-worker.
-    (clj-worker/install!)
+    ;; Loaded as a node:worker_threads Worker (same bundle) — become whatever
+    ;; the workerData role names, defaulting to the clj/bb eval worker. See
+    ;; xi.ext.clj-worker and xi.ext.clj-socket (nested socket-bridge workers).
+    (if (= "xi-socket-bridge" (some-> wt/workerData (aget "role")))
+      (clj-socket/bridge-install!)
+      (clj-worker/install!))
     (let [{:keys [command] :as opts} (parse-args args)]
       (case command
         :help       (do (.write js/process.stdout (str HELP_TEXT "\n"))

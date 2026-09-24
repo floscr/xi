@@ -241,6 +241,59 @@ stops one, and a room with live processes is kept alive instead of
 auto-destroyed. `process-manager` no longer exposes any tools of its own —
 spawning happens only through `clj`, inside the gate.
 
+## Loopback TCP sockets (`socket/…`)
+
+Raw TCP to **loopback** services — nREPL servers, mpv/daemon IPC, anything
+speaking a line- or length-framed protocol on localhost — uses the `socket`
+namespace. There is no JVM here (`java.net.Socket` doesn't exist); this is
+the sandbox-native replacement.
+
+| Call | Does |
+| --- | --- |
+| `(socket/connect host port opts?)` | open a TCP connection → handle `{:id :host :port}`; opts `{:timeout-ms 10000}` |
+| `(socket/write s data)` | send `data` (string → UTF-8, or seq of ints 0–255) → bytes sent |
+| `(socket/read s opts?)` | blocking read, see below |
+| `(socket/close s)` | close + tear down the bridge |
+| `(socket/open? s)` | connection still open? |
+| `(socket/list)` | this worker's sockets → `[{:id :host :port :status :buffered} …]` |
+
+`read` blocks until its condition is met (default timeout 30s, override with
+`{:timeout-ms …}`), returning a string by default or a vector of ints with
+`{:bytes? true}`:
+
+- no opts — block until ≥1 byte is available, return everything buffered;
+  `nil` on clean EOF.
+- `{:n k}` — exactly `k` bytes (throws if the peer closes first).
+- `{:until "\n"}` — everything **before** the delimiter; the delimiter is
+  consumed but not returned. Bytes after it stay buffered for the next read.
+
+```clojure
+;; length-prefixed JSON framing ("<len>:<json>"):
+(def s (socket/connect "127.0.0.1" 3828))
+(socket/write s (let [payload (json/write-str [0 1 "ping" []])]
+                  (str (count payload) ":" payload)))
+(let [len (parse-long (socket/read s {:until ":"}))]
+  (json/read-str (socket/read s {:n len})))
+```
+
+Guards: `connect` refuses non-loopback hosts (`localhost` / `127.x.x.x` /
+`::1`) **at runtime**, so a dynamically built host string can't bypass it —
+raw TCP to remote hosts stays out of the sandbox (`(curl …)` covers remote
+http(s)). No approval dialog is raised: loopback IPC is the same trust tier
+as the pre-approved `(ports)` helper.
+
+Mechanics (`xi.ext.clj-socket`): SCI evals are synchronous but JS sockets
+are async-only, so each `connect` spawns a **nested worker** from the same
+bundle (`workerData :role "xi-socket-bridge"`, dispatched in `xi.cli/main`)
+that owns the async `net.Socket`. Received bytes stream through a
+`SharedArrayBuffer` ring buffer (1MB; the bridge pauses the socket when
+full); the eval thread blocks with `Atomics.wait` — abortable like
+`process/wait`, so ESC/turn-end wakes a blocked read — and buffers
+locally so `:until`/`:n` reads stop exactly at their boundary. Writes are
+`postMessage`'d to the bridge. Sockets persist across evals like the rest
+of the room's REPL state and die with the room's worker (nested workers
+terminate with their parent) or on `(socket/close s)`.
+
 ## No bash tool
 
 Adding the tool isn't enough — the model keeps reaching for the familiar
