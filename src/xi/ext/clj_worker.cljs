@@ -14,6 +14,10 @@
                          :abortSab SharedArrayBuffer}
      worker → main  #js {:id n :text s :isError bool}
                     | #js {:processEvent \"register\"|\"deregister\" …}
+                    | #js {:gateRequest \"read\"|\"write\" :path s :roomKey s
+                           :sab SharedArrayBuffer}
+                      (runtime path gate — the worker blocks in Atomics.wait
+                      on :sab until the main thread writes the verdict)
 
    The actual dispatch lives in xi.ext.clj/eval-message; this namespace only
    owns the parentPort message pump."

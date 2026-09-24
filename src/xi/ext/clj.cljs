@@ -135,10 +135,51 @@
 (defn- opts-cwd [opts]
   (or (:cwd @opts) (.cwd js/process)))
 
+;; Runtime path gate: 2×Int32 header [status root-len] + UTF-8 root bytes.
+;; status: 0 pending · 1 allowed · 2 denied.
+(def ^:private GATE_SAB_BYTES (+ 8 4096))
+
+(defn- runtime-gate!
+  "Ask the main thread to approve an out-of-sandbox `resolved` path hit
+   mid-eval (a dynamic path the static gate couldn't pre-approve). Posts a
+   gateRequest to the parent thread and blocks in an Atomics.wait loop on the
+   request's SharedArrayBuffer until the user answers the approval dialog —
+   waking early (and throwing) when the eval's abort flag flips on turn-end.
+   Returns the approved root string, :denied, or nil when there is no parent
+   thread to ask (eval running outside a worker)."
+  [opts kind resolved]
+  (when wt/parentPort
+    (let [sab (js/SharedArrayBuffer. GATE_SAB_BYTES)
+          i32 (js/Int32Array. sab 0 2)
+          rid (:room-id @opts)
+          _   (.postMessage wt/parentPort
+                            #js {:gateRequest (name kind)
+                                 :path        (str resolved)
+                                 :roomKey     (if (keyword? rid) (name rid) (str rid))
+                                 :sab         sab})
+          ^js abort (:abort-arr @opts)]
+      (loop []
+        (js/Atomics.wait i32 0 0 250)
+        (let [status (js/Atomics.load i32 0)]
+          (cond
+            (= status 1)
+            (let [len (js/Atomics.load i32 1)]
+              (.decode (js/TextDecoder.) (.slice (js/Uint8Array. sab 8 len))))
+
+            (= status 2) :denied
+
+            (and abort (not (zero? (js/Atomics.load abort 0))))
+            (throw (ex-info "clj: aborted (turn ended)" {:aborted true}))
+
+            :else (recur)))))))
+
 (defn- resolve-read
   "Canonicalize p against cwd; throw on credential paths and on reads that
    escape the working dir, the OS tmp dir, and any gate-approved roots
-   (:allowed-reads, plus :allowed-writes since a write grant implies read)."
+   (:allowed-reads, plus :allowed-writes since a write grant implies read).
+   An unapproved out-of-repo path raises the approval dialog at runtime via
+   runtime-gate! (the eval blocks until answered); the approved root is added
+   to :allowed-reads so further reads under it pass without a round-trip."
   [opts p]
   (let [cwd      (opts-cwd opts)
         resolved (sandbox/real-resolve cwd (str p))
@@ -151,14 +192,26 @@
             (sandbox/path-within? resolved tmp)
             (some #(sandbox/path-within? resolved %) allowed))
       resolved
-      (throw (ex-info (str "clj: reads are limited to the working dir and "
-                           (os/tmpdir)
-                           " (out-of-repo paths need gate approval): " p) {})))))
+      (let [verdict (runtime-gate! opts :read resolved)]
+        (cond
+          (string? verdict)
+          (do (swap! opts update :allowed-reads (fnil conj #{}) verdict)
+              resolved)
+
+          (= verdict :denied)
+          (throw (ex-info (str "clj: user denied reading outside the repo: " p) {}))
+
+          :else
+          (throw (ex-info (str "clj: reads are limited to the working dir and "
+                               (os/tmpdir)
+                               " (out-of-repo paths need gate approval): " p) {})))))))
 
 (defn- resolve-write
   "Canonicalize p against cwd; only the working dir, the OS tmp dir, and any
    out-of-repo roots the user pre-approved at the gate (`:allowed-writes` in
-   opts) are writable from clj scripts."
+   opts) are writable from clj scripts. An unapproved out-of-repo path raises
+   the approval dialog at runtime via runtime-gate! (the eval blocks until
+   answered); the approved root is added to :allowed-writes."
   [opts p]
   (let [cwd      (opts-cwd opts)
         resolved (sandbox/real-resolve cwd (str p))
@@ -169,8 +222,18 @@
             (sandbox/path-within? resolved tmp)
             (some #(sandbox/path-within? resolved %) allowed))
       resolved
-      (throw (ex-info (str "clj: writes are limited to the working dir and "
-                           (os/tmpdir) ": " p) {})))))
+      (let [verdict (runtime-gate! opts :write resolved)]
+        (cond
+          (string? verdict)
+          (do (swap! opts update :allowed-writes (fnil conj #{}) verdict)
+              resolved)
+
+          (= verdict :denied)
+          (throw (ex-info (str "clj: user denied writing outside the repo: " p) {}))
+
+          :else
+          (throw (ex-info (str "clj: writes are limited to the working dir and "
+                               (os/tmpdir) ": " p) {})))))))
 
 (defn- glob-base
   "The literal directory prefix of a glob pattern — everything before the first
@@ -815,8 +878,9 @@
         "allowlisted; reads and writes are confined to the working dir and "
         "/tmp — a literal path outside the repo (cat/ls/glob/grep/… to read, "
         "spit/mv/cp/mkdir/touch/rm to write) raises an approval dialog (like "
-        "the read/write/edit tools), and a dynamic out-of-repo path is "
-        "rejected. Credential paths (~/.ssh, auth files) are always blocked. "
+        "the read/write/edit tools), and a dynamic out-of-repo path raises "
+        "the same dialog at runtime (the eval blocks until answered). "
+        "Credential paths (~/.ssh, auth files) are always blocked. "
         "Long-running commands: (process/start \"cmd\") → {:pid :log} runs "
         "detached (dev servers, watchers, slow builds); (process/wait pid) "
         "blocks until exit; (process/output pid) tails its log; "
@@ -859,6 +923,7 @@
 ;; key). Both are captured by gate-clj on each gated call.
 (defonce ^:private app-dispatch! (atom nil))
 (defonce ^:private room-ids (atom {}))      ;; room-key str → room-id
+(defonce ^:private gate-ctxs (atom {}))     ;; room-key str → tool-gate ctx (runtime path gate)
 
 (defn- settle-worker-death!
   "A room's worker died (crash / exit / terminate) with evals possibly in
@@ -893,6 +958,35 @@
                     :room-id rid :pid (.-pid m)})
         nil))))
 
+(defn- on-gate-request
+  "Worker → main runtime path gate: the worker hit a dynamic out-of-repo
+   read/write mid-eval and is blocked (Atomics.wait) on the request's
+   SharedArrayBuffer. Run the same permission-gate approval dialog the static
+   gate uses (auto-approved when the path sits under an already-allowed repo,
+   or headless), then write the verdict into the SAB — status 1 + the UTF-8
+   approved root on allow, status 2 on deny — and notify the waiting worker."
+  [^js m]
+  (let [sab     (.-sab m)
+        i32     (js/Int32Array. sab 0 2)
+        ctx     (get @gate-ctxs (.-roomKey m))
+        path    (.-path m)
+        settle! (fn [root]
+                  (let [bytes (when root (.encode (js/TextEncoder.) (str root)))]
+                    (if (and bytes (<= (.-length bytes) (- (.-byteLength sab) 8)))
+                      (do (.set (js/Uint8Array. sab 8 (.-length bytes)) bytes)
+                          (js/Atomics.store i32 1 (.-length bytes))
+                          (js/Atomics.store i32 0 1))
+                      (js/Atomics.store i32 0 2))
+                    (js/Atomics.notify i32 0)))]
+    (if-not ctx
+      (settle! nil)
+      (-> (js/Promise.resolve
+           (if (= "write" (.-gateRequest m))
+             (pg/approve-write-path ctx path)
+             (pg/approve-read-path ctx path)))
+          (.then settle!)
+          (.catch (fn [_] (settle! nil)))))))
+
 (defn- ensure-worker!
   "Get or lazily spawn the room's dedicated worker thread. The error/exit
    handlers only settle when this worker is still the room's registered one —
@@ -903,8 +997,10 @@
       (let [w (wt/Worker. (aget js/process.argv 1))]
         (.on w "message"
              (fn [^js m]
-               (if (.-processEvent m)
-                 (on-process-event m)
+               (cond
+                 (.-gateRequest m)  (on-gate-request m)
+                 (.-processEvent m) (on-process-event m)
+                 :else
                  (let [id (.-id m)]
                    (when-let [{:keys [resolve]} (get @pending id)]
                      (swap! pending dissoc id)
@@ -1447,6 +1543,10 @@
         ;; dispatched into app state (see on-process-event).
         _       (when dispatch! (reset! app-dispatch! dispatch!))
         _       (when room-id (swap! room-ids assoc (room-key room-id) room-id))
+        ;; Capture the gate ctx per room so a worker's runtime gateRequest
+        ;; (dynamic out-of-repo path mid-eval) can run the same approval
+        ;; dialogs (see on-gate-request).
+        _       (when room-id (swap! gate-ctxs assoc (room-key room-id) ctx))
         session (set (:allowed-clis (state/room-ext (get-state) room-id ext-id)))
         ;; A trusted bb.edn (sha in the trust store) makes `bb` an allowed CLI
         ;; for (sh "bb" …), same as the dedicated bb tool.

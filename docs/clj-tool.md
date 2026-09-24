@@ -79,8 +79,13 @@ Guards, enforced inside every helper:
   before the first `* ? [ {` metacharacter, so `/etc/**` and `../x/*` are gated
   too), approves the out-of-repo ones, and injects the approved roots into the
   worker so its `resolve-read` allows them. A **dynamic** (computed, non-string)
-  out-of-repo path can't be pre-approved and still hard-rejects ("reads are
-  limited to the working dir and …"). Credential paths
+  out-of-repo path is invisible to that pre-scan, so it raises the same dialog
+  **at runtime** instead: the worker posts a `gateRequest` to the main thread
+  and blocks (`Atomics.wait` on a per-request `SharedArrayBuffer`, waking on
+  the eval's abort flag) until the dialog is answered; on allow the approved
+  root is written back into the buffer and added to the worker's allowed reads,
+  on deny the read throws ("user denied reading outside the repo"). Headless
+  (no confirmer attached) auto-approves, matching the static gate. Credential paths
   (`xi.sandbox.core/hidden-paths` — `~/.ssh`, `~/.gnupg`, …) are always blocked,
   symlink-canonicalized, even inside an approved repo.
 - **Writes** (`spit`/`mkdir`/`cp`/`mv`/`touch`/`rm`): the room cwd and the OS
@@ -91,18 +96,19 @@ Guards, enforced inside every helper:
   `allowed-write-repos`). The gate statically scans the code for these helpers'
   write-target args, approves the out-of-repo ones, and injects the approved
   roots into the worker so its `resolve-write` allows them. A **dynamic**
-  (computed, non-string) out-of-repo path can't be pre-approved and still
-  hard-rejects ("writes are limited to the working dir and …").
+  (computed, non-string) out-of-repo path raises the same dialog **at runtime**
+  via the worker’s `gateRequest` round-trip (see reads above); on deny the
+  write throws ("user denied writing outside the repo").
 - **Directory deletion**: the builtin `(rm dir)` recursively deletes a whole
   tree, so the gate statically scans `rm`'s literal path args and, for any that
   resolve to an **existing directory**, raises a confirm before the eval runs —
   the prompt calls out when the target is *outside the project repo*. Files are
   unaffected (auto-run). A `[y]` on an out-of-repo directory also injects it as
-  an approved write root so `resolve-write` permits the delete. With no client
-  attached (headless) the confirm passes through, but an out-of-repo directory
-  still hard-rejects since it was never approved. **Dynamic** (computed) `rm`
-  paths are invisible to this scan — an in-repo dynamic directory delete isn't
-  pre-confirmed (same gap as dynamic writes). Shelling a dir delete out —
+  an approved write root so `resolve-write` permits the delete. **Dynamic**
+  (computed) `rm` paths are invisible to this scan — an in-repo dynamic
+  directory delete isn't pre-confirmed; an out-of-repo one falls through to
+  the runtime write gate above (approval dialog, no tree-deletion-specific
+  prompt). Shelling a dir delete out —
   `(sh "bb" "-e" "(fs/delete-tree …)")` or a bash `fs/delete-dir`/`fs/delete-tree`
   — is caught separately as a guarded pattern.
 - **Env**: only `xi.sandbox.core`'s env allowlist; secret-bearing keys throw.
