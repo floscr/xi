@@ -309,7 +309,8 @@
                                   {:type :session/created :room-id "r"
                                    :session {:id "s2"}
                                    :after-prompt "summary text"})]
-    (is (= [[:app/dispatch {:type :prompt/submit :room-id "r" :text "summary text"}]]
+    (is (= [[:app/dispatch {:type :prompt/submit :room-id "r" :text "summary text"
+                            :collapsed-label "Summary"}]]
            effects))))
 
 (deftest session-created-keep-history-flags-old-conversation
@@ -327,6 +328,19 @@
     (is (every? :no-llm? (butlast h)))
     (is (= :status (:kind (last h))))
     (is (str/includes? (:text (last h)) "truncated"))))
+
+(deftest messages->history-recovers-collapse-label
+  ;; A skill/command/summary prompt persists a hidden collapse marker in its
+  ;; transcript text (xi.agent begin-turn); on resume the label is rebuilt and
+  ;; the marker stripped, so the block re-collapses instead of showing expanded.
+  (is (= [{:kind :user :text "do the thing" :collapsed-label "/commit"}]
+         (commands/messages->history
+          [{:type :text :role "user"
+            :text "<!--xi:collapse=/commit-->\ndo the thing"}])))
+  ;; Plain user prompts are untouched (no marker → no label).
+  (is (= [{:kind :user :text "just a question"}]
+         (commands/messages->history
+          [{:type :text :role "user" :text "just a question"}]))))
 
 (deftest messages->history-pre-truncation-blocks
   ;; Blocks from a /truncate ancestor become :no-llm? entries; the divider

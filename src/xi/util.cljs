@@ -178,6 +178,27 @@
       n)
     n))
 
+(def ^:private collapse-marker-re #"^<!--xi:collapse=(.*?)-->\n?")
+
+(defn with-collapse-marker
+  "Prefix a generated prompt (skill body, /commit, compaction/rollover summary)
+   with a hidden sentinel that records its collapse label. The marker travels
+   in the provider transcript, so a session resumed from disk can rebuild the
+   :collapsed-label that the in-memory mirror carried live. It's an HTML comment
+   so it stays invisible in any markdown rendering, and is stripped on resume."
+  [text label]
+  (str "<!--xi:collapse=" label "-->\n" text))
+
+(defn collapse-label
+  "The collapse label recorded by a leading collapse marker, or nil."
+  [text]
+  (when text (second (re-find collapse-marker-re text))))
+
+(defn strip-collapse-marker
+  "Remove a leading collapse marker, leaving the clean prompt text."
+  [text]
+  (if text (str/replace text collapse-marker-re "") text))
+
 (def ^:private session-title-max 60)
 
 (defn session-title
@@ -193,7 +214,7 @@
    Otherwise the text is truncated to 60 chars. Returns nil when no usable
    title can be derived. Idempotent on already-clean titles."
   [text]
-  (when-let [text (some-> text str/trim not-empty)]
+  (when-let [text (some-> text strip-collapse-marker str/trim not-empty)]
     (letfn [(clip [s] (subs s 0 (min session-title-max (count s))))]
       (cond
         (str/starts-with? text "The conversation history") nil

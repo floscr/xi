@@ -116,11 +116,18 @@
             :text
             (case (:role block)
               "user"
-              (recur (next ms)
-                     (conj (flush-imgs out imgs)
-                           (flag {:kind :user :text (strip-attachment-refs (:text block))}
-                                 block))
-                     [])
+              ;; A skill/command/summary prompt carries a hidden collapse marker
+              ;; (xi.agent begin-turn) in its transcript text; rebuild the
+              ;; :collapsed-label from it and strip it so the entry reads clean.
+              (let [raw   (:text block)
+                    label (util/collapse-label raw)
+                    text  (strip-attachment-refs (util/strip-collapse-marker raw))]
+                (recur (next ms)
+                       (conj (flush-imgs out imgs)
+                             (flag (cond-> {:kind :user :text text}
+                                     label (assoc :collapsed-label label))
+                                   block))
+                       []))
               "assistant"
               (recur (next ms)
                      (conj (flush-imgs out imgs)

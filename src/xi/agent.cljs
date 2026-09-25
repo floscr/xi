@@ -223,14 +223,21 @@
   ;; the current history. Clear them so the web cache doesn't pair grown history
   ;; with a stale hash — which would make the incremental-resume prefix check
   ;; double-append the tail. The next resume event re-establishes them.
-  {:state   (-> st
-                (update-in [:rooms (:id room) :history] conj
-                           (cond-> {:kind :user :text (:text prompt) :images (:images prompt)}
-                             (:collapsed-label prompt)
-                             (assoc :collapsed-label (:collapsed-label prompt))))
-                (update-in [:rooms (:id room)] dissoc :msg-hash :msg-count)
-                (assoc-in [:rooms (:id room) :agent :busy?] true))
-   :effects [(start-turn-effect room prompt)]})
+  (let [label (:collapsed-label prompt)
+        ;; The in-memory entry keeps clean text (collapse is driven by
+        ;; :collapsed-label). But that key never reaches the provider transcript,
+        ;; so a resume from disk would lose it. Embed a hidden marker only in the
+        ;; text sent to the provider; messages->history rebuilds the label from
+        ;; it and strips it back out on resume.
+        provider-prompt (cond-> prompt
+                          label (update :text util/with-collapse-marker label))]
+    {:state   (-> st
+                  (update-in [:rooms (:id room) :history] conj
+                             (cond-> {:kind :user :text (:text prompt) :images (:images prompt)}
+                               label (assoc :collapsed-label label)))
+                  (update-in [:rooms (:id room)] dissoc :msg-hash :msg-count)
+                  (assoc-in [:rooms (:id room) :agent :busy?] true))
+     :effects [(start-turn-effect room provider-prompt)]}))
 
 (defn- join-prompts
   "Combine queued prompts into a single prompt: non-blank texts joined by
