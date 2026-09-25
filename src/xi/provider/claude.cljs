@@ -101,6 +101,22 @@
 (def ^:private MCP_SERVER_NAME "xi-tools")
 (def ^:private MCP_TOOL_PREFIX (str "mcp__" MCP_SERVER_NAME "__"))
 
+(def ^:private TOOL_NAMING_NOTE
+  ;; Counter the model's trained Claude-Code prior to call bare native tool
+  ;; names. Native builtins are disabled (:tools []); only mcp__xi-tools__*
+  ;; exist, so a bare `grep`/`find`/`bash` call is rejected by the SDK with
+  ;; "No such tool available". Weaker models fall back to the bare names
+  ;; without this reminder.
+  (str "IMPORTANT — tool names in THIS environment: the native Claude Code "
+       "tools (Bash, Grep, Glob, Read, Edit, Write, LS, Task, WebFetch, etc.) "
+       "are DISABLED. Every tool is provided by the `" MCP_SERVER_NAME "` MCP "
+       "server and MUST be called by its fully-qualified name — the tool name "
+       "prefixed with `" MCP_TOOL_PREFIX "` (e.g. `" MCP_TOOL_PREFIX "grep`, `"
+       MCP_TOOL_PREFIX "find`, `" MCP_TOOL_PREFIX "read`, `" MCP_TOOL_PREFIX
+       "edit`, `" MCP_TOOL_PREFIX "clj`). Calling a bare name such as `grep`, "
+       "`find`, or `bash` fails with \"No such tool available\" — always use the "
+       "prefixed name shown in each tool's schema."))
+
 (def ^:private PERSONAL_AGENT_TOOLS
   "Tools available in personal-agent mode."
   #{"web_search" "amazon_search" "willhaben_search" "geizhals_search"})
@@ -303,6 +319,12 @@
                                :extra-tool-registry (:extra-tool-registry opts)
                                :remove-tools (:remove-tools opts)}
                         (:personal-agent? opts) (assoc :only-tools PERSONAL_AGENT_TOOLS))))
+        ;; Append the tool-naming note on tool turns so the model calls the
+        ;; mcp__xi-tools__* names, not the disabled native builtins. Skipped
+        ;; for :no-tools? turns (title gen etc.) which expose no tools.
+        append-sys (if (:no-tools? opts)
+                     (:system opts)
+                     (str/join "\n\n" (remove str/blank? [(:system opts) TOOL_NAMING_NOTE])))
         query-opts (let [base (clj->js
                                (cond-> {:cwd cwd
                                         :permissionMode "bypassPermissions"
@@ -333,11 +355,11 @@
                                  (:model opts)
                                  (assoc :model (:model opts))
 
-                                 (:system opts)
+                                 append-sys
                                  (assoc :systemPrompt
                                         #js {:type "preset"
                                              :preset "claude_code"
-                                             :append (:system opts)})
+                                             :append append-sys})
 
                                  (:effort opts)
                                  (assoc :effort (:effort opts))
