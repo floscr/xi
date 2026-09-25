@@ -295,6 +295,16 @@
   "text → [:code …] for the no-grammar path (Bash results etc.)."
   (js/Map.))
 
+(def ^:private md-cache-max 300)
+
+(def ^:private md-cache
+  "text → rendered markdown hiccup. Every chat bubble renders its markdown on
+   every app render (a keystroke in the compose box re-renders the whole
+   timeline), so without this each of the ~60 windowed posts re-parses its
+   markdown into fresh hiccup and Replicant can't short-circuit — the cause of
+   laggy input on long chats."
+  (js/Map.))
+
 (defn- highlight-code
   "Tokenize + class-wrap text against a grammar → hiccup [:code ...].
    Bare URLs inside tokens are linkified so they stay clickable.
@@ -325,6 +335,20 @@
         (when (>= (.-size plain-code-cache) code-cache-max) (.clear plain-code-cache))
         (.set plain-code-cache text result)
         result)))
+
+(defn- render-md
+  "Memoized `md/render`: identical text yields the *identical* hiccup object so
+   Replicant's `unchanged?` short-circuits via identical? and skips re-diffing
+   the post subtree (same trick as highlight-code / plain-code). Keeps typing
+   in the composer from re-parsing every message's markdown on each keystroke."
+  [text]
+  (if (nil? text)
+    (md/render text)
+    (or (.get md-cache text)
+        (let [result (md/render text)]
+          (when (>= (.-size md-cache) md-cache-max) (.clear md-cache))
+          (.set md-cache text result)
+          result))))
 
 (defn- truncate-lines [text n]
   (let [lines (str/split-lines text)]
@@ -630,12 +654,12 @@
               (when (pos? n)
                 [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
           (when (seq (:text entry))
-            [:div {:class ["post-content"]} (md/render (:text entry))])]]))
+            [:div {:class ["post-content"]} (render-md (:text entry))])]]))
 
     :text
     [:div {:class ["post" "post--assistant"]}
      [:div {:class ["post-body"]}
-      (md/render (:text entry))]]
+      (render-md (:text entry))]]
 
     :thinking
     [:div {:class ["post" "post--assistant"]}
