@@ -1403,6 +1403,28 @@
 ;; scrolled-up flag into state. Declared here so attach-scroll-listener! can
 ;; reach it without a forward reference.
 (defonce ^:private dispatch-ref (atom nil))
+;; The app map ({:state :dispatch! …}), set at init. Declared here (not down in
+;; the init section) so scroll-to-bottom! can read the viewed session id to
+;; disarm smooth-follow across chat switches.
+(defonce ^:private app-ref (atom nil))
+
+;; Smooth-scroll follow. When the user is parked at the bottom and content grows
+;; (blocks streaming in), ease the scroll toward the growing bottom with a
+;; per-frame rAF loop instead of teleporting, so new content slides up. A native
+;; scrollTo({behavior:"smooth"}) can't do this: re-issued on every render as
+;; content streams, it just restarts and never visibly moves. Our loop reads the
+;; fresh scrollHeight each frame and closes a fraction of the remaining distance,
+;; so it naturally follows continuous growth. One guard keeps jumps instant:
+;;   - too-far snaps (chat switch, first paint, a block taller than ~1.25
+;;     screens) exceed smooth-scroll-max-vh → instant.
+;; Disarmed on a session switch / fresh timeline so a new chat lands instantly.
+(defonce ^:private smooth-scroll-armed? (atom false))
+(defonce ^:private smooth-scroll-session (atom nil))
+;; Pending requestAnimationFrame id for the follow loop (nil when idle).
+(defonce ^:private smooth-follow-raf (atom nil))
+(def ^:private smooth-scroll-max-vh 1.25)
+;; Fraction of the remaining distance the follow loop closes each frame (ease-out).
+(def ^:private smooth-follow-ease 0.28)
 
 ;; Debounce timer for the offline transition — a pending js/setTimeout id (or
 ;; nil). Set on WS drop, cleared on reconnect, so transient blips never flip the
@@ -1774,17 +1796,61 @@
 (defn- at-bottom? [^js el]
   (<= (- (.-scrollHeight el) (.-scrollTop el) (.-clientHeight el)) 40))
 
+(defn- cancel-smooth-follow! []
+  (when-let [id @smooth-follow-raf]
+    (js/cancelAnimationFrame id)
+    (reset! smooth-follow-raf nil)))
+
+(defn- smooth-follow-step!
+  "One frame of the follow loop: ease scrollTop toward the (possibly still
+   growing) bottom, then reschedule until we're within a pixel or the user has
+   scrolled away (auto-scroll? off)."
+  [^js timeline]
+  (reset! smooth-follow-raf nil)
+  (when @auto-scroll?
+    (let [target (- (.-scrollHeight timeline) (.-clientHeight timeline))
+          cur    (.-scrollTop timeline)
+          delta  (- target cur)]
+      (mark-programmatic-scroll!)
+      (if (<= delta 1)
+        (set! (.-scrollTop timeline) target)
+        (do (set! (.-scrollTop timeline) (+ cur (max 1 (* delta smooth-follow-ease))))
+            (reset! smooth-follow-raf
+                    (js/requestAnimationFrame #(smooth-follow-step! timeline))))))))
+
 (defn- scroll-to-bottom! []
   (when @auto-scroll?
     (when-let [timeline (.querySelector js/document ".timeline")]
-      (mark-programmatic-scroll!)
-      (set! (.-scrollTop timeline) (.-scrollHeight timeline)))))
+      ;; A session switch must land at the bottom instantly, not ease down from
+      ;; the top — disarm the follow until this chat's first snap has landed.
+      (let [sid (some-> @app-ref :state deref (get-in [:web/route :session-id]))]
+        (when (not= sid @smooth-scroll-session)
+          (reset! smooth-scroll-session sid)
+          (reset! smooth-scroll-armed? false)
+          (cancel-smooth-follow!)))
+      (let [target (- (.-scrollHeight timeline) (.-clientHeight timeline))
+            delta  (- target (.-scrollTop timeline))]
+        (if (and @smooth-scroll-armed?
+                 (< delta (* smooth-scroll-max-vh (.-clientHeight timeline))))
+          ;; Ease toward the bottom. If the loop is already running it keeps
+          ;; following the growing content; otherwise kick it off.
+          (when-not @smooth-follow-raf
+            (reset! smooth-follow-raf
+                    (js/requestAnimationFrame #(smooth-follow-step! timeline))))
+          (do (cancel-smooth-follow!)
+              (mark-programmatic-scroll!)
+              (set! (.-scrollTop timeline) target)
+              ;; First snap of this chat (or a huge jump) has landed instantly;
+              ;; arm smooth follow for the incremental growth that comes next.
+              (reset! smooth-scroll-armed? true)))))))
 
 (defn- attach-scroll-listener! []
   (when-let [timeline (.querySelector js/document ".timeline")]
     (when-not (identical? timeline @tracked-timeline)
       (reset! tracked-timeline timeline)
       (reset! auto-scroll? true)
+      ;; Fresh timeline (first mount / hot reload): first snap must be instant.
+      (reset! smooth-scroll-armed? false)
       (reset! prev-scroll-top (.-scrollTop timeline))
       ;; Unambiguous user gestures — only real input devices fire these, never
       ;; our programmatic snaps — so they mark user intent for the scroll
@@ -1928,8 +1994,6 @@
   (js/requestAnimationFrame scroll-to-bottom!))
 
 ;; ── Init ─────────────────────────────────────────────────────────────────────
-
-(defonce ^:private app-ref (atom nil))
 
 (defn- ws-url
   "WS server URL. Served by the Bun server itself → same origin as the page,
