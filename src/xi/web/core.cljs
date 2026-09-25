@@ -1555,15 +1555,28 @@
      ;; Re-enable auto-scroll and snap to the newest content (mirrors
      ;; :prompt-nav/resume, but for the standalone scroll-to-bottom arrow).
      ;; The state handler clears :web/scrolled-up? / :web/frozen-window-start,
-     ;; so this snap runs against the unfrozen window; the reflow from that
-     ;; unfreeze is covered by mark-programmatic-scroll! so it can't be misread
-     ;; as the user scrolling back up.
+     ;; so this snap runs against the unfrozen window. That unfreeze re-tightens
+     ;; the render window and drops the top DOM nodes on the next render — a
+     ;; reflow that shifts scrollHeight after this effect fires. A single
+     ;; synchronous snap therefore lands at a stale position (content "flickers"
+     ;; but never reaches bottom). So, like :prompt-nav/scroll, re-assert the
+     ;; snap across a few animation frames until it actually lands at the
+     ;; bottom, marking each write programmatic so the re-tighten reflow can't
+     ;; be misread as the user scrolling back up.
      (reset! auto-scroll? true)
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
-     (when-let [timeline (.querySelector js/document ".timeline")]
-       (mark-programmatic-scroll!)
-       (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
+     (letfn [(snap [n]
+               (when-let [timeline (.querySelector js/document ".timeline")]
+                 (mark-programmatic-scroll!)
+                 (set! (.-scrollTop timeline) (.-scrollHeight timeline))
+                 (when (and (pos? n)
+                            (> (- (.-scrollHeight timeline)
+                                  (.-scrollTop timeline)
+                                  (.-clientHeight timeline))
+                               2))
+                   (js/requestAnimationFrame #(snap (dec n))))))]
+       (snap 30)))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
