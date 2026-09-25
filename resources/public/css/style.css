@@ -602,7 +602,7 @@ body {
 }
 
 .post--tool {
-  padding: 0 var(--size-1);
+  padding: 0;
 }
 
 .post-body {
@@ -1497,7 +1497,16 @@ body {
 }
 
 /* ---- Tool call blocks ---- */
-.tool-call-block { margin: var(--size-1) 0; }
+/* Outer box: rounded, bordered on all sides. Inner content (code/diff/result)
+   carries no border of its own — the box frames everything and zones are
+   separated by single hairline dividers. */
+.tool-call-block {
+  margin: var(--size-1) 0;
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  overflow: hidden;
+}
 
 .tool-call-toggle {
   display: flex;
@@ -1509,7 +1518,7 @@ body {
   color: var(--fg-2);
   font-size: var(--font-sm);
   font-family: inherit;
-  padding: var(--size-1) 0;
+  padding: var(--size-1) var(--size-2);
   width: 100%;
   text-align: left;
 }
@@ -1557,6 +1566,7 @@ body {
 /* Expanded: show the full, untruncated label (e.g. the whole command). */
 .tool-call-block[open] > .tool-call-toggle {
   align-items: flex-start;
+  border-bottom: var(--border-0);
 }
 
 .tool-call-block[open] > .tool-call-toggle .tool-call-toggle-label {
@@ -1567,27 +1577,66 @@ body {
 }
 
 /* ---- Viewer mode: grouped, collapsed tool headers ---- */
+/* The group is the outer box (rounded + bordered). Each tool inside drops its
+   own box; consecutive tools are separated by a single hairline divider. */
 .viewer-tool-group {
-  border: 1px solid var(--bd-0, var(--bg-2));
-  border-radius: var(--radius-2, 8px);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
   background: var(--bg-1);
-  padding: 0 var(--size-2);
+  padding: 0;
   margin: var(--size-1) 0;
+  overflow: hidden;
 }
 
 .viewer-tool-group .post--tool {
   margin: 0;
 }
 
-.viewer-tool-group .post--tool + .post--tool .tool-call-block {
-  border-top: 1px solid var(--bd-0, var(--bg-2));
+/* Tools inside a group are not their own box — the group frames them. */
+.tool-call-block--viewer {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
-/* A collapsed tool inside a group is just its summary row; keep it tight. */
-.tool-call-block--viewer { margin: 0; }
+/* Single divider between consecutive tools in the group. */
+.viewer-tool-group .post--tool + .post--tool .tool-call-block--viewer {
+  border-top: var(--border-0);
+}
+
+/* Right-side status badge: a filled circle with a white icon pinned to the
+   right of the header, capturing the tool's outcome. Stays visible even when
+   collapsed into a viewer group. */
+.tool-call-status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  margin-left: var(--size-1);
+  color: #fff;
+  border: 1px solid transparent;
+}
+.tool-call-status .icon,
+.tool-call-status svg { width: 12px; height: 12px; }
+.tool-call-status--allow {
+  background: var(--accent);
+  border-color: oklch(from var(--accent) calc(l + 0.12) c h);
+}
+.tool-call-status--deny { background: var(--fg-2, #9ca3af); }
+.tool-call-status--error { background: var(--danger, var(--red-fg, #ef4444)); }
 
 .tool-call-content {
-  padding: 0 0 var(--size-2);
+  padding: 0;
+}
+
+/* Stacked content zones (clj input/result/stdout/error, permission asks) get a
+   single hairline divider between them — no nested boxes. */
+.tool-call-content + .tool-call-content {
+  border-top: var(--border-0);
 }
 
 .tool-call-code {
@@ -1598,10 +1647,10 @@ body {
   font-size: var(--font-xs);
   line-height: 1.4;
   color: var(--fg-0);
-  background-color: var(--bg-1);
+  background-color: transparent;
   padding: var(--size-2);
-  border-radius: var(--radius-sm);
-  border: var(--border-0);
+  border-radius: 0;
+  border: none;
   max-height: 30vh;
   overflow-y: auto;
 }
@@ -1675,27 +1724,6 @@ code a:hover {
   white-space: nowrap;
 }
 
-/* Join the code panel and each result zone into one continuous box: kill the
-   inter-panel gap and flatten the shared edges so consecutive `pre`s read as a
-   single box, with each lower panel's top border acting as the divider line. */
-.tool-call-block--clj .tool-call-content:not(:last-of-type) { padding-bottom: 0; }
-
-.tool-call-block--clj .tool-call-content .tool-call-code {
-  border-radius: 0;
-  border-bottom: none;
-}
-
-.tool-call-block--clj .tool-call-content:first-of-type .tool-call-code {
-  border-top-left-radius: var(--radius-sm);
-  border-top-right-radius: var(--radius-sm);
-}
-
-.tool-call-block--clj .tool-call-content:last-of-type .tool-call-code {
-  border-bottom-left-radius: var(--radius-sm);
-  border-bottom-right-radius: var(--radius-sm);
-  border-bottom: var(--border-0);
-}
-
 .clj-zone-label {
   display: block;
   font-size: 0.6rem;
@@ -1747,9 +1775,9 @@ code a:hover {
   padding: var(--size-2);
   font-size: var(--font-sm);
   color: var(--fg-0);
-  background-color: var(--bg-1);
-  border: var(--border-0);
-  border-radius: var(--radius-sm);
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   gap: var(--size-2);
@@ -1764,13 +1792,6 @@ code a:hover {
 }
 
 .tool-call-permission--resolved { padding: var(--size-1) var(--size-2); }
-
-/* Joined to the panel above (clj block): flatten the shared top edge so the
-   code/result and the ask meet on a single hairline divider. */
-.tool-call-block--clj .tool-call-content:not(:first-of-type) .tool-call-permission {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
 
 /* ---- Thinking blocks ---- */
 .thinking-block { margin: var(--size-1) 0; }

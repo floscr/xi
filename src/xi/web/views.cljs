@@ -252,18 +252,31 @@
 (defn- get-arg [args k]
   (or (get args (name k)) (get args k)))
 
+(defn- relativize-path
+  "When `path` is an absolute path inside the repo `cwd`, return it relative to
+   the repo root (e.g. \"src/xi/web/views.cljs\"); otherwise return it unchanged."
+  [path cwd]
+  (if (and (string? path) (string? cwd) (seq cwd))
+    (let [prefix (str cwd "/")]
+      (cond
+        (str/starts-with? path prefix) (subs path (count prefix))
+        (= path cwd)                   "."
+        :else                          path))
+    path))
+
 (defn- tool-summary
-  "Short one-line argument summary shown in the tool header."
-  [tool args]
+  "Short one-line argument summary shown in the tool header. File paths are
+   shown relative to the repo `cwd` when they live inside it."
+  [tool args cwd]
   (case tool
     ("Bash" "bash") (get-arg args :command)
     ("clj")         (get-arg args :code)
-    ("Read" "read")  (or (get-arg args :file_path) (get-arg args :path))
-    ("Write" "write") (or (get-arg args :file_path) (get-arg args :path))
-    ("Edit" "edit")  (or (get-arg args :file_path) (get-arg args :path))
+    ("Read" "read")  (relativize-path (or (get-arg args :file_path) (get-arg args :path)) cwd)
+    ("Write" "write") (relativize-path (or (get-arg args :file_path) (get-arg args :path)) cwd)
+    ("Edit" "edit")  (relativize-path (or (get-arg args :file_path) (get-arg args :path)) cwd)
     ("Grep" "grep")  (get-arg args :pattern)
     ("Glob" "find")  (get-arg args :pattern)
-    ("ls")           (get-arg args :path)
+    ("ls")           (relativize-path (get-arg args :path) cwd)
     "git_commit"     (get-arg args :message)
     (let [v (some (fn [k] (let [x (get-arg args k)]
                             (when (and (string? x) (seq x)) x)))
@@ -499,9 +512,9 @@
 
 (defn- tool-post [dispatch! {:keys [tool arguments result is-error status
                                     permission resolved-permission
-                                    viewer-collapsed?]}]
+                                    viewer-collapsed? cwd]}]
   (let [name      (util/strip-mcp-prefix tool)
-        summary   (tool-summary name arguments)
+        summary   (tool-summary name arguments cwd)
         running?  (= :running status)
         text      (util/extract-text-content result)
         grammar   (when (and text (not is-error)) (tool-grammar name arguments))
@@ -527,9 +540,22 @@
        [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))} label]
        (when clj-preview
          [:span {:class ["clj-head-preview"]} clj-preview])
+       (when running? (spinner))
+       ;; Right-side status badge: a filled circle with a white icon that
+       ;; captures the outcome — red ✗ on error, purple ✓ when the user
+       ;; confirmed the tool, grey ✗ when it was denied. Stays visible even
+       ;; when the block is collapsed into a viewer group.
        (cond
-         running? (spinner)
-         is-error [:span {:class ["error-text"]} " error"])]
+         is-error
+         [:span {:class ["tool-call-status" "tool-call-status--error"] :title "Error"}
+          (icon/icon {:icon-name :x :size :sm})]
+         (some? resolved-permission)
+         (let [{:keys [value label]} resolved-permission
+               deny? (not value)]
+           [:span {:class ["tool-call-status"
+                           (if deny? "tool-call-status--deny" "tool-call-status--allow")]
+                   :title (or label (if deny? "Denied" "Allowed"))}
+            (icon/icon {:icon-name (if deny? :x :check) :size :sm})]))]
       (when clj-code
         [:div {:class ["tool-call-content" "tool-call-input"]}
          [:pre {:class ["tool-call-code"]}
@@ -2532,17 +2558,18 @@
                        (ritems p)
                        (when (< p total)
                          (let [entry (nth entries p)
-                               ;; A tool post joins a viewer group only when it
-                               ;; has no attached dialog (pending permission or
-                               ;; a resolved decision) — those stay expanded and
-                               ;; break the run.
+                               ;; A tool post joins a viewer group unless it has
+                               ;; a *pending* permission ask (needs the inline
+                               ;; Allow/Deny buttons, so it stays expanded and
+                               ;; breaks the run). Already-answered tools join the
+                               ;; group and show a decision icon in their header.
                                collapsible? (and viewer?
                                                  (= :tool-call (:kind entry))
-                                                 (not= p perm-tool-idx)
-                                                 (not (resolved-by-tool (:id entry))))
+                                                 (not= p perm-tool-idx))
                                post  (entry->post
                                       dispatch!
-                                      (cond-> (assoc entry :history-index p)
+                                      (cond-> (assoc entry :history-index p
+                                                     :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd])))
                                         collapsible?
                                         (assoc :viewer-collapsed? true)
                                         (and (= :user (:kind entry)) (= p (:index editing)))

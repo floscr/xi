@@ -70,9 +70,11 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   persisted to `localStorage "xi-viewer-mode"`): collapses tool posts
   (read/write/clj/…) to header-only rows and folds each run of consecutive
   ones into a single `.viewer-tool-group` box. A run breaks on any text
-  entry or on a tool with an attached permission dialog (those stay
-  expanded). Each collapsed header is still an individual `<details>` you
-  can click to expand in place (`group-viewer-items` in `xi.web.views`)
+  entry or on a tool with a *pending* permission ask (which stays expanded
+  for its Allow/Deny buttons). An already-answered tool joins the group and
+  shows a decision icon (✓/✗) at the right of its header. Each collapsed
+  header is still an individual `<details>` you can click to expand in place
+  (`group-viewer-items` in `xi.web.views`)
 - **Timeline virtualization**: only the last 60 entries render; "Show
   earlier" expands by 40 (`:web/timeline-window`, reset on navigation)
 - **Per-session compose drafts** (`:web/drafts`, keyed by session id;
