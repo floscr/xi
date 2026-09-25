@@ -1623,11 +1623,23 @@ body {
 .tool-call-status .icon,
 .tool-call-status svg { width: 12px; height: 12px; }
 .tool-call-status--allow {
-  background: var(--accent);
-  border-color: oklch(from var(--accent) calc(l + 0.12) c h);
+  background: linear-gradient(180deg,
+    oklch(from var(--accent) calc(l + 0.08) c h),
+    var(--accent));
+  border-color: oklch(from var(--accent) calc(l + 0.18) c h);
 }
-.tool-call-status--deny { background: var(--fg-2, #9ca3af); }
-.tool-call-status--error { background: var(--danger, var(--red-fg, #ef4444)); }
+.tool-call-status--deny {
+  background: linear-gradient(180deg,
+    oklch(from var(--fg-2, #9ca3af) calc(l + 0.08) c h),
+    var(--fg-2, #9ca3af));
+  border-color: oklch(from var(--fg-2, #9ca3af) calc(l + 0.18) c h);
+}
+.tool-call-status--error {
+  background: linear-gradient(180deg,
+    oklch(from var(--danger, var(--red-fg, #ef4444)) calc(l + 0.08) c h),
+    var(--danger, var(--red-fg, #ef4444)));
+  border-color: oklch(from var(--danger, var(--red-fg, #ef4444)) calc(l + 0.18) c h);
+}
 
 .tool-call-content {
   padding: 0;
