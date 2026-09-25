@@ -1645,7 +1645,7 @@ body {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  margin-left: var(--size-1);
+  margin-left: auto;
   color: #fff;
   border: 1px solid transparent;
 }
@@ -1831,8 +1831,6 @@ code a:hover {
   gap: var(--size-2);
   flex-wrap: wrap;
 }
-
-.tool-call-permission--resolved { padding: var(--size-1) var(--size-2); }
 
 /* ---- Thinking blocks ---- */
 .thinking-block { margin: var(--size-1) 0; }

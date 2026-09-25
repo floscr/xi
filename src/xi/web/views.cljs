@@ -586,15 +586,6 @@
             [:div {:class ["tool-call-permission-msg"]} (or message text)]
             [:div {:class ["tool-call-permission-actions"]}
              (confirm-buttons dialog answer!)]]]))
-      ;; Answered: a compact decision pill, still part of the same grey box.
-      (when-let [{:keys [value label]} resolved-permission]
-        (let [deny? (not value)]
-          [:div {:class ["tool-call-content"]}
-           [:div {:class ["tool-call-permission" "tool-call-permission--resolved"]}
-            [:div {:class ["dialog-decision"
-                           (if deny? "dialog-decision--deny" "dialog-decision--allow")]}
-             (icon/icon {:icon-name (if deny? :x :check) :size :sm})
-             [:span label]]]]))
       (when imgs
         [:div {:class ["tool-call-content" "user-images"]}
          (map-indexed
