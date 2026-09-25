@@ -1566,6 +1566,26 @@ body {
   word-break: break-word;
 }
 
+/* ---- Viewer mode: grouped, collapsed tool headers ---- */
+.viewer-tool-group {
+  border: 1px solid var(--bd-0, var(--bg-2));
+  border-radius: var(--radius-2, 8px);
+  background: var(--bg-1);
+  padding: 0 var(--size-2);
+  margin: var(--size-1) 0;
+}
+
+.viewer-tool-group .post--tool {
+  margin: 0;
+}
+
+.viewer-tool-group .post--tool + .post--tool .tool-call-block {
+  border-top: 1px solid var(--bd-0, var(--bg-2));
+}
+
+/* A collapsed tool inside a group is just its summary row; keep it tight. */
+.tool-call-block--viewer { margin: 0; }
+
 .tool-call-content {
   padding: 0 0 var(--size-2);
 }

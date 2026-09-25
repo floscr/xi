@@ -66,6 +66,13 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
 - Thinking blocks and interesting tool blocks expanded by default
   (`<details>` — Replicant only writes changed attrs, so manual toggles
   survive re-renders)
+- **Viewer mode** (overflow menu → "Viewer mode", `:web/viewer-mode?`,
+  persisted to `localStorage "xi-viewer-mode"`): collapses tool posts
+  (read/write/clj/…) to header-only rows and folds each run of consecutive
+  ones into a single `.viewer-tool-group` box. A run breaks on any text
+  entry or on a tool with an attached permission dialog (those stay
+  expanded). Each collapsed header is still an individual `<details>` you
+  can click to expand in place (`group-viewer-items` in `xi.web.views`)
 - **Timeline virtualization**: only the last 60 entries render; "Show
   earlier" expands by 40 (`:web/timeline-window`, reset on navigation)
 - **Per-session compose drafts** (`:web/drafts`, keyed by session id;
@@ -115,6 +122,7 @@ All under the same app atom, never sent over the wire:
 | `:web/drafts` | `{draft-key text}` compose drafts per session |
 | `:web/compose-images` | staged image attachments |
 | `:web/timeline-window` | virtualization window size |
+| `:web/viewer-mode?` | collapse tool posts into grouped headers |
 | `:web/lightbox` | open image src or absent |
 | `:web/watched` | `{session-id count-when-last-seen}` |
 | `:web/response-counts` | `{session-id count}` from the server |

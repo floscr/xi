@@ -825,6 +825,9 @@
           :web/set-wide          (fn [st {:keys [wide?]}] {:state (assoc st :web/wide? wide?)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
+          :viewer/toggle         (fn [st _] (let [on? (not (:web/viewer-mode? st))]
+                                             {:state   (assoc st :web/viewer-mode? on?)
+                                              :effects [[:viewer/persist on?]]}))
           :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
           :models/web-list-result (fn [st {:keys [models]}]
@@ -1601,7 +1604,13 @@
                        (if (= mode "auto")
                          (.removeItem js/localStorage "ui-theme")
                          (.setItem js/localStorage "ui-theme" mode))
-                       (catch :default _))))})
+                       (catch :default _))))
+   :viewer/persist (fn [_ on?]
+                     (try
+                       (if on?
+                         (.setItem js/localStorage "xi-viewer-mode" "1")
+                         (.removeItem js/localStorage "xi-viewer-mode"))
+                       (catch :default _)))})
 
 ;; ── Taps (cache persistence + unread polling + post-join URL) ─────────────────
 
@@ -2069,9 +2078,11 @@
         routes    (:routes composed)
         stored-theme (or (try (.getItem js/localStorage "ui-theme") (catch :default _ nil))
                         "auto")
+        viewer?   (boolean (try (.getItem js/localStorage "xi-viewer-mode") (catch :default _ nil)))
         route     (router/parse-path routes (.-pathname js/window.location))
         initial   (-> (state/initial-state {:mode :client})
                       (assoc :web/theme-mode stored-theme
+                             :web/viewer-mode? viewer?
                              :web/nav-items (:nav-items composed))
                       (cache/hydrate route))
         transport (ws-transport/create!

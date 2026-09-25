@@ -474,7 +474,8 @@
      label]))
 
 (defn- tool-post [dispatch! {:keys [tool arguments result is-error status
-                                    permission resolved-permission]}]
+                                    permission resolved-permission
+                                    viewer-collapsed?]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments)
         running?  (= :running status)
@@ -492,8 +493,10 @@
                                            (str summary)
                                            (first (str/split-lines (str summary))))))))]
     [:div {:class ["post" "post--tool"]}
-     [:details {:class (cond-> ["tool-call-block"] clj? (conj "tool-call-block--clj"))
-                :open true}
+     [:details {:class (cond-> ["tool-call-block"]
+                         clj? (conj "tool-call-block--clj")
+                         viewer-collapsed? (conj "tool-call-block--viewer"))
+                :open (not viewer-collapsed?)}
       [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
@@ -1985,6 +1988,15 @@
                                    (dispatch! {:type :palette/open-skills}))}}
             (icon/icon {:icon-name :zap :size :sm})
             [:span "Skills"]])
+         (when room
+           (let [viewer? (:web/viewer-mode? state)]
+             [:button {:class ["overflow-menu-item"]
+                       :on {:click (fn [e]
+                                     (.stopPropagation e)
+                                     (dispatch! {:type :overflow/close})
+                                     (dispatch! {:type :viewer/toggle}))}}
+              (icon/icon {:icon-name (if viewer? :check :eye) :size :sm})
+              [:span (if viewer? "Viewer mode: on" "Viewer mode")]]))
          [:div {:class ["overflow-menu-divider"]}]
          [:button {:class ["overflow-menu-item"]
                    :on {:click (fn [e]
@@ -2298,6 +2310,22 @@
             label)])
         chips)])))
 
+(defn- group-viewer-items
+  "Viewer mode: collapse runs of consecutive collapsible tool posts into a
+   single grouped container that shows just their headers. `items` is an
+   ordered seq of {:key :node :group?}. Runs of :group? true fold into one
+   `.viewer-tool-group`; everything else (text, dialogs, non-collapsible
+   tools) passes through unchanged, breaking the run."
+  [items]
+  (mapcat
+   (fn [run]
+     (if (:group? (first run))
+       [[:div {:class ["viewer-tool-group"]
+               :replicant/key (str "vg-" (:key (first run)))}
+         (map :node run)]]
+       (map :node run)))
+   (partition-by :group? items)))
+
 (defn- chat-view [state dispatch!]
   (let [active  (state/active-room state)
         sid     (get-in state [:web/route :session-id])
@@ -2454,36 +2482,57 @@
                    (str "Show " (min window-step start) " earlier messages"
                         " (" start " hidden)"))])
                (let [editing   (:web/editing-bubble state)
+                     ;; Viewer mode collapses non-text tool posts (read/write/
+                     ;; clj/…) into grouped header-only items; see
+                     ;; group-viewer-items.
+                     viewer?   (:web/viewer-mode? state)
                      ;; Answered dialogs live in a web-only log, each anchored
                      ;; to the history length at answer time so its static
                      ;; bubble stays in chronological place as the turn resumes.
                      ;; Ones tagged :tool-id render inside their tool block
                      ;; instead (see resolved-by-tool), so drop them here.
                      by-anchor (group-by :anchor resolved-list)
-                     rposts    (fn [p] (map (fn [e] (resolved-dialog-post (:key e) e))
+                     ;; Resolved-dialog bubbles are never groupable (:group?
+                     ;; false), so they break any run of collapsed tools.
+                     ritems    (fn [p] (map (fn [e] {:key (str "rdlg-" (:key e))
+                                                     :group? false
+                                                     :node (resolved-dialog-post (:key e) e)})
                                             (remove :tool-id (get by-anchor p))))]
-                 (concat
-                  ;; Resolved bubbles anchored above the visible window: pin at top.
-                  (mapcat rposts (sort (filter #(< % start) (keys by-anchor))))
-                  (mapcat
-                   (fn [p]
-                     (concat
-                      (rposts p)
-                      (when (< p total)
-                        (let [entry (nth entries p)
-                              post  (entry->post
-                                     dispatch!
-                                     (cond-> (assoc entry :history-index p)
-                                       (and (= :user (:kind entry)) (= p (:index editing)))
-                                       (assoc :editing? true :edit-text (:text editing))
-                                       (= p perm-tool-idx)
-                                       (assoc :permission {:dialog pending-dialog
-                                                           :answer! perm-answer!})
-                                       (resolved-by-tool (:id entry))
-                                       (assoc :resolved-permission
-                                              (resolved-by-tool (:id entry)))))]
-                          (when post [(with-post-key (str "h-" p) post)])))))
-                   (range start (inc total)))))
+                 (group-viewer-items
+                  (concat
+                   ;; Resolved bubbles anchored above the visible window: pin at top.
+                   (mapcat ritems (sort (filter #(< % start) (keys by-anchor))))
+                   (mapcat
+                    (fn [p]
+                      (concat
+                       (ritems p)
+                       (when (< p total)
+                         (let [entry (nth entries p)
+                               ;; A tool post joins a viewer group only when it
+                               ;; has no attached dialog (pending permission or
+                               ;; a resolved decision) — those stay expanded and
+                               ;; break the run.
+                               collapsible? (and viewer?
+                                                 (= :tool-call (:kind entry))
+                                                 (not= p perm-tool-idx)
+                                                 (not (resolved-by-tool (:id entry))))
+                               post  (entry->post
+                                      dispatch!
+                                      (cond-> (assoc entry :history-index p)
+                                        collapsible?
+                                        (assoc :viewer-collapsed? true)
+                                        (and (= :user (:kind entry)) (= p (:index editing)))
+                                        (assoc :editing? true :edit-text (:text editing))
+                                        (= p perm-tool-idx)
+                                        (assoc :permission {:dialog pending-dialog
+                                                            :answer! perm-answer!})
+                                        (resolved-by-tool (:id entry))
+                                        (assoc :resolved-permission
+                                               (resolved-by-tool (:id entry)))))]
+                           (when post [{:key (str "h-" p)
+                                        :group? collapsible?
+                                        :node (with-post-key (str "h-" p) post)}])))))
+                    (range start (inc total))))))
                ;; These tail bubbles appear/disappear as a turn progresses
                ;; (optimistic → real message, pending command clears, dialog
                ;; answered). They share the parent's child list with the keyed
