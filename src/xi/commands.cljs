@@ -561,7 +561,8 @@
           effects (cond-> []
                     busy?        (conj [:provider/discard {:room-id room-id}])
                     after-prompt (conj [:app/dispatch {:type :prompt/submit :room-id room-id
-                                                       :text after-prompt}]))]
+                                                       :text after-prompt
+                                                       :collapsed-label "Summary"}]))]
       (cond-> {:state (-> st
                           (assoc-in [:rooms room-id :session] session)
                           (assoc-in [:rooms room-id :history]
