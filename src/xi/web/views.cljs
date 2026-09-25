@@ -615,7 +615,8 @@
   (case (:kind entry)
     :user
     (let [idx (:history-index entry)]
-      (if (:editing? entry)
+      (cond
+        (:editing? entry)
         [:div {:class ["post" "post--user" "post--editing"]}
          [:div {:class ["post-body"]}
           [:textarea {:class ["bubble-edit-textarea"]
@@ -649,6 +650,21 @@
             {:variant :primary :size :sm
              :on-click (fn [_] (dispatch! {:type :bubble/edit-save}))}
             "Save")]]]
+        ;; Skill/command-generated prompt (e.g. a loaded skill body or the
+        ;; /commit prompt): collapsed to a one-line user bubble that expands
+        ;; on press, so the long generated text doesn't dominate the timeline.
+        (:collapsed-label entry)
+        [:div {:class ["post" "post--user" "post--user-collapsed"]}
+         [:details {:class ["post-body" "user-collapse"]}
+          [:summary {:class ["user-collapse-summary"]}
+           [:span {:class ["tool-call-toggle-icon"]}
+            (icon/icon {:icon-name :chevron-right :size :sm})]
+           [:span {:class ["user-collapse-label"]} (:collapsed-label entry)]]
+          (when (seq (:text entry))
+            [:div {:class ["post-content" "user-collapse-content"]}
+             (render-md (:text entry))])]]
+
+        :else
         [:div (cond-> {:class ["post" "post--user" (when idx "post--tappable")]}
                 idx (assoc :data-history-index idx)
                 idx (assoc :on (block-context-menu-on

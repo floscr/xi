@@ -225,7 +225,9 @@
   ;; double-append the tail. The next resume event re-establishes them.
   {:state   (-> st
                 (update-in [:rooms (:id room) :history] conj
-                           {:kind :user :text (:text prompt) :images (:images prompt)})
+                           (cond-> {:kind :user :text (:text prompt) :images (:images prompt)}
+                             (:collapsed-label prompt)
+                             (assoc :collapsed-label (:collapsed-label prompt))))
                 (update-in [:rooms (:id room)] dissoc :msg-hash :msg-count)
                 (assoc-in [:rooms (:id room) :agent :busy?] true))
    :effects [(start-turn-effect room prompt)]})
@@ -234,16 +236,21 @@
   "Combine queued prompts into a single prompt: non-blank texts joined by
    blank lines, images concatenated in order."
   [prompts]
-  {:text   (->> (map :text prompts)
-                (remove str/blank?)
-                (str/join "\n\n"))
-   :images (into [] (mapcat :images) prompts)})
+  (cond-> {:text   (->> (map :text prompts)
+                        (remove str/blank?)
+                        (str/join "\n\n"))
+           :images (into [] (mapcat :images) prompts)}
+    ;; A lone queued skill/command prompt keeps its collapsed label; once merged
+    ;; with other queued prompts the single label no longer fits, so drop it.
+    (and (= 1 (count prompts)) (:collapsed-label (first prompts)))
+    (assoc :collapsed-label (:collapsed-label (first prompts)))))
 
 ;; ── Event handlers (pure) ────────────────────────────────────────────────────
 
-(defn- prompt-submit [st {:keys [room-id text images]}]
+(defn- prompt-submit [st {:keys [room-id text images collapsed-label]}]
   (when-let [room (state/get-room st room-id)]
-    (let [prompt {:text text :images images}]
+    (let [prompt (cond-> {:text text :images images}
+                   collapsed-label (assoc :collapsed-label collapsed-label))]
       (if (get-in room [:agent :busy?])
         ;; Busy — queue for after the current turn settles
         {:state (update-in st [:rooms room-id :agent :queued] (fnil conj []) prompt)}

@@ -465,6 +465,35 @@ body {
   cursor: pointer;
 }
 
+/* Collapsed skill/command-generated prompt: a one-line user bubble (chevron +
+   label) that expands on press to reveal the full generated text. Reuses the
+   purple .post-body bubble so it still reads as a user message. */
+.user-collapse {
+  cursor: pointer;
+}
+.user-collapse > .user-collapse-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  cursor: pointer;
+}
+.user-collapse > .user-collapse-summary::-webkit-details-marker {
+  display: none;
+}
+.user-collapse[open] > .user-collapse-summary .tool-call-toggle-icon {
+  transform: rotate(90deg);
+}
+.user-collapse-label {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-collapse-content {
+  margin-top: var(--size-2);
+}
+
 /* Queued backend slash command (offline / pre-join): a dimmed user bubble
    with the command text + a spinner, cleared once it fires on (re)join. */
 .post--pending-command .post-body {

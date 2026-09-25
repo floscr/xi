@@ -102,7 +102,8 @@
         edited   (fx/session-edited-files room cwd)
         overview (git-overview-sync cwd edited)]
     (dispatch! {:type :prompt/submit :room-id room-id
-                :text (build-commit-prompt args overview)})))
+                :text (build-commit-prompt args overview)
+                :collapsed-label "/commit"})))
 
 ;; ── Tools ──────────────────────────────────────────────────────────────────
 

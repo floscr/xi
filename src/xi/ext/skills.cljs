@@ -243,9 +243,11 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
               (.then (fn [values]
                        (when values
                          (dispatch! {:type :prompt/submit :room-id room-id
-                                     :text (substitute-inputs body inputs values)})))))
+                                     :text (substitute-inputs body inputs values)
+                                     :collapsed-label (str "Skill: " (:name skill))})))))
           (dispatch! {:type :prompt/submit :room-id room-id
-                      :text (substitute-inputs body inputs {})})))
+                      :text (substitute-inputs body inputs {})
+                      :collapsed-label (str "Skill: " (:name skill))})))
       (dispatch! {:type :history/append :room-id room-id
                   :entry {:kind :status
                           :text (str "Skill '" (str/trim name) "' not found. Use /skill list to see available skills.")}}))))
