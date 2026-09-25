@@ -2,9 +2,12 @@
   "LocalStorage offline cache for the web client.
 
    Backend wins: the cache only fills the gap before the WS connects (and
-   when offline). `:room/joined` / `:lobby/state` overwrite it. Stored as
-   EDN (the same format the wire uses), so keywords/nesting survive a
-   round-trip — no JSON shims.
+   when offline). `:room/joined` / `:lobby/state` overwrite it. Serialized
+   with transit (the same codec the wire uses), so keywords/nesting survive a
+   round-trip while decoding ~40× faster than the EDN reader — the parse cost
+   matters because every chat switch reads a full cached history (with tool
+   results) synchronously on the main thread, twice, which janked switching on
+   mobile when this used cljs.reader.
 
    Keys:
      xi/lobby            last {:rooms :sessions} for an instant home paint
@@ -12,15 +15,22 @@
      xi/room-lru         [sid …] most-recent-first, caps the room snapshots
      xi/watched          {session-id response-count-when-last-seen}"
   (:require [clojure.string :as str]
-            [cljs.reader :as reader]
+            [cognitect.transit :as transit]
             [xi.core.state :as state]))
 
 ;; ── Primitives ───────────────────────────────────────────────────────────────
 
+;; Reusable transit reader/writer (see xi.wire — they reset their per-message
+;; cache each read/write, so one instance is safe to share). Transit decodes a
+;; large cached room far faster than cljs.reader, which is the whole point:
+;; store-get runs synchronously on the chat-switch path.
+(def ^:private writer (transit/writer :json))
+(def ^:private reader (transit/reader :json))
+
 (defn- store-get [k]
   (try
     (when-let [raw (.getItem js/localStorage k)]
-      (reader/read-string raw))
+      (transit/read reader raw))
     (catch :default _ nil)))
 
 (defn- store-set!
@@ -28,7 +38,7 @@
    so callers can evict and retry."
   [k v]
   (try
-    (.setItem js/localStorage k (pr-str v))
+    (.setItem js/localStorage k (transit/write writer v))
     true
     (catch :default e
       (js/console.warn "[cache] write failed:" e)
@@ -204,7 +214,7 @@
     :agent/turn-end :agent/tool-result :agent/abort})
 
 (def ^:private tool-result-persist-interval-ms
-  "Min gap between :agent/tool-result checkpoints. save-room! pr-strs the
+  "Min gap between :agent/tool-result checkpoints. save-room! serializes the
    full history (can be hundreds of KB) synchronously on the main thread, so
    tool-heavy turns would otherwise jank the UI on every result."
   5000)
