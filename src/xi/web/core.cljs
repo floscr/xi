@@ -1781,6 +1781,13 @@
         ;; if the user had scrolled up into history — re-enable the auto-scroll
         ;; gate so the post-render scroll-to-bottom snaps to the new bubble.
         (reset! auto-scroll? true)
+        ;; Arm smooth-follow so the user's own bubble eases up like a streaming
+        ;; block, rather than teleporting. Without this, a message sent as the
+        ;; first action in a freshly-opened chat (still disarmed from the load
+        ;; snap) would pop in instantly while the assistant's reply animated.
+        ;; Submits from scrolled-up history still snap instantly — that jump
+        ;; exceeds the smooth-scroll-max-vh guard in scroll-to-bottom!.
+        (reset! smooth-scroll-armed? true)
         (dispatch! {:type :web/optimistic-set
                   :room-id (:room-id event)
                   :session-id (get-in state [:web/route :session-id])
