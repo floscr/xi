@@ -1268,7 +1268,11 @@
                                   (when (or (not busy?) (submittable-while-busy? v))
                                     (submit-compose! dispatch! room-id session-id
                                                      images draft-key v)))))))}}})
-       (when busy? (spinner))]
+       (when busy?
+         [:button {:class ["icon-btn" "compose-spinner-abort"]
+                   :aria-label "Abort"
+                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
+          (spinner)])]
       (if (and busy? (not (command-while-busy? draft)))
         ;; Busy: queue-send button (when there's something to queue) next to
         ;; the abort button. Queued-message access lives in the floating

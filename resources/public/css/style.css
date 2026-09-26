@@ -1253,20 +1253,37 @@ body {
   padding-bottom: var(--size-2);
 }
 
-/* Touch devices: the compose-row icon buttons (attach, send, queue, abort)
-   are visually 28px (20px icon + 4px padding) — well under the ~44px
-   recommended touch target, which made the send button need several taps on
-   phones. Grow the tappable box to 44px on coarse pointers; the negative
-   margin cancels the growth on BOTH axes so the visual footprint / spacing
-   stays the original 28px (44 - 2*8) and only the hit area expands — the
-   extension bleeds into the row gaps and padding. touch-action:manipulation
-   kills Safari's residual double-tap heuristics on the button. */
+/* Touch devices: the compose-row icon buttons (attach, send, queue, abort,
+   spinner-abort) are visually 28px (20px icon + 4px padding) — well under
+   the ~44px recommended touch target, which made the send button need
+   several taps on phones. Expand the tappable area WITHOUT any layout or
+   visual change: stretch the button box over the row's content height and
+   bleed an invisible ::after overlay over the row's padding and half of
+   each flex gap, so taps anywhere in the surrounding whitespace hit the
+   button. The first/last buttons additionally cover the row's inline
+   padding out to the screen edge. touch-action:manipulation kills Safari's
+   residual double-tap heuristics on the buttons. */
 @media (pointer: coarse) {
+  /* .compose-actions must stretch too, or the buttons inside it can only be
+     as tall as its centered 28px content box. */
+  .compose-input-row .compose-actions {
+    align-self: stretch;
+  }
   .compose-input-row .icon-btn {
-    min-width: 44px;
-    min-height: 44px;
-    margin: calc(-1 * var(--size-2));
+    align-self: stretch;
+    position: relative;
     touch-action: manipulation;
+  }
+  .compose-input-row .icon-btn::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--size-2)) calc(-1 * var(--size-1));
+  }
+  .compose-input-row .compose-attach-btn::after {
+    inset-inline-start: calc(-1 * var(--size-3));
+  }
+  .compose-input-row .compose-actions > .icon-btn:last-child::after {
+    inset-inline-end: calc(-1 * var(--size-3));
   }
 }
 
@@ -1297,6 +1314,12 @@ body {
 }
 
 .compose-attach-btn {
+  flex-shrink: 0;
+}
+
+/* Spinner shown while the agent is busy — wrapped in a button so tapping it
+   aborts, same as the circle-x. Looks identical to the bare spinner. */
+.compose-spinner-abort {
   flex-shrink: 0;
 }
 
