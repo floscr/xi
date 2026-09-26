@@ -60,14 +60,19 @@ process, so it can't flip it).
 - **`sudo`** (`sh`/`bash`) → **deny**. Never allowed from the agent.
 - **remote-copy shells** — `scp` / `rsync` / `sftp` (`sh` `:cli`, or matched in a
   `bash` command line) → **deny**.
-- **SSH private keys** — reading any file under a `~/.ssh/` dir with `read` /
-  `grep` / `find` / `ls` (the built-in tools and clj's `cat`/`grep`, which all
-  consult the engine as `:read`/`:grep`/…) → **deny**. `*.pub` public keys and
-  `config` / `known_hosts` / `authorized_keys` / `environment` stay readable
-  (excluded by the regex); everything else (`id_rsa`, `id_ed25519`, custom-named
-  keys, keys in subdirs) is blocked outright. This is stricter than the softer
-  "sensitive path" ask below — that one can add friction but never grant access
-  here.
+- **SSH private keys** — reading any file under a `~/.ssh/` dir → **deny**,
+  across two surfaces:
+  - the structured read tools `read` / `grep` / `find` / `ls` (path-matched), and
+  - the **shell** — `bash` and clj `(sh …)` command lines that name a key path
+    (e.g. `cat ~/.ssh/id_rsa`, `head`/`base64`/`xxd`/`cp …`), matched in the
+    command string. This closes the bypass where a read-only CLI like `cat`
+    auto-runs and its path argument is invisible to the structured `:read` guard.
+
+  `*.pub` public keys and `config` / `known_hosts` / `authorized_keys` /
+  `environment` stay readable (excluded by the regex); everything else (`id_rsa`,
+  `id_ed25519`, custom-named keys, keys in subdirs) is blocked outright. This is
+  stricter than the softer "sensitive path" ask below — that one can add friction
+  but never grant access here.
 
 ### Built-in default rules
 

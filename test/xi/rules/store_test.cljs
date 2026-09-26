@@ -1,5 +1,6 @@
 (ns xi.rules.store-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.rules :as rules]
             [xi.rules.store :as store]
             [xi.ext.treesitter.parse :as ts]
@@ -192,6 +193,32 @@
                  "/home/floscr/.ssh/authorized_keys"]]
         (let [h (hit {:tool :read :path p})]
           (is (not (and h (= :hardened (:scope h)))) p))))))
+
+(deftest hardened-ssh-private-key-shell-read-denied
+  (let [ruleset (store/ordered-rules {} "r1" (os/tmpdir))
+        hit     (fn [req] (rules/first-match ruleset req))
+        denied? (fn [tool command]
+                  (let [h (hit {:tool tool :command command})]
+                    (and h (= :deny (:type (:action h))) (= :hardened (:scope h)))))]
+    (testing "reading a private key through the shell is hard-denied (closes the sh-cat bypass)"
+      (is (denied? :sh "cat ~/.ssh/id_rsa"))
+      (is (denied? :sh "cat /home/floscr/.ssh/id_ed25519"))
+      (is (denied? :sh "head -c 9 ~/.ssh/id_rsa"))
+      (is (denied? :sh "base64 ~/.ssh/id_ecdsa_sk"))
+      (is (denied? :sh "cp ~/.ssh/id_rsa /tmp/x"))
+      (is (denied? :sh "cat ~/.ssh/keys/id_rsa"))
+      (testing "same for the bash tool"
+        (is (denied? :bash "cat ~/.ssh/id_rsa"))
+        (is (denied? :bash "xxd ~/.ssh/id_ed25519 | head"))))
+    (testing "public keys / non-secret ssh files / dir listings are NOT hardened-denied"
+      (doseq [c ["cat ~/.ssh/id_rsa.pub"
+                 "cat ~/.ssh/config"
+                 "cat ~/.ssh/known_hosts"
+                 "cat ~/.ssh/authorized_keys"
+                 "ls ~/.ssh/"
+                 "ls -la ~/.ssh"]]
+        (let [h (hit {:tool :sh :cli (first (str/split c #"\s+")) :command c})]
+          (is (not (and h (= :hardened (:scope h)))) c))))))
 
 (deftest runtime-rules-precedence
   (testing "server rules come before session rules, each scope-tagged"

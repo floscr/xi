@@ -135,6 +135,16 @@
    id_ed25519, and custom-named keys are all caught while `*.pub` stays readable."
   #"(?:^|/)\.ssh/(?:[^/]*/)*(?!(?:known_hosts|authorized_keys|config|environment)[^/]*$)(?![^/]*\.pub$)[^/]+$")
 
+(def ^:private hardened-ssh-key-command-re
+  "Same private-key detection as `hardened-ssh-key-re`, but tuned to find the key
+   path *inside a shell command string* (segments bounded by whitespace/quotes,
+   not anchored at end-of-string). Catches `cat ~/.ssh/id_rsa`,
+   `head -c9 ~/.ssh/id_ed25519`, `base64 ~/.ssh/key`, `cp ~/.ssh/id_rsa /tmp/x`,
+   etc. regardless of the wrapping CLI — closes the shell bypass that structured
+   :read guards can't see (a path handed to `sh cat` is an opaque arg). `*.pub`
+   and config/known_hosts/authorized_keys/environment stay allowed."
+  #"\.ssh/(?:[^\s'\"/]+/)*(?!(?:known_hosts|authorized_keys|config|environment)(?:[\s'\"]|$))(?![^\s'\"/]*\.pub(?:[\s'\"]|$))[^\s'\"/]+")
+
 (def hardened-rules
   "Non-overridable policy rules, tagged :scope :hardened. The store prepends
    these ABOVE every config/runtime/default rule, so they always win — a user
@@ -164,6 +174,16 @@
    ;; `*.pub` and config/known_hosts stay readable (excluded by the regex).
    {:match  {:tool #{:read :grep :find :ls} :path hardened-ssh-key-re}
     :action {:type :deny :message "Blocked (hardened): reading SSH private keys under ~/.ssh is never allowed."}
+    :scope  :hardened}
+   ;; SSH private keys via the shell: a `(sh "cat" "~/.ssh/id_rsa")` / bash
+   ;; `cat ~/.ssh/id_rsa` names the key as an opaque command arg, so the
+   ;; structured :read guard above never sees it and read-only CLIs (cat, head,
+   ;; base64, …) auto-run without a prompt. Match the key path inside the command
+   ;; string instead — the clj sh deny-scan and the bash tool-gate both consult
+   ;; the engine with :command, so this blocks the shell bypass regardless of the
+   ;; wrapping CLI. `*.pub`/config/known_hosts stay allowed (excluded by regex).
+   {:match  {:tool #{:sh :bash} :command hardened-ssh-key-command-re}
+    :action {:type :deny :message "Blocked (hardened): reading SSH private keys under ~/.ssh via the shell is never allowed."}
     :scope  :hardened}])
 
 ;; ── clj (sh …) softeners: "disallow * then soften", scoped to :sh ────────────
