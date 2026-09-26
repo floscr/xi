@@ -1338,11 +1338,15 @@
    clis))
 
 (defn- strip-quoted
-  "Remove single- and double-quoted spans so quoted `;`/`|` don't count."
+  "Remove single- and double-quoted spans so quoted `;`/`|` don't count,
+   and redirection operators (`2>&1`, `>&2`, `&>`) so their `&`/`|` don't
+   read as command separators."
   [s]
   (-> s
       (str/replace #"'[^']*'" "_")
-      (str/replace #"\"(?:\\.|[^\"\\])*\"" "_")))
+      (str/replace #"\"(?:\\.|[^\"\\])*\"" "_")
+      (str/replace #"\d*>&\d*" " ")
+      (str/replace #"&>>?" " ")))
 
 (defn chained-bash?
   "True when a bash command uses shell composition — pipes, `;`/`&&`/`&`,

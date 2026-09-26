@@ -118,7 +118,11 @@
     (is (not (clj-ext/chained-bash? "steam-run npx biome check --write .")))) 
   (testing "separators inside quotes don't count"
     (is (not (clj-ext/chained-bash? "git commit -m 'a; b && c'")))
-    (is (not (clj-ext/chained-bash? "grep \"a|b\" file.txt")))))
+    (is (not (clj-ext/chained-bash? "grep \"a|b\" file.txt"))))
+  (testing "redirections are not composition"
+    (is (not (clj-ext/chained-bash? "hey re:deploy-pi --service x 2>&1")))
+    (is (not (clj-ext/chained-bash? "npm test >&2")))
+    (is (not (clj-ext/chained-bash? "npm test &> out.log")))))
 
 ;; ── eval basics ──────────────────────────────────────────────────────────────
 
@@ -810,7 +814,9 @@
   (is (= #{"npm"} (clj-ext/bg-command-clis ["npm run dev"])))
   (is (= #{"cd" "npm"} (clj-ext/bg-command-clis ["cd web && npm start"])))
   (is (= #{"node"} (clj-ext/bg-command-clis ["PORT=3000 node server.js"])))
-  (is (= #{"echo" "wc"} (clj-ext/bg-command-clis ["echo hi | wc -c"]))))
+  (is (= #{"echo" "wc"} (clj-ext/bg-command-clis ["echo hi | wc -c"])))
+  (is (= #{"hey"} (clj-ext/bg-command-clis ["hey re:deploy-pi --service split-expenses 2>&1"])))
+  (is (= #{"npm"} (clj-ext/bg-command-clis ["npm run build &> build.log"]))))
 
 (deftest worker-refuses-unapproved-bg-command
   (let [res (eval! "(process/start \"echo hi\")")]
