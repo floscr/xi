@@ -1274,13 +1274,24 @@ body {
     position: relative;
     touch-action: manipulation;
   }
+  /* Every button covers the row's vertical padding — including the
+     home-indicator safe area below, so the tap region runs to the very
+     bottom of the screen when the keyboard is closed. */
   .compose-input-row .icon-btn::after {
     content: "";
     position: absolute;
     inset: calc(-1 * var(--size-2)) calc(-1 * var(--size-1));
+    bottom: calc(-1 * max(var(--size-2), env(safe-area-inset-bottom, 0px)));
   }
   .compose-input-row .compose-attach-btn::after {
     inset-inline-start: calc(-1 * var(--size-3));
+  }
+  /* The action buttons (send / abort) get a generous reach: out to the right
+     screen edge and ~32px inward over the composer whitespace. They come
+     after the textarea in the DOM, so they win the overlap and taps landing
+     left of the icon still hit the button. */
+  .compose-input-row .compose-actions > .icon-btn:first-of-type::after {
+    inset-inline-start: calc(-1 * var(--size-8));
   }
   .compose-input-row .compose-actions > .icon-btn:last-child::after {
     inset-inline-end: calc(-1 * var(--size-3));

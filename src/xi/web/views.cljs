@@ -1267,32 +1267,38 @@
                                 (let [v (.. e -target -value)]
                                   (when (or (not busy?) (submittable-while-busy? v))
                                     (submit-compose! dispatch! room-id session-id
-                                                     images draft-key v)))))))}}})
-       (when busy?
-         [:button {:class ["icon-btn" "compose-spinner-abort"]
-                   :aria-label "Abort"
-                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
-          (spinner)])]
-      (if (and busy? (not (command-while-busy? draft)))
-        ;; Busy: queue-send button (when there's something to queue) next to
-        ;; the abort button. Queued-message access lives in the floating
-        ;; queue-count group above the composer.
-        [:div {:class ["compose-actions"]}
-         (when offline? (offline-indicator))
-         (when (or has-input? (seq images))
+                                                     images draft-key v)))))))}}})]
+      (let [spinner-abort
+            ;; The busy spinner doubles as an abort button, sitting right next
+            ;; to the circle-x inside .compose-actions (4px gap — no stray
+            ;; whitespace between them).
+            (when busy?
+              [:button {:class ["icon-btn" "compose-spinner-abort"]
+                        :aria-label "Abort"
+                        :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
+               (spinner)])]
+        (if (and busy? (not (command-while-busy? draft)))
+          ;; Busy: queue-send button (when there's something to queue) next to
+          ;; the abort button. Queued-message access lives in the floating
+          ;; queue-count group above the composer.
+          [:div {:class ["compose-actions"]}
+           (when offline? (offline-indicator))
+           spinner-abort
+           (when (or has-input? (seq images))
+             [:button {:class ["icon-btn"]
+                       :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
+                                                            images draft-key draft))}}
+              (icon/icon {:icon-name :arrow-up :size :md})])
+           [:button {:class ["icon-btn"]
+                     :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
+            (icon/icon {:icon-name :circle-x :size :md})]]
+          [:div {:class ["compose-actions"]}
+           (when offline? (offline-indicator))
+           spinner-abort
            [:button {:class ["icon-btn"]
                      :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
                                                           images draft-key draft))}}
-            (icon/icon {:icon-name :arrow-up :size :md})])
-         [:button {:class ["icon-btn"]
-                   :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
-          (icon/icon {:icon-name :circle-x :size :md})]]
-        [:div {:class ["compose-actions"]}
-         (when offline? (offline-indicator))
-         [:button {:class ["icon-btn"]
-                   :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
-                                                        images draft-key draft))}}
-          (icon/icon {:icon-name :arrow-up :size :md})]])]]]))
+            (icon/icon {:icon-name :arrow-up :size :md})]]))]]]))
 
 ;; ── Permission dialog ────────────────────────────────────────────────────────
 
