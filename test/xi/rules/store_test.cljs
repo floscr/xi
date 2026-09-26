@@ -126,6 +126,39 @@
     (testing "a path outside the anchored dir does not match"
       (is (nil? (rules/first-match ruleset (raw-req "/etc/hosts")))))))
 
+(deftest path-rule-matches-tilde-form
+  ;; Real temp dir under $HOME so real-resolve returns an absolute path we can
+  ;; home-collapse (no symlink surprises); the rule is written home-relative (~).
+  (let [home     (os/homedir)
+        dir-name (str ".xi-rules-tilde-test-" (.getTime (js/Date.)))
+        base     (node-path/join home dir-name)
+        sub      (node-path/join base "sub")]
+    (fs/mkdirSync sub #js {:recursive true})
+    (try
+      (let [ruleset [{:match {:tool #{:read}
+                             :path (re-pattern (str "^~/" dir-name "(?:/|$)"))}
+                      :action {:type :allow}}]
+            req     (fn [p] (store/enrich-request
+                            (store/decision-request {:name "read" :arguments {:path p}}
+                                                    {:cwd home})
+                            ruleset))]
+        (testing "absolute path under $HOME matches the ~-anchored rule"
+          (is (= :allow (get-in (rules/first-match ruleset (req (node-path/join sub "x.edn")))
+                                [:action :type]))))
+        (testing "the dir itself matches"
+          (is (= :allow (get-in (rules/first-match ruleset (req base))
+                                [:action :type]))))
+        (testing "a ~-typed path matches"
+          (is (= :allow (get-in (rules/first-match ruleset (req (str "~/" dir-name "/sub/x.edn")))
+                                [:action :type]))))
+        (testing "a lookalike sibling does not match"
+          (is (nil? (rules/first-match ruleset (req (str base "X"))))))
+        (testing ":resolved-home-path is populated for a $HOME path"
+          (is (= (str "~/" dir-name "/sub")
+                 (:resolved-home-path (req sub))))))
+      (finally
+        (fs/rmSync base #js {:recursive true :force true})))))
+
 (deftest credential-path?-classifies-paths
   (let [cwd (.cwd js/process)
         home (os/homedir)]

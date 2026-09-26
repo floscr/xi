@@ -154,7 +154,7 @@ All present fields are **ANDed**; an absent field is no constraint.
 | Field         | Matches                                                              |
 |---------------|---------------------------------------------------------------------|
 | `:tool`       | tool kind — keyword or set: `:write :edit :read :grep :find :ls :bash :clj :sh :mcp :other` |
-| `:path`       | target file path — **regex** (`re-find`, partial) or **glob string** (full match: `*`=one segment, `**`=any, `?`=one char) |
+| `:path`       | target file path — **regex** (`re-find`, partial) or **glob string** (full match: `*`=one segment, `**`=any, `?`=one char). Matched against the raw arg **and** its resolved absolute path **and** the resolved path with a leading `$HOME` collapsed to `~` — so a pattern works whether the path was given absolute, relative, or `~`-prefixed, and may itself be written with `~`. Symlinks are canonicalized. |
 | `:command`    | bash command / clj code / clj shell-out command — **regex** (`re-find`) or **string** (substring) |
 | `:cli`        | shell-out binary (first token of a `clj` `(sh …)` / background command) — **string** (exact), **set** (membership), or **regex** (`re-find`); only `:sh` requests carry `:cli` |
 | `:repo`       | git-root path **suffix** of the target/effective cwd (e.g. `"config/dotfiles"`) |

@@ -170,16 +170,20 @@
     :else          false))
 
 (defn- match-path*
-  "Path spec matches the request's raw `:path` OR its resolved absolute
-   `:resolved-path`. Absent spec is unconstrained (the nil-spec branch of
-   `match-path` returns true). Raw matching is preserved unchanged; the resolved
-   form only ADDS matches, so relative/`~` paths that name the same file as an
-   absolute rule still match (and deny rules can't be dodged with a relative
-   path)."
+  "Path spec matches the request's raw `:path`, its resolved absolute
+   `:resolved-path`, OR the home-collapsed `:resolved-home-path` (the resolved
+   path with a leading $HOME rewritten back to `~`). Absent spec is unconstrained
+   (the nil-spec branch of `match-path` returns true). Raw matching is preserved
+   unchanged; the resolved forms only ADD matches, so relative/`~`/absolute paths
+   that name the same file all match one rule — a rule may be written with either
+   an absolute (`/home/you/…`) or a `~/…` path — and deny rules can't be dodged
+   with a relative path."
   [spec req]
   (or (match-path spec (:path req))
       (and (some? (:resolved-path req))
-           (match-path spec (:resolved-path req)))))
+           (match-path spec (:resolved-path req)))
+      (and (some? (:resolved-home-path req))
+           (match-path spec (:resolved-home-path req)))))
 
 (defn matches?
   "True when canonical `rule`'s `:match` matches decision request `req`.

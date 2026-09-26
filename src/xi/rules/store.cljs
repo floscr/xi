@@ -208,21 +208,36 @@
      (let [resolved (sandbox/real-resolve cwd (str path))]
        (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths))))))
 
+(defn- home-collapse
+  "Rewrite a leading $HOME in absolute `abs` back to `~`, so a `:path` rule can
+   be written home-relative (`~/…`) and still match a resolved absolute target.
+   Returns nil when `abs` is nil or not under $HOME (nothing to collapse)."
+  [abs]
+  (when abs
+    (let [home (os/homedir)]
+      (cond
+        (= abs home)                               "~"
+        (str/starts-with? abs (str home path/sep)) (str "~" (subs abs (count home)))
+        :else                                      nil))))
+
 (defn enrich-request
   "Add the opt-in, I/O-derived match fields to a decision `req` that the given
-   `ruleset` actually needs — `:resolved-path` (canonical absolute path) for
+   `ruleset` actually needs — `:resolved-path` (canonical absolute path) plus
+   `:resolved-home-path` (that path with a leading $HOME collapsed to `~`) for
    `:path` rules, `:outside-cwd?` for `:outside` rules, `:credential-path?` for
    `:credential` rules, and `:nodes` (tree-sitter) for `:node` rules."
   [req ruleset]
-  (cond-> req
-    (and (:path req) (rules/needs-resolved-path? ruleset))
-    (assoc :resolved-path (sandbox/real-resolve (:effective-cwd req) (str (:path req))))
-    (and (:path req) (rules/needs-outside? ruleset))
-    (assoc :outside-cwd? (outside-cwd? (:effective-cwd req) (:path req)))
-    (and (:path req) (rules/needs-credential? ruleset))
-    (assoc :credential-path? (credential-path? (:effective-cwd req) (:path req)))
-    (and (:path req) (rules/needs-nodes? ruleset))
-    (assoc :nodes (nodes/nodes-for req))))
+  (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
+                   (sandbox/real-resolve (:effective-cwd req) (str (:path req))))]
+    (cond-> req
+      resolved (assoc :resolved-path resolved)
+      (home-collapse resolved) (assoc :resolved-home-path (home-collapse resolved))
+      (and (:path req) (rules/needs-outside? ruleset))
+      (assoc :outside-cwd? (outside-cwd? (:effective-cwd req) (:path req)))
+      (and (:path req) (rules/needs-credential? ruleset))
+      (assoc :credential-path? (credential-path? (:effective-cwd req) (:path req)))
+      (and (:path req) (rules/needs-nodes? ruleset))
+      (assoc :nodes (nodes/nodes-for req)))))
 
 ;; ── Ordered ruleset ─────────────────────────────────────────────────────────
 
