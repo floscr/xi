@@ -169,6 +169,18 @@
     (string? spec) (= spec (str cli))
     :else          false))
 
+(defn- match-path*
+  "Path spec matches the request's raw `:path` OR its resolved absolute
+   `:resolved-path`. Absent spec is unconstrained (the nil-spec branch of
+   `match-path` returns true). Raw matching is preserved unchanged; the resolved
+   form only ADDS matches, so relative/`~` paths that name the same file as an
+   absolute rule still match (and deny rules can't be dodged with a relative
+   path)."
+  [spec req]
+  (or (match-path spec (:path req))
+      (and (some? (:resolved-path req))
+           (match-path spec (:resolved-path req)))))
+
 (defn matches?
   "True when canonical `rule`'s `:match` matches decision request `req`.
    All present match keys are ANDed; absent keys are unconstrained."
@@ -176,7 +188,7 @@
   (let [m (:match rule)]
     (and (match-tool       (:tool m)       (:tool req))
          (match-cli        (:cli m)        (:cli req))
-         (match-path       (:path m)       (:path req))
+         (match-path*      (:path m)       req)
          (match-command    (:command m)    (:command req))
          (match-substring  (:repo m)       (:repo req))
          (match-prefix     (:dir m)        (:effective-cwd req))
@@ -201,6 +213,13 @@
    target with tree-sitter to populate `:nodes`."
   [rules]
   (boolean (some #(some-> (canonical %) :match :node) rules)))
+
+(defn needs-resolved-path?
+  "True when any rule carries a `:path` matcher, so the store should resolve the
+   target path and populate `:resolved-path` on the request (lets `:path` rules
+   match relative/`~` forms that name an absolute-rule's file)."
+  [rules]
+  (boolean (some #(some-> (canonical %) :match :path) rules)))
 
 (defn needs-outside?
   "True when any rule carries an `:outside` matcher, so the store should resolve

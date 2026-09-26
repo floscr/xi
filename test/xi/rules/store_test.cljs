@@ -3,6 +3,7 @@
             [clojure.string :as str]
             [xi.rules :as rules]
             [xi.rules.store :as store]
+            [xi.sandbox.core :as sandbox]
             [xi.ext.treesitter.parse :as ts]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -94,6 +95,36 @@
       (is (true? (:outside-cwd?
                   (store/enrich-request
                    base [{:match {:tool :write :outside :cwd}}])))))))
+
+(deftest enrich-request-populates-resolved-path-only-when-needed
+  (let [cwd  (.cwd js/process)
+        base (store/decision-request {:name "read" :arguments {:path "src/xi/rules.cljs"}}
+                                     {:cwd cwd})]
+    (testing "no :path rule → request is untouched"
+      (is (not (contains? (store/enrich-request base [{:match {:tool :read}}])
+                          :resolved-path))))
+    (testing "a :path rule → :resolved-path is the canonical absolute path"
+      (let [req (store/enrich-request base [{:match {:tool :read :path #"rules\.cljs"}}])]
+        (is (= (sandbox/real-resolve cwd "src/xi/rules.cljs") (:resolved-path req)))))))
+
+(deftest path-rule-matches-relative-via-resolved-path
+  (let [cwd      (.cwd js/process)
+        real-cwd (sandbox/real-resolve cwd ".")
+        ;; absolute-anchored allow rule, like the ~/Code/Projects rule
+        ruleset [{:match {:tool #{:read} :path (re-pattern (str "^" real-cwd "/src/"))}
+                  :action {:type :allow}}]
+        raw-req (fn [p] (store/enrich-request
+                         (store/decision-request {:name "read" :arguments {:path p}}
+                                                 {:cwd cwd})
+                         ruleset))]
+    (testing "absolute path under the anchored dir matches"
+      (is (= :allow (get-in (rules/first-match ruleset (raw-req (str cwd "/src/xi/rules.cljs")))
+                            [:action :type]))))
+    (testing "relative path resolving into the anchored dir also matches"
+      (is (= :allow (get-in (rules/first-match ruleset (raw-req "src/xi/rules.cljs"))
+                            [:action :type]))))
+    (testing "a path outside the anchored dir does not match"
+      (is (nil? (rules/first-match ruleset (raw-req "/etc/hosts")))))))
 
 (deftest credential-path?-classifies-paths
   (let [cwd (.cwd js/process)

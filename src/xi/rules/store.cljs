@@ -210,11 +210,13 @@
 
 (defn enrich-request
   "Add the opt-in, I/O-derived match fields to a decision `req` that the given
-   `ruleset` actually needs — `:outside-cwd?` for `:outside` rules,
-   `:credential-path?` for `:credential` rules, and `:nodes` (tree-sitter) for
-   `:node` rules."
+   `ruleset` actually needs — `:resolved-path` (canonical absolute path) for
+   `:path` rules, `:outside-cwd?` for `:outside` rules, `:credential-path?` for
+   `:credential` rules, and `:nodes` (tree-sitter) for `:node` rules."
   [req ruleset]
   (cond-> req
+    (and (:path req) (rules/needs-resolved-path? ruleset))
+    (assoc :resolved-path (sandbox/real-resolve (:effective-cwd req) (str (:path req))))
     (and (:path req) (rules/needs-outside? ruleset))
     (assoc :outside-cwd? (outside-cwd? (:effective-cwd req) (:path req)))
     (and (:path req) (rules/needs-credential? ruleset))
