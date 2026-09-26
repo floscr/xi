@@ -1380,9 +1380,11 @@
        set))
 
 (def ^:private HELPER_EQUIV
-  "CLIs that have a builtin helper — (sh …) to these is bounced with a hint
-   instead of raising an approval dialog. Allowlisted CLIs (global config or
-   /clj allow) bypass this — the escape hatch for when flags are needed."
+  "CLIs that have a builtin helper — (sh …) to these carries a hint pointing at
+   the helper. Read-only ones (SAFE_AUTORUN) auto-run with the hint appended;
+   the rest go through the normal per-CLI approval dialog (no longer a hard
+   block) with the hint attached. Allowlisted CLIs (global config or /clj allow)
+   skip the dialog — the escape hatch for when flags are needed."
   {"ls"     "(ls dir)"
    "cat"    "(cat f)"
    "head"   "(head f n)"
@@ -1425,8 +1427,11 @@
   "Read-only HELPER_EQUIV CLIs that are auto-allowed instead of bounced:
    the (sh …) call runs and the result gets a helper hint appended, so the
    model doesn't lose a turn. Other write CLIs (mkdir cp mv touch sed awk) and
-   network CLIs (curl wget) stay bounced — raw sh would bypass the helpers'
-   write-path / http-only guards.
+   network CLIs (curl wget) aren't auto-run — raw sh would bypass the helpers'
+   write-path / http-only guards — but they're no longer hard-blocked either:
+   they fall through to the normal per-CLI approval flow (with the helper hint
+   attached), the same as any non-allowlisted CLI. So the helper nudge is a
+   warning, not a dead-end error.
 
    `rm` is the one write exception: deleting scratch files (typically under
    /tmp) is common enough that requiring approval each time is friction, so
@@ -1596,9 +1601,11 @@
                                     (or (not= "ss" bin) (not ss-escalated?))))
                              needed)
             ;; Safe read-only CLIs run anyway — result + helper hint — so
-            ;; the model doesn't lose a turn; the rest of shadowed bounces.
+            ;; the model doesn't lose a turn. The rest of shadowed (write /
+            ;; network helper-equivalent CLIs) aren't hard-blocked; they fall
+            ;; through to the normal per-CLI approval flow below (like any other
+            ;; CLI), carrying the helper hint — a nudge, not a dead-end error.
             autorun  (filter #(contains? SAFE_AUTORUN %) shadowed)
-            blockers (remove (set autorun) shadowed)
             ;; bg CLIs skip the helper bounce (a background `npm run dev` has
             ;; no helper equivalent) but still need per-CLI user approval.
             bg-needed (->> bg-clis
@@ -1617,10 +1624,10 @@
                          " "
                          (remove
                           nil?
-                          [(when (seq autorun)
+                          [(when (seq shadowed)
                              (str "hint: prefer the builtin helpers over sh: "
                                   (str/join ", " (map #(str "`" % "` → " (HELPER_EQUIV %))
-                                                      autorun))))
+                                                      shadowed))))
                            (when tmp-rm?
                              (str "note: removing files under /tmp is usually "
                                   "unnecessary — /tmp is temporary and cleared "
@@ -1678,13 +1685,6 @@
                (pg/ask-server-control confirm! sc-cmd (pg/server-control-kind sc-cmd)))
               (.then (fn [res]
                        (or res (blocked (str "clj: user denied `" sc-cmd "`"))))))
-
-          (seq blockers)
-          (blocked (str "clj: don't shell out to "
-                        (str/join ", " (map #(str "`" % "`") blockers))
-                        " — use the builtin helper: "
-                        (str/join ", " (map #(str % " → " (HELPER_EQUIV %)) blockers))
-                        ". Helpers run in-process with no approval needed."))
 
           :else
           ;; First clear any out-of-repo builtin reads (cat/ls/grep/…) through

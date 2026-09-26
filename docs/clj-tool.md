@@ -161,14 +161,17 @@ approval dialog. It splits into two tiers:
   arbitrary file, bypassing the write guards) escalate to the normal
   per-CLI approval dialog instead (`ss-escalated-command?`, bundled short
   flags like `-tK` included).
-- **Hard bounce**: write CLIs (`mkdir`, `cp`, `mv`, `touch`, `sed`, `awk`)
-  and network CLIs (`curl`, `wget`) are intercepted with the helper hint
-  instead of running — raw `sh` would bypass the helpers' write-path and
-  http(s)-only guards. The hint points to the guarded helper
-  (`(mkdir d)`, `(curl url)`, `(str/replace …)` + `(spit …)`, …).
+- **Approval + hint**: write CLIs (`mkdir`, `cp`, `mv`, `touch`, `sed`,
+  `awk`) and network CLIs (`curl`, `wget`) aren't auto-run — raw `sh` would
+  bypass the helpers' write-path and http(s)-only guards — but they're **not
+  hard-blocked** either. They fall through to the normal per-CLI approval
+  dialog (like any other non-allowlisted CLI), carrying the helper hint that
+  points to the guarded helper (`(mkdir d)`, `(curl url)`,
+  `(str/replace …)` + `(spit …)`, …). So the nudge is a warning, not a
+  dead-end error that wastes a turn — approve it and the raw command runs.
 
-Allowlisting the CLI (globally or `/clj allow`) bypasses the bounce when
-its real flags are needed.
+Allowlisting the CLI (globally or `/clj allow`) skips the approval dialog
+and runs it dialog-free when its real flags are needed.
 
 If the appended hints degrade model output (noise, the model parroting the
 hint, …), disable them without losing the auto-run behavior by setting

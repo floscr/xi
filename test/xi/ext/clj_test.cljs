@@ -415,10 +415,16 @@
   (is (contains? (:remove-tools clj-ext/extension) "bash")))
 
 (deftest gate-hints-curl-helper
-  (let [res (gate {:name "clj" :arguments {:code "(sh \"curl\" \"https://x.y\")"}}
-                  (gate-ctx))]
-    (is (:intercepted res))
-    (is (str/includes? (intercepted-text res) "(curl url)"))))
+  ;; curl is no longer hard-blocked — it routes through per-CLI approval. With
+  ;; no confirm! attached (gate-ctx) that surfaces the "needs approval" message.
+  (async done
+    (-> (js/Promise.resolve
+         (gate {:name "clj" :arguments {:code "(sh \"curl\" \"https://x.y\")"}}
+               (gate-ctx)))
+        (.then (fn [res]
+                 (is (:intercepted res))
+                 (is (str/includes? (intercepted-text res) "need approval"))
+                 (done))))))
 
 (deftest curl-rejects-non-http
   (let [res (eval! "(curl \"file:///etc/passwd\")")]
@@ -503,13 +509,35 @@
                    (is (str/includes? (intercepted-text r) "user denied"))
                    (done)))))))
 
-(deftest gate-bounces-write-clis
-  ;; write CLIs keep the hard bounce — raw sh would bypass the helpers'
-  ;; write-path guard.
-  (let [res (gate {:name "clj" :arguments {:code "(sh \"sed\" \"-i\" \"s/a/b/\" \"f\")"}}
-                  (gate-ctx))]
-    (is (:intercepted res))
-    (is (str/includes? (intercepted-text res) "builtin helper"))))
+(deftest gate-write-clis-route-through-approval
+  ;; write / network helper-equivalent CLIs (sed, curl, …) are no longer
+  ;; hard-blocked with a dead-end error — they fall through to the normal
+  ;; per-CLI approval flow. With no confirm! attached (gate-ctx), that surfaces
+  ;; the standard "needs approval, no client attached" message, not a helper
+  ;; bounce.
+  (async done
+    (-> (js/Promise.resolve
+         (gate {:name "clj" :arguments {:code "(sh \"sed\" \"-i\" \"s/a/b/\" \"f\")"}}
+               (gate-ctx)))
+        (.then (fn [res]
+                 (is (:intercepted res))
+                 (is (str/includes? (intercepted-text res) "need approval"))
+                 (is (not (str/includes? (intercepted-text res) "builtin helper")))
+                 (done))))))
+
+(deftest gate-approves-network-cli-with-helper-hint
+  ;; Approving the CLI lets it through (not intercepted), with the CLI allowed
+  ;; and the helper hint attached — a warning nudge, not an error.
+  (async done
+    (let [ctx (assoc (gate-ctx) :confirm! (fn [_ & _] (js/Promise.resolve true)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code "(sh \"curl\" \"http://localhost:8199/\")"}}
+                 ctx))
+          (.then (fn [res]
+                   (is (not (:intercepted res)))
+                   (is (some #{"curl"} (get-in res [:arguments :_allowed])))
+                   (is (str/includes? (str (get-in res [:arguments :_hint])) "(curl url)"))
+                   (done)))))))
 
 (deftest clj-tool-appends-hint
   (let [res (clj-ext/reply->result
