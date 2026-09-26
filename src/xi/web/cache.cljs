@@ -209,8 +209,12 @@
   "Event types after which the cache is worth refreshing.
    :history/append is intentionally excluded — it fires on every streaming
    delta and would thrash localStorage during long turns. :agent/tool-result
-   gives a mid-turn checkpoint; :agent/turn-end persists the final state."
-  #{:lobby/state :room/joined :session/resumed
+   gives a mid-turn checkpoint; :agent/turn-end persists the final state.
+   :session/resumed-tail matters: on a cache-echoing join the server marks the
+   full :session/resumed :no-broadcast? and ships only the tail, so without it
+   the merged history never lands back in localStorage and every switch
+   repaints the same stale snapshot."
+  #{:lobby/state :room/joined :session/resumed :session/resumed-tail
     :agent/turn-end :agent/tool-result :agent/abort})
 
 (def ^:private tool-result-persist-interval-ms
