@@ -50,6 +50,16 @@
 ;;
 ;; createSdkMcpServer needs Zod schemas. Convert our JSON Schema tool defs.
 
+(defn- parse-json-string
+  "If v is a string, try to JSON.parse it; on failure return the original
+   string (so validation reports a clear type error). Non-strings pass
+   through untouched. Lets models that serialize structured args as a JSON
+   string still satisfy array/object schemas."
+  [v]
+  (if (string? v)
+    (try (js/JSON.parse v) (catch :default _ v))
+    v))
+
 (defn- json-schema-prop->zod
   [prop]
   (let [prop-type (get prop :type)
@@ -59,20 +69,22 @@
                (= "string" prop-type) (.string z)
                (or (= "number" prop-type) (= "integer" prop-type)) (.number z)
                (= "boolean" prop-type) (.boolean z)
-               (= "array" prop-type) (if-let [items (get prop :items)]
-                                       (.array z (json-schema-prop->zod items))
-                                       (.array z (.unknown z)))
-               (= "object" prop-type) (if-let [props (get prop :properties)]
-                                        (let [required-set (set (get prop :required))
-                                              shape (reduce-kv
-                                                     (fn [acc k v]
-                                                       (let [zod-prop (json-schema-prop->zod v)]
-                                                         (assoc acc k (if (contains? required-set k)
-                                                                        zod-prop
-                                                                        (.optional zod-prop)))))
-                                                     {} props)]
-                                          (.object z (clj->js shape)))
-                                        (.record z (.string z) (.unknown z)))
+               (= "array" prop-type) (.preprocess z parse-json-string
+                                       (if-let [items (get prop :items)]
+                                         (.array z (json-schema-prop->zod items))
+                                         (.array z (.unknown z))))
+               (= "object" prop-type) (.preprocess z parse-json-string
+                                        (if-let [props (get prop :properties)]
+                                          (let [required-set (set (get prop :required))
+                                                shape (reduce-kv
+                                                       (fn [acc k v]
+                                                         (let [zod-prop (json-schema-prop->zod v)]
+                                                           (assoc acc k (if (contains? required-set k)
+                                                                          zod-prop
+                                                                          (.optional zod-prop)))))
+                                                       {} props)]
+                                            (.object z (clj->js shape)))
+                                          (.record z (.string z) (.unknown z))))
                :else (.unknown z))]
     (if-let [desc (get prop :description)]
       (.describe base desc)
