@@ -50,6 +50,14 @@
 (deftest scan-parse-error
   (is (:parse-error (clj-ext/scan-sh-calls "(sh \"x\""))))
 
+(deftest scan-sh-leading-dir-map
+  (let [scan (clj-ext/scan-sh-calls "(sh {:dir \"sub\"} \"bb\" \"build\")")]
+    (is (= #{"bb"} (:literals scan)))
+    (is (not (:dynamic? scan))))
+  ;; the literal :dir is gated like a read
+  (is (= ["/other/repo"]
+         (clj-ext/scan-read-paths "(sh {:dir \"/other/repo\"} \"bb\" \"build\")"))))
+
 (deftest scan-no-sh
   (let [scan (clj-ext/scan-sh-calls "(+ 1 2)")]
     (is (= #{} (:literals scan)))
@@ -362,6 +370,25 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "=> 1"))))
 
+(deftest sh-dir-opt-runs-in-dir
+  (let [d   (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-sh-dir-"))
+        res (eval! (str "(sh {:dir \"" d "\"} \"pwd\")") {:allowed ["pwd"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) d))))
+
+(deftest sh-dir-opt-relative
+  (let [d    (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-sh-rel-"))
+        base (node-path/basename d)
+        res  (eval! (str "(sh {:dir \"" base "\"} \"pwd\")") {:allowed ["pwd"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) d))))
+
+(deftest sh-dir-opt-missing-dir
+  (let [res (eval! "(sh {:dir \"xi-definitely-missing-dir-xyz\"} \"pwd\")"
+                   {:allowed ["pwd"]})]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "existing directory"))))
+
 ;; ── tool gate ──────────────────────────────────────────────────────────────────
 
 (def ^:private gate (:tool-gate clj-ext/extension))
@@ -415,6 +442,75 @@
                    (is (str/includes? (intercepted-text r) "user denied"))
                    (done)))))))
 
+(deftest gate-engine-allow-rule-skips-approval
+  ;; A session :allow rule (rules engine) for a non-autorun CLI lets (sh …) run
+  ;; without a confirm — headless ctx (no confirm!) would otherwise block it —
+  ;; and injects the CLI as :_allowed so the worker's runtime check permits it.
+  (async done
+    (let [state {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :sh :cli "npm"}
+                                                       :action {:type :allow}}]}}}}}
+          ctx   (assoc (gate-ctx) :get-state (fn [] state) :confirm! nil)
+          res   (gate {:name "clj" :arguments {:code "(sh \"npm\" \"--version\")"}} ctx)]
+      (-> (js/Promise.resolve res)
+          (.then (fn [r]
+                   (is (not (:intercepted r)))
+                   (is (contains? (set (get-in r [:arguments :_allowed])) "npm"))
+                   (done)))))))
+
+(deftest gate-engine-deny-rule-blocks
+  ;; A session :deny rule blocks the command with the rule's message.
+  (let [state {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :sh :cli "npm"}
+                                                    :action {:type :deny :message "no npm here"}}]}}}}}
+        ctx   (assoc (gate-ctx) :get-state (fn [] state))
+        res   (gate {:name "clj" :arguments {:code "(sh \"npm\" \"run\" \"x\")"}} ctx)]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "no npm here"))))
+
+(deftest gate-dir-scoped-deny-matches-per-command-dir
+  ;; A :dir-scoped deny rule fires only when the command's effective cwd (its
+  ;; per-call :dir opt, resolved against cwd) is inside that directory.
+  (let [scoped (node-path/join (os/tmpdir) "xi-dir-scope-deny")
+        state  {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :sh :cli "npm" :dir scoped}
+                                                     :action {:type :deny :message "no npm in scoped dir"}}]}}}}}
+        ctx    (assoc (gate-ctx) :cwd (os/tmpdir) :get-state (fn [] state))
+        res    (gate {:name "clj"
+                      :arguments {:code (str "(sh {:dir \"" scoped "\"} \"npm\" \"x\")")}}
+                     ctx)]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "no npm in scoped dir"))))
+
+(deftest gate-dir-scoped-deny-ignores-other-dir
+  ;; The same rule leaves a command running in the plain cwd untouched — its
+  ;; effective cwd is not inside the scoped :dir, so the deny doesn't match.
+  (let [scoped (node-path/join (os/tmpdir) "xi-dir-scope-deny")
+        state  {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :sh :cli "npm" :dir scoped}
+                                                     :action {:type :deny :message "no npm in scoped dir"}}]}}}}}
+        ctx    (assoc (gate-ctx) :cwd (os/tmpdir) :get-state (fn [] state) :confirm! nil)
+        res    (gate {:name "clj" :arguments {:code "(sh \"npm\" \"x\")"}} ctx)]
+    (is (not (str/includes? (str (intercepted-text res)) "no npm in scoped dir")))))
+
+(defn- clj-command [st args]
+  ((-> clj-ext/extension :commands first :handler)
+   st {:room-id "r" :args args}))
+
+(defn- session-rules [st]
+  (get-in st [:rooms "r" :ext :rules :rules]))
+
+(deftest command-allow-writes-session-rule
+  ;; /clj allow <cli> adds a {:tool :sh :cli …} session allow-rule to the
+  ;; shared rules store (not a private allowlist), so /rules sees it and the
+  ;; engine consult in gate-clj picks it up.
+  (let [st  {:rooms {"r" {:ext {}}}}
+        st' (:state (clj-command st "allow npm"))]
+    (is (some #(= {:match {:tool :sh :cli "npm"} :action {:type :allow}} %)
+              (session-rules st')))))
+
+(deftest command-revoke-removes-session-rule
+  (let [st  {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :sh :cli "npm"}
+                                                  :action {:type :allow}}]}}}}}
+        st' (:state (clj-command st "revoke npm"))]
+    (is (empty? (session-rules st')))))
+
 (deftest extension-removes-bash
   (is (contains? (:remove-tools clj-ext/extension) "bash")))
 
@@ -462,6 +558,97 @@
           (.then (fn [r]
                    (is (not (:intercepted r)))
                    (is (seq (get-in r [:arguments :_allowed-reads])))
+                   (done)))))))
+
+(deftest gate-headless-credential-read-blocked
+  ;; With no confirm! (headless), an out-of-repo read of a credential/secret
+  ;; path must NOT be silently auto-approved: auto-approval would inject an
+  ;; :_allowed-reads root that defeats resolve-read's credential hard-block.
+  (async done
+    (let [ctx (assoc (gate-ctx) :cwd (os/tmpdir))] ; confirm! nil == headless
+      (-> (js/Promise.resolve
+           (gate {:name "clj"
+                  :arguments {:code (str "(cat \"" (os/homedir) "/.ssh/xi-gate-cred.txt\")")}}
+                 ctx))
+          (.then (fn [r]
+                   (is (:intercepted r) "headless credential read is blocked, not auto-approved")
+                   (is (str/includes? (intercepted-text r) "denied reading outside"))
+                   (is (nil? (get-in r [:arguments :_allowed-reads])))
+                   (done)))))))
+
+(deftest gate-headless-noncredential-read-auto-approved
+  ;; Headless auto-approve still applies to ordinary out-of-repo paths; only
+  ;; credential/secret paths are withheld from silent approval.
+  (async done
+    (let [ctx (assoc (gate-ctx) :cwd (os/tmpdir))] ; confirm! nil == headless
+      (-> (js/Promise.resolve
+           (gate {:name "clj"
+                  :arguments {:code (str "(cat \"" (os/homedir) "/xi-gate-plain.txt\")")}}
+                 ctx))
+          (.then (fn [r]
+                   (is (not (:intercepted r)) "ordinary headless outside read auto-approves")
+                   (is (seq (get-in r [:arguments :_allowed-reads])))
+                   (done)))))))
+
+(deftest gate-engine-allow-rule-skips-outside-read-dialog
+  ;; A session :allow rule matching the out-of-repo read path bypasses the
+  ;; outside-read dialog entirely (the confirm! here would DENY) and injects the
+  ;; approved root as :_allowed-reads — this is how a prior [r] repo grant, or
+  ;; any config/hardened allow, lets clj's out-of-repo reads through silently.
+  (async done
+    (let [state {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :read :path #"xi-gate-eng-read"}
+                                                       :action {:type :allow}}]}}}}}
+          ctx   (assoc (gate-ctx) :cwd (os/tmpdir) :get-state (fn [] state)
+                       :confirm! (fn [_ & _] (js/Promise.resolve false)))
+          res   (gate {:name "clj"
+                       :arguments {:code (str "(cat \"" (os/homedir) "/xi-gate-eng-read.txt\")")}}
+                      ctx)]
+      (-> (js/Promise.resolve res)
+          (.then (fn [r]
+                   (is (not (:intercepted r)) "engine allow bypasses the deny dialog")
+                   (is (seq (get-in r [:arguments :_allowed-reads])))
+                   (done)))))))
+
+(deftest gate-engine-deny-rule-blocks-outside-write
+  ;; A session :deny rule blocks an out-of-repo write even when the confirm!
+  ;; would say yes — the engine consult wins over the dialog.
+  (async done
+    (let [state {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool #{:write :edit} :path #"xi-gate-eng-write"}
+                                                       :action {:type :deny :message "nope"}}]}}}}}
+          ctx   (assoc (gate-ctx) :cwd (os/tmpdir) :get-state (fn [] state)
+                       :confirm! (fn [_ & _] (js/Promise.resolve true)))
+          res   (gate {:name "clj"
+                       :arguments {:code (str "(spit \"" (os/homedir) "/xi-gate-eng-write.txt\" \"x\")")}}
+                      ctx)]
+      (-> (js/Promise.resolve res)
+          (.then (fn [r]
+                   (is (:intercepted r))
+                   (is (str/includes? (intercepted-text r) "denied writing outside"))
+                   (done)))))))
+
+(deftest gate-outside-write-repo-answer-persists-session-rule
+  ;; Answering [r] (allow-repo) on an out-of-repo write persists a repo-scoped
+  ;; session allow-rule via :ext.rules/add (writes grouped with edits), mirroring
+  ;; the write-tool gate — so later writes under that repo skip the dialog.
+  (async done
+    (let [repo (fs/mkdtempSync (node-path/join (os/homedir) "clj-gate-repo-"))
+          _    (fs/mkdirSync (node-path/join repo ".git"))
+          f    (node-path/join repo "file.txt")
+          disp (atom [])
+          ctx  (assoc (gate-ctx) :cwd (os/tmpdir)
+                      :confirm! (fn [_ & _] (js/Promise.resolve :repo))
+                      :dispatch! (fn [ev] (swap! disp conj ev)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code (str "(spit \"" f "\" \"x\")")}} ctx))
+          (.then (fn [r]
+                   (is (not (:intercepted r)))
+                   (let [ev (first (filter #(= :ext.rules/add (:type %)) @disp))]
+                     (is (some? ev) "an :ext.rules/add event was dispatched")
+                     (is (= :session (:scope ev)))
+                     (is (= #{:write :edit} (get-in ev [:rule :match :tool])))
+                     (is (str/includes? (get-in ev [:rule :match :repo]) "clj-gate-repo"))
+                     (is (= {:type :allow} (get-in ev [:rule :action]))))
+                   (fs/rmSync repo #js {:recursive true :force true})
                    (done)))))))
 
 (deftest gate-autoruns-ls-with-hint
@@ -761,6 +948,13 @@
 (deftest scan-flags-dynamic-bg-command
   (is (:bg-dynamic? (clj-ext/scan-code "(let [c \"x\"] (process/start c))"))))
 
+(deftest scan-bg-leading-dir-map
+  (let [scan (clj-ext/scan-code
+              "(process/start {:dir \"sub\"} \"bb build\") (process/poll-until {:dir \"/x\"} \"curl -sf y\")")]
+    (is (= ["bb build" "curl -sf y"] (:bg scan)))
+    (is (not (:bg-dynamic? scan)))
+    (is (= ["sub" "/x"] (mapv :path (:reads scan))))))
+
 (deftest gate-blocks-dynamic-bg-command
   (let [res (gate {:name "clj" :arguments {:code "(process/start (str \"npm \" x))"}}
                   (gate-ctx))]
@@ -832,6 +1026,23 @@
       (is (str/includes? text ":status :exited"))
       (is (str/includes? text ":exit 0"))
       (is (str/includes? text "done")))))
+
+(deftest process-start-dir-opt
+  (let [d   (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-bg-dir-"))
+        res (eval! (str "(let [{:keys [pid]} (process/start {:dir \"" d "\"} \"pwd\")]"
+                        "  (process/wait pid 5000))")
+                   {:allowed-bg ["pwd"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) d))))
+
+(deftest poll-until-dir-opt
+  (let [d   (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-poll-dir-"))
+        res (eval! (str "(process/poll-until {:dir \"" d "\"} \"pwd\" "
+                        "{:until :stdout-matches :pattern \"" (node-path/basename d) "\" "
+                        ":interval-ms 50 :timeout-ms 2000})")
+                   {:allowed-bg ["pwd"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) ":met? true"))))
 
 (deftest process-list-and-stop
   (let [start (eval! "(:pid (process/start \"sleep 30\"))"

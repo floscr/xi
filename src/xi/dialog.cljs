@@ -24,7 +24,9 @@
    :always     {:value :always :key "a" :label "Always"
                 :resolved-label "Always allowed"}
    :allow-repo {:value :repo   :key "r" :label "Allow repo writes"
-                :resolved-label "Repo writes allowed"}})
+                :resolved-label "Repo writes allowed"}
+   :recommend-rule {:value :recommend :key "?" :label "Recommend a rule"
+                    :resolved-label "Recommending a rule…"}})
 
 (def default-confirm-options [:yes :no])
 
@@ -54,10 +56,13 @@
 
 (defn form-fields
   "Normalized fields for a :form dialog: each entry gets a :label (defaulting
-   to the humanized :name). Entries without a :name are dropped."
+   to the humanized :name) and a :value (the prefilled/initial text, defaulting
+   to \"\"). Entries without a :name are dropped."
   [dialog]
   (into []
-        (keep (fn [{:keys [name label] :as field}]
+        (keep (fn [{:keys [name label value] :as field}]
                 (when (seq (str name))
-                  (assoc field :label (or label (humanize-name name))))))
+                  (assoc field
+                         :label (or label (humanize-name name))
+                         :value (str value)))))
         (:fields dialog)))

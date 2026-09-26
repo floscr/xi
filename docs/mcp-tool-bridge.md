@@ -88,27 +88,37 @@ The SDK's `createSdkMcpServer` requires Zod schemas.
 `json-schema-prop->zod` / `json-schema->zod-shape` convert Xi's JSON Schema
 tool definitions to Zod types at MCP server creation time.
 
-## Permission gate
+## Permission gate & rules engine
 
-The permission gate (`ext/permission_gate.cljs`) blocks:
+Tool-call policy (allow / deny / nudge / ask / confirm) is driven by the
+declarative **rules engine** (`xi.ext.rules` + `xi.rules.store` /
+`xi.rules`) — see [rules.md](rules.md) for the full reference. In precedence
+order: an immutable hard-block (agents can never write the rules files), a
+hardened tier (`sudo`, remote-copy shells, …), repo/global config
+(`.xi/rules.edn`, `~/.config/xi/rules.edn`), runtime session rules, then the
+built-in defaults. Highlights the defaults still enforce:
 
-- **Writes to sensitive paths**: `/Mail/`, `/.ssh/`, `/.gnupg/`, `/.password-store/`
-- **Writes to protected paths**: `.env`, `.git/`, `node_modules/`
-- **Writes/edits outside the project repo**: any `write`/`edit` whose path
-  resolves outside the working dir (project repo) and the OS tmp dir requires
-  confirmation. Symlinks are canonicalized so the check can't be laundered
-  through a link created inside the repo; the tmp dir is always allowed.
-  When the target sits inside another git repo (a `.git` entry is found
-  walking up from the path), the confirm dialog offers a third option —
-  `[r]` in the TUI, "Allow repo" in the web client — that allows **all**
-  writes under that repo root for the rest of the room's session. Allowed
-  roots live room-scoped under `[:rooms rid :ext :permission-gate
-  :allowed-write-repos]`.
-- **Dangerous bash patterns**: `rm -rf`, `fs/delete-dir` / `fs/delete-tree`,
-  `sudo`, `chmod -R`, `dd if=`, etc.
+- **Credential paths** (`~/.ssh`, `~/.gnupg`, `~/.password-store`, …) —
+  hard-blocked for read/write (`:credential` matcher, symlink-canonicalized).
+- **Writes/edits outside the project repo**: the default outside-write rule
+  (`{:match {:tool #{:write :edit} :outside :cwd} :action {:type :ask …}}`)
+  confirms any `write`/`edit` whose path resolves outside the working dir and
+  the OS tmp dir. The confirm offers `[r]` *allow repo* when the target sits
+  inside another git repo, which persists a repo-scoped session allow-rule
+  (`{:match {:tool #{:write :edit} :repo <root>} :action {:type :allow}}`) in
+  the shared rules store — visible to `/rules`, not a private allowlist.
 
-To add a blocked pattern, edit the pattern/path lists in
-`ext/permission_gate.cljs`.
+What still lives in `ext/permission_gate.cljs`:
+
+- **`GUARDED_PATTERNS`** — dangerous bash substrings (`rm -rf`,
+  `fs/delete-dir` / `fs/delete-tree`, `chmod -R`, `dd if=`, …) that the `clj`
+  gate confirms before running scanned commands.
+- **Server control** (`server-restart` / `server-stop`) — handled specially
+  (`ask-server-control`, detached run) and deliberately never expressed as a
+  rule.
+
+To add a policy, prefer a rule (`.xi/rules.edn` or `/rules`); only the guarded
+patterns / server-control live in `ext/permission_gate.cljs`.
 
 ## NixOS executable resolution
 

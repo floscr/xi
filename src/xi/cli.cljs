@@ -65,6 +65,7 @@
             [xi.fx :as fx]
             [xi.naming :as naming]
             [xi.quick-replies :as quick-replies]
+            [xi.rules.store :as rules-store]
             [xi.summary :as summary]
             [xi.provider.claude :as claude]
             [xi.provider.ollama :as ollama]
@@ -192,6 +193,9 @@ FLAGS
                              agent.edn there sets :system-prompt(-file)/:model.
                              Implies --personal-agent-only.
   --debug-events             Write the full event stream as JSONL (see docs).
+  --no-hardened-rules        Drop the non-overridable hardened rules tier
+                             (sudo/remote-copy denies). Unsafe; agents cannot
+                             set this — it is a launch-time operator override.
   --stream                   prompt: stream response tokens to stdout as they arrive.
   --no-store                 prompt: run ephemerally — leave no session behind.
   --json                     sessions: emit a JSON array instead of TSV lines.
@@ -245,6 +249,7 @@ See docs/cli.md for the full reference.")
           "--agent"        (recur (nnext args) (assoc opts :agent (second args)
                                                      :personal-agent? true))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
+          "--no-hardened-rules" (recur (next args) (assoc opts :no-hardened-rules? true))
           "--model"        (recur (nnext args) (assoc opts :model (second args)))
           "--session"      (recur (nnext args) (assoc opts :session-id (second args)))
           "--port"         (recur (nnext args) (assoc opts :port (js/parseInt (second args) 10)))
@@ -1132,6 +1137,7 @@ See docs/cli.md for the full reference.")
       (clj-socket/bridge-install!)
       (clj-worker/install!))
     (let [{:keys [command] :as opts} (parse-args args)]
+      (rules-store/set-hardened-disabled! (:no-hardened-rules? opts))
       (case command
         :help       (do (.write js/process.stdout (str HELP_TEXT "\n"))
                         (js/process.exit 0))

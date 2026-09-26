@@ -375,94 +375,20 @@
   (status! dispatch! room-id
            "/mcp auth (OAuth for hosted MCP servers) is not implemented yet — Phase C."))
 
-;; ── Tool gate (confirm every MCP tool call) ───────────────────────────────────
-
-(defn- format-arg-value
-  "Render one argument value for the confirm block: strings verbatim (so paths
-   and prose read naturally), everything else via pr-str."
-  [v]
-  (if (string? v) v (pr-str v)))
-
-(defn format-arguments
-  "Indented `key: value` lines for a tool-call arguments map (a placeholder
-   when empty). Shown in the gate block so the user sees exactly what the model
-   is about to send to the MCP server."
-  [arguments]
-  (if (empty? arguments)
-    "  (no arguments)"
-    (str/join "\n"
-              (map (fn [[k v]] (str "  " (name k) ": " (format-arg-value v)))
-                   arguments))))
-
-(defn gate-message
-  "The confirm-dialog text for an MCP tool call — server, tool, and every
-   argument, so the web/TUI block carries as much info as possible."
-  [server tool arguments]
-  (str "MCP tool call — approve?\n\n"
-       "Server: " server "\n"
-       "Tool:   " tool "\n\n"
-       "Arguments:\n"
-       (format-arguments arguments)))
-
-(defn- tool-allowed?
-  "Has this exact MCP tool been remembered as always-allowed for the room?
-   Remembering is per-room (i.e. per session) and keyed on the fully qualified
-   tool name, so it covers every call to that tool regardless of arguments."
-  [st room-id qualified-name]
-  (contains? (get-in st [:rooms room-id :ext :mcp :allowed-tools]) qualified-name))
-
-(defn- allow-tool-handler
-  "Remember `tool` as always-allowed for the room's session — set when the user
-   chooses [a]llow always on an MCP confirm dialog. Room-scoped, so it lives as
-   long as the room does and is cleared when the session ends."
-  [st {:keys [room-id tool]}]
-  {:state (update-in st [:rooms room-id :ext :mcp :allowed-tools]
-                     (fnil conj #{}) tool)})
-
-(defn- mcp-tool-gate
-  "Gate every external MCP tool call behind a confirm dialog. Non-MCP tools
-   (bare names) pass through untouched; on approval the call proceeds, on
-   denial it's blocked (nil). With no :confirm! (the client mirror, where the
-   gate never actually executes tools) it passes through — the authoritative
-   gate runs server-side, where :confirm! resolves to its safe default (deny)
-   when no client is attached to approve.
-
-   The dialog offers a third choice, [a]llow always, which allows the call and
-   remembers this tool for the rest of the session (see allow-tool-handler), so
-   subsequent calls to the same tool skip the prompt entirely."
-  [tool-call {:keys [confirm! get-state dispatch! room-id]}]
-  (if-let [{:keys [server tool]} (parse-qualified-name (:name tool-call))]
-    (cond
-      (not confirm!) tool-call
-      (and get-state (tool-allowed? (get-state) room-id (:name tool-call))) tool-call
-      :else
-      (-> (confirm! (gate-message server tool (:arguments tool-call))
-                    {:options [:yes :no :always]})
-          (.then (fn [ans]
-                   (cond
-                     (= ans :always)
-                     (do (when dispatch!
-                           (dispatch! {:type :mcp/allow-tool
-                                       :room-id room-id
-                                       :tool (:name tool-call)}))
-                         tool-call)
-                     ans tool-call
-                     :else nil)))))
-    tool-call))
-
 (defn create
   "Factory — the /mcp control extension, or nil when no manager is in ctx.
    Also installs configured MCP servers into the manager as a side effect the
-   first time it runs with a manager (see xi.cli, which calls install!)."
+   first time it runs with a manager (see xi.cli, which calls install!).
+
+   Every external MCP tool call is confirmed before it runs — but that gate now
+   lives in the rules engine (xi.rules.defaults has a default `{:match {:tool
+   :mcp} :action {:type :ask …}}` rule, and the rules ext renders the
+   informative server/tool/arguments block). [a]lways there persists a session
+   allow-rule narrowed to that mcp server + tool, so this ext no longer carries
+   its own tool-gate or allow-list."
   [{:keys [manager]}]
   (when manager
     {:id        :mcp
-     ;; Every external MCP tool call is confirmed before it runs (see
-     ;; mcp-tool-gate) — external servers are third-party code, so nothing they
-     ;; expose executes without an explicit, information-rich approval.
-     :tool-gate mcp-tool-gate
-     ;; Remembers [a]llow-always choices per room for the session's lifetime.
-     :handlers  {:mcp/allow-tool allow-tool-handler}
      :commands [{:name "mcp"
                  :description "Manage MCP servers (list/add/enable/disable/remove/refresh)"
                  :handler mcp-command

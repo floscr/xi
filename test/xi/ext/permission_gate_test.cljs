@@ -14,82 +14,35 @@
 
 (def ^:private repo-cwd (.cwd js/process))
 
-(deftest write-inside-repo-passes-without-confirmation
+;; The write / blocked-command / guarded / outside-repo policy gates moved to
+;; the rules engine (xi.rules.defaults); the permission-gate tool-gate now only
+;; guards the server-control tasks. So ordinary calls pass through untouched.
+
+(deftest write-passes-through-gate
   (async done
     (let [calls (atom [])
           tc {:name "write"
-              :arguments {:path (node-path/join repo-cwd "target" "scratch.txt")}}]
+              :arguments {:path (node-path/join (os/homedir) "outside.txt")}}]
       (-> (js/Promise.resolve (gate tc (ctx repo-cwd false calls)))
           (.then (fn [res]
-                   (is (= tc res) "in-repo write is allowed unchanged")
-                   (is (empty? @calls) "confirm! not invoked for in-repo path")
+                   (is (= tc res) "write passes the permission-gate unchanged")
+                   (is (empty? @calls) "confirm! not invoked — writes are now gated by rules")
                    (done)))))))
 
-(deftest write-to-tmp-passes-without-confirmation
+(deftest ordinary-bash-passes-through
   (async done
     (let [calls (atom [])
-          tc {:name "write"
-              :arguments {:path (node-path/join (os/tmpdir) "scratch.txt")}}]
+          tc {:name "bash" :arguments {:command "rm -rf /home/x/build"}}]
       (-> (js/Promise.resolve (gate tc (ctx repo-cwd false calls)))
           (.then (fn [res]
-                   (is (= tc res) "tmp write is allowed unchanged")
-                   (is (empty? @calls) "confirm! not invoked for tmp path")
+                   (is (= tc res) "guarded bash is no longer gated here (rules do it)")
+                   (is (empty? @calls) "confirm! not invoked")
                    (done)))))))
 
-(deftest write-outside-repo-requires-confirmation-blocks-on-no
-  (async done
-    (let [calls (atom [])
-          out (node-path/join (os/homedir) "xi-outside-write-test.txt")
-          tc {:name "edit" :arguments {:path out}}]
-      (-> (js/Promise.resolve (gate tc (ctx repo-cwd false calls)))
-          (.then (fn [res]
-                   (is (nil? res) "denied outside-repo write is blocked")
-                   (is (= 1 (count @calls)) "confirm! invoked once")
-                   (is (re-find #"outside the project repo" (first @calls)))
-                   (done)))))))
-
-(deftest write-outside-repo-skips-confirm-when-repo-allowed
-  (async done
-    (let [calls (atom [])
-          home  (os/homedir)
-          out   (node-path/join home "xi-outside-write-test.txt")
-          tc    {:name "write" :arguments {:path out}}
-          st    {:rooms {"r" {:ext {:permission-gate
-                                    {:allowed-write-repos #{home}}}}}}
-          ctx'  (assoc (ctx repo-cwd false calls)
-                       :room-id "r"
-                       :get-state (fn [] st))]
-      (-> (js/Promise.resolve (gate tc ctx'))
-          (.then (fn [res]
-                   (is (= tc res) "write under an allowed repo passes through")
-                   (is (empty? @calls) "confirm! not invoked for allowed repo")
-                   (done)))))))
-
-(deftest write-outside-repo-allowed-on-yes
-  (async done
-    (let [calls (atom [])
-          out (node-path/join (os/homedir) "xi-outside-write-test.txt")
-          tc {:name "write" :arguments {:path out}}]
-      (-> (js/Promise.resolve (gate tc (ctx repo-cwd true calls)))
-          (.then (fn [res]
-                   (is (= tc res) "approved outside-repo write passes through")
-                   (is (= 1 (count @calls)) "confirm! invoked once")
-                   (done)))))))
-
-(deftest fs-delete-dir-is-a-guarded-pattern
+(deftest guarded-patterns-still-published
+  ;; clj reuses these patterns for (sh …) argv strings.
   (is (some #{"fs/delete-dir"} pg/GUARDED_PATTERNS))
-  (is (some #{"fs/delete-tree"} pg/GUARDED_PATTERNS)))
+  (is (some #{"fs/delete-tree"} pg/GUARDED_PATTERNS))
+  (is (some #{"git push"} pg/GUARDED_PATTERNS)))
 
-(deftest bash-fs-delete-tree-requires-confirmation
-  ;; A babashka/clojure dir-tree deletion shelled from bash is guarded like
-  ;; rm -rf — denying it blocks the command.
-  (async done
-    (let [calls (atom [])
-          tc {:name "bash"
-              :arguments {:command "bb -e '(babashka.fs/delete-tree \"build\")'"}}]
-      (-> (js/Promise.resolve (gate tc (ctx repo-cwd false calls)))
-          (.then (fn [res]
-                   (is (nil? res) "denied fs/delete-tree command is blocked")
-                   (is (= 1 (count @calls)) "confirm! invoked once")
-                   (is (re-find #"Guarded command" (first @calls)))
-                   (done)))))))
+

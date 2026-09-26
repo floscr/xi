@@ -15,28 +15,30 @@
    Real CLIs run only through (sh \"cmd\" \"arg\" …), which is permission
    gated: a pre-scan of the code (edamame parse) collects literal sh targets
    in the :tool-gate, checks them against the global allowlist
-   (~/.config/xi/ext/clj.edn → :allow-clis) and the per-room session
-   allowlist, and raises confirm dialogs for the rest. Approved binaries are
-   injected into the tool-call arguments (:_allowed) so the runtime check in
-   `sh` only ever executes vetted commands; dynamically computed command
-   names that were never approved fail at runtime.
+   (~/.config/xi/ext/clj.edn → :allow-clis) and the shared rules engine
+   (session/config allow + deny rules), and raises confirm dialogs for the
+   rest. Approved binaries are injected into the tool-call arguments
+   (:_allowed) so the runtime check in `sh` only ever executes vetted
+   commands; dynamically computed command names that were never approved fail
+   at runtime.
 
    Paths: reads are blocked from credential paths (xi.sandbox.core
    hidden-paths); writes are limited to the room cwd and the OS tmp dir.
 
-   Session allowlist lives room-scoped under [:rooms rid :ext :clj]
-   (:allowed-clis). `/clj` shows status; `/clj allow|revoke <cli>` edits the
-   session allowlist; `/clj reset` drops the room's REPL context.
-   Disable at runtime with `/ext disable clj`."
+   Session-allowed CLIs live as session rules in the rules store (shape
+   {:tool :sh :cli \"…\"}), visible in /rules. `/clj` shows status;
+   `/clj allow|revoke <cli>` adds/removes those session rules; `/clj reset`
+   drops the room's REPL context. Disable at runtime with `/ext disable clj`."
   (:require [clojure.string :as str]
             [clojure.walk :as walk]
             [cljs.reader :as reader]
             [edamame.core :as e]
             [sci.core :as sci]
-            [xi.core.state :as state]
             [xi.ext.clj-process :as proc]
             [xi.ext.clj-socket :as sock]
             [xi.ext.permission-gate :as pg]
+            [xi.rules :as rules]
+            [xi.rules.store :as rules-store]
             [xi.sandbox.core :as sandbox]
             ["node:child_process" :as cp]
             ["node:crypto" :as crypto]
@@ -240,6 +242,16 @@
           (throw (ex-info (str "clj: writes are limited to the working dir and "
                                (os/tmpdir) ": " p) {})))))))
 
+(defn- resolve-dir
+  "Resolve the :dir of an optional bb-style leading opts map ((sh {:dir d} …),
+   (process/start {:dir d} …)) against the room cwd — gated like a read, so an
+   out-of-repo dir raises the approval dialog. Must be an existing directory."
+  [opts d]
+  (let [resolved (resolve-read opts d)]
+    (when-not (try (.isDirectory (fs/statSync resolved)) (catch :default _ false))
+      (throw (ex-info (str "clj: :dir is not an existing directory: " d) {})))
+    resolved))
+
 (defn- glob-base
   "The literal directory prefix of a glob pattern — everything before the first
    glob metacharacter, trimmed to its last path segment (\".\" when there is
@@ -287,10 +299,15 @@
 (defn- sh-fn
   "(sh \"cmd\" \"arg\" …) → stdout string on exit 0 (falls back to stderr when
    stdout is empty — ffmpeg-style tools); throws ex-info with
-   {:exit :out :err} on non-zero exit. Mirrors the git helper."
+   {:exit :out :err} on non-zero exit. Mirrors the git helper.
+   An optional bb-style leading opts map takes :dir — the directory (relative
+   to the room cwd, or absolute) to run in: (sh {:dir \"sub\"} \"bb\" \"build\")."
   [opts]
   (fn [& argv]
-    (let [{:keys [allowed]} @opts
+    (let [[m argv] (if (map? (first argv))
+                     [(first argv) (rest argv)]
+                     [nil argv])
+          {:keys [allowed]} @opts
           bin (first argv)]
       (cond
         (not (string? bin))
@@ -306,7 +323,8 @@
                              "user can run /clj allow " bin) {}))
 
         :else
-        (let [{:keys [exit out err]} (spawn-sync! argv (opts-cwd opts))]
+        (let [dir (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts))
+              {:keys [exit out err]} (spawn-sync! (vec argv) dir)]
           (if (zero? exit)
             (let [out' (str/trimr out)]
               (if (str/blank? out') (str/trimr err) out'))
@@ -735,7 +753,7 @@
                         'cheshire.core cheshire-namespace
                         ;; background processes: (process/start "cmd") etc.,
                         ;; command strings gated + enforced via :allowed-bg.
-                        'process (proc/sci-namespace opts)
+                        'process (proc/sci-namespace opts (fn [d] (resolve-dir opts d)))
                         ;; synchronous loopback TCP sockets:
                         ;; (socket/connect "127.0.0.1" 7474) … see
                         ;; xi.ext.clj-socket.
@@ -874,7 +892,10 @@
         "(jq \".foo[]\" json-or-data) → parsed result, no tmp file (opts {:raw true}) "
         "(git \"status\" \"--short\") → stdout string (pre-approved; push/clean "
         "excluded) (sh \"cmd\" \"arg\" …) → stdout string, throws on "
-        "non-zero exit ({:exit :out :err} in ex-data). "
+        "non-zero exit ({:exit :out :err} in ex-data); sh, process/start and "
+        "process/poll-until take an optional bb-style leading opts map with "
+        ":dir to run in another directory — (sh {:dir \"sub\"} \"bb\" "
+        "\"build\") — instead of cd-chaining. "
         "clojure.core + str/set/walk/edn aliases available. Paths accept a "
         "leading ~ or $HOME. Prefer this over "
         "bash pipelines: compute in-script, return small values. "
@@ -963,11 +984,71 @@
                     :room-id rid :pid (.-pid m)})
         nil))))
 
+(defn- outside-repo-rule
+  "Session repo-scoped allow-rule for the [r] answer on an out-of-repo
+   read/write, mirroring the rules ext's allow-repo-rule-from-req: writes are
+   grouped with edits (a write grant covers edits). nil when the path isn't
+   inside any repo — then the grant is one-off and nothing is persisted."
+  [kind repo]
+  (when repo
+    (let [tool (if (= :write kind) #{:write :edit} kind)]
+      {:match {:tool tool :repo repo} :action {:type :allow}})))
+
+(defn- approve-outside-path
+  "Approve one out-of-repo read/write `path` (kind :read or :write) by consulting
+   the rules engine as a {:tool :read/:write} request, then falling back to a
+   dialog. Returns a promise of the approved root (the repo root when granted a
+   repo, else the resolved path) or nil when denied/blocked.
+
+   - engine :allow    → auto-approve, no dialog (this is how a repo-scoped
+     session rule from a prior [r], or any config/hardened allow, skips the ask)
+   - engine :deny     → nil (blocked)
+   - engine :ask/none → dialog [y]/[n]/[r allow repo]; [r] persists a repo-scoped
+     session allow-rule (via :ext.rules/add) so later access under that repo
+     skips the dialog. Auto-approves when headless (no confirm!)."
+  [kind path {:keys [confirm! dispatch! get-state room-id] :as _ctx} cwd]
+  (let [resolved (sandbox/real-resolve cwd (str path))
+        repo     (rules-store/git-root (node-path/dirname resolved))
+        st       (when get-state (get-state))
+        ruleset  (rules-store/ordered-rules st room-id cwd)
+        ext-st   (get-in st [:rooms room-id :ext])
+        req      (rules-store/enrich-request
+                  {:tool kind :path (str path) :effective-cwd cwd
+                   :repo repo :state ext-st}
+                  ruleset)
+        action   (:action (rules/canonical (rules/first-match ruleset req)))]
+    (case (:type action)
+      :allow (js/Promise.resolve (or repo resolved))
+      :deny  (js/Promise.resolve nil)
+      (if-not confirm!
+        ;; Headless (no human to ask): auto-approve out-of-repo access EXCEPT
+        ;; credential/secret paths. Silently approving one would inject an
+        ;; :_allowed-reads/:_allowed-writes root that defeats resolve-read's
+        ;; credential hard-block (it only fires when `not approved?`). Deny
+        ;; (nil) so the hard-block stays effective with no one to confirm.
+        (if (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths))
+          (js/Promise.resolve nil)
+          (js/Promise.resolve (or repo resolved)))
+        (-> (confirm! (or (:message action)
+                          (str (if (= :write kind) "Write" "Read")
+                               " outside the project repo: " path
+                               (when repo (str " (repo: " repo ")"))))
+                      (when repo {:options [:yes :no :allow-repo]}))
+            (.then (fn [answer]
+                     (cond
+                       (= answer :repo)
+                       (do (when-let [rule (and dispatch! (outside-repo-rule kind repo))]
+                             (dispatch! {:type :ext.rules/add :room-id room-id
+                                         :scope :session :rule rule}))
+                           repo)
+                       answer resolved
+                       :else nil))))))))
+
 (defn- on-gate-request
   "Worker → main runtime path gate: the worker hit a dynamic out-of-repo
    read/write mid-eval and is blocked (Atomics.wait) on the request's
-   SharedArrayBuffer. Run the same permission-gate approval dialog the static
-   gate uses (auto-approved when the path sits under an already-allowed repo,
+   SharedArrayBuffer. Run the same engine consult + approval dialog the static
+   gate uses (auto-approved by a matching allow rule — e.g. an [r] repo grant —
    or headless), then write the verdict into the SAB — status 1 + the UTF-8
    approved root on allow, status 2 on deny — and notify the waiting worker."
   [^js m]
@@ -985,10 +1066,8 @@
                     (js/Atomics.notify i32 0)))]
     (if-not ctx
       (settle! nil)
-      (-> (js/Promise.resolve
-           (if (= "write" (.-gateRequest m))
-             (pg/approve-write-path ctx path)
-             (pg/approve-read-path ctx path)))
+      (-> (approve-outside-path (if (= "write" (.-gateRequest m)) :write :read)
+                                path ctx (:cwd ctx))
           (.then settle!)
           (.catch (fn [_] (settle! nil)))))))
 
@@ -1178,8 +1257,21 @@
    a new class of call site for the gate, add a rule here — the code is still
    parsed and walked exactly once (see scan-code)."
   [;; (sh …) call sites: keep the raw arg vectors for the CLI / guarded checks.
+   ;; A leading opts map ({:dir …}) is stripped so the CLI name stays first;
+   ;; its literal :dir joins the read-gated paths (cd'ing in is at least a read).
    {:heads   #{'sh}
-    :collect (fn [acc _head args] (update acc :sh-calls conj args))}
+    :collect (fn [acc _head args]
+               (let [[m args] (if (map? (first args))
+                                [(first args) (vec (rest args))]
+                                [nil args])]
+                 (cond-> (update acc :sh-calls conj args)
+                   (string? (:dir m))
+                   (update :reads conj {:head 'sh :path (:dir m)})
+                   ;; Command + its effective :dir, for the per-command engine
+                   ;; consult (dir-scoped rules match at the dir the sh runs in).
+                   (string? (first args))
+                   (update :cmds conj {:command (str/join " " (filter string? args))
+                                       :dir (:dir m) :bg? false}))))}
    ;; builtin write helpers: record each literal write-target path tagged with
    ;; the helper it came from (so rm targets can be singled out for dir-delete).
    {:heads   (set (keys WRITE_HELPER_TARGETS))
@@ -1204,11 +1296,18 @@
    ;; gating sh gets (sudo/remote/guarded/CLI approval). Non-literal commands
    ;; are flagged and blocked — the worker only runs approved exact strings.
    {:heads   #{'process/start 'process/poll-until}
-    :collect (fn [acc _head args]
-               (let [c (first args)]
-                 (if (string? c)
-                   (update acc :bg conj c)
-                   (assoc acc :bg-dynamic? true))))}
+    :collect (fn [acc head args]
+               (let [[m args] (if (map? (first args))
+                                [(first args) (vec (rest args))]
+                                [nil args])
+                     c (first args)]
+                 (cond-> (if (string? c)
+                           (update acc :bg conj c)
+                           (assoc acc :bg-dynamic? true))
+                   (string? (:dir m))
+                   (update :reads conj {:head head :path (:dir m)})
+                   (string? c)
+                   (update :cmds conj {:command c :dir (:dir m) :bg? true}))))}
    ;; glob: its literal arg is a pattern, not a path — record the pattern's
    ;; literal base dir so out-of-repo globs (`/etc/**`, `../x/*`) are gated too.
    {:heads   #{'glob}
@@ -1229,7 +1328,7 @@
   [code]
   (try
     (let [forms (e/parse-string-all code SCAN_OPTS)
-          acc   (atom {:sh-calls [] :writes [] :reads [] :bg []})]
+          acc   (atom {:sh-calls [] :writes [] :reads [] :bg [] :cmds []})]
       (walk/postwalk
        (fn [f]
          (when (seq? f)
@@ -1315,10 +1414,19 @@
   {:intercepted true
    :result {:content [{:type "text" :text text}] :is-error true}})
 
+(defn- cli-allow-rule
+  "A session rule that allows one CLI binary for clj shell-outs, modeled as the
+   same {:tool :sh :cli …} request clj builds when it consults the engine. Used
+   so an :always answer (or /clj allow) persists as a rule rather than a
+   private allowlist — one policy store, visible in /rules."
+  [cli]
+  {:match {:tool :sh :cli (str cli)} :action {:type :allow}})
+
 (defn- approve-clis!
   "Confirm each cli in turn. Resolves to {:approved #{…}} or {:denied cli}.
-   :always answers persist to the room session allowlist — except `bb`, whose
-   :always records the project's bb.edn sha in the persistent trust store."
+   :always answers persist as a session allow-rule (via :ext.rules/add) — except
+   `bb`, whose :always records the project's bb.edn sha in the persistent trust
+   store."
   [confirm! dispatch! room-id cwd clis]
   (reduce
    (fn [chain cli]
@@ -1333,8 +1441,9 @@
                                (= answer :always)
                                (do (if (= cli "bb")
                                      (trust-bb! cwd)
-                                     (dispatch! {:type :ext.clj/allow-cli
-                                                 :room-id room-id :cli cli}))
+                                     (dispatch! {:type    :ext.rules/add
+                                                 :room-id room-id :scope :session
+                                                 :rule    (cli-allow-rule cli)}))
                                    (update acc :approved conj cli))
 
                                answer (update acc :approved conj cli)
@@ -1452,11 +1561,28 @@
     "stat" "du" "readlink" "realpath" "which" "basename" "dirname" "date"
     "wc" "sort" "uniq" "cut" "tr" "git" "rm" "ss" "netstat" "lsof"})
 
-(def ^:private REMOTE_CLIS
-  "Never allowed via (sh …) — parity with the permission gate's blocked
-   bash commands. `ssh` is intentionally excluded: it goes through the normal
-   per-CLI approval prompt instead of being hard-blocked."
-  #{"scp" "rsync" "sftp"})
+(defn- command-cli
+  "The binary (first whitespace token) of a shell command string."
+  [cmd]
+  (first (str/split (str/trim (str cmd)) #"\s+")))
+
+(defn- sh-decision
+  "Consult the rules engine for one (sh …) / background command string, modeled
+   as a synthetic {:tool :sh} request carrying the command's binary as :cli.
+   Returns the matched rule (with :action) or nil.
+
+   This is how clj's shell-outs inherit the shared policy — the hardened tier
+   (sudo, remote-copy shells) and any user deny/allow rules — that the rules
+   extension can't apply on its own: it only sees the opaque clj `:code`, not
+   the individual commands the pre-scan extracts. clj scans the code into
+   literal commands and consults the engine per command here."
+  [ruleset ext-state cwd cmd]
+  (rules/first-match
+   ruleset
+   (rules-store/enrich-request
+    {:tool :sh :cli (command-cli cmd) :command (str cmd)
+     :effective-cwd cwd :state ext-state}
+    ruleset)))
 
 (defn- confirm-all!
   "Confirm each prompt in turn; resolves false on the first deny."
@@ -1466,14 +1592,13 @@
           (js/Promise.resolve true)
           prompts))
 
-(defn- approve-reads
-  "Approve each out-of-repo read `path` via pg/approve-read-path — a dialog
-   offering [y]/[n]/[r allow repo], auto-allowed when the path already sits
-   under an approved read (or write) repo. Returns a promise of
+(defn- approve-outside-paths
+  "Approve each out-of-repo `path` (kind :read or :write) via the engine consult
+   + dialog (approve-outside-path). Returns a promise of
    {:approved #{roots} :denied path|nil}; resolves :denied on the first refusal.
-   Paths already covered by a just-approved root are skipped so several reads
+   Paths already covered by a just-approved root are skipped so several accesses
    into one repo prompt only once."
-  [paths ctx cwd]
+  [kind paths ctx cwd]
   (reduce
    (fn [chain path]
      (.then chain
@@ -1483,32 +1608,7 @@
                   denied acc
                   (some #(sandbox/path-within? resolved %) approved) acc
                   :else
-                  (-> (pg/approve-read-path ctx path)
-                      (.then (fn [root]
-                               (if root
-                                 (update acc :approved conj root)
-                                 (assoc acc :denied path))))))))))
-   (js/Promise.resolve {:approved #{} :denied nil})
-   paths))
-
-(defn- approve-writes
-  "Approve each out-of-repo write `path` via the permission gate's outside-write
-   flow (pg/approve-write-path) — a dialog offering [y]/[n]/[r allow repo], auto
-   allowed when the path already sits under an approved repo. Returns a promise
-   of {:approved #{roots} :denied path|nil}; resolves :denied on the first
-   refusal. Paths already covered by a just-approved root are skipped so a
-   two-path mv into one repo prompts only once."
-  [paths ctx cwd]
-  (reduce
-   (fn [chain path]
-     (.then chain
-            (fn [{:keys [approved denied] :as acc}]
-              (let [resolved (sandbox/real-resolve cwd (str path))]
-                (cond
-                  denied acc
-                  (some #(sandbox/path-within? resolved %) approved) acc
-                  :else
-                  (-> (pg/approve-write-path ctx path)
+                  (-> (approve-outside-path kind path ctx cwd)
                       (.then (fn [root]
                                (if root
                                  (update acc :approved conj root)
@@ -1529,7 +1629,7 @@
    (fn [chain p]
      (.then chain
             (fn [{:keys [ok?] :as acc}]
-              (let [outside? (pg/outside-project? cwd p)]
+              (let [outside? (rules-store/outside-cwd? cwd p)]
                 (cond
                   (not ok?)  acc
                   (not confirm!) acc
@@ -1561,10 +1661,11 @@
         ;; (dynamic out-of-repo path mid-eval) can run the same approval
         ;; dialogs (see on-gate-request).
         _       (when room-id (swap! gate-ctxs assoc (room-key room-id) ctx))
-        session (set (:allowed-clis (state/room-ext (get-state) room-id ext-id)))
         ;; A trusted bb.edn (sha in the trust store) makes `bb` an allowed CLI
-        ;; for (sh "bb" …), same as the dedicated bb tool.
-        base    (cond-> (into (global-allow-clis) session)
+        ;; for (sh "bb" …), same as the dedicated bb tool. Session-allowed CLIs
+        ;; are no longer a private allowlist — they live as session rules and
+        ;; reach clj through the engine consult (`engine-allowed`) below.
+        base    (cond-> (global-allow-clis)
                   (bb-trusted? cwd) (conj "bb"))
         inject  (fn [allowed hint]
                   (cond-> (update tool-call :arguments assoc
@@ -1591,7 +1692,38 @@
                     "separately and interpolate its result in Clojure."))
 
       :else
-      (let [needed   (remove base (sort (:literals sh)))
+      (let [ext-st   (get-in (get-state) [:rooms room-id :ext])
+            ;; Each scanned command carries its effective :dir (the sh/process
+            ;; :dir opt, resolved against cwd) so dir-scoped rules match at the
+            ;; directory the command actually runs in — not the clj cwd.
+            cmds     (:cmds scan)
+            rs-cache (atom {})
+            ruleset-for (fn [eff]
+                          (or (@rs-cache eff)
+                              (let [r (rules-store/ordered-rules (get-state) room-id eff)]
+                                (swap! rs-cache assoc eff r)
+                                r)))
+            cmd-eff-cwd (fn [dir] (if dir (rules-store/expand-path cwd dir) cwd))
+            cmd-decision (fn [{:keys [command dir]}]
+                           (let [eff (cmd-eff-cwd dir)]
+                             (sh-decision (ruleset-for eff) ext-st eff command)))
+            ;; Engine consult per scanned command (sh + background), modeled as
+            ;; a {:tool :sh} request. :allow → the command's binary is
+            ;; pre-approved; :deny is handled by `denied` below. This is how a
+            ;; user config `:allow` rule reaches clj's shell-outs. SAFE_AUTORUN
+            ;; CLIs are excluded: they already run through clj's autorun path
+            ;; (helper hints + git/ss escalation), which the engine-allow must
+            ;; not short-circuit.
+            engine-allowed (into #{}
+                                 (comp (keep (fn [c]
+                                               (when (= :allow (get-in (cmd-decision c) [:action :type]))
+                                                 (command-cli (:command c)))))
+                                       (remove #(contains? SAFE_AUTORUN %)))
+                                 cmds)
+            ;; base allowlist ∪ engine-allowed CLIs — the set injected as
+            ;; :_allowed (runtime-vetted) and skipped from per-CLI approval.
+            allowed-base (into base engine-allowed)
+            needed   (remove base (sort (:literals sh)))
             ;; (sh "git" …) bounces to the pre-approved (git …) helper —
             ;; unless a deny-listed subcommand (push, clean) is involved,
             ;; which the helper refuses; those go through approval instead.
@@ -1619,9 +1751,12 @@
             ;; no helper equivalent) but still need per-CLI user approval.
             bg-needed (->> bg-clis
                            (remove base)
+                           (remove engine-allowed)
                            (remove #(contains? SAFE_AUTORUN %))
                            sort)
-            needed'  (distinct (concat (remove (set autorun) needed) bg-needed))
+            needed'  (->> (concat (remove (set autorun) needed) bg-needed)
+                          (remove engine-allowed)
+                          distinct)
             tmp-rm?  (some (fn [cmd]
                              (and (str/starts-with? cmd "rm ")
                                   (or (str/includes? cmd "/tmp/")
@@ -1642,7 +1777,13 @@
                                   "unnecessary — /tmp is temporary and cleared "
                                   "automatically; skip the rm unless you need "
                                   "the space back."))]))))
-            remote   (filter REMOTE_CLIS (into (:literals sh) bg-clis))
+            ;; A rule (hardened tier or user config) may deny one of the scanned
+            ;; commands — sudo / remote-copy shells live in the hardened tier now.
+            denied   (some (fn [c]
+                             (let [r (cmd-decision c)]
+                               (when (= :deny (get-in r [:action :type]))
+                                 {:cmd (:command c) :message (get-in r [:action :message])})))
+                           cmds)
             sc-cmd   (first (filter pg/server-control-kind
                                     (concat (:commands sh) bg)))
             ;; `rm` is auto-allowed from clj (SAFE_AUTORUN) — including rm -rf,
@@ -1667,24 +1808,21 @@
             ;; the same approval dialog the write/edit tools use, then are
             ;; injected so the worker's resolve-write allows them.
             outside-writes (->> (write-paths-of scan)
-                                (filter #(pg/outside-project? cwd %))
+                                (filter #(rules-store/outside-cwd? cwd %))
                                 (remove (set rm-dirs)))
             ;; Literal read-target paths that escape the repo (+tmp). Same
             ;; approval dialog as writes, then injected so resolve-read allows
             ;; them. A write-approved root implies read, so drop those overlaps.
             outside-reads (->> (read-paths-of scan)
-                               (filter #(pg/outside-project? cwd %)))]
+                               (filter #(rules-store/outside-cwd? cwd %)))]
         (cond
-          ;; sudo is never allowed from the agent — hard block, no confirm.
-          (or (contains? (:literals sh) "sudo")
-              (contains? bg-clis "sudo")
-              (some #(str/includes? % "sudo ") (concat (:commands sh) bg)))
-          (blocked "clj: `sudo` is never allowed from the agent.")
-
-          (seq remote)
-          (blocked (str "clj: remote shell commands ("
-                        (str/join ", " (sort remote))
-                        ") are not allowed."))
+          ;; A rule (hardened tier or user config) denies one of the scanned
+          ;; commands — block with the rule's message. This is where sudo and
+          ;; remote-copy shells are now rejected (see defaults/hardened-rules),
+          ;; no longer via clj-private branches.
+          denied
+          (blocked (or (:message denied)
+                       (str "clj: `" (:cmd denied) "` is denied by policy.")))
 
           ;; bb serve:restart / serve:stop would kill the server hosting this
           ;; agent mid-eval — delegate to the permission gate's detached-run
@@ -1698,12 +1836,12 @@
           :else
           ;; First clear any out-of-repo builtin reads (cat/ls/grep/…) through
           ;; the outside-read dialog, then the writes, then guarded/CLI approval.
-          (-> (approve-reads outside-reads ctx cwd)
+          (-> (approve-outside-paths :read outside-reads ctx cwd)
               (.then
                (fn [{reads :approved rdenied :denied}]
                  (if rdenied
                    (blocked (str "clj: user denied reading outside the repo: " rdenied))
-          (-> (approve-writes outside-writes ctx cwd)
+          (-> (approve-outside-paths :write outside-writes ctx cwd)
               (.then
                (fn [{writes :approved wdenied :denied}]
                  (if wdenied
@@ -1736,7 +1874,7 @@
                                        (not ok?)
                                        (blocked "clj: user denied a guarded command")
 
-                                       (empty? needed') (inject-w (into base autorun) hint)
+                                       (empty? needed') (inject-w (into allowed-base autorun) hint)
 
                                        (not confirm!)
                                        (blocked (str "clj: these CLIs need approval but no client is "
@@ -1747,7 +1885,7 @@
                                            (.then (fn [{:keys [approved denied]}]
                                                     (if denied
                                                       (blocked (str "clj: user denied running `" denied "`"))
-                                                      (inject-w (into (into base autorun) approved)
+                                                      (inject-w (into (into allowed-base autorun) approved)
                                                                 hint)))))))))))))))))))))))))))
 
 (defn- gate-bb [tool-call {:keys [cwd confirm! room-id]}]
@@ -1796,19 +1934,25 @@
 
 ;; ── Command + state ──────────────────────────────────────────────────────────
 
-(defn- ext-state [st room-id]
-  (state/room-ext st room-id ext-id))
+
 
 (defn- status-line [st room-id text]
   (update-in st [:rooms room-id :history] conj {:kind :status :text text}))
 
-(defn- allow-cli [st {:keys [room-id cli]}]
-  (when (and room-id (seq (str cli)))
-    {:state (update-in st [:rooms room-id :ext ext-id :allowed-clis]
-                       (fnil conj #{}) (str cli))}))
+(defn- session-allow-clis
+  "The CLIs allowed for this session, read from the rules store: session
+   allow-rules of the {:tool :sh :cli \"…\"} shape clj writes."
+  [st room-id]
+  (->> (get-in st [:rooms room-id :ext rules-store/ext-id :rules])
+       (keep (fn [r]
+               (when (and (= :sh (get-in r [:match :tool]))
+                          (= :allow (get-in r [:action :type]))
+                          (string? (get-in r [:match :cli])))
+                 (get-in r [:match :cli]))))
+       sort))
 
 (defn- status-text [st room-id]
-  (let [session (sort (:allowed-clis (ext-state st room-id)))
+  (let [session (session-allow-clis st room-id)
         global  (sort (global-allow-clis))
         cwd     (get-in st [:rooms room-id :cwd])]
     (str "clj — sandboxed Clojure tool\n"
@@ -1828,16 +1972,19 @@
       "allow"
       (if (seq (str arg))
         {:state (-> st
-                    (update-in [:rooms room-id :ext ext-id :allowed-clis]
-                               (fnil conj #{}) arg)
+                    (update-in [:rooms room-id :ext rules-store/ext-id :rules]
+                               (fn [rs] (vec (cons (cli-allow-rule arg) (or rs [])))))
                     (status-line room-id (str "clj: `" arg "` allowed for this session")))}
         {:state (status-line st room-id "usage: /clj allow <cli>")})
 
       "revoke"
       (if (seq (str arg))
         {:state (-> st
-                    (update-in [:rooms room-id :ext ext-id :allowed-clis]
-                               (fnil disj #{}) arg)
+                    (update-in [:rooms room-id :ext rules-store/ext-id :rules]
+                               (fn [rs] (vec (remove #(and (= :sh (get-in % [:match :tool]))
+                                                           (= (str arg) (get-in % [:match :cli]))
+                                                           (= :allow (get-in % [:action :type])))
+                                                     (or rs [])))))
                     (status-line room-id (str "clj: `" arg "` revoked")))}
         {:state (status-line st room-id "usage: /clj revoke <cli>")})
 
@@ -1909,7 +2056,10 @@
        "approval needed (push/clean excluded); other real "
        "CLIs run via (sh \"cmd\" \"arg\" …) → stdout string, throws on "
        "non-zero exit — argv-style, one command, no "
-       "pipes or shell strings (compose results in Clojure instead). "
+       "pipes or shell strings (compose results in Clojure instead); to run "
+       "in another directory pass a bb-style leading opts map — "
+       "(sh {:dir \"sub/project\"} \"bb\" \"build\") — never `cd … &&` "
+       "chains. "
        "The REPL "
        "persists across your tool calls: (def x …) once, reuse it later "
        "instead of re-reading files. "
@@ -1920,7 +2070,8 @@
        "Background processes (dev servers, watchers, slow builds — anything "
        "that outlives the eval) use the `process` namespace: "
        "(process/start \"npm run dev\") → {:pid :log} spawns detached with "
-       "output to the :log file; (process/wait pid) (optional timeout-ms, "
+       "output to the :log file (start and poll-until also accept the "
+       "{:dir …} leading opts map); (process/wait pid) (optional timeout-ms, "
        "default 120s — re-call to keep waiting) blocks until exit → "
        "{:status :exited/:running :exit :output}; (process/output pid) → last "
        "log lines; (process/list) → tracked processes; (process/stop pid) "
@@ -1941,11 +2092,9 @@
 
 (def extension
   {:id               ext-id
-   :init             {:room {:allowed-clis #{}}}
-   :handlers         {:ext.clj/allow-cli allow-cli
-                      :ext.clj/status    ext-status
-                      :agent/turn-end    on-turn-end
-                      :room/close        on-room-close}
+   :handlers         {:ext.clj/status ext-status
+                      :agent/turn-end on-turn-end
+                      :room/close     on-room-close}
    :fx               {:ext.clj/reset-runtime    reset-runtime-fx
                       :ext.clj/trust-bb         trust-bb-fx
                       :ext.clj/abort-evals      abort-evals-fx

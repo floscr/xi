@@ -1348,19 +1348,23 @@
    values live in app state under :web/dialog-form keyed by field name;
    Submit answers with the values map, Cancel answers nil."
   [dispatch! state dialog answer!]
-  (let [values (:web/dialog-form state)
-        fields (dlg/form-fields dialog)
-        done!  (fn [value]
-                 (dispatch! {:type :web/dialog-form-reset})
-                 (answer! value))]
+  (let [values  (:web/dialog-form state)
+        fields  (dlg/form-fields dialog)
+        ;; Effective value: the transient form value once the user has touched
+        ;; the field, otherwise the field's prefilled :value.
+        eff     (fn [{:keys [name value]}]
+                  (if (contains? values name) (str (get values name)) (str value)))
+        done!   (fn [value]
+                  (dispatch! {:type :web/dialog-form-reset})
+                  (answer! value))]
     [:div {:class ["dialog-form"]}
-     (for [{:keys [name label]} fields]
+     (for [{:keys [name label] :as field} fields]
        [:div {:replicant/key name :class ["dialog-form-field"]}
         [:div {:class ["dialog-form-label"]} label]
         (form/form-textarea-auto
-         {:value     (str (get values name))
+         {:value     (eff field)
           :max-rows  6
-          :attrs     {:value (str (get values name))}
+          :attrs     {:value (eff field)}
           :on-change (fn [^js e]
                        (dispatch! {:type :web/dialog-form-set
                                    :patch {name (.. e -target -value)}}))})])
@@ -1373,8 +1377,8 @@
        {:variant :primary :size :sm
         :on-click (fn [_]
                     (done! (into {}
-                                 (map (fn [{:keys [name]}]
-                                        [name (str (get values name))]))
+                                 (map (fn [{:keys [name] :as field}]
+                                        [name (eff field)]))
                                  fields)))}
        "Submit")]]))
 

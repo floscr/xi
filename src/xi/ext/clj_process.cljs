@@ -159,13 +159,14 @@
 ;; ── SCI-facing ops ───────────────────────────────────────────────────────────
 
 (defn- start!
-  "Spawn `cmd` detached in the background → {:pid N :log path}."
-  [opts cmd]
+  "Spawn `cmd` detached in the background → {:pid N :log path}.
+   `dir` (optional, from a leading {:dir …} opts map) overrides the cwd."
+  [opts cmd dir]
   (require-approved! opts cmd)
   (let [cmd'      (str/trimr (str/replace (str cmd) #"\s*&\s*$" ""))
         logfile   (new-log-path)
         exit-file (str logfile ".exit")
-        child     (spawn-detached! cmd' (:cwd @opts) logfile exit-file)
+        child     (spawn-detached! cmd' (or dir (:cwd @opts)) logfile exit-file)
         pid       (.-pid child)
         started   (.now js/Date)
         rid       (:room-id @opts)
@@ -235,9 +236,9 @@
 (defn- run-once!
   "One poll attempt: run `cmd` via bash, merged stdout+stderr →
    {:exit N :output str}."
-  [opts cmd]
+  [opts cmd dir]
   (let [^js res (cp/spawnSync "bash" #js ["-c" (str cmd)]
-                              #js {:cwd (or (:cwd @opts) (.cwd js/process))
+                              #js {:cwd (or dir (:cwd @opts) (.cwd js/process))
                                    :encoding "utf8"
                                    :timeout 30000
                                    :env (unchecked-get js/process "env")})
@@ -257,14 +258,14 @@
   "Rerun `cmd` every :interval-ms until the :until condition holds
    (:exit-zero default | :stdout-matches | :stdout-not-matches + :pattern) or
    :timeout-ms elapses → {:met? bool :attempts N :exit N :output str}."
-  [opts cmd & [{:keys [until pattern interval-ms timeout-ms]}]]
+  [opts cmd dir & [{:keys [until pattern interval-ms timeout-ms]}]]
   (require-approved! opts cmd)
   (when (and (contains? #{:stdout-matches :stdout-not-matches} until)
              (not (string? pattern)))
     (throw (ex-info "process/poll-until: :pattern (string regex) is required for stdout conditions" {})))
   (let [deadline (+ (.now js/Date) (or timeout-ms default-poll-timeout-ms))]
     (loop [attempts 1]
-      (let [res  (run-once! opts cmd)
+      (let [res  (run-once! opts cmd dir)
             met? (poll-met? (or until :exit-zero) pattern res)]
         (cond
           met?
@@ -281,11 +282,21 @@
 (defn sci-namespace
   "The `process` namespace injected into the SCI ctx (see make-ctx). `opts` is
    the room runtime's opts atom — carries :allowed-bg, :cwd, :room-id and
-   :abort-arr for the current eval."
-  [opts]
-  {'start      (fn [cmd] (start! opts cmd))
-   'stop       (fn [pid] (stop! opts pid))
-   'wait       (fn [pid & [timeout-ms]] (wait opts pid timeout-ms))
-   'list       (fn [] (list-procs opts))
-   'output     (fn [pid & [n]] (output opts pid n))
-   'poll-until (fn [cmd & [opt-map]] (poll-until opts cmd opt-map))})
+   :abort-arr for the current eval. `resolve-dir` resolves + gates the :dir of
+   an optional bb-style leading opts map on start/poll-until, e.g.
+   (process/start {:dir \"sub/project\"} \"bb build\")."
+  [opts resolve-dir]
+  (let [split (fn [args]
+                (if (map? (first args))
+                  [(some-> (:dir (first args)) resolve-dir) (rest args)]
+                  [nil args]))]
+    {'start      (fn [& args]
+                   (let [[dir [cmd]] (split args)]
+                     (start! opts cmd dir)))
+     'stop       (fn [pid] (stop! opts pid))
+     'wait       (fn [pid & [timeout-ms]] (wait opts pid timeout-ms))
+     'list       (fn [] (list-procs opts))
+     'output     (fn [pid & [n]] (output opts pid n))
+     'poll-until (fn [& args]
+                   (let [[dir [cmd opt-map]] (split args)]
+                     (poll-until opts cmd dir opt-map)))}))

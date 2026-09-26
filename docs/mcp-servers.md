@@ -107,10 +107,12 @@ the `mcp__<id>__` prefix before forwarding the call to the server.
 ### Tool gate: every MCP tool call is confirmed
 
 External MCP servers are third-party code, so **nothing they expose runs without
-an explicit approval.** The `:mcp` control extension carries a `:tool-gate` that
-intercepts every `mcp__<id>__<tool>` call (built-in Xi tools with bare names are
-untouched) and raises a confirm dialog before the call is forwarded. The block
-carries as much info as possible — the server, the tool, and every argument:
+an explicit approval.** This gate is a **built-in default rule** in the
+[rules engine](rules.md) — `{:match {:tool :mcp} :action {:type :ask …}}` — not
+code in the `:mcp` extension. It matches every `mcp__<id>__<tool>` call (built-in
+Xi tools with bare names are untouched) and raises a confirm dialog before the
+call is forwarded. The rules ext builds an informative block carrying as much
+info as possible — the server, the tool, and every argument:
 
 ```
 MCP tool call — approve?
@@ -123,19 +125,23 @@ Arguments:
   topic: hooks
 ```
 
-Approve and the call proceeds; deny and it is blocked (the model gets
-"Blocked by Xi permission gate"). In headless mode with no client attached to
-approve, the confirm resolves to its safe default (deny), so MCP tools never run
-unattended. The gate lives alongside the built-in `permission-gate`; both are
-composed into the same per-turn tool-gate chain.
+Approve and the call proceeds; deny and it is blocked. In headless mode with no
+client attached to approve, the confirm resolves to its safe default (deny), so
+MCP tools never run unattended.
 
 **Allow always (per session).** The dialog offers a third choice besides
 yes/no — `[a]llow always` in the TUI, an **Always** button on the web. Choosing
-it approves this call *and* remembers the tool (keyed on its fully qualified
-`mcp__<id>__<tool>` name, regardless of arguments) for the rest of the session,
-so every later call to that same tool skips the prompt. The memory is
-room-scoped: it lives as long as the room does and is cleared when the session
-ends — there is no on-disk allow-list. To un-remember, start a new session.
+it approves this call *and* persists a session allow-rule narrowed to that MCP
+server + tool (`{:match {:tool :mcp :mcp-server … :mcp-tool …} :action {:type
+:allow}}`), so every later call to that same tool skips the prompt. The rule is
+session-scoped (room-scoped runtime state): it lives as long as the room does
+and is cleared when the session ends. To make it permanent, commit an `:allow`
+rule to `~/.config/xi/rules.edn` or `<repo>/.xi/rules.edn` (see
+[rules.md](rules.md)).
+
+Because it is an ordinary default rule, you can override it: a higher-precedence
+`:allow` rule for a server/tool silences the prompt, and an `:ask`/`:deny` rule
+of your own can tighten or widen it.
 
 ### `/mcp` command
 
@@ -223,9 +229,9 @@ deploys and mutate service env vars, never load unless you opt in. To use it:
 2. `/mcp enable render` then `/mcp refresh render` (caches its tools).
 3. `/render` shows key presence, enabled state, and these steps.
 
-Once enabled, every Render tool call is still confirmed by the MCP tool gate —
-unless you `[a]llow always` a given tool, which remembers it for the session
-(e.g. approve `list_logs` once with `[a]` and later log reads run un-prompted).
+Once enabled, every Render tool call is still confirmed by the MCP default rule —
+unless you `[a]llow always` a given tool, which persists a session allow-rule for
+it (e.g. approve `list_logs` once with `[a]` and later log reads run un-prompted).
 
 The hosted-OAuth flow (`/mcp auth`) remains unimplemented — API-key auth covers
 Render and most hosted servers without it.

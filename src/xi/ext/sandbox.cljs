@@ -6,20 +6,19 @@
    (xi.sandbox.core — bubblewrap or firejail): filesystem read-only
    outside the room's cwd, credential paths hidden, private /tmp, env
    scrubbed to an allowlist, network dropped unless `/sandbox net`
-   allows it. write/edit run in-process (an OS sandbox can't cover
-   them), so they are confined to the cwd by path checks; read-type
-   tools (read/grep/find/ls) are blocked from hidden credential paths
-   the same way.
+   allows it.
+
+   The deny-checks — writes outside the working tree, reads of credential
+   paths, and backgrounded (`cmd &`) commands — live as default rules in
+   xi.rules.defaults, gated on the same room flag (:when {:sandbox
+   {:enabled? true}}). Because the rules extension is registered first, those
+   denies run before this gate, so a blocked call never reaches the executor.
+   write/edit/read run in-process (an OS sandbox can't cover them) and pass
+   through this gate untouched.
 
    State is room-scoped ([:rooms rid :ext :sandbox]
    {:enabled? bool :backend kw :network :none|:all}) so joined clients
    see the badge the server enforces.
-
-   Background commands (`cmd &`) are refused while sandboxed: the
-   sandbox gate must run before process-manager's (see xi.config), and
-   a backgrounded child would outlive its bwrap wrapper anyway.
-   In-process path gates canonicalize symlinks (sandbox/real-resolve)
-   so a link created inside cwd can't launder reads/writes outside it.
 
    Known gap (v1, by design): extension tools that spawn their own
    processes (commit, …) are curated code and not wrapped."
@@ -38,11 +37,6 @@
 
 ;; ── Tool gate ────────────────────────────────────────────────────────────────
 
-(defn- blocked [text]
-  {:intercepted true
-   :result {:content [{:type "text" :text text}]
-            :is-error true}})
-
 (defn- run-bash!
   "Execute a bash tool call under the sandbox backend; resolves to an
    intercepted gate result."
@@ -54,57 +48,18 @@
                        :env (sandbox/scrub-env)})
         (.then (fn [result] {:intercepted true :result result})))))
 
-(defn- target-path [arguments]
-  (or (:path arguments) (:file_path arguments)))
-
-(defn- background-command?
-  "True for `cmd &` — backgrounded children would escape (or be killed
-   with) the sandbox wrapper, so they are refused while sandboxed."
-  [command]
-  (str/ends-with? (str/trimr (or command "")) "&"))
-
-(defn- gate-write
-  "Allow write/edit only inside the room's cwd (symlink-canonicalized)."
-  [tool-call cwd]
-  (let [path (target-path (:arguments tool-call))
-        resolved (sandbox/real-resolve cwd (str path))
-        real-cwd (sandbox/real-resolve cwd ".")]
-    (if (sandbox/path-within? resolved real-cwd)
-      tool-call
-      (blocked (str "Sandbox: writes outside the working directory are blocked: " path)))))
-
-(defn- gate-read
-  "Block read-type tools from hidden credential paths (symlink-canonicalized)."
-  [tool-call cwd]
-  (let [path (or (target-path (:arguments tool-call)) cwd)
-        resolved (sandbox/real-resolve cwd (str path))]
-    (if (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths))
-      (blocked (str "Sandbox: reading credential paths is blocked: " path))
-      tool-call)))
-
 (defn- tool-gate
-  "Enforce the sandbox while enabled. Tool names may be PascalCase (from
-   the SDK) or lowercase."
+  "While sandboxed, execute bash under the OS sandbox backend (bwrap/firejail).
+   The deny-checks (writes outside cwd, credential reads, `cmd &`) are default
+   rules gated on the same room flag and run first (rules ext is registered
+   first), so a blocked call never reaches here. write/edit/read run in-process
+   and pass through. Tool names may be PascalCase (from the SDK) or lowercase."
   [tool-call {:keys [get-state room-id cwd]}]
   (let [{:keys [enabled? backend network]} (ext-state (get-state) room-id)]
-    (if-not enabled?
-      tool-call
-      (let [lname (str/lower-case (or (:name tool-call) ""))
-            cwd (or cwd (.cwd js/process))]
-        (case lname
-          "bash"
-          (if (background-command? (:command (:arguments tool-call)))
-            (blocked "Sandbox: background processes (`cmd &`) are disabled in sandbox mode.")
-            (run-bash! (:arguments tool-call)
-                       {:backend backend :network network :cwd cwd}))
-
-          ("write" "edit")
-          (gate-write tool-call cwd)
-
-          ("read" "grep" "find" "ls")
-          (gate-read tool-call cwd)
-
-          tool-call)))))
+    (if (and enabled? (= "bash" (str/lower-case (or (:name tool-call) ""))))
+      (run-bash! (:arguments tool-call)
+                 {:backend backend :network network :cwd (or cwd (.cwd js/process))})
+      tool-call)))
 
 ;; ── Command + state ──────────────────────────────────────────────────────────
 

@@ -72,9 +72,11 @@ Guards, enforced inside every helper:
   `glob`/`cp`-source): the room cwd and the OS tmp dir are readable freely. A
   **literal** path that escapes both raises the same outside-repo approval
   dialog the `read` tool uses — [y]/[n], plus [r] *allow all reads from this
-  repo* when the target sits inside another git repo (the grant persists like
-  the permission-gate's `allowed-read-repos`; a `write`-repo grant implies read,
-  so an already-approved write repo is auto-allowed). The gate statically scans
+  repo* when the target sits inside another git repo (the [r] answer persists a
+  repo-scoped session allow-rule in the shared rules store — `{:match {:tool
+  :read :repo <root>} :action {:type :allow}}`; a `write`-repo grant is stored
+  as `{:tool #{:write :edit} …}`, so it also covers reads and an already-approved
+  write repo is auto-allowed). The gate statically scans
   the code for these helpers' read-target args (for `glob`, the literal base dir
   before the first `* ? [ {` metacharacter, so `/etc/**` and `../x/*` are gated
   too), approves the out-of-repo ones, and injects the approved roots into the
@@ -92,8 +94,10 @@ Guards, enforced inside every helper:
   tmp dir are writable freely. A **literal** path that escapes both raises the
   same outside-repo approval dialog the `write`/`edit` tools use — [y]/[n], plus
   [r] *allow all writes to this repo* when the target sits inside another git
-  repo (the grant is shared with, and persists like, the permission-gate's
-  `allowed-write-repos`). The gate statically scans the code for these helpers'
+  repo (the [r] answer persists a repo-scoped session allow-rule in the shared
+  rules store — `{:match {:tool #{:write :edit} :repo <root>} :action {:type
+  :allow}}`, so the grant covers edits too and is visible to `/rules`). The gate
+  statically scans the code for these helpers'
   write-target args, approves the out-of-repo ones, and injects the approved
   roots into the worker so its `resolve-write` allows them. A **dynamic**
   (computed, non-string) out-of-repo path raises the same dialog **at runtime**
@@ -121,13 +125,25 @@ the interpreter needs allowlisting like any other CLI.
 
 `sh` is argv-style only (`(sh "ffmpeg" "-i" x)`) — no shell strings, so no
 quoting/pipe smuggling. `(sh "bash" "-c" …)` is rejected with a teaching
-error. Approval happens **before** eval, in the `:tool-gate`:
+error. To run in another directory, pass a bb-style **leading opts map** with
+`:dir` (relative to the room cwd, absolute, or `~`-prefixed) instead of
+`cd … &&` chains: `(sh {:dir "sub/project"} "bb" "build")`. The dir must
+exist and is gated like a read — an out-of-repo `:dir` raises the same
+approval dialog as reading there. Approval happens **before** eval, in the
+`:tool-gate`:
 
 1. The code is parsed (edamame) and all `(sh …)` call sites collected.
 2. Literal command names are checked against the **global allowlist**
    (`~/.config/xi/ext/clj.edn` → `:allow-clis`, see
    [config.md](config.md#clj-tool-sandboxed-clojure-allowlist)) and the
-   **session allowlist** (room state).
+   **shared rules engine** — each scanned command is modeled as a synthetic
+   `{:tool :sh :cli <binary> :command <cmd>}` request and run through
+   `rules/first-match` over the ordered ruleset (hardened tier + config +
+   session/server runtime + defaults). A rule `:deny` blocks it (with the
+   rule's message); a rule `:allow` pre-approves the binary. Session
+   allow grants (`/clj allow`, or an `:always` answer) are stored here as
+   session allow-rules, so they show up in `/rules` — there is no separate
+   private allowlist. (See [rules.md](rules.md).)
 3. Unknown commands raise a confirm dialog per binary — *allow once /
    always (= rest of session) / deny*. Parse errors block eval (the gate and
    the evaluator must agree on what runs).
@@ -170,8 +186,9 @@ approval dialog. It splits into two tiers:
   `(str/replace …)` + `(spit …)`, …). So the nudge is a warning, not a
   dead-end error that wastes a turn — approve it and the raw command runs.
 
-Allowlisting the CLI (globally or `/clj allow`) skips the approval dialog
-and runs it dialog-free when its real flags are needed.
+Allowlisting the CLI (globally, `/clj allow`, or any rules-engine `:allow`)
+skips the approval dialog and runs it dialog-free when its real flags are
+needed.
 
 If the appended hints degrade model output (noise, the model parroting the
 hint, …), disable them without losing the auto-run behavior by setting
@@ -211,6 +228,7 @@ outlives a single eval — use the `process` namespace instead of `(sh …)`
 | Call | Does |
 | --- | --- |
 | `(process/start "npm run dev")` | spawn detached → `{:pid :log}` (log = capture file) |
+| `(process/start {:dir "sub"} "bb build")` | same, run in another directory (bb-style leading opts map; also on `poll-until`) |
 | `(process/wait pid timeout-ms?)` | block until exit → `{:status :exited :exit :output}`, or `{:status :running …}` after the timeout (default 120s — call again to keep waiting) |
 | `(process/output pid n?)` | last n log lines (default 50) |
 | `(process/list)` | this room's processes → `[{:pid :command :alive? :uptime-ms :log :exit} …]` |
@@ -218,7 +236,9 @@ outlives a single eval — use the `process` namespace instead of `(sh …)`
 | `(process/poll-until "cmd" opts?)` | rerun `cmd` until a condition holds → `{:met? :attempts :exit :output}`; opts `{:until :exit-zero\|:stdout-matches\|:stdout-not-matches :pattern "re" :interval-ms 5000 :timeout-ms 120000}` — for waiting on external state you didn't spawn |
 
 `process/start` and `process/poll-until` take a **literal shell command
-string** (bash), and are gated exactly like the rest of the tool: the
+string** (bash) — optionally preceded by a `{:dir …}` opts map to set the
+working directory (gated like a read; must be an existing directory) — and
+are gated exactly like the rest of the tool: the
 pre-scan collects the literals, walks them through the same checks as bash
 commands (sudo → block, remote shells → block, `bb serve:*` → server-control
 confirm + detached, guarded patterns → confirm, unknown CLIs → per-binary
@@ -364,13 +384,16 @@ by content-hash** instead of allowlisting the bare `bb` CLI.
 ## Commands & state
 
 - `/clj` — status: global + session allowlists, bb.edn trust state
-- `/clj allow <cli>` / `/clj revoke <cli>` — edit the session allowlist
+- `/clj allow <cli>` / `/clj revoke <cli>` — add/remove a session allow-rule
+  for that CLI (stored in the rules engine, visible in `/rules`)
 - `/clj trust-bb` — trust the current project's `bb.edn` (records its sha)
 - `/clj reset` — drop the room's REPL context (defs, loaded data)
 - `/ext disable clj` / `enable clj` — runtime kill switch
 
-Session state lives room-scoped at `[:rooms rid :ext :clj]`
-(`{:allowed-clis #{…}}`), mirrored to clients. The SCI contexts themselves are
+Session-allowed CLIs are stored as session rules in the rules engine
+(`[:rooms rid :ext :rules :rules]`, shape `{:tool :sh :cli "…"} → :allow`),
+mirrored to clients — the clj extension keeps no private allowlist. The SCI
+contexts themselves are
 runtime objects that live in the room's eval worker thread; `/clj reset` and
 room destroy (`:room/close`) terminate that worker (a fresh one spawns lazily
 on the next eval), and `/ext disable clj` terminates all of them.

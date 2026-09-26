@@ -52,6 +52,17 @@
                         (resolve (js/JSON.parse stdout))
                         (catch :default e (reject e)))))))))
 
+(defn parse-file-sync
+  "Parse `path` with the grammar for `lang` synchronously → JS root node, or nil
+   on any failure (missing CLI/grammar, parse error). Used by the rules store's
+   `:node` consult, which runs inside the synchronous matcher pipeline."
+  [lang path]
+  (try
+    (let [out (cp/execFileSync (bin-path) #js [(grammars-dir) lang path]
+                               #js {:maxBuffer (* 128 1024 1024)})]
+      (js/JSON.parse (.toString out "utf8")))
+    (catch :default _ nil)))
+
 ;; ── Node accessors ───────────────────────────────────────────────────────────
 
 (defn node-type [^js n] (.-t n))

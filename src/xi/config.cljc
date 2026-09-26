@@ -34,7 +34,6 @@
         [xi.ext.image-graph :as image-graph]
         [xi.ext.kb :as kb]
         [xi.ext.mcp :as mcp]
-        [xi.ext.memory-intercept :as memory-intercept]
         [xi.ext.permission-gate :as permission-gate]
         [xi.ext.freesearch :as freesearch]
         [xi.ext.plan-mode :as plan-mode]
@@ -44,6 +43,7 @@
         [xi.ext.pushover :as pushover]
         [xi.ext.render :as render]
         [xi.ext.resume :as resume]
+        [xi.ext.rules :as rules]
         [xi.ext.review :as review]
         [xi.ext.sandbox :as ext-sandbox]
         [xi.ext.session-search :as session-search]
@@ -51,7 +51,6 @@
         [xi.ext.snippets :as snippets]
         [xi.ext.subagent :as subagent]
         [xi.ext.terminal-title :as terminal-title]
-        [xi.ext.tmp-cleanup-intercept :as tmp-cleanup-intercept]
         [xi.ext.treesitter.core :as treesitter]
         [xi.ext.web :as web]
         [xi.ext.worktree.core :as worktree]]
@@ -99,7 +98,11 @@
    (def server
      "Extensions whose state + provider/tool hooks run server-side (server,
       standalone, and mirrored into clients)."
-     [plan-mode/extension
+     [;; Rules engine FIRST: the immutable hard-block + data rules run before
+      ;; every other policy gate, and an :allow rule can force-allow a call,
+      ;; short-circuiting the remaining gates.
+      rules/create
+      plan-mode/extension
       done-notify/extension
       pushover/create
       diff/extension
@@ -125,16 +128,15 @@
       ;; clj (sandboxed SCI scripting tool) after the policy gates so its
       ;; tool calls still pass plan-mode/permission-gate first
       clj-tool/extension
-      memory-intercept/extension
       treesitter/create
-      tmp-cleanup-intercept/extension
       terminal-title/extension
       clipboard-image/extension
       extensions/create
       mcp/create
       render/create
-      ;; sandbox after the policy gates (plan-mode, permission-gate) so
-      ;; blocks/confirms run first
+      ;; sandbox after the policy gates: its deny-checks are default rules (run
+      ;; first via the rules ext); this ext only wraps bash under the OS backend
+      ;; once the earlier gates have passed
       ext-sandbox/extension
       ;; registry-only: tracks processes spawned by clj's `process` namespace
       ;; (/ps, /kill, room keep-alive); spawning is gated in clj-tool

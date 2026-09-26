@@ -18,16 +18,20 @@
            (dialog/confirm-options {:options [:nope custom]})))))
 
 (deftest form-fields-humanizes-missing-labels
-  (is (= [{:name "commit-message" :label "Commit message"}
-          {:name "scope" :label "Scope"}]
+  (is (= [{:name "commit-message" :label "Commit message" :value ""}
+          {:name "scope" :label "Scope" :value ""}]
          (dialog/form-fields {:type :form
                               :fields [{:name "commit-message"}
                                        {:name "scope"}]}))))
 
 (deftest form-fields-keeps-explicit-labels-drops-nameless
-  (is (= [{:name "a" :label "Custom"}]
+  (is (= [{:name "a" :label "Custom" :value ""}]
          (dialog/form-fields {:fields [{:name "a" :label "Custom"}
                                        {:label "no name"}]}))))
+
+(deftest form-fields-prefills-value
+  (is (= [{:name "rule" :label "Rule" :value "{:a 1}"}]
+         (dialog/form-fields {:fields [{:name "rule" :value "{:a 1}"}]}))))
 
 (deftest resolved-label-from-options
   (let [d {:options [:yes :no :always]}]

@@ -512,7 +512,8 @@
   [{:keys [message] :as dlg} respond!]
   (let [fields (dialog/form-fields dlg)
         n      (count fields)
-        !form  (atom {:idx 0 :values {}})]
+        !form  (atom {:idx 0
+                      :values (into {} (map (juxt :name :value)) fields)})]
     {:type :dialog
      :render
      (fn [width]
