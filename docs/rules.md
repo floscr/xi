@@ -30,17 +30,44 @@ precedence order:
 
 1. **hard-coded immutable** — agents may never write the rules files, and a few
    always-blocked paths. Not user-editable, cannot be overridden by any rule.
-2. **repo config** — `<repo>/.xi/rules.edn`
-3. **global config** — `~/.config/xi/rules.edn`
-4. **server-session** — added at runtime, process-local, cleared on restart
-5. **session runtime** — added at runtime, room-scoped, persists with the session
-6. **built-in defaults** — shipped with xi (`xi.rules.defaults`), lowest
+2. **hardened tier** — a small set of non-overridable policy `:deny` rules
+   (`:scope :hardened`, `xi.rules.defaults/hardened-rules`), prepended ahead of
+   all config/runtime rules so nothing below can click through them. The agent
+   cannot disable them; only the operator can, and only at launch via the
+   `--no-hardened-rules` CLI flag. Covers `sudo`, remote-copy shells
+   (`scp`/`rsync`/`sftp`), and reading SSH private keys under `~/.ssh`.
+3. **repo config** — `<repo>/.xi/rules.edn`
+4. **global config** — `~/.config/xi/rules.edn`
+5. **server-session** — added at runtime, process-local, cleared on restart
+6. **session runtime** — added at runtime, room-scoped, persists with the session
+7. **built-in defaults** — shipped with xi (`xi.rules.defaults`), lowest
    precedence, so any rule above overrides them.
 
-Config (2–3) sits **above** runtime (4–5), so a rule you commit to a file
+Config (3–4) sits **above** runtime (5–6), so a rule you commit to a file
 overrides a careless "always allow" chosen in the moment. Repo beats global
 (more specific wins). Built-in defaults (including the mode-gated plan-mode and
 sandbox sets) sit last, so any of your rules wins over a default.
+
+### Hardened tier (non-overridable)
+
+Shipped with xi (`xi.rules.defaults/hardened-rules`), tagged `:scope :hardened`,
+prepended ahead of every config/runtime/default rule so **nothing below can
+grant an exception** — there is no `[a]llow` button and a softer `ask` rule can
+only add friction, never override the deny. Only the operator can turn the tier
+off, and only at launch with `--no-hardened-rules` (the agent can't relaunch the
+process, so it can't flip it).
+
+- **`sudo`** (`sh`/`bash`) → **deny**. Never allowed from the agent.
+- **remote-copy shells** — `scp` / `rsync` / `sftp` (`sh` `:cli`, or matched in a
+  `bash` command line) → **deny**.
+- **SSH private keys** — reading any file under a `~/.ssh/` dir with `read` /
+  `grep` / `find` / `ls` (the built-in tools and clj's `cat`/`grep`, which all
+  consult the engine as `:read`/`:grep`/…) → **deny**. `*.pub` public keys and
+  `config` / `known_hosts` / `authorized_keys` / `environment` stay readable
+  (excluded by the regex); everything else (`id_rsa`, `id_ed25519`, custom-named
+  keys, keys in subdirs) is blocked outright. This is stricter than the softer
+  "sensitive path" ask below — that one can add friction but never grant access
+  here.
 
 ### Built-in default rules
 

@@ -171,6 +171,28 @@
       (let [h (hit {:tool :sh :cli "ssh" :command "ssh host"})]
         (is (not (and h (= :hardened (:scope h)))))))))
 
+(deftest hardened-ssh-private-key-read-denied
+  (let [ruleset (store/ordered-rules {} "r1" (os/tmpdir))
+        hit     (fn [req] (rules/first-match ruleset req))
+        denied? (fn [path]
+                  (let [h (hit {:tool :read :path path})]
+                    (and h (= :deny (:type (:action h))) (= :hardened (:scope h)))))]
+    (testing "private key files under ~/.ssh are hard-denied (no allow button)"
+      (is (denied? "/home/floscr/.ssh/id_rsa"))
+      (is (denied? "/home/floscr/.ssh/id_ed25519"))
+      (is (denied? "~/.ssh/id_ecdsa_sk"))
+      (is (denied? "/home/floscr/.ssh/mycustomkey"))
+      (is (denied? "/home/floscr/.ssh/keys/id_rsa"))
+      (testing "also for grep/find/ls read surfaces"
+        (is (= :deny (:type (:action (hit {:tool :grep :path "/home/floscr/.ssh/id_rsa"})))))))
+    (testing "public keys and non-secret ssh files are NOT hardened-denied"
+      (doseq [p ["/home/floscr/.ssh/id_rsa.pub"
+                 "/home/floscr/.ssh/config"
+                 "/home/floscr/.ssh/known_hosts"
+                 "/home/floscr/.ssh/authorized_keys"]]
+        (let [h (hit {:tool :read :path p})]
+          (is (not (and h (= :hardened (:scope h)))) p))))))
+
 (deftest runtime-rules-precedence
   (testing "server rules come before session rules, each scope-tagged"
     (let [state {:ext    {:rules {:rules [{:match {:tool :write} :action {:type :deny}}]}}

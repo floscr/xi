@@ -127,6 +127,14 @@
 (def ^:private hardened-sudo-re
   #"\bsudo\b")
 
+(def ^:private hardened-ssh-key-re
+  "Private SSH key files under ~/.ssh: any file there that is not a `.pub`
+   public key or the non-secret config/known_hosts/authorized_keys/environment.
+   Read-blocked outright (hardened, non-overridable) — no allow button. Matches
+   the final path segment at any depth under a `.ssh/` dir so id_rsa,
+   id_ed25519, and custom-named keys are all caught while `*.pub` stays readable."
+  #"(?:^|/)\.ssh/(?:[^/]*/)*(?!(?:known_hosts|authorized_keys|config|environment)[^/]*$)(?![^/]*\.pub$)[^/]+$")
+
 (def hardened-rules
   "Non-overridable policy rules, tagged :scope :hardened. The store prepends
    these ABOVE every config/runtime/default rule, so they always win — a user
@@ -148,6 +156,14 @@
     :scope  :hardened}
    {:match  {:tool :bash :command hardened-remote-bash-re}
     :action {:type :deny :message "Blocked (hardened): remote shell commands (scp, rsync, sftp) are not allowed."}
+    :scope  :hardened}
+   ;; SSH private keys under ~/.ssh: never readable by any read surface (the
+   ;; built-in read/grep/find/ls tools and clj's cat/grep, which all consult
+   ;; the engine as :read/:grep/…). Hardened → not clickable-through; the softer
+   ;; sensitive-path ask below can only add friction, never grant access here.
+   ;; `*.pub` and config/known_hosts stay readable (excluded by the regex).
+   {:match  {:tool #{:read :grep :find :ls} :path hardened-ssh-key-re}
+    :action {:type :deny :message "Blocked (hardened): reading SSH private keys under ~/.ssh is never allowed."}
     :scope  :hardened}])
 
 ;; ── clj (sh …) softeners: "disallow * then soften", scoped to :sh ────────────
