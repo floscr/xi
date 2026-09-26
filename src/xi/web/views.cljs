@@ -1903,6 +1903,60 @@
        [:pre {:class ["file-tab-code"]}
         (if grammar (highlight-code grammar text) text)])]))
 
+(defn- prompt-part-preview
+  "First ~200 chars of a part's text, with a single trailing ellipsis when it
+   was clipped — the collapsed overview line for a system-prompt part."
+  [text]
+  (let [t (str/triml (or text ""))]
+    (if (<= (count t) 200) t (str (str/trimr (subs t 0 200)) "…"))))
+
+(defn- prompt-tab-view
+  "System-prompt buffer rendered as the active tab (the web equivalent of the
+   TUI's /prompt buffer). Each contributing part is a collapsible card: collapsed
+   shows a one-line preview, clicking the header expands it to the full,
+   markdown-rendered text. The toolbar toggles every part at once. `expanded` is
+   the `:web/prompt-expanded` set of expanded part indices."
+  [dispatch! room expanded]
+  (let [parts   (get-in room [:agent :system-parts])
+        claude? (= :claude (get-in room [:agent :provider]))
+        n       (count parts)
+        all?    (and (pos? n) (= expanded (set (range n))))]
+    [:div {:class ["file-tab" "prompt-tab"]}
+     [:div {:class ["file-tab-header"]}
+      [:span {:class ["file-tab-path"]} "System Prompt"]
+      (when (pos? n)
+        [:button {:class ["tab-pill-item"]
+                  :on {:click (fn [_] (dispatch! {:type :prompt/toggle-all :n n}))}}
+         (if all? "Collapse all" "Expand all")])]
+     [:div {:class ["prompt-tab-body"]}
+      (when claude?
+        [:div {:class ["prompt-note"]}
+         "The Claude Code preset is injected by the Agent SDK ahead of everything "
+         "below and is not shown here; the parts below are appended after it."])
+      (if (seq parts)
+        (map-indexed
+         (fn [idx {:keys [source text repo?]}]
+           (let [open? (contains? expanded idx)
+                 lines (inc (count (re-seq #"\n" (or text ""))))]
+             [:div {:class ["prompt-part" (when open? "prompt-part--open")
+                            (when repo? "prompt-part--repo")]
+                    :replicant/key (str "pp-" idx)}
+              [:button {:class ["prompt-part-header"]
+                        :on {:click (fn [_] (dispatch! {:type :prompt/part-toggle
+                                                        :idx idx}))}}
+               [:span {:class ["prompt-part-caret"]}
+                (icon/icon {:icon-name (if open? :chevron-down :chevron-right)
+                            :size :sm})]
+               [:span {:class ["prompt-part-source"]} (str source)]
+               (when repo?
+                 [:span {:class ["prompt-part-badge"]} "repo"])
+               [:span {:class ["prompt-part-lines"]} (str lines " lines")]]
+              (if open?
+                [:div {:class ["prompt-part-body" "post-content"]} (render-md text)]
+                [:div {:class ["prompt-part-preview"]} (prompt-part-preview text)])]))
+         parts)
+        [:div {:class ["prompt-note"]} "(no system prompt)"])]]))
+
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 
 (defn- tab-bar
@@ -1927,6 +1981,11 @@
                :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
                                                :room-id room-id :buffer-id :file}))}}
       "File"])
+   (when (:prompt buffers)
+     [:button {:class ["tab-pill-item" (when (= active-buffer :prompt) "tab-pill-item--active")]
+               :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
+                                               :room-id room-id :buffer-id :prompt}))}}
+      "Prompt"])
    (when canvas?
      [:button {:class ["tab-pill-item"]
                :on {:click (fn [_] (dispatch! {:type :canvas-review/open-page
@@ -2441,7 +2500,7 @@
         buffers    (get-in room [:ui :buffers])
         active-buf (get-in room [:ui :active-buffer] :chat)
         canvas?    (boolean (seq (get-in room [:ext :canvas-review :diff])))
-        has-tabs?  (boolean (or (:diff buffers) (:file buffers) canvas?))
+        has-tabs?  (boolean (or (:diff buffers) (:file buffers) (:prompt buffers) canvas?))
         ;; Prompt navigation over the FULL history (not just the rendered
         ;; window): collect every user entry's absolute history index so we can
         ;; jump to prompts scrolled off the top, expanding the window on demand.
@@ -2477,6 +2536,9 @@
 
        :file
        (file-tab-view (:file buffers))
+
+       :prompt
+       (prompt-tab-view dispatch! room (or (:web/prompt-expanded state) #{}))
 
        ;; default: :chat
        (list

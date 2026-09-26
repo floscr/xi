@@ -221,9 +221,16 @@ Be concise, direct, and friendly. When unsure, say so.")
 
 (defn load-agents-parts
   "Load AGENTS.md and related prompts as source-attributed parts.
-   Returns a vector of {:source :text} maps (may be empty)."
+   Returns a vector of {:source :text :repo?} maps (may be empty). :repo? marks
+   parts whose source file lives inside the current repo (git root, or cwd when
+   not a git repo)."
   [cwd]
   (let [files (find-agents-md cwd)
+        base (or (tools-util/git-root cwd) (.resolve node-path cwd))
+        repo-file? (fn [f]
+                     (let [rf (.resolve node-path f)]
+                       (or (= rf base)
+                           (str/starts-with? rf (str base (.-sep node-path))))))
         profile-prompt (fetch-profile-agents-prompt cwd)
         effective-files (if (and profile-prompt (:replace profile-prompt) (seq files))
                           (let [root-agents (.join node-path (.resolve node-path cwd) "AGENTS.md")]
@@ -234,6 +241,7 @@ Be concise, direct, and friendly. When unsure, say so.")
                             (let [content (str (fs/readFileSync f "utf8"))]
                               (when (seq content)
                                 {:source (.relative node-path cwd f)
+                                 :repo?  (repo-file? f)
                                  :text   (str "# " (.relative node-path cwd f) "\n\n" content)}))))
                     effective-files)
         parts (if-let [pc (:prompt profile-prompt)]

@@ -377,6 +377,23 @@
 (defn- diff-modify-toggle [st _]
   {:state (update st :web/diff-modify? not)})
 
+(defn- prompt-part-toggle
+  "Expand/collapse one system-prompt part in the /prompt tab by toggling its
+   index in the `:web/prompt-expanded` set."
+  [st {:keys [idx]}]
+  {:state (update st :web/prompt-expanded
+                  (fn [s] (let [s (or s #{})]
+                            (if (contains? s idx) (disj s idx) (conj s idx)))))})
+
+(defn- prompt-toggle-all
+  "Expand or collapse every system-prompt part at once. When all `n` indices are
+   already expanded, collapse them all; otherwise expand them all."
+  [st {:keys [n]}]
+  {:state (assoc st :web/prompt-expanded
+                 (if (= (:web/prompt-expanded st) (set (range n)))
+                   #{}
+                   (set (range n))))})
+
 (defn- selected-diff-snippet
   "Pull the diff buffer for room-id, flatten it, and return the snippet text
    for the current selection range (or nil)."
@@ -1015,6 +1032,8 @@
           :diff/modify-toggle    diff-modify-toggle
           :diff/explain          diff-explain
           :diff/modify-submit    diff-modify-submit
+          :prompt/part-toggle    prompt-part-toggle
+          :prompt/toggle-all     prompt-toggle-all
           ;; Git status (roomless working-tree diff page)
           :git-status/open       (fn [_st {:keys [cwd]}]
                                    {:effects [[:app/dispatch {:type :route/navigate

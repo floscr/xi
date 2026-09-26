@@ -3053,6 +3053,106 @@ code a:hover {
   padding: var(--size-4) var(--size-5);
 }
 
+/* System-prompt tab (/prompt): per-part collapsible cards */
+.prompt-tab-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--size-3) var(--size-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+.prompt-note {
+  flex-shrink: 0;
+  padding: var(--size-2) var(--size-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--fg-2);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+
+.prompt-part {
+  flex-shrink: 0;
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-0);
+}
+
+.prompt-part-header {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  width: 100%;
+  padding: var(--size-2) var(--size-3);
+  background: var(--bg-1);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--fg-0);
+  font-family: inherit;
+}
+
+.prompt-part-header:hover {
+  background: var(--bg-2);
+}
+
+/* Parts sourced from a file inside the current repo get an accent rail + badge */
+.prompt-part--repo {
+  border-left: 3px solid var(--accent);
+}
+
+.prompt-part-badge {
+  flex-shrink: 0;
+  padding: 0 var(--size-2);
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+}
+
+.prompt-part-caret {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--fg-2);
+}
+
+.prompt-part-source {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-1);
+}
+
+.prompt-part-lines {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+.prompt-part-preview {
+  padding: var(--size-2) var(--size-3);
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  color: var(--fg-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.prompt-part-body {
+  padding: var(--size-3) var(--size-4);
+  overflow-x: auto;
+}
+
 /* Diff method selector: header bar above the diff with source + engine <select>s */
 .diff-method-bar {
   flex-shrink: 0;
