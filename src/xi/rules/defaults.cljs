@@ -124,6 +124,15 @@
 (def ^:private hardened-remote-bash-re
   #"\b(?:scp|rsync|sftp)\b")
 
+(def ^:private hardened-shell-clis
+  "Interactive/login shell interpreters that clj `(sh …)` must never invoke.
+   Running a shell (`bash -lc \"grep … | grep … | head\"`, `sh -c …`, `zsh`, …)
+   smuggles a whole pipeline/shell string past clj's argv-only model, defeating
+   its per-command policy scan (the engine only ever sees `:cli` \"bash\" and one
+   opaque `:command` blob it can't reason about). Blocked outright — commands go
+   argv-style through `(sh \"cmd\" \"arg\" …)` and pipelines compose in Clojure."
+  #{"bash" "sh" "zsh" "fish" "dash" "ksh" "csh" "tcsh" "ash" "mksh"})
+
 (def ^:private hardened-sudo-re
   #"\bsudo\b")
 
@@ -166,6 +175,23 @@
     :scope  :hardened}
    {:match  {:tool :bash :command hardened-remote-bash-re}
     :action {:type :deny :message "Blocked (hardened): remote shell commands (scp, rsync, sftp) are not allowed."}
+    :scope  :hardened}
+   ;; Shell interpreters via clj `(sh …)`: `(sh "bash" "-lc" "… | … | head")`
+   ;; runs a login/interactive shell to smuggle a pipeline past clj's argv-only
+   ;; model — the engine only sees :cli "bash" and one opaque :command blob, so
+   ;; the per-command scan can't reason about what actually runs. Denied so
+   ;; commands go argv-style through (sh "cmd" "arg" …) and pipelines compose in
+   ;; Clojure (or the builtin helpers: (grep …), (curl …), (jq …), …). Matches
+   ;; by :cli (binary), so the real bash tool (:tool :bash) is untouched.
+   {:match  {:tool :sh :cli hardened-shell-clis}
+    :action {:type :deny
+             :message (str "Blocked (hardened): running a shell interpreter "
+                           "(bash, sh, zsh, …) via clj (sh …) is not allowed — "
+                           "it smuggles a pipeline/shell string past the "
+                           "argv-only model. Run commands argv-style, one per "
+                           "(sh \"cmd\" \"arg\" …) call, and compose pipelines in "
+                           "Clojure or via the builtin helpers ((grep …), "
+                           "(curl …), (jq …), …).")}
     :scope  :hardened}
    ;; SSH private keys under ~/.ssh: never readable by any read surface (the
    ;; built-in read/grep/find/ls tools and clj's cat/grep, which all consult

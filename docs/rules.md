@@ -60,6 +60,15 @@ process, so it can't flip it).
 - **`sudo`** (`sh`/`bash`) → **deny**. Never allowed from the agent.
 - **remote-copy shells** — `scp` / `rsync` / `sftp` (`sh` `:cli`, or matched in a
   `bash` command line) → **deny**.
+- **shell interpreters via clj `(sh …)`** — `bash` / `sh` / `zsh` / `fish` /
+  `dash` / `ksh` / `csh` / `tcsh` / `ash` / `mksh` as the `:cli` → **deny**.
+  `(sh "bash" "-lc" "grep … | grep … | head")` runs a login/interactive shell to
+  smuggle a whole pipeline past clj's argv-only model — the engine only ever
+  sees `:cli "bash"` and one opaque `:command` blob, so its per-command scan
+  can't reason about what actually runs. Commands must go argv-style, one per
+  `(sh "cmd" "arg" …)` call, with pipelines composed in Clojure or via the
+  builtin helpers (`(grep …)`, `(curl …)`, `(jq …)`, …). Matched by `:cli`, so
+  the real `bash` tool (`:tool :bash`) is untouched.
 - **SSH private keys** — reading any file under a `~/.ssh/` dir → **deny**,
   across two surfaces:
   - the structured read tools `read` / `grep` / `find` / `ls` (path-matched), and

@@ -172,6 +172,18 @@
       (let [h (hit {:tool :sh :cli "ssh" :command "ssh host"})]
         (is (not (and h (= :hardened (:scope h)))))))))
 
+(deftest hardened-shell-interpreter-via-clj-sh-denied
+  (let [ruleset (store/ordered-rules {} "r1" (os/tmpdir))
+        hit     (fn [req] (rules/first-match ruleset req))]
+    (testing "shell interpreters run via clj (sh …) are hard-denied"
+      (doseq [cli ["bash" "sh" "zsh" "fish" "dash" "ksh" "csh" "tcsh" "ash" "mksh"]]
+        (let [h (hit {:tool :sh :cli cli :command (str cli " -lc 'grep x | head'")})]
+          (is (= :deny (:type (:action h))) cli)
+          (is (= :hardened (:scope h)) cli))))
+    (testing "the real bash tool (:tool :bash) is untouched by this rule"
+      (let [h (hit {:tool :bash :command "grep x | head"})]
+        (is (not (and h (= :hardened (:scope h)) (= :sh (get-in h [:match :tool])))))))))
+
 (deftest hardened-ssh-private-key-read-denied
   (let [ruleset (store/ordered-rules {} "r1" (os/tmpdir))
         hit     (fn [req] (rules/first-match ruleset req))
