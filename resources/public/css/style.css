@@ -1257,14 +1257,15 @@ body {
    are visually 28px (20px icon + 4px padding) — well under the ~44px
    recommended touch target, which made the send button need several taps on
    phones. Grow the tappable box to 44px on coarse pointers; the negative
-   block margin cancels the extra height so the composer stays the same
-   size, and the icon stays 20px centered. touch-action:manipulation kills
-   Safari's residual double-tap heuristics on the button. */
+   margin cancels the growth on BOTH axes so the visual footprint / spacing
+   stays the original 28px (44 - 2*8) and only the hit area expands — the
+   extension bleeds into the row gaps and padding. touch-action:manipulation
+   kills Safari's residual double-tap heuristics on the button. */
 @media (pointer: coarse) {
   .compose-input-row .icon-btn {
     min-width: 44px;
     min-height: 44px;
-    margin-block: calc(-1 * var(--size-2));
+    margin: calc(-1 * var(--size-2));
     touch-action: manipulation;
   }
 }
