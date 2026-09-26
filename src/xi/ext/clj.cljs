@@ -179,18 +179,23 @@
    (:allowed-reads, plus :allowed-writes since a write grant implies read).
    An unapproved out-of-repo path raises the approval dialog at runtime via
    runtime-gate! (the eval blocks until answered); the approved root is added
-   to :allowed-reads so further reads under it pass without a round-trip."
+   to :allowed-reads so further reads under it pass without a round-trip.
+   Credential paths are hard-blocked as defense-in-depth UNLESS the user has
+   explicitly approved them at the gate (they sit under an :allowed-reads /
+   :allowed-writes root) — an explicit approval overrides the block."
   [opts p]
   (let [cwd      (opts-cwd opts)
         resolved (sandbox/real-resolve cwd (str p))
         real-cwd (sandbox/real-resolve cwd ".")
         tmp      (sandbox/real-resolve cwd (os/tmpdir))
-        allowed  (into (set (:allowed-reads @opts)) (:allowed-writes @opts))]
-    (when (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths))
+        allowed  (into (set (:allowed-reads @opts)) (:allowed-writes @opts))
+        approved? (some #(sandbox/path-within? resolved %) allowed)]
+    (when (and (not approved?)
+               (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths)))
       (throw (ex-info (str "clj: reading credential paths is blocked: " p) {})))
     (if (or (sandbox/path-within? resolved real-cwd)
             (sandbox/path-within? resolved tmp)
-            (some #(sandbox/path-within? resolved %) allowed))
+            approved?)
       resolved
       (let [verdict (runtime-gate! opts :read resolved)]
         (cond
