@@ -1,7 +1,8 @@
 (ns xi.system-prompt
   "System prompt construction. Loads AGENTS.md from project root + parents.
    Supports profile-based agents prompts via `bb profile:agents-prompt`."
-  (:require [clojure.string :as str]
+  (:require [cljs.reader :as reader]
+            [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
             [xi.ext.skills :as skills]
@@ -12,6 +13,42 @@
 
 (def ^:private BB_EDN
   (str BB_DIR "/bb.edn"))
+
+(def ^:private PROMPT_FILES_EDN
+  (str (aget js/process.env "HOME") "/.config/xi/prompt-files.edn"))
+
+(defn- expand-home [p]
+  (if (str/starts-with? p "~")
+    (str (aget js/process.env "HOME") (subs p 1))
+    p))
+
+(defn load-prompt-files
+  "User-configured extra system-prompt files. ~/.config/xi/prompt-files.edn
+   is an EDN vector of markdown file paths (leading ~ expanded); each existing
+   non-empty file becomes a {:source :text} part appended to every session's
+   system prompt on this machine. Missing config or files are silently
+   skipped. Returns a vector of parts (possibly empty)."
+  []
+  (try
+    (if (fs/existsSync PROMPT_FILES_EDN)
+      (let [paths (reader/read-string {:default (fn [_tag v] v)}
+                                      (str (fs/readFileSync PROMPT_FILES_EDN "utf8")))]
+        (into []
+              (keep (fn [p]
+                      (when (string? p)
+                        (let [f (expand-home p)]
+                          (when (fs/existsSync f)
+                            (let [content (str (fs/readFileSync f "utf8"))]
+                              (when (seq content)
+  (let [home (aget js/process.env "HOME")
+        disp (if (str/starts-with? f home)
+               (str "~" (subs f (count home)))
+               f)]
+    {:source disp
+     :text   (str "# " disp "\n\n" content)}))))))))
+              (when (sequential? paths) paths)))
+      [])
+    (catch :default _ [])))
 
 (def ^:private BASE_PROMPT
   "You are Xi, a coding assistant. You help users with software engineering tasks.
@@ -166,14 +203,21 @@ Be concise, direct, and friendly. When unsure, say so.")
                           profile-content profile-content
                           agents-content  agents-content
                           :else           nil)
-        skill-content (skills/load-skill-prompts cwd)]
-    (cond
-      (and combined-agents skill-content)
-      (str combined-agents skill-content)
+        skill-content (skills/load-skill-prompts cwd)
+        prompt-files-content (some->> (load-prompt-files) seq
+                                      (map :text)
+                                      (str/join "\n\n---\n\n"))
+        base (cond
+               (and combined-agents skill-content)
+               (str combined-agents skill-content)
 
-      combined-agents combined-agents
-      skill-content   skill-content
-      :else           nil)))
+               combined-agents combined-agents
+               skill-content   skill-content
+               :else           nil)]
+    (cond
+      (and base prompt-files-content) (str base "\n\n---\n\n" prompt-files-content)
+      prompt-files-content            prompt-files-content
+      :else                           base)))
 
 (defn load-agents-parts
   "Load AGENTS.md and related prompts as source-attributed parts.
@@ -200,7 +244,8 @@ Be concise, direct, and friendly. When unsure, say so.")
                 parts)
         parts (if-let [sk (skills/load-skill-prompts cwd)]
                 (conj parts {:source "skills" :text sk})
-                parts)]
+                parts)
+        parts (into parts (load-prompt-files))]
     parts))
 
 (defn combine

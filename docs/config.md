@@ -141,6 +141,16 @@ See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider and
 Some features persist runtime state under `~/.config/xi/`. These are not part of
 the compile-time `config.cljc` — they are written and read at runtime.
 
+### Extra system-prompt files
+
+| Path | Read by | Description |
+| --- | --- | --- |
+| `~/.config/xi/prompt-files.edn` | `xi.system-prompt` | An EDN vector of markdown file paths (leading `~` expanded), e.g. `["~/.config/dotfiles/config/agent-instructions/xi.md"]`. Each existing, non-empty file is appended to the system prompt of **every** session on this machine, after AGENTS.md / profile / skill content. Missing config or files are silently skipped. Read fresh at room provisioning, so edits apply to the next session without a server restart. |
+
+Use this for machine-local personal instructions that should not live in any
+project's AGENTS.md — e.g. pointers to task recipe docs. Machines without the
+file (servers, boxes) are unaffected.
+
 ### External MCP servers
 
 | Path | Written by | Description |
