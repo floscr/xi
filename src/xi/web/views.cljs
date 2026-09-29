@@ -5,8 +5,6 @@
    Phase 7a: the online chat view (topbar, timeline of history entries,
    compose input, abort, permission dialogs). Home view + router land in 7b."
   (:require [clojure.string :as str]
-            [cljs.reader :as edn]
-            [cljs.pprint :as pprint]
             [xi.commands :as commands]
             [xi.core.state :as state]
             [xi.markdown.hiccup :as md]
@@ -29,6 +27,7 @@
             [ui.lightbox :as lightbox]
             [ui.sidebar :as sidebar]
             [ui.command :as cmd]
+            [xi.clj-result :as clj-result]
             [ui.theme-toggle :as theme-toggle]))
 
 ;; ── Standalone (homescreen) detection ────────────────────────────────────────
@@ -415,60 +414,13 @@
     "clj_replace" (get-arg args :file)
     nil))
 
-(defn- parse-clj-result
-  "Split a clj tool result string into {:stdout :value :error :loc}.
-   Success text is `<stdout>=> <value>`; error text is
-   `<stdout>Error: <msg> (line X:Y)`."
-  [text is-error]
-  (if is-error
-    (let [lead?  (str/starts-with? text "Error: ")
-          nl-idx (str/index-of text "\nError: ")
-          stdout (when nl-idx (subs text 0 nl-idx))
-          err    (cond lead?  (subs text (count "Error: "))
-                       nl-idx (subs text (+ nl-idx 1 (count "Error: ")))
-                       :else  text)
-          loc-m  (re-find #"\s*\(line \d+(?::\d+)?\)\s*$" err)
-          loc    (when loc-m (str/replace (str/trim loc-m) #"[()]" ""))
-          msg    (if loc-m (subs err 0 (- (count err) (count loc-m))) err)]
-      {:stdout (not-empty stdout) :error (str/trim msg) :loc loc})
-    (let [lead?  (str/starts-with? text "=> ")
-          nl-idx (str/index-of text "\n=> ")]
-      (cond
-        lead?  {:value (subs text 3)}
-        nl-idx {:stdout (not-empty (subs text 0 nl-idx))
-                :value  (subs text (+ nl-idx 4))}
-        :else  {:value text}))))
-
-(defn- clj-data-value?
-  "True when a clj `=>` value looks like a printed clj data structure worth
-   syntax-highlighting — it opens with a collection/set/keyword/reader delimiter
-   (`[ ( { # :`). Plain command output (multi-line shell text from `(sh …)` /
-   `(cat …)`, printed strings) opens with ordinary characters, so it renders as
-   plain monospace instead and the clj highlighter doesn't spray colours over
-   arbitrary text."
-  [s]
-  (boolean (re-find #"^\s*[\[({#:]" s)))
-
-(defn- pretty-edn
-  "Best-effort pretty-print of an EDN value string so multi-key maps / nested
-   collections render across lines instead of on one wide row. Unknown tagged
-   literals (e.g. `#object[...]`) are preserved via a default reader. Returns
-   the original text unchanged if it can't be parsed as a single EDN form."
-  [text]
-  (try
-    (let [v (edn/read-string {:default (fn [tag val] (tagged-literal tag val))} text)]
-      (str/trim-newline
-       (binding [pprint/*print-right-margin* 80]
-         (with-out-str (pprint/pprint v)))))
-    (catch :default _ text)))
-
 (defn- clj-result-view
   "Render a parsed clj result as separate stdout / value / error zones (the
    'Quiet REPL' block): the returned value sits on its own panel — clj data
    structures get syntax colouring, plain command output stays uncoloured;
    errors get a red band + a line:col chip."
   [text is-error]
-  (let [{:keys [stdout value error loc]} (parse-clj-result text is-error)
+  (let [{:keys [stdout error loc] :as parsed} (clj-result/parse-clj-result text is-error)
         g (grammars/get-grammar "clj")]
     (list
      (when stdout
@@ -482,17 +434,13 @@
         (when loc
           [:div {:class ["clj-result-loc-row"]}
            [:span {:class ["clj-result-loc"]} loc]])])
-     (when value
-       (let [value  (str/replace value #"^(?:[ \t]*\r?\n)+" "")
-             data?  (and g (clj-data-value? value))
-             shown  (truncate-lines (if data? (pretty-edn value) value) 100)]
-         ;; When there's stdout, a bare `nil` value is just noise — hide it.
-         (when-not (and stdout (= "nil" (str/trim value)))
-           [:div {:class ["tool-call-content" "clj-result-value"]}
-            [:pre {:class ["tool-call-code"]}
-             (if data?
-               (highlight-code g shown)
-               (plain-code shown))]]))))))
+     (when-let [{value :text :keys [data?]} (clj-result/value-display parsed)]
+       (let [shown (truncate-lines value 100)]
+         [:div {:class ["tool-call-content" "clj-result-value"]}
+          [:pre {:class ["tool-call-code"]}
+           (if (and g data?)
+             (highlight-code g shown)
+             (plain-code shown))]])))))
 
 (defn- confirm-buttons
   "Answer buttons for a :confirm dialog, driven by its normalized :options

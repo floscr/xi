@@ -15,6 +15,7 @@
    syntax/diff highlighting knowledge is ported from master's client/tui."
   (:require-macros [xi.config-macros :refer [deftui-opt]])
   (:require [clojure.string :as str]
+            [xi.clj-result :as clj-result]
             [xi.config]
             [xi.highlight.core :as hl]
             [xi.highlight.grammars :as hl-grammars]
@@ -269,6 +270,26 @@
                        code)
                      truncate-output-block-after-n-lines)))
 
+(defn- clj-result-display
+  "clj tool result → TUI text, the twin of the web's clj-result-view: stdout
+   as-is, the error in red with its line:col, and the `=>` value — clj data
+   pretty-printed + highlighted, continuation lines aligned under the `=> `."
+  [text is-error]
+  (let [{:keys [stdout error loc] :as parsed} (clj-result/parse-clj-result text is-error)
+        {value :text :keys [data?]} (clj-result/value-display parsed)
+        g   (hl-grammars/get-grammar "clj")
+        cap #(truncate-output % truncate-output-block-after-n-lines)]
+    (->> [(when stdout (cap stdout))
+          (when error
+            (str (ansi/fg :error (cap error))
+                 (when loc (str " " (ansi/fg :dim loc)))))
+          (when value
+            (str (ansi/fg :dim "=> ")
+                 (str/replace (cap (if (and g data?) (highlight-code g value) value))
+                              "\n" "\n   ")))]
+         (remove nil?)
+         (str/join "\n\n"))))
+
 ;; ── Entry blocks ─────────────────────────────────────────────────────────────
 
 (defn- never-update [_ _] false)
@@ -397,16 +418,20 @@
                             (set! (.-grammar st) (tool-output-lang canonical arguments))))
         set-output! (fn [content is-error]
                       (when-let [text (not-empty (result-text content))]
-                        ;; MCP tools return JSON payloads: pretty-print + JSON-
-                        ;; highlight them; fall back to the tool's own grammar.
-                        (let [pretty  (when (and mcp? (not is-error)) (pretty-json text))
-                              text    (or pretty text)
-                              grammar (if pretty (hl-grammars/get-grammar "json") (.-grammar st))
-                              display (if (and grammar (not is-error))
-                                        (truncate-output (highlight-text grammar text) truncate-output-block-after-n-lines)
-                                        (truncate-output text truncate-output-block-after-n-lines))]
-                          ((:add-child box) (comp/make-spacer 1))
-                          ((:add-child box) (comp/make-text display))))
+                        ((:add-child box) (comp/make-spacer 1))
+                        ((:add-child box)
+                         (if clj?
+                           (comp/make-text (clj-result-display text is-error)
+                                           {:hang-indent code-hang-indent})
+                           ;; MCP tools return JSON payloads: pretty-print + JSON-
+                           ;; highlight them; fall back to the tool's own grammar.
+                           (let [pretty  (when (and mcp? (not is-error)) (pretty-json text))
+                                 text    (or pretty text)
+                                 grammar (if pretty (hl-grammars/get-grammar "json") (.-grammar st))]
+                             (comp/make-text
+                              (if (and grammar (not is-error))
+                                (truncate-output (highlight-text grammar text) truncate-output-block-after-n-lines)
+                                (truncate-output text truncate-output-block-after-n-lines)))))))
                       (set! (.-outputSet st) true))
         finish! (fn [is-error]
                   (when spinner

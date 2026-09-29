@@ -130,3 +130,19 @@
       (is (some #(= "    out)]" %) lines)))
     (testing "code is syntax highlighted"
       (is (some #(str/includes? % "\u001b[38;2") raw)))))
+
+(deftest clj-tool-block-result
+  (let [value (pr-str (into (sorted-map) (map (fn [i] [(keyword (str "some-long-key-" i)) i])) (range 10)))
+        entry {:kind :tool-call :id "t2" :tool "clj" :status :done
+               :arguments {"code" "(f)"}
+               :result [{:type "text" :text (str "printed\n=> " value)}]}
+        lines (render-block entry 100)]
+    (testing "stdout shows as-is, value is pretty-printed under a => marker"
+      (is (some #(= " printed" %) lines))
+      (is (some #(re-matches #" => \{:some-long-key-\d \d," %) lines))
+      (is (some #(re-matches #"     :some-long-key-\d \d," %) lines))))
+  (testing "errors show the message with its location"
+    (let [entry {:kind :tool-call :id "t3" :tool "clj" :status :error :is-error true
+                 :arguments {"code" "(f)"}
+                 :result [{:type "text" :text "Error: Could not resolve symbol: f (line 1:1)"}]}]
+      (is (some #(= " Could not resolve symbol: f line 1:1" %) (render-block entry 60))))))
