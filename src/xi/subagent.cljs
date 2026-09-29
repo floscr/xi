@@ -106,8 +106,8 @@
                       ;; has no interactive operator in its own turn, so a
                       ;; routed-and-awaited confirm would hang it indefinitely.
                       ;; MUST stay present-and-denying — a nil :confirm! makes
-                      ;; the gates (permission-gate, mcp) *pass through*, i.e.
-                      ;; auto-ALLOW guarded ops + third-party MCP calls.
+                      ;; rules :ask actions *pass through*, i.e. auto-ALLOW
+                      ;; guarded ops + third-party MCP calls.
                       :confirm!  (fn confirm!
                                    ([_message] (js/Promise.resolve false))
                                    ([_message _copts] (js/Promise.resolve false)))}

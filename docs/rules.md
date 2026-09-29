@@ -151,9 +151,12 @@ are **denied**, and reads / grep / find / ls / read-only bash pass through. Thes
 rules sit before the write/bash gates so plan-mode's deny wins over the softer
 ask gates.
 
-The server-control tasks (`bb serve:restart` / `serve:stop`) are **not** rules —
-they're handled specially by the `permission-gate` extension (detached run so the
-agent's own server can be killed cleanly).
+**Server control**: `bb serve:restart` / `serve:stop` via `bash`, the `bb`
+tool, or clj `(sh …)` → **ask** (`[y]es` / `[n]o`, no always). Once approved,
+the executor runs it detached (`xi.server-control`) and returns an explicit
+result, so the agent's own turn survives killing its server. The rule is
+`:command`-scoped, so clj confirms the exact command even when `bb` is an
+allowed CLI.
 
 To opt back in / silence a gate, add a higher-precedence `:allow` rule for the
 same match — or drop its bundle from the default tier via `:defaults` (below).
@@ -224,6 +227,7 @@ The built-in default tier, in order:
  :xi.rules.defaults/plan-mode
  :xi.rules.defaults/write-gates
  :xi.rules.defaults/bash-guards
+ :xi.rules.defaults/server-control
  :xi.rules.defaults/mcp-confirm
  :xi.rules.defaults/subagent-confirm
  :xi.rules.defaults/clj-sh]
@@ -239,6 +243,7 @@ The built-in default tier, in order:
 | `outside-writes`     | 1 | ask: write outside the repo (with `[r]`) |
 | `write-gates`        | → | composite: `sensitive-writes` `protected-writes` `outside-writes` |
 | `bash-guards`        | 2 | deny remote shells, ask on destructive bash |
+| `server-control`     | 1 | ask on `bb serve:restart` / `serve:stop` (bash, bb tool, clj sh) |
 | `mcp-confirm`        | 1 | ask on every external MCP tool call |
 | `subagent-confirm`   | 1 | ask on every `spawn_subagent` call |
 | `sh-read-only`       | 1 | allow read-only CLIs via clj `(sh …)` |
@@ -252,7 +257,7 @@ All present fields are **ANDed**; an absent field is no constraint.
 
 | Field         | Matches                                                              |
 |---------------|---------------------------------------------------------------------|
-| `:tool`       | tool kind — keyword or set: `:write :edit :read :grep :find :ls :bash :clj :sh :mcp :other` |
+| `:tool`       | tool kind — keyword or set: `:write :edit :read :grep :find :ls :bash :clj :sh :bb :mcp :other` (`:bb` = the bb tool; its `:command` is the `bb <task> <args…>` line it runs) |
 | `:tool-name`  | raw tool name — **string** (exact / glob full match), **regex** (`re-find`), or **set** (membership). Targets one extension tool, which otherwise only has the kind `:other` (e.g. `"spawn_subagent"`). Synthetic clj `:sh` requests carry no tool name, so they never match. |
 | `:path`       | target file path — **regex** (`re-find`, partial) or **glob string** (full match: `*`=one segment, `**`=any, `?`=one char). Matched against the raw arg **and** its resolved absolute path **and** the resolved path with a leading `$HOME` collapsed to `~` — so a pattern works whether the path was given absolute, relative, or `~`-prefixed, and may itself be written with `~`. Symlinks are canonicalized. |
 | `:command`    | bash command / clj code / clj shell-out command — **regex** (`re-find`) or **string** (substring) |

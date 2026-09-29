@@ -351,7 +351,6 @@ namespace docstring is the authoritative description.
 |-----------|--------------|
 | rules | Declarative rules engine — every allow/deny/confirm policy; `/rules`. Loaded first. See [rules.md](rules.md). |
 | plan-mode | Read-only exploration mode (`/plan`, 📋 badge). The read-only policy itself is a default rule. |
-| permission-gate | Only guards the server-control tasks (`bb serve:restart` / `serve:stop`, run detached). |
 
 **Agent tools**
 

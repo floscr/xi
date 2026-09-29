@@ -28,16 +28,27 @@
   "Remote-shell commands, always blocked."
   (alt-re ["ssh " "scp " "rsync " "sftp "]))
 
+(def guarded-patterns
+  "Destructive / high-blast-radius command substrings that require
+   confirmation. Public: the clj gate applies the same list to (sh …) argv
+   strings."
+  ["rm -rf" "rm -r" "sudo " "chmod -R" "chown -R"
+   "fs/delete-dir" "fs/delete-tree"
+   "> /dev/" "mkfs" "dd if=" ":(){ " "fork bomb"
+   "git push"
+   "kill " "kill -" "pkill" "killall"])
+
 (def ^:private guarded-command-re
-  "Destructive / high-blast-radius bash patterns that require confirmation.
-   NOTE: the server-control tasks (serve:restart / serve:stop) are handled
-   separately by the permission-gate extension (detached run) and are not
-   matched here."
-  (alt-re ["rm -rf" "rm -r" "sudo " "chmod -R" "chown -R"
-           "fs/delete-dir" "fs/delete-tree"
-           "> /dev/" "mkfs" "dd if=" ":(){ " "fork bomb"
-           "git push"
-           "kill " "kill -" "pkill" "killall"]))
+  "`guarded-patterns` as one alternation regex."
+  (alt-re guarded-patterns))
+
+;; ── Server control (xi.server-control) ────────────────────────────────────────
+
+(def ^:private server-control-re
+  "`bb serve:restart` / `serve:stop` — they kill the server hosting this agent
+   (the executors run them detached, see xi.server-control). Same substrings as
+   xi.server-control/kind."
+  #"serve:(?:restart|stop)")
 
 ;; ── /tmp cleanup nudge (was xi.ext.tmp-cleanup-intercept) ────────────────────
 
@@ -291,6 +302,13 @@
     {:match  {:tool :bash :command guarded-command-re}
      :action {:type :ask :message "Guarded command — proceed?" :options [:yes :no]}}]
 
+   ;; Restarting/stopping the server drops every connected session — always
+   ;; ask (bash, the bb tool, and clj (sh …) alike). The executors run an
+   ;; approved one detached so the agent's own turn gets a result.
+   ::server-control
+   [{:match  {:tool #{:bash :bb :sh} :command server-control-re}
+     :action {:type :ask :options [:yes :no]}}]
+
    ;; External MCP tools are third-party code — every call is confirmed (with an
    ;; informative server/tool/arguments block built by the rules ext). [a]lways
    ;; persists a session allow-rule narrowed to that mcp server + tool.
@@ -356,6 +374,7 @@
    ::plan-mode
    ::write-gates
    ::bash-guards
+   ::server-control
    ::mcp-confirm
    ::subagent-confirm
    ::clj-sh])

@@ -38,10 +38,11 @@
             [xi.ext.clj-socket :as sock]
             [xi.ext.git-lock :as git-lock-ext]
             [xi.git-lock :as git-lock]
-            [xi.ext.permission-gate :as pg]
             [xi.rules :as rules]
+            [xi.rules.defaults :as rules-defaults]
             [xi.rules.store :as rules-store]
             [xi.paths :as paths]
+            [xi.server-control :as server-control]
             [xi.tools.truncate :as trunc]
             ["node:child_process" :as cp]
             ["node:crypto" :as crypto]
@@ -353,6 +354,14 @@
                              "\" …) calls raise an approval dialog; dynamic command "
                              "names can't be pre-approved — use a literal, or the "
                              "user can run /clj allow " bin) {}))
+
+        ;; bb serve:restart / serve:stop would kill the server hosting this
+        ;; agent mid-eval — run it detached and return the explanation. (The
+        ;; server-control rule asked at the gate.)
+        (server-control/kind (str/join " " argv))
+        (server-control/run-detached!
+         (str/join " " argv)
+         (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts)))
 
         :else
         (let [dir (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts))
@@ -1294,7 +1303,8 @@
                                       :description "Extra CLI args appended to the task."}}
                   :required []}})
 
-(defn- bb-tool [args {:keys [cwd]}]
+
+(defn- bb-tool-in-worker [args cwd]
   (-> (run-in-worker #js {:kind   "bb"
                           :roomId (room-key (:_room-id args))
                           :task   (some-> (:task args) str)
@@ -1304,6 +1314,15 @@
        (fn [^js m]
          {:content  [{:type "text" :text (.-text m)}]
           :is-error (boolean (.-isError m))}))))
+
+(defn- bb-tool [args {:keys [cwd]}]
+  (let [cmd (str/join " " (bb-argv args))]
+    ;; serve:restart / serve:stop kill the server hosting this agent — run
+    ;; detached, never inline (the server-control rule asked at the gate).
+    (if (server-control/kind cmd)
+      (js/Promise.resolve (server-control/tool-result cmd cwd))
+      (bb-tool-in-worker args cwd))))
+
 
 ;; ── Worker: eval side (worker thread) ────────────────────────────────────────
 ;; Runs on the worker thread (xi.ext.clj-worker → here). Handles one request
@@ -1477,7 +1496,7 @@
 (defn- sh-summary
   "Derive the (sh …) view {:literals :commands :dynamic? :shell-c?} from a
    scan-code result. :commands joins each call's literal string args — used for
-   the guarded / server-control pattern checks (dynamic args are invisible to
+   the guarded pattern checks (dynamic args are invisible to
    it; the binary itself must still be an approved literal)."
   [scan]
   (let [calls (:sh-calls scan)]
@@ -1952,21 +1971,33 @@
                                (when (= :deny (get-in r [:action :type]))
                                  {:cmd (:command c) :message (get-in r [:action :message])})))
                            cmds)
-            sc-cmd   (first (filter pg/server-control-kind
-                                    (concat (:commands sh) bg)))
+            ;; A command-scoped :ask rule (it constrains :command, e.g. the
+            ;; server-control rule on `bb serve:restart`) confirms that exact
+            ;; command, even when its CLI is otherwise allowed. CLI-wide asks
+            ;; (the base `sh-confirm`) stay with the per-CLI approval below.
+            rule-asks (->> cmds
+                           (keep (fn [c]
+                                   (let [r (cmd-decision c)]
+                                     (when (and (= :ask (get-in r [:action :type]))
+                                                (rules/arg-scoped? r))
+                                       (if-let [msg (get-in r [:action :message])]
+                                         (str msg "\n\n" (:command c))
+                                         (str "Run `" (:command c) "`?"))))))
+                           distinct)
             ;; `rm` is auto-allowed from clj (SAFE_AUTORUN) — including rm -rf,
             ;; so drop rm commands from the guarded confirm here. bash's rm -rf
-            ;; stays guarded (GUARDED_PATTERNS is unchanged).
+            ;; stays guarded (guarded-patterns is unchanged).
             guarded  (concat
                       (->> (:commands sh)
                            (filter (fn [cmd]
-                                     (some #(str/includes? cmd %) pg/GUARDED_PATTERNS)))
+                                     (some #(str/includes? cmd %) rules-defaults/guarded-patterns)))
                            (remove #(str/starts-with? % "rm ")))
                       ;; bg command lines keep the rm guard — a background
                       ;; `rm -rf` runs through bash, not the confined helper.
                       (filter (fn [cmd]
-                                (some #(str/includes? cmd %) pg/GUARDED_PATTERNS))
+                                (some #(str/includes? cmd %) rules-defaults/guarded-patterns))
                               bg))
+            confirms (concat rule-asks (map #(str "Guarded command: " %) guarded))
             ;; Builtin (rm dir) targets that are existing directories — a
             ;; recursive tree deletion. Gate each with its own confirm (handled
             ;; below, in or out of repo), so they're excluded from the generic
@@ -1991,15 +2022,6 @@
           denied
           (blocked (or (:message denied)
                        (str "clj: `" (:cmd denied) "` is denied by policy.")))
-
-          ;; bb serve:restart / serve:stop would kill the server hosting this
-          ;; agent mid-eval — delegate to the permission gate's detached-run
-          ;; flow instead of ever letting sh run it inline.
-          sc-cmd
-          (-> (js/Promise.resolve
-               (pg/ask-server-control confirm! sc-cmd (pg/server-control-kind sc-cmd)))
-              (.then (fn [res]
-                       (or res (blocked (str "clj: user denied `" sc-cmd "`"))))))
 
           :else
           ;; First clear any out-of-repo builtin reads (cat/ls/grep/…) through
@@ -2029,12 +2051,13 @@
                                                                     :_allowed-writes (vec writes))
                                                (seq reads) (update :arguments assoc
                                                                    :_allowed-reads (vec reads))))]
-                              ;; Guarded patterns (rm -rf, sudo, git push, kill …)
-                              ;; need a confirm even when the CLI itself is
-                              ;; allowlisted — parity with the bash gate. No
-                              ;; confirm! (headless) passes through.
-                              (-> (if (and (seq guarded) confirm!)
-                                    (confirm-all! confirm! (map #(str "Guarded command: " %) guarded))
+                              ;; Command-scoped ask rules and guarded patterns
+                              ;; (rm -rf, sudo, git push, kill …) need a confirm
+                              ;; even when the CLI itself is allowlisted —
+                              ;; parity with the bash gate. No confirm!
+                              ;; (headless) passes through.
+                              (-> (if (and (seq confirms) confirm!)
+                                    (confirm-all! confirm! confirms)
                                     (js/Promise.resolve true))
                                   (.then
                                    (fn [ok?]
@@ -2062,17 +2085,11 @@
         cmd (str/join " " (bb-argv (:arguments tool-call)))
         dir (or cwd (.cwd js/process))]
     (cond
-      ;; serve:restart / serve:stop would kill the server hosting this agent —
-      ;; run detached via the permission gate, never inline. Trust doesn't bypass.
-      (pg/server-control-kind cmd)
-      (-> (js/Promise.resolve
-           (pg/ask-server-control confirm! cmd (pg/server-control-kind cmd)))
-          (.then (fn [res] (or res (blocked (str "bb: user denied `" cmd "`"))))))
-
       ;; Trusted bb.edn: allow, but still confirm any guarded pattern (parity
-      ;; with the bash/clj gates).
+      ;; with the bash/clj gates). serve:restart / serve:stop are asked by the
+      ;; server-control rule and run detached by bb-tool.
       (bb-trusted? dir)
-      (let [guarded (filter #(str/includes? cmd %) pg/GUARDED_PATTERNS)]
+      (let [guarded (filter #(str/includes? cmd %) rules-defaults/guarded-patterns)]
         (if (and (seq guarded) confirm!)
           (-> (confirm-all! confirm! (map #(str "Guarded command: " %) guarded))
               (.then (fn [ok?]

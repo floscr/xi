@@ -21,8 +21,8 @@ Personal coding agent in ClojureScript + Bun.
   `xi.core.*`, `xi.agent`, extensions, providers, …) — restart it with
   `bb serve:restart`. The web client hot-reloads; just refresh the page.
 - **`bb serve:restart` / `bb serve:stop` sever your own connection** (they kill
-  the server hosting your session). The permission gate runs them detached and
-  returns success immediately; the WS link dropping right after is the
+  the server hosting your session). They're confirmed, then run detached
+  (`xi.server-control`) and return success immediately; the WS link dropping right after is the
   expected sign it worked — do NOT retry. It's back in ~5s (`bb check`). If a
   restart seems risky, ask first.
 - `bb tasks` lists everything (build, test, serve, demo, claude, treesitter, …).

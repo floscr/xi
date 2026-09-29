@@ -64,6 +64,17 @@
                                       {:cwd "/home/x/proj"})]
       (is (= :clj (:tool req)))
       (is (= "(println 1)" (:command req)))))
+  (testing "bb tool call → :bb kind, :command is the bb command line"
+    (let [req (store/decision-request {:name "bb" :arguments {:task "serve:restart"}}
+                                      {:cwd "/tmp"})]
+      (is (= :bb (:tool req)))
+      (is (= "bb serve:restart" (:command req))))
+    (is (= "bb test --focus x"
+           (:command (store/decision-request {:name "bb" :arguments {:task "test" :args ["--focus" "x"]}}
+                                             {:cwd "/tmp"}))))
+    (is (= "bb tasks"
+           (:command (store/decision-request {:name "bb" :arguments {}} {:cwd "/tmp"})))
+        "no task lists the tasks"))
   (testing "mcp tool call parses server + tool"
     (let [req (store/decision-request {:name "mcp__context7__search" :arguments {}}
                                       {:cwd "/tmp"})]

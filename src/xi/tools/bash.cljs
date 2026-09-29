@@ -1,6 +1,7 @@
 (ns xi.tools.bash
   "Bash command execution tool."
-  (:require [xi.tools.truncate :as trunc]))
+  (:require [xi.server-control :as server-control]
+            [xi.tools.truncate :as trunc]))
 
 (def ^:private DEFAULT_TIMEOUT 30000)
 (def ^:private MAX_OUTPUT 50000)
@@ -11,8 +12,7 @@
                    :prefix "bash"
                    :how    "inspect it with grep/tail or the read tool with offset/limit."}))
 
-(defn execute
-  "Execute a bash command. Returns promise of tool result."
+(defn- execute-inline
   [{:keys [command timeout]} {:keys [cwd]}]
   (let [timeout-ms (or timeout DEFAULT_TIMEOUT)
         ;; setsid creates a new session with no controlling terminal,
@@ -51,6 +51,14 @@
                                           (str "\nExit code: " code)))]
                         (resolve {:content [{:type "text" :text (if (seq output) output "(no output)")}]
                                   :is-error (and code (not= code 0))}))))))))))
+
+(defn execute
+  "Execute a bash command. Returns promise of tool result. Server-control
+   commands (xi.server-control) run detached instead of inline."
+  [{:keys [command] :as args} {:keys [cwd] :as ctx}]
+  (if (server-control/kind command)
+    (js/Promise.resolve (server-control/tool-result command cwd))
+    (execute-inline args ctx)))
 
 (def definition
   {:name "bash"

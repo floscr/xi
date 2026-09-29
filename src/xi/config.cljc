@@ -36,7 +36,6 @@
         [xi.ext.image-graph :as image-graph]
         [xi.ext.kb :as kb]
         [xi.ext.mcp :as mcp]
-        [xi.ext.permission-gate :as permission-gate]
         [xi.ext.freesearch :as freesearch]
         [xi.ext.plan-mode :as plan-mode]
         [xi.ext.process-manager :as process-manager]
@@ -133,9 +132,8 @@
       github/extension
       github-code-search/extension
       image-graph/extension
-      permission-gate/extension
-      ;; clj (sandboxed SCI scripting tool) after the policy gates so its
-      ;; tool calls still pass plan-mode/permission-gate first
+      ;; clj (sandboxed SCI scripting tool) after the rules gate so its tool
+      ;; calls still pass the policy rules first
       clj-tool/extension
       treesitter/create
       terminal-title/extension

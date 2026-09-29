@@ -94,6 +94,29 @@
     (is (nil? (rules/first-match defaults/default-rules
                                  {:tool :read :path "src/foo.cljs"})))))
 
+(deftest server-control-gate
+  (testing "restarting/stopping the server asks — via bash, the bb tool, or clj sh"
+    (is (= :ask (action-type {:tool :bash :command "bb serve:restart"})))
+    (is (= :ask (action-type {:tool :bb   :command "bb serve:stop"})))
+    (is (= :ask (action-type {:tool :sh   :cli "bb" :command "bb serve:restart"})))
+    (is (= [:yes :no]
+           (get-in (rules/first-match defaults/default-rules
+                                      {:tool :bb :command "bb serve:restart"})
+                   [:action :options]))
+        "no [a]lways — every restart is confirmed"))
+  (testing "the rule is command-scoped, so clj confirms that exact command"
+    (is (rules/arg-scoped? (rules/first-match defaults/default-rules
+                                              {:tool :sh :cli "bb" :command "bb serve:restart"}))))
+  (testing "other bb tasks and the personal server's tasks don't match"
+    (is (nil? (rules/first-match defaults/default-rules {:tool :bb :command "bb test"})))
+    (is (nil? (rules/first-match defaults/default-rules
+                                 {:tool :bb :command "bb serve:personal:restart"})))))
+
+(deftest guarded-patterns-published
+  ;; clj applies the same list to (sh …) argv strings.
+  (is (some #{"fs/delete-dir"} defaults/guarded-patterns))
+  (is (some #{"git push"} defaults/guarded-patterns)))
+
 (deftest subagent-spawn-gate
   (testing "spawning a sub-agent asks, with [a]lways"
     (is (= :ask (action-type {:tool :other :tool-name "spawn_subagent"})))
@@ -193,7 +216,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 17 (count defaults/default-rules))))
+    (is (= 18 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes

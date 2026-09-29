@@ -149,17 +149,17 @@ built-in defaults. Highlights the defaults still enforce:
   (`{:match {:tool #{:write :edit} :repo <root>} :action {:type :allow}}`) in
   the shared rules store — visible to `/rules`, not a private allowlist.
 
-What still lives in `ext/permission_gate.cljs`:
+The permission-gate extension is gone. Its last pieces:
 
-- **`GUARDED_PATTERNS`** — dangerous bash substrings (`rm -rf`,
-  `fs/delete-dir` / `fs/delete-tree`, `chmod -R`, `dd if=`, …) that the `clj`
-  gate confirms before running scanned commands.
-- **Server control** (`server-restart` / `server-stop`) — handled specially
-  (`ask-server-control`, detached run) and deliberately never expressed as a
-  rule.
+- **Guarded patterns** — `xi.rules.defaults/guarded-patterns`, the same list
+  the `bash-guards` rule is built from; the `clj` gate confirms them for
+  scanned `(sh …)` commands.
+- **Server control** (`bb serve:restart` / `serve:stop`) — asked by the
+  `server-control` default rule; the executors (bash, the bb tool, clj `sh`)
+  run an approved one detached via `xi.server-control`.
 
-To add a policy, prefer a rule (`.xi/rules.edn` or `/rules`); only the guarded
-patterns / server-control live in `ext/permission_gate.cljs`.
+To add a policy, add a rule (`.xi/rules.edn`, `/rules`, or a default in
+`xi.rules.defaults`).
 
 ## Claude CLI resolution (NixOS)
 

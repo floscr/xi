@@ -256,8 +256,8 @@ string** (bash) — optionally preceded by a `{:dir …}` opts map to set the
 working directory (gated like a read; must be an existing directory) — and
 are gated exactly like the rest of the tool: the
 pre-scan collects the literals, walks them through the same checks as bash
-commands (sudo → block, remote shells → block, `bb serve:*` → server-control
-confirm + detached, guarded patterns → confirm, unknown CLIs → per-binary
+commands (sudo → block, remote shells → block, command-scoped `:ask` rules →
+confirm, guarded patterns → confirm, unknown CLIs → per-binary
 approval with `SAFE_AUTORUN` passing free), and injects the approved strings
 into the call (`:_allowed-bg`). The worker re-checks membership at runtime,
 so a **dynamically computed** command was never approved and is rejected with
@@ -349,14 +349,15 @@ restores bash). All shell work goes through `clj`; real CLIs via `(sh …)`
 with its approval/allowlist flow. The `:system-prompt` blurb states this so
 the model doesn't try to call a tool it doesn't have.
 
-Because `(sh …)` replaces bash, the permission gate's bash policy is
-mirrored in the clj gate (reusing `xi.ext.permission-gate` publics):
+Because `(sh …)` replaces bash, bash's policy is mirrored in the clj gate:
 
 - **Remote shells** (`ssh`/`scp`/`rsync`/`sftp`) — always blocked.
-- **Server control** (`bb serve:restart|stop`) — delegated to
-  `pg/ask-server-control`: confirmed, then run *detached* with an immediate
-  explicit result. Critical here: `sh` is synchronous, so running it inline
-  would kill the server hosting the agent mid-eval.
+- **Command-scoped `:ask` rules** — a rule whose match constrains `:command`
+  (or `:within`) confirms that exact scanned command, even when its CLI is
+  allowed. The `server-control` default rule on `bb serve:restart|stop` is one:
+  once approved, `sh` runs it *detached* (`xi.server-control`) and returns an
+  explicit result, since `sh` is synchronous and running it inline would kill
+  the server hosting the agent mid-eval.
 - **Guarded patterns** (`rm -rf`, `fs/delete-dir` / `fs/delete-tree`, `sudo`,
   `git push`, `kill …`) — confirm
   dialog even when the CLI is allowlisted. Pattern-matched on each call's
@@ -389,10 +390,11 @@ by content-hash** instead of allowlisting the bare `bb` CLI.
     `bb.edn` sha (not the bare `bb` CLI); plain "yes" runs once.
 - **Scope of the hash**: only `bb.edn` itself — its inline tasks, `:init`, and
   `:requires`. Task code that lives in *separate* files is outside the hash.
-- **Gating parity**: `bb serve:restart`/`serve:stop` still route through
-  `pg/ask-server-control` (detached run) even on a trusted `bb.edn` — trust
-  never lets them run inline and kill the host server. Guarded patterns still
-  confirm. With no client attached, an untrusted `bb.edn` is blocked.
+- **Gating parity**: `bb serve:restart`/`serve:stop` are asked by the
+  `server-control` rule even on a trusted `bb.edn` (rules run before the
+  trust check), and the bb tool always runs them detached
+  (`xi.server-control`) — trust never lets them run inline and kill the host
+  server. Guarded patterns still confirm. With no client attached, an untrusted `bb.edn` is blocked.
 - `(sh "bb" …)` inside `clj` shares the same trust check: a trusted `bb.edn`
   makes `bb` an allowed CLI for the eval, and an untrusted one's "always"
   approval records the sha rather than session-allowlisting the string.

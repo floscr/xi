@@ -172,7 +172,7 @@
    chrome-devtools-mcp restricts those tools to the OS temp dir — so uploading
    e.g. a CV from a project dir fails with a 'not within any of the configured
    workspace roots' error. Path safety is already enforced upstream of the proxy by
-   xi's sandbox + permission-gate, so the child server's redundant gate only
+   xi's rules engine, so the child server's redundant gate only
    gets in the way."
   []
   (let [browser-url (env "XI_CHROME_BROWSER_URL")

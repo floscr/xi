@@ -205,7 +205,16 @@
       "ls"    :ls
       "bash"  :bash
       "clj"   :clj
+      "bb"    :bb
       (if (str/starts-with? n "mcp__") :mcp :other))))
+
+(defn- bb-command
+  "The command line a bb tool call runs — `bb <task> <args…>`, or `bb tasks`
+   without a task (mirrors xi.ext.clj's bb-argv) — so `:command` rules match
+   bb calls like any other command."
+  [{:keys [task args]}]
+  (let [task (not-empty (str/trim (str task)))]
+    (str/join " " (into ["bb"] (if task (into [task] (map str args)) ["tasks"])))))
 
 (defn hard-block
   "Immutable, non-overridable check: deny any tool call that would write a
@@ -252,7 +261,7 @@
   (let [{:keys [name arguments]} tool-call
         kind    (tool-kind name)
         p       (or (:path arguments) (:file_path arguments))
-        command (:command arguments)
+        command (if (= kind :bb) (bb-command arguments) (:command arguments))
         code    (:code arguments)
         eff-cwd (or cwd (.cwd js/process))
         repo    (git-root (if p (path/dirname (expand-path eff-cwd (str p))) eff-cwd))

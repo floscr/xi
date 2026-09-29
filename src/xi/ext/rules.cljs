@@ -108,7 +108,7 @@
      "\n## Rule schema\n"
      "A rule is an EDN map `{:match {…} :action {:type …}}`.\n\n"
      "`:match` fields (all ANDed; omit a field to leave it unconstrained):\n"
-     "- :tool     keyword or set of :write :edit :read :grep :find :ls :bash :clj :mcp :other\n"
+     "- :tool     keyword or set of :write :edit :read :grep :find :ls :bash :clj :bb :mcp :other\n"
      "- :tool-name exact tool name (string/glob, regex, or set), for :other tools\n"
      "- :path     regex (partial, re-find) or glob string (full; * one segment, ** any, ? one char)\n"
      "- :command  regex (re-find) or string (substring) over the bash command / clj code\n"
