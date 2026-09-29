@@ -210,6 +210,17 @@
    ;; wrapping CLI. `*.pub`/config/known_hosts stay allowed (excluded by regex).
    {:match  {:tool #{:sh :bash} :command hardened-ssh-key-command-re}
     :action {:type :deny :message "Blocked (hardened): reading SSH private keys under ~/.ssh via the shell is never allowed."}
+    :scope  :hardened}
+   ;; xi rules files anywhere else (e.g. a dotfiles source that gets copied to
+   ;; ~/.config/xi/rules.edn): any change is confirmed, every time. The
+   ;; canonical locations are already hard-blocked (store/hard-block); this
+   ;; covers the rest. A `rules.edn` only counts when it carries `:version`, so
+   ;; unrelated tools' rules.edn files stay untouched. Hardened + no [a]lways,
+   ;; so neither a session grant nor a config allow can skip the prompt.
+   {:match  {:tool #{:write :edit :bash :clj} :xi-rules-file true}
+    :action {:type    :ask
+             :message "Change an xi rules file (a rules.edn with :version — permission policy)?"
+             :options [:yes :no]}
     :scope  :hardened}])
 
 ;; ── clj (sh …) softeners: "disallow * then soften", scoped to :sh ────────────

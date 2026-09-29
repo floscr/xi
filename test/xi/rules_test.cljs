@@ -141,3 +141,14 @@
 (deftest needs-credential
   (is (rules/needs-credential? [{:match {:tool #{:read :grep} :credential :read}}]))
   (is (not (rules/needs-credential? [{:match {:tool :read :path "*.clj"}}]))))
+
+(deftest match-xi-rules-file-optin
+  (let [rule {:match {:tool #{:write :edit} :xi-rules-file true}}]
+    (is (rules/matches? rule {:tool :edit :path "/x/rules.edn" :xi-rules-file? true}))
+    (is (not (rules/matches? rule {:tool :edit :path "/x/rules.edn" :xi-rules-file? false})))
+    (is (not (rules/matches? rule {:tool :edit :path "/x/rules.edn"}))
+        "absent flag → an :xi-rules-file rule never matches")))
+
+(deftest needs-xi-rules-file
+  (is (rules/needs-xi-rules-file? [{:match {:tool :edit :xi-rules-file true}}]))
+  (is (not (rules/needs-xi-rules-file? [{:match {:tool :edit :path "*.edn"}}]))))

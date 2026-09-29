@@ -410,6 +410,62 @@
             ":defaults kept as written (unexpanded aliases)")
         (is (= [:ls :read] (map #(get-in % [:match :tool]) (:rules data)))
             "new rule prepended")))))
+
+(deftest xi-rules-file-change-detection
+  (let [dir        (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-rules-edit-"))
+        xi-file    (node-path/join dir "xi" "rules.edn")
+        other-file (node-path/join dir "other" "rules.edn")
+        legacy     (node-path/join dir "legacy" "rules.edn")
+        not-rules  (node-path/join dir "settings.edn")
+        _          (doseq [d ["xi" "other" "legacy"]]
+                     (fs/mkdirSync (node-path/join dir d)))
+        _          (fs/writeFileSync xi-file "{:version 1 :rules [{:match {:tool :read :path #\"x\"} :action {:type :allow}}]}")
+        _          (fs/writeFileSync other-file "{:lint {:level :warn}}")
+        _          (fs/writeFileSync legacy "[{:match {:tool :read} :action {:type :allow}}]")
+        _          (fs/writeFileSync not-rules "{:version 1}")
+        change?    (fn [tool args]
+                     (store/xi-rules-file-change?
+                      (store/decision-request {:name tool :arguments args} {:cwd dir})))]
+    (try
+      (testing "write/edit of a versioned rules.edn is an xi rules-file change"
+        (is (change? "edit" {:path xi-file :edits [{:oldText ":read" :newText ":ls"}]}))
+        (is (change? "write" {:path "xi/rules.edn" :content "{}"}) "relative path"))
+      (testing "unrelated rules.edn / non-rules.edn files are left alone"
+        (is (not (change? "edit" {:path other-file :edits [{:oldText ":warn" :newText ":off"}]})))
+        (is (not (change? "write" {:path not-rules :content "{:version 2}"})))
+        (is (not (change? "edit" {:path legacy :edits [{:oldText ":read" :newText ":ls"}]}))))
+      (testing "introducing :version (creating or migrating an xi file) counts"
+        (is (change? "edit" {:path legacy :edits [{:oldText "[" :newText "{:version 1 :rules ["}]}))
+        (is (change? "write" {:path (node-path/join dir "new" "rules.edn")
+                              :content "{:version 1 :rules []}"})))
+      (testing "shell / clj writes naming a versioned rules.edn count; reads don't"
+        (is (change? "bash" {:command (str "sed -i s/read/ls/ " xi-file)}))
+        (is (change? "bash" {:command "cp /tmp/x xi/rules.edn"}) "relative to cwd")
+        (is (change? "clj" {:code (str "(spit \"" xi-file "\" \"{}\")")}))
+        (is (not (change? "bash" {:command (str "cat " xi-file)})))
+        (is (not (change? "bash" {:command (str "sed -i s/a/b/ " other-file)}))))
+      (testing "other tools never count"
+        (is (not (change? "read" {:path xi-file}))))
+      (testing "hardened: always asks, above any user allow-rule"
+        (let [state   {:rooms {"r1" {:ext {:rules {:rules [{:match  {:tool #{:write :edit}}
+                                                               :action {:type :allow}}]}}}}}
+              ruleset (store/ordered-rules state "r1" dir)
+              hit     (fn [tool args]
+                        (rules/first-match
+                         ruleset
+                         (store/enrich-request
+                          (store/decision-request {:name tool :arguments args} {:cwd dir})
+                          ruleset)))
+              h       (hit "edit" {:path xi-file :edits [{:oldText ":read" :newText ":ls"}]})]
+          (is (= :hardened (:scope h)))
+          (is (= :ask (get-in h [:action :type])))
+          (is (= [:yes :no] (get-in h [:action :options])) "no [a]lways grant")
+          (is (= :session (:scope (hit "edit" {:path other-file
+                                              :edits [{:oldText ":warn" :newText ":off"}]})))
+              "an unrelated rules.edn falls through to the user's allow")))
+      (finally
+        (fs/rmSync dir #js {:recursive true :force true})))))
+
 (deftest operands-within-repo
   (let [repo (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-within-"))
         _    (fs/mkdirSync (node-path/join repo ".git"))

@@ -12,7 +12,8 @@
                :mcp-tool   \"*\"           ; MCP tool name (glob/exact)
                :when {:mode :plan}       ; submap match against room ext state
                :node {:type \"...\" :name #\"...\" :contains #\"...\"} ; tree-sitter (opt-in)
-               :within :repo}            ; every :sh operand inside the repo (opt-in)
+               :within :repo             ; every :sh operand inside the repo (opt-in)
+               :xi-rules-file true}      ; changes an xi rules.edn (opt-in)
       :action {:type :allow|:deny|:nudge|:ask
                :message \"...\"
                :options [:yes :no :always]}
@@ -167,6 +168,15 @@
         :repo (boolean (:operands-within-repo? req))
         false)))
 
+(defn- match-xi-rules-file
+  "xi-rules-file match (opt-in). `:xi-rules-file true` matches when the call
+   would change an xi rules file (a `rules.edn` carrying `:version`) — the store
+   computes and populates `:xi-rules-file?` on the request only when an
+   `:xi-rules-file` rule is in play (nil never matches)."
+  [spec req]
+  (or (nil? spec)
+      (and (true? spec) (boolean (:xi-rules-file? req)))))
+
 (defn- match-cli
   "CLI (binary) spec for `:tool :sh` shell-outs: string → exact binary match,
    set → membership, regex → re-find, against `(:cli req)` (the command's first
@@ -214,7 +224,8 @@
          (match-node       (:node m)       (:nodes req))
          (match-outside    (:outside m)    req)
          (match-credential (:credential m) req)
-         (match-within     (:within m)     req))))
+         (match-within     (:within m)     req)
+         (match-xi-rules-file (:xi-rules-file m) req))))
 
 (defn first-match
   "First rule in `rules` (already in precedence order) whose match matches
@@ -262,3 +273,10 @@
    resolve the target path and populate `:credential-path?` on the request."
   [rules]
   (boolean (some #(some-> (canonical %) :match :credential) rules)))
+
+(defn needs-xi-rules-file?
+  "True when any rule carries an `:xi-rules-file` matcher, so the store should
+   check whether the call changes an xi rules file and populate
+   `:xi-rules-file?` on the request."
+  [rules]
+  (boolean (some #(some-> (canonical %) :match :xi-rules-file) rules)))

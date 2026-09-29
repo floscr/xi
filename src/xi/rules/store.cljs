@@ -290,6 +290,57 @@
      (let [resolved (sandbox/real-resolve cwd (str path))]
        (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths))))))
 
+(def ^:private rules-edn-token-re
+  "A path-ish token naming a `rules.edn` inside a shell command / clj code."
+  #"[^\s'\"`()\[\]{}]*rules\.edn")
+
+(def ^:private version-key-re #":version\b")
+
+(defn- rules-edn-name? [p]
+  (= "rules.edn" (path/basename (str p))))
+
+(defn- versioned-rules-edn?
+  "True when `file` is an existing xi rules file: it parses to a map carrying
+   `:version` — the version lock every xi rules file must declare, which tells
+   it apart from any other tool's rules.edn. Unparseable content that mentions
+   `:version` counts too (a broken xi file still gets confirmed)."
+  [file]
+  (try
+    (and (fs/existsSync file)
+         (let [text (str (fs/readFileSync file "utf8"))
+               data (read-rule-edn text)]
+           (if (some? data)
+             (and (map? data) (contains? data :version))
+             (boolean (re-find version-key-re text)))))
+    (catch :default _ false)))
+
+(defn xi-rules-file-change?
+  "True when decision `req` would change an xi rules file (any `rules.edn`
+   carrying `:version`, wherever it lives — e.g. a dotfiles source copy).
+   write/edit: the target is named rules.edn (raw or symlink-resolved) and
+   either the existing file is versioned or the new text introduces
+   `:version` (creating or migrating one). bash/clj: the command carries a
+   write token and names a rules.edn path that is an existing versioned file.
+   I/O, computed only when an `:xi-rules-file` rule is in play."
+  [{:keys [tool path command arguments effective-cwd]}]
+  (boolean
+   (case tool
+     (:write :edit)
+     (when path
+       (let [resolved (sandbox/real-resolve effective-cwd (str path))]
+         (and (or (rules-edn-name? path) (rules-edn-name? resolved))
+              (or (versioned-rules-edn? resolved)
+                  (some #(re-find version-key-re (str %))
+                        (cons (:content arguments)
+                              (map :newText (:edits arguments))))))))
+
+     (:bash :clj)
+     (when (and command (re-find write-token-re (str command)))
+       (some #(versioned-rules-edn? (sandbox/real-resolve effective-cwd %))
+             (re-seq rules-edn-token-re (str command))))
+
+     false)))
+
 (defn operands-within-repo?
   "True when literal `argv` (a `:sh` command, binary first) only touches paths
    strictly inside `repo` (not the root itself — `mv <repo> /tmp/x`) or tmp —
@@ -337,8 +388,9 @@
    `ruleset` actually needs — `:resolved-path` (canonical absolute path) plus
    `:resolved-home-path` (that path with a leading $HOME collapsed to `~`) for
    `:path` rules, `:outside-cwd?` for `:outside` rules, `:credential-path?` for
-   `:credential` rules, `:nodes` (tree-sitter) for `:node` rules, and
-   `:operands-within-repo?` for `:within` rules (from a literal `:sh` `:argv`)."
+   `:credential` rules, `:nodes` (tree-sitter) for `:node` rules,
+   `:operands-within-repo?` for `:within` rules (from a literal `:sh` `:argv`),
+   and `:xi-rules-file?` for `:xi-rules-file` rules."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (sandbox/real-resolve (:effective-cwd req) (str (:path req))))]
@@ -353,7 +405,9 @@
       (assoc :nodes (nodes/nodes-for req))
       (and (:argv req) (rules/needs-within? ruleset))
       (assoc :operands-within-repo? (operands-within-repo? (:effective-cwd req)
-                                                           (:repo req) (:argv req))))))
+                                                           (:repo req) (:argv req)))
+      (rules/needs-xi-rules-file? ruleset)
+      (assoc :xi-rules-file? (xi-rules-file-change? req)))))
 
 ;; ── Ordered ruleset ─────────────────────────────────────────────────────────
 

@@ -35,7 +35,8 @@ precedence order:
    all config/runtime rules so nothing below can click through them. The agent
    cannot disable them; only the operator can, and only at launch via the
    `--no-hardened-rules` CLI flag. Covers `sudo`, remote-copy shells
-   (`scp`/`rsync`/`sftp`), and reading SSH private keys under `~/.ssh`.
+   (`scp`/`rsync`/`sftp`), reading SSH private keys under `~/.ssh`, and an
+   always-confirm on changes to xi rules files outside the canonical paths.
 3. **repo config** — `<repo>/.xi/rules.edn`
 4. **global config** — `~/.config/xi/rules.edn`
 5. **server-session** — added at runtime, process-local, cleared on restart
@@ -83,6 +84,15 @@ process, so it can't flip it).
   `id_ed25519`, custom-named keys, keys in subdirs) is blocked outright. This is
   stricter than the softer "sensitive path" ask below — that one can add friction
   but never grant access here.
+- **xi rules files elsewhere** — any change to a `rules.edn` that is an xi
+  rules file (it carries `:version`) → **ask**, every time, `[y]es` / `[n]o`
+  only. Covers files the immutable hard-block doesn't, e.g. a dotfiles source
+  that gets copied to `~/.config/xi/rules.edn`. Matched via `:xi-rules-file`:
+  `write`/`edit` when the existing file is versioned or the new text introduces
+  `:version` (creating or migrating one), and `bash`/`clj` commands that carry
+  a write token and name an existing versioned `rules.edn`. Other tools'
+  `rules.edn` files (no `:version`) are left alone. Being hardened, no session
+  grant or config `:allow` can skip the prompt.
 
 ### Built-in default rules
 
@@ -258,6 +268,7 @@ All present fields are **ANDed**; an absent field is no constraint.
 | `:node`       | tree-sitter AST predicate (opt-in) — `{:type … :name … :contains …}` |
 | `:outside`    | location predicate (opt-in) — `:cwd` matches when the target path resolves outside the effective cwd (and tmp); symlinks are canonicalized |
 | `:credential` | credential-path predicate (opt-in) — `:read` matches when the target path resolves inside a hidden credential dir (`.ssh`, `.gnupg`, `.password-store`, …); symlinks are canonicalized |
+| `:xi-rules-file` | xi-rules-file predicate (opt-in) — `true` matches when a `write`/`edit`/`bash`/`clj` call would change an xi rules file: a `rules.edn` whose content carries `:version` (existing, or introduced by the write/edit). Symlinks are canonicalized |
 | `:within`     | operand-location predicate for clj `:sh` shell-outs (opt-in) — `:repo` matches when the call is fully literal and every non-flag arg resolves strictly inside the effective git repo (not the root itself, not `.git/` or `.xi/`) or tmp; flags must be bare short clusters (`-p`, `-rv`) — any `--long`/`--`/glued non-letter value never matches; symlinks are canonicalized |
 
 ### Effective working directory
