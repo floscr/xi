@@ -1,39 +1,83 @@
-# MCP Tool Bridge
+# MCP Tool Bridge (SDK Runner)
 
-Xi uses the Claude Agent SDK to talk to Claude Code (CC), but **CC never executes tools directly**. Instead, Xi exposes its own tools via an in-process MCP server. CC proposes tool calls, Xi intercepts and executes them through its own pipeline — including a tool gate that can block or rewrite dangerous operations.
-
-This mirrors [Pi's claude-bridge architecture](https://github.com/nichochar/pi).
+Xi uses the Claude Agent SDK to talk to Claude Code (CC), but **CC never
+executes tools directly**. The SDK runs in a separate **runner process**
+(`runner/runner.mjs`, its own `node_modules`, freely upgradable SDK); the
+runner exposes Xi's tools to CC via an in-process MCP server and **proxies
+every tool call back to the host** over stdio. The host executes the call
+through its own pipeline — including a tool gate that can block or rewrite
+dangerous operations — so the tool registry and rules/permission gate never
+leave the Xi process.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Claude Code (subprocess via SDK)                    │
+│  Claude Code (subprocess of the runner, via SDK)     │
 │                                                      │
 │  Built-in tools: DISABLED (tools: [] whitelist)      │
 │  Available tools: mcp__xi-tools__* only              │
 │                                                      │
 │  CC proposes: mcp__xi-tools__bash {command: "ls"}    │
 └──────────────┬───────────────────────────────────────┘
-               │ MCP call
+               │ MCP call (in-process in the runner)
                ▼
 ┌──────────────────────────────────────────────────────┐
-│  Xi MCP Handler (provider/claude.cljs)               │
+│  Runner (runner/runner.mjs, spawned per turn)        │
 │                                                      │
-│  1. Receive tool call from CC                        │
+│  · builds the SDK MCP server from the host's         │
+│    toolDefs (JSON Schema → Zod)                      │
+│  · forwards every SDK message to the host            │
+│    as a `sdk-message` frame                          │
+│  · proxies each tool call as a `tool-call` frame     │
+│    and waits for the `tool-result` frame             │
+└──────────────┬───────────────────────────────────────┘
+               │ newline-delimited JSON over stdio
+               ▼
+┌──────────────────────────────────────────────────────┐
+│  Xi host (providers/anthropic.cljs)                  │
+│                                                      │
+│  1. Receive tool-call frame from the runner          │
 │  2. Run :tool-gate chain (extension-composed)        │
 │  3. nil → "Blocked by Xi permission gate" error      │
 │     {:intercepted true :result …} → return result    │
 │     tool-call → execute via Xi tool registry         │
-│  4. Return result to CC                              │
+│  4. Send tool-result frame back to the runner        │
 └──────────────────────────────────────────────────────┘
 ```
+
+## Wire protocol (host ⇄ runner)
+
+Newline-delimited JSON over the runner's stdin/stdout (stderr is inherited
+for diagnostics). One runner process per turn — no cross-room interleaving.
+
+Host → runner:
+
+| Frame | Meaning |
+|---|---|
+| `{type:"start", queryOpts, envOverride, toolDefs, prompt, noTools}` | begin the turn |
+| `{type:"tool-result", id, result:{content, isError}}` | answer a proxied tool call |
+| `{type:"abort"}` | interrupt the turn gracefully |
+
+Runner → host:
+
+| Frame | Meaning |
+|---|---|
+| `{type:"sdk-message", message}` | one SDK message, decoded host-side by `process-sdk-message` |
+| `{type:"tool-call", id, name, arguments}` | proxied tool call awaiting a `tool-result` |
+| `{type:"done"}` | terminal: turn complete |
+| `{type:"error", message}` | terminal: turn failed |
+
+The runner guarantees a **single terminal frame** (`done` or `error`); the
+host ignores any frame after it.
 
 ## Key files
 
 | File | Role |
 |------|------|
-| `src/xi/provider/claude.cljs` | SDK integration, MCP server, stream processing |
+| `runner/runner.mjs` | SDK integration: query lifecycle, MCP server, tool-call proxying |
+| `runner/package.json` | pins the SDK version — upgrade here, `npm install` in `runner/` |
+| `src/xi/providers/anthropic.cljs` | spawns the runner, decodes SDK messages, services tool calls |
 | `src/xi/tools/registry.cljs` | Tool definitions and execute fns |
 | `src/xi/tools/*.cljs` | Individual tools (bash, read, write, edit, grep, find, ls) |
 | `src/xi/ext/core.cljs` | Tool-gate chain composition (`compose-tool-gate`) |
@@ -45,27 +89,28 @@ This mirrors [Pi's claude-bridge architecture](https://github.com/nichochar/pi).
 
 CC is started with `permissionMode: "bypassPermissions"` (so it doesn't
 prompt on stdin) and a **whitelist**: `tools: []` disables every built-in,
-`allowedTools: ["mcp__xi-tools__*"]` exposes only Xi's MCP tools.
+`allowedTools: ["mcp__xi-tools__*"]` exposes only Xi's MCP tools
+(`base-query-opts` in `providers/anthropic.cljs`).
 
-### 2. Xi's tools are exposed via MCP
+### 2. Xi's tools are exposed via MCP — in the runner
 
-`build-mcp-server` creates an in-process MCP server using
-`createSdkMcpServer` from the SDK. Each Xi tool (from `tools/registry.cljs`)
-becomes an MCP tool:
-
-- Tool name: `bash`, `read`, `write`, etc. (CC sees them as `mcp__xi-tools__bash`)
-- Input schema: converted from JSON Schema to Zod (required by the SDK)
-- Handler: runs the gate, then executes via the registry's exec fn, which
-  receives only `{:cwd}` — tools have no app-state concerns
+The host resolves the turn's tool surface with `resolve-tooling`
+(extension extras/removals, personal-agent filter) and ships the ordered
+`toolDefs` in the `start` frame. The runner builds an in-process MCP server
+from them (`createSdkMcpServer`), converting each JSON Schema to Zod. Each
+tool's handler doesn't execute anything — it emits a `tool-call` frame and
+resolves when the matching `tool-result` arrives.
 
 Extensions extend the tool surface per assembly via
 `:extra-tool-definitions` / `:extra-tool-registry` (e.g. `kb_*`,
-`web_search` — see [extensions.md](extensions.md)).
+`web_search` — see [extensions.md](extensions.md)). The tooling seam is
+fn-valued and deref'd fresh each turn, so `/ext enable|disable` takes
+effect on the next turn.
 
 In personal-agent mode (`:personal-agent?`), the definitions are filtered
 to `PERSONAL_AGENT_TOOLS` (`web_search` only).
 
-### 3. The tool gate
+### 3. The tool gate (host-side)
 
 The gate is an async transform chain composed from extensions at assembly
 time (`ext/compose`) and passed into the provider per turn as `:tool-gate`.
@@ -81,12 +126,6 @@ Gate ctx provides `{:dispatch! :get-state :room-id :cwd :confirm!}` —
 `confirm!` raises a dialog in the connected clients (TUI/web) and resolves
 with the answer, which is how the permission gate and `/commit` confirm
 work.
-
-### 4. JSON Schema → Zod conversion
-
-The SDK's `createSdkMcpServer` requires Zod schemas.
-`json-schema-prop->zod` / `json-schema->zod-shape` convert Xi's JSON Schema
-tool definitions to Zod types at MCP server creation time.
 
 ## Permission gate & rules engine
 
@@ -120,13 +159,13 @@ What still lives in `ext/permission_gate.cljs`:
 To add a policy, prefer a rule (`.xi/rules.edn` or `/rules`); only the guarded
 patterns / server-control live in `ext/permission_gate.cljs`.
 
-## NixOS executable resolution
+## Claude CLI resolution (NixOS)
 
-The SDK ships a native CC binary that can't run on NixOS (wrong
-`ld-linux`). `resolve-claude-executable` follows the `which claude` symlink
-to find the `.js` entrypoint and passes it as
-`pathToClaudeCodeExecutable`. The SDK detects the `.js` extension and runs
-it via bun/node.
+The SDK ships a native, generically-linked CC binary that can't run on NixOS
+(wrong `ld-linux`). The runner's `resolveClaudeExecutable()` instead resolves
+`claude` from `PATH` (following the symlink with `realpathSync`) and passes
+it as `pathToClaudeCodeExecutable`; `XI_CLAUDE_CLI_PATH` overrides it
+explicitly.
 
 ## Session resume
 
@@ -134,14 +173,15 @@ There is no provider-side session atom. The provider session id lives in
 app state at `[:rooms room-id :session :provider-session-id]` — set by
 `:agent/turn-end`, passed to the next turn as `:resume-session-id` (SDK
 `resume` option). Clearing it (e.g. `/clear`, `/tree` navigation) makes the
-next `query()` start a fresh Claude session with a new JSONL file.
+next turn start a fresh Claude session with a new JSONL file.
 
 ## Stream processing
 
-`stream-messages` returns `{:promise :abort!}`. The SDK's `query()` yields
-messages processed into provider callbacks (`:on-text`, `:on-thinking`,
-`:on-tool-start`, `:on-tool-args`, `:on-tool-result`, `:on-error`), which
-the agent layer turns into `:agent/*` events:
+`stream-messages-runner` returns `{:promise :abort!}`. The runner's
+`sdk-message` frames are decoded host-side by `process-sdk-message` into
+provider callbacks (`:on-text`, `:on-thinking`, `:on-tool-start`,
+`:on-tool-args`, `:on-tool-result`, `:on-error`), which the agent layer
+turns into `:agent/*` events:
 
 | Message type | What Xi does |
 |---|---|
@@ -155,6 +195,7 @@ the agent layer turns into `:agent/*` events:
 Tool names in stream events have the MCP prefix (`mcp__xi-tools__bash`),
 which `util/strip-mcp-prefix` removes for display.
 
-Lifecycle quirks (the reason for the SDK version pin — see AGENTS.md):
-the query must be `.close()`d after completion to avoid EPIPE from orphaned
-subprocess pipes; abort uses `.interrupt()` then `.close()`.
+SDK lifecycle quirks are contained in the runner: the query must be
+`.close()`d after completion to avoid EPIPE from orphaned subprocess pipes;
+abort uses `.interrupt()` then `.close()`; stdout write errors after the
+terminal frame are swallowed to stderr.

@@ -1,6 +1,6 @@
 # OpenAI Codex provider (ChatGPT subscription)
 
-The **OpenAI Codex provider** (`xi.provider.openai.codex`) runs real GPT/Codex
+The **OpenAI Codex provider** (`xi.providers.openai.codex`) runs real GPT/Codex
 models against your **ChatGPT subscription** — the same backend the
 [`codex`](https://github.com/openai/codex) CLI uses
 (`https://chatgpt.com/backend-api/codex/responses`) — rather than a
@@ -8,7 +8,7 @@ pay-per-token API key.
 
 It speaks the OpenAI **Responses** SSE wire format, so it shares all of Xi's
 Responses machinery (streaming, reasoning summaries, the tool-use loop) with the
-Zen Responses surface via `xi.provider.openai.responses`; this provider only
+Zen Responses surface via `xi.providers.openai.responses`; this provider only
 supplies the Codex-specific endpoint, auth headers, and request body.
 
 ## Using it

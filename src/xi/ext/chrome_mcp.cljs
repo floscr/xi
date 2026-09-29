@@ -2,7 +2,7 @@
   "chrome-devtools-mcp proxied into xi's own tool surface.
 
    xi's provider disables the Claude CLI's native MCP servers (only xi's
-   in-process MCP is exposed — see xi.provider.claude/query-opts), so a
+   in-process MCP is exposed — see xi.providers.anthropic/base-query-opts), so a
    chrome-devtools-mcp declared in ~/.claude.json never reaches an agent run
    inside xi. This extension re-provides it as xi tools: xi spawns
    chrome-devtools-mcp as a child MCP server over stdio and forwards each

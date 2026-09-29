@@ -1,8 +1,8 @@
 (ns xi.providers.openai.responses
   "Shared OpenAI Responses-API adapter (streaming SSE + Xi's own tool-use loop).
 
-   Both the OpenCode Zen Responses surface (xi.provider.zen.responses) and the
-   ChatGPT-subscription Codex surface (xi.provider.openai.codex) speak the same
+   Both the OpenCode Zen Responses surface (xi.providers.zen.responses) and the
+   ChatGPT-subscription Codex surface (xi.providers.openai.codex) speak the same
    OpenAI Responses wire format; only the endpoint, auth headers, and request
    body differ. This namespace owns everything they share:
 

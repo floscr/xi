@@ -66,7 +66,7 @@ function lateError(prefix, e) {
   else sendTerminal({ type: "error", message });
 }
 
-// ── JSON Schema → Zod (mirrors xi.provider.claude) ─────────────────────────────
+// ── JSON Schema → Zod (sole copy — Xi ships tool defs as plain JSON Schema) ─────────────────────────────
 
 function parseJsonString(v) {
   if (typeof v === "string") {

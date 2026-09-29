@@ -4,7 +4,7 @@
    reasoning deltas, accumulates tool calls, and drives Xi's tool-use loop.
 
    No app-state dependency — callers pass a config map and per-turn opts.
-   Both `xi.provider.ollama` and `xi.provider.zen` (chat-completions surface)
+   Both `xi.providers.ollama` and `xi.providers.zen` (chat-completions surface)
    are thin wrappers over `stream-messages` here.
 
    config keys:

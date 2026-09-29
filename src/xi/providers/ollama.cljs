@@ -1,6 +1,6 @@
 (ns xi.providers.ollama
   "Direct OpenAI-compatible streaming provider for Ollama (and similar).
-   A thin wrapper over `xi.provider.openai-compat`: supplies the local base
+   A thin wrapper over `xi.providers.openai-compat`: supplies the local base
    URL and an `ensure-ollama-running!` pre-flight that spawns `ollama serve`
    when the local API isn't reachable.
 

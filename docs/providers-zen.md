@@ -2,7 +2,7 @@
 
 [OpenCode Zen](https://opencode.ai/docs/zen) is a curated, benchmarked
 multi-model AI gateway from the OpenCode team. Xi talks to it as a **native HTTP
-provider** (`xi.provider.zen`) — no `opencode` CLI subprocess and no extra npm
+provider** (`xi.providers.zen`) — no `opencode` CLI subprocess and no extra npm
 deps. It reuses Xi's existing OpenAI-compatible streaming core, plus a raw-HTTP
 Anthropic Messages adapter for the Claude/Qwen models.
 
@@ -46,13 +46,13 @@ Get a key at <https://opencode.ai/auth>.
 
 Zen serves different model families through different wire formats. Xi routes
 each model to the right adapter via a static table transcribed from the docs
-(`xi.provider.zen.models`); unknown/new ids default to chat-completions.
+(`xi.providers.zen.models`); unknown/new ids default to chat-completions.
 
 | Surface | Endpoint | Models | Status |
 | --- | --- | --- | --- |
-| Chat Completions | `POST /zen/v1/chat/completions` | DeepSeek, GLM, Kimi, MiniMax, Big Pickle, all `*-free` | ✅ supported (via `xi.provider.openai-compat`) |
-| Anthropic Messages | `POST /zen/v1/messages` (`x-api-key`) | Claude, Qwen | ✅ supported (via `xi.provider.zen.anthropic`) |
-| OpenAI Responses | `POST /zen/v1/responses` | GPT (incl. GPT 6 Astra), Grok, Muse | ✅ supported (via `xi.provider.zen.responses`) |
+| Chat Completions | `POST /zen/v1/chat/completions` | DeepSeek, GLM, Kimi, MiniMax, Big Pickle, all `*-free` | ✅ supported (via `xi.providers.openai-compat`) |
+| Anthropic Messages | `POST /zen/v1/messages` (`x-api-key`) | Claude, Qwen | ✅ supported (via `xi.providers.zen.anthropic`) |
+| OpenAI Responses | `POST /zen/v1/responses` | GPT (incl. GPT 6 Astra), Grok, Muse | ✅ supported (via `xi.providers.zen.responses`) |
 | Google | `POST /zen/v1/models/<id>` | Gemini | ⏳ not yet implemented |
 
 Selecting a Gemini model currently surfaces a clear "not supported yet" error
@@ -60,17 +60,17 @@ rather than failing silently.
 
 ## Architecture notes
 
-- `xi.provider.openai-compat` — the shared OpenAI Chat Completions streaming +
-  tool-use loop, extracted from `xi.provider.ollama`. Both Ollama and Zen's
+- `xi.providers.openai-compat` — the shared OpenAI Chat Completions streaming +
+  tool-use loop, extracted from `xi.providers.ollama`. Both Ollama and Zen's
   chat-completions surface are thin config wrappers over it (base URL, auth
   headers, optional pre-flight).
-- `xi.provider.zen` — the dispatcher: picks the adapter by the model's wire
+- `xi.providers.zen` — the dispatcher: picks the adapter by the model's wire
   format and injects the resolved auth header.
-- `xi.provider.zen.anthropic` — raw-HTTP Anthropic Messages streaming adapter
+- `xi.providers.zen.anthropic` — raw-HTTP Anthropic Messages streaming adapter
   (tool_use blocks accumulated from `input_json_delta`, executed through Xi's
   registry + tool gate, fed back as `tool_result` blocks). Uses `x-api-key`
   auth (the Zen Anthropic surface rejects bearer-only).
-- `xi.provider.zen.responses` — raw-HTTP OpenAI **Responses API** streaming
+- `xi.providers.zen.responses` — raw-HTTP OpenAI **Responses API** streaming
   adapter (GPT/Grok/Muse). Bearer auth. Runs stateless (`store:false`): the
   streamed output items (reasoning / message / function_call) are echoed back
   verbatim into each next request's `input`, so item ids and reasoning ↔
@@ -80,12 +80,12 @@ rather than failing silently.
   models reject `none`) with `include: ["reasoning.encrypted_content"]`, and
   streams reasoning summaries as thinking when a model emits them. Override the
   effort per turn via the `:reasoning-effort` opt.
-- `xi.provider.zen.auth` / `xi.provider.zen.models` — key resolution and the
+- `xi.providers.zen.auth` / `xi.providers.zen.models` — key resolution and the
   id-normalization + wire-format routing table.
 
 ## Prompt caching (cost)
 
-The Anthropic Messages adapter (`xi.provider.zen.anthropic`) uses Anthropic
+The Anthropic Messages adapter (`xi.providers.zen.anthropic`) uses Anthropic
 **prompt caching**. Xi's tool-use loop re-sends the same large static prefix
 (system prompt + tool definitions + prior turns) on every iteration; without
 caching each round-trip is billed the full input price for all of it — a
@@ -106,7 +106,7 @@ roughly a 3× reduction, growing with the number/size of tool iterations.
 
 Caching only kicks in above Anthropic's ~1024-token minimum prefix, so trivial
 one-line turns won't show cache hits — that's expected. The native Claude
-provider (`xi.provider.claude`) already caches automatically via the SDK's
+provider (`xi.providers.anthropic`) already caches automatically via the SDK's
 `claude_code` preset; this brings the Zen Anthropic surface to parity.
 
 ## Privacy

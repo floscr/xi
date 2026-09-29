@@ -4,8 +4,9 @@
    (xi.ext.mcp); the extension wrapper turns a connected client's tool list
    into Xi tool-definitions + a tool-registry.
 
-   Xi's single-runtime-dep rule (only @anthropic-ai/claude-agent-sdk) means
-   we speak the wire protocol by hand rather than pulling in the MCP SDK.
+   Xi's no-runtime-deps rule (the Claude Agent SDK lives in the separate
+   runner/ process) means we speak the wire protocol by hand rather than
+   pulling in the MCP SDK.
 
    stdio (`connect`): newline-delimited JSON-RPC over a subprocess:
      → spawn the server, write one JSON object per line to its stdin

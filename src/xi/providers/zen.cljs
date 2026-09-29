@@ -3,18 +3,18 @@
 
    Zen serves models across several wire formats behind one gateway
    (https://opencode.ai/zen/v1). This provider dispatches each turn to the
-   right adapter based on the model's wire-format (see xi.provider.zen.models):
+   right adapter based on the model's wire-format (see xi.providers.zen.models):
 
-     :chat      OpenAI Chat Completions  — via xi.provider.openai-compat
+     :chat      OpenAI Chat Completions  — via xi.providers.openai-compat
                 (DeepSeek, GLM, Kimi, MiniMax, big-pickle, all *-free models)
-     :messages  Anthropic Messages       — via xi.provider.zen.anthropic
+     :messages  Anthropic Messages       — via xi.providers.zen.anthropic
                 (Claude, Qwen)
-     :responses OpenAI Responses         — via xi.provider.zen.responses
+     :responses OpenAI Responses         — via xi.providers.zen.responses
                 (GPT, Grok, Muse)
      :gemini    Google generateContent   — not yet implemented (Gemini)
 
    Auth: OPENCODE_API_KEY / OPENCODE_ZEN_API_KEY, else OpenCode's own
-   ~/.local/share/opencode/auth.json (see xi.provider.zen.auth). The free
+   ~/.local/share/opencode/auth.json (see xi.providers.zen.auth). The free
    chat-completions models work without a key.
 
    Interface: (stream-messages opts) → {:promise :abort!}."

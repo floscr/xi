@@ -1,41 +1,19 @@
 (ns xi.providers.anthropic
-  "Claude provider — uses the Claude Agent SDK for API access.
-   Claude proposes tool calls via MCP; Xi intercepts and executes them
-   through its own tool pipeline. Mirrors Pi's claude-bridge architecture.
+  "Anthropic provider — runs the Claude Agent SDK in a separate runner
+   process (runner/runner.mjs, its own node_modules, freely upgradable SDK)
+   and speaks newline-delimited JSON over stdio. The host owns the tool
+   registry + permission gate; the runner proxies each tool call back via
+   `tool-call` frames.
 
-   SDK lore (do not lose):
-   - SDK pinned to 0.2.110 — newer versions exit 127 (CLI resolution breaks)
-   - The query MUST be closed via .close() after completion to avoid EPIPE
-     from orphaned subprocess pipes; error paths must close too
-   - Abort = .interrupt() (graceful) then .close() (cleanup), never .return()
-
-   Interface: (stream-messages opts) → {:promise :abort!}.
+   Interface: (stream-messages-runner opts) → {:promise :abort!}.
    Extension hooks are injected via :tool-gate (async transform; nil blocks,
    {:intercepted true :result …} short-circuits) — no ext/core dependency."
-  (:require ["@anthropic-ai/claude-agent-sdk" :as sdk]
-            ["node:child_process" :as child-process]
+  (:require ["node:child_process" :as child-process]
             ["node:fs" :as fs]
             ["node:path" :as path]
-            ["zod" :as z]
             [clojure.string :as str]
             [xi.tools.registry :as tools]
             [xi.util :as util]))
-
-;; ── Claude Code Executable Resolution ─────────────────────────────────────────
-
-(defn resolve-claude-executable
-  "Resolve the claude CLI executable path. Returns path string or nil."
-  []
-  (try
-    (let [which-path (-> (child-process/execSync "which claude" #js {:encoding "utf8"})
-                         (.trim))
-          real-path (fs/realpathSync which-path)]
-      (when (.endsWith real-path ".js")
-        real-path))
-    (catch :default _e nil)))
-
-(def ^:private claude-executable
-  (delay (resolve-claude-executable)))
 
 (defn- cwd-missing?
   "True when a working directory is set but doesn't exist on this host. A Pi
@@ -46,65 +24,6 @@
   (and (string? cwd)
        (pos? (count cwd))
        (try (not (.existsSync fs cwd)) (catch :default _ false))))
-
-;; ── JSON Schema → Zod ─────────────────────────────────────────────────────────
-;;
-;; createSdkMcpServer needs Zod schemas. Convert our JSON Schema tool defs.
-
-(defn- parse-json-string
-  "If v is a string, try to JSON.parse it; on failure return the original
-   string (so validation reports a clear type error). Non-strings pass
-   through untouched. Lets models that serialize structured args as a JSON
-   string still satisfy array/object schemas."
-  [v]
-  (if (string? v)
-    (try (js/JSON.parse v) (catch :default _ v))
-    v))
-
-(defn- json-schema-prop->zod
-  [prop]
-  (let [prop-type (get prop :type)
-        enum-vals (get prop :enum)
-        base (cond
-               (seq enum-vals) (.enum z (clj->js enum-vals))
-               (= "string" prop-type) (.string z)
-               (or (= "number" prop-type) (= "integer" prop-type)) (.number z)
-               (= "boolean" prop-type) (.boolean z)
-               (= "array" prop-type) (.preprocess z parse-json-string
-                                       (if-let [items (get prop :items)]
-                                         (.array z (json-schema-prop->zod items))
-                                         (.array z (.unknown z))))
-               (= "object" prop-type) (.preprocess z parse-json-string
-                                        (if-let [props (get prop :properties)]
-                                          (let [required-set (set (get prop :required))
-                                                shape (reduce-kv
-                                                       (fn [acc k v]
-                                                         (let [zod-prop (json-schema-prop->zod v)]
-                                                           (assoc acc k (if (contains? required-set k)
-                                                                          zod-prop
-                                                                          (.optional zod-prop)))))
-                                                       {} props)]
-                                            (.object z (clj->js shape)))
-                                          (.record z (.string z) (.unknown z))))
-               :else (.unknown z))]
-    (if-let [desc (get prop :description)]
-      (.describe base desc)
-      base)))
-
-(defn- json-schema->zod-shape
-  [schema]
-  (let [props (get schema :properties)
-        required-set (set (get schema :required))]
-    (when props
-      (reduce-kv
-       (fn [acc k v]
-         (let [zod-prop (json-schema-prop->zod v)]
-           (unchecked-set acc (name k)
-                          (if (contains? required-set (name k))
-                            zod-prop
-                            (.optional zod-prop)))
-           acc))
-       #js {} props))))
 
 ;; ── MCP Tool Bridge ───────────────────────────────────────────────────────────
 ;;
@@ -140,9 +59,9 @@
 
 (defn run-gated-tool
   "Execute one tool call through the extension tool-gate, then the registry.
-   Returns a Promise of #js {:content … :isError …}. Shared by the in-process
-   MCP bridge and (slice 2) the runner's proxied tool-call handler, so the
-   permission gate + registry stay in one place regardless of transport.
+   Returns a Promise of #js {:content … :isError …}. Services the runner's
+   proxied tool-call frames, so the permission gate + registry stay host-side
+   regardless of transport.
 
    opts: {:tool-name :exec-fn :arguments :tool-gate :cwd :client-pid}."
   [{:keys [tool-name exec-fn arguments tool-gate cwd client-pid]}]
@@ -173,8 +92,8 @@
   "Resolve the enabled tool defs + registry for a turn: extension extras,
    removals, and the personal-agent `only-tools` filter applied. `:defs` is the
    ordered tool-definition vector shown to the model; `:registry` maps
-   tool-name → exec-fn. Shared by the in-process MCP bridge and the runner
-   transport (which ships `:defs` over the wire and dispatches via `:registry`).
+   tool-name → exec-fn. The runner transport ships `:defs` over the wire and
+   dispatches proxied calls via `:registry`.
 
    extra-tool-definitions / extra-tool-registry may be a value OR a 0-arg fn.
    The manager passes fns (xi.cli/tooling-opts) so the enabled tool set is read
@@ -208,32 +127,6 @@
                      :tool-gate tool-gate
                      :cwd cwd
                      :client-pid client-pid})))
-
-(defn- build-mcp-server
-  [{:keys [cwd tool-gate client-pid] :as opts}]
-  (let [tool-gate (or tool-gate default-gate)
-        {:keys [defs registry]} (resolve-tooling opts)
-        mcp-tools (into-array
-                   (map (fn [tool-def]
-                          (let [tool-name (:name tool-def)
-                                exec-fn (get registry tool-name)
-                                zod-shape (json-schema->zod-shape (:input_schema tool-def))]
-                            #js {:name tool-name
-                                 :description (:description tool-def)
-                                 :inputSchema (or zod-shape #js {})
-                                 :handler
-                                 (fn [^js args _extra]
-                                   (run-gated-tool {:tool-name tool-name
-                                                    :exec-fn exec-fn
-                                                    :arguments (js->clj args :keywordize-keys true)
-                                                    :tool-gate tool-gate
-                                                    :cwd cwd
-                                                    :client-pid client-pid}))}))
-                        defs))]
-    (sdk/createSdkMcpServer
-     #js {:name MCP_SERVER_NAME
-          :version "1.0.0"
-          :tools mcp-tools})))
 
 ;; ── Stream Event Processing ──────────────────────────────────────────────────
 
@@ -339,11 +232,11 @@
             :is-error (:is_error block)}))))))
 
 (defn process-sdk-message
-  "Dispatch a single SDK message onto callbacks + per-turn `state`. Shared by
-   the in-process iterator loop and (slice 2) the runner transport, which feeds
-   the same messages over the wire. Handles stream_event / assistant / user /
-   result / system / rate_limit_event; loop control (done detection, recursion,
-   abort) stays with the caller."
+  "Dispatch a single SDK message onto callbacks + per-turn `state` — the
+   runner transport feeds these over the wire as `sdk-message` frames.
+   Handles stream_event / assistant / user / result / system /
+   rate_limit_event; loop control (done detection, abort) stays with the
+   caller."
   [^js message callbacks state]
   (let [msg-type (.-type message)]
     (case msg-type
@@ -391,204 +284,11 @@
 
       nil)))
 
-;; ── Main Streaming Function ──────────────────────────────────────────────────
-
-(defn stream-messages
-  "Send a prompt to Claude via the SDK with the MCP tool bridge.
-   Returns {:promise p :abort! f} — promise resolves to the response state
-   map; abort! interrupts gracefully then closes (state gets :aborted)."
-  [opts]
-  (let [callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
-                                     :on-tool-args :on-tool-result :on-session
-                                     :on-error])
-        ;; Per-turn stream accumulation — contained to this turn.
-        state (atom {:content [] :usage {} :stop-reason nil
-                     :model (:model opts) :session-id nil
-                     :result-text nil :cost nil :tool-call-ids []
-                     :pending-tool-inputs {} :saw-stream-events false})
-
-        cwd (or (:cwd opts) (.cwd js/process))
-        resume-id (:resume-session-id opts)
-        ;; A text-only turn (:no-tools?, e.g. title generation) skips the MCP
-        ;; bridge entirely: it needs no tools, and building/attaching a second
-        ;; xi-tools server concurrently with the first user turn made that
-        ;; turn's first tool calls fail with "No such tool available" until the
-        ;; extra CLI subprocess's MCP handshake finished (see docs).
-        mcp-server (when-not (:no-tools? opts)
-                     (build-mcp-server
-                      (cond-> {:cwd cwd
-                               :client-pid (:client-pid opts)
-                               :tool-gate (:tool-gate opts)
-                               :extra-tool-definitions (:extra-tool-definitions opts)
-                               :extra-tool-registry (:extra-tool-registry opts)
-                               :remove-tools (:remove-tools opts)}
-                        (:personal-agent? opts) (assoc :only-tools PERSONAL_AGENT_TOOLS))))
-        ;; Append the tool-naming note on tool turns so the model calls the
-        ;; mcp__xi-tools__* names, not the disabled native builtins. Skipped
-        ;; for :no-tools? turns (title gen etc.) which expose no tools.
-        append-sys (if (:no-tools? opts)
-                     (:system opts)
-                     (str/join "\n\n" (remove str/blank? [(:system opts) TOOL_NAMING_NOTE])))
-        query-opts (let [base (clj->js
-                               (cond-> {:cwd cwd
-                                        :permissionMode "bypassPermissions"
-                                        :allowDangerouslySkipPermissions true
-                                        :includePartialMessages true
-                                        ;; Whitelist approach: disable ALL builtins
-                                        :tools []
-                                        :allowedTools (if (:no-tools? opts)
-                                                        []
-                                                        [(str MCP_TOOL_PREFIX "*")])
-                                        ;; Ignore filesystem MCP config
-                                        ;; (~/.claude.json). Without this the
-                                        ;; SDK merges the user's native MCP
-                                        ;; servers with ours and spawns them; we
-                                        ;; want ONLY our programmatic xi-tools
-                                        ;; server so the inner agent can't reach
-                                        ;; native MCP (e.g. chrome-devtools).
-                                        :strictMcpConfig true
-                                        ;; Disable the SDK's auto-memory feature
-                                        ;; (~/.claude/projects/<cwd>/memory/,
-                                        ;; enabled by default with the
-                                        ;; claude_code preset). We don't want the
-                                        ;; inner agent reading or writing memory.
-                                        :autoMemoryEnabled false}
-                                 @claude-executable
-                                 (assoc :pathToClaudeCodeExecutable @claude-executable)
-
-                                 (:model opts)
-                                 (assoc :model (:model opts))
-
-                                 append-sys
-                                 (assoc :systemPrompt
-                                        #js {:type "preset"
-                                             :preset "claude_code"
-                                             :append append-sys})
-
-                                 (:effort opts)
-                                 (assoc :effort (:effort opts))
-
-                                 ;; Per-turn env override, merged over
-                                 ;; process.env (the SDK replaces env wholesale,
-                                 ;; so we must keep PATH/auth/etc).
-                                 (:env opts)
-                                 (assoc :env (merge (js->clj js/process.env)
-                                                    (:env opts)))
-
-                                 resume-id
-                                 (assoc :resume resume-id)))]
-                     (when mcp-server
-                       (unchecked-set base "mcpServers"
-                                      (js-obj MCP_SERVER_NAME mcp-server)))
-                     base)
-
-        images (:images opts)
-        ;; Only images and PDFs can be inlined as API content blocks (vision /
-        ;; document). Any other attachment (zip, text, …) reaches the model only
-        ;; via its on-disk path, already appended to the prompt text upstream.
-        inline (filter (fn [{:keys [media-type]}]
-                         (or (= media-type "application/pdf")
-                             (str/starts-with? (or media-type "") "image/")))
-                       images)
-        ;; With inline attachments: SDKUserMessage with multipart content via
-        ;; async generator (same pattern as pi's claude-bridge); else plain
-        ;; string.
-        prompt-value
-        (if (seq inline)
-          (let [text-blocks (when (seq (:prompt opts))
-                              [#js {:type "text" :text (:prompt opts)}])
-                content (into-array
-                         (concat
-                          text-blocks
-                          (map (fn [{:keys [media-type data]}]
-                                 (if (= media-type "application/pdf")
-                                   #js {:type "document"
-                                        :source #js {:type "base64"
-                                                     :media_type media-type
-                                                     :data data}}
-                                   #js {:type "image"
-                                        :source #js {:type "base64"
-                                                     :media_type media-type
-                                                     :data data}}))
-                               inline)))
-                msg #js {:type "user"
-                         :message #js {:role "user" :content content}
-                         :parent_tool_use_id nil}]
-            ((js* "(async function*(msg) { yield msg; })") msg))
-          (:prompt opts))
-
-        ^js sdk-query (sdk/query #js {:prompt prompt-value
-                                      :options query-opts})
-        flags #js {:aborted false}
-        close-query! (fn []
-                       (try (.close sdk-query)
-                            (catch :default _e nil)))
-
-        promise
-        (js/Promise.
-         (fn [resolve _reject]
-           (letfn [(finish! []
-                     (close-query!)
-                     (resolve @state))
-
-                   (consume []
-                     (if (.-aborted flags)
-                       (do
-                         (swap! state assoc :aborted true)
-                         (finish!))
-                       (-> (.next sdk-query)
-                           (.then
-                            (fn [^js result]
-                              (if (.-done result)
-                                (finish!)
-                                (do
-                                  (process-sdk-message (.-value result) callbacks state)
-                                  (consume)))))
-                           (.catch
-                            (fn [err]
-                              (let [msg (str (.-message err))]
-                                (cond
-                                  (and resume-id
-                                       (re-find #"No conversation found" msg))
-                                  ;; The session we tried to resume is gone from
-                                  ;; disk. Signal the agent to retry fresh rather
-                                  ;; than surfacing a dead-end error to the user.
-                                  (do (swap! state assoc :resume-failed true)
-                                      (finish!))
-
-                                  ;; The working directory vanished (e.g. a Pi
-                                  ;; session with cwd=/var/lib/xi opened on a host
-                                  ;; without it). spawn ENOENT is mislabeled
-                                  ;; 'executable not found'; recover via the agent
-                                  ;; (cwd-select dialog) rather than dead-ending.
-                                  (cwd-missing? cwd)
-                                  (do (swap! state assoc :cwd-missing true)
-                                      (finish!))
-
-                                  :else
-                                  (do
-                                    (js/console.error "[claude] stream error:" msg)
-                                    (when (:on-error callbacks)
-                                      ((:on-error callbacks)
-                                       {:type "error" :message msg}))
-                                    (finish!)))))))))]
-             (consume))))]
-
-    {:promise promise
-     :abort!  (fn []
-                (set! (.-aborted flags) true)
-                (swap! state assoc :aborted true)
-                ;; interrupt() asks the CLI to stop gracefully; close() kills it
-                (-> (.interrupt sdk-query)
-                    (.catch (fn [_] nil)))
-                (close-query!))}))
-
 ;; ── Runner transport (out-of-process SDK) ─────────────────────────────────────
-;; Opt-in via XI_CLAUDE_RUNNER=1: instead of running the Claude Agent SDK
-;; in-process, spawn `runner/runner.mjs` (its own node_modules, freely
-;; upgradable SDK) per turn and speak newline-delimited JSON over stdio. The
-;; host still owns the permission gate + tool registry — the runner proxies
-;; each tool call back via `tool-call` frames (see runner/runner.mjs).
+;; Spawn `runner/runner.mjs` (its own node_modules, freely upgradable SDK)
+;; per turn and speak newline-delimited JSON over stdio. The host owns the
+;; permission gate + tool registry — the runner proxies each tool call back
+;; via `tool-call` frames (see runner/runner.mjs).
 
 (defn- initial-turn-state [opts]
   (atom {:content [] :usage {} :stop-reason nil
@@ -635,9 +335,9 @@
       (:prompt opts))))
 
 (defn stream-messages-runner
-  "Runner-transport variant of stream-messages: spawn runner/runner.mjs per
-   turn, forward SDK messages through process-sdk-message, and service proxied
-   tool-call frames on the host. Same {:promise :abort!} contract."
+  "Run one Claude turn: spawn runner/runner.mjs, forward SDK messages
+   through process-sdk-message, and service proxied tool-call frames on the
+   host. Returns {:promise :abort!}."
   [opts]
   (let [callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
                                      :on-tool-args :on-tool-result :on-session
@@ -754,14 +454,6 @@
                (send-frame! {:type "abort"})
                (js/setTimeout (fn [] (try (.kill proc) (catch :default _e nil))) 500))}))
 
-(defn- start-turn!
-  "Route a turn to the runner transport (opt-in via XI_CLAUDE_RUNNER=1) or the
-   in-process SDK. Default stays in-process."
-  [opts]
-  (if (= "1" (aget js/process.env "XI_CLAUDE_RUNNER"))
-    (stream-messages-runner opts)
-    (stream-messages opts)))
-
 (def model-ids
   "Anthropic model ids offered in the model picker (static — the subscription
    backend has no public listing endpoint)."
@@ -776,5 +468,5 @@
 
 (def provider
   {:id :anthropic
-   :start-turn! start-turn!
+   :start-turn! stream-messages-runner
    :list-models! list-models!})

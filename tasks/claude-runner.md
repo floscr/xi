@@ -106,22 +106,26 @@ Small bun/node program:
    compiles clean. Decoder fixtures pending.
 2. **Runner process + stdio transport** — ✅ DONE. Built `runner/`
    (`package.json` pinning the SDK + `runner.mjs`) and the host-side
-   `stream-messages-runner` + `start-turn!` dispatcher in `xi.provider.claude`.
-   Opt-in via **`XI_CLAUDE_RUNNER=1`** (default stays in-process — safe until
-   you test); runner path overridable via `XI_CLAUDE_RUNNER_PATH` (defaults to
-   the bundled `runner/runner.mjs`). Host reuses `resolve-tooling` (ships
+   `stream-messages-runner` in what is now `xi.providers.anthropic`. Runner
+   path overridable via `XI_CLAUDE_RUNNER_PATH` (defaults to the bundled
+   `runner/runner.mjs`); Claude CLI resolved from PATH (NixOS-friendly),
+   overridable via `XI_CLAUDE_CLI_PATH`. Host reuses `resolve-tooling` (ships
    `:defs` over the wire) + `tool-dispatcher` (services proxied `tool-call`
    frames through the gate + registry) + `process-sdk-message` (forwarded SDK
    messages). Chose **per-turn spawn** (one runner process per turn) over
    long-lived to avoid stdout frame interleaving across concurrent rooms.
-   Compiles clean. Test recipe below; then bump the runner's SDK.
+3. **Unpin + fable** — ✅ DONE. Runner SDK at `^0.2.141`; Claude 5.1 / fable
+   models verified live on the subscription. `@anthropic-ai/claude-agent-sdk`
+   removed from Xi's `package.json`; the in-process SDK path (Zod converter,
+   `build-mcp-server`, in-process `stream-messages`) and the
+   `XI_CLAUDE_RUNNER` flag are deleted — the runner is the only path.
 
-   Test: `cd runner && npm install`, then `XI_CLAUDE_RUNNER=1 bb serve:restart`
-   (or set it in the `xi-serve` env), run a turn, confirm streaming + tool
-   calls behave identically to the in-process path.
-3. **Unpin + fable** — upgrade the runner's SDK to the version that supports the
-   new CLI; verify a fable model runs on the subscription end-to-end. Remove
-   `@anthropic-ai/claude-agent-sdk` from Xi; delete the in-process path + flag.
+   Follow-up (same cutover): providers unified into an extension-like system —
+   `xi.provider.*` → `xi.providers.*`, `claude` → `anthropic` (provider id
+   `:claude` → `:anthropic`), each provider self-contained
+   `{:id :start-turn! :list-models!}`, declared in `config.cljc` like
+   extensions; generic model fetch in `fx.cljs`. Commits `0ef5bbc`,
+   `ff1fa3e`, `983b694`.
 4. **(Optional, Phase 2) Containerize** — wrap the runner (nspawn/podman/microvm),
    swap stdio for a socket, mount creds + persist `~/.claude/projects` for
    resume. Protocol unchanged.

@@ -131,7 +131,7 @@
   "Provider-effect tooling threaded into agent/create-fx. Reads the extension
    manager *live* so runtime enable/disable is reflected on the next turn:
    the gate + tool defs/registry are fn-valued and re-evaluated per turn by
-   xi.provider.claude/build-mcp-server (see xi.ext.manager)."
+   xi.providers.anthropic/resolve-tooling (see xi.ext.manager)."
   [manager ask!]
   {:tool-gate              (fn [tool-call ctx]
                             (if-let [g (ext/tool-gate (manager/composed manager))]

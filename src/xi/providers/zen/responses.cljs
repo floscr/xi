@@ -3,7 +3,7 @@
 
    Raw HTTP to POST https://opencode.ai/zen/v1/responses — the OpenAI Responses
    API streaming SSE wire format, driven by the shared adapter in
-   xi.provider.openai.responses (which owns the SSE parsing + tool-use loop).
+   xi.providers.openai.responses (which owns the SSE parsing + tool-use loop).
    This namespace only supplies the Zen-specific request: a bearer token, the
    `/responses` endpoint, and a body that carries the system prompt as a
    `developer`-role input item.

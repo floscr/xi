@@ -3,12 +3,12 @@
 
    Talks to the same Codex Responses backend the `codex` CLI uses —
    POST https://chatgpt.com/backend-api/codex/responses — reusing the CLI's
-   OAuth credentials from ~/.codex/auth.json (see xi.provider.openai.auth), so
+   OAuth credentials from ~/.codex/auth.json (see xi.providers.openai.auth), so
    real GPT/Codex models (gpt-5.1-codex, gpt-5-codex, …) run against the user's
    ChatGPT plan rather than a pay-per-token API key.
 
    The wire format is the OpenAI Responses SSE protocol, so the SSE parsing +
-   tool-use loop are the shared ones in xi.provider.openai.responses. This
+   tool-use loop are the shared ones in xi.providers.openai.responses. This
    namespace supplies the Codex-specific request: the endpoint, ChatGPT auth
    headers (bearer token + `chatgpt-account-id`), and a body that carries the
    system prompt in the top-level `instructions` field.

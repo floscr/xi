@@ -30,8 +30,8 @@ appear or vanish the moment it is enabled/disabled — no restart.
 ### Honest scope: only tool surfaces hot-swap
 
 The provider re-reads `:tool-definitions`, `:tool-registry`, and `:tool-gate`
-per turn (see `xi.provider.claude/build-mcp-server`, which derefs the fn-valued
-tooling seam supplied by `xi.cli/tooling-opts`). Those surfaces go live
+per turn (see `xi.providers.anthropic/resolve-tooling`, which derefs the
+fn-valued tooling seam supplied by `xi.cli/tooling-opts`). Those surfaces go live
 immediately.
 
 Everything else — reducer `:handlers`, `:event-hooks`, command dispatch,
@@ -246,4 +246,4 @@ Render and most hosted servers without it.
 - `src/xi/mcp/client.cljs` — JSON-RPC MCP client (stdio `connect` + Streamable-HTTP `connect-http`)
 - `src/xi/cli.cljs` — creates the manager, seeds it, calls `mcp/install!`, and
   wires the fn-valued tooling seam (`tooling-opts`)
-- `src/xi/provider/claude.cljs` — `build-mcp-server` derefs the tooling seam per turn
+- `src/xi/providers/anthropic.cljs` — `resolve-tooling` derefs the tooling seam per turn

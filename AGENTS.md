@@ -55,15 +55,15 @@ running.
 - Running `bb build` while watch is active is harmless but wasteful; running `bb web:build` may conflict with the watch process.
 - Never `kill` watch/server processes by PID to clean up — use the matching tmux tasks (`bb dev:stop` / `bb serve:stop`) so sessions stay consistent.
 
-### SDK Version Constraint
+### The Claude SDK Runner
 
-The `@anthropic-ai/claude-agent-sdk` must be pinned to **`0.2.110`** — the same version used by the Pi claude-bridge extension. Newer SDK versions (e.g. 0.2.140) produce exit code 127 at runtime because of incompatible Claude CLI resolution. Do not upgrade the SDK without first verifying it works with the installed Claude CLI and bridge.
+The `@anthropic-ai/claude-agent-sdk` is **not** a dependency of Xi itself — it lives in the separate **`runner/`** process (`runner/runner.mjs`, own `package.json`/`node_modules`). The Anthropic provider (`xi.providers.anthropic`) spawns the runner per turn and speaks newline-delimited JSON over stdio; the runner proxies every tool call back to the host, so the tool registry + rules/permission gate stay host-side. This decouples the SDK version from Xi: upgrade it by bumping `runner/package.json` and running `npm install` in `runner/`.
 
-### Provider Notes
+Runner notes:
 
-- The SDK query must be explicitly closed after completion via `.close()` to avoid EPIPE errors from orphaned subprocess pipes
-- Abort uses `.interrupt()` (graceful) then `.close()` (cleanup), not `.return()`
-- Error paths must also close the query before resolving the promise
+- The runner resolves the `claude` CLI from `PATH` (override with `XI_CLAUDE_CLI_PATH`); the SDK's bundled generic-linux binary does not work on NixOS.
+- `XI_CLAUDE_RUNNER_PATH` overrides the runner script location (defaults to `runner/runner.mjs` next to `target/main.js`).
+- SDK query lifecycle quirks (`.close()` after completion, `.interrupt()` then `.close()` on abort, single terminal frame) are handled inside `runner/runner.mjs`.
 
 ## Testing
 
@@ -121,19 +121,24 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
   transit strings (`xi.wire`).
 - **Standalone = not connected.** Server, client, and standalone modes share
   the same state shape and code paths; transports just forward events.
-- **Providers are pluggable** (`xi.provider.claude`, `xi.provider.ollama`,
-  `xi.provider.openai.codex`, `xi.provider.zen`). Zen (OpenCode Zen gateway)
+- **Providers are pluggable** and declared in `src/xi/config.cljc` like
+  extensions (`xi.providers.anthropic`, `xi.providers.ollama`,
+  `xi.providers.openai.codex`, `xi.providers.zen`). Each provider is a data
+  map `{:id :start-turn! :list-models!}`. The Anthropic provider runs the
+  Claude Agent SDK out-of-process via `runner/` (see "The Claude SDK Runner"
+  above). Zen (OpenCode Zen gateway)
   routes `opencode/<id>` models across several API surfaces; chat-completions,
   Anthropic Messages, and OpenAI Responses (GPT/Grok/Muse, incl. GPT 6 Astra)
   are implemented today. See [docs/providers-zen.md](docs/providers-zen.md).
   The OpenAI Codex provider routes `openai/<id>` models (gpt-5.1-codex, …) to
   the ChatGPT-subscription Codex backend, reusing the `codex` CLI's credentials
   from `~/.codex/auth.json`. The shared OpenAI Responses SSE + tool-loop
-  machinery lives in `xi.provider.openai.responses`. See
+  machinery lives in `xi.providers.openai.responses`. See
   [docs/providers-openai.md](docs/providers-openai.md).
 - **shadow-cljs** compiles to a single node script run by **Bun**; the web
   client is a separate `:browser` build served by the same Bun server.
-- Runtime npm deps: only `@anthropic-ai/claude-agent-sdk` (pinned, see above).
+- Runtime npm deps: none in Xi itself (`@chenglou/pretext` aside); the Claude
+  Agent SDK lives in `runner/` (see above).
 - Session metadata stored in `~/.config/xi/sessions/`; conversation transcripts
   live in Claude CLI sessions under `~/.claude/projects/`
 - Personal agent sessions stored separately in `~/.config/xi/personal-agent/root/`
@@ -187,8 +192,9 @@ src/xi/
   compaction.cljs      — /compact (pure handlers + summary-turn effect)
   fx.cljs              — effect handlers (sessions, image processing, model list)
   wire.cljs            — EDN wire protocol (the events ARE the protocol)
-  provider/
-    claude.cljs        — Claude Agent SDK provider (MCP tool bridge, streaming)
+  providers/
+    anthropic.cljs     — Anthropic provider (spawns runner/, proxies tool calls,
+                         decodes SDK message stream)
     openai_compat.cljs — shared OpenAI Chat Completions streaming + tool loop
     ollama.cljs        — Ollama provider (thin wrapper over openai_compat)
     zen.cljs           — OpenCode Zen gateway provider (dispatches by wire format)
@@ -266,6 +272,9 @@ src/xi/
 Outside `src/`: `bb-client/` — a Babashka/JVM client lib (`xi.client/prompt!`)
 for calling xi's one-shot prompt mode from other services, paired with named
 agent profiles (`xi prompt --agent`). See [docs/bb-client.md](docs/bb-client.md).
+`runner/` — the out-of-process Claude Agent SDK runner (`runner.mjs` + its own
+`package.json`), spawned per turn by `xi.providers.anthropic` (see "The Claude
+SDK Runner" above).
 
 ### Web Client
 

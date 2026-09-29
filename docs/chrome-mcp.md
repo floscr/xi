@@ -7,8 +7,9 @@ performance traces, read console/network — as ordinary xi tools.
 
 ## Why this exists
 
-xi's Claude provider **disables the Claude CLI's native MCP servers**: only
-xi's in-process MCP is exposed to a run (see `xi.provider.claude/query-opts`).
+xi's Anthropic provider **disables the Claude CLI's native MCP servers**: only
+xi's own tool bridge is exposed to a run (`strictMcpConfig` in
+`xi.providers.anthropic/base-query-opts`).
 So a `chrome-devtools-mcp` you declare in `~/.claude.json` never reaches an
 agent turn started *inside* xi.
 
@@ -163,7 +164,7 @@ PID**:
 1. A TUI/CLI client sends its OS PID in its `:auth/hello` (`cli.cljs`).
 2. The server stores it in the client registry (`ws.cljs`), and `agent.cljs`
    picks the room's client PID (preferring the `tui` platform) into the turn's
-   tool ctx as `:client-pid` (via `provider/claude.cljs`).
+   tool ctx as `:client-pid` (via `providers/anthropic.cljs`).
 3. The chrome guard resolves that PID to a workspace name
    (`wm/workspace-for-pid`): walk `/proc/<pid>/stat` ancestry (the bun client
    is a descendant of its terminal emulator) → `wmctrl -lp` maps the terminal
@@ -294,8 +295,8 @@ tool defs are inlined into the bundle at compile time:
 - `scripts/sync-chrome-tools.mjs` — regenerates the EDN from
   `chrome-devtools-mcp`'s live `tools/list`, transforming each `inputSchema`
   into xi's expected shape (structural keys as keywords, property-name keys as
-  strings, so the JSON-Schema→Zod converter in `xi.provider.claude` handles
-  nested `:required` correctly).
+  strings, so the JSON-Schema→Zod converter in the SDK runner handles nested
+  `:required` correctly).
 
 Regenerate when bumping `chrome-devtools-mcp`:
 
