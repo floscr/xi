@@ -84,6 +84,19 @@
     (is (not (store/outside-cwd? cwd nil)) "nil path is not outside")
     (is (not (store/outside-cwd? cwd "")) "blank path is not outside")))
 
+(deftest outside-cwd?-always-allows-system-tmp
+  (testing "/tmp stays inside even when TMPDIR points elsewhere (nix-shell)"
+    (let [env  (unchecked-get js/process "env")
+          prev (aget env "TMPDIR")]
+      (aset env "TMPDIR" "/tmp/nix-shell.test")
+      (try
+        (is (not (store/outside-cwd? "/home" "/tmp/views.patch")) "plain /tmp")
+        (is (not (store/outside-cwd? "/home" "/tmp/nix-shell.test/x")) "TMPDIR")
+        (finally
+          (if (some? prev)
+            (aset env "TMPDIR" prev)
+            (js-delete env "TMPDIR")))))))
+
 (deftest enrich-request-populates-outside-only-when-needed
   (let [cwd (.cwd js/process)
         base (store/decision-request {:name "write" :arguments {:path "/etc/hosts"}}

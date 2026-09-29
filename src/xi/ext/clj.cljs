@@ -189,14 +189,13 @@
   (let [cwd      (opts-cwd opts)
         resolved (sandbox/real-resolve cwd (str p))
         real-cwd (sandbox/real-resolve cwd ".")
-        tmp      (sandbox/real-resolve cwd (os/tmpdir))
         allowed  (into (set (:allowed-reads @opts)) (:allowed-writes @opts))
         approved? (some #(sandbox/path-within? resolved %) allowed)]
     (when (and (not approved?)
                (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths)))
       (throw (ex-info (str "clj: reading credential paths is blocked: " p) {})))
     (if (or (sandbox/path-within? resolved real-cwd)
-            (sandbox/path-within? resolved tmp)
+            (sandbox/within-tmp? cwd resolved)
             approved?)
       resolved
       (let [verdict (runtime-gate! opts :read resolved)]
@@ -210,8 +209,7 @@
 
           :else
           (throw (ex-info (str "clj: reads are limited to the working dir and "
-                               (os/tmpdir)
-                               " (out-of-repo paths need gate approval): " p) {})))))))
+                               "/tmp (out-of-repo paths need gate approval): " p) {})))))))
 
 (defn- resolve-write
   "Canonicalize p against cwd; only the working dir, the OS tmp dir, and any
@@ -223,10 +221,9 @@
   (let [cwd      (opts-cwd opts)
         resolved (sandbox/real-resolve cwd (str p))
         real-cwd (sandbox/real-resolve cwd ".")
-        tmp      (sandbox/real-resolve cwd (os/tmpdir))
         allowed  (:allowed-writes @opts)]
     (if (or (sandbox/path-within? resolved real-cwd)
-            (sandbox/path-within? resolved tmp)
+            (sandbox/within-tmp? cwd resolved)
             (some #(sandbox/path-within? resolved %) allowed))
       resolved
       (let [verdict (runtime-gate! opts :write resolved)]
@@ -240,7 +237,7 @@
 
           :else
           (throw (ex-info (str "clj: writes are limited to the working dir and "
-                               (os/tmpdir) ": " p) {})))))))
+                               "/tmp: " p) {})))))))
 
 (defn- resolve-dir
   "Resolve the :dir of an optional bb-style leading opts map ((sh {:dir d} …),

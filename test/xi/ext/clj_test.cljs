@@ -327,7 +327,9 @@
 
 (deftest read-parent-dir-blocked
   (testing "a `..` traversal above the working dir is refused at runtime"
-    (let [res (eval! "(ls \"..\")")]
+    ;; cwd under $HOME: from the default tmp cwd, `..` would land in /tmp,
+    ;; which is always readable.
+    (let [res (eval! "(ls \"..\")" {:cwd (os/homedir)})]
       (is (:is-error res))
       (is (str/includes? (result-text res) "reads are limited")))))
 

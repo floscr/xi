@@ -106,6 +106,19 @@
   []
   (mapv #(node-path/join (os/homedir) %) HIDDEN_PATHS))
 
+(defn tmp-roots
+  "Canonical temp roots that path gates always treat as scratch space: the
+   system `/tmp` plus `os.tmpdir()`. Both are needed because a server launched
+   from a nix-shell inherits TMPDIR=/tmp/nix-shell.XXXX, so `os.tmpdir()` alone
+   would leave plain `/tmp/foo` looking out-of-repo."
+  [cwd]
+  (into [] (comp (map #(real-resolve cwd %)) (distinct)) ["/tmp" (os/tmpdir)]))
+
+(defn within-tmp?
+  "True when canonical `resolved` lives under one of the `tmp-roots`."
+  [cwd resolved]
+  (boolean (some #(path-within? resolved %) (tmp-roots cwd))))
+
 (defn scrub-env
   "JS env object containing only allowlisted vars from process.env."
   []

@@ -192,10 +192,9 @@
   (boolean
    (when (and cwd path (not (str/blank? (str path))))
      (let [resolved (sandbox/real-resolve cwd (str path))
-           real-cwd (sandbox/real-resolve cwd ".")
-           tmp      (sandbox/real-resolve cwd (os/tmpdir))]
+           real-cwd (sandbox/real-resolve cwd ".")]
        (not (or (sandbox/path-within? resolved real-cwd)
-                (sandbox/path-within? resolved tmp)))))))
+                (sandbox/within-tmp? cwd resolved)))))))
 
 (defn credential-path?
   "True when target `path` resolves inside one of the hidden credential dirs
