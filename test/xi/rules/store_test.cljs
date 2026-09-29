@@ -4,7 +4,7 @@
             [xi.rules :as rules]
             [xi.rules.defaults :as defaults]
             [xi.rules.store :as store]
-            [xi.sandbox.core :as sandbox]
+            [xi.paths :as paths]
             [xi.ext.treesitter.parse :as ts]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -119,11 +119,11 @@
                           :resolved-path))))
     (testing "a :path rule → :resolved-path is the canonical absolute path"
       (let [req (store/enrich-request base [{:match {:tool :read :path #"rules\.cljs"}}])]
-        (is (= (sandbox/real-resolve cwd "src/xi/rules.cljs") (:resolved-path req)))))))
+        (is (= (paths/real-resolve cwd "src/xi/rules.cljs") (:resolved-path req)))))))
 
 (deftest path-rule-matches-relative-via-resolved-path
   (let [cwd      (.cwd js/process)
-        real-cwd (sandbox/real-resolve cwd ".")
+        real-cwd (paths/real-resolve cwd ".")
         ;; absolute-anchored allow rule, like the ~/Code/Projects rule
         ruleset [{:match {:tool #{:read} :path (re-pattern (str "^" real-cwd "/src/"))}
                   :action {:type :allow}}]

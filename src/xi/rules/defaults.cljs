@@ -89,31 +89,6 @@
   (str "Plan mode is on (read-only exploration). This bash command looks like a "
        "mutation and was blocked. Run /plan to exit plan mode."))
 
-;; ── Sandbox mode (OS-level confinement; toggled by xi.ext.sandbox /sandbox) ───
-
-(def ^:private sandbox-on
-  "`:when` submap that matches while the room's sandbox flag is set. The sandbox
-   extension owns the toggle/badge and the bash executor (bwrap/firejail
-   wrapping); these deny-checks live here as data rules."
-  {:sandbox {:enabled? true}})
-
-(def ^:private sandbox-bg-bash-re
-  "A backgrounded command (`cmd &`) — its child would escape (or be killed with)
-   the sandbox wrapper, so it is refused while sandboxed. Matches a trailing `&`
-   (optionally followed by whitespace)."
-  #"&\s*$")
-
-(def ^:private sandbox-write-msg
-  (str "Sandbox is on: writes outside the working directory are blocked. Run "
-       "/sandbox off to exit sandbox mode."))
-
-(def ^:private sandbox-read-msg
-  (str "Sandbox is on: reading credential paths (.ssh, .gnupg, .password-store, "
-       "…) is blocked. Run /sandbox off to exit sandbox mode."))
-
-(def ^:private sandbox-bg-msg
-  "Sandbox is on: background processes (`cmd &`) are disabled. Run /sandbox off to exit sandbox mode.")
-
 ;; ── Hardened tier (prepended above all config/runtime rules; flag-removable) ───
 
 (def ^:private hardened-remote-clis
@@ -285,19 +260,6 @@
     {:match  {:tool :bash :command plan-mutating-bash-re :when plan-mode-on}
      :action {:type :deny :message plan-bash-msg}}]
 
-   ;; Sandbox mode (read-only confinement): deny writes outside the working
-   ;; tree, reads of credential paths, and backgrounded (`cmd &`) commands. The
-   ;; bash executor (bwrap/firejail wrapping) stays in xi.ext.sandbox. Must
-   ;; precede the write/bash gates so sandbox denies win over the softer asks;
-   ;; only active while the room's sandbox flag is set (:when).
-   ::sandbox-mode
-   [{:match  {:tool #{:write :edit} :outside :cwd :when sandbox-on}
-     :action {:type :deny :message sandbox-write-msg}}
-    {:match  {:tool #{:read :grep :find :ls} :credential :read :when sandbox-on}
-     :action {:type :deny :message sandbox-read-msg}}
-    {:match  {:tool :bash :command sandbox-bg-bash-re :when sandbox-on}
-     :action {:type :deny :message sandbox-bg-msg}}]
-
    ;; Write gates: sensitive → protected → outside the working tree.
    ::sensitive-writes
    [{:match  {:tool #{:write :edit} :path sensitive-write-re}
@@ -385,7 +347,6 @@
   [::tmp-cleanup
    ::no-auto-memory
    ::plan-mode
-   ::sandbox-mode
    ::write-gates
    ::bash-guards
    ::mcp-confirm

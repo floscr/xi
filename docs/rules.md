@@ -47,8 +47,8 @@ precedence order:
 
 Config (3–4) sits **above** runtime (5–6), so a rule you commit to a file
 overrides a careless "always allow" chosen in the moment. Repo beats global
-(more specific wins). Built-in defaults (including the mode-gated plan-mode and
-sandbox sets) sit last, so any of your rules wins over a default.
+(more specific wins). Built-in defaults (including the mode-gated plan-mode
+set) sit last, so any of your rules wins over a default.
 
 ### Hardened tier (non-overridable)
 
@@ -147,15 +147,6 @@ are **denied**, and reads / grep / find / ls / read-only bash pass through. Thes
 rules sit before the write/bash gates so plan-mode's deny wins over the softer
 ask gates.
 
-**Sandbox mode** (gated by `:when {:sandbox {:enabled? true}}`, toggled with
-`/sandbox`; the `sandbox` extension owns the toggle + badge and still runs bash
-under the OS backend — bwrap/firejail — while these rules own the deny-checks):
-while on, `write`/`edit` outside the working tree (`:outside :cwd`) are
-**denied**, reads (`read`/`grep`/`find`/`ls`) of credential paths
-(`:credential :read` — `.ssh`, `.gnupg`, `.password-store`, …) are **denied**,
-and backgrounded `bash` (`cmd &`) is **denied**. These sit before the write/bash
-gates so sandbox's hard denies win over the softer asks.
-
 The server-control tasks (`bb serve:restart` / `serve:stop`) are **not** rules —
 they're handled specially by the `permission-gate` extension (detached run so the
 agent's own server can be killed cleanly).
@@ -201,7 +192,6 @@ order, optionally mixed with inline rule maps:
 {:version  1
  :rules    [ … ]
  :defaults [:xi.rules.defaults/plan-mode
-            :xi.rules.defaults/sandbox-mode
             :xi.rules.defaults/write-gates
             {:match {:tool :bash :command #"\bgit push\b"}
              :action {:type :ask :message "Push?"}}
@@ -215,10 +205,11 @@ order, optionally mixed with inline rule maps:
   still beat a bundle's `:ask`. (That's why aliases live under `:defaults`,
   not `:rules`: inline in `:rules` the catch-all asks would sit above — and
   shadow — every runtime grant.)
-- Order matters (first match wins): keep `plan-mode` / `sandbox-mode` before
-  the write/bash gates, and the nudges first, as the built-in order does.
-  Dropping `plan-mode` / `sandbox-mode` means `/plan` / `/sandbox` no longer
-  enforce anything.
+- Order matters (first match wins): keep `plan-mode` before the write/bash
+  gates, and the nudges first, as the built-in order does. Dropping
+  `plan-mode` means `/plan` no longer enforces anything.
+- The `sandbox-mode` alias is gone (the sandbox extension was removed); a file
+  that still lists it fails closed with an unknown-alias error.
 
 The built-in default tier, in order:
 
@@ -226,7 +217,6 @@ The built-in default tier, in order:
 [:xi.rules.defaults/tmp-cleanup
  :xi.rules.defaults/no-auto-memory
  :xi.rules.defaults/plan-mode
- :xi.rules.defaults/sandbox-mode
  :xi.rules.defaults/write-gates
  :xi.rules.defaults/bash-guards
  :xi.rules.defaults/mcp-confirm
@@ -238,7 +228,6 @@ The built-in default tier, in order:
 | `tmp-cleanup`        | 1 | nudge: `rm` under `/tmp` |
 | `no-auto-memory`     | 2 | nudge: writes into the Claude auto-memory dir |
 | `plan-mode`          | 3 | plan mode's allow-plan-file / deny-writes / deny-mutating-bash |
-| `sandbox-mode`       | 3 | sandbox's outside-write / credential-read / background-bash denies |
 | `sensitive-writes`   | 1 | ask: write into Mail / .ssh / .gnupg / .password-store |
 | `protected-writes`   | 1 | ask: write into .env / .git/ / node_modules/ |
 | `outside-writes`     | 1 | ask: write outside the repo (with `[r]`) |

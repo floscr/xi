@@ -22,8 +22,8 @@
    commands; dynamically computed command names that were never approved fail
    at runtime.
 
-   Paths: reads are blocked from credential paths (xi.sandbox.core
-   hidden-paths); writes are limited to the room cwd and the OS tmp dir.
+   Paths: reads are blocked from credential paths (xi.paths/hidden-paths);
+   writes are limited to the room cwd and the OS tmp dir.
 
    Session-allowed CLIs live as session rules in the rules store (shape
    {:tool :sh :cli \"…\"}), visible in /rules. `/clj` shows status;
@@ -41,7 +41,7 @@
             [xi.ext.permission-gate :as pg]
             [xi.rules :as rules]
             [xi.rules.store :as rules-store]
-            [xi.sandbox.core :as sandbox]
+            [xi.paths :as paths]
             [xi.tools.truncate :as trunc]
             ["node:child_process" :as cp]
             ["node:crypto" :as crypto]
@@ -100,7 +100,7 @@
 (defn- find-bb-edn
   "Walk up from cwd to the nearest bb.edn; nil when none is found."
   [cwd]
-  (loop [dir (sandbox/real-resolve (or cwd (.cwd js/process)) ".")]
+  (loop [dir (paths/real-resolve (or cwd (.cwd js/process)) ".")]
     (let [f (node-path/join dir "bb.edn")]
       (if (fs/existsSync f)
         f
@@ -219,15 +219,15 @@
    :allowed-writes root) — an explicit approval overrides the block."
   [opts p]
   (let [cwd      (opts-cwd opts)
-        resolved (sandbox/real-resolve cwd (str p))
-        real-cwd (sandbox/real-resolve cwd ".")
+        resolved (paths/real-resolve cwd (str p))
+        real-cwd (paths/real-resolve cwd ".")
         allowed  (into (set (:allowed-reads @opts)) (:allowed-writes @opts))
-        approved? (some #(sandbox/path-within? resolved %) allowed)]
+        approved? (some #(paths/path-within? resolved %) allowed)]
     (when (and (not approved?)
-               (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths)))
+               (some #(paths/path-within? resolved %) (paths/hidden-paths)))
       (throw (ex-info (str "clj: reading credential paths is blocked: " p) {})))
-    (if (or (sandbox/path-within? resolved real-cwd)
-            (sandbox/within-tmp? cwd resolved)
+    (if (or (paths/path-within? resolved real-cwd)
+            (paths/within-tmp? cwd resolved)
             approved?)
       resolved
       (let [verdict (runtime-gate! opts :read resolved)]
@@ -251,12 +251,12 @@
    answered); the approved root is added to :allowed-writes."
   [opts p]
   (let [cwd      (opts-cwd opts)
-        resolved (sandbox/real-resolve cwd (str p))
-        real-cwd (sandbox/real-resolve cwd ".")
+        resolved (paths/real-resolve cwd (str p))
+        real-cwd (paths/real-resolve cwd ".")
         allowed  (:allowed-writes @opts)]
-    (if (or (sandbox/path-within? resolved real-cwd)
-            (sandbox/within-tmp? cwd resolved)
-            (some #(sandbox/path-within? resolved %) allowed))
+    (if (or (paths/path-within? resolved real-cwd)
+            (paths/within-tmp? cwd resolved)
+            (some #(paths/path-within? resolved %) allowed))
       resolved
       (let [verdict (runtime-gate! opts :write resolved)]
         (cond
@@ -583,7 +583,7 @@
      'tail   (fn [p & [n]] (vec (take-last (or n 10) (str/split-lines (read-file opts p)))))
      'glob   (fn [pattern]
                (let [cwd (opts-cwd opts)
-                     pat (sandbox/expand-home (str pattern))]
+                     pat (paths/expand-home (str pattern))]
                  ;; Confine glob to the allowed roots: resolve-read on the
                  ;; pattern's literal base dir throws when it escapes the repo.
                  (resolve-read opts (glob-base pat))
@@ -649,7 +649,7 @@
      'git    (git-fn opts)
      'sleep  (fn [ms] (proc/sleep-abortable opts ms))
      'env    (fn [k]
-               (let [scrubbed (sandbox/scrub-env)]
+               (let [scrubbed (paths/scrub-env)]
                  (or (aget scrubbed (str k))
                      (when (aget js/process.env (str k))
                        (throw (ex-info (str "clj: env key blocked: " k) {}))))))
@@ -1107,7 +1107,7 @@
      session allow-rule (via :ext.rules/add) so later access under that repo
      skips the dialog. Auto-approves when headless (no confirm!)."
   [kind path {:keys [confirm! dispatch! get-state room-id] :as _ctx} cwd]
-  (let [resolved (sandbox/real-resolve cwd (str path))
+  (let [resolved (paths/real-resolve cwd (str path))
         repo     (rules-store/git-root (node-path/dirname resolved))
         st       (when get-state (get-state))
         ruleset  (rules-store/ordered-rules st room-id cwd)
@@ -1126,7 +1126,7 @@
         ;; :_allowed-reads/:_allowed-writes root that defeats resolve-read's
         ;; credential hard-block (it only fires when `not approved?`). Deny
         ;; (nil) so the hard-block stays effective with no one to confirm.
-        (if (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths))
+        (if (some #(paths/path-within? resolved %) (paths/hidden-paths))
           (js/Promise.resolve nil)
           (js/Promise.resolve (or repo resolved)))
         (-> (confirm! (or (:message action)
@@ -1449,7 +1449,7 @@
                    (string? p)
                    (update :reads conj
                            {:head 'glob
-                            :path (glob-base (sandbox/expand-home p))}))))}])
+                            :path (glob-base (paths/expand-home p))}))))}])
 
 (defn scan-code
   "Parse `code` once (edamame) and postwalk it once, dispatching every list form
@@ -1537,7 +1537,7 @@
    would be a recursive directory tree deletion."
   [cwd p]
   (try
-    (let [resolved (sandbox/real-resolve cwd (str p))]
+    (let [resolved (paths/real-resolve cwd (str p))]
       (and (fs/existsSync resolved)
            (.isDirectory (fs/statSync resolved))))
     (catch :default _ false)))
@@ -1737,10 +1737,10 @@
    (fn [chain path]
      (.then chain
             (fn [{:keys [approved denied] :as acc}]
-              (let [resolved (sandbox/real-resolve cwd (str path))]
+              (let [resolved (paths/real-resolve cwd (str path))]
                 (cond
                   denied acc
-                  (some #(sandbox/path-within? resolved %) approved) acc
+                  (some #(paths/path-within? resolved %) approved) acc
                   :else
                   (-> (approve-outside-path kind path ctx cwd)
                       (.then (fn [root]
@@ -1775,7 +1775,7 @@
                                (if yes?
                                  (cond-> acc
                                    outside? (update :approved-roots conj
-                                                    (sandbox/real-resolve cwd (str p))))
+                                                    (paths/real-resolve cwd (str p))))
                                  (assoc acc :ok? false))))))))))
    (js/Promise.resolve {:ok? true :approved-roots #{}})
    dirs))

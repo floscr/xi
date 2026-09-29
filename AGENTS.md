@@ -86,7 +86,7 @@ host side (`xi.providers.runner`) is provider-agnostic. Details:
 ```
 src/xi/          cli (entry + assembly), config.cljc (extensions/providers/
                  options), core/ (state, events, app, log), agent, commands,
-                 wire, session*, system_prompt, rules/, sandbox/, tools/,
+                 wire, session*, system_prompt, rules/, paths, tools/,
                  providers/, server/, client/ (TUI), tui/, web/ (browser),
                  ext/ (extensions), markdown/, highlight/, mcp/
 test/xi/         mirrors src/

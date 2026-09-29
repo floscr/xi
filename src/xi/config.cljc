@@ -47,7 +47,6 @@
         [xi.ext.resume :as resume]
         [xi.ext.rules :as rules]
         [xi.ext.review :as review]
-        [xi.ext.sandbox :as ext-sandbox]
         [xi.ext.session-search :as session-search]
         [xi.ext.skills :as skills]
         [xi.ext.snippets :as snippets]
@@ -144,10 +143,6 @@
       extensions/create
       mcp/create
       render/create
-      ;; sandbox after the policy gates: its deny-checks are default rules (run
-      ;; first via the rules ext); this ext only wraps bash under the OS backend
-      ;; once the earlier gates have passed
-      ext-sandbox/extension
       ;; registry-only: tracks processes spawned by clj's `process` namespace
       ;; (/ps, /kill, room keep-alive); spawning is gated in clj-tool
       process-manager/extension

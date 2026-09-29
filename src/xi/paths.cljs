@@ -1,57 +1,20 @@
-(ns xi.sandbox.core
-  "Pluggable OS-level sandbox backends for agent tool execution.
-
-   A backend is a plain data map (same style as providers/extensions —
-   no registration, no atoms):
-     :id        keyword
-     :binary    executable name probed for availability
-     :wrap-argv (fn [argv policy] → argv') — pure; wraps a spawn argv so
-                the process runs confined under the policy
-
-   The policy map is backend-independent and fully expanded (absolute,
-   existence-checked paths) before it reaches a backend:
-     :home         the user's home directory
-     :writable     absolute paths that stay writable (the room's cwd)
-     :hidden-dirs  credential directories masked from the sandbox
-     :hidden-files credential files masked from the sandbox
-     :network      :none | :all"
+(ns xi.paths
+  "Path + env safety helpers shared by the rules engine and the clj tool:
+   symlink-canonical resolution (so a path gate can't be laundered through a
+   link), containment checks, the tmp scratch roots, the hidden credential
+   paths, and the env allowlist."
   (:require [clojure.string :as str]
-            [xi.sandbox.bwrap :as bwrap]
-            [xi.sandbox.firejail :as firejail]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]))
 
-;; ── Backends ─────────────────────────────────────────────────────────────────
-
-(def backends
-  "backend-id → backend map."
-  {:bwrap    bwrap/backend
-   :firejail firejail/backend})
-
-(def ^:private backend-order
-  "Preference order when no backend is requested explicitly."
-  [:bwrap :firejail])
-
-(defn available?
-  "True when the backend's binary is on PATH."
-  [backend-id]
-  (some? (js/Bun.which (get-in backends [backend-id :binary]))))
-
-(defn first-available
-  "The preferred installed backend id, or nil."
-  []
-  (first (filter available? backend-order)))
-
-;; ── Policy ───────────────────────────────────────────────────────────────────
-
 (def HIDDEN_PATHS
-  "Home-relative credential/secret paths masked from sandboxed processes."
+  "Home-relative credential/secret paths the path gates never expose."
   [".ssh" ".gnupg" ".password-store" ".aws" ".kube"
    ".pi" ".config/xi" ".config/gh" ".netrc" ".npmrc"])
 
 (def ENV_ALLOWLIST
-  "Env vars forwarded into sandboxed processes (everything else — API
+  "Env vars forwarded to agent-spawned processes (everything else — API
    keys, tokens — is scrubbed). Includes the NixOS SSL/nix vars needed
    for basic tooling to function."
   ["PATH" "HOME" "USER" "LOGNAME" "SHELL" "TERM" "COLORTERM"
@@ -128,21 +91,3 @@
       (when-some [v (aget env k)]
         (unchecked-set out k v)))
     out))
-
-(defn make-policy
-  "Build the expanded policy for a turn: absolute writable root (the
-   room's cwd) and the hidden paths that actually exist on this host,
-   split into dirs and files (backends mask them differently)."
-  [{:keys [cwd network]}]
-  (let [existing (filterv #(fs/existsSync %) (hidden-paths))
-        {dirs true files false} (group-by #(.isDirectory (fs/statSync %)) existing)]
-    {:home         (os/homedir)
-     :writable     [(node-path/resolve (or cwd (.cwd js/process)))]
-     :hidden-dirs  (vec dirs)
-     :hidden-files (vec files)
-     :network      (or network :none)}))
-
-(defn wrap-argv
-  "Wrap argv for the given backend id under the policy."
-  [backend-id policy argv]
-  ((get-in backends [backend-id :wrap-argv]) argv policy))

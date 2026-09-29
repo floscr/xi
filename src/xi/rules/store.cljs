@@ -22,7 +22,7 @@
             [xi.rules :as rules]
             [xi.rules.defaults :as defaults]
             [xi.rules.nodes :as nodes]
-            [xi.sandbox.core :as sandbox]
+            [xi.paths :as paths]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as path]))
@@ -268,27 +268,27 @@
 (defn outside-cwd?
   "True when target `path` resolves outside both the effective `cwd` and the OS
    tmp dir — i.e. a write/edit that escapes the working tree. Tmp is always
-   allowed. Symlinks are canonicalized (sandbox/real-resolve) so the check can't
+   allowed. Symlinks are canonicalized (paths/real-resolve) so the check can't
    be laundered through a link created inside cwd. This is I/O, computed only
    when an `:outside` rule is in play."
   [cwd path]
   (boolean
    (when (and cwd path (not (str/blank? (str path))))
-     (let [resolved (sandbox/real-resolve cwd (str path))
-           real-cwd (sandbox/real-resolve cwd ".")]
-       (not (or (sandbox/path-within? resolved real-cwd)
-                (sandbox/within-tmp? cwd resolved)))))))
+     (let [resolved (paths/real-resolve cwd (str path))
+           real-cwd (paths/real-resolve cwd ".")]
+       (not (or (paths/path-within? resolved real-cwd)
+                (paths/within-tmp? cwd resolved)))))))
 
 (defn credential-path?
   "True when target `path` resolves inside one of the hidden credential dirs
    (.ssh, .gnupg, .password-store, …). Symlinks are canonicalized
-   (sandbox/real-resolve) so the check can't be laundered through a link. I/O,
+   (paths/real-resolve) so the check can't be laundered through a link. I/O,
    computed only when a `:credential` rule is in play."
   [cwd path]
   (boolean
    (when (and cwd path (not (str/blank? (str path))))
-     (let [resolved (sandbox/real-resolve cwd (str path))]
-       (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths))))))
+     (let [resolved (paths/real-resolve cwd (str path))]
+       (some #(paths/path-within? resolved %) (paths/hidden-paths))))))
 
 (def ^:private rules-edn-token-re
   "A path-ish token naming a `rules.edn` inside a shell command / clj code."
@@ -327,7 +327,7 @@
    (case tool
      (:write :edit)
      (when path
-       (let [resolved (sandbox/real-resolve effective-cwd (str path))]
+       (let [resolved (paths/real-resolve effective-cwd (str path))]
          (and (or (rules-edn-name? path) (rules-edn-name? resolved))
               (or (versioned-rules-edn? resolved)
                   (some #(re-find version-key-re (str %))
@@ -336,7 +336,7 @@
 
      (:bash :clj)
      (when (and command (re-find write-token-re (str command)))
-       (some #(versioned-rules-edn? (sandbox/real-resolve effective-cwd %))
+       (some #(versioned-rules-edn? (paths/real-resolve effective-cwd %))
              (re-seq rules-edn-token-re (str command))))
 
      false)))
@@ -359,16 +359,16 @@
     (boolean
      (when (and repo (seq operands)
                 (every? #(re-matches #"-[a-zA-Z]+" %) flags))
-       (let [root     (sandbox/real-resolve cwd repo)
+       (let [root     (paths/real-resolve cwd repo)
              reserved (map #(path/join root %) [".git" ".xi"])]
          (every? (fn [op]
                    ;; root / reserved checks come first so a repo living
                    ;; under tmp can't launder them through the tmp clause.
-                   (let [resolved (sandbox/real-resolve cwd op)]
+                   (let [resolved (paths/real-resolve cwd op)]
                      (and (not= resolved root)
-                          (not-any? #(sandbox/path-within? resolved %) reserved)
-                          (or (sandbox/path-within? resolved root)
-                              (sandbox/within-tmp? cwd resolved)))))
+                          (not-any? #(paths/path-within? resolved %) reserved)
+                          (or (paths/path-within? resolved root)
+                              (paths/within-tmp? cwd resolved)))))
                  operands))))))
 
 (defn- home-collapse
@@ -393,7 +393,7 @@
    and `:xi-rules-file?` for `:xi-rules-file` rules."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
-                   (sandbox/real-resolve (:effective-cwd req) (str (:path req))))]
+                   (paths/real-resolve (:effective-cwd req) (str (:path req))))]
     (cond-> req
       resolved (assoc :resolved-path resolved)
       (home-collapse resolved) (assoc :resolved-home-path (home-collapse resolved))

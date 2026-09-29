@@ -88,7 +88,7 @@ Guards, enforced inside every helper:
   root is written back into the buffer and added to the worker's allowed reads,
   on deny the read throws ("user denied reading outside the repo"). Headless
   (no confirmer attached) auto-approves, matching the static gate. Credential paths
-  (`xi.sandbox.core/hidden-paths` — `~/.ssh`, `~/.gnupg`, …) are always blocked,
+  (`xi.paths/hidden-paths` — `~/.ssh`, `~/.gnupg`, …) are always blocked,
   symlink-canonicalized, even inside an approved repo.
 - **Writes** (`spit`/`mkdir`/`cp`/`mv`/`touch`/`rm`): the room cwd and the OS
   tmp dir are writable freely. A **literal** path that escapes both raises the
@@ -115,7 +115,7 @@ Guards, enforced inside every helper:
   prompt). Shelling a dir delete out —
   `(sh "bb" "-e" "(fs/delete-tree …)")` or a bash `fs/delete-dir`/`fs/delete-tree`
   — is caught separately as a guarded pattern.
-- **Env**: only `xi.sandbox.core`'s env allowlist; secret-bearing keys throw.
+- **Env**: only `xi.paths`' env allowlist; secret-bearing keys throw.
 - Printed output is captured; results are truncated (30k chars; `sh` /
   `grep` / `curl` output at 20k). On truncation the full text is saved to
   `$TMPDIR/xi-output/clj-….log` and the marker names that file with a nudge

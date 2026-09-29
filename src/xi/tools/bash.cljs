@@ -12,18 +12,14 @@
                    :how    "inspect it with grep/tail or the read tool with offset/limit."}))
 
 (defn execute
-  "Execute a bash command. Returns promise of tool result.
-   ctx supports :wrap-argv — optional (fn [argv] → argv') wrapping the
-   spawn argv (sandboxing) — and :env, an optional env object replacing
-   process.env."
-  [{:keys [command timeout]} {:keys [cwd wrap-argv env]}]
+  "Execute a bash command. Returns promise of tool result."
+  [{:keys [command timeout]} {:keys [cwd]}]
   (let [timeout-ms (or timeout DEFAULT_TIMEOUT)
         ;; setsid creates a new session with no controlling terminal,
         ;; preventing child processes (e.g. ssh) from opening /dev/tty
         ;; and writing interactive prompts directly to the terminal,
         ;; which would corrupt the TUI.
-        argv (cond-> ["setsid" "bash" "-c" command]
-               wrap-argv wrap-argv)]
+        argv ["setsid" "bash" "-c" command]]
     (js/Promise.
      (fn [resolve _reject]
        (let [proc (js/Bun.spawn
@@ -31,7 +27,7 @@
                    #js {:stdin "ignore"
                         :stdout "pipe"
                         :stderr "pipe"
-                        :env (or env (unchecked-get js/process "env"))
+                        :env (unchecked-get js/process "env")
                         :cwd (or cwd (.cwd js/process))})
              timer (js/setTimeout
                     (fn []

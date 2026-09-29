@@ -119,40 +119,6 @@
       (is (nil? (rules/first-match defaults/default-rules
                                    {:tool :edit :path "src/foo.cljs"}))))))
 
-(deftest sandbox-mode-gate
-  (let [on  {:sandbox {:enabled? true}}
-        off {:sandbox {:enabled? false}}]
-    (testing "sandbox denies writes/edits outside the working tree"
-      (is (= :deny (action-type {:tool :write :path "/elsewhere/x.txt"
-                                 :outside-cwd? true :state on})))
-      (is (= :deny (action-type {:tool :edit :path "/elsewhere/x.txt"
-                                 :outside-cwd? true :state on}))))
-    (testing "the sandbox outside-write deny wins over the general outside ask"
-      (is (= :ask (action-type {:tool :write :path "/elsewhere/x.txt"
-                               :outside-cwd? true :state off}))
-          "with sandbox off it falls through to the softer ask"))
-    (testing "a write inside the tree is not denied by sandbox"
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :write :path "src/foo.cljs" :state on}))))
-    (testing "sandbox denies reads of credential paths"
-      (is (= :deny (action-type {:tool :read :credential-path? true :state on})))
-      (is (= :deny (action-type {:tool :grep :credential-path? true :state on})))
-      (is (= :deny (action-type {:tool :find :credential-path? true :state on})))
-      (is (= :deny (action-type {:tool :ls   :credential-path? true :state on}))))
-    (testing "non-credential reads pass, and reads pass when sandbox is off"
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :read :path "src/foo.cljs" :state on})))
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :read :credential-path? true :state off}))))
-    (testing "sandbox denies backgrounded (`cmd &`) bash"
-      (is (= :deny (action-type {:tool :bash :command "npm run dev &" :state on})))
-      (is (= :deny (action-type {:tool :bash :command "sleep 5 &  " :state on}))))
-    (testing "a foregrounded command passes, and `cmd &` passes when sandbox off"
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :bash :command "npm run dev" :state on})))
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :bash :command "npm run dev &" :state off}))))))
-
 (deftest sh-softener-gate
   (testing "read-only / rm autorun CLIs are allowed without asking"
     (is (= :allow (action-type {:tool :sh :cli "ls"  :command "ls -la"})))
@@ -214,7 +180,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 19 (count defaults/default-rules))))
+    (is (= 16 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
