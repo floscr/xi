@@ -212,6 +212,25 @@
                      (is (str/includes? @asked "library: react"))
                      (done))))))))
 
+(deftest ask-rule-on-edit-previews-diff
+  (testing "a guarded edit passes the change it would make to the confirm dialog
+           as :diff, without touching the file"
+    (async done
+      (let [rule  {:match {:tool :edit} :action {:type :ask}}
+            state (state-with [:ext :rules :rules] rule)
+            path  "/tmp/xi-rules-diff-preview-missing.txt"
+            tc    {:name "edit"
+                   :arguments {:path path :edits [{:oldText "" :newText "hello"}]}}
+            opts  (atom nil)
+            c     (assoc (ctx state)
+                         :confirm! (fn [_ o] (reset! opts o)
+                                     (js/Promise.resolve false)))]
+        (-> (rules-ext/tool-gate tc c)
+            (.then (fn [_]
+                     (is (= path (get-in @opts [:diff :path])))
+                     (is (str/includes? (get-in @opts [:diff :text]) "+ hello"))
+                     (done))))))))
+
 (deftest mcp-default-rule-always-narrows-to-server-and-tool
   (async done
     (let [state      (state-with [:ext :rules :rules] {:match {:tool :read}

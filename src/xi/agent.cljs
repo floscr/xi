@@ -479,6 +479,7 @@
                        ;; opts may carry {:options [:yes :no :always …]} —
                        ;; option keywords from xi.dialog/confirm-option; the
                        ;; renderers build their buttons/keys from that data.
+                       ;; :diff {:path :text} previews a write/edit's change.
                        :confirm!  (when ask!
                                     (fn confirm!
                                       ([message] (confirm! message nil))
@@ -486,7 +487,8 @@
                                        (ask! {:dispatch! dispatch! :state (get-state)}
                                              {:room-id room-id
                                               :dialog  (cond-> {:type :confirm :message message}
-                                                         (:options opts) (assoc :options (:options opts)))}))))}
+                                                         (:options opts) (assoc :options (:options opts))
+                                                         (:diff opts)    (assoc :diff (:diff opts)))}))))}
              gate1 (when tool-gate
                      (fn [tool-call] (tool-gate tool-call gate-ctx)))
              ;; The turn's cwd doesn't exist on this host (e.g. a Pi session

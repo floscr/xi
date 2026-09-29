@@ -36,6 +36,14 @@
           result (edit/apply-edit content {:oldText "--target--" :newText "--replaced--"})]
       (is (= {:ok "prefix--replaced--suffix"} result)))))
 
+(deftest apply-edits-in-order
+  (testing "applies each edit in turn and stops at the first error"
+    (is (= {:ok "a2 b2"}
+           (edit/apply-edits "a b" [{:oldText "a" :newText "a2"}
+                                    {:oldText "b" :newText "b2"}])))
+    (is (:error (edit/apply-edits "a b" [{:oldText "a" :newText "a2"}
+                                          {:oldText "zzz" :newText ""}])))))
+
 (deftest apply-edit-special-chars
   (testing "handles regex-special characters in text"
     (is (= {:ok "result = fn(x)"}

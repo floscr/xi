@@ -232,6 +232,17 @@
                  :else line)))
        (str/join "\n")))
 
+(defn diff-preview-text
+  "A confirm dialog's :diff preview ({:path :text}) as highlighted, truncated
+   TUI text — the same rendering as the edit tool's result diff, capped at
+   `max-lines`."
+  [{:keys [path text]} max-lines]
+  (let [grammar (some-> path file-ext hl-grammars/get-grammar)]
+    (truncate-output (if grammar
+                       (highlight-diff-text grammar text)
+                       text)
+                     max-lines)))
+
 (defn- diff-output?
   "Does tool output look like a unified diff (from the edit tool)?"
   [text]

@@ -5,6 +5,20 @@
             [xi.tools.util :as util]
             ["node:fs" :as fs]))
 
+(defn preview
+  "Unified diff of the file's current content (empty when new) against the
+   content about to be written, without writing — shown in the permission
+   dialog before the call runs. nil when nothing would change."
+  [{:keys [path content]} {:keys [cwd]}]
+  (try
+    (let [resolved (tfs/resolve-path path cwd)
+          original (if (tfs/file-exists? resolved)
+                     (fs/readFileSync resolved "utf8")
+                     "")]
+      (when (and (string? content) (not= content original))
+        (util/unified-diff original content)))
+    (catch :default _ nil)))
+
 (defn execute
   "Write content to a file. Creates parent directories if needed."
   [{:keys [path content]} {:keys [cwd]}]

@@ -25,6 +25,31 @@
         :else
         {:ok (str (subs content 0 idx) newText (subs content (+ idx (count oldText))))}))))
 
+(defn apply-edits
+  "Apply `edits` in order to `content`. Returns {:ok content} or the first
+   {:error msg}."
+  [content edits]
+  (reduce (fn [acc edit]
+            (let [r (apply-edit (:ok acc) edit)]
+              (if (:error r) (reduced r) r)))
+          {:ok content}
+          edits))
+
+(defn preview
+  "Unified diff the edit would produce, without writing anything — shown in
+   the permission dialog before the call runs. nil when the edits don't apply
+   (the tool reports that error itself once allowed) or change nothing."
+  [{:keys [path edits]} {:keys [cwd]}]
+  (try
+    (let [resolved (tfs/resolve-path path cwd)
+          original (if (tfs/file-exists? resolved)
+                     (fs/readFileSync resolved "utf8")
+                     "")
+          {:keys [ok]} (apply-edits original edits)]
+      (when (and ok (not= ok original))
+        (util/unified-diff original ok)))
+    (catch :default _ nil)))
+
 (defn execute
   "Edit a file using exact text replacement.
    Accepts a vec of {:oldText :newText} edits applied against the original file."
@@ -43,22 +68,18 @@
                                (util/content-hash original) "). Re-read "
                                path " before editing.")}]
          :is-error true}
-        (loop [content original
-               [edit & remaining] edits
-               applied 0]
-          (if-not edit
-            (do (fs/writeFileSync resolved content "utf8")
-                (let [display-path (util/display-path resolved path cwd)
-                      diff (util/unified-diff original content)
-                      info (when created? (str "(created new file)\n"))]
-                  {:content [{:type "text"
-                              :text (str display-path "\n" info diff
-                                         "\n[file-hash: " (util/content-hash content) "]")}]}))
-            (let [result (apply-edit content edit)]
-              (if (:error result)
-                {:content [{:type "text" :text (:error result)}]
-                 :is-error true}
-                (recur (:ok result) remaining (inc applied))))))))
+        (let [result (apply-edits original edits)]
+          (if (:error result)
+            {:content [{:type "text" :text (:error result)}]
+             :is-error true}
+            (let [content (:ok result)]
+              (fs/writeFileSync resolved content "utf8")
+              (let [display-path (util/display-path resolved path cwd)
+                    diff (util/unified-diff original content)
+                    info (when created? (str "(created new file)\n"))]
+                {:content [{:type "text"
+                            :text (str display-path "\n" info diff
+                                       "\n[file-hash: " (util/content-hash content) "]")}]}))))))
     (catch :default e
       {:content [{:type "text" :text (str "Error editing file: " (.-message e))}]
        :is-error true})))

@@ -459,6 +459,14 @@
               :on {:click (fn [_] (answer! value))}}
      label]))
 
+(defn- dialog-diff
+  "A confirm dialog's :diff preview ({:path :text} — the change a guarded
+   write/edit is about to make), rendered like the edit tool's result diff."
+  [{:keys [diff]}]
+  (when-let [{:keys [path text]} diff]
+    (edit-diff-code (grammars/get-grammar (file-ext path))
+                    (truncate-lines text 100))))
+
 (defn- tool-post [dispatch! {:keys [tool arguments result is-error status
                                     permission resolved-permission
                                     viewer-collapsed? cwd]}]
@@ -531,6 +539,7 @@
       (when-let [{:keys [dialog answer!]} permission]
         (let [{:keys [message text]} dialog]
           [:div {:class ["tool-call-content"]}
+           (dialog-diff dialog)
            [:div {:class ["tool-call-permission"]}
             [:div {:class ["tool-call-permission-msg"]} (or message text)]
             [:div {:class ["tool-call-permission-actions"]}
@@ -1396,6 +1405,7 @@
       [:div {:class ["post" "post--assistant" "post--dialog"]}
        [:div {:class ["post-body" "dialog-bubble"]}
         [:div {:class ["dialog-message"]} (or message text)]
+        (dialog-diff live-dialog)
         (case type
           :cwd-select (cwd-select-body dispatch! state options answer!)
           :form       (form-dialog-body dispatch! state live-dialog answer!)

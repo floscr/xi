@@ -24,7 +24,9 @@
   (:require [clojure.string :as str]
             [xi.ext.core :as ext]
             [xi.rules :as rules]
-            [xi.rules.store :as store]))
+            [xi.rules.store :as store]
+            [xi.tools.edit :as edit]
+            [xi.tools.write :as write]))
 
 (def ^:private ext-id store/ext-id)
 
@@ -169,6 +171,22 @@
       path    (str (name tool) " " path " \u2014 approve?")
       :else   (str "Rule: " (name tool)))))
 
+(defn- ask-diff
+  "For a guarded write/edit, the diff the call would apply ({:path :text}), so
+   the confirm dialog shows exactly what is being approved. nil for other tools
+   or when there's nothing to preview."
+  [{:keys [tool path arguments effective-cwd]}]
+  (when path
+    (let [ctx  {:cwd effective-cwd}
+          text (case tool
+                 :edit  (when (sequential? (:edits arguments))
+                          (edit/preview arguments ctx))
+                 :write (when (string? (:content arguments))
+                          (write/preview arguments ctx))
+                 nil)]
+      (when (seq text)
+        {:path path :text text}))))
+
 (defn- apply-action
   "Apply a matched rule's action to `tool-call`. Returns a tool-call (allow),
    nil (block), an intercepted result map, or a Promise of any of those."
@@ -179,7 +197,9 @@
     :nudge (nudge-result message)
     :ask   (if confirm!
              (-> (confirm! (or message (ask-message req))
-                           {:options (recommend-options options)})
+                           (let [diff (ask-diff req)]
+                             (cond-> {:options (recommend-options options)}
+                               diff (assoc :diff diff))))
                  (.then (fn [ans]
                           (cond
                             (= ans :recommend)

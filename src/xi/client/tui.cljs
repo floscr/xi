@@ -417,8 +417,13 @@
    line. Enter = yes, Esc = no. The message word-wraps to the terminal width so
    long guarded commands no longer overflow and corrupt the layout, and the
    editor stays visible below the dialog for context."
-  [{:keys [message prompt] :as dlg} respond! editor]
+  [{:keys [message prompt diff] :as dlg} respond! editor]
   (let [text    (or message prompt "Confirm?")
+        ;; A guarded write/edit's change, shown above the question so the
+        ;; user sees what they're approving. Lines are clipped (not wrapped)
+        ;; to keep the diff's columns intact, and capped so a big write
+        ;; can't push the question off-screen.
+        diff-lines (when diff (str/split-lines (view/diff-preview-text diff 30)))
         options (dialog/confirm-options dlg)
         by-key  (into {} (mapcat (fn [{:keys [key value]}]
                                    [[key value] [(str/upper-case key) value]]))
@@ -433,6 +438,10 @@
                (let [wrapped (ansi/wrap-text text (max 1 (- width 2)))
                      box (into [(ansi/fg :border (apply str (repeat width "─")))]
                                (concat
+                                (map #(str (ansi/truncate-to-width (str "  " %) width)
+                                           ansi/reset)
+                                     diff-lines)
+                                (when diff-lines [""])
                                 (map #(str "  " %) wrapped)
                                 [hint ""]))]
                  (into box (when editor ((:render editor) width)))))

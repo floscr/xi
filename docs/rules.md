@@ -218,7 +218,7 @@ and are not short-circuited by a `:sh` `:allow`.
 | `:allow` | Force-allow: the call runs and the **remaining gates are skipped**.     |
 | `:deny`  | Block with an error result (`:message` shown to the agent).             |
 | `:nudge` | Block with a **non-error** steering result — `:message` redirects the agent without signalling failure. |
-| `:ask`   | Raise a confirm dialog. When no `:message` is given, an informative default is built from the request (MCP server/tool/arguments, else the bash/clj command, else the target path). `:options` defaults to `[:yes :no :always]`; answering `:always` persists a session allow-rule for the same call (narrowed to the MCP server + tool for MCP calls), and `:repo` (when the target is in a git repo) persists one scoped to the whole repo. |
+| `:ask`   | Raise a confirm dialog. When no `:message` is given, an informative default is built from the request (MCP server/tool/arguments, else the bash/clj command, else the target path). `:options` defaults to `[:yes :no :always]`; answering `:always` persists a session allow-rule for the same call (narrowed to the MCP server + tool for MCP calls), and `:repo` (when the target is in a git repo) persists one scoped to the whole repo. For `write`/`edit` calls the dialog also previews the change as a diff (computed without writing; web and TUI). |
 
 ```clojure
 {:match {:tool :bash :command #"\bgit push\b"}
