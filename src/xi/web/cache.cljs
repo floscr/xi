@@ -184,6 +184,15 @@
 (defn save-preferred-model! [model]
   (when (string? model) (store-set! preferred-model-key model)))
 
+;; ── Collapsed sidebar groups ─────────────────────────────────────────────────
+
+(def ^:private sidebar-collapsed-key "xi/sidebar-collapsed")
+
+(defn load-sidebar-collapsed [] (set (store-get sidebar-collapsed-key)))
+
+(defn save-sidebar-collapsed! [groups]
+  (store-set! sidebar-collapsed-key (vec groups)))
+
 ;; ── Hydrate + persist ────────────────────────────────────────────────────────
 
 (defn hydrate
@@ -201,7 +210,8 @@
                         :web/recent-commands (load-recent-commands)
                         :web/command-usage (load-recent-commands)
                         :web/recent-skills (load-recent-skills)
-                        :web/preferred-model (load-preferred-model))
+                        :web/preferred-model (load-preferred-model)
+                        :web/sidebar-collapsed (load-sidebar-collapsed))
       (load-lobby) (assoc :lobby (load-lobby))
       cached       (assoc-in [:web/cache sid] cached))))
 

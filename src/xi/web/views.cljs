@@ -223,22 +223,23 @@
      (fn [] (js/requestAnimationFrame #(.reload js/location))))))
 
 (defn card-status-indicator
-  "Trailing status indicator for session cards / palette rows: a single,
-  ALWAYS-present node whose class toggles between the busy spinner, the unread
-  dot, or nothing. Do NOT replace this with a `cond` that returns a spinner div,
-  an unread-dot div, or nil — those swap element identity / drop to nil, and as
-  the keyed card list churns and reorders Replicant mis-reconciles the slot:
-  it leaves the stale spinner in the DOM (spinner shown after the agent stops)
-  and appends a second one on the next state change (the doubled-spinner bug).
-  One stable node means Replicant only ever patches the `class` attribute, so it
-  can never add or remove children here. The containing slot collapses via the
-  `:has()` rule on .project-card-status / .command-item-status."
-  [{:keys [busy? unread?]}]
-  [:div {:replicant/key "status-indicator"
-         :class (cond
-                  busy?   ["agent-status-spinner"]
-                  unread? ["unread-dot"]
-                  :else   [])}])
+  "Session status dot for session cards (badge on the chat icon) and palette
+  chat rows (trailing slot). Shows the single most important state:
+  working (flashing purple) > unread (orange) > live room (green) > nothing.
+
+  A single, ALWAYS-present node whose class toggles. Do NOT replace this with a
+  `cond` returning different elements or nil — those swap element identity /
+  drop to nil, and as the keyed card list churns and reorders Replicant
+  mis-reconciles the slot: it leaves a stale indicator in the DOM (shown after
+  the agent stops) and appends a second one on the next state change (the old
+  doubled-spinner bug). One stable node means Replicant only ever patches the
+  `class` attribute. Hidden via CSS when it carries no state modifier."
+  [{:keys [busy? unread? active?]}]
+  [:span {:replicant/key "status-indicator"
+          :class ["status-dot"
+                  (cond busy?   "status-dot--busy"
+                        unread? "status-dot--unread"
+                        active? "status-dot--live")]}])
 
 (defn nav-items-for
   "Extension nav items (from ext/compose :nav-items, stored in state at
@@ -1972,6 +1973,21 @@
              :on {:click on-back}}
     (icon/icon {:icon-name :arrow-left :size :md})]])
 
+(defn- message-circle-icon
+  "Inline Lucide `message-circle` (chat bubble) SVG at the icon component's :sm
+   size — the shared icon set has no chat icon (icon/icon returns nil for it)."
+  []
+  [:svg {:class ["icon" "icon-sm"]
+         :xmlns "http://www.w3.org/2000/svg"
+         :viewBox "0 0 24 24"
+         :fill "none"
+         :stroke "currentColor"
+         :stroke-width "2"
+         :stroke-linecap "round"
+         :stroke-linejoin "round"
+         :aria-hidden "true"}
+   [:path {:d "M7.9 20A9 9 0 1 0 4 16.1L2 22Z"}]])
+
 (defn- more-vertical-icon
   "Inline three-dots (vertical ellipsis) SVG — there is no ellipsis icon in the
    shared icon set, so we render a Lucide-compatible one matching the icon
@@ -2698,10 +2714,19 @@
                         (.preventDefault e)
                         (open-session-menu! dispatch! session-id name
                                             (.-clientX e) (.-clientY e)))))}
-   [:div {:class ["project-card-icon"]}
+   ;; The chat icon is faded unless the session has a live room; its badge is
+   ;; the session's status dot (working > unread > live, see
+   ;; card-status-indicator).
+   [:div {:class ["project-card-icon" "project-card-icon--badged"
+                  (when-not (or active? has-dialog?) "project-card-icon--idle")]
+          :title (cond busy?   "Working…"
+                       unread? "Unread responses"
+                       active? "Live on the server"
+                       :else   nil)}
     (cond
       has-dialog? (icon/icon {:icon-name :alert-circle :size :sm})
-      :else       (icon/icon {:icon-name :message-circle :size :sm}))]
+      :else       (message-circle-icon))
+    (card-status-indicator {:busy? busy? :unread? unread? :active? active?})]
    [:div {:class ["project-card-info"]}
     [:span {:class ["project-card-name"]} (or name "New session")]
     [:span {:class ["project-card-path"]}
@@ -2709,15 +2734,9 @@
            (format-relative-time timestamp)
            (cond has-dialog? "needs response"
                  busy? "working…"
-                 active? "active"
                  :else nil)]
           (remove str/blank?)
           (str/join " · "))]]
-   ;; Keep the trailing indicator slot ALWAYS present (hidden via CSS when it
-   ;; holds no indicator) with a single stable child (see card-status-indicator)
-   ;; so Replicant never duplicates or strands the spinner as cards reorder.
-   [:div {:class ["project-card-status"]}
-    (card-status-indicator {:busy? busy? :unread? unread?})]
    (when session-id
      [:button {:class ["project-card-action" "project-card-favorite"
                        (when favorite? "project-card-favorite--on")]
@@ -2777,7 +2796,7 @@
   "Card for a project directory in the home view. `dirty?` draws an orange
    status dot on the folder icon when the project's git tree has changes."
   [dispatch! path dirty?]
-  [:div {:class ["project-card"]
+  [:div {:class ["project-card" "project-card--dir"]
          :replicant/key (str "dir-" path)
          :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}}
    [:div {:class ["project-card-icon" (when dirty? "project-card-icon--dirty")]}
@@ -3188,6 +3207,29 @@
          [:div {:class ["claude-usage-reset"]}
           (str "Resets " resets-in " at " session-reset)])])))
 
+(defn- sidebar-section
+  "Collapsible drawer group: a framework sidebar-group whose label is a toggle
+   row (icon · label · count · chevron). Collapsed group ids live in
+   :web/sidebar-collapsed (see :sidebar/toggle-group); a collapsed group keeps
+   its header but doesn't build its cards at all."
+  [dispatch! collapsed {:keys [id label icon-name n]} & children]
+  (let [open? (not (contains? collapsed id))]
+    (sidebar/sidebar-group
+     ;; The framework conj's :class as ONE token, so collapsed-ness rides a
+     ;; data attribute rather than a second class.
+     {:class "sidebar-section"
+      :attrs {:replicant/key  (str "section-" (name id))
+              :data-collapsed (when-not open? "true")}
+      :label [:button {:class ["sidebar-section-toggle"]
+                       :aria-expanded (str open?)
+                       :on {:click (fn [_] (dispatch! {:type :sidebar/toggle-group :group id}))}}
+              [:span {:class ["sidebar-section-icon"]} (icon/icon {:icon-name icon-name :size :sm})]
+              [:span {:class ["sidebar-section-label"]} label]
+              (when n [:span {:class ["sidebar-section-count"]} n])
+              [:span {:class ["sidebar-section-chevron"]} (icon/icon {:icon-name :chevron-down :size :sm})]]}
+     (when open?
+       [:div {:class ["sidebar-section-items"]} children]))))
+
 (def ^:private recent-sidebar-cache
   ;; Memo for the docked/drawer sidebar. On wide screens the sidebar is always
   ;; rendered, so without this its whole projects+sessions subtree would be
@@ -3219,7 +3261,9 @@
         ;; "Hidden" = dismissed this run (reversible, still fully resumable).
         {:keys [recent hidden earlier]} (when render? (sidebar-session-groups state))
         visible  (concat recent earlier)
-        cards    (concat recent hidden earlier)]
+        cards    (concat recent hidden earlier)
+        collapsed (or (:web/sidebar-collapsed state) #{})
+        section  (partial sidebar-section dispatch! collapsed)]
     (sidebar/sidebar
      {}
      ;; Keep the card list out of the DOM while the drawer is closed and
@@ -3232,43 +3276,51 @@
      ;; by open? makes Replicant discard the whole stale subtree and build it
      ;; anew the moment the drawer opens.
      (sidebar/sidebar-content
-      {:attrs {:style {:padding "env(safe-area-inset-top) 0 0 0"}
+      ;; Only the top padding is overridden (safe-area inset for the iOS
+      ;; drawer); the inline padding comes from CSS so the cards stay inset.
+      {:attrs {:style {:padding-top "max(var(--size-2), env(safe-area-inset-top))"}
                :replicant/key (str "sidebar-content-" render?)}}
       (when render?
         (list
+         ;; Recent projects, closed out by the "All projects" overview row.
          (when (not pa?)
-           (sidebar/sidebar-group {:label "Projects"}
+           (section {:id :projects :label "Projects" :icon-name :folder :n (count projects)}
              (let [dirty (:web/project-dirty state)]
                (for [p projects]
                  (project-dir-card dispatch! p (contains? dirty p))))
-             [:div {:class ["sidebar-nav-buttons"]
-                    :replicant/key "sidebar-nav-buttons"}
-              (button/button
-               {:variant :secondary :size :sm :icon-left :layout-dashboard
-                :class "sidebar-nav-button"
-                :on-click (fn [_] (dispatch! {:type :route/navigate :page :home}))}
-               "All projects")
-              (for [item (nav-items-for state :sidebar)]
-                (button/button
-                 {:variant :secondary :size :sm :icon-left (:icon item)
-                  :class "sidebar-nav-button"
-                  :attrs {:replicant/key (str "nav-" (:label item))}
-                  :on-click (fn [_] (dispatch! (:event item)))}
-                 (:label item)))]))
+             (sidebar/sidebar-menu-item
+              {:icon-name :layout-dashboard
+               :class     "sidebar-row"
+               :active    (= :home (get-in state [:web/route :page]))
+               :attrs     {:replicant/key "all-projects"}
+               :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home}))}
+              "All projects")))
          (when (seq recent)
-           (sidebar/sidebar-group {:label "Recent"}
+           (section {:id :recent :label "Recent" :icon-name :clock :n (count recent)}
              (for [c (with-projects recent)]
                (session-card dispatch! (assoc c :dismissable? true)))))
          ;; Hidden group sits between Recent and Earlier. Its cards keep the
          ;; toggle (now an eye → "Show in recent") so the user can restore them.
          (when (seq hidden)
-           (sidebar/sidebar-group {:label "Hidden"}
+           (section {:id :hidden :label "Hidden" :icon-name :eye-off :n (count hidden)}
              (for [c (with-projects hidden)]
                (session-card dispatch! (assoc c :dismissable? true)))))
          (when (seq earlier)
-           (sidebar/sidebar-group {:label "Earlier"}
+           (section {:id :earlier :label "Earlier" :icon-name :calendar :n (count earlier)}
              (for [c (with-projects earlier)]
-               (session-card dispatch! c)))))))
+               (session-card dispatch! c))))
+         ;; Entries contributed by extensions (:nav-items with :menu :sidebar,
+         ;; e.g. Image Graphs) — last, below the core session groups.
+         (let [ext-items (when (not pa?) (nav-items-for state :sidebar))]
+           (when (seq ext-items)
+             (section {:id :extensions :label "Extensions" :icon-name :package :n (count ext-items)}
+               (for [item ext-items]
+                 (sidebar/sidebar-menu-item
+                  {:icon-name (:icon item)
+                   :class     "sidebar-row"
+                   :attrs     {:replicant/key (str "nav-" (:label item))}
+                   :on-click  (fn [_] (dispatch! (:event item)))}
+                  (:label item)))))))))
      (sidebar/sidebar-footer {}
        [:div {:style {:display "flex" :align-items "center" :justify-content "space-between"}}
         (theme-toggle/theme-toggle
@@ -3310,6 +3362,9 @@
                 (:web/response-counts state)
                 (:web/watched state)
                 (get-in state [:web/route :session-id])
+                (get-in state [:web/route :page])
+                (:web/sidebar-collapsed state)
+                (:web/project-dirty state)
                 (:web/theme-mode state)
                 (:web/nav-items state)]
         cached @recent-sidebar-cache]
@@ -3354,8 +3409,8 @@
 
 (defn- palette-chat-item
   "cmd/command-item variant with a trailing status slot, so palette chat rows
-   surface the same live indicators as session cards — a spinner while the
-   room is busy, an unread dot when there are unseen responses. Mirrors the
+   surface the same status dot as session cards (working > unread > live —
+   see card-status-indicator). Mirrors the
    ui.command DOM contract (.command-item) so ui-runtime.js keyboard
    navigation works.
 
@@ -3369,7 +3424,7 @@
      it appear as a search result while typing. Used by the Sessions group
      so every session (incl. Earlier) is reachable by search."
   ([card dispatch!] (palette-chat-item card dispatch! nil))
-  ([{:keys [session-id name cwd has-dialog? busy? unread?]} dispatch!
+  ([{:keys [session-id name cwd has-dialog? busy? unread? active?]} dispatch!
     {:keys [search?]}]
    (let [label (or name "New session")]
      [:button (cond-> {:class ["command-item"] :role "option" :type "button"
@@ -3383,7 +3438,7 @@
                   :size :sm :class "command-item-icon"})
       [:span {:class ["command-item-label"]} label]
       [:div {:class ["command-item-status"]}
-       (card-status-indicator {:busy? busy? :unread? unread?})]])))
+       (card-status-indicator {:busy? busy? :unread? unread? :active? active?})]])))
 
 (defn- palette-project-actions
   "Command items for a project's second-level page (Tab-drilled from a project

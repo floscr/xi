@@ -83,6 +83,7 @@
                   {:session-id  sid
                    :name        (or (some :session-name rooms) "New session")
                    :cwd         (some :cwd rooms)
+                   :current?    (= sid (get-in state [:web/route :session-id]))
                    :active?     true
                    :busy?       (boolean (some :busy? rooms))
                    :has-dialog? (boolean (some :has-dialog? rooms))}))))))

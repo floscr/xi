@@ -839,6 +839,16 @@
           :sidebar/open          (fn [st _] {:state (assoc st :web/sidebar-open? true)
                                              :effects [[:ws/send {:type :usage/refresh}]]})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
+          ;; Collapse/expand a drawer group (:projects, :recent, …). Kept in
+          ;; state (not a native <details>) because the drawer remounts its
+          ;; content on every open; persisted so it survives reloads too.
+          :sidebar/toggle-group  (fn [st {:keys [group]}]
+                                   (let [collapsed (or (:web/sidebar-collapsed st) #{})
+                                         collapsed (if (contains? collapsed group)
+                                                     (disj collapsed group)
+                                                     (conj collapsed group))]
+                                     {:state   (assoc st :web/sidebar-collapsed collapsed)
+                                      :effects [[:cache/sidebar-collapsed {:groups collapsed}]]}))
           :web/set-wide          (fn [st {:keys [wide?]}] {:state (assoc st :web/wide? wide?)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
@@ -1622,6 +1632,7 @@
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
    :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
+   :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
    ;; Read a session's cached snapshot and feed it into :web/cache so the chat
    ;; view paints from it while the WS join lands.
    :cache/seed-room
