@@ -25,7 +25,7 @@
 // proxies each tool call back to the host (where the permission gate +
 // registry live). It never touches the host's data.
 
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync, execSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -84,10 +84,12 @@ function send(obj) {
   }
 }
 
-// The host kills us once it has the terminal frame; a write racing that close
-// must not become an uncaughtException (which would itself try to `send`).
+// An EPIPE on stdout means the host closed its end: it is gone (see hostGone
+// below). Handling the event also keeps the write from becoming an
+// uncaughtException (which would itself try to `send`).
 process.stdout.on("error", (e) => {
-  process.stderr.write("[runner] stdout error: " + String((e && e.message) || e) + "\n");
+  if (e && e.code === "EPIPE") hostGone();
+  else process.stderr.write("[runner] stdout error: " + String((e && e.message) || e) + "\n");
 });
 
 // Set once the turn's terminal frame (`done` / `error`) is out. Late errors —
@@ -251,6 +253,45 @@ function resolveClaudeExecutable() {
   }
 }
 
+// ── Claude CLI lifetime ────────────────────────────────────────────────────────
+// The CLI must not outlive the host. The SDK only kills it from a
+// process.on("exit") hook, which never runs when we die by signal, and the CLI
+// survives the SIGHUP of a closing tmux pane: it then finishes the in-flight
+// model response and writes it to the transcript on its own. The restarted host
+// sees the turn as interrupted and auto-resumes it with "continue", on top of a
+// turn that in fact completed. So we spawn the CLI ourselves (the SDK's
+// spawnClaudeCodeProcess hook, mirroring its default spawn) to hold the handle.
+
+const cliProcs = new Set();
+
+function spawnCli({ command, args, cwd, env, signal }) {
+  const p = spawn(command, args, {
+    cwd, env, signal, stdio: ["pipe", "pipe", "ignore"], windowsHide: true,
+  });
+  cliProcs.add(p);
+  p.once("exit", () => cliProcs.delete(p));
+  return p;
+}
+
+function shutdown(cliSignal) {
+  for (const p of cliProcs) {
+    try { p.kill(cliSignal); } catch { }
+  }
+  process.exit(0);
+}
+
+// Host gone (it died or was killed without killing us: tmux SIGHUP, a systemd
+// KillMode=process stop, a crash): stop the turn dead, nobody consumes it.
+function hostGone() {
+  shutdown("SIGKILL");
+}
+
+// SIGTERM is the host ending the turn on purpose (after the terminal frame, or
+// after an abort): pass it on so the CLI shuts down the way the SDK would.
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGTERM"));
+process.on("SIGHUP", hostGone);
+
 // ── Turn execution ─────────────────────────────────────────────────────────────
 
 let currentQuery = null;
@@ -274,6 +315,7 @@ function buildPrompt(prompt) {
 async function runTurn({ queryOpts, envOverride, toolDefs, prompt, noTools }) {
   const opts = { ...queryOpts };
   opts.env = { ...process.env, ...(envOverride || {}) };
+  opts.spawnClaudeCodeProcess = spawnCli;
   const cli = resolveClaudeExecutable();
   if (cli) opts.pathToClaudeCodeExecutable = cli;
   if (!noTools && toolDefs && toolDefs.length) {
@@ -321,6 +363,8 @@ process.stdin.on("data", (chunk) => {
     handleFrame(frame);
   }
 });
+// The host never closes our stdin while it is alive.
+process.stdin.on("end", hostGone);
 
 function handleFrame(frame) {
   switch (frame.type) {
