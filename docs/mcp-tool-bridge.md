@@ -2,7 +2,7 @@
 
 Xi uses the Claude Agent SDK to talk to Claude Code (CC), but **CC never
 executes tools directly**. The SDK runs in a separate **runner process**
-(`providers/anthropic/runner.mjs`, its own `node_modules`, freely upgradable SDK); the
+(`packages/providers/anthropic/runner.mjs`, its own `node_modules`, freely upgradable SDK); the
 runner exposes Xi's tools to CC via an in-process MCP server and **proxies
 every tool call back to the host** over stdio. The host executes the call
 through its own pipeline — including a tool gate that can block or rewrite
@@ -23,7 +23,7 @@ leave the Xi process.
                │ MCP call (in-process in the runner)
                ▼
 ┌──────────────────────────────────────────────────────┐
-│  Runner (providers/anthropic/runner.mjs, spawned per turn)        │
+│  Runner (packages/providers/anthropic/runner.mjs, spawned per turn)        │
 │                                                      │
 │  · builds the SDK MCP server from the host's         │
 │    toolDefs (JSON Schema → Zod)                      │
@@ -75,9 +75,9 @@ host ignores any frame after it.
 
 | File | Role |
 |------|------|
-| `providers/anthropic/runner.mjs` | SDK integration: query lifecycle, MCP server, tool-call proxying |
-| `providers/anthropic/package.json` | pins the SDK version — upgrade here; the runner reinstalls when the lockfile changes |
-| `providers/anthropic/nix/` | pins the Claude CLI release; the runner builds it to the `claude` out-link — see [The pinned CLI](#the-pinned-cli) |
+| `packages/providers/anthropic/runner.mjs` | SDK integration: query lifecycle, MCP server, tool-call proxying |
+| `packages/providers/anthropic/package.json` | pins the SDK version — upgrade here; the runner reinstalls when the lockfile changes |
+| `packages/providers/anthropic/nix/` | pins the Claude CLI release; the runner builds it to the `claude` out-link — see [The pinned CLI](#the-pinned-cli) |
 | `src/xi/providers/runner.cljs` | host side of the runner protocol, provider-agnostic: spawn, framing, tool-call proxying, terminal frame |
 | `src/xi/providers/anthropic.cljs` | Claude-specific: query options, SDK message decoding, tool gate + registry wiring |
 | `src/xi/tools/registry.cljs` | Tool definitions and execute fns |
@@ -165,7 +165,7 @@ patterns / server-control live in `ext/permission_gate.cljs`.
 
 The SDK ships a native, generically-linked CC binary that can't run on NixOS
 (wrong `ld-linux`). The runner's `resolveClaudeExecutable()` instead resolves,
-in order: `XI_CLAUDE_CLI_PATH`, the pinned `providers/anthropic/claude/bin/claude`
+in order: `XI_CLAUDE_CLI_PATH`, the pinned `packages/providers/anthropic/claude/bin/claude`
 out-link, then `claude` from `PATH` (following the symlink with
 `realpathSync`), and passes the result as `pathToClaudeCodeExecutable`.
 
@@ -177,9 +177,9 @@ upstream, so the release is pinned next to the runner:
 
 | File | Role |
 |------|------|
-| `providers/anthropic/nix/claude-code-manifest.json` | the upstream release manifest — this *is* the pin |
-| `providers/anthropic/nix/flake.nix` + `flake.lock` | nixpkgs' `claude-code` built with that manifest |
-| `providers/anthropic/claude` | out-link to the build (gitignored) |
+| `packages/providers/anthropic/nix/claude-code-manifest.json` | the upstream release manifest — this *is* the pin |
+| `packages/providers/anthropic/nix/flake.nix` + `flake.lock` | nixpkgs' `claude-code` built with that manifest |
+| `packages/providers/anthropic/claude` | out-link to the build (gitignored) |
 
 Nothing is built by hand and there is no dev shell to enter: before each turn
 the runner compares the manifest's version with the version the out-link

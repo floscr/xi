@@ -57,18 +57,18 @@ running.
 
 ### The Claude SDK Runner
 
-The `@anthropic-ai/claude-agent-sdk` is **not** a dependency of Xi itself — it lives in a separate **runner process** (`providers/anthropic/runner.mjs`, own `package.json`/`node_modules`). The Anthropic provider (`xi.providers.anthropic`) spawns the runner per turn and speaks newline-delimited JSON over stdio; the runner proxies every tool call back to the host, so the tool registry + rules/permission gate stay host-side. This decouples the SDK version from Xi: upgrade it by bumping `providers/anthropic/package.json` — the runner reinstalls its own deps when the lockfile changes.
+The `@anthropic-ai/claude-agent-sdk` is **not** a dependency of Xi itself — it lives in a separate **runner process** (`packages/providers/anthropic/runner.mjs`, own `package.json`/`node_modules`). The Anthropic provider (`xi.providers.anthropic`) spawns the runner per turn and speaks newline-delimited JSON over stdio; the runner proxies every tool call back to the host, so the tool registry + rules/permission gate stay host-side. This decouples the SDK version from Xi: upgrade it by bumping `packages/providers/anthropic/package.json` — the runner reinstalls its own deps when the lockfile changes.
 
-**Everything a provider needs outside the compiled CLJS lives in `providers/<id>/`** (runner script, its `node_modules`, pinned vendor CLI), mirroring `src/xi/providers/<id>`. The host side of the runner protocol — spawning, framing, tool-call proxying — is provider-agnostic and lives in `xi.providers.runner`; a provider supplies only its `start` payload and what a `message` frame means. A second runner (e.g. OpenAI) is a new `providers/<id>/runner.mjs` plus a call to `runner/run-turn!`.
+**Everything a provider needs outside the compiled CLJS lives in `packages/providers/<id>/`** (runner script, its `node_modules`, pinned vendor CLI), mirroring `src/xi/providers/<id>`. The host side of the runner protocol — spawning, framing, tool-call proxying — is provider-agnostic and lives in `xi.providers.runner`; a provider supplies only its `start` payload and what a `message` frame means. A second runner (e.g. OpenAI) is a new `packages/providers/<id>/runner.mjs` plus a call to `runner/run-turn!`.
 
 Runner notes:
 
 - The runner resolves the `claude` CLI from `PATH` (override with `XI_CLAUDE_CLI_PATH`); the SDK's bundled generic-linux binary does not work on NixOS.
-- **The Claude CLI is pinned in-repo via nix, not taken from the system.** `providers/anthropic/nix/` is a flake building nixpkgs' `claude-code` with the upstream release manifest pinned in `claude-code-manifest.json` (the CLI gates new model ids on its own version, and nixpkgs lags upstream). The runner builds it to the gitignored out-link `providers/anthropic/claude` by itself, whenever that is missing or not the pinned version, and prefers it over `PATH` — there is no dev shell or `.envrc`, and it applies wherever `xi` is launched from. On a "Claude Code X does not support this model; version Y or newer is required" error: `bb claude:update` (refetches the manifest for the latest release); it takes effect on the next turn, no restart needed. Details: [docs/mcp-tool-bridge.md](docs/mcp-tool-bridge.md#the-pinned-cli).
+- **The Claude CLI is pinned in-repo via nix, not taken from the system.** `packages/providers/anthropic/nix/` is a flake building nixpkgs' `claude-code` with the upstream release manifest pinned in `claude-code-manifest.json` (the CLI gates new model ids on its own version, and nixpkgs lags upstream). The runner builds it to the gitignored out-link `packages/providers/anthropic/claude` by itself, whenever that is missing or not the pinned version, and prefers it over `PATH` — there is no dev shell or `.envrc`, and it applies wherever `xi` is launched from. On a "Claude Code X does not support this model; version Y or newer is required" error: `bb claude:update` (refetches the manifest for the latest release); it takes effect on the next turn, no restart needed. Details: [docs/mcp-tool-bridge.md](docs/mcp-tool-bridge.md#the-pinned-cli).
 - The runner's stderr is inherited by the host, so anything it writes there paints over the TUI — keep runner diagnostics to real errors only, never per-turn logging.
 - **Token hygiene:** text-only throwaway turns (titles, quick replies, summaries) must pass `:no-tools? true`, otherwise each one carries every tool definition (~25k tokens). Xi is the sole loader of project instructions (`settingSources ["user"]`), so don't re-enable the CLI's own AGENTS.md loading. Rules + how to audit cache hits: [docs/mcp-tool-bridge.md](docs/mcp-tool-bridge.md#prompt-caching--token-hygiene).
-- `XI_CLAUDE_RUNNER_PATH` overrides the runner script location (defaults to `providers/anthropic/runner.mjs` next to `target/main.js`).
-- SDK query lifecycle quirks (`.close()` after completion, `.interrupt()` then `.close()` on abort, single terminal frame) are handled inside `providers/anthropic/runner.mjs`.
+- `XI_CLAUDE_RUNNER_PATH` overrides the runner script location (defaults to `packages/providers/anthropic/runner.mjs` next to `target/main.js`).
+- SDK query lifecycle quirks (`.close()` after completion, `.interrupt()` then `.close()` on abort, single terminal frame) are handled inside `packages/providers/anthropic/runner.mjs`.
 
 ## Testing
 
@@ -130,7 +130,7 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
   extensions (`xi.providers.anthropic`, `xi.providers.ollama`,
   `xi.providers.openai.codex`, `xi.providers.zen`). Each provider is a data
   map `{:id :start-turn! :list-models!}`. The Anthropic provider runs the
-  Claude Agent SDK out-of-process via `providers/anthropic/` (see "The Claude SDK Runner"
+  Claude Agent SDK out-of-process via `packages/providers/anthropic/` (see "The Claude SDK Runner"
   above). Zen (OpenCode Zen gateway)
   routes `opencode/<id>` models across several API surfaces; chat-completions,
   Anthropic Messages, and OpenAI Responses (GPT/Grok/Muse, incl. GPT 6 Astra)
@@ -143,7 +143,7 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
 - **shadow-cljs** compiles to a single node script run by **Bun**; the web
   client is a separate `:browser` build served by the same Bun server.
 - Runtime npm deps: none in Xi itself; the Claude Agent SDK lives in
-  `providers/anthropic/` (see above). The only dev npm dep is the
+  `packages/providers/anthropic/` (see above). The only dev npm dep is the
   `shadow-cljs` launcher. The browser overlay scripts (element picker, design
   mode, style editor) are built with squint + esbuild in-process by babashka
   (`scripts/overlay_build.clj`) — no node/npm.
@@ -203,7 +203,7 @@ src/xi/
   providers/
     runner.cljs        — host side of the provider runner protocol (spawn,
                          NDJSON framing, tool-call proxying) — provider-agnostic
-    anthropic.cljs     — Anthropic provider (runs providers/anthropic/ via
+    anthropic.cljs     — Anthropic provider (runs packages/providers/anthropic/ via
                          runner.cljs, decodes the SDK message stream)
     openai_compat.cljs — shared OpenAI Chat Completions streaming + tool loop
     ollama.cljs        — Ollama provider (thin wrapper over openai_compat)
@@ -250,7 +250,7 @@ src/xi/
                          extension (API key from config; see docs/mcp-servers.md)
     treesitter/        — tree-sitter outline extension: `read` of large source
                          files → structural outline via a native nix-built CLI
-                         (native/xi-treesitter, `bb treesitter:install`), plus a
+                         (packages/xi-treesitter, `bb treesitter:install`), plus a
                          read_source tool for literal code — see docs/treesitter.md
     *.cljs             — extensions: kb, web, perplexity, github_code_search,
                          commit, clj_surgeon, permission_gate,
@@ -279,13 +279,22 @@ src/xi/
   util.cljs            — shared pure utilities
 ```
 
-Outside `src/`: `bb-client/` — a Babashka/JVM client lib (`xi.client/prompt!`)
-for calling xi's one-shot prompt mode from other services, paired with named
-agent profiles (`xi prompt --agent`). See [docs/bb-client.md](docs/bb-client.md).
-`providers/` — runtime assets per provider, outside the compiled CLJS:
-`providers/anthropic/` holds the out-of-process Claude Agent SDK runner
-(`runner.mjs` + its own `package.json`) and the pinned Claude CLI, spawned per
-turn by `xi.providers.anthropic` (see "The Claude SDK Runner" above).
+Outside `src/`, everything with its own build manifest lives under `packages/`
+(nothing there is part of the shadow-cljs build):
+
+- `packages/bb-client/` — a Babashka/JVM client lib (`xi.client/prompt!`) for
+  calling xi's one-shot prompt mode from other services, paired with named
+  agent profiles (`xi prompt --agent`). See [docs/bb-client.md](docs/bb-client.md).
+- `packages/providers/` — runtime assets per provider, outside the compiled
+  CLJS: `packages/providers/anthropic/` holds the out-of-process Claude Agent
+  SDK runner (`runner.mjs` + its own `package.json`) and the pinned Claude CLI,
+  spawned per turn by `xi.providers.anthropic` (see "The Claude SDK Runner"
+  above).
+- `packages/xi-treesitter/` — the native tree-sitter outline CLI (C + nix),
+  built by `bb treesitter:install`. See [docs/treesitter.md](docs/treesitter.md).
+
+`bb-client/` and `providers/` are shipped to the server by the deploy, at the
+same relative paths (`/var/lib/xi/packages/…`).
 
 ### Web Client
 

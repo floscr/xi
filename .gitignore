@@ -3,8 +3,8 @@ node_modules/
 .demo-home/
 .shadow-cljs/
 .cpcache/
-# out-link to the pinned Claude CLI, built by the runner (providers/anthropic/nix)
-providers/anthropic/claude
+# out-link to the pinned Claude CLI, built by the runner (packages/providers/anthropic/nix)
+packages/providers/anthropic/claude
 *.js.map
 resources/public/js/
 resources/public/mkcert-rootCA.crt

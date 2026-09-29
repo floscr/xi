@@ -10,7 +10,7 @@ large fraction of that.
 
 Two pieces:
 
-1. **A native CLI** (`native/xi-treesitter`) — a small C program built via nix
+1. **A native CLI** (`packages/xi-treesitter`) — a small C program built via nix
    that dlopens nix-built tree-sitter grammar `.so` files, parses a file, and
    prints the parse tree as compact JSON. Bun shells out to it (Bun cannot
    load grammar `.so` files directly: `bun:ffi` doesn't support by-value
@@ -26,7 +26,7 @@ everything silently stays off until you run the install step.
 
 ```bash
 bb treesitter:install
-# = nix-build native/xi-treesitter -o ~/.config/xi/treesitter
+# = nix-build packages/xi-treesitter -o ~/.config/xi/treesitter
 ```
 
 This builds the CLI and a grammar bundle
@@ -129,7 +129,7 @@ Anything targeted or composed passes through untouched: pipes
 | CSS | `.css` | @import/@charset/@namespace, rule selectors (custom `--props` listed as children), @media/@supports + nested selectors, @keyframes, other at-rules |
 | Clojure | `.clj .cljs .cljc .bb` | ns + require libspecs, def/defonce, defn (multi-arity arglists), defmethod (named `fn :dispatch`), defmacro, defprotocol/defrecord/deftype + methods, generic `def*` forms; recurses into `#?(...)` reader conditionals |
 
-To add a language: add the grammar to `native/xi-treesitter/default.nix`,
+To add a language: add the grammar to `packages/xi-treesitter/default.nix`,
 re-run `bb treesitter:install`, then add an extension mapping + extractor in
 `src/xi/ext/treesitter/langs.cljs`.
 
@@ -160,7 +160,7 @@ interactive-read latency.
 ## Source layout
 
 ```
-native/xi-treesitter/
+packages/xi-treesitter/
   main.c        — the CLI (TSTreeCursor walk → JSON)
   default.nix   — build: CLI + tree-sitter.withPlugins grammar bundle
 src/xi/ext/treesitter/

@@ -1,6 +1,6 @@
 (ns xi.providers.runner
   "Host side of the provider runner protocol, shared by every provider that
-   runs its vendor SDK out of process (`providers/<id>/runner.mjs`, its own
+   runs its vendor SDK out of process (`packages/providers/<id>/runner.mjs`, its own
    node_modules — see docs/mcp-tool-bridge.md).
 
    One runner process per turn, newline-delimited JSON over stdio:
@@ -17,10 +17,10 @@
             [clojure.string :as str]))
 
 (defn script-path
-  "Default location of a provider's runner script: `providers/<id>/runner.mjs`
+  "Default location of a provider's runner script: `packages/providers/<id>/runner.mjs`
    next to the directory holding the compiled main.js."
   [provider-id]
-  (.resolve path js/__dirname ".." "providers" (name provider-id) "runner.mjs"))
+  (.resolve path js/__dirname ".." "packages" "providers" (name provider-id) "runner.mjs"))
 
 (defn split-frames
   "Append `chunk` to the pending `buf` and split off the complete lines.

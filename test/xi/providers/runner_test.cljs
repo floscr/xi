@@ -18,4 +18,4 @@
 
 (deftest script-path
   (is (str/ends-with? (runner/script-path :anthropic)
-                      "/providers/anthropic/runner.mjs")))
+                      "/packages/providers/anthropic/runner.mjs")))

@@ -5,7 +5,7 @@
    into Xi tool-definitions + a tool-registry.
 
    Xi's no-runtime-deps rule (the Claude Agent SDK lives in the separate
-   providers/anthropic/ runner process) means we speak the wire protocol by hand rather than
+   packages/providers/anthropic/ runner process) means we speak the wire protocol by hand rather than
    pulling in the MCP SDK.
 
    stdio (`connect`): newline-delimited JSON-RPC over a subprocess:

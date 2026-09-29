@@ -1,7 +1,7 @@
 // Regenerate resources/chrome/tools.edn from chrome-devtools-mcp's live
 // tools/list. Spawns the MCP server over stdio, performs the JSON-RPC
 // handshake, then transforms each tool's JSON Schema into the shape xi's
-// tool defs (converted to Zod by the SDK runner, providers/anthropic/runner.mjs) expect:
+// tool defs (converted to Zod by the SDK runner, packages/providers/anthropic/runner.mjs) expect:
 //   - structural keys are keywords (:type :description :enum :items
 //     :properties :required)
 //   - property-name keys stay strings (so nested :required matching, which

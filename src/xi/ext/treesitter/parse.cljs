@@ -1,11 +1,11 @@
 (ns xi.ext.treesitter.parse
-  "Run the native xi-treesitter CLI (native/xi-treesitter) and work with the
+  "Run the native xi-treesitter CLI (packages/xi-treesitter) and work with the
    JSON parse tree it emits.
 
    The CLI is discovered at $XI_TREESITTER_DIR (default
    ~/.config/xi/treesitter) which must contain bin/xi-treesitter and
    grammars/<lang>.so — the layout produced by
-   `nix-build native/xi-treesitter -o ~/.config/xi/treesitter`.
+   `nix-build packages/xi-treesitter -o ~/.config/xi/treesitter`.
 
    Nodes are kept as raw JS objects for speed (trees for large files reach
    hundreds of thousands of nodes):

@@ -10,7 +10,7 @@
    definition located via tree-sitter node boundaries.
 
    Requires the native CLI + grammars at ~/.config/xi/treesitter (see
-   native/xi-treesitter and docs/treesitter.md); the factory returns nil when
+   packages/xi-treesitter and docs/treesitter.md); the factory returns nil when
    they are missing, so the extension silently stays off."
   (:require [clojure.string :as str]
             [xi.ext.treesitter.parse :as p]

@@ -1,6 +1,6 @@
 (ns xi.providers.anthropic
   "Anthropic provider — runs the Claude Agent SDK in a separate runner
-   process (providers/anthropic/runner.mjs, its own node_modules, freely
+   process (packages/providers/anthropic/runner.mjs, its own node_modules, freely
    upgradable SDK) driven through xi.providers.runner. The host owns the tool
    registry + permission gate; the runner proxies each tool call back via
    `tool-call` frames.
@@ -284,7 +284,7 @@
       nil)))
 
 ;; ── Runner transport (out-of-process SDK) ─────────────────────────────────────
-;; Spawn `providers/anthropic/runner.mjs` (its own node_modules, freely
+;; Spawn `packages/providers/anthropic/runner.mjs` (its own node_modules, freely
 ;; upgradable SDK) per turn. Spawning, framing and tool-call proxying live in
 ;; xi.providers.runner; this section supplies what is Claude-specific: the
 ;; query options, the prompt shape and the SDK message decoding.

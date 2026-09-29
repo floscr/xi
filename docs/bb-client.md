@@ -1,6 +1,6 @@
 # Babashka client (`xi.client`)
 
-`bb-client/` is a tiny Babashka/JVM library for calling xi from other
+`packages/bb-client/` is a tiny Babashka/JVM library for calling xi from other
 services — one function, `xi.client/prompt!`, wrapping a one-shot
 `xi prompt --json` run. It exists so bb services (health coach, finance
 categorizer, …) stop hand-rolling process spawning and stop re-sending chat
@@ -9,14 +9,14 @@ and `--session`, each service holds a real stateful conversation.
 
 ## Setup
 
-The lib lives in the xi repo at `bb-client/` (its own `deps.edn`, so consumers
+The lib lives in the xi repo at `packages/bb-client/` (its own `deps.edn`, so consumers
 don't inherit xi's CLJS deps). Point a consumer's `bb.edn`/`deps.edn` at the
 checkout:
 
 ```clojure
 ;; bb.edn
-{:deps {xi/client {:local/root "/var/lib/xi/bb-client"}}}      ; deployed (pi)
-;; or   xi/client {:local/root "~/Code/Projects/xi/bb-client"} ; dev
+{:deps {xi/client {:local/root "/var/lib/xi/packages/bb-client"}}}      ; deployed (pi)
+;; or   xi/client {:local/root "~/Code/Projects/xi/packages/bb-client"} ; dev
 ```
 
 The compiled bundle is discovered via `$XI_BUNDLE`, then

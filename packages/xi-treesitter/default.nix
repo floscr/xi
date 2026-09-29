@@ -5,7 +5,7 @@
 #   $out/grammars/<lang>.so  — grammar shared objects (tree-sitter.withPlugins)
 #
 # Install for Xi (see docs/treesitter.md):
-#   nix-build native/xi-treesitter -o ~/.config/xi/treesitter
+#   nix-build packages/xi-treesitter -o ~/.config/xi/treesitter
 #
 # Xi discovers it at $XI_TREESITTER_DIR (default ~/.config/xi/treesitter),
 # which must contain bin/xi-treesitter and grammars/<lang>.so.
