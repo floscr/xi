@@ -81,7 +81,7 @@ namespace.
 
 | Flag | Default | What it does | Owner |
 | --- | --- | --- | --- |
-| `quick-replies?` | `true` | After each finished assistant turn, run a cheap model (Haiku) over the final message to detect a decision point (yes/no, pick-one) and show one-tap **quick-reply chips** below the response. The response text is never modified — chips are additive UI, and tapping one sends a predefined message. A cheap regex gate runs first, so most turns never call the model. Set to `false` to disable. | `xi.quick-replies` |
+| `quick-replies?` | `false` (disabled) | After each finished assistant turn, run a cheap model (Haiku) over the final message to detect a decision point (yes/no, pick-one) and show one-tap **quick-reply chips** below the response. The response text is never modified — chips are additive UI, and tapping one sends a predefined message. A cheap regex gate runs first, so most turns never call the model. Set to `true` to enable. | `xi.quick-replies` |
 
 ---
 
@@ -94,9 +94,9 @@ namespace.
 | `XI_MODEL` | `claude-opus-4-8` | Default model id. |
 | `XI_EFFORT` | `high` | Reasoning effort. |
 | `XI_CWD` | `process.cwd()` | Working directory for the room. |
-| `XI_RELOAD_SESSION` | — | Session id to reload on start. |
-| `ANTHROPIC_API_KEY` | — | API auth (alternative to `~/.pi/agent/auth.json` OAuth tokens). |
+| `ANTHROPIC_API_KEY` | — | API auth, passed through to the Claude CLI (otherwise the CLI's own login is used). |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude CLI config directory. |
+| `XI_THEME_MODE` | auto-detected | TUI color scheme override: `light` or `dark` (`xi.tui.theme-mode`). |
 
 ### Server / networking
 
@@ -106,6 +106,7 @@ namespace.
 | `XI_TLS_PORT` | `7443` | HTTPS/`wss://` port (when certs exist). |
 | `XI_TLS_CERT` | `~/.config/xi/tls/xi.crt` | TLS certificate path. Setting it (or `XI_TLS_KEY`) forces TLS on. |
 | `XI_TLS_KEY` | `~/.config/xi/tls/xi.key` | TLS private key path. |
+| `XI_ICON` | `desktop` (`personal` in personal-agent mode) | Icon variant served at `/apple-touch-icon.png` (e.g. `hetzner`). |
 
 See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 
@@ -135,6 +136,12 @@ See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider and
 | `WINDOWID` | — | done-notify | Terminal window id used to focus on notification. |
 | `XI_PRODUCT_SEARCH_CHROME` | auto-detected | product-search | Path to the Chrome/Chromium binary used to drive the `amazon_search` / `willhaben_search` / `geizhals_search` headless browser. Falls back to the legacy `XI_AMAZON_CHROME`, then common install paths and `google-chrome-stable` on `PATH`. |
 | `XI_AMAZON_CHROME` | — | product-search | Legacy fallback for `XI_PRODUCT_SEARCH_CHROME`. |
+| `XI_WEBSEARCH_SCRIPT` | `scripts/websearch.clj` | freesearch | Path to the babashka script behind the free `web_search` tool. |
+| `GEMINI_API_KEY` | — | image-graph | Gemini API key; usually kept in `~/.config/xi/ext/image-graph.env`. |
+
+Feature-specific variables are documented with their feature: `XI_CHROME_*`
+(browser tools) in [chrome-mcp.md](chrome-mcp.md), `XI_TREESITTER_DIR` in
+[treesitter.md](treesitter.md).
 
 ---
 

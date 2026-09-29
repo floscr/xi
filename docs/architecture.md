@@ -79,7 +79,7 @@ server, and the browser client are all assemblies of the same pure handlers.
               :clients {client-id {:kind :tui/:web :visible? … :room-id …}}}
  :rooms      {room-id {:history  []        ;; chat history (see below)
                        :session  {:id … :provider-session-id … :name …}
-                       :agent    {:busy? false :model "…" :provider :claude
+                       :agent    {:busy? false :model "…" :provider :anthropic
                                   :queued []}
                        :cwd      "/path"
                        :ext      {ext-id {…}}   ;; room-scoped extension state
@@ -167,7 +167,8 @@ Each mode merges handler maps (core + agent + commands + compaction +
 extensions) and wires effect handlers from its sources (providers, fx,
 compaction, TUI, WS):
 
-- `xi` — standalone: all handlers, local TUI renderer.
+- `xi` — standalone: all handlers, local TUI renderer (see
+  [tui-rendering.md](tui-rendering.md)).
 - `xi server [--headless] [--personal-agent-only]` — server handlers + room
   manager + cleanup chains; non-headless additionally boots a local TUI
   client app in the same process, joining via WS like any remote client.

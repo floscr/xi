@@ -32,8 +32,8 @@ stripped before the request (the API expects the bare id, e.g. `gpt-5.1-codex`).
 
 ## Authentication
 
-Xi **reuses the Codex CLI's credentials** — analogous to how the Claude provider
-reuses `~/.pi/agent/auth.json`. There is **no separate login flow in Xi**: just
+Xi **reuses the Codex CLI's credentials** — analogous to how the Anthropic
+provider reuses the Claude CLI's own login. There is **no separate login flow in Xi**: just
 sign in once with the Codex CLI.
 
 ```bash

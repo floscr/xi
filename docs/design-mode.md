@@ -182,7 +182,7 @@ XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 | `src/xi/ext/design_mode_js.clj` | Compile-time macro inlining `design.js`. |
 | `resources/design-mode/design.cljs` | Browser-side resident script (squint ClojureScript). |
 | `resources/design-mode/design.js` | **Generated** self-contained IIFE (squint → esbuild); committed. |
-| `resources/design-mode/squint.edn` | squint config for the design-mode build. |
+| `scripts/overlay_build.clj` | Shared overlay build (squint → esbuild, in-process). |
 | `resources/dialkit/dial.css` | **Generated** dialkit CSS (`bb dialkit:css`) inlined into the overlay for the popover. |
 | `test/xi/ext/design_mode_test.cljs` | Unit tests (injection, poll parsing, prompt building, install). |
 

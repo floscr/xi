@@ -22,6 +22,7 @@ provider effects, and TUI.
    :tool-gate        (fn [tool-call ctx] → tool-call|nil|{:intercepted ...})
    :tool-definitions [{:name :description :input_schema}]
    :tool-registry    {name (fn [args ctx] → result|Promise)}
+   :remove-tools     #{tool-name}      ; builtin tools to hide from the model
    :commands         [{:name :description :handler}]
    :system-prompt    str | (fn [cwd] → str|nil)
    :keybindings      [{:key "alt+r" :event {...} :when (fn [state])}]
@@ -29,6 +30,12 @@ provider effects, and TUI.
    :on-shutdown      (fn [])
    :on-enable        (fn [])           ; runtime enable hook (see "Runtime enable/disable")
    :on-disable       (fn [])           ; runtime disable hook; owns its own teardown
+   ;; WS server routing (server surface)
+   :server-fx        (fn [{:keys [send!]}] → {fx-type (fn [ctx payload])}) ; reply to one client
+   :roomless-events  #{event-type}     ; may be sent without joining a room
+   :no-broadcast     #{event-type}     ; never echoed to the room's clients
+   :originator-only  #{event-type}     ; sent only to the originating client
+   :lobby-relevant   #{event-type}     ; push fresh :lobby/state afterwards
    ;; web-client surface (browser build only — see "Web Client Surface")
    :routes           {"seg" {:parse fn :path {page-kw fn} :roomless-pages #{page-kw}}}
    :pages            {page-kw (fn [state dispatch!] → hiccup)}
@@ -275,9 +282,9 @@ browser client. Because the web client is a separate shadow-cljs `:browser`
 build, an extension with a web UI is split in two:
 
 - `src/xi/ext/github.cljs` — the node/server half (tools, server handlers,
-  roomless events), composed in `xi.cli`.
+  roomless events), listed in `xi.config/server`.
 - `src/xi/ext/github/web.cljs` — the browser half (routes, pages, client
-  handlers), composed in `xi.web.core/web-extensions`. It may require
+  handlers), listed in `xi.config/web`. It may require
   `xi.web.views` (shared building blocks: `nav-group`, `overflow-menu`,
   `spinner`, `shorten-path`, `diff-rows-view`) and `ui.*` components, but
   core web namespaces never require extension code.
@@ -321,81 +328,69 @@ Example: `xi.ext.github.web` (/pulls PR list/detail/diff pages).
 
 ## Writing a New Extension
 
-1. Create `src/xi/ext/my_ext.cljs`
-2. Define the extension map with an `:id` (or a `create` factory fn)
-3. Require it in `src/xi/config.cljc` (inside the right reader-feature
-   branch: `:node` for server/client, `:browser` for web halves) and add
-   it to the matching surface vector
-4. Build: `bb build` — shadow-cljs compiles it in
-
-### Minimal example
-
-```clojure
-(ns xi.ext.my-ext)
-
-(defn- my-tool [{:keys [query]} {:keys [cwd]}]
-  (js/Promise.resolve
-   {:content [{:type "text" :text (str "Hello from " cwd)}]}))
-
-(def extension
-  {:id               :my-ext
-   :tool-definitions [{:name "my_tool"
-                       :description "A sample tool"
-                       :input_schema {:type "object"
-                                      :properties {:query {:type "string"}}
-                                      :required ["query"]}}]
-   :tool-registry    {"my_tool" my-tool}})
-```
-
-### Extension with state, commands, and badges
-
-```clojure
-(ns xi.ext.my-ext
-  (:require [xi.core.state :as state]))
-
-(def ^:private ext-id :my-ext)
-
-(defn- enabled? [st room-id]
-  (boolean (:enabled? (state/room-ext st room-id ext-id))))
-
-(defn- toggle [st {:keys [room-id]}]
-  (when (state/get-room st room-id)
-    (let [st' (update-in st [:rooms room-id :ext ext-id :enabled?] not)
-          on? (get-in st' [:rooms room-id :ext ext-id :enabled?])]
-      {:state (update-in st' [:rooms room-id :history] conj
-                         {:kind :status :text (str "My ext: " (if on? "ON" "OFF"))})})))
-
-(def extension
-  {:id           ext-id
-   :init         {:room {:enabled? false}}
-   :commands     [{:name "myext"
-                   :description "Toggle my extension"
-                   :handler toggle}]
-   :prompt-badge (fn [state]
-                   (when-let [room (state/active-room state)]
-                     (when (enabled? state (:id room)) " ⚡")))})
-```
+Follow [writing-extensions.md](writing-extensions.md) — the step-by-step
+recipe, contracts, register step, and a table of example extensions to copy.
 
 ## Built-in Extensions
 
-| Extension | Type | Description |
-|-----------|------|-------------|
-| plan-mode | command, badge | Read-only exploration mode (`/plan`). Owns the toggle + 📋 badge + room flag; the read-only policy (allow tasks/todo.md, deny other writes/edits and mutating bash) is a `:when {:plan-mode {:enabled? true}}` default rule in the [rules engine](rules.md). |
-| done-notify | handler, keybinding, badge | Desktop notification on turn end. Ctrl+Shift+N toggle, 🔔 badge. |
-| pushover | handler, keybinding, badge (factory) | Pushover push on turn end / confirm dialog. Ctrl+Shift+P (or the web palette) cycles a per-room tri-state mode: **auto** (default — push only when away: no visible client on server, done-notify bell on standalone), **on** (force pushes even while watching, 📲 badge), **off** (never push). |
-| dictation | handler, keybinding, badge (factory, client-only) | Voice input via sox/whisper. Alt+R to record. |
-| permission-gate | tool-gate | Now only guards the server-control tasks (`bb serve:restart`/`serve:stop`, detached run). All other policy (sensitive/protected/outside writes, dangerous bash) moved to the [rules engine](rules.md) default rules. |
-| kb | tools | Knowledge base search/get/store via `kb` CLI. |
-| web | tools | Fetch URLs with HTML→markdown, Jina fallback, feed parsing. |
-| perplexity | tools, command | Web search via Perplexity; `/perplexity-login` to authenticate. |
-| product-search | tools | `amazon_search` (amazon.de), `willhaben_search` (willhaben.at classifieds), `geizhals_search` (geizhals.at price comparison). All three share one lazily-launched headless Chrome (CDP) and return product entries (title, price, URL, plus site-specific fields). Also enabled in `--personal-agent-only` mode. Chrome path via `XI_PRODUCT_SEARCH_CHROME` (legacy `XI_AMAZON_CHROME` still honored). |
-| commit | tools, command | Git workflow; `/commit` builds a prompt from live overview. |
-| review | command | Code review; `/review [staged\|<ref>]` embeds the code-review methodology (four-phase, severity labels) and submits a diff for review. Augments the prompt with project-type guidance auto-detected by marker files (clojure, typescript) plus an optional per-profile override (`bb profile:review-prompt`; `:review-prompt` / `:review-replace`). |
-| clj-surgeon | tools, handler | Structural Clojure refactoring. Auto-fixes parens after write/edit to .clj files. |
-| github | handler, web | Roomless PR browsing via `gh`. Web half: /pulls list/detail/diff pages + review-with-agent. |
-| terminal-title | handler | Sets terminal title from session name/cwd via ANSI escape. |
-| clipboard-image | event-hook | Converts pasted clipboard image paths to inline base64. |
-| projects | command, handler, keybinding | Project path picker. `/project` or Alt+P. |
-| skills | system-prompt, command (factory) | Injects tool knowledge based on project markers; `/skill list\|load`. Skills with `<input />` placeholders raise a `:form` dialog to collect values before submitting. |
-| chrome | tools (factory) | Proxies `chrome-devtools-mcp` as xi tools (opt-in via `XI_CHROME_TOOLS`). See [chrome-mcp.md](chrome-mcp.md). |
-| element_picker | command + fx | `/pick` a DOM element in the MCP-controlled Chrome → sends its HTML, selector, styles + a screenshot as the next prompt. Installed into `chrome` (shares its MCP client). See [element-picker.md](element-picker.md). |
+Which of these load, and in what order, is `src/xi/config.cljc`; each
+namespace docstring is the authoritative description.
+
+**Policy & safety**
+
+| Extension | What it does |
+|-----------|--------------|
+| rules | Declarative rules engine — every allow/deny/confirm policy; `/rules`. Loaded first. See [rules.md](rules.md). |
+| plan-mode | Read-only exploration mode (`/plan`, 📋 badge). The read-only policy itself is a default rule. |
+| permission-gate | Only guards the server-control tasks (`bb serve:restart` / `serve:stop`, run detached). |
+| sandbox | OS-level confinement (bwrap/firejail) of bash; `/sandbox`. |
+
+**Agent tools**
+
+| Extension | What it does |
+|-----------|--------------|
+| clj | Sandboxed Clojure (SCI) scripting tool + `bb` tool — replaces bash. See [clj-tool.md](clj-tool.md). |
+| process-manager | Registry of background processes started via clj's `process` ns; `/ps`, `/kill`. |
+| treesitter | Large-file `read` → structural outline; `read_source`. See [treesitter.md](treesitter.md). |
+| clj-surgeon | Structural Clojure refactoring tools; auto-fixes parens after write/edit. |
+| commit | Hunk-level staging + commit tools; `/commit`. |
+| kb | Knowledge base search/get/store via the `kb` CLI. |
+| web | `fetch`: HTML→markdown, Jina fallback, feed parsing. |
+| freesearch | Free `web_search` tool (no paid API, no headless browser). |
+| product-search | `amazon_search` / `willhaben_search` / `geizhals_search` over a shared headless Chrome. |
+| github-code-search | github.com code search (full query syntax); `/github-login`. |
+| session-search | Search previous sessions by title and content. |
+| events | Agent tool for inspecting the session event log. |
+| subagent | Background sub-agents (`spawn_subagent` …); `/subagents`. |
+| image-graph | Per-project Gemini image gallery (`GEMINI_API_KEY`); has a web half. |
+| chrome | Proxies `chrome-devtools-mcp` as xi tools (opt-in, `XI_CHROME_TOOLS`). Hosts element-picker (`/pick`), design-mode (`/design`) and style-editor. See [chrome-mcp.md](chrome-mcp.md), [element-picker.md](element-picker.md), [design-mode.md](design-mode.md), [style-editor.md](style-editor.md). |
+| mcp | Wraps external MCP servers (`~/.config/xi/mcp.edn`) as extensions; `/mcp`. See [mcp-servers.md](mcp-servers.md). |
+| render | Render.com MCP server, disabled by default; `/render`. |
+| extensions | `/ext list\|enable\|disable` over the live extension manager. |
+
+**Sessions, review & workflow**
+
+| Extension | What it does |
+|-----------|--------------|
+| resume | `/trim`, `/rollover`, `/lineage`. See [resume.md](resume.md). |
+| worktree | `/worktree` — move the room into a fresh git worktree (`merge`/`list`/`remove`). |
+| review | `/review [staged\|<ref>]` — code review prompt with per-language checklists. |
+| canvas-review | Experimental node-based review canvas (`canvas_review_*` tools); has a web half. |
+| diff | `/diff` viewer buffer (see [commands.md](commands.md)); has a web half. |
+| file-view | Opens files touched by write/edit into a `:file` buffer; has a web half. |
+| file-finder | Ctrl+P fuzzy file finder (TUI). |
+| github | Roomless PR browsing via `gh`; web half: /pulls list/detail/diff. |
+| projects | `/project` / Alt+P project path picker. |
+| skills | Project-marker system-prompt injection + `/skill list\|load` (`<input />` placeholders raise a `:form` dialog). |
+| snippets | Insertable prompt snippets for the web client. |
+| browser-open | `/browser-open` — open this session in the web client. |
+
+**Notifications & terminal**
+
+| Extension | What it does |
+|-----------|--------------|
+| done-notify | Desktop notification on turn end / pending dialog. Ctrl+Shift+N, 🔔 badge. |
+| pushover | Pushover push (factory; inert without keys). Ctrl+Shift+P cycles auto / on / off per room. |
+| terminal-title | Terminal title from session name / cwd. |
+| clipboard-image | Pasted clipboard image paths → inline base64 images (event hook). |
+| dictation | Client-only voice input via sox/whisper (Alt+R). |

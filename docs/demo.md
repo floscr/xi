@@ -60,7 +60,6 @@ server-side namespaces, run `bb demo:restart`.
 **Shared from the real `$HOME` so live Claude turns still work** (option 1 —
 live turns enabled):
 
-- `.pi` → **symlink** (xi auth: `~/.pi/agent/auth.json`)
 - `.claude/.credentials.json`, `.claude/settings.json`, `.claude/CLAUDE.md` →
   **symlinks** (Claude CLI OAuth + config; token refresh stays shared)
 - `.claude.json` → **copy** (config; demo writes stay contained, real config is
@@ -91,3 +90,18 @@ To self-test the xi web UI, use the demo server — **never** the real server on
 Edit the `seeds` vector in `scripts/demo-seed.mjs` (project cwds, session names,
 models, ages, and transcript lines built from `userMsg` / `asstMsg` /
 `toolUse` / `toolResult`), then `bb demo:seed` (or `bb demo:restart`).
+
+## Static `?demo=<view>` render (screenshots)
+
+Separate from the demo server: loading the web client with a `?demo=<view>`
+query param (on any server) renders a static, fully-populated view once — no
+transport, no live data — from the fabricated data in `src/xi/web/demo.cljs`
+(`demo-sessions` for the list, `demo-history` for the chat timeline). Views:
+`sessions` (session list) and `chat` (a coding conversation); any other value
+falls back to the session list. Use it for README/marketing screenshots that
+must never leak real sessions.
+
+To capture them via the Chrome DevTools MCP: emulate `390x844x3,mobile,touch`
+(iPhone size, 3× DPR), navigate to `http://localhost:7474/?demo=<view>`, and
+take a full-page screenshot. The color scheme stays on `auto`, so emulating
+light/dark switches the theme.

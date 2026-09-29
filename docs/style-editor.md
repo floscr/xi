@@ -167,11 +167,11 @@ no `import`s). Source at `resources/style-editor/style-editor.cljs`, compiled
 with squint → esbuild into `resources/style-editor/style-editor.js` — a
 **committed, generated** artifact (~37KB, since the dialkit panel it `require`s
 is bundled in). The overlay pulls in dialkit by requiring the framework's `dial`
-namespace directly — `bb style-editor:build` **generates**
-`resources/style-editor/squint.edn` (gitignored) with clj-ui-framework's
-`src/ui/js` on `:paths`, resolved from the **pinned gitlib** (the deps.edn
-`:git/sha`, fetched on demand) — no local checkout. esbuild `--bundle`
-tree-shakes and links it (plus `squint-cljs`) into the IIFE. No vendoring.
+namespace directly — `bb style-editor:build` passes clj-ui-framework's
+`src/ui/js` as an extra source root to `scripts/overlay_build.clj`, resolved
+from the **pinned gitlib** (the deps.edn `:git/sha`, fetched on demand) — no
+local checkout. esbuild bundles and tree-shakes it (plus the squint runtime)
+into the IIFE. No vendoring.
 
 dialkit is token-driven CSS. Since the target page doesn't load
 clj-ui-framework's stylesheet, the node ext injects a `<style>` first: the
@@ -216,7 +216,7 @@ XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 | `src/xi/ext/style_editor_js.clj` | Compile-time macro inlining `style-editor.js`. |
 | `resources/style-editor/style-editor.cljs` | Browser-side source (squint ClojureScript). |
 | `resources/style-editor/style-editor.js` | **Generated** self-contained IIFE (squint → esbuild); committed. |
-| `resources/style-editor/squint.edn` | **Generated** (gitignored) squint config — `bb style-editor:build` writes the pinned clj-ui-framework gitlib's `src/ui/js` onto `:paths` for `dial`. |
+| `scripts/overlay_build.clj` | Shared overlay build (squint → esbuild, in-process); `bb style-editor:build` adds the pinned clj-ui-framework gitlib's `src/ui/js` as a source root for `dial`. |
 | `resources/dialkit/dial.css` | **Generated** injectable dialkit stylesheet (`bb dialkit:css`); committed. |
 | `scripts/gen-dialkit-css.clj` | Resolves clj-ui-framework (pinned gitlib, or `CLJ_UI_FRAMEWORK`) tokens + dial.css → `resources/dialkit/dial.css`. |
 | `src/xi/ext/dialkit_css.clj` | Compile-time macro inlining `resources/dialkit/dial.css`. |

@@ -71,9 +71,10 @@ Regenerate after editing `picker.cljs`:
 bb picker:build   # squint compile + esbuild → resources/element-picker/picker.js
 ```
 
-`squint-cljs` and `esbuild` are **devDependencies** (build-time only) — xi's
-single-runtime-dep rule is untouched, since the generated `picker.js` is what
-ships.
+The build runs in-process in babashka (`scripts/overlay_build.clj`: squint as a
+bb git dep, esbuild via FFI) — no node, no npm, and nothing left in the repo
+but the generated `picker.js`. The same script builds the design-mode and
+style-editor overlays.
 
 #### squint gotchas (learned porting picker.js → picker.cljs)
 
@@ -121,7 +122,7 @@ XI_CHROME_TOOLS=1 XI_CHROME_BROWSER_URL=http://127.0.0.1:9222 bb serve:restart
 | `src/xi/ext/element_picker_js.clj` | Compile-time macro inlining `picker.js`. |
 | `resources/element-picker/picker.cljs` | Browser-side picker source (squint ClojureScript). |
 | `resources/element-picker/picker.js` | **Generated** self-contained IIFE (squint → esbuild); committed. |
-| `resources/element-picker/squint.edn` | squint config for the picker build. |
+| `scripts/overlay_build.clj` | Shared overlay build (squint → esbuild, in-process). |
 | `test/xi/ext/element_picker_test.cljs` | Unit tests (injection, parsing, install, message building). |
 
 The picker is wired into `xi.ext.chrome-mcp` (`src/xi/ext/chrome_mcp.cljs`), which owns

@@ -142,6 +142,9 @@ src/xi/web/
   views.cljs   — pure views (state → hiccup): home, chat, compose, lightbox
   router.cljs  — route parsing, :route/navigate handler, History API effect
   cache.cljs   — localStorage offline cache (hydrate + persist tap)
+  keymap.cljs  — view- and mode-scoped keyboard shortcuts
+  demo.cljs    — fabricated data for the static `?demo=<view>` render
+                 (see demo.md)
 
 src/xi/client/ws_transport.cljs — shared WS transport (forward+mirror,
                                   reconnect, pending sends)
@@ -151,13 +154,8 @@ resources/public/
   index.html      — shell (loads compiled JS)
   css/style.css   — app styles
   theme.css       — built clj-ui-framework theme (see frontend.md)
+  ui-runtime.js   — clj-ui-framework browser runtime (context menu etc.)
 ```
 
 UI components come from [clj-ui-framework](frontend.md) (`ui.button`,
 `ui.icon`, `ui.spinner`, `ui.lightbox`, `ui.form`, …).
-
-## Known issues
-
-- Deep-link *reload* into a chat URL can occasionally join a room whose
-  resumed history is empty (server-side room-resume race — tracked in
-  [phase-8-cutover.md](phase-8-cutover.md)).

@@ -3,39 +3,8 @@
 Xi runs the same event-driven core in every mode ([architecture.md](architecture.md));
 the server mode adds a WS transport and a room manager on top of it.
 
-## CLI Commands
-
-```
-xi              Standalone TUI. One local room, connected to nothing.
-xi server       Start a WS server + a local TUI client in the same process.
-xi prompt <txt> One-shot: run a single prompt headless, print the response, exit.
-xi join [url]   Connect a TUI client to the latest room on a running server.
-xi create [url] Connect a TUI client to a new room on a running server.
-xi help         Print CLI usage and exit (also --help, -h).
-```
-
-`xi prompt` (aka `xi -p`) is a headless, non-interactive mode for scripting and
-piping — see [prompt-mode.md](prompt-mode.md). For the full CLI reference
-(all commands, flags, and environment variables) see [cli.md](cli.md).
-
-### Flags
-
-```
---port N                Override the default port (7474). Applies to all server commands.
---headless              Server only: run without a local TUI. Clients attach remotely.
---personal-agent-only   Server only: run as a personal assistant with no coding tools.
---stream                prompt only: stream response tokens to stdout as they arrive.
---no-store              prompt only: run ephemerally, leaving no session behind (see prompt-mode.md).
---model NAME            Override the default model.
---session SID           Resume the saved session with this id on launch
-                        (standalone, join, or create). Used by /reload to
-                        rejoin the same session across a server restart.
---debug-events          Write the full event stream as JSONL (see architecture.md).
-```
-
-### Environment
-
-- `XI_PORT` — default port when `--port` is not specified (fallback: 7474)
+Commands, flags and environment variables: [cli.md](cli.md). One-shot
+`xi prompt`: [prompt-mode.md](prompt-mode.md).
 
 ## Modes
 
@@ -296,7 +265,8 @@ cat ~/.config/xi/crash.log   # timestamped label + stack for each caught error
 ```
 src/xi/
   cli.cljs                 — entry point, subcommand routing, per-mode assembly
-  wire.cljs                — EDN encode/decode
+  wire.cljs                — transit (JSON) encode/decode of event maps
+  auth.cljs                — client-key auth store (see client-auth.md)
   server/
     ws.cljs                — Bun WS server, broadcast tap, static file serving
     room_manager.cljs      — rooms as pure event handlers (join/attach/cleanup)

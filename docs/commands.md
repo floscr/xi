@@ -51,20 +51,27 @@ Defined in `xi.commands/built-in-commands`:
 | `/model` | Show or set model |
 | `/resume` | Resume a previous session |
 | `/sessions` | List previous sessions |
+| `/favorites` | List favorited sessions |
+| `/favorite` | Toggle favorite on the current session |
 | `/new` | Start a new session |
 | `/clear` | Clear current session |
+| `/fork` | Split the conversation into a new session |
 | `/truncate` | Summarize conversation to reduce context ([compaction.md](compaction.md)) |
+| `/summary` | Describe what this session is about (cheap model) |
 | `/prompt` | Show system prompt |
-| `/diff` | Diff viewer (`git` \| `staged` \| `unstaged` \| `session-edits` \| `session-git` \| `session-commits` \| `<ref>`; no args → session diff). `session-git` = files edited this session that are still uncommitted (vs the last commit) |
 | `/tree` | Navigate session history ([session-tree.md](session-tree.md)) |
 | `/events` | Show the event log for this session |
 | `/buffers` | Switch buffer view (chat / logs / prompt / diff) |
+| `/cd` | Change working directory |
 | `/debug` | Copy debug info to clipboard |
 | `/reload` | Restart Xi (picks up recompiled code) |
 | `/quit` | Exit Xi |
 
-Extensions add more (e.g. `/plan`, `/commit`, `/kb` — see
-[extensions.md](extensions.md)).
+Extensions add more (e.g. `/plan`, `/commit`, `/diff`, `/kb` — see
+[extensions.md](extensions.md)). `/diff` (diff extension) takes `git` \|
+`staged` \| `unstaged` \| `session-edits` \| `session-git` \|
+`session-commits` \| `<ref>`; no args → session diff. `session-git` = files
+edited this session that are still uncommitted.
 
 ## Extension commands
 

@@ -18,6 +18,7 @@ xi -h
 | `xi prompt <text>` (alias `xi -p`) | One-shot headless run: send a single prompt, print the assistant's response, and exit. No TUI, no server — safe to script, pipe, and run from an agent shell. Reads **stdin** when `<text>` is omitted. See [prompt-mode.md](prompt-mode.md). |
 | `xi join [url]` | Connect a TUI client to the **latest** room on a running server. |
 | `xi create [url]` | Connect a TUI client to a **new** room on a running server. |
+| `xi sessions` | List saved chats (the web sidebar's Recent set) as TSV, then exit. Machine-facing; no TUI, no server. `--all` lists every chat, `--limit N` caps the count, `--json` emits a JSON array. |
 | `xi clients [action]` | Manage the client-key auth store (`~/.config/xi/clients.edn`) from the shell: `list` (default), `pending`, `approve <code>`, `revoke <key-prefix\|name>`. The CLI counterpart to the web pairing banner and the repo's `bb serve:*` tasks — use it to approve pairing codes over ssh on a headless server (no repo checkout needed; a running server admits approvals within ~2s). See [client-auth.md](client-auth.md). |
 | `xi help` | Print the built-in help and exit (also `--help`, `-h`). |
 
@@ -39,9 +40,11 @@ Defaults to `ws://localhost:<port>`.
 | `--personal-agent-only` | `server`, `prompt` | Personal-assistant mode — no coding tools, `web_search` only. In prompt mode the run also gets no AGENTS.md/skills context, only the personal-agent system prompt. |
 | `--agent ID` | `prompt` | Run as a **named personal agent** (implies `--personal-agent-only`). Sessions are stored per agent in `~/.config/xi/personal-agent/<ID>/`, and an optional `agent.edn` there customizes the agent — see [Named agents](#named-agents) below. |
 | `--debug-events` | standalone, `server` | Write the full event stream as JSONL (see [architecture.md](architecture.md)). |
+| `--no-hardened-rules` | all | Drop the non-overridable hardened rules tier (see [rules.md](rules.md)). Unsafe; a launch-time operator override agents cannot set. |
 | `--stream` | `prompt` | Stream response tokens to stdout as they arrive (otherwise buffered until the turn ends). |
 | `--no-store` | `prompt` | Run ephemerally: the turn uses a throwaway `CLAUDE_CONFIG_DIR` that is deleted on exit and the Xi session save is skipped, so it leaves no session anywhere and never appears in any session list. See [prompt-mode.md](prompt-mode.md). |
 | `--json` | `prompt`, `sessions` | prompt: emit `{"session-id": …, "text": …}` instead of raw text — pass the id back via `--session` to continue the conversation programmatically. sessions: emit a JSON array instead of TSV. |
+| `--all` / `--limit N` | `sessions` | List every saved chat, not just recent / cap the number listed. |
 
 ## Named agents
 
@@ -84,17 +87,9 @@ the process by hand — see [bb-client.md](bb-client.md).
 
 ## Environment
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `XI_MODEL` | `claude-opus-4-8` | Default model when `--model` is omitted. |
-| `XI_EFFORT` | `high` | Reasoning effort. |
-| `XI_PORT` | `7474` | Default port when `--port` is omitted. |
-| `XI_CWD` | current dir | Working directory the agent runs in. |
-| `ANTHROPIC_API_KEY` | — | Auth. Alternatively, OAuth tokens in `~/.pi/agent/auth.json`. |
-| `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude CLI config directory. |
-
-See [config.md](config.md) for the full configuration reference (config file,
-TUI options, TLS ports, and more).
+The CLI honours `XI_MODEL`, `XI_EFFORT`, `XI_PORT`, `XI_CWD`,
+`ANTHROPIC_API_KEY` and `CLAUDE_CONFIG_DIR` — see
+[config.md](config.md#environment-variables) for defaults and the full list.
 
 ## Examples
 
