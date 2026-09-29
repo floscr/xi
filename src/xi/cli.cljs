@@ -58,6 +58,7 @@
             [xi.config :as config]
             [xi.env :as env]
             [xi.ext.core :as ext]
+            [xi.holds :as holds]
             [xi.ext.clj-worker :as clj-worker]
             [xi.ext.clj-socket :as clj-socket]
             [xi.ext.manager :as manager]
@@ -140,7 +141,11 @@
    :extra-tool-definitions (fn [] (:tool-definitions (manager/composed manager)))
    :extra-tool-registry    (fn [] (:tool-registry (manager/composed manager)))
    :remove-tools           (fn [] (:remove-tools (manager/composed manager)))
-   :ask!                   ask!})
+   :ask!                   ask!
+   ;; Holds (xi.holds) settle at every turn end; /holds + /release effects.
+   ;; Wired here, not in xi.agent: that ns is shared with the browser build.
+   :turn-finished!         holds/settle-room!
+   :fx                     holds/fx})
 
 (defn- subagent-opts
   "Like tooling-opts, plus the throwaway CLAUDE_CONFIG_DIR fns so a sub-agent's

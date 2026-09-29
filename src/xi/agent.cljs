@@ -22,7 +22,6 @@
    in-flight turn handles, which are runtime resources, not app state)."
   (:require [clojure.string :as str]
             [xi.core.state :as state]
-            [xi.holds :as holds]
             [xi.util :as util]))
 
 ;; ── History folding (pure) ───────────────────────────────────────────────────
@@ -461,10 +460,18 @@
      :remove-tools           0-arg fn → #{tool-name} of builtin tools to
                              hide from the model (extension :remove-tools)
      :ask!                   dialog ask! — partially applied into the gate
-                             ctx as :confirm! (fn [message] → Promise<bool>)"
+                             ctx as :confirm! (fn [message] → Promise<bool>)
+     :turn-finished!         (fn [room-id cwd]) — called when every turn
+                             finishes, fails or is discarded (holds settle)
+     :fx                     extra effect handlers merged in (the /holds
+                             effects). Both come from node-only xi.cli — this
+                             ns is shared with the browser build."
   ([providers] (create-fx providers nil))
-  ([providers {:keys [tool-gate extra-tool-definitions extra-tool-registry remove-tools ask!]}]
+  ([providers {:keys [tool-gate extra-tool-definitions extra-tool-registry remove-tools ask!
+                      turn-finished! fx]}]
   (let [inflight (js/Map.)]
+   (merge
+    fx
     {:provider/start-turn
      (fn [{:keys [dispatch! get-state]} {:keys [room-id cwd] :as payload}]
        (let [provider (resolve-provider providers payload)
@@ -571,15 +578,10 @@
                     (dispatch! {:type :agent/error :room-id room-id
                                 :error {:type "error" :message (str (.-message err))}})
                     (dispatch! {:type :agent/turn-end :room-id room-id}))))
-               ;; Every turn — finished, failed or discarded — drops the
-               ;; room's holds whose resource is back to a releasable state
-               ;; (git: clean index). Staged files keep the git index held.
-               (.finally #(holds/settle-room! room-id cwd))))))
-
-     ;; /holds, /release (xi.commands) — list / force-release the room's
-     ;; holds; the holds are released at turn end above.
-     :holds/list    (:holds/list holds/fx)
-     :holds/release (:holds/release holds/fx)
+               ;; Every turn — finished, failed or discarded — reports back
+               ;; (xi.cli wires it to xi.holds/settle-room!, which drops holds
+               ;; whose resource is releasable again).
+               (.finally #(when turn-finished! (turn-finished! room-id cwd)))))))
 
      :provider/abort
      (fn [_ {:keys [room-id]}]
@@ -595,4 +597,4 @@
      (fn [_ {:keys [room-id]}]
        (when-let [handle (.get inflight room-id)]
          (.delete inflight room-id)
-         ((:abort! handle))))})))
+         ((:abort! handle))))}))))
