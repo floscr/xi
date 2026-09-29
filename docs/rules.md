@@ -116,12 +116,13 @@ overlap):
   `-i`/`--in-place`, sed's `w`/`e` commands, any other flag, and a missing file
   operand don't match and fall to the base `(sh …)` ask.
 - **file management in a repo** — clj `(sh …)` of `mv` / `cp` / `mkdir` /
-  `touch` / `rmdir` / `chmod` whose operands all stay inside the repo or tmp
+  `touch` / `rmdir` whose operands all stay inside the repo or tmp
   (`:within :repo`) → **allow**, as an exact-command grant. Anything reaching
-  outside, into `.git/` / `.xi/`, or the repo root itself asks as usual. `ln`
-  isn't covered: a relative link target resolves against the link's own
-  directory, so the operand check can't vouch for it. `chmod -R` still gets
-  the guarded-command confirm.
+  outside, into `.git/` / `.xi/`, or the repo root itself asks as usual. Not
+  covered: `ln` (a relative link target resolves against the link's own
+  directory, so the operand check can't vouch for it) and `chmod` (a
+  permission change isn't a content change — `+x` makes a written file
+  runnable, `u+s` / `o+r` escalate or expose — so it always confirms).
 - **external MCP tool** — any `mcp__<server>__<tool>` call → **ask**, with an
   informative confirm block (server, tool, and every argument). `[a]lways`
   persists a session allow-rule narrowed to that MCP server + tool. External

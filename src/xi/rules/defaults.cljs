@@ -237,9 +237,12 @@
 (def sh-repo-file-clis
   "File-management CLIs clj `(sh …)` may run without approval when every
    operand stays inside the git repo (or tmp) — see the `:within :repo`
-   default rule. `ln` is deliberately absent: a relative link target resolves
-   against the link's dir, not cwd, so the operand check can't vouch for it."
-  #{"mv" "cp" "mkdir" "touch" "rmdir" "chmod"})
+   default rule. Deliberately absent: `ln` (a relative link target resolves
+   against the link's dir, not cwd, so the operand check can't vouch for it)
+   and `chmod` (a permission change isn't a content change — `+x` turns a
+   written file into something runnable, `u+s`/`o+r` escalate or expose —
+   so it stays confirmed even inside the repo)."
+  #{"mv" "cp" "mkdir" "touch" "rmdir"})
 
 (def default-rules
   "The built-in rule set, in precedence order, each tagged :scope :default.

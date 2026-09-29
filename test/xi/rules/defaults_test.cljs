@@ -192,7 +192,7 @@
 
 (deftest file-clis-within-repo
   (testing "mv/cp/mkdir/… whose operands stay in the repo are allowed"
-    (doseq [cli ["mv" "cp" "mkdir" "touch" "rmdir" "chmod"]]
+    (doseq [cli ["mv" "cp" "mkdir" "touch" "rmdir"]]
       (is (= :allow (action-type {:tool :sh :cli cli :command (str cli " a b")
                                   :operands-within-repo? true}))
           cli)))
@@ -203,7 +203,10 @@
         "no argv (dynamic args) → operands unchecked")
     (is (= :ask (action-type {:tool :sh :cli "ln" :command "ln -s a b"
                               :operands-within-repo? true}))
-        "ln is not covered — its link target resolves against the link's dir")))
+        "ln is not covered — its link target resolves against the link's dir")
+    (is (= :ask (action-type {:tool :sh :cli "chmod" :command "chmod +x a"
+                              :operands-within-repo? true}))
+        "chmod is not covered — a permission change (+x, u+s) isn't a content change")))
 
 (deftest defaults-tagged-scope
   (is (every? #(= :default (:scope %)) defaults/default-rules)))
