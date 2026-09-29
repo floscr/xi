@@ -432,10 +432,11 @@
          (plain-code (truncate-lines stdout 100))]])
      (when error
        [:div {:class ["tool-call-content" "clj-result-error"]}
-        [:pre {:class ["tool-call-code"]} (plain-code (truncate-lines error 100))]
-        (when loc
-          [:div {:class ["clj-result-loc-row"]}
-           [:span {:class ["clj-result-loc"]} loc]])])
+        [:pre {:class ["tool-call-code"]}
+         (plain-code (truncate-lines error 100))
+         (when loc
+           [:span {:class ["clj-result-loc-row"]}
+            [:span {:class ["clj-result-loc"]} loc]])]])
      (when-let [{value :text :keys [data?]} (clj-result/value-display parsed)]
        (let [shown (truncate-lines value 100)]
          [:div {:class ["tool-call-content" "clj-result-value"]}

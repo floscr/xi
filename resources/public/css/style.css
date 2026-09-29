@@ -1892,13 +1892,13 @@ code a:hover,
   border-color: color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
-.clj-result-loc-row { padding-top: var(--size-1); }
+/* The line:col chip sits inside the red panel, under the message. */
+.clj-result-loc-row { display: block; padding-top: var(--size-2); }
 
 .clj-result-loc {
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
   font-size: var(--font-xs);
   color: var(--danger);
-  background: var(--bg-0);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
   border-radius: var(--radius-xs);
   padding: 1px 6px;
