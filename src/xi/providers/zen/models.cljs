@@ -31,8 +31,8 @@
     "muse-spark-1.2" "muse-spark-1.2-contributor-free"})
 
 (def ^:private messages-models
-  #{"claude-fable-5-1" "claude-fable-5" "claude-opus-5" "claude-opus-4-8" "claude-opus-4-7"
-    "claude-opus-4-6" "claude-opus-4-5" "claude-sonnet-5" "claude-sonnet-4-6"
+  #{"claude-fable-5-1" "claude-fable-5" "claude-opus-5-5" "claude-opus-5" "claude-opus-4-8" "claude-opus-4-7"
+    "claude-opus-4-6" "claude-opus-4-5" "claude-sonnet-5-5" "claude-sonnet-5" "claude-sonnet-4-6"
     "claude-sonnet-4-5" "claude-haiku-4-5"
     "qwen3.7-max" "qwen3.7-plus" "qwen3.6-plus" "qwen3.5-plus"})
 
