@@ -67,10 +67,6 @@
             [xi.quick-replies :as quick-replies]
             [xi.rules.store :as rules-store]
             [xi.summary :as summary]
-            [xi.providers.anthropic :as anthropic]
-            [xi.providers.ollama :as ollama]
-            [xi.providers.openai.codex :as openai-codex]
-            [xi.providers.zen :as zen]
             [xi.server.room-manager :as rm]
             [xi.server.ws :as ws]
             [xi.session :as session]
@@ -82,10 +78,10 @@
             ["node:worker_threads" :as wt]))
 
 (def providers
-  {:anthropic anthropic/provider
-   :ollama ollama/provider
-   :openai openai-codex/provider
-   :zen    zen/provider})
+  "Provider id → provider map, derived from the xi.config/providers vector
+   (declared there like extensions). Insertion order is preserved (array-map),
+   so model listing follows the config's picker order."
+  (into {} (map (juxt :id identity)) config/providers))
 
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────
 ;;

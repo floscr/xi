@@ -1,5 +1,6 @@
 (ns xi.config
-  "Root config — declares which extensions load on each surface.
+  "Root config — declares which extensions and providers load on each
+   surface.
 
    One file for every build: the node builds read it with the :node
    reader feature, the browser build with :browser (set per build via
@@ -53,7 +54,11 @@
         [xi.ext.terminal-title :as terminal-title]
         [xi.ext.treesitter.core :as treesitter]
         [xi.ext.web :as web]
-        [xi.ext.worktree.core :as worktree]]
+        [xi.ext.worktree.core :as worktree]
+        [xi.providers.anthropic :as anthropic]
+        [xi.providers.ollama :as ollama]
+        [xi.providers.openai.codex :as openai-codex]
+        [xi.providers.zen :as zen]]
        :browser
        [[xi.ext.canvas-review.web :as canvas-review-web]
         [xi.ext.diff.web :as diff-web]
@@ -146,6 +151,18 @@
       skills/create
       snippets/extension
       events/create]))
+
+#?(:node
+   (def providers
+     "Providers available on the node surfaces, in model-picker order. Each
+      entry is a provider map (:id, :start-turn!, optional :list-models!);
+      xi.cli derives the id → provider lookup from this vector. Routing by
+      model name stays in xi.util/provider-for-model (shared with the
+      browser build)."
+     [anthropic/provider
+      ollama/provider
+      openai-codex/provider
+      zen/provider]))
 
 #?(:node
    (def client
