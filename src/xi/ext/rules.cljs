@@ -46,17 +46,23 @@
    present, the same target path/command. Used when the user answers [a]lways on
    an :ask rule so the same call passes silently next time."
   [req]
-  (let [m (if (= :mcp (:tool req))
-            (cond-> {:tool :mcp}
-              (:mcp-server req) (assoc :mcp-server (:mcp-server req))
-              (:mcp-tool req)   (assoc :mcp-tool (:mcp-tool req)))
+  (let [m (case (:tool req)
+            :mcp (cond-> {:tool :mcp}
+                   (:mcp-server req) (assoc :mcp-server (:mcp-server req))
+                   (:mcp-tool req)   (assoc :mcp-tool (:mcp-tool req)))
+            ;; a network grant covers the host, not one exact URL
+            :net (cond-> {:tool :net}
+                   (:host req) (assoc :host (:host req)))
             (cond-> {:tool (:tool req)}
               ;; :other lumps every extension tool together — pin the exact
               ;; tool so [a]lways on spawn_subagent can't allow all of them.
               (and (= :other (:tool req)) (:tool-name req))
               (assoc :tool-name (:tool-name req))
               (:path req)    (assoc :path (:path req))
-              (:command req) (assoc :command (:command req))))]
+              (:command req) (assoc :command (:command req))))
+        ;; a grant to one user extension never extends to the agent or to
+        ;; other extensions
+        m (cond-> m (:extension req) (assoc :extension (:extension req)))]
     {:match m :action {:type :allow}}))
 
 (defn- allow-repo-rule-from-req
@@ -68,7 +74,9 @@
   (when-let [repo (:repo req)]
     (let [t    (:tool req)
           tool (if (#{:write :edit} t) #{:write :edit} t)]
-      {:match {:tool tool :repo repo} :action {:type :allow}})))
+      {:match  (cond-> {:tool tool :repo repo}
+                 (:extension req) (assoc :extension (:extension req)))
+       :action {:type :allow}})))
 
 ;; ── Recommend-a-rule flow ─────────────────────────────────────────────────────
 
@@ -165,8 +173,11 @@
    command; file tools show the path; other named tools show the tool name +
    arguments; anything else names the tool kind."
   [req]
-  (let [{:keys [tool tool-name path command mcp-server mcp-tool arguments]} req]
+  (let [{:keys [tool tool-name path command mcp-server mcp-tool arguments host]} req]
     (cond
+      (= :net tool)
+      (str "Network request — approve?\n\nHost: " host "\n\n" command)
+
       (= :mcp tool)
       (str "MCP tool call — approve?\n\n"
            "Server: " mcp-server "\n"
@@ -186,6 +197,14 @@
 
       :else   (str "Rule: " (name tool)))))
 
+(defn- with-requester
+  "Name the user extension behind an xi.api.* request at the top of its
+   confirm text — the user must know it isn't the agent asking."
+  [req text]
+  (if-let [ext (:extension req)]
+    (str "[extension " (name ext) "] " text)
+    text))
+
 (defn- ask-diff
   "For a guarded write/edit, the diff the call would apply ({:path :text}), so
    the confirm dialog shows exactly what is being approved. nil for other tools
@@ -203,15 +222,22 @@
         {:path path :text text}))))
 
 (defn- apply-action
-  "Apply a matched rule's action to `tool-call`. Returns a tool-call (allow),
-   nil (block), an intercepted result map, or a Promise of any of those."
-  [{:keys [type message options]} tool-call req {:keys [confirm! dispatch! room-id]}]
+  "Apply a matched rule's action to decision request `req` → a decision (or a
+   Promise of one, when it asks):
+     {:decision :allow}             an :allow rule (force-allow)
+     {:decision :approved}          an :ask answered yes / always / repo
+     {:decision :unanswered}        an :ask with no confirm! to raise it
+     {:decision :deny :message m}   a :deny rule, or an :ask answered no
+                                    (m nil) / with recommend-a-rule
+     {:decision :nudge :message m}  a :nudge rule
+     {:decision :pass}              an unknown action type"
+  [{:keys [type message options]} req {:keys [confirm! dispatch! room-id]}]
   (case type
-    :allow (ext/allow tool-call)
-    :deny  (deny-result message)
-    :nudge (nudge-result message)
+    :allow {:decision :allow}
+    :deny  {:decision :deny :message (or message "Blocked by rule.")}
+    :nudge {:decision :nudge :message (or message "")}
     :ask   (if confirm!
-             (-> (confirm! (or message (ask-message req))
+             (-> (confirm! (with-requester req (or message (ask-message req)))
                            (let [diff (ask-diff req)]
                              (cond-> {:options (recommend-options options)}
                                diff (assoc :diff diff))))
@@ -219,7 +245,7 @@
                           (cond
                             (= ans :recommend)
                             (do (spawn-recommend! dispatch! room-id req message)
-                                (deny-result recommend-blocked-msg))
+                                {:decision :deny :message recommend-blocked-msg})
 
                             ;; [a]lways → persist a narrow path/command allow-rule
                             (= ans :always)
@@ -228,7 +254,7 @@
                                               :room-id room-id
                                               :scope   :session
                                               :rule    (allow-rule-from-req req)}))
-                                tool-call)
+                                {:decision :approved})
 
                             ;; [r] allow-repo → persist a repo-scoped allow-rule
                             ;; (falls back to a one-time allow when not in a repo)
@@ -239,29 +265,53 @@
                                               :room-id room-id
                                               :scope   :session
                                               :rule    rule}))
-                                tool-call)
+                                {:decision :approved})
 
-                            ans   tool-call
-                            :else nil))))
-             tool-call)
-    ;; unknown action type: allow through unchanged
-    tool-call))
+                            ans   {:decision :approved}
+                            :else {:decision :deny :message nil}))))
+             {:decision :unanswered})
+    {:decision :pass}))
+
+(defn- decide*
+  "`decide!`, but synchronous unless it has to ask (value or Promise)."
+  [req {:keys [get-state room-id] :as ctx}]
+  (if-let [msg (store/hard-block-request req)]
+    {:decision :deny :message msg}
+    (let [state   (when get-state (get-state))
+          ruleset (store/ordered-rules state room-id (:effective-cwd req))
+          req     (store/enrich-request req ruleset)
+          rule    (rules/first-match ruleset req)]
+      (if rule
+        (apply-action (:action (rules/canonical rule)) req ctx)
+        {:decision :pass}))))
+
+(defn decide!
+  "Decide a decision request (store/decision-request for tool calls,
+   store/request for anything else — e.g. xi.api.* calls from user
+   extensions) through the rules engine: the immutable hard-block first, then
+   the first matching rule's action. → Promise of a decision (see
+   apply-action), or {:decision :pass} when no rule matches. ctx: {:get-state
+   :room-id :confirm! :dispatch!}."
+  [req ctx]
+  (js/Promise.resolve (decide* req ctx)))
+
+(defn- then-value
+  "Apply f to v, or to what Promise v resolves to."
+  [v f]
+  (if (instance? js/Promise v) (.then v f) (f v)))
 
 (defn tool-gate
-  "The rules tool-gate. Runs the immutable hard-block first, then matches the
-   first data rule and applies its action. No match → the call passes through
-   unchanged so the remaining gates still run."
-  [tool-call {:keys [get-state room-id cwd] :as ctx}]
-  (or
-   ;; 1. immutable, non-overridable
-   (store/hard-block tool-call ctx)
-   ;; 2. data rules, in precedence order
-   (let [state   (when get-state (get-state))
-         ruleset (store/ordered-rules state room-id cwd)
-         req     (store/enrich-request (store/decision-request tool-call ctx) ruleset)
-         rule    (rules/first-match ruleset req)]
-     (if rule
-       (apply-action (:action (rules/canonical rule)) tool-call req ctx)
+  "The rules tool-gate: `decide!` on the call, mapped back to the gate
+   contract. :allow force-allows (short-circuiting the remaining gates);
+   approved/unmatched/unanswered calls pass on to the remaining gates."
+  [tool-call ctx]
+  (then-value
+   (decide* (store/decision-request tool-call ctx) ctx)
+   (fn [{:keys [decision message]}]
+     (case decision
+       :allow (ext/allow tool-call)
+       :deny  (when message (deny-result message))
+       :nudge (nudge-result message)
        tool-call))))
 
 ;; ── Rule mutation (runtime scopes) ───────────────────────────────────────────

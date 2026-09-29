@@ -259,6 +259,22 @@
     {:match  {:tool :bash :command memory-path-re}
      :action {:type :nudge :message memory-note}}]
 
+   ;; A user extension never touches credential paths (.ssh, .gnupg,
+   ;; .config/xi — client keys + ext/*.env secrets — .netrc, …; see
+   ;; xi.paths/HIDDEN_PATHS): reading one and sending it out through an
+   ;; approved host would leak it.
+   ::extension-credentials
+   [{:match  {:tool #{:read :ls :write :edit} :extension true :credential :read}
+     :action {:type :deny
+              :message "Blocked: extensions may not read or write credential paths."}}]
+
+   ;; A user extension (xi.api.fs) reads/writes its own data dir freely —
+   ;; before plan-mode and the write gates: the dir is outside every repo, and
+   ;; plan mode restricts the agent's work, not an extension's own state.
+   ::extension-data
+   [{:match  {:tool #{:read :write :edit :ls} :extension true :extension-data :own}
+     :action {:type :allow}}]
+
    ;; Plan mode (read-only): allow the plan file, deny other writes/edits and any
    ;; mutating bash. Must precede the write/bash gates so plan-mode denies win
    ;; over the softer ask gates; reads/grep/find/ls and read-only bash fall
@@ -323,6 +339,21 @@
    [{:match  {:tool-name "spawn_subagent"}
      :action {:type :ask :options [:yes :no :always]}}]
 
+   ;; Shell-outs from user extensions (xi.api.sh) ask for every command —
+   ;; placed before clj-sh on purpose: its read-only auto-run list is only safe
+   ;; with clj's own confinement (confined `rm` helper, git push/clean
+   ;; escalation, worker path limits), which a real extension spawn doesn't
+   ;; have. [a]lways pins the exact command to that extension.
+   ::extension-sh
+   [{:match  {:tool :sh :extension true}
+     :action {:type :ask :options [:yes :no :always]}}]
+
+   ;; Network requests from user extensions (xi.api.http) — every host asks;
+   ;; [a]lways persists a session allow-rule pinned to extension + host.
+   ::net-confirm
+   [{:match  {:tool :net}
+     :action {:type :ask :options [:yes :no :always]}}]
+
    ;; clj (sh …) shell-outs (:sh) — "disallow * then soften", scoped to :sh so
    ;; the real bash tool is untouched. Read-only/rm CLIs auto-run; every other
    ;; CLI hits the base ask (the clj gate turns that into its per-CLI approval
@@ -371,12 +402,16 @@
    file's `:defaults` replaces this vector."
   [::tmp-cleanup
    ::no-auto-memory
+   ::extension-credentials
+   ::extension-data
    ::plan-mode
    ::write-gates
    ::bash-guards
    ::server-control
    ::mcp-confirm
    ::subagent-confirm
+   ::extension-sh
+   ::net-confirm
    ::clj-sh])
 
 (def default-rules

@@ -216,32 +216,6 @@
   (let [task (not-empty (str/trim (str task)))]
     (str/join " " (into ["bb"] (if task (into [task] (map str args)) ["tasks"])))))
 
-(defn hard-block
-  "Immutable, non-overridable check: deny any tool call that would write a
-   rules file. Returns an intercepted deny result, or nil to continue. This is
-   deliberately imperative (not a data rule) — it is security-critical and must
-   never be shadowed or disabled."
-  [tool-call {:keys [cwd]}]
-  (let [{:keys [name arguments]} tool-call
-        kind (tool-kind name)]
-    (case kind
-      (:write :edit)
-      (let [p (or (:path arguments) (:file_path arguments))]
-        (when (and p (re-find rules-file-re (expand-path cwd (str p))))
-          (deny-result hard-block-msg)))
-
-      :bash
-      (let [c (str (:command arguments))]
-        (when (and (re-find rules-file-loose-re c) (re-find write-token-re c))
-          (deny-result hard-block-msg)))
-
-      :clj
-      (let [c (str (:code arguments))]
-        (when (and (re-find rules-file-loose-re c) (re-find write-token-re c))
-          (deny-result hard-block-msg)))
-
-      nil)))
-
 ;; ── Decision request ───────────────────────────────────────────────────────
 
 (defn- parse-mcp [name]
@@ -274,6 +248,40 @@
       code      (assoc :command code)
       (seq arguments) (assoc :arguments arguments)
       (= kind :mcp) (merge (parse-mcp name)))))
+
+(defn request
+  "A decision request for a call that isn't a tool call — xi.api.* from user
+   extensions. `m` carries :tool plus whatever it targets (:path :command :cli
+   :argv :host :extension …); this fills :effective-cwd (m's own, else ctx's
+   :cwd), :repo, and the room's ext :state, like decision-request does."
+  [m {:keys [cwd get-state room-id]}]
+  (let [eff (or (:effective-cwd m) cwd (.cwd js/process))
+        p   (:path m)]
+    (merge {:effective-cwd eff
+            :repo          (git-root (if p (path/dirname (expand-path eff (str p))) eff))
+            :state         (when (and get-state room-id)
+                             (get-in (get-state) [:rooms room-id :ext]))}
+           m)))
+
+(defn hard-block-request
+  "Immutable, non-overridable check: a deny message when decision request
+   `req` would write a rules file — a write/edit targeting one, or a shell-ish
+   command (bash, clj code, (sh …)) naming one next to a write token — else
+   nil. Deliberately imperative (not a data rule): it is security-critical and
+   must never be shadowed or disabled."
+  [{:keys [tool path command effective-cwd]}]
+  (when (case tool
+          (:write :edit)   (and path (re-find rules-file-re (expand-path effective-cwd (str path))))
+          (:bash :clj :sh) (let [c (str command)]
+                             (and (re-find rules-file-loose-re c) (re-find write-token-re c)))
+          false)
+    hard-block-msg))
+
+(defn hard-block
+  "`hard-block-request` for a tool call: an intercepted deny result, or nil."
+  [tool-call ctx]
+  (when-let [msg (hard-block-request (decision-request tool-call ctx))]
+    (deny-result msg)))
 
 (defn outside-cwd?
   "True when target `path` resolves outside both the effective `cwd` and the OS
@@ -400,7 +408,9 @@
    `:path` rules, `:outside-cwd?` for `:outside` rules, `:credential-path?` for
    `:credential` rules, `:nodes` (tree-sitter) for `:node` rules,
    `:operands-within-repo?` for `:within` rules (from a literal `:sh` `:argv`),
-   and `:xi-rules-file?` for `:xi-rules-file` rules."
+   `:xi-rules-file?` for `:xi-rules-file` rules, and `:own-data?` for
+   `:extension-data` rules (symlink-canonical, so a link out of the data dir
+   doesn't count)."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (paths/real-resolve (:effective-cwd req) (str (:path req))))]
@@ -417,7 +427,11 @@
       (assoc :operands-within-repo? (operands-within-repo? (:effective-cwd req)
                                                            (:repo req) (:argv req)))
       (rules/needs-xi-rules-file? ruleset)
-      (assoc :xi-rules-file? (xi-rules-file-change? req)))))
+      (assoc :xi-rules-file? (xi-rules-file-change? req))
+      (and (:path req) (:extension req) (rules/needs-extension-data? ruleset))
+      (assoc :own-data? (paths/path-within?
+                         (paths/real-resolve (:effective-cwd req) (str (:path req)))
+                         (paths/real-resolve "/" (paths/extension-data-dir (:extension req))))))))
 
 ;; ── Ordered ruleset ─────────────────────────────────────────────────────────
 

@@ -40,6 +40,24 @@
     (testing "a request without a tool name never matches a :tool-name rule"
       (is (not (rules/matches? {:match {:tool-name "spawn_subagent"}} {:tool :sh}))))))
 
+(deftest match-extension-and-host
+  (let [req {:tool :net :extension "pushover" :host "api.pushover.net"}]
+    (testing ":extension true matches any extension request, never a tool call"
+      (is (rules/matches? {:match {:extension true}} req))
+      (is (not (rules/matches? {:match {:extension true}} {:tool :net :host "x"}))))
+    (testing ":extension by name / glob / set"
+      (is (rules/matches? {:match {:extension "pushover"}} req))
+      (is (rules/matches? {:match {:extension #{"a" "pushover"}}} req))
+      (is (not (rules/matches? {:match {:extension "notes"}} req))))
+    (testing ":host glob / set / regex"
+      (is (rules/matches? {:match {:host "*.pushover.net"}} req))
+      (is (rules/matches? {:match {:host #{"api.pushover.net"}}} req))
+      (is (rules/matches? {:match {:host #"pushover\.net$"}} req))
+      (is (not (rules/matches? {:match {:host "example.com"}} req))))
+    (testing ":extension-data :own reads the store-computed flag"
+      (is (rules/matches? {:match {:extension-data :own}} (assoc req :own-data? true)))
+      (is (not (rules/matches? {:match {:extension-data :own}} req))))))
+
 (deftest match-path-glob-and-regex
   (is (rules/matches? {:match {:tool :write :path "*.sh"}}
                       {:tool :write :path "deploy.sh"}))

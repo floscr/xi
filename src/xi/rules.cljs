@@ -5,6 +5,9 @@
 
      {:match  {:tool #{:write :edit}   ; keyword or set of tool kinds
                :tool-name \"spawn_subagent\" ; raw tool name (glob/exact, regex, set)
+               :extension \"notes\"        ; user extension behind an xi.api.* call (true = any)
+               :extension-data :own      ; path inside that extension's data dir (opt-in)
+               :host \"api.example.com\"   ; :net request host (glob/exact, regex)
                :path #\"\\.sh$\"          ; regex OR glob string on the target path
                :command #\"\\brm\\b\"       ; regex OR substring on the bash command
                :repo \"config/dotfiles\"  ; substring of the effective repo root
@@ -118,6 +121,28 @@
     (contains? spec tool-name)
     (match-name spec tool-name)))
 
+(defn- match-extension
+  "Extension spec for requests a user extension makes through xi.api.*:
+   `true` → any extension, else like `:tool-name` (string glob/exact, regex,
+   set). Tool calls carry no :extension, so an `:extension` rule never
+   matches them."
+  [spec ext]
+  (cond
+    (nil? spec)  true
+    (nil? ext)   false
+    (true? spec) true
+    :else        (match-tool-name spec ext)))
+
+(defn- match-extension-data
+  "Own-data-dir match (opt-in). `:extension-data :own` matches when the target
+   path resolves inside the requesting extension's data dir — the store
+   computes `:own-data?` only when such a rule is in play."
+  [spec req]
+  (or (nil? spec)
+      (case spec
+        :own (boolean (:own-data? req))
+        false)))
+
 (defn- match-when
   "Submap match against room ext `state`: every k/v in `spec` must match the
    value in `state`. A map value matches recursively (nested submap), so a rule
@@ -224,6 +249,9 @@
   (let [m (:match rule)]
     (and (match-tool       (:tool m)       (:tool req))
          (match-tool-name  (:tool-name m)  (:tool-name req))
+         (match-extension  (:extension m)  (:extension req))
+         (match-extension-data (:extension-data m) req)
+         (match-tool-name  (:host m)       (:host req))
          (match-cli        (:cli m)        (:cli req))
          (match-path*      (:path m)       req)
          (match-command    (:command m)    (:command req))
@@ -278,6 +306,12 @@
    it matched, not the CLI at large."
   [rule]
   (boolean (some #(some? (get-in rule [:match %])) [:command :within])))
+
+(defn needs-extension-data?
+  "True when any rule carries an `:extension-data` matcher, so the store should
+   resolve the target path and populate `:own-data?` on the request."
+  [rules]
+  (boolean (some #(some-> (canonical %) :match :extension-data) rules)))
 
 (defn needs-credential?
   "True when any rule carries a `:credential` matcher, so the store should

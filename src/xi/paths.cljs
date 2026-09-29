@@ -64,6 +64,14 @@
             abs
             (recur parent (node-path/join (node-path/basename probe) rest-part))))))))
 
+(defn extension-data-dir
+  "The data directory a user extension may freely read and write:
+   $XDG_DATA_HOME (else ~/.local/share) /xi/extensions/<id>."
+  [id]
+  (node-path/join (or (not-empty (aget js/process.env "XDG_DATA_HOME"))
+                      (node-path/join (os/homedir) ".local" "share"))
+                  "xi" "extensions" (name id)))
+
 (defn hidden-paths
   "Absolute hidden paths (no existence check — usable for pure gating)."
   []
