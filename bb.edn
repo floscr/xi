@@ -322,6 +322,18 @@
    :task (shell "nix-build" "native/xi-treesitter"
                 "-o" (str (System/getProperty "user.home") "/.config/xi/treesitter"))}
 
+  claude:update
+  {:doc "Pin the flake's Claude CLI to the latest upstream release (or `bb claude:update <version>`): rewrites nix/claude-code-manifest.json. Then `direnv reload` + `bb serve:restart`."
+   :task (let [base "https://downloads.claude.ai/claude-code-releases"
+               version (or (first *command-line-args*)
+                           (clojure.string/trim
+                            (:out (shell {:out :string} "curl" "-fsSL" (str base "/latest")))))
+               manifest (:out (shell {:out :string} "curl" "-fsSL"
+                                     (str base "/" version "/manifest.zst.json")))]
+           (spit "nix/claude-code-manifest.json" manifest)
+           (println (str "Pinned Claude CLI " version " → nix/claude-code-manifest.json"))
+           (println "Next: direnv reload (or: nix build .#claude-code), then bb serve:restart"))}
+
   demo:key
   {:doc "Print the demo client key + the localStorage snippet to install it"
    :task (let [k "demo00000000000000000000000000000000000000000000000000000000demo"]

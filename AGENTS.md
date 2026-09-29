@@ -62,6 +62,7 @@ The `@anthropic-ai/claude-agent-sdk` is **not** a dependency of Xi itself — it
 Runner notes:
 
 - The runner resolves the `claude` CLI from `PATH` (override with `XI_CLAUDE_CLI_PATH`); the SDK's bundled generic-linux binary does not work on NixOS.
+- **The Claude CLI comes from the repo's nix dev shell, not the system.** `flake.nix` builds nixpkgs' `claude-code` with the upstream release manifest pinned in `nix/claude-code-manifest.json` (the CLI gates new model ids on its own version, and nixpkgs lags upstream). `.envrc` (`use flake`) puts it on `PATH`, so `bb serve` / `bb dev` started from a direnv-loaded shell (incl. the tmux panes) hand the right `claude` to the runner. On a "Claude Code X does not support this model; version Y or newer is required" error: `bb claude:update` (rewrites the manifest to the latest release), `direnv reload`, then `bb serve:restart`.
 - `XI_CLAUDE_RUNNER_PATH` overrides the runner script location (defaults to `runner/runner.mjs` next to `target/main.js`).
 - SDK query lifecycle quirks (`.close()` after completion, `.interrupt()` then `.close()` on abort, single terminal frame) are handled inside `runner/runner.mjs`.
 

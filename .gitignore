@@ -3,6 +3,8 @@ node_modules/
 .demo-home/
 .shadow-cljs/
 .cpcache/
+.direnv/
+result
 *.js.map
 resources/public/js/
 resources/public/mkcert-rootCA.crt
