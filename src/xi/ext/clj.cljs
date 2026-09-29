@@ -36,8 +36,8 @@
             [sci.core :as sci]
             [xi.ext.clj-process :as proc]
             [xi.ext.clj-socket :as sock]
-            [xi.ext.git-lock :as git-lock-ext]
             [xi.git-lock :as git-lock]
+            [xi.holds :as holds]
             [xi.rules :as rules]
             [xi.rules.defaults :as rules-defaults]
             [xi.rules.store :as rules-store]
@@ -189,7 +189,7 @@
 
 (defn- git-lock-gate!
   "Before an index-mutating git op (argv without \"git\") in `dir`: block
-   until this room holds the cross-room git staging lock (xi.git-lock) —
+   until this room holds the git-index hold (xi.holds, xi.git-lock) —
    the main thread polls, posting status lines while another room holds it.
    Throws when the main thread refuses (timeout, broad add sweeping another
    room's files). No-op for read-only git and outside a worker."
@@ -202,11 +202,13 @@
         (throw (ex-info (if (seq msg) msg "git lock: denied") {}))))))
 
 (defn- git-lock-settle!
-  "After a git op: drop this room's staging lease if the index is clean."
+  "After a git op: drop this room's git-index hold if the index is clean."
   [opts dir argv]
-  (when (git-lock/locking? (git-lock/parse-argv argv))
-    (try (git-lock/settle! dir {:pid js/process.pid :room (:room-id @opts)})
-         (catch :default _ nil))))
+  (let [op (git-lock/parse-argv argv)]
+    (when (git-lock/locking? op)
+      (try (holds/settle! git-lock/hold ((:key git-lock/hold) op dir)
+                          {:pid js/process.pid :room (:room-id @opts)})
+           (catch :default _ nil)))))
 
 (defn- resolve-read
   "Canonicalize p against cwd; throw on credential paths and on reads that
@@ -1181,11 +1183,12 @@
           (.catch (fn [_] (settle! nil)))))))
 
 (defn- on-git-gate-request
-  "Worker → main git staging-lock gate: the worker is about to run an
-   index-mutating git op and is blocked (Atomics.wait) on the request's SAB.
-   Wait for the room's lease (xi.ext.git-lock — async polling, status lines
-   while another room holds it), then write status 1 to proceed or status 2
-   + the refusal text."
+  "Worker → main git-index hold: the worker is about to run an index-mutating
+   git op and is blocked (Atomics.wait) on the request's SAB. Acquire the
+   room's hold (xi.holds — refuse hook, async polling, status lines while
+   another room holds it), then write status 1 to proceed or status 2 + the
+   refusal text. Proceeds when the room's gate ctx is unknown (no gated clj
+   call seen yet)."
   [^js m]
   (let [sab     (.-sab m)
         i32     (js/Int32Array. sab 0 2)
@@ -1199,7 +1202,13 @@
                       (js/Atomics.store i32 0 2))
                     (js/Atomics.store i32 0 1))
                   (js/Atomics.notify i32 0))]
-    (-> (git-lock-ext/request-for-room-key! (.-roomKey m) (.-cwd m) (js->clj (.-argv m)))
+    (-> (if-let [ctx (get @gate-ctxs (.-roomKey m))]
+          (-> (holds/acquire! git-lock/hold
+                              [(git-lock/parse-argv (js->clj (.-argv m)))]
+                              (assoc ctx :cwd (.-cwd m)))
+              ;; a fn, not the bare keyword — Promise.then ignores non-fns
+              (.then (fn [r] (:error r))))
+          (js/Promise.resolve nil))
         (.then settle!)
         (.catch (fn [e] (settle! (str "git lock: " (.-message e))))))))
 

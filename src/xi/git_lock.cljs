@@ -1,29 +1,29 @@
 (ns xi.git-lock
-  "Cross-room git staging lock.
+  "Cross-room git staging lock — the `git-index` hold (see xi.holds).
 
    Rooms working in the same repo share one git index, so one room's
-   `git add` + another room's `git commit` bundles unrelated work. The lock
+   `git add` + another room's `git commit` bundles unrelated work. The hold
    serializes index-mutating git ops: the first room to touch the index holds
-   a lease until the index is clean again (it committed, reset, or unstaged);
+   it until the index is clean again (it committed, reset, or unstaged);
    every other room's index-mutating op waits. Read-only git (status, diff,
    log, …) never waits.
 
-   The lease is a file, `<git-dir>/xi-staging.lock` (JSON), so it is shared
-   by every Xi process on the machine (:7474, :7475, standalone TUIs) and is
-   per-worktree (each worktree has its own git dir + index). The owner is
-   {:pid :room} — a room key alone isn't unique across processes.
-
-   A lease is stale (stealable) when its process is dead, or when the index
+   The lease lives at `<git-dir>/xi-staging.lock`, so it is per-worktree
+   (each worktree has its own git dir + index); the hold's key is the
+   worktree's toplevel. Beyond a dead owner, a lease is stale when the index
    has had nothing staged for STALE_CLEAN_MS (the holder committed/unstaged
    outside a tracked op, e.g. the user did it in a terminal).
 
-   Pure classification (parse-argv, locking?, broad-add?, …) up top; the
-   impure edge (git + lock file, sync) below — sync so the clj worker thread
-   can call it too; only wait-acquire! is async (main thread)."
+   Broad adds (`add -A/./-u`, `commit -a`) that would sweep up files another
+   room edited are refused outright — the hold's `:refuse` hook.
+
+   Pure classification (parse-argv, locking?, broad-add?, …) up top; the git
+   edge (sync, so the clj worker thread can call it too) and the hold below."
   (:require ["node:child_process" :as cp]
-            ["node:fs" :as fs]
             ["node:path" :as node-path]
             [clojure.string :as str]
+            [xi.fx :as fx]
+            [xi.holds.lease :as lease]
             [xi.util :as util]))
 
 ;; ── Classification (pure) ────────────────────────────────────────────────────
@@ -96,7 +96,7 @@
 
 (defn tool-call-argvs
   "Git argvs (without \"git\") a tool call will run, for the tools that run
-   git directly. The clj tool is gated at runtime inside its worker instead."
+   git directly. The clj tool is held at runtime inside its worker instead."
   [{:keys [name arguments]}]
   (let [files (map str (:files arguments))]
     (case (some-> name util/strip-mcp-prefix str/lower-case)
@@ -118,18 +118,12 @@
    release. Long enough to cover the gap between acquiring and staging."
   60000)
 
-(defn stale?
-  "Pure staleness check for a lock map. ctx: {:now ms :staged [paths]
-   :alive? (fn [pid] → bool)}."
-  [lock {:keys [now staged alive?]}]
-  (or (not (alive? (:pid lock)))
-      (and (empty? staged)
-           (> (- now (or (:touched-at lock) 0)) STALE_CLEAN_MS))))
-
-(defn same-owner? [lock owner]
-  (and (some? lock)
-       (= (:pid lock) (:pid owner))
-       (= (str (:room lock)) (str (:room owner)))))
+(defn stale-clean?
+  "Git-specific staleness (on top of the lease's dead-pid check): nothing
+   staged for STALE_CLEAN_MS. ctx: {:now ms :staged [paths]}."
+  [lease {:keys [now staged]}]
+  (and (empty? staged)
+       (> (- now (or (:touched-at lease) 0)) STALE_CLEAN_MS)))
 
 (defn foreign-sweep
   "Files a broad add would sweep up that other rooms edited. `dirty` is a set
@@ -142,14 +136,7 @@
                  {:label label :files (vec (distinct hit))})))
        vec))
 
-(defn describe-holder
-  "Human label for a lock holder."
-  [lock]
-  (str "\"" (or (not-empty (:label lock)) (:room lock) "?") "\""
-       (when (not= (:pid lock) js/process.pid)
-         (str " (another Xi process, pid " (:pid lock) ")"))))
-
-;; ── Impure edge: git + lock file (sync) ──────────────────────────────────────
+;; ── Git edge (sync) ──────────────────────────────────────────────────────────
 
 (def LOCK_NAME "xi-staging.lock")
 
@@ -190,119 +177,74 @@
         #{}))
     #{}))
 
-(defn- lock-path [gd] (node-path/join gd LOCK_NAME))
+(defn lease-path
+  "The lease file for the worktree at `top`, or nil outside a repo."
+  [top]
+  (some-> (git-dir top) (node-path/join LOCK_NAME)))
 
-(defn- read-lock [path]
-  (try
-    (js->clj (js/JSON.parse (fs/readFileSync path "utf8")) :keywordize-keys true)
-    (catch :default _ nil)))
+;; ── The git-index hold ───────────────────────────────────────────────────────
 
-(defn- write-lock! [path lock]
-  (fs/writeFileSync path (js/JSON.stringify (clj->js lock))))
+(def ^:private DEFAULT_WAIT_SECS 600)
 
-(defn- create-lock!
-  "Atomically create the lock file; false when it already exists."
-  [path lock]
-  (try
-    (let [fd (fs/openSync path "wx")]
-      (fs/writeSync fd (js/JSON.stringify (clj->js lock)))
-      (fs/closeSync fd)
-      true)
-    (catch :default _ false)))
+(defn- wait-ms []
+  (let [v (js/parseInt (aget js/process.env "XI_GIT_LOCK_WAIT_SECS") 10)]
+    (* 1000 (if (js/isNaN v) DEFAULT_WAIT_SECS v))))
 
-(defn- rm-lock! [path]
-  (try (fs/unlinkSync path) (catch :default _ nil)))
+(defn- staged-summary [staged]
+  (when (seq staged)
+    (str " (staged: " (str/join ", " (take 5 staged))
+         (when (> (count staged) 5) (str ", +" (- (count staged) 5) " more"))
+         ")")))
 
-(defn- pid-alive? [pid]
-  (try (js/process.kill pid 0) true
-       (catch :default e (= "EPERM" (.-code e)))))
+(defn- other-room-edits
+  "[{:label :files [abs]}] for every other room in this process."
+  [st room-id]
+  (->> (:rooms st)
+       (keep (fn [[rid room]]
+               (when (and (not= rid room-id) (:cwd room))
+                 {:label (lease/room-label room)
+                  :files (mapv #(node-path/resolve (:cwd room) %)
+                               (fx/session-edited-files room (:cwd room)))})))))
 
-(defn holder
-  "The current lock map for the repo at `cwd`, or nil."
-  [cwd]
-  (some-> (git-dir cwd) lock-path read-lock))
+(defn- broad-add-refusal
+  "Refuse hook: error text when a broad add would stage files another room
+   edited, else nil."
+  [ops {:keys [get-state room-id cwd]}]
+  (when (and get-state (some broad-add? ops))
+    (let [dir  (op-cwd cwd (first (filter broad-add? ops)))
+          hits (foreign-sweep (dirty-files dir) (other-room-edits (get-state) room-id))]
+      (when (seq hits)
+        (str "git lock: refusing a broad add/commit (-A, ., -u, commit -a) — it "
+             "would stage files another room is working on:\n"
+             (str/join "\n" (map (fn [{:keys [label files]}]
+                                   (str "  \"" label "\": "
+                                        (str/join ", " (map #(node-path/relative dir %) files))))
+                                 hits))
+             "\nStage your own files explicitly (git add -- <paths>).")))))
 
-(defn try-acquire!
-  "One acquisition attempt for `owner` ({:pid :room :label}) →
-   {:status :acquired|:busy|:no-repo, :holder lock, :staged [..], :fresh? bool}.
-   :fresh? marks a newly created lease (vs. re-entering one we hold)."
-  [cwd owner]
-  (if-let [gd (git-dir cwd)]
-    (let [path   (lock-path gd)
-          now    (js/Date.now)
-          staged (staged-files cwd)
-          lock   (read-lock path)]
-      (cond
-        (same-owner? lock owner)
-        (do (write-lock! path (assoc lock :touched-at now))
-            {:status :acquired :staged staged :fresh? false})
+(defn ops
+  "The index-mutating git ops a tool call runs (parsed argvs), [] for none."
+  [tool-name arguments]
+  (->> (tool-call-argvs {:name tool-name :arguments arguments})
+       (map parse-argv)
+       (filterv locking?)))
 
-        (and lock (not (stale? lock {:now now :staged staged :alive? pid-alive?})))
-        {:status :busy :holder lock :staged staged}
-
-        :else
-        (do (when (fs/existsSync path)
-              ;; stale or corrupt — re-read so we only clear what we judged
-              (when (= lock (read-lock path)) (rm-lock! path)))
-            (if (create-lock! path (assoc owner :acquired-at now :touched-at now))
-              {:status :acquired :staged staged :fresh? true}
-              {:status :busy :holder (read-lock path) :staged staged}))))
-    {:status :no-repo}))
-
-(defn release!
-  "Drop `owner`'s lease on the repo at `cwd`. True when released."
-  [cwd owner]
-  (when-let [gd (git-dir cwd)]
-    (let [path (lock-path gd)]
-      (when (same-owner? (read-lock path) owner)
-        (rm-lock! path)
-        true))))
-
-(defn settle!
-  "Release `owner`'s lease when the index is clean (after a commit, reset,
-   restore --staged, or at turn end). Keeps it while files are staged. True
-   when released."
-  [cwd owner]
-  (when-let [gd (git-dir cwd)]
-    (let [path (lock-path gd)]
-      (when (and (same-owner? (read-lock path) owner)
-                 (empty? (staged-files cwd)))
-        (rm-lock! path)
-        true))))
-
-(defn force-release!
-  "Drop whatever lease exists on the repo at `cwd`. Returns the dropped lock."
-  [cwd]
-  (when-let [gd (git-dir cwd)]
-    (let [path (lock-path gd)
-          lock (read-lock path)]
-      (when (fs/existsSync path) (rm-lock! path))
-      lock)))
-
-;; ── Waiting (async, main thread) ─────────────────────────────────────────────
-
-(def ^:private POLL_MS 2000)
-
-(defn wait-acquire!
-  "Poll try-acquire! until `owner` holds the lease.
-   opts: {:cwd :owner :timeout-ms :cancelled? (fn [] → bool)
-          :on-wait (fn [holder staged]) — called once, on the first busy poll}
-   → Promise<{:status :acquired|:timeout|:cancelled|:no-repo
-              :waited-ms :holder :staged :fresh?}>"
-  [{:keys [cwd owner timeout-ms cancelled? on-wait]}]
-  (let [start (js/Date.now)]
-    (js/Promise.
-     (fn [resolve _]
-       (letfn [(attempt [notified?]
-                 (let [{:keys [status holder] :as r} (try-acquire! cwd owner)
-                       waited (- (js/Date.now) start)
-                       r      (assoc r :waited-ms waited)]
-                   (cond
-                     (not= :busy status)          (resolve r)
-                     (and cancelled? (cancelled?)) (resolve (assoc r :status :cancelled))
-                     (>= waited timeout-ms)       (resolve (assoc r :status :timeout))
-                     :else
-                     (do (when (and on-wait (not notified?))
-                           (on-wait holder (:staged r)))
-                         (js/setTimeout #(attempt true) POLL_MS)))))]
-         (attempt false))))))
+(def hold
+  "The git-index hold (registered in xi.holds/registry)."
+  {:id         :git-index
+   :label      "git index"
+   :ops        (fn [tool-name arguments _cwd] (ops tool-name arguments))
+   :key        (fn [op cwd] (toplevel (op-cwd cwd op)))
+   :cwd-key    toplevel
+   :lease-path lease-path
+   :stale?     (fn [top l] (stale-clean? l {:now (js/Date.now) :staged (staged-files top)}))
+   :settle?    (fn [top] (empty? (staged-files top)))
+   :refuse     broad-add-refusal
+   :detail     (fn [top] (staged-summary (staged-files top)))
+   :on-acquire (fn [top fresh?]
+                 (when fresh?
+                   (when-let [s (staged-summary (staged-files top))]
+                     (str "⚠ index already had staged files no room owns" s
+                          " — they will be part of this room's next commit"))))
+   :wait-ms    wait-ms
+   :hint       "commit or unstage there, or run /release"})

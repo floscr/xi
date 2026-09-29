@@ -1,6 +1,7 @@
 (ns xi.tools.registry
   "Tool registry — maps tool names to definitions and execute fns."
   (:require [xi.util :as util]
+            [xi.holds :as holds]
             [xi.image :as image]
             [xi.tools.read :as read]
             [xi.tools.write :as write]
@@ -36,10 +37,14 @@
 (defn with-extensions
   "The builtin registry merged with the extensions' :tool-registry (a map or a
    0-arg fn returning one — the manager's live seam). Extension entries win, so
-   an extension can override a builtin by name (treesitter's `read`)."
+   an extension can override a builtin by name (treesitter's `read`). Every
+   exec-fn is wrapped by xi.holds, so calls on a held resource (the git index)
+   wait for it on every provider."
   [extra-registry]
-  (merge (tool-registry)
-         (if (fn? extra-registry) (extra-registry) extra-registry)))
+  (into {}
+        (map (fn [[n f]] [n (holds/wrap n f)]))
+        (merge (tool-registry)
+               (if (fn? extra-registry) (extra-registry) extra-registry))))
 
 (defn run-tool
   "Run a tool's `exec-fn` with `args`/`ctx` and normalize its result to a

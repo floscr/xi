@@ -113,7 +113,7 @@ docs/            see the index below
 | Browser tools | [chrome-mcp.md](docs/chrome-mcp.md) · [element-picker.md](docs/element-picker.md) · [design-mode.md](docs/design-mode.md) · [style-editor.md](docs/style-editor.md) |
 | Web client · offline · UI components · demo | [web-client.md](docs/web-client.md) · [web-offline.md](docs/web-offline.md) · [frontend.md](docs/frontend.md) · [demo.md](docs/demo.md) |
 | TUI rendering · syntax highlighting | [tui-rendering.md](docs/tui-rendering.md) · [syntax-highlighting.md](docs/syntax-highlighting.md) |
-| Concurrent-edit safety (file hashes) · cross-room git lock | [concurrent-edits.md](docs/concurrent-edits.md) · [git-lock.md](docs/git-lock.md) |
+| Concurrent-edit safety (file hashes) · holds + cross-room git lock | [concurrent-edits.md](docs/concurrent-edits.md) · [git-lock.md](docs/git-lock.md) |
 
 ## Conventions
 

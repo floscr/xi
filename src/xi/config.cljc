@@ -30,7 +30,6 @@
         [xi.ext.extensions :as extensions]
         [xi.ext.file-finder :as file-finder]
         [xi.ext.file-view.core :as file-view]
-        [xi.ext.git-lock :as git-lock]
         [xi.ext.github :as github]
         [xi.ext.github-code-search.core :as github-code-search]
         [xi.ext.image-graph :as image-graph]
@@ -102,11 +101,7 @@
    (def server
      "Extensions whose state + provider/tool hooks run server-side (server,
       standalone, and mirrored into clients)."
-     [;; Git staging lock before everything: a rules :allow short-circuits
-      ;; every later gate, and cross-room git serialization must never be
-      ;; skipped. It only waits/refuses — it grants nothing.
-      git-lock/extension
-      ;; Rules engine next: the immutable hard-block + data rules run before
+     [;; Rules engine first: the immutable hard-block + data rules run before
       ;; every other policy gate, and an :allow rule can force-allow a call,
       ;; short-circuiting the remaining gates.
       rules/create

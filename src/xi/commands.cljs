@@ -371,6 +371,10 @@
    {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers}
    {:name "cd"       :description "Change working directory"            :handler cmd-cd}
    {:name "debug"    :description "Copy debug info to clipboard"       :handler cmd-debug}
+   {:name "holds"    :description "Show who holds this room's shared resources (git index)"
+    :handler (fn [_st {:keys [room-id]}] {:effects [[:holds/list {:room-id room-id}]]})}
+   {:name "release"  :description "Force-release holds on this room's shared resources (git index)"
+    :handler (fn [_st {:keys [room-id]}] {:effects [[:holds/release {:room-id room-id}]]})}
    {:name "reload"   :description "Restart Xi (picks up recompiled code)" :handler cmd-reload}
    {:name "quit"     :description "Exit Xi"                            :handler cmd-quit}])
 

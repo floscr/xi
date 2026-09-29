@@ -64,6 +64,8 @@ Defined in `xi.commands/built-in-commands`:
 | `/buffers` | Switch buffer view (chat / logs / prompt / diff) |
 | `/cd` | Change working directory |
 | `/debug` | Copy debug info to clipboard |
+| `/holds` | Show who holds this room's shared resources (the git index; see [git-lock.md](git-lock.md)) |
+| `/release` | Force-release holds on this room's shared resources |
 | `/reload` | Restart Xi (picks up recompiled code) |
 | `/quit` | Exit Xi |
 

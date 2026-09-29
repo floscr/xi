@@ -4,8 +4,9 @@
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]
-            [xi.ext.git-lock :as ext]
-            [xi.git-lock :as lock]))
+            [xi.git-lock :as lock]
+            [xi.holds :as holds]
+            [xi.holds.lease :as lease]))
 
 ;; ── Classification ───────────────────────────────────────────────────────────
 
@@ -48,14 +49,17 @@
                                 :arguments {:command "git add x && git commit -m \"msg\""}})))
   (is (nil? (lock/tool-call-argvs {:name "read" :arguments {:path "x"}}))))
 
-(deftest stale-test
-  (let [lock {:pid 1 :touched-at 0}
-        alive (constantly true)]
-    (is (lock/stale? lock {:now 1 :staged [] :alive? (constantly false)}) "dead pid")
-    (is (not (lock/stale? lock {:now 1 :staged [] :alive? alive})) "fresh + clean")
-    (is (lock/stale? lock {:now (inc lock/STALE_CLEAN_MS) :staged [] :alive? alive})
+(deftest ops-keeps-only-locking-git-test
+  (is (= ["add" "commit"] (map :sub (lock/ops "bash" {:command "git status && git add x && git commit -m m"}))))
+  (is (= [] (lock/ops "bash" {:command "git log"})))
+  (is (= [] (lock/ops "read" {:path "x"}))))
+
+(deftest stale-clean-test
+  (let [l {:pid 1 :touched-at 0}]
+    (is (not (lock/stale-clean? l {:now 1 :staged []})) "fresh + clean")
+    (is (lock/stale-clean? l {:now (inc lock/STALE_CLEAN_MS) :staged []})
         "clean for too long")
-    (is (not (lock/stale? lock {:now (* 10 lock/STALE_CLEAN_MS) :staged ["a"] :alive? alive}))
+    (is (not (lock/stale-clean? l {:now (* 10 lock/STALE_CLEAN_MS) :staged ["a"]}))
         "staged files keep it held indefinitely")))
 
 (deftest foreign-sweep-test
@@ -72,7 +76,7 @@
     (.-stdout r)))
 
 (defn- tmp-repo []
-  (let [dir (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-git-lock-"))]
+  (let [dir (fs/realpathSync (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-git-lock-")))]
     (git! dir "init" "-q")
     (git! dir "config" "user.email" "t@t")
     (git! dir "config" "user.name" "t")
@@ -83,87 +87,100 @@
 (def ^:private A {:pid js/process.pid :room "a" :label "Room A"})
 (def ^:private B {:pid js/process.pid :room "b" :label "Room B"})
 
+(defn- stale? [dir] #((:stale? lock/hold) dir %))
+
 (deftest lease-lifecycle-test
-  (let [dir (tmp-repo)]
+  (let [dir  (tmp-repo)
+        path (lock/lease-path dir)]
+    (testing "the lease sits in the worktree's git dir"
+      (is (= (node-path/join dir ".git" lock/LOCK_NAME) path)))
     (testing "re-entrant for the holder, busy for others"
-      (is (:fresh? (lock/try-acquire! dir A)))
+      (is (:fresh? (lease/try-acquire! path A (stale? dir))))
       (is (= {:status :acquired :fresh? false}
-             (select-keys (lock/try-acquire! dir A) [:status :fresh?])))
-      (let [r (lock/try-acquire! dir B)]
+             (select-keys (lease/try-acquire! path A (stale? dir)) [:status :fresh?])))
+      (let [r (lease/try-acquire! path B (stale? dir))]
         (is (= :busy (:status r)))
         (is (= "Room A" (get-in r [:holder :label])))))
-    (testing "settle keeps the lease while files are staged"
+    (testing "settle keeps the hold while files are staged"
       (git! dir "add" "a.txt")
-      (is (not (lock/settle! dir A)))
-      (is (= :busy (:status (lock/try-acquire! dir B)))))
+      (is (not (holds/settle! lock/hold dir A)))
+      (is (= :busy (:status (lease/try-acquire! path B (stale? dir))))))
     (testing "settle by a non-owner is a no-op"
       (git! dir "commit" "-qm" "a")
-      (is (not (lock/settle! dir B))))
+      (is (not (holds/settle! lock/hold dir B))))
     (testing "commit → clean index → settle releases, B can take it"
-      (is (lock/settle! dir A))
-      (is (nil? (lock/holder dir)))
-      (is (= :acquired (:status (lock/try-acquire! dir B)))))
+      (is (holds/settle! lock/hold dir A))
+      (is (nil? (lease/read-lease path)))
+      (is (= :acquired (:status (lease/try-acquire! path B (stale? dir))))))
     (testing "force-release drops any holder"
-      (is (= "b" (:room (lock/force-release! dir))))
-      (is (nil? (lock/holder dir))))
-    (testing "outside a repo"
-      (is (= :no-repo (:status (lock/try-acquire! (os/tmpdir) A)))))))
+      (is (= "b" (:room (lease/force-release! path))))
+      (is (nil? (lease/read-lease path))))
+    (testing "outside a repo there is nothing to hold"
+      (is (nil? (lock/lease-path (os/tmpdir)))))))
 
 (deftest dead-holder-is-stealable-test
-  (let [dir (tmp-repo)]
-    (lock/try-acquire! dir {:pid 999999999 :room "ghost"})
+  (let [dir  (tmp-repo)
+        path (lock/lease-path dir)]
+    (lease/try-acquire! path {:pid 999999999 :room "ghost"} (stale? dir))
     (git! dir "add" "a.txt")
-    (is (= :acquired (:status (lock/try-acquire! dir A))))))
+    (is (= :acquired (:status (lease/try-acquire! path A (stale? dir)))))))
 
-;; ── Extension gate (two rooms, one repo) ─────────────────────────────────────
+;; ── holds/wrap: two rooms, one repo ──────────────────────────────────────────
 
-(defn- gate [tool-call ctx]
-  ((:tool-gate ext/extension) tool-call ctx))
-
-(defn- gate-ctx [dir state room-id]
+(defn- ctx [dir state room-id]
   {:room-id room-id :cwd dir :get-state (fn [] @state) :dispatch! (fn [_])})
 
-(deftest gate-two-rooms-test
+(defn- ran [label] (fn [_args _ctx] {:content [{:type "text" :text label}]}))
+
+(deftest wrap-two-rooms-test
   (async done
-    (let [dir   (tmp-repo)
-          state (atom {:rooms {:ra {:id :ra :cwd dir :agent {:busy? true}}
-                               :rb {:id :rb :cwd dir :agent {:busy? true}}}})
-          stage {:name "git_stage_hunks" :arguments {:files ["a.txt"]}}
-          commit {:name "git_commit" :arguments {:message "b"}}]
+    (let [dir    (tmp-repo)
+          state  (atom {:rooms {:ra {:id :ra :cwd dir :agent {:busy? true}}
+                                :rb {:id :rb :cwd dir :agent {:busy? true}}}})
+          stage  (holds/wrap "git_stage_hunks" (fn [_ _] (git! dir "add" "a.txt")
+                                                 {:content [{:type "text" :text "staged"}]}))
+          commit (holds/wrap "git_commit" (ran "committed"))]
       (aset js/process.env "XI_GIT_LOCK_WAIT_SECS" "0")
-      (-> (gate stage (gate-ctx dir state :ra))
+      (-> (stage {:files ["a.txt"]} (ctx dir state :ra))
           (.then (fn [r]
-                   (is (= stage r) "A acquires and proceeds")
-                   (git! dir "add" "a.txt")
-                   (gate commit (gate-ctx dir state :rb))))
+                   (is (= "staged" (get-in r [:content 0 :text])) "A acquires and runs")
+                   (is (= "ra" (:room (lease/read-lease (lock/lease-path dir))))
+                       "staged files keep A's hold after the call")
+                   (commit {:message "b"} (ctx dir state :rb))))
           (.then (fn [r]
-                   (is (:intercepted r) "B is held off while A has staged files")
-                   (is (re-find #"Room|ra|git index lock"
-                                (get-in r [:result :content 0 :text])))
+                   (is (:is-error r) "B is held off while A has staged files")
+                   (is (re-find #"git index.*held|gave up" (get-in r [:content 0 :text])))
                    (git! dir "commit" "-qm" "a")
-                   ((get-in ext/extension [:fx :git-lock/settle]) nil {:room-id :ra :cwd dir})
-                   (gate commit (gate-ctx dir state :rb))))
+                   (holds/settle-room! :ra dir)
+                   (commit {:message "b"} (ctx dir state :rb))))
           (.then (fn [r]
-                   (is (= commit r) "B proceeds once A committed")
-                   (is (= "rb" (:room (lock/holder dir))))))
+                   (is (= "committed" (get-in r [:content 0 :text])) "B runs once A committed")
+                   (is (nil? (lease/read-lease (lock/lease-path dir)))
+                       "clean index after B's call → B's hold settled too")))
           (.finally (fn []
                       (js-delete js/process.env "XI_GIT_LOCK_WAIT_SECS")
                       (done)))))))
 
-(deftest broad-add-refused-when-sweeping-other-room-test
+(deftest wrap-refuses-broad-add-sweeping-other-room-test
   (async done
     (let [dir   (tmp-repo)
           state (atom {:rooms {:ra {:id :ra :cwd dir :agent {:busy? true} :history []}
                                :rb {:id :rb :cwd dir :agent {:busy? true}
                                     :session {:name "Room B"}
                                     :history [{:kind :tool-call :tool "edit"
-                                               :arguments {:path "b.txt"}}]}}})]
-      (-> (gate {:name "bash" :arguments {:command "git add -A"}} (gate-ctx dir state :ra))
+                                               :arguments {:path "b.txt"}}]}}})
+          bash  (holds/wrap "bash" (ran "ran"))]
+      (-> (bash {:command "git add -A"} (ctx dir state :ra))
           (.then (fn [r]
-                   (is (:intercepted r))
-                   (is (re-find #"Room B.*b\.txt" (get-in r [:result :content 0 :text])))
-                   (gate {:name "bash" :arguments {:command "git add a.txt"}}
-                         (gate-ctx dir state :ra))))
+                   (is (:is-error r))
+                   (is (re-find #"Room B.*b\.txt" (get-in r [:content 0 :text])))
+                   (bash {:command "git add a.txt"} (ctx dir state :ra))))
           (.then (fn [r]
-                   (is (not (:intercepted r)) "explicit paths are fine")))
+                   (is (= "ran" (get-in r [:content 0 :text])) "explicit paths are fine")))
           (.finally done)))))
+
+(deftest wrap-passes-unheld-calls-straight-through-test
+  (let [called (atom nil)
+        read   (holds/wrap "read" (fn [args _] (reset! called args) :direct))]
+    (is (= :direct (read {:path "x"} {:cwd "/tmp"})) "no promise, no lease — just the exec-fn")
+    (is (= {:path "x"} @called))))
