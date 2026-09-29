@@ -55,8 +55,19 @@
                                  (.-message e)))
           nil)))))
 
-(def ^:private CLAUDE_PROJECTS_DIR
-  (.join node-path HOME ".claude" "projects"))
+(defn claude-config-dir
+  "The Claude CLI config dir — CLAUDE_CONFIG_DIR or ~/.claude. Read per call:
+   Xi points it at a throwaway mirror for ephemeral runs (`--no-store`), and
+   every Claude path (transcripts, credentials) must follow the same dir the
+   CLI writes to. Not a user-facing setting."
+  []
+  (or (not-empty (aget js/process.env "CLAUDE_CONFIG_DIR"))
+      (.join node-path HOME ".claude")))
+
+(defn claude-projects-dir
+  "Where the Claude CLI keeps its session transcripts."
+  []
+  (.join node-path (claude-config-dir) "projects"))
 
 (def ^:private FAVORITES_FILE
   (.join node-path HOME ".config" "xi" "favorites.json"))
@@ -102,7 +113,7 @@
   (.join node-path XI_SESSIONS_DIR (encode-cwd-xi cwd)))
 
 (defn- claude-project-dir [cwd]
-  (.join node-path CLAUDE_PROJECTS_DIR (encode-cwd-claude cwd)))
+  (.join node-path (claude-projects-dir) (encode-cwd-claude cwd)))
 
 (defn git-project-cwds
   "All working-tree paths that belong to the same git repository as `cwd`
@@ -265,13 +276,6 @@
                             "utf8")
           (invalidate-listing-cache!))))
     (catch :default _e nil)))
-
-
-(defn- claude-config-dir
-  "The Claude CLI config dir the SDK reads — CLAUDE_CONFIG_DIR or ~/.claude."
-  []
-  (or (aget js/process.env "CLAUDE_CONFIG_DIR")
-      (.join node-path HOME ".claude")))
 
 (defn make-throwaway-config-dir!
   "Create a temp CLAUDE_CONFIG_DIR mirroring the real Claude config via
@@ -479,10 +483,11 @@
         cached @transcript-index-cache]
     (if (and cached (< (- now (:at cached)) 2000))
       (:index cached)
-      (let [index (into {}
-                        (for [sub (list-dir-subdirs CLAUDE_PROJECTS_DIR)
-                              f   (list-dir-files (.join node-path CLAUDE_PROJECTS_DIR sub) ".jsonl")]
-                          [(.basename node-path f) f]))]
+      (let [index (let [root (claude-projects-dir)]
+                    (into {}
+                          (for [sub (list-dir-subdirs root)
+                                f   (list-dir-files (.join node-path root sub) ".jsonl")]
+                            [(.basename node-path f) f])))]
         (reset! transcript-index-cache {:at now :index index})
         index))))
 
@@ -726,10 +731,11 @@
                                    (let [dir (.join node-path XI_SESSIONS_DIR subdir)]
                                      (->> (list-dir-files dir ".json")
                                           (keep #(cached-summary read-xi-session-meta %)))))))
-        ;; Claude: each subdir under CLAUDE_PROJECTS_DIR is an encoded CWD
-        claude-sessions (->> (list-dir-subdirs CLAUDE_PROJECTS_DIR)
+        ;; Claude: each subdir under claude-projects-dir is an encoded CWD
+        claude-root (claude-projects-dir)
+        claude-sessions (->> (list-dir-subdirs claude-root)
                              (mapcat (fn [subdir]
-                                       (let [dir (.join node-path CLAUDE_PROJECTS_DIR subdir)]
+                                       (let [dir (.join node-path claude-root subdir)]
                                          (->> (list-dir-files dir ".jsonl")
                                               (keep #(cached-summary read-claude-session-summary %))))))
                              ;; Drop aborted stubs with no assistant reply.

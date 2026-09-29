@@ -24,7 +24,6 @@
             [xi.session :as session]
             [xi.session.sync :as sync]
             ["node:fs" :as fs]
-            ["node:os" :as os]
             ["node:path" :as node-path]))
 
 (def ^:private ext-id :resume)
@@ -220,7 +219,7 @@ Be thorough but concise. Output only the summary, no preamble.")
 
 (defn- transcript-path [cwd cli-sid]
   (when (and cwd cli-sid)
-    (node-path/join (os/homedir) ".claude" "projects"
+    (node-path/join (session/claude-projects-dir)
                     (sync/encode-cwd-claude cwd) (str cli-sid ".jsonl"))))
 
 (defn- lineage-chain

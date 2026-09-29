@@ -205,7 +205,6 @@ ENVIRONMENT
   XI_PORT                    Default port when --port is omitted.
   XI_CWD                     Working directory the agent runs in.
   ANTHROPIC_API_KEY          Auth (otherwise the Claude CLI's own login).
-  CLAUDE_CONFIG_DIR          Claude CLI config dir (default ~/.claude).
 
 EXAMPLES
   xi                                         # standalone TUI

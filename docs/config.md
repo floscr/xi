@@ -95,8 +95,12 @@ namespace.
 | `XI_EFFORT` | `high` | Reasoning effort. |
 | `XI_CWD` | `process.cwd()` | Working directory for the room. |
 | `ANTHROPIC_API_KEY` | — | API auth, passed through to the Claude CLI (otherwise the CLI's own login is used). |
-| `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude CLI config directory. |
 | `XI_THEME_MODE` | auto-detected | TUI color scheme override: `light` or `dark` (`xi.tui.theme-mode`). |
+
+`CLAUDE_CONFIG_DIR` is not a Xi setting: Xi sets it internally to point the
+Claude CLI at a throwaway config mirror for side turns (titles, summaries,
+quick replies, sub-agents) and `xi prompt --no-store`, so their transcripts
+never reach the session list (`xi.session/make-throwaway-config-dir!`).
 
 ### Server / networking
 

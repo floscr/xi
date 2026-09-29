@@ -87,8 +87,8 @@ the process by hand — see [bb-client.md](bb-client.md).
 
 ## Environment
 
-The CLI honours `XI_MODEL`, `XI_EFFORT`, `XI_PORT`, `XI_CWD`,
-`ANTHROPIC_API_KEY` and `CLAUDE_CONFIG_DIR` — see
+The CLI honours `XI_MODEL`, `XI_EFFORT`, `XI_PORT`, `XI_CWD` and
+`ANTHROPIC_API_KEY` — see
 [config.md](config.md#environment-variables) for defaults and the full list.
 
 ## Examples

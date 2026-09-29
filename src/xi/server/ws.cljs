@@ -140,14 +140,13 @@
   (atom nil))
 
 (defn- read-claude-token
-  "OAuth access token from ~/.claude/.credentials.json (kept fresh by Claude
-   Code). nil when the file is missing/unreadable (e.g. the demo server's
-   redirected HOME)."
+  "OAuth access token from <claude-config-dir>/.credentials.json (kept fresh
+   by Claude Code). nil when the file is missing/unreadable (e.g. the demo
+   server's redirected HOME)."
   []
   (try
     (let [fs   (js/require "node:fs")
-          os   (js/require "node:os")
-          path (str (.homedir os) "/.claude/.credentials.json")]
+          path (str (session/claude-config-dir) "/.credentials.json")]
       (when (.existsSync fs path)
         (some-> (.readFileSync fs path "utf8")
                 (js/JSON.parse)
