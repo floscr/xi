@@ -749,6 +749,21 @@
     (is (str/includes? (result-text res) ":size 3"))
     (is (str/includes? (result-text res) ":file? true"))))
 
+(deftest grep-find-reject-opts-map
+  ;; (grep {:raw true} #"re" "src") used to shift the regex into the path
+  ;; slot, whose /re/ string then hit the out-of-repo read gate as a path.
+  (testing "a map as the pattern is a usage error, not a gated read"
+    (let [res (eval! "(grep {:raw true} #\"x\" \"src\")")]
+      (is (:is-error res))
+      (is (str/includes? (result-text res) "takes no opts map")))
+    (let [res (eval! "(find {:dir \"x\"} \"*.clj\" \"src\")")]
+      (is (:is-error res))
+      (is (str/includes? (result-text res) "takes no opts map"))))
+  (testing "a non-string path is a usage error"
+    (let [res (eval! "(grep #\"x\" #\"y\")")]
+      (is (:is-error res))
+      (is (str/includes? (result-text res) "path must be a string")))))
+
 (deftest path-helpers
   (let [res (eval! "[(basename \"/a/b/c.txt\") (basename \"/a/b/c.txt\" \".txt\") (dirname \"/a/b/c.txt\")]")]
     (is (str/includes? (result-text res) "[\"c.txt\" \"c\" \"/a/b\"]"))))

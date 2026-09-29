@@ -332,8 +332,25 @@
                                  (str/trim (str err "\n" out)))
                             {:exit exit :out out :err err}))))))))
 
+(defn- check-search-args!
+  "grep/find take (pattern path) — no leading opts map. A map passed as the
+   pattern (e.g. jq's {:raw true}) shifts the regex into the path slot, and a
+   stringified regex (/re/) looks like an absolute out-of-repo path — which
+   surfaces as a baffling \"Read outside the project repo\" gate dialog instead
+   of a usage error. Throw a clear one up front."
+  [helper pattern p]
+  (when (map? pattern)
+    (throw (ex-info (str "clj: (" helper " pattern path) takes no opts map — got "
+                         (pr-str pattern) " as the pattern")
+                    {})))
+  (when-not (or (nil? p) (string? p))
+    (throw (ex-info (str "clj: (" helper " pattern path) — path must be a string, got "
+                         (pr-str p))
+                    {}))))
+
 (defn- grep-fn [opts]
   (fn [pattern & [p]]
+    (check-search-args! "grep" pattern p)
     (let [cwd    (opts-cwd opts)
           target (resolve-read opts (or p "."))
           {:keys [exit out err]}
@@ -347,6 +364,7 @@
 
 (defn- find-fn [opts]
   (fn [pattern & [dir]]
+    (check-search-args! "find" pattern dir)
     (let [cwd (opts-cwd opts)
           target (resolve-read opts (or dir "."))
           {:keys [exit out err]} (spawn-sync! ["fd" "--" (str pattern) target] cwd)]
