@@ -116,7 +116,11 @@ Guards, enforced inside every helper:
   `(sh "bb" "-e" "(fs/delete-tree …)")` or a bash `fs/delete-dir`/`fs/delete-tree`
   — is caught separately as a guarded pattern.
 - **Env**: only `xi.sandbox.core`'s env allowlist; secret-bearing keys throw.
-- Printed output is captured; results are truncated (30k chars).
+- Printed output is captured; results are truncated (30k chars; `sh` /
+  `grep` / `curl` output at 20k). On truncation the full text is saved to
+  `$TMPDIR/xi-output/clj-….log` and the marker names that file with a nudge
+  to `(grep re f)` / `(tail f n)` / `read` it instead of re-running
+  (`xi.tools.truncate`; the bash tool does the same, keeping the tail).
 
 Quick scripts: `(spit (str (tmpdir) "/x.py") src)` then `(sh "python3" …)` —
 the interpreter needs allowlisting like any other CLI.

@@ -1,14 +1,15 @@
 (ns xi.tools.bash
-  "Bash command execution tool.")
+  "Bash command execution tool."
+  (:require [xi.tools.truncate :as trunc]))
 
 (def ^:private DEFAULT_TIMEOUT 30000)
 (def ^:private MAX_OUTPUT 50000)
 
 (defn- truncate-output [s max-len]
-  (if (> (count s) max-len)
-    (str (subs s (- (count s) max-len))
-         "\n[output truncated to last " max-len " chars]")
-    s))
+  (trunc/truncate s max-len
+                  {:keep   :tail
+                   :prefix "bash"
+                   :how    "inspect it with grep/tail or the read tool with offset/limit."}))
 
 (defn execute
   "Execute a bash command. Returns promise of tool result.

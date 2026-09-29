@@ -40,6 +40,7 @@
             [xi.rules :as rules]
             [xi.rules.store :as rules-store]
             [xi.sandbox.core :as sandbox]
+            [xi.tools.truncate :as trunc]
             ["node:child_process" :as cp]
             ["node:crypto" :as crypto]
             ["node:fs" :as fs]
@@ -128,10 +129,10 @@
 ;; ── Path + output guards ─────────────────────────────────────────────────────
 
 (defn- truncate [s max-len]
-  (let [s (str s)]
-    (if (> (count s) max-len)
-      (str (subs s 0 max-len) "\n… [truncated to " max-len " chars]")
-      s)))
+  (trunc/truncate s max-len
+                  {:prefix "clj"
+                   :how    (str "inspect it with (grep re f), (tail f n), (head f n) "
+                                "or the read tool with offset/limit.")}))
 
 
 (defn- opts-cwd [opts]
