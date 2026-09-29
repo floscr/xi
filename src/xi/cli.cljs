@@ -202,7 +202,7 @@ FLAGS
 
 ENVIRONMENT
   XI_MODEL, XI_EFFORT        Default model / reasoning effort.
-  XI_PORT                    Default port when --port is omitted.
+  XI_PORT                    Default port when --port is omitted. All modes.
   XI_CWD                     Working directory the agent runs in.
   ANTHROPIC_API_KEY          Auth (otherwise the Claude CLI's own login).
 
@@ -263,6 +263,18 @@ See docs/cli.md for the full reference.")
                         (not (.startsWith arg "--")))
                    (update opts :clients-args (fnil conj []) arg)
                    :else opts)))))))
+
+(defn- valid-port [v]
+  (let [n (js/parseInt v 10)]
+    (when (and (js/Number.isInteger n) (< 0 n 65536)) n)))
+
+(defn resolve-port
+  "Settle :port once for every mode: --port, else XI_PORT, else the default.
+   Server bind, client connect, the auto-join probe and state all read this."
+  [opts]
+  (assoc opts :port (or (valid-port (:port opts))
+                        (valid-port (aget js/process.env "XI_PORT"))
+                        ws/DEFAULT_PORT)))
 
 (defn- resolve-model-opts [{:keys [model]}]
   {:model  (or model
@@ -334,6 +346,7 @@ See docs/cli.md for the full reference.")
         {:keys [dispatch!]}
         (app/create-app {:initial-state (state/initial-state
                                          {:mode :standalone
+                                          :port (:port opts)
                                           :ext (:process-ext-init composed)})
                          :handlers      handlers
                          :transform-event (ext/transform-event composed)
@@ -559,7 +572,7 @@ See docs/cli.md for the full reference.")
 ;; ── Client (join/create + the server's local TUI) ────────────────────────────
 
 (defn- client-url [{:keys [url port]}]
-  (or url (str "ws://localhost:" (or port ws/DEFAULT_PORT))))
+  (or url (str "ws://localhost:" port)))
 
 (defn- server-running?
   "Probe whether a server is already listening on the given port. Resolves a
@@ -882,6 +895,7 @@ See docs/cli.md for the full reference.")
                                           (:client/disconnect events/core-handlers))))
         app (app/create-app {:initial-state (state/initial-state
                                              {:mode :server
+                                              :port port
                                               :ext (:process-ext-init composed)})
                              :handlers handlers
                              :transform-event (ext/transform-event composed)
@@ -945,7 +959,7 @@ See docs/cli.md for the full reference.")
   [{:keys [auto-join? port initial-prompt session-id] :as opts}]
   (if-not auto-join?
     (start-standalone! opts)
-    (-> (server-running? (or port ws/DEFAULT_PORT))
+    (-> (server-running? port)
         (.then (fn [running?]
                  (cond
                    ;; No server — plain local standalone room (resumes
@@ -1034,7 +1048,7 @@ See docs/cli.md for the full reference.")
            (if (nil? rows)
              (do (.write js/process.stderr
                          (str "xi sessions: no running server on port "
-                              (or port ws/DEFAULT_PORT)
+                              port
                               " — recent is relative to a running server. "
                               "Use --all to list every saved chat.\n"))
                  (print-sessions! opts []))
@@ -1132,7 +1146,7 @@ See docs/cli.md for the full reference.")
     (if (= "xi-socket-bridge" (some-> wt/workerData (aget "role")))
       (clj-socket/bridge-install!)
       (clj-worker/install!))
-    (let [{:keys [command] :as opts} (parse-args args)]
+    (let [{:keys [command] :as opts} (resolve-port (parse-args args))]
       (rules-store/set-hardened-disabled! (:no-hardened-rules? opts))
       (case command
         :help       (do (.write js/process.stdout (str HELP_TEXT "\n"))

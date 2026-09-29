@@ -602,9 +602,7 @@
 
      :start!
      (fn [{:keys [dispatch! state add-tap!]} {:keys [port]}]
-       (let [port (or port
-                      (some-> (aget js/process.env "XI_PORT") js/parseInt)
-                      DEFAULT_PORT)
+       (let [port (or port DEFAULT_PORT)
              public-dir (resolve-public-dir)
              ;; Personal-agent mode is single-user/local: skip HTTPS (no iOS
              ;; PWA durable-storage concern) and skip client-key pairing.

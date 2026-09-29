@@ -6,6 +6,7 @@
 
    {:connection {:id      uuid
                  :mode    :standalone | :server | :client
+                 :port    int | nil   ;; server/standalone: the (would-be) WS port
                  :clients {client-id {:kind :tui|:web :visible? bool}}}
     :rooms      {room-id {:id :history :session :agent :ext :ui}}
     :active-room room-id | nil
@@ -47,10 +48,11 @@
 
 (defn initial-state
   ([] (initial-state nil))
-  ([{:keys [mode connection-id ext]}]
-   {:connection {:id      (or connection-id (random-uuid))
-                 :mode    (or mode :standalone)
-                 :clients {}}
+  ([{:keys [mode connection-id ext port]}]
+   {:connection (cond-> {:id      (or connection-id (random-uuid))
+                         :mode    (or mode :standalone)
+                         :clients {}}
+                  port (assoc :port port))
     :rooms       {}
     :active-room nil
     ;; process-local extension state, keyed by extension id (seeded from
@@ -70,6 +72,11 @@
 
 (defn mode [state]
   (get-in state [:connection :mode]))
+
+(defn port
+  "The WS port this process serves (server) or would join (standalone), or nil."
+  [state]
+  (get-in state [:connection :port]))
 
 (defn room-ext
   "Room-scoped extension state for ext-id (mirrors to clients)."

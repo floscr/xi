@@ -7,16 +7,14 @@
 
    Local-only: `xdg-open` runs on the machine hosting the server, so this is
    registered for the TUI/standalone/server surfaces (where that machine is
-   the user's), not for a remote headless deployment.")
+   the user's), not for a remote headless deployment."
+  (:require [xi.core.state :as state]))
 
-;; Default web-client port. The real port only lives in CLI opts, not state,
-;; so we open on the default; an XI_PORT env override is honored if present.
-(defn- web-port []
-  (or (some-> (aget js/process.env "XI_PORT") js/parseInt)
-      7474))
+;; Fallback for states built without a port (tests); the CLI always sets one.
+(def ^:private default-port 7474)
 
-(defn- session-url [sid]
-  (str "http://localhost:" (web-port) "/chat/" sid))
+(defn- session-url [st sid]
+  (str "http://localhost:" (or (state/port st) default-port) "/chat/" sid))
 
 (defn- status-entry [text]
   {:kind :status :text text})
@@ -28,7 +26,7 @@
   "/browser-open — open the current session's chat URL in the browser."
   [st {:keys [room-id]}]
   (if-let [sid (get-in st [:rooms room-id :session :id])]
-    (let [url (session-url sid)]
+    (let [url (session-url st sid)]
       {:state   (append-status st room-id (str "Opening " url " in browser…"))
        :effects [[:browser/open {:url url}]]})
     {:state (append-status st room-id "No active session to open — send a prompt first.")}))

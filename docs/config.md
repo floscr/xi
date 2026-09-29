@@ -106,7 +106,7 @@ never reach the session list (`xi.session/make-throwaway-config-dir!`).
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `XI_PORT` | `7474` | WS server port (plain `ws://`, TUI + web). |
+| `XI_PORT` | `7474` | WS port (plain `ws://`, TUI + web) when `--port` is omitted — in every mode: the server binds it, `join`/`create`/`sessions` and standalone auto-join connect to it, `/browser-open` opens it. |
 | `XI_TLS_PORT` | `7443` | HTTPS/`wss://` port (when certs exist). |
 | `XI_TLS_CERT` | `~/.config/xi/tls/xi.crt` | TLS certificate path. Setting it (or `XI_TLS_KEY`) forces TLS on. |
 | `XI_TLS_KEY` | `~/.config/xi/tls/xi.key` | TLS private key path. |
