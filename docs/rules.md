@@ -115,6 +115,13 @@ overlap):
   → **allow**. It's `:command`-scoped, so clj grants that exact command only.
   `-i`/`--in-place`, sed's `w`/`e` commands, any other flag, and a missing file
   operand don't match and fall to the base `(sh …)` ask.
+- **file management in a repo** — clj `(sh …)` of `mv` / `cp` / `mkdir` /
+  `touch` / `rmdir` / `chmod` whose operands all stay inside the repo or tmp
+  (`:within :repo`) → **allow**, as an exact-command grant. Anything reaching
+  outside, into `.git/` / `.xi/`, or the repo root itself asks as usual. `ln`
+  isn't covered: a relative link target resolves against the link's own
+  directory, so the operand check can't vouch for it. `chmod -R` still gets
+  the guarded-command confirm.
 - **external MCP tool** — any `mcp__<server>__<tool>` call → **ask**, with an
   informative confirm block (server, tool, and every argument). `[a]lways`
   persists a session allow-rule narrowed to that MCP server + tool. External
@@ -171,6 +178,7 @@ All present fields are **ANDed**; an absent field is no constraint.
 | `:node`       | tree-sitter AST predicate (opt-in) — `{:type … :name … :contains …}` |
 | `:outside`    | location predicate (opt-in) — `:cwd` matches when the target path resolves outside the effective cwd (and tmp); symlinks are canonicalized |
 | `:credential` | credential-path predicate (opt-in) — `:read` matches when the target path resolves inside a hidden credential dir (`.ssh`, `.gnupg`, `.password-store`, …); symlinks are canonicalized |
+| `:within`     | operand-location predicate for clj `:sh` shell-outs (opt-in) — `:repo` matches when the call is fully literal and every non-flag arg resolves strictly inside the effective git repo (not the root itself, not `.git/` or `.xi/`) or tmp; flags must be bare short clusters (`-p`, `-rv`) — any `--long`/`--`/glued non-letter value never matches; symlinks are canonicalized |
 
 ### Effective working directory
 
@@ -212,7 +220,8 @@ synthetic request `{:tool :sh :cli <binary> :command <cmd>}`. So `:cli` /
 source (a `:tool :clj` rule still matches the raw code). A `:sh` `:allow`
 without `:command` pre-approves that binary (skips its confirm); a `:sh` `:deny` blocks the eval
 with the rule message. A `:sh` `:allow` that carries a `:command` grants only
-the exact, fully-literal commands it matched, never the binary at large. If
+the exact, fully-literal commands it matched, never the binary at large (same
+for a `:within` allow). If
 another call to the same CLI in the eval isn't matched, or has a dynamic arg,
 the CLI still needs approval (see
 [clj-tool.md](clj-tool.md#sh--permissions)). `:repo` rules match against the git
@@ -270,7 +279,7 @@ Clojure reader, so they round-trip through save/load correctly.
 Agents can **never** write the rules files
 (`~/.config/xi/rules.edn`, `<repo>/.xi/rules.edn`) — not via `write`/`edit`, and
 not via a `bash`/`clj` command that both references a rules file and contains a
-write token (`>`, `tee`, `sed -i`, `cp`, `mv`, `dd`, `spit`, `writeFileSync`,
+write token (`>`, `tee`, `sed -i`, `cp`, `mv`, `dd`, `chmod`, `spit`, `writeFileSync`,
 `rm`, …). This check runs first and cannot be overridden by any `:allow` rule.
 Edit the rules files yourself, or use the recommend-a-rule flow on a guard
 dialog.

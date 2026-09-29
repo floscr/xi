@@ -316,3 +316,32 @@
           rs (store/runtime-rules state "r1")]
       (is (= [:server :session] (map :scope rs)))
       (is (= :deny (:type (:action (first rs))))))))
+
+(deftest operands-within-repo
+  (let [repo (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-within-"))
+        _    (fs/mkdirSync (node-path/join repo ".git"))
+        _    (fs/mkdirSync (node-path/join repo "src"))
+        in?  (fn [& argv] (store/operands-within-repo? repo repo (vec argv)))]
+    (try
+      (testing "operands inside the repo (or tmp) match"
+        (is (in? "mv" "a.txt" "src/b.txt"))
+        (is (in? "cp" "-rv" "src" "src2"))
+        (is (in? "mkdir" "-p" "src/x/y"))
+        (is (in? "mv" "src/a" (node-path/join (os/tmpdir) "xi-junk"))))
+      (testing "any operand outside the repo → no match"
+        (is (not (in? "mv" "a" "/etc/x")))
+        (is (not (in? "cp" (node-path/join (os/homedir) ".bashrc") "a"))))
+      (testing "the repo root, .git/ and .xi/ are off-limits (even under tmp)"
+        (is (not (in? "mv" repo "/tmp/r")))
+        (is (not (in? "mv" "." "x")))
+        (is (not (in? "mv" "hook" ".git/hooks/pre-commit")))
+        (is (not (in? "mv" ".xi" "old"))))
+      (testing "long / glued-value flags and missing operands → no match"
+        (is (not (in? "mv" "--target-directory=/etc" "a")))
+        (is (not (in? "mv" "-t/etc" "a")))
+        (is (not (in? "mv" "--" "a" "b")))
+        (is (not (in? "mkdir" "-p"))))
+      (testing "no git repo → no match"
+        (is (not (store/operands-within-repo? repo nil ["mv" "a" "b"]))))
+      (finally
+        (fs/rmSync repo #js {:recursive true :force true})))))

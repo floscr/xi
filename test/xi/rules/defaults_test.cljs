@@ -190,5 +190,20 @@
     (testing "outside a git repo it asks"
       (is (= :ask (action-type {:tool :sh :cli "sed" :command "sed -n 1p f"}))))))
 
+(deftest file-clis-within-repo
+  (testing "mv/cp/mkdir/… whose operands stay in the repo are allowed"
+    (doseq [cli ["mv" "cp" "mkdir" "touch" "rmdir" "chmod"]]
+      (is (= :allow (action-type {:tool :sh :cli cli :command (str cli " a b")
+                                  :operands-within-repo? true}))
+          cli)))
+  (testing "operands outside the repo (or unchecked) fall to the base ask"
+    (is (= :ask (action-type {:tool :sh :cli "mv" :command "mv a /etc/x"
+                              :operands-within-repo? false})))
+    (is (= :ask (action-type {:tool :sh :cli "mv" :command "mv a b"}))
+        "no argv (dynamic args) → operands unchecked")
+    (is (= :ask (action-type {:tool :sh :cli "ln" :command "ln -s a b"
+                              :operands-within-repo? true}))
+        "ln is not covered — its link target resolves against the link's dir")))
+
 (deftest defaults-tagged-scope
   (is (every? #(= :default (:scope %)) defaults/default-rules)))

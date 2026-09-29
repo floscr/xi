@@ -11,7 +11,8 @@
                :mcp-server \"context7\"   ; MCP server id (glob/exact)
                :mcp-tool   \"*\"           ; MCP tool name (glob/exact)
                :when {:mode :plan}       ; submap match against room ext state
-               :node {:type \"...\" :name #\"...\" :contains #\"...\"}} ; tree-sitter (opt-in)
+               :node {:type \"...\" :name #\"...\" :contains #\"...\"} ; tree-sitter (opt-in)
+               :within :repo}            ; every :sh operand inside the repo (opt-in)
       :action {:type :allow|:deny|:nudge|:ask
                :message \"...\"
                :options [:yes :no :always]}
@@ -155,6 +156,17 @@
         :read (boolean (:credential-path? req))
         false)))
 
+(defn- match-within
+  "Operand-location match (opt-in). `:within :repo` matches when every operand
+   of a literal `:sh` command resolves inside the effective git repo (not its
+   `.git/`) or tmp — the store computes and populates `:operands-within-repo?`
+   on the request only when a `:within` rule is in play (nil never matches)."
+  [spec req]
+  (or (nil? spec)
+      (case spec
+        :repo (boolean (:operands-within-repo? req))
+        false)))
+
 (defn- match-cli
   "CLI (binary) spec for `:tool :sh` shell-outs: string → exact binary match,
    set → membership, regex → re-find, against `(:cli req)` (the command's first
@@ -201,7 +213,8 @@
          (match-when       (:when m)       (:state req))
          (match-node       (:node m)       (:nodes req))
          (match-outside    (:outside m)    req)
-         (match-credential (:credential m) req))))
+         (match-credential (:credential m) req)
+         (match-within     (:within m)     req))))
 
 (defn first-match
   "First rule in `rules` (already in precedence order) whose match matches
@@ -230,6 +243,19 @@
    the target path and populate `:outside-cwd?` on the request."
   [rules]
   (boolean (some #(some-> (canonical %) :match :outside) rules)))
+
+(defn needs-within?
+  "True when any rule carries a `:within` matcher, so the store should check a
+   `:sh` request's operands and populate `:operands-within-repo?`."
+  [rules]
+  (boolean (some #(some-> (canonical %) :match :within) rules)))
+
+(defn arg-scoped?
+  "True when (canonical) `rule` constrains a `:sh` command's arguments — a
+   `:command` or `:within` matcher — so its allow covers only the exact command
+   it matched, not the CLI at large."
+  [rule]
+  (boolean (some #(some? (get-in rule [:match %])) [:command :within])))
 
 (defn needs-credential?
   "True when any rule carries a `:credential` matcher, so the store should

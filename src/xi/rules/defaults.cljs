@@ -234,6 +234,13 @@
    executing (`e`, `s///e`) commands never match and stay gated."
   #"^sed -n (?:(?:\d+|\$|/[^/\s]*/)(?:,(?:\d+|\$|/[^/\s]*/))?p;?)+(?: [^\s-]\S*)+$")
 
+(def sh-repo-file-clis
+  "File-management CLIs clj `(sh …)` may run without approval when every
+   operand stays inside the git repo (or tmp) — see the `:within :repo`
+   default rule. `ln` is deliberately absent: a relative link target resolves
+   against the link's dir, not cwd, so the operand check can't vouch for it."
+  #{"mv" "cp" "mkdir" "touch" "rmdir" "chmod"})
+
 (def default-rules
   "The built-in rule set, in precedence order, each tagged :scope :default.
    Behavioral nudges come first so a harmless /tmp `rm` or an auto-memory write
@@ -323,6 +330,11 @@
    ;; Read-only `sed -n '<range>p' file…` inside a git repo. A :command-scoped
    ;; allow, so clj grants only that exact literal command — not `sed` at large.
    {:match  {:tool :sh :cli "sed" :command sed-print-re :repo #"."}
+    :action {:type :allow}
+    :scope  :default}
+   ;; File management (mv/cp/mkdir/…) whose every operand resolves inside the
+   ;; repo (never .git/) or tmp. Arg-scoped too: exact literal commands only.
+   {:match  {:tool :sh :cli sh-repo-file-clis :within :repo}
     :action {:type :allow}
     :scope  :default}
    {:match  {:tool :sh}

@@ -98,7 +98,7 @@
 
 (def ^:private write-token-re
   "Write indicators in a shell command or clj eval that would mutate a file."
-  #"(?:>>?|\btee\b|\bsed\s+-i|\bcp\b|\bmv\b|\bdd\b|\bspit\b|writeFileSync|appendFileSync|\brm\b)")
+  #"(?:>>?|\btee\b|\bsed\s+-i|\bcp\b|\bmv\b|\bdd\b|\bchmod\b|\bspit\b|writeFileSync|appendFileSync|\brm\b)")
 
 (def ^:private hard-block-msg
   (str "Blocked (hard rule): agents may not modify the rules files "
@@ -207,6 +207,36 @@
      (let [resolved (sandbox/real-resolve cwd (str path))]
        (some #(sandbox/path-within? resolved %) (sandbox/hidden-paths))))))
 
+(defn operands-within-repo?
+  "True when literal `argv` (a `:sh` command, binary first) only touches paths
+   strictly inside `repo` (not the root itself — `mv <repo> /tmp/x`) or tmp —
+   never the repo's `.git/` (hooks = code execution) or `.xi/` (moving it away
+   would drop the repo's rules file). Flags must be bare short-flag
+   clusters (`-f`, `-rv`): a `--long[=value]` flag, `--`, or a value glued to a
+   non-letter (`-t/etc`) could smuggle an unchecked path, so it never matches.
+   Every other arg is treated as a path and resolved against `cwd` with
+   symlinks canonicalized (a flag's separate value, e.g. `-m 755`, is checked
+   too — stricter, never looser). I/O, computed only when a `:within` rule is
+   in play."
+  [cwd repo argv]
+  (let [args     (map str (rest argv))
+        flags    (filter #(str/starts-with? % "-") args)
+        operands (remove #(str/starts-with? % "-") args)]
+    (boolean
+     (when (and repo (seq operands)
+                (every? #(re-matches #"-[a-zA-Z]+" %) flags))
+       (let [root     (sandbox/real-resolve cwd repo)
+             reserved (map #(path/join root %) [".git" ".xi"])]
+         (every? (fn [op]
+                   ;; root / reserved checks come first so a repo living
+                   ;; under tmp can't launder them through the tmp clause.
+                   (let [resolved (sandbox/real-resolve cwd op)]
+                     (and (not= resolved root)
+                          (not-any? #(sandbox/path-within? resolved %) reserved)
+                          (or (sandbox/path-within? resolved root)
+                              (sandbox/within-tmp? cwd resolved)))))
+                 operands))))))
+
 (defn- home-collapse
   "Rewrite a leading $HOME in absolute `abs` back to `~`, so a `:path` rule can
    be written home-relative (`~/…`) and still match a resolved absolute target.
@@ -224,7 +254,8 @@
    `ruleset` actually needs — `:resolved-path` (canonical absolute path) plus
    `:resolved-home-path` (that path with a leading $HOME collapsed to `~`) for
    `:path` rules, `:outside-cwd?` for `:outside` rules, `:credential-path?` for
-   `:credential` rules, and `:nodes` (tree-sitter) for `:node` rules."
+   `:credential` rules, `:nodes` (tree-sitter) for `:node` rules, and
+   `:operands-within-repo?` for `:within` rules (from a literal `:sh` `:argv`)."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (sandbox/real-resolve (:effective-cwd req) (str (:path req))))]
@@ -236,7 +267,10 @@
       (and (:path req) (rules/needs-credential? ruleset))
       (assoc :credential-path? (credential-path? (:effective-cwd req) (:path req)))
       (and (:path req) (rules/needs-nodes? ruleset))
-      (assoc :nodes (nodes/nodes-for req)))))
+      (assoc :nodes (nodes/nodes-for req))
+      (and (:argv req) (rules/needs-within? ruleset))
+      (assoc :operands-within-repo? (operands-within-repo? (:effective-cwd req)
+                                                           (:repo req) (:argv req))))))
 
 ;; ── Ordered ruleset ─────────────────────────────────────────────────────────
 

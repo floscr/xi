@@ -1335,11 +1335,14 @@
                    ;; Command + its effective :dir, for the per-command engine
                    ;; consult (dir-scoped rules match at the dir the sh runs in).
                    ;; :literal? — every arg is a string literal, so :command is
-                   ;; exactly the argv that will run (exact-command grants).
+                   ;; exactly the argv that will run (exact-command grants) and
+                   ;; :argv is kept for operand checks (`:within` rules).
                    (string? (first args))
-                   (update :cmds conj {:command (str/join " " (filter string? args))
-                                       :literal? (every? string? args)
-                                       :dir (:dir m) :bg? false}))))}
+                   (update :cmds conj (let [literal? (every? string? args)]
+                                        (cond-> {:command (str/join " " (filter string? args))
+                                                 :literal? literal?
+                                                 :dir (:dir m) :bg? false}
+                                          literal? (assoc :argv (vec args))))))))}
    ;; builtin write helpers: record each literal write-target path tagged with
    ;; the helper it came from (so rm targets can be singled out for dir-delete).
    {:heads   (set (keys WRITE_HELPER_TARGETS))
@@ -1643,13 +1646,15 @@
    (sudo, remote-copy shells) and any user deny/allow rules — that the rules
    extension can't apply on its own: it only sees the opaque clj `:code`, not
    the individual commands the pre-scan extracts. clj scans the code into
-   literal commands and consults the engine per command here."
-  [ruleset ext-state cwd cmd]
+   literal commands and consults the engine per command here. `argv` (only for
+   fully-literal calls) lets `:within` rules check the command's operands."
+  [ruleset ext-state cwd cmd argv]
   (rules/first-match
    ruleset
    (rules-store/enrich-request
-    {:tool :sh :cli (command-cli cmd) :command (str cmd)
-     :effective-cwd cwd :repo (rules-store/git-root cwd) :state ext-state}
+    (cond-> {:tool :sh :cli (command-cli cmd) :command (str cmd)
+             :effective-cwd cwd :repo (rules-store/git-root cwd) :state ext-state}
+      argv (assoc :argv argv))
     ruleset)))
 
 (defn- confirm-all!
@@ -1773,25 +1778,26 @@
                                 (swap! rs-cache assoc eff r)
                                 r)))
             cmd-eff-cwd (fn [dir] (if dir (rules-store/expand-path cwd dir) cwd))
-            cmd-decision (fn [{:keys [command dir]}]
+            cmd-decision (fn [{:keys [command dir argv]}]
                            (let [eff (cmd-eff-cwd dir)]
-                             (sh-decision (ruleset-for eff) ext-st eff command)))
+                             (sh-decision (ruleset-for eff) ext-st eff command argv)))
             ;; Engine consult per scanned command (sh + background), modeled as
             ;; a {:tool :sh} request; :deny is handled by `denied` below. This
             ;; is how a user config `:allow` rule reaches clj's shell-outs. An
             ;; :allow grants at the rule's granularity:
-            ;; - :cli     — no :command constraint (/clj allow, `:cli` rules):
+            ;; - :cli     — no argument constraint (/clj allow, `:cli` rules):
             ;;              the binary is pre-approved for the whole eval.
-            ;; - :command — a :command-scoped rule: only that exact literal
-            ;;              command runs (injected as :_allowed-commands), so an
-            ;;              args-specific allow can't leak to other (sh "<cli>" …)
-            ;;              calls — dynamic args, `apply sh` — in the same eval.
+            ;; - :command — an arg-scoped rule (:command / :within): only that
+            ;;              exact literal command runs (injected as
+            ;;              :_allowed-commands), so an args-specific allow can't
+            ;;              leak to other (sh "<cli>" …) calls — dynamic args,
+            ;;              `apply sh` — in the same eval.
             grants   (mapv (fn [c]
                              (let [r (cmd-decision c)]
                                (assoc c :grant
                                       (when (= :allow (get-in r [:action :type]))
                                         (cond
-                                          (nil? (get-in r [:match :command])) :cli
+                                          (not (rules/arg-scoped? r))         :cli
                                           (or (:bg? c) (:literal? c))         :command)))))
                            cmds)
             ;; SAFE_AUTORUN CLIs are excluded: they already run through clj's

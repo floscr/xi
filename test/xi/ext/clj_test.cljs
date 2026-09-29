@@ -537,6 +537,22 @@
                    (is (str/includes? (intercepted-text gated) "need approval"))
                    (done)))))))
 
+(deftest gate-default-allows-mv-within-repo
+  ;; Built-in default: mv/cp/… whose every operand stays inside the repo runs
+  ;; without approval (exact-command grant); one reaching outside is gated.
+  (async done
+    (let [ctx (assoc (gate-ctx) :cwd (.cwd js/process))]
+      (-> (js/Promise.all
+           #js [(gate {:name "clj" :arguments {:code "(sh \"mv\" \"src/a.txt\" \"src/b.txt\")"}} ctx)
+                (gate {:name "clj" :arguments {:code "(sh \"mv\" \"src/a.txt\" \"/etc/b.txt\")"}} ctx)])
+          (.then (fn [[ok gated]]
+                   (is (not (:intercepted ok)))
+                   (is (= ["mv src/a.txt src/b.txt"] (get-in ok [:arguments :_allowed-commands])))
+                   (is (not (contains? (set (get-in ok [:arguments :_allowed])) "mv")))
+                   (is (:intercepted gated))
+                   (is (str/includes? (intercepted-text gated) "need approval"))
+                   (done)))))))
+
 (deftest gate-engine-deny-rule-blocks
   ;; A session :deny rule blocks the command with the rule's message.
   (let [state {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :sh :cli "npm"}

@@ -143,12 +143,14 @@ approval dialog as reading there. Approval happens **before** eval, in the
    cwd's git root as `:repo`, so `:repo`-scoped rules match. A rule `:deny`
    blocks it (with the rule's message). A rule `:allow` grants at the rule's
    granularity: one **without** a `:command` pre-approves the binary for the
-   eval; a **`:command`-scoped** one grants only that exact, fully-literal
-   command (injected as `:_allowed-commands`). A `:command`-scoped allow
+   eval; an **arg-scoped** one (`:command` or `:within`) grants only that
+   exact, fully-literal command (injected as `:_allowed-commands`). An
+   arg-scoped allow
    never covers other calls to the same CLI in the eval: if any `(sh …)`
    call to that CLI isn't granted, or has a dynamic arg, the CLI still goes
-   through approval. This is how the built-in `sed -n '<range>p' file` default
-   runs without making `sed -i` runnable. Session
+   through approval. This is how the built-in `sed -n '<range>p' file` and
+   in-repo `mv`/`cp`/`mkdir`/… defaults run without making `sed -i` or
+   `mv ~/x /etc` runnable. Session
    allow grants (`/clj allow`, or an `:always` answer) are stored here as
    session allow-rules, so they show up in `/rules` — there is no separate
    private allowlist. (See [rules.md](rules.md).)
