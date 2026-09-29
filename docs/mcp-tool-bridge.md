@@ -2,7 +2,7 @@
 
 Xi uses the Claude Agent SDK to talk to Claude Code (CC), but **CC never
 executes tools directly**. The SDK runs in a separate **runner process**
-(`runner/runner.mjs`, its own `node_modules`, freely upgradable SDK); the
+(`providers/anthropic/runner.mjs`, its own `node_modules`, freely upgradable SDK); the
 runner exposes Xi's tools to CC via an in-process MCP server and **proxies
 every tool call back to the host** over stdio. The host executes the call
 through its own pipeline — including a tool gate that can block or rewrite
@@ -23,12 +23,12 @@ leave the Xi process.
                │ MCP call (in-process in the runner)
                ▼
 ┌──────────────────────────────────────────────────────┐
-│  Runner (runner/runner.mjs, spawned per turn)        │
+│  Runner (providers/anthropic/runner.mjs, spawned per turn)        │
 │                                                      │
 │  · builds the SDK MCP server from the host's         │
 │    toolDefs (JSON Schema → Zod)                      │
 │  · forwards every SDK message to the host            │
-│    as a `sdk-message` frame                          │
+│    as a `message` frame                          │
 │  · proxies each tool call as a `tool-call` frame     │
 │    and waits for the `tool-result` frame             │
 └──────────────┬───────────────────────────────────────┘
@@ -63,7 +63,7 @@ Runner → host:
 
 | Frame | Meaning |
 |---|---|
-| `{type:"sdk-message", message}` | one SDK message, decoded host-side by `process-sdk-message` |
+| `{type:"message", message}` | one SDK message, decoded host-side by `process-sdk-message` |
 | `{type:"tool-call", id, name, arguments}` | proxied tool call awaiting a `tool-result` |
 | `{type:"done"}` | terminal: turn complete |
 | `{type:"error", message}` | terminal: turn failed |
@@ -75,9 +75,11 @@ host ignores any frame after it.
 
 | File | Role |
 |------|------|
-| `runner/runner.mjs` | SDK integration: query lifecycle, MCP server, tool-call proxying |
-| `runner/package.json` | pins the SDK version — upgrade here, `npm install` in `runner/` |
-| `src/xi/providers/anthropic.cljs` | spawns the runner, decodes SDK messages, services tool calls |
+| `providers/anthropic/runner.mjs` | SDK integration: query lifecycle, MCP server, tool-call proxying |
+| `providers/anthropic/package.json` | pins the SDK version — upgrade here; the runner reinstalls when the lockfile changes |
+| `providers/anthropic/claude-code-manifest.json` | pins the Claude CLI release (`bb claude:update`); built to the `claude` out-link next to it |
+| `src/xi/providers/runner.cljs` | host side of the runner protocol, provider-agnostic: spawn, framing, tool-call proxying, terminal frame |
+| `src/xi/providers/anthropic.cljs` | Claude-specific: query options, SDK message decoding, tool gate + registry wiring |
 | `src/xi/tools/registry.cljs` | Tool definitions and execute fns |
 | `src/xi/tools/*.cljs` | Individual tools (bash, read, write, edit, grep, find, ls) |
 | `src/xi/ext/core.cljs` | Tool-gate chain composition (`compose-tool-gate`) |
@@ -163,7 +165,7 @@ patterns / server-control live in `ext/permission_gate.cljs`.
 
 The SDK ships a native, generically-linked CC binary that can't run on NixOS
 (wrong `ld-linux`). The runner's `resolveClaudeExecutable()` instead resolves,
-in order: `XI_CLAUDE_CLI_PATH`, the repo-pinned `nix/claude/bin/claude`
+in order: `XI_CLAUDE_CLI_PATH`, the repo-pinned `providers/anthropic/claude/bin/claude`
 out-link (`bb claude:build`, see `flake.nix`), then `claude` from `PATH`
 (following the symlink with `realpathSync`), and passes the result as
 `pathToClaudeCodeExecutable`.
@@ -219,7 +221,7 @@ next turn start a fresh Claude session with a new JSONL file.
 ## Stream processing
 
 `stream-messages-runner` returns `{:promise :abort!}`. The runner's
-`sdk-message` frames are decoded host-side by `process-sdk-message` into
+`message` frames are decoded host-side by `process-sdk-message` into
 provider callbacks (`:on-text`, `:on-thinking`, `:on-tool-start`,
 `:on-tool-args`, `:on-tool-result`, `:on-error`), which the agent layer
 turns into `:agent/*` events:

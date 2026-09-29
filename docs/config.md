@@ -113,8 +113,8 @@ See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `XI_CLAUDE_RUNNER_PATH` | bundled `runner/runner.mjs` | Path to the Claude SDK runner script spawned per turn by `xi.providers.anthropic`. |
-| `XI_CLAUDE_CLI_PATH` | `nix/claude/bin/claude` (from `bb claude:build`), else `claude` from `PATH` | Claude CLI executable used by the runner. The repo pins the CLI version via `flake.nix` + `nix/claude-code-manifest.json`; bump with `bb claude:update`. |
+| `XI_CLAUDE_RUNNER_PATH` | bundled `providers/anthropic/runner.mjs` | Path to the Claude SDK runner script spawned per turn by `xi.providers.anthropic`. |
+| `XI_CLAUDE_CLI_PATH` | `providers/anthropic/claude/bin/claude` (from `bb claude:build`), else `claude` from `PATH` | Claude CLI executable used by the runner. The repo pins the CLI version via `flake.nix` + `providers/anthropic/claude-code-manifest.json`; bump with `bb claude:update`. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint (`xi.providers.ollama`). |
 | `OPENCODE_API_KEY` | — | OpenCode Zen API key (`xi.providers.zen`). Falls back to `OPENCODE_ZEN_API_KEY`, then `~/.local/share/opencode/auth.json`. Optional — free chat-completions models work without it. |
 | `OPENCODE_ZEN_API_KEY` | — | Alternate name for the Zen API key. |

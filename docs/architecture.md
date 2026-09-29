@@ -158,7 +158,7 @@ lookup from that vector.
   resources, not app state). Abort: `:agent/abort` event →
   `:provider/abort` effect → handle's `abort!`.
 - `xi.providers.anthropic` runs the Claude Agent SDK in the out-of-process
-  `runner/` (tool calls proxy back to the host) — see
+  `providers/anthropic/` (tool calls proxy back to the host) — see
   [mcp-tool-bridge.md](mcp-tool-bridge.md).
 
 ## Assembly (`xi.cli`)

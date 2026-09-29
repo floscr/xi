@@ -2,8 +2,9 @@
 // xi-claude-runner — standalone Claude Agent SDK runner.
 //
 // Isolates @anthropic-ai/claude-agent-sdk in its own process with its own
-// node_modules, so Xi's build isn't chained to one SDK version. Xi (the host)
-// spawns one of these per turn and speaks newline-delimited JSON over stdio:
+// node_modules, so Xi's build isn't chained to one SDK version. Xi (the host,
+// xi.providers.runner) spawns one of these per turn and speaks
+// newline-delimited JSON over stdio:
 //
 //   host → runner (stdin):
 //     {type:"start", queryOpts, envOverride, toolDefs, prompt, noTools}
@@ -11,31 +12,55 @@
 //     {type:"abort"}
 //
 //   runner → host (stdout):
-//     {type:"sdk-message", message}   raw SDK message, forwarded verbatim
+//     {type:"message", message}       raw SDK message, forwarded verbatim
 //     {type:"tool-call", id, name, arguments}
 //     {type:"done"}
 //     {type:"error", message}
+//
+// Everything this provider needs at runtime lives in this directory: the
+// runner, its node_modules, and the pinned Claude CLI (claude-code-manifest.json
+// → the `claude` out-link, see flake.nix).
 //
 // The runner is thin: it forwards SDK messages (the host decodes them) and
 // proxies each tool call back to the host (where the permission gate +
 // registry live). It never touches the host's data.
 
 import { execSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ── Self-bootstrap ─────────────────────────────────────────────────────────────
-// Install the runner's own deps on first run so the host never needs a manual
-// `npm install` in runner/. npm output goes to stderr (fd 2) — stdout is the
+// Install the runner's own deps so the host never needs a manual `npm install`
+// here: on first run, and again whenever package-lock.json is newer than the
+// last install (an SDK bump — also after a deploy, which ships the lockfile
+// but not node_modules). npm output goes to stderr (fd 2) — stdout is the
 // protocol frame stream and must stay clean. The host reads no frames until we
 // send some, and its `start` frame just buffers in the stdin pipe meanwhile.
 
 const runnerDir = dirname(fileURLToPath(import.meta.url));
+const installMarker = join(runnerDir, "node_modules", ".xi-installed");
 
-if (!existsSync(join(runnerDir, "node_modules", "@anthropic-ai", "claude-agent-sdk"))) {
-  process.stderr.write("[runner] deps missing — running npm install in " + runnerDir + "\n");
+function depsState() {
+  if (!existsSync(join(runnerDir, "node_modules", "@anthropic-ai", "claude-agent-sdk")))
+    return "missing";
+  // Installed by hand (no marker yet): trust it and start tracking from now.
+  if (!existsSync(installMarker)) return "untracked";
+  try {
+    const lock = statSync(join(runnerDir, "package-lock.json")).mtimeMs;
+    return lock > statSync(installMarker).mtimeMs ? "stale" : "ok";
+  } catch {
+    return "ok";
+  }
+}
+
+const deps = depsState();
+if (deps === "missing" || deps === "stale") {
+  process.stderr.write("[runner] deps " + deps + " — running npm install in " + runnerDir + "\n");
   execSync("npm install", { cwd: runnerDir, stdio: ["ignore", 2, 2] });
+}
+if (deps !== "ok") {
+  try { writeFileSync(installMarker, new Date().toISOString() + "\n"); } catch { }
 }
 
 const { query, createSdkMcpServer } = await import("@anthropic-ai/claude-agent-sdk");
@@ -155,14 +180,13 @@ function buildMcpServer(toolDefs) {
 // pathToClaudeCodeExecutable — and only fall back to the SDK's own binary
 // when there is none. XI_CLAUDE_CLI_PATH overrides the lookup.
 //
-// Before PATH, prefer the repo-pinned CLI at <repo>/nix/claude/bin/claude —
-// the `nix build .#claude-code -o nix/claude` out-link written by
-// `bb claude:build` / `bb claude:update`. The CLI gates new model ids on its
-// own version and the system package lags upstream; the out-link makes the
-// pinned version win even when xi is launched from a directory without the
-// repo's direnv shell loaded.
+// Before PATH, prefer the pinned CLI next to this script (./claude/bin/claude)
+// — the `nix build .#claude-code` out-link written by `bb claude:build` /
+// `bb claude:update`. The CLI gates new model ids on its own version and the
+// system package lags upstream; the out-link makes the pinned version win even
+// when xi is launched from a directory without the repo's direnv shell loaded.
 
-const pinnedClaude = join(runnerDir, "..", "nix", "claude", "bin", "claude");
+const pinnedClaude = join(runnerDir, "claude", "bin", "claude");
 
 function resolveClaudeExecutable() {
   const override = process.env.XI_CLAUDE_CLI_PATH;
@@ -209,7 +233,7 @@ async function runTurn({ queryOpts, envOverride, toolDefs, prompt, noTools }) {
   currentQuery = q;
   try {
     for await (const message of q) {
-      send({ type: "sdk-message", message });
+      send({ type: "message", message });
     }
     sendTerminal({ type: "done" });
   } catch (err) {

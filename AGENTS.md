@@ -57,16 +57,18 @@ running.
 
 ### The Claude SDK Runner
 
-The `@anthropic-ai/claude-agent-sdk` is **not** a dependency of Xi itself — it lives in the separate **`runner/`** process (`runner/runner.mjs`, own `package.json`/`node_modules`). The Anthropic provider (`xi.providers.anthropic`) spawns the runner per turn and speaks newline-delimited JSON over stdio; the runner proxies every tool call back to the host, so the tool registry + rules/permission gate stay host-side. This decouples the SDK version from Xi: upgrade it by bumping `runner/package.json` and running `npm install` in `runner/`.
+The `@anthropic-ai/claude-agent-sdk` is **not** a dependency of Xi itself — it lives in a separate **runner process** (`providers/anthropic/runner.mjs`, own `package.json`/`node_modules`). The Anthropic provider (`xi.providers.anthropic`) spawns the runner per turn and speaks newline-delimited JSON over stdio; the runner proxies every tool call back to the host, so the tool registry + rules/permission gate stay host-side. This decouples the SDK version from Xi: upgrade it by bumping `providers/anthropic/package.json` — the runner reinstalls its own deps when the lockfile changes.
+
+**Everything a provider needs outside the compiled CLJS lives in `providers/<id>/`** (runner script, its `node_modules`, pinned vendor CLI), mirroring `src/xi/providers/<id>`. The host side of the runner protocol — spawning, framing, tool-call proxying — is provider-agnostic and lives in `xi.providers.runner`; a provider supplies only its `start` payload and what a `message` frame means. A second runner (e.g. OpenAI) is a new `providers/<id>/runner.mjs` plus a call to `runner/run-turn!`.
 
 Runner notes:
 
 - The runner resolves the `claude` CLI from `PATH` (override with `XI_CLAUDE_CLI_PATH`); the SDK's bundled generic-linux binary does not work on NixOS.
-- **The Claude CLI is pinned in-repo via nix, not taken from the system.** `flake.nix` builds nixpkgs' `claude-code` with the upstream release manifest pinned in `nix/claude-code-manifest.json` (the CLI gates new model ids on its own version, and nixpkgs lags upstream). `bb claude:build` writes the gitignored out-link `nix/claude`, which the runner prefers over `PATH` — so it also applies when `xi` is launched from any other directory. `.envrc` (`use flake`) additionally puts the same `claude` on `PATH` inside the repo. On a "Claude Code X does not support this model; version Y or newer is required" error: `bb claude:update` (refetches the manifest for the latest release + rebuilds `nix/claude`); it takes effect on the next turn, no restart needed.
+- **The Claude CLI is pinned in-repo via nix, not taken from the system.** `flake.nix` builds nixpkgs' `claude-code` with the upstream release manifest pinned in `providers/anthropic/claude-code-manifest.json` (the CLI gates new model ids on its own version, and nixpkgs lags upstream). `bb claude:build` writes the gitignored out-link `providers/anthropic/claude`, which the runner prefers over `PATH` — so it also applies when `xi` is launched from any other directory. `.envrc` (`use flake`) additionally puts the same `claude` on `PATH` inside the repo. On a "Claude Code X does not support this model; version Y or newer is required" error: `bb claude:update` (refetches the manifest for the latest release + rebuilds `providers/anthropic/claude`); it takes effect on the next turn, no restart needed.
 - The runner's stderr is inherited by the host, so anything it writes there paints over the TUI — keep runner diagnostics to real errors only, never per-turn logging.
 - **Token hygiene:** text-only throwaway turns (titles, quick replies, summaries) must pass `:no-tools? true`, otherwise each one carries every tool definition (~25k tokens). Xi is the sole loader of project instructions (`settingSources ["user"]`), so don't re-enable the CLI's own AGENTS.md loading. Rules + how to audit cache hits: [docs/mcp-tool-bridge.md](docs/mcp-tool-bridge.md#prompt-caching--token-hygiene).
-- `XI_CLAUDE_RUNNER_PATH` overrides the runner script location (defaults to `runner/runner.mjs` next to `target/main.js`).
-- SDK query lifecycle quirks (`.close()` after completion, `.interrupt()` then `.close()` on abort, single terminal frame) are handled inside `runner/runner.mjs`.
+- `XI_CLAUDE_RUNNER_PATH` overrides the runner script location (defaults to `providers/anthropic/runner.mjs` next to `target/main.js`).
+- SDK query lifecycle quirks (`.close()` after completion, `.interrupt()` then `.close()` on abort, single terminal frame) are handled inside `providers/anthropic/runner.mjs`.
 
 ## Testing
 
@@ -128,7 +130,7 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
   extensions (`xi.providers.anthropic`, `xi.providers.ollama`,
   `xi.providers.openai.codex`, `xi.providers.zen`). Each provider is a data
   map `{:id :start-turn! :list-models!}`. The Anthropic provider runs the
-  Claude Agent SDK out-of-process via `runner/` (see "The Claude SDK Runner"
+  Claude Agent SDK out-of-process via `providers/anthropic/` (see "The Claude SDK Runner"
   above). Zen (OpenCode Zen gateway)
   routes `opencode/<id>` models across several API surfaces; chat-completions,
   Anthropic Messages, and OpenAI Responses (GPT/Grok/Muse, incl. GPT 6 Astra)
@@ -141,7 +143,7 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
 - **shadow-cljs** compiles to a single node script run by **Bun**; the web
   client is a separate `:browser` build served by the same Bun server.
 - Runtime npm deps: none in Xi itself (`@chenglou/pretext` aside); the Claude
-  Agent SDK lives in `runner/` (see above).
+  Agent SDK lives in `providers/anthropic/` (see above).
 - Session metadata stored in `~/.config/xi/sessions/`; conversation transcripts
   live in Claude CLI sessions under `~/.claude/projects/`
 - Personal agent sessions stored separately in `~/.config/xi/personal-agent/root/`
@@ -196,8 +198,10 @@ src/xi/
   fx.cljs              — effect handlers (sessions, image processing, model list)
   wire.cljs            — EDN wire protocol (the events ARE the protocol)
   providers/
-    anthropic.cljs     — Anthropic provider (spawns runner/, proxies tool calls,
-                         decodes SDK message stream)
+    runner.cljs        — host side of the provider runner protocol (spawn,
+                         NDJSON framing, tool-call proxying) — provider-agnostic
+    anthropic.cljs     — Anthropic provider (runs providers/anthropic/ via
+                         runner.cljs, decodes the SDK message stream)
     openai_compat.cljs — shared OpenAI Chat Completions streaming + tool loop
     ollama.cljs        — Ollama provider (thin wrapper over openai_compat)
     zen.cljs           — OpenCode Zen gateway provider (dispatches by wire format)
@@ -275,9 +279,10 @@ src/xi/
 Outside `src/`: `bb-client/` — a Babashka/JVM client lib (`xi.client/prompt!`)
 for calling xi's one-shot prompt mode from other services, paired with named
 agent profiles (`xi prompt --agent`). See [docs/bb-client.md](docs/bb-client.md).
-`runner/` — the out-of-process Claude Agent SDK runner (`runner.mjs` + its own
-`package.json`), spawned per turn by `xi.providers.anthropic` (see "The Claude
-SDK Runner" above).
+`providers/` — runtime assets per provider, outside the compiled CLJS:
+`providers/anthropic/` holds the out-of-process Claude Agent SDK runner
+(`runner.mjs` + its own `package.json`) and the pinned Claude CLI, spawned per
+turn by `xi.providers.anthropic` (see "The Claude SDK Runner" above).
 
 ### Web Client
 

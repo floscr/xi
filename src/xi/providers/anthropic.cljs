@@ -1,17 +1,16 @@
 (ns xi.providers.anthropic
   "Anthropic provider — runs the Claude Agent SDK in a separate runner
-   process (runner/runner.mjs, its own node_modules, freely upgradable SDK)
-   and speaks newline-delimited JSON over stdio. The host owns the tool
+   process (providers/anthropic/runner.mjs, its own node_modules, freely
+   upgradable SDK) driven through xi.providers.runner. The host owns the tool
    registry + permission gate; the runner proxies each tool call back via
    `tool-call` frames.
 
    Interface: (stream-messages-runner opts) → {:promise :abort!}.
    Extension hooks are injected via :tool-gate (async transform; nil blocks,
    {:intercepted true :result …} short-circuits) — no ext/core dependency."
-  (:require ["node:child_process" :as child-process]
-            ["node:fs" :as fs]
-            ["node:path" :as path]
+  (:require ["node:fs" :as fs]
             [clojure.string :as str]
+            [xi.providers.runner :as runner]
             [xi.tools.registry :as tools]
             [xi.util :as util]))
 
@@ -233,7 +232,7 @@
 
 (defn process-sdk-message
   "Dispatch a single SDK message onto callbacks + per-turn `state` — the
-   runner transport feeds these over the wire as `sdk-message` frames.
+   runner transport feeds these over the wire as `message` frames.
    Handles stream_event / assistant / user / result / system /
    rate_limit_event; loop control (done detection, abort) stays with the
    caller."
@@ -285,10 +284,10 @@
       nil)))
 
 ;; ── Runner transport (out-of-process SDK) ─────────────────────────────────────
-;; Spawn `runner/runner.mjs` (its own node_modules, freely upgradable SDK)
-;; per turn and speak newline-delimited JSON over stdio. The host owns the
-;; permission gate + tool registry — the runner proxies each tool call back
-;; via `tool-call` frames (see runner/runner.mjs).
+;; Spawn `providers/anthropic/runner.mjs` (its own node_modules, freely
+;; upgradable SDK) per turn. Spawning, framing and tool-call proxying live in
+;; xi.providers.runner; this section supplies what is Claude-specific: the
+;; query options, the prompt shape and the SDK message decoding.
 
 (defn- initial-turn-state [opts]
   (atom {:content [] :usage {} :stop-reason nil
@@ -298,7 +297,7 @@
 
 (defn- runner-path []
   (or (aget js/process.env "XI_CLAUDE_RUNNER_PATH")
-      (.resolve path js/__dirname ".." "runner" "runner.mjs")))
+      (runner/script-path :anthropic)))
 
 (defn- base-query-opts
   "JSON-serializable query options for the runner. Excludes mcpServers, env,
@@ -344,9 +343,9 @@
       (:prompt opts))))
 
 (defn stream-messages-runner
-  "Run one Claude turn: spawn runner/runner.mjs, forward SDK messages
-   through process-sdk-message, and service proxied tool-call frames on the
-   host. Returns {:promise :abort!}."
+  "Run one Claude turn through the SDK runner (xi.providers.runner): forward
+   its SDK messages through process-sdk-message and service proxied tool calls
+   on the host. Returns {:promise :abort!}."
   [opts]
   (let [callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
                                      :on-tool-args :on-tool-result :on-session
@@ -362,106 +361,37 @@
                                           :extra-tool-registry (:extra-tool-registry opts)
                                           :remove-tools (:remove-tools opts)}
                                    (:personal-agent? opts) (assoc :only-tools PERSONAL_AGENT_TOOLS)))
-        dispatch (tool-dispatcher {:registry registry
-                                   :tool-gate (:tool-gate opts)
-                                   :cwd cwd
-                                   :client-pid (:client-pid opts)})
-        query-opts (base-query-opts opts append-sys)
-        ^js proc (child-process/spawn (.-execPath js/process)
-                                      #js [(runner-path)]
-                                      #js {:stdio #js ["pipe" "pipe" "inherit"]})
-        send-frame! (fn [m]
-                      (try
-                        (.write (.-stdin proc) (str (js/JSON.stringify (clj->js m)) "\n"))
-                        (catch :default _e nil)))
-        promise
-        (js/Promise.
-         (fn [resolve _reject]
-           (let [buf (atom "")
-                 done? (atom false)
-                 finish! (fn []
-                           (when-not @done?
-                             (reset! done? true)
-                             (try (.kill proc) (catch :default _e nil))
-                             (resolve @state)))
-                 handle-frame
-                 (fn [^js frame]
-                   ;; Frames after the terminal `done`/`error` (e.g. a late
-                   ;; runner error while we're killing it) must not fire
-                   ;; callbacks into an already-resolved turn.
-                   (when-not @done?
-                    (case (aget frame "type")
-                     "sdk-message"
-                     (process-sdk-message (aget frame "message") callbacks state)
+        {:keys [promise abort!]}
+        (runner/run-turn!
+         {:script (runner-path)
+          :log-tag "claude-runner"
+          :start {:queryOpts (base-query-opts opts append-sys)
+                  :envOverride (:env opts)
+                  :toolDefs (when-not (:no-tools? opts) defs)
+                  :prompt (runner-prompt opts)
+                  :noTools (boolean (:no-tools? opts))}
+          :on-message (fn [message] (process-sdk-message message callbacks state))
+          :on-tool-call (tool-dispatcher {:registry registry
+                                          :tool-gate (:tool-gate opts)
+                                          :cwd cwd
+                                          :client-pid (:client-pid opts)})
+          :on-error (fn [msg]
+                      (cond
+                        (and resume-id (re-find #"No conversation found" msg))
+                        (swap! state assoc :resume-failed true)
 
-                     "tool-call"
-                     (let [id (aget frame "id")
-                           tool-name (aget frame "name")
-                           args (js->clj (aget frame "arguments") :keywordize-keys true)]
-                       (-> (dispatch tool-name args)
-                           (.then (fn [^js res]
-                                    (send-frame! {:type "tool-result"
-                                                  :id id
-                                                  :result {:content (.-content res)
-                                                           :isError (.-isError res)}})))
-                           (.catch (fn [e]
-                                     (send-frame!
-                                      {:type "tool-result" :id id
-                                       :result {:content #js [#js {:type "text" :text (str e)}]
-                                                :isError true}})))))
+                        (cwd-missing? cwd)
+                        (swap! state assoc :cwd-missing true)
 
-                     "done" (finish!)
-
-                     "error"
-                     (let [msg (str (aget frame "message"))]
-                       (cond
-                         (and resume-id (re-find #"No conversation found" msg))
-                         (do (swap! state assoc :resume-failed true) (finish!))
-
-                         (cwd-missing? cwd)
-                         (do (swap! state assoc :cwd-missing true) (finish!))
-
-                         :else
-                         (do
-                           (js/console.error "[claude-runner] error:" msg)
-                           (when (:on-error callbacks)
-                             ((:on-error callbacks) {:type "error" :message msg}))
-                           (finish!))))
-
-                     nil)))]
-             (.setEncoding (.-stdout proc) "utf8")
-             (.on (.-stdout proc) "data"
-                  (fn [chunk]
-                    (swap! buf str chunk)
-                    (loop []
-                      (let [s @buf
-                            nl (.indexOf s "\n")]
-                        (when (>= nl 0)
-                          (let [line (subs s 0 nl)]
-                            (reset! buf (subs s (inc nl)))
-                            (when-not (str/blank? line)
-                              (try (handle-frame (js/JSON.parse line))
-                                   (catch :default e
-                                     (js/console.error "[claude-runner] bad frame:" (str e)))))
-                            (recur)))))))
-             (.on proc "error"
-                  (fn [err]
-                    (js/console.error "[claude-runner] spawn error:" (str err))
-                    (when (:on-error callbacks)
-                      ((:on-error callbacks) {:type "error" :message (str err)}))
-                    (finish!)))
-             (.on proc "close" (fn [_code] (finish!)))
-             (send-frame! {:type "start"
-                           :queryOpts query-opts
-                           :envOverride (:env opts)
-                           :toolDefs (when-not (:no-tools? opts) defs)
-                           :prompt (runner-prompt opts)
-                           :noTools (boolean (:no-tools? opts))}))))]
-    {:promise promise
+                        :else
+                        (do
+                          (js/console.error "[claude-runner] error:" msg)
+                          (when (:on-error callbacks)
+                            ((:on-error callbacks) {:type "error" :message msg})))))})]
+    {:promise (.then promise (fn [_] @state))
      :abort! (fn []
                (swap! state assoc :aborted true)
-               (send-frame! {:type "abort"})
-               (js/setTimeout (fn [] (try (.kill proc) (catch :default _e nil))) 500))}))
+               (abort!))}))
 
 (def model-ids
   "Anthropic model ids offered in the model picker (static — the subscription

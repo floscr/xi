@@ -126,6 +126,11 @@ Small bun/node program:
    `{:id :start-turn! :list-models!}`, declared in `config.cljc` like
    extensions; generic model fetch in `fx.cljs`. Commits `0ef5bbc`,
    `ff1fa3e`, `983b694`.
+
+   Layout since then (the paths above are historical): the runner and the
+   pinned Claude CLI live in `providers/anthropic/` (was `runner/` + `nix/`),
+   the provider-agnostic host transport in `xi.providers.runner`, and the
+   frame carrying an SDK message is `message` (was `sdk-message`).
 4. **(Optional, Phase 2) Containerize** — wrap the runner (nspawn/podman/microvm),
    swap stdio for a socket, mount creds + persist `~/.claude/projects` for
    resume. Protocol unchanged.
