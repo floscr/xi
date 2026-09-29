@@ -9,9 +9,13 @@
      3. global config         ~/.config/xi/rules.edn
      4. server-session        process-local  [:ext :rules :rules]
      5. session runtime       room-scoped    [:rooms rid :ext :rules :rules]
+     6. defaults              a rules file's :defaults (repo, else global),
+                              else xi.rules.defaults/default-rules
 
    Config over runtime, so a configured rule overrides a careless 'always
-   allow'. Config files are cached by mtime and reloaded on change (or via
+   allow'. Config files are versioned maps `{:version 1 :rules [...]
+   :defaults [...]}`; an invalid file fails closed (a catch-all deny in its
+   tier). They are cached by mtime and reloaded on change (or via
    `/rules reload`)."
   (:require [clojure.string :as str]
             [cljs.tools.reader :as tr]
@@ -28,7 +32,17 @@
 ;; ── Paths ────────────────────────────────────────────────────────────────────
 
 (defn config-dir [] (path/join (os/homedir) ".config" "xi"))
-(defn global-file [] (path/join (config-dir) "rules.edn"))
+(defonce ^:private global-file-override (atom nil))
+
+(defn set-global-file!
+  "Point the global rules file at `file` (nil restores the default). Used by
+   the test runner so the user's real ~/.config/xi/rules.edn never leaks into
+   test runs."
+  [file]
+  (reset! global-file-override file))
+
+(defn global-file []
+  (or @global-file-override (path/join (config-dir) "rules.edn")))
 (defn repo-file [repo-root] (when repo-root (path/join repo-root ".xi" "rules.edn")))
 
 (defn expand-path
@@ -67,24 +81,93 @@
       (tr/read-string (str s)))
     (catch :default _ nil)))
 
-(defn- read-rules-file
-  "Read a rules EDN file into a vector of rule maps ([] when absent/unreadable),
-   cached by mtime. A file may hold a vector of rules or a map {:rules [...]}."
+(def rules-file-version
+  "The rules-file format version this xi reads. Every rules file must declare
+   it as `:version`; a missing or different version is an error, so a format
+   change (e.g. renamed default aliases) can never be misread silently."
+  1)
+
+(def ^:private rules-file-keys #{:version :rules :defaults})
+
+(defn parse-rules-config
+  "Validate parsed rules-file `data` (nil = unparseable). Returns
+   `{:rules [...] :defaults [...]}` — `:defaults` expanded via
+   `defaults/expand`, nil when the file doesn't set it — or `{:error msg}`."
+  [data]
+  (let [v       rules-file-version
+        shape   (str "{:version " v " :rules [...] :defaults [...]}")
+        unknown (when (map? data) (remove rules-file-keys (keys data)))]
+    (cond
+      (nil? data)
+      {:error "not valid EDN"}
+
+      (not (map? data))
+      {:error (str "must be a map " shape " — bare rule vectors aren't accepted")}
+
+      (not (contains? data :version))
+      {:error (str "missing required :version — add :version " v)}
+
+      (not= v (:version data))
+      {:error (str "unsupported :version " (pr-str (:version data))
+                   " — this xi reads :version " v)}
+
+      (seq unknown)
+      {:error (str "unknown key(s) " (str/join " " (map pr-str unknown))
+                   " — expected " shape)}
+
+      (not (sequential? (:rules data [])))
+      {:error ":rules must be a vector of rule maps"}
+
+      (not-every? map? (:rules data))
+      {:error (str ":rules entries must be rule maps (put "
+                   ":xi.rules.defaults/… aliases under :defaults)")}
+
+      (not (sequential? (:defaults data [])))
+      {:error ":defaults must be a vector of aliases / rule maps"}
+
+      :else
+      (try
+        {:rules    (vec (:rules data))
+         :defaults (when (contains? data :defaults)
+                     (defaults/expand (:defaults data)))}
+        (catch :default e
+          {:error (ex-message e)})))))
+
+(defn- read-rules-data
+  "The raw parsed EDN of rules `file` (nil when unparseable)."
   [file]
-  (try
-    (if-not (and file (fs/existsSync file))
-      []
-      (let [mtime (.-mtimeMs (fs/statSync file))
+  (read-rule-edn (str (fs/readFileSync file "utf8"))))
+
+(defn- load-rules-file
+  "Read + validate rules `file`, cached by mtime. nil when there is no file;
+   otherwise the `parse-rules-config` result (`{:rules :defaults}` or
+   `{:error}`)."
+  [file]
+  (when (and file (fs/existsSync file))
+    (try
+      (let [mtime  (.-mtimeMs (fs/statSync file))
             cached (get @cache file)]
         (if (= mtime (:mtime cached))
-          (:rules cached)
-          (let [data (read-rule-edn (str (fs/readFileSync file "utf8")))
-                rules (vec (if (map? data) (:rules data) data))]
-            (swap! cache assoc file {:mtime mtime :rules rules})
-            rules))))
-    (catch :default e
-      (js/console.error "[rules] failed to read" file (.-message e))
-      [])))
+          (:config cached)
+          (let [config (parse-rules-config (read-rules-data file))]
+            (swap! cache assoc file {:mtime mtime :config config})
+            config)))
+      (catch :default e
+        {:error (str "unreadable: " (.-message e))}))))
+
+(defn- invalid-file-rule
+  "The fail-closed stand-in for an invalid rules `file`: a catch-all deny that
+   takes the file's place in the config tier, so every rule below it (runtime
+   grants, defaults) is shadowed until the file is fixed — a broken file must
+   never silently drop the user's own denies."
+  [file error]
+  {:match  {}
+   :action {:type    :deny
+            :message (str "Blocked: rules file " file " is invalid — " error
+                          ". Every tool call is denied until it is fixed. "
+                          "Agents can't edit rules files: ask the user to fix "
+                          "it (expected {:version " rules-file-version
+                          " :rules [...]}).")}})
 
 ;; ── Hard-coded immutable rules ──────────────────────────────────────────────
 
@@ -274,12 +357,33 @@
 
 ;; ── Ordered ruleset ─────────────────────────────────────────────────────────
 
-(defn config-rules
-  "Repo rules then global rules, each tagged with its scope."
+(defn- config-files
+  "The config rules files for `cwd`, highest precedence first, as
+   [[file scope] …] (the repo file only when cwd is inside a git repo)."
   [cwd]
   (let [repo (git-root (or cwd (.cwd js/process)))]
-    (vec (concat (map #(assoc % :scope :repo)   (read-rules-file (repo-file repo)))
-                 (map #(assoc % :scope :global) (read-rules-file (global-file)))))))
+    (cond-> []
+      repo (conj [(repo-file repo) :repo])
+      true (conj [(global-file) :global]))))
+
+(defn config-rules
+  "Repo rules then global rules, each tagged with its scope. An invalid file
+   contributes a single catch-all deny instead (see `invalid-file-rule`)."
+  [cwd]
+  (vec (mapcat (fn [[file scope]]
+                 (let [{:keys [rules error]} (load-rules-file file)]
+                   (map #(assoc % :scope scope)
+                        (if error [(invalid-file-rule file error)] rules))))
+               (config-files cwd))))
+
+(defn default-rules
+  "The lowest-precedence default tier: the first config file (repo, then
+   global) that sets `:defaults`, expanded; else the built-in defaults. An
+   invalid file is skipped here — its fail-closed deny already sits above."
+  [cwd]
+  (or (some (fn [[file _]] (:defaults (load-rules-file file)))
+            (config-files cwd))
+      defaults/default-rules))
 
 (defn runtime-rules
   "Server-session rules then session-runtime rules, each tagged."
@@ -308,24 +412,28 @@
   "The full ruleset in precedence order for `cwd`/`room-id`, excluding the
    imperative hard-block (that runs first, separately): the hardened tier
    (prepended, always wins) then config (repo, global) then runtime (server,
-   session) then the built-in defaults last, so any user rule overrides a
-   default but nothing overrides the hardened tier."
+   session) then the default tier last, so any user rule overrides a default
+   but nothing overrides the hardened tier."
   [state room-id cwd]
   (vec (concat (hardened-rules)
                (config-rules cwd)
                (runtime-rules state room-id)
-               defaults/default-rules)))
+               (default-rules cwd))))
 
 ;; ── Config file writing (repo / global scopes) ───────────────────────────────
 
 (defn- write-rules-file!
-  "Persist a rule vector to `file` as pretty EDN (one rule per line), creating
-   parent dirs. Regex literals round-trip via pr-str/read-string."
-  [file rules]
+  "Persist raw rules-file `data` ({:version :rules :defaults}) to `file` as
+   pretty EDN (one rule per line), creating parent dirs. Regex literals
+   round-trip via pr-str/read-string."
+  [file {:keys [version rules] :as data}]
   (fs/mkdirSync (path/dirname file) #js {:recursive true})
   (fs/writeFileSync
    file
-   (str "[\n" (str/join "\n" (map pr-str rules)) "\n]\n")
+   (str "{:version " (pr-str version) "\n"
+        (when (contains? data :defaults)
+          (str " :defaults " (pr-str (:defaults data)) "\n"))
+        " :rules\n [" (str/join "\n  " (map pr-str rules)) "]}\n")
    "utf8"))
 
 (defn scope-file
@@ -339,13 +447,20 @@
 
 (defn append-rule-file!
   "Prepend `rule` (with any :scope stripped) to the config file for `scope`
-   (:repo | :global), so the newest rule wins among file rules. Returns the
-   file path on success, nil when the scope has no file. Clears the mtime
-   cache so the next check reloads."
+   (:repo | :global), so the newest rule wins among file rules; a missing file
+   is created at the current `:version`. The file's `:defaults` are kept as
+   written (aliases, unexpanded). Returns `{:file path}` on success,
+   `{:error msg}` when the existing file is invalid (left untouched), nil when
+   the scope has no file. Clears the mtime cache so the next check reloads."
   [scope cwd rule]
   (when-let [file (scope-file scope cwd)]
-    (let [existing (read-rules-file file)
-          next-rules (vec (cons (dissoc rule :scope) existing))]
-      (write-rules-file! file next-rules)
-      (clear-cache!)
-      file)))
+    (let [data  (if (fs/existsSync file)
+                  (read-rules-data file)
+                  {:version rules-file-version :rules []})
+          error (:error (parse-rules-config data))]
+      (if error
+        {:error (str file " is invalid — " error)}
+        (do (write-rules-file! file (update data :rules
+                                            #(vec (cons (dissoc rule :scope) %))))
+            (clear-cache!)
+            {:file file})))))

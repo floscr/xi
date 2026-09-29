@@ -210,3 +210,34 @@
 
 (deftest defaults-tagged-scope
   (is (every? #(= :default (:scope %)) defaults/default-rules)))
+
+(deftest bundle-aliases-expand
+  (testing "the built-in tier is the expansion of the default aliases"
+    (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
+    (is (= 19 (count defaults/default-rules))))
+  (testing "composites expand to their parts, in order"
+    (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
+                             :xi.rules.defaults/protected-writes
+                             :xi.rules.defaults/outside-writes])
+           (defaults/expand [:xi.rules.defaults/write-gates])))
+    (is (= (defaults/expand [:xi.rules.defaults/sh-read-only
+                             :xi.rules.defaults/repository-scripts
+                             :xi.rules.defaults/sh-confirm])
+           (defaults/expand [:xi.rules.defaults/clj-sh]))))
+  (testing "every alias a bundle references resolves"
+    (doseq [[alias entries] defaults/bundles
+            e entries
+            :when (keyword? e)]
+      (is (contains? defaults/bundles e) (str alias " → " e))))
+  (testing "inline rule maps pass through, tagged :default"
+    (is (= [{:match {:tool :read} :action {:type :allow} :scope :default}]
+           (defaults/expand [{:match {:tool :read} :action {:type :allow}}]))))
+  (testing "a subset keeps only the chosen bundles"
+    (let [rs (defaults/expand [:xi.rules.defaults/mcp-confirm])]
+      (is (= :ask (get-in (rules/first-match rs {:tool :mcp}) [:action :type])))
+      (is (nil? (rules/first-match rs {:tool :sh :cli "cat"})))))
+  (testing "unknown aliases and non-rule entries throw"
+    (is (thrown-with-msg? js/Error #"unknown default-rules alias"
+          (defaults/expand [:xi.rules.defaults/nope])))
+    (is (thrown-with-msg? js/Error #"invalid :defaults entry"
+          (defaults/expand ["plan-mode"])))))

@@ -244,102 +244,143 @@
    so it stays confirmed even inside the repo)."
   #{"mv" "cp" "mkdir" "touch" "rmdir"})
 
-(def default-rules
-  "The built-in rule set, in precedence order, each tagged :scope :default.
-   Behavioral nudges come first so a harmless /tmp `rm` or an auto-memory write
-   is steered (not asked) even though it would also match a policy gate below."
-  [;; Behavioral nudges (win over the policy gates below on overlap).
-   {:match  {:tool :bash :command tmp-rm-re}
-    :action {:type :nudge :message tmp-note}
-    :scope  :default}
-   {:match  {:tool #{:write :edit} :path memory-path-re}
-    :action {:type :nudge :message memory-note}
-    :scope  :default}
-   {:match  {:tool :bash :command memory-path-re}
-    :action {:type :nudge :message memory-note}
-    :scope  :default}
+(def bundles
+  "Named default-rule bundles, keyed by alias (`:xi.rules.defaults/<name>`).
+   A bundle is a vector of rule maps and/or other aliases (composites), expanded
+   in order by `expand`. Rules are first-match-wins, so the ORDER bundles are
+   listed in (see `default-aliases`) is their precedence. A rules file's
+   `:defaults` vector composes these to replace the built-in default tier."
+  {;; Behavioral nudges (listed first so they win over the policy gates on
+   ;; overlap — a harmless /tmp `rm` is steered, not asked).
+   ::tmp-cleanup
+   [{:match  {:tool :bash :command tmp-rm-re}
+     :action {:type :nudge :message tmp-note}}]
+
+   ::no-auto-memory
+   [{:match  {:tool #{:write :edit} :path memory-path-re}
+     :action {:type :nudge :message memory-note}}
+    {:match  {:tool :bash :command memory-path-re}
+     :action {:type :nudge :message memory-note}}]
 
    ;; Plan mode (read-only): allow the plan file, deny other writes/edits and any
-   ;; mutating bash. Placed before the write/bash gates so plan-mode denies win
+   ;; mutating bash. Must precede the write/bash gates so plan-mode denies win
    ;; over the softer ask gates; reads/grep/find/ls and read-only bash fall
    ;; through. Only active while the room's plan-mode flag is set (:when).
-   {:match  {:tool #{:write :edit} :path plan-file :when plan-mode-on}
-    :action {:type :allow}
-    :scope  :default}
-   {:match  {:tool #{:write :edit} :when plan-mode-on}
-    :action {:type :deny :message plan-write-msg}
-    :scope  :default}
-   {:match  {:tool :bash :command plan-mutating-bash-re :when plan-mode-on}
-    :action {:type :deny :message plan-bash-msg}
-    :scope  :default}
+   ::plan-mode
+   [{:match  {:tool #{:write :edit} :path plan-file :when plan-mode-on}
+     :action {:type :allow}}
+    {:match  {:tool #{:write :edit} :when plan-mode-on}
+     :action {:type :deny :message plan-write-msg}}
+    {:match  {:tool :bash :command plan-mutating-bash-re :when plan-mode-on}
+     :action {:type :deny :message plan-bash-msg}}]
 
    ;; Sandbox mode (read-only confinement): deny writes outside the working
    ;; tree, reads of credential paths, and backgrounded (`cmd &`) commands. The
-   ;; bash executor (bwrap/firejail wrapping) stays in xi.ext.sandbox. Placed
-   ;; before the write/bash gates so sandbox denies win over the softer asks;
+   ;; bash executor (bwrap/firejail wrapping) stays in xi.ext.sandbox. Must
+   ;; precede the write/bash gates so sandbox denies win over the softer asks;
    ;; only active while the room's sandbox flag is set (:when).
-   {:match  {:tool #{:write :edit} :outside :cwd :when sandbox-on}
-    :action {:type :deny :message sandbox-write-msg}
-    :scope  :default}
-   {:match  {:tool #{:read :grep :find :ls} :credential :read :when sandbox-on}
-    :action {:type :deny :message sandbox-read-msg}
-    :scope  :default}
-   {:match  {:tool :bash :command sandbox-bg-bash-re :when sandbox-on}
-    :action {:type :deny :message sandbox-bg-msg}
-    :scope  :default}
+   ::sandbox-mode
+   [{:match  {:tool #{:write :edit} :outside :cwd :when sandbox-on}
+     :action {:type :deny :message sandbox-write-msg}}
+    {:match  {:tool #{:read :grep :find :ls} :credential :read :when sandbox-on}
+     :action {:type :deny :message sandbox-read-msg}}
+    {:match  {:tool :bash :command sandbox-bg-bash-re :when sandbox-on}
+     :action {:type :deny :message sandbox-bg-msg}}]
 
    ;; Write gates: sensitive → protected → outside the working tree.
-   {:match  {:tool #{:write :edit} :path sensitive-write-re}
-    :action {:type :ask
-             :message "Write to a sensitive path (Mail / .ssh / .gnupg / .password-store)?"
-             :options [:yes :no]}
-    :scope  :default}
-   {:match  {:tool #{:write :edit} :path protected-write-re}
-    :action {:type :ask
-             :message "Write to a protected path (.env / .git/ / node_modules/)?"
-             :options [:yes :no]}
-    :scope  :default}
-   {:match  {:tool #{:write :edit} :outside :cwd}
-    :action {:type :ask
-             :message "Write outside the project repo?"
-             :options [:yes :no :repo]}
-    :scope  :default}
+   ::sensitive-writes
+   [{:match  {:tool #{:write :edit} :path sensitive-write-re}
+     :action {:type :ask
+              :message "Write to a sensitive path (Mail / .ssh / .gnupg / .password-store)?"
+              :options [:yes :no]}}]
+
+   ::protected-writes
+   [{:match  {:tool #{:write :edit} :path protected-write-re}
+     :action {:type :ask
+              :message "Write to a protected path (.env / .git/ / node_modules/)?"
+              :options [:yes :no]}}]
+
+   ::outside-writes
+   [{:match  {:tool #{:write :edit} :outside :cwd}
+     :action {:type :ask
+              :message "Write outside the project repo?"
+              :options [:yes :no :repo]}}]
+
+   ::write-gates
+   [::sensitive-writes ::protected-writes ::outside-writes]
 
    ;; Bash gates: remote shells are blocked outright; destructive patterns ask.
-   {:match  {:tool :bash :command remote-shell-re}
-    :action {:type :deny
-             :message (str "Blocked: remote shell commands (ssh, scp, rsync, "
-                           "sftp) are not allowed.")}
-    :scope  :default}
-   {:match  {:tool :bash :command guarded-command-re}
-    :action {:type :ask :message "Guarded command — proceed?" :options [:yes :no]}
-    :scope  :default}
+   ::bash-guards
+   [{:match  {:tool :bash :command remote-shell-re}
+     :action {:type :deny
+              :message (str "Blocked: remote shell commands (ssh, scp, rsync, "
+                            "sftp) are not allowed.")}}
+    {:match  {:tool :bash :command guarded-command-re}
+     :action {:type :ask :message "Guarded command — proceed?" :options [:yes :no]}}]
 
    ;; External MCP tools are third-party code — every call is confirmed (with an
    ;; informative server/tool/arguments block built by the rules ext). [a]lways
    ;; persists a session allow-rule narrowed to that mcp server + tool.
-   {:match  {:tool :mcp}
-    :action {:type :ask :options [:yes :no :always]}
-    :scope  :default}
+   ::mcp-confirm
+   [{:match  {:tool :mcp}
+     :action {:type :ask :options [:yes :no :always]}}]
 
    ;; clj (sh …) shell-outs (:sh) — "disallow * then soften", scoped to :sh so
    ;; the real bash tool is untouched. Read-only/rm CLIs auto-run; every other
    ;; CLI hits the base ask (the clj gate turns that into its per-CLI approval
    ;; flow, and its allowlist/config/session softeners sit ABOVE this default
    ;; tier). sudo/remote-copy are denied earlier by the hardened tier.
-   {:match  {:tool :sh :cli sh-autorun-clis}
-    :action {:type :allow}
-    :scope  :default}
-   ;; Read-only `sed -n '<range>p' file…` inside a git repo. A :command-scoped
-   ;; allow, so clj grants only that exact literal command — not `sed` at large.
-   {:match  {:tool :sh :cli "sed" :command sed-print-re :repo #"."}
-    :action {:type :allow}
-    :scope  :default}
-   ;; File management (mv/cp/mkdir/…) whose every operand resolves inside the
-   ;; repo (never .git/) or tmp. Arg-scoped too: exact literal commands only.
-   {:match  {:tool :sh :cli sh-repo-file-clis :within :repo}
-    :action {:type :allow}
-    :scope  :default}
-   {:match  {:tool :sh}
-    :action {:type :ask :message "Run this CLI via clj (sh …)?" :options [:yes :no :always]}
-    :scope  :default}])
+   ::sh-read-only
+   [{:match  {:tool :sh :cli sh-autorun-clis}
+     :action {:type :allow}}]
+
+   ;; Repo-local shell-outs, each arg-scoped (clj grants only the exact literal
+   ;; command, never the binary at large): read-only `sed -n '<range>p' file…`
+   ;; inside a git repo, and file management (mv/cp/mkdir/…) whose every
+   ;; operand resolves inside the repo (never .git/) or tmp.
+   ::repository-scripts
+   [{:match  {:tool :sh :cli "sed" :command sed-print-re :repo #"."}
+     :action {:type :allow}}
+    {:match  {:tool :sh :cli sh-repo-file-clis :within :repo}
+     :action {:type :allow}}]
+
+   ::sh-confirm
+   [{:match  {:tool :sh}
+     :action {:type :ask :message "Run this CLI via clj (sh …)?" :options [:yes :no :always]}}]
+
+   ::clj-sh
+   [::sh-read-only ::repository-scripts ::sh-confirm]})
+
+(defn expand
+  "Expand a `:defaults` vector — bundle aliases (recursively, so composites
+   work) and inline rule maps, in order — into a flat rule vector tagged
+   :scope :default. Throws ex-info on an unknown alias or a non-rule entry."
+  [entries]
+  (letfn [(step [e]
+            (cond
+              (map? e)     [(assoc e :scope :default)]
+              (keyword? e) (if-let [b (get bundles e)]
+                             (mapcat step b)
+                             (throw (ex-info (str "unknown default-rules alias " e)
+                                             {:alias e})))
+              :else        (throw (ex-info (str "invalid :defaults entry " (pr-str e)
+                                                " (expected an alias keyword or a rule map)")
+                                           {:entry e}))))]
+    (vec (mapcat step entries))))
+
+(def default-aliases
+  "The built-in default tier, as bundle aliases in precedence order. A rules
+   file's `:defaults` replaces this vector."
+  [::tmp-cleanup
+   ::no-auto-memory
+   ::plan-mode
+   ::sandbox-mode
+   ::write-gates
+   ::bash-guards
+   ::mcp-confirm
+   ::clj-sh])
+
+(def default-rules
+  "The built-in rule set (`default-aliases` expanded), in precedence order, each
+   tagged :scope :default."
+  (expand default-aliases))

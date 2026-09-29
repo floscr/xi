@@ -335,9 +335,12 @@
           (status! dispatch! room-id (str "Rule added at :" (name scope) " scope.")))
 
       (#{:repo :global} scope)
-      (if-let [file (store/append-rule-file! scope cwd rule)]
-        (status! dispatch! room-id (str "Rule written to " file "."))
-        (status! dispatch! room-id (str "Couldn't resolve a " (name scope) " rules file.")))
+      (let [{:keys [file error]} (store/append-rule-file! scope cwd rule)]
+        (status! dispatch! room-id
+                 (cond
+                   file  (str "Rule written to " file ".")
+                   error (str "Rule not saved — " error)
+                   :else (str "Couldn't resolve a " (name scope) " rules file."))))
 
       :else
       (status! dispatch! room-id

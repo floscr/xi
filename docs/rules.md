@@ -40,8 +40,9 @@ precedence order:
 4. **global config** — `~/.config/xi/rules.edn`
 5. **server-session** — added at runtime, process-local, cleared on restart
 6. **session runtime** — added at runtime, room-scoped, persists with the session
-7. **built-in defaults** — shipped with xi (`xi.rules.defaults`), lowest
-   precedence, so any rule above overrides them.
+7. **defaults** — the built-in default rules (`xi.rules.defaults`), or the
+   bundles a rules file picks via [`:defaults`](#choosing-defaults-defaults);
+   lowest precedence, so any rule above overrides them.
 
 Config (3–4) sits **above** runtime (5–6), so a rule you commit to a file
 overrides a careless "always allow" chosen in the moment. Repo beats global
@@ -150,16 +151,94 @@ they're handled specially by the `permission-gate` extension (detached run so th
 agent's own server can be killed cleanly).
 
 To opt back in / silence a gate, add a higher-precedence `:allow` rule for the
-same match.
+same match — or drop its bundle from the default tier via `:defaults` (below).
 
-A rules file is either a vector of rules or `{:rules [ … ]}`:
+## Rules files
+
+A rules file is a map with a **required** `:version`:
 
 ```clojure
 ;; ~/.config/xi/rules.edn
-[{:match {:tool :read :dir "~/code/projects"} :action {:type :allow}}
- {:match {:tool :write :path #"\.sh$" :repo "config/dotfiles"}
-  :action {:type :allow}}]
+{:version 1
+ :rules   [{:match {:tool :read :dir "~/code/projects"} :action {:type :allow}}
+           {:match {:tool :write :path #"\.sh$" :repo "config/dotfiles"}
+            :action {:type :allow}}]}
 ```
+
+| Key         | Meaning                                                                 |
+|-------------|-------------------------------------------------------------------------|
+| `:version`  | Required. The rules-file format version — currently `1`. It version-locks the file: when the format (or a default-bundle alias) changes, the version bumps and an old file errors instead of being silently misread. |
+| `:rules`    | Vector of rule maps, at this file's config precedence (repo / global). |
+| `:defaults` | Optional. Replaces the default tier — see [below](#choosing-defaults-defaults). |
+
+**An invalid file fails closed.** A missing or unsupported `:version`, a bare
+rule vector (the pre-version format), an unknown top-level key, an alias under
+`:rules`, an unknown `:defaults` alias, or unparseable EDN makes the whole
+file invalid. It is replaced by a single catch-all **deny** in its tier whose
+message names the file and the problem — so every tool call is blocked (the
+hardened tier still runs above it) until the file is fixed. A broken file never
+silently drops your own deny rules. `/rules list` shows the stand-in rule.
+Agents can't edit rules files, so the fix is always the user's.
+
+### Choosing defaults (`:defaults`)
+
+The built-in defaults are grouped into named **bundles**, addressed by alias
+keywords `:xi.rules.defaults/<name>`. A rules file's `:defaults` vector
+replaces the whole default tier — list the bundles you want, in precedence
+order, optionally mixed with inline rule maps:
+
+```clojure
+{:version  1
+ :rules    [ … ]
+ :defaults [:xi.rules.defaults/plan-mode
+            :xi.rules.defaults/sandbox-mode
+            :xi.rules.defaults/write-gates
+            {:match {:tool :bash :command #"\bgit push\b"}
+             :action {:type :ask :message "Push?"}}
+            :xi.rules.defaults/clj-sh]}
+```
+
+- The repo file's `:defaults` wins over the global file's; with neither, the
+  built-in set applies (`xi.rules.defaults/default-aliases`, below).
+- `:defaults []` turns the default tier off entirely.
+- The tier stays at the **lowest** precedence, so session `[a]lways` grants
+  still beat a bundle's `:ask`. (That's why aliases live under `:defaults`,
+  not `:rules`: inline in `:rules` the catch-all asks would sit above — and
+  shadow — every runtime grant.)
+- Order matters (first match wins): keep `plan-mode` / `sandbox-mode` before
+  the write/bash gates, and the nudges first, as the built-in order does.
+  Dropping `plan-mode` / `sandbox-mode` means `/plan` / `/sandbox` no longer
+  enforce anything.
+
+The built-in default tier, in order:
+
+```clojure
+[:xi.rules.defaults/tmp-cleanup
+ :xi.rules.defaults/no-auto-memory
+ :xi.rules.defaults/plan-mode
+ :xi.rules.defaults/sandbox-mode
+ :xi.rules.defaults/write-gates
+ :xi.rules.defaults/bash-guards
+ :xi.rules.defaults/mcp-confirm
+ :xi.rules.defaults/clj-sh]
+```
+
+| Alias (`:xi.rules.defaults/…`) | Rules | Covers |
+|---|---|---|
+| `tmp-cleanup`        | 1 | nudge: `rm` under `/tmp` |
+| `no-auto-memory`     | 2 | nudge: writes into the Claude auto-memory dir |
+| `plan-mode`          | 3 | plan mode's allow-plan-file / deny-writes / deny-mutating-bash |
+| `sandbox-mode`       | 3 | sandbox's outside-write / credential-read / background-bash denies |
+| `sensitive-writes`   | 1 | ask: write into Mail / .ssh / .gnupg / .password-store |
+| `protected-writes`   | 1 | ask: write into .env / .git/ / node_modules/ |
+| `outside-writes`     | 1 | ask: write outside the repo (with `[r]`) |
+| `write-gates`        | → | composite: `sensitive-writes` `protected-writes` `outside-writes` |
+| `bash-guards`        | 2 | deny remote shells, ask on destructive bash |
+| `mcp-confirm`        | 1 | ask on every external MCP tool call |
+| `sh-read-only`       | 1 | allow read-only CLIs via clj `(sh …)` |
+| `repository-scripts` | 2 | allow read-only `sed -n …p` and in-repo `mv`/`cp`/`mkdir`/`touch`/`rmdir` |
+| `sh-confirm`         | 1 | ask on any other clj `(sh …)` CLI |
+| `clj-sh`             | → | composite: `sh-read-only` `repository-scripts` `sh-confirm` |
 
 ## `:match` fields
 
@@ -254,6 +333,11 @@ and are not short-circuited by a `:sh` `:allow`.
 Runtime rules are added programmatically (e.g. the `:always` answer above, or
 the recommend-a-rule flow) via the `:ext.rules/add` event with `:scope :session`
 or `:scope :server`.
+
+Saving a recommended rule at `repo` / `global` scope prepends it to that file's
+`:rules` (creating the file at the current `:version` if needed, keeping its
+`:defaults` as written). An invalid file is left untouched and the save
+reports why.
 
 ## Recommend a rule from a guard dialog
 

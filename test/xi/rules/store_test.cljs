@@ -2,6 +2,7 @@
   (:require [cljs.test :refer [deftest is testing]]
             [clojure.string :as str]
             [xi.rules :as rules]
+            [xi.rules.defaults :as defaults]
             [xi.rules.store :as store]
             [xi.sandbox.core :as sandbox]
             [xi.ext.treesitter.parse :as ts]
@@ -317,6 +318,98 @@
       (is (= [:server :session] (map :scope rs)))
       (is (= :deny (:type (:action (first rs))))))))
 
+(deftest parse-rules-config-requires-version
+  (let [err (fn [data] (:error (store/parse-rules-config data)))]
+    (testing "invalid files error"
+      (is (re-find #"not valid EDN" (err nil)))
+      (is (re-find #"bare rule vectors" (err [{:match {:tool :read}}])))
+      (is (re-find #"missing required :version" (err {:rules []})))
+      (is (re-find #"unsupported :version 2" (err {:version 2 :rules []})))
+      (is (re-find #"unsupported :version \"1\"" (err {:version "1" :rules []})))
+      (is (re-find #"unknown key\(s\) :default" (err {:version 1 :default []})))
+      (is (re-find #":rules must be a vector" (err {:version 1 :rules {:a 1}})))
+      (is (re-find #"aliases under :defaults"
+                   (err {:version 1 :rules [:xi.rules.defaults/plan-mode]})))
+      (is (re-find #"unknown default-rules alias"
+                   (err {:version 1 :defaults [:xi.rules.defaults/nope]}))))
+    (testing "a valid file parses; :defaults nil unless set"
+      (is (= {:rules [] :defaults nil} (store/parse-rules-config {:version 1})))
+      (is (= {:rules [{:match {:tool :read}}] :defaults nil}
+             (store/parse-rules-config {:version 1 :rules [{:match {:tool :read}}]})))
+      (is (= [] (:defaults (store/parse-rules-config {:version 1 :defaults []}))))
+      (is (= (defaults/expand [:xi.rules.defaults/plan-mode])
+             (:defaults (store/parse-rules-config
+                         {:version 1 :defaults [:xi.rules.defaults/plan-mode]})))))))
+
+(defn- with-repo-rules
+  "Run `f` with a throwaway git repo whose .xi/rules.edn holds `content`
+   (a string; nil = no file). `f` gets the repo dir."
+  [content f]
+  (let [repo (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-rules-file-"))
+        file (node-path/join repo ".xi" "rules.edn")]
+    (fs/mkdirSync (node-path/join repo ".git"))
+    (fs/mkdirSync (node-path/join repo ".xi"))
+    (when content (fs/writeFileSync file content))
+    (store/clear-cache!)
+    (try (f repo file)
+         (finally
+           (store/clear-cache!)
+           (fs/rmSync repo #js {:recursive true :force true})))))
+
+(deftest repo-defaults-replace-the-default-tier
+  (with-repo-rules
+    "{:version 1 :defaults [:xi.rules.defaults/mcp-confirm]}"
+    (fn [repo _]
+      (is (= (defaults/expand [:xi.rules.defaults/mcp-confirm])
+             (store/default-rules repo)))
+      (let [rs (store/ordered-rules {} "r1" repo)]
+        (is (= :default (:scope (last rs))))
+        (is (not-any? #(= (:match %) {:tool :sh}) rs)
+            "the dropped clj-sh bundle is gone"))))
+  (with-repo-rules
+    "{:version 1 :rules []}"
+    (fn [repo _]
+      (testing "no :defaults in the repo file → falls through (global / built-in)"
+        (is (seq (store/default-rules repo)))))))
+
+(deftest invalid-rules-file-fails-closed
+  (with-repo-rules
+    "[{:match {:tool :read} :action {:type :allow}}]"
+    (fn [repo file]
+      (let [rs  (store/ordered-rules {} "r1" repo)
+            hit (rules/first-match rs {:tool :read :path "README.md"})]
+        (is (= :repo (:scope hit)))
+        (is (= :deny (get-in hit [:action :type])))
+        (is (str/includes? (get-in hit [:action :message]) file))
+        (is (str/includes? (get-in hit [:action :message]) "bare rule vectors")))
+      (testing "the invalid file isn't rewritten by a saved rule"
+        (is (:error (store/append-rule-file! :repo repo {:match {:tool :ls}})))
+        (is (= "[{:match {:tool :read} :action {:type :allow}}]"
+               (str (fs/readFileSync file "utf8"))))))))
+
+(deftest append-rule-file-writes-versioned-file
+  (with-repo-rules
+    nil
+    (fn [repo file]
+      (is (= {:file file}
+             (store/append-rule-file! :repo repo {:match {:tool :ls :path #"\.md$"}
+                                                  :action {:type :allow}
+                                                  :scope :session})))
+      (let [data (store/read-rule-edn (str (fs/readFileSync file "utf8")))]
+        (is (= 1 (:version data)))
+        (is (= 1 (count (:rules data))))
+        (is (not (contains? (first (:rules data)) :scope)))
+        (is (= "\\.md$" (.-source (get-in data [:rules 0 :match :path]))))
+        (is (not (contains? data :defaults))))))
+  (with-repo-rules
+    "{:version 1 :defaults [:xi.rules.defaults/plan-mode] :rules [{:match {:tool :read} :action {:type :allow}}]}"
+    (fn [repo file]
+      (store/append-rule-file! :repo repo {:match {:tool :ls} :action {:type :allow}})
+      (let [data (store/read-rule-edn (str (fs/readFileSync file "utf8")))]
+        (is (= [:xi.rules.defaults/plan-mode] (:defaults data))
+            ":defaults kept as written (unexpanded aliases)")
+        (is (= [:ls :read] (map #(get-in % [:match :tool]) (:rules data)))
+            "new rule prepended")))))
 (deftest operands-within-repo
   (let [repo (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-within-"))
         _    (fs/mkdirSync (node-path/join repo ".git"))
