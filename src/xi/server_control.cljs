@@ -33,7 +33,8 @@
          "Your WebSocket connection to :7474 will drop momentarily — this is "
          "EXPECTED and means the restart is working, NOT a failure or a "
          "permission error. A fresh server will be listening on :7474 within "
-         "~5s and this turn will auto-resume. Do not retry the command; "
+         "~15s (it waits for the watch's fresh build) and this turn will "
+         "auto-resume. Do not retry the command; "
          "confirm it's back with `bb check` or by reloading the page.")
     :stop
     (str "Server stop initiated in the background (detached). Your connection "

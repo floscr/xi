@@ -25,7 +25,9 @@ Personal coding agent in ClojureScript + Bun.
 - **`bb serve:restart` / `bb serve:stop` sever your own connection** (they kill
   the server hosting your session). They're confirmed, then run detached
   (`xi.server-control`) and return success immediately; the WS link dropping right after is the
-  expected sign it worked — do NOT retry. It's back in ~5s (`bb check`). If a
+  expected sign it worked — do NOT retry. It's back in ~15s (`bb check`) —
+  the server window waits for the fresh watch's first build
+  (`bb serve:await-build`) so it never boots the previous build. If a
   restart seems risky, ask first.
 - `bb tasks` lists everything (build, test, serve, demo, claude, treesitter, …).
 

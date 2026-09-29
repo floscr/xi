@@ -56,8 +56,14 @@
             (str "printf '\\n=== xi-serve start %s ===\\n' \"$(date -Is)\" >> " log "; "
                  cmd " 2>&1 | tee -a " log))
           (def serve-config {:session "xi-serve"
+                             ;; The server window waits for the new watch's first
+                             ;; build (serve:await-build): both windows start
+                             ;; together, and bun would otherwise boot the
+                             ;; PREVIOUS watch's target/main.js — stale code +
+                             ;; a "Stale Output!" devtools token mismatch.
                              :windows [["watch" "npx shadow-cljs watch main web"]
-                                       ["server" (logged "bun target/main.js server --headless" serve-log)]]
+                                       ["server" (str "bb serve:await-build; "
+                                                     (logged "bun target/main.js server --headless" serve-log))]]
                              :env-file ".env"})
           (def pa-serve-config {:session "xi-pa"
                                 :windows [["server" "bun target/main.js server --headless --personal-agent-only --port 7475"]]})
@@ -302,6 +308,23 @@
            (stop-dev-watch!)
            (reap-stray-serve!)
            (td/restart (assoc serve-config :print [(str "Web: http://" ip ":7474")])))}
+
+  serve:await-build
+  {:doc "Block until the shadow watch writes a fresh target/main.js (max 180s) — the serve session's server window runs this before starting bun"
+   :task (let [f        (clojure.java.io/file "target/main.js")
+               t0       (System/currentTimeMillis)
+               deadline (+ t0 180000)]
+           (println "[xi] waiting for the shadow watch to build target/main.js …")
+           (loop []
+             (cond
+               (> (.lastModified f) t0)
+               (println "[xi] fresh build — starting the server")
+
+               (> (System/currentTimeMillis) deadline)
+               (println "[xi] no fresh build after 180s — starting on the existing target/main.js")
+
+               :else
+               (do (Thread/sleep 500) (recur)))))}
 
   serve:logs
   {:doc "Print the persisted headless server log (/tmp, survives restarts, self-cleans on reboot). Pass a number for line count."
