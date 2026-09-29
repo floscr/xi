@@ -8,8 +8,8 @@
                    \"refresh_token\": \"…\", \"account_id\": \"…\"},
       \"last_refresh\": \"2025-01-01T00:00:00Z\"}
 
-   Xi reuses these directly — analogous to how the Claude provider reuses
-   ~/.pi/agent/auth.json — so `codex login` is the only auth step. We decode the
+   Xi reuses these directly — analogous to how the Anthropic provider reuses
+   the Claude CLI's own login — so `codex login` is the only auth step. We decode the
    `access_token` JWT to check expiry (and to recover the `chatgpt_account_id`
    header value), refresh against https://auth.openai.com/oauth/token when
    expired, and write the fresh tokens back so the codex CLI stays in sync.

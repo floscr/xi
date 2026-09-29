@@ -95,8 +95,8 @@
   "When true, run a cheap model over each finished assistant turn to detect a
    decision point (yes/no, pick-one) and show one-tap quick-reply chips below
    the response (xi.quick-replies). The response text is never modified — chips
-   are additive UI. Default true. A cheap regex gate runs first, so most turns
-   never call the model."
+   are additive UI. Currently disabled. A cheap regex gate runs first, so most
+   turns never call the model."
   false)
 
 #?(:node

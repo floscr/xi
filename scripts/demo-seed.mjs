@@ -13,7 +13,6 @@
  *   .config/xi/clients.edn               — pre-approved demo client key (no pairing)
  *
  * What we share from the real HOME so live Claude turns still work:
- *   .pi                          → symlink  (xi auth: ~/.pi/agent/auth.json)
  *   .claude/.credentials.json    → symlink  (Claude CLI OAuth; refresh stays shared)
  *   .claude/settings.json        → symlink  (if present)
  *   .claude/CLAUDE.md            → symlink  (global instructions; if present)
@@ -231,7 +230,6 @@ rmrf(DEMO_HOME);
 mkdirp(DEMO_HOME);
 
 // Shared auth/config so live turns work (sessions stay isolated below).
-linkFromReal(".pi");
 copyFromReal(".claude.json");
 mkdirp(path.join(DEMO_HOME, ".claude"));
 linkFromReal(".claude/.credentials.json");
