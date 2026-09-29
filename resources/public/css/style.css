@@ -2100,7 +2100,19 @@ code a:hover,
   border-color: color-mix(in srgb, var(--warning) 45%, transparent);
 }
 .sidebar .project-card-info { row-gap: 1px; }
-.sidebar .project-card-name { font-size: var(--font-sm); font-weight: 500; }
+.sidebar .project-card-name {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  /* One line per session keeps every row the same height */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Hover-only actions take no space until hovered, so idle titles get the
+   full width (touch keeps them always visible, see below). */
+@media (hover: hover) {
+  .sidebar .project-card:not(:hover) :is(.session-delete-btn, .session-more-btn) { display: none; }
+}
 .sidebar .project-card-path { font-size: var(--font-xs); }
 /* Project rows are single-line: the folder name says enough, the absolute
    path is noise in a narrow column (still on the home listing). */
@@ -2119,8 +2131,12 @@ code a:hover,
 .sidebar .sidebar-row .sidebar-menu-item-icon { color: var(--fg-1); opacity: 1; }
 .sidebar .sidebar-row.sidebar-menu-item-active { border: var(--border-0); }
 
-/* Collapsible group header: icon · label · count · chevron */
+/* Collapsible group header: a quiet small-caps label · count · chevron. No
+   icon, and its text starts where the item *icons* start, so the header sits
+   left of its items' names and the grouping reads at a glance. */
 .sidebar .sidebar-section { margin-bottom: var(--size-3); }
+/* Collapsed groups stack tightly, like a list of closed folders. */
+.sidebar .sidebar-section[data-collapsed] { margin-bottom: 0; }
 .sidebar .sidebar-section .sidebar-group-label {
   padding: 0;
   text-transform: none;
@@ -2131,22 +2147,24 @@ code a:hover,
   align-items: center;
   gap: var(--size-2);
   width: 100%;
-  padding: var(--size-1) var(--size-2);
+  /* +1px matches the cards' transparent border, aligning with their icons */
+  padding: var(--size-1) var(--size-2) var(--size-1) calc(var(--size-2) + 1px);
   margin-bottom: 2px;
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--fg-2);
   font: inherit;
-  font-size: var(--font-xs);
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   cursor: pointer;
   transition: color 0.15s, background-color 0.15s;
 }
 @media (hover: hover) {
   .sidebar-section-toggle:hover { color: var(--fg-0); }
 }
-.sidebar-section-icon,
 .sidebar-section-chevron {
   display: flex;
   align-items: center;
@@ -2155,14 +2173,51 @@ code a:hover,
 .sidebar-section-label { flex: 1; text-align: left; }
 .sidebar-section-count {
   font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--fg-2);
-  opacity: 0.8;
+  opacity: 0.7;
 }
 .sidebar-section-chevron {
-  opacity: 0.7;
+  opacity: 0.5;
   transition: transform 0.15s;
 }
+.sidebar-section-chevron svg { width: 12px; height: 12px; }
 .sidebar-section[data-collapsed] .sidebar-section-chevron { transform: rotate(-90deg); }
+
+/* Search field atop the sidebar: looks like an input, opens the palette. */
+.sidebar-search-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--size-2) 0 calc(var(--size-2) + 1px);
+  margin-bottom: var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+  color: var(--fg-2);
+  font: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+@media (hover: hover) {
+  .sidebar-search-trigger:hover { color: var(--fg-1); }
+}
+.sidebar-search-trigger-label { flex: 1; text-align: left; }
+.sidebar-search-trigger-kbd {
+  font: inherit;
+  font-size: 11px;
+  padding: 1px 5px;
+  border: var(--border-0);
+  border-radius: 4px;
+  opacity: 0.8;
+}
+@media (hover: none) {
+  .sidebar-search-trigger-kbd { display: none; }
+}
 
 .project-card-icon { flex-shrink: 0; color: var(--fg-1); }
 .project-card-icon--dirty { position: relative; }

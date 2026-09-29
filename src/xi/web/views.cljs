@@ -2747,14 +2747,6 @@
                  :else nil)]
           (remove str/blank?)
           (str/join " · "))]]
-   (when session-id
-     [:button {:class ["project-card-action" "project-card-favorite"
-                       (when favorite? "project-card-favorite--on")]
-               :title (if favorite? "Remove bookmark" "Bookmark session")
-               :on {:click (fn [^js e]
-                             (.stopPropagation e)
-                             (dispatch! {:type :favorites/toggle :session-id session-id}))}}
-      (icon/icon {:icon-name :star :size :sm})])
    ;; Hide/show in Recent — only rendered where the caller opts in (:dismissable?):
    ;; the sidebar's Recent group (eye-off → hide) and Hidden group (eye → restore).
    ;; Earlier cards omit it entirely. Also gated on idle ("sent, not processing"):
@@ -2776,7 +2768,18 @@
                              (let [r (.getBoundingClientRect (.-currentTarget e))]
                                (open-session-menu! dispatch! session-id name
                                                    (.-left r) (.-bottom r))))}}
-      (more-vertical-icon)])]))
+      (more-vertical-icon)])
+   ;; Star goes last so it stays pinned to the right edge: the hover-only
+   ;; actions above come and go (busy cards have none), and putting them after
+   ;; the star made it jump sideways from card to card.
+   (when session-id
+     [:button {:class ["project-card-action" "project-card-favorite"
+                       (when favorite? "project-card-favorite--on")]
+               :title (if favorite? "Remove bookmark" "Bookmark session")
+               :on {:click (fn [^js e]
+                             (.stopPropagation e)
+                             (dispatch! {:type :favorites/toggle :session-id session-id}))}}
+      (icon/icon {:icon-name :star :size :sm})])]))
 
 
 
@@ -3218,11 +3221,13 @@
           (str "Resets " resets-in " at " session-reset)])])))
 
 (defn- sidebar-section
-  "Collapsible drawer group: a framework sidebar-group whose label is a toggle
-   row (icon · label · count · chevron). Collapsed group ids live in
-   :web/sidebar-collapsed (see :sidebar/toggle-group); a collapsed group keeps
-   its header but doesn't build its cards at all."
-  [dispatch! collapsed {:keys [id label icon-name n]} & children]
+  "Collapsible drawer group: a framework sidebar-group whose label is a quiet
+   small-caps toggle row (label · count · chevron). The label carries no icon,
+   so it sits flush with the item icons and the item names read as nested
+   inside it. Collapsed group ids live in :web/sidebar-collapsed (see
+   :sidebar/toggle-group); a collapsed group keeps its header but doesn't build
+   its cards at all."
+  [dispatch! collapsed {:keys [id label n]} & children]
   (let [open? (not (contains? collapsed id))]
     (sidebar/sidebar-group
      ;; The framework conj's :class as ONE token, so collapsed-ness rides a
@@ -3233,12 +3238,27 @@
       :label [:button {:class ["sidebar-section-toggle"]
                        :aria-expanded (str open?)
                        :on {:click (fn [_] (dispatch! {:type :sidebar/toggle-group :group id}))}}
-              [:span {:class ["sidebar-section-icon"]} (icon/icon {:icon-name icon-name :size :sm})]
               [:span {:class ["sidebar-section-label"]} label]
               (when n [:span {:class ["sidebar-section-count"]} n])
               [:span {:class ["sidebar-section-chevron"]} (icon/icon {:icon-name :chevron-down :size :sm})]]}
      (when open?
        [:div {:class ["sidebar-section-items"]} children]))))
+
+(def ^:private mac?
+  (boolean (re-find #"Mac|iPhone|iPad" (or (some-> js/navigator .-platform) ""))))
+
+(defn- sidebar-search
+  "Search field atop the drawer sidebar. A trigger, not an input: it opens the
+   command palette (the same one as mod+k), which already fuzzy-searches every
+   session, project and command."
+  [dispatch!]
+  [:button {:class ["sidebar-search-trigger"]
+            :type "button"
+            :replicant/key "sidebar-search"
+            :on {:click (fn [_] (dispatch! {:type :palette/open}))}}
+   (icon/icon {:icon-name :search :size :sm})
+   [:span {:class ["sidebar-search-trigger-label"]} "Search"]
+   [:kbd {:class ["sidebar-search-trigger-kbd"]} (if mac? "⌘K" "Ctrl K")]])
 
 (def ^:private recent-sidebar-cache
   ;; Memo for the docked/drawer sidebar. On wide screens the sidebar is always
@@ -3292,9 +3312,10 @@
                :replicant/key (str "sidebar-content-" render?)}}
       (when render?
         (list
+         (sidebar-search dispatch!)
          ;; Recent projects, closed out by the "All projects" overview row.
          (when (not pa?)
-           (section {:id :projects :label "Projects" :icon-name :folder :n (count projects)}
+           (section {:id :projects :label "Projects" :n (count projects)}
              (let [dirty (:web/project-dirty state)]
                (for [p projects]
                  (project-dir-card dispatch! p (contains? dirty p))))
@@ -3306,24 +3327,24 @@
                :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home}))}
               "All projects")))
          (when (seq recent)
-           (section {:id :recent :label "Recent" :icon-name :clock :n (count recent)}
+           (section {:id :recent :label "Recent" :n (count recent)}
              (for [c (with-projects recent)]
                (session-card dispatch! (assoc c :dismissable? true)))))
          ;; Hidden group sits between Recent and Earlier. Its cards keep the
          ;; toggle (now an eye → "Show in recent") so the user can restore them.
          (when (seq hidden)
-           (section {:id :hidden :label "Hidden" :icon-name :eye-off :n (count hidden)}
+           (section {:id :hidden :label "Hidden" :n (count hidden)}
              (for [c (with-projects hidden)]
                (session-card dispatch! (assoc c :dismissable? true)))))
          (when (seq earlier)
-           (section {:id :earlier :label "Earlier" :icon-name :calendar :n (count earlier)}
+           (section {:id :earlier :label "Earlier" :n (count earlier)}
              (for [c (with-projects earlier)]
                (session-card dispatch! c))))
          ;; Entries contributed by extensions (:nav-items with :menu :sidebar,
          ;; e.g. Image Graphs) — last, below the core session groups.
          (let [ext-items (when (not pa?) (nav-items-for state :sidebar))]
            (when (seq ext-items)
-             (section {:id :extensions :label "Extensions" :icon-name :package :n (count ext-items)}
+             (section {:id :extensions :label "Extensions" :n (count ext-items)}
                (for [item ext-items]
                  (sidebar/sidebar-menu-item
                   {:icon-name (:icon item)

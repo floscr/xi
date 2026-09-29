@@ -1192,6 +1192,15 @@
                                              reopen? (assoc :web/palette-drilling? true))
                                     :effects (cond-> [[:palette/reset-filter nil]]
                                                reopen? (conj [:palette/reopen nil]))})
+          ;; Top-level palette from a button (the sidebar search field) rather
+          ;; than mod+k. Sets :web/palette-open? directly for the same iOS
+          ;; reason as the open-* handlers below.
+          :palette/open          (fn [st _]
+                                   {:state (-> st
+                                               (assoc :web/palette-open? true)
+                                               (dissoc :web/palette-page))
+                                    :effects [[:palette/reopen nil]
+                                              [:palette/reset-filter nil]]})
           ;; Change model / /model: drill into an in-palette model picker. The
           ;; runtime force-closes the <dialog> on the item click, so we set a
           ;; one-shot :web/palette-drilling? flag and re-open the dialog (see the
