@@ -139,6 +139,72 @@
     "end_turn"   "stop"
     "stop"))
 
+(defn- try-json-parse [s]
+  (try (js->clj (js/JSON.parse s) :keywordize-keys true)
+       (catch :default _ nil)))
+
+(defn parse-partial-json
+  "Best-effort parse of a streaming JSON prefix (a tool's `input_json_delta`
+   chunks so far): close the open string and containers, and if that still
+   isn't valid drop a trailing comma / dangling key / half-written scalar
+   member. Returns the parsed value, or nil when the prefix can't be
+   completed yet. Display-only — the authoritative arguments are the full
+   parse at `content_block_stop`."
+  [s]
+  (when (seq s)
+    (let [n (count s)
+          [stack in-str? esc?]
+          (loop [i 0 stack [] in-str? false esc? false]
+            (if (< i n)
+              (let [c (.charAt s i)]
+                (cond
+                  esc?    (recur (inc i) stack true false)
+                  in-str? (case c
+                            "\\" (recur (inc i) stack true true)
+                            "\"" (recur (inc i) stack false false)
+                            (recur (inc i) stack true false))
+                  :else   (case c
+                            "\""      (recur (inc i) stack true false)
+                            ("{" "[") (recur (inc i) (conj stack c) false false)
+                            ("}" "]") (recur (inc i) (if (seq stack) (pop stack) stack) false false)
+                            (recur (inc i) stack false false))))
+              [stack in-str? esc?]))
+          body    (cond-> s
+                    ;; a dangling escape: drop `\` or a partial `\uXX`
+                    esc?    (subs 0 (dec n))
+                    in-str? (str/replace #"\\u[0-9a-fA-F]{0,3}$" ""))
+          base    (cond-> body in-str? (str "\""))
+          closers (apply str (map {"{" "}" "[" "]"} (rseq stack)))]
+      (some #(try-json-parse (str % closers))
+            [base
+             (str/replace base #"[\s,]+$" "")
+             (str/replace base #",?\s*\"(?:[^\"\\]|\\.)*\"\s*:?\s*$" "")
+             (str/replace base #",?\s*\"(?:[^\"\\]|\\.)*\"\s*:\s*[^\s\"{}\[\],]+$" "")]))))
+
+(def ^:private partial-args-interval-ms
+  "Min gap between streamed partial-argument updates for one tool call. Each
+   update is a dispatch + WS broadcast of the args so far, so a long input
+   (a big clj snippet, a file write) is throttled rather than sent per token."
+  100)
+
+(defn- stream-partial-args!
+  "Fold an `input_json_delta` chunk into the pending tool input and, at most
+   every `partial-args-interval-ms`, surface the args parsed so far via
+   :on-tool-args — so a running tool block shows its input while the model is
+   still writing it instead of sitting empty until `content_block_stop`."
+  [callbacks state idx chunk]
+  (let [pending (-> (swap! state update-in [:pending-tool-inputs idx :json-chunks] conj chunk)
+                    (get-in [:pending-tool-inputs idx]))
+        now     (js/Date.now)]
+    (when (and (:on-tool-args callbacks)
+               (:id pending)
+               (>= (- now (:emitted-at pending 0)) partial-args-interval-ms))
+      (when-let [args (parse-partial-json (apply str (:json-chunks pending)))]
+        (when (and (map? args) (seq args))
+          (swap! state assoc-in [:pending-tool-inputs idx :emitted-at] now)
+          ((:on-tool-args callbacks)
+           {:id (:id pending) :name (:name pending) :arguments args}))))))
+
 (defn- process-stream-event
   [^js event callbacks state]
   (let [event-type (.-type event)]
@@ -172,7 +238,7 @@
           "text_delta"     (when (:on-text callbacks) ((:on-text callbacks) (.-text delta)))
           "thinking_delta" (when (:on-thinking callbacks) ((:on-thinking callbacks) (.-thinking delta)))
           "input_json_delta"
-          (swap! state update-in [:pending-tool-inputs idx :json-chunks] conj (.-partial_json delta))
+          (stream-partial-args! callbacks state idx (.-partial_json delta))
           nil))
 
       "content_block_stop"
