@@ -55,8 +55,7 @@
   "Spawn the server-control command detached (setsid) so it survives killing
    the pane/server that hosts this agent, and return an explicit tool result
    immediately — before the server dies — so the agent gets a clear success
-   signal instead of a severed 'permission stream closed' error. Mirrors the
-   setsid detach pattern in xi.ext.dev-server."
+   signal instead of a severed 'permission stream closed' error."
   [cmd kind]
   (js/Bun.spawn
    #js ["setsid" "bash" "-c" (str "sleep 0.3; " cmd)]
