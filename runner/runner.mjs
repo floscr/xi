@@ -20,10 +20,26 @@
 // proxies each tool call back to the host (where the permission gate +
 // registry live). It never touches the host's data.
 
-import { query, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
 import { execSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// ── Self-bootstrap ─────────────────────────────────────────────────────────────
+// Install the runner's own deps on first run so the host never needs a manual
+// `npm install` in runner/. npm output goes to stderr (fd 2) — stdout is the
+// protocol frame stream and must stay clean. The host reads no frames until we
+// send some, and its `start` frame just buffers in the stdin pipe meanwhile.
+
+const runnerDir = dirname(fileURLToPath(import.meta.url));
+
+if (!existsSync(join(runnerDir, "node_modules", "@anthropic-ai", "claude-agent-sdk"))) {
+  process.stderr.write("[runner] deps missing — running npm install in " + runnerDir + "\n");
+  execSync("npm install", { cwd: runnerDir, stdio: ["ignore", 2, 2] });
+}
+
+const { query, createSdkMcpServer } = await import("@anthropic-ai/claude-agent-sdk");
+const { z } = await import("zod");
 
 // ── Framing ──────────────────────────────────────────────────────────────────
 // Protocol frames go to stdout; anything else (diagnostics) must go to stderr
