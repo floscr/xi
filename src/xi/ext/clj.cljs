@@ -36,6 +36,8 @@
             [sci.core :as sci]
             [xi.ext.clj-process :as proc]
             [xi.ext.clj-socket :as sock]
+            [xi.ext.git-lock :as git-lock-ext]
+            [xi.git-lock :as git-lock]
             [xi.ext.permission-gate :as pg]
             [xi.rules :as rules]
             [xi.rules.store :as rules-store]
@@ -142,39 +144,68 @@
 ;; status: 0 pending · 1 allowed · 2 denied.
 (def ^:private GATE_SAB_BYTES (+ 8 4096))
 
-(defn- runtime-gate!
-  "Ask the main thread to approve an out-of-sandbox `resolved` path hit
-   mid-eval (a dynamic path the static gate couldn't pre-approve). Posts a
-   gateRequest to the parent thread and blocks in an Atomics.wait loop on the
-   request's SharedArrayBuffer until the user answers the approval dialog —
-   waking early (and throwing) when the eval's abort flag flips on turn-end.
-   Returns the approved root string, :denied, or nil when there is no parent
-   thread to ask (eval running outside a worker)."
-  [opts kind resolved]
+(defn- await-main-thread!
+  "Post a gateRequest (`msg`, a JS object; :sab and :roomKey are added) to
+   the parent thread and block in an Atomics.wait loop on the request's
+   SharedArrayBuffer until the main thread writes a verdict — waking early
+   (and throwing) when the eval's abort flag flips on turn-end.
+   Returns [:allowed text] / [:denied text] (text = the UTF-8 payload the main
+   thread wrote, possibly \"\"), or nil when there is no parent thread to ask
+   (eval running outside a worker)."
+  [opts ^js msg]
   (when wt/parentPort
     (let [sab (js/SharedArrayBuffer. GATE_SAB_BYTES)
           i32 (js/Int32Array. sab 0 2)
           rid (:room-id @opts)
-          _   (.postMessage wt/parentPort
-                            #js {:gateRequest (name kind)
-                                 :path        (str resolved)
-                                 :roomKey     (if (keyword? rid) (name rid) (str rid))
-                                 :sab         sab})
-          ^js abort (:abort-arr @opts)]
+          _   (aset msg "sab" sab)
+          _   (aset msg "roomKey" (if (keyword? rid) (name rid) (str rid)))
+          _   (.postMessage wt/parentPort msg)
+          ^js abort (:abort-arr @opts)
+          payload (fn []
+                    (let [len (js/Atomics.load i32 1)]
+                      (.decode (js/TextDecoder.) (.slice (js/Uint8Array. sab 8 len)))))]
       (loop []
         (js/Atomics.wait i32 0 0 250)
         (let [status (js/Atomics.load i32 0)]
           (cond
-            (= status 1)
-            (let [len (js/Atomics.load i32 1)]
-              (.decode (js/TextDecoder.) (.slice (js/Uint8Array. sab 8 len))))
-
-            (= status 2) :denied
+            (= status 1) [:allowed (payload)]
+            (= status 2) [:denied (payload)]
 
             (and abort (not (zero? (js/Atomics.load abort 0))))
             (throw (ex-info "clj: aborted (turn ended)" {:aborted true}))
 
             :else (recur)))))))
+
+(defn- runtime-gate!
+  "Ask the main thread to approve an out-of-sandbox `resolved` path hit
+   mid-eval (a dynamic path the static gate couldn't pre-approve); blocks
+   until the user answers the approval dialog. Returns the approved root
+   string, :denied, or nil when there is no parent thread to ask."
+  [opts kind resolved]
+  (when-let [[verdict root] (await-main-thread! opts #js {:gateRequest (name kind)
+                                                          :path        (str resolved)})]
+    (if (= :allowed verdict) root :denied)))
+
+(defn- git-lock-gate!
+  "Before an index-mutating git op (argv without \"git\") in `dir`: block
+   until this room holds the cross-room git staging lock (xi.git-lock) —
+   the main thread polls, posting status lines while another room holds it.
+   Throws when the main thread refuses (timeout, broad add sweeping another
+   room's files). No-op for read-only git and outside a worker."
+  [opts dir argv]
+  (when (git-lock/locking? (git-lock/parse-argv argv))
+    (when-let [[verdict msg] (await-main-thread! opts #js {:gateRequest "git"
+                                                           :cwd         dir
+                                                           :argv        (clj->js (vec argv))})]
+      (when (= :denied verdict)
+        (throw (ex-info (if (seq msg) msg "git lock: denied") {}))))))
+
+(defn- git-lock-settle!
+  "After a git op: drop this room's staging lease if the index is clean."
+  [opts dir argv]
+  (when (git-lock/locking? (git-lock/parse-argv argv))
+    (try (git-lock/settle! dir {:pid js/process.pid :room (:room-id @opts)})
+         (catch :default _ nil))))
 
 (defn- resolve-read
   "Canonicalize p against cwd; throw on credential paths and on reads that
@@ -325,7 +356,10 @@
 
         :else
         (let [dir (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts))
-              {:keys [exit out err]} (spawn-sync! (vec argv) dir)]
+              git? (= "git" bin)
+              _    (when git? (git-lock-gate! opts dir (rest argv)))
+              {:keys [exit out err]} (spawn-sync! (vec argv) dir)
+              _    (when git? (git-lock-settle! opts dir (rest argv)))]
           (if (zero? exit)
             (let [out' (str/trimr out)]
               (if (str/blank? out') (str/trimr err) out'))
@@ -453,7 +487,9 @@
                              "git helper — use (sh \"git\" \"" sub "\" …), "
                              "which asks the user for approval.")
                         {})))
+      (git-lock-gate! opts (opts-cwd opts) args)
       (let [{:keys [exit out err]} (spawn-sync! (into ["git"] args) (opts-cwd opts))]
+        (git-lock-settle! opts (opts-cwd opts) args)
         (if (zero? exit)
           (let [out' (str/trimr out)]
             (when (= sub "commit")
@@ -1135,6 +1171,29 @@
           (.then settle!)
           (.catch (fn [_] (settle! nil)))))))
 
+(defn- on-git-gate-request
+  "Worker → main git staging-lock gate: the worker is about to run an
+   index-mutating git op and is blocked (Atomics.wait) on the request's SAB.
+   Wait for the room's lease (xi.ext.git-lock — async polling, status lines
+   while another room holds it), then write status 1 to proceed or status 2
+   + the refusal text."
+  [^js m]
+  (let [sab     (.-sab m)
+        i32     (js/Int32Array. sab 0 2)
+        settle! (fn [err]
+                  (if err
+                    (let [bytes (.encode (js/TextEncoder.) (str err))
+                          room  (- (.-byteLength sab) 8)
+                          bytes (if (> (.-length bytes) room) (.slice bytes 0 room) bytes)]
+                      (.set (js/Uint8Array. sab 8 (.-length bytes)) bytes)
+                      (js/Atomics.store i32 1 (.-length bytes))
+                      (js/Atomics.store i32 0 2))
+                    (js/Atomics.store i32 0 1))
+                  (js/Atomics.notify i32 0))]
+    (-> (git-lock-ext/request-for-room-key! (.-roomKey m) (.-cwd m) (js->clj (.-argv m)))
+        (.then settle!)
+        (.catch (fn [e] (settle! (str "git lock: " (.-message e))))))))
+
 (defn- ensure-worker!
   "Get or lazily spawn the room's dedicated worker thread. The error/exit
    handlers only settle when this worker is still the room's registered one —
@@ -1146,6 +1205,7 @@
         (.on w "message"
              (fn [^js m]
                (cond
+                 (= "git" (.-gateRequest m)) (on-git-gate-request m)
                  (.-gateRequest m)  (on-gate-request m)
                  (.-processEvent m) (on-process-event m)
                  :else
