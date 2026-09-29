@@ -395,7 +395,7 @@
   [providers {:keys [provider model]}]
   (or (get providers provider)
       (get providers (util/provider-for-model model))
-      (get providers :claude)
+      (get providers :anthropic)
       (first (vals providers))))
 
 ;; ── Effects (contained impure edge) ──────────────────────────────────────────

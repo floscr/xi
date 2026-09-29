@@ -148,55 +148,32 @@
            :args (if (= scope :all) (str "all:" (inc i)) (str (inc i)))}})
 
 
-(def ^:private claude-model-ids
-  ["claude-fable-5-1" "claude-opus-5" "claude-opus-4-8" "claude-fable-5"
-   "claude-sonnet-5" "claude-opus-4-6" "claude-sonnet-4-6"
-   "claude-haiku-4-5-20251001"])
-
-(defn- fetch-ollama-ids
-  "Promise of Ollama model-name vector (empty on error)."
-  []
-  (-> (js/fetch "http://localhost:11434/api/tags")
-      (.then (fn [res] (.json res)))
-      (.then (fn [^js data]
-               (mapv :name (js->clj (.-models data) :keywordize-keys true))))
-      (.catch (fn [_err] []))))
-
-(defn- fetch-zen-ids
-  "Promise of OpenCode Zen model ids, each prefixed with `opencode/` so the
-   picker routes them to the Zen provider. Empty on error (best-effort)."
-  []
-  (-> (js/fetch "https://opencode.ai/zen/v1/models"
-                #js {:signal (js/AbortSignal.timeout 4000)})
-      (.then (fn [res] (.json res)))
-      (.then (fn [^js data]
-               (->> (js->clj (.-data data) :keywordize-keys true)
-                    (keep :id)
-                    (mapv (fn [id] (str "opencode/" id))))))
-      (.catch (fn [_err] []))))
-
-(defn- fetch-all-model-ids
-  "Fetch Ollama + Zen model names, combine with Claude IDs, call cb.
-   Each source degrades to empty independently, so a failure never blocks the
-   others; falls back to Claude-only if all remote sources fail."
-  [cb]
-  (-> (js/Promise.all #js [(fetch-ollama-ids) (fetch-zen-ids)])
-      (.then (fn [^js results]
-               (let [[ollama zen] (js->clj results)]
-                 (cb (into (into claude-model-ids ollama) zen)))))
-      (.catch (fn [_err] (cb claude-model-ids)))))
+(defn fetch-model-ids
+  "Fetch model ids from every provider exposing :list-models! (in provider
+   order) and call cb with the combined vector. Each source degrades to empty
+   independently, so one failing provider never blocks the others."
+  [providers cb]
+  (let [fetches (keep :list-models! (vals providers))]
+    (-> (js/Promise.all
+         (into-array (map (fn [f] (-> (f) (.catch (fn [_err] [])))) fetches)))
+        (.then (fn [^js results]
+                 (cb (into [] cat (array-seq results)))))
+        (.catch (fn [_err] (cb []))))))
 
 (defn web-model-list-reply-fx
   "Build the full model list and send it to the requesting client."
-  [send-fn]
-  (fetch-all-model-ids
+  [providers send-fn]
+  (fetch-model-ids
+   providers
    (fn [models] (send-fn {:type :models/web-list-result :models models}))))
 
 (defn create-fx
-  "Build effect handlers. opts:
+  "Build effect handlers. providers is the provider-id → provider map
+   (:models/fetch gathers model ids from each provider's :list-models!).
+   opts:
      :system-prompt-fn  (fn [cwd] → {:system str :system-parts [{:source :text}]})
                         — called on /cd to rebuild the system prompt."
-  [ring & [{:keys [system-prompt-fn]}]]
+  [ring providers & [{:keys [system-prompt-fn]}]]
   {:session/new
    (fn [{:keys [dispatch! state]} {:keys [room-id save-current? after-prompt truncated-from keep-history?]}]
      (let [room (room-of state room-id)
@@ -406,7 +383,8 @@
      ;; open), then fill it in once the model list arrives.
      (dispatch! {:type :ui/menu-push :room-id room-id
                  :menu {:id :model :prompt "model> " :loading? true}})
-     (fetch-all-model-ids
+     (fetch-model-ids
+      providers
       (fn [ids]
         (let [items (mapv (fn [id]
                             {:label id

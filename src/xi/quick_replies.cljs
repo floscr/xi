@@ -183,7 +183,7 @@
   [providers {:keys [make-config-dir! remove-config-dir!]}]
   {:quick-replies/generate
    (fn [{:keys [dispatch! state]} {:keys [room-id gen text]}]
-     (when-let [provider (get providers :claude)]
+     (when-let [provider (get providers :anthropic)]
        (let [cwd        (get-in state [:rooms room-id :cwd])
              chunks     (atom [])
              config-dir (when make-config-dir! (make-config-dir!))

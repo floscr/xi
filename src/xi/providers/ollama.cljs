@@ -89,6 +89,17 @@
     :pre-flight ensure-ollama-running!}
    opts))
 
+(defn list-models!
+  "Promise of installed Ollama model names (empty on error)."
+  []
+  (-> (js/fetch (str OLLAMA_BASE_URL "/api/tags")
+                #js {:signal (js/AbortSignal.timeout 4000)})
+      (.then (fn [^js res] (.json res)))
+      (.then (fn [^js data]
+               (mapv :name (js->clj (.-models data) :keywordize-keys true))))
+      (.catch (fn [_err] []))))
+
 (def provider
   {:id :ollama
-   :start-turn! stream-messages})
+   :start-turn! stream-messages
+   :list-models! list-models!})

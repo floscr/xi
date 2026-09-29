@@ -112,9 +112,9 @@
   (testing "openai/ prefix routes to the Codex provider"
     (is (= :openai (util/provider-for-model "openai/gpt-5.1-codex")))
     (is (= :openai (util/provider-for-model "openai/gpt-5-codex"))))
-  (testing "claude models route to :claude"
-    (is (= :claude (util/provider-for-model "claude-opus-4-6")))
-    (is (= :claude (util/provider-for-model "sonnet"))))
+  (testing "claude models route to :anthropic"
+    (is (= :anthropic (util/provider-for-model "claude-opus-4-6")))
+    (is (= :anthropic (util/provider-for-model "sonnet"))))
   (testing "everything else routes to :ollama"
     (is (= :ollama (util/provider-for-model "llama3")))
     (is (= :ollama (util/provider-for-model "deepseek-r1")))

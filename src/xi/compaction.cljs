@@ -98,7 +98,7 @@ Be thorough but concise. Output only the summary, no preamble.")
   (let [inflight (js/Map.)]
     {:compact/start
      (fn [{:keys [dispatch! state]} {:keys [room-id session-id]}]
-       (let [provider (get providers :claude)
+       (let [provider (get providers :anthropic)
              chunks (atom [])
              {:keys [promise abort!]}
              ((:start-turn! provider)

@@ -139,7 +139,7 @@
   [providers {:keys [make-config-dir! remove-config-dir!]}]
   {:summary/generate
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]
-     (if-let [provider (get providers :claude)]
+     (if-let [provider (get providers :anthropic)]
        (let [room       (get-in state [:rooms room-id])
              transcript (build-transcript (:history room))
              cwd        (:cwd room)

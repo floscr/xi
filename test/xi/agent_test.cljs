@@ -289,9 +289,9 @@
                                              {:type :agent/abort :room-id "r"})))))
 
 (deftest provider-routing
-  (let [providers {:claude {:id :claude} :ollama {:id :ollama}}]
-    (is (= :claude (:id (agent/resolve-provider providers {:model "claude-sonnet-4-5"}))))
-    (is (= :claude (:id (agent/resolve-provider providers {:model "opus"}))))
+  (let [providers {:anthropic {:id :anthropic} :ollama {:id :ollama}}]
+    (is (= :anthropic (:id (agent/resolve-provider providers {:model "claude-sonnet-4-5"}))))
+    (is (= :anthropic (:id (agent/resolve-provider providers {:model "opus"}))))
     (is (= :ollama (:id (agent/resolve-provider providers {:model "qwen3:32b"}))))
     (is (= :ollama (:id (agent/resolve-provider providers {:provider :ollama
                                                            :model "claude-sonnet-4-5"}))))))

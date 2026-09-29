@@ -1918,7 +1918,7 @@
    the `:web/prompt-expanded` set of expanded part indices."
   [dispatch! room expanded]
   (let [parts   (get-in room [:agent :system-parts])
-        claude? (= :claude (get-in room [:agent :provider]))
+        claude? (= :anthropic (get-in room [:agent :provider]))
         n       (count parts)
         all?    (and (pos? n) (= expanded (set (range n))))]
     [:div {:class ["file-tab" "prompt-tab"]}

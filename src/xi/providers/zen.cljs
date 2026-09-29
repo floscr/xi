@@ -76,6 +76,20 @@
       ;; :gemini — follow-up
       (unsupported wire opts))))
 
+(defn list-models!
+  "Promise of OpenCode Zen model ids, each prefixed with `opencode/` so the
+   picker routes them to the Zen provider. Empty on error (best-effort)."
+  []
+  (-> (js/fetch (str models/base-url "/models")
+                #js {:signal (js/AbortSignal.timeout 4000)})
+      (.then (fn [^js res] (.json res)))
+      (.then (fn [^js data]
+               (->> (js->clj (.-data data) :keywordize-keys true)
+                    (keep :id)
+                    (mapv (fn [id] (str "opencode/" id))))))
+      (.catch (fn [_err] []))))
+
 (def provider
   {:id :zen
-   :start-turn! stream-messages})
+   :start-turn! stream-messages
+   :list-models! list-models!})

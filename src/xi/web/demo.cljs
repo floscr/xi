@@ -190,7 +190,7 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
 
 (defn- chat-state []
   (let [rid  "demo-room"
-        room (assoc (state/make-room rid {:provider :claude
+        room (assoc (state/make-room rid {:provider :anthropic
                                           :model "claude-opus-4"
                                           :cwd "/home/dev/acme-web"
                                           :session {:id "demo-dark-mode"

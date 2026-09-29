@@ -82,7 +82,7 @@
             ["node:worker_threads" :as wt]))
 
 (def providers
-  {:claude anthropic/provider
+  {:anthropic anthropic/provider
    :ollama ollama/provider
    :openai openai-codex/provider
    :zen    zen/provider})
@@ -348,7 +348,7 @@ See docs/cli.md for the full reference.")
                                                (subagent/create-fx
                                                 providers
                                                 (subagent-opts mgr (:ask! dialogs)))
-                                               (fx/create-fx ring
+                                               (fx/create-fx ring providers
                                                  {:system-prompt-fn
                                                   (fn [cwd]
                                                     (let [parts (into (system-prompt/load-agents-parts cwd)
@@ -520,7 +520,7 @@ See docs/cli.md for the full reference.")
                                                (subagent/create-fx
                                                 providers
                                                 (subagent-opts mgr (:ask! dialogs)))
-                                               (fx/create-fx ring
+                                               (fx/create-fx ring providers
                                                  {:system-prompt-fn
                                                   (fn [cwd]
                                                     (let [parts (into (system-prompt/load-agents-parts cwd)
@@ -864,6 +864,7 @@ See docs/cli.md for the full reference.")
         composed (manager/composed mgr)
         server (ws/create-server
                 {:server-opts server-opts
+                 :providers providers
                  :personal-agent? personal-agent?
                  :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts composed cwd))
                  :room-ext-init (:room-ext-init composed)
@@ -895,7 +896,7 @@ See docs/cli.md for the full reference.")
                                               (subagent/create-fx
                                                providers
                                                (subagent-opts mgr (:ask! dialogs)))
-                                              (fx/create-fx ring
+                                              (fx/create-fx ring providers
                                                 {:system-prompt-fn
                                                  (fn [cwd]
                                                    (let [parts (into (system-prompt/load-agents-parts cwd)

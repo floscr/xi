@@ -450,7 +450,7 @@ Be thorough but concise. Output only the summary, no preamble.")
                                        rollover-instruction)}))]
          (if-not focus
            (ready! nil)
-           (if-let [provider (get providers :claude)]
+           (if-let [provider (get providers :anthropic)]
              (let [chunks (atom [])
                    {:keys [promise abort!]}
                    ((:start-turn! provider)

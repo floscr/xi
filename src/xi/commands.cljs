@@ -251,7 +251,7 @@
   [st room-id expanded?]
   (let [parts   (get-in st [:rooms room-id :agent :system-parts])
         system  (get-in st [:rooms room-id :agent :system])
-        claude? (= :claude (get-in st [:rooms room-id :agent :provider]))
+        claude? (= :anthropic (get-in st [:rooms room-id :agent :provider]))
         body    (cond
                   expanded?
                   (or system

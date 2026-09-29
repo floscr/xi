@@ -314,6 +314,8 @@
 
    opts:
      :server-opts        {:model :effort} — defaults for rooms provisioned here.
+     :providers          provider-id → provider map — model listing for web
+                         clients (each provider's :list-models!).
      :personal-agent?    provision personal-assistant rooms: PA system prompt
                          instead of AGENTS.md, sessions in the PA dir, and the
                          provider restricted to web_search (the room's
@@ -330,7 +332,7 @@
                          encodes + delivers an event map to one client).
 
    Returns {:fx {…} :start! (fn [app {:keys [port]}] → {:port :stop!})}."
-  [{:keys [server-opts personal-agent? ext-system-prompt-parts room-ext-init ext]}]
+  [{:keys [server-opts providers personal-agent? ext-system-prompt-parts room-ext-init ext]}]
   (let [sockets (js/Map.)
         ;; Which favicon this instance serves at /apple-touch-icon.png. XI_ICON
         ;; overrides (e.g. hetzner--xi sets "hetzner"); otherwise personal-agent
@@ -487,6 +489,7 @@
       :models/web-list-reply
       (fn [_ {:keys [client-id]}]
         (fx/web-model-list-reply-fx
+         providers
          (fn [event] (send! client-id (wire/encode event)))))
 
       ;; Content search over saved sessions (names + conversation text).

@@ -53,7 +53,7 @@
                          {:type :history/append :room-id "a" :entry {:role :user :text "hi"}}
                          {:type :history/append :room-id "a" :entry {:role :assistant :text "yo"}}
                          {:type :agent/busy :room-id "a" :busy? true}
-                         {:type :agent/set-model :room-id "a" :model "opus" :provider :claude})]
+                         {:type :agent/set-model :room-id "a" :model "opus" :provider :anthropic})]
     (is (= [:user :assistant] (mapv :role (:history (state/get-room st "a")))))
     (is (true? (get-in st [:rooms "a" :agent :busy?])))
     (is (= "opus" (get-in st [:rooms "a" :agent :model])))

@@ -116,7 +116,7 @@
   [providers {:keys [make-config-dir! remove-config-dir!]}]
   {:session/generate-title
    (fn [{:keys [dispatch! state]} {:keys [room-id text]}]
-     (when-let [provider (get providers :claude)]
+     (when-let [provider (get providers :anthropic)]
        (let [cwd        (get-in state [:rooms room-id :cwd])
              chunks     (atom [])
              input      (subs text 0 (min MAX_INPUT (count text)))

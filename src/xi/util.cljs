@@ -155,7 +155,7 @@
   (cond
     (zen-model? model)    :zen
     (openai-model? model) :openai
-    (claude-model? model) :claude
+    (claude-model? model) :anthropic
     :else                 :ollama))
 
 (defn extract-text-content
