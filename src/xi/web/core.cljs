@@ -10,8 +10,7 @@
    router lives in the single atom (:web/route); the cache hydrates state
    before the WS connects and persists via an app tap. Saved sessions, live
    rooms, unread dots and reconnect come from the lobby mirror + transport."
-  (:require ["@chenglou/pretext" :as pretext]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [replicant.dom :as r]
             [xi.agent :as agent]
             [xi.client.ws-transport :as ws-transport]
@@ -471,13 +470,13 @@
       (.-innerWidth js/window))))
 
 (defn- measure-diff-cols
-  "How many monospace columns fit the diff pane right now. Uses pretext to
-   measure the character width (canvas, no DOM reflow) against the live
-   content width. Clamped so a too-narrow or unmeasurable pane still works."
+  "How many monospace columns fit the diff pane right now. Measures the
+   character width on a canvas (no DOM reflow) against the live content
+   width. Clamped so a too-narrow or unmeasurable pane still works."
   []
-  (let [font     (mono-font-string)
-        prepared (pretext/prepareWithSegments "0000000000" font)
-        char-px  (/ (pretext/measureNaturalWidth prepared) 10)
+  (let [ctx      (.getContext (js/document.createElement "canvas") "2d")
+        _        (set! (.-font ctx) (mono-font-string))
+        char-px  (/ (.-width (.measureText ctx "0000000000")) 10)
         px       (diff-content-px)]
     (if (and (pos? char-px) (pos? px))
       (max 40 (js/Math.floor (/ px char-px)))

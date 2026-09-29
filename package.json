@@ -7,11 +7,6 @@
     "test:watch": "npx shadow-cljs watch test"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0",
-    "shadow-cljs": "3.4.9",
-    "squint-cljs": "^0.11.189"
-  },
-  "dependencies": {
-    "@chenglou/pretext": "0.0.8"
+    "shadow-cljs": "3.4.9"
   }
 }

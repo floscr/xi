@@ -1,5 +1,15 @@
-{:deps {tmux-dev/tmux-dev {:git/url "https://git.example.com/floscr/tmux-dev"
-                            :git/sha "78a82846116d13f05c3ddd9c5d1c4639b6c3538a"}}
+{:paths ["scripts"]
+ :deps {tmux-dev/tmux-dev {:git/url "https://git.example.com/floscr/tmux-dev"
+                            :git/sha "78a82846116d13f05c3ddd9c5d1c4639b6c3538a"}
+        ;; squint + esbuild for the browser overlay builds (scripts/overlay_build.clj)
+        ;; — in-process via bb, no node/npm. Same pins as the dotfiles' server-lib.
+        ;; Don't pin squint back to v0.11.189 (the npm release the overlays used
+        ;; to be built with): its JVM compiler doesn't munge reserved words, so
+        ;; dialkit's `(defn- mk [tag class] …)` comes out as invalid JS.
+        io.github.squint-cljs/squint {:git/url "https://github.com/squint-cljs/squint"
+                                      :git/sha "e83befd03153b842d45cd25a77fefb915f120eb7"}
+        io.github.babashka/babashka.esbuild {:git/url "https://github.com/babashka/babashka.esbuild"
+                                             :git/sha "c25eeb3d86ad739428e600375a96ad4024b379b9"}}
  :tasks
  {:requires ([tmux-dev.core :as td]
              [clojure.edn :as edn])
@@ -140,36 +150,28 @@
    :task (shell {:extra-env {"CLJ_UI_FRAMEWORK" (clj-ui-framework-dir)}}
                 "bb" "scripts/gen-dialkit-css.clj")}
 
+  ;; The overlay builds run squint + esbuild in-process (scripts/overlay_build.clj).
+  ;; requiring-resolve keeps the compiler off the startup path of every other task.
   picker:build
-  {:doc "Compile the element-picker (squint → esbuild) to resources/element-picker/picker.js"
-   :task (let [dir "resources/element-picker"]
-           (shell {:dir dir} "npx" "squint" "compile")
-           (shell {:dir dir} "npx" "esbuild" ".compiled/picker.mjs"
-                  "--bundle" "--format=iife" "--minify" "--outfile=picker.js"
-                  "--banner:js=/* GENERATED from picker.cljs by `bb picker:build` — do not edit. */"))}
+  {:doc "Compile the element-picker (squint → esbuild, in-process) to resources/element-picker/picker.js"
+   :task ((requiring-resolve 'overlay-build/build!)
+          {:dir "resources/element-picker" :entry "picker" :out "picker.js"
+           :task "picker:build"})}
 
   design:build
-  {:doc "Compile the design-mode browser script (squint → esbuild) to resources/design-mode/design.js"
-   :task (let [dir "resources/design-mode"]
-           (shell {:dir dir} "npx" "squint" "compile")
-           (shell {:dir dir} "npx" "esbuild" ".compiled/design.mjs"
-                  "--bundle" "--format=iife" "--minify" "--outfile=design.js"
-                  "--banner:js=/* GENERATED from design.cljs by `bb design:build` — do not edit. */"))}
+  {:doc "Compile the design-mode browser script (squint → esbuild, in-process) to resources/design-mode/design.js"
+   :task ((requiring-resolve 'overlay-build/build!)
+          {:dir "resources/design-mode" :entry "design" :out "design.js"
+           :task "design:build"})}
 
   style-editor:build
-  {:doc "Compile the style-editor (squint → esbuild) to resources/style-editor/style-editor.js"
-   :task (let [dir "resources/style-editor"
-               fw  (clj-ui-framework-dir)]
-           ;; squint.edn is generated (gitignored): the dialkit runtime the
-           ;; overlay `(:require [dial])`s lives in the pinned clj-ui-framework
-           ;; gitlib, not a local checkout.
-           (spit (str dir "/squint.edn")
-                 (str (pr-str {:paths ["." (str fw "/src/ui/js")]
-                               :output-dir ".compiled" :extension "mjs"}) "\n"))
-           (shell {:dir dir} "npx" "squint" "compile")
-           (shell {:dir dir} "npx" "esbuild" ".compiled/style-editor.mjs"
-                  "--bundle" "--format=iife" "--minify" "--outfile=style-editor.js"
-                  "--banner:js=/* GENERATED from style-editor.cljs by `bb style-editor:build` — do not edit. */"))}
+  {:doc "Compile the style-editor (squint → esbuild, in-process) to resources/style-editor/style-editor.js"
+   :task ((requiring-resolve 'overlay-build/build!)
+          {:dir "resources/style-editor" :entry "style-editor" :out "style-editor.js"
+           ;; the dialkit runtime the overlay `(:require [dial])`s lives in the
+           ;; pinned clj-ui-framework gitlib, not a local checkout
+           :paths [(str (clj-ui-framework-dir) "/src/ui/js")]
+           :task "style-editor:build"})}
 
   dev:url
   {:doc "Print Tailscale IP with frontend port"

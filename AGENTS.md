@@ -14,7 +14,7 @@ Personal coding agent in ClojureScript + Bun.
 **Always use `bb` tasks for building — never call `npx shadow-cljs` directly.**
 
 ```bash
-npm install    # one-time: install shadow-cljs + SDK
+npm install    # one-time: install the shadow-cljs launcher
 bb build       # compile CLJS → JS (node TUI/server)
 bb web:build   # compile the browser web client
 bb test        # compile and run tests
@@ -142,8 +142,11 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. The short
   [docs/providers-openai.md](docs/providers-openai.md).
 - **shadow-cljs** compiles to a single node script run by **Bun**; the web
   client is a separate `:browser` build served by the same Bun server.
-- Runtime npm deps: none in Xi itself (`@chenglou/pretext` aside); the Claude
-  Agent SDK lives in `providers/anthropic/` (see above).
+- Runtime npm deps: none in Xi itself; the Claude Agent SDK lives in
+  `providers/anthropic/` (see above). The only dev npm dep is the
+  `shadow-cljs` launcher. The browser overlay scripts (element picker, design
+  mode, style editor) are built with squint + esbuild in-process by babashka
+  (`scripts/overlay_build.clj`) — no node/npm.
 - Session metadata stored in `~/.config/xi/sessions/`; conversation transcripts
   live in Claude CLI sessions under `~/.claude/projects/`
 - Personal agent sessions stored separately in `~/.config/xi/personal-agent/root/`
