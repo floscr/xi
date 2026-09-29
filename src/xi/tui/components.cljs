@@ -8,7 +8,9 @@
 
 (defn make-text
   "Create a text component with optional padding and background.
-   opts: {:padding-x 1 :padding-y 0 :bg-code nil}"
+   opts: {:padding-x 1 :padding-y 0 :bg-code nil :hang-indent nil}
+   :hang-indent n wraps in code mode (see `ansi/wrap-text`): wrapped lines
+   keep their indentation and continuations hang n columns deeper."
   ([text] (make-text text {}))
   ([text opts]
    (let [state (atom {:text text
@@ -17,7 +19,8 @@
                       :cached-lines nil})
          padding-x (or (:padding-x opts) 0)
          padding-y (or (:padding-y opts) 0)
-         bg-code (:bg-code opts)]
+         bg-code (:bg-code opts)
+         wrap-opts (select-keys opts [:hang-indent])]
      {:type :text
       :set-text (fn [t]
                   (swap! state assoc :text t :cached-text nil :cached-width nil :cached-lines nil)
@@ -32,7 +35,7 @@
                           left-pad (apply str (repeat padding-x " "))
                           wrapped (if (or (nil? text) (= "" (str/trim (str text))))
                                     []
-                                    (ansi/wrap-text text content-width))
+                                    (ansi/wrap-text text content-width wrap-opts))
                           content-lines (mapv (fn [line]
                                                (let [padded (str left-pad line)]
                                                  (if bg-code

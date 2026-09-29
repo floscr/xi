@@ -1,7 +1,8 @@
 (ns xi.client.view-test
   (:require [cljs.test :refer [deftest is testing]]
             [clojure.string :as str]
-            [xi.client.view :as view]))
+            [xi.client.view :as view]
+            [xi.tui.ansi :as ansi]))
 
 ;; ── format-tool-args ─────────────────────────────────────────────────────────
 
@@ -106,3 +107,26 @@
       (is (= text (view/buffer-display-text {:text text})))))
   (testing "blank text → empty string"
     (is (= "" (view/buffer-display-text {:path "src/foo.clj" :text ""})))))
+
+;; ── clj tool block ───────────────────────────────────────────────────────────
+
+(defn- render-block [entry width]
+  (->> (:nodes (view/entry->block entry))
+       (mapcat #((:render %) width))
+       (mapv #(str/trimr (ansi/strip-ansi %)))))
+
+(deftest clj-tool-block-code
+  (let [code  "[ver\n (let [out (sh \"unzip\" \"-p\" \"some/long/path.jar\")]\n   out)]"
+        entry {:kind :tool-call :id "t1" :tool "mcp__xi-tools__clj"
+               :status :done :arguments {"code" code}}
+        raw   (->> (:nodes (view/entry->block entry)) (mapcat #((:render %) 40)))
+        lines (render-block entry 40)]
+    (testing "header is just the tool name; code renders on its own lines"
+      (is (= "$ clj" (str/trim (first lines))))
+      (is (some #(= " [ver" %) lines)))
+    (testing "wrapped code lines keep their indent and hang deeper"
+      (is (some #(= "  (let [out (sh \"unzip\" \"-p\"" %) lines))
+      (is (some #(= "    \"some/long/path.jar\")]" %) lines))
+      (is (some #(= "    out)]" %) lines)))
+    (testing "code is syntax highlighted"
+      (is (some #(str/includes? % "\u001b[38;2") raw)))))

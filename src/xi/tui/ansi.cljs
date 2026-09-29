@@ -478,36 +478,73 @@
               :else
               (recur (+ i n) vcol' start result))))))))
 
+(defn- word-wrap-line
+  "Simple word-wrap of a single line: split on spaces, greedily fill lines of
+   at most max-width visible columns, hard-breaking words that don't fit.
+   With rest-width, lines after the first are limited to that instead."
+  ([line max-width] (word-wrap-line line max-width max-width))
+  ([line first-width rest-width]
+   (let [words (str/split line #" ")]
+     (loop [result []
+            current ""
+            [w & more] words]
+       (if-not w
+         (if (seq current)
+           (conj result current)
+           result)
+         (let [candidate (if (seq current)
+                           (str current " " w)
+                           w)
+               limit (if (empty? result) first-width rest-width)]
+           (if (> (visible-width candidate) limit)
+             (if (seq current)
+               (recur (conj result current) w more)
+               ;; Single word longer than width — hard-break it
+               (recur (into result (break-long-word w rest-width)) "" more))
+             (recur result candidate more))))))))
+
+(def ^:private leading-indent-re
+  "Leading run of spaces, including any SGR codes interleaved with them."
+  (js/RegExp. "^(?: |\\u001b\\[[0-9;]*m)*"))
+
+(defn- wrap-line-keep-indent
+  "Word-wrap a line while keeping its leading indentation: the first segment
+   keeps the indent verbatim and continuation segments hang at
+   indent + hang columns. Falls back to plain word-wrap when the indent would
+   eat more than half the width."
+  [line max-width hang]
+  (let [prefix (aget (.exec leading-indent-re line) 0)
+        indent (visible-width prefix)
+        cont   (+ indent hang)
+        width  (- max-width cont)]
+    (if (or (< width (quot max-width 2)) (= (count prefix) (count line)))
+      (word-wrap-line line max-width)
+      (let [[fst & more] (word-wrap-line (subs line (count prefix))
+                                         (- max-width indent) width)
+            pad (apply str (repeat cont " "))]
+        (into [(str prefix fst)] (map #(str pad %)) more)))))
+
 (defn wrap-text
   "Word-wrap text to fit within max-width columns.
    Returns vector of lines. ANSI SGR state is propagated across line
-   boundaries so each output line is independently renderable."
-  [text max-width]
-  (if (or (empty? text) (<= max-width 0))
-    [""]
-    (let [lines (str/split-lines text)
-          raw (into []
-                    (mapcat
-                     (fn [line]
-                       (if (<= (visible-width line) max-width)
-                         [line]
-                         ;; Simple word-wrap: split on spaces
-                         (let [words (str/split line #" ")]
-                           (loop [result []
-                                  current ""
-                                  [w & more] words]
-                             (if-not w
-                               (if (seq current)
-                                 (conj result current)
-                                 result)
-                               (let [candidate (if (seq current)
-                                                 (str current " " w)
-                                                 w)]
-                                 (if (> (visible-width candidate) max-width)
-                                   (if (seq current)
-                                     (recur (conj result current) w more)
-                                     ;; Single word longer than width — hard-break it
-                                     (recur (into result (break-long-word w max-width)) "" more))
-                                   (recur result candidate more))))))))
-                    lines))]
-      (propagate-sgr raw))))
+   boundaries so each output line is independently renderable.
+
+   opts:
+     :hang-indent n — code mode: a wrapped line keeps its leading indentation
+                      and its continuation lines hang at that indent + n
+                      columns (default mode drops leading spaces of lines it
+                      has to wrap)."
+  ([text max-width] (wrap-text text max-width nil))
+  ([text max-width {:keys [hang-indent]}]
+   (if (or (empty? text) (<= max-width 0))
+     [""]
+     (let [lines (str/split-lines text)
+           raw (into []
+                     (mapcat
+                      (fn [line]
+                        (cond
+                          (<= (visible-width line) max-width) [line]
+                          hang-indent (wrap-line-keep-indent line max-width hang-indent)
+                          :else       (word-wrap-line line max-width))))
+                     lines)]
+       (propagate-sgr raw)))))

@@ -58,6 +58,29 @@
       (is (every? #(<= (count %) 20) result))
       (is (= text (apply str result))))))
 
+(deftest wrap-text-hang-indent
+  (testing "default mode drops the indent of a wrapped line"
+    (is (= ["aaa bbb" "ccc"] (ansi/wrap-text "  aaa bbb ccc" 10))))
+
+  (testing "code mode keeps the indent and hangs continuations deeper"
+    (is (= ["  aaa bbb" "    ccc" "    ddd"]
+           (ansi/wrap-text "  aaa bbb ccc ddd" 10 {:hang-indent 2}))))
+
+  (testing "lines that fit and unindented lines are untouched"
+    (is (= ["(foo" " bar)"]
+           (ansi/wrap-text "(foo\n bar)" 10 {:hang-indent 2})))
+    (is (= ["aaa bbb" "  ccc"]
+           (ansi/wrap-text "aaa bbb ccc" 8 {:hang-indent 2}))))
+
+  (testing "indent interleaved with SGR codes is measured by visible width"
+    (let [red "\033[31m" reset "\033[0m"
+          result (ansi/wrap-text (str " " red "aaa bbb ccc" reset) 10 {:hang-indent 2})]
+      (is (= [" aaa bbb" "   ccc"] (mapv ansi/strip-ansi result)))))
+
+  (testing "an indent eating over half the width falls back to plain wrap"
+    (is (= ["aaa bbb"]
+           (ansi/wrap-text "        aaa bbb" 10 {:hang-indent 2})))))
+
 (deftest visible-width-wide-chars
   (testing "BMP wide emoji counts as 2 columns"
     (is (= 2 (ansi/visible-width "✅")))

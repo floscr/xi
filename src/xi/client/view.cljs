@@ -239,16 +239,35 @@
                (str/starts-with? % "- "))
           (rest lines))))
 
+(defn- highlight-code
+  "Apply syntax highlighting to plain source text."
+  [grammar text]
+  (let [tokens (-> (hl/tokenize grammar text) hl/merge-adjacent)
+        lines (hl/split-tokens-by-line tokens)]
+    (->> lines
+         (mapv hl-theme/colorize)
+         (str/join "\n"))))
+
 (defn- highlight-text
   "Apply syntax highlighting; auto-detects diff output."
   [grammar text]
   (if (diff-output? text)
     (highlight-diff-text grammar text)
-    (let [tokens (-> (hl/tokenize grammar text) hl/merge-adjacent)
-          lines (hl/split-tokens-by-line tokens)]
-      (->> lines
-           (mapv hl-theme/colorize)
-           (str/join "\n")))))
+    (highlight-code grammar text)))
+
+(def ^:private code-hang-indent
+  "Extra columns a wrapped code line's continuation hangs below its indent."
+  2)
+
+(defn- clj-code-display
+  "The clj tool's code, syntax highlighted and truncated like tool output —
+   rendered as its own node under the `$ clj` header (not squeezed into it)."
+  [arguments]
+  (when-let [code (some-> (get-arg arguments :code) str str/trimr not-empty)]
+    (truncate-output (if-let [g (hl-grammars/get-grammar "clj")]
+                       (highlight-code g code)
+                       code)
+                     truncate-output-block-after-n-lines)))
 
 ;; ── Entry blocks ─────────────────────────────────────────────────────────────
 
@@ -359,9 +378,14 @@
         short-name (shorten-tool-name (:tool entry))
         canonical (canonical-tool (:tool entry))
         mcp? (str/starts-with? (str (:tool entry)) "mcp__")
+        clj? (= "clj" canonical)
+        header-args (fn [arguments]
+                      (when-not clj? (format-tool-args canonical arguments)))
         header-text (comp/make-text
-                     (tool-header-str short-name
-                                      (format-tool-args canonical (:arguments entry))))
+                     (tool-header-str short-name (header-args (:arguments entry))))
+        code-text (when clj?
+                    (comp/make-text (clj-code-display (:arguments entry))
+                                    {:hang-indent code-hang-indent}))
         live? (= :running (:status entry))
         spinner (when live? (comp/make-spinner))
         start-time (js/Date.now)
@@ -397,6 +421,7 @@
                                                     (str "Took " duration))))))))
                   (set! (.-finished st) true))]
     ((:add-child box) header-text)
+    (when code-text ((:add-child box) code-text))
     (if live?
       (do ((:add-child box) spinner)
           ((:start spinner)))
@@ -410,8 +435,9 @@
                   (when (not= (:arguments old) (:arguments new))
                     (ensure-grammar! (:arguments new))
                     ((:set-text header-text)
-                     (tool-header-str short-name
-                                      (format-tool-args canonical (:arguments new)))))
+                     (tool-header-str short-name (header-args (:arguments new))))
+                    (when code-text
+                      ((:set-text code-text) (clj-code-display (:arguments new)))))
                   (when (and (:result new) (not (.-outputSet st)) (not collapsed?))
                     (set-output! (:result new) (:is-error new)))
                   (when (and (not= :running (:status new)) (not (.-finished st)))
