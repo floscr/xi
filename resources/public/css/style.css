@@ -9,6 +9,11 @@
    the pixel-accurate visual viewport height while the keyboard is open. */
 :root { --app-height: 100vh; }
 
+/* Reading-width cap for the chat column on large displays. Shared by the
+   timeline content and the composer dock so their edges line up; the
+   timeline itself stays full width so its scrollbar sits at the window edge. */
+:root { --chat-max-width: 64rem; }
+
 html, body {
   margin: 0; padding: 0;
   overflow: hidden; position: fixed;
@@ -432,6 +437,7 @@ body {
   flex-direction: column;
   flex: 1;
   width: 100%;
+  max-width: var(--chat-max-width);
   margin: 0 auto;
   padding: 0 var(--size-4);
 }
@@ -2612,6 +2618,7 @@ code a:hover,
   position: relative;
   flex-shrink: 0;
   width: 100%;
+  max-width: var(--chat-max-width);
   margin-inline: auto;
 }
 
