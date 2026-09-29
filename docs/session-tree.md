@@ -72,19 +72,10 @@ vanishes naturally.
 | `src/xi/tui/history_selector.cljs` | Interactive TUI selector (filtering, search) |
 | `src/xi/client/tui.cljs` | Panel wiring (dialog > menu > tree > editor priority) |
 
-## The old append-only tree (dormant)
+## History: the old branching tree
 
-The previous implementation maintained a parallel append-only tree
-(`.tree.jsonl` files with `id`/`parentId` pointers) that supported true
-branching — preserving abandoned branches and re-injecting fork context
-into the system prompt. That code survives as **unwired leaf namespaces**:
-
-- `src/xi/session/tree.cljs` — tree data structure (create, append!,
-  branch!, `build-message-context`)
-- `src/xi/session/tree_recorder.cljs` — event → tree entry mapping
-- `src/xi/tui/tree_selector.cljs` — the tree-shaped selector UI
-
-Nothing constructs or records into them in the rebuild. If branch
-preservation is wanted again, these are the starting point; until then
-`/tree` is intentionally simpler: truncate, carry the context, start a
-fresh provider session.
+Before the rebuild, `/tree` kept a parallel append-only tree
+(`.tree.jsonl`, `id`/`parentId` pointers) that preserved abandoned branches.
+That unused code (`session/tree.cljs`, `session/tree_recorder.cljs`,
+`tui/tree_selector.cljs`) was deleted; if branch preservation is wanted
+again, recover it from git: `git log --diff-filter=D -- src/xi/session/tree.cljs`.

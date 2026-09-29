@@ -164,15 +164,6 @@
       (fs/mkdirSync dir #js {:recursive true}))
     (assoc meta :_dir dir)))
 
-(defn tree-filepath
-  "Return the path to the tree JSONL file for a session."
-  [session]
-  (let [dir (or (:_dir session)
-                (if (:personal-agent? session)
-                  (personal-agent-dir (:agent session))
-                  (xi-session-dir (:cwd session))))]
-    (.join node-path dir (str (:id session) ".tree.jsonl"))))
-
 (defonce ^:private all-sessions-cache
   ;; {:at <ms> :sessions [...]} — short-TTL cache of the raw (un-annotated)
   ;; list-all-sessions scan. The scan stats every session file on disk
