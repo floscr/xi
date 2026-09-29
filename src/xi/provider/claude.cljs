@@ -15,6 +15,7 @@
   (:require ["@anthropic-ai/claude-agent-sdk" :as sdk]
             ["node:child_process" :as child-process]
             ["node:fs" :as fs]
+            ["node:path" :as path]
             ["zod" :as z]
             [clojure.string :as str]
             [xi.tools.registry :as tools]
@@ -137,15 +138,50 @@
   "Pass-through tool gate (extensions inject the real one)."
   (fn [tool-call] (js/Promise.resolve tool-call)))
 
-(defn- build-mcp-server
-  ;; extra-tool-definitions / extra-tool-registry may be a value OR a 0-arg fn.
-  ;; The manager passes fns (xi.cli/tooling-opts) so the enabled tool set is
-  ;; read *fresh each turn* — enabling/disabling an extension changes what the
-  ;; model sees on the next turn without a restart (see xi.ext.manager).
-  [{:keys [cwd only-tools tool-gate extra-tool-definitions extra-tool-registry
-           remove-tools client-pid]}]
+(defn run-gated-tool
+  "Execute one tool call through the extension tool-gate, then the registry.
+   Returns a Promise of #js {:content … :isError …}. Shared by the in-process
+   MCP bridge and (slice 2) the runner's proxied tool-call handler, so the
+   permission gate + registry stay in one place regardless of transport.
+
+   opts: {:tool-name :exec-fn :arguments :tool-gate :cwd :client-pid}."
+  [{:keys [tool-name exec-fn arguments tool-gate cwd client-pid]}]
   (let [tool-gate (or tool-gate default-gate)
-        extra-defs (if (fn? extra-tool-definitions)
+        tool-call {:name tool-name :arguments arguments}]
+    (-> (tool-gate tool-call)
+        (.then
+         (fn [gated]
+           (cond
+             (nil? gated)
+             #js {:content #js [#js {:type "text"
+                                     :text "Blocked by Xi permission gate"}]
+                  :isError true}
+
+             (:intercepted gated)
+             (let [result (:result gated)]
+               #js {:content (clj->js (util/cap-tool-result-content (:content result)))
+                    :isError (boolean (:is-error result))})
+
+             :else
+             (-> (tools/run-tool exec-fn (or (:arguments gated) arguments)
+                                 {:cwd cwd :client-pid client-pid})
+                 (.then (fn [{:keys [content is-error]}]
+                          #js {:content (clj->js content)
+                               :isError is-error})))))))))
+
+(defn resolve-tooling
+  "Resolve the enabled tool defs + registry for a turn: extension extras,
+   removals, and the personal-agent `only-tools` filter applied. `:defs` is the
+   ordered tool-definition vector shown to the model; `:registry` maps
+   tool-name → exec-fn. Shared by the in-process MCP bridge and the runner
+   transport (which ships `:defs` over the wire and dispatches via `:registry`).
+
+   extra-tool-definitions / extra-tool-registry may be a value OR a 0-arg fn.
+   The manager passes fns (xi.cli/tooling-opts) so the enabled tool set is read
+   *fresh each turn* — enabling/disabling an extension changes what the model
+   sees on the next turn without a restart (see xi.ext.manager)."
+  [{:keys [only-tools extra-tool-definitions extra-tool-registry remove-tools]}]
+  (let [extra-defs (if (fn? extra-tool-definitions)
                      (extra-tool-definitions) extra-tool-definitions)
         extra-registry (if (fn? extra-tool-registry)
                          (extra-tool-registry) extra-tool-registry)
@@ -157,7 +193,26 @@
         defs (if only-tools
                (filterv #(contains? only-tools (:name %)) all-defs)
                all-defs)
-        registry (merge (tools/tool-registry) extra-registry)
+        registry (merge (tools/tool-registry) extra-registry)]
+    {:defs defs :registry registry}))
+
+(defn tool-dispatcher
+  "Return a fn `(tool-name clj-args) → Promise<#js {:content :isError}>` that
+   runs a tool through the gate + registry. Used by the runner transport to
+   service proxied `tool-call` frames on the host."
+  [{:keys [registry tool-gate cwd client-pid]}]
+  (fn [tool-name arguments]
+    (run-gated-tool {:tool-name tool-name
+                     :exec-fn (get registry tool-name)
+                     :arguments arguments
+                     :tool-gate tool-gate
+                     :cwd cwd
+                     :client-pid client-pid})))
+
+(defn- build-mcp-server
+  [{:keys [cwd tool-gate client-pid] :as opts}]
+  (let [tool-gate (or tool-gate default-gate)
+        {:keys [defs registry]} (resolve-tooling opts)
         mcp-tools (into-array
                    (map (fn [tool-def]
                           (let [tool-name (:name tool-def)
@@ -168,28 +223,12 @@
                                  :inputSchema (or zod-shape #js {})
                                  :handler
                                  (fn [^js args _extra]
-                                   (let [args (js->clj args :keywordize-keys true)
-                                         tool-call {:name tool-name :arguments args}]
-                                     (-> (tool-gate tool-call)
-                                         (.then
-                                          (fn [gated]
-                                            (cond
-                                              (nil? gated)
-                                              #js {:content #js [#js {:type "text"
-                                                                      :text "Blocked by Xi permission gate"}]
-                                                   :isError true}
-
-                                              (:intercepted gated)
-                                              (let [result (:result gated)]
-                                                #js {:content (clj->js (util/cap-tool-result-content (:content result)))
-                                                     :isError (boolean (:is-error result))})
-
-                                              :else
-                                              (-> (tools/run-tool exec-fn (or (:arguments gated) args)
-                                                                  {:cwd cwd :client-pid client-pid})
-                                                  (.then (fn [{:keys [content is-error]}]
-                                                           #js {:content (clj->js content)
-                                                                :isError is-error})))))))))}))
+                                   (run-gated-tool {:tool-name tool-name
+                                                    :exec-fn exec-fn
+                                                    :arguments (js->clj args :keywordize-keys true)
+                                                    :tool-gate tool-gate
+                                                    :cwd cwd
+                                                    :client-pid client-pid}))}))
                         defs))]
     (sdk/createSdkMcpServer
      #js {:name MCP_SERVER_NAME
@@ -298,6 +337,59 @@
            {:id (:tool_use_id block)
             :content (:content block)
             :is-error (:is_error block)}))))))
+
+(defn process-sdk-message
+  "Dispatch a single SDK message onto callbacks + per-turn `state`. Shared by
+   the in-process iterator loop and (slice 2) the runner transport, which feeds
+   the same messages over the wire. Handles stream_event / assistant / user /
+   result / system / rate_limit_event; loop control (done detection, recursion,
+   abort) stays with the caller."
+  [^js message callbacks state]
+  (let [msg-type (.-type message)]
+    (case msg-type
+      "stream_event"
+      (do (swap! state assoc :saw-stream-events true)
+          (process-stream-event (.-event message) callbacks state))
+
+      "assistant"
+      (process-assistant-message message callbacks state)
+
+      "user"
+      (extract-tool-results-from-user-msg message callbacks)
+
+      "result"
+      (let [result-text (.-result message)
+            cost (.-total_cost_usd message)
+            ^js usage (.-usage message)]
+        (swap! state assoc
+               :result-text result-text
+               :is-error (boolean (.-is_error message))
+               :cost cost :done true)
+        (when usage
+          (swap! state update :usage merge
+                 (js->clj usage :keywordize-keys true))))
+
+      "system"
+      (when (= "init" (.-subtype message))
+        (when-let [sid (.-session_id message)]
+          (swap! state assoc :session-id sid)
+          (when-let [f (:on-session callbacks)]
+            (f sid))))
+
+      "rate_limit_event"
+      (let [^js info (.-rate_limit_info message)]
+        ;; A "rejected" rate limit is only a hard stop when overage isn't
+        ;; covering it. When overage is allowed / already in use the request
+        ;; proceeds, so don't surface it as an error the user has to see.
+        (when (and info (= "rejected" (.-status info))
+                   (not (= "allowed" (.-overageStatus info)))
+                   (not (.-isUsingOverage info))
+                   (:on-error callbacks))
+          ((:on-error callbacks)
+           {:type "rate_limit"
+            :info (js->clj info :keywordize-keys true)})))
+
+      nil)))
 
 ;; ── Main Streaming Function ──────────────────────────────────────────────────
 
@@ -449,55 +541,8 @@
                             (fn [^js result]
                               (if (.-done result)
                                 (finish!)
-                                (let [^js message (.-value result)
-                                      msg-type (.-type message)]
-                                  (case msg-type
-                                    "stream_event"
-                                    (do (swap! state assoc :saw-stream-events true)
-                                        (process-stream-event
-                                         (.-event message) callbacks state))
-
-                                    "assistant"
-                                    (process-assistant-message message callbacks state)
-
-                                    "user"
-                                    (extract-tool-results-from-user-msg message callbacks)
-
-                                    "result"
-                                    (let [result-text (.-result message)
-                                          cost (.-total_cost_usd message)
-                                          ^js usage (.-usage message)]
-                                      (swap! state assoc
-                                             :result-text result-text
-                                             :is-error (boolean (.-is_error message))
-                                             :cost cost :done true)
-                                      (when usage
-                                        (swap! state update :usage merge
-                                               (js->clj usage :keywordize-keys true))))
-
-                                    "system"
-                                    (when (= "init" (.-subtype message))
-                                      (when-let [sid (.-session_id message)]
-                                        (swap! state assoc :session-id sid)
-                                        (when-let [f (:on-session callbacks)]
-                                          (f sid))))
-
-                                    "rate_limit_event"
-                                    (let [^js info (.-rate_limit_info message)]
-                                      ;; A "rejected" rate limit is only a hard
-                                      ;; stop when overage isn't covering it. When
-                                      ;; overage is allowed / already in use the
-                                      ;; request proceeds, so don't surface it as
-                                      ;; an error the user has to see.
-                                      (when (and info (= "rejected" (.-status info))
-                                                 (not (= "allowed" (.-overageStatus info)))
-                                                 (not (.-isUsingOverage info))
-                                                 (:on-error callbacks))
-                                        ((:on-error callbacks)
-                                         {:type "rate_limit"
-                                          :info (js->clj info :keywordize-keys true)})))
-
-                                    nil)
+                                (do
+                                  (process-sdk-message (.-value result) callbacks state)
                                   (consume)))))
                            (.catch
                             (fn [err]
@@ -538,6 +583,185 @@
                     (.catch (fn [_] nil)))
                 (close-query!))}))
 
+;; ── Runner transport (out-of-process SDK) ─────────────────────────────────────
+;; Opt-in via XI_CLAUDE_RUNNER=1: instead of running the Claude Agent SDK
+;; in-process, spawn `runner/runner.mjs` (its own node_modules, freely
+;; upgradable SDK) per turn and speak newline-delimited JSON over stdio. The
+;; host still owns the permission gate + tool registry — the runner proxies
+;; each tool call back via `tool-call` frames (see runner/runner.mjs).
+
+(defn- initial-turn-state [opts]
+  (atom {:content [] :usage {} :stop-reason nil
+         :model (:model opts) :session-id nil
+         :result-text nil :cost nil :tool-call-ids []
+         :pending-tool-inputs {} :saw-stream-events false}))
+
+(defn- runner-path []
+  (or (aget js/process.env "XI_CLAUDE_RUNNER_PATH")
+      (.resolve path js/__dirname ".." "runner" "runner.mjs")))
+
+(defn- base-query-opts
+  "JSON-serializable query options for the runner. Excludes mcpServers, env,
+   and pathToClaudeCodeExecutable — the runner supplies those itself."
+  [opts append-sys]
+  (cond-> {:cwd (or (:cwd opts) (.cwd js/process))
+           :permissionMode "bypassPermissions"
+           :allowDangerouslySkipPermissions true
+           :includePartialMessages true
+           :tools []
+           :allowedTools (if (:no-tools? opts) [] [(str MCP_TOOL_PREFIX "*")])
+           :strictMcpConfig true
+           :autoMemoryEnabled false}
+    (:model opts) (assoc :model (:model opts))
+    append-sys (assoc :systemPrompt {:type "preset" :preset "claude_code"
+                                     :append append-sys})
+    (:effort opts) (assoc :effort (:effort opts))
+    (:resume-session-id opts) (assoc :resume (:resume-session-id opts))))
+
+(defn- runner-prompt
+  "Build the runner's `prompt` value: a plain string, or {:text :blocks} when
+   there are inline image/PDF attachments (reconstructed into API content
+   blocks by the runner)."
+  [opts]
+  (let [inline (filter (fn [{:keys [media-type]}]
+                         (or (= media-type "application/pdf")
+                             (str/starts-with? (or media-type "") "image/")))
+                       (:images opts))]
+    (if (seq inline)
+      {:text (:prompt opts)
+       :blocks (mapv (fn [{:keys [media-type data]}]
+                       {:media_type media-type :data data})
+                     inline)}
+      (:prompt opts))))
+
+(defn stream-messages-runner
+  "Runner-transport variant of stream-messages: spawn runner/runner.mjs per
+   turn, forward SDK messages through process-sdk-message, and service proxied
+   tool-call frames on the host. Same {:promise :abort!} contract."
+  [opts]
+  (let [callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
+                                     :on-tool-args :on-tool-result :on-session
+                                     :on-error])
+        state (initial-turn-state opts)
+        cwd (or (:cwd opts) (.cwd js/process))
+        resume-id (:resume-session-id opts)
+        append-sys (if (:no-tools? opts)
+                     (:system opts)
+                     (str/join "\n\n" (remove str/blank? [(:system opts) TOOL_NAMING_NOTE])))
+        {:keys [defs registry]} (resolve-tooling
+                                 (cond-> {:extra-tool-definitions (:extra-tool-definitions opts)
+                                          :extra-tool-registry (:extra-tool-registry opts)
+                                          :remove-tools (:remove-tools opts)}
+                                   (:personal-agent? opts) (assoc :only-tools PERSONAL_AGENT_TOOLS)))
+        dispatch (tool-dispatcher {:registry registry
+                                   :tool-gate (:tool-gate opts)
+                                   :cwd cwd
+                                   :client-pid (:client-pid opts)})
+        query-opts (base-query-opts opts append-sys)
+        ^js proc (child-process/spawn (.-execPath js/process)
+                                      #js [(runner-path)]
+                                      #js {:stdio #js ["pipe" "pipe" "inherit"]})
+        send-frame! (fn [m]
+                      (try
+                        (.write (.-stdin proc) (str (js/JSON.stringify (clj->js m)) "\n"))
+                        (catch :default _e nil)))
+        promise
+        (js/Promise.
+         (fn [resolve _reject]
+           (let [buf (atom "")
+                 done? (atom false)
+                 finish! (fn []
+                           (when-not @done?
+                             (reset! done? true)
+                             (try (.kill proc) (catch :default _e nil))
+                             (resolve @state)))
+                 handle-frame
+                 (fn [^js frame]
+                   ;; Frames after the terminal `done`/`error` (e.g. a late
+                   ;; runner error while we're killing it) must not fire
+                   ;; callbacks into an already-resolved turn.
+                   (when-not @done?
+                    (case (aget frame "type")
+                     "sdk-message"
+                     (process-sdk-message (aget frame "message") callbacks state)
+
+                     "tool-call"
+                     (let [id (aget frame "id")
+                           tool-name (aget frame "name")
+                           args (js->clj (aget frame "arguments") :keywordize-keys true)]
+                       (-> (dispatch tool-name args)
+                           (.then (fn [^js res]
+                                    (send-frame! {:type "tool-result"
+                                                  :id id
+                                                  :result {:content (.-content res)
+                                                           :isError (.-isError res)}})))
+                           (.catch (fn [e]
+                                     (send-frame!
+                                      {:type "tool-result" :id id
+                                       :result {:content #js [#js {:type "text" :text (str e)}]
+                                                :isError true}})))))
+
+                     "done" (finish!)
+
+                     "error"
+                     (let [msg (str (aget frame "message"))]
+                       (cond
+                         (and resume-id (re-find #"No conversation found" msg))
+                         (do (swap! state assoc :resume-failed true) (finish!))
+
+                         (cwd-missing? cwd)
+                         (do (swap! state assoc :cwd-missing true) (finish!))
+
+                         :else
+                         (do
+                           (js/console.error "[claude-runner] error:" msg)
+                           (when (:on-error callbacks)
+                             ((:on-error callbacks) {:type "error" :message msg}))
+                           (finish!))))
+
+                     nil)))]
+             (.setEncoding (.-stdout proc) "utf8")
+             (.on (.-stdout proc) "data"
+                  (fn [chunk]
+                    (swap! buf str chunk)
+                    (loop []
+                      (let [s @buf
+                            nl (.indexOf s "\n")]
+                        (when (>= nl 0)
+                          (let [line (subs s 0 nl)]
+                            (reset! buf (subs s (inc nl)))
+                            (when-not (str/blank? line)
+                              (try (handle-frame (js/JSON.parse line))
+                                   (catch :default e
+                                     (js/console.error "[claude-runner] bad frame:" (str e)))))
+                            (recur)))))))
+             (.on proc "error"
+                  (fn [err]
+                    (js/console.error "[claude-runner] spawn error:" (str err))
+                    (when (:on-error callbacks)
+                      ((:on-error callbacks) {:type "error" :message (str err)}))
+                    (finish!)))
+             (.on proc "close" (fn [_code] (finish!)))
+             (send-frame! {:type "start"
+                           :queryOpts query-opts
+                           :envOverride (:env opts)
+                           :toolDefs (when-not (:no-tools? opts) defs)
+                           :prompt (runner-prompt opts)
+                           :noTools (boolean (:no-tools? opts))}))))]
+    {:promise promise
+     :abort! (fn []
+               (swap! state assoc :aborted true)
+               (send-frame! {:type "abort"})
+               (js/setTimeout (fn [] (try (.kill proc) (catch :default _e nil))) 500))}))
+
+(defn- start-turn!
+  "Route a turn to the runner transport (opt-in via XI_CLAUDE_RUNNER=1) or the
+   in-process SDK. Default stays in-process."
+  [opts]
+  (if (= "1" (aget js/process.env "XI_CLAUDE_RUNNER"))
+    (stream-messages-runner opts)
+    (stream-messages opts)))
+
 (def provider
   {:id :claude
-   :start-turn! stream-messages})
+   :start-turn! start-turn!})

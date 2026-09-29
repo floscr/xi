@@ -1,0 +1,14 @@
+{
+  "name": "xi-claude-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Claude Agent SDK runner for Xi. Isolates @anthropic-ai/claude-agent-sdk in its own process so Xi's build/deps aren't chained to a single SDK version. Talks newline-delimited JSON over stdio; tool calls proxy back to the host.",
+  "bin": {
+    "xi-claude-runner": "./runner.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.141",
+    "zod": "4.4.3"
+  }
+}
