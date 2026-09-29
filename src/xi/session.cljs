@@ -1121,6 +1121,33 @@
 
     []))
 
+(defn transcript-turn-complete?
+  "True when parsed Claude transcript entries end in a finished turn: the last
+   user/assistant entry is an assistant message that stopped with end_turn
+   (metadata entries like last-prompt / cost-state are ignored). A turn cut off
+   mid-flight ends in a tool_use, a tool result or a user prompt instead."
+  [entries]
+  (let [last-msg (->> entries
+                      (filter #(contains? #{"user" "assistant"} (:type %)))
+                      last)]
+    (and (= "assistant" (:type last-msg))
+         (= "end_turn" (get-in last-msg [:message :stop_reason])))))
+
+(defn turn-completed?
+  "True when an Xi session's Claude transcript ends in a finished turn — see
+   transcript-turn-complete?. False when there is no transcript to read."
+  [summary]
+  (boolean
+   (when-let [filepath (and (:cli-session-id summary)
+                            (find-claude-transcript (:cwd summary) (:cli-session-id summary)))]
+     (try
+       (->> (str/split (fs/readFileSync filepath "utf8") #"\n")
+            (remove str/blank?)
+            (keep #(try (js->clj (js/JSON.parse %) :keywordize-keys true)
+                        (catch :default _e nil)))
+            transcript-turn-complete?)
+       (catch :default _e false)))))
+
 (defn read-session-messages
   "Read conversation messages from a session for display.
 

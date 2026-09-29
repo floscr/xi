@@ -267,5 +267,16 @@ which `util/strip-mcp-prefix` removes for display.
 
 SDK lifecycle quirks are contained in the runner: the query must be
 `.close()`d after completion to avoid EPIPE from orphaned subprocess pipes;
-abort uses `.interrupt()` then `.close()`; stdout write errors after the
-terminal frame are swallowed to stderr.
+abort uses `.interrupt()` then `.close()`.
+
+The Claude CLI must never outlive the host. The SDK only kills it from a
+`process.on("exit")` hook, which doesn't run when the runner dies by signal,
+and `bb serve:restart` SIGKILLs just the bun host (`reap-stray-serve!`). An
+orphaned CLI then finishes the in-flight turn on its own, and the restarted
+server's auto-resume sends `continue` on top of a turn that actually
+completed. So the runner spawns the CLI itself (`spawnClaudeCodeProcess`) and
+SIGKILLs it as soon as the host is gone: stdin EOF, EPIPE on stdout, or
+SIGHUP. A SIGTERM from the host (the normal kill after the terminal frame, or
+after an abort) is passed on to the CLI as SIGTERM. The server also skips
+auto-resume when the transcript already ends in an `end_turn`
+(`session/turn-completed?`).

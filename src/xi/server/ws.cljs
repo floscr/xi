@@ -454,10 +454,14 @@
               ;; Auto-resume an agent whose turn was cut off by a hard restart:
               ;; the session was marked interrupted while its spinner was up and
               ;; never cleared (a completed turn's :session/sync would have).
-              ;; Clear the marker and re-drive it with a "continue" prompt.
+              ;; Clear the marker and re-drive it with a "continue" prompt —
+              ;; unless the transcript shows the turn finished anyway (the
+              ;; response landed after the server died): a "continue" then
+              ;; reads as a go-ahead to whatever the agent last proposed.
               (when (:interrupted-at summary)
                 (session/clear-interrupted! (:filepath summary))
-                (dispatch! {:type :prompt/submit :room-id room-id :text "continue"}))))))
+                (when-not (session/turn-completed? summary)
+                  (dispatch! {:type :prompt/submit :room-id room-id :text "continue"})))))))
 
       ;; Send the full lobby payload (rooms + saved sessions) to one client.
       :lobby/send

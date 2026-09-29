@@ -216,3 +216,27 @@
       (is (contains? (session/load-dismissed) id) "present in the set")
       (is (false? (session/toggle-dismissed! id)) "toggle off returns false")
       (is (not (contains? (session/load-dismissed) id)) "no longer dismissed"))))
+
+;; ── transcript-turn-complete? ─────────────────────────────────────────────────
+
+(deftest transcript-turn-complete-end-turn
+  (testing "a turn whose last assistant message ended with end_turn is complete, trailing metadata ignored"
+    (is (session/transcript-turn-complete?
+         [{:type "user" :message {:content "audit the docs"}}
+          {:type "assistant" :message {:stop_reason "end_turn" :content [{:type "text" :text "Audit: …"}]}}
+          {:type "last-prompt"}
+          {:type "cost-state"}]))))
+
+(deftest transcript-turn-complete-cut-off
+  (testing "a turn cut off mid-flight is not complete"
+    (is (not (session/transcript-turn-complete?
+              [{:type "user" :message {:content "go"}}
+               {:type "assistant" :message {:stop_reason "tool_use" :content [{:type "tool_use"}]}}])))
+    (is (not (session/transcript-turn-complete?
+              [{:type "assistant" :message {:stop_reason "tool_use"}}
+               {:type "user" :message {:content [{:type "tool_result"}]}}
+               {:type "attachment"}])))
+    (is (not (session/transcript-turn-complete?
+              [{:type "assistant" :message {:stop_reason "end_turn"}}
+               {:type "user" :message {:content "next prompt"}}])))
+    (is (not (session/transcript-turn-complete? [])))))
