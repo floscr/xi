@@ -664,6 +664,42 @@
      'generate-string gen
      'encode gen}))
 
+(def ^:private instant-namespace
+  "clojure.instant shim: RFC3339 strings → js/Date (the cljs inst type),
+   backed by cljs.reader's #inst parser so validation matches the reader."
+  {'read-instant-date reader/parse-timestamp})
+
+(deftype Instant [ms]
+  Object
+  (toEpochMilli [_] ms)
+  (getEpochSecond [_] (js/Math.floor (/ ms 1000)))
+  (isBefore [_ ^js o] (< ms (.-ms o)))
+  (isAfter [_ ^js o] (> ms (.-ms o)))
+  (compareTo [_ ^js o] (compare ms (.-ms o)))
+  (equals [_ ^js o] (and (instance? Instant o) (= ms (.-ms o))))
+  (plusMillis [_ n] (Instant. (+ ms n)))
+  (plusSeconds [_ n] (Instant. (+ ms (* n 1000))))
+  (minusMillis [_ n] (Instant. (- ms n)))
+  (minusSeconds [_ n] (Instant. (- ms (* n 1000))))
+  (toString [_] (.toISOString (js/Date. ms)))
+  IEquiv
+  (-equiv [_ ^js o] (and (instance? Instant o) (= ms (.-ms o))))
+  IComparable
+  (-compare [_ ^js o] (compare ms (.-ms o)))
+  IPrintWithWriter
+  (-pr-writer [_ w _] (-write w (str "#object[java.time.Instant \"" (.toISOString (js/Date. ms)) "\"]"))))
+
+(def ^:private instant-class
+  "java.time.Instant: the deftype constructor itself with the statics
+   attached. SCI allows instance interop when (symbol (.-name ctor)) is a
+   :classes key, so pin the ctor's (otherwise compiler-mangled) name."
+  (js/Object.assign
+   (js/Object.defineProperty Instant "name" #js {:value "Instant"})
+   #js {:parse         (fn [s] (Instant. (.getTime (reader/parse-timestamp s))))
+        :now           (fn [] (Instant. (js/Date.now)))
+        :ofEpochMilli  (fn [n] (Instant. n))
+        :ofEpochSecond (fn [n] (Instant. (* n 1000)))}))
+
 (defn- format-sign [neg? flags]
   (cond neg?                        "-"
         (str/includes? flags "+") "+"
@@ -767,6 +803,7 @@
                                               'parse-boolean parse-boolean
                                               'parse-uuid    parse-uuid
                                               'format        sandbox-format})
+                        'clojure.instant instant-namespace
                         'clojure.data.json json-data-namespace
                         'cheshire.core cheshire-namespace
                         ;; background processes: (process/start "cmd") etc.,
@@ -787,6 +824,13 @@
                                  'Integer #js {:parseInt    (fn [s & [radix]]
                                                               (js/parseInt s (or radix 10)))}
                                  'Double  #js {:parseDouble (fn [s] (js/parseFloat s))}
+                                 ;; clojure.instant / #inst values are js/Dates;
+                                 ;; the 'Date key (the ctor's .name) is what
+                                 ;; allows instance interop like (.getTime d).
+                                 'Date js/Date
+                                 'java.util.Date js/Date
+                                 'java.time.Instant instant-class
+                                 'Instant instant-class
                                  'js/Error js/Error
                                  'Exception js/Error
                                  'Throwable js/Error}})]

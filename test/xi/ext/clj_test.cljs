@@ -235,6 +235,23 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "=> 1024"))))
 
+(deftest read-instant-date-fn
+  (let [res (eval! "(.getTime (clojure.instant/read-instant-date \"2024-01-02T03:04:05Z\"))")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> 1704164645000"))))
+
+(deftest read-instant-date-invalid-throws
+  (is (:is-error (eval! "(clojure.instant/read-instant-date \"nope\")"))))
+
+(deftest instant-parse-static
+  (let [res (eval! (str "(let [a (java.time.Instant/parse \"2024-01-02T03:04:05Z\")"
+                        "      b (.plusSeconds a 60)]"
+                        "  [(.toEpochMilli a) (.getEpochSecond a) (.isBefore a b)"
+                        "   (str b) (= a (Instant/ofEpochMilli 1704164645000))])"))]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res)
+                       "=> [1704164645000 1704164645 true \"2024-01-02T03:05:05.000Z\" true]"))))
+
 (deftest sleep-helper
   (let [res (eval! "(sleep 1)")]
     (is (not (:is-error res)) (result-text res))
