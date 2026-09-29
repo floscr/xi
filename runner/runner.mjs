@@ -200,7 +200,6 @@ async function runTurn({ queryOpts, envOverride, toolDefs, prompt, noTools }) {
   const opts = { ...queryOpts };
   opts.env = { ...process.env, ...(envOverride || {}) };
   const cli = resolveClaudeExecutable();
-  process.stderr.write("[runner] claude cli: " + (cli || "(sdk bundled)") + "\n");
   if (cli) opts.pathToClaudeCodeExecutable = cli;
   if (!noTools && toolDefs && toolDefs.length) {
     opts.mcpServers = { "xi-tools": buildMcpServer(toolDefs) };
