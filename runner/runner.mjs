@@ -154,10 +154,20 @@ function buildMcpServer(toolDefs) {
 // on PATH — the SDK accepts both a `.js` entrypoint and a native binary as
 // pathToClaudeCodeExecutable — and only fall back to the SDK's own binary
 // when there is none. XI_CLAUDE_CLI_PATH overrides the lookup.
+//
+// Before PATH, prefer the repo-pinned CLI at <repo>/nix/claude/bin/claude —
+// the `nix build .#claude-code -o nix/claude` out-link written by
+// `bb claude:build` / `bb claude:update`. The CLI gates new model ids on its
+// own version and the system package lags upstream; the out-link makes the
+// pinned version win even when xi is launched from a directory without the
+// repo's direnv shell loaded.
+
+const pinnedClaude = join(runnerDir, "..", "nix", "claude", "bin", "claude");
 
 function resolveClaudeExecutable() {
   const override = process.env.XI_CLAUDE_CLI_PATH;
   if (override) return override;
+  if (existsSync(pinnedClaude)) return realpathSync(pinnedClaude);
   try {
     const w = execSync("which claude", { encoding: "utf8" }).trim();
     return w ? realpathSync(w) : null;
@@ -190,6 +200,7 @@ async function runTurn({ queryOpts, envOverride, toolDefs, prompt, noTools }) {
   const opts = { ...queryOpts };
   opts.env = { ...process.env, ...(envOverride || {}) };
   const cli = resolveClaudeExecutable();
+  process.stderr.write("[runner] claude cli: " + (cli || "(sdk bundled)") + "\n");
   if (cli) opts.pathToClaudeCodeExecutable = cli;
   if (!noTools && toolDefs && toolDefs.length) {
     opts.mcpServers = { "xi-tools": buildMcpServer(toolDefs) };

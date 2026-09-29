@@ -322,8 +322,13 @@
    :task (shell "nix-build" "native/xi-treesitter"
                 "-o" (str (System/getProperty "user.home") "/.config/xi/treesitter"))}
 
+  claude:build
+  {:doc "nix-build the pinned Claude CLI (flake.nix + nix/claude-code-manifest.json) to the nix/claude out-link the SDK runner prefers over PATH"
+   :task (do (shell "nix" "build" ".#claude-code" "-o" "nix/claude")
+             (shell "nix/claude/bin/claude" "--version"))}
+
   claude:update
-  {:doc "Pin the flake's Claude CLI to the latest upstream release (or `bb claude:update <version>`): rewrites nix/claude-code-manifest.json. Then `direnv reload` + `bb serve:restart`."
+  {:doc "Pin the Claude CLI to the latest upstream release (or `bb claude:update <version>`): rewrites nix/claude-code-manifest.json and rebuilds nix/claude. Takes effect on the next turn (runners are spawned per turn)."
    :task (let [base "https://downloads.claude.ai/claude-code-releases"
                version (or (first *command-line-args*)
                            (clojure.string/trim
@@ -332,7 +337,7 @@
                                      (str base "/" version "/manifest.zst.json")))]
            (spit "nix/claude-code-manifest.json" manifest)
            (println (str "Pinned Claude CLI " version " → nix/claude-code-manifest.json"))
-           (println "Next: direnv reload (or: nix build .#claude-code), then bb serve:restart"))}
+           (run 'claude:build))}
 
   demo:key
   {:doc "Print the demo client key + the localStorage snippet to install it"

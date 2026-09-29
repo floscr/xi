@@ -5,6 +5,8 @@ node_modules/
 .cpcache/
 .direnv/
 result
+# `bb claude:build` out-link to the pinned Claude CLI (see flake.nix)
+nix/claude
 *.js.map
 resources/public/js/
 resources/public/mkcert-rootCA.crt
