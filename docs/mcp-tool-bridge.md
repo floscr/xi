@@ -162,10 +162,51 @@ patterns / server-control live in `ext/permission_gate.cljs`.
 ## Claude CLI resolution (NixOS)
 
 The SDK ships a native, generically-linked CC binary that can't run on NixOS
-(wrong `ld-linux`). The runner's `resolveClaudeExecutable()` instead resolves
-`claude` from `PATH` (following the symlink with `realpathSync`) and passes
-it as `pathToClaudeCodeExecutable`; `XI_CLAUDE_CLI_PATH` overrides it
-explicitly.
+(wrong `ld-linux`). The runner's `resolveClaudeExecutable()` instead resolves,
+in order: `XI_CLAUDE_CLI_PATH`, the repo-pinned `nix/claude/bin/claude`
+out-link (`bb claude:build`, see `flake.nix`), then `claude` from `PATH`
+(following the symlink with `realpathSync`), and passes the result as
+`pathToClaudeCodeExecutable`.
+
+## Prompt caching & token hygiene
+
+Prompt caching is done by the Claude CLI (it places the `cache_control`
+breakpoints, 1h TTL on a subscription). Xi's job is to keep the request prefix
+— tools → system prompt → messages — byte-stable between turns and free of
+dead weight. The rules:
+
+- **The system prompt is built once per room**, at creation or cwd change
+  (`system-prompt/load-agents-parts` + extension prompts), not per turn. An
+  AGENTS.md edit mid-session therefore does not invalidate the cache; it is
+  picked up by the next room / server restart.
+- **Xi is the sole loader of project instructions.** `base-query-opts` passes
+  `settingSources ["user"]`, so the CLI loads `~/.claude/CLAUDE.md` but not the
+  project's `AGENTS.md`/`CLAUDE.md` — those are already in the appended system
+  prompt (`find-agents-md` takes `AGENTS.md`, falling back to `CLAUDE.md`).
+  With `settingSources` omitted the CLI loads everything and each session
+  carries AGENTS.md twice (~7k tokens for this repo), plus a full re-injected
+  copy after every edit.
+- **Text-only side turns pass `:no-tools? true`** (titles, quick replies,
+  summaries). That drops the tool bridge and the Claude Code preset prompt, and
+  sets `settingSources []`. Measured on the pinned CLI, a no-tools turn is ~880
+  prompt tokens instead of ~9k with the CLI loading instruction files; leaving
+  the tool bridge on adds the tools + preset block on top (~25k tokens in
+  session transcripts). Any new throwaway turn must do the same.
+- Turns that **resume** a session (`/compact`, `/rollover`) keep the tools:
+  their history contains tool calls. They run on a different model than the
+  conversation, so they never hit its cache — that is a per-use cost of those
+  commands.
+
+Expected, unavoidable full rewrites of the cached prefix: switching the model
+(caches are per model), a CLI upgrade (`bb claude:update`), a tool list change
+(enabling/disabling an extension or MCP server), a server restart after the
+system prompt's sources changed, and more than an hour of idle time.
+
+To audit, read the `usage` of each assistant message in the session transcript
+(`~/.claude/projects/<cwd>/<session>.jsonl`): at the first request of a turn,
+`cache_read_input_tokens` should be ~95%+ of the prompt. A turn start whose
+`cache_creation_input_tokens` is about the size of the whole conversation means
+something in the prefix changed.
 
 ## Session resume
 

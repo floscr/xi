@@ -198,6 +198,10 @@
               (cond-> {:model   MODEL
                        :prompt  (str PROMPT_PREFIX text "\n>>>")
                        :cwd     cwd
+                       ;; Text-only throwaway turn: without this the request
+                       ;; carries every tool definition (~25k tokens) plus the
+                       ;; Claude Code preset prompt, after every single turn.
+                       :no-tools? true
                        :on-text (fn [t] (swap! chunks conj t))}
                 config-dir (assoc :env {"CLAUDE_CONFIG_DIR" config-dir})))]
          (-> promise

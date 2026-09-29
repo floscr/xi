@@ -153,6 +153,9 @@
               (cond-> {:model   SUMMARY_MODEL
                        :prompt  (str SUMMARY_PROMPT_PREFIX transcript)
                        :cwd     cwd
+                       ;; Text-only throwaway turn: skip the tool bridge so the
+                       ;; request doesn't carry every tool definition.
+                       :no-tools? true
                        :on-text (fn [t] (swap! chunks conj t))}
                 config-dir (assoc :env {"CLAUDE_CONFIG_DIR" config-dir})))]
          (-> promise

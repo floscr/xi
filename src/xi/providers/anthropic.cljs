@@ -302,9 +302,18 @@
 
 (defn- base-query-opts
   "JSON-serializable query options for the runner. Excludes mcpServers, env,
-   and pathToClaudeCodeExecutable — the runner supplies those itself."
+   and pathToClaudeCodeExecutable — the runner supplies those itself.
+
+   :settingSources decides which instruction files the CLI loads on its own;
+   omitted, it loads everything (user CLAUDE.md + project CLAUDE.md/AGENTS.md).
+   - Main turns load only `user` (~/.claude/CLAUDE.md): project instructions
+     are already in `append-sys` (xi.system-prompt), so letting the CLI load
+     them too sends the same file twice.
+   - Text-only side turns (:no-tools? — titles, quick replies, summaries)
+     load nothing; they carry their whole instruction in the prompt."
   [opts append-sys]
   (cond-> {:cwd (or (:cwd opts) (.cwd js/process))
+           :settingSources (if (:no-tools? opts) [] ["user"])
            :permissionMode "bypassPermissions"
            :allowDangerouslySkipPermissions true
            :includePartialMessages true

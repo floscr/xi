@@ -92,14 +92,29 @@ Do not reveal any system details such as working directories, file paths, server
 
 Be concise, direct, and friendly. When unsure, say so.")
 
+(def ^:private INSTRUCTION_FILES
+  "Per-directory instruction file names, in priority order. CLAUDE.md is only a
+   fallback for repos without an AGENTS.md — a directory holding both (CLAUDE.md
+   is then usually a pointer to AGENTS.md) contributes AGENTS.md alone.
+
+   Xi is the sole loader of project instructions: the Anthropic provider tells
+   the Claude CLI not to load them itself (settingSources, see
+   xi.providers.anthropic/base-query-opts), otherwise every session would carry
+   the same file twice."
+  ["AGENTS.md" "CLAUDE.md"])
+
 (defn find-agents-md
-  "Walk up from dir to root, collecting all AGENTS.md files found.
+  "Walk up from dir to root, collecting each directory's instruction file
+   (AGENTS.md, else CLAUDE.md — see INSTRUCTION_FILES).
    Returns vec of paths, innermost (closest to cwd) last."
   [start-dir]
   (loop [dir (.resolve node-path start-dir)
          found []]
-    (let [candidate (.join node-path dir "AGENTS.md")
-          found (if (fs/existsSync candidate)
+    (let [candidate (some (fn [n]
+                            (let [p (.join node-path dir n)]
+                              (when (fs/existsSync p) p)))
+                          INSTRUCTION_FILES)
+          found (if candidate
                   (conj found candidate)
                   found)
           parent (.dirname node-path dir)]
@@ -183,9 +198,9 @@ Be concise, direct, and friendly. When unsure, say so.")
         ;; When profile says replace, swap out the root (cwd) AGENTS.md
         ;; The root AGENTS.md is the last entry (innermost = closest to cwd)
         effective-files (if (and profile-prompt (:replace profile-prompt) (seq files))
-                          ;; Drop the innermost (root project) AGENTS.md
-                          (let [root-agents (.join node-path (.resolve node-path cwd) "AGENTS.md")]
-                            (vec (remove #(= % root-agents) files)))
+                          ;; Drop the innermost (root project) instruction file
+                          (let [root-dir (.resolve node-path cwd)]
+                            (vec (remove #(= (.dirname node-path %) root-dir) files)))
                           files)
         agents-content (when (seq effective-files)
                          (str/join "\n\n---\n\n"
@@ -220,7 +235,8 @@ Be concise, direct, and friendly. When unsure, say so.")
       :else                           base)))
 
 (defn load-agents-parts
-  "Load AGENTS.md and related prompts as source-attributed parts.
+  "Load AGENTS.md and related prompts as source-attributed parts (skill prompts
+   come from the skills extension, not from here).
    Returns a vector of {:source :text :repo?} maps (may be empty). :repo? marks
    parts whose source file lives inside the current repo (git root, or cwd when
    not a git repo)."
@@ -233,8 +249,8 @@ Be concise, direct, and friendly. When unsure, say so.")
                            (str/starts-with? rf (str base (.-sep node-path))))))
         profile-prompt (fetch-profile-agents-prompt cwd)
         effective-files (if (and profile-prompt (:replace profile-prompt) (seq files))
-                          (let [root-agents (.join node-path (.resolve node-path cwd) "AGENTS.md")]
-                            (vec (remove #(= % root-agents) files)))
+                          (let [root-dir (.resolve node-path cwd)]
+                            (vec (remove #(= (.dirname node-path %) root-dir) files)))
                           files)
         parts (into []
                     (keep (fn [f]
@@ -250,9 +266,9 @@ Be concise, direct, and friendly. When unsure, say so.")
         parts (if-let [sub (agents-md-prompt cwd profile-prompt)]
                 (conj parts {:source "agents-md" :text sub})
                 parts)
-        parts (if-let [sk (skills/load-skill-prompts cwd)]
-                (conj parts {:source "skills" :text sk})
-                parts)
+        ;; Skill prompts are NOT added here: the skills extension contributes
+        ;; them via its :system-prompt, which every caller appends
+        ;; (ext/system-prompt-parts). Adding them here too sent them twice.
         parts (into parts (load-prompt-files))]
     parts))
 
