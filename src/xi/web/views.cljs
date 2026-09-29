@@ -27,6 +27,7 @@
             [ui.lightbox :as lightbox]
             [ui.sidebar :as sidebar]
             [ui.command :as cmd]
+            [ui.context-menu :as context-menu]
             [xi.clj-result :as clj-result]
             [ui.theme-toggle :as theme-toggle]))
 
@@ -2706,28 +2707,53 @@
   [cards]
   (map #(assoc % :show-project? true) cards))
 
-(defn- open-session-menu!
-  "Dispatch :session/menu-open anchored at (x, y), reading the point from the
-   triggering DOM event: pointer coords for a right-click, else the trigger
-   button's bottom-left corner."
-  [dispatch! session-id name x y]
-  (dispatch! {:type :session/menu-open
-              :session-id session-id :name name :x x :y y}))
+(defn- session-menu-items
+  "ui.context-menu entries for a session card: bookmark toggle, hide/show in
+   Recent (only where the caller opts in via :dismissable?), and Delete. Hiding
+   and deleting are gated on idle — a busy card or one awaiting a dialog
+   response can't be dismissed or removed."
+  [dispatch! {:keys [session-id favorite? dismissed? dismissable? busy? has-dialog?]}]
+  (let [idle? (not (or busy? has-dialog?))]
+    (cond-> [{:label    (if favorite? "Remove bookmark" "Bookmark")
+              :icon     :star
+              :on-click #(dispatch! {:type :favorites/toggle :session-id session-id})}]
+      (and dismissable? idle?)
+      (conj {:label    (if dismissed? "Show in recent" "Hide from recent")
+             :icon     (if dismissed? :eye :eye-off)
+             :on-click #(dispatch! {:type :dismissed/toggle :session-id session-id})})
+      idle?
+      (conj {:type :separator}
+            {:label    "Delete"
+             :icon     :trash
+             :variant  :danger
+             :confirm  "Delete this session permanently?"
+             :on-click #(dispatch! {:type :session/delete :session-id session-id})}))))
 
-(defn- session-card [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? unread? favorite? dismissed? dismissable? show-project?]}]
-  (let [menuable? (and session-id (not busy?) (not has-dialog?))]
-  [:div {:class ["project-card" (when active? "project-card--active")
+(defn- open-card-menu!
+  "Open the enclosing card's context menu from its ⋮ button, anchored under the
+   button. Goes through the framework's long-press entry point, which fires the
+   same contextmenu event a right-click / long-press would."
+  [^js e]
+  (.stopPropagation e)
+  (let [btn (.-currentTarget e)
+        r   (.getBoundingClientRect btn)]
+    (when-let [open! (aget js/window "__uiLongPress")]
+      (when-let [trigger (.closest btn ".context-menu-trigger")]
+        (open! trigger (.-left r) (.-bottom r))))))
+
+(defn- session-card
+  "Session row. Secondary actions (bookmark, hide from Recent, delete) live in
+   a ui.context-menu on the card: right-click, long-press on touch (the
+   framework's gesture runtime), or the ⋮ button."
+  [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? unread? show-project?]
+              :as card-data}]
+  (let [card
+  [:div {:class ["project-card"
                  (when has-dialog? "project-card--dialog")
                  (when current? "project-card--current")]
          :replicant/key (or session-id (str "card-" name))
-         :on (cond-> {:click (fn [_] (dispatch! {:type :route/navigate
-                                                 :page :chat :session-id session-id}))}
-               menuable?
-               (assoc :contextmenu
-                      (fn [^js e]
-                        (.preventDefault e)
-                        (open-session-menu! dispatch! session-id name
-                                            (.-clientX e) (.-clientY e)))))}
+         :on {:click (fn [_] (dispatch! {:type :route/navigate
+                                         :page :chat :session-id session-id}))}}
    ;; The chat icon is faded unless the session has a live room; its badge is
    ;; the session's status dot (working > unread > live, see
    ;; card-status-indicator).
@@ -2751,63 +2777,21 @@
                  :else nil)]
           (remove str/blank?)
           (str/join " · "))]]
-   ;; Hide/show in Recent — only rendered where the caller opts in (:dismissable?):
-   ;; the sidebar's Recent group (eye-off → hide) and Hidden group (eye → restore).
-   ;; Earlier cards omit it entirely. Also gated on idle ("sent, not processing"):
-   ;; a busy card or one awaiting a dialog response can't be dismissed.
-   (when (and session-id dismissable? (not busy?) (not has-dialog?))
-     [:button {:class ["project-card-action" "session-delete-btn"]
-               :title (if dismissed? "Show in recent" "Hide from recent")
-               :on {:click (fn [^js e]
-                             (.stopPropagation e)
-                             (dispatch! {:type :dismissed/toggle :session-id session-id}))}}
-      (icon/icon {:icon-name (if dismissed? :eye :eye-off) :size :sm})])
-   ;; ⋮ more-actions trigger — opens the session context menu (Delete). The
-   ;; reliable touch/mobile entry point (right-click also opens it on desktop).
-   (when menuable?
+   ;; ⋮ opens the same context menu as right-click / long-press.
+   (when session-id
      [:button {:class ["project-card-action" "session-more-btn"]
                :title "More actions"
-               :on {:click (fn [^js e]
-                             (.stopPropagation e)
-                             (let [r (.getBoundingClientRect (.-currentTarget e))]
-                               (open-session-menu! dispatch! session-id name
-                                                   (.-left r) (.-bottom r))))}}
-      (more-vertical-icon)])
-   ;; Star goes last so it stays pinned to the right edge: the hover-only
-   ;; actions above come and go (busy cards have none), and putting them after
-   ;; the star made it jump sideways from card to card.
-   (when session-id
-     [:button {:class ["project-card-action" "project-card-favorite"
-                       (when favorite? "project-card-favorite--on")]
-               :title (if favorite? "Remove bookmark" "Bookmark session")
-               :on {:click (fn [^js e]
-                             (.stopPropagation e)
-                             (dispatch! {:type :favorites/toggle :session-id session-id}))}}
-      (icon/icon {:icon-name :star :size :sm})])]))
-
-
-
-(defn- session-menu
-  "Context menu for a session card, summoned by right-clicking the card or
-   tapping its ⋮ button. Anchored at {:x :y}; clamped into the viewport on
-   mount. Reuses the bubble-menu styling. Delete permanently removes the
-   session from disk (server unlinks the file)."
-  [dispatch! {:keys [session-id x y]}]
-  (let [close! (fn [] (dispatch! {:type :session/menu-close}))]
-    [:div {:class ["bubble-menu-backdrop"]
-           :on {:click       (fn [_] (close!))
-                :contextmenu (fn [^js e] (.preventDefault e) (close!))}}
-     [:div {:class ["bubble-menu"]
-            :style {:top (str y "px") :left (str x "px")}
-            :replicant/on-mount clamp-bubble-menu!
-            :on {:click (fn [^js e] (.stopPropagation e))}}
-      [:button {:class ["bubble-menu-item" "bubble-menu-item--danger"]
-                :on {:click (fn [^js e]
-                              (.stopPropagation e)
-                              (close!)
-                              (dispatch! {:type :session/delete :session-id session-id}))}}
-       (icon/icon {:icon-name :trash :size :sm})
-       [:span "Delete"]]]]))
+               :on {:click open-card-menu!}}
+      (more-vertical-icon)])]]
+    (if session-id
+      ;; The trigger wraps the card (rather than being it) so the card keeps
+      ;; its own click handler — the trigger's :attrs would replace it.
+      (context-menu/context-menu-trigger
+       {:items (session-menu-items dispatch! card-data)
+        :class "project-card-trigger"
+        :attrs {:replicant/key session-id}}
+       card)
+      card)))
 
 (defn- project-dir-card
   "Card for a project directory in the home view. `dirty?` draws an orange
@@ -3149,7 +3133,7 @@
                        :replicant/key "all-sessions"
                        :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :all}))}}
                  [:div {:class ["project-card-icon"]}
-                  (icon/icon {:icon-name :message-circle :size :sm})]
+                  (message-circle-icon)]
                  [:div {:class ["project-card-info"]}
                   [:span {:class ["project-card-name"]} "All sessions"]]
                  [:div {:class ["project-card-chevron"]}
@@ -4203,7 +4187,5 @@
           :git-status (git-status-view state dispatch!)
           (home-view state dispatch!))))
      (command-palette state dispatch!)
-     (when-let [menu (:web/session-menu state)]
-       (session-menu dispatch! menu))
      (auth-request-banner state dispatch!)
      (auth-overlay state))))

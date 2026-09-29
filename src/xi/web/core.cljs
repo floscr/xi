@@ -1097,12 +1097,6 @@
                                                  (update :web/all-sessions #(some-> % flip)))
                                       :effects [[:ws/send {:type :dismissed/toggle
                                                            :session-id session-id}]]}))
-          ;; Session context menu (right-click / ⋮ on a session card). Anchored
-          ;; at {:x :y}; the view clamps it into the viewport on mount.
-          :session/menu-open     (fn [st {:keys [session-id name x y]}]
-                                   {:state (assoc st :web/session-menu
-                                                 {:session-id session-id :name name :x x :y y})})
-          :session/menu-close    (fn [st _] {:state (dissoc st :web/session-menu)})
           ;; Permanently delete a saved session. Drop the card locally for an
           ;; instant response, then forward: the server unlinks the on-disk
           ;; file, closes any lingering idle room, and rebroadcasts an
@@ -1120,7 +1114,6 @@
                                          viewing? (and (= :chat (get-in st [:web/route :page]))
                                                        (= session-id (get-in st [:web/route :session-id])))]
                                      {:state (-> st
-                                                 (dissoc :web/session-menu)
                                                  (update-in [:lobby :sessions] drop)
                                                  (update :web/project-sessions drop)
                                                  (update :web/all-sessions #(some-> % drop)))

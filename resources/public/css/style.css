@@ -1964,17 +1964,21 @@ code a:hover,
   margin-bottom: var(--size-2);
 }
 
+/* Listings (home, project, all sessions, favorites) hold inset rounded cards
+   rather than full-bleed rows — the same card language as the sidebar drawer
+   and the composer. */
 .project-list {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  padding: var(--size-1) var(--size-3) var(--size-4);
 }
 
 .sessions-search {
   display: flex;
   align-items: center;
   gap: var(--size-2);
-  padding: var(--size-3) var(--size-4);
-  border-bottom: var(--border-0);
+  padding: var(--size-3) var(--size-3) var(--size-2);
 }
 
 .sessions-search .sidebar-search {
@@ -2012,31 +2016,40 @@ code a:hover,
   .search-toggle--active:hover { background: var(--accent); color: var(--fg-on-accent); }
 }
 
+/* Session / project card. Hover gets a soft fill; the open chat gets the
+   composer card's surface + hairline border. --card-ring tracks the current
+   fill so icon badges (status / dirty dots) cut cleanly out of the icon. */
 .project-card {
+  --card-ring: var(--bg-0);
   display: flex;
   align-items: center;
   gap: var(--size-3);
-  padding: var(--size-2) var(--size-4);
-  border-bottom: var(--border-0);
+  padding: var(--size-2) var(--size-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background-color 0.15s;
+  transition: background-color 0.15s, border-color 0.15s;
 }
 
 @media (hover: hover) {
-  .project-card:hover { background-color: var(--bg-1); }
+  .project-card:hover {
+    --card-ring: var(--bg-1);
+    background-color: var(--bg-1);
+  }
 }
 
-.project-card--active {
-  box-shadow: inset 3px 0 0 var(--accent);
+/* Currently-open chat */
+.project-card--current {
+  --card-ring: var(--bg-1);
+  background-color: var(--bg-1);
+  border: var(--border-0);
 }
 
+/* Needs-response: a warm hairline + warning icon */
 .project-card--dialog {
-  box-shadow: inset 3px 0 0 var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
 }
 .project-card--dialog .project-card-icon { color: var(--warning); }
-
-/* Currently-open chat in the recent-sessions drawer */
-.project-card--current { background-color: var(--bg-1); }
 
 /* Keep the sidebar drawer's footer clear of the home indicator when it
    slides out edge-to-edge behind the translucent iOS chrome (the top inset
@@ -2083,38 +2096,19 @@ code a:hover,
   text-align: right;
 }
 
-/* ---- Sidebar drawer: inset cards (Arc/Realm-style) ----
-   Items float inside the drawer as rounded cards instead of a full-bleed,
-   border-separated list. Hover gets a soft fill; the open chat gets the same
-   surface + hairline border + radius as the composer card, so the two read as
-   one design language. Scoped to .sidebar — the home listings keep the
-   full-bleed .project-card rows. */
+/* ---- Sidebar drawer: compact cards (Arc/Realm-style) ----
+   Same .project-card look as the listings, just tighter for the narrow
+   column. */
 .sidebar-layout--floating > .sidebar .sidebar-content {
   padding-inline: var(--size-2);
   padding-bottom: var(--size-3);
 }
 .sidebar .project-card {
-  --card-ring: var(--bg-0);
   padding: 6px var(--size-2);
   gap: var(--size-2);
   margin-bottom: 2px;
   font-size: var(--font-sm);
   line-height: 1.3;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  box-shadow: none;
-}
-@media (hover: hover) {
-  .sidebar .project-card:hover { --card-ring: var(--bg-1); }
-}
-.sidebar .project-card--current {
-  --card-ring: var(--bg-1);
-  background-color: var(--bg-1);
-  border: var(--border-0);
-}
-/* Needs-response: a warm hairline instead of the full-bleed inset bar */
-.sidebar .project-card--dialog {
-  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
 }
 .sidebar .project-card-info { row-gap: 1px; }
 .sidebar .project-card-name {
@@ -2125,10 +2119,10 @@ code a:hover,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Hover-only actions take no space until hovered, so idle titles get the
-   full width (touch keeps them always visible, see below). */
+/* The hover-only ⋮ takes no space until hovered, so idle titles get the
+   full width. */
 @media (hover: hover) {
-  .sidebar .project-card:not(:hover) :is(.session-delete-btn, .session-more-btn) { display: none; }
+  .sidebar .project-card:not(:hover) .session-more-btn { display: none; }
 }
 .sidebar .project-card-path { font-size: var(--font-xs); }
 /* Project rows are single-line: the folder name says enough, the absolute
@@ -2374,45 +2368,11 @@ code a:hover,
   color: var(--fg-0);
 }
 
-/* Bookmark star on session cards. Muted/outline when off, gold + filled when
-   on. Always visible (touch-friendly) rather than hover-only. */
-.project-card-favorite {
-  color: var(--fg-3, var(--fg-2));
-  opacity: 0.55;
-}
-.project-card-favorite:hover {
-  color: var(--fg-0);
-  opacity: 1;
-}
-.project-card-favorite--on {
-  color: var(--warning, #f5a623);
-  opacity: 1;
-}
-.project-card-favorite--on svg { fill: currentColor; }
-.project-card-favorite--on:hover { color: var(--warning, #f5a623); }
-
 .project-card-name { font-weight: 600; }
 
-/* Hide-from-Recent toggle on session cards. Reversible (not a delete), so it
-   stays neutral rather than danger-red. Reveal on hover (desktop), faint but
-   always visible on touch. */
-.session-delete-btn {
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s;
-  color: var(--fg-2);
-}
-.session-delete-btn:hover { color: var(--fg-0); }
-@media (hover: hover) {
-  .project-card:hover .session-delete-btn { opacity: 1; }
-}
-/* Always show on touch devices */
-@media (hover: none) {
-  .session-delete-btn { opacity: 0.7; }
-}
-
-/* ⋮ more-actions trigger on session cards. Reveal on hover (desktop), faint
-   but always visible on touch — mirrors .session-delete-btn. */
+/* ⋮ opens the session card's context menu (bookmark / hide / delete).
+   Revealed on hover (desktop); touch devices hide it — long-press on the card
+   opens the same menu (ui.context-menu + the framework gesture runtime). */
 .session-more-btn {
   flex-shrink: 0;
   opacity: 0;
@@ -2424,7 +2384,7 @@ code a:hover,
   .project-card:hover .session-more-btn { opacity: 1; }
 }
 @media (hover: none) {
-  .session-more-btn { opacity: 0.7; }
+  .session-more-btn { display: none; }
 }
 
 .project-card-path {
