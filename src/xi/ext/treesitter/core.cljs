@@ -1,10 +1,11 @@
 (ns xi.ext.treesitter.core
   "Tree-sitter outline extension — maki-style context-token saving.
 
-   Overrides the `read` tool via a tool-gate: reading a large supported source
-   file (no offset/limit) returns a compact structural outline (imports, types,
-   fn signatures with 1-based [line-ranges]) instead of the full contents. The
-   model then pulls only the lines it needs.
+   Overrides the builtin `read` tool (a :tool-registry entry of the same name):
+   reading a large supported source file (no offset/limit) returns a compact
+   structural outline (imports, types, fn signatures with 1-based
+   [line-ranges]) instead of the full contents; everything else falls through
+   to the builtin read. The model then pulls only the lines it needs.
 
    Adds `read_source` for literal code: whole file, a line range, or one named
    definition located via tree-sitter node boundaries.
@@ -17,6 +18,7 @@
             [xi.ext.treesitter.langs :as langs]
             [xi.ext.treesitter.skeleton :as skeleton]
             [xi.tools.fs :as tfs]
+            [xi.tools.read :as read]
             [xi.tools.util :as util]
             ["node:fs" :as fs]))
 
@@ -54,7 +56,7 @@
                 skeleton-text)}]})
 
 (defn- try-outline
-  "→ Promise of {:intercepted true :result …} or nil (pass through)."
+  "→ Promise of the outline tool result, or nil (read the file normally)."
   [resolved display-path lang]
   (-> (js/Promise.resolve)
       (.then (fn [_]
@@ -69,8 +71,7 @@
                                   ;; saving over the file itself.
                                   (when (and text
                                              (< (count text) (* 0.5 (.-length src))))
-                                    {:intercepted true
-                                     :result (outline-result display-path total text)})))))))))
+                                    (outline-result display-path total text))))))))))
       (.catch (fn [_] nil))))
 
 (defn- outlinable
@@ -87,68 +88,16 @@
                (< (.-size (fs/statSync resolved)) max-bytes))
       {:resolved resolved :lang lang})))
 
-(defn- head-tail-lines
-  "Parse a head/tail arg list → {:n <requested line count> :file <path>},
-   or nil when it has unknown flags or multiple files (pass through)."
-  [args]
-  (loop [args args n 10 file nil]
-    (if-let [a (first args)]
-      (cond
-        (or (= a "-n") (= a "--lines"))
-        (let [num (js/parseInt (or (second args) "") 10)]
-          (when-not (js/isNaN num)
-            (recur (drop 2 args) (js/Math.abs num) file)))
-        (re-matches #"-n\d+" a) (recur (rest args) (js/parseInt (subs a 2) 10) file)
-        (re-matches #"--lines=\d+" a) (recur (rest args) (js/parseInt (subs a 8) 10) file)
-        (re-matches #"-\d+" a) (recur (rest args) (js/parseInt (subs a 1) 10) file)
-        (str/starts-with? a "-") nil
-        file nil
-        :else (recur (rest args) n a))
-      (when file {:n n :file file}))))
-
-(defn- bash-read-target
-  "File path when a bash command is a plain full-content read of a single
-   file — `cat`/`less`/`more` FILE, or `head`/`tail` requesting ≥ min-lines.
-   Otherwise nil. Commands with pipes, redirects, quoting, globs, or several
-   files pass through: those are targeted or composed reads."
-  [cmd]
-  (when (and (string? cmd)
-             (not (re-find #"[|;&<>`$*?~'\"\\\n]" cmd)))
-    (let [[prog & args] (str/split (str/trim cmd) #"\s+")]
-      (case prog
-        ("cat" "less" "more")
-        (let [files (remove #(str/starts-with? % "-") args)]
-          (when (= 1 (count files)) (first files)))
-        ("head" "tail")
-        (let [{:keys [n file]} (head-tail-lines args)]
-          (when (and file (>= n min-lines)) file))
-        nil))))
-
-(defn- gate-outline
-  "Outline path if it qualifies, else pass tool-call through unchanged."
-  [tool-call path cwd]
-  (if-let [{:keys [resolved lang]} (outlinable path cwd)]
+(defn- read-with-outline
+  "The `read` tool, overridden via :tool-registry: a plain read (no
+   offset/limit) of a large supported source file returns its outline;
+   everything else falls through to the builtin read."
+  [{:keys [path offset limit] :as args} {:keys [cwd] :as ctx}]
+  (if-let [{:keys [resolved lang]} (and path (nil? offset) (nil? limit)
+                                        (outlinable path cwd))]
     (-> (try-outline resolved path lang)
-        (.then (fn [intercepted] (or intercepted tool-call))))
-    tool-call))
-
-(defn- tool-gate
-  "Intercept plain reads of large supported source files → outline. Covers
-   both the `read` tool and full-file reads via `bash` (cat etc.) — without
-   the bash branch, `cat file` is a trivial bypass of the read gate."
-  [tool-call {:keys [cwd]}]
-  (let [{:keys [name arguments]} tool-call
-        {:keys [path offset limit command]} arguments]
-    (cond
-      (and (= name "read") path (nil? offset) (nil? limit))
-      (gate-outline tool-call path cwd)
-
-      (= name "bash")
-      (if-let [target (bash-read-target command)]
-        (gate-outline tool-call target cwd)
-        tool-call)
-
-      :else tool-call)))
+        (.then (fn [outline] (or outline (read/execute args ctx)))))
+    (read/execute args ctx)))
 
 ;; ── read_source tool ─────────────────────────────────────────────────────────
 
@@ -223,16 +172,14 @@
        "what exists and where. Never open a file with read_source — it is a "
        "follow-up for pulling one definition (read_source(path, symbol)) or a "
        "range you found in the outline; read(path, offset, limit) also works "
-       "for line ranges. Whole-file read_source(path) is a last resort. "
-       "Plain full-file bash reads (cat/less/more, head/tail with a large -n) "
-       "of such files return the same outline — use read instead of cat."))
+       "for line ranges. Whole-file read_source(path) is a last resort."))
 
 (defn create
   "Extension factory — nil (disabled) when the native CLI/grammars are absent."
   [_ctx]
   (when (p/available?)
     {:id :treesitter
-     :tool-gate tool-gate
      :tool-definitions [read-source-def]
-     :tool-registry {"read_source" read-source}
+     :tool-registry {"read"        read-with-outline
+                     "read_source" read-source}
      :system-prompt system-prompt}))

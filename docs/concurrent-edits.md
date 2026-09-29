@@ -121,7 +121,8 @@ Removes the retry-loop token waste *and* gives per-line staleness detection.
 - Keep `str_replace` as a fallback path (some edits are easier expressed as
   text).
 
-Integration mirrors the treesitter extension's `:tool-gate` pattern: line
+Integration mirrors the treesitter extension's `read` override (a
+`:tool-registry` entry replacing the builtin): line
 tagging can be added to the `read` result; the anchor edit can be a new tool or
 a new mode of `edit`. Decide during implementation whether this is core
 (`src/xi/tools/`) or an extension (`src/xi/ext/`) — leaning core since it

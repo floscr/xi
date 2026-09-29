@@ -31,7 +31,10 @@
                    {:dispatch! :get-state :room-id :cwd :confirm!}
      :tool-definitions [{:name :description :input_schema}]
      :tool-registry    {name (fn [args ctx] → result|Promise)} — ctx is
-                   the provider tool ctx merged with the gate ctx above
+                   the per-turn tool ctx {:dispatch! :get-state :room-id
+                   :confirm!} with the provider's {:cwd :client-pid} on top
+                   (xi.agent/create-fx). A name matching a builtin tool
+                   replaces its implementation (xi.tools.registry/with-extensions).
      :remove-tools #{tool-name} — builtin tools to hide from the model
                    (dropped from the provider tool list; re-read per turn,
                    so /ext disable restores them). E.g. the clj extension

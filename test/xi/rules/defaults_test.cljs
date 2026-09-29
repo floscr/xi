@@ -94,6 +94,19 @@
     (is (nil? (rules/first-match defaults/default-rules
                                  {:tool :read :path "src/foo.cljs"})))))
 
+(deftest subagent-spawn-gate
+  (testing "spawning a sub-agent asks, with [a]lways"
+    (is (= :ask (action-type {:tool :other :tool-name "spawn_subagent"})))
+    (is (= [:yes :no :always]
+           (get-in (rules/first-match defaults/default-rules
+                                      {:tool :other :tool-name "spawn_subagent"})
+                   [:action :options]))))
+  (testing "polling/stopping sub-agents runs without a prompt"
+    (doseq [t ["list_subagents" "subagent_result" "stop_subagent"]]
+      (is (nil? (rules/first-match defaults/default-rules
+                                   {:tool :other :tool-name t}))
+          t))))
+
 (deftest plan-mode-gate
   (let [on  {:plan-mode {:enabled? true}}
         off {:plan-mode {:enabled? false}}]
@@ -180,7 +193,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 16 (count defaults/default-rules))))
+    (is (= 17 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes

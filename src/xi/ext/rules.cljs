@@ -51,6 +51,10 @@
               (:mcp-server req) (assoc :mcp-server (:mcp-server req))
               (:mcp-tool req)   (assoc :mcp-tool (:mcp-tool req)))
             (cond-> {:tool (:tool req)}
+              ;; :other lumps every extension tool together — pin the exact
+              ;; tool so [a]lways on spawn_subagent can't allow all of them.
+              (and (= :other (:tool req)) (:tool-name req))
+              (assoc :tool-name (:tool-name req))
               (:path req)    (assoc :path (:path req))
               (:command req) (assoc :command (:command req))))]
     {:match m :action {:type :allow}}))
@@ -93,6 +97,7 @@
      "the future.\n\n"
      "## The call that was guarded\n"
      "- tool: " (pr-str tool) "\n"
+     (when (= :other tool) (str "- tool-name: " (:tool-name req) "\n"))
      (when path          (str "- path: " path "\n"))
      (when command       (str "- command: " command "\n"))
      (when mcp-server    (str "- mcp-server: " mcp-server "\n"))
@@ -104,6 +109,7 @@
      "A rule is an EDN map `{:match {…} :action {:type …}}`.\n\n"
      "`:match` fields (all ANDed; omit a field to leave it unconstrained):\n"
      "- :tool     keyword or set of :write :edit :read :grep :find :ls :bash :clj :mcp :other\n"
+     "- :tool-name exact tool name (string/glob, regex, or set), for :other tools\n"
      "- :path     regex (partial, re-find) or glob string (full; * one segment, ** any, ? one char)\n"
      "- :command  regex (re-find) or string (substring) over the bash command / clj code\n"
      "- :repo     git-root path suffix of the target/effective cwd, e.g. \"config/dotfiles\"\n"
@@ -156,19 +162,28 @@
 (defn- ask-message
   "Default confirm text for an :ask rule that supplies no explicit :message.
    MCP calls get the full server/tool/arguments block; bash/clj show the
-   command; file tools show the path; everything else names the tool kind."
+   command; file tools show the path; other named tools show the tool name +
+   arguments; anything else names the tool kind."
   [req]
-  (let [{:keys [tool path command mcp-server mcp-tool arguments]} req]
+  (let [{:keys [tool tool-name path command mcp-server mcp-tool arguments]} req]
     (cond
       (= :mcp tool)
-      (str "MCP tool call \u2014 approve?\n\n"
+      (str "MCP tool call — approve?\n\n"
            "Server: " mcp-server "\n"
            "Tool:   " mcp-tool "\n\n"
            "Arguments:\n"
            (format-arguments arguments))
 
-      command (str "Run " (name tool) " \u2014 approve?\n\n" command)
-      path    (str (name tool) " " path " \u2014 approve?")
+      command (str "Run " (name tool) " — approve?\n\n" command)
+      path    (str (name tool) " " path " — approve?")
+
+      ;; Extension tools (:other): name the tool and show what it will get.
+      tool-name
+      (str "Tool call — approve?\n\n"
+           "Tool: " tool-name "\n\n"
+           "Arguments:\n"
+           (format-arguments arguments))
+
       :else   (str "Rule: " (name tool)))))
 
 (defn- ask-diff

@@ -15,9 +15,11 @@ Two pieces:
    prints the parse tree as compact JSON. Bun shells out to it (Bun cannot
    load grammar `.so` files directly: `bun:ffi` doesn't support by-value
    structs, which `TSNode` is).
-2. **An extension** (`src/xi/ext/treesitter/`) — a `:tool-gate` that
-   intercepts `read` calls and returns the outline, plus a `read_source` tool
-   for literal code.
+2. **An extension** (`src/xi/ext/treesitter/`) — overrides the builtin `read`
+   tool (a `:tool-registry` entry of the same name, which wins over the
+   builtin) to return the outline, falling back to the builtin read; plus a
+   `read_source` tool for literal code. Being a plain tool, not a gate, a rules
+   `:allow` on `read` can't skip the outline.
 
 The extension is a factory that returns `nil` when the CLI isn't installed, so
 everything silently stays off until you run the install step.
@@ -82,37 +84,24 @@ Long signatures are whitespace-compacted and truncated.
 and a small `## Reading code` system-prompt section tells the model the
 outline is expected, not an error.
 
-## When the gate intercepts
+## When a read is outlined
 
-A `read` is outlined only when **all** of these hold — otherwise it passes
-through unchanged:
+A `read` is outlined only when **all** of these hold — otherwise it falls
+through to the builtin read:
 
 | Condition | Value |
 |---|---|
-| Tool + args | `read` with `path`, no `offset`/`limit` — or a plain full-file `bash` read (see below) |
+| Tool + args | `read` with `path`, no `offset`/`limit` |
 | Language | extension maps to a supported grammar (see below) |
 | Grammar installed | `grammars/<lang>.so` exists |
 | File size | ≥ 120 lines and < 2 MB |
 | Worth it | outline text < 50% of the file's size |
-| No errors | any parse/extract failure → silent pass-through |
+| No errors | any parse/extract failure → silent fall-through |
 
 Thresholds live in `xi.ext.treesitter.core` (`min-lines`, `max-bytes`).
 
-### The bash bypass
-
-Without it, `cat file` via the `bash` tool would be a trivial bypass of the
-read gate (Spotify's shunt plugin guards the same hole with its
-`check-bash-read` hook). The gate also outlines a `bash` call when its
-command is a **plain full-content read of a single file**:
-
-- `cat` / `less` / `more` with exactly one file argument, or
-- `head` / `tail` requesting ≥ `min-lines` lines (`-n N`, `-nN`, `-N`,
-  `--lines=N`).
-
-Anything targeted or composed passes through untouched: pipes
-(`cat f | grep x`), redirects, quoting, globs, multiple files, unknown flags
-(`tail -f`), or a small `head -n 20`. The same file-qualification rules as
-`read` apply (supported language, size, worth-it check).
+`bash` reads (`cat file`) are not outlined: the `bash` tool is hidden
+whenever the clj extension is on (`:remove-tools`), which is the normal setup.
 
 ## Supported languages
 
@@ -167,9 +156,9 @@ src/xi/ext/treesitter/
   parse.cljs    — CLI discovery/spawn, JS node accessors, text helpers
   langs.cljs    — extension → language map + per-language extractors
   skeleton.cljs — entries → outline text; symbol table for read_source
-  core.cljs     — the extension: tool-gate, read_source, system prompt, factory
+  core.cljs     — the extension: read override, read_source, system prompt, factory
 ```
 
 Tests: `test/xi/ext/treesitter/` — pure formatter tests plus end-to-end
-per-language extractor tests and gate/`read_source` tests that spawn the real
+per-language extractor tests and `read`/`read_source` tests that spawn the real
 CLI (skipped when it isn't installed).

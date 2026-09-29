@@ -4,6 +4,7 @@
    A rule is data:
 
      {:match  {:tool #{:write :edit}   ; keyword or set of tool kinds
+               :tool-name \"spawn_subagent\" ; raw tool name (glob/exact, regex, set)
                :path #\"\\.sh$\"          ; regex OR glob string on the target path
                :command #\"\\brm\\b\"       ; regex OR substring on the bash command
                :repo \"config/dotfiles\"  ; substring of the effective repo root
@@ -22,8 +23,8 @@
    `:on-block` / `:do` are accepted as aliases for `:match` / `:action`.
 
    Matching is pure over a *decision request* the store builds from a tool
-   call: {:tool :path :command :repo :effective-cwd :mcp-server :mcp-tool
-          :state :nodes}. This namespace does no I/O."
+   call: {:tool :tool-name :path :command :repo :effective-cwd :mcp-server
+          :mcp-tool :state :nodes}. This namespace does no I/O."
   (:require [clojure.string :as str]))
 
 (defn canonical
@@ -107,6 +108,15 @@
 
 (defn- match-tool [spec tool]
   (or (nil? spec) (contains? (as-set spec) tool)))
+
+(defn- match-tool-name
+  "Raw tool-name spec (e.g. \"spawn_subagent\"): set → membership, regex →
+   re-find, string → glob/exact full match. Targets a specific tool when its
+   kind is only `:other` (extension tools)."
+  [spec tool-name]
+  (if (set? spec)
+    (contains? spec tool-name)
+    (match-name spec tool-name)))
 
 (defn- match-when
   "Submap match against room ext `state`: every k/v in `spec` must match the
@@ -213,6 +223,7 @@
   [rule req]
   (let [m (:match rule)]
     (and (match-tool       (:tool m)       (:tool req))
+         (match-tool-name  (:tool-name m)  (:tool-name req))
          (match-cli        (:cli m)        (:cli req))
          (match-path*      (:path m)       req)
          (match-command    (:command m)    (:command req))

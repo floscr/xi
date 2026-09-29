@@ -21,7 +21,7 @@ provider effects, and TUI.
    :event-hooks      {event-type (fn [event state] → event'|nil)}
    :tool-gate        (fn [tool-call ctx] → tool-call|nil|{:intercepted ...})
    :tool-definitions [{:name :description :input_schema}]
-   :tool-registry    {name (fn [args ctx] → result|Promise)}
+   :tool-registry    {name (fn [args ctx] → result|Promise)} ; ctx: {:cwd :client-pid :dispatch! :get-state :room-id :confirm!}
    :remove-tools     #{tool-name}      ; builtin tools to hide from the model
    :commands         [{:name :description :handler}]
    :system-prompt    str | (fn [cwd] → str|nil)
@@ -145,8 +145,17 @@ keywords from `xi.dialog/confirm-option` (e.g. `:always` resolves
 `:always`, `:allow-repo` resolves `:repo`); the TUI and web render the
 dialog generically from that vector, so no template changes are needed.
 
-Tool exec-fns only receive `{:cwd}` — they have no access to dispatch,
-state, or dialogs. Approval/interception must happen in the gate.
+Tool exec-fns get the same context plus the provider's own keys:
+`{:cwd :client-pid :dispatch! :get-state :room-id :confirm!}` (in a
+sub-agent turn, `:room-id` is the parent room and `:confirm!` auto-denies).
+So a tool can mutate state by dispatching events itself — implement tools in
+`:tool-registry`, never inside a gate. Policy (whether a call may run at all)
+belongs in rules: add a default rule to `xi.rules.defaults`, matching
+extension tools by `:tool-name` (see [rules.md](rules.md)).
+
+A `:tool-registry` entry named like a builtin (`read`, `bash`, …) replaces
+the builtin's implementation for every provider (the treesitter `read`
+outline works this way); rules still see the call under its builtin name.
 
 ## Dialogs
 

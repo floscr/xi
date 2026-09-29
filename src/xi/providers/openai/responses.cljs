@@ -95,8 +95,8 @@
   "Execute one function_call through Xi's registry + gate. Returns a promise of
    a Responses `function_call_output` item. Errors are surfaced in the output
    text (the Responses API has no error flag on tool output)."
-  [{:keys [call_id name arguments]} cwd tool-gate]
-  (let [registry (tools/tool-registry)]
+  [{:keys [call_id name arguments]} registry tool-ctx tool-gate]
+  (let [registry (or registry (tools/tool-registry))]
     (-> (tool-gate {:name name :arguments arguments})
         (.then
          (fn [gated]
@@ -113,7 +113,7 @@
     :else
     (let [exec-fn (get registry name)]
       (if exec-fn
-        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) {:cwd cwd})
+        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx)
             (.then (fn [{:keys [content is-error]}]
                      {:type "function_call_output" :call_id call_id
                       :output (str (when is-error "[error] ")
@@ -361,7 +361,7 @@
                              ((:on-tool-args callbacks)
                               {:id (:call_id tc) :name (:name tc) :arguments (:arguments tc)})))
                          (-> (js/Promise.all
-                              (clj->js (mapv #(execute-tool-call % cwd tool-gate) tcs)))
+                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-gate) tcs)))
                              (.then
                               (fn [results]
                                 (let [outputs (js->clj results :keywordize-keys true)]

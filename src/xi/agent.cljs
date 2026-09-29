@@ -467,9 +467,11 @@
     {:provider/start-turn
      (fn [{:keys [dispatch! get-state]} {:keys [room-id cwd] :as payload}]
        (let [provider (resolve-provider providers payload)
-             ;; Per-turn context handed to extension tool gates: lets a gate
-             ;; read live state, dispatch events, and raise confirm dialogs.
-             gate-ctx {:dispatch! dispatch!
+             ;; Per-turn context handed to extension tool gates AND tool
+             ;; exec-fns (as :tool-ctx, merged under the provider's own
+             ;; {:cwd :client-pid}): lets them read live state, dispatch
+             ;; events, and raise confirm dialogs.
+             tool-ctx {:dispatch! dispatch!
                        :get-state get-state
                        :room-id   room-id
                        :cwd       cwd
@@ -490,7 +492,7 @@
                                                          (:options opts) (assoc :options (:options opts))
                                                          (:diff opts)    (assoc :diff (:diff opts)))}))))}
              gate1 (when tool-gate
-                     (fn [tool-call] (tool-gate tool-call gate-ctx)))
+                     (fn [tool-call] (tool-gate tool-call tool-ctx)))
              ;; The turn's cwd doesn't exist on this host (e.g. a Pi session
              ;; with cwd=/var/lib/xi opened elsewhere). Ask the user where to
              ;; run, persist it on the room, then replay the turn fresh.
@@ -524,7 +526,8 @@
              client-pid (room-client-pid (get-state) room-id)
              {:keys [promise abort!]}
              ((:start-turn! provider)
-              (cond-> (merge payload (event-callbacks dispatch! room-id))
+              (cond-> (merge payload (event-callbacks dispatch! room-id)
+                             {:tool-ctx tool-ctx})
                 gate1                  (assoc :tool-gate gate1)
                 extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
                 extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)

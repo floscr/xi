@@ -62,8 +62,10 @@
    proxied tool-call frames, so the permission gate + registry stay host-side
    regardless of transport.
 
-   opts: {:tool-name :exec-fn :arguments :tool-gate :cwd :client-pid}."
-  [{:keys [tool-name exec-fn arguments tool-gate cwd client-pid]}]
+   opts: {:tool-name :exec-fn :arguments :tool-gate :tool-ctx :cwd :client-pid}.
+   The exec-fn's ctx is the per-turn :tool-ctx (dispatch!, get-state, room-id,
+   confirm! — see xi.agent/create-fx) with :cwd / :client-pid on top."
+  [{:keys [tool-name exec-fn arguments tool-gate tool-ctx cwd client-pid]}]
   (let [tool-gate (or tool-gate default-gate)
         tool-call {:name tool-name :arguments arguments}]
     (-> (tool-gate tool-call)
@@ -82,7 +84,7 @@
 
              :else
              (-> (tools/run-tool exec-fn (or (:arguments gated) arguments)
-                                 {:cwd cwd :client-pid client-pid})
+                                 (assoc tool-ctx :cwd cwd :client-pid client-pid))
                  (.then (fn [{:keys [content is-error]}]
                           #js {:content (clj->js content)
                                :isError is-error})))))))))
@@ -111,19 +113,20 @@
         defs (if only-tools
                (filterv #(contains? only-tools (:name %)) all-defs)
                all-defs)
-        registry (merge (tools/tool-registry) extra-registry)]
+        registry (tools/with-extensions extra-registry)]
     {:defs defs :registry registry}))
 
 (defn tool-dispatcher
   "Return a fn `(tool-name clj-args) → Promise<#js {:content :isError}>` that
    runs a tool through the gate + registry. Used by the runner transport to
    service proxied `tool-call` frames on the host."
-  [{:keys [registry tool-gate cwd client-pid]}]
+  [{:keys [registry tool-gate tool-ctx cwd client-pid]}]
   (fn [tool-name arguments]
     (run-gated-tool {:tool-name tool-name
                      :exec-fn (get registry tool-name)
                      :arguments arguments
                      :tool-gate tool-gate
+                     :tool-ctx tool-ctx
                      :cwd cwd
                      :client-pid client-pid})))
 
@@ -373,6 +376,7 @@
           :on-message (fn [message] (process-sdk-message message callbacks state))
           :on-tool-call (tool-dispatcher {:registry registry
                                           :tool-gate (:tool-gate opts)
+                                          :tool-ctx (:tool-ctx opts)
                                           :cwd cwd
                                           :client-pid (:client-pid opts)})
           :on-error (fn [msg]

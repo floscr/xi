@@ -33,6 +33,14 @@
   []
   (into {} (map (fn [{:keys [def exec]}] [(:name def) exec]) builtin-tools)))
 
+(defn with-extensions
+  "The builtin registry merged with the extensions' :tool-registry (a map or a
+   0-arg fn returning one — the manager's live seam). Extension entries win, so
+   an extension can override a builtin by name (treesitter's `read`)."
+  [extra-registry]
+  (merge (tool-registry)
+         (if (fn? extra-registry) (extra-registry) extra-registry)))
+
 (defn run-tool
   "Run a tool's `exec-fn` with `args`/`ctx` and normalize its result to a
    promise of {:content <blocks> :is-error bool}. Every tool result is capped

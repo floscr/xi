@@ -250,6 +250,28 @@
                    (is (= :allow (get-in @dispatched [:rule :action :type])))
                    (done)))))))
 
+(deftest subagent-spawn-asks-with-task-and-always-pins-the-tool
+  (async done
+    (let [state      (state-with [:ext :rules :rules] {:match {:tool :read}
+                                                       :action {:type :allow}})
+          tc         {:name "spawn_subagent"
+                      :arguments {:task "review the diff" :label "review"}}
+          asked      (atom nil)
+          dispatched (atom nil)
+          c          (assoc (ctx state)
+                            :confirm!  (fn [msg _] (reset! asked msg)
+                                         (js/Promise.resolve :always))
+                            :dispatch! (fn [ev] (reset! dispatched ev)))]
+      (-> (rules-ext/tool-gate tc c)
+          (.then (fn [out]
+                   (is (= tc out))
+                   (is (str/includes? @asked "Tool: spawn_subagent"))
+                   (is (str/includes? @asked "task: review the diff"))
+                   (is (= {:tool :other :tool-name "spawn_subagent"}
+                          (get-in @dispatched [:rule :match]))
+                       ":always must not allow every :other tool")
+                   (done)))))))
+
 (deftest add-rule-handler-prepends-at-scope
   (testing "session scope goes room-scoped, server scope process-local"
     (let [st0 {:rooms {"r1" {:ext {:rules {:rules [{:existing true}]}}}}

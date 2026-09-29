@@ -9,12 +9,11 @@
    connections describing how blocks relate, and a targeted walkthrough plan
    (where to look first) the human steps through with Next/Prev.
 
-   The model drives the canvas through five tools (canvas_review_*). Tools
-   only receive {:cwd}, so they can't touch app state directly — instead the
-   :tool-gate intercepts each call, dispatches a pure state-mutating event, and
-   short-circuits with {:intercepted true :result …} (the tool-gate
-   intercept pattern). Canvas state lives room-scoped at [:rooms rid :ext :canvas-review]
-   and mirrors to every client, so the canvas builds up live as the model works.
+   The model drives the canvas through six tools (canvas_review_*), plain
+   :tool-registry entries: each dispatches a pure state-mutating event via the
+   tool ctx's dispatch! and returns a short result. Canvas state lives
+   room-scoped at [:rooms rid :ext :canvas-review] and mirrors to every client,
+   so the canvas builds up live as the model works.
 
    Node/server half. The browser half (xi.ext.canvas-review.web) renders the
    canvas page."
@@ -236,7 +235,7 @@
           keyword))
 
 (defn- ok-result [text]
-  {:intercepted true :result {:content [{:type "text" :text text}]}})
+  {:content [{:type "text" :text text}]})
 
 (defn- handle-tool
   "Turn a canvas_review_* call into state-mutating dispatches and a result."
@@ -292,15 +291,17 @@
 
     nil))
 
-(defn- tool-gate
-  "Intercept canvas_review_* calls: mutate canvas state, short-circuit with a
-   result. Everything else passes through."
-  [tool-call {:keys [dispatch! room-id]}]
-  (let [{:keys [name arguments]} tool-call]
-    (if (tool-names name)
-      (or (handle-tool dispatch! room-id name arguments)
-          tool-call)
-      tool-call)))
+(def ^:private tool-registry
+  "canvas_review_* name → exec-fn. Reads dispatch!/room-id from the tool ctx."
+  (into {}
+        (map (fn [tool-name]
+               [tool-name
+                (fn [args {:keys [dispatch! room-id]}]
+                  (if dispatch!
+                    (handle-tool dispatch! room-id tool-name args)
+                    {:content [{:type "text" :text "canvas review: no room context"}]
+                     :is-error true}))]))
+        tool-names))
 
 ;; ── Persistence (node-only) ──────────────────────────────────────────────────
 ;; Canvas state is room-scoped runtime state that would die with the room when
@@ -385,4 +386,4 @@
    ;; every client's recent-sessions sidebar pick up the new :session-name.
    :lobby-relevant   #{:canvas-review/load}
    :tool-definitions tool-defs
-   :tool-gate        tool-gate})
+   :tool-registry    tool-registry})

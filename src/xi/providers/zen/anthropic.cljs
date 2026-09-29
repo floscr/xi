@@ -126,8 +126,8 @@
 (defn- execute-tool-call
   "Execute one tool_use through Xi's registry + gate. Returns promise of an
    Anthropic tool_result content block."
-  [{:keys [id name arguments]} cwd tool-gate]
-  (let [registry (tools/tool-registry)]
+  [{:keys [id name arguments]} registry tool-ctx tool-gate]
+  (let [registry (or registry (tools/tool-registry))]
     (-> (tool-gate {:name name :arguments arguments})
         (.then
          (fn [gated]
@@ -136,7 +136,7 @@
               :content "Blocked by Xi permission gate" :is_error true}
              (let [exec-fn (get registry name)]
                (if exec-fn
-                 (-> (tools/run-tool exec-fn arguments {:cwd cwd})
+                 (-> (tools/run-tool exec-fn arguments tool-ctx)
                      (.then (fn [{:keys [content is-error]}]
                               {:type "tool_result" :tool_use_id id
                                :content (util/extract-text-content content)
@@ -381,7 +381,7 @@
                                                          :input (:arguments tc)})
                                                       tcs))})
                          (-> (js/Promise.all
-                              (clj->js (mapv #(execute-tool-call % cwd tool-gate) tcs)))
+                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-gate) tcs)))
                              (.then
                               (fn [results]
                                 (let [tool-results (js->clj results :keywordize-keys true)]

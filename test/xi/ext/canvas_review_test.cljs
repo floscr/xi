@@ -63,17 +63,19 @@
 
 (deftest highlight-tool-and-handler
   (let [rid  "r1"
-        gate (:tool-gate cr/extension)
+        tool (get-in cr/extension [:tool-registry "canvas_review_highlight"])
         defs (:tool-definitions cr/extension)
         hl   (get-in cr/extension [:handlers :canvas-review/highlight])]
     (testing "the highlight tool is advertised"
       (is (some #(= "canvas_review_highlight" (:name %)) defs)))
-    (testing "the tool-gate intercepts a highlight call and dispatches it"
+    (testing "every advertised tool has a registry entry"
+      (is (= (set (map :name defs)) (set (keys (:tool-registry cr/extension))))))
+    (testing "the highlight tool dispatches through the tool ctx"
       (let [seen (atom nil)
-            res  (gate {:name "canvas_review_highlight"
-                        :arguments {:id "blk-1" :lines [402 403 404]}}
+            res  (tool {:id "blk-1" :lines [402 403 404]}
                        {:room-id rid :dispatch! #(reset! seen %)})]
-        (is (:intercepted res))
+        (is (not (:is-error res)))
+        (is (re-find #"Highlighted 3" (get-in res [:content 0 :text])))
         (is (= :canvas-review/highlight (:type @seen)))
         (is (= "blk-1" (:id @seen)))
         (is (= [402 403 404] (:lines @seen)))))

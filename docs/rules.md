@@ -138,6 +138,10 @@ overlap):
   informative confirm block (server, tool, and every argument). `[a]lways`
   persists a session allow-rule narrowed to that MCP server + tool. External
   servers are third-party code, so nothing they expose runs without approval.
+- **sub-agent spawn** — `spawn_subagent` (`:tool-name`) → **ask**; the dialog
+  shows the task. `[a]lways` persists a session allow-rule pinned to
+  `spawn_subagent` (never to `:other` at large). A sub-agent's own tool calls
+  auto-deny every ask, so sub-agents can't spawn sub-agents.
 
 **Plan mode** (gated by `:when {:plan-mode {:enabled? true}}`, toggled with
 `/plan`; the `plan-mode` extension owns the toggle + badge, the policy lives
@@ -207,7 +211,8 @@ order, optionally mixed with inline rule maps:
   shadow — every runtime grant.)
 - Order matters (first match wins): keep `plan-mode` before the write/bash
   gates, and the nudges first, as the built-in order does. Dropping
-  `plan-mode` means `/plan` no longer enforces anything.
+  `plan-mode` means `/plan` no longer enforces anything; dropping
+  `subagent-confirm` lets the agent spawn sub-agents unasked.
 - The `sandbox-mode` alias is gone (the sandbox extension was removed); a file
   that still lists it fails closed with an unknown-alias error.
 
@@ -220,6 +225,7 @@ The built-in default tier, in order:
  :xi.rules.defaults/write-gates
  :xi.rules.defaults/bash-guards
  :xi.rules.defaults/mcp-confirm
+ :xi.rules.defaults/subagent-confirm
  :xi.rules.defaults/clj-sh]
 ```
 
@@ -234,6 +240,7 @@ The built-in default tier, in order:
 | `write-gates`        | → | composite: `sensitive-writes` `protected-writes` `outside-writes` |
 | `bash-guards`        | 2 | deny remote shells, ask on destructive bash |
 | `mcp-confirm`        | 1 | ask on every external MCP tool call |
+| `subagent-confirm`   | 1 | ask on every `spawn_subagent` call |
 | `sh-read-only`       | 1 | allow read-only CLIs via clj `(sh …)` |
 | `repository-scripts` | 2 | allow read-only `sed -n …p` and in-repo `mv`/`cp`/`mkdir`/`touch`/`rmdir` |
 | `sh-confirm`         | 1 | ask on any other clj `(sh …)` CLI |
@@ -246,6 +253,7 @@ All present fields are **ANDed**; an absent field is no constraint.
 | Field         | Matches                                                              |
 |---------------|---------------------------------------------------------------------|
 | `:tool`       | tool kind — keyword or set: `:write :edit :read :grep :find :ls :bash :clj :sh :mcp :other` |
+| `:tool-name`  | raw tool name — **string** (exact / glob full match), **regex** (`re-find`), or **set** (membership). Targets one extension tool, which otherwise only has the kind `:other` (e.g. `"spawn_subagent"`). Synthetic clj `:sh` requests carry no tool name, so they never match. |
 | `:path`       | target file path — **regex** (`re-find`, partial) or **glob string** (full match: `*`=one segment, `**`=any, `?`=one char). Matched against the raw arg **and** its resolved absolute path **and** the resolved path with a leading `$HOME` collapsed to `~` — so a pattern works whether the path was given absolute, relative, or `~`-prefixed, and may itself be written with `~`. Symlinks are canonicalized. |
 | `:command`    | bash command / clj code / clj shell-out command — **regex** (`re-find`) or **string** (substring) |
 | `:cli`        | shell-out binary (first token of a `clj` `(sh …)` / background command) — **string** (exact), **set** (membership), or **regex** (`re-find`); only `:sh` requests carry `:cli` |
@@ -318,7 +326,7 @@ and are not short-circuited by a `:sh` `:allow`.
 | `:allow` | Force-allow: the call runs and the **remaining gates are skipped**.     |
 | `:deny`  | Block with an error result (`:message` shown to the agent).             |
 | `:nudge` | Block with a **non-error** steering result — `:message` redirects the agent without signalling failure. |
-| `:ask`   | Raise a confirm dialog. When no `:message` is given, an informative default is built from the request (MCP server/tool/arguments, else the bash/clj command, else the target path). `:options` defaults to `[:yes :no :always]`; answering `:always` persists a session allow-rule for the same call (narrowed to the MCP server + tool for MCP calls), and `:repo` (when the target is in a git repo) persists one scoped to the whole repo. For `write`/`edit` calls the dialog also previews the change as a diff (computed without writing; web and TUI). |
+| `:ask`   | Raise a confirm dialog. When no `:message` is given, an informative default is built from the request (MCP server/tool/arguments, else the bash/clj command, else the target path). `:options` defaults to `[:yes :no :always]`; answering `:always` persists a session allow-rule for the same call (narrowed to the MCP server + tool for MCP calls, and to the `:tool-name` for other extension tools), and `:repo` (when the target is in a git repo) persists one scoped to the whole repo. For `write`/`edit` calls the dialog also previews the change as a diff (computed without writing; web and TUI). |
 
 ```clojure
 {:match {:tool :bash :command #"\bgit push\b"}

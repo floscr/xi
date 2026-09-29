@@ -23,6 +23,23 @@
   (testing "single keyword"
     (is (rules/matches? {:match {:tool :bash}} {:tool :bash}))))
 
+(deftest match-tool-name
+  (let [req {:tool :other :tool-name "spawn_subagent"}]
+    (testing "exact string"
+      (is (rules/matches? {:match {:tool-name "spawn_subagent"}} req))
+      (is (not (rules/matches? {:match {:tool-name "list_subagents"}} req))))
+    (testing "glob, regex, set"
+      (is (rules/matches? {:match {:tool-name "*_subagent"}} req))
+      (is (rules/matches? {:match {:tool-name #"^spawn_"}} req))
+      (is (rules/matches? {:match {:tool-name #{"a" "spawn_subagent"}}} req))
+      (is (not (rules/matches? {:match {:tool-name #{"a" "b"}}} req))))
+    (testing "ANDed with :tool; absent spec is unconstrained"
+      (is (rules/matches? {:match {:tool :other :tool-name "spawn_subagent"}} req))
+      (is (not (rules/matches? {:match {:tool :bash :tool-name "spawn_subagent"}} req)))
+      (is (rules/matches? {:match {:tool :other}} req)))
+    (testing "a request without a tool name never matches a :tool-name rule"
+      (is (not (rules/matches? {:match {:tool-name "spawn_subagent"}} {:tool :sh}))))))
+
 (deftest match-path-glob-and-regex
   (is (rules/matches? {:match {:tool :write :path "*.sh"}}
                       {:tool :write :path "deploy.sh"}))

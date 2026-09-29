@@ -7,8 +7,9 @@
    one and polls it — spawn_subagent → list_subagents / subagent_result →
    stop_subagent — mirroring the process-manager tool shape.
 
-   The LLM cannot run a sub-agent without user approval: spawn_subagent goes
-   through a :confirm! dialog first (blocked when no client is attached).
+   The LLM cannot run a sub-agent without user approval: the
+   `::subagent-confirm` default rule (xi.rules.defaults) asks before every
+   spawn_subagent call (denied when no client is attached).
 
    State is room-scoped, so it rides in :room/joined snapshots and mirrors to
    every client (the web Sub-agents panel builds up live):
@@ -20,7 +21,7 @@
 
    The turn itself is run by the :subagent/start effect (xi.subagent, wired in
    xi.cli next to agent/create-fx). This namespace is the node data surface:
-   tools, gate, the turn-running effect wiring, system prompt. The pure state
+   tools, the turn-running effect wiring, system prompt. The pure state
    handlers live in xi.ext.subagent.handlers so the web half can reuse them."
   (:require [clojure.string :as str]
             [xi.ext.subagent.handlers :as h]
@@ -131,7 +132,7 @@
                         :summary summary
                         :messages (session/read-session-messages summary)})))))))
 
-;; ── Tools (handled in the gate — they need dispatch!/get-state/room-id) ───────
+;; ── Tools (registry fns; dispatch!/get-state/room-id come from the tool ctx) ──
 
 (def ^:private tool-defs
   [{:name "spawn_subagent"
@@ -165,8 +166,6 @@
                    :properties {:id {:type "string" :description "The sub-agent id to stop."}}
                    :required ["id"]}}])
 
-(def ^:private tool-names (set (map :name tool-defs)))
-
 (defn- recent-snippet [child]
   (let [t (or (final-text (:history child))
               (some->> (:history child) (filter #(= :thinking (:kind %))) last :text))]
@@ -198,66 +197,56 @@
         "with `subagent_result` (id \"" sub-id "\") once it reports done. Stop "
         "it early with `stop_subagent`.")))
 
-(def ^:private blocked-result
-  {:intercepted true
-   :result {:content [{:type "text"
-                       :text "Sub-agent not started — the user declined (or no client is attached to approve it)."}]
-            :is-error true}})
-
 (defn- spawn-tool
-  "Confirm with the user, then spawn. Returns a promise of an intercepted
-   result (id on approval, blocked otherwise)."
-  [tool-call {:keys [dispatch! room-id confirm!]}]
-  (let [{:keys [task label]} (:arguments tool-call)
-        sub-id (gen-id "sa")
+  "Spawn the sub-agent and return its id. Approval is policy — the
+   `::subagent-confirm` default rule asks before this ever runs."
+  [{:keys [task label]} {:keys [dispatch! room-id]}]
+  (let [sub-id (gen-id "sa")
         label  (or (not-empty label) (default-label task))]
-    (if confirm!
-      (-> (confirm! (str "Spawn sub-agent '" label "'?"))
-          (.then (fn [ok?]
-                   (if ok?
-                     (do (dispatch! {:type :subagent/spawn :room-id room-id
-                                     :sub-id sub-id :task task :label label :prompt task})
-                         {:intercepted true :result (spawn-result sub-id label)})
-                     blocked-result))))
-      (js/Promise.resolve blocked-result))))
+    (dispatch! {:type :subagent/spawn :room-id room-id
+                :sub-id sub-id :task task :label label :prompt task})
+    (spawn-result sub-id label)))
 
-(defn- result-tool [id st room-id]
-  (let [child (find-child st room-id id)]
+(defn- result-tool [{:keys [id]} {:keys [get-state room-id]}]
+  (let [child (find-child (get-state) room-id id)]
     (cond
       (nil? child)
-      {:intercepted true :result (text-result (str "No sub-agent with id " id "."))}
+      (text-result (str "No sub-agent with id " id "."))
 
       (= :running (:status child))
-      {:intercepted true
-       :result (text-result
-                (str "Sub-agent " id " is still running. Recent output:\n"
-                     (or (recent-snippet child) "(no output yet)")
-                     "\nCall subagent_result again later to poll."))}
+      (text-result
+       (str "Sub-agent " id " is still running. Recent output:\n"
+            (or (recent-snippet child) "(no output yet)")
+            "\nCall subagent_result again later to poll."))
 
       :else
-      {:intercepted true
-       :result (text-result
-                (str "Sub-agent " id " [" (name (:status child)) "]:\n\n"
-                     (or (:result child) "(no textual output)")))})))
+      (text-result
+       (str "Sub-agent " id " [" (name (:status child)) "]:\n\n"
+            (or (:result child) "(no textual output)"))))))
 
-(defn- stop-tool [id room-id dispatch!]
+(defn- stop-tool [{:keys [id]} {:keys [dispatch! room-id]}]
   (if (subagent/running? id)
     (do (dispatch! {:type :subagent/abort :room-id room-id :sub-id id})
-        {:intercepted true :result (text-result (str "Stopping sub-agent " id "."))})
-    {:intercepted true :result (text-result (str "Sub-agent " id " is not running."))}))
+        (text-result (str "Stopping sub-agent " id ".")))
+    (text-result (str "Sub-agent " id " is not running."))))
 
-(defn- tool-gate
-  [tool-call {:keys [dispatch! get-state room-id] :as ctx}]
-  (let [{:keys [name arguments]} tool-call]
-    (if-not (tool-names name)
-      tool-call
-      (case name
-        "spawn_subagent"  (spawn-tool tool-call ctx)
-        "list_subagents"  {:intercepted true
-                           :result (text-result (format-list (agents (get-state) room-id)))}
-        "subagent_result" (result-tool (:id arguments) (get-state) room-id)
-        "stop_subagent"   (stop-tool (:id arguments) room-id dispatch!)
-        tool-call))))
+(defn- list-tool [_args {:keys [get-state room-id]}]
+  (text-result (format-list (agents (get-state) room-id))))
+
+(defn- with-room-ctx
+  "Guard a tool fn on the tool ctx carrying dispatch!/get-state (always true
+   inside an agent turn)."
+  [f]
+  (fn [args {:keys [dispatch! get-state] :as ctx}]
+    (if (and dispatch! get-state)
+      (f args ctx)
+      {:content [{:type "text" :text "sub-agents: no room context"}] :is-error true})))
+
+(def ^:private tool-registry
+  {"spawn_subagent"  (with-room-ctx spawn-tool)
+   "list_subagents"  (with-room-ctx list-tool)
+   "subagent_result" (with-room-ctx result-tool)
+   "stop_subagent"   (with-room-ctx stop-tool)})
 
 ;; ── Command (TUI visibility) ─────────────────────────────────────────────────
 
@@ -289,7 +278,7 @@
    :init             {:room {:agents [] :collapsed? false}}
    :system-prompt    system-prompt
    :tool-definitions tool-defs
-   :tool-gate        tool-gate
+   :tool-registry    tool-registry
    :handlers         (assoc h/handlers
                             :room/close on-room-close
                             :subagent/abort abort-sub

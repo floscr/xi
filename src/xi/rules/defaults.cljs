@@ -298,6 +298,13 @@
    [{:match  {:tool :mcp}
      :action {:type :ask :options [:yes :no :always]}}]
 
+   ;; A sub-agent runs a whole unattended agent turn — every spawn is confirmed
+   ;; (the dialog shows the task). [a]lways persists a session allow-rule
+   ;; pinned to spawn_subagent.
+   ::subagent-confirm
+   [{:match  {:tool-name "spawn_subagent"}
+     :action {:type :ask :options [:yes :no :always]}}]
+
    ;; clj (sh …) shell-outs (:sh) — "disallow * then soften", scoped to :sh so
    ;; the real bash tool is untouched. Read-only/rm CLIs auto-run; every other
    ;; CLI hits the base ask (the clj gate turns that into its per-CLI approval
@@ -350,6 +357,7 @@
    ::write-gates
    ::bash-guards
    ::mcp-confirm
+   ::subagent-confirm
    ::clj-sh])
 
 (def default-rules

@@ -1,5 +1,5 @@
 (ns xi.ext.treesitter.core-test
-  "Tool-gate + read_source behavior. Skipped when the native CLI is absent."
+  "read override + read_source behavior. Skipped when the native CLI is absent."
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.ext.treesitter.core :as core]
@@ -28,89 +28,48 @@
     (fs/writeFileSync path content)
     path))
 
-(defn- gate-result-text [gated]
-  (-> gated :result :content first :text))
+(defn- result-text [result]
+  (-> result :content first :text))
 
-(deftest gate-intercepts-large-source-test
+(deftest read-outlines-large-source-test
   (async done
     (if-not (p/available?)
       (do (is true "skipped") (done))
-      (let [ext (core/create nil)
-            gate (:tool-gate ext)
+      (let [ext  (core/create nil)
+            read (get-in ext [:tool-registry "read"])
             path (write-tmp "xi-ts-core-test.ts" (big-ts-source))]
-        (-> (js/Promise.resolve (gate {:name "read" :arguments {:path path}} {:cwd nil}))
-            (.then (fn [gated]
+        (-> (js/Promise.resolve (read {:path path} {:cwd nil}))
+            (.then (fn [result]
                      (testing "large source file read → outline"
-                       (is (:intercepted gated))
-                       (let [text (gate-result-text gated)]
+                       (let [text (result-text result)]
                          (is (str/includes? text "fns:"))
                          (is (str/includes? text "export function fn0(a: number): number [2-9]"))
                          (is (str/includes? text "read_source"))))
                      (done)))
             (.catch (fn [e] (is false (str e)) (done))))))))
 
-(deftest gate-passes-through-test
+(deftest read-falls-through-to-builtin-test
   (async done
     (if-not (p/available?)
       (do (is true "skipped") (done))
-      (let [ext (core/create nil)
-            gate (:tool-gate ext)
-            big (write-tmp "xi-ts-core-test.ts" (big-ts-source))
+      (let [ext   (core/create nil)
+            read  (get-in ext [:tool-registry "read"])
+            big   (write-tmp "xi-ts-core-test.ts" (big-ts-source))
             small (write-tmp "xi-ts-core-small.ts" "export const x = 1;\n")
-            md (write-tmp "xi-ts-core-test.md" (apply str (repeat 300 "line\n")))
-            offset-call {:name "read" :arguments {:path big :offset 10 :limit 5}}
-            small-call {:name "read" :arguments {:path small}}
-            md-call {:name "read" :arguments {:path md}}]
+            md    (write-tmp "xi-ts-core-test.md" (apply str (repeat 300 "line\n")))]
         (-> (js/Promise.all
-             #js [(js/Promise.resolve (gate offset-call {:cwd nil}))
-                  (js/Promise.resolve (gate small-call {:cwd nil}))
-                  (js/Promise.resolve (gate md-call {:cwd nil}))])
+             #js [(js/Promise.resolve (read {:path big :offset 10 :limit 5} {:cwd nil}))
+                  (js/Promise.resolve (read {:path small} {:cwd nil}))
+                  (js/Promise.resolve (read {:path md} {:cwd nil}))])
             (.then (fn [[o s m]]
-                     (testing "offset/limit reads pass through"
-                       (is (= offset-call o)))
-                     (testing "small files pass through"
-                       (is (= small-call s)))
-                     (testing "unsupported extensions pass through"
-                       (is (= md-call m)))
-                     (done)))
-            (.catch (fn [e] (is false (str e)) (done))))))))
-
-(deftest gate-bash-read-test
-  (async done
-    (if-not (p/available?)
-      (do (is true "skipped") (done))
-      (let [ext (core/create nil)
-            gate (:tool-gate ext)
-            big (write-tmp "xi-ts-core-test.ts" (big-ts-source))
-            md (write-tmp "xi-ts-core-test.md" (apply str (repeat 300 "line\n")))
-            bash (fn [cmd] {:name "bash" :arguments {:command cmd}})
-            cat-call (bash (str "cat " big))
-            head-big-call (bash (str "head -n 500 " big))
-            head-small-call (bash (str "head -n 20 " big))
-            piped-call (bash (str "cat " big " | grep fn0"))
-            md-call (bash (str "cat " md))
-            other-call (bash "echo hello")]
-        (-> (js/Promise.all
-             #js [(js/Promise.resolve (gate cat-call {:cwd nil}))
-                  (js/Promise.resolve (gate head-big-call {:cwd nil}))
-                  (js/Promise.resolve (gate head-small-call {:cwd nil}))
-                  (js/Promise.resolve (gate piped-call {:cwd nil}))
-                  (js/Promise.resolve (gate md-call {:cwd nil}))
-                  (js/Promise.resolve (gate other-call {:cwd nil}))])
-            (.then (fn [[cat-g head-big head-small piped md-g other]]
-                     (testing "cat of a large source file → outline"
-                       (is (:intercepted cat-g))
-                       (is (str/includes? (gate-result-text cat-g) "fns:")))
-                     (testing "head asking for many lines → outline"
-                       (is (:intercepted head-big)))
-                     (testing "small/targeted head passes through"
-                       (is (= head-small-call head-small)))
-                     (testing "piped commands pass through (targeted reads)"
-                       (is (= piped-call piped)))
-                     (testing "unsupported file types pass through"
-                       (is (= md-call md-g)))
-                     (testing "non-read bash commands pass through"
-                       (is (= other-call other)))
+                     (testing "offset/limit reads get literal lines, not the outline"
+                       (is (not (str/includes? (result-text o) "Structural outline")))
+                       (is (str/includes? (result-text o) "const x")))
+                     (testing "small files are read whole"
+                       (is (str/includes? (result-text s) "export const x = 1;")))
+                     (testing "unsupported extensions are read whole"
+                       (is (not (str/includes? (result-text m) "Structural outline")))
+                       (is (str/includes? (result-text m) "line")))
                      (done)))
             (.catch (fn [e] (is false (str e)) (done))))))))
 

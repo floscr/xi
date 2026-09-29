@@ -21,7 +21,7 @@ Step-by-step recipe. Key reference: [extensions.md](extensions.md).
 | React to events | `:handlers` |
 | Side effects | `:fx` |
 | Rewrite/block events pre-dispatch | `:event-hooks` |
-| Intercept/confirm tool calls | `:tool-gate` |
+| Confirm/deny tool calls | a default rule in `xi.rules.defaults` (`:tool-name` for your tools) |
 | System prompt text | `:system-prompt` |
 | TUI shortcut | `:keybindings` |
 | Prompt indicator | `:prompt-badge` |
@@ -66,8 +66,9 @@ File `src/xi/ext/my_thing.cljs`, ns `xi.ext.my-thing`, events namespaced
   (-> (do-io!)
       (.then #(dispatch! {:type :ext.my-thing/done :room-id room-id}))))
 
-;; tool — args keywordized; result map or Promise of it
-(fn [{:keys [query]} {:keys [cwd]}]
+;; tool — args keywordized; result map or Promise of it. ctx:
+;; {:cwd :client-pid :dispatch! :get-state :room-id :confirm!}
+(fn [{:keys [query]} {:keys [cwd dispatch! room-id]}]
   {:content [{:type "text" :text "…"}] :is-error false})
 
 ;; command — pure; I/O via effects

@@ -258,7 +258,8 @@
         repo    (git-root (if p (path/dirname (expand-path eff-cwd (str p))) eff-cwd))
         state   (when (and get-state room-id)
                   (get-in (get-state) [:rooms room-id :ext]))]
-    (cond-> {:tool kind :effective-cwd eff-cwd :repo repo :state state}
+    (cond-> {:tool kind :tool-name (some-> name str) :effective-cwd eff-cwd
+             :repo repo :state state}
       p         (assoc :path p)
       command   (assoc :command command)
       code      (assoc :command code)

@@ -71,8 +71,8 @@
 (defn- execute-tool-call
   "Execute a single tool call through Xi's registry + tool gate.
    Returns promise of {:role \"tool\" :tool_call_id ... :content ...}"
-  [{:keys [id name arguments]} cwd tool-gate]
-  (let [registry (tools/tool-registry)]
+  [{:keys [id name arguments]} registry tool-ctx tool-gate]
+  (let [registry (or registry (tools/tool-registry))]
     (-> (tool-gate {:name name :arguments arguments})
         (.then
          (fn [gated]
@@ -88,7 +88,7 @@
     :else
     (let [exec-fn (get registry name)]
       (if exec-fn
-        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) {:cwd cwd})
+        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx)
             (.then (fn [{:keys [content]}]
                      {:role "tool" :tool_call_id id
                       :content (util/extract-text-content content)})))
@@ -309,7 +309,7 @@
                                                                  :arguments (:arguments-str tc)}})
                                                    tc-entries)})
                          (-> (js/Promise.all
-                              (clj->js (mapv #(execute-tool-call % cwd tool-gate) tc-entries)))
+                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-gate) tc-entries)))
                              (.then (fn [results]
                                       (let [tool-results (js->clj results :keywordize-keys true)]
                                         (doseq [[tc tr] (map vector tc-entries tool-results)]

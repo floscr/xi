@@ -95,8 +95,9 @@
             ;; resumable session when the user opens the sub-agent as a chat.
             config-dir (when make-config-dir! (make-config-dir!))
             ;; Tool ctx uses the PARENT room-id: the sub-agent's tools act in
-            ;; the parent room (cwd, canvas state, confirm dialogs).
-            gate-ctx {:dispatch! dispatch!
+            ;; the parent room (cwd, canvas state, confirm dialogs). Handed to
+            ;; the gate and, as :tool-ctx, to tool exec-fns.
+            tool-ctx {:dispatch! dispatch!
                       :get-state get-state
                       :room-id   room-id
                       :cwd       cwd
@@ -110,7 +111,7 @@
                       :confirm!  (fn confirm!
                                    ([_message] (js/Promise.resolve false))
                                    ([_message _copts] (js/Promise.resolve false)))}
-            gate1    (when tool-gate (fn [tool-call] (tool-gate tool-call gate-ctx)))
+            gate1    (when tool-gate (fn [tool-call] (tool-gate tool-call tool-ctx)))
             ;; The PARENT room's driving-client pid: chrome-mcp scopes a turn to
             ;; that client's terminal workspace. Without it a sub-agent's
             ;; browser calls would fall back to guessing a workspace and could
@@ -125,7 +126,8 @@
                              :cwd     cwd
                              :effort  effort
                              :system  system
-                             :personal-agent? personal-agent?}
+                             :personal-agent? personal-agent?
+                             :tool-ctx tool-ctx}
                             (callbacks dispatch! room-id sub-id))
                gate1                  (assoc :tool-gate gate1)
                extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
