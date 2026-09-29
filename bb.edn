@@ -92,14 +92,24 @@
               (println (str "Reaping " (count pids) " stray xi serve process(es): "
                             (clojure.string/join " " pids)))
               (apply shell {:continue true} "kill" "-9" pids)
-              (Thread/sleep 500))))
+              (Thread/sleep 500)))
+          ;; `bb dev` (session xi) and `bb serve` (session xi-serve) both run
+          ;; `shadow-cljs watch main web`. There is one shadow server per
+          ;; project and a build can only be watched once, so whichever starts
+          ;; second dies with "already started {:build-id :main}". Starting or
+          ;; restarting either one stops the other first.
+          (defn stop-dev-watch! []
+            (td/stop config))
+          (defn stop-serve-watch! []
+            (td/stop serve-config)
+            (reap-stray-serve!)))
 
-  dev         {:doc "Start tmux dev session"
-               :task (td/start config)}
+  dev         {:doc "Start tmux dev session (stops the serve session — both run the shadow watch)"
+               :task (do (stop-serve-watch!) (td/start config))}
   dev:stop    {:doc "Stop tmux dev session"
                :task (td/stop config)}
-  dev:restart {:doc "Restart tmux dev session"
-               :task (td/restart config)}
+  dev:restart {:doc "Restart tmux dev session (stops the serve session — both run the shadow watch)"
+               :task (do (stop-serve-watch!) (td/restart config))}
   dev:attach  {:doc "Attach to tmux dev session"
                :task (td/attach config)}
   dev:logs    {:doc "Show recent output from dev windows"
@@ -198,8 +208,9 @@
            (td/restart (assoc pa-serve-config :print [(str "Web: http://" ip ":7475")])))}
 
   serve
-  {:doc "Start tmux serve session with Tailscale URL"
+  {:doc "Start tmux serve session with Tailscale URL (stops the dev session — both run the shadow watch)"
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
+           (stop-dev-watch!)
            (td/start (assoc serve-config :print [(str "Web: http://" ip ":7474")]))
            (td/attach serve-config))}
 
@@ -286,8 +297,9 @@
                              " — applies to new connections (restart the server to drop live ones).")))))}
 
   serve:restart
-  {:doc "Restart tmux serve session (reaps leaked headless :7474 servers first)"
+  {:doc "Restart tmux serve session (stops the dev session, reaps leaked headless :7474 servers first)"
    :task (let [ip (-> (shell {:out :string} "tailscale ip -4") :out clojure.string/trim)]
+           (stop-dev-watch!)
            (reap-stray-serve!)
            (td/restart (assoc serve-config :print [(str "Web: http://" ip ":7474")])))}
 
@@ -386,6 +398,7 @@
            (println "  port 7476  demo (seed data)  session xi-demo   bb demo / demo:restart / demo:stop")
            (println "  shadow watch (main+web)     session xi-serve  auto-compiles on save; no manual build")
            (println "  standalone watch (no srv)   session xi        bb dev / dev:restart / dev:stop")
+           (println "  (xi and xi-serve both run the shadow watch — starting/restarting one stops the other)")
            (println)
            (println "  - port 7474 already listening? Don't start a server — use http://localhost:7474.")
            (println "  - changed server-side cljs (xi.server/core/agent/ext/provider)? bb serve:restart.")

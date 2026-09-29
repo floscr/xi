@@ -14,7 +14,9 @@ Personal coding agent in ClojureScript + Bun.
 > servers holding :7474 before. Only the `bb` tasks start/stop/restart.
 
 - **A shadow-cljs watch is usually running** (`bb dev` / `bb serve`) and
-  recompiles both the `main` and `web` targets on save. If it is, don't run
+  recompiles both the `main` and `web` targets on save. The two are exclusive
+  (one shadow server can watch a build only once): starting or restarting
+  either stops the other. If it is, don't run
   `bb build` / `bb web:build` (the latter can conflict with the watch).
   Otherwise use `bb build`, `bb web:build`, or start a watch.
 - **The server does not hot-reload server-side code** (`xi.server.*`,
