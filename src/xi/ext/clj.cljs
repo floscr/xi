@@ -737,16 +737,19 @@
   IPrintWithWriter
   (-pr-writer [_ w _] (-write w (str "#object[java.time.Instant \"" (.toISOString (js/Date. ms)) "\"]"))))
 
-(def ^:private instant-class
-  "java.time.Instant: the deftype constructor itself with the statics
-   attached. SCI allows instance interop when (symbol (.-name ctor)) is a
-   :classes key, so pin the ctor's (otherwise compiler-mangled) name."
-  (js/Object.assign
-   (js/Object.defineProperty Instant "name" #js {:value "Instant"})
-   #js {:parse         (fn [s] (Instant. (.getTime (reader/parse-timestamp s))))
-        :now           (fn [] (Instant. (js/Date.now)))
-        :ofEpochMilli  (fn [n] (Instant. n))
-        :ofEpochSecond (fn [n] (Instant. (* n 1000)))}))
+(def ^:private instant-statics
+  "java.time.Instant statics (Instant/parse, Instant/now, …) on a null-proto
+   object — NOT the deftype ctor, so Instant/constructor can't reach
+   js/Function (see `null-proto`). Instance interop is separate: SCI keys it on
+   the class *name*, so we still pin the deftype ctor's (otherwise
+   compiler-mangled) name to \"Instant\" here for the side effect."
+  (let [_ (js/Object.defineProperty Instant "name" #js {:value "Instant"})
+        o (js/Object.create nil)]
+    (unchecked-set o "parse"         (fn [s] (Instant. (.getTime (reader/parse-timestamp s)))))
+    (unchecked-set o "now"           (fn [] (Instant. (js/Date.now))))
+    (unchecked-set o "ofEpochMilli"  (fn [n] (Instant. n)))
+    (unchecked-set o "ofEpochSecond" (fn [n] (Instant. (* n 1000))))
+    o))
 
 (defn- format-sign [neg? flags]
   (cond neg?                        "-"
@@ -838,6 +841,44 @@
 
                whole))))))))
 
+(def ^:private denied-core
+  "Core symbols removed from the sandbox. Raw JS-property access
+   (aget/unchecked-get/js-obj/js-invoke/…) bypasses SCI's instance-interop
+   gating — `(aget some-obj \"constructor\")` reaches js/Function and escapes,
+   the same class of hole `null-proto` closes for static access. Dynamic eval
+   (eval/load-string) and var/namespace manipulation (intern/resolve/
+   alter-var-root/…) are re-entry/reflection surface a sandbox script never
+   needs. SCI throws \"X is not allowed!\" on resolution (:deny mode)."
+  '#{aget aset unchecked-get unchecked-set unchecked-get-field
+     js-obj js-invoke js-keys js-delete js-in
+     eval load-string load-file load load-reader read+string
+     intern resolve ns-resolve requiring-resolve find-var
+     alter-var-root alter-meta! reset-meta!
+     create-ns in-ns remove-ns the-ns find-ns all-ns
+     ns-map ns-publics ns-interns ns-unmap ns-name})
+
+(defn- null-proto
+  "A null-prototype object exposing only `members` (name→value). Configured
+   `:classes` values must be these: SCI's cljs static-field access is an
+   unchecked property read (`Class/foo` → `(unchecked-get class \"foo\")`), so a
+   real class value leaks `Class/constructor` → js/Function → arbitrary code
+   (a full sandbox escape). With a null prototype `Class/constructor` reads
+   `undefined` and every prototype walk dead-ends. Instance interop is
+   unaffected: SCI keys it on the class *name* and reflects on the real object,
+   so the value here is only the static-member surface."
+  [members]
+  (let [o (js/Object.create nil)]
+    (doseq [[k v] members] (unchecked-set o (name k) v))
+    o))
+
+(defn- null-proto-copy
+  "null-proto exposing every own property of `src` (e.g. all of js/Math)."
+  [src]
+  (let [o (js/Object.create nil)]
+    (doseq [k (js/Object.getOwnPropertyNames src)]
+      (unchecked-set o k (unchecked-get src k)))
+    o))
+
 (defn- make-ctx [opts]
   (let [helpers (helper-fns opts)
         ctx (sci/init {:namespaces
@@ -861,27 +902,45 @@
                         ;; (socket/connect "127.0.0.1" 7474) … see
                         ;; xi.ext.clj-socket.
                         'socket (sock/sci-namespace opts)}
-                       :classes {'Math js/Math
-                           ;; JVM-style Thread/sleep, backed by a synchronous
-                           ;; (abortable) worker-thread block.
-                           'Thread  #js {:sleep (fn [ms] (proc/sleep-abortable opts ms))}
+                       ;; Every value is a null-proto object (see `null-proto`)
+                       ;; — never a real class — so `Class/constructor` can't
+                       ;; reach js/Function and escape the sandbox. Instance
+                       ;; interop (`.getTime` on a Date, …) still works: SCI keys
+                       ;; it on the class name, not this value.
+                       :classes {'Math (null-proto-copy js/Math)
+                                 ;; JVM-style Thread/sleep, backed by a synchronous
+                                 ;; (abortable) worker-thread block.
+                                 'Thread  (null-proto {:sleep (fn [ms] (proc/sleep-abortable opts ms))})
                                  ;; JVM-style numeric parsing statics so code
                                  ;; like (Long/parseLong s) resolves.
-                                 'Long    #js {:parseLong   (fn [s & [radix]]
-                                                              (js/parseInt s (or radix 10)))}
-                                 'Integer #js {:parseInt    (fn [s & [radix]]
-                                                              (js/parseInt s (or radix 10)))}
-                                 'Double  #js {:parseDouble (fn [s] (js/parseFloat s))}
+                                 'Long    (null-proto {:parseLong   (fn [s & [radix]]
+                                                                      (js/parseInt s (or radix 10)))})
+                                 'Integer (null-proto {:parseInt    (fn [s & [radix]]
+                                                                      (js/parseInt s (or radix 10)))})
+                                 'Double  (null-proto {:parseDouble (fn [s] (js/parseFloat s))})
                                  ;; clojure.instant / #inst values are js/Dates;
                                  ;; the 'Date key (the ctor's .name) is what
                                  ;; allows instance interop like (.getTime d).
-                                 'Date js/Date
-                                 'java.util.Date js/Date
-                                 'java.time.Instant instant-class
-                                 'Instant instant-class
-                                 'js/Error js/Error
-                                 'Exception js/Error
-                                 'Throwable js/Error}})]
+                                 'Date (null-proto {})
+                                 'java.util.Date (null-proto {})
+                                 ;; Instant statics (Instant/ofEpochMilli …) —
+                                 ;; the deftype's pinned .name gives instance
+                                 ;; interop; this value is the static surface.
+                                 'java.time.Instant instant-statics
+                                 'Instant instant-statics
+                                 ;; Override SCI's own default `Error` class too
+                                 ;; (else Error/constructor still escapes). Only
+                                 ;; for (catch …) / instance? naming; ex-info and
+                                 ;; :default catch are host fns, not this value.
+                                 'js/Error (null-proto {})
+                                 'Error    (null-proto {})
+                                 'Exception (null-proto {})
+                                 'Throwable (null-proto {})}
+                       ;; Enables SCI's resolution-time permission check; every
+                       ;; symbol above resolves as before, these throw. Belt to
+                       ;; null-proto's braces — covers the raw-access fns that
+                       ;; sidestep the class config entirely.
+                       :deny denied-core})]
     (sci/eval-string* ctx PRELUDE)
     ctx))
 

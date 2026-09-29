@@ -37,6 +37,23 @@ SCI is allowlist-only: scripts get `clojure.core` (+ `clojure.string` as
 `str`, `clojure.set` as `set`, `clojure.walk` as `walk`, `clojure.edn` as
 `edn`) and the injected helpers below. **No `js/` interop, no other I/O.**
 
+The interop lockdown is load-bearing for the whole sandbox — reaching
+`js/Function` would run arbitrary host code and defeat every path/sh gate:
+
+- Configured classes (`Math`, `Date`, `Long`, `Instant`, …) are exposed as
+  **null-prototype** objects holding only their intended static members, so
+  `Class/constructor` reads `undefined` instead of a real constructor (SCI's
+  cljs static-member access is an unchecked property read). Instance interop
+  (`.getTime` on a `#inst`, …) is unaffected — it keys on the class name.
+- Raw JS-property access and dynamic eval are **removed** (`:deny`): `aget`
+  `aset` `unchecked-get`/`-set` `js-obj` `js-invoke`, `eval` `load-string`,
+  and the var/namespace-manipulation fns (`intern` `resolve` `alter-var-root`
+  …). These would otherwise sidestep the class gating or re-enter the reader.
+- Instance-method interop through the class config still throws on anything
+  not on a configured class (e.g. `(.-constructor "s")`).
+
+See `test/xi/ext/clj_sandbox_test.cljs` for the escape corpus these close.
+
 | Helper | Does |
 | --- | --- |
 | `(cat f)` / `(slurp f)` | read file as string |
