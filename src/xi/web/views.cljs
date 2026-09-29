@@ -3210,12 +3210,12 @@
 
 (defn- sidebar-section
   "Collapsible drawer group: a framework sidebar-group whose label is a quiet
-   small-caps toggle row (label · count · chevron). The label carries no icon,
+   small-caps toggle row (label · chevron). The label carries no icon,
    so it sits flush with the item icons and the item names read as nested
    inside it. Collapsed group ids live in :web/sidebar-collapsed (see
    :sidebar/toggle-group); a collapsed group keeps its header but doesn't build
    its cards at all."
-  [dispatch! collapsed {:keys [id label n]} & children]
+  [dispatch! collapsed {:keys [id label]} & children]
   (let [open? (not (contains? collapsed id))]
     (sidebar/sidebar-group
      ;; The framework conj's :class as ONE token, so collapsed-ness rides a
@@ -3227,7 +3227,6 @@
                        :aria-expanded (str open?)
                        :on {:click (fn [_] (dispatch! {:type :sidebar/toggle-group :group id}))}}
               [:span {:class ["sidebar-section-label"]} label]
-              (when n [:span {:class ["sidebar-section-count"]} n])
               [:span {:class ["sidebar-section-chevron"]} (icon/icon {:icon-name :chevron-down :size :sm})]]}
      (when open?
        [:div {:class ["sidebar-section-items"]} children]))))
@@ -3303,7 +3302,7 @@
          (sidebar-search dispatch!)
          ;; Recent projects, closed out by the "All projects" overview row.
          (when (not pa?)
-           (section {:id :projects :label "Projects" :n (count projects)}
+           (section {:id :projects :label "Projects"}
              (let [dirty (:web/project-dirty state)]
                (for [p projects]
                  (project-dir-card dispatch! p (contains? dirty p))))
@@ -3315,24 +3314,24 @@
                :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home}))}
               "All projects")))
          (when (seq recent)
-           (section {:id :recent :label "Recent" :n (count recent)}
+           (section {:id :recent :label "Recent"}
              (for [c (with-projects recent)]
                (session-card dispatch! (assoc c :dismissable? true)))))
          ;; Hidden group sits between Recent and Earlier. Its cards keep the
          ;; toggle (now an eye → "Show in recent") so the user can restore them.
          (when (seq hidden)
-           (section {:id :hidden :label "Hidden" :n (count hidden)}
+           (section {:id :hidden :label "Hidden"}
              (for [c (with-projects hidden)]
                (session-card dispatch! (assoc c :dismissable? true)))))
          (when (seq earlier)
-           (section {:id :earlier :label "Earlier" :n (count earlier)}
+           (section {:id :earlier :label "Earlier"}
              (for [c (with-projects earlier)]
                (session-card dispatch! c))))
          ;; Entries contributed by extensions (:nav-items with :menu :sidebar,
          ;; e.g. Image Graphs) — last, below the core session groups.
          (let [ext-items (when (not pa?) (nav-items-for state :sidebar))]
            (when (seq ext-items)
-             (section {:id :extensions :label "Extensions" :n (count ext-items)}
+             (section {:id :extensions :label "Extensions"}
                (for [item ext-items]
                  (sidebar/sidebar-menu-item
                   {:icon-name (:icon item)

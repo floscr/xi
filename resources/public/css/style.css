@@ -2170,7 +2170,7 @@ code a:hover,
 .sidebar .sidebar-row .sidebar-menu-item-icon { color: var(--fg-1); opacity: 1; }
 .sidebar .sidebar-row.sidebar-menu-item-active { border: var(--border-0); }
 
-/* Collapsible group header: a quiet small-caps label · count · chevron. No
+/* Collapsible group header: a quiet small-caps label · chevron. No
    icon, and its text starts where the item *icons* start, so the header sits
    left of its items' names and the grouping reads at a glance. */
 .sidebar .sidebar-section { margin-bottom: var(--size-3); }
@@ -2210,13 +2210,6 @@ code a:hover,
   flex-shrink: 0;
 }
 .sidebar-section-label { flex: 1; text-align: left; }
-.sidebar-section-count {
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--fg-2);
-  opacity: 0.7;
-}
 .sidebar-section-chevron {
   opacity: 0.5;
   transition: transform 0.15s;
