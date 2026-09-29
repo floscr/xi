@@ -659,7 +659,7 @@
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
        [:span {:style {:font-weight "500"}} "Thinking"]]
-      [:pre {:class ["thinking-text"]} (:text entry)]]]
+      (into [:pre {:class ["thinking-text"]}] (md/linkify (:text entry)))]]
 
     :tool-call
     (tool-post dispatch! entry)

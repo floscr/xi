@@ -1750,13 +1750,15 @@ body {
 /* Linkified URLs inside code blocks (tool output, inline code) — without this
    they fall back to the browser's default blue, which reads poorly on the
    dark code panels. Match the accent styling used for prose links. */
-code a {
+code a,
+.thinking-text a {
   color: var(--accent);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-code a:hover {
+code a:hover,
+.thinking-text a:hover {
   text-decoration-color: var(--accent);
 }
 
