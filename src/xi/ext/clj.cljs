@@ -304,7 +304,7 @@
     (let [[m argv] (if (map? (first argv))
                      [(first argv) (rest argv)]
                      [nil argv])
-          {:keys [allowed]} @opts
+          {:keys [allowed allowed-commands]} @opts
           bin (first argv)]
       (cond
         (not (string? bin))
@@ -313,7 +313,10 @@
         (str/includes? bin " ")
         (throw (ex-info "clj: sh is argv-style — (sh \"cmd\" \"arg\" …), not a shell string" {}))
 
-        (not (contains? (set allowed) bin))
+        ;; A CLI-wide grant, or an exact-command grant (a :command-scoped
+        ;; rule allowed this literal argv at the gate).
+        (not (or (contains? (set allowed) bin)
+                 (contains? (set allowed-commands) (str/join " " argv))))
         (throw (ex-info (str "clj: `" bin "` is not approved. Literal (sh \"" bin
                              "\" …) calls raise an approval dialog; dynamic command "
                              "names can't be pre-approved — use a literal, or the "
@@ -898,12 +901,13 @@
            "for .startsWith, (str/lower-case s) for .toLowerCase, "
            "(str/split s #\",\") for .split."))))
 
-(defn- eval-code! [{:keys [code room-id cwd allowed allowed-writes allowed-reads
-                           allowed-bg abort-arr]}]
+(defn- eval-code! [{:keys [code room-id cwd allowed allowed-commands allowed-writes
+                           allowed-reads allowed-bg abort-arr]}]
   (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default))
         prints (atom "")
         commit-outs (atom [])]
     (swap! opts assoc :cwd cwd :allowed (set allowed)
+           :allowed-commands (set allowed-commands)
            :allowed-writes (set allowed-writes)
            :allowed-reads (set allowed-reads)
            :allowed-bg (set allowed-bg)
@@ -1199,6 +1203,7 @@
                           :code    (str (:code args))
                           :roomId  (room-key (:_room-id args))
                           :allowed (clj->js (vec (:_allowed args)))
+                          :allowedCommands (clj->js (vec (:_allowed-commands args)))
                           :allowedWrites (clj->js (vec (:_allowed-writes args)))
                           :allowedReads  (clj->js (vec (:_allowed-reads args)))
                           :allowedBg     (clj->js (vec (:_allowed-bg args)))
@@ -1256,6 +1261,7 @@
       (let [res (eval-code! {:code    (str (.-code m))
                              :room-id (.-roomId m)
                              :allowed (js->clj (.-allowed m))
+                             :allowed-commands (js->clj (.-allowedCommands m))
                              :allowed-writes (js->clj (.-allowedWrites m))
                              :allowed-reads (js->clj (.-allowedReads m))
                              :allowed-bg (js->clj (.-allowedBg m))
@@ -1328,8 +1334,11 @@
                    (update :reads conj {:head 'sh :path (:dir m)})
                    ;; Command + its effective :dir, for the per-command engine
                    ;; consult (dir-scoped rules match at the dir the sh runs in).
+                   ;; :literal? — every arg is a string literal, so :command is
+                   ;; exactly the argv that will run (exact-command grants).
                    (string? (first args))
                    (update :cmds conj {:command (str/join " " (filter string? args))
+                                       :literal? (every? string? args)
                                        :dir (:dir m) :bg? false}))))}
    ;; builtin write helpers: record each literal write-target path tagged with
    ;; the helper it came from (so rm targets can be singled out for dir-delete).
@@ -1640,7 +1649,7 @@
    ruleset
    (rules-store/enrich-request
     {:tool :sh :cli (command-cli cmd) :command (str cmd)
-     :effective-cwd cwd :state ext-state}
+     :effective-cwd cwd :repo (rules-store/git-root cwd) :state ext-state}
     ruleset)))
 
 (defn- confirm-all!
@@ -1726,10 +1735,11 @@
         ;; reach clj through the engine consult (`engine-allowed`) below.
         base    (cond-> (global-allow-clis)
                   (bb-trusted? cwd) (conj "bb"))
-        inject  (fn [allowed hint]
+        inject  (fn [allowed allowed-commands hint]
                   (cond-> (update tool-call :arguments assoc
                                   :_room-id room-id
-                                  :_allowed (vec allowed))
+                                  :_allowed (vec allowed)
+                                  :_allowed-commands (vec allowed-commands))
                     (seq bg) (update :arguments assoc :_allowed-bg bg)
                     hint (update :arguments assoc :_hint hint)))]
     (cond
@@ -1767,18 +1777,46 @@
                            (let [eff (cmd-eff-cwd dir)]
                              (sh-decision (ruleset-for eff) ext-st eff command)))
             ;; Engine consult per scanned command (sh + background), modeled as
-            ;; a {:tool :sh} request. :allow → the command's binary is
-            ;; pre-approved; :deny is handled by `denied` below. This is how a
-            ;; user config `:allow` rule reaches clj's shell-outs. SAFE_AUTORUN
-            ;; CLIs are excluded: they already run through clj's autorun path
-            ;; (helper hints + git/ss escalation), which the engine-allow must
-            ;; not short-circuit.
+            ;; a {:tool :sh} request; :deny is handled by `denied` below. This
+            ;; is how a user config `:allow` rule reaches clj's shell-outs. An
+            ;; :allow grants at the rule's granularity:
+            ;; - :cli     — no :command constraint (/clj allow, `:cli` rules):
+            ;;              the binary is pre-approved for the whole eval.
+            ;; - :command — a :command-scoped rule: only that exact literal
+            ;;              command runs (injected as :_allowed-commands), so an
+            ;;              args-specific allow can't leak to other (sh "<cli>" …)
+            ;;              calls — dynamic args, `apply sh` — in the same eval.
+            grants   (mapv (fn [c]
+                             (let [r (cmd-decision c)]
+                               (assoc c :grant
+                                      (when (= :allow (get-in r [:action :type]))
+                                        (cond
+                                          (nil? (get-in r [:match :command])) :cli
+                                          (or (:bg? c) (:literal? c))         :command)))))
+                           cmds)
+            ;; SAFE_AUTORUN CLIs are excluded: they already run through clj's
+            ;; autorun path (helper hints + git/ss escalation), which the
+            ;; engine-allow must not short-circuit.
             engine-allowed (into #{}
-                                 (comp (keep (fn [c]
-                                               (when (= :allow (get-in (cmd-decision c) [:action :type]))
-                                                 (command-cli (:command c)))))
+                                 (comp (filter #(= :cli (:grant %)))
+                                       (map (comp command-cli :command))
                                        (remove #(contains? SAFE_AUTORUN %)))
-                                 cmds)
+                                 grants)
+            engine-commands (into #{}
+                                  (comp (filter #(and (= :command (:grant %)) (not (:bg? %))))
+                                        (map :command))
+                                  grants)
+            ;; CLIs whose every scanned (sh / bg) command is engine-granted —
+            ;; they skip per-CLI approval without the CLI itself being allowed.
+            covered  (fn [bg?]
+                       (->> grants
+                            (filter #(= bg? (boolean (:bg? %))))
+                            (group-by (comp command-cli :command))
+                            (keep (fn [[cli cs]] (when (every? :grant cs) cli)))
+                            (remove #(contains? SAFE_AUTORUN %))
+                            set))
+            covered-sh (covered false)
+            covered-bg (covered true)
             ;; base allowlist ∪ engine-allowed CLIs — the set injected as
             ;; :_allowed (runtime-vetted) and skipped from per-CLI approval.
             allowed-base (into base engine-allowed)
@@ -1811,9 +1849,13 @@
             bg-needed (->> bg-clis
                            (remove base)
                            (remove engine-allowed)
+                           (remove covered-bg)
                            (remove #(contains? SAFE_AUTORUN %))
                            sort)
-            needed'  (->> (concat (remove (set autorun) needed) bg-needed)
+            needed'  (->> (concat (->> needed
+                                       (remove (set autorun))
+                                       (remove covered-sh))
+                                  bg-needed)
                           (remove engine-allowed)
                           distinct)
             tmp-rm?  (some (fn [cmd]
@@ -1915,7 +1957,7 @@
                             (blocked "clj: user denied a directory deletion")
                             (let [writes   (into (set writes) rm-roots)
                                   inject-w (fn [allowed hint]
-                                             (cond-> (inject allowed hint)
+                                             (cond-> (inject allowed engine-commands hint)
                                                (seq writes) (update :arguments assoc
                                                                     :_allowed-writes (vec writes))
                                                (seq reads) (update :arguments assoc

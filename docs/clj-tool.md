@@ -139,16 +139,26 @@ approval dialog as reading there. Approval happens **before** eval, in the
    **shared rules engine** — each scanned command is modeled as a synthetic
    `{:tool :sh :cli <binary> :command <cmd>}` request and run through
    `rules/first-match` over the ordered ruleset (hardened tier + config +
-   session/server runtime + defaults). A rule `:deny` blocks it (with the
-   rule's message); a rule `:allow` pre-approves the binary. Session
+   session/server runtime + defaults). The request carries the effective
+   cwd's git root as `:repo`, so `:repo`-scoped rules match. A rule `:deny`
+   blocks it (with the rule's message). A rule `:allow` grants at the rule's
+   granularity: one **without** a `:command` pre-approves the binary for the
+   eval; a **`:command`-scoped** one grants only that exact, fully-literal
+   command (injected as `:_allowed-commands`). A `:command`-scoped allow
+   never covers other calls to the same CLI in the eval: if any `(sh …)`
+   call to that CLI isn't granted, or has a dynamic arg, the CLI still goes
+   through approval. This is how the built-in `sed -n '<range>p' file` default
+   runs without making `sed -i` runnable. Session
    allow grants (`/clj allow`, or an `:always` answer) are stored here as
    session allow-rules, so they show up in `/rules` — there is no separate
    private allowlist. (See [rules.md](rules.md).)
 3. Unknown commands raise a confirm dialog per binary — *allow once /
    always (= rest of session) / deny*. Parse errors block eval (the gate and
    the evaluator must agree on what runs).
-4. The approved set is injected into the tool call (`:_allowed`); `sh`
-   re-checks it at runtime, so a *dynamically computed* command name that was
+4. The approved set is injected into the tool call (`:_allowed`, plus the
+   exact-command grants in `:_allowed-commands`); `sh` re-checks it at
+   runtime (binary in `:_allowed`, or the space-joined argv in
+   `:_allowed-commands`). So a *dynamically computed* command name that was
    never approved fails with instructions to use a literal.
 
 With no client attached (e.g. `xi prompt`), confirms resolve to deny.

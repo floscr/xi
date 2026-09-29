@@ -225,6 +225,15 @@
     "stat" "du" "readlink" "realpath" "which" "basename" "dirname" "date"
     "wc" "sort" "uniq" "cut" "tr" "git" "rm" "ss" "netstat" "lsof"})
 
+(def sed-print-re
+  "The read-only `sed -n '<addr>p' file…` idiom (a line-range / pattern print,
+   e.g. `sed -n 3060,3420p src/foo.cljs`), matched against clj's space-joined
+   literal (sh …) args. The script may only be `p` commands over line-number,
+   `$`, or `/re/` addresses (`;`-separated), and every trailing arg must be a
+   non-flag operand — so `-i`/`--in-place`, and sed's writing (`w`) or
+   executing (`e`, `s///e`) commands never match and stay gated."
+  #"^sed -n (?:(?:\d+|\$|/[^/\s]*/)(?:,(?:\d+|\$|/[^/\s]*/))?p;?)+(?: [^\s-]\S*)+$")
+
 (def default-rules
   "The built-in rule set, in precedence order, each tagged :scope :default.
    Behavioral nudges come first so a harmless /tmp `rm` or an auto-memory write
@@ -309,6 +318,11 @@
    ;; flow, and its allowlist/config/session softeners sit ABOVE this default
    ;; tier). sudo/remote-copy are denied earlier by the hardened tier.
    {:match  {:tool :sh :cli sh-autorun-clis}
+    :action {:type :allow}
+    :scope  :default}
+   ;; Read-only `sed -n '<range>p' file…` inside a git repo. A :command-scoped
+   ;; allow, so clj grants only that exact literal command — not `sed` at large.
+   {:match  {:tool :sh :cli "sed" :command sed-print-re :repo #"."}
     :action {:type :allow}
     :scope  :default}
    {:match  {:tool :sh}

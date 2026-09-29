@@ -109,6 +109,12 @@ overlap):
   **deny** (hard-blocked).
 - **guarded command** — destructive `bash` patterns (`rm -rf`, `sudo`,
   `chmod -R`, `git push`, `kill`, `fs/delete-tree`, …) → **ask**.
+- **read-only `sed` in a repo** — clj `(sh "sed" "-n" "<addr>p" file…)` (line
+  range, `$`, or `/re/` addresses, `;`-separated `p` commands, e.g.
+  `sed -n 3060,3420p src/foo.cljs`) whose effective cwd is inside a git repo
+  → **allow**. It's `:command`-scoped, so clj grants that exact command only.
+  `-i`/`--in-place`, sed's `w`/`e` commands, any other flag, and a missing file
+  operand don't match and fall to the base `(sh …)` ask.
 - **external MCP tool** — any `mcp__<server>__<tool>` call → **ask**, with an
   informative confirm block (server, tool, and every argument). `[a]lways`
   persists a session allow-rule narrowed to that MCP server + tool. External
@@ -204,8 +210,13 @@ the script and models **each** literal `(sh …)` / background command as its ow
 synthetic request `{:tool :sh :cli <binary> :command <cmd>}`. So `:cli` /
 `:command` rules under `:tool :sh` target individual shell-outs, not the Clojure
 source (a `:tool :clj` rule still matches the raw code). A `:sh` `:allow`
-pre-approves that binary (skips its confirm); a `:sh` `:deny` blocks the eval
-with the rule message. Session grants from `/clj allow <cli>` (and `:always`
+without `:command` pre-approves that binary (skips its confirm); a `:sh` `:deny` blocks the eval
+with the rule message. A `:sh` `:allow` that carries a `:command` grants only
+the exact, fully-literal commands it matched, never the binary at large. If
+another call to the same CLI in the eval isn't matched, or has a dynamic arg,
+the CLI still needs approval (see
+[clj-tool.md](clj-tool.md#sh--permissions)). `:repo` rules match against the git
+root of the command's effective cwd. Session grants from `/clj allow <cli>` (and `:always`
 answers) are stored exactly as `{:tool :sh :cli "<cli>"} → :allow` session
 rules, so they appear in `/rules`. Read-only auto-run CLIs (`ls`, `cat`, `git`,
 `rm`, `ss`, …) keep running through the clj tool's own autorun/escalation path

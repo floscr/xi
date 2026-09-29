@@ -13,13 +13,15 @@
   "Evaluate synchronously via the worker-side entry (xi.ext.clj/eval-message).
    The real clj tool goes through a worker thread (spawned off process.argv[1]
    by xi.cli's isMainThread guard), which doesn't exist in the test bundle."
-  [code & [{:keys [allowed allowed-writes allowed-reads allowed-bg cwd room-id]}]]
+  [code & [{:keys [allowed allowed-commands allowed-writes allowed-reads allowed-bg
+                   cwd room-id]}]]
   (clj-ext/reply->result
    (clj-ext/eval-message #js {:id      0
                               :kind    "clj"
                               :code    code
                               :roomId  (str (or room-id :test))
                               :allowed (clj->js (or allowed []))
+                              :allowedCommands (clj->js (or allowed-commands []))
                               :allowedWrites (clj->js (or allowed-writes []))
                               :allowedReads  (clj->js (or allowed-reads []))
                               :allowedBg     (clj->js (or allowed-bg []))
@@ -378,6 +380,15 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "hi"))))
 
+(deftest sh-runs-exact-allowed-command
+  (testing "an exact-command grant runs that literal argv only"
+    (let [res (eval! "(sh \"echo\" \"hi\")" {:allowed-commands ["echo hi"]})]
+      (is (not (:is-error res)) (result-text res))
+      (is (str/includes? (result-text res) "hi")))
+    (let [res (eval! "(sh \"echo\" \"bye\")" {:allowed-commands ["echo hi"]})]
+      (is (:is-error res))
+      (is (str/includes? (result-text res) "not approved")))))
+
 (deftest sh-returns-stdout-string
   (let [res (eval! "(str/trim (sh \"echo\" \"  hi  \"))" {:allowed ["echo"]})]
     (is (not (:is-error res)) (result-text res))
@@ -474,6 +485,56 @@
           (.then (fn [r]
                    (is (not (:intercepted r)))
                    (is (contains? (set (get-in r [:arguments :_allowed])) "npm"))
+                   (done)))))))
+
+(deftest gate-command-scoped-allow-grants-exact-command
+  ;; A :command-scoped allow grants only the exact literal command
+  ;; (:_allowed-commands) — never the CLI — so it can't leak to other
+  ;; (sh "<cli>" …) calls in the same eval.
+  (async done
+    (let [state {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :sh :cli "npm"
+                                                              :command #"^npm --version$"}
+                                                       :action {:type :allow}}]}}}}}
+          ctx   (assoc (gate-ctx) :get-state (fn [] state) :confirm! nil)
+          res   (gate {:name "clj" :arguments {:code "(sh \"npm\" \"--version\")"}} ctx)]
+      (-> (js/Promise.resolve res)
+          (.then (fn [r]
+                   (is (not (:intercepted r)))
+                   (is (not (contains? (set (get-in r [:arguments :_allowed])) "npm")))
+                   (is (= ["npm --version"] (get-in r [:arguments :_allowed-commands])))
+                   (done)))))))
+
+(deftest gate-command-scoped-allow-does-not-cover-other-calls
+  ;; One allowed + one unmatched call of the same CLI → the CLI still needs
+  ;; approval (headless: blocked); likewise a call with a dynamic arg, whose
+  ;; scanned literal-only command can't stand for the argv that will run.
+  (async done
+    (let [state {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :sh :cli "npm"
+                                                              :command #"^npm --version"}
+                                                     :action {:type :allow}}]}}}}}
+          ctx   (assoc (gate-ctx) :get-state (fn [] state) :confirm! nil)]
+      (-> (js/Promise.all
+           #js [(gate {:name "clj" :arguments {:code "(sh \"npm\" \"--version\") (sh \"npm\" \"publish\")"}} ctx)
+                (gate {:name "clj" :arguments {:code "(sh \"npm\" \"--version\" x)"}} ctx)])
+          (.then (fn [rs]
+                   (doseq [r rs]
+                     (is (:intercepted r))
+                     (is (str/includes? (intercepted-text r) "need approval")))
+                   (done)))))))
+
+(deftest gate-default-allows-sed-print-in-repo
+  ;; Built-in default: read-only `sed -n '<range>p' file` inside a git repo
+  ;; runs without approval, as an exact-command grant; `sed -i` stays gated.
+  (async done
+    (let [ctx (assoc (gate-ctx) :cwd (.cwd js/process))]
+      (-> (js/Promise.all
+           #js [(gate {:name "clj" :arguments {:code "(sh \"sed\" \"-n\" \"1,5p\" \"bb.edn\")"}} ctx)
+                (gate {:name "clj" :arguments {:code "(sh \"sed\" \"-i\" \"s/a/b/\" \"bb.edn\")"}} ctx)])
+          (.then (fn [[ok gated]]
+                   (is (not (:intercepted ok)))
+                   (is (= ["sed -n 1,5p bb.edn"] (get-in ok [:arguments :_allowed-commands])))
+                   (is (:intercepted gated))
+                   (is (str/includes? (intercepted-text gated) "need approval"))
                    (done)))))))
 
 (deftest gate-engine-deny-rule-blocks

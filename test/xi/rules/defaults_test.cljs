@@ -168,5 +168,27 @@
                                  {:tool :bash :command "terraform apply"}))
         "a plain bash command matches no :sh rule")))
 
+(deftest sed-print-in-repo
+  (let [sed (fn [cmd & [repo]] (action-type {:tool :sh :cli "sed" :command cmd
+                                             :repo (or repo "/home/u/code/proj")}))]
+    (testing "read-only `sed -n <addr>p file…` inside a repo is allowed"
+      (is (= :allow (sed "sed -n 3060,3420p src/xi/web/views.cljs")))
+      (is (= :allow (sed "sed -n 1p a b")))
+      (is (= :allow (sed "sed -n $p f")))
+      (is (= :allow (sed "sed -n 10,$p f")))
+      (is (= :allow (sed "sed -n /start/,/end/p f")))
+      (is (= :allow (sed "sed -n 1,5p;20,30p f"))))
+    (testing "writing / executing / flag-carrying forms fall to the base ask"
+      (is (= :ask (sed "sed -i s/a/b/ f")))
+      (is (= :ask (sed "sed -n 1p -i f")))
+      (is (= :ask (sed "sed -n 1p --in-place f")))
+      (is (= :ask (sed "sed -n 1p;w out f")))
+      (is (= :ask (sed "sed -n 1e f")))
+      (is (= :ask (sed "sed -n s/a/b/ep f")))
+      (is (= :ask (sed "sed s/a/b/ f")))
+      (is (= :ask (sed "sed -n 1,5p")) "no file operand (stdin / dynamic arg)"))
+    (testing "outside a git repo it asks"
+      (is (= :ask (action-type {:tool :sh :cli "sed" :command "sed -n 1p f"}))))))
+
 (deftest defaults-tagged-scope
   (is (every? #(= :default (:scope %)) defaults/default-rules)))

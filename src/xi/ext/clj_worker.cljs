@@ -10,7 +10,8 @@
 
    Protocol (structured-clone plain JS objects):
      main → worker  #js {:id n :kind \"clj\"|\"bb\" :code s :cwd s
-                         :allowed #js[...] :roomId s :task s :args #js[...]
+                         :allowed #js[...] :allowedCommands #js[...]
+                         :roomId s :task s :args #js[...]
                          :abortSab SharedArrayBuffer}
      worker → main  #js {:id n :text s :isError bool}
                     | #js {:processEvent \"register\"|\"deregister\" …}
