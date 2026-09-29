@@ -59,3 +59,18 @@
                         (tree-seq vector? seq thead))
             right-th (second ths)]
         (is (= {:style {:text-align "right"}} (second right-th)))))))
+
+(deftest table-cells-carry-plain-text-column-labels
+  (let [out (md/render "| **Name** | `Default` |\n| --- | ---: |\n| a | 1 |")
+        tds (find-all (find-tag out :tbody) :td)]
+    (testing "each td gets its header's text, markup stripped, for list mode"
+      (is (= ["Name" "Default"] (mapv #(:data-label (second %)) tds))))
+    (testing "alignment attrs are kept alongside the label"
+      (is (= {:text-align "right"} (:style (second (second tds))))))))
+
+(deftest table-has-table-list-mode-toggle
+  (let [out   (md/render "| A |\n| --- |\n| 1 |")
+        items (->> (find-all out :button)
+                   (filter #(some #{"button-group-item"} (:class (second %)))))]
+    (is (= 2 (count items)))
+    (is (every? #(fn? (get-in (second %) [:on :click])) items))))

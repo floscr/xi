@@ -804,48 +804,70 @@ body {
 
 /* ---- Table plain-text toggle ---------------------------------------------
    Each rendered markdown table (xi.markdown.hiccup) is wrapped in
-   .md-table-wrap with a small toggle button. Clicking the button flips the
-   .as-text class on the wrapper (pure DOM, not app state — not persisted).
-   In text mode the grid is flattened into one entry per row: first column
-   bold as a heading, remaining columns muted on their own lines. Copies
-   cleanly as plain text instead of a mangled grid. */
+   .md-table-wrap with a Table/List segmented control (ui.button-group).
+   Clicking a segment sets the .as-text class on the wrapper (pure DOM, not
+   app state — not persisted); that class alone decides which segment looks
+   active. List mode renders one entry per row: first column as a heading,
+   middle columns as a "Label value" meta line (labels from td[data-label]),
+   last column as body-size prose. Copies cleanly as plain text. */
 .md-table-wrap { position: relative; margin: var(--size-2) 0; }
 
-.md-table-toggle {
-  display: inline-flex; align-items: center; gap: 0.35em;
-  font: inherit; font-size: var(--font-xs);
-  color: var(--fg-2); background: var(--bg-1);
-  border: var(--border-0); border-radius: var(--radius-sm);
-  padding: 0.1em 0.5em; margin-bottom: 0.35em;
-  cursor: pointer; user-select: none; line-height: 1.5;
+/* compact boxed button-group: sized for inline use above a table */
+.md-table-toggle { padding: 2px; gap: 2px; margin-bottom: var(--size-2); user-select: none; }
+.md-table-toggle .button-group-item {
+  height: 1.5rem; padding: 0 var(--size-2); gap: var(--size-1);
+  font-size: 0.75rem; color: var(--fg-2);
 }
-.md-table-toggle:hover { color: var(--fg-0); background: var(--bg-2); }
-.md-table-toggle::before { content: "\25A6"; }        /* ▦ grid glyph */
-.md-table-toggle::after  { content: "Text"; }
-.md-table-wrap.as-text .md-table-toggle::after { content: "Grid"; }
+.md-table-toggle .button-group-item .icon { width: 0.8rem; height: 0.8rem; }
+.md-table-wrap:not(.as-text) .md-table-mode-grid,
+.md-table-wrap.as-text .md-table-mode-list {
+  background: var(--bg-0); color: var(--fg-0); box-shadow: var(--shadow-0);
+}
 
-/* text mode: flatten the table into bulleted, muted-label lines (Option D) */
+/* list mode */
 .md-table-wrap.as-text .md-table {
   display: block; border: 0; overflow: visible;
-  white-space: normal; font-size: var(--font-xs);
+  max-width: 72ch; white-space: normal; font-size: 1em;
 }
 .md-table-wrap.as-text .md-table thead { display: none; }
 .md-table-wrap.as-text .md-table tbody,
 .md-table-wrap.as-text .md-table tr,
 .md-table-wrap.as-text .md-table td { display: block; }
 .md-table-wrap.as-text .md-table tr {
-  padding: 0.35em 0 0.4em 0.9em; margin: 0;
-  border: 0; border-left: 2px solid var(--fg-2);
+  padding: var(--size-3) 2px; margin: 0;
+  border: 0; border-top: var(--border-0);
 }
-.md-table-wrap.as-text .md-table tr:hover { border-left-color: var(--accent); }
+.md-table-wrap.as-text .md-table tr:last-child { border-bottom: var(--border-0); }
 .md-table-wrap.as-text .md-table td {
   border: 0; padding: 0; white-space: normal; text-align: left !important;
 }
 .md-table-wrap.as-text .md-table td:first-child {
-  font-weight: 600; margin-bottom: 0.1em;
+  font-weight: 600; line-height: 1.45; margin-bottom: 0.2em;
 }
-.md-table-wrap.as-text .md-table td:not(:first-child) {
-  color: var(--fg-2); font-size: 0.95em;
+.md-table-wrap.as-text .md-table tr:hover td:first-child { color: var(--accent); }
+/* "**name** `path`": the path becomes a quiet label next to the name */
+.md-table-wrap.as-text .md-table td:first-child strong + code {
+  font-weight: 400; font-size: 0.8em; color: var(--fg-2);
+  background: none; border: 0; padding: 0; margin-left: 0.4em;
+}
+/* a first cell that is only code (option names, symbols) stays prominent */
+.md-table-wrap.as-text .md-table td:first-child > code:only-child {
+  font-weight: 500; color: inherit; background: none; border: 0; padding: 0;
+}
+/* middle columns: one inline "Label value" meta line */
+.md-table-wrap.as-text .md-table td:not(:first-child):not(:last-child) {
+  display: inline-block; margin: 0 var(--size-4) 0.25em 0;
+  font-size: 0.83em; color: var(--fg-1);
+}
+.md-table-wrap.as-text .md-table td:not(:first-child):not(:last-child)::before {
+  content: attr(data-label); color: var(--fg-2); margin-right: 0.4em;
+}
+.md-table-wrap.as-text .md-table td:not(:first-child):not(:last-child) code {
+  background: none; border: 0; padding: 0;
+}
+/* last column: the prose, at readable size and contrast */
+.md-table-wrap.as-text .md-table td:last-child:not(:first-child) {
+  color: var(--fg-1); font-size: 0.95em; line-height: 1.6;
 }
 
 .error-text { color: var(--danger); }

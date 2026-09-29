@@ -4,7 +4,8 @@
             [xi.url :as url]
             [xi.highlight.core :as hl]
             [xi.highlight.bundle :as grammars]
-            [xi.highlight.theme-css :as theme]))
+            [xi.highlight.theme-css :as theme]
+            [ui.button-group :as bg]))
 
 ;; ---------------------------------------------------------------------------
 ;; Bare-URL linkification (for pre-formatted / code contexts)
@@ -57,6 +58,40 @@
   "Render inline tokens to hiccup nodes."
   [tokens]
   (mapv render-inline-token tokens))
+
+(defn- inline-text
+  "Flatten inline tokens to their visible plain text (markup dropped)."
+  [tokens]
+  (apply str
+         (for [t tokens]
+           (cond
+             (string? t) t
+             (vector? t) (let [[tag content] t]
+                           (case tag
+                             (:bold :italic :strike) (inline-text content)
+                             :code content
+                             :link (:text content)
+                             ""))
+             :else ""))))
+
+(defn- table-mode-toggle
+  "Table ⇄ List segmented control. The mode is pure DOM state: the .as-text
+   class on the enclosing .md-table-wrap, which also drives which segment
+   looks active (see style.css), so there's no second flag to keep in sync."
+  []
+  (let [set-mode (fn [text?]
+                   (fn [e]
+                     (.. e -currentTarget -parentNode -parentNode -classList
+                         (toggle "as-text" text?))))]
+    (bg/button-group {:variant :boxed :class "md-table-toggle"}
+                     (bg/button-group-item {:icon :grid :class "md-table-mode-grid"
+                                            :attrs {:type "button" :title "Show as table"}
+                                            :on-click (set-mode false)}
+                                           "Table")
+                     (bg/button-group-item {:icon :list :class "md-table-mode-list"
+                                            :attrs {:type "button" :title "Show as list"}
+                                            :on-click (set-mode true)}
+                                           "List"))))
 
 ;; ---------------------------------------------------------------------------
 ;; Block rendering
@@ -123,13 +158,10 @@
                            (case (nth align i :none)
                              :right {:style {:text-align "right"}}
                              :center {:style {:text-align "center"}}
-                             {}))]
+                             {}))
+              labels (mapv inline-text header)]
           [:div {:class "md-table-wrap"}
-           [:button {:class "md-table-toggle" :type "button"
-                     :title "Toggle plain-text view"
-                     :on {:click (fn [e]
-                                   (.. e -currentTarget -parentNode -classList
-                                       (toggle "as-text")))}}]
+           (table-mode-toggle)
            [:table {:class "md-table"}
             [:thead
              (into [:tr]
@@ -138,7 +170,11 @@
             (into [:tbody]
                   (for [r rows]
                     (into [:tr]
-                          (map-indexed (fn [i c] (into [:td (cell-attrs i)] (render-inline c)))
+                          ;; data-label carries the column name into list
+                          ;; mode, where the thead is hidden.
+                          (map-indexed (fn [i c]
+                                         (into [:td (assoc (cell-attrs i) :data-label (nth labels i ""))]
+                                               (render-inline c)))
                                        r))))]])
 
         :hr
