@@ -1,4 +1,4 @@
-(ns xi.provider.openai.responses
+(ns xi.providers.openai.responses
   "Shared OpenAI Responses-API adapter (streaming SSE + Xi's own tool-use loop).
 
    Both the OpenCode Zen Responses surface (xi.provider.zen.responses) and the

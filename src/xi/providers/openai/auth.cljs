@@ -1,4 +1,4 @@
-(ns xi.provider.openai.auth
+(ns xi.providers.openai.auth
   "Reuse the Codex CLI's ChatGPT-subscription credentials.
 
    Codex (the `codex` CLI) stores its OAuth tokens at ~/.codex/auth.json:

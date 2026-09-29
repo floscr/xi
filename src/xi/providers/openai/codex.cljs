@@ -1,4 +1,4 @@
-(ns xi.provider.openai.codex
+(ns xi.providers.openai.codex
   "OpenAI ChatGPT-subscription (Codex) provider.
 
    Talks to the same Codex Responses backend the `codex` CLI uses —
@@ -17,8 +17,8 @@
 
    Interface: (stream-messages opts) → {:promise :abort!}."
   (:require [clojure.string :as str]
-            [xi.provider.openai.auth :as auth]
-            [xi.provider.openai.responses :as responses]))
+            [xi.providers.openai.auth :as auth]
+            [xi.providers.openai.responses :as responses]))
 
 (def ^:private codex-url "https://chatgpt.com/backend-api/codex/responses")
 ;; Identify as the codex CLI (the client these credentials belong to).

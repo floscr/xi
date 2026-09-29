@@ -1,4 +1,4 @@
-(ns xi.provider.zen.anthropic
+(ns xi.providers.zen.anthropic
   "OpenCode Zen Anthropic Messages surface (Claude + Qwen models).
 
    Raw HTTP to POST https://opencode.ai/zen/v1/messages — the standard

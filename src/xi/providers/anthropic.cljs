@@ -1,4 +1,4 @@
-(ns xi.provider.claude
+(ns xi.providers.anthropic
   "Claude provider — uses the Claude Agent SDK for API access.
    Claude proposes tool calls via MCP; Xi intercepts and executes them
    through its own tool pipeline. Mirrors Pi's claude-bridge architecture.

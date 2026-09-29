@@ -1,4 +1,4 @@
-(ns xi.provider.ollama
+(ns xi.providers.ollama
   "Direct OpenAI-compatible streaming provider for Ollama (and similar).
    A thin wrapper over `xi.provider.openai-compat`: supplies the local base
    URL and an `ensure-ollama-running!` pre-flight that spawns `ollama serve`
@@ -7,7 +7,7 @@
    Interface: (stream-messages opts) → {:promise :abort!}.
    Extension hooks are injected via :tool-gate — no ext/core dependency."
   (:require [clojure.string :as str]
-            [xi.provider.openai-compat :as oai]))
+            [xi.providers.openai-compat :as oai]))
 
 ;; ── Config ──────────────────────────────────────────────────────────────────
 

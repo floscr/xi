@@ -1,6 +1,6 @@
-(ns xi.provider.zen.models-test
+(ns xi.providers.zen.models-test
   (:require [cljs.test :refer [deftest is testing]]
-            [xi.provider.zen.models :as models]))
+            [xi.providers.zen.models :as models]))
 
 ;; ── strip-prefix ──
 

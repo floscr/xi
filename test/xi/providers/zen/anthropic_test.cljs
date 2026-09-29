@@ -1,10 +1,10 @@
-(ns xi.provider.zen.anthropic-test
+(ns xi.providers.zen.anthropic-test
   "Tests for the prompt-caching breakpoint helpers. These drive the cost
    reduction: without cache_control on the static prefix (system + tools +
    prior turns) the Anthropic surface re-bills the whole prefix on every
    tool-loop iteration."
   (:require [cljs.test :refer [deftest is testing]]
-            [xi.provider.zen.anthropic :as anthropic]))
+            [xi.providers.zen.anthropic :as anthropic]))
 
 (def ^:private cc {:type "ephemeral"})
 

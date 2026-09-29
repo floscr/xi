@@ -1,4 +1,4 @@
-(ns xi.provider.zen.auth
+(ns xi.providers.zen.auth
   "Resolve the OpenCode Zen API key.
 
    Resolution order:

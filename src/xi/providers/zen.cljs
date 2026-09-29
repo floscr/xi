@@ -1,4 +1,4 @@
-(ns xi.provider.zen
+(ns xi.providers.zen
   "OpenCode Zen provider — a curated multi-model AI gateway.
 
    Zen serves models across several wire formats behind one gateway
@@ -18,11 +18,11 @@
    chat-completions models work without a key.
 
    Interface: (stream-messages opts) → {:promise :abort!}."
-  (:require [xi.provider.openai-compat :as oai]
-            [xi.provider.zen.anthropic :as anthropic]
-            [xi.provider.zen.auth :as auth]
-            [xi.provider.zen.models :as models]
-            [xi.provider.zen.responses :as responses]))
+  (:require [xi.providers.openai-compat :as oai]
+            [xi.providers.zen.anthropic :as anthropic]
+            [xi.providers.zen.auth :as auth]
+            [xi.providers.zen.models :as models]
+            [xi.providers.zen.responses :as responses]))
 
 (defn- unsupported
   "Return a turn handle that reports an unsupported wire format instead of

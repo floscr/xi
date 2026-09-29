@@ -1,4 +1,4 @@
-(ns xi.provider.zen.responses
+(ns xi.providers.zen.responses
   "OpenCode Zen OpenAI-Responses surface (GPT, Grok, Muse models).
 
    Raw HTTP to POST https://opencode.ai/zen/v1/responses — the OpenAI Responses
@@ -12,7 +12,7 @@
    iteration — so it needs no server-side conversation state.
 
    Interface: (stream-messages config opts) → {:promise :abort!}."
-  (:require [xi.provider.openai.responses :as responses]))
+  (:require [xi.providers.openai.responses :as responses]))
 
 (def ^:private max-output-tokens 32000)
 

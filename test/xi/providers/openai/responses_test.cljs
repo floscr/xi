@@ -1,6 +1,6 @@
-(ns xi.provider.openai.responses-test
+(ns xi.providers.openai.responses-test
   (:require [cljs.test :refer [deftest is testing]]
-            [xi.provider.openai.responses :as responses]))
+            [xi.providers.openai.responses :as responses]))
 
 ;; ── history->responses-input ──
 ;;

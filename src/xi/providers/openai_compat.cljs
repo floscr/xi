@@ -1,4 +1,4 @@
-(ns xi.provider.openai-compat
+(ns xi.providers.openai-compat
   "Shared OpenAI-compatible streaming provider core.
    Speaks the OpenAI `/chat/completions` SSE wire format: streams text +
    reasoning deltas, accumulates tool calls, and drives Xi's tool-use loop.

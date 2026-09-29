@@ -1,4 +1,4 @@
-(ns xi.provider.zen.models
+(ns xi.providers.zen.models
   "OpenCode Zen model metadata: id normalization + wire-format routing.
 
    Zen's `/v1/models` endpoint returns bare model ids with no hint about which
