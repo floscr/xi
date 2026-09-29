@@ -91,8 +91,6 @@ namespace.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `XI_MODEL` | `claude-opus-4-8` | Default model id. |
-| `XI_EFFORT` | `high` | Reasoning effort. |
 | `XI_CWD` | `process.cwd()` | Working directory for the room. |
 | `ANTHROPIC_API_KEY` | — | API auth, passed through to the Claude CLI (otherwise the CLI's own login is used). |
 | `XI_THEME_MODE` | auto-detected | TUI color scheme override: `light` or `dark` (`xi.tui.theme-mode`). |

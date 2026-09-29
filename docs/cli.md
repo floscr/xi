@@ -31,7 +31,7 @@ Defaults to `ws://localhost:<port>`.
 | Flag | Applies to | Description |
 | --- | --- | --- |
 | `--port N` | all | Override the default port (`7474`; falls back to `XI_PORT`). |
-| `--model NAME` | all | Override the default model (also honours `XI_MODEL`). |
+| `--model NAME` | all | Override the default model. Without it: the last model picked with `/model`, else the built-in default. |
 | `--session ID` | standalone, `join`, `create`, `prompt` | Resume a saved session by its id instead of opening a fresh room. In prompt mode this continues the saved conversation (the provider transcript is resumed) — chain one-shots into a stateful conversation. |
 | `--prompt TEXT` | standalone, client | Send an initial prompt as soon as the room is ready. |
 | `--no-auto-join` | standalone | Stay a local room; don't connect to a running server. |
@@ -66,7 +66,7 @@ An optional `agent.edn` in that directory customizes the agent:
 | --- | --- |
 | `:system-prompt` | System prompt text; replaces the default personal-agent prompt. |
 | `:system-prompt-file` | Path to a file holding the system prompt (relative paths resolve against the agent dir). Wins over the default; `:system-prompt` wins over it. |
-| `:model` | Default model for this agent. Precedence: `--model` flag > `agent.edn` > `XI_MODEL` > built-in default. |
+| `:model` | Default model for this agent. Precedence: `--model` flag > `agent.edn` > last `/model` pick > built-in default. |
 
 The intended scripting loop:
 
@@ -87,8 +87,7 @@ the process by hand — see [bb-client.md](bb-client.md).
 
 ## Environment
 
-The CLI honours `XI_MODEL`, `XI_EFFORT`, `XI_PORT`, `XI_CWD` and
-`ANTHROPIC_API_KEY` — see
+The CLI honours `XI_PORT`, `XI_CWD` and `ANTHROPIC_API_KEY` — see
 [config.md](config.md#environment-variables) for defaults and the full list.
 
 ## Examples

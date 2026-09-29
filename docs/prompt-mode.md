@@ -30,7 +30,7 @@ terminal prints a usage error instead of hanging).
                 a throwaway CLAUDE_CONFIG_DIR that is deleted on exit, so the
                 Claude transcript never lands in ~/.claude/projects and the run
                 never appears in the Xi or Claude session lists.
---model NAME    Override the default model (also honours XI_MODEL).
+--model NAME    Override the default model.
 --personal-agent-only
                 Restricted one-shot: the personal-agent system prompt only (no
                 AGENTS.md, profile, or skills context) and provider tools

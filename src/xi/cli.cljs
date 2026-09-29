@@ -176,7 +176,7 @@ USAGE
 
 FLAGS
   --port N                   Override the default port (7474). All modes.
-  --model NAME               Override the default model (also honours XI_MODEL).
+  --model NAME               Override the default model.
   --session ID               Resume a saved session by id (standalone/join/create).
   --prompt TEXT              Send an initial prompt on launch (standalone/client).
   --no-auto-join             Standalone: stay local, don't join a running server.
@@ -201,7 +201,6 @@ FLAGS
   --limit N                  sessions: cap the number of chats listed.
 
 ENVIRONMENT
-  XI_MODEL, XI_EFFORT        Default model / reasoning effort.
   XI_PORT                    Default port when --port is omitted. All modes.
   XI_CWD                     Working directory the agent runs in.
   ANTHROPIC_API_KEY          Auth (otherwise the Claude CLI's own login).
@@ -278,11 +277,9 @@ See docs/cli.md for the full reference.")
 
 (defn- resolve-model-opts [{:keys [model]}]
   {:model  (or model
-               (aget js/process.env "XI_MODEL")
                (session/load-preferred-model)
                DEFAULT_MODEL)
-   :effort (or (aget js/process.env "XI_EFFORT")
-               "high")})
+   :effort "high"})
 
 (defn- make-handlers
   "Base pure handler map shared by every mode. extra-commands are extension
