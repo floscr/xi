@@ -68,8 +68,8 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   survive re-renders)
 - **Viewer mode** (overflow menu → "Viewer mode", `:web/viewer-mode?`,
   persisted to `localStorage "xi-viewer-mode"`): collapses tool posts
-  (read/write/clj/…) to header-only rows and folds each run of consecutive
-  ones into a single `.viewer-tool-group` box. A run breaks on any text
+  (read/write/clj/…) and thinking blocks to header-only rows and folds each
+  run of consecutive ones into a single `.viewer-tool-group` box. A run breaks on any text
   entry or on a tool with a *pending* permission ask (which stays expanded
   for its Allow/Deny buttons). An already-answered tool joins the group and
   shows a decision icon (✓/✗) at the right of its header. Each collapsed

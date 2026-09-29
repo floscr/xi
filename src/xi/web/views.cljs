@@ -653,8 +653,10 @@
       (render-md (:text entry))]]
 
     :thinking
-    [:div {:class ["post" "post--assistant"]}
-     [:details {:class ["thinking-block"] :open true}
+    [:div {:class ["post" "post--assistant" "post--thinking"]}
+     [:details {:class (cond-> ["thinking-block"]
+                         (:viewer-collapsed? entry) (conj "thinking-block--viewer"))
+                :open (not (:viewer-collapsed? entry))}
       [:summary {:class ["thinking-toggle"]}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
@@ -2415,9 +2417,9 @@
         chips)])))
 
 (defn- group-viewer-items
-  "Viewer mode: collapse runs of consecutive collapsible tool posts into a
-   single grouped container that shows just their headers. `items` is an
-   ordered seq of {:key :node :group?}. Runs of :group? true fold into one
+  "Viewer mode: collapse runs of consecutive collapsible tool and thinking
+   posts into a single grouped container that shows just their headers.
+   `items` is an ordered seq of {:key :node :group?}. Runs of :group? true fold into one
    `.viewer-tool-group`; everything else (text, dialogs, non-collapsible
    tools) passes through unchanged, breaking the run."
   [items]
@@ -2620,8 +2622,10 @@
                                ;; Allow/Deny buttons, so it stays expanded and
                                ;; breaks the run). Already-answered tools join the
                                ;; group and show a decision icon in their header.
+                               ;; Thinking blocks fold into the same group as a
+                               ;; collapsed "Thinking" row.
                                collapsible? (and viewer?
-                                                 (= :tool-call (:kind entry))
+                                                 (#{:tool-call :thinking} (:kind entry))
                                                  (not= p perm-tool-idx))
                                post  (entry->post
                                       dispatch!

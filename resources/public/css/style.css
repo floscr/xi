@@ -1668,8 +1668,10 @@ body {
   overflow: hidden;
 }
 
-.viewer-tool-group .post--tool {
+.viewer-tool-group .post--tool,
+.viewer-tool-group .post--thinking {
   margin: 0;
+  padding: 0;
 }
 
 /* Tools inside a group are not their own box — the group frames them. */
@@ -1680,9 +1682,24 @@ body {
   background: transparent;
 }
 
-/* Single divider between consecutive tools in the group. */
-.viewer-tool-group .post--tool + .post--tool .tool-call-block--viewer {
+/* Single divider between consecutive rows (tools / thinking) in the group. */
+.viewer-tool-group .post + .post > .tool-call-block--viewer,
+.viewer-tool-group .post + .post > .thinking-block--viewer {
   border-top: var(--border-0);
+}
+
+/* Thinking folded into a viewer group: a header row matching the tool rows;
+   expanded, its text sits flush in the group box below a hairline. */
+.viewer-tool-group .thinking-block--viewer { margin: 0; }
+.thinking-block--viewer > .thinking-toggle {
+  padding: var(--size-1) var(--size-2);
+  font-size: var(--font-xs);
+}
+.thinking-block--viewer > .thinking-text {
+  border: none;
+  border-top: var(--border-0);
+  border-radius: 0;
+  background: transparent;
 }
 
 /* Right-side status badge: a filled circle with a white icon pinned to the

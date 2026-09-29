@@ -7,8 +7,9 @@
    of real sessions and reproducible.
 
    Views:
-     ?demo=sessions  → the session list
-     ?demo=chat      → a chat room mid-conversation"
+     ?demo=sessions    → the session list
+     ?demo=chat        → a chat room mid-conversation
+     ?demo=chat-viewer → the same room in viewer mode (grouped tool rows)"
   (:require [xi.core.state :as state]))
 
 (def ^:private now (js/Date.now))
@@ -133,6 +134,9 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
     :result edit-result
     :is-error false
     :status :done}
+   {:kind :thinking
+    :text "The edit landed cleanly. Run the ThemeToggle tests to make sure the persistence path works."
+    :done? true}
    {:kind :tool-call
     :id "t3"
     :tool "Bash"
@@ -205,4 +209,5 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
   [view]
   (case view
     "chat" (chat-state)
+    "chat-viewer" (assoc (chat-state) :web/viewer-mode? true)
     (sessions-state)))
