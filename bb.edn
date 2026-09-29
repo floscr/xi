@@ -323,20 +323,21 @@
                 "-o" (str (System/getProperty "user.home") "/.config/xi/treesitter"))}
 
   claude:build
-  {:doc "nix-build the pinned Claude CLI (flake.nix + providers/anthropic/claude-code-manifest.json) to the providers/anthropic/claude out-link the SDK runner prefers over PATH"
-   :task (do (shell "nix" "build" ".#claude-code" "-o" "providers/anthropic/claude")
+  {:doc "Force a nix build of the pinned Claude CLI (providers/anthropic/nix) to the providers/anthropic/claude out-link. Optional: the runner builds it itself when it is missing or not the pinned version."
+   :task (do (shell "nix" "build" "path:./providers/anthropic/nix#claude-code"
+                    "-o" "providers/anthropic/claude")
              (shell "providers/anthropic/claude/bin/claude" "--version"))}
 
   claude:update
-  {:doc "Pin the Claude CLI to the latest upstream release (or `bb claude:update <version>`): rewrites providers/anthropic/claude-code-manifest.json and rebuilds providers/anthropic/claude. Takes effect on the next turn (runners are spawned per turn)."
+  {:doc "Pin the Claude CLI to the latest upstream release (or `bb claude:update <version>`): rewrites providers/anthropic/nix/claude-code-manifest.json and rebuilds providers/anthropic/claude. Takes effect on the next turn (runners are spawned per turn)."
    :task (let [base "https://downloads.claude.ai/claude-code-releases"
                version (or (first *command-line-args*)
                            (clojure.string/trim
                             (:out (shell {:out :string} "curl" "-fsSL" (str base "/latest")))))
                manifest (:out (shell {:out :string} "curl" "-fsSL"
                                      (str base "/" version "/manifest.zst.json")))]
-           (spit "providers/anthropic/claude-code-manifest.json" manifest)
-           (println (str "Pinned Claude CLI " version " → providers/anthropic/claude-code-manifest.json"))
+           (spit "providers/anthropic/nix/claude-code-manifest.json" manifest)
+           (println (str "Pinned Claude CLI " version " → providers/anthropic/nix/claude-code-manifest.json"))
            (run 'claude:build))}
 
   demo:key

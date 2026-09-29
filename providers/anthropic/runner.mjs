@@ -18,15 +18,15 @@
 //     {type:"error", message}
 //
 // Everything this provider needs at runtime lives in this directory: the
-// runner, its node_modules, and the pinned Claude CLI (claude-code-manifest.json
-// → the `claude` out-link, see flake.nix).
+// runner, its node_modules, and the pinned Claude CLI (the ./nix flake → the
+// `claude` out-link). Both are set up by the runner itself on first use.
 //
 // The runner is thin: it forwards SDK messages (the host decodes them) and
 // proxies each tool call back to the host (where the permission gate +
 // registry live). It never touches the host's data.
 
-import { execSync } from "node:child_process";
-import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync, execSync } from "node:child_process";
+import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -180,17 +180,68 @@ function buildMcpServer(toolDefs) {
 // pathToClaudeCodeExecutable — and only fall back to the SDK's own binary
 // when there is none. XI_CLAUDE_CLI_PATH overrides the lookup.
 //
-// Before PATH, prefer the pinned CLI next to this script (./claude/bin/claude)
-// — the `nix build .#claude-code` out-link written by `bb claude:build` /
-// `bb claude:update`. The CLI gates new model ids on its own version and the
-// system package lags upstream; the out-link makes the pinned version win even
-// when xi is launched from a directory without the repo's direnv shell loaded.
+// Before PATH, prefer the pinned CLI: ./nix is a flake building the release
+// named in ./nix/claude-code-manifest.json, linked to ./claude. The CLI gates
+// new model ids on its own version and the system package lags upstream, so
+// the pin has to win wherever xi is launched from.
+//
+// The link is built here, on demand, when it is missing or not the pinned
+// version — a `nix run` per turn would re-evaluate the flake every time, and
+// the SDK wants an executable path anyway. Without nix on PATH, or when the
+// build fails (offline), whatever is already linked or on PATH is used.
 
-const pinnedClaude = join(runnerDir, "claude", "bin", "claude");
+const cliFlakeDir = join(runnerDir, "nix");
+const cliOutLink = join(runnerDir, "claude");
+const pinnedClaude = join(cliOutLink, "bin", "claude");
+
+function pinnedVersion() {
+  try {
+    const manifest = readFileSync(join(cliFlakeDir, "claude-code-manifest.json"), "utf8");
+    return JSON.parse(manifest).version || null;
+  } catch {
+    return null;
+  }
+}
+
+// The out-link resolves to /nix/store/<hash>-claude-code-<version>.
+function linkedVersion() {
+  try {
+    const m = /-claude-code-([^/]+)$/.exec(realpathSync(cliOutLink));
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasNix() {
+  try {
+    execFileSync("nix", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ensurePinnedClaude() {
+  const want = pinnedVersion();
+  if (!want || linkedVersion() === want || !hasNix()) return;
+  process.stderr.write("[runner] building pinned claude cli " + want + "\n");
+  try {
+    execFileSync("nix", [
+      "--extra-experimental-features", "nix-command flakes",
+      "build", "path:" + cliFlakeDir + "#claude-code",
+      "-o", cliOutLink,
+    ], { stdio: ["ignore", "pipe", "pipe"], timeout: 10 * 60 * 1000 });
+  } catch (e) {
+    const detail = String((e && (e.stderr || e.message)) || e).trim();
+    process.stderr.write("[runner] claude cli build failed, falling back: " + detail + "\n");
+  }
+}
 
 function resolveClaudeExecutable() {
   const override = process.env.XI_CLAUDE_CLI_PATH;
   if (override) return override;
+  ensurePinnedClaude();
   if (existsSync(pinnedClaude)) return realpathSync(pinnedClaude);
   try {
     const w = execSync("which claude", { encoding: "utf8" }).trim();

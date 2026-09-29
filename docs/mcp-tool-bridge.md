@@ -77,7 +77,7 @@ host ignores any frame after it.
 |------|------|
 | `providers/anthropic/runner.mjs` | SDK integration: query lifecycle, MCP server, tool-call proxying |
 | `providers/anthropic/package.json` | pins the SDK version — upgrade here; the runner reinstalls when the lockfile changes |
-| `providers/anthropic/claude-code-manifest.json` | pins the Claude CLI release (`bb claude:update`); built to the `claude` out-link next to it |
+| `providers/anthropic/nix/` | pins the Claude CLI release; the runner builds it to the `claude` out-link — see [The pinned CLI](#the-pinned-cli) |
 | `src/xi/providers/runner.cljs` | host side of the runner protocol, provider-agnostic: spawn, framing, tool-call proxying, terminal frame |
 | `src/xi/providers/anthropic.cljs` | Claude-specific: query options, SDK message decoding, tool gate + registry wiring |
 | `src/xi/tools/registry.cljs` | Tool definitions and execute fns |
@@ -165,10 +165,37 @@ patterns / server-control live in `ext/permission_gate.cljs`.
 
 The SDK ships a native, generically-linked CC binary that can't run on NixOS
 (wrong `ld-linux`). The runner's `resolveClaudeExecutable()` instead resolves,
-in order: `XI_CLAUDE_CLI_PATH`, the repo-pinned `providers/anthropic/claude/bin/claude`
-out-link (`bb claude:build`, see `flake.nix`), then `claude` from `PATH`
-(following the symlink with `realpathSync`), and passes the result as
-`pathToClaudeCodeExecutable`.
+in order: `XI_CLAUDE_CLI_PATH`, the pinned `providers/anthropic/claude/bin/claude`
+out-link, then `claude` from `PATH` (following the symlink with
+`realpathSync`), and passes the result as `pathToClaudeCodeExecutable`.
+
+### The pinned CLI
+
+The CLI gates new model ids on its own version ("Claude Code X does not
+support this model; version Y or newer is required") and nixpkgs lags
+upstream, so the release is pinned next to the runner:
+
+| File | Role |
+|------|------|
+| `providers/anthropic/nix/claude-code-manifest.json` | the upstream release manifest — this *is* the pin |
+| `providers/anthropic/nix/flake.nix` + `flake.lock` | nixpkgs' `claude-code` built with that manifest |
+| `providers/anthropic/claude` | out-link to the build (gitignored) |
+
+Nothing is built by hand and there is no dev shell to enter: before each turn
+the runner compares the manifest's version with the version the out-link
+points at, and runs `nix build path:…/nix#claude-code -o …/claude` when they
+differ or the link is missing. When they match this costs a file read. Without
+`nix` on `PATH`, or when the build fails (offline), it uses whatever is already
+linked or on `PATH`.
+
+It builds once rather than using `nix run` per turn: the SDK needs an
+executable path, and `nix run` would re-evaluate the flake on every turn and
+side turn. The flake sits in its own directory and is used as a `path:` flake so
+that evaluating it copies three small files into the store rather than
+`node_modules` or the repo, and so it works on hosts without a git checkout.
+
+`bb claude:update [version]` bumps the manifest to the latest release;
+`bb claude:build` forces a build. Both take effect on the next turn.
 
 ## Prompt caching & token hygiene
 

@@ -3,9 +3,7 @@ node_modules/
 .demo-home/
 .shadow-cljs/
 .cpcache/
-.direnv/
-result
-# `bb claude:build` out-link to the pinned Claude CLI (see flake.nix)
+# out-link to the pinned Claude CLI, built by the runner (providers/anthropic/nix)
 providers/anthropic/claude
 *.js.map
 resources/public/js/
