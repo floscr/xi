@@ -139,10 +139,27 @@ Phase B notes:
 - [x] TUI client mirror loads user extensions (`xi.ext.user/mirror-extensions`:
       handlers, commands, keybindings, badge) — without it a joined TUI had no
       Ctrl+Shift+N, no badge and no `/browser-open`.
-- [ ] `pushover` stays built-in: the web client has its toggle compiled in
-      (`xi.web.core` requires `xi.ext.pushover`, `xi.web.views` renders the
-      button), its keys come from env vars the sandbox can't read, and the
-      headless hosts that rely on it have no extensions dir or rules file.
+- [x] Only files listed under `:extensions` in the global rules file load.
+
+## Phase F — second round of ports
+
+- [x] Sandbox additions: `xi.api.json` (`parse` / `stringify` / `pretty`),
+      `xi.api.http` `url-encode` / `url-decode`, fetch `:timeout-ms` and the
+      final `:url` in the response.
+- [x] `pushover`, `freesearch` (`web_search`), `web` (`fetch`) and
+      `github-code-search` moved to the dotfiles; built-ins deleted.
+  - pushover keys: `config.edn` in its data dir (no env access). The web
+    palette toggle forwards `:ext.pushover/toggle` via `:user-ext/forward`.
+  - freesearch parses the DuckDuckGo-lite page itself; `scripts/websearch.clj`
+    (bb + jsoup pod) is gone.
+  - github-code-search keeps its cookie in its data dir (`auth.json`).
+- [ ] Headless hosts (`modules/services/xi-agent.nix`: pi4, hetzner--xi) get
+      `web_search` / `fetch` from the extensions dir + a rules file written by
+      the module. Written, NOT deployed or tested there.
+- [ ] `github` (PR pages) stays built-in: its events are roomless and answered
+      to one client (`:server-fx`, `:roomless-events`), and its web half has
+      client-local handlers, `:ws/send`, the diff renderer and room creation —
+      none of which a user extension or browser half can have.
 
 ## Open
 

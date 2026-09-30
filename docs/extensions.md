@@ -55,7 +55,7 @@ Clojure, one vector per surface (`server`, `client`, `web`):
 ```clojure
 (def server
   [plan-mode/extension    ; extension map → used as-is
-   pushover/create        ; factory fn → called with ctx by ext/instantiate
+   chrome/create          ; factory fn → called with ctx by ext/instantiate
    …])
 ```
 
@@ -98,8 +98,7 @@ xi.web.core ── web-extensions (xi.config/web) → ext/instantiate → ext/co
 Extension state lives in two places:
 
 - **Room-scoped** `[:rooms rid :ext <id>]` — rides in the `:room/joined`
-  snapshot, mirrors to clients. Used for: plan-mode `:enabled?`,
-  pushover `:mode`.
+  snapshot, mirrors to clients. Used for: plan-mode `:enabled?`.
 - **Process-local** `[:ext <id>]` — never crosses the wire. Used for:
   dictation `:recording?`.
 
@@ -225,8 +224,8 @@ Static string or a function of `cwd`:
 Declarative key → event dispatch:
 
 ```clojure
-:keybindings [{:key   "ctrl+shift+p"
-               :event {:type :ext.pushover/toggle}
+:keybindings [{:key   "alt+r"
+               :event {:type :ext.dictation/toggle}
                :when  (fn [state] ...)}]  ; optional guard
 ```
 
@@ -252,10 +251,10 @@ get `{}`). Factories close over runtime resources and may return nil when
 unconfigured:
 
 ```clojure
-;; pushover: nil when env vars missing → ext/compose drops it
+;; chrome: nil when XI_CHROME_TOOLS is unset → ext/compose drops it
 (defn create [_ctx]
-  (when (and user-key app-token)
-    {:id :pushover ...}))
+  (when (seq (env "XI_CHROME_TOOLS"))
+    {:id :chrome ...}))
 
 ;; events: closes over the ring buffer from ctx
 (defn create [{:keys [ring]}]
@@ -365,10 +364,7 @@ namespace docstring is the authoritative description.
 | treesitter | Large-file `read` → structural outline; `read_source`. See [treesitter.md](treesitter.md). |
 | clj-surgeon | Structural Clojure refactoring tools; auto-fixes parens after write/edit. |
 | commit | Hunk-level staging + commit tools; `/commit`. |
-| web | `fetch`: HTML→markdown, Jina fallback, feed parsing. |
-| freesearch | Free `web_search` tool (no paid API, no headless browser). |
 | product-search | `amazon_search` / `willhaben_search` / `geizhals_search` over a shared headless Chrome. |
-| github-code-search | github.com code search (full query syntax); `/github-login`. |
 | session-search | Search previous sessions by title and content. |
 | events | Agent tool for inspecting the session event log. |
 | subagent | Background sub-agents (`spawn_subagent` …); `/subagents`. |
@@ -398,7 +394,6 @@ namespace docstring is the authoritative description.
 
 | Extension | What it does |
 |-----------|--------------|
-| pushover | Pushover push (factory; inert without keys). Ctrl+Shift+P cycles auto / on / off per room. |
 | terminal-title | Terminal title from session name / cwd. |
 | clipboard-image | Pasted clipboard image paths → inline base64 images (event hook). |
 | dictation | Client-only voice input via sox/whisper (Alt+R). |

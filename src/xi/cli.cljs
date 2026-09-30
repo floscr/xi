@@ -104,7 +104,7 @@
 
 (defn- server-extensions
   "Extensions whose state + provider hooks live server-side (xi.config/server).
-   nils (e.g. an unconfigured pushover) are dropped by ext/compose. `ask!`
+   nils (e.g. chrome without XI_CHROME_TOOLS) are dropped by ext/compose. `ask!`
    (the dialog ask! from ext/create-dialogs) is threaded into extensions that
    raise their own confirm dialogs from effects (worktree removal); nil in
    the client mirror, where those effects never run. `manager` (xi.ext.manager)

@@ -3911,9 +3911,10 @@
                :reload       (fn [_] (reload-with-feedback!))))]
        (let [actions (for [{:keys [key label icon]} (palette/actions (boolean room))]
                        (cmd/command-item {:icon icon :on-click (action-onclick key)} label))
-             ;; The pushover ext seeds every room's [:ext :pushover] state, so
-             ;; its presence means push notifications are configured server-side
-             ;; — only then is the toggle useful (Ctrl+Shift+P on the TUI).
+             ;; The pushover user extension seeds every room's [:ext :pushover]
+             ;; state, so its presence means the server has it loaded — only
+             ;; then is the toggle useful (Ctrl+Shift+P on the TUI). The mode
+             ;; comes back as a :user-ext/sync of that slice.
              push?   (and room (contains? (get-in state [:rooms (:id room) :ext])
                                           :pushover))
              push-mode (or (get-in state [:rooms (:id room) :ext :pushover :mode]) :auto)]
@@ -3922,8 +3923,9 @@
              push?
              (conj (cmd/command-item
                     {:icon :bell
-                     :on-click (fn [_] (dispatch! {:type :ext.pushover/toggle
-                                                   :room-id (:id room)}))}
+                     :on-click (fn [_] (dispatch! {:type  :user-ext/forward
+                                                   :event {:type :ext.pushover/toggle
+                                                           :room-id (:id room)}}))}
                     (str "Push notifications: "
                          (case push-mode
                            :on  "on (always)"

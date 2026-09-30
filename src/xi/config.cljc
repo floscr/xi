@@ -29,15 +29,12 @@
         [xi.ext.file-finder :as file-finder]
         [xi.ext.file-view.core :as file-view]
         [xi.ext.github :as github]
-        [xi.ext.github-code-search.core :as github-code-search]
         [xi.ext.image-graph :as image-graph]
         [xi.ext.mcp :as mcp]
-        [xi.ext.freesearch :as freesearch]
         [xi.ext.plan-mode :as plan-mode]
         [xi.ext.process-manager :as process-manager]
         [xi.ext.product-search.core :as product-search]
         [xi.ext.projects :as projects]
-        [xi.ext.pushover :as pushover]
         [xi.ext.render :as render]
         [xi.ext.resume :as resume]
         [xi.ext.rules :as rules]
@@ -49,7 +46,6 @@
         [xi.ext.terminal-title :as terminal-title]
         [xi.ext.user :as user-ext]
         [xi.ext.treesitter.core :as treesitter]
-        [xi.ext.web :as web]
         [xi.ext.worktree.core :as worktree]
         [xi.providers.anthropic :as anthropic]
         [xi.providers.ollama :as ollama]
@@ -104,14 +100,11 @@
       ;; xi.ext.rules/tool-policy in front of every tool call.
       rules/create
       plan-mode/extension
-      pushover/create
       diff/extension
       file-view/extension
       file-finder/extension
       worktree/create
       session-search/extension
-      web/extension
-      freesearch/extension
       product-search/extension
       commit/extension
       resume/create
@@ -120,7 +113,6 @@
       chrome/create
       clj-surgeon/extension
       github/extension
-      github-code-search/extension
       image-graph/extension
       ;; clj (sandboxed SCI scripting tool)
       clj-tool/extension

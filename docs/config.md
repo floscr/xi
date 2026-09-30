@@ -131,13 +131,8 @@ See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider and
 
 | Variable | Default | Used by | Description |
 | --- | --- | --- | --- |
-| `PUSHOVER_USER_KEY` | — | pushover | Pushover user key; the extension is inert unless both keys are set. |
-| `PUSHOVER_APP_TOKEN` | — | pushover | Pushover application token. |
-| `PUSHOVER_URL` | — | pushover | Optional URL attached to the push. |
-| `GITHUB_USER_SESSION` | — | github-code-search | GitHub session cookie for github.com code search. |
 | `XI_PRODUCT_SEARCH_CHROME` | auto-detected | product-search | Path to the Chrome/Chromium binary used to drive the `amazon_search` / `willhaben_search` / `geizhals_search` headless browser. Falls back to the legacy `XI_AMAZON_CHROME`, then common install paths and `google-chrome-stable` on `PATH`. |
 | `XI_AMAZON_CHROME` | — | product-search | Legacy fallback for `XI_PRODUCT_SEARCH_CHROME`. |
-| `XI_WEBSEARCH_SCRIPT` | `scripts/websearch.clj` | freesearch | Path to the babashka script behind the free `web_search` tool. |
 | `GEMINI_API_KEY` | — | image-graph | Gemini API key; usually kept in `~/.config/xi/ext/image-graph.env`. |
 | `XI_GIT_LOCK_WAIT_SECS` | `600` | `xi.git-lock` (git-index hold) | How long a room waits for another room's git-index hold before its git op fails with an error naming the holder. See [git-lock.md](git-lock.md). |
 
