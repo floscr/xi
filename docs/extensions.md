@@ -98,7 +98,7 @@ Extension state lives in two places:
 
 - **Room-scoped** `[:rooms rid :ext <id>]` — rides in the `:room/joined`
   snapshot, mirrors to clients. Used for: plan-mode `:enabled?`,
-  done-notify `:enabled?`.
+  pushover `:mode`.
 - **Process-local** `[:ext <id>]` — never crosses the wire. Used for:
   dictation `:recording?`.
 
@@ -224,8 +224,8 @@ Static string or a function of `cwd`:
 Declarative key → event dispatch:
 
 ```clojure
-:keybindings [{:key   "ctrl+shift+n"
-               :event {:type :ext.done-notify/toggle}
+:keybindings [{:key   "ctrl+shift+p"
+               :event {:type :ext.pushover/toggle}
                :when  (fn [state] ...)}]  ; optional guard
 ```
 
@@ -364,7 +364,6 @@ namespace docstring is the authoritative description.
 | treesitter | Large-file `read` → structural outline; `read_source`. See [treesitter.md](treesitter.md). |
 | clj-surgeon | Structural Clojure refactoring tools; auto-fixes parens after write/edit. |
 | commit | Hunk-level staging + commit tools; `/commit`. |
-| kb | Knowledge base search/get/store via the `kb` CLI. |
 | web | `fetch`: HTML→markdown, Jina fallback, feed parsing. |
 | freesearch | Free `web_search` tool (no paid API, no headless browser). |
 | product-search | `amazon_search` / `willhaben_search` / `geizhals_search` over a shared headless Chrome. |
@@ -393,13 +392,11 @@ namespace docstring is the authoritative description.
 | projects | `/project` / Alt+P project path picker. |
 | skills | Project-marker system-prompt injection + `/skill list\|load` (`<input />` placeholders raise a `:form` dialog). |
 | snippets | Insertable prompt snippets for the web client. |
-| browser-open | `/browser-open` — open this session in the web client. |
 
 **Notifications & terminal**
 
 | Extension | What it does |
 |-----------|--------------|
-| done-notify | Desktop notification on turn end / pending dialog. Ctrl+Shift+N, 🔔 badge. |
 | pushover | Pushover push (factory; inert without keys). Ctrl+Shift+P cycles auto / on / off per room. |
 | terminal-title | Terminal title from session name / cwd. |
 | clipboard-image | Pasted clipboard image paths → inline base64 images (event hook). |

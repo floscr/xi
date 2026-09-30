@@ -6,7 +6,8 @@
      - a confirm dialog opening (git commit approval, guarded command,
        worktree removal, …) that needs a decision to proceed.
    The user is deemed unlikely to be watching when:
-     standalone — only when the done-notify bell (🔔) is enabled.
+     standalone — only when the done-notify bell (🔔) is enabled (a user
+                  extension's room slice; never without it).
      server     — only when no visible client is attached to the room.
    In server mode the notification carries a deep link (PUSHOVER_URL +
    /chat/<session-id>) so tapping it opens the chat.

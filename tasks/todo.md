@@ -130,6 +130,20 @@ Phase B notes:
 - [x] `bb demo:stop` / `demo:restart` reap the leaked :7476 bun (it survived
       every `td/stop`, so the fresh server couldn't bind).
 
+## Phase E — first ports out of the build
+
+- [x] `kb`, `browser-open`, `done-notify` moved to user extensions in the
+      dotfiles (`config/xi/extensions/`, symlinked to `~/.config/xi/extensions`
+      by `modules/dev/ai.nix`; their CLIs pre-allowed in `config/xi/rules.edn`).
+      Built-ins + their tests deleted.
+- [x] TUI client mirror loads user extensions (`xi.ext.user/mirror-extensions`:
+      handlers, commands, keybindings, badge) — without it a joined TUI had no
+      Ctrl+Shift+N, no badge and no `/browser-open`.
+- [ ] `pushover` stays built-in: the web client has its toggle compiled in
+      (`xi.web.core` requires `xi.ext.pushover`, `xi.web.views` renders the
+      button), its keys come from env vars the sandbox can't read, and the
+      headless hosts that rely on it have no extensions dir or rules file.
+
 ## Open
 
 - Per-project extensions (`<repo>/.xi/extensions/`)? Not in v1 unless wanted.

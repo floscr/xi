@@ -16,8 +16,7 @@
    runtime via SCI."
   (:require
    #?@(:node
-       [[xi.ext.browser-open :as browser-open]
-        [xi.ext.canvas-review :as canvas-review]
+       [[xi.ext.canvas-review :as canvas-review]
         [xi.ext.chrome-mcp :as chrome]
         [xi.ext.clipboard-image :as clipboard-image]
         [xi.ext.clj :as clj-tool]
@@ -25,7 +24,6 @@
         [xi.ext.commit :as commit]
         [xi.ext.dictation :as dictation]
         [xi.ext.diff.core :as diff]
-        [xi.ext.done-notify :as done-notify]
         [xi.ext.events :as events]
         [xi.ext.extensions :as extensions]
         [xi.ext.file-finder :as file-finder]
@@ -33,7 +31,6 @@
         [xi.ext.github :as github]
         [xi.ext.github-code-search.core :as github-code-search]
         [xi.ext.image-graph :as image-graph]
-        [xi.ext.kb :as kb]
         [xi.ext.mcp :as mcp]
         [xi.ext.freesearch :as freesearch]
         [xi.ext.plan-mode :as plan-mode]
@@ -107,13 +104,11 @@
       ;; xi.ext.rules/tool-policy in front of every tool call.
       rules/create
       plan-mode/extension
-      done-notify/extension
       pushover/create
       diff/extension
       file-view/extension
       file-finder/extension
       worktree/create
-      kb/extension
       session-search/extension
       web/extension
       freesearch/extension
@@ -122,7 +117,6 @@
       resume/create
       review/extension
       canvas-review/extension
-      browser-open/extension
       chrome/create
       clj-surgeon/extension
       github/extension
