@@ -41,6 +41,26 @@
     (is (= {} (anthropic/parse-partial-json "{")))
     (is (= {:a 1} (anthropic/parse-partial-json "{\"a\": 1}")))))
 
+(deftest api-retry-fails-fast-on-unretryable-errors
+  (let [errors (atom [])
+        cbs    {:on-error #(swap! errors conj %)}
+        state  (atom {})
+        retry! #(anthropic/process-sdk-message
+                 (clj->js {:type "system" :subtype "api_retry" :attempt 1
+                           :max_retries 10 :retry_delay_ms 1000
+                           :error_status %1 :error %2})
+                 cbs state)]
+    (testing "transient errors are left to the CLI's own retries"
+      (retry! 529 "server_error")
+      (is (empty? @errors))
+      (is (not (:fatal-error @state))))
+    (testing "an expired login is reported once, on the first retry"
+      (retry! 401 "authentication_failed")
+      (retry! 401 "authentication_failed")
+      (is (:fatal-error @state))
+      (is (= 1 (count @errors)))
+      (is (re-find #"login has expired" (:message (first @errors)))))))
+
 (defn- stream-event [event]
   (clj->js {:type "stream_event" :event event}))
 

@@ -299,12 +299,21 @@
             :content (:content block)
             :is-error (:is_error block)}))))))
 
+(def ^:private fatal-api-errors
+  "`api_retry` error kinds no amount of retrying fixes → what to tell the user.
+   The CLI backs off through all its retries regardless, which leaves the turn
+   sitting at \"thinking\" for minutes before the error finally surfaces."
+  {"authentication_failed" "Claude authentication failed — the login has expired. Run `claude /login` on the host (or set ANTHROPIC_API_KEY)."
+   "oauth_org_not_allowed" "Claude authentication failed — this organization is not allowed to use the OAuth login."
+   "billing_error"         "Claude billing error — check the account's plan or credit balance."})
+
 (defn process-sdk-message
   "Dispatch a single SDK message onto callbacks + per-turn `state` — the
    runner transport feeds these over the wire as `message` frames.
    Handles stream_event / assistant / user / result / system /
    rate_limit_event; loop control (done detection, abort) stays with the
-   caller."
+   caller — a fatal `api_retry` only reports the error and sets :fatal-error,
+   ending the turn is the caller's job."
   [^js message callbacks state]
   (let [msg-type (.-type message)]
     (case msg-type
@@ -331,11 +340,21 @@
                  (js->clj usage :keywordize-keys true))))
 
       "system"
-      (when (= "init" (.-subtype message))
+      (case (.-subtype message)
+        "init"
         (when-let [sid (.-session_id message)]
           (swap! state assoc :session-id sid)
           (when-let [f (:on-session callbacks)]
-            (f sid))))
+            (f sid)))
+
+        "api_retry"
+        (when-let [msg (and (not (:fatal-error @state))
+                            (fatal-api-errors (.-error message)))]
+          (swap! state assoc :fatal-error true)
+          (when-let [f (:on-error callbacks)]
+            (f {:type "error" :message msg})))
+
+        nil)
 
       "rate_limit_event"
       (let [^js info (.-rate_limit_info message)]
@@ -420,6 +439,7 @@
                                      :on-tool-args :on-tool-result :on-session
                                      :on-error])
         state (initial-turn-state opts)
+        !abort (volatile! nil)
         cwd (or (:cwd opts) (.cwd js/process))
         resume-id (:resume-session-id opts)
         append-sys (if (:no-tools? opts)
@@ -439,7 +459,12 @@
                   :toolDefs (when-not (:no-tools? opts) defs)
                   :prompt (runner-prompt opts)
                   :noTools (boolean (:no-tools? opts))}
-          :on-message (fn [message] (process-sdk-message message callbacks state))
+          :on-message (fn [message]
+                        (let [fatal-before? (:fatal-error @state)]
+                          (process-sdk-message message callbacks state)
+                          ;; Already reported — stop the CLI's pointless retries.
+                          (when (and (:fatal-error @state) (not fatal-before?))
+                            (when-let [f @!abort] (f)))))
           :on-tool-call (tool-dispatcher {:registry registry
                                           :tool-gate (:tool-gate opts)
                                           :tool-ctx (:tool-ctx opts)
@@ -447,6 +472,9 @@
                                           :client-pid (:client-pid opts)})
           :on-error (fn [msg]
                       (cond
+                        ;; The abort above; the real error is already out.
+                        (:fatal-error @state) nil
+
                         (and resume-id (re-find #"No conversation found" msg))
                         (swap! state assoc :resume-failed true)
 
@@ -458,6 +486,7 @@
                           (js/console.error "[claude-runner] error:" msg)
                           (when (:on-error callbacks)
                             ((:on-error callbacks) {:type "error" :message msg})))))})]
+    (vreset! !abort abort!)
     {:promise (.then promise (fn [_] @state))
      :abort! (fn []
                (swap! state assoc :aborted true)
