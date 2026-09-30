@@ -20,6 +20,7 @@
             [xi.core.state]
             [xi.ext.manager :as manager]
             [xi.ext.user.guard :as guard]
+            [xi.rules.store :as store]
             [xi.sandbox.sci :as sandbox]
             [xi.tools.registry :as registry]
             ["node:fs" :as fs]
@@ -126,14 +127,18 @@
    :error is a string when the file couldn't be turned into a valid extension
    (:extension nil then). Guards are applied to accepted extensions.
    `taken-ids` / `taken-tools`: ids and tool names already in use (built-ins,
-   MCP) — a user extension may never replace one."
+   MCP) — a user extension may never replace one.
+   `enabled`: a set of file names; when given, any other file is left
+   unevaluated and reported as {:file :skipped? true}."
   ([dir] (load-dir dir nil))
-  ([dir {:keys [taken-ids taken-tools] :or {taken-ids #{} taken-tools #{}}}]
+  ([dir {:keys [taken-ids taken-tools enabled] :or {taken-ids #{} taken-tools #{}}}]
   (loop [files      (list-files dir)
          taken-ids  taken-ids
          taken-tools taken-tools
          acc        []]
     (if-let [file (first files)]
+      (if (and enabled (not (contains? enabled (node-path/basename file))))
+        (recur (rest files) taken-ids taken-tools (conj acc {:file file :skipped? true}))
       (let [src   (str (fs/readFileSync file "utf8"))
             base  {:file file :hash (content-hash src)}
             entry (try
@@ -151,7 +156,7 @@
         (recur (rest files)
                (cond-> taken-ids  (:id entry) (conj (:id entry)))
                (into taken-tools (map :name (:tool-definitions (:extension entry))))
-               (conj acc entry)))
+               (conj acc entry))))
       acc))))
 
 (defonce ^:private loaded (atom []))
@@ -232,16 +237,22 @@
     (reset! loaded entries)
     (doseq [{:keys [extension]} entries :when extension]
       (manager/register! mgr extension))
-    (let [ok  (keep :id entries)
-          bad (filter :error entries)]
+    (let [ok      (keep :id entries)
+          bad     (filter :error entries)
+          skipped (filter :skipped? entries)]
       (when (seq ok)
         (js/console.error (str "[user-ext] loaded: " (str/join ", " (map name ok)))))
+      (when (seq skipped)
+        (js/console.error (str "[user-ext] not enabled (list under :extensions in "
+                               (store/global-file) "): "
+                               (str/join ", " (map #(node-path/basename (:file %)) skipped)))))
       (doseq [{:keys [file error]} bad]
         (js/console.error (str "[user-ext] rejected " (node-path/basename file) ": " error))))
     entries))
 
 (defn- taken
-  "Ids and tool names a user extension may not use: everything registered in
+  "load-dir opts for the live manager: the enabled file names, plus the ids
+   and tool names a user extension may not use — everything registered in
    `mgr` and every builtin tool, except what this loader registered itself
    (a reload replaces those). manager/register! replaces by id and the tool
    registry lets extensions win by name, so without this a user file could
@@ -249,13 +260,15 @@
   [mgr]
   (let [own-ids   (set (keep :id @loaded))
         own-tools (set (mapcat #(map :name (get-in % [:extension :tool-definitions])) @loaded))]
-    {:taken-ids   (into #{} (comp (map :id) (remove own-ids)) (manager/ext-list mgr))
+    {:enabled     (store/enabled-extensions)
+     :taken-ids   (into #{} (comp (map :id) (remove own-ids)) (manager/ext-list mgr))
      :taken-tools (-> (set (map :name (registry/tool-definitions)))
                       (into (comp (map :name) (remove own-tools))
                             (:tool-definitions (manager/composed mgr))))}))
 
 (defn install!
-  "Load ~/.config/xi/extensions and register each valid extension into `mgr`
+  "Load the enabled files of ~/.config/xi/extensions (rules.edn `:extensions`,
+   see xi.rules.store/enabled-extensions) and register each valid extension into `mgr`
    (call AFTER the built-ins + MCP are seeded). Returns the load report."
   [mgr]
   (register-all! mgr (load-dir (extensions-dir) (taken mgr))))
@@ -271,10 +284,11 @@
    mirror-keys). `builtins` are the client's mirrored built-in extension maps;
    their ids and tools are taken, as on the server. Effects and tools are left
    out: they run on the server, which loads the directory itself."
-  ([builtins] (mirror-extensions (extensions-dir) builtins))
-  ([dir builtins]
+  ([builtins] (mirror-extensions (extensions-dir) (store/enabled-extensions) builtins))
+  ([dir enabled builtins]
    (let [builtins (remove nil? builtins)]
-     (->> (load-dir dir {:taken-ids   (set (map :id builtins))
+     (->> (load-dir dir {:enabled     enabled
+                         :taken-ids   (set (map :id builtins))
                          :taken-tools (into (set (map :name (registry/tool-definitions)))
                                             (comp (mapcat :tool-definitions) (map :name))
                                             builtins)})
@@ -288,4 +302,5 @@
   [mgr]
   (let [entries (register-all! mgr (load-dir (extensions-dir) (taken mgr)))]
     {:loaded   (vec (keep :id entries))
-     :rejected (mapv #(select-keys % [:file :error]) (filter :error entries))}))
+     :rejected (mapv #(select-keys % [:file :error]) (filter :error entries))
+     :skipped  (mapv #(node-path/basename (:file %)) (filter :skipped? entries))}))

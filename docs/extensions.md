@@ -9,7 +9,8 @@ provider effects, and TUI.
 > [writing-extensions.md](writing-extensions.md) — this file is the
 > reference for every key.
 >
-> Want one without rebuilding xi? Drop it into `~/.config/xi/extensions/`.
+> Want one without rebuilding xi? Put it into `~/.config/xi/extensions/` and
+> list it under `:extensions` in `~/.config/xi/rules.edn`.
 > These **user extensions** load at runtime in a capability sandbox; see
 > [user-extensions.md](user-extensions.md).
 

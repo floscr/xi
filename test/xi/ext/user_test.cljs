@@ -92,6 +92,19 @@
       (is (:error e) "the js/Function escape throws → the file is rejected, not loaded")
       (is (nil? (:extension e))))))
 
+(deftest only-enabled-files-are-evaluated
+  (let [dir (tmp-dir)]
+    (write! dir "on.cljs" "(ns on) (def extension {:id :on})")
+    ;; would throw if evaluated
+    (write! dir "off.cljs" "(ns off) (throw (ex-info \"evaluated\" {}))")
+    (let [[off on] (user/load-dir dir {:enabled #{"on.cljs"}})]
+      (is (= :on (:id on)))
+      (is (true? (:skipped? off)))
+      (is (nil? (:error off)) "skipped, not rejected: the file is never read"))
+    (is (every? :skipped? (user/load-dir dir {:enabled #{}}))
+        "an empty allowlist loads nothing")
+    (is (= [] (user/mirror-extensions dir #{} [])))))
+
 (deftest mirror-extensions-keep-only-what-a-client-presents
   (let [dir (tmp-dir)]
     (write! dir "bell.cljs"
@@ -107,7 +120,7 @@
                 :tool-definitions [{:name \"bell_ring\" :description \"r\"}]
                 :tool-registry {\"bell_ring\" (fn [_ _] nil)}})")
     (write! dir "clash.cljs" "(ns clash) (def extension {:id :plan-mode})")
-    (let [exts (user/mirror-extensions dir [{:id :plan-mode} nil])]
+    (let [exts (user/mirror-extensions dir #{"bell.cljs" "clash.cljs"} [{:id :plan-mode} nil])]
       (is (= [:bell] (map :id exts)) "a built-in's id stays taken in the mirror")
       (is (= #{:id :init :handlers :commands :keybindings :prompt-badge}
              (set (keys (first exts))))

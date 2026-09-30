@@ -1,7 +1,8 @@
 # User extensions
 
-Drop a `.cljs` file into `~/.config/xi/extensions/` and an already-built xi
-loads it at startup. No build step is needed. User extensions have the same
+Put a `.cljs` file into `~/.config/xi/extensions/`, list its name under
+`:extensions` in `~/.config/xi/rules.edn`, and an already-built xi loads it at
+startup. No build step is needed. User extensions have the same
 shape as built-in ones ([extensions.md](extensions.md)) but run in a
 **capability sandbox**. They get no host access of their own, and every side
 effect goes through the rules engine.
@@ -49,9 +50,35 @@ freely. Relative paths resolve against the room's cwd inside a tool call (the
 project, where the normal write rules apply), and against the data dir
 when there's no room cwd (e.g. in an fx).
 
+## Enabling
+
+A file in the directory is loaded only when the **global** rules file names it:
+
+```clojure
+;; ~/.config/xi/rules.edn
+{:version 1
+ :extensions ["notes.cljs"]
+ :rules []}
+```
+
+- `:extensions` is a vector of top-level file names. A file that isn't listed
+  is never read or evaluated. It is logged at startup
+  (`[user-ext] not enabled (…): foo.cljs`) and reported by `/ext reload`.
+- With no rules file, no `:extensions` key, or an invalid rules file, nothing
+  loads.
+- Only the global file counts. `:extensions` in a repo's `.xi/rules.edn` is
+  ignored, so a checked-out project can't enable anything.
+- The list lives in the rules file because agents can't change it: writes
+  under `~/.config/xi` are hard-blocked, and a change to any other xi rules
+  file (e.g. a dotfiles source copied into place) asks every time (see
+  [rules.md](rules.md)). Dropping a file into the directory is therefore not
+  enough to get code loaded.
+- The list names files, not contents. Editing a file that is already enabled
+  is an ordinary write under the normal write rules.
+
 ## Files
 
-- Each **top-level** `*.cljs` file in `~/.config/xi/extensions/` is one
+- Each enabled **top-level** `*.cljs` file in `~/.config/xi/extensions/` is one
   extension, loaded alphabetically after the built-ins and MCP servers.
 - A file defines `extension`: the extension map for the server side (tools,
   handlers, commands, fx, system prompt, …).
@@ -60,7 +87,8 @@ when there's no room cwd (e.g. in an fx).
 - `<name>/web.cljs` defining `web-extension` is the extension's optional
   **browser half** (see [Browser halves](#browser-halves)).
 
-`/ext list` shows loaded extensions. `/ext reload` re-reads the directory. Tool
+`/ext list` shows loaded extensions. `/ext reload` re-reads the enabled list
+and the directory. Tool
 changes apply on the next turn. Handler, command and keybinding changes need a
 server restart, the same as for built-in extensions. Rejected files are logged
 with the reason (`[user-ext] rejected foo.cljs: …`) and reported by
@@ -213,11 +241,12 @@ What a browser half can do (`xi.web.user-ext.guard`):
   interrupted.
 - User tools are offered to Claude models only. The openai/zen/ollama
   providers still only advertise built-in tools.
-- Each process reads its own directory. A TUI joined to a server presents the
-  commands, keybindings and prompt badges of the extensions in *its*
-  directory and forwards their events. The effects and tools run on the
-  server, from the server's directory. On one machine these are the same
-  files. Against a remote server, keep the two directories in sync.
+- Each process reads its own directory and its own `:extensions` list. A TUI
+  joined to a server presents the commands, keybindings and prompt badges of
+  the extensions enabled in *its* directory and forwards their events. The
+  effects and tools run on the server, from the server's directory. On one
+  machine these are the same files. Against a remote server, keep the two
+  directories and lists in sync.
 - Browser halves are loaded once per page load. After `/ext reload`, refresh
   the browser. The TUI has no browser-half equivalent.
 - An extension can add system-prompt text, which steers the agent. The agent's

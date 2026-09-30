@@ -67,7 +67,7 @@
 (defn- reload-fx
   "Re-evaluate ~/.config/xi/extensions and re-register (xi.ext.user)."
   [mgr {:keys [dispatch!]} {:keys [room-id]}]
-  (let [{:keys [loaded rejected]} (user-ext/reload! mgr)]
+  (let [{:keys [loaded rejected skipped]} (user-ext/reload! mgr)]
     (status! dispatch! room-id
              (str "Reloaded user extensions."
                   (when (seq loaded)
@@ -75,6 +75,9 @@
                   (when (seq rejected)
                     (str "\n  rejected: "
                          (str/join "; " (map #(str (:file %) " — " (:error %)) rejected))))
+                  (when (seq skipped)
+                    (str "\n  not enabled (list under :extensions in rules.edn): "
+                         (str/join ", " skipped)))
                   "\nTool changes apply next turn; handler/command changes need a restart."))))
 
 (defn create

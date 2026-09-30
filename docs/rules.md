@@ -190,6 +190,7 @@ A rules file is a map with a **required** `:version`:
 | `:version`  | Required. The rules-file format version — currently `1`. It version-locks the file: when the format (or a default-bundle alias) changes, the version bumps and an old file errors instead of being silently misread. |
 | `:rules`    | Vector of rule maps, at this file's config precedence (repo / global). |
 | `:defaults` | Optional. Replaces the default tier — see [below](#choosing-defaults-defaults). |
+| `:extensions` | Optional. Vector of file names in `~/.config/xi/extensions/` that xi may load as [user extensions](user-extensions.md#enabling). Read from the global file only; a repo file's list is ignored. |
 
 **An invalid file fails closed.** A missing or unsupported `:version`, a bare
 rule vector (the pre-version format), an unknown top-level key, an alias under

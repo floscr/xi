@@ -352,6 +352,32 @@
              (:defaults (store/parse-rules-config
                          {:version 1 :defaults [:xi.rules.defaults/plan-mode]})))))))
 
+(deftest extensions-are-enabled-by-the-global-file-only
+  (let [dir  (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-rules-ext-"))
+        file (node-path/join dir "rules.edn")
+        prev (store/global-file) ; the hermetic test override
+        with (fn [content f]
+               (when content (fs/writeFileSync file content))
+               (store/set-global-file! file)
+               (store/clear-cache!)
+               (try (f) (finally (store/set-global-file! prev) (store/clear-cache!))))]
+    (testing "no file, no key, or an invalid file → nothing is enabled"
+      (with nil #(is (= #{} (store/enabled-extensions))))
+      (with "{:version 1 :rules []}" #(is (= #{} (store/enabled-extensions))))
+      (with "{:version 1 :extensions [:kb]}" #(is (= #{} (store/enabled-extensions)))))
+    (testing "file names only"
+      (is (re-find #":extensions must be a vector of extension file names"
+                   (:error (store/parse-rules-config {:version 1 :extensions [:kb]}))))
+      (is (re-find #":extensions must be"
+                   (:error (store/parse-rules-config {:version 1 :extensions "kb.cljs"})))))
+    (with "{:version 1 :extensions [\"kb.cljs\"] :rules []}"
+      (fn []
+        (is (= #{"kb.cljs"} (store/enabled-extensions)))
+        (testing "a saved rule keeps the list"
+          (store/append-rule-file! :global nil {:match {:tool :ls} :action {:type :allow}})
+          (is (= #{"kb.cljs"} (store/enabled-extensions))))))
+    (fs/rmSync dir #js {:recursive true :force true})))
+
 (defn- with-repo-rules
   "Run `f` with a throwaway git repo whose .xi/rules.edn holds `content`
    (a string; nil = no file). `f` gets the repo dir."

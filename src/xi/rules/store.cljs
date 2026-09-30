@@ -88,12 +88,13 @@
    change (e.g. renamed default aliases) can never be misread silently."
   1)
 
-(def ^:private rules-file-keys #{:version :rules :defaults})
+(def ^:private rules-file-keys #{:version :rules :defaults :extensions})
 
 (defn parse-rules-config
   "Validate parsed rules-file `data` (nil = unparseable). Returns
-   `{:rules [...] :defaults [...]}` — `:defaults` expanded via
-   `defaults/expand`, nil when the file doesn't set it — or `{:error msg}`."
+   `{:rules [...] :defaults [...] :extensions [...]}` — `:defaults` expanded
+   via `defaults/expand`, nil when the file doesn't set it; `:extensions` as
+   written, nil when absent — or `{:error msg}`."
   [data]
   (let [v       rules-file-version
         shape   (str "{:version " v " :rules [...] :defaults [...]}")
@@ -126,11 +127,16 @@
       (not (sequential? (:defaults data [])))
       {:error ":defaults must be a vector of aliases / rule maps"}
 
+      (not (and (sequential? (:extensions data []))
+                (every? string? (:extensions data))))
+      {:error ":extensions must be a vector of extension file names"}
+
       :else
       (try
-        {:rules    (vec (:rules data))
-         :defaults (when (contains? data :defaults)
-                     (defaults/expand (:defaults data)))}
+        (cond-> {:rules    (vec (:rules data))
+                 :defaults (when (contains? data :defaults)
+                             (defaults/expand (:defaults data)))}
+          (contains? data :extensions) (assoc :extensions (vec (:extensions data))))
         (catch :default e
           {:error (ex-message e)})))))
 
@@ -492,6 +498,15 @@
                         (if error [(invalid-file-rule file error)] rules))))
                (config-files cwd))))
 
+(defn enabled-extensions
+  "The user-extension file names the GLOBAL rules file enables under
+   `:extensions` — the only place that can: agents can never write that file,
+   so dropping a file into the extensions dir isn't enough to get it loaded.
+   A repo rules file's `:extensions` is ignored. #{} when the file is missing,
+   invalid, or doesn't set the key."
+  []
+  (set (:extensions (load-rules-file (global-file)))))
+
 (defn default-rules
   "The lowest-precedence default tier: the first config file (repo, then
    global) that sets `:defaults`, expanded; else the built-in defaults. An
@@ -539,7 +554,7 @@
 ;; ── Config file writing (repo / global scopes) ───────────────────────────────
 
 (defn- write-rules-file!
-  "Persist raw rules-file `data` ({:version :rules :defaults}) to `file` as
+  "Persist raw rules-file `data` ({:version :rules :defaults :extensions}) to `file` as
    pretty EDN (one rule per line), creating parent dirs. Regex literals
    round-trip via pr-str/read-string."
   [file {:keys [version rules] :as data}]
@@ -549,6 +564,8 @@
    (str "{:version " (pr-str version) "\n"
         (when (contains? data :defaults)
           (str " :defaults " (pr-str (:defaults data)) "\n"))
+        (when (contains? data :extensions)
+          (str " :extensions " (pr-str (:extensions data)) "\n"))
         " :rules\n [" (str/join "\n  " (map pr-str rules)) "]}\n")
    "utf8"))
 
