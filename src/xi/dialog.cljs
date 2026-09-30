@@ -28,15 +28,20 @@
    :recommend-rule {:value :recommend :key "?" :label "Recommend a rule"
                     :resolved-label "Recommending a rule…"}})
 
+(def ^:private option-alias
+  "Other spellings of a confirm option: rules files name the repo grant after
+   the answer it resolves to (`:options [:yes :no :repo]`)."
+  {:repo :allow-repo})
+
 (def default-confirm-options [:yes :no])
 
 (defn confirm-options
   "Normalized options for a :confirm dialog: keywords are looked up in
-   `confirm-option` (unknown ones dropped), maps pass through as-is. A dialog
-   without :options gets the plain yes/no pair."
+   `confirm-option` (aliases resolved, unknown ones dropped), maps pass
+   through as-is. A dialog without :options gets the plain yes/no pair."
   [dialog]
   (into []
-        (keep #(if (keyword? %) (confirm-option %) %))
+        (keep #(if (keyword? %) (confirm-option (option-alias % %)) %))
         (or (seq (:options dialog)) default-confirm-options)))
 
 (defn resolved-label

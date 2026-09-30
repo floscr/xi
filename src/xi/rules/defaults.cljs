@@ -209,11 +209,13 @@
    ;; canonical locations are already hard-blocked (store/hard-block); this
    ;; covers the rest. A `rules.edn` only counts when it carries `:version`, so
    ;; unrelated tools' rules.edn files stay untouched. Hardened + no [a]lways,
-   ;; so neither a session grant nor a config allow can skip the prompt.
+   ;; so neither a session grant nor a config allow can skip the prompt — the
+   ;; [r] repo grant covers the repo's other files (it lands in the session
+   ;; tier, below this rule), the rules file itself keeps asking.
    {:match  {:tool #{:write :edit :bash :clj} :xi-rules-file true}
     :action {:type    :ask
              :message "Change an xi rules file (a rules.edn with :version — permission policy)?"
-             :options [:yes :no]}
+             :options [:yes :no :repo]}
     :scope  :hardened}])
 
 ;; ── clj (sh …) softeners: "disallow * then soften", scoped to :sh ────────────

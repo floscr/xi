@@ -470,7 +470,7 @@
               h       (hit "edit" {:path xi-file :edits [{:oldText ":read" :newText ":ls"}]})]
           (is (= :hardened (:scope h)))
           (is (= :ask (get-in h [:action :type])))
-          (is (= [:yes :no] (get-in h [:action :options])) "no [a]lways grant")
+          (is (= [:yes :no :repo] (get-in h [:action :options])) "no [a]lways grant")
           (is (= :session (:scope (hit "edit" {:path other-file
                                               :edits [{:oldText ":warn" :newText ":off"}]})))
               "an unrelated rules.edn falls through to the user's allow")))

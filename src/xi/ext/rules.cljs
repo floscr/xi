@@ -72,14 +72,14 @@
   "Build a session allow-rule scoped to the whole repo root of the target.
    Used when the user answers [r] (allow-repo) on an outside-repo :ask so later
    writes anywhere under that repo pass silently. write/edit are grouped (a
-   write grant covers edits). Returns nil when the target isn't in any repo."
+   write grant covers edits). Returns nil when the target isn't in any repo,
+   or the call isn't a write/edit (a repo-wide bash/clj allow is no \"repo
+   writes\" grant)."
   [req]
-  (when-let [repo (:repo req)]
-    (let [t    (:tool req)
-          tool (if (#{:write :edit} t) #{:write :edit} t)]
-      {:match  (cond-> {:tool tool :repo repo}
-                 (:extension req) (assoc :extension (:extension req)))
-       :action {:type :allow}})))
+  (when-let [repo (and (#{:write :edit} (:tool req)) (:repo req))]
+    {:match  (cond-> {:tool #{:write :edit} :repo repo}
+               (:extension req) (assoc :extension (:extension req)))
+     :action {:type :allow}}))
 
 ;; ── Recommend-a-rule flow ─────────────────────────────────────────────────────
 
@@ -91,9 +91,12 @@
        "once they've decided."))
 
 (defn- recommend-options
-  "Append the recommend-a-rule option to a confirm's option list."
-  [options]
-  (let [opts (vec (or options [:yes :no :always]))]
+  "A confirm's option list for decision request `req`: the repo grant is
+   dropped when there is no rule to save for it (see allow-repo-rule-from-req),
+   and the recommend-a-rule option is appended."
+  [options req]
+  (let [opts (cond->> (vec (or options [:yes :no :always]))
+               (not (allow-repo-rule-from-req req)) (into [] (remove #{:repo :allow-repo})))]
     (cond-> opts
       (not (some #{:recommend-rule} opts)) (conj :recommend-rule))))
 
@@ -273,7 +276,7 @@
                               message message
                               :else   (ask-message req)))
                            (let [diff (ask-diff req)]
-                             (cond-> {:options (recommend-options options)}
+                             (cond-> {:options (recommend-options options req)}
                                diff (assoc :diff diff))))
                  (.then (fn [ans]
                           (cond

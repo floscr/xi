@@ -263,12 +263,14 @@
                                [:ext :rules :rules] [rule])
           tc         {:name "write" :arguments {:path "src/xi/rules.cljs"}}
           dispatched (atom nil)
+          asked      (atom nil)
           c          {:get-state (fn [] state) :room-id "r1" :cwd cwd
-                      :confirm!  (fn [_ _] (js/Promise.resolve :repo))
+                      :confirm!  (fn [_ opts] (reset! asked opts) (js/Promise.resolve :repo))
                       :dispatch! (fn [ev] (reset! dispatched ev))}]
       (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
                    (is (= tc out) "call is allowed through")
+                   (is (some #{:repo} (:options @asked)) "the dialog offers [r]")
                    (is (= :ext.rules/add (:type @dispatched)))
                    (is (= :session (:scope @dispatched)))
                    (is (= #{:write :edit} (get-in @dispatched [:rule :match :tool]))

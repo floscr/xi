@@ -12,6 +12,11 @@
     (is (= ["y" "n" "r"] (map :key opts)))
     (is (every? :label opts))))
 
+(deftest confirm-options-resolves-the-rules-repo-alias
+  (is (= (dialog/confirm-options {:options [:yes :no :allow-repo]})
+         (dialog/confirm-options {:options [:yes :no :repo]}))
+      "a rule's :repo option is the [r] allow-repo choice"))
+
 (deftest confirm-options-drops-unknown-keywords-keeps-maps
   (let [custom {:value :x :key "x" :label "X"}]
     (is (= [custom]
