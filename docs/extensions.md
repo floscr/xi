@@ -8,6 +8,10 @@ provider effects, and TUI.
 > Writing a new extension? Follow the step-by-step recipe in
 > [writing-extensions.md](writing-extensions.md) — this file is the
 > reference for every key.
+>
+> Want one without rebuilding xi? Drop it into `~/.config/xi/extensions/`.
+> These **user extensions** load at runtime in a capability sandbox; see
+> [user-extensions.md](user-extensions.md).
 
 ## Extension Shape
 
@@ -373,7 +377,7 @@ namespace docstring is the authoritative description.
 | chrome | Proxies `chrome-devtools-mcp` as xi tools (opt-in, `XI_CHROME_TOOLS`). Hosts element-picker (`/pick`), design-mode (`/design`) and style-editor. See [chrome-mcp.md](chrome-mcp.md), [element-picker.md](element-picker.md), [design-mode.md](design-mode.md), [style-editor.md](style-editor.md). |
 | mcp | Wraps external MCP servers (`~/.config/xi/mcp.edn`) as extensions; `/mcp`. See [mcp-servers.md](mcp-servers.md). |
 | render | Render.com MCP server, disabled by default; `/render`. |
-| extensions | `/ext list\|enable\|disable` over the live extension manager. |
+| extensions | `/ext list\|enable\|disable\|reload` over the live extension manager (`reload` re-reads [user extensions](user-extensions.md)). |
 
 **Sessions, review & workflow**
 

@@ -63,6 +63,7 @@
             [xi.ext.clj-socket :as clj-socket]
             [xi.ext.manager :as manager]
             [xi.ext.mcp :as mcp]
+            [xi.ext.user :as user-ext]
             [xi.fx :as fx]
             [xi.naming :as naming]
             [xi.quick-replies :as quick-replies]
@@ -324,6 +325,7 @@ See docs/cli.md for the full reference.")
         _        (manager/seed! mgr (into (server-extensions ring (:ask! dialogs) mgr)
                                           (client-extensions)))
         _        (mcp/install! mgr)
+        _        (user-ext/install! mgr)
         composed (manager/composed mgr)
         agents-files (system-prompt/find-agents-md cwd)
         system-parts (into (system-prompt/load-agents-parts cwd)
@@ -470,6 +472,7 @@ See docs/cli.md for the full reference.")
         _        (manager/seed! mgr (remove #(= :terminal-title (:id %))
                                             (server-extensions ring (:ask! dialogs) mgr)))
         _        (mcp/install! mgr)
+        _        (user-ext/install! mgr)
         composed (manager/composed mgr)
         ;; --personal-agent-only: PA system prompt only (no AGENTS.md, no
         ;; profile/skills, no extension prompt parts) and the room's
@@ -871,6 +874,7 @@ See docs/cli.md for the full reference.")
         mgr      (manager/create)
         _        (manager/seed! mgr (server-extensions ring (:ask! dialogs) mgr))
         _        (mcp/install! mgr)
+        _        (user-ext/install! mgr)
         composed (manager/composed mgr)
         server (ws/create-server
                 {:server-opts server-opts

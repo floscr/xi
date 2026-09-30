@@ -111,7 +111,7 @@ docs/            see the index below
 | Server, rooms, HTTP API · client auth · TLS | [server.md](docs/server.md) · [client-auth.md](docs/client-auth.md) · [tls-https.md](docs/tls-https.md) |
 | One-shot `xi prompt` · bb client lib | [prompt-mode.md](docs/prompt-mode.md) · [bb-client.md](docs/bb-client.md) |
 | Slash commands · `/tree` · compaction · resume | [commands.md](docs/commands.md) · [session-tree.md](docs/session-tree.md) · [compaction.md](docs/compaction.md) · [resume.md](docs/resume.md) |
-| Extensions · runtime toggling + external MCP | [extensions.md](docs/extensions.md) · [writing-extensions.md](docs/writing-extensions.md) · [mcp-servers.md](docs/mcp-servers.md) |
+| Extensions · user extensions (runtime, sandboxed) · runtime toggling + external MCP | [extensions.md](docs/extensions.md) · [writing-extensions.md](docs/writing-extensions.md) · [user-extensions.md](docs/user-extensions.md) · [mcp-servers.md](docs/mcp-servers.md) |
 | Rules / permissions · `clj` tool · tree-sitter reads | [rules.md](docs/rules.md) · [clj-tool.md](docs/clj-tool.md) · [treesitter.md](docs/treesitter.md) |
 | Providers | [mcp-tool-bridge.md](docs/mcp-tool-bridge.md) · [providers-zen.md](docs/providers-zen.md) · [providers-openai.md](docs/providers-openai.md) |
 | Browser tools | [chrome-mcp.md](docs/chrome-mcp.md) · [element-picker.md](docs/element-picker.md) · [design-mode.md](docs/design-mode.md) · [style-editor.md](docs/style-editor.md) |

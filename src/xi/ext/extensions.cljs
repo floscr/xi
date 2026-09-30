@@ -8,7 +8,8 @@
    effect. This is a factory: it returns nil unless a :manager is in ctx
    (so the client mirror, which has no manager, gets nothing)."
   (:require [clojure.string :as str]
-            [xi.ext.manager :as manager]))
+            [xi.ext.manager :as manager]
+            [xi.ext.user :as user-ext]))
 
 (defn- render-list
   [mgr]
@@ -34,6 +35,7 @@
     (case sub
       "enable"  {:effects [[:ext/toggle {:room-id room-id :action :enable  :id id}]]}
       "disable" {:effects [[:ext/toggle {:room-id room-id :action :disable :id id}]]}
+      "reload"  {:effects [[:ext/reload {:room-id room-id}]]}
       {:effects [[:ext/list {:room-id room-id}]]})))
 
 (defn- list-fx
@@ -62,6 +64,19 @@
                      (str (name kw) " already "
                           (if (= action :enable) "enabled." "disabled.")))))))))
 
+(defn- reload-fx
+  "Re-evaluate ~/.config/xi/extensions and re-register (xi.ext.user)."
+  [mgr {:keys [dispatch!]} {:keys [room-id]}]
+  (let [{:keys [loaded rejected]} (user-ext/reload! mgr)]
+    (status! dispatch! room-id
+             (str "Reloaded user extensions."
+                  (when (seq loaded)
+                    (str "\n  loaded: " (str/join ", " (map name loaded))))
+                  (when (seq rejected)
+                    (str "\n  rejected: "
+                         (str/join "; " (map #(str (:file %) " — " (:error %)) rejected))))
+                  "\nTool changes apply next turn; handler/command changes need a restart."))))
+
 (defn create
   "Factory — returns the control extension, or nil when no manager is in ctx."
   [{:keys [manager]}]
@@ -72,6 +87,8 @@
                  :handler ext-command
                  :subcommands [{:name "list" :description "List registered extensions"}
                                {:name "enable" :description "Enable an extension by id"}
-                               {:name "disable" :description "Disable an extension by id"}]}]
+                               {:name "disable" :description "Disable an extension by id"}
+                               {:name "reload" :description "Reload user extensions from ~/.config/xi/extensions"}]}]
      :fx       {:ext/list   (partial list-fx manager)
-                :ext/toggle (partial toggle-fx manager)}}))
+                :ext/toggle (partial toggle-fx manager)
+                :ext/reload (partial reload-fx manager)}}))
