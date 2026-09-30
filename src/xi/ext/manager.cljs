@@ -5,7 +5,7 @@
    whole process. This manager keeps that snapshot *live*: it holds the
    registered extensions plus which are enabled, and recomposes on every
    change. The provider tooling seam reads `(composed mgr)` fresh each turn
-   (see xi.cli/tooling-opts + xi.providers.anthropic/resolve-tooling), so an
+   (see xi.cli/tooling-opts + xi.tools.registry/resolve-tooling), so an
    extension's tools appear/vanish the moment it is enabled/disabled — no
    restart.
 

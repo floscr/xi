@@ -273,7 +273,7 @@ keeps that snapshot **live** so extensions can be enabled/disabled
 mid-session (`/ext list|enable|disable`), firing the `:on-enable` /
 `:on-disable` hooks. The provider re-reads the composed tool set on every
 turn (via the fn-valued tooling seam in `xi.cli/tooling-opts`, deref'd in
-`xi.providers.anthropic/resolve-tooling`), so tool changes take effect on the
+`xi.tools.registry/resolve-tooling`), so tool changes take effect on the
 next turn without a restart.
 
 **Scope:** only *use-time* surfaces hot-swap — `:tool-definitions`,

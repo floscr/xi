@@ -60,8 +60,8 @@
    :description description
    :input_schema (or input_schema {:type "object" :properties {}})})
 
-(defn- build-tools []
-  (mapv xi-tool->anthropic (tools/tool-definitions)))
+(defn- build-tools [tool-defs]
+  (mapv xi-tool->anthropic tool-defs))
 
 ;; ── Prompt caching ───────────────────────────────────────────────────────────
 ;;
@@ -293,10 +293,10 @@
         cwd (or (:cwd opts) (.cwd js/process))
         model (:model opts)
         tool-policy (or (:tool-policy opts) default-policy)
-        anthropic-tools (build-tools)
+        {tool-defs :defs registry :registry} (tools/resolve-tooling opts)
+        anthropic-tools (build-tools tool-defs)
 
-        system-text (let [tool-defs (tools/tool-definitions)
-                          base (system-prompt/build tool-defs cwd)]
+        system-text (let [base (system-prompt/build tool-defs cwd)]
                       (if (:system opts)
                         (str base "\n\n" (:system opts))
                         base))
@@ -390,7 +390,7 @@
                                                          :input (:arguments tc)})
                                                       tcs))})
                          (-> (js/Promise.all
-                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-policy) tcs)))
+                              (clj->js (mapv #(execute-tool-call % registry (assoc (:tool-ctx opts) :cwd cwd) tool-policy) tcs)))
                              (.then
                               (fn [results]
                                 (let [tool-results (js->clj results :keywordize-keys true)]

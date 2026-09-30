@@ -49,10 +49,6 @@
        "`find`, or `bash` fails with \"No such tool available\" — always use the "
        "prefixed name shown in each tool's schema."))
 
-(def ^:private PERSONAL_AGENT_TOOLS
-  "Tools available in personal-agent mode."
-  #{"web_search" "amazon_search" "willhaben_search" "geizhals_search"})
-
 (def ^:private default-policy
   "Pass-through tool policy (xi.cli injects the rules engine)."
   (fn [tool-call] (js/Promise.resolve tool-call)))
@@ -89,33 +85,6 @@
                  (.then (fn [{:keys [content is-error]}]
                           #js {:content (clj->js content)
                                :isError is-error})))))))))
-
-(defn resolve-tooling
-  "Resolve the enabled tool defs + registry for a turn: extension extras,
-   removals, and the personal-agent `only-tools` filter applied. `:defs` is the
-   ordered tool-definition vector shown to the model; `:registry` maps
-   tool-name → exec-fn. The runner transport ships `:defs` over the wire and
-   dispatches proxied calls via `:registry`.
-
-   extra-tool-definitions / extra-tool-registry may be a value OR a 0-arg fn.
-   The manager passes fns (xi.cli/tooling-opts) so the enabled tool set is read
-   *fresh each turn* — enabling/disabling an extension changes what the model
-   sees on the next turn without a restart (see xi.ext.manager)."
-  [{:keys [only-tools extra-tool-definitions extra-tool-registry remove-tools]}]
-  (let [extra-defs (if (fn? extra-tool-definitions)
-                     (extra-tool-definitions) extra-tool-definitions)
-        extra-registry (if (fn? extra-tool-registry)
-                         (extra-tool-registry) extra-tool-registry)
-        removed (if (fn? remove-tools) (remove-tools) remove-tools)
-        all-defs (into (tools/tool-definitions) extra-defs)
-        all-defs (if (seq removed)
-                   (filterv #(not (contains? removed (:name %))) all-defs)
-                   all-defs)
-        defs (if only-tools
-               (filterv #(contains? only-tools (:name %)) all-defs)
-               all-defs)
-        registry (tools/with-extensions extra-registry)]
-    {:defs defs :registry registry}))
 
 (defn tool-dispatcher
   "Return a fn `(tool-name clj-args) → Promise<#js {:content :isError}>` that
@@ -446,11 +415,9 @@
         append-sys (if (:no-tools? opts)
                      (:system opts)
                      (str/join "\n\n" (remove str/blank? [(:system opts) TOOL_NAMING_NOTE])))
-        {:keys [defs registry]} (resolve-tooling
-                                 (cond-> {:extra-tool-definitions (:extra-tool-definitions opts)
-                                          :extra-tool-registry (:extra-tool-registry opts)
-                                          :remove-tools (:remove-tools opts)}
-                                   (:personal-agent? opts) (assoc :only-tools PERSONAL_AGENT_TOOLS)))
+        ;; the runner transport ships `defs` over the wire and dispatches
+        ;; proxied calls via `registry`
+        {:keys [defs registry]} (tools/resolve-tooling opts)
         {:keys [promise abort!]}
         (runner/run-turn!
          {:script (runner-path)

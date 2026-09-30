@@ -138,7 +138,7 @@
   "Provider-effect tooling threaded into agent/create-fx. Reads the extension
    manager *live* so runtime enable/disable is reflected on the next turn:
    the tool defs/registry are fn-valued and re-evaluated per turn by
-   xi.providers.anthropic/resolve-tooling (see xi.ext.manager)."
+   xi.tools.registry/resolve-tooling (see xi.ext.manager)."
   [manager ask!]
   {;; Policy is core, not an extension surface: every tool call is decided by
    ;; the rules engine before it runs. Extensions can't add to or skip it.

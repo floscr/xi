@@ -29,7 +29,7 @@ appear or vanish the moment it is enabled/disabled — no restart.
 
 ### Honest scope: only tool surfaces hot-swap
 
-The provider re-reads `:tool-definitions` and `:tool-registry` per turn (see `xi.providers.anthropic/resolve-tooling`, which derefs the
+The provider re-reads `:tool-definitions` and `:tool-registry` per turn (see `xi.tools.registry/resolve-tooling`, which derefs the
 fn-valued tooling seam supplied by `xi.cli/tooling-opts`). Those surfaces go live
 immediately.
 
@@ -245,4 +245,4 @@ Render and most hosted servers without it.
 - `src/xi/mcp/client.cljs` — JSON-RPC MCP client (stdio `connect` + Streamable-HTTP `connect-http`)
 - `src/xi/cli.cljs` — creates the manager, seeds it, calls `mcp/install!`, and
   wires the fn-valued tooling seam (`tooling-opts`)
-- `src/xi/providers/anthropic.cljs` — `resolve-tooling` derefs the tooling seam per turn
+- `src/xi/tools/registry.cljs` — `resolve-tooling` derefs the tooling seam per turn

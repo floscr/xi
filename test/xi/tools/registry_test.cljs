@@ -41,3 +41,19 @@
                      (is (false? is-error))
                      (is (= "ok" (util/extract-text-content content)))
                      (done))))))))
+
+(deftest resolve-tooling-composes-the-advertised-tools
+  (let [ext-def  {:name "web_search" :description "s"}
+        names    #(mapv :name (:defs (registry/resolve-tooling %)))
+        builtins (mapv :name (registry/tool-definitions))]
+    (is (= builtins (names {})))
+    (is (= (conj builtins "web_search")
+           (names {:extra-tool-definitions (fn [] [ext-def])}))
+        "extension tools are advertised; the seam may be a fn")
+    (is (not-any? #{"bash"} (names {:remove-tools #{"bash"}})))
+    (is (= ["web_search"] (names {:extra-tool-definitions [ext-def] :personal-agent? true}))
+        "personal-agent mode keeps only its allowlist")
+    (is (= ["ls"] (names {:only-tools #{"ls"}})))
+    (is (fn? (get (:registry (registry/resolve-tooling
+                              {:extra-tool-registry {"web_search" (fn [_ _] nil)}}))
+                  "web_search")))))

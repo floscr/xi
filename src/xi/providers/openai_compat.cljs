@@ -60,8 +60,8 @@
               :description description
               :parameters (or input_schema {:type "object" :properties {}})}})
 
-(defn- build-tools []
-  (mapv xi-tool->openai (tools/tool-definitions)))
+(defn- build-tools [tool-defs]
+  (mapv xi-tool->openai tool-defs))
 
 ;; ── Tool Execution ──────────────────────────────────────────────────────────
 
@@ -214,10 +214,10 @@
         cwd (or (:cwd opts) (.cwd js/process))
         model (model-id (:model opts))
         tool-policy (or (:tool-policy opts) default-policy)
-        openai-tools (build-tools)
+        {tool-defs :defs registry :registry} (tools/resolve-tooling opts)
+        openai-tools (build-tools tool-defs)
 
-        system-text (let [tool-defs (tools/tool-definitions)
-                          base (system-prompt/build tool-defs cwd)]
+        system-text (let [base (system-prompt/build tool-defs cwd)]
                       (if (:system opts)
                         (str base "\n\n" (:system opts))
                         base))
@@ -309,7 +309,7 @@
                                                                  :arguments (:arguments-str tc)}})
                                                    tc-entries)})
                          (-> (js/Promise.all
-                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-policy) tc-entries)))
+                              (clj->js (mapv #(execute-tool-call % registry (assoc (:tool-ctx opts) :cwd cwd) tool-policy) tc-entries)))
                              (.then (fn [results]
                                       (let [tool-results (js->clj results :keywordize-keys true)]
                                         (doseq [[tc tr] (map vector tc-entries tool-results)]

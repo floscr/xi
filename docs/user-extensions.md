@@ -249,8 +249,6 @@ What a browser half can do (`xi.web.user-ext.guard`):
 
 - An extension that loops forever blocks the server thread. SCI can't be
   interrupted.
-- User tools are offered to Claude models only. The openai/zen/ollama
-  providers still only advertise built-in tools.
 - Each process reads its own directory and its own `:extensions` list. A TUI
   joined to a server presents the commands, keybindings and prompt badges of
   the extensions enabled in *its* directory and forwards their events. The

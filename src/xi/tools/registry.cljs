@@ -46,6 +46,36 @@
         (merge (tool-registry)
                (if (fn? extra-registry) (extra-registry) extra-registry))))
 
+(def ^:private PERSONAL_AGENT_TOOLS
+  "Tools available in personal-agent mode."
+  #{"web_search" "amazon_search" "willhaben_search" "geizhals_search"})
+
+(defn resolve-tooling
+  "Resolve the enabled tool defs + registry for a turn from a provider's
+   `start-turn!` opts: extension extras, removals, and the personal-agent
+   filter (`:personal-agent?`, or an explicit `:only-tools` name set) applied.
+   `:defs` is the ordered tool-definition vector shown to the model;
+   `:registry` maps tool-name → exec-fn. Every provider advertises `:defs`, so
+   extension tools reach all models, not just the builtins.
+
+   extra-tool-definitions / extra-tool-registry may be a value OR a 0-arg fn.
+   The manager passes fns (xi.cli/tooling-opts) so the enabled tool set is read
+   *fresh each turn* — enabling/disabling an extension changes what the model
+   sees on the next turn without a restart (see xi.ext.manager)."
+  [{:keys [only-tools personal-agent? extra-tool-definitions extra-tool-registry remove-tools]}]
+  (let [extra-defs (if (fn? extra-tool-definitions)
+                     (extra-tool-definitions) extra-tool-definitions)
+        removed (if (fn? remove-tools) (remove-tools) remove-tools)
+        only-tools (or only-tools (when personal-agent? PERSONAL_AGENT_TOOLS))
+        all-defs (into (tool-definitions) extra-defs)
+        all-defs (if (seq removed)
+                   (filterv #(not (contains? removed (:name %))) all-defs)
+                   all-defs)
+        defs (if only-tools
+               (filterv #(contains? only-tools (:name %)) all-defs)
+               all-defs)]
+    {:defs defs :registry (with-extensions extra-tool-registry)}))
+
 (defn run-tool
   "Run a tool's `exec-fn` with `args`/`ctx` and normalize its result to a
    promise of {:content <blocks> :is-error bool}. Every tool result is capped

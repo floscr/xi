@@ -86,8 +86,8 @@
    :parameters (or input_schema {:type "object" :properties {}})
    :strict false})
 
-(defn build-tools []
-  (mapv xi-tool->responses (tools/tool-definitions)))
+(defn build-tools [tool-defs]
+  (mapv xi-tool->responses tool-defs))
 
 ;; ── Tool execution ───────────────────────────────────────────────────────────
 
@@ -275,10 +275,10 @@
         cwd (or (:cwd opts) (.cwd js/process))
         model (:model opts)
         tool-policy (or (:tool-policy opts) default-policy)
-        responses-tools (build-tools)
+        {tool-defs :defs registry :registry} (tools/resolve-tooling opts)
+        responses-tools (build-tools tool-defs)
 
-        system-text (let [tool-defs (tools/tool-definitions)
-                          base (system-prompt/build tool-defs cwd)]
+        system-text (let [base (system-prompt/build tool-defs cwd)]
                       (if (:system opts)
                         (str base "\n\n" (:system opts))
                         base))
@@ -361,7 +361,7 @@
                              ((:on-tool-args callbacks)
                               {:id (:call_id tc) :name (:name tc) :arguments (:arguments tc)})))
                          (-> (js/Promise.all
-                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-policy) tcs)))
+                              (clj->js (mapv #(execute-tool-call % registry (assoc (:tool-ctx opts) :cwd cwd) tool-policy) tcs)))
                              (.then
                               (fn [results]
                                 (let [outputs (js->clj results :keywordize-keys true)]
