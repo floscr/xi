@@ -21,6 +21,7 @@
             [xi.ext.manager :as manager]
             [xi.ext.user.guard :as guard]
             [xi.sandbox.sci :as sandbox]
+            [xi.tools.registry :as registry]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]))
@@ -65,7 +66,7 @@
    the rules engine's) and no :event-hooks (rewrites/blocks any event)."
   #{:id :init :handlers :fx :commands :tool-definitions :tool-registry
     :system-prompt :keybindings :prompt-badge :on-shutdown :on-enable
-    :on-disable :remove-tools
+    :on-disable
     ;; web half, collected but not composed node-side
     :routes :pages :nav-items :taps})
 
@@ -123,11 +124,14 @@
    file is one extension; its sibling namespaces load on demand via :load-fn).
    → a vector of {:file :id :extension :web-extension :hash :error} in load
    order; :error is a string when the file couldn't be turned into a valid
-   extension (:extension nil then). Guards are applied to accepted extensions."
-  [dir]
+   extension (:extension nil then). Guards are applied to accepted extensions.
+   `taken-ids` / `taken-tools`: ids and tool names already in use (built-ins,
+   MCP) — a user extension may never replace one."
+  ([dir] (load-dir dir nil))
+  ([dir {:keys [taken-ids taken-tools] :or {taken-ids #{} taken-tools #{}}}]
   (loop [files      (list-files dir)
-         taken-ids  #{}
-         taken-tools #{}
+         taken-ids  taken-ids
+         taken-tools taken-tools
          acc        []]
     (if-let [file (first files)]
       (let [src   (str (fs/readFileSync file "utf8"))
@@ -149,7 +153,7 @@
                (cond-> taken-ids  (:id entry) (conj (:id entry)))
                (into taken-tools (map :name (:tool-definitions (:extension entry))))
                (conj acc entry)))
-      acc)))
+      acc))))
 
 (defonce ^:private loaded (atom []))
 
@@ -179,17 +183,31 @@
         (js/console.error (str "[user-ext] rejected " (node-path/basename file) ": " error))))
     entries))
 
+(defn- taken
+  "Ids and tool names a user extension may not use: everything registered in
+   `mgr` and every builtin tool, except what this loader registered itself
+   (a reload replaces those). manager/register! replaces by id and the tool
+   registry lets extensions win by name, so without this a user file could
+   swap out :rules or the builtin `write`."
+  [mgr]
+  (let [own-ids   (set (keep :id @loaded))
+        own-tools (set (mapcat #(map :name (get-in % [:extension :tool-definitions])) @loaded))]
+    {:taken-ids   (into #{} (comp (map :id) (remove own-ids)) (manager/ext-list mgr))
+     :taken-tools (-> (set (map :name (registry/tool-definitions)))
+                      (into (comp (map :name) (remove own-tools))
+                            (:tool-definitions (manager/composed mgr))))}))
+
 (defn install!
   "Load ~/.config/xi/extensions and register each valid extension into `mgr`
    (call AFTER the built-ins + MCP are seeded). Returns the load report."
   [mgr]
-  (register-all! mgr (load-dir (extensions-dir))))
+  (register-all! mgr (load-dir (extensions-dir) (taken mgr))))
 
 (defn reload!
   "Re-evaluate the extensions dir and re-register (dropping ids whose file is
    gone). Tool changes apply next turn; handler/command/keybinding changes need
    a restart, same as built-ins. → {:loaded [ids] :rejected [{:file :error}]}."
   [mgr]
-  (let [entries (register-all! mgr (load-dir (extensions-dir)))]
+  (let [entries (register-all! mgr (load-dir (extensions-dir) (taken mgr)))]
     {:loaded   (vec (keep :id entries))
      :rejected (mapv #(select-keys % [:file :error]) (filter :error entries))}))

@@ -55,6 +55,22 @@
       (is (nil? (:error a)))
       (is (re-find #"already in use" (:error b))))))
 
+(deftest never-replaces-a-built-in-id-or-tool
+  (let [dir (tmp-dir)]
+    (write! dir "a.cljs" "(ns a) (def extension {:id :rules})")
+    (write! dir "b.cljs"
+            (str "(ns b) (def extension {:id :b :tool-definitions [{:name "
+                 (pr-str "write") " :description " (pr-str "x") "}]})"))
+    (let [[a b] (user/load-dir dir {:taken-ids #{:rules} :taken-tools #{"write"}})]
+      (is (re-find #"already in use" (:error a)) "a user file can't swap out :rules")
+      (is (re-find #"tool name already in use: write" (:error b))
+          "nor replace the builtin write tool"))))
+
+(deftest remove-tools-is-not-allowed
+  (let [dir (tmp-dir)]
+    (write! dir "r.cljs" (str "(ns r) (def extension {:id :r :remove-tools #{" (pr-str "read") "}})"))
+    (is (re-find #"disallowed keys.*remove-tools" (:error (first (user/load-dir dir)))))))
+
 (deftest sandbox-escape-in-a-file-is-a-clean-rejection
   (let [dir (tmp-dir)]
     (write! dir "evil.cljs"
