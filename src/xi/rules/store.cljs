@@ -263,6 +263,15 @@
                              (get-in (get-state) [:rooms room-id :ext]))}
            m)))
 
+(defn with-path-target
+  "Append the target of a path ask to its confirm `text`: the path and the git
+   repo it sits in (or that it is in none), so a rule's generic :message —
+   \"Write outside the project repo?\" — still says what is being approved."
+  [text path repo]
+  (str text "\n\n"
+       "Path: " path "\n"
+       "Repo: " (or repo "none (not inside a git repo)")))
+
 (defn hard-block-request
   "Immutable, non-overridable check: a deny message when decision request
    `req` would write a rules file — a write/edit targeting one, or a shell-ish

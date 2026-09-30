@@ -237,7 +237,13 @@
     :deny  {:decision :deny :message (or message "Blocked by rule.")}
     :nudge {:decision :nudge :message (or message "")}
     :ask   (if confirm!
-             (-> (confirm! (with-requester req (or message (ask-message req)))
+             (-> (confirm! (with-requester
+                            req
+                            (cond
+                              (and message (:path req))
+                              (store/with-path-target message (:path req) (:repo req))
+                              message message
+                              :else   (ask-message req)))
                            (let [diff (ask-diff req)]
                              (cond-> {:options (recommend-options options)}
                                diff (assoc :diff diff))))

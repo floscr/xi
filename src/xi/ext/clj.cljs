@@ -1161,10 +1161,11 @@
         (if (some #(paths/path-within? resolved %) (paths/hidden-paths))
           (js/Promise.resolve nil)
           (js/Promise.resolve (or repo resolved)))
-        (-> (confirm! (or (:message action)
-                          (str (if (= :write kind) "Write" "Read")
-                               " outside the project repo: " path
-                               (when repo (str " (repo: " repo ")"))))
+        (-> (confirm! (rules-store/with-path-target
+                       (or (:message action)
+                           (str (if (= :write kind) "Write" "Read")
+                                " outside the project repo?"))
+                       resolved repo)
                       (when repo {:options [:yes :no :allow-repo]}))
             (.then (fn [answer]
                      (cond
