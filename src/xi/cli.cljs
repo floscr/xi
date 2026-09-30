@@ -1148,14 +1148,26 @@ See docs/cli.md for the full reference.")
             "usage: xi clients [list|pending|approve <code>|revoke <key-prefix|name>]"))
     (js/process.exit 0)))
 
+(defn- silence-worker-console!
+  "A worker has its own `console`, so the TUI's stdout interception
+   (xi.tui.terminal/intercept-stdout!) never sees it: anything a worker logs
+   is painted straight over the alternate screen. Workers talk to the main
+   thread only via parentPort, so their console is dropped. In dev builds this
+   is the shadow-cljs devtools client each worker carries (same bundle), which
+   reports a lost / restarted watch on every `bb serve:restart`."
+  []
+  (doseq [k ["log" "info" "debug" "warn" "error"]]
+    (aset js/console k (fn [& _] nil))))
+
 (defn main [& args]
   (if-not wt/isMainThread
     ;; Loaded as a node:worker_threads Worker (same bundle) — become whatever
     ;; the workerData role names, defaulting to the clj/bb eval worker. See
     ;; xi.ext.clj-worker and xi.ext.clj-socket (nested socket-bridge workers).
-    (if (= "xi-socket-bridge" (some-> wt/workerData (aget "role")))
-      (clj-socket/bridge-install!)
-      (clj-worker/install!))
+    (do (silence-worker-console!)
+        (if (= "xi-socket-bridge" (some-> wt/workerData (aget "role")))
+          (clj-socket/bridge-install!)
+          (clj-worker/install!)))
     (let [{:keys [command] :as opts} (resolve-port (parse-args args))]
       (rules-store/set-hardened-disabled! (:no-hardened-rules? opts))
       (case command
