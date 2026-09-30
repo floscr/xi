@@ -122,9 +122,9 @@
 (defn load-dir
   "Evaluate every extension file in `dir`, each in its OWN sandbox context (a
    file is one extension; its sibling namespaces load on demand via :load-fn).
-   → a vector of {:file :id :extension :web-extension :hash :error} in load
-   order; :error is a string when the file couldn't be turned into a valid
-   extension (:extension nil then). Guards are applied to accepted extensions.
+   → a vector of {:file :ns :id :extension :hash :error} in load order;
+   :error is a string when the file couldn't be turned into a valid extension
+   (:extension nil then). Guards are applied to accepted extensions.
    `taken-ids` / `taken-tools`: ids and tool names already in use (built-ins,
    MCP) — a user extension may never replace one."
   ([dir] (load-dir dir nil))
@@ -140,13 +140,12 @@
                     (let [ctx (make-ctx dir)
                           nsn (source-ns src)
                           _   (sci/eval-string* ctx src)
-                          ext (read-var ctx nsn 'extension)
-                          web (read-var ctx nsn 'web-extension)]
+                          ext (read-var ctx nsn 'extension)]
                       (if-let [reason (validate ext taken-ids taken-tools)]
                         (assoc base :error reason)
                         (assoc base :id (:id ext)
-                                    :extension (guard/wrap ext)
-                                    :web-extension web)))
+                                    :ns nsn
+                                    :extension (guard/wrap ext))))
                     (catch :default e
                       (assoc base :error (str "eval error: " (.-message e)))))]
         (recur (rest files)
@@ -159,10 +158,68 @@
 
 (defn loaded-entries [] @loaded)
 
-(defn web-extensions
-  "Source-carrying web halves the browser build should evaluate (Phase C)."
+(defn- path->ns
+  "<dir>/my_ext/util.cljs → \"my-ext.util\" (inverse of file-ns->path)."
+  [dir file]
+  (-> (node-path/relative dir file)
+      (str/replace #"\.cljs$" "")
+      (str/replace node-path/sep ".")
+      (str/replace "_" "-")))
+
+(defn- cljs-files-under
+  "Every *.cljs file below `root` (recursive); [] when absent."
+  [root]
+  (if (fs/existsSync root)
+    (->> (fs/readdirSync root #js {:withFileTypes true :recursive true})
+         (keep (fn [^js e]
+                 (when (and (.isFile e) (str/ends-with? (.-name e) ".cljs"))
+                   (node-path/join (or (.-parentPath e) (.-path e)) (.-name e)))))
+         sort vec)
+    []))
+
+(defn web-bundle
+  "The browser half of a loaded extension, as source: its `<ns>.web`
+   namespace plus every sibling under the extension's subdir (the browser
+   resolves requires against these). nil when the extension has no
+   `<name>/web.cljs`."
+  [dir {:keys [id ns]}]
+  (let [web-ns (str ns ".web")]
+    (when (fs/existsSync (file-ns->path dir web-ns))
+      (let [root (node-path/dirname (file-ns->path dir web-ns))]
+        {:id      id
+         :ns      web-ns
+         :sources (into {}
+                        (map (fn [f] [(path->ns dir f) (str (fs/readFileSync f "utf8"))]))
+                        (cljs-files-under root))}))))
+
+(defn web-bundles
+  "Web halves of every loaded user extension (sent to browsers on request)."
   []
-  (keep (fn [e] (when (:web-extension e) (select-keys e [:id :file]))) @loaded))
+  (vec (keep #(when (:id %) (web-bundle (extensions-dir) %)) @loaded)))
+
+(def server-extension
+  "Built-in server extension (xi.config/server) that hands user web halves
+   to browsers: a web client sends the roomless :user-ext/web-sources and gets
+   :user-ext/web-sources-result {:extensions [bundle …]} back — only to that
+   client. The browser evaluates them in its own sandbox (xi.web.user-ext).
+
+   :user-ext/sync carries a user extension's changed room slice (emitted by
+   xi.ext.user.guard) — a no-op here, it exists to be broadcast so clients,
+   which lack the extension's server handlers, can mirror the slice."
+  {:id              :user-extensions
+   :handlers        {:user-ext/web-sources
+                     (fn [_st {:keys [client-id]}]
+                       {:effects [[:user-ext/web-sources-reply {:client-id client-id}]]})
+                     :user-ext/sync
+                     (fn [st {:keys [room-id ext-id state]}]
+                       (when (get-in st [:rooms room-id])
+                         {:state (assoc-in st [:rooms room-id :ext ext-id] state)}))}
+   :server-fx       (fn [{:keys [send!]}]
+                      {:user-ext/web-sources-reply
+                       (fn [_ {:keys [client-id]}]
+                         (send! client-id {:type       :user-ext/web-sources-result
+                                           :extensions (web-bundles)}))})
+   :roomless-events #{:user-ext/web-sources}})
 
 (defn- register-all!
   "Register the accepted extensions of `entries` into `mgr`; unregister any

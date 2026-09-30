@@ -29,6 +29,7 @@
             [xi.web.demo :as demo]
             [xi.web.keymap :as keymap]
             [xi.web.router :as router]
+            [xi.web.user-ext :as user-ext]
             [xi.session.sidebar :as sidebar]
             [xi.session.recent :as recent]
             [xi.web.views :as views]))
@@ -2003,6 +2004,10 @@
 ;; reload! keeps working across hot reloads).
 (defonce ^:private pages-ref (atom nil))
 
+;; The composed route table, as an atom: user extensions' web halves add
+;; routes after startup (xi.web.user-ext), and the router reads it per call.
+(defonce ^:private routes-ref (atom nil))
+
 (defn- render! [app-state dispatch!]
   (let [root (el "app")
         hiccup (views/root-view app-state dispatch! @pages-ref)]
@@ -2190,7 +2195,8 @@
 
 (defn- real-init! []
   (let [composed  (ext/compose (web-extensions))
-        routes    (:routes composed)
+        _         (reset! routes-ref (:routes composed))
+        routes    routes-ref
         stored-theme (or (try (.getItem js/localStorage "ui-theme") (catch :default _ nil))
                         "auto")
         viewer?   (boolean (try (.getItem js/localStorage "xi-viewer-mode") (catch :default _ nil)))
@@ -2237,9 +2243,15 @@
                          :handlers      (ws-transport/make-handlers
                                          (base-handlers)
                                          {:local-handlers
-                                          (ext/merge-handlers (web-handlers routes) composed)})
+                                          (ext/merge-handlers
+                                           (merge (web-handlers routes) user-ext/handlers)
+                                           composed)})
                          :effects       (merge (:effects transport)
                                                (web-effects routes)
+                                               (user-ext/fx {:pages-ref   pages-ref
+                                                             :routes-ref  routes-ref
+                                                             :app-ref     app-ref
+                                                             :builtin-ids (map :id (:extensions composed))})
                                                (:fx composed))
                          :on-render     render!})]
     (reset! pages-ref (:pages composed))
@@ -2255,6 +2267,8 @@
     (add-tap! (optimistic-tap dispatch!))
     (add-tap! (record-command-tap dispatch!))
     (add-tap! (prompt-nav-close-tap dispatch!))
+    ;; first connect → fetch user extensions' web halves (xi.web.user-ext)
+    (add-tap! (user-ext/request-tap dispatch!))
     (doseq [make-tap (:taps composed)]
       (add-tap! (make-tap dispatch!)))
     (router/init! routes dispatch!)

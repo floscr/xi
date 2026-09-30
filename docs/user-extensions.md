@@ -57,7 +57,8 @@ when there's no room cwd (e.g. in an fx).
   handlers, commands, fx, system prompt, …).
 - A file may require its own sibling namespaces: `(:require [notes.util])` loads
   `~/.config/xi/extensions/notes/util.cljs`.
-- `web-extension` (a browser half) is collected but not loaded yet.
+- `<name>/web.cljs` defining `web-extension` is the extension's optional
+  **browser half** (see [Browser halves](#browser-halves)).
 
 `/ext list` shows loaded extensions. `/ext reload` re-reads the directory. Tool
 changes apply on the next turn. Handler, command and keybinding changes need a
@@ -131,11 +132,80 @@ The loader wraps every user fn (`xi.ext.user.guard`):
 - **Errors:** a throwing handler, fx or command is logged and ignored. A
   throwing tool returns an error result.
 
+- **Sync:** a changed `[:rooms <rid> :ext <id>]` slice is re-emitted as
+  `:user-ext/sync`. Clients mirror rooms by replaying the server's reducers,
+  but they don't have a user extension's server handlers, so the slice is
+  sent to them whole. Room slices therefore reach every client in the room,
+  including browser halves. The process-level `[:ext <id>]` stays on the server.
+
 Allowed map keys: `:id :init :handlers :fx :commands :tool-definitions
 :tool-registry :system-prompt :keybindings :prompt-badge :on-shutdown
-:on-enable :on-disable :remove-tools` (plus the web keys). `:tool-gate` and
-`:event-hooks` are rejected, because policy belongs to the rules engine. `:id`
-and tool names must not clash with anything already loaded.
+:on-enable :on-disable`. `:tool-gate`, `:event-hooks` and `:remove-tools` are
+rejected, because policy belongs to the rules engine. `:id` and tool names
+must not clash with anything already loaded, built-ins included.
+
+## Browser halves
+
+An extension with a subdirectory can ship UI for the web client:
+
+```clojure
+;; ~/.config/xi/extensions/notes/web.cljs
+(ns notes.web
+  (:require [ui.button :as button]
+            [xi.core.state :as state]))
+
+(defn- notes-page [st dispatch!]
+  (let [text (get-in (state/active-room st) [:ext :notes :text])]
+    [:div
+     [:h2 "Notes"]
+     (button/button {:variant :secondary :size :sm
+                     :on-click (fn [_] (dispatch! {:type :ext.notes/refresh}))}
+                    "Refresh")
+     [:pre (or text "(empty)")]]))
+
+(def web-extension
+  {:id :notes
+   :routes {"notes" {:parse (fn [_] {:page :notes/list})
+                    :path  {:notes/list (fn [_] "/notes")}}}
+   :pages {:notes/list notes-page}
+   :nav-items [{:menu :sidebar :label "Notes" :icon :file-text
+                :event {:type :route/navigate :page :notes/list}}]})
+```
+
+The server half handles `:ext.notes/refresh`, reads the file through
+`xi.api.fs`, and stores the text in the room's `[:ext :notes]` slice, which
+syncs back to the page. The full version is the demo extension in
+`scripts/demo-extensions/`, seeded by `bb demo`.
+
+How it loads:
+
+- After connecting, the web client asks the server for the web halves
+  (`:user-ext/web-sources`). The server replies to that client only, with the
+  source of `<ns>.web` and every other file under the extension's
+  subdirectory. The browser resolves requires against those files.
+- The SCI evaluator is a separate, lazily loaded shadow module (`:user-ext`),
+  so clients without web halves never download it.
+- Halves are evaluated in the same hardened SCI setup as the server side.
+  Available namespaces are `clojure.*`, `xi.core.state`, a few pure
+  `xi.web.views` helpers, and the `ui.*` components (without the ones that
+  touch `js/window`).
+
+What a browser half can do (`xi.web.user-ext.guard`):
+
+- **Keys:** only `:id :routes :pages :nav-items :taps`. There are no
+  `:handlers` or `:fx`, because the logic lives in the server half. `:id` must
+  match the server half.
+- **Pages** are namespaced by the extension id (`:notes/…`). Route segments
+  can't shadow built-in ones (`chat`, `projects`, `git-status`) or another
+  extension's routes.
+- **dispatch!** sends the extension's own `:ext.<id>/*` events to the server
+  (tagged with the active room) and passes `:route/navigate` / `:nav/back`.
+  Anything else is dropped. The same applies to nav-item events.
+- **Rendering:** page output is sanitized before replicant renders it.
+  Script-capable tags (`script`, `iframe`, `object`, `style`, …), string
+  `on*` handlers, `innerHTML`/`srcdoc`, and `javascript:`/`vbscript:`/non-image
+  `data:` URLs are removed. A throwing page renders an error box instead of
+  breaking the client.
 
 ## Limits (v1)
 
@@ -145,6 +215,7 @@ and tool names must not clash with anything already loaded.
   providers still only advertise built-in tools.
 - Each process reads its own directory. A TUI connected to a remote server
   shows *its* extensions' commands, not the server's.
-- Browser halves (`web-extension`) aren't loaded yet.
+- Browser halves are loaded once per page load. After `/ext reload`, refresh
+  the browser. The TUI has no browser-half equivalent.
 - An extension can add system-prompt text, which steers the agent. The agent's
   tool calls still go through the rules.

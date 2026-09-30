@@ -73,7 +73,11 @@
           ;; the main watch (bb dev / bb serve).
           (def demo-home (str (System/getProperty "user.dir") "/.demo-home"))
           (def demo-config {:session "xi-demo"
+                            ;; XDG_DATA_HOME too: user extensions keep their data
+                            ;; there (xi.paths/extension-data-dir), and an inherited
+                            ;; absolute XDG_DATA_HOME would point at the real one.
                             :windows [["server" (str "HOME=" demo-home
+                                                     " XDG_DATA_HOME=" demo-home "/.local/share"
                                                      " bun target/main.js server --headless --port 7476")]]
                             :print ["Demo web: http://localhost:7476"]})
           ;; Reap leaked dev :7474 headless servers. `td/*` only manage the tmux
@@ -88,17 +92,23 @@
           ;; carry trailing --port/--personal-agent-only args so they don't
           ;; match. pgrep returns just the PIDs, so no cmdline parsing is
           ;; needed (bb.edn is EDN — no #(...) / #"..." reader macros).
-          (defn stray-serve-pids []
+          (defn stray-pids [pattern]
             (let [{:keys [out]} (shell {:out :string :continue true}
-                                       "pgrep" "-f" "target/main.js server --headless$")]
+                                       "pgrep" "-f" pattern)]
               (remove clojure.string/blank?
                       (clojure.string/split-lines (or out "")))))
-          (defn reap-stray-serve! []
-            (when-let [pids (seq (stray-serve-pids))]
-              (println (str "Reaping " (count pids) " stray xi serve process(es): "
+          (defn reap! [what pattern]
+            (when-let [pids (seq (stray-pids pattern))]
+              (println (str "Reaping " (count pids) " stray xi " what " process(es): "
                             (clojure.string/join " " pids)))
               (apply shell {:continue true} "kill" "-9" pids)
               (Thread/sleep 500)))
+          (defn reap-stray-serve! []
+            (reap! "serve" "target/main.js server --headless$"))
+          ;; The demo server leaks the same way (tmux session gone, bun still
+          ;; holding :7476), so a demo:restart's fresh server can't bind.
+          (defn reap-stray-demo! []
+            (reap! "demo" "target/main.js server --headless --port 7476$"))
           ;; `bb dev` (session xi) and `bb serve` (session xi-serve) both run
           ;; `shadow-cljs watch main web`. There is one shadow server per
           ;; project and a build can only be watched once, so whichever starts
@@ -342,13 +352,15 @@
              (td/start demo-config))}
 
   demo:stop
-  {:doc "Stop the demo server tmux session"
-   :task (td/stop demo-config)}
+  {:doc "Stop the demo server tmux session (reaps a leaked :7476 server)"
+   :task (do (td/stop demo-config) (reap-stray-demo!))}
 
   demo:restart
   {:doc "Re-seed .demo-home and restart the demo server (picks up server-side changes)"
    :task (do (shell "bun" "scripts/demo-seed.mjs")
-             (td/restart demo-config))}
+             (td/stop demo-config)
+             (reap-stray-demo!)
+             (td/start demo-config))}
 
   demo:logs
   {:doc "Show recent output from the demo server window"

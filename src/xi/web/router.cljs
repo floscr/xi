@@ -18,12 +18,19 @@
 
 ;; ── Path <-> route ───────────────────────────────────────────────────────────
 
+(defn- routes-of
+  "The route table: `routes` may be a map or an atom holding one (user
+   extensions add routes after the web client started)."
+  [routes]
+  (if (satisfies? IDeref routes) @routes routes))
+
 (defn parse-path
   "URL path → route map. Extension route entries (keyed by first URL
    segment, from ext/compose :routes) take precedence over the built-ins;
    their :parse fn receives the remaining segments."
   [routes path]
-  (let [segments (filterv seq (str/split (or path "/") #"/"))]
+  (let [routes   (routes-of routes)
+        segments (filterv seq (str/split (or path "/") #"/"))]
     (if-let [entry (get routes (first segments))]
       ((:parse entry) (vec (rest segments)))
       (case (first segments)
@@ -45,7 +52,7 @@
   "Route map → URL path. Extension :path fns (keyed by page) take
    precedence over the built-ins."
   [routes {:keys [page session-id file task-id dir cwd number] :as route}]
-  (if-let [f (some #(get-in % [:path page]) (vals routes))]
+  (if-let [f (some #(get-in % [:path page]) (vals (routes-of routes)))]
     (f route)
     (case page
     :chat (if session-id (str "/chat/" session-id) "/chat")
@@ -61,7 +68,7 @@
   "Pages that imply leaving the active room on navigation: the built-ins
    plus every extension route entry's :roomless-pages."
   [routes]
-  (into #{:home} (mapcat :roomless-pages) (vals routes)))
+  (into #{:home} (mapcat :roomless-pages) (vals (routes-of routes))))
 
 ;; ── Navigation (pure handler) ────────────────────────────────────────────────
 
@@ -197,11 +204,11 @@
   {:effects [[:nav/back {:fallback fallback}]]})
 
 (defn handlers
-  "Router handler map, closed over the composed extension route table."
+  "Router handler map over the extension route table (a map or an atom —
+   read per navigation, so routes added later count)."
   [routes]
-  (let [roomless (roomless-pages routes)]
-    {:route/navigate (fn [st ev] (navigate roomless st ev))
-     :nav/back       nav-back}))
+  {:route/navigate (fn [st ev] (navigate (roomless-pages routes) st ev))
+   :nav/back       nav-back})
 
 ;; ── History effect + init (impure edge) ──────────────────────────────────────
 

@@ -50,6 +50,7 @@
         [xi.ext.snippets :as snippets]
         [xi.ext.subagent :as subagent]
         [xi.ext.terminal-title :as terminal-title]
+        [xi.ext.user :as user-ext]
         [xi.ext.treesitter.core :as treesitter]
         [xi.ext.web :as web]
         [xi.ext.worktree.core :as worktree]
@@ -134,6 +135,10 @@
       terminal-title/extension
       clipboard-image/extension
       extensions/create
+      ;; hands user extensions' web halves (~/.config/xi/extensions/<name>/web.cljs)
+      ;; to browsers; the user extensions themselves load after the built-ins
+      ;; (xi.ext.user/install!, called in xi.cli next to mcp/install!)
+      user-ext/server-extension
       mcp/create
       render/create
       ;; registry-only: tracks processes spawned by clj's `process` namespace

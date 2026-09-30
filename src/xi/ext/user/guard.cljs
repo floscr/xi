@@ -12,6 +12,9 @@
      - effects:   only the extension's own :fx types and the filtered
                   :app/dispatch pass; anything else is dropped.
      - errors:    every user fn is wrapped so a throw is logged, not fatal.
+     - sync:      a changed room slice is re-emitted as :user-ext/sync, so
+                  clients (which can't replay the extension's server
+                  reducers) mirror it.
 
    Policy (whether a tool call / xi.api.* op runs at all) is NOT here — that is
    the rules engine, which sees these calls tagged :extension id."
@@ -60,16 +63,29 @@
         (and (= :app/dispatch fx-type)
              (allowed? id (:type payload) opts)))))
 
+(defn- sync-effects
+  "One :user-ext/sync per room whose [:rooms rid :ext id] slice changed.
+   Clients mirror room state by replaying the server's reducers, but they
+   don't have a user extension's server handlers — so the changed slice
+   rides along explicitly (see xi.ext.user/server-extension)."
+  [id before after]
+  (vec (for [rid   (keys (:rooms before))
+             :let  [slice (get-in after [:rooms rid :ext id])]
+             :when (not= slice (get-in before [:rooms rid :ext id]))]
+         [:app/dispatch {:type :user-ext/sync :room-id rid :ext-id id :state slice}])))
+
 (defn- restrict-result
   "Sanitize a handler/command result {:state :effects} against `before`."
   [id own-fx opts before result]
   (when result
-    (cond-> {}
-      (:state result)   (assoc :state (restrict-state id before (:state result)))
-      (:effects result) (assoc :effects
-                               (filterv #(or (allow-effect? id own-fx opts %)
-                                             (do (log-blocked id (str "effect " (first %))) false))
-                                        (:effects result))))))
+    (let [state   (some->> (:state result) (restrict-state id before))
+          effects (filterv #(or (allow-effect? id own-fx opts %)
+                                (do (log-blocked id (str "effect " (first %))) false))
+                           (:effects result))
+          effects (cond-> effects state (into (sync-effects id before state)))]
+      (cond-> {}
+        state         (assoc :state state)
+        (seq effects) (assoc :effects effects)))))
 
 ;; ── Wrappers ─────────────────────────────────────────────────────────────────
 

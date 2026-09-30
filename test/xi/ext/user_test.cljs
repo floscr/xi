@@ -4,6 +4,7 @@
             [xi.ext.manager :as manager]
             [xi.ext.user :as user]
             [xi.ext.user.guard :as guard]
+            [xi.web.user-ext.sci :as web-sci]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]))
@@ -71,6 +72,18 @@
     (write! dir "r.cljs" (str "(ns r) (def extension {:id :r :remove-tools #{" (pr-str "read") "}})"))
     (is (re-find #"disallowed keys.*remove-tools" (:error (first (user/load-dir dir)))))))
 
+(deftest web-bundle-carries-the-web-ns-and-its-siblings
+  (let [dir (tmp-dir)]
+    (fs/mkdirSync (node-path/join dir "my_notes"))
+    (write! dir "my_notes.cljs" "(ns my-notes) (def extension {:id :my-notes})")
+    (write! dir "my_notes/web.cljs" "(ns my-notes.web (:require [my-notes.ui]))")
+    (write! dir "my_notes/ui.cljs" "(ns my-notes.ui)")
+    (let [[e] (user/load-dir dir)
+          b   (user/web-bundle dir e)]
+      (is (= "my-notes.web" (:ns b)))
+      (is (= #{"my-notes.web" "my-notes.ui"} (set (keys (:sources b)))))
+      (is (nil? (user/web-bundle dir (assoc e :ns "other"))) "no web.cljs → nil"))))
+
 (deftest sandbox-escape-in-a-file-is-a-clean-rejection
   (let [dir (tmp-dir)]
     (write! dir "evil.cljs"
@@ -108,6 +121,28 @@
       (is (false? (:hacked after)))
       (is (= [:orig] (get-in after [:ext :rules :rules])) "rules store untouched")
       (is (true? (get-in after [:rooms "r1" :agent :busy?])) "room fields untouched"))))
+
+(deftest changed-room-slices-are-synced-to-clients
+  (let [id :notes
+        ext (guard/wrap
+             {:id id
+              :handlers {:x (fn [st {:keys [room-id text]}]
+                              {:state (assoc-in st [:rooms room-id :ext id :text] text)})}})
+        h (get-in ext [:handlers :x])
+        before {:rooms {"r1" {:ext {id {:text nil}}} "r2" {:ext {id {:text nil}}}}}]
+    (testing "only the changed room's slice rides along"
+      (is (= [[:app/dispatch {:type :user-ext/sync :room-id "r1" :ext-id id
+                              :state {:text "hi"}}]]
+             (:effects (h before {:room-id "r1" :text "hi"})))))
+    (testing "no change, no sync"
+      (is (nil? (:effects (h before {:room-id "r1" :text nil})))))
+    (testing "the sync reducer mirrors the slice (server + browser)"
+      (let [sync (get-in user/server-extension [:handlers :user-ext/sync])]
+        (is (= {:text "hi"}
+               (get-in (:state (sync before {:room-id "r2" :ext-id id :state {:text "hi"}}))
+                       [:rooms "r2" :ext id])))
+        (is (nil? (sync before {:room-id "gone" :ext-id id :state {}}))
+            "never creates a room")))))
 
 ;; ── guard: dispatch + effect filtering ───────────────────────────────────────
 
@@ -216,6 +251,25 @@
                           (aset js/process.env "XDG_DATA_HOME" saved)
                           (js-delete js/process.env "XDG_DATA_HOME"))
                         (done))))))))
+
+(deftest the-demo-extension-loads-on-both-sides
+  ;; scripts/demo-extensions (installed by the demo seed): the server half via
+  ;; load-dir, the web half via web-bundle → the browser evaluator.
+  (let [dir   "scripts/demo-extensions"
+        [e]   (user/load-dir dir)
+        b     (user/web-bundle dir e)
+        [w]   (web-sci/load! [b] {})
+        page  (get-in w [:web-ext :pages :notes/list])
+        st    {:rooms {"r1" {:id "r1" :ext {:notes {:text "hello"}}}}
+               :active-room "r1"}]
+    (is (nil? (:error e)) (str (:error e)))
+    (is (= #{"notes_add"} (set (map :name (get-in e [:extension :tool-definitions])))))
+    (is (nil? (:error w)) (str (:error w)))
+    (is (= "/notes" ((get-in w [:web-ext :routes "notes" :path :notes/list]) {})))
+    (is (fn? page))
+    (is (some #{"hello"} (flatten (page st identity)))
+        "the page renders the room's mirrored [:ext :notes :text]")
+    (is (some #(= "Notes" (:label %)) (get-in w [:web-ext :nav-items])))))
 
 (deftest tool-errors-become-error-results
   (let [ext (guard/wrap

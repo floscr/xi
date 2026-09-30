@@ -274,9 +274,17 @@ if (favorites.length) {
   );
 }
 
+// Demo user extension (server + web half) — docs/user-extensions.md.
+fs.cpSync(
+  path.join(REPO, "scripts", "demo-extensions"),
+  path.join(DEMO_HOME, ".config", "xi", "extensions"),
+  { recursive: true },
+);
+
 // Stash the key so `bb demo` / docs can echo it.
 fs.writeFileSync(path.join(DEMO_HOME, ".demo-client-key"), DEMO_CLIENT_KEY + "\n");
 
 console.log(`Seeded demo HOME at ${DEMO_HOME}`);
 console.log(`  ${seeds.length} sessions across 2 demo projects`);
+console.log(`  user extension: notes (+ web half at /notes)`);
 console.log(`  client key: ${DEMO_CLIENT_KEY}`);
