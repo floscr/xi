@@ -92,6 +92,27 @@
       (is (:error e) "the js/Function escape throws → the file is rejected, not loaded")
       (is (nil? (:extension e))))))
 
+(deftest mirror-extensions-keep-only-what-a-client-presents
+  (let [dir (tmp-dir)]
+    (write! dir "bell.cljs"
+            "(ns bell)
+             (def extension
+               {:id :bell
+                :init {:room {:on? false}}
+                :handlers {:ext.bell/toggle (fn [st ev] {:state (update-in st [:rooms (:room-id ev) :ext :bell :on?] not)})}
+                :fx {:ext.bell/ring (fn [_ _])}
+                :commands [{:name \"bell\" :description \"b\" :handler (fn [_ _] nil)}]
+                :keybindings [{:key \"alt+b\" :event {:type :ext.bell/toggle}}]
+                :prompt-badge (fn [_] \"!\")
+                :tool-definitions [{:name \"bell_ring\" :description \"r\"}]
+                :tool-registry {\"bell_ring\" (fn [_ _] nil)}})")
+    (write! dir "clash.cljs" "(ns clash) (def extension {:id :plan-mode})")
+    (let [exts (user/mirror-extensions dir [{:id :plan-mode} nil])]
+      (is (= [:bell] (map :id exts)) "a built-in's id stays taken in the mirror")
+      (is (= #{:id :init :handlers :commands :keybindings :prompt-badge}
+             (set (keys (first exts))))
+          "no fx or tools: those run on the server"))))
+
 (deftest no-extension-var-is-rejected
   (let [dir (tmp-dir)]
     (write! dir "empty.cljs" "(ns empty) (def foo 1)")

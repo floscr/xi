@@ -213,8 +213,11 @@ What a browser half can do (`xi.web.user-ext.guard`):
   interrupted.
 - User tools are offered to Claude models only. The openai/zen/ollama
   providers still only advertise built-in tools.
-- Each process reads its own directory. A TUI connected to a remote server
-  shows *its* extensions' commands, not the server's.
+- Each process reads its own directory. A TUI joined to a server presents the
+  commands, keybindings and prompt badges of the extensions in *its*
+  directory and forwards their events. The effects and tools run on the
+  server, from the server's directory. On one machine these are the same
+  files. Against a remote server, keep the two directories in sync.
 - Browser halves are loaded once per page load. After `/ext reload`, refresh
   the browser. The TUI has no browser-half equivalent.
 - An extension can add system-prompt text, which steers the agent. The agent's

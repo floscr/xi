@@ -260,6 +260,27 @@
   [mgr]
   (register-all! mgr (load-dir (extensions-dir) (taken mgr))))
 
+(def ^:private mirror-keys
+  "What a TUI client needs of a user extension: the handlers (an event type
+   only forwards to the server when the client has a handler for it, and the
+   server's echo replays through it), plus what the TUI presents locally."
+  [:id :init :handlers :commands :keybindings :prompt-badge])
+
+(defn mirror-extensions
+  "The user extensions as a join/create TUI client mirrors them (see
+   mirror-keys). `builtins` are the client's mirrored built-in extension maps;
+   their ids and tools are taken, as on the server. Effects and tools are left
+   out: they run on the server, which loads the directory itself."
+  ([builtins] (mirror-extensions (extensions-dir) builtins))
+  ([dir builtins]
+   (let [builtins (remove nil? builtins)]
+     (->> (load-dir dir {:taken-ids   (set (map :id builtins))
+                         :taken-tools (into (set (map :name (registry/tool-definitions)))
+                                            (comp (mapcat :tool-definitions) (map :name))
+                                            builtins)})
+          (keep :extension)
+          (mapv #(select-keys % mirror-keys))))))
+
 (defn reload!
   "Re-evaluate the extensions dir and re-register (dropping ids whose file is
    gone). Tool changes apply next turn; handler/command/keybinding changes need

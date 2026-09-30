@@ -119,10 +119,14 @@
    commands (/ext, /mcp, /render) are presented in the local palette;
    `:mirror? true` makes their factories skip create-time side effects (e.g.
    seeding mcp.edn). The client never runs these commands' fx — it forwards
-   them to the server, which owns the live manager — so a stub manager is fine."
+   them to the server, which owns the live manager — so a stub manager is fine.
+
+   User extensions (~/.config/xi/extensions) follow the built-ins, reduced to
+   what a client mirrors (xi.ext.user/mirror-extensions)."
   []
-  (ext/instantiate config/server
-                   {:ring nil :ask! nil :manager (manager/create) :mirror? true}))
+  (let [builtins (ext/instantiate config/server
+                                  {:ring nil :ask! nil :manager (manager/create) :mirror? true})]
+    (into builtins (user-ext/mirror-extensions builtins))))
 
 (defn- client-extensions
   "Process-local extensions that run in the TUI client process
