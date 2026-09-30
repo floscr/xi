@@ -43,13 +43,21 @@
       (unchecked-set o k (unchecked-get src k)))
     o))
 
+(defn- error-ctor
+  "Factory behind `(Exception. msg)` / `(js/Error. msg)` / `assert`. SCI cljs
+   constructs via `(or (:constructor opts) (:class opts))`, so construction
+   goes through this fn while static access (`Error/constructor`) only ever
+   sees the null-proto `:class`."
+  ([] (js/Error.))
+  ([msg] (js/Error. msg))
+  ([msg opts] (js/Error. msg opts)))
+
 (def ^:private default-class-overrides
   "SCI ships a default cljs `Error` class; replace it (and its aliases) with a
-   name-only stub so it never exposes a real constructor."
-  {'Error     (null-proto {})
-   'js/Error  (null-proto {})
-   'Exception (null-proto {})
-   'Throwable (null-proto {})})
+   null-proto static surface plus a constructor fn, so construction and
+   `assert` keep working without exposing the real class."
+  (let [error {:class (null-proto {}) :constructor error-ctor}]
+    {'Error error 'js/Error error 'Exception error 'Throwable error}))
 
 (defn init
   "sci/init with the shared hardening applied: `denied-core` merged into

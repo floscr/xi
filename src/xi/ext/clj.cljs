@@ -738,6 +738,13 @@
   IPrintWithWriter
   (-pr-writer [_ w _] (-write w (str "#object[java.time.Instant \"" (.toISOString (js/Date. ms)) "\"]"))))
 
+(defn- date-ctor
+  "Factory behind (Date.) / (Date. x) in the sandbox (see xi.sandbox.sci)."
+  ([] (js/Date.))
+  ([x] (js/Date. x)))
+
+(defn- instant-ctor [ms] (Instant. ms))
+
 (def ^:private instant-statics
   "java.time.Instant statics (Instant/parse, Instant/now, …) on a null-proto
    object — NOT the deftype ctor, so Instant/constructor can't reach
@@ -884,13 +891,15 @@
                                  ;; clojure.instant / #inst values are js/Dates;
                                  ;; the 'Date key (the ctor's .name) is what
                                  ;; allows instance interop like (.getTime d).
-                                 'Date (sandbox/null-proto {})
-                                 'java.util.Date (sandbox/null-proto {})
+                                 ;; :constructor keeps (Date.) / (Date. ms) working;
+                                 ;; static access only sees the null-proto :class.
+                                 'Date           {:class (sandbox/null-proto {}) :constructor date-ctor}
+                                 'java.util.Date {:class (sandbox/null-proto {}) :constructor date-ctor}
                                  ;; Instant statics (Instant/ofEpochMilli …) —
                                  ;; the deftype's pinned .name gives instance
                                  ;; interop; this value is the static surface.
-                                 'java.time.Instant instant-statics
-                                 'Instant instant-statics}})]
+                                 'java.time.Instant {:class instant-statics :constructor instant-ctor}
+                                 'Instant           {:class instant-statics :constructor instant-ctor}}})]
     (sci/eval-string* ctx PRELUDE)
     ctx))
 
