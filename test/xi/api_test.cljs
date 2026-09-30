@@ -5,6 +5,7 @@
             [clojure.string :as str]
             [xi.api.fs :as xfs]
             [xi.api.http :as http]
+            [xi.api.json :as json]
             [xi.api.sh :as xsh]
             [xi.ext.rules :as rules-ext]
             [xi.rules.store :as store]
@@ -144,6 +145,22 @@
                    (is (re-find #"denied" msg))
                    (is (re-find #"Host: example.com" @asked))))
           (.finally done)))))
+
+(deftest http-url-components
+  (is (= "a%20b%26c%3Dd" (http/url-encode "a b&c=d")))
+  (is (= "https://x.y/a b" (http/url-decode "https%3A%2F%2Fx.y%2Fa+b")))
+  (is (= "100%" (http/url-decode "100%")) "a malformed escape comes back unchanged"))
+
+;; ── json ───────────────────────────────────────────────────────────────────────
+
+(deftest json-round-trips
+  (is (= {:a [1 {:b "c"}] :d nil} (json/parse "{\"a\":[1,{\"b\":\"c\"}],\"d\":null}")))
+  (is (= {"a/b" 1} (json/parse "{\"a/b\":1}" {:keywordize? false})))
+  (is (= "{\"a\":[1,\"x\"]}" (json/stringify {:a [1 "x"]})))
+  (is (= "{\n  \"a\": 1\n}" (json/stringify {:a 1} {:pretty? true})))
+  (is (= "{\n  \"z\": 1,\n  \"a\": 2\n}" (json/pretty "{\"z\":1,\"a\":2}"))
+      "pretty keeps the key order")
+  (is (thrown? js/Error (json/parse "nope"))))
 
 ;; ── decide! / store ──────────────────────────────────────────────────────────
 

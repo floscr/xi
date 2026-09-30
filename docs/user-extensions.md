@@ -117,12 +117,22 @@ no one to answer (no room, no client), the call is refused.
 |---|---|---|
 | `xi.api.fs` | `read` `write` `list` `exists?` `data-dir` | `{:tool :read/:write/:ls :path …}` |
 | `xi.api.sh` | `(sh ctx "cmd" "arg" …)` (optional `{:dir …}` before the argv) | `{:tool :sh :cli :command :argv}` |
-| `xi.api.http` | `(fetch ctx url {:method :headers :body})` (http(s) only) | `{:tool :net :host …}` |
+| `xi.api.http` | `(fetch ctx url {:method :headers :body :timeout-ms})` (http(s) only) → `{:status :ok? :url :headers :body}`; `url-encode` `url-decode` (pure) | `{:tool :net :host …}` |
+| `xi.api.json` | `parse` `stringify` `pretty` | (no request) |
 | `xi.api.promise` | `then` `catch` `all` `resolve` `reject` `delay` | (no request) |
 
 `.then` interop is blocked in the sandbox, so chain Promises with
 `xi.api.promise`. Relative paths resolve against the room's cwd, or against
 the data dir outside a room.
+
+- The gate checks the host of the URL you pass. Redirects are followed and
+  `:url` is where the request ended up.
+- There is no `js/JSON`: `(json/parse s)` returns Clojure data with keyword
+  keys (`{:keywordize? false}` keeps strings), `(json/stringify x)` builds a
+  payload, and `(json/pretty s)` re-indents a JSON string without reordering
+  its keys.
+- There is no env access. Keep keys and tokens in a file in the data dir
+  (`(fs/data-dir ctx)`), which the extension may read without asking.
 
 Defaults that apply to extensions (see [rules.md](rules.md)):
 

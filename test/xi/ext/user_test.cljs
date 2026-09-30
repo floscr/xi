@@ -41,6 +41,19 @@
       (is (= :notes (:id entry)))
       (is (= "N" (get-in entry [:extension :init :room :label]))))))
 
+(deftest pure-api-helpers-are-available-in-the-sandbox
+  (let [dir (tmp-dir)]
+    (write! dir "j.cljs"
+            "(ns j (:require [xi.api.http :as http] [xi.api.json :as json]))
+             (def extension
+               {:id :j
+                :init {:room {:parsed (json/parse \"{\\\"a\\\":[1,2]}\")
+                              :json   (json/stringify {:q (http/url-encode \"a b\")})}}})")
+    (let [[e] (user/load-dir dir)]
+      (is (nil? (:error e)))
+      (is (= {:parsed {:a [1 2]} :json "{\"q\":\"a%20b\"}"}
+             (get-in e [:extension :init :room]))))))
+
 (deftest rejects-tool-gate-and-event-hooks
   (let [dir (tmp-dir)]
     (write! dir "bad.cljs"

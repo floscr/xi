@@ -14,6 +14,7 @@
             [sci.core :as sci]
             [xi.api.fs]
             [xi.api.http]
+            [xi.api.json]
             [xi.api.promise :as api-promise]
             [xi.api.sh]
             [xi.core.events]
@@ -38,6 +39,7 @@
   {'xi.api.fs      (sci/copy-ns xi.api.fs      (sci/create-ns 'xi.api.fs))
    'xi.api.sh      (sci/copy-ns xi.api.sh      (sci/create-ns 'xi.api.sh))
    'xi.api.http    (sci/copy-ns xi.api.http    (sci/create-ns 'xi.api.http))
+   'xi.api.json    (sci/copy-ns xi.api.json    (sci/create-ns 'xi.api.json))
    'xi.api.promise api-promise/sci-namespace
    'xi.core.state  (sci/copy-ns xi.core.state  (sci/create-ns 'xi.core.state))
    'xi.core.events (sci/copy-ns xi.core.events (sci/create-ns 'xi.core.events))})
