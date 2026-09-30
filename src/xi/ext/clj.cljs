@@ -13,8 +13,8 @@
    - REPL persistence: (def x …) survives across calls (external memory)
 
    Real CLIs run only through (sh \"cmd\" \"arg\" …), which is permission
-   gated: a pre-scan of the code (edamame parse) collects literal sh targets
-   in the :tool-gate, checks them against the global allowlist
+   gated: before the tool runs (`approve`), a pre-scan of the code (edamame
+   parse) collects literal sh targets, checks them against the global allowlist
    (~/.config/xi/ext/clj.edn → :allow-clis) and the shared rules engine
    (session/config allow + deny rules), and raises confirm dialogs for the
    rest. Approved binaries are injected into the tool-call arguments
@@ -34,6 +34,7 @@
             [cljs.reader :as reader]
             [edamame.core :as e]
             [sci.core :as sci]
+            [xi.bb-trust :as bb-trust]
             [xi.ext.clj-process :as proc]
             [xi.ext.clj-socket :as sock]
             [xi.git-lock :as git-lock]
@@ -46,7 +47,6 @@
             [xi.server-control :as server-control]
             [xi.tools.truncate :as trunc]
             ["node:child_process" :as cp]
-            ["node:crypto" :as crypto]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]
@@ -77,58 +77,6 @@
 
 (defn- helper-hints? []
   (not= false (:helper-hints @global-config)))
-
-;; ── bb.edn SHA trust ─────────────────────────────────────────────────────────
-;; `bb` runs without an approval dialog when the project's bb.edn content-hash
-;; is in the trust store. Trust is content-addressed (sha256 of bb.edn), so a
-;; copied bb.edn is trusted too and an edited one auto-revokes until re-trusted.
-;; Note: this trusts bb.edn's inline tasks/:init/:requires — task code that
-;; lives in separate files is outside the hash.
-
-(defn- bb-trust-path []
-  (node-path/join (os/homedir) ".config" "xi" "ext" "bb-trust.edn"))
-
-(defn- read-bb-trust []
-  (try
-    (when (fs/existsSync (bb-trust-path))
-      (reader/read-string (fs/readFileSync (bb-trust-path) "utf8")))
-    (catch :default _ nil)))
-
-(defn- write-bb-trust! [m]
-  (let [p (bb-trust-path)]
-    (fs/mkdirSync (node-path/dirname p) #js {:recursive true})
-    (fs/writeFileSync p (str (pr-str m) "\n"))))
-
-(defn- find-bb-edn
-  "Walk up from cwd to the nearest bb.edn; nil when none is found."
-  [cwd]
-  (loop [dir (paths/real-resolve (or cwd (.cwd js/process)) ".")]
-    (let [f (node-path/join dir "bb.edn")]
-      (if (fs/existsSync f)
-        f
-        (let [parent (node-path/dirname dir)]
-          (when (not= parent dir) (recur parent)))))))
-
-(defn- bb-sha
-  "Hex sha256 of the nearest bb.edn, or nil when none is found."
-  [cwd]
-  (when-let [f (find-bb-edn cwd)]
-    (-> (.createHash crypto "sha256")
-        (.update (fs/readFileSync f))
-        (.digest "hex"))))
-
-(defn- bb-trusted? [cwd]
-  (boolean (when-let [sha (bb-sha cwd)]
-             (contains? (set (:shas (read-bb-trust))) sha))))
-
-(defn- trust-bb!
-  "Persist the nearest bb.edn's sha to the trust store. Returns {:path :sha}
-   or nil when no bb.edn is found."
-  [cwd]
-  (when-let [f (find-bb-edn cwd)]
-    (let [sha (bb-sha cwd)]
-      (write-bb-trust! (update (or (read-bb-trust) {}) :shas (fnil conj #{}) sha))
-      {:path f :sha sha})))
 
 ;; ── Path + output guards ─────────────────────────────────────────────────────
 
@@ -1087,10 +1035,10 @@
 ;; The worker mirrors process/start registrations back to the main thread as
 ;; `processEvent` messages; dispatching them into app state needs the app's
 ;; dispatch! and the original room-id (the worker only sees the string room
-;; key). Both are captured by gate-clj on each gated call.
+;; key). Both are captured by `approve` on each call.
 (defonce ^:private app-dispatch! (atom nil))
 (defonce ^:private room-ids (atom {}))      ;; room-key str → room-id
-(defonce ^:private gate-ctxs (atom {}))     ;; room-key str → tool-gate ctx (runtime path gate)
+(defonce ^:private gate-ctxs (atom {}))     ;; room-key str → tool ctx (runtime path gate)
 
 (defn- settle-worker-death!
   "A room's worker died (crash / exit / terminate) with evals possibly in
@@ -1308,7 +1256,7 @@
       (update-in res [:content 0 :text] str "\n\n" hint)
       res)))
 
-(defn- clj-tool [args {:keys [cwd]}]
+(defn- run-clj [args {:keys [cwd]}]
   (-> (run-in-worker #js {:kind    "clj"
                           :code    (str (:code args))
                           :roomId  (room-key (:_room-id args))
@@ -1355,13 +1303,17 @@
          {:content  [{:type "text" :text (.-text m)}]
           :is-error (boolean (.-isError m))}))))
 
-(defn- bb-tool [args {:keys [cwd]}]
+(defn- bb-tool
+  "The bb tool. Whether the call may run at all (bb.edn trust, guarded
+   patterns, server control) is decided by the rules engine before this."
+  [args {:keys [cwd room-id]}]
   (let [cmd (str/join " " (bb-argv args))]
     ;; serve:restart / serve:stop kill the server hosting this agent — run
-    ;; detached, never inline (the server-control rule asked at the gate).
+    ;; detached, never inline (the server-control rule asked first).
     (if (server-control/kind cmd)
       (js/Promise.resolve (server-control/tool-result cmd cwd))
-      (bb-tool-in-worker args cwd))))
+      ;; bb runs in the room's eval worker
+      (bb-tool-in-worker (assoc args :_room-id room-id) cwd))))
 
 
 ;; ── Worker: eval side (worker thread) ────────────────────────────────────────
@@ -1631,7 +1583,7 @@
                              (cond
                                (= answer :always)
                                (do (if (= cli "bb")
-                                     (trust-bb! cwd)
+                                     (bb-trust/trust! cwd)
                                      (dispatch! {:type    :ext.rules/add
                                                  :room-id room-id :scope :session
                                                  :rule    (cli-allow-rule cli)}))
@@ -1642,37 +1594,6 @@
    (js/Promise.resolve {:approved #{}})
    clis))
 
-(defn- strip-quoted
-  "Remove single- and double-quoted spans so quoted `;`/`|` don't count,
-   and redirection operators (`2>&1`, `>&2`, `&>`) so their `&`/`|` don't
-   read as command separators."
-  [s]
-  (-> s
-      (str/replace #"'[^']*'" "_")
-      (str/replace #"\"(?:\\.|[^\"\\])*\"" "_")
-      (str/replace #"\d*>&\d*" " ")
-      (str/replace #"&>>?" " ")))
-
-(defn chained-bash?
-  "True when a bash command uses shell composition — pipes, `;`/`&&`/`&`,
-   command substitution, backticks, multiple lines, or a leading VAR= binding.
-   These are the unreadable one-liners the clj tool exists to replace."
-  [cmd]
-  (let [s (strip-quoted (str/trim (str cmd)))]
-    (boolean (or (re-find #"[;|&\n]" s)
-                 (re-find #"\$\(" s)
-                 (str/includes? s "`")
-                 (re-find #"^\w+=" s)))))
-
-(defn- gate-bash [tool-call]
-  (if (chained-bash? (str (get-in tool-call [:arguments :command])))
-    (blocked (str "bash: chained/piped shell commands are disabled — rewrite "
-                  "this with the clj tool (sandboxed Clojure REPL): (cat f) "
-                  "(glob …) (grep re path) (sh \"cmd\" \"arg\" …); compute "
-                  "in-script and return small values. Bash remains available "
-                  "for single simple commands."))
-    tool-call))
-
 (defn bg-command-clis
   "Leading CLI names of background shell command strings (process/start /
    poll-until run whole bash command lines, unlike argv-style sh): strip
@@ -1680,7 +1601,7 @@
    each segment's first word. These join the sh literals for CLI approval."
   [cmds]
   (->> cmds
-       (mapcat (fn [cmd] (str/split (strip-quoted (str cmd)) #"[;|&\n]+")))
+       (mapcat (fn [cmd] (str/split (rules-store/strip-quoted (str cmd)) #"[;|&\n]+")))
        (keep (fn [seg]
                (->> (str/split (str/trim seg) #"\s+")
                     (remove #(re-matches #"[A-Za-z_][A-Za-z0-9_]*=.*" %))
@@ -1745,7 +1666,7 @@
    `rm` is the one write exception: deleting scratch files (typically under
    /tmp) is common enough that requiring approval each time is friction, so
    (sh \"rm\" …) is auto-allowed — including `rm -rf`, which is exempted from
-   the guarded-pattern confirm in gate-clj (bash's rm -rf stays guarded). The
+   the guarded-pattern confirm in `approve` (bash's rm -rf stays guarded). The
    attached hint points at the confined (rm f) helper and, for /tmp targets,
    notes the deletion is usually unnecessary."
   #{"ls" "cat" "head" "tail" "grep" "rg" "find" "fd" "pwd" "echo" "mktemp"
@@ -1839,7 +1760,16 @@
    (js/Promise.resolve {:ok? true :approved-roots #{}})
    dirs))
 
-(defn- gate-clj [tool-call {:keys [get-state room-id confirm! dispatch! cwd] :as ctx}]
+(defn approve
+  "Vet one clj call before it runs: static validation, the rules-engine
+   consult per scanned (sh …) / background command, and the approval dialogs
+   (CLIs, out-of-repo paths, recursive rm, guarded commands). → the tool call
+   with its grants injected into :arguments (:_room-id :_allowed
+   :_allowed-commands :_allowed-reads :_allowed-writes :_allowed-bg :_hint),
+   or {:intercepted true :result …} when refused; a Promise when it had to
+   ask. Runs as part of the tool (clj-tool) — it is not a policy hook.
+   Public for tests."
+  [tool-call {:keys [get-state room-id confirm! dispatch! cwd] :as ctx}]
   (let [code    (str (get-in tool-call [:arguments :code]))
         scan    (scan-code code)
         sh      (sh-summary scan)
@@ -1859,7 +1789,7 @@
         ;; are no longer a private allowlist — they live as session rules and
         ;; reach clj through the engine consult (`engine-allowed`) below.
         base    (cond-> (global-allow-clis)
-                  (bb-trusted? cwd) (conj "bb"))
+                  (bb-trust/trusted? cwd) (conj "bb"))
         inject  (fn [allowed allowed-commands hint]
                   (cond-> (update tool-call :arguments assoc
                                   :_room-id room-id
@@ -2119,43 +2049,21 @@
                                                       (inject-w (into (into allowed-base autorun) approved)
                                                                 hint)))))))))))))))))))))))))))
 
-(defn- gate-bb [tool-call {:keys [cwd confirm! room-id]}]
-  (let [;; bb runs in the room's eval worker — route it there (see bb-tool).
-        tool-call (update tool-call :arguments assoc :_room-id room-id)
-        cmd (str/join " " (bb-argv (:arguments tool-call)))
-        dir (or cwd (.cwd js/process))]
-    (cond
-      ;; Trusted bb.edn: allow, but still confirm any guarded pattern (parity
-      ;; with the bash/clj gates). serve:restart / serve:stop are asked by the
-      ;; server-control rule and run detached by bb-tool.
-      (bb-trusted? dir)
-      (let [guarded (filter #(str/includes? cmd %) rules-defaults/guarded-patterns)]
-        (if (and (seq guarded) confirm!)
-          (-> (confirm-all! confirm! (map #(str "Guarded command: " %) guarded))
-              (.then (fn [ok?]
-                       (if ok? tool-call
-                           (blocked "bb: user denied a guarded command")))))
-          tool-call))
+(defn- public-args
+  "Tool-call arguments minus the `_`-prefixed grant keys — those come from
+   `approve` only, never from the model."
+  [args]
+  (into {} (remove (fn [[k _]] (str/starts-with? (name k) "_"))) args))
 
-      (not confirm!)
-      (blocked (str "bb: bb.edn is not trusted and no client is attached to "
-                    "confirm — trust it with /clj trust-bb."))
-
-      :else
-      (-> (confirm! (str "Trust bb.edn at " (find-bb-edn dir) " and allow `bb` tasks?")
-                    {:options [:yes :no :always]})
-          (.then (fn [answer]
-                   (cond
-                     (= answer :always) (do (trust-bb! dir) tool-call)
-                     answer             tool-call
-                     :else              (blocked "bb: user denied running bb"))))))))
-
-(defn- tool-gate [tool-call ctx]
-  (case (str/lower-case (or (:name tool-call) ""))
-    "bash" (gate-bash tool-call)
-    "clj"  (gate-clj tool-call ctx)
-    "bb"   (gate-bb tool-call ctx)
-    tool-call))
+(defn- clj-tool
+  "The clj tool: `approve` the call (validation + approvals), then evaluate
+   it in the room's worker with the grants it was given."
+  [args ctx]
+  (-> (js/Promise.resolve (approve {:name "clj" :arguments (public-args args)} ctx))
+      (.then (fn [v]
+               (if (:intercepted v)
+                 (:result v)
+                 (run-clj (:arguments v) ctx))))))
 
 ;; ── Command + state ──────────────────────────────────────────────────────────
 
@@ -2185,8 +2093,8 @@
                                     (str "(none — " (config-path) ")")) "\n"
          "  Session allowlist: " (if (seq session) (str/join ", " session) "(none)") "\n"
          "  bb.edn:            " (cond
-                                   (not (find-bb-edn cwd)) "(none found)"
-                                   (bb-trusted? cwd)       "trusted — bb tasks allowed"
+                                   (not (bb-trust/find-bb-edn cwd)) "(none found)"
+                                   (bb-trust/trusted? cwd)       "trusted — bb tasks allowed"
                                    :else                   "not trusted — /clj trust-bb") "\n"
          "  /clj allow <cli> · /clj revoke <cli> · /clj trust-bb · /clj reset (drop REPL state)\n"
          "  Disable with /ext disable clj")))
@@ -2255,8 +2163,15 @@
 (defn- ext-status [st {:keys [room-id text]}]
   {:state (status-line st room-id text)})
 
+(defn- on-trust-bb
+  "Trust the room's bb.edn — dispatched by the bb-trust rule's [a]lways
+   option (xi.rules.defaults), same effect as /clj trust-bb."
+  [st {:keys [room-id cwd]}]
+  {:effects [[:ext.clj/trust-bb {:room-id room-id
+                                 :cwd     (or cwd (get-in st [:rooms room-id :cwd]))}]]})
+
 (defn- trust-bb-fx [{:keys [dispatch!]} {:keys [room-id cwd]}]
-  (let [{:keys [path sha]} (trust-bb! cwd)]
+  (let [{:keys [path sha]} (bb-trust/trust! cwd)]
     (dispatch! {:type :ext.clj/status :room-id room-id
                 :text (if sha
                         (str "clj: trusted bb.edn — bb tasks allowed\n"
@@ -2318,6 +2233,7 @@
 (def extension
   {:id               ext-id
    :handlers         {:ext.clj/status ext-status
+                      :ext.clj/trust-bb on-trust-bb
                       :agent/turn-end on-turn-end
                       :room/close     on-room-close}
    :fx               {:ext.clj/reset-runtime    reset-runtime-fx
@@ -2328,7 +2244,6 @@
    :tool-registry    {"clj" clj-tool
                       "bb"  bb-tool}
    :remove-tools     #{"bash"}
-   :tool-gate        tool-gate
    :system-prompt    SYSTEM_PROMPT
    :commands         [{:name "clj"
                        :description "Sandboxed Clojure tool — status, allow/revoke CLIs, trust bb.edn, reset REPL"

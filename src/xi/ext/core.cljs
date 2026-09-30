@@ -25,16 +25,14 @@
                    pre-dispatch transforms on the app dispatch path;
                    nil blocks the event. Never run on :remote? (mirrored)
                    events — mirrors must replay the server verbatim.
-     :tool-gate    (fn [tool-call ctx] → tool-call | nil
-                    | {:intercepted true :result …} | Promise<…>)
-                   async chain on provider tool execution. ctx:
-                   {:dispatch! :get-state :room-id :cwd :confirm!}
      :tool-definitions [{:name :description :input_schema}]
      :tool-registry    {name (fn [args ctx] → result|Promise)} — ctx is
                    the per-turn tool ctx {:dispatch! :get-state :room-id
                    :confirm!} with the provider's {:cwd :client-pid} on top
                    (xi.agent/create-fx). A name matching a builtin tool
                    replaces its implementation (xi.tools.registry/with-extensions).
+                   Whether a call runs at all is the rules engine's decision
+                   (xi.ext.rules/tool-policy) — extensions have no policy hook.
      :remove-tools #{tool-name} — builtin tools to hide from the model
                    (dropped from the provider tool list; re-read per turn,
                    so /ext disable restores them). E.g. the clj extension
@@ -132,7 +130,6 @@
                                          acc
                                          (:event-hooks e)))
                                {} exts)
-     :tool-gates       (vec (keep :tool-gate exts))
      :remove-tools     (into #{} (mapcat :remove-tools) exts)
      :roomless-events  (into #{} (mapcat :roomless-events) exts)
      :no-broadcast     (into #{} (mapcat :no-broadcast) exts)
@@ -177,50 +174,6 @@
                             ev))))
                     event hs)
             event))))))
-
-(defn allow
-  "Force-allow signal for a tool gate: return `(allow tool-call)` to short-circuit
-   the gate chain and let the tool run, skipping every remaining gate. Used by
-   the rules engine so a configured allow-rule overrides the default gates
-   (which would otherwise still prompt). `tool-gate` unwraps it before handing
-   the result back to the provider."
-  [tool-call]
-  {::allow tool-call})
-
-(defn tool-gate
-  "Compose the extensions' tool gates into one async gate:
-   (fn [tool-call ctx] → Promise<tool-call | nil | {:intercepted …}>).
-   nil short-circuits (blocked); {:intercepted …} short-circuits (the
-   gate already produced the result); {::allow tool-call} short-circuits
-   (force-allow, skip remaining gates — unwrapped before returning).
-   Returns nil when no gates exist."
-  [composed]
-  (let [gates (:tool-gates composed)]
-    (when (seq gates)
-      (fn [tool-call ctx]
-        (-> (reduce
-             (fn [chain gate]
-               (.then chain
-                      (fn [value]
-                        (cond
-                          (nil? value) nil
-                          (and (map? value) (contains? value ::allow)) value
-                          (:intercepted value) value
-                          :else
-                          (try
-                            (let [result (gate value ctx)]
-                              (if (instance? js/Promise result)
-                                result
-                                (js/Promise.resolve result)))
-                            (catch :default e
-                              (js/console.error "[ext] tool gate failed:" e)
-                              value))))))
-             (js/Promise.resolve tool-call)
-             gates)
-            (.then (fn [value]
-                     (if (and (map? value) (contains? value ::allow))
-                       (::allow value)
-                       value))))))))
 
 (defn system-prompt
   "Collect extension system prompts for a cwd. Returns a string or nil."

@@ -451,15 +451,16 @@
    In-flight turn handles live here — runtime resources, not app state.
 
    Second arity threads extension tooling into every turn:
-     :tool-gate              composed 2-arg gate (fn [tool-call ctx] → Promise);
-                             wrapped here into the provider's single-arg gate,
-                             closing over a per-turn ctx so extensions can
-                             dispatch, read state, confirm via dialogs, etc.
+     :tool-policy            the policy step (fn [tool-call ctx] → Promise) every
+                             tool call passes before it runs — the rules
+                             engine (xi.ext.rules/tool-policy). Wrapped here
+                             into the provider's single-arg fn, closing over
+                             the per-turn ctx (state, dispatch, dialogs).
      :extra-tool-definitions extra tool defs exposed to the provider
      :extra-tool-registry    name → exec-fn for those extra tools
      :remove-tools           0-arg fn → #{tool-name} of builtin tools to
                              hide from the model (extension :remove-tools)
-     :ask!                   dialog ask! — partially applied into the gate
+     :ask!                   dialog ask! — partially applied into the tool
                              ctx as :confirm! (fn [message] → Promise<bool>)
      :turn-finished!         (fn [room-id cwd]) — called when every turn
                              finishes, fails or is discarded (holds settle)
@@ -467,7 +468,7 @@
                              effects). Both come from node-only xi.cli — this
                              ns is shared with the browser build."
   ([providers] (create-fx providers nil))
-  ([providers {:keys [tool-gate extra-tool-definitions extra-tool-registry remove-tools ask!
+  ([providers {:keys [tool-policy extra-tool-definitions extra-tool-registry remove-tools ask!
                       turn-finished! fx]}]
   (let [inflight (js/Map.)]
    (merge
@@ -475,7 +476,7 @@
     {:provider/start-turn
      (fn [{:keys [dispatch! get-state]} {:keys [room-id cwd] :as payload}]
        (let [provider (resolve-provider providers payload)
-             ;; Per-turn context handed to extension tool gates AND tool
+             ;; Per-turn context handed to the tool policy AND tool
              ;; exec-fns (as :tool-ctx, merged under the provider's own
              ;; {:cwd :client-pid}): lets them read live state, dispatch
              ;; events, and raise confirm dialogs.
@@ -499,8 +500,8 @@
                                               :dialog  (cond-> {:type :confirm :message message}
                                                          (:options opts) (assoc :options (:options opts))
                                                          (:diff opts)    (assoc :diff (:diff opts)))}))))}
-             gate1 (when tool-gate
-                     (fn [tool-call] (tool-gate tool-call tool-ctx)))
+             policy1 (when tool-policy
+                     (fn [tool-call] (tool-policy tool-call tool-ctx)))
              ;; The turn's cwd doesn't exist on this host (e.g. a Pi session
              ;; with cwd=/var/lib/xi opened elsewhere). Ask the user where to
              ;; run, persist it on the room, then replay the turn fresh.
@@ -536,7 +537,7 @@
              ((:start-turn! provider)
               (cond-> (merge payload (event-callbacks dispatch! room-id)
                              {:tool-ctx tool-ctx})
-                gate1                  (assoc :tool-gate gate1)
+                policy1                  (assoc :tool-policy policy1)
                 extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
                 extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
                 remove-tools           (assoc :remove-tools remove-tools)

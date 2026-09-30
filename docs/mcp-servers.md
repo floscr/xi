@@ -29,8 +29,7 @@ appear or vanish the moment it is enabled/disabled — no restart.
 
 ### Honest scope: only tool surfaces hot-swap
 
-The provider re-reads `:tool-definitions`, `:tool-registry`, and `:tool-gate`
-per turn (see `xi.providers.anthropic/resolve-tooling`, which derefs the
+The provider re-reads `:tool-definitions` and `:tool-registry` per turn (see `xi.providers.anthropic/resolve-tooling`, which derefs the
 fn-valued tooling seam supplied by `xi.cli/tooling-opts`). Those surfaces go live
 immediately.
 
@@ -38,7 +37,7 @@ Everything else — reducer `:handlers`, `:event-hooks`, command dispatch,
 `:keybindings`, `:system-prompt`, `:taps`, `:routes` — is captured **once** into
 `create-app` / the TUI client / the WS server at assembly time. Toggling an
 extension that contributes those surfaces does **not** fully take effect until a
-restart. MCP extensions only ever contribute tools + a tool-gate, so they are
+restart. MCP extensions only ever contribute tools, so they are
 covered completely; that is why the feature is built this way.
 
 ### `/ext` command

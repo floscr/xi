@@ -5,9 +5,9 @@ executes tools directly**. The SDK runs in a separate **runner process**
 (`packages/providers/anthropic/runner.mjs`, its own `node_modules`, freely upgradable SDK); the
 runner exposes Xi's tools to CC via an in-process MCP server and **proxies
 every tool call back to the host** over stdio. The host executes the call
-through its own pipeline — including a tool gate that can block or rewrite
-dangerous operations — so the tool registry and rules/permission gate never
-leave the Xi process.
+through its own pipeline — including the rules policy step that can block
+dangerous operations — so the tool registry and the rules engine never leave
+the Xi process.
 
 ## Architecture
 
@@ -38,7 +38,7 @@ leave the Xi process.
 │  Xi host (providers/anthropic.cljs)                  │
 │                                                      │
 │  1. Receive tool-call frame from the runner          │
-│  2. Run :tool-gate chain (extension-composed)        │
+│  2. Run :tool-policy (the rules engine)              │
 │  3. nil → "Blocked by Xi permission gate" error      │
 │     {:intercepted true :result …} → return result    │
 │     tool-call → execute via Xi tool registry         │
@@ -79,11 +79,10 @@ host ignores any frame after it.
 | `packages/providers/anthropic/package.json` | pins the SDK version — upgrade here; the runner reinstalls when the lockfile changes |
 | `packages/providers/anthropic/nix/` | pins the Claude CLI release; the runner builds it to the `claude` out-link — see [The pinned CLI](#the-pinned-cli) |
 | `src/xi/providers/runner.cljs` | host side of the runner protocol, provider-agnostic: spawn, framing, tool-call proxying, terminal frame |
-| `src/xi/providers/anthropic.cljs` | Claude-specific: query options, SDK message decoding, tool gate + registry wiring |
+| `src/xi/providers/anthropic.cljs` | Claude-specific: query options, SDK message decoding, tool policy + registry wiring |
 | `src/xi/tools/registry.cljs` | Tool definitions and execute fns |
 | `src/xi/tools/*.cljs` | Individual tools (bash, read, write, edit, grep, find, ls) |
-| `src/xi/ext/core.cljs` | Tool-gate chain composition (`compose-tool-gate`) |
-| `src/xi/ext/permission_gate.cljs` | Permission gate extension (blocks dangerous ops) |
+| `src/xi/ext/rules.cljs` | `tool-policy`: the rules engine's decision on each tool call |
 
 ## How it works
 
@@ -112,22 +111,23 @@ effect on the next turn.
 In personal-agent mode (`:personal-agent?`), the definitions are filtered
 to `PERSONAL_AGENT_TOOLS` (`web_search` only).
 
-### 3. The tool gate (host-side)
+### 3. The tool policy (host-side)
 
-The gate is an async transform chain composed from extensions at assembly
-time (`ext/compose`) and passed into the provider per turn as `:tool-gate`.
-Each link is `(fn [tool-call ctx]) → promise` of:
+Every tool call passes one policy step before it runs: the rules engine
+(`xi.ext.rules/tool-policy`), wired by `xi.cli` and passed into the provider
+per turn as `:tool-policy`. It is core, not an extension surface — extensions
+can't add to it or skip it. `(fn [tool-call ctx]) → promise` of:
 
 | Return | Meaning |
 |---|---|
-| tool-call (possibly modified) | allow / rewrite, continue the chain |
-| `nil` | block — CC sees "Blocked by Xi permission gate" |
-| `{:intercepted true :result …}` | short-circuit with a synthetic result |
+| tool-call | run it |
+| `nil` | block — CC sees "Blocked by Xi permission gate" (an ask answered no) |
+| `{:intercepted true :result …}` | return this result instead (a rule's deny or nudge) |
 
-Gate ctx provides `{:dispatch! :get-state :room-id :cwd :confirm!}` —
-`confirm!` raises a dialog in the connected clients (TUI/web) and resolves
-with the answer, which is how the permission gate and `/commit` confirm
-work.
+If deciding throws, the call is denied. The ctx provides `{:dispatch!
+:get-state :room-id :cwd :confirm!}` — `confirm!` raises a dialog in the
+connected clients (TUI/web) and resolves with the answer, which is how rule
+asks and `/commit` confirm work. Tool exec-fns get the same ctx.
 
 ## Permission gate & rules engine
 

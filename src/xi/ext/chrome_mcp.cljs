@@ -6,11 +6,11 @@
    chrome-devtools-mcp declared in ~/.claude.json never reaches an agent run
    inside xi. This extension re-provides it as xi tools: xi spawns
    chrome-devtools-mcp as a child MCP server over stdio and forwards each
-   call. Every call then flows through xi's tool-gate — governable and
+   call. Every call then flows through xi's rules policy — governable and
    redirectable exactly like the built-in tools.
 
      model → xi in-process MCP (mcp__xi-tools__navigate_page …)
-           → tool-gate → this registry fn
+           → rules policy → this registry fn
            → hand-rolled stdio JSON-RPC client → chrome-devtools-mcp → Chrome
 
    The tool definitions are baked into the bundle at compile time from

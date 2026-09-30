@@ -118,8 +118,20 @@ overlap):
   for the whole target repo.
 - **remote shell** — `bash` running `ssh` / `scp` / `rsync` / `sftp` →
   **deny** (hard-blocked).
+- **chained bash** — a `bash` command that composes shell commands (pipes,
+  `;` / `&&` / `&`, `$(…)`, backticks, several lines, a leading `VAR=`;
+  `:chained true`) → **deny**, pointing at the clj tool. `bash` is hidden from
+  the model while the clj extension is on, so this only applies where bash is
+  still offered. To use bash without clj, drop `bash-chained` from `:defaults`
+  or add an allow rule.
+- **untrusted `bb.edn`** — a `bb` tool call whose project `bb.edn` isn't in the
+  trust store (`:bb-trusted false`) → **ask**, naming the `bb.edn`. `[a]lways`
+  trusts that `bb.edn` (the same as `/clj trust-bb`; content-addressed, so an
+  edit asks again) instead of saving a session rule. With nobody to answer,
+  the call is refused (`:unanswered :deny`).
 - **guarded command** — destructive `bash` patterns (`rm -rf`, `sudo`,
-  `chmod -R`, `git push`, `kill`, `fs/delete-tree`, …) → **ask**.
+  `chmod -R`, `git push`, `kill`, `fs/delete-tree`, …), also in a `bb` task's
+  command line → **ask**.
 - **read-only `sed` in a repo** — clj `(sh "sed" "-n" "<addr>p" file…)` (line
   range, `$`, or `/re/` addresses, `;`-separated `p` commands, e.g.
   `sed -n 3060,3420p src/foo.cljs`) whose effective cwd is inside a git repo
@@ -228,6 +240,8 @@ The built-in default tier, in order:
  :xi.rules.defaults/extension-data
  :xi.rules.defaults/plan-mode
  :xi.rules.defaults/write-gates
+ :xi.rules.defaults/bash-chained
+ :xi.rules.defaults/bb-trust
  :xi.rules.defaults/bash-guards
  :xi.rules.defaults/server-control
  :xi.rules.defaults/mcp-confirm
@@ -248,7 +262,9 @@ The built-in default tier, in order:
 | `protected-writes`   | 1 | ask: write into .env / .git/ / node_modules/ |
 | `outside-writes`     | 1 | ask: write outside the repo (with `[r]`) |
 | `write-gates`        | → | composite: `sensitive-writes` `protected-writes` `outside-writes` |
-| `bash-guards`        | 2 | deny remote shells, ask on destructive bash |
+| `bash-chained`       | 1 | deny chained/piped bash (use the clj tool) |
+| `bb-trust`           | 1 | ask before running `bb` with an untrusted `bb.edn`; `[a]lways` trusts it |
+| `bash-guards`        | 2 | deny remote shells, ask on destructive bash / bb task command lines |
 | `server-control`     | 1 | ask on `bb serve:restart` / `serve:stop` (bash, bb tool, clj sh) |
 | `mcp-confirm`        | 1 | ask on every external MCP tool call |
 | `subagent-confirm`   | 1 | ask on every `spawn_subagent` call |
@@ -282,6 +298,8 @@ All present fields are **ANDed**; an absent field is no constraint.
 | `:outside`    | location predicate (opt-in) — `:cwd` matches when the target path resolves outside the effective cwd (and tmp); symlinks are canonicalized |
 | `:credential` | credential-path predicate (opt-in) — `:read` matches when the target path resolves inside a hidden credential dir (`.ssh`, `.gnupg`, `.password-store`, …); symlinks are canonicalized |
 | `:xi-rules-file` | xi-rules-file predicate (opt-in) — `true` matches when a `write`/`edit`/`bash`/`clj` call would change an xi rules file: a `rules.edn` whose content carries `:version` (existing, or introduced by the write/edit). Symlinks are canonicalized |
+| `:chained`    | shell-composition predicate for `bash` (opt-in) — `true` matches a command using pipes, `;`/`&&`/`&`, `$(…)`, backticks, several lines or a leading `VAR=` (quoted separators and redirections like `2>&1` don't count) |
+| `:bb-trusted` | `bb.edn` trust predicate for `bb` tool calls (opt-in) — `true` / `false` matches by whether the nearest `bb.edn`'s sha256 is in the trust store (`~/.config/xi/ext/bb-trust.edn`, written by `/clj trust-bb`) |
 | `:within`     | operand-location predicate for clj `:sh` shell-outs (opt-in) — `:repo` matches when the call is fully literal and every non-flag arg resolves strictly inside the effective git repo (not the root itself, not `.git/` or `.xi/`) or tmp; flags must be bare short clusters (`-p`, `-rv`) — any `--long`/`--`/glued non-letter value never matches; symlinks are canonicalized |
 
 ### Effective working directory
@@ -339,10 +357,17 @@ and are not short-circuited by a `:sh` `:allow`.
 
 | `:type`  | Effect                                                                  |
 |----------|-------------------------------------------------------------------------|
-| `:allow` | Force-allow: the call runs and the **remaining gates are skipped**.     |
+| `:allow` | The call runs. Rules are first-match-wins, so an allow ends the decision: no later rule can ask about or deny it. (The `clj` tool's own per-command approvals still run, because they are part of that tool.) |
 | `:deny`  | Block with an error result (`:message` shown to the agent).             |
 | `:nudge` | Block with a **non-error** steering result — `:message` redirects the agent without signalling failure. |
-| `:ask`   | Raise a confirm dialog. When no `:message` is given, an informative default is built from the request (MCP server/tool/arguments, else the bash/clj command, else the target path). `:options` defaults to `[:yes :no :always]`; answering `:always` persists a session allow-rule for the same call (narrowed to the MCP server + tool for MCP calls, and to the `:tool-name` for other extension tools), and `:repo` (when the target is in a git repo) persists one scoped to the whole repo. For `write`/`edit` calls the dialog also previews the change as a diff (computed without writing; web and TUI). |
+| `:ask`   | Raise a confirm dialog. When no `:message` is given, an informative default is built from the request (MCP server/tool/arguments, else the bash/clj command, else the target path). `:options` defaults to `[:yes :no :always]`; answering `:always` persists a session allow-rule for the same call (narrowed to the MCP server + tool for MCP calls, and to the `:tool-name` for other extension tools), and `:repo` (when the target is in a git repo) persists one scoped to the whole repo. For `write`/`edit` calls the dialog also previews the change as a diff (computed without writing; web and TUI). `:unanswered :deny` refuses the call when no client can be asked (the default lets an unanswerable tool-call ask pass). |
+
+An entry in `:options` may also be a map, `{:value … :key … :label …
+:resolved-label … :event {:type …}}`: picking it approves the call and
+dispatches the event (with `:room-id` and `:cwd` added) instead of saving a
+session rule. Only events on a fixed allowlist are dispatched (currently
+`:ext.clj/trust-bb`, used by the `bb-trust` default), so a rules file can't
+turn a dialog click into an arbitrary event.
 
 ```clojure
 {:match {:tool :bash :command #"\bgit push\b"}
@@ -354,8 +379,10 @@ and are not short-circuited by a `:sh` `:allow`.
 `xi.ext.rules/decide!` runs the same engine on any decision request: the
 immutable hard-block, then the first matching rule, with `:ask` dialogs and
 `[a]lways` / `[r]` persistence. It resolves to a decision (`:allow`,
-`:approved`, `:pass`, `:unanswered`, `:deny`, `:nudge`). The rules tool-gate
-is a thin mapping over it. Callers that aren't tool calls build their request
+`:approved`, `:pass`, `:unanswered`, `:deny`, `:nudge`). The tool-call policy
+step (`xi.ext.rules/tool-policy`, wired in front of every tool call by
+`xi.cli`) is a thin mapping over it. It is the only policy step: extensions
+have no hook to allow, block or rewrite tool calls. Callers that aren't tool calls build their request
 with `xi.rules.store/request`. The `xi.api.fs` / `.sh` / `.http` capabilities
 of user extensions work this way, with every request tagged
 `:extension <id>`. For them `:unanswered` (no one to ask) is a refusal, and
@@ -388,8 +415,8 @@ Every `:ask` rule's confirm dialog carries an extra **Recommend a rule** option
    the recommended rule (EDN) and a scope field (`session` / `repo` / `global` /
    `server`). Edit either, then Save.
 4. Saving writes the rule directly — runtime scopes into app state, config scopes
-   (`repo`/`global`) appended to the on-disk rules file — **bypassing the
-   tool-gate**, so the immutable hard-block is never involved. Re-run the
+   (`repo`/`global`) appended to the on-disk rules file — **not through a tool
+   call**, so the immutable hard-block is never involved. Re-run the
    original call to pick up the new rule.
 
 Regex literals (`#"…"`) in a recommended or file rule are parsed with the full

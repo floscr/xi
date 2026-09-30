@@ -505,3 +505,46 @@
         (is (not (store/operands-within-repo? repo nil ["mv" "a" "b"]))))
       (finally
         (fs/rmSync repo #js {:recursive true :force true})))))
+
+;; ── chained bash detection ───────────────────────────────────────────────────
+
+(deftest chained-command-detection
+  (testing "chained/piped commands are flagged"
+    (is (store/chained-command? "S=/tmp/x; wc -l $S/a $S/b"))
+    (is (store/chained-command? "grep foo *.clj | head -5"))
+    (is (store/chained-command? "npm install && npm test"))
+    (is (store/chained-command? "cat a.txt\ncat b.txt"))
+    (is (store/chained-command? "echo $(date)"))
+    (is (store/chained-command? "echo `date`"))
+    (is (store/chained-command? "sleep 100 &")))
+  (testing "single plain commands pass"
+    (is (not (store/chained-command? "git status")))
+    (is (not (store/chained-command? "npm test")))
+    (is (not (store/chained-command? "ls -la src")))
+    (is (not (store/chained-command? "steam-run npx biome check --write .")))) 
+  (testing "separators inside quotes don't count"
+    (is (not (store/chained-command? "git commit -m 'a; b && c'")))
+    (is (not (store/chained-command? "grep \"a|b\" file.txt"))))
+  (testing "redirections are not composition"
+    (is (not (store/chained-command? "hey re:deploy-pi --service x 2>&1")))
+    (is (not (store/chained-command? "npm test >&2")))
+    (is (not (store/chained-command? "npm test &> out.log")))))
+
+(deftest enrich-adds-chained-and-bb-trust-only-when-a-rule-needs-them
+  (let [chained [{:match {:tool :bash :chained true} :action {:type :deny}}]
+        bb      [{:match {:tool :bb :bb-trusted false} :action {:type :ask}}]]
+    (is (true? (:chained? (store/enrich-request {:tool :bash :command "a | b"} chained))))
+    (is (false? (:chained? (store/enrich-request {:tool :bash :command "ls"} chained))))
+    (is (not (contains? (store/enrich-request {:tool :bash :command "a | b"} []) :chained?)))
+    (is (not (contains? (store/enrich-request {:tool :sh :command "a | b"} chained) :chained?))
+        "only the bash tool")
+    (is (false? (:bb-trusted? (store/enrich-request {:tool :bb :effective-cwd "/tmp"} bb)))
+        "no trusted bb.edn above /tmp")
+    (is (not (contains? (store/enrich-request {:tool :bash :effective-cwd "/tmp"} bb)
+                        :bb-trusted?)))
+    (testing "matching"
+      (is (rules/matches? (first chained) {:tool :bash :chained? true}))
+      (is (not (rules/matches? (first chained) {:tool :bash :chained? false})))
+      (is (rules/matches? (first bb) {:tool :bb :bb-trusted? false}))
+      (is (not (rules/matches? (first bb) {:tool :bb :bb-trusted? true})))
+      (is (not (rules/matches? (first bb) {:tool :bb})) "unknown trust never matches"))))

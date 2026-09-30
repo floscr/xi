@@ -60,8 +60,8 @@ features can't be loaded as a JVM macro namespace.
 
 `config.cljc` also declares which extensions load per surface. Each is a vector
 of extension maps or factory fns `(fn [ctx] → ext|nil)`, composed in order by
-`ext/compose` at assembly time. **Order matters** — handlers and tool-gates
-chain in list order.
+`ext/compose` at assembly time. **Order matters** — handlers chain in list
+order, and a later extension's tool replaces an earlier one of the same name.
 
 - `server` (`:node`) — extensions whose state + provider/tool hooks run
   server-side (server, standalone, mirrored into clients).
@@ -181,7 +181,7 @@ full walkthrough.
 | Path | Read by | Description |
 | --- | --- | --- |
 | `~/.config/xi/ext/clj.edn` | `xi.ext.clj` | Global config for the sandboxed `clj` scripting tool. An EDN map; `:allow-clis` is a vector of CLI binary names (e.g. `["ffmpeg" "jq"]`) that `(sh …)` may run without a confirm dialog, in every room. `:helper-hints` (default `true`) — set to `false` to stop appending "prefer the builtin helpers" hints to auto-run `(sh …)` results if they degrade model output (auto-run itself stays on). Read once per server process. |
-| `~/.config/xi/ext/bb-trust.edn` | `xi.ext.clj` | Trust store for the `bb` tool. An EDN map `{:shas #{"<sha256>" …}}` of trusted `bb.edn` content hashes. When the nearest `bb.edn` (walking up from the room cwd) hashes to one of these, `bb <task>` (and `(sh "bb" …)`) run without a confirm dialog; editing `bb.edn` changes its sha and auto-revokes trust. Written at runtime by `/clj trust-bb` or the `bb` approval dialog's "always" answer — not hand-edited. See [clj-tool.md](clj-tool.md). |
+| `~/.config/xi/ext/bb-trust.edn` | `xi.bb-trust` | Trust store for the `bb` tool. An EDN map `{:shas #{"<sha256>" …}}` of trusted `bb.edn` content hashes. When the nearest `bb.edn` (walking up from the room cwd) hashes to one of these, `bb <task>` (and `(sh "bb" …)`) run without a confirm dialog; editing `bb.edn` changes its sha and auto-revokes trust. Written at runtime by `/clj trust-bb` or the `bb` approval dialog's "always" answer — not hand-edited. See [clj-tool.md](clj-tool.md). |
 
 Per-session (room) allowances are managed at runtime instead: approving a
 confirm dialog with "always" or running `/clj allow <cli>` adds the binary to

@@ -132,7 +132,7 @@
           fake-prov {:id :fake
                      :start-turn!
                      (fn [opts]
-                       {:promise (-> ((:tool-gate opts) {:name "mcp__srv__do" :arguments {}})
+                       {:promise (-> ((:tool-policy opts) {:name "mcp__srv__do" :arguments {}})
                                      (.then (fn [_] {:usage {} :cost 0})))
                         :abort!  (fn [])})}
           handlers (merge events/core-handlers h/handlers (:handlers dialogs))
@@ -150,7 +150,7 @@
            {:initial-state init
             :handlers handlers
             :effects (merge (subagent/create-fx {:fake fake-prov}
-                                                {:tool-gate gate :ask! (:ask! dialogs)})
+                                                {:tool-policy gate :ask! (:ask! dialogs)})
                             (:fx dialogs))})]
       (dispatch! {:type :subagent/spawn :room-id "r1" :sub-id "sa-1"
                   :task "t" :label "L" :prompt "t"})

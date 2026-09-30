@@ -102,9 +102,9 @@
    (def server
      "Extensions whose state + provider/tool hooks run server-side (server,
       standalone, and mirrored into clients)."
-     [;; Rules engine first: the immutable hard-block + data rules run before
-      ;; every other policy gate, and an :allow rule can force-allow a call,
-      ;; short-circuiting the remaining gates.
+     [;; The rules engine's extension half (rule state, /rules). Deciding tool
+      ;; calls is core, not an extension surface — xi.cli wires
+      ;; xi.ext.rules/tool-policy in front of every tool call.
       rules/create
       plan-mode/extension
       done-notify/extension
@@ -128,8 +128,7 @@
       github/extension
       github-code-search/extension
       image-graph/extension
-      ;; clj (sandboxed SCI scripting tool) after the rules gate so its tool
-      ;; calls still pass the policy rules first
+      ;; clj (sandboxed SCI scripting tool)
       clj-tool/extension
       treesitter/create
       terminal-title/extension

@@ -15,14 +15,14 @@ agent turn started *inside* xi.
 
 This extension re-provides it. xi spawns `chrome-devtools-mcp` as a child MCP
 server over stdio and forwards each call. The payoff: every browser call flows
-through xi's **tool-gate**, so it's governable and redirectable exactly like a
+through xi's **rules policy**, so it's governable and redirectable exactly like a
 built-in tool. In attach mode this is used to **scope the agent to the xmonad
 workspace of the TUI driving the session** (see
 [Workspace scoping](#workspace-scoping) below).
 
 ```
 model → xi in-process MCP (mcp__xi-tools__navigate_page …)
-      → tool-gate → chrome registry fn
+      → rules policy → chrome registry fn
       → hand-rolled stdio JSON-RPC client → chrome-devtools-mcp → Chrome
 ```
 

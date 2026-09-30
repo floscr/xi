@@ -6,8 +6,9 @@
    `tool-call` frames.
 
    Interface: (stream-messages-runner opts) → {:promise :abort!}.
-   Extension hooks are injected via :tool-gate (async transform; nil blocks,
-   {:intercepted true :result …} short-circuits) — no ext/core dependency."
+   The policy step is injected via :tool-policy (async; nil blocks,
+   {:intercepted true :result …} stands in for the tool's result) — no
+   dependency on the rules engine here."
   (:require ["node:fs" :as fs]
             [clojure.string :as str]
             [xi.providers.runner :as runner]
@@ -27,7 +28,7 @@
 ;; ── MCP Tool Bridge ───────────────────────────────────────────────────────────
 ;;
 ;; Claude's built-in tools are disabled (tools: [] whitelist) — Xi exposes
-;; its own via MCP. Each call passes through :tool-gate before execution.
+;; its own via MCP. Each call passes through :tool-policy before execution.
 
 (def ^:private MCP_SERVER_NAME "xi-tools")
 (def ^:private MCP_TOOL_PREFIX (str "mcp__" MCP_SERVER_NAME "__"))
@@ -52,23 +53,23 @@
   "Tools available in personal-agent mode."
   #{"web_search" "amazon_search" "willhaben_search" "geizhals_search"})
 
-(def ^:private default-gate
-  "Pass-through tool gate (extensions inject the real one)."
+(def ^:private default-policy
+  "Pass-through tool policy (xi.cli injects the rules engine)."
   (fn [tool-call] (js/Promise.resolve tool-call)))
 
 (defn run-gated-tool
-  "Execute one tool call through the extension tool-gate, then the registry.
+  "Execute one tool call through the tool policy, then the registry.
    Returns a Promise of #js {:content … :isError …}. Services the runner's
    proxied tool-call frames, so the permission gate + registry stay host-side
    regardless of transport.
 
-   opts: {:tool-name :exec-fn :arguments :tool-gate :tool-ctx :cwd :client-pid}.
+   opts: {:tool-name :exec-fn :arguments :tool-policy :tool-ctx :cwd :client-pid}.
    The exec-fn's ctx is the per-turn :tool-ctx (dispatch!, get-state, room-id,
    confirm! — see xi.agent/create-fx) with :cwd / :client-pid on top."
-  [{:keys [tool-name exec-fn arguments tool-gate tool-ctx cwd client-pid]}]
-  (let [tool-gate (or tool-gate default-gate)
+  [{:keys [tool-name exec-fn arguments tool-policy tool-ctx cwd client-pid]}]
+  (let [tool-policy (or tool-policy default-policy)
         tool-call {:name tool-name :arguments arguments}]
-    (-> (tool-gate tool-call)
+    (-> (tool-policy tool-call)
         (.then
          (fn [gated]
            (cond
@@ -120,12 +121,12 @@
   "Return a fn `(tool-name clj-args) → Promise<#js {:content :isError}>` that
    runs a tool through the gate + registry. Used by the runner transport to
    service proxied `tool-call` frames on the host."
-  [{:keys [registry tool-gate tool-ctx cwd client-pid]}]
+  [{:keys [registry tool-policy tool-ctx cwd client-pid]}]
   (fn [tool-name arguments]
     (run-gated-tool {:tool-name tool-name
                      :exec-fn (get registry tool-name)
                      :arguments arguments
-                     :tool-gate tool-gate
+                     :tool-policy tool-policy
                      :tool-ctx tool-ctx
                      :cwd cwd
                      :client-pid client-pid})))
@@ -466,7 +467,7 @@
                           (when (and (:fatal-error @state) (not fatal-before?))
                             (when-let [f @!abort] (f)))))
           :on-tool-call (tool-dispatcher {:registry registry
-                                          :tool-gate (:tool-gate opts)
+                                          :tool-policy (:tool-policy opts)
                                           :tool-ctx (:tool-ctx opts)
                                           :cwd cwd
                                           :client-pid (:client-pid opts)})

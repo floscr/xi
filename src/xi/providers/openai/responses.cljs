@@ -34,7 +34,7 @@
 ;; below (callers request `include: reasoning.encrypted_content`).
 (def default-reasoning-effort "low")
 
-(def ^:private default-gate
+(def ^:private default-policy
   (fn [tool-call] (js/Promise.resolve tool-call)))
 
 ;; ── History replay → Responses input items ────────────────────────────────
@@ -95,9 +95,9 @@
   "Execute one function_call through Xi's registry + gate. Returns a promise of
    a Responses `function_call_output` item. Errors are surfaced in the output
    text (the Responses API has no error flag on tool output)."
-  [{:keys [call_id name arguments]} registry tool-ctx tool-gate]
+  [{:keys [call_id name arguments]} registry tool-ctx tool-policy]
   (let [registry (or registry (tools/tool-registry))]
-    (-> (tool-gate {:name name :arguments arguments})
+    (-> (tool-policy {:name name :arguments arguments})
         (.then
          (fn [gated]
   (cond
@@ -274,7 +274,7 @@
                                      :on-tool-args :on-tool-result :on-error])
         cwd (or (:cwd opts) (.cwd js/process))
         model (:model opts)
-        tool-gate (or (:tool-gate opts) default-gate)
+        tool-policy (or (:tool-policy opts) default-policy)
         responses-tools (build-tools)
 
         system-text (let [tool-defs (tools/tool-definitions)
@@ -361,7 +361,7 @@
                              ((:on-tool-args callbacks)
                               {:id (:call_id tc) :name (:name tc) :arguments (:arguments tc)})))
                          (-> (js/Promise.all
-                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-gate) tcs)))
+                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-policy) tcs)))
                              (.then
                               (fn [results]
                                 (let [outputs (js->clj results :keywordize-keys true)]

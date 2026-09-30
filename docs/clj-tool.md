@@ -150,8 +150,8 @@ error. To run in another directory, pass a bb-style **leading opts map** with
 `:dir` (relative to the room cwd, absolute, or `~`-prefixed) instead of
 `cd … &&` chains: `(sh {:dir "sub/project"} "bb" "build")`. The dir must
 exist and is gated like a read — an out-of-repo `:dir` raises the same
-approval dialog as reading there. Approval happens **before** eval, in the
-`:tool-gate`:
+approval dialog as reading there. Approval happens **before** eval, as the first
+step of the tool itself (`xi.ext.clj/approve`):
 
 1. The code is parsed (edamame) and all `(sh …)` call sites collected.
 2. Literal command names are checked against the **global allowlist**
@@ -382,10 +382,13 @@ Because `(sh …)` replaces bash, bash's policy is mirrored in the clj gate:
   invisible to this check — known gap, same class as bash string matching.
 
 For providers that don't consume `:remove-tools` yet (openai_compat &co
-build their tool list from the builtin registry only), a `chained-bash?`
-gate still bounces bash commands using shell composition (`;`, `&&`, `|`,
-`$( )`, backticks, multi-line, leading `VAR=`) to the clj tool; single plain
-commands pass.
+build their tool list from the builtin registry only), the `bash-chained`
+default rule (`{:tool :bash :chained true}` → deny, see
+[rules.md](rules.md)) still bounces bash commands using shell composition
+(`;`, `&&`, `|`, `$( )`, backticks, multi-line, leading `VAR=`) to the clj
+tool; single plain commands pass. It is a default rule, not tied to this
+extension: it also applies when clj is disabled, unless you drop it from
+`:defaults` or add an allow rule.
 
 ## The `bb` tool + bb.edn trust
 
@@ -407,11 +410,16 @@ by content-hash** instead of allowlisting the bare `bb` CLI.
     `bb.edn` sha (not the bare `bb` CLI); plain "yes" runs once.
 - **Scope of the hash**: only `bb.edn` itself — its inline tasks, `:init`, and
   `:requires`. Task code that lives in *separate* files is outside the hash.
-- **Gating parity**: `bb serve:restart`/`serve:stop` are asked by the
-  `server-control` rule even on a trusted `bb.edn` (rules run before the
-  trust check), and the bb tool always runs them detached
-  (`xi.server-control`) — trust never lets them run inline and kill the host
-  server. Guarded patterns still confirm. With no client attached, an untrusted `bb.edn` is blocked.
+- **Policy is rules** ([rules.md](rules.md)): the trust check is the
+  `bb-trust` default rule (`{:tool :bb :bb-trusted false}` → ask; its
+  "always" option dispatches `:ext.clj/trust-bb`), not code in the tool. With
+  no client attached, an untrusted `bb.edn` is refused (`:unanswered :deny`).
+  On a trusted `bb.edn`, guarded patterns in the task's command line still
+  confirm (`bash-guards`), and `bb serve:restart`/`serve:stop` are asked by
+  the `server-control` rule. The bb tool always runs those detached
+  (`xi.server-control`), so trust never lets them run inline and kill the
+  host server. For an untrusted `bb.edn` the trust ask comes first and is the
+  only prompt for that call.
 - `(sh "bb" …)` inside `clj` shares the same trust check: a trusted `bb.edn`
   makes `bb` an allowed CLI for the eval, and an untrusted one's "always"
   approval records the sha rather than session-allowlisting the string.
@@ -479,9 +487,9 @@ on the next eval), and `/ext disable clj` terminates all of them.
   respawns the room's worker (losing its REPL state).
 - **Live rules** (planned, not built): scan user prompts for "do not touch X"
   phrasings and offer to inject deny-glob rules enforced in the path guards
-  and the builtin-tool gate; `/rule add|list|rm`.
+  and the rules engine; `/rule add|list|rm`.
 - The builtin `bash`/`grep`/`find`/`ls` tools still coexist (bash is
-  restricted to single plain commands by the gate, see above). A later step
+  restricted to single plain commands by the `bash-chained` default rule). A later step
   could drop them from the registry when `clj` is enabled, making `clj` the
   only execution surface.
 - `(env …)` uses the OS sandbox's narrow env allowlist; a confirm-based

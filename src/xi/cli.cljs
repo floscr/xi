@@ -58,6 +58,7 @@
             [xi.config :as config]
             [xi.env :as env]
             [xi.ext.core :as ext]
+            [xi.ext.rules :as rules-ext]
             [xi.holds :as holds]
             [xi.ext.clj-worker :as clj-worker]
             [xi.ext.clj-socket :as clj-socket]
@@ -132,13 +133,12 @@
 (defn- tooling-opts
   "Provider-effect tooling threaded into agent/create-fx. Reads the extension
    manager *live* so runtime enable/disable is reflected on the next turn:
-   the gate + tool defs/registry are fn-valued and re-evaluated per turn by
+   the tool defs/registry are fn-valued and re-evaluated per turn by
    xi.providers.anthropic/resolve-tooling (see xi.ext.manager)."
   [manager ask!]
-  {:tool-gate              (fn [tool-call ctx]
-                            (if-let [g (ext/tool-gate (manager/composed manager))]
-                              (g tool-call ctx)
-                              tool-call))
+  {;; Policy is core, not an extension surface: every tool call is decided by
+   ;; the rules engine before it runs. Extensions can't add to or skip it.
+   :tool-policy            rules-ext/tool-policy
    :extra-tool-definitions (fn [] (:tool-definitions (manager/composed manager)))
    :extra-tool-registry    (fn [] (:tool-registry (manager/composed manager)))
    :remove-tools           (fn [] (:remove-tools (manager/composed manager)))

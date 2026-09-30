@@ -42,6 +42,13 @@
   "`guarded-patterns` as one alternation regex."
   (alt-re guarded-patterns))
 
+(def ^:private chained-bash-msg
+  (str "bash: chained/piped shell commands are disabled — rewrite "
+       "this with the clj tool (sandboxed Clojure REPL): (cat f) "
+       "(glob …) (grep re path) (sh \"cmd\" \"arg\" …); compute "
+       "in-script and return small values. Bash remains available "
+       "for single simple commands."))
+
 ;; ── Server control (xi.server-control) ────────────────────────────────────────
 
 (def ^:private server-control-re
@@ -191,7 +198,7 @@
    ;; `cat ~/.ssh/id_rsa` names the key as an opaque command arg, so the
    ;; structured :read guard above never sees it and read-only CLIs (cat, head,
    ;; base64, …) auto-run without a prompt. Match the key path inside the command
-   ;; string instead — the clj sh deny-scan and the bash tool-gate both consult
+   ;; string instead — the clj sh deny-scan and the bash tool policy both consult
    ;; the engine with :command, so this blocks the shell bypass regardless of the
    ;; wrapping CLI. `*.pub`/config/known_hosts stay allowed (excluded by regex).
    {:match  {:tool #{:sh :bash} :command hardened-ssh-key-command-re}
@@ -309,13 +316,36 @@
    ::write-gates
    [::sensitive-writes ::protected-writes ::outside-writes]
 
-   ;; Bash gates: remote shells are blocked outright; destructive patterns ask.
+   ;; Chained/piped bash is refused: those one-liners are what the clj tool
+   ;; replaces. bash is hidden from the model while the clj extension is on, so
+   ;; this only bites where bash is still offered (drop the alias, or add an
+   ;; allow rule, to run without clj).
+   ::bash-chained
+   [{:match  {:tool :bash :chained true}
+     :action {:type :deny :message chained-bash-msg}}]
+
+   ;; bb tasks run bb.edn's code: an untrusted bb.edn (sha not in the trust
+   ;; store, xi.bb-trust) asks first — and is refused when nobody can answer.
+   ;; [a]lways trusts that bb.edn (content-addressed, so an edit re-asks)
+   ;; instead of saving a session rule. Listed before the guards so an
+   ;; untrusted bb.edn is never waved through by a narrower ask.
+   ::bb-trust
+   [{:match  {:tool :bb :bb-trusted false}
+     :action {:type :ask
+              :options [:yes :no
+                        {:value :trust-bb :key "a" :label "Always (trust bb.edn)"
+                         :resolved-label "bb.edn trusted"
+                         :event {:type :ext.clj/trust-bb}}]
+              :unanswered :deny}}]
+
+   ;; Bash gates: remote shells are blocked outright; destructive patterns ask
+   ;; (for bb task command lines too).
    ::bash-guards
    [{:match  {:tool :bash :command remote-shell-re}
      :action {:type :deny
               :message (str "Blocked: remote shell commands (ssh, scp, rsync, "
                             "sftp) are not allowed.")}}
-    {:match  {:tool :bash :command guarded-command-re}
+    {:match  {:tool #{:bash :bb} :command guarded-command-re}
      :action {:type :ask :message "Guarded command — proceed?" :options [:yes :no]}}]
 
    ;; Restarting/stopping the server drops every connected session — always
@@ -406,6 +436,8 @@
    ::extension-data
    ::plan-mode
    ::write-gates
+   ::bash-chained
+   ::bb-trust
    ::bash-guards
    ::server-control
    ::mcp-confirm

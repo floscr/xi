@@ -110,30 +110,6 @@
     (is (= [] (clj-ext/scan-read-paths "(ls dir)")))
     (is (= [] (clj-ext/scan-read-paths "(+ 1 2)")))))
 
-;; ── chained bash detection ───────────────────────────────────────────────────
-
-(deftest chained-bash-detection
-  (testing "chained/piped commands are flagged"
-    (is (clj-ext/chained-bash? "S=/tmp/x; wc -l $S/a $S/b"))
-    (is (clj-ext/chained-bash? "grep foo *.clj | head -5"))
-    (is (clj-ext/chained-bash? "npm install && npm test"))
-    (is (clj-ext/chained-bash? "cat a.txt\ncat b.txt"))
-    (is (clj-ext/chained-bash? "echo $(date)"))
-    (is (clj-ext/chained-bash? "echo `date`"))
-    (is (clj-ext/chained-bash? "sleep 100 &")))
-  (testing "single plain commands pass"
-    (is (not (clj-ext/chained-bash? "git status")))
-    (is (not (clj-ext/chained-bash? "npm test")))
-    (is (not (clj-ext/chained-bash? "ls -la src")))
-    (is (not (clj-ext/chained-bash? "steam-run npx biome check --write .")))) 
-  (testing "separators inside quotes don't count"
-    (is (not (clj-ext/chained-bash? "git commit -m 'a; b && c'")))
-    (is (not (clj-ext/chained-bash? "grep \"a|b\" file.txt"))))
-  (testing "redirections are not composition"
-    (is (not (clj-ext/chained-bash? "hey re:deploy-pi --service x 2>&1")))
-    (is (not (clj-ext/chained-bash? "npm test >&2")))
-    (is (not (clj-ext/chained-bash? "npm test &> out.log")))))
-
 ;; ── eval basics ──────────────────────────────────────────────────────────────
 
 (deftest eval-value
@@ -427,9 +403,9 @@
     (is (:is-error res))
     (is (str/includes? (result-text res) "existing directory"))))
 
-;; ── tool gate ──────────────────────────────────────────────────────────────────
+;; ── approve (validation + approvals, run by the tool before it evaluates) ────
 
-(def ^:private gate (:tool-gate clj-ext/extension))
+(def ^:private gate clj-ext/approve)
 
 (defn- gate-ctx []
   {:get-state (fn [] {}) :room-id "r" :confirm! nil :dispatch! (fn [_])})
@@ -437,15 +413,34 @@
 (defn- intercepted-text [res]
   (get-in res [:result :content 0 :text]))
 
-(deftest gate-bounces-chained-bash
-  (let [res (gate {:name "bash" :arguments {:command "ls src | head -3"}}
-                  (gate-ctx))]
-    (is (:intercepted res))
-    (is (str/includes? (intercepted-text res) "clj tool"))))
+(def ^:private clj-tool (get-in clj-ext/extension [:tool-registry "clj"]))
 
-(deftest gate-passes-plain-bash
-  (let [tc {:name "bash" :arguments {:command "git status"}}]
-    (is (= tc (gate tc (gate-ctx))))))
+(deftest the-tool-runs-approve-itself
+  ;; No policy hook exists any more: the tool vets its own call, so a refusal
+  ;; comes back as the tool's result (and nothing is evaluated).
+  (async done
+    (-> (js/Promise.resolve
+         (clj-tool {:code "(sh \"sudo\" \"rm\" \"-rf\" \"/\")"} (gate-ctx)))
+        (.then (fn [res]
+                 (is (:is-error res))
+                 (is (str/includes? (result-text res) "sudo"))
+                 (done))))))
+
+(deftest the-tool-ignores-grants-supplied-in-the-arguments
+  ;; `_`-prefixed grant keys come from approve only. A call that smuggles its
+  ;; own :_allowed still needs the approval it can't get headless.
+  (async done
+    (-> (js/Promise.resolve
+         (clj-tool {:code "(sh \"npm\" \"publish\")" :_allowed ["npm"]
+                    :_allowed-commands ["npm publish"]}
+                   (gate-ctx)))
+        (.then (fn [res]
+                 (is (:is-error res))
+                 (is (str/includes? (result-text res) "need approval"))
+                 (done))))))
+
+(deftest extension-declares-no-policy-hook
+  (is (not (contains? clj-ext/extension :tool-gate))))
 
 (deftest scan-commands-joined
   (is (= ["git status --short"]

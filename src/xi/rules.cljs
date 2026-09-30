@@ -17,6 +17,8 @@
                :when {:mode :plan}       ; submap match against room ext state
                :node {:type \"...\" :name #\"...\" :contains #\"...\"} ; tree-sitter (opt-in)
                :within :repo             ; every :sh operand inside the repo (opt-in)
+               :chained true             ; a :bash command that composes shell commands (opt-in)
+               :bb-trusted false         ; a :bb call whose bb.edn is (not) in the trust store (opt-in)
                :xi-rules-file true}      ; changes an xi rules.edn (opt-in)
       :action {:type :allow|:deny|:nudge|:ask
                :message \"...\"
@@ -212,6 +214,26 @@
   (or (nil? spec)
       (and (true? spec) (boolean (:xi-rules-file? req)))))
 
+(defn- match-chained
+  "Shell-composition match (opt-in). `:chained true` matches a `:bash` command
+   that uses pipes, `;`/`&&`/`&`, command substitution, several lines or a
+   leading VAR= binding — the store computes `:chained?` only when such a rule
+   is in play (nil never matches)."
+  [spec req]
+  (or (nil? spec)
+      (and (true? spec) (boolean (:chained? req)))))
+
+(defn- match-bb-trusted
+  "bb.edn trust match (opt-in). `:bb-trusted true|false` matches a `:bb` call
+   by whether the project's bb.edn sha is in the trust store (xi.bb-trust) —
+   the store computes `:bb-trusted?` only when such a rule is in play (nil,
+   i.e. not a bb call, never matches)."
+  [spec req]
+  (or (nil? spec)
+      (and (boolean? spec)
+           (some? (:bb-trusted? req))
+           (= spec (:bb-trusted? req)))))
+
 (defn- match-cli
   "CLI (binary) spec for `:tool :sh` shell-outs: string → exact binary match,
    set → membership, regex → re-find, against `(:cli req)` (the command's first
@@ -264,6 +286,8 @@
          (match-outside    (:outside m)    req)
          (match-credential (:credential m) req)
          (match-within     (:within m)     req)
+         (match-chained    (:chained m)    req)
+         (match-bb-trusted (:bb-trusted m) req)
          (match-xi-rules-file (:xi-rules-file m) req))))
 
 (defn first-match
@@ -312,6 +336,18 @@
    resolve the target path and populate `:own-data?` on the request."
   [rules]
   (boolean (some #(some-> (canonical %) :match :extension-data) rules)))
+
+(defn needs-chained?
+  "True when any rule carries a `:chained` matcher, so the store should analyse
+   a `:bash` command and populate `:chained?` on the request."
+  [rules]
+  (boolean (some #(some-> (canonical %) :match :chained) rules)))
+
+(defn needs-bb-trusted?
+  "True when any rule carries a `:bb-trusted` matcher (true or false), so the
+   store should read the bb.edn trust store and populate `:bb-trusted?`."
+  [rules]
+  (boolean (some #(some? (some-> (canonical %) :match :bb-trusted)) rules)))
 
 (defn needs-credential?
   "True when any rule carries a `:credential` matcher, so the store should

@@ -153,7 +153,7 @@
   [opts cmd]
   (when-not (contains? (:allowed-bg @opts) (str cmd))
     (throw (ex-info (str "process: the command must be a literal string in this "
-                         "eval, approved by the tool gate — got " (pr-str cmd))
+                         "eval, approved before it runs — got " (pr-str cmd))
                     {:command (str cmd)}))))
 
 ;; ── SCI-facing ops ───────────────────────────────────────────────────────────

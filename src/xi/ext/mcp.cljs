@@ -385,7 +385,7 @@
    :mcp} :action {:type :ask …}}` rule, and the rules ext renders the
    informative server/tool/arguments block). [a]lways there persists a session
    allow-rule narrowed to that mcp server + tool, so this ext no longer carries
-   its own tool-gate or allow-list."
+   its own policy hook or allow-list."
   [{:keys [manager]}]
   (when manager
     {:id        :mcp

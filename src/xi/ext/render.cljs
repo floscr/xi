@@ -17,7 +17,7 @@
    secret is resolved only at connect time). It defaults to disabled so
    Render's tools — which can trigger deploys and mutate service env vars —
    never load unless you opt in; once enabled, every call is still confirmed by
-   the MCP tool gate.
+   the rules engine (the mcp-confirm rule).
 
    Turn it on with:
      /mcp enable render      then      /mcp refresh render   (caches its tools)

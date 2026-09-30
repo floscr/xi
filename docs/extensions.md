@@ -23,7 +23,6 @@ provider effects, and TUI.
    :handlers         {event-type handler-fn}  ; chained AFTER base handlers
    :fx               {fx-type (fn [ctx payload])}
    :event-hooks      {event-type (fn [event state] → event'|nil)}
-   :tool-gate        (fn [tool-call ctx] → tool-call|nil|{:intercepted ...})
    :tool-definitions [{:name :description :input_schema}]
    :tool-registry    {name (fn [args ctx] → result|Promise)} ; ctx: {:cwd :client-pid :dispatch! :get-state :room-id :confirm!}
    :remove-tools     #{tool-name}      ; builtin tools to hide from the model
@@ -78,7 +77,7 @@ xi.cli (assembly)
 │      ctx {:ring … :ask! …})            │  merge into
 ├── client-extensions  →  ext/instantiate │  app handlers,
 │     (xi.config/client)                  │  fx, commands,
-└── create-app ←───────────────────────┘  tool-gate, etc.
+└── create-app ←───────────────────────┘  tools, etc.
       ↕ events      ↕ effects
     handlers        fx handlers
 
@@ -278,10 +277,10 @@ turn (via the fn-valued tooling seam in `xi.cli/tooling-opts`, deref'd in
 next turn without a restart.
 
 **Scope:** only *use-time* surfaces hot-swap — `:tool-definitions`,
-`:tool-registry`, `:tool-gate`. Construction-time surfaces (`:handlers`,
+`:tool-registry`. Construction-time surfaces (`:handlers`,
 `:event-hooks`, commands, `:keybindings`, `:system-prompt`, `:taps`,
 `:routes`) are baked at assembly and need a restart to fully change. Design
-runtime-toggleable extensions to contribute only tools + a tool-gate.
+runtime-toggleable extensions to contribute only tools.
 
 **External MCP servers** are built on this: `xi.ext.mcp` wraps each
 configured MCP server (`~/.config/xi/mcp.edn`) as an extension contributing

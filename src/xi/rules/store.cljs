@@ -19,6 +19,7 @@
    `/rules reload`)."
   (:require [clojure.string :as str]
             [cljs.tools.reader :as tr]
+            [xi.bb-trust :as bb-trust]
             [xi.rules :as rules]
             [xi.rules.defaults :as defaults]
             [xi.rules.nodes :as nodes]
@@ -398,6 +399,29 @@
                               (paths/within-tmp? cwd resolved)))))
                  operands))))))
 
+(defn strip-quoted
+  "Remove single- and double-quoted spans so quoted `;`/`|` don't count,
+   and redirection operators (`2>&1`, `>&2`, `&>`) so their `&`/`|` don't
+   read as command separators."
+  [s]
+  (-> s
+      (str/replace #"'[^']*'" "_")
+      (str/replace #"\"(?:\\.|[^\"\\])*\"" "_")
+      (str/replace #"\d*>&\d*" " ")
+      (str/replace #"&>>?" " ")))
+
+(defn chained-command?
+  "True when a bash command uses shell composition — pipes, `;`/`&&`/`&`,
+   command substitution, backticks, multiple lines, or a leading VAR= binding.
+   These are the unreadable one-liners the clj tool exists to replace
+   (`:chained` rules)."
+  [cmd]
+  (let [s (strip-quoted (str/trim (str cmd)))]
+    (boolean (or (re-find #"[;|&\n]" s)
+                 (re-find #"\$\(" s)
+                 (str/includes? s "`")
+                 (re-find #"^\w+=" s)))))
+
 (defn- home-collapse
   "Rewrite a leading $HOME in absolute `abs` back to `~`, so a `:path` rule can
    be written home-relative (`~/…`) and still match a resolved absolute target.
@@ -417,9 +441,10 @@
    `:path` rules, `:outside-cwd?` for `:outside` rules, `:credential-path?` for
    `:credential` rules, `:nodes` (tree-sitter) for `:node` rules,
    `:operands-within-repo?` for `:within` rules (from a literal `:sh` `:argv`),
-   `:xi-rules-file?` for `:xi-rules-file` rules, and `:own-data?` for
+   `:xi-rules-file?` for `:xi-rules-file` rules, `:own-data?` for
    `:extension-data` rules (symlink-canonical, so a link out of the data dir
-   doesn't count)."
+   doesn't count), `:chained?` for `:chained` rules (`:bash` commands), and
+   `:bb-trusted?` for `:bb-trusted` rules (`:bb` calls)."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (paths/real-resolve (:effective-cwd req) (str (:path req))))]
@@ -437,6 +462,10 @@
                                                            (:repo req) (:argv req)))
       (rules/needs-xi-rules-file? ruleset)
       (assoc :xi-rules-file? (xi-rules-file-change? req))
+      (and (= :bash (:tool req)) (rules/needs-chained? ruleset))
+      (assoc :chained? (chained-command? (:command req)))
+      (and (= :bb (:tool req)) (rules/needs-bb-trusted? ruleset))
+      (assoc :bb-trusted? (bb-trust/trusted? (:effective-cwd req)))
       (and (:path req) (:extension req) (rules/needs-extension-data? ruleset))
       (assoc :own-data? (paths/path-within?
                          (paths/real-resolve (:effective-cwd req) (str (:path req)))

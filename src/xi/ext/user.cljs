@@ -62,8 +62,8 @@
 ;; ── Validation ───────────────────────────────────────────────────────────────
 
 (def ^:private allowed-keys
-  "Extension-map keys a user extension may declare. No :tool-gate (policy is
-   the rules engine's) and no :event-hooks (rewrites/blocks any event)."
+  "Extension-map keys a user extension may declare. No policy hook exists (that
+   is the rules engine's job) and no :event-hooks (rewrites/blocks any event)."
   #{:id :init :handlers :fx :commands :tool-definitions :tool-registry
     :system-prompt :keybindings :prompt-badge :on-shutdown :on-enable
     :on-disable

@@ -1,7 +1,6 @@
 (ns xi.ext.rules-test
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
-            [xi.ext.core :as ext]
             [xi.ext.rules :as rules-ext]))
 
 (defn- ctx [state]
@@ -13,45 +12,132 @@
 (defn- state-with [scope-path rule]
   (assoc-in {:rooms {"r1" {:cwd "/tmp"}}} scope-path [rule]))
 
-(deftest allow-rule-force-allows
-  (testing ":allow returns the ext/allow force-allow signal"
+(deftest allow-rule-runs-the-call
+  (async done
     (let [rule  {:match {:tool :bash} :action {:type :allow}}
           state (state-with [:ext :rules :rules] rule)
-          tc    {:name "bash" :arguments {:command "ls"}}
-          out   (rules-ext/tool-gate tc (ctx state))]
-      (is (= (ext/allow tc) out)))))
+          tc    {:name "bash" :arguments {:command "ls"}}]
+      (-> (rules-ext/tool-policy tc (ctx state))
+          (.then (fn [out]
+                   (is (= tc out))
+                   (done)))))))
 
 (deftest deny-rule-intercepts-with-error
-  (let [rule  {:match {:tool :write :path "*.sh"} :action {:type :deny :message "no shell"}}
-        state (state-with [:ext :rules :rules] rule)
-        out   (rules-ext/tool-gate {:name "write" :arguments {:path "x.sh"}} (ctx state))]
-    (is (:intercepted out))
-    (is (:is-error (:result out)))
-    (is (= "no shell" (get-in out [:result :content 0 :text])))))
+  (async done
+    (let [rule  {:match {:tool :write :path "*.sh"} :action {:type :deny :message "no shell"}}
+          state (state-with [:ext :rules :rules] rule)]
+      (-> (rules-ext/tool-policy {:name "write" :arguments {:path "x.sh"}} (ctx state))
+          (.then (fn [out]
+                   (is (:intercepted out))
+                   (is (:is-error (:result out)))
+                   (is (= "no shell" (get-in out [:result :content 0 :text])))
+                   (done)))))))
 
 (deftest nudge-rule-intercepts-without-error
-  (let [rule  {:match {:tool :write :path "*.sh"} :action {:type :nudge :message "prefer bb"}}
-        state (state-with [:ext :rules :rules] rule)
-        out   (rules-ext/tool-gate {:name "write" :arguments {:path "x.sh"}} (ctx state))]
-    (is (:intercepted out))
-    (is (false? (:is-error (:result out))))
-    (is (= "prefer bb" (get-in out [:result :content 0 :text])))))
+  (async done
+    (let [rule  {:match {:tool :write :path "*.sh"} :action {:type :nudge :message "prefer bb"}}
+          state (state-with [:ext :rules :rules] rule)]
+      (-> (rules-ext/tool-policy {:name "write" :arguments {:path "x.sh"}} (ctx state))
+          (.then (fn [out]
+                   (is (:intercepted out))
+                   (is (false? (:is-error (:result out))))
+                   (is (= "prefer bb" (get-in out [:result :content 0 :text])))
+                   (done)))))))
 
 (deftest no-match-passes-through
-  (let [rule  {:match {:tool :write} :action {:type :deny}}
-        state (state-with [:ext :rules :rules] rule)
-        tc    {:name "bash" :arguments {:command "ls"}}]
-    (is (= tc (rules-ext/tool-gate tc (ctx state))))))
+  (async done
+    (let [rule  {:match {:tool :write} :action {:type :deny}}
+          state (state-with [:ext :rules :rules] rule)
+          tc    {:name "bash" :arguments {:command "ls"}}]
+      (-> (rules-ext/tool-policy tc (ctx state))
+          (.then (fn [out]
+                   (is (= tc out))
+                   (done)))))))
 
 (deftest hard-block-runs-before-data-rules
   (testing "an :allow rule cannot override the immutable rules-file hard-block"
-    (let [rule  {:match {:tool :write} :action {:type :allow}}
-          state (state-with [:ext :rules :rules] rule)
-          out   (rules-ext/tool-gate {:name "write"
-                                      :arguments {:path "~/.config/xi/rules.edn"}}
-                                     (ctx state))]
-      (is (:intercepted out))
-      (is (:is-error (:result out))))))
+    (async done
+      (let [rule  {:match {:tool :write} :action {:type :allow}}
+            state (state-with [:ext :rules :rules] rule)]
+        (-> (rules-ext/tool-policy {:name "write"
+                                    :arguments {:path "~/.config/xi/rules.edn"}}
+                                   (ctx state))
+            (.then (fn [out]
+                     (is (:intercepted out))
+                     (is (:is-error (:result out)))
+                     (done))))))))
+
+(deftest policy-fails-closed
+  (testing "a throw while deciding denies the call instead of letting it run"
+    (async done
+      (-> (rules-ext/tool-policy {:name "bash" :arguments {:command "ls"}}
+                                 (assoc (ctx {}) :get-state (fn [] (throw (js/Error. "boom")))))
+          (.then (fn [out]
+                   (is (:intercepted out))
+                   (is (:is-error (:result out)))
+                   (is (re-find #"boom" (get-in out [:result :content 0 :text])))
+                   (done)))))))
+
+(deftest chained-bash-is-denied-by-default
+  (async done
+    (-> (js/Promise.all
+         #js [(rules-ext/tool-policy {:name "bash" :arguments {:command "ls src | head -3"}}
+                                     (ctx {}))
+              (rules-ext/tool-policy {:name "bash" :arguments {:command "git status"}}
+                                     (ctx {}))])
+        (.then (fn [[chained plain]]
+                 (is (:is-error (:result chained)))
+                 (is (re-find #"chained/piped" (get-in chained [:result :content 0 :text])))
+                 (is (= {:name "bash" :arguments {:command "git status"}} plain))
+                 (done))))))
+
+;; /tmp has no trusted bb.edn, so a bb call there hits the bb-trust rule.
+
+(deftest untrusted-bb-asks-and-always-trusts-via-the-option-event
+  (async done
+    (let [tc         {:name "bb" :arguments {:task "test"}}
+          asked      (atom nil)
+          dispatched (atom [])
+          c          (assoc (ctx {})
+                            :confirm!  (fn [msg opts] (reset! asked [msg opts])
+                                         (js/Promise.resolve :trust-bb))
+                            :dispatch! (fn [ev] (swap! dispatched conj ev)))]
+      (-> (rules-ext/tool-policy tc c)
+          (.then (fn [out]
+                   (is (= tc out) "the call runs")
+                   (is (re-find #"not trusted" (first @asked)))
+                   (is (re-find #"bb test" (first @asked)))
+                   (is (some #(= :trust-bb (:value %)) (:options (second @asked))))
+                   (is (= [{:type :ext.clj/trust-bb :room-id "r1" :cwd "/tmp"}] @dispatched)
+                       "trusts bb.edn instead of saving a session rule")
+                   (done)))))))
+
+(deftest untrusted-bb-is-refused-when-nobody-can-answer
+  (async done
+    (-> (rules-ext/tool-policy {:name "bb" :arguments {:task "test"}} (ctx {}))
+        (.then (fn [out]
+                 (is (:is-error (:result out)))
+                 (is (re-find #"no client" (get-in out [:result :content 0 :text])))
+                 (done))))))
+
+(deftest option-events-are-allowlisted
+  (testing "a rule's option can't dispatch an arbitrary event"
+    (async done
+      (let [rule       {:match {:tool :bash}
+                        :action {:type :ask
+                                 :options [:yes :no {:value :go :key "g" :label "Go"
+                                                     :event {:type :prompt/submit :text "pwn"}}]}}
+            state      (state-with [:ext :rules :rules] rule)
+            dispatched (atom [])
+            tc         {:name "bash" :arguments {:command "ls"}}
+            c          (assoc (ctx state)
+                              :confirm!  (fn [_ _] (js/Promise.resolve :go))
+                              :dispatch! (fn [ev] (swap! dispatched conj ev)))]
+        (-> (rules-ext/tool-policy tc c)
+            (.then (fn [out]
+                     (is (= tc out) "a truthy answer still approves")
+                     (is (empty? @dispatched))
+                     (done))))))))
 
 (deftest ask-rule-allows-on-yes
   (async done
@@ -59,7 +145,7 @@
           state (state-with [:ext :rules :rules] rule)
           tc    {:name "bash" :arguments {:command "ls"}}
           c     (assoc (ctx state) :confirm! (fn [_ _] (js/Promise.resolve true)))]
-      (-> (rules-ext/tool-gate tc c)
+      (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
                    (is (= tc out))
                    (done)))))))
@@ -70,7 +156,7 @@
           state (state-with [:ext :rules :rules] rule)
           tc    {:name "bash" :arguments {:command "ls"}}
           c     (assoc (ctx state) :confirm! (fn [_ _] (js/Promise.resolve false)))]
-      (-> (rules-ext/tool-gate tc c)
+      (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
                    (is (nil? out))
                    (done)))))))
@@ -84,7 +170,7 @@
           c          (assoc (ctx state)
                             :confirm!  (fn [_ _] (js/Promise.resolve :always))
                             :dispatch! (fn [ev] (reset! dispatched ev)))]
-      (-> (rules-ext/tool-gate tc c)
+      (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
                    (is (= tc out))
                    (is (= :ext.rules/add (:type @dispatched)))
@@ -101,7 +187,7 @@
           c          (assoc (ctx state)
                             :confirm!  (fn [_ _] (js/Promise.resolve :recommend))
                             :dispatch! (fn [ev] (swap! dispatched conj ev)))]
-      (-> (rules-ext/tool-gate tc c)
+      (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
                    (is (:intercepted out))
                    (is (:is-error (:result out)))
@@ -180,7 +266,7 @@
           c          {:get-state (fn [] state) :room-id "r1" :cwd cwd
                       :confirm!  (fn [_ _] (js/Promise.resolve :repo))
                       :dispatch! (fn [ev] (reset! dispatched ev))}]
-      (-> (rules-ext/tool-gate tc c)
+      (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
                    (is (= tc out) "call is allowed through")
                    (is (= :ext.rules/add (:type @dispatched)))
@@ -204,7 +290,7 @@
             c     (assoc (ctx state)
                         :confirm! (fn [msg _] (reset! asked msg)
                                     (js/Promise.resolve true)))]
-        (-> (rules-ext/tool-gate tc c)
+        (-> (rules-ext/tool-policy tc c)
             (.then (fn [out]
                      (is (= tc out) "approval lets the call proceed")
                      (is (str/includes? @asked "Server: context7"))
@@ -225,7 +311,7 @@
             c     (assoc (ctx state)
                          :confirm! (fn [_ o] (reset! opts o)
                                      (js/Promise.resolve false)))]
-        (-> (rules-ext/tool-gate tc c)
+        (-> (rules-ext/tool-policy tc c)
             (.then (fn [_]
                      (is (= path (get-in @opts [:diff :path])))
                      (is (str/includes? (get-in @opts [:diff :text]) "+ hello"))
@@ -240,7 +326,7 @@
           c          (assoc (ctx state)
                             :confirm!  (fn [_ _] (js/Promise.resolve :always))
                             :dispatch! (fn [ev] (reset! dispatched ev)))]
-      (-> (rules-ext/tool-gate tc c)
+      (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
                    (is (= tc out))
                    (is (= :ext.rules/add (:type @dispatched)))
@@ -262,7 +348,7 @@
                             :confirm!  (fn [msg _] (reset! asked msg)
                                          (js/Promise.resolve :always))
                             :dispatch! (fn [ev] (reset! dispatched ev)))]
-      (-> (rules-ext/tool-gate tc c)
+      (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
                    (is (= tc out))
                    (is (str/includes? @asked "Tool: spawn_subagent"))

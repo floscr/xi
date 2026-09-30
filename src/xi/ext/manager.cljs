@@ -10,13 +10,12 @@
    restart.
 
    Scope, honestly: only the *use-time* surfaces hot-swap — the tool
-   definitions, tool registry, and tool-gate, which the provider re-reads
-   per turn. The *construction-time* surfaces (reducer :handlers,
+   definitions and tool registry, which the provider re-reads per turn. The *construction-time* surfaces (reducer :handlers,
    :event-hooks, command dispatch, :keybindings, :system-prompt, :taps,
    :routes) are captured once into create-app / the TUI client / the WS
    server at assembly, so toggling an extension that contributes those does
    not fully take effect until a reload. MCP extensions only ever contribute
-   tools + a tool-gate, so they are covered completely.
+   tools, so they are covered completely.
 
    Lifecycle hooks on an extension map (both optional):
      :on-enable  (fn [])  — called when the extension becomes enabled

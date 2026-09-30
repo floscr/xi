@@ -27,7 +27,6 @@
                   :commands     [{:name "ca"}]
                   :tool-definitions [{:name "ta"}]
                   :tool-registry {"ta" (fn [_ _] :a)}
-                  :tool-gate    (fn [tc _] tc)
                   :keybindings  [{:key "alt+a"}]
                   :prompt-badge (fn [_] "A")
                   :system-prompt "sysA"
@@ -41,10 +40,9 @@
       (is (= [:a :b] @order)))
     (testing "commands concatenate in order"
       (is (= ["ca" "cb"] (mapv :name (:commands composed)))))
-    (testing "tool defs / registry / gates / badges / keybindings collected"
+    (testing "tool defs / registry / badges / keybindings collected"
       (is (= ["ta"] (mapv :name (:tool-definitions composed))))
       (is (= 1 (count (:tool-registry composed))))
-      (is (= 1 (count (:tool-gates composed))))
       (is (= 1 (count (:badges composed))))
       (is (= 1 (count (:keybindings composed))))
       (is (= 1 (count (:on-shutdown-fns composed)))))))
@@ -92,69 +90,6 @@
 
 (deftest transform-event-nil-when-no-hooks
   (is (nil? (ext/transform-event (ext/compose [{:id :a}])))))
-
-;; ── tool-gate ────────────────────────────────────────────────────────────────
-
-;; cljs.test/async runs the body in a ^:async fn, where shadow-cljs
-;; auto-awaits Promise-typed expressions — so binding (gate …) yields the
-;; resolved value and we can assert synchronously.
-
-(deftest tool-gate-sync-chain
-  (async done
-    (let [composed (ext/compose
-                    [{:id :a :tool-gate (fn [tc _] (assoc tc :a true))}
-                     {:id :b :tool-gate (fn [tc _] (update tc :name str "!"))}])
-          gate   (ext/tool-gate composed)
-          result (gate {:name "write"} {})]
-      (is (= {:name "write!" :a true} result))
-      (done))))
-
-(deftest tool-gate-promise-value
-  (async done
-    (let [composed (ext/compose
-                    [{:id :a :tool-gate (fn [tc _] (js/Promise.resolve (assoc tc :async true)))}])
-          gate   (ext/tool-gate composed)
-          result (gate {:name "x"} {})]
-      (is (= {:name "x" :async true} result))
-      (done))))
-
-(deftest tool-gate-nil-blocks
-  (async done
-    (let [reached (atom false)
-          composed (ext/compose
-                    [{:id :a :tool-gate (fn [_ _] nil)}
-                     {:id :b :tool-gate (fn [tc _] (reset! reached true) tc)}])
-          gate   (ext/tool-gate composed)
-          result (gate {:name "x"} {})]
-      (is (nil? result) "nil short-circuits as blocked")
-      (is (false? @reached) "later gates do not run after a block")
-      (done))))
-
-(deftest tool-gate-intercepted-short-circuits
-  (async done
-    (let [reached (atom false)
-          composed (ext/compose
-                    [{:id :a :tool-gate (fn [_ _] {:intercepted true :result :done})}
-                     {:id :b :tool-gate (fn [tc _] (reset! reached true) tc)}])
-          gate   (ext/tool-gate composed)
-          result (gate {:name "x"} {})]
-      (is (= {:intercepted true :result :done} result))
-      (is (false? @reached) "intercept short-circuits later gates")
-      (done))))
-
-(deftest tool-gate-throw-recovers
-  (async done
-    (let [composed (ext/compose
-                    [{:id :a :tool-gate (fn [_ _] (throw (js/Error. "boom")))}
-                     {:id :b :tool-gate (fn [tc _] (assoc tc :b true))}])
-          gate   (ext/tool-gate composed)
-          result (gate {:name "x"} {})]
-      (is (= {:name "x" :b true} result)
-          "a throwing gate is skipped, the call passes through")
-      (done))))
-
-(deftest tool-gate-nil-when-no-gates
-  (is (nil? (ext/tool-gate (ext/compose [{:id :a}])))))
 
 ;; ── system-prompt / prompt-badges ────────────────────────────────────────────
 

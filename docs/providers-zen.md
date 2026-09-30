@@ -68,7 +68,7 @@ rather than failing silently.
   format and injects the resolved auth header.
 - `xi.providers.zen.anthropic` — raw-HTTP Anthropic Messages streaming adapter
   (tool_use blocks accumulated from `input_json_delta`, executed through Xi's
-  registry + tool gate, fed back as `tool_result` blocks). Uses `x-api-key`
+  registry + tool policy, fed back as `tool_result` blocks). Uses `x-api-key`
   auth (the Zen Anthropic surface rejects bearer-only).
 - `xi.providers.zen.responses` — raw-HTTP OpenAI **Responses API** streaming
   adapter (GPT/Grok/Muse). Bearer auth. Runs stateless (`store:false`): the

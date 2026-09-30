@@ -70,18 +70,18 @@
 (defn create-fx
   "Sub-agent provider effect. `providers` = provider-id → provider.
    `opts` is the same tooling threaded into xi.agent/create-fx:
-     :tool-gate, :extra-tool-definitions, :extra-tool-registry.
+     :tool-policy, :extra-tool-definitions, :extra-tool-registry.
 
    The `:subagent/start` effect runs a fresh (never-resumed) provider turn with
-   the same extension tools + gate the main agent gets, so a sub-agent can use
-   git/read/etc. A background sub-agent runs unattended, so tool-gate
+   the same extension tools + rules policy the main agent gets, so a sub-agent
+   can use git/read/etc. A background sub-agent runs unattended, so rule
    confirmations resolve to the safe default (deny) instead of opening an
    interactive dialog in the parent room: an unanswered dialog would block the
    sub-agent's turn forever (it never reaches :subagent/turn-end and stays
    stuck :running). Tools the user already [a]llow-always'd in the parent room
    skip :confirm! entirely (room-scoped allowlist), so those still run."
   ([providers] (create-fx providers nil))
-  ([providers {:keys [tool-gate extra-tool-definitions extra-tool-registry
+  ([providers {:keys [tool-policy extra-tool-definitions extra-tool-registry
                       make-config-dir! remove-config-dir!]}]
    {:subagent/start
     (fn [{:keys [dispatch! get-state]}
@@ -96,7 +96,7 @@
             config-dir (when make-config-dir! (make-config-dir!))
             ;; Tool ctx uses the PARENT room-id: the sub-agent's tools act in
             ;; the parent room (cwd, canvas state, confirm dialogs). Handed to
-            ;; the gate and, as :tool-ctx, to tool exec-fns.
+            ;; the tool policy and, as :tool-ctx, to tool exec-fns.
             tool-ctx {:dispatch! dispatch!
                       :get-state get-state
                       :room-id   room-id
@@ -111,7 +111,7 @@
                       :confirm!  (fn confirm!
                                    ([_message] (js/Promise.resolve false))
                                    ([_message _copts] (js/Promise.resolve false)))}
-            gate1    (when tool-gate (fn [tool-call] (tool-gate tool-call tool-ctx)))
+            policy1    (when tool-policy (fn [tool-call] (tool-policy tool-call tool-ctx)))
             ;; The PARENT room's driving-client pid: chrome-mcp scopes a turn to
             ;; that client's terminal workspace. Without it a sub-agent's
             ;; browser calls would fall back to guessing a workspace and could
@@ -129,7 +129,7 @@
                              :personal-agent? personal-agent?
                              :tool-ctx tool-ctx}
                             (callbacks dispatch! room-id sub-id))
-               gate1                  (assoc :tool-gate gate1)
+               policy1                  (assoc :tool-policy policy1)
                extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
                extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
                client-pid             (assoc :client-pid client-pid)

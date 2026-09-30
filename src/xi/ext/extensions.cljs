@@ -2,7 +2,7 @@
   "Control surface for the live extension manager (xi.ext.manager):
    `/ext list | enable <id> | disable <id>` toggles extensions at runtime.
 
-   Only use-time surfaces hot-swap (tools + tool-gate — see the manager
+   Only use-time surfaces hot-swap (tool definitions + registry — see the manager
    docstring); toggling an extension that contributes reducer handlers,
    commands, keybindings, or a system prompt needs a restart to fully take
    effect. This is a factory: it returns nil unless a :manager is in ctx

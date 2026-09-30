@@ -76,8 +76,10 @@ File `src/xi/ext/my_thing.cljs`, ns `xi.ext.my-thing`, events namespaced
  :handler (fn [_st {:keys [room-id args]}]
             {:effects [[:my-thing/start {:room-id room-id :args args}]]})}
 
-;; tool-gate — tool-call (allow) | nil (block) | {:intercepted true :result …} | Promise
-;; ctx has :confirm! (fn [msg] → Promise<bool>), false when no client attached
+;; policy — there is no hook. Whether a tool call runs is decided by the rules
+;; engine (docs/rules.md); add a default rule in xi.rules.defaults instead. A tool
+;; that needs to confirm something itself uses its ctx's :confirm!
+;; (fn [msg] → Promise<bool>), false when no client is attached.
 
 ;; event-hook — (fn [event state] → event'|nil); nil blocks; skipped on :remote?
 

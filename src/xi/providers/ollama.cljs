@@ -5,7 +5,7 @@
    when the local API isn't reachable.
 
    Interface: (stream-messages opts) → {:promise :abort!}.
-   Extension hooks are injected via :tool-gate — no ext/core dependency."
+   The policy step is injected via :tool-policy — no ext/core dependency."
   (:require [clojure.string :as str]
             [xi.providers.openai-compat :as oai]))
 

@@ -210,13 +210,38 @@
                               :operands-within-repo? true}))
         "chmod is not covered — a permission change (+x, u+s) isn't a content change")))
 
+(deftest chained-bash-is-denied
+  (is (= :deny (action-type {:tool :bash :command "ls | head" :chained? true})))
+  (is (nil? (action-type {:tool :bash :command "git status" :chained? false})))
+  (testing "the /tmp cleanup nudge still wins over the chained deny"
+    (is (nudged? {:tool :bash :command "rm -rf /tmp/foo; ls" :chained? true}))))
+
+(deftest bb-trust-and-guards
+  (testing "an untrusted bb.edn asks, and is refused when nobody can answer"
+    (let [rule (rules/first-match defaults/default-rules
+                                  {:tool :bb :command "bb test" :bb-trusted? false})]
+      (is (= :ask (get-in rule [:action :type])))
+      (is (= :deny (get-in rule [:action :unanswered])))
+      (is (= :ext.clj/trust-bb
+             (some #(get-in % [:event :type]) (get-in rule [:action :options]))))))
+  (testing "a trusted bb.edn runs without a prompt"
+    (is (nil? (action-type {:tool :bb :command "bb test" :bb-trusted? true}))))
+  (testing "guarded patterns and server control still ask for a trusted bb.edn"
+    (is (= :ask (action-type {:tool :bb :command "bb clean rm -rf target" :bb-trusted? true})))
+    (is (= :ask (action-type {:tool :bb :command "bb serve:restart" :bb-trusted? true}))))
+  (testing "the trust ask comes first, so a narrower ask can't wave an untrusted bb.edn through"
+    (is (= :deny (get-in (rules/first-match defaults/default-rules
+                                            {:tool :bb :command "bb serve:restart"
+                                             :bb-trusted? false})
+                         [:action :unanswered])))))
+
 (deftest defaults-tagged-scope
   (is (every? #(= :default (:scope %)) defaults/default-rules)))
 
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 22 (count defaults/default-rules))))
+    (is (= 24 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes

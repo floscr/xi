@@ -49,7 +49,7 @@
 (def ^:private max-iterations 25)
 (def ^:private max-tokens 32000)
 
-(def ^:private default-gate
+(def ^:private default-policy
   (fn [tool-call] (js/Promise.resolve tool-call)))
 
 ;; ── Tool defs → Anthropic format ─────────────────────────────────────────────
@@ -126,17 +126,26 @@
 (defn- execute-tool-call
   "Execute one tool_use through Xi's registry + gate. Returns promise of an
    Anthropic tool_result content block."
-  [{:keys [id name arguments]} registry tool-ctx tool-gate]
+  [{:keys [id name arguments]} registry tool-ctx tool-policy]
   (let [registry (or registry (tools/tool-registry))]
-    (-> (tool-gate {:name name :arguments arguments})
+    (-> (tool-policy {:name name :arguments arguments})
         (.then
          (fn [gated]
-           (if (nil? gated)
+           (cond
+             (nil? gated)
              {:type "tool_result" :tool_use_id id
               :content "Blocked by Xi permission gate" :is_error true}
+
+             ;; a deny / nudge: the policy's result stands in for the tool's
+             (:intercepted gated)
+             {:type "tool_result" :tool_use_id id
+              :content (util/extract-text-content (get-in gated [:result :content]))
+              :is_error (boolean (get-in gated [:result :is-error]))}
+
+             :else
              (let [exec-fn (get registry name)]
                (if exec-fn
-                 (-> (tools/run-tool exec-fn arguments tool-ctx)
+                 (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx)
                      (.then (fn [{:keys [content is-error]}]
                               {:type "tool_result" :tool_use_id id
                                :content (util/extract-text-content content)
@@ -283,7 +292,7 @@
                                      :on-tool-args :on-tool-result :on-error])
         cwd (or (:cwd opts) (.cwd js/process))
         model (:model opts)
-        tool-gate (or (:tool-gate opts) default-gate)
+        tool-policy (or (:tool-policy opts) default-policy)
         anthropic-tools (build-tools)
 
         system-text (let [tool-defs (tools/tool-definitions)
@@ -381,7 +390,7 @@
                                                          :input (:arguments tc)})
                                                       tcs))})
                          (-> (js/Promise.all
-                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-gate) tcs)))
+                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-policy) tcs)))
                              (.then
                               (fn [results]
                                 (let [tool-results (js->clj results :keywordize-keys true)]

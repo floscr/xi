@@ -139,7 +139,7 @@ For `.clj/.cljs/.cljc`, xi already has true AST editing (clj-surgeon
 named form / structural pattern, so unrelated edits elsewhere don't disturb it,
 and two agents editing the same form get a clean conflict.
 
-- Bias the agent (system prompt / tool descriptions / a `:tool-gate` hint) to
+- Bias the agent (system prompt / tool descriptions / a `:nudge` rule) to
   **prefer `clj_replace` over `edit` for Clojure files**.
 - No new machinery — this is guidance + possibly a gentle nudge when `edit` is
   called on a `.clj*` path.

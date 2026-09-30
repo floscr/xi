@@ -11,18 +11,21 @@
      4. server-session  process-local [:ext :rules]
      5. session runtime room-scoped   [:rooms rid :ext :rules]
 
-   The tool-gate runs the hard-block first, then matches the first data rule and
-   applies its action:
+   Every tool call is decided here before it runs (`tool-policy`, called by
+   core — xi.cli): the hard-block first, then the first matching data rule's
+   action:
 
-     :allow → force-allow, short-circuiting the remaining gates (via ext/allow)
-     :deny  → intercept with an error result
-     :nudge → intercept with a non-error steering result
+     :allow → run the tool
+     :deny  → an error result instead of running it
+     :nudge → a non-error steering result instead of running it
      :ask   → raise a confirm dialog; on :always persist a session allow-rule
+
+   There is no other policy hook: extensions can't gate tool calls.
 
    The pure matcher lives in `xi.rules`; file/state loading + the imperative
    hard-block live in `xi.rules.store`."
   (:require [clojure.string :as str]
-            [xi.ext.core :as ext]
+            [xi.bb-trust :as bb-trust]
             [xi.rules :as rules]
             [xi.rules.store :as store]
             [xi.tools.edit :as edit]
@@ -185,6 +188,12 @@
            "Arguments:\n"
            (format-arguments arguments))
 
+      ;; the bb-trust rule: say which bb.edn the [a]lways option would trust
+      (false? (:bb-trusted? req))
+      (str "bb.edn is not trusted ("
+           (or (bb-trust/find-bb-edn (:effective-cwd req)) "none found")
+           ") — run this task?\n\n" command)
+
       command (str "Run " (name tool) " — approve?\n\n" command)
       path    (str (name tool) " " path " — approve?")
 
@@ -221,17 +230,36 @@
       (when (seq text)
         {:path path :text text}))))
 
+(def ^:private option-events
+  "Event types an ask option may carry (`{:value … :label … :event {:type …}}`
+   in a rule's :options). A fixed allowlist: rules files are data anyone with
+   repo access can write, and an option must not become a way to dispatch
+   arbitrary events on a click."
+  #{:ext.clj/trust-bb})
+
+(defn- option-event
+  "The allowlisted event of the option in `options` the user answered with
+   `ans`, or nil."
+  [options ans]
+  (some (fn [o]
+          (when (and (map? o) (= ans (:value o))
+                     (contains? option-events (get-in o [:event :type])))
+            (:event o)))
+        options))
+
 (defn- apply-action
   "Apply a matched rule's action to decision request `req` → a decision (or a
    Promise of one, when it asks):
      {:decision :allow}             an :allow rule (force-allow)
      {:decision :approved}          an :ask answered yes / always / repo
      {:decision :unanswered}        an :ask with no confirm! to raise it
+                                    (a deny instead when the action says
+                                    `:unanswered :deny`)
      {:decision :deny :message m}   a :deny rule, or an :ask answered no
                                     (m nil) / with recommend-a-rule
      {:decision :nudge :message m}  a :nudge rule
      {:decision :pass}              an unknown action type"
-  [{:keys [type message options]} req {:keys [confirm! dispatch! room-id]}]
+  [{:keys [type message options unanswered]} req {:keys [confirm! dispatch! room-id]}]
   (case type
     :allow {:decision :allow}
     :deny  {:decision :deny :message (or message "Blocked by rule.")}
@@ -273,9 +301,22 @@
                                               :rule    rule}))
                                 {:decision :approved})
 
+                            ;; an option carrying an event (the bb-trust
+                            ;; rule's "trust bb.edn") → approve + dispatch it
+                            (option-event options ans)
+                            (do (when dispatch!
+                                  (dispatch! (assoc (option-event options ans)
+                                                    :room-id room-id
+                                                    :cwd (:effective-cwd req))))
+                                {:decision :approved})
+
                             ans   {:decision :approved}
                             :else {:decision :deny :message nil}))))
-             {:decision :unanswered})
+             (if (= :deny unanswered)
+               {:decision :deny
+                :message  (str "Blocked: this call needs approval, but no client "
+                               "is attached to confirm it.")}
+               {:decision :unanswered}))
     {:decision :pass}))
 
 (defn- decide*
@@ -301,24 +342,24 @@
   [req ctx]
   (js/Promise.resolve (decide* req ctx)))
 
-(defn- then-value
-  "Apply f to v, or to what Promise v resolves to."
-  [v f]
-  (if (instance? js/Promise v) (.then v f) (f v)))
-
-(defn tool-gate
-  "The rules tool-gate: `decide!` on the call, mapped back to the gate
-   contract. :allow force-allows (short-circuiting the remaining gates);
-   approved/unmatched/unanswered calls pass on to the remaining gates."
+(defn tool-policy
+  "The policy step every tool call passes before it runs (wired by xi.cli into
+   the providers): `decide!` on the call → Promise of the tool call (run it),
+   nil (blocked, no message), or {:intercepted true :result …} (the result to
+   return instead). Allowed, approved, unmatched and unanswered calls run.
+   Fails closed: if deciding throws, the call is denied."
   [tool-call ctx]
-  (then-value
-   (decide* (store/decision-request tool-call ctx) ctx)
-   (fn [{:keys [decision message]}]
-     (case decision
-       :allow (ext/allow tool-call)
-       :deny  (when message (deny-result message))
-       :nudge (nudge-result message)
-       tool-call))))
+  (-> (js/Promise.resolve nil)
+      (.then (fn [_] (decide* (store/decision-request tool-call ctx) ctx)))
+      (.then (fn [{:keys [decision message]}]
+               (case decision
+                 :deny  (when message (deny-result message))
+                 :nudge (nudge-result message)
+                 tool-call)))
+      (.catch (fn [e]
+                (js/console.error "[rules] deciding a tool call failed:" e)
+                (deny-result (str "Blocked: the rules engine failed on this call — "
+                                  (.-message e)))))))
 
 ;; ── Rule mutation (runtime scopes) ───────────────────────────────────────────
 
@@ -450,7 +491,9 @@
       {:effects [[:rules/list {:room-id room-id}]]})))
 
 (defn create
-  "Factory: the rules engine extension. Captures the dialog `ask!` (from
+  "Factory: the rules engine's extension half — rule state, /rules and the
+   recommend-a-rule flow. Deciding tool calls is not an extension surface:
+   core calls `tool-policy` directly. Captures the dialog `ask!` (from
    ext/create-dialogs) so the recommend-a-rule flow can open its save dialog.
    On the client mirror (ask! nil) the recommend fx is a no-op."
   [{:keys [ask!]}]
@@ -459,7 +502,6 @@
               :process {:rules []}}
    :handlers {:ext.rules/add     add-rule
               :subagent/turn-end on-subagent-turn-end}
-   :tool-gate tool-gate
    :commands [{:name        "rules"
                :description "List or reload policy rules"
                :handler     rules-command

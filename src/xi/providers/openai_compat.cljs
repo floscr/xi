@@ -65,15 +65,15 @@
 
 ;; ── Tool Execution ──────────────────────────────────────────────────────────
 
-(def ^:private default-gate
+(def ^:private default-policy
   (fn [tool-call] (js/Promise.resolve tool-call)))
 
 (defn- execute-tool-call
-  "Execute a single tool call through Xi's registry + tool gate.
+  "Execute a single tool call through Xi's registry + tool policy.
    Returns promise of {:role \"tool\" :tool_call_id ... :content ...}"
-  [{:keys [id name arguments]} registry tool-ctx tool-gate]
+  [{:keys [id name arguments]} registry tool-ctx tool-policy]
   (let [registry (or registry (tools/tool-registry))]
-    (-> (tool-gate {:name name :arguments arguments})
+    (-> (tool-policy {:name name :arguments arguments})
         (.then
          (fn [gated]
   (cond
@@ -213,7 +213,7 @@
                                      :on-tool-args :on-tool-result :on-error])
         cwd (or (:cwd opts) (.cwd js/process))
         model (model-id (:model opts))
-        tool-gate (or (:tool-gate opts) default-gate)
+        tool-policy (or (:tool-policy opts) default-policy)
         openai-tools (build-tools)
 
         system-text (let [tool-defs (tools/tool-definitions)
@@ -309,7 +309,7 @@
                                                                  :arguments (:arguments-str tc)}})
                                                    tc-entries)})
                          (-> (js/Promise.all
-                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-gate) tc-entries)))
+                              (clj->js (mapv #(execute-tool-call % (tools/with-extensions (:extra-tool-registry opts)) (assoc (:tool-ctx opts) :cwd cwd) tool-policy) tc-entries)))
                              (.then (fn [results]
                                       (let [tool-results (js->clj results :keywordize-keys true)]
                                         (doseq [[tc tr] (map vector tc-entries tool-results)]

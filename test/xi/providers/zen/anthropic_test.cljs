@@ -3,10 +3,34 @@
    reduction: without cache_control on the static prefix (system + tools +
    prior turns) the Anthropic surface re-bills the whole prefix on every
    tool-loop iteration."
-  (:require [cljs.test :refer [deftest is testing]]
+  (:require [cljs.test :refer [deftest is testing async]]
             [xi.providers.zen.anthropic :as anthropic]))
 
 (def ^:private cc {:type "ephemeral"})
+
+(def ^:private execute-tool-call #'anthropic/execute-tool-call)
+
+;; ── tool policy ──
+
+(deftest a-policy-deny-replaces-the-tool-result
+  (testing "{:intercepted …} (a rule's deny/nudge) is returned and the tool does not run"
+    (async done
+      (let [ran?     (atom false)
+            registry {"write" (fn [_ _] (reset! ran? true)
+                                {:content [{:type "text" :text "written"}] :is-error false})}
+            policy   (fn [_] (js/Promise.resolve
+                              {:intercepted true
+                               :result {:content [{:type "text" :text "no shell"}]
+                                        :is-error true}}))]
+        (-> (js/Promise.resolve
+             (execute-tool-call {:id "t1" :name "write" :arguments {:path "x.sh"}}
+                                registry {} policy))
+            (.then (fn [res]
+                     (is (false? @ran?))
+                     (is (= {:type "tool_result" :tool_use_id "t1"
+                             :content "no shell" :is_error true}
+                            res))
+                     (done))))))))
 
 ;; ── system->blocks ──
 
