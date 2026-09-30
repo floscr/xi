@@ -32,7 +32,8 @@
    asks the main thread to `acquire!` and settles itself.
 
    Release: `settle!` after each held call, `settle-room!` at turn end, a dead
-   owner or `:stale?`, and /release."
+   or idle owner (its turn ended with the hold unsettled) or `:stale?`, and
+   /release."
   (:require [clojure.string :as str]
             [xi.core.state :as state]
             [xi.git-lock :as git-lock]
@@ -78,6 +79,16 @@
       (swap! held update (:room owner) disj [(:id hold) key])
       true)))
 
+(defn- settle-or-idle!
+  "The owner's turn is over: release its lease on `key` if the hold settles,
+   else flag it idle — a stopped room can't release it, so it must not keep
+   other rooms waiting."
+  [hold key owner]
+  (or (settle! hold key owner)
+      (when-let [path (and key ((:lease-path hold) key))]
+        (lease/mark-idle! path owner)
+        nil)))
+
 (defn- acquire-key!
   "Wait for `key`'s lease. → Promise<nil (acquired / nothing to hold) | error text>."
   [hold key {:keys [room-id get-state dispatch!]} own]
@@ -107,7 +118,7 @@
                    ;; Turn ended while we were polling: don't sit on a lease
                    ;; nobody will use.
                    (when (and get-state (turn-over? get-state room-id))
-                     (settle! hold key own))
+                     (settle-or-idle! hold key own))
                    nil)
                :cancelled
                (str label ": stopped waiting (turn ended)")
@@ -181,7 +192,8 @@
 
 (defn settle-room!
   "Turn end: settle every lease the room took in this process, plus its
-   cwd's resources."
+   cwd's resources. What doesn't settle is flagged idle, so another room can
+   take it over instead of waiting on a room that has stopped."
   [room-id cwd]
   (let [own  {:pid js/process.pid :room (room-key room-id)}
         took (for [[hold-id k] (get @held (:room own))
@@ -193,7 +205,7 @@
                    :when k]
                [hold k])]
     (doseq [[hold k] (distinct (concat took here))]
-      (try (settle! hold k own) (catch :default _ nil)))))
+      (try (settle-or-idle! hold k own) (catch :default _ nil)))))
 
 ;; ── /holds, /release ─────────────────────────────────────────────────────────
 

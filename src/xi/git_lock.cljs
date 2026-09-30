@@ -10,9 +10,10 @@
 
    The lease lives at `<git-dir>/xi-staging.lock`, so it is per-worktree
    (each worktree has its own git dir + index); the hold's key is the
-   worktree's toplevel. Beyond a dead owner, a lease is stale when the index
-   has had nothing staged for STALE_CLEAN_MS (the holder committed/unstaged
-   outside a tracked op, e.g. the user did it in a terminal).
+   worktree's toplevel. Beyond a dead or idle owner (xi.holds.lease), a lease
+   is stale when the index has had nothing staged for STALE_CLEAN_MS (the
+   holder committed/unstaged outside a tracked op, e.g. the user did it in a
+   terminal).
 
    Broad adds (`add -A/./-u`, `commit -a`) that would sweep up files another
    room edited are refused outright — the hold's `:refuse` hook.
@@ -244,7 +245,7 @@
    :on-acquire (fn [top fresh?]
                  (when fresh?
                    (when-let [s (staged-summary (staged-files top))]
-                     (str "⚠ index already had staged files no room owns" s
+                     (str "⚠ index already had staged files no running room owns" s
                           " — they will be part of this room's next commit"))))
    :wait-ms    wait-ms
    :hint       "commit or unstage there, or run /release"})

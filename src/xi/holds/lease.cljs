@@ -6,8 +6,9 @@
    standalone TUIs) sees the same holder. The owner is {:pid :room} — a room
    key alone isn't unique across processes.
 
-   A lease is stale (stealable) when its process is dead, or when the hold's
-   own `stale?` says so. Everything here is synchronous (the clj worker thread
+   A lease is stale (stealable) when its process is dead, when its room's turn
+   is over (`:idle-at`, set by `mark-idle!`), or when the hold's own `stale?`
+   says so. Everything here is synchronous (the clj worker thread
    settles leases itself) except `wait-acquire!` (main thread)."
   (:require ["node:fs" :as fs]
             ["node:path" :as node-path]))
@@ -55,22 +56,23 @@
   [lease]
   (str "\"" (or (not-empty (:label lease)) (:room lease) "?") "\""
        (when (not= (:pid lease) js/process.pid)
-         (str " (another Xi process, pid " (:pid lease) ")"))))
+         (str " (another Xi process, pid " (:pid lease) ")"))
+       (when (:idle-at lease) " (idle — its turn ended)")))
 
 (defn try-acquire!
   "One acquisition attempt for `owner` ({:pid :room :label}) on the lease at
    `path`. `stale?` (fn [lease] → bool) adds hold-specific staleness to the
-   dead-pid check. → {:status :acquired|:busy, :holder lease, :fresh? bool};
+   dead-pid and idle-holder checks. → {:status :acquired|:busy, :holder lease, :fresh? bool};
    :fresh? marks a newly created lease (vs. re-entering one we hold)."
   [path owner stale?]
   (let [now   (js/Date.now)
         lease (read-lease path)]
     (cond
       (same-owner? lease owner)
-      (do (write-lease! path (assoc lease :touched-at now))
+      (do (write-lease! path (-> lease (dissoc :idle-at) (assoc :touched-at now)))
           {:status :acquired :fresh? false})
 
-      (and lease (pid-alive? (:pid lease)) (not (stale? lease)))
+      (and lease (pid-alive? (:pid lease)) (not (:idle-at lease)) (not (stale? lease)))
       {:status :busy :holder lease}
 
       :else
@@ -87,6 +89,16 @@
   (when (same-owner? (read-lease path) owner)
     (rm-lease! path)
     true))
+
+(defn mark-idle!
+  "Flag `owner`'s lease at `path` as idle — its room's turn is over, so
+   nobody is there to release it and the next room may take it over. Cleared
+   when the owner re-enters. True when flagged."
+  [path owner]
+  (let [lease (read-lease path)]
+    (when (same-owner? lease owner)
+      (write-lease! path (assoc lease :idle-at (js/Date.now)))
+      true)))
 
 (defn force-release!
   "Drop whatever lease exists at `path`. Returns the dropped lease."

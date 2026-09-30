@@ -53,10 +53,13 @@ Your own terminal git is not covered.
 - **Release** happens once the holder's index is clean. It is checked after
   each of the holder's git ops and again at turn end, so a commit, `reset` or
   `restore --staged` frees it.
-- **Staged files keep the hold across turns.** If an agent stops with files
-  still staged (waiting on you, interrupted), releasing would let the next
-  room's commit sweep them up. Waiters keep waiting until the holder commits,
-  you unstage, or you run `/release`.
+- **Staged files keep the hold only while the holder's turn is running.** If
+  an agent stops with files still staged (waiting on you, interrupted), its
+  lease is flagged idle at turn end: nobody is there to release it, so the
+  next room takes it over instead of waiting. That room gets the `⚠` status
+  line below, because the leftover staged files will be part of its next
+  commit. If the holder resumes first, its next git op clears the flag and it
+  holds the index again.
 - **Timeout:** a waiter gives up after `XI_GIT_LOCK_WAIT_SECS` (default 600).
   The agent gets an error naming the holder and its staged files, and should
   tell you. A wait also stops when the waiting room's turn ends.
@@ -65,25 +68,28 @@ Your own terminal git is not covered.
   `git commit -a` fail with a list of the affected files if any dirty file was
   edited by another room this session. The agent must stage its own paths
   explicitly.
-- If the index already had staged files that no room owns (e.g. you staged by
-  hand), the room taking the hold gets a `⚠` status line: those files will be
-  part of its next commit.
+- If the index already had staged files that no running room owns (you staged
+  by hand, or an idle holder left them), the room taking the hold gets a `⚠`
+  status line: those files will be part of its next commit.
 
 ## The lease
 
 A JSON file at `<git-dir>/xi-staging.lock`: `{pid room label acquired-at
-touched-at}` (`xi.holds.lease`). Because it's a file, every Xi process on the
+touched-at idle-at}` (`xi.holds.lease`). Because it's a file, every Xi process on the
 machine (main server, personal agent, standalone TUIs) sees it. It is
 per-worktree because each worktree has its own git dir and index. The owner
 is `{pid, room}`.
 
 It becomes stale and can be taken over when:
 
-- the owning process is dead, or
+- the owning process is dead,
+- the owning room's turn ended with the hold unsettled (`idle-at`, set at
+  turn end and cleared when that room runs its next index-mutating op), or
 - nothing has been staged for 60 s (`STALE_CLEAN_MS`). This covers holders that
   finished outside a tracked op, e.g. you committed in a terminal.
 
 ## Commands
 
-- `/holds`: who holds this room's resources (the git index of its cwd).
+- `/holds`: who holds this room's resources (the git index of its cwd), and
+  whether that holder is idle.
 - `/release`: force-release them.

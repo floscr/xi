@@ -125,6 +125,24 @@
     (git! dir "add" "a.txt")
     (is (= :acquired (:status (lease/try-acquire! path A (stale? dir)))))))
 
+(deftest idle-holder-is-stealable-test
+  (let [dir  (tmp-repo)
+        path (lock/lease-path dir)]
+    (lease/try-acquire! path A (stale? dir))
+    (git! dir "add" "a.txt")
+    (testing "turn end with files still staged flags the lease idle"
+      (holds/settle-room! :a dir)
+      (is (:idle-at (lease/read-lease path))))
+    (testing "the holder resuming clears the flag and holds off others again"
+      (lease/try-acquire! path A (stale? dir))
+      (is (nil? (:idle-at (lease/read-lease path))))
+      (is (= :busy (:status (lease/try-acquire! path B (stale? dir))))))
+    (testing "another room takes over an idle holder's lease"
+      (holds/settle-room! :a dir)
+      (is (= {:status :acquired :fresh? true}
+             (select-keys (lease/try-acquire! path B (stale? dir)) [:status :fresh?])))
+      (is (= "b" (:room (lease/read-lease path)))))))
+
 ;; ── holds/wrap: two rooms, one repo ──────────────────────────────────────────
 
 (defn- ctx [dir state room-id]
