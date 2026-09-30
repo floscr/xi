@@ -936,7 +936,8 @@
    otherwise nil. The sandbox only allows an allowlist of interop, so most
    `(.method obj …)` forms fail with a \"… not allowed!\" message, and a few
    (like Java-style exception accessors) fail with \"Could not find instance
-   method: …\"."
+   method: …\". Also covers JVM-style `(catch Exception e …)`, which fails
+   on the sandbox's stubbed exception classes."
   [^js err]
   (let [msg (str (.-message err))]
     (cond
@@ -949,6 +950,17 @@
            "Java interop like (.getMessage e) doesn't exist. Use the portable "
            "(ex-message e) for the message and (ex-cause e) for the cause, and "
            "catch with (catch :default e …) rather than (catch Exception e …).")
+
+      ;; (catch Exception e …) / Throwable / Error: the sandbox stubs those
+      ;; classes as plain objects (xi.sandbox.sci), so SCI's `e instanceof
+      ;; clazz` throws a TypeError whose wording varies by JS engine (JSC
+      ;; names the operand, V8 doesn't).
+      (re-find #"instanceof clazz|Right-hand side of 'instanceof'" msg)
+      (str "Hint: clj runs in a sandbox (ClojureScript/SCI, not the JVM) — "
+           "(catch Exception e …), (catch Throwable e …) and (catch Error e …) "
+           "don't work: those classes don't exist here. Catch with "
+           "(catch :default e …) (or (catch js/Error e …)) and read the error "
+           "with (ex-message e) / (ex-data e).")
 
       (and (str/includes? msg "not allowed!")
            (re-find #"Method \S" msg))

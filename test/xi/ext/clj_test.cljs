@@ -188,6 +188,14 @@
     (is (:is-error res))
     (is (str/includes? (result-text res) "(ex-message e)"))))
 
+(deftest eval-catch-jvm-class-hints-catch-default
+  ;; JVM-style catch classes are stubs in the sandbox, so the catch clause
+  ;; itself throws; the error result should point at (catch :default e …).
+  (doseq [clazz ["Exception" "Throwable" "Error"]]
+    (let [res (eval! (str "(try (throw (ex-info \"boom\" {})) (catch " clazz " e :caught))"))]
+      (is (:is-error res) clazz)
+      (is (str/includes? (result-text res) "(catch :default e …)") clazz))))
+
 (deftest repl-persistence
   (eval! "(def xi-test-x 41)" {:room-id :persist})
   (let [res (eval! "(inc xi-test-x)" {:room-id :persist})]
