@@ -105,7 +105,7 @@
                           (status! dispatch! room-id
                                    (str "⏳ " label " is held by "
                                         (lease/describe-holder holder) (detail)
-                                        " — waiting…")))})
+                                        " — waiting… To unlock: " (:hint hold) ".")))})
           (.then
            (fn [{:keys [status waited-ms holder fresh?]}]
              (case status

@@ -46,7 +46,8 @@ Your own terminal git is not covered.
   git commands and clj `(git …)` / `(sh "git" …)`.
 - **Other rooms' index-mutating ops wait.** The tool call stays pending and
   the room shows a status line (`⏳ git index is held by "<room>" (staged: …)
-  — waiting…`). Once it's free the op runs (`🔓 git index acquired after Ns`).
+  — waiting… To unlock: commit or unstage there, or run /release.`). Once
+  it's free the op runs (`🔓 git index acquired after Ns`).
 - **Read-only and ref-only git never waits**: `status`, `diff`, `log`,
   `show`, `blame`, `stash list`, `branch`, `tag`, `fetch`, `push`, … (see
   `NON_LOCKING` in `xi.git-lock`).
