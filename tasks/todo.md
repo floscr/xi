@@ -1,191 +1,96 @@
-# User extensions — sandboxed, loaded at runtime
+# Provider fallback extension (`xi.ext.provider-fallback`)
 
-Goal: users drop `.cljs` files into `~/.config/xi/extensions/` and a running,
-already-built xi loads them. Built-in extensions stay compiled (full access);
-user extensions are a separate, **capability-sandboxed** tier: SCI with no raw
-host access, side effects only through rules-gated `xi.api.*`, dispatch and
-state writes limited to their own slice. Surfaces: server, TUI client, `xi
-prompt`, and web (browser SCI, sources sent by the server).
+Switch a room to a fallback provider/model when the current one runs out of
+usage (mostly Anthropic subscription limits), re-run the failed prompt there,
+and switch back once the limit resets.
 
-## Decisions (agreed)
+## Findings
 
-- No `node:*` / npm / raw `js/` globals. `js` is an allowlist object (`Math`
-  `Date` `JSON` `Promise` `setTimeout` `clearTimeout` `console`).
-- Side effects only via `xi.api.fs` / `xi.api.sh` / `xi.api.http`, each call
-  decided by the rules engine like a tool call (`:ask` → normal dialog; no room
-  context → deny). Requests carry `:extension <id>`.
-- Network: `fetch` gated as a new `:net` request with a `:host` match.
-- `sh`: same rules as clj `(sh …)` (`{:tool :sh :cli …}`).
-- Dispatch: own `:ext.<id>/*` events, `:ui/status`, and `:prompt/submit`
-  (the last only from commands/keybindings — user-initiated, no agent loops
-  from tool fns). Everything else is dropped + logged.
-- State: handler/command results merge back only into `[:ext <id>]` and
-  `[:rooms * :ext <id>]`; any other change is discarded.
-- Effects: own `:fx` + filtered `:app/dispatch` only.
-- No `:tool-gate`, no `:event-hooks` for user extensions (key allowlist).
-- No load-time trust dialog — rules gate every side effect. A status line
-  announces new/changed extensions (content hashes remembered).
-- Web halves: hiccup sanitized (no `:innerHTML`, `script`/`iframe`/`object`,
-  `javascript:` URLs).
-- Accepted v1 gaps: an infinite loop in an extension blocks its thread (SCI
-  isn't interruptible); user tools reach Claude models only (other providers
-  still expose builtin tool defs only).
+- **Signal (Anthropic):** the CLI emits `rate_limit_event` with
+  `status "rejected"` + `resetsAt` (epoch s) + `rateLimitType`
+  (`five_hour`/`seven_day`/…). `xi.providers.anthropic/process-sdk-message`
+  already forwards it as `:agent/error {:type "rate_limit" :info {…}}` (no
+  `:message`, so it renders as a raw `pr-str` today). The CLI then writes a
+  synthetic assistant text "You've hit your limit · resets 8:10pm (…)" and the
+  turn ends with "Claude Code returned an error result: …" → a second
+  `:agent/error`. So the turn ends promptly; detection has to dedupe.
+- **Context across providers:** sessionless providers (openai/zen/ollama)
+  rebuild the conversation from the room's in-memory `:history` every turn
+  (`:history` = prior-history in `build-turn-effect`), so Claude → fallback
+  keeps the context with no extra work.
+- **Back to Claude:** the room still holds the old Claude
+  `provider-session-id`, whose transcript lacks the fallback turns. Same fix as
+  `/fork` and `/tree`: clear the id + `:inject-history? true` → the next Claude
+  turn starts fresh with the whole history injected as context.
+- **Re-running the prompt:** `:agent/retry-fresh` already finds the last
+  `:user` entry and re-runs it with prior-history, but it always clears
+  `provider-session-id`. With the id cleared, `:session/sync` stops
+  persisting the room's metadata. → needs a `:keep-session?` flag (small core
+  change, `xi.agent`).
+- `/model` already switches provider+model via plain state
+  (`[:rooms rid :agent :model/:provider]`), so the extension can do the same.
 
-## Phase A — foundations
+## Design
 
-- [x] `rules/decide!` — async `(decide! req ctx) → Promise<{:allow? :message}>`
-      from the existing pieces (hard-block, ordered rules, ask dialog incl.
-      `:always`/`:repo` persistence). Rules tool-gate reimplemented on top,
-      behaviour unchanged (existing tests stay green). Phase 2 reuses it.
-- [x] Rules: `:extension` match field; `:net` tool kind + `:host` match
-      (string/glob/regex/set). Defaults: ask on `:net` (`[a]lways` → session
-      rule pinned to extension + host); allow `:read`/`:write` inside the
-      extension's data dir (`~/.local/share/xi/extensions/<id>/`).
-- [x] `xi.api.fs` — `read` `write` `list` `exists?` `data-dir`; promises;
-      each op → `decide!` on `{:tool :read|:write :path … :extension id}`.
-- [x] `xi.api.sh` — argv-style `(sh "cmd" "arg" …)` → `decide!` on
-      `{:tool :sh :cli :command :extension}`; async spawn; server-control
-      commands run detached (xi.server-control).
-- [x] `xi.api.http` — `fetch` → `decide!` on `{:tool :net :host …}`.
-- [x] Tests: decide! parity with the gate, new match fields, api gating
-      (allow/deny/ask/headless).
+Server extension, `src/xi/ext/provider_fallback.cljs`, registered in
+`xi.config/server`. Config: `xi.config/provider-fallback`, e.g.
+`{:anthropic "openai/<model>"}` (provider → fallback model), documented in
+docs/config.md.
 
-Phase A notes:
-- Deviation, agreed-in-spirit: extension `sh` does NOT get clj's auto-run
-  list — new default `extension-sh` asks for every command (`[a]lways` pins
-  the exact command). clj-sh's read-only allows (incl. `rm`, `git`, `find`)
-  are only safe with clj's own confinement, which a real spawn lacks.
-- Added default `extension-credentials`: deny extension read/write of
-  `xi.paths/HIDDEN_PATHS` (client keys, ext/*.env secrets, .ssh, …).
-- sh child env: scrubbed + DISPLAY / WAYLAND_DISPLAY / XDG_RUNTIME_DIR /
-  DBUS_SESSION_BUS_ADDRESS (notification CLIs).
-- 785 tests green; :main + :web build clean.
+Room state `[:rooms rid :ext :provider-fallback]`:
+`{:enabled? true :limited nil|{:primary {:model :provider} :resets-at ms :switched-at-idx n}}`
 
-## SCI sandbox hardening (done, prerequisite for B)
+1. **Detect.** Chain on `:agent/error`: `:type "rate_limit"` (Anthropic), or
+   an error message matching 429 / usage limit / quota for other providers.
+   Record `:pending-limit {:resets-at …}` once per turn.
+2. **Switch + replay.** Chain on `:agent/turn-end` (runs after the base
+   handler, before its queued-prompt `:app/dispatch` is processed, so queued
+   prompts also go to the fallback):
+   - set `:agent :model/:provider` to the fallback, store `:primary`
+   - status line: "Claude usage limit hit (resets 20:10) → switched to X"
+   - dispatch `:agent/retry-fresh {:keep-session? true}`: re-runs the last
+     user prompt on the fallback with prior-history (drops the synthetic
+     "hit your limit" text + error entries).
+   - Mid-turn limit (tool calls already ran after the prompt): send
+     "Continue — the previous model hit its usage limit" with the full
+     history instead of replaying, so tools don't run twice.
+   - Effect: schedule a restore timer at `resets-at`.
+3. **Restore.** The timer dispatches `:ext.provider-fallback/restore`: switch
+   back to `:primary`, clear `provider-session-id` + `:inject-history? true`
+   (only if fallback turns happened), status line. If the room is busy, set a
+   flag and restore at the next turn-end.
+4. **UI.** `:prompt-badge` (`⇄ <fallback>` while on the fallback).
+   `/fallback` shows status. `/fallback back` restores now.
+   `/fallback off|on` turns auto-switching off/on for the room.
+5. **Core touch-ups.**
+   - `xi.agent/retry-fresh`: `:keep-session?` flag.
+   - `xi.providers.anthropic`: give the `rate_limit` error a readable
+     `:message` (reset time).
 
-Probing SCI for Phase B surfaced a LIVE escape in the existing clj tool:
-`((Date/constructor "…"))` ran arbitrary host code (static-member access is an
-unchecked property read in SCI cljs), and `aget`/`js-obj`/`eval` bypassed the
-class gating. Fixed in 5821fb6: null-proto `:classes` values + a `:deny` set;
-escape corpus in `test/xi/ext/clj_sandbox_test.cljs`. Phase B's user-extension
-SCI context MUST reuse the same hardening (null-proto classes, :deny, js-block)
-— extract into a shared `xi.sandbox.sci` so clj + user extensions stay in sync.
-KB: "SCI cljs sandbox: configured classes leak js/Function".
+## Known limitations (v1)
 
-## Phase B — loader (node surfaces)
+- Fallback turns aren't in any Claude transcript, so resuming the session
+  from disk drops them (the in-memory room keeps them). Same gap `/model`
+  already has when switching providers.
+- Side turns (titles, quick replies, summaries) and sub-agents keep using
+  Claude and will just fail while limited.
+- Restore timers don't survive a server restart (but neither does the room's
+  in-memory ext state).
+- Not in v1: a proactive warning on `allowed_warning` (utilization) events.
 
-- [x] `xi.ext.user`: scan dir, one SCI ctx per process — pure xi nses via
-      `sci/copy-ns` (`xi.core.state`, `xi.core.events`, …) + `xi.api.*`, js
-      allowlist, `:load-fn` for the user's own nses (relative to the dir),
-      no js-libs. Conventions: a file's `extension` (server),
-      `client-extension` (TUI), `web-extension` (browser; or `<name>/web.cljs`).
-- [x] Validation → `/ext list` `rejected: <reason>`: key allowlist, `:id`
-      not taken, tool names unique, eval errors.
-- [x] Capability wrappers: try/catch + log on every fn; state-slice merge;
-      effect filter; filtered `dispatch!` in fx / tool ctx; tool ctx without
-      raw access.
-- [x] Assembly in `xi.cli`: server / mirror / client extension lists, after
-      the built-ins; manager registration; new/changed status line.
-- [x] `/ext reload` — re-eval the dir; tools apply live, handlers/commands
-      need a restart (same as built-ins).
-- [x] Tests: validation, wrappers (state slice, dispatch filter, effect
-      filter), loader on a tmp dir.
+## Rejected alternative
 
-Phase B notes:
-- One SCI ctx per extension FILE (not per process): isolates extensions
-  from each other; siblings still load via :load-fn. sci/eval-string* resets
-  *ns*, so the loader reads `<file-ns>/extension` qualified.
-- Registered like MCP: `user-ext/install!` right after `mcp/install!` in
-  standalone / prompt / server. NOT yet in the TUI client mirror/local lists
-  (client mode shows server-side user ext commands only if the TUI loads the
-  same dir) — follow-up. `client-extension` var not loaded yet.
-- New-/changed-extension status line: deferred (no room at load time); the
-  load is logged to the server log + `/ext reload` reports.
-- xi.api.promise host fns are `then*`/`catch*` (a ns object with a `then`
-  property is a thenable); SCI sees them as `then`/`catch`.
-- docs/user-extensions.md example is loaded + run by a test.
-- 803 tests green; :main + :web clean.
+A wrapper "meta-provider" that retries inside `start-turn!`. That would need
+no core change and the retry would happen inside the turn. But providers
+aren't extensions, the room's `:model` would not reflect who answered, and
+switching back would be invisible.
 
-## Phase C — web
+## Steps
 
-- [x] SCI in a lazily loaded shadow `:modules` entry of `:web` (`:user-ext`).
-- [x] Server sends user web halves' source on request (roomless
-      `:user-ext/web-sources`, reply to that client only); browser evals with
-      curated `xi.web.views` + `ui.*` via copy-ns, filtered `dispatch!`
-      (own events forwarded to the server), hiccup sanitizer; pages / routes /
-      nav-items / taps added to the running client (router reads a routes atom).
-- [x] Room-state sync: clients can't replay a user extension's server
-      reducers, so the server guard re-emits a changed `[:rooms rid :ext id]`
-      slice as `:user-ext/sync` (broadcast; applied by server + browser).
-- [x] Tests: sanitizer, filtered dispatch, validation, sync.
-
-## Phase D — docs + live check
-
-- [x] `docs/user-extensions.md` (API, sandbox, surfaces, browser halves, rules
-      examples); linked from extensions.md / AGENTS.md / demo.md.
-- [x] Live check on the demo server: `scripts/demo-extensions/notes` (tool,
-      command, fs, web page) is seeded; sidebar → Notes → Refresh shows the
-      file's text via server fs read → sync. sh + fetch are covered by unit
-      tests only (each asks, so they'd need a dialog in the demo).
-- [x] `bb demo:stop` / `demo:restart` reap the leaked :7476 bun (it survived
-      every `td/stop`, so the fresh server couldn't bind).
-
-## Phase E — first ports out of the build
-
-- [x] `kb`, `browser-open`, `done-notify` moved to user extensions in the
-      dotfiles (`config/xi/extensions/`, symlinked to `~/.config/xi/extensions`
-      by `modules/dev/ai.nix`; their CLIs pre-allowed in `config/xi/rules.edn`).
-      Built-ins + their tests deleted.
-- [x] TUI client mirror loads user extensions (`xi.ext.user/mirror-extensions`:
-      handlers, commands, keybindings, badge) — without it a joined TUI had no
-      Ctrl+Shift+N, no badge and no `/browser-open`.
-- [x] Only files listed under `:extensions` in the global rules file load.
-
-## Phase F — second round of ports
-
-- [x] Sandbox additions: `xi.api.json` (`parse` / `stringify` / `pretty`),
-      `xi.api.http` `url-encode` / `url-decode`, fetch `:timeout-ms` and the
-      final `:url` in the response.
-- [x] `pushover`, `freesearch` (`web_search`), `web` (`fetch`) and
-      `github-code-search` moved to the dotfiles; built-ins deleted.
-  - pushover keys: `config.edn` in its data dir (no env access). The web
-    palette toggle forwards `:ext.pushover/toggle` via `:user-ext/forward`.
-  - freesearch parses the DuckDuckGo-lite page itself; `scripts/websearch.clj`
-    (bb + jsoup pod) is gone.
-  - github-code-search keeps its cookie in its data dir (`auth.json`).
-- [ ] Headless hosts (`modules/services/xi-agent.nix`: pi4, hetzner--xi) get
-      `web_search` / `fetch` from the extensions dir + a rules file written by
-      the module. Written, NOT deployed or tested there.
-- [ ] `github` (PR pages) stays built-in: its events are roomless and answered
-      to one client (`:server-fx`, `:roomless-events`), and its web half has
-      client-local handlers, `:ws/send`, the diff renderer and room creation —
-      none of which a user extension or browser half can have.
-
-## Open
-
-- Per-project extensions (`<repo>/.xi/extensions/`)? Not in v1 unless wanted.
-
-## Rules migration, Phase 2
-
-See `tasks/archive/2026-09-rules-migration.md`.
-
-- [x] Step 1 (a7784e3): core calls `xi.ext.rules/tool-policy` directly;
-      `:tool-gate` / `ext/tool-gate` / `ext/allow` deleted; provider option
-      renamed `:tool-policy`. `:chained` + `bash-chained` (D3 = deny),
-      `:bb-trusted` + `bb-trust` with an event-carrying "always" option
-      (D1 = B, allowlisted events) and `:unanswered :deny`. clj's approvals run
-      inside the clj tool (`approve`); model-supplied `_` grant keys dropped.
-      Fixed zen ignoring `{:intercepted …}`. Live-checked on the demo server.
-      Not yet live on :7474 (needs `bb serve:restart`).
-- [ ] Step 2: clj approvals as rules sub-requests (request expansion;
-      SAFE_AUTORUN / GIT_DENY / ss escalation / guarded patterns as default
-      rules; approve-clis! / outside-path / rm-dir dialogs → rule asks; worker
-      runtime path gate → `decide!`). Write the behaviour → rule mapping first.
-
-Noticed, not fixed: `xi.tui.editor` / `xi.tui.pager` use `deftui-opt` (expands
-to `xi.config/tui-opt`) without requiring `xi.config` → "undeclared var"
-warnings on every :main build, and a load-order dependency.
-
-## Review
-
-(fill in when done)
+- [ ] `retry-fresh` `:keep-session?` + test
+- [ ] readable `rate_limit` message in anthropic provider
+- [ ] `xi.ext.provider-fallback` (detect, switch, replay, restore, badge, /fallback)
+- [ ] register in `xi.config/server`, add the `provider-fallback` config option
+- [ ] tests `test/xi/ext/provider_fallback_test.cljs` (pure handlers)
+- [ ] docs: config.md, extensions.md built-in table
+- [ ] `bb test`, compile via watch; manual check by faking a `rate_limit` error
