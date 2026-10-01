@@ -131,9 +131,7 @@ See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider and
 
 | Variable | Default | Used by | Description |
 | --- | --- | --- | --- |
-| `XI_PRODUCT_SEARCH_CHROME` | auto-detected | product-search | Path to the Chrome/Chromium binary used to drive the `amazon_search` / `willhaben_search` / `geizhals_search` headless browser. Falls back to the legacy `XI_AMAZON_CHROME`, then common install paths and `google-chrome-stable` on `PATH`. |
-| `XI_AMAZON_CHROME` | — | product-search | Legacy fallback for `XI_PRODUCT_SEARCH_CHROME`. |
-| `GEMINI_API_KEY` | — | image-graph | Gemini API key; usually kept in `~/.config/xi/ext/image-graph.env`. |
+| `XI_CHROME_BINARY` | auto-detected | `xi.browser.chrome` | Chrome/Chromium binary for the headless browser user extensions drive through `xi.api.chrome`. Otherwise common install paths, then `google-chrome-stable` on `PATH`. See [user-extensions.md](user-extensions.md#headless-chrome). |
 | `XI_GIT_LOCK_WAIT_SECS` | `600` | `xi.git-lock` (git-index hold) | How long a room waits for another room's git-index hold before its git op fails with an error naming the holder. See [git-lock.md](git-lock.md). |
 
 Feature-specific variables are documented with their feature: `XI_CHROME_*`
@@ -188,8 +186,8 @@ the room's session allowlist (it dies with the room). See
 | --- | --- | --- |
 | `~/.config/xi/ext/<id>.env` | `xi.ext.config` | Dotenv-style per-extension secrets (`KEY=VALUE` lines; `#` comments and blank lines ignored; surrounding quotes stripped). Lives outside the repo; the repo `.gitignore` also covers stray `*.env` as a backstop. A non-blank `process.env` value of the same name overrides the file. |
 
-Used for API keys that must not be committed. For example, the
-disabled-by-default **Render** MCP extension reads its key from
-`~/.config/xi/ext/render.env` (`RENDER_API_KEY=…`); the `mcp.edn` entry only
-references the key by name via an `:auth` descriptor, never the secret itself.
+Used for API keys that must not be committed. For example, a hosted MCP server
+like Render reads its key from `~/.config/xi/ext/render.env`
+(`RENDER_API_KEY=…`); the `mcp.edn` entry only references the key by name via
+an `:auth` descriptor, never the secret itself.
 See [mcp-servers.md](mcp-servers.md#http-transport-streamable-http--api-key).

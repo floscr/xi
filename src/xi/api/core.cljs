@@ -16,6 +16,21 @@
             [xi.paths :as paths]
             [xi.rules.store :as store]))
 
+;; Extension id → its declared `:permissions` map, set by the loader
+;; (xi.ext.user). Capabilities that need an up-front declaration read it here,
+;; never from ctx, which the extension's own code passes in.
+(defonce ^:private declared (atom {}))
+
+(defn set-permissions!
+  "Replace the declared permissions of every loaded user extension."
+  [id->permissions]
+  (reset! declared id->permissions))
+
+(defn permission
+  "The extension in `ctx`'s declaration for permission `k`, or nil."
+  [{:keys [extension]} k]
+  (get-in @declared [extension k]))
+
 (defn base-cwd
   "Where an extension's relative paths resolve: the room cwd, else its data dir."
   [{:keys [cwd extension]}]

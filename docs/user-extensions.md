@@ -118,6 +118,7 @@ no one to answer (no room, no client), the call is refused.
 | `xi.api.fs` | `read` `write` `list` `exists?` `data-dir` | `{:tool :read/:write/:ls :path …}` |
 | `xi.api.sh` | `(sh ctx "cmd" "arg" …)` (optional `{:dir …}` before the argv) | `{:tool :sh :cli :command :argv}` |
 | `xi.api.http` | `(fetch ctx url {:method :headers :body :timeout-ms})` (http(s) only) → `{:status :ok? :url :headers :body}`; `url-encode` `url-decode` (pure) | `{:tool :net :host …}` |
+| `xi.api.chrome` | `(visit ctx url {:wait :eval :timeout-ms})` (https only, declared hosts only) → `{:url :ready? :value}`; see [Headless Chrome](#headless-chrome) | `{:tool :browser :host …}` |
 | `xi.api.json` | `parse` `stringify` `pretty` | (no request) |
 | `xi.api.promise` | `then` `catch` `all` `resolve` `reject` `delay` | (no request) |
 
@@ -141,7 +142,8 @@ Defaults that apply to extensions (see [rules.md](rules.md)):
   denied.
 - Every shell command asks. clj's read-only auto-run list doesn't apply,
   because a real process has none of clj's confinement.
-- Every network host asks.
+- Every network host asks, and so does every host a headless-Chrome visit
+  opens.
 - `[a]lways` saves a session rule pinned to that extension (and host or exact
   command). It never extends to the agent or to other extensions.
 
@@ -150,6 +152,7 @@ Pre-allow things permanently in `~/.config/xi/rules.edn`:
 ```clojure
 {:match {:tool :sh :extension "notify" :cli "notify-send"} :action {:type :allow}}
 {:match {:tool :net :extension "pushover" :host "api.pushover.net"} :action {:type :allow}}
+{:match {:tool :browser :extension "shop"} :action {:type :allow}}
 ```
 
 ### What an extension can touch in xi itself
@@ -178,9 +181,82 @@ The loader wraps every user fn (`xi.ext.user.guard`):
 
 Allowed map keys: `:id :init :handlers :fx :commands :tool-definitions
 :tool-registry :system-prompt :keybindings :prompt-badge :on-shutdown
-:on-enable :on-disable`. `:tool-gate`, `:event-hooks` and `:remove-tools` are
-rejected, because policy belongs to the rules engine. `:id` and tool names
+:on-enable :on-disable :permissions` (see [Headless Chrome](#headless-chrome)).
+`:tool-gate`, `:event-hooks` and `:remove-tools` are rejected, because policy
+belongs to the rules engine. `:id` and tool names
 must not clash with anything already loaded, built-ins included.
+
+## Headless Chrome
+
+Some sites block scripted HTTP or only render their content with JavaScript,
+so `xi.api.http` gets nothing useful from them. For those, `xi.api.chrome`
+loads the page in a headless Chrome and evaluates a JS expression in it.
+
+An extension has to declare the hosts it drives first:
+
+```clojure
+;; ~/.config/xi/extensions/shop.cljs
+(ns shop
+  (:require [clojure.string :as str]
+            [xi.api.chrome :as chrome]
+            [xi.api.http :as http]
+            [xi.api.promise :as p]))
+
+(def ^:private titles-js
+  "[...document.querySelectorAll('h2')].map(h => h.innerText)")
+
+(defn- search [{:keys [query]} ctx]
+  (-> (chrome/visit ctx (str "https://www.example-shop.com/s?q=" (http/url-encode query))
+                    {:wait "document.querySelectorAll('h2').length"
+                     :eval titles-js})
+      (p/then (fn [{:keys [value]}]
+                {:content [{:type "text" :text (str/join "\n" value)}]}))))
+
+(def extension
+  {:id :shop
+   :permissions {:chrome-driver {:hosts ["example-shop.com"]}}
+   :tool-definitions [{:name "shop_search"
+                       :description "Search example-shop.com."
+                       :input_schema {:type "object"
+                                      :properties {:query {:type "string"}}
+                                      :required ["query"]}}]
+   :tool-registry {"shop_search" search}})
+```
+
+`(visit ctx url {:wait :eval :timeout-ms})`:
+
+- Opens the https `url` in a fresh tab.
+- Polls `:wait` (a JS expression) until it is truthy: a positive number, a
+  non-empty string, or true. The default waits for the page to finish
+  loading. It gives up after `:timeout-ms` (default 15s, max 60s) and goes on.
+- Evaluates `:eval` in the page. A returned Promise is awaited.
+- Returns `{:url <final URL> :ready? <false if :wait timed out> :value <the
+  :eval result as Clojure data, keyword keys>}`.
+
+Both expressions run in the page, not in xi.
+
+What keeps it contained:
+
+- **Declared hosts.** `:permissions {:chrome-driver {:hosts [...]}}` lists the
+  hosts, and each also covers its subdomains (`"amazon.de"` covers
+  `www.amazon.de`). Without the declaration, or for a URL outside it, `visit`
+  is refused before anything is asked. A malformed declaration rejects the
+  whole file.
+- **Rules.** Each visit is also a `{:tool :browser :host …}` request. By
+  default it asks, and `[a]lways` grants that extension the host for the
+  session.
+- **Network.** The browser's only way out is a proxy that tunnels HTTPS to the
+  declared hosts and refuses everything else. That covers the page's own
+  requests, redirects, WebSockets and your `:eval` code, and it includes
+  localhost. A site that loads its scripts or data from another domain needs
+  that domain declared too.
+- **Profile.** Each extension gets its own browser on a throwaway profile, so
+  none of your Chrome logins or cookies are visible to it. CDP runs over a
+  pipe, so no other process can attach to the browser.
+
+The browser starts on the first visit and closes after five idle minutes.
+Visits from one extension run one at a time. Set `XI_CHROME_BINARY` if Chrome
+isn't found (see [config.md](config.md)).
 
 ## Browser halves
 

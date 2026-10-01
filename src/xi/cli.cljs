@@ -99,8 +99,8 @@
 ;;                       In client mode their room-state handlers are
 ;;                       mirrored and their badges/keybindings/commands
 ;;                       are presented locally.
-;;   client-extensions — process-local, run in the TUI client process
-;;                       (dictation): handlers installed unwrapped, fx local.
+;;   client-extensions — process-local, run in the TUI client process:
+;;                       handlers installed unwrapped, fx local.
 
 (defn- server-extensions
   "Extensions whose state + provider hooks live server-side (xi.config/server).
@@ -116,7 +116,7 @@
 (defn- mirror-extensions
   "Server extensions instantiated for the *client mirror* (a join/create TUI
    client). A throwaway manager is supplied so the manager-gated control
-   commands (/ext, /mcp, /render) are presented in the local palette;
+   commands (/ext, /mcp) are presented in the local palette;
    `:mirror? true` makes their factories skip create-time side effects (e.g.
    seeding mcp.edn). The client never runs these commands' fx — it forwards
    them to the server, which owns the live manager — so a stub manager is fine.

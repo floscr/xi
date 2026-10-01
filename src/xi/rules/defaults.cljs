@@ -386,6 +386,13 @@
    [{:match  {:tool :net}
      :action {:type :ask :options [:yes :no :always]}}]
 
+   ;; Headless-Chrome visits from user extensions (xi.api.chrome), already
+   ;; limited to the hosts the extension declares — each host still asks;
+   ;; [a]lways persists a session allow-rule pinned to extension + host.
+   ::browser-confirm
+   [{:match  {:tool :browser}
+     :action {:type :ask :options [:yes :no :always]}}]
+
    ;; clj (sh …) shell-outs (:sh) — "disallow * then soften", scoped to :sh so
    ;; the real bash tool is untouched. Read-only/rm CLIs auto-run; every other
    ;; CLI hits the base ask (the clj gate turns that into its per-CLI approval
@@ -446,6 +453,7 @@
    ::subagent-confirm
    ::extension-sh
    ::net-confirm
+   ::browser-confirm
    ::clj-sh])
 
 (def default-rules

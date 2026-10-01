@@ -100,13 +100,13 @@ Extension state lives in two places:
 - **Room-scoped** `[:rooms rid :ext <id>]` — rides in the `:room/joined`
   snapshot, mirrors to clients. Used for: plan-mode `:enabled?`.
 - **Process-local** `[:ext <id>]` — never crosses the wire. Used for:
-  dictation `:recording?`.
+  the rules engine's server-session rules.
 
 Declare initial state via `:init`:
 
 ```clojure
 {:init {:room    {:enabled? false}   ; per-room, mirrored
-        :process {:recording? false}}} ; per-process, local
+        :process {:rules []}}}       ; per-process, local
 ```
 
 ## Handler Contract
@@ -224,8 +224,8 @@ Static string or a function of `cwd`:
 Declarative key → event dispatch:
 
 ```clojure
-:keybindings [{:key   "alt+r"
-               :event {:type :ext.dictation/toggle}
+:keybindings [{:key   "alt+n"
+               :event {:type :ext.notes/toggle}
                :when  (fn [state] ...)}]  ; optional guard
 ```
 
@@ -364,14 +364,11 @@ namespace docstring is the authoritative description.
 | treesitter | Large-file `read` → structural outline; `read_source`. See [treesitter.md](treesitter.md). |
 | clj-surgeon | Structural Clojure refactoring tools; auto-fixes parens after write/edit. |
 | commit | Hunk-level staging + commit tools; `/commit`. |
-| product-search | `amazon_search` / `willhaben_search` / `geizhals_search` over a shared headless Chrome. |
 | session-search | Search previous sessions by title and content. |
 | events | Agent tool for inspecting the session event log. |
 | subagent | Background sub-agents (`spawn_subagent` …); `/subagents`. |
-| image-graph | Per-project Gemini image gallery (`GEMINI_API_KEY`); has a web half. |
 | chrome | Proxies `chrome-devtools-mcp` as xi tools (opt-in, `XI_CHROME_TOOLS`). Hosts element-picker (`/pick`), design-mode (`/design`) and style-editor. See [chrome-mcp.md](chrome-mcp.md), [element-picker.md](element-picker.md), [design-mode.md](design-mode.md), [style-editor.md](style-editor.md). |
 | mcp | Wraps external MCP servers (`~/.config/xi/mcp.edn`) as extensions; `/mcp`. See [mcp-servers.md](mcp-servers.md). |
-| render | Render.com MCP server, disabled by default; `/render`. |
 | extensions | `/ext list\|enable\|disable\|reload` over the live extension manager (`reload` re-reads [user extensions](user-extensions.md)). |
 
 **Sessions, review & workflow**
@@ -396,4 +393,3 @@ namespace docstring is the authoritative description.
 |-----------|--------------|
 | terminal-title | Terminal title from session name / cwd. |
 | clipboard-image | Pasted clipboard image paths → inline base64 images (event hook). |
-| dictation | Client-only voice input via sox/whisper (Alt+R). |

@@ -10,7 +10,7 @@
      room-scoped   [:rooms rid :ext <id>] — rides in :room/joined snapshots,
                    mirrors to clients (plan-mode :enabled?)
      process-local [:ext <id>]            — never crosses the wire
-                   (dictation :recording? on a client process)
+                   (the rules engine's server-session rules)
 
    Extension map:
      :id           keyword (required)

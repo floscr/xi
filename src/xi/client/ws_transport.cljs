@@ -144,7 +144,7 @@
    Second arity threads extension seams:
      :client-fx       extra mirrored-effect types allowed to run locally
                       (joined to the clipboard default whitelist)
-     :local-handlers  process-local extension handlers (e.g. dictation)
+     :local-handlers  process-local extension handlers (xi.config/client)
                       installed UNWRAPPED — they act on the client process
                       and never forward/mirror. Dialog answers still
                       forward to the server, which owns the resolver.

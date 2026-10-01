@@ -99,8 +99,8 @@ auto-titles the session from the first message, and the session persists on
 disk, so the returned `url` (`/chat/<session-id>`) resumes it in the web client
 later.
 
-This is how the GTD service in dotfiles triggers new coding sessions: a task
-POSTs its prompt + project cwd and gets back a URL to open.
+A task tracker, for example, can POST a task's prompt + project cwd and get
+back a URL to open.
 
 **Auth** — same client-key trust as the WS transport: send an approved key (or
 the local `~/.config/xi/client-key`) as either header:

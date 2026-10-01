@@ -249,6 +249,7 @@ The built-in default tier, in order:
  :xi.rules.defaults/subagent-confirm
  :xi.rules.defaults/extension-sh
  :xi.rules.defaults/net-confirm
+ :xi.rules.defaults/browser-confirm
  :xi.rules.defaults/clj-sh]
 ```
 
@@ -271,6 +272,7 @@ The built-in default tier, in order:
 | `subagent-confirm`   | 1 | ask on every `spawn_subagent` call |
 | `extension-sh`       | 1 | ask on every user-extension shell-out (before `clj-sh`: its auto-run list relies on clj's own confinement) |
 | `net-confirm`        | 1 | ask on every user-extension network request (`[a]lways` pins extension + host) |
+| `browser-confirm`    | 1 | ask on every user-extension headless-Chrome visit (`[a]lways` pins extension + host) |
 | `sh-read-only`       | 1 | allow read-only CLIs via clj `(sh …)` |
 | `repository-scripts` | 2 | allow read-only `sed -n …p` and in-repo `mv`/`cp`/`mkdir`/`touch`/`rmdir` |
 | `sh-confirm`         | 1 | ask on any other clj `(sh …)` CLI |
@@ -282,10 +284,10 @@ All present fields are **ANDed**; an absent field is no constraint.
 
 | Field         | Matches                                                              |
 |---------------|---------------------------------------------------------------------|
-| `:tool`       | tool kind — keyword or set: `:write :edit :read :grep :find :ls :bash :clj :sh :bb :net :mcp :other` (`:bb` = the bb tool; its `:command` is the `bb <task> <args…>` line it runs. `:net` = a user extension's network request) |
+| `:tool`       | tool kind — keyword or set: `:write :edit :read :grep :find :ls :bash :clj :sh :bb :net :browser :mcp :other` (`:bb` = the bb tool; its `:command` is the `bb <task> <args…>` line it runs. `:net` = a user extension's network request, `:browser` = its headless-Chrome visit) |
 | `:extension`  | the user extension behind an `xi.api.*` call — `true` (any), or string (exact / glob), regex, set. Agent tool calls carry none, so an `:extension` rule never matches them |
 | `:extension-data` | own-data-dir predicate (opt-in) — `:own` matches when the target path resolves inside the requesting extension's data dir (`$XDG_DATA_HOME/xi/extensions/<id>`); symlinks are canonicalized |
-| `:host`       | `:net` request host — string (exact / glob), regex, set |
+| `:host`       | `:net` / `:browser` request host — string (exact / glob), regex, set |
 | `:tool-name`  | raw tool name — **string** (exact / glob full match), **regex** (`re-find`), or **set** (membership). Targets one extension tool, which otherwise only has the kind `:other` (e.g. `"spawn_subagent"`). Synthetic clj `:sh` requests carry no tool name, so they never match. |
 | `:path`       | target file path — **regex** (`re-find`, partial) or **glob string** (full match: `*`=one segment, `**`=any, `?`=one char). Matched against the raw arg **and** its resolved absolute path **and** the resolved path with a leading `$HOME` collapsed to `~` — so a pattern works whether the path was given absolute, relative, or `~`-prefixed, and may itself be written with `~`. Symlinks are canonicalized. |
 | `:command`    | bash command / clj code / clj shell-out command — **regex** (`re-find`) or **string** (substring) |

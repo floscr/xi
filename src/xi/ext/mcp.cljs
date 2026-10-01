@@ -118,19 +118,6 @@
   (fs/mkdirSync (config-dir) #js {:recursive true})
   (fs/writeFileSync (registry-file) (pr-str m)))
 
-(defn ensure-registry-entry!
-  "Idempotently add `entry` under `id` to the MCP registry when `id` is absent
-   (an existing entry is left untouched, so the user's enable/disable choice
-   and edits win). Returns true when it wrote a new entry. Used by dedicated
-   MCP extensions (e.g. xi.ext.render) to seed a disabled server that install!
-   then registers and /mcp manages."
-  [id entry]
-  (let [reg (read-registry)
-        kid (keyword id)]
-    (if (contains? reg kid)
-      false
-      (do (write-registry! (assoc reg kid entry)) true))))
-
 (defn- read-cached-tools [id]
   (read-edn (tools-cache-file id)))
 

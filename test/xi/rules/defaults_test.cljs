@@ -235,13 +235,20 @@
                                              :bb-trusted? false})
                          [:action :unanswered])))))
 
+(deftest extension-browser-visits-ask
+  (testing "a headless-Chrome visit from a user extension asks, offering [a]lways"
+    (let [rule (rules/first-match defaults/default-rules
+                                  {:tool :browser :extension "shop" :host "www.amazon.de"})]
+      (is (= :ask (get-in rule [:action :type])))
+      (is (some #{:always} (get-in rule [:action :options]))))))
+
 (deftest defaults-tagged-scope
   (is (every? #(= :default (:scope %)) defaults/default-rules)))
 
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 24 (count defaults/default-rules))))
+    (is (= 25 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes

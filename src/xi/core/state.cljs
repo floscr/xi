@@ -16,7 +16,7 @@
    - room-scoped  [:rooms rid :ext <id>] — rides in :room/joined snapshots,
                   mirrors to clients (e.g. plan-mode :enabled?)
    - process-local [:ext <id>]           — never crosses the wire
-                  (e.g. dictation :recording? on a client process)
+                  (e.g. the rules engine's server-session rules)
 
     Standalone = one local room, connected to nothing. Server hosts N rooms.
    Client mirrors remote rooms into the same shape."

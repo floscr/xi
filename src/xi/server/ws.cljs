@@ -32,7 +32,7 @@
    clients can't address rooms they're not in. Sockets live in the
    create-server closure (runtime resources, not app state).
 
-   Deferred to later phases: :visibility tracking, dictation."
+   Deferred to later phases: :visibility tracking."
   (:require [xi.auth :as auth]
             [xi.ext.diff.git :as diff-git]
             [xi.fx :as fx]
@@ -735,21 +735,21 @@
              _ (js/setInterval #(fetch-claude-usage! schedule-lobby-broadcast!)
                                (* 5 60 1000))
              ;; HTTP API: programmatically create a room (and optionally kick
-             ;; off a turn) so an external service — e.g. the GTD service in
-             ;; dotfiles — can spawn a background agent session and hand back a
-             ;; web-client URL to open it. POST /api/rooms {prompt?, cwd?,
-             ;; model?}. Auth: same client-key trust as WS (via Authorization:
-             ;; Bearer <key> or X-Xi-Client-Key), skipped in personal-agent
-             ;; mode. The room runs clientless (busy rooms keep running) and its
-             ;; session persists on disk, so /chat/<session-id> resumes it later.
+             ;; off a turn) so an external service can spawn a background
+             ;; agent session and hand back a web-client URL to open it.
+             ;; POST /api/rooms {prompt?, cwd?, model?}. Auth: same client-key
+             ;; trust as WS (via Authorization: Bearer <key> or
+             ;; X-Xi-Client-Key), skipped in personal-agent mode. The room
+             ;; runs clientless (busy rooms keep running) and its session
+             ;; persists on disk, so /chat/<session-id> resumes it later.
              ;; Read-only status of prior background sessions by id: `running`
              ;; (a live room mid-turn), `error` (its last turn aborted or the
              ;; server was hard-killed mid-turn), `complete` (finished
              ;; normally), or `unknown`. Background rooms are reaped the moment
              ;; their turn ends, so a finished/aborted session has no live room
              ;; — status then comes from the persisted session metadata
-             ;; (:aborted-at / :interrupted-at). The GTD service polls this to
-             ;; badge task rows it dispatched to the agent.
+             ;; (:aborted-at / :interrupted-at). A service that dispatched
+             ;; sessions polls this to show their state.
              session-status
              (fn [id]
                (let [busy? (some (fn [[_ room]]

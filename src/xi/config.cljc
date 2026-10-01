@@ -23,20 +23,16 @@
         [xi.ext.clj :as clj-tool]
         [xi.ext.clj-surgeon :as clj-surgeon]
         [xi.ext.commit :as commit]
-        [xi.ext.dictation :as dictation]
         [xi.ext.diff.core :as diff]
         [xi.ext.events :as events]
         [xi.ext.extensions :as extensions]
         [xi.ext.file-finder :as file-finder]
         [xi.ext.file-view.core :as file-view]
         [xi.ext.github :as github]
-        [xi.ext.image-graph :as image-graph]
         [xi.ext.mcp :as mcp]
         [xi.ext.plan-mode :as plan-mode]
         [xi.ext.process-manager :as process-manager]
-        [xi.ext.product-search.core :as product-search]
         [xi.ext.projects :as projects]
-        [xi.ext.render :as render]
         [xi.ext.resume :as resume]
         [xi.ext.rules :as rules]
         [xi.ext.review :as review]
@@ -57,7 +53,6 @@
         [xi.ext.diff.web :as diff-web]
         [xi.ext.file-view.web :as file-view-web]
         [xi.ext.github.web :as github-web]
-        [xi.ext.image-graph.web :as image-graph-web]
         [xi.ext.subagent.web :as subagent-web]])))
 
 (def tui
@@ -106,7 +101,6 @@
       file-finder/extension
       worktree/create
       session-search/extension
-      product-search/extension
       commit/extension
       resume/create
       review/extension
@@ -114,7 +108,6 @@
       chrome/create
       clj-surgeon/extension
       github/extension
-      image-graph/extension
       ;; clj (sandboxed SCI scripting tool)
       clj-tool/extension
       treesitter/create
@@ -126,7 +119,6 @@
       ;; (xi.ext.user/install!, called in xi.cli next to mcp/install!)
       user-ext/server-extension
       mcp/create
-      render/create
       ;; registry-only: tracks processes spawned by clj's `process` namespace
       ;; (/ps, /kill, room keep-alive); spawning is gated in clj-tool
       process-manager/extension
@@ -151,7 +143,7 @@
 #?(:node
    (def client
      "Process-local extensions that run in the TUI client process."
-     [dictation/create]))
+     []))
 
 #?(:browser
    (def web
@@ -160,5 +152,4 @@
       file-view-web/extension
       github-web/extension
       canvas-review-web/extension
-      image-graph-web/extension
       subagent-web/extension]))

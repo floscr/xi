@@ -165,8 +165,8 @@
 (defn- copy-dialog-overlay
   "iOS manual-copy fallback. Shows the text in a pre-selected, read-only
    textarea so the user can copy it via the native long-press menu, since the
-   programmatic Clipboard API is unavailable over plain HTTP on iOS. Tracked for
-   a proper HTTPS fix in GTD."
+   programmatic Clipboard API is unavailable over plain HTTP on iOS. Serving
+   over HTTPS (docs/tls-https.md) avoids it."
   [dispatch! text]
   (when text
     (let [close! (fn [] (dispatch! {:type :copy/close}))]

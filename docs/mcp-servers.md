@@ -217,16 +217,16 @@ works too. The repo's `.gitignore` also covers stray `*.env` files as a
 backstop. This loader is generic — any extension can use it for its own
 secrets, not just MCP.
 
-### Render extension
+### Example: Render
 
-`xi.ext.render` is a dedicated, **disabled-by-default** extension that wires all
-of the above together. On startup it idempotently seeds the disabled `:render`
-`:http` entry (above) into `mcp.edn` — so Render's tools, which can trigger
-deploys and mutate service env vars, never load unless you opt in. To use it:
+Render's hosted MCP server puts all of the above together. Its tools can
+trigger deploys and change service env vars, so add it disabled and opt in when
+you need it:
 
-1. Put your key in `~/.config/xi/ext/render.env` (`RENDER_API_KEY=…`).
-2. `/mcp enable render` then `/mcp refresh render` (caches its tools).
-3. `/render` shows key presence, enabled state, and these steps.
+1. Add the `:render` entry from [the registry example](#registry-configxi-mcpedn) to `~/.config/xi/mcp.edn`
+   with `:enabled false`.
+2. Put your key in `~/.config/xi/ext/render.env` (`RENDER_API_KEY=…`).
+3. `/mcp enable render`, then `/mcp refresh render` to cache its tools.
 
 Once enabled, every Render tool call is still confirmed by the MCP default rule —
 unless you `[a]llow always` a given tool, which persists a session allow-rule for
@@ -240,7 +240,6 @@ Render and most hosted servers without it.
 - `src/xi/ext/manager.cljs` — live extension registry + enable/disable/register/unregister
 - `src/xi/ext/extensions.cljs` — the `/ext` control command
 - `src/xi/ext/mcp.cljs` — MCP-as-extension helper + registry/cache I/O + `/mcp` command + `:auth` resolution
-- `src/xi/ext/render.cljs` — the disabled-by-default Render (`:http`) extension
 - `src/xi/ext/config.cljs` — generic per-extension gitignored config/secret loader
 - `src/xi/mcp/client.cljs` — JSON-RPC MCP client (stdio `connect` + Streamable-HTTP `connect-http`)
 - `src/xi/cli.cljs` — creates the manager, seeds it, calls `mcp/install!`, and

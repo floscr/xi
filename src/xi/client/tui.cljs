@@ -72,9 +72,9 @@
 (defn- ->editor-keybindings
   "Translate ext keybindings ({:key :event :when}) into editor bindings
    ({:key-fn :handler}). :when (if present) gates on full app state and is
-   folded into :key-fn so a guarded binding (e.g. dictation's Ctrl+C, only
-   active while recording) lets the key fall through to the editor's own
-   handler when the guard fails. :event is dispatched with the active
+   folded into :key-fn so a guarded binding (e.g. a Ctrl+C only active in
+   some mode) lets the key fall through to the editor's own handler when the
+   guard fails. :event is dispatched with the active
    room's :room-id added."
   [keybindings get-state dispatch!]
   (vec (keep (fn [{:keys [key event] pred :when}]
@@ -1248,13 +1248,7 @@
                :clipboard/copy
                (fn [_ {:keys [text]}] (copy-to-clipboard! text))
 
-               ;; Editor seams for extensions (e.g. dictation inserting a
-               ;; transcript, then optionally submitting).
+               ;; Editor seam for commands and extensions (e.g. inserting a
+               ;; picked path or a re-edited prompt).
                :editor/insert-text
-               (fn [_ {:keys [text]}] (when (seq text) ((:insert-text editor-comp) text)))
-
-               :editor/delete-before-cursor
-               (fn [_ {:keys [n]}] ((:delete-chars-back editor-comp) (or n 0)))
-
-               :editor/submit
-               (fn [_ _] ((:submit editor-comp)))}}))
+               (fn [_ {:keys [text]}] (when (seq text) ((:insert-text editor-comp) text)))}}))

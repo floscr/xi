@@ -12,6 +12,8 @@
    fetch; they are not composed here."
   (:require [clojure.string :as str]
             [sci.core :as sci]
+            [xi.api.chrome]
+            [xi.api.core :as api-core]
             [xi.api.fs]
             [xi.api.http]
             [xi.api.json]
@@ -36,7 +38,8 @@
 (def ^:private exposed-namespaces
   "The host namespaces a user extension may require. Pure xi helpers + the
    rules-gated capabilities. Nothing here performs an un-gated side effect."
-  {'xi.api.fs      (sci/copy-ns xi.api.fs      (sci/create-ns 'xi.api.fs))
+  {'xi.api.chrome  (sci/copy-ns xi.api.chrome  (sci/create-ns 'xi.api.chrome))
+   'xi.api.fs      (sci/copy-ns xi.api.fs      (sci/create-ns 'xi.api.fs))
    'xi.api.sh      (sci/copy-ns xi.api.sh      (sci/create-ns 'xi.api.sh))
    'xi.api.http    (sci/copy-ns xi.api.http    (sci/create-ns 'xi.api.http))
    'xi.api.json    (sci/copy-ns xi.api.json    (sci/create-ns 'xi.api.json))
@@ -69,9 +72,30 @@
    is the rules engine's job) and no :event-hooks (rewrites/blocks any event)."
   #{:id :init :handlers :fx :commands :tool-definitions :tool-registry
     :system-prompt :keybindings :prompt-badge :on-shutdown :on-enable
-    :on-disable
+    :on-disable :permissions
     ;; web half, collected but not composed node-side
     :routes :pages :nav-items :taps})
+
+(defn- host-name? [h]
+  (boolean (and (string? h)
+                (re-matches #"(?i)[a-z0-9-]+(?:\.[a-z0-9-]+)+" h))))
+
+(defn- permissions-error
+  "→ nil when `perms` (an extension's `:permissions`) is well-formed, else why
+   not. The only permission so far is :chrome-driver (xi.api.chrome)."
+  [perms]
+  (cond
+    (nil? perms) nil
+    (not (map? perms)) ":permissions must be a map"
+    (seq (remove #{:chrome-driver} (keys perms)))
+    (str "unknown permissions: " (str/join ", " (remove #{:chrome-driver} (keys perms))))
+
+    (contains? perms :chrome-driver)
+    (let [hosts (:hosts (:chrome-driver perms))]
+      (when-not (and (map? (:chrome-driver perms)) (vector? hosts) (seq hosts)
+                     (every? host-name? hosts))
+        (str ":chrome-driver needs :hosts, a non-empty vector of host names "
+             "like \"amazon.de\" (no scheme, port or wildcard)")))))
 
 (defn validate
   "→ nil when `ext` is a usable user extension, else a rejection reason.
@@ -84,6 +108,7 @@
     (seq (remove allowed-keys (keys ext)))
     (str "disallowed keys: "
          (str/join ", " (sort (remove allowed-keys (keys ext)))))
+    (permissions-error (:permissions ext)) (permissions-error (:permissions ext))
     (some taken-tools (map :name (:tool-definitions ext)))
     (str "tool name already in use: "
          (str/join ", " (filter taken-tools (map :name (:tool-definitions ext)))))
@@ -150,9 +175,10 @@
                           ext (read-var ctx nsn 'extension)]
                       (if-let [reason (validate ext taken-ids taken-tools)]
                         (assoc base :error reason)
-                        (assoc base :id (:id ext)
-                                    :ns nsn
-                                    :extension (guard/wrap ext))))
+                        (cond-> (assoc base :id (:id ext)
+                                            :ns nsn
+                                            :extension (guard/wrap (dissoc ext :permissions)))
+                          (:permissions ext) (assoc :permissions (:permissions ext)))))
                     (catch :default e
                       (assoc base :error (str "eval error: " (.-message e)))))]
         (recur (rest files)
@@ -237,6 +263,9 @@
     (doseq [old (set (keep :id @loaded)) :when (not (contains? new-ids old))]
       (manager/unregister! mgr old))
     (reset! loaded entries)
+    (api-core/set-permissions! (into {} (keep (fn [{:keys [id permissions]}]
+                                                (when (and id permissions) [id permissions])))
+                                     entries))
     (doseq [{:keys [extension]} entries :when extension]
       (manager/register! mgr extension))
     (let [ok      (keep :id entries)
