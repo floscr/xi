@@ -34,8 +34,8 @@
       `xi-pa` / hetzner specifics, keep the `bb check` / tmux-task discipline.
       The clj-ui-framework block points at a local checkout path; keep only
       the public URL (see [section 5](05-packaging.md)).
-- [ ] `tasks/`: remove from the public tree (or move to a private branch /
-      the dotfiles) once this plan is done.
+- [x] `tasks/`: **decided** — keep while the plan is live (it is the plan),
+      `git rm -r tasks/` as the last commit before publishing (section 6).
 - [x] `resources/public/preview-join.html` — design mock containing `hey`
       commands; delete if nothing serves it.
 
@@ -50,18 +50,19 @@ Committed as `650f3e4` (`chore: scrub stale config, docs and personal paths
 for public release`). `:main` build: 0 warnings; `bb test`: 826 tests, 0
 failures. `:web` was not rebuilt after the final doc/comment-only edits.
 
+### Follow-up (2026-10-01)
+Dropped the `PUSHOVER_` prefix from `src/xi/env.cljs` + `test/xi/env_test.cljs`;
+removed the local-checkout line from `docs/frontend.md`; de-personalised comments
+in `theme_mode.cljs`, `web/views.cljs`, `bb.edn`, `scripts/overlay_build.clj`.
+`bb test`: 836 tests, 0 failures.
+
 ### Left for later
 - [ ] `docs/chrome-mcp.md` `:49-50`, `:215-216` — **blocked on section 2**
       (chrome-mcp defaults). The docs describe the real code defaults
       (`wm.cljs:28`, `launch.cljs:30`), so change code + docs together. Once
       WM scoping is off by default, the owner needs `XI_CHROME_WM_BIN`,
       `XI_CHROME_WMCTRL_BIN` and `XI_CHROME_LAUNCH_BIN` in the local `.env`.
-- [ ] `tasks/` — decide at the release gate (section 6): `git rm -r tasks/` or
-      move to a private branch / dotfiles.
-- [ ] `PUSHOVER_` prefix in `src/xi/env.cljs` (launcher-var allowlist) and the
-      `PUSHOVER_*` fixtures in `test/xi/env_test.cljs` — dead since 49a385c;
-      `src/xi/env.cljs` had uncommitted edits from another session, so it was
-      not touched here.
+- [ ] `git rm -r tasks/` at the release gate (section 6).
 - [ ] `AGENTS.md`: the personal-agent session line (`~/.config/xi/personal-agent/`)
       depends on the personal-agent decision in [section 3](03-port-personal-extensions.md).
       The clj-ui-framework block sits between `clj-ui-framework:begin/end`

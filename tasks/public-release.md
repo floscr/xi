@@ -46,8 +46,10 @@ Absolute `/home/floscr/…` paths, the dotfiles `bb.edn`, the xmonad `wm` CLI,
 - [x] Delete `.env.example` (Pushover only, dead since 49a385c)
 - [x] Refresh the `xi.config` docstring
 - [x] Fix the `deftui-opt` undeclared-var build warning
-- [ ] Scrub personal paths/hosts/tools from docs, comments, test fixtures
-- [ ] Make AGENTS.md generic; decide on `tasks/` and `preview-join.html`
+- [x] Scrub personal paths/hosts/tools from docs, comments, test fixtures
+      (what's left is code defaults, tracked in section 2 / 5)
+- [x] Make AGENTS.md generic; `preview-join.html` deleted; `tasks/` stays until
+      the release gate, then `git rm -r tasks/` (see section 6)
 
 ## 5. Packaging → [details](public-release/05-packaging.md)
 
