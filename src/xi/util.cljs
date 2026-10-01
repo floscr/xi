@@ -20,15 +20,22 @@
        (remove str/blank?)
        count))
 
+(defn paste-has-fence?
+  "Does `text` already contain a ``` fence line? Such pastes (e.g. copied from
+   a rendered code block) must not be wrapped a second time."
+  [text]
+  (boolean (re-find #"(?m)^[ \t]*```" (str text))))
+
 (defn paste-should-fence?
   "Decide whether a pasted blob should be wrapped in a bare ``` code fence.
    Wraps when the paste spans more than 2 paragraphs, looks like code, or is at
-   least 500 characters."
+   least 500 characters — unless it already carries its own fence."
   [text]
   (let [text (str text)]
-    (or (>= (count text) paste-fence-min-chars)
-        (> (paste-paragraph-count text) 2)
-        (paste-code-like? text))))
+    (and (not (paste-has-fence? text))
+         (or (>= (count text) paste-fence-min-chars)
+             (> (paste-paragraph-count text) 2)
+             (paste-code-like? text)))))
 
 (defn fence-paste
   "Wrap `text` in a bare ``` code fence. Adds a leading newline unless the

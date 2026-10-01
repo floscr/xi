@@ -271,6 +271,12 @@
     (is (util/paste-should-fence? "fn(a){b();c();}"))
     (is (not (util/paste-should-fence? "hello world")))))
 
+(deftest paste-should-fence-skips-already-fenced
+  (testing "a paste carrying its own ``` fence is not wrapped again"
+    (is (not (util/paste-should-fence? "```\nfn(a){b();c();}\n```")))
+    (is (not (util/paste-should-fence? (str "intro\n\n```clojure\n" (apply str (repeat 500 "a")) "\n```"))))
+    (is (util/paste-should-fence? "inline ``` mention fn(a){b();c();}"))))
+
 (deftest fence-paste-standalone-line
   (testing "cursor alone on its line gets no extra newlines"
     (is (= "```\nx();\n```"
