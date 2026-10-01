@@ -146,6 +146,13 @@ overlap):
   directory, so the operand check can't vouch for it) and `chmod` (a
   permission change isn't a content change — `+x` makes a written file
   runnable, `u+s` / `o+r` escalate or expose — so it always confirms).
+- **removing git-tracked content** — clj `(sh "rm" …)` whose every operand is
+  tracked content inside the repo (`:tracked :git`: a file in the index, or a
+  directory holding only indexed files — recoverable from git) → **allow**, as
+  an exact-command grant. `(sh "rm" …)` auto-runs regardless; what this
+  changes is the clj builtin `(rm dir)`: its recursive-delete confirm is
+  skipped for such a directory, while one holding anything untracked or
+  ignored still asks. See [clj-tool.md](clj-tool.md#sh--permissions).
 - **script / inline-code execution** (`script-exec`) — an interpreter run with
   inline code or a script file → **ask**, `[y]es` / `[n]o` only, refused when
   nobody can answer (`:unanswered :deny`). The interpreter reads the script
@@ -324,9 +331,9 @@ The built-in default tier, in order:
 | `browser-confirm`    | 1 | ask on every user-extension headless-Chrome visit (`[a]lways` pins extension + host) |
 | `script-exec`        | 6 | ask before an interpreter runs inline code or a script file (`bb -f`, `node -e`, `python x.py`, `bun x.ts`, …); no `[a]lways`, refused headless |
 | `sh-read-only`       | 1 | allow read-only CLIs via clj `(sh …)` |
-| `repository-scripts` | 2 | allow read-only `sed -n …p` and in-repo `mv`/`cp`/`mkdir`/`touch`/`rmdir` |
+| `repository-scripts` | 3 | allow read-only `sed -n …p`, in-repo `mv`/`cp`/`mkdir`/`touch`/`rmdir`, and `rm` of git-tracked content (ordered before `sh-read-only` so its arg-scoped `rm` allow is reachable) |
 | `sh-confirm`         | 1 | ask on any other clj `(sh …)` CLI |
-| `clj-sh`             | → | composite: `sh-read-only` `repository-scripts` `sh-confirm` |
+| `clj-sh`             | → | composite: `repository-scripts` `sh-read-only` `sh-confirm` |
 
 ## `:match` fields
 
@@ -354,6 +361,7 @@ All present fields are **ANDed**; an absent field is no constraint.
 | `:chained`    | shell-composition predicate for `bash` (opt-in) — `true` matches a command using pipes, `;`/`&&`/`&`, `$(…)`, backticks, several lines or a leading `VAR=` (quoted separators and redirections like `2>&1` don't count) |
 | `:bb-trusted` | `bb.edn` trust predicate for `bb` tool calls (opt-in) — `true` / `false` matches by whether the nearest `bb.edn`'s sha256 is in the trust store (`~/.config/xi/ext/bb-trust.edn`, written by `/clj trust-bb`) |
 | `:within`     | operand-location predicate for clj `:sh` shell-outs (opt-in) — `:repo` matches when the call is fully literal and every non-flag arg resolves strictly inside the effective git repo (not the root itself, not `.git/` or `.xi/`) or tmp; flags must be bare short clusters (`-p`, `-rv`) — any `--long`/`--`/glued non-letter value never matches; symlinks are canonicalized |
+| `:tracked`    | git-tracked predicate for clj `:sh` shell-outs (opt-in) — `:git` matches when the call is fully literal and every non-flag arg resolves inside the effective git repo to **tracked content**: a file in the index, or a directory holding at least one indexed file and nothing untracked (ignored files count as untracked). Deleting or moving such a path is recoverable from git (uncommitted edits to a tracked file are not — tracked means "in the index"). Same flag discipline as `:within`; the repo root, `.git/`, tmp and anything outside never match; symlinks are canonicalized. Checked with `git ls-files`, lazily — git is spawned only for a command whose other match fields (tool, `:cli`, …) already matched. Used by the `repository-scripts` default; the clj builtin `(rm dir)` consults it too — see [clj-tool.md](clj-tool.md#sh--permissions) |
 
 ### Effective working directory
 
@@ -396,7 +404,7 @@ source (a `:tool :clj` rule still matches the raw code). A `:sh` `:allow`
 without `:command` pre-approves that binary (skips its confirm); a `:sh` `:deny` blocks the eval
 with the rule message. A `:sh` `:allow` that carries a `:command` grants only
 the exact, fully-literal commands it matched, never the binary at large (same
-for a `:within` allow). If
+for a `:within` or `:tracked` allow). If
 another call to the same CLI in the eval isn't matched, or has a dynamic arg,
 the CLI still needs approval (see
 [clj-tool.md](clj-tool.md#sh--permissions)). `:repo` rules match against the git

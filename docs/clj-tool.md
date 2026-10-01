@@ -125,7 +125,14 @@ Guards, enforced inside every helper:
   resolve to an **existing directory**, raises a confirm before the eval runs —
   the prompt calls out when the target is *outside the project repo*. Files are
   unaffected (auto-run). A `[y]` on an out-of-repo directory also injects it as
-  an approved write root so `resolve-write` permits the delete. **Dynamic**
+  an approved write root so `resolve-write` permits the delete. An **in-repo**
+  directory skips the confirm when an *arg-scoped* rules-engine `:allow`
+  (`:tracked` / `:within` / `:command`) matches the `rm -r <dir>` it amounts
+  to. The built-in `repository-scripts` default
+  `{:match {:tool :sh :cli "rm" :tracked :git} :action {:type :allow}}` is
+  one: a directory whose files are all in the git index (recoverable) is
+  deleted without asking, while one holding anything untracked or ignored
+  still confirms. The CLI-wide `rm` allow is not arg-scoped and never lifts it. **Dynamic**
   (computed) `rm` paths are invisible to this scan — an in-repo dynamic
   directory delete isn't pre-confirmed; an out-of-repo one falls through to
   the runtime write gate above (approval dialog, no tree-deletion-specific
@@ -164,7 +171,7 @@ step of the tool itself (`xi.ext.clj/approve`):
    cwd's git root as `:repo`, so `:repo`-scoped rules match. A rule `:deny`
    blocks it (with the rule's message). A rule `:allow` grants at the rule's
    granularity: one **without** a `:command` pre-approves the binary for the
-   eval; an **arg-scoped** one (`:command` or `:within`) grants only that
+   eval; an **arg-scoped** one (`:command`, `:within` or `:tracked`) grants only that
    exact, fully-literal command (injected as `:_allowed-commands`). An
    arg-scoped allow
    never covers other calls to the same CLI in the eval: if any `(sh …)`
@@ -380,7 +387,7 @@ Because `(sh …)` replaces bash, bash's policy is mirrored in the clj gate:
 
 - **Remote shells** (`ssh`/`scp`/`rsync`/`sftp`) — always blocked.
 - **Command-scoped `:ask` rules** — a rule whose match constrains `:command`
-  (or `:within`) confirms that exact scanned command, even when its CLI is
+  (or `:within` / `:tracked`) confirms that exact scanned command, even when its CLI is
   allowed. The `server-control` default rule on `bb serve:restart|stop` is one:
   once approved, `sh` runs it *detached* (`xi.server-control`) and returns an
   explicit result, since `sh` is synchronous and running it inline would kill

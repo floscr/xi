@@ -275,6 +275,24 @@
                               :operands-within-repo? true}))
         "chmod is not covered — a permission change (+x, u+s) isn't a content change")))
 
+(deftest rm-of-tracked-content
+  (let [matched (fn [req] (rules/first-match defaults/default-rules req))]
+    (testing "rm whose operands are all git-tracked hits the arg-scoped allow (before the CLI-wide one)"
+      (let [r (matched {:tool :sh :cli "rm" :command "rm -r src" :operands-tracked? true})]
+        (is (= :allow (get-in r [:action :type])))
+        (is (rules/arg-scoped? r))))
+    (testing "a delayed check is forced by the matcher"
+      (is (rules/arg-scoped? (matched {:tool :sh :cli "rm" :command "rm a"
+                                       :operands-tracked? (delay true)}))))
+    (testing "untracked / unchecked operands fall through to the CLI-wide rm allow"
+      (doseq [req [{:tool :sh :cli "rm" :command "rm notes.txt" :operands-tracked? false}
+                   {:tool :sh :cli "rm" :command "rm x"}]]
+        (let [r (matched req)]
+          (is (= :allow (get-in r [:action :type])))
+          (is (not (rules/arg-scoped? r)) (pr-str req)))))
+    (testing "only rm — a tracked operand doesn't lift other CLIs"
+      (is (= :ask (action-type {:tool :sh :cli "shred" :command "shred a" :operands-tracked? true}))))))
+
 (deftest chained-bash-is-denied
   (is (= :deny (action-type {:tool :bash :command "ls | head" :chained? true})))
   (is (nil? (action-type {:tool :bash :command "git status" :chained? false})))
@@ -313,14 +331,14 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 31 (count defaults/default-rules))))
+    (is (= 32 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
                              :xi.rules.defaults/outside-writes])
            (defaults/expand [:xi.rules.defaults/write-gates])))
-    (is (= (defaults/expand [:xi.rules.defaults/sh-read-only
-                             :xi.rules.defaults/repository-scripts
+    (is (= (defaults/expand [:xi.rules.defaults/repository-scripts
+                             :xi.rules.defaults/sh-read-only
                              :xi.rules.defaults/sh-confirm])
            (defaults/expand [:xi.rules.defaults/clj-sh]))))
   (testing "every alias a bundle references resolves"

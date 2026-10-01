@@ -456,12 +456,19 @@
 
    ;; Repo-local shell-outs, each arg-scoped (clj grants only the exact literal
    ;; command, never the binary at large): read-only `sed -n '<range>p' file…`
-   ;; inside a git repo, and file management (mv/cp/mkdir/…) whose every
-   ;; operand resolves inside the repo (never .git/) or tmp.
+   ;; inside a git repo, file management (mv/cp/mkdir/…) whose every operand
+   ;; resolves inside the repo (never .git/) or tmp, and `rm` of git-tracked
+   ;; content (a file in the index, or a directory holding only indexed files
+   ;; — recoverable from git). The rm rule must sit BEFORE sh-read-only's
+   ;; CLI-wide `rm` allow: (sh "rm" …) auto-runs either way, but the clj
+   ;; builtin (rm dir) lifts its recursive-delete confirm only on an
+   ;; arg-scoped allow, which first-match-wins would otherwise never reach.
    ::repository-scripts
    [{:match  {:tool :sh :cli "sed" :command sed-print-re :repo #"."}
      :action {:type :allow}}
     {:match  {:tool :sh :cli sh-repo-file-clis :within :repo}
+     :action {:type :allow}}
+    {:match  {:tool :sh :cli "rm" :tracked :git}
      :action {:type :allow}}]
 
    ::sh-confirm
@@ -469,7 +476,7 @@
      :action {:type :ask :message "Run this CLI via clj (sh …)?" :options [:yes :no :always]}}]
 
    ::clj-sh
-   [::sh-read-only ::repository-scripts ::sh-confirm]})
+   [::repository-scripts ::sh-read-only ::sh-confirm]})
 
 (defn expand
   "Expand a `:defaults` vector — bundle aliases (recursively, so composites

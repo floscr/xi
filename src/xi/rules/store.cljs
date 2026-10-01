@@ -24,6 +24,7 @@
             [xi.rules.defaults :as defaults]
             [xi.rules.nodes :as nodes]
             [xi.paths :as paths]
+            ["node:child_process" :as cp]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as path]))
@@ -387,35 +388,81 @@
 
      false)))
 
+(defn- literal-operands
+  "The non-flag args of literal `argv` (a `:sh` command, binary first), or nil
+   when there are none or a flag isn't a bare short-flag cluster (`-f`, `-rv`):
+   a `--long[=value]` flag, `--`, or a value glued to a non-letter (`-t/etc`)
+   could smuggle an unchecked path, so such a command never matches an
+   operand predicate. Every other arg is treated as a path (a flag's separate
+   value, e.g. `-m 755`, is checked too — stricter, never looser)."
+  [argv]
+  (let [args     (map str (rest argv))
+        flags    (filter #(str/starts-with? % "-") args)
+        operands (remove #(str/starts-with? % "-") args)]
+    (when (and (seq operands) (every? #(re-matches #"-[a-zA-Z]+" %) flags))
+      operands)))
+
 (defn operands-within-repo?
   "True when literal `argv` (a `:sh` command, binary first) only touches paths
    strictly inside `repo` (not the root itself — `mv <repo> /tmp/x`) or tmp —
    never the repo's `.git/` (hooks = code execution) or `.xi/` (moving it away
-   would drop the repo's rules file). Flags must be bare short-flag
-   clusters (`-f`, `-rv`): a `--long[=value]` flag, `--`, or a value glued to a
-   non-letter (`-t/etc`) could smuggle an unchecked path, so it never matches.
-   Every other arg is treated as a path and resolved against `cwd` with
-   symlinks canonicalized (a flag's separate value, e.g. `-m 755`, is checked
-   too — stricter, never looser). I/O, computed only when a `:within` rule is
-   in play."
+   would drop the repo's rules file). Operands/flags as in `literal-operands`;
+   each operand is resolved against `cwd` with symlinks canonicalized. I/O,
+   computed only when a `:within` rule is in play."
   [cwd repo argv]
-  (let [args     (map str (rest argv))
-        flags    (filter #(str/starts-with? % "-") args)
-        operands (remove #(str/starts-with? % "-") args)]
-    (boolean
-     (when (and repo (seq operands)
-                (every? #(re-matches #"-[a-zA-Z]+" %) flags))
-       (let [root     (paths/real-resolve cwd repo)
-             reserved (map #(path/join root %) [".git" ".xi"])]
-         (every? (fn [op]
-                   ;; root / reserved checks come first so a repo living
-                   ;; under tmp can't launder them through the tmp clause.
-                   (let [resolved (paths/real-resolve cwd op)]
-                     (and (not= resolved root)
-                          (not-any? #(paths/path-within? resolved %) reserved)
-                          (or (paths/path-within? resolved root)
-                              (paths/within-tmp? cwd resolved)))))
-                 operands))))))
+  (boolean
+   (when-let [operands (and repo (literal-operands argv))]
+     (let [root     (paths/real-resolve cwd repo)
+           reserved (map #(path/join root %) [".git" ".xi"])]
+       (every? (fn [op]
+                 ;; root / reserved checks come first so a repo living
+                 ;; under tmp can't launder them through the tmp clause.
+                 (let [resolved (paths/real-resolve cwd op)]
+                   (and (not= resolved root)
+                        (not-any? #(paths/path-within? resolved %) reserved)
+                        (or (paths/path-within? resolved root)
+                            (paths/within-tmp? cwd resolved)))))
+               operands)))))
+
+(defn- git-ls-files
+  "`git ls-files -z <flags> -- rel` entries for `rel` under repo `root`, or nil
+   when git fails (not a repo, no git). `--literal-pathspecs` keeps an operand
+   with `*`/`?`/`[` from widening into a glob."
+  [root rel flags]
+  (let [r (cp/spawnSync "git"
+                        (clj->js (concat ["--literal-pathspecs" "-C" root "ls-files" "-z"]
+                                         flags ["--" rel]))
+                        #js {:encoding "utf8"})]
+    (when (= 0 (.-status r))
+      (remove str/blank? (str/split (str (.-stdout r)) #"\u0000")))))
+
+(defn git-tracked?
+  "True when canonical absolute path `abs` is git-tracked content inside repo
+   `root`: a file in the index, or a directory holding at least one indexed
+   file and nothing untracked (ignored files count as untracked — deleting
+   them would be unrecoverable too). The root itself never counts. Uncommitted
+   modifications to a tracked file don't matter: tracked means in the index.
+   I/O (two `git ls-files` runs)."
+  [root abs]
+  (boolean
+   (when (and root abs (not= abs root) (paths/path-within? abs root))
+     (let [rel (path/relative root abs)]
+       (and (seq (git-ls-files root rel []))
+            (empty? (git-ls-files root rel ["--others"])))))))
+
+(defn operands-git-tracked?
+  "True when literal `argv` (a `:sh` command, binary first) only names
+   git-tracked content inside `repo` — every operand resolves (symlinks
+   canonicalized) to a tracked file or an all-tracked directory (see
+   `git-tracked?`), so removing or moving it is recoverable from git.
+   Operands/flags as in `literal-operands`; tmp paths, the repo root, `.git/`
+   and anything outside the repo are never tracked, so they never match. I/O,
+   computed only when a `:tracked` rule is in play."
+  [cwd repo argv]
+  (boolean
+   (when-let [operands (and repo (literal-operands argv))]
+     (let [root (paths/real-resolve cwd repo)]
+       (every? #(git-tracked? root (paths/real-resolve cwd %)) operands)))))
 
 (defn strip-quoted
   "Remove single- and double-quoted spans so quoted `;`/`|` don't count,
@@ -459,7 +506,10 @@
    `:path` rules, `:outside-cwd?` for `:outside` rules, `:credential-path?` for
    `:credential` rules, `:nodes` (tree-sitter) for `:node` rules,
    `:operands-within-repo?` for `:within` rules (from a literal `:sh` `:argv`),
-   `:xi-rules-file?` for `:xi-rules-file` rules, `:own-data?` for
+   `:operands-tracked?` for `:tracked` rules (same `:argv`, checked against
+   the git index — a delay the matcher forces, so git is only spawned for a
+   command a `:tracked` rule otherwise matches), `:xi-rules-file?` for
+   `:xi-rules-file` rules, `:own-data?` for
    `:extension-data` rules (symlink-canonical, so a link out of the data dir
    doesn't count), `:chained?` for `:chained` rules (`:bash` commands), and
    `:bb-trusted?` for `:bb-trusted` rules (`:bb` calls)."
@@ -478,6 +528,9 @@
       (and (:argv req) (rules/needs-within? ruleset))
       (assoc :operands-within-repo? (operands-within-repo? (:effective-cwd req)
                                                            (:repo req) (:argv req)))
+      (and (:argv req) (rules/needs-tracked? ruleset))
+      (assoc :operands-tracked? (let [{:keys [effective-cwd repo argv]} req]
+                                  (delay (operands-git-tracked? effective-cwd repo argv))))
       (rules/needs-xi-rules-file? ruleset)
       (assoc :xi-rules-file? (xi-rules-file-change? req))
       (and (= :bash (:tool req)) (rules/needs-chained? ruleset))

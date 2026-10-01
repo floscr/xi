@@ -1980,8 +1980,19 @@
             ;; Builtin (rm dir) targets that are existing directories — a
             ;; recursive tree deletion. Gate each with its own confirm (handled
             ;; below, in or out of repo), so they're excluded from the generic
-            ;; outside-write approval to avoid double-prompting.
-            rm-dirs  (filter #(existing-dir? cwd %) (rm-targets-of scan))
+            ;; outside-write approval to avoid double-prompting. An in-repo dir
+            ;; skips the confirm when an ARG-SCOPED engine :allow (a rule with
+            ;; :tracked / :within / :command, e.g. "git-tracked dirs inside the
+            ;; repo") matches the `rm -r <dir>` it amounts to; the default
+            ;; CLI-wide `rm` allow is not arg-scoped, so it never lifts it.
+            rm-dirs  (->> (rm-targets-of scan)
+                          (filter #(existing-dir? cwd %))
+                          (remove (fn [p]
+                                    (and (not (rules-store/outside-cwd? cwd p))
+                                         (let [r (cmd-decision {:command (str "rm -r " p)
+                                                                :argv ["rm" "-r" p]})]
+                                           (and (= :allow (get-in r [:action :type]))
+                                                (rules/arg-scoped? r)))))))
             ;; Literal write-target paths that escape the repo (+tmp). These get
             ;; the same approval dialog the write/edit tools use, then are
             ;; injected so the worker's resolve-write allows them.

@@ -187,3 +187,25 @@
 (deftest needs-xi-rules-file
   (is (rules/needs-xi-rules-file? [{:match {:tool :edit :xi-rules-file true}}]))
   (is (not (rules/needs-xi-rules-file? [{:match {:tool :edit :path "*.edn"}}]))))
+
+(deftest match-tracked-optin
+  (let [rule {:match {:tool :sh :cli "rm" :tracked :git}}]
+    (is (rules/matches? rule {:tool :sh :cli "rm" :command "rm src/a.clj"
+                              :operands-tracked? true}))
+    (is (not (rules/matches? rule {:tool :sh :cli "rm" :command "rm notes.txt"
+                                   :operands-tracked? false}))
+        "untracked operand → no match")
+    (is (not (rules/matches? rule {:tool :sh :cli "rm" :command "rm x"}))
+        "absent flag (dynamic args / no :tracked check) → a :tracked rule never matches")
+    (is (not (rules/matches? {:match {:tool :sh :tracked :repo}}
+                             {:tool :sh :cli "rm" :command "rm x" :operands-tracked? true}))
+        "only :git is a known value")))
+
+(deftest needs-tracked
+  (is (rules/needs-tracked? [{:match {:tool :sh :cli "rm" :tracked :git}}]))
+  (is (not (rules/needs-tracked? [{:match {:tool :sh :cli "rm" :within :repo}}]))))
+
+(deftest tracked-rules-are-arg-scoped
+  (is (rules/arg-scoped? {:match {:tool :sh :cli "rm" :tracked :git}}))
+  (is (rules/arg-scoped? {:match {:tool :sh :cli "mv" :within :repo}}))
+  (is (not (rules/arg-scoped? {:match {:tool :sh :cli "rm"}}))))

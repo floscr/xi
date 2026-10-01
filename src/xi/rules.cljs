@@ -17,6 +17,7 @@
                :when {:mode :plan}       ; submap match against room ext state
                :node {:type \"...\" :name #\"...\" :contains #\"...\"} ; tree-sitter (opt-in)
                :within :repo             ; every :sh operand inside the repo (opt-in)
+               :tracked :git             ; every :sh operand git-tracked in the repo (opt-in)
                :chained true             ; a :bash command that composes shell commands (opt-in)
                :bb-trusted false         ; a :bb call whose bb.edn is (not) in the trust store (opt-in)
                :xi-rules-file true}      ; changes an xi rules.edn (opt-in)
@@ -205,6 +206,22 @@
         :repo (boolean (:operands-within-repo? req))
         false)))
 
+(defn- match-tracked
+  "Git-tracked match (opt-in). `:tracked :git` matches when every operand of a
+   literal `:sh` command is git-tracked content inside the effective repo — a
+   file in the index, or a directory whose files are all in the index — so
+   deleting or moving it is recoverable from git. The store populates
+   `:operands-tracked?` on the request only when a `:tracked` rule is in play
+   (nil never matches) — as a delay, since the check spawns git: it is forced
+   here, i.e. only once a `:tracked` rule's other fields (tool, cli, …) have
+   matched, never for unrelated commands."
+  [spec req]
+  (or (nil? spec)
+      (case spec
+        :git (let [v (:operands-tracked? req)]
+               (boolean (if (delay? v) @v v)))
+        false)))
+
 (defn- match-xi-rules-file
   "xi-rules-file match (opt-in). `:xi-rules-file true` matches when the call
    would change an xi rules file (a `rules.edn` carrying `:version`) — the store
@@ -286,6 +303,7 @@
          (match-outside    (:outside m)    req)
          (match-credential (:credential m) req)
          (match-within     (:within m)     req)
+         (match-tracked    (:tracked m)    req)
          (match-chained    (:chained m)    req)
          (match-bb-trusted (:bb-trusted m) req)
          (match-xi-rules-file (:xi-rules-file m) req))))
@@ -324,12 +342,19 @@
   [rules]
   (boolean (some #(some-> (canonical %) :match :within) rules)))
 
+(defn needs-tracked?
+  "True when any rule carries a `:tracked` matcher, so the store should check a
+   `:sh` request's operands against the git index and populate
+   `:operands-tracked?`."
+  [rules]
+  (boolean (some #(some-> (canonical %) :match :tracked) rules)))
+
 (defn arg-scoped?
   "True when (canonical) `rule` constrains a `:sh` command's arguments — a
-   `:command` or `:within` matcher — so its allow covers only the exact command
-   it matched, not the CLI at large."
+   `:command`, `:within` or `:tracked` matcher — so its allow covers only the
+   exact command it matched, not the CLI at large."
   [rule]
-  (boolean (some #(some? (get-in rule [:match %])) [:command :within])))
+  (boolean (some #(some? (get-in rule [:match %])) [:command :within :tracked])))
 
 (defn needs-extension-data?
   "True when any rule carries an `:extension-data` matcher, so the store should

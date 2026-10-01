@@ -6,6 +6,7 @@
             [xi.rules.store :as store]
             [xi.paths :as paths]
             [xi.ext.treesitter.parse :as ts]
+            ["node:child_process" :as cp]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]))
@@ -513,6 +514,47 @@
         (is (not (in? "mkdir" "-p"))))
       (testing "no git repo → no match"
         (is (not (store/operands-within-repo? repo nil ["mv" "a" "b"]))))
+      (finally
+        (fs/rmSync repo #js {:recursive true :force true})))))
+
+(deftest operands-git-tracked
+  ;; A real (index-only, no commit needed) git repo: tracked = in the index.
+  (let [repo (fs/realpathSync (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-tracked-")))
+        git  (fn [& args] (cp/spawnSync "git" (clj->js args) #js {:cwd repo :encoding "utf8"}))
+        file (fn [rel s]
+               (fs/mkdirSync (node-path/dirname (node-path/join repo rel)) #js {:recursive true})
+               (fs/writeFileSync (node-path/join repo rel) s))
+        ok?  (fn [& argv] (store/operands-git-tracked? repo repo (vec argv)))]
+    (try
+      (git "init" "-q")
+      (file "src/a.clj" "a")
+      (file "src/b.clj" "b")
+      (file "mixed/t.clj" "t")
+      (file "logs/keep.clj" "k")
+      (file ".gitignore" "*.log\n")
+      (git "add" "src" "mixed/t.clj" "logs/keep.clj" ".gitignore")
+      (file "untracked.txt" "u")
+      (file "mixed/u.txt" "u")
+      (file "logs/out.log" "ignored")
+      (testing "a tracked file / an all-tracked directory match"
+        (is (ok? "rm" "src/a.clj"))
+        (is (ok? "rm" "-f" "src/a.clj" "mixed/t.clj"))
+        (is (ok? "rm" "-r" "src"))
+        (is (ok? "rm" "-r" (node-path/join repo "src")) "absolute operand"))
+      (testing "untracked or ignored content never matches"
+        (is (not (ok? "rm" "untracked.txt")))
+        (is (not (ok? "rm" "missing.txt")))
+        (is (not (ok? "rm" "src/a.clj" "untracked.txt")) "one untracked operand spoils it")
+        (is (not (ok? "rm" "-r" "mixed")) "dir holding an untracked file")
+        (is (not (ok? "rm" "-r" "logs")) "dir holding an ignored file"))
+      (testing "the repo root, .git/, outside paths and long flags → no match"
+        (is (not (ok? "rm" "-r" ".")))
+        (is (not (ok? "rm" "-r" ".git")))
+        (is (not (ok? "rm" "/etc/passwd")))
+        (is (not (ok? "rm" "--force" "src/a.clj")))
+        (is (not (ok? "rm" "-r"))))
+      (testing "no git repo → no match"
+        (is (not (store/operands-git-tracked? repo nil ["rm" "src/a.clj"]))))
       (finally
         (fs/rmSync repo #js {:recursive true :force true})))))
 

@@ -2,6 +2,7 @@
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.ext.clj :as clj-ext]
+            ["node:child_process" :as cp]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]))
@@ -1017,6 +1018,61 @@
           (.then (fn [res]
                    (is (not (:intercepted res)))
                    (fs/rmSync dir #js {:recursive true :force true})
+                   (done)))))))
+
+(defn- mk-git-repo
+  "A temp git repo (index only) with a tracked `src/` dir and an untracked
+   `scratch/` dir; returns its canonical path."
+  []
+  (let [repo (fs/realpathSync (mk-tmp-dir))
+        git  (fn [& args] (cp/spawnSync "git" (clj->js args) #js {:cwd repo :encoding "utf8"}))]
+    (fs/mkdirSync (node-path/join repo "src"))
+    (fs/mkdirSync (node-path/join repo "scratch"))
+    (fs/writeFileSync (node-path/join repo "src" "a.clj") "a")
+    (fs/writeFileSync (node-path/join repo "scratch" "u.txt") "u")
+    (git "init" "-q")
+    (git "add" "src")
+    repo))
+
+(deftest gate-default-lifts-rm-directory-confirm-for-tracked-dir
+  ;; Built-in default {:tool :sh :cli "rm" :tracked :git} (arg-scoped allow):
+  ;; the builtin (rm dir) deletes an all-tracked in-repo directory without the
+  ;; recursive-delete confirm; an untracked directory still prompts.
+  (async done
+    (let [repo    (mk-git-repo)
+          prompts (atom [])
+          ctx     (assoc (gate-ctx) :cwd repo
+                         :confirm! (fn [msg & _]
+                                     (swap! prompts conj msg)
+                                     (js/Promise.resolve false)))]
+      (-> (js/Promise.all
+           #js [(gate {:name "clj" :arguments {:code "(rm \"src\")"}} ctx)
+                (gate {:name "clj" :arguments {:code "(rm \"scratch\")"}} ctx)])
+          (.then (fn [[tracked untracked]]
+                   (is (not (:intercepted tracked)) "tracked dir: no confirm, not blocked")
+                   (is (:intercepted untracked) "untracked dir: the confirm (denied) blocks")
+                   (is (= 1 (count (filter #(str/includes? % "Recursively delete directory") @prompts)))
+                       "only the untracked dir prompted")
+                   (fs/rmSync repo #js {:recursive true :force true})
+                   (done)))))))
+
+(deftest gate-cli-wide-rm-allow-keeps-rm-directory-confirm
+  ;; The default CLI-wide `rm` allow (and a session `/clj allow rm`) is not
+  ;; arg-scoped, so it never lifts the recursive-delete confirm on its own.
+  (async done
+    (let [repo    (mk-git-repo)
+          state   {:rooms {"r" {:ext {:rules {:rules [{:match  {:tool :sh :cli "rm"}
+                                                       :action {:type :allow}}]}}}}}
+          prompts (atom [])
+          ctx     (assoc (gate-ctx) :cwd repo :get-state (fn [] state)
+                         :confirm! (fn [msg & _]
+                                     (swap! prompts conj msg)
+                                     (js/Promise.resolve false)))]
+      (-> (js/Promise.resolve (gate {:name "clj" :arguments {:code "(rm \"src\")"}} ctx))
+          (.then (fn [res]
+                   (is (:intercepted res))
+                   (is (some #(str/includes? % "Recursively delete directory") @prompts))
+                   (fs/rmSync repo #js {:recursive true :force true})
                    (done)))))))
 
 (deftest gate-autoruns-rm-file-no-directory-prompt
