@@ -73,6 +73,9 @@
   "Read TUI config option `k` from `tui`, falling back to `default` when the
    key is not defined in the config. See the `deftui-opt` macro in
    xi.config-macros for the usual call site."
+  [k default]
+  (get tui k default))
+
 (def appearance
   "Web client appearance overrides — how the chat timeline renders its
    collapsible blocks. Same shape as `tui`: only keys you want to change from
@@ -94,9 +97,6 @@
        :open | :collapsed — whether thinking blocks start expanded.
        Default :collapsed."
   {})
-
-  [k default]
-  (get tui k default))
 
 (def quick-replies?
   "When true, run a cheap model over each finished assistant turn to detect a
