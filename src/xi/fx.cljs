@@ -129,10 +129,9 @@
        vec))
 
 (defn- list-room-sessions [room scope]
-  (let [pa? (get-in room [:agent :personal-agent?])]
+  (let [agent-id (get-in room [:agent :agent-id])]
     (cond
-      pa?           (session/list-personal-agent-sessions
-                     (get-in room [:session :agent]))
+      agent-id      (session/list-personal-agent-sessions agent-id)
       (= :all scope) (session/list-all-sessions)
       :else          (session/list-sessions (:cwd room)))))
 
@@ -178,7 +177,7 @@
    (fn [{:keys [dispatch! state]} {:keys [room-id save-current? after-prompt truncated-from keep-history?]}]
      (let [room (room-of state room-id)
            current (:session room)
-           pa? (get-in room [:agent :personal-agent?])]
+           agent-id (get-in room [:agent :agent-id])]
        (when (and save-current? (:provider-session-id current))
          (try (session/save-session! (->disk-session current))
               (catch :default e
@@ -187,8 +186,7 @@
                    :room-id room-id
                    :session (cond-> (session/create-session
                                      (or (:cwd room) (.cwd js/process))
-                                     (when pa? {:personal-agent? true
-                                                :agent (:agent current)}))
+                                     (when agent-id {:agent agent-id}))
                               ;; Lineage link from /truncate — persisted with the
                               ;; session so a later resume can render the prior
                               ;; conversation above the truncation divider.
@@ -200,7 +198,7 @@
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]
      (let [room (room-of state room-id)
            current (:session room)
-           pa? (get-in room [:agent :personal-agent?])]
+           agent-id (get-in room [:agent :agent-id])]
        ;; Persist the original branch on disk before diverging so the two
        ;; sessions don't share a provider session id.
        (when (:provider-session-id current)
@@ -211,8 +209,7 @@
                    :room-id room-id
                    :session (session/create-session
                              (or (:cwd room) (.cwd js/process))
-                             (when pa? {:personal-agent? true
-                                        :agent (:agent current)}))})))
+                             (when agent-id {:agent agent-id}))})))
 
    :session/sync
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]
@@ -410,10 +407,12 @@
          (if-not (.isDirectory (.statSync fs resolved))
            (dispatch! {:type :ui/status :room-id room-id
                        :text (str "Not a directory: " resolved)})
-           (let [pa?    (get-in room [:agent :personal-agent?])
-                 result (when (and system-prompt-fn (not pa?))
+           ;; An agent room keeps its profile prompt — no project prompt
+           ;; rebuild on /cd.
+           (let [agent? (some? (get-in room [:agent :agent-id]))
+                 result (when (and system-prompt-fn (not agent?))
                           (system-prompt-fn resolved))
-                 agents (when (and system-prompt-fn (not pa?))
+                 agents (when (and system-prompt-fn (not agent?))
                           (system-prompt/find-agents-md resolved))]
              (dispatch! (cond-> {:type :cwd/changed :room-id room-id :cwd resolved}
                           (:system result) (assoc :system (:system result))

@@ -296,7 +296,7 @@ All present fields are **ANDed**; an absent field is no constraint.
 | `:dir`        | absolute **path prefix** of the effective cwd (`~` expanded)         |
 | `:mcp-server` | MCP server id (for `mcp__<server>__<tool>` calls) — string/glob     |
 | `:mcp-tool`   | MCP tool name — string/glob (`"*"` = any)                            |
-| `:when`       | submap predicate over room ext state; a map value matches recursively (nested submap, ignoring extra keys), e.g. `{:plan-mode {:enabled? true}}` |
+| `:when`       | submap predicate over room ext state; a map value matches recursively (nested submap, ignoring extra keys), e.g. `{:plan-mode {:enabled? true}}`. Rooms of a named agent (`--agent ID`) carry `{:agent {:id "ID"}}`, so `{:agent {:id "root"}}` scopes a rule to that agent and `{:agent {}}` to any agent room |
 | `:node`       | tree-sitter AST predicate (opt-in) — `{:type … :name … :contains …}` |
 | `:outside`    | location predicate (opt-in) — `:cwd` matches when the target path resolves outside the effective cwd (and tmp); symlinks are canonicalized |
 | `:credential` | credential-path predicate (opt-in) — `:read` matches when the target path resolves inside a hidden credential dir (`.ssh`, `.gnupg`, `.password-store`, …); symlinks are canonicalized |

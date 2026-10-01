@@ -66,7 +66,7 @@
                                                      (logged "bun target/main.js server --headless" serve-log))]]
                              :env-file ".env"})
           (def pa-serve-config {:session "xi-pa"
-                                :windows [["server" "bun target/main.js server --headless --personal-agent-only --port 7475"]]})
+                                :windows [["server" "bun target/main.js server --headless --agent root --port 7475"]]})
           ;; Isolated demo server (port 7476). HOME is redirected at .demo-home
           ;; (built by scripts/demo-seed.mjs) so it never sees the real active
           ;; session — see docs/demo.md. Reuses the target/main.js compiled by
@@ -85,11 +85,11 @@
           ;; detached/orphaned `bun target/main.js server --headless` processes
           ;; leak across restarts and keep :7474 occupied. The personal-agent
           ;; (--port 7475), demo (--port 7476) and system xi-agent
-          ;; (--personal-agent-only) servers all carry --port/--personal-agent-only
-          ;; and are deliberately excluded.
+          ;; (--agent root) servers all carry --port/--agent and are
+          ;; deliberately excluded.
           ;; The `--headless$` end-anchor matches ONLY the dev serve cmdline
           ;; (`bun target/main.js server --headless`); personal/demo/xi-agent
-          ;; carry trailing --port/--personal-agent-only args so they don't
+          ;; carry trailing --port/--agent args so they don't
           ;; match. pgrep returns just the PIDs, so no cmdline parsing is
           ;; needed (bb.edn is EDN — no #(...) / #"..." reader macros).
           (defn stray-pids [pattern]
@@ -205,8 +205,8 @@
            (println (str "http://" ip ":8100")))}
 
   dev:personal
-  {:doc "Start headless server in personal agent mode (foreground)"
-   :task (shell "bun target/main.js server --headless --personal-agent-only")}
+  {:doc "Start headless server as the root agent profile (foreground)"
+   :task (shell "bun target/main.js server --headless --agent root")}
 
   serve:personal
   {:doc "Start tmux personal-agent serve session (port 7475)"

@@ -33,7 +33,8 @@
    create-server closure (runtime resources, not app state).
 
    Deferred to later phases: :visibility tracking."
-  (:require [xi.auth :as auth]
+  (:require [xi.agent-profile :as profile]
+            [xi.auth :as auth]
             [xi.ext.diff.git :as diff-git]
             [xi.fx :as fx]
             [xi.server.files :as files]
@@ -82,10 +83,11 @@
 
 (defn- lobby-sessions
   "Saved sessions from disk for the lobby/home view — a curated subset of
-   the full summaries (id, name, cwd, mtime, source)."
-  [personal-agent?]
-  (->> (if personal-agent?
-         (session/list-personal-agent-sessions)
+   the full summaries (id, name, cwd, mtime, source). An agent server lists
+   only its agent's sessions."
+  [agent-id]
+  (->> (if agent-id
+         (session/list-personal-agent-sessions agent-id)
          (session/list-all-sessions))
        (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite? :dismissed?]))))
 
@@ -93,12 +95,12 @@
   "All saved-session summaries, minus those shadowed by a live room's
    provider-session-id (Claude CLI ids) — prevents a duplicate card during
    the first agent turn before Xi's own :session/sync has run."
-  [st personal-agent?]
+  [st agent-id]
   (let [live-pids (into #{}
                         (keep (fn [[_ room]]
                                 (get-in room [:session :provider-session-id])))
                         (:rooms st))]
-    (cond->> (lobby-sessions personal-agent?)
+    (cond->> (lobby-sessions agent-id)
       (seq live-pids)
       (filterv #(not (contains? live-pids (:session-id %)))))))
 
@@ -196,29 +198,30 @@
    Filters out external (Claude/Pi) sessions whose id matches a live room's
    provider-session-id — prevents a duplicate card during the first agent
    turn before Xi's own :session/sync has run."
-  [st personal-agent? model]
+  [st agent-id model]
   (let [rooms    (rm/room-summaries st)
         ;; Cap the broadcast list (recent + favorites + live) — the full list
         ;; can be thousands of summaries, and every lobby-relevant event would
-        ;; ship all of them to every client. Personal-agent mode stays uncapped:
+        ;; ship all of them to every client. An agent server stays uncapped:
         ;; its home view is the only listing surface and its corpus is small.
-        sessions (cond-> (saved-sessions st personal-agent?)
-                   (not personal-agent?)
+        sessions (cond-> (saved-sessions st agent-id)
+                   (nil? agent-id)
                    (cap-sessions (into #{} (keep :session-id) rooms)))
         ;; Response counts ride along so clients don't each round-trip a
         ;; :session/counts query for every session on every lobby refresh —
         ;; one count pass per broadcast instead of one per client.
         counts   (session/count-session-responses
                   (into [] (keep :session-id) sessions)
-                  {:personal-agent? personal-agent?})]
+                  {:personal-agent? (some? agent-id)})]
     (wire/encode (cond-> {:type       :lobby/state
                           :rooms      rooms
                           :sessions   sessions
                           :counts     counts
                           :started-at server-started-at
                           :read       (session/load-read-state)}
-                   model           (assoc :model model)
-                   personal-agent? (assoc :personal-agent? true)
+                   model    (assoc :model model)
+                   ;; Clients key their "no projects" views on this.
+                   agent-id (assoc :agent-id agent-id)
                    @claude-usage   (assoc :claude-usage @claude-usage)))))
 
 ;; ── Static file serving (resources/public, SPA fallback) ──────────────────────
@@ -315,10 +318,12 @@
      :server-opts        {:model :effort} — defaults for rooms provisioned here.
      :providers          provider-id → provider map — model listing for web
                          clients (each provider's :list-models!).
-     :personal-agent?    provision personal-assistant rooms: PA system prompt
-                         instead of AGENTS.md, sessions in the PA dir, and the
-                         provider restricted to web_search (the room's
-                         [:agent :personal-agent?] flag drives the rest).
+     :agent-id           run as a named agent (xi.agent-profile): rooms get
+                         the profile's system prompt instead of AGENTS.md and
+                         its :tools allowlist, sessions live in the agent's
+                         dir, and the lobby carries :agent-id (the room's
+                         [:agent :agent-id] drives the rest). nil = coding
+                         server.
      :ext-system-prompt-parts  (fn [cwd] → [{:source :text}]) — extension
                          system prompt parts with source attribution.
      :room-ext-init      map of ext-id → initial room-scoped state, seeded
@@ -331,15 +336,16 @@
                          encodes + delivers an event map to one client).
 
    Returns {:fx {…} :start! (fn [app {:keys [port]}] → {:port :stop!})}."
-  [{:keys [server-opts providers personal-agent? ext-system-prompt-parts room-ext-init ext]}]
+  [{:keys [server-opts providers agent-id ext-system-prompt-parts room-ext-init ext]}]
   (let [sockets (js/Map.)
+        agent?  (some? agent-id)
         ;; Which favicon this instance serves at /apple-touch-icon.png. XI_ICON
-        ;; overrides (e.g. hetzner--xi sets "hetzner"); otherwise personal-agent
+        ;; overrides (e.g. hetzner--xi sets "hetzner"); otherwise agent
         ;; hosts get the warm "personal" icon and coding hosts the "desktop" one.
         icon-variant (or (some-> (aget js/process.env "XI_ICON")
                                   (.trim)
                                   (as-> v (when (pos? (.-length v)) v)))
-                         (if personal-agent? "personal" "desktop"))
+                         (if agent? "personal" "desktop"))
         send!   (fn [client-id payload]
                   (when-let [ws (.get sockets client-id)]
                     (try (.send ws payload) (catch :default _ nil))))
@@ -354,13 +360,15 @@
         ;; Impurely provision a room map for a fresh (or resumed) room —
         ;; session + system prompt are read per-cwd from disk. Shared by the
         ;; :room/setup effect (WS join) and the HTTP /api/rooms endpoint.
+        ;; An agent server reads its profile here, per room, so a config.edn
+        ;; edit applies to the next room without a restart.
         ;; Returns {:cwd :session :room}.
         build-room
         (fn [{:keys [cwd summary model effort]}]
           (let [cwd (or (:cwd summary) cwd (.cwd js/process))
-                system-parts (if personal-agent?
-                               [{:source "personal-agent"
-                                 :text   system-prompt/PERSONAL_AGENT_PROMPT}]
+                prof (when agent? (profile/load agent-id))
+                system-parts (if prof
+                               (profile/system-parts prof)
                                (into (system-prompt/load-agents-parts cwd)
                                      (when ext-system-prompt-parts
                                        (ext-system-prompt-parts cwd))))
@@ -368,7 +376,7 @@
                 session (if summary
                           (session/load-session summary)
                           (session/create-session
-                           cwd (when personal-agent? {:personal-agent? true})))]
+                           cwd (when agent? {:agent agent-id})))]
             {:cwd     cwd
              :session session
              :room    {:model        (or model (:model server-opts))
@@ -376,11 +384,13 @@
                        :cwd          cwd
                        :system       system
                        :system-parts system-parts
-                       :agents-files (when-not personal-agent?
+                       :agents-files (when-not agent?
                                        (system-prompt/find-agents-md cwd))
                        :session      session
-                       :ext          room-ext-init
-                       :personal-agent? personal-agent?
+                       :ext          (cond-> room-ext-init
+                                       prof (merge (profile/room-ext prof)))
+                       :agent-id     agent-id
+                       :only-tools   (:tools prof)
                        :created      (js/Date.now)}}))]
     {:fx
      (merge
@@ -396,8 +406,8 @@
       :room/setup
       (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd model session-id cached-msg-hash cached-msg-count join-token]}]
         (let [summary (when session-id
-                        (if personal-agent?
-                          (session/find-personal-agent-session-by-id session-id)
+                        (if agent?
+                          (session/find-personal-agent-session-by-id session-id agent-id)
                           (session/find-session-by-id session-id)))
               {:keys [session room]} (build-room {:cwd cwd :summary summary :model model})]
           (dispatch! {:type :room/create :room-id room-id :room room})
@@ -465,7 +475,7 @@
       ;; Send the full lobby payload (rooms + saved sessions) to one client.
       :lobby/send
       (fn [{:keys [state]} {:keys [client-id]}]
-        (send! client-id (lobby-payload state personal-agent? (:model server-opts))))
+        (send! client-id (lobby-payload state agent-id (:model server-opts))))
 
       ;; Reply to an unread-count query: assistant-turn counts per session.
       :session/counts-reply
@@ -473,17 +483,17 @@
         (send! client-id (wire/encode {:type   :session/counts-result
                                        :counts (session/count-session-responses
                                                 session-ids
-                                                {:personal-agent? personal-agent?})})))
+                                                {:personal-agent? agent?})})))
 
       ;; Full (uncapped) saved-session list + counts — fetched on demand by
       ;; the all-sessions view, since the lobby broadcast only carries the
       ;; capped recent list.
       :sessions/all-reply
       (fn [{:keys [state]} {:keys [client-id]}]
-        (let [sessions (saved-sessions state personal-agent?)
+        (let [sessions (saved-sessions state agent-id)
               counts   (session/count-session-responses
                         (into [] (keep :session-id) sessions)
-                        {:personal-agent? personal-agent?})]
+                        {:personal-agent? agent?})]
           (send! client-id (wire/encode {:type     :sessions/all-result
                                          :sessions sessions
                                          :counts   counts}))))
@@ -503,7 +513,7 @@
                                        :query       query
                                        :session-ids (session/content-search
                                                      cwd query
-                                                     {:personal-agent? personal-agent?})})))
+                                                     {:personal-agent? agent?})})))
 
       ;; Full-text search with result summaries + match snippets, for the
       ;; command palette's in-panel session search (scoped to a project cwd).
@@ -514,7 +524,7 @@
                 {:type     :session/web-search-result
                  :query    query
                  :sessions (->> (session/search-sessions
-                                 cwd query {:personal-agent? personal-agent?})
+                                 cwd query {:personal-agent? agent?})
                                 (take 30)
                                 (mapv #(select-keys % [:session-id :name :cwd
                                                        :last-accessed :timestamp
@@ -552,7 +562,7 @@
       :session/mark-read-reply
       (fn [{:keys [dispatch!]} {:keys [session-id]}]
         (let [n (get (session/count-session-responses
-                      [session-id] {:personal-agent? personal-agent?})
+                      [session-id] {:personal-agent? agent?})
                      session-id 0)]
           (session/mark-session-read! session-id n)
           (dispatch! {:type :read-state/changed})))
@@ -604,9 +614,9 @@
      (fn [{:keys [dispatch! state add-tap!]} {:keys [port]}]
        (let [port (or port DEFAULT_PORT)
              public-dir (resolve-public-dir)
-             ;; Personal-agent mode is single-user/local: skip HTTPS (no iOS
+             ;; An agent server is single-user/local: skip HTTPS (no iOS
              ;; PWA durable-storage concern) and skip client-key pairing.
-             tls        (when-not personal-agent? (resolve-tls))
+             tls        (when-not agent? (resolve-tls))
              ;; Pairing requests awaiting approval: code → #js {:cid :key :name
              ;; :platform}, mirrored to ~/.config/xi/pending-clients.edn for
              ;; `bb serve:approve`. Stale entries from a previous run are
@@ -634,7 +644,7 @@
                                        (.. ws -data -clientPlatform)
                                        (assoc :platform (.. ws -data -clientPlatform)))})
                  (send-event! cid {:type :auth/ok})
-                 (send! cid (lobby-payload @state personal-agent? (:model server-opts)))))
+                 (send! cid (lobby-payload @state agent-id (:model server-opts)))))
              resolve-pending!
              (fn [code approved?]
                (when-let [^js e (.get pending code)]
@@ -657,8 +667,8 @@
                  (cond
                    (authed? ws) nil
 
-                   ;; Personal-agent mode has no pairing — admit every client.
-                   personal-agent? (admit! ws)
+                   ;; An agent server has no pairing — admit every client.
+                   agent? (admit! ws)
 
                    (not (and (string? client-key) (>= (count client-key) 16)))
                    (send-event! cid {:type :auth/denied :reason "invalid client key"})
@@ -709,7 +719,7 @@
                ;; list and unread/active/dialog markers live.
                (let [cids (keys (get-in st [:connection :clients]))]
                  (when (seq cids)
-                   (let [payload (lobby-payload st personal-agent? (:model server-opts))]
+                   (let [payload (lobby-payload st agent-id (:model server-opts))]
                      (when (not= payload @last-lobby)
                        (reset! last-lobby payload)
                        (doseq [cid cids] (send! cid payload)))))))
@@ -739,7 +749,7 @@
              ;; agent session and hand back a web-client URL to open it.
              ;; POST /api/rooms {prompt?, cwd?, model?}. Auth: same client-key
              ;; trust as WS (via Authorization: Bearer <key> or
-             ;; X-Xi-Client-Key), skipped in personal-agent mode. The room
+             ;; X-Xi-Client-Key), skipped on an agent server. The room
              ;; runs clientless (busy rooms keep running) and its session
              ;; persists on disk, so /chat/<session-id> resumes it later.
              ;; Read-only status of prior background sessions by id: `running`
@@ -772,7 +782,7 @@
                      key (or (some-> (.get headers "authorization")
                                      (.replace #"(?i)^bearer\s+" ""))
                              (.get headers "x-xi-client-key"))
-                     authed? (or personal-agent? (auth/approved? key))
+                     authed? (or agent? (auth/approved? key))
                      json-resp (fn [status obj]
                                  (js/Response. (js/JSON.stringify obj)
                                                #js {:status  status

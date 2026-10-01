@@ -45,6 +45,7 @@
                       ~/.pi/agent/logs/<session>.events.jsonl"
   (:require [clojure.string :as str]
             [xi.agent :as agent]
+            [xi.agent-profile :as profile]
             [xi.auth :as auth]
             [xi.client.tui :as client-tui]
             [xi.client.ws-transport :as ws-transport]
@@ -192,12 +193,12 @@ FLAGS
   --no-auto-join             Standalone: stay local, don't join a running server.
   --join, --create           Standalone: redirect onto a running server instead.
   --headless                 server: run without a local TUI (clients attach remotely).
-  --personal-agent-only      server/prompt: personal-assistant mode (no coding
-                             tools, web_search only; prompt: no AGENTS.md context).
-  --agent ID                 prompt: run as a named personal agent. Sessions live
-                             in ~/.config/xi/personal-agent/<ID>/; an optional
-                             agent.edn there sets :system-prompt(-file)/:model.
-                             Implies --personal-agent-only.
+  --agent ID                 server/prompt: run as the named agent from
+                             ~/.config/xi/config.edn [:agents ID] — its :tools
+                             allowlist and system prompt replace the coding
+                             tools + AGENTS.md; sessions live in
+                             ~/.config/xi/personal-agent/<ID>/. No profile =
+                             no tools.
   --debug-events             Write the full event stream as JSONL (see docs).
   --no-hardened-rules        Drop the non-overridable hardened rules tier
                              (sudo/remote-copy denies). Unsafe; agents cannot
@@ -249,9 +250,7 @@ See docs/cli.md for the full reference.")
           ;; Opt out of auto-joining a running server when launching standalone
           "--no-auto-join" (recur (next args) (assoc opts :auto-join? false))
           "--headless"     (recur (next args) (assoc opts :headless? true))
-          "--personal-agent-only" (recur (next args) (assoc opts :personal-agent? true))
-          "--agent"        (recur (nnext args) (assoc opts :agent (second args)
-                                                     :personal-agent? true))
+          "--agent"        (recur (nnext args) (assoc opts :agent (second args)))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
           "--no-hardened-rules" (recur (next args) (assoc opts :no-hardened-rules? true))
           "--model"        (recur (nnext args) (assoc opts :model (second args)))
@@ -271,6 +270,12 @@ See docs/cli.md for the full reference.")
                    (and (= :clients (:command opts))
                         (not (.startsWith arg "--")))
                    (update opts :clients-args (fnil conj []) arg)
+                   ;; An unknown flag fails loudly: a caller relying on a
+                   ;; removed restriction flag must not silently get a full
+                   ;; coding agent.
+                   (.startsWith arg "--")
+                   (do (.write js/process.stderr (str "xi: unknown flag " arg "\n"))
+                       (js/process.exit 2))
                    :else opts)))))))
 
 (defn- valid-port [v]
@@ -438,30 +443,31 @@ See docs/cli.md for the full reference.")
    CLAUDE_CONFIG_DIR (a temp mirror of the real config) so the Claude CLI
    writes its session transcript into a temp dir that is torn down on exit,
    never landing in ~/.claude/projects, and the Xi session save is skipped."
-  [{:keys [prompt-text stream? no-store? personal-agent? agent session-id json?] :as opts}]
-  (let [;; --agent: optional per-agent config (system prompt + model) read from
-        ;; ~/.config/xi/personal-agent/<agent>/agent.edn (root agent included).
-        agent-cfg (when personal-agent? (session/agent-config agent))
+  [{:keys [prompt-text stream? no-store? agent session-id json?] :as opts}]
+  (let [;; --agent: the named agent's profile (tools, system prompt, model)
+        ;; from ~/.config/xi/config.edn.
+        agent?  (some? agent)
+        prof    (when agent? (profile/load agent))
         {:keys [model effort]} (resolve-model-opts
-                                (update opts :model #(or % (:model agent-cfg))))
+                                (update opts :model #(or % (:model prof))))
         ;; --session: resume an existing conversation — load its metadata and
         ;; seed :provider-session-id so the provider continues the transcript.
         resumed (when session-id
-                  (if personal-agent?
+                  (if agent?
                     (session/find-personal-agent-session-by-id session-id agent)
                     (session/find-session-by-id session-id)))
         _ (when (and session-id (not resumed))
             (.write js/process.stderr (str "xi: session not found: " session-id "\n"))
             (js/process.exit 1))
         loaded (when resumed (session/load-session resumed))
-        ;; Personal-agent one-shots run in the agent's own dir, and resumes
-        ;; follow the session's recorded cwd: the provider resolves a resume id
-        ;; within the *current* cwd's transcript dir, so the cwd must be stable
-        ;; across turns — callers (bb services) typically spawn from throwaway
-        ;; temp dirs, which would strand each turn in its own project dir.
+        ;; Agent one-shots run in the agent's own dir, and resumes follow the
+        ;; session's recorded cwd: the provider resolves a resume id within the
+        ;; *current* cwd's transcript dir, so the cwd must be stable across
+        ;; turns — callers (bb services) typically spawn from throwaway temp
+        ;; dirs, which would strand each turn in its own project dir.
         cwd (or (aget js/process.env "XI_CWD")
                 (when-let [c (:cwd loaded)] (when (fs/existsSync c) c))
-                (when personal-agent? (session/personal-agent-dir agent))
+                (:dir prof)
                 (.cwd js/process))
         ;; --no-store: point the Claude CLI at a throwaway config dir so its
         ;; transcript lands in a temp dir we delete on exit (see finish!).
@@ -478,22 +484,19 @@ See docs/cli.md for the full reference.")
         _        (mcp/install! mgr)
         _        (user-ext/install! mgr)
         composed (manager/composed mgr)
-        ;; --personal-agent-only: PA system prompt only (no AGENTS.md, no
-        ;; profile/skills, no extension prompt parts) and the room's
-        ;; :personal-agent? flag restricts provider tools to web_search —
-        ;; mirrors the server's :room/setup PA provisioning.
-        agents-files (when-not personal-agent? (system-prompt/find-agents-md cwd))
-        system-parts (if personal-agent?
-                       [{:source (if agent (str "agent:" agent) "personal-agent")
-                         :text   (or (:system-prompt agent-cfg)
-                                     system-prompt/PERSONAL_AGENT_PROMPT)}]
+        ;; --agent: the profile's system prompt only (no AGENTS.md, no
+        ;; profile/skills, no extension prompt parts) and its :tools allowlist
+        ;; as the room's :only-tools — mirrors the server's build-room.
+        agents-files (when-not agent? (system-prompt/find-agents-md cwd))
+        system-parts (if prof
+                       (profile/system-parts prof)
                        (into (system-prompt/load-agents-parts cwd)
                              (ext/system-prompt-parts composed cwd)))
         system (system-prompt/parts->system system-parts)
         sess (if loaded
                (assoc loaded :provider-session-id (:cli-session-id loaded))
                (session/create-session
-                cwd (when personal-agent? {:personal-agent? true :agent agent})))
+                cwd (when agent? {:agent agent})))
         acc  #js {:out "" :error nil}
         finish!
         (fn []
@@ -573,8 +576,10 @@ See docs/cli.md for the full reference.")
                        :system system
                        :system-parts system-parts
                        :agents-files agents-files
-                       :ext (:room-ext-init composed)
-                       :personal-agent? personal-agent?
+                       :ext (cond-> (:room-ext-init composed)
+                              prof (merge (profile/room-ext prof)))
+                       :agent-id agent
+                       :only-tools (:tools prof)
                        :session sess}})
     (dispatch! {:type :prompt/submit :room-id "main" :text prompt-text})))
 
@@ -866,13 +871,16 @@ See docs/cli.md for the full reference.")
   "Host rooms over WS. The server app runs providers + sessions and has no
    renderer; unless --headless, a local TUI joins through the same WS path
    as any remote client."
-  [{:keys [port headless? personal-agent?] :as opts}]
+  [{:keys [port headless? agent] :as opts}]
   (install-crash-guard!)
   ;; A long-lived server can outlive the nix generation it was launched under;
   ;; drop stale /nix/store env vars (e.g. DEPS_CLJ_TOOLS_DIR) so spawned tools
   ;; use the current toolchain. See xi.env.
   (env/sanitize-inherited-env!)
-  (let [server-opts (resolve-model-opts opts)
+  (let [;; --agent: the profile's :model is the default when no --model is
+        ;; given (the server re-reads the profile per room for prompt + tools).
+        server-opts (resolve-model-opts
+                     (update opts :model #(or % (when agent (:model (profile/load agent))))))
         ring (log/create-ring)
         dialogs  (ext/create-dialogs)
         mgr      (manager/create)
@@ -883,7 +891,7 @@ See docs/cli.md for the full reference.")
         server (ws/create-server
                 {:server-opts server-opts
                  :providers providers
-                 :personal-agent? personal-agent?
+                 :agent-id agent
                  :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts composed cwd))
                  :room-ext-init (:room-ext-init composed)
                  :ext composed})

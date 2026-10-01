@@ -37,8 +37,7 @@ Defaults to `ws://localhost:<port>`.
 | `--no-auto-join` | standalone | Stay a local room; don't connect to a running server. |
 | `--join` / `--create` | standalone | Redirect the bare `xi` invocation onto a running server (latest / new room). |
 | `--headless` | `server` | Run the server without a local TUI; clients attach remotely. |
-| `--personal-agent-only` | `server`, `prompt` | Personal-assistant mode — no coding tools, `web_search` only. In prompt mode the run also gets no AGENTS.md/skills context, only the personal-agent system prompt. |
-| `--agent ID` | `prompt` | Run as a **named personal agent** (implies `--personal-agent-only`). Sessions are stored per agent in `~/.config/xi/personal-agent/<ID>/`, and an optional `agent.edn` there customizes the agent — see [Named agents](#named-agents) below. |
+| `--agent ID` | `server`, `prompt` | Run as a **named agent**: the profile `[:agents ID]` in `~/.config/xi/config.edn` decides which tools the model gets and its system prompt (no AGENTS.md/skills context), and sessions are stored per agent in `~/.config/xi/personal-agent/<ID>/` — see [Agent profiles](#agent-profiles) below. |
 | `--debug-events` | standalone, `server` | Write the full event stream as JSONL (see [architecture.md](architecture.md)). |
 | `--no-hardened-rules` | all | Drop the non-overridable hardened rules tier (see [rules.md](rules.md)). Unsafe; a launch-time operator override agents cannot set. |
 | `--stream` | `prompt` | Stream response tokens to stdout as they arrive (otherwise buffered until the turn ends). |
@@ -46,27 +45,41 @@ Defaults to `ws://localhost:<port>`.
 | `--json` | `prompt`, `sessions` | prompt: emit `{"session-id": …, "text": …}` instead of raw text — pass the id back via `--session` to continue the conversation programmatically. sessions: emit a JSON array instead of TSV. |
 | `--all` / `--limit N` | `sessions` | List every saved chat, not just recent / cap the number listed. |
 
-## Named agents
+## Agent profiles
 
-`xi prompt --agent <id>` runs the one-shot as a named personal agent: a
-personal-assistant-mode run (no coding tools) whose sessions live in their own
-directory, `~/.config/xi/personal-agent/<id>/` — one directory per consumer
-application (a fitness coach, a finance categorizer, …), fully isolated from
-coding sessions and from each other.
-
-An optional `agent.edn` in that directory customizes the agent:
+`xi server --agent <id>` and `xi prompt --agent <id>` run xi as a named
+agent instead of a coding agent. Everything that makes the agent what it is
+lives in the profile under `[:agents <id>]` in `~/.config/xi/config.edn`
+(see [config.md](config.md#agent-profiles-configxiconfigedn)):
 
 ```clojure
-;; ~/.config/xi/personal-agent/coach/agent.edn
-{:system-prompt-file "prompt.md"          ; or :system-prompt "inline text…"
- :model              "claude-haiku-4-5-20251001"}
+;; ~/.config/xi/config.edn
+{:agents {"root"  {:system-prompt-file "agents/root.md"
+                   :model "claude-sonnet-4-6"
+                   :tools ["web_search" "fetch"]}
+          "coach" {:system-prompt-file "personal-agent/coach/prompt.md"
+                   :tools ["web_search"]}}}
 ```
 
 | Key | Meaning |
 | --- | --- |
-| `:system-prompt` | System prompt text; replaces the default personal-agent prompt. |
-| `:system-prompt-file` | Path to a file holding the system prompt (relative paths resolve against the agent dir). Wins over the default; `:system-prompt` wins over it. |
-| `:model` | Default model for this agent. Precedence: `--model` flag > `agent.edn` > last `/model` pick > built-in default. |
+| `:tools` | The tool names the model gets — builtins and extension tools alike — or `:all`. Unlisted tools are never advertised, so the model cannot call them. **Absent, or no profile at all, means no tools**: a typo can't turn a restricted agent into a coding agent. |
+| `:system-prompt` | System prompt text; replaces every project prompt part (AGENTS.md, profile, skills, extension prompts). |
+| `:system-prompt-file` | Path to a file holding the prompt (`~` expanded; relative paths resolve against `~/.config/xi/`). `:system-prompt` wins over it; with neither, a short generic assistant prompt is used. |
+| `:model` | Default model for this agent. Precedence: `--model` flag > profile > last `/model` pick > built-in default. |
+
+An agent's sessions live in their own directory,
+`~/.config/xi/personal-agent/<id>/` — one per consumer application (a fitness
+coach, a finance categorizer, …), fully isolated from coding sessions and from
+each other. A server started with `--agent` lists only those sessions and
+shows no projects; one-shots run in that directory. `root` is the
+conventional id for the general-purpose assistant.
+
+Whether a listed tool may *run* is still the rules engine's call: agent rooms
+carry `[:ext :agent {:id "<id>"}]`, so a rule can target one agent with
+`:when {:agent {:id "root"}}` (see [rules.md](rules.md)). The config file
+sits under `~/.config/xi`, which agents can never write, so the allowlist is
+the operator's alone.
 
 The intended scripting loop:
 
@@ -78,9 +91,6 @@ xi prompt --agent coach --json "I ran 5k today"
 # later turns — same conversation, no history re-sending needed
 xi prompt --agent coach --session 0198… --json "how does that compare to last week?"
 ```
-
-The root agent (plain `--personal-agent-only`, sessions in
-`…/personal-agent/root/`) reads an `agent.edn` the same way.
 
 From Babashka/JVM services, use the bundled client lib instead of spawning
 the process by hand — see [bb-client.md](bb-client.md).

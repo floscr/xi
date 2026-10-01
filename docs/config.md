@@ -108,7 +108,7 @@ never reach the session list (`xi.session/make-throwaway-config-dir!`).
 | `XI_TLS_PORT` | `7443` | HTTPS/`wss://` port (when certs exist). |
 | `XI_TLS_CERT` | `~/.config/xi/tls/xi.crt` | TLS certificate path. Setting it (or `XI_TLS_KEY`) forces TLS on. |
 | `XI_TLS_KEY` | `~/.config/xi/tls/xi.key` | TLS private key path. |
-| `XI_ICON` | `desktop` (`personal` in personal-agent mode) | Icon variant served at `/apple-touch-icon.png` (e.g. `personal`). |
+| `XI_ICON` | `desktop` (`personal` on an agent server) | Icon variant served at `/apple-touch-icon.png` (e.g. `personal`). |
 
 See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 
@@ -144,6 +144,30 @@ Feature-specific variables are documented with their feature: `XI_CHROME_*`
 
 Some features persist runtime state under `~/.config/xi/`. These are not part of
 the compile-time `config.cljc` — they are written and read at runtime.
+
+### Agent profiles (`~/.config/xi/config.edn`)
+
+The user config file. An EDN map; the only key read so far is `:agents`, a
+map of agent id → profile, consumed by `xi server --agent <id>` and
+`xi prompt --agent <id>` (`xi.agent-profile`):
+
+```clojure
+{:agents {"root" {:system-prompt-file "agents/root.md"
+                  :model "claude-sonnet-4-6"
+                  :tools ["web_search" "fetch"]}}}
+```
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `:tools` | none | Vector of tool names the model is given (builtins and extension tools alike), or `:all`. Unlisted tools are never advertised. A missing key or a missing profile yields **no tools** (fail closed). |
+| `:system-prompt` | generic assistant prompt | Prompt text; replaces AGENTS.md, skills, extension prompts and `prompt-files.edn`. |
+| `:system-prompt-file` | — | File holding the prompt; `~` expanded, relative paths resolve against `~/.config/xi/`. `:system-prompt` wins over it. |
+| `:model` | — | Default model for the agent; a `--model` flag wins. |
+
+Read at every room provisioning (server) or run (prompt), so edits apply to
+the next chat without a restart. The file lives under `~/.config/xi`, a path
+agents can never write, so only the operator decides an agent's tools. Full
+semantics in [cli.md](cli.md#agent-profiles).
 
 ### Extra system-prompt files
 

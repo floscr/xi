@@ -51,8 +51,10 @@
            (names {:extra-tool-definitions (fn [] [ext-def])}))
         "extension tools are advertised; the seam may be a fn")
     (is (not-any? #{"bash"} (names {:remove-tools #{"bash"}})))
-    (is (= ["web_search"] (names {:extra-tool-definitions [ext-def] :personal-agent? true}))
-        "personal-agent mode keeps only its allowlist")
+    (is (= ["web_search"] (names {:extra-tool-definitions [ext-def] :only-tools #{"web_search"}}))
+        "an agent profile's allowlist keeps only its tools, builtin or extension")
+    (is (= [] (names {:extra-tool-definitions [ext-def] :only-tools #{}}))
+        "an empty allowlist advertises nothing")
     (is (= ["ls"] (names {:only-tools #{"ls"}})))
     (is (fn? (get (:registry (registry/resolve-tooling
                               {:extra-tool-registry {"web_search" (fn [_ _] nil)}}))

@@ -90,7 +90,8 @@
                    :provider        (get-in room [:agent :provider])
                    :effort          (get-in room [:agent :effort])
                    :cwd             (:cwd room)
-                   :personal-agent? (get-in room [:agent :personal-agent?])}]]})))
+                   ;; An agent profile's tool allowlist binds sub-agents too.
+                   :only-tools      (get-in room [:agent :only-tools])}]]})))
 
 (defn- text-delta [st {:keys [room-id sub-id text]}]
   (when (find-child st room-id sub-id)

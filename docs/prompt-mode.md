@@ -31,16 +31,14 @@ terminal prints a usage error instead of hanging).
                 Claude transcript never lands in ~/.claude/projects and the run
                 never appears in the Xi or Claude session lists.
 --model NAME    Override the default model.
---personal-agent-only
-                Restricted one-shot: the personal-agent system prompt only (no
-                AGENTS.md, profile, or skills context) and provider tools
-                limited to web_search — no file/shell/browser access. Useful
+--agent ID      Run as a named agent: the profile [:agents ID] in
+                ~/.config/xi/config.edn sets the tools the model gets (no
+                file/shell/browser access unless listed), its system prompt
+                (no AGENTS.md, profile, or skills context) and model.
+                Sessions live in ~/.config/xi/personal-agent/<ID>/. Useful
                 for piping untrusted or minimal data to the model from other
-                services (combine with --no-store).
---agent ID      Run as a named personal agent (implies --personal-agent-only).
-                Sessions live in ~/.config/xi/personal-agent/<ID>/ and an
-                optional agent.edn there sets the system prompt and model.
-                See "Named agents" in cli.md.
+                services (combine with --no-store). See "Agent profiles" in
+                cli.md.
 --session ID    Continue a saved conversation: the provider transcript is
                 resumed, so the agent remembers earlier turns — no need to
                 re-send history. The id is the Xi session id printed by --json.
@@ -49,8 +47,8 @@ terminal prints a usage error instead of hanging).
 ```
 
 `XI_CWD` (or the current directory) sets the working directory the agent runs
-in, exactly like the other modes — except personal-agent runs (`--agent`,
-`--personal-agent-only`), which run in the agent's own directory
+in, exactly like the other modes — except agent runs (`--agent`), which run
+in the agent's own directory
 (`~/.config/xi/personal-agent/<id>/`), and `--session` resumes, which follow
 the session's recorded cwd. The provider resolves a resume id within the
 current cwd's transcript dir, so the cwd must be stable across turns for

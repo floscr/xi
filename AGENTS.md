@@ -64,7 +64,8 @@ Full picture: [docs/architecture.md](docs/architecture.md).
   `ollama`, `openai.codex` (`openai/<id>`, ChatGPT subscription), `zen`
   (`opencode/<id>`).
 - Sessions: metadata in `~/.config/xi/sessions/`, transcripts in Claude CLI
-  sessions under `~/.claude/projects/`; personal-agent sessions in
+  sessions under `~/.claude/projects/`; named-agent sessions (`--agent`,
+  profiles in `~/.config/xi/config.edn`) in
   `~/.config/xi/personal-agent/<agent>/`. Auth: the Claude CLI's own login, or
   `ANTHROPIC_API_KEY`.
 

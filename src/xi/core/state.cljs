@@ -26,7 +26,7 @@
   "A room: independent conversation with its own history, session and UI."
   ([id] (make-room id nil))
   ([id {:keys [provider model cwd session system system-parts effort agents-files
-               personal-agent? created ext]}]
+               agent-id only-tools created ext]}]
    {:id      id
     :cwd     cwd
     :created created                  ;; ms timestamp (servers resolve "latest" by it)
@@ -39,7 +39,8 @@
               :system-parts    (or system-parts []) ;; [{:source :text}] with attribution
               :effort          effort
               :agents-files    agents-files    ;; paths shown in launch header
-              :personal-agent? personal-agent?}
+              :agent-id        agent-id        ;; named agent profile (xi.agent-profile), nil = project room
+              :only-tools      only-tools}     ;; the profile's tool allowlist (name set), nil = every tool
     :ext     (or ext {})              ;; room-scoped extension state, keyed by ext id
                                       ;; (rides in :room/joined snapshots → mirrors)
     :ui      {:dialogs       []       ;; pending dialogs, FIFO

@@ -2178,7 +2178,7 @@
    session listing (/projects/:cwd) when the cwd is known, falling back to the
    projects root."
   [state]
-  (if (get-in state [:lobby :personal-agent?])
+  (if (get-in state [:lobby :agent-id])
     {:type :route/navigate :page :home}
     (let [sid (get-in state [:web/route :session-id])
           ;; A virtual new chat started from a project listing carries that
@@ -2473,7 +2473,7 @@
         ;; "updating" hint in the topbar instead of a spinner flash.
         loading? (and resuming? (empty? history))
         ready?  (not loading?)
-        pa?     (get-in state [:lobby :personal-agent?])
+        pa?     (get-in state [:lobby :agent-id])
         dkey    (draft-key state)
         buffers    (get-in room [:ui :buffers])
         active-buf (get-in room [:ui :active-buffer] :chat)
@@ -2692,7 +2692,7 @@
            (compose-box dispatch! room busy? (:web/compose-images state)
                         dkey (get-in state [:web/drafts dkey]) sid
                         (:web/cmd-selected state)
-                        (get-in state [:lobby :personal-agent?])
+                        (get-in state [:lobby :agent-id])
                         (:web/queue-popover? state)
                         (:web/prompt-nav state)
                         nav-ctx
@@ -3035,11 +3035,11 @@
 (defn- home-view [state dispatch!]
   (let [selected-dir (:web/selected-project-dir state)]
     (cond
-      (and (get-in state [:lobby :personal-agent?])
+      (and (get-in state [:lobby :agent-id])
            (= selected-dir :favorites))
       (favorites-view state dispatch!)
 
-      (get-in state [:lobby :personal-agent?])
+      (get-in state [:lobby :agent-id])
       (personal-agent-home-view state dispatch!)
 
       (= selected-dir :all)
@@ -3272,7 +3272,7 @@
         ;; so render its content regardless of the open/closed drawer state.
         wide?    (boolean (:web/wide? state))
         render?  (or open? wide?)
-        pa?      (get-in state [:lobby :personal-agent?])
+        pa?      (get-in state [:lobby :agent-id])
         projects (when (and render? (not pa?)) (recent-projects state))
         ;; Session cards split into Recent / Hidden / Earlier (busy pinned to
         ;; the top). Shared with ALT+j/k keyboard nav so both agree on order.
@@ -3845,7 +3845,7 @@
                               (take 8))
             chat-items   (mapv #(palette-chat-item % dispatch!) recents)
             project-dirs (:web/project-dirs state)
-            pa?          (get-in state [:lobby :personal-agent?])
+            pa?          (get-in state [:lobby :agent-id])
             {:keys [recent hidden earlier]} (sidebar-session-groups state)
             any-visible? (or (seq recent) (seq earlier))
             any-unread?  (some :unread? (concat recent hidden earlier))

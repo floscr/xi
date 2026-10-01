@@ -190,8 +190,8 @@
               :provider (:provider agent)
               :cwd      (:cwd room)
               :effort   (:effort agent)
-              :system   system
-              :personal-agent? (:personal-agent? agent)}
+              :system   system}
+       (:only-tools agent) (assoc :only-tools (:only-tools agent))
        (seq images)   (assoc :images images)
        (seq prior-history) (assoc :history (vec prior-history))
        resume-id      (assoc :resume-session-id resume-id))]))

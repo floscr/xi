@@ -13,13 +13,14 @@
                   :message \"how does that compare to last week?\"})
      ;; => {:ok true :session-id \"0198…\" :text \"…\"}
 
-   The agent's sessions live in ~/.config/xi/personal-agent/<agent>/ and an
-   optional agent.edn there sets the system prompt + model — see docs/cli.md
-   (\"Named agents\") in the xi repo.
+   The agent's profile (tools, system prompt, model) is the [:agents <agent>]
+   entry of ~/.config/xi/config.edn and its sessions live in
+   ~/.config/xi/personal-agent/<agent>/ — see docs/cli.md (\"Agent profiles\")
+   in the xi repo. \"root\" is the default profile.
 
    Uses ProcessBuilder directly (babashka.process thread pools die under
-   systemd) and runs the agent in an empty temp dir, so a personal-agent run
-   receives only what's in the prompt."
+   systemd) and runs the agent in an empty temp dir, so an agent run receives
+   only what's in the prompt."
   (:require [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.string :as str])
@@ -40,28 +41,28 @@
 (defn build-args
   "The `bun … prompt` argv for an opts map (pure; the prompt text itself goes
    on stdin)."
-  [{:keys [bundle agent session-id model no-store? personal-agent?]}]
+  [{:keys [bundle agent session-id model no-store?]}]
   (cond-> ["bun" bundle "prompt" "--json"]
     agent      (into ["--agent" agent])
     session-id (into ["--session" session-id])
     model      (into ["--model" model])
-    no-store?  (conj "--no-store")
-    (and personal-agent? (not agent)) (conj "--personal-agent-only")))
+    no-store?  (conj "--no-store")))
 
 (defn prompt!
   "Run one turn against a xi agent and block for the reply. opts:
 
      :message         - the prompt text (required)
-     :agent           - named personal agent id; sessions are stored per agent
-                        in ~/.config/xi/personal-agent/<id>/ (implies
-                        :personal-agent?)
+     :agent           - agent profile id (~/.config/xi/config.edn [:agents id]:
+                        its :tools allowlist + system prompt); sessions are
+                        stored per agent in ~/.config/xi/personal-agent/<id>/.
+                        Without it the run is a full coding agent in the
+                        temp dir — pass \"root\" for the default restricted
+                        profile.
      :session-id      - continue a saved conversation (pass back the
                         :session-id from a previous reply); the provider
                         transcript is resumed, so history does NOT need to be
                         re-sent in the prompt
      :model           - override the agent's/default model
-     :personal-agent? - restricted mode without a named agent (no coding
-                        tools, web_search only)
      :no-store?       - ephemeral run, leaves no session behind (the reply's
                         :session-id is then not resumable)
      :bundle          - path to xi's target/main.js (default: find-bundle)

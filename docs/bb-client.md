@@ -4,7 +4,7 @@
 services — one function, `xi.client/prompt!`, wrapping a one-shot
 `xi prompt --json` run. It exists so bb services (health coach, finance
 categorizer, …) stop hand-rolling process spawning and stop re-sending chat
-history into every prompt: combined with [named agents](cli.md#named-agents)
+history into every prompt: combined with [agent profiles](cli.md#agent-profiles)
 and `--session`, each service holds a real stateful conversation.
 
 ## Setup
@@ -45,10 +45,9 @@ exit, unparseable output).
 | Key | Meaning |
 | --- | --- |
 | `:message` | The prompt text (required; sent on stdin). |
-| `:agent` | Named personal agent id → `--agent` (sessions + optional `agent.edn` in `~/.config/xi/personal-agent/<id>/`; implies personal-agent mode). |
+| `:agent` | Agent profile id → `--agent` (its `:tools` + system prompt from `~/.config/xi/config.edn`; sessions in `~/.config/xi/personal-agent/<id>/`). Without it the run is a full coding agent; pass `"root"` for the default restricted profile. |
 | `:session-id` | Continue a saved conversation → `--session`. |
 | `:model` | Override the agent's/default model → `--model`. |
-| `:personal-agent?` | Restricted mode without a named agent → `--personal-agent-only`. |
 | `:no-store?` | Ephemeral run, leaves no session behind → `--no-store`. |
 | `:bundle` | Explicit path to `target/main.js` (default: auto-discovery). |
 

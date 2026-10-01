@@ -169,7 +169,7 @@ compaction, TUI, WS):
 
 - `xi` — standalone: all handlers, local TUI renderer (see
   [tui-rendering.md](tui-rendering.md)).
-- `xi server [--headless] [--personal-agent-only]` — server handlers + room
+- `xi server [--headless] [--agent ID]` — server handlers + room
   manager + cleanup chains; non-headless additionally boots a local TUI
   client app in the same process, joining via WS like any remote client.
 - `xi join [url]` / `xi create [url]` — TUI client over `ws-transport`

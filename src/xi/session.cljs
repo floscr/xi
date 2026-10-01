@@ -4,6 +4,7 @@
    The actual conversation data lives in claude CLI sessions (~/.claude/projects/)."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
+            [xi.agent-profile :as profile]
             [xi.session.sync :as sync]
             [xi.util :as util]
             ["node:fs" :as fs]
@@ -19,41 +20,14 @@
   (.join node-path HOME ".config" "xi" "sessions"))
 
 (def ^:private PERSONAL_AGENT_DIR
-  (.join node-path HOME ".config" "xi" "personal-agent"))
+  "Root of the per-agent session dirs (xi.agent-profile owns the layout)."
+  profile/AGENTS_DIR)
 
 (defn personal-agent-dir
-  "Sessions dir for a named personal agent. nil/absent agent-id = the default
-   agent (\"root\", the historical layout)."
+  "Sessions dir for a named agent. nil/absent agent-id = the default agent
+   (\"root\", the historical layout)."
   [agent-id]
-  (.join node-path PERSONAL_AGENT_DIR (or agent-id "root")))
-
-(defn agent-config
-  "Read a named agent's optional agent.edn config from its sessions dir
-   (~/.config/xi/personal-agent/<agent-id>/agent.edn). Recognized keys:
-     :system-prompt      - system prompt text (replaces the default PA prompt)
-     :system-prompt-file - path to a file holding the system prompt (relative
-                           paths resolve against the agent dir)
-     :model              - default model for this agent
-   Returns the parsed map (with :system-prompt-file resolved into
-   :system-prompt) or nil when no config exists / it fails to parse."
-  [agent-id]
-  (let [dir (personal-agent-dir agent-id)
-        fp  (.join node-path dir "agent.edn")]
-    (when (fs/existsSync fp)
-      (try
-        (let [cfg (edn/read-string (fs/readFileSync fp "utf8"))]
-          (if-let [prompt-file (:system-prompt-file cfg)]
-            (let [resolved (if (.isAbsolute node-path prompt-file)
-                             prompt-file
-                             (.join node-path dir prompt-file))]
-              (-> cfg
-                  (dissoc :system-prompt-file)
-                  (assoc :system-prompt (str/trim (fs/readFileSync resolved "utf8")))))
-            cfg))
-        (catch :default e
-          (js/console.error (str "xi: failed to read agent config " fp ": "
-                                 (.-message e)))
-          nil)))))
+  (profile/agent-dir agent-id))
 
 (defn claude-config-dir
   "The Claude CLI config dir — CLAUDE_CONFIG_DIR or ~/.claude. Read per call:
@@ -153,11 +127,12 @@
 (defn create-session
   "Create a new Xi session. Returns session state map.
    opts:
-     :personal-agent? - store in personal-agent sessions dir
-     :agent           - named agent id (subdir of the personal-agent dir;
-                        implies :personal-agent?)"
+     :agent - named agent id: the session is stored in that agent's dir
+              (~/.config/xi/personal-agent/<id>/) instead of the cwd's
+              project dir, and flagged :personal-agent? on disk so later
+              saves land there too."
   [cwd & [opts]]
-  (let [pa? (boolean (or (:personal-agent? opts) (:agent opts)))
+  (let [pa? (some? (:agent opts))
         dir (if pa?
               (personal-agent-dir (:agent opts))
               (xi-session-dir cwd))

@@ -63,23 +63,30 @@ A TUI client over `xi.client.ws-transport` (forward + mirror — see
 targets `"new"`. Exits with an error if the server isn't running (the TUI
 does not opt into reconnect; the web client does).
 
-### Personal Agent (`xi server --personal-agent-only`)
+### Agent server (`xi server --agent <id>`)
 
-Runs Xi as a conversational personal assistant with no coding tools. Rooms
-provisioned by the server carry `[:agent :personal-agent?]`, which drives
-everything downstream:
+Runs Xi as a named agent — e.g. a conversational assistant with a handful of
+search tools — instead of a coding agent. The agent's profile is the
+`[:agents <id>]` entry of `~/.config/xi/config.edn` (see
+[cli.md](cli.md#agent-profiles)); rooms provisioned by the server carry
+`[:agent :agent-id]` and `[:agent :only-tools]`, which drive everything
+downstream:
 
-- The provider restricts the MCP tool bridge to `web_search` only (no file,
-  edit, bash, etc.)
-- AGENTS.md is replaced with a conversational system prompt
-  (`system-prompt/PERSONAL_AGENT_PROMPT`)
-- Image attachments still work (processed in the prompt, not via tools)
-- Sessions are stored separately in `~/.config/xi/personal-agent/root/`;
-  the lobby, `/new`, and `/resume` list only those sessions
+- The provider advertises only the profile's `:tools` (no file, edit, bash,
+  … unless listed); the hidden tools are unreachable, not just undocumented.
+- AGENTS.md, skills and extension prompts are replaced by the profile's
+  system prompt. The profile is re-read for every new room, so a config edit
+  applies to the next chat without a restart.
+- Image attachments still work (processed in the prompt, not via tools).
+- Sessions are stored separately in `~/.config/xi/personal-agent/<id>/`;
+  the lobby, `/new`, and `/resume` list only those sessions, and the web
+  client shows a flat session list with no projects.
+- Rooms carry `[:ext :agent {:id "<id>"}]`, so rules can target the agent
+  with `:when {:agent {:id "<id>"}}`.
 
 ```bash
-xi server --headless --personal-agent-only   # start personal assistant
-xi join                                       # connect from another terminal
+xi server --headless --agent root   # start the root agent profile
+xi join                              # connect from another terminal
 ```
 
 ## HTTP API
@@ -110,7 +117,7 @@ Authorization: Bearer <client-key>
 X-Xi-Client-Key: <client-key>
 ```
 
-Auth is skipped in `--personal-agent-only` mode (single-user/local, like WS).
+Auth is skipped on an agent server (`--agent`; single-user/local, like WS).
 
 **Request body** (JSON, all fields optional):
 

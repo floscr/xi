@@ -96,7 +96,7 @@ prompt on stdin) and a **whitelist**: `tools: []` disables every built-in,
 ### 2. Xi's tools are exposed via MCP — in the runner
 
 The host resolves the turn's tool surface with `resolve-tooling`
-(extension extras/removals, personal-agent filter) and ships the ordered
+(extension extras/removals, an agent profile's `:only-tools` allowlist) and ships the ordered
 `toolDefs` in the `start` frame. The runner builds an in-process MCP server
 from them (`createSdkMcpServer`), converting each JSON Schema to Zod. Each
 tool's handler doesn't execute anything — it emits a `tool-call` frame and
@@ -108,8 +108,9 @@ Extensions extend the tool surface per assembly via
 fn-valued and deref'd fresh each turn, so `/ext enable|disable` takes
 effect on the next turn.
 
-In personal-agent mode (`:personal-agent?`), the definitions are filtered
-to `PERSONAL_AGENT_TOOLS` (`web_search` only).
+On an agent run (`--agent`), the definitions are filtered to the profile's
+`:tools` (`:only-tools` on the room; see [cli.md](cli.md#agent-profiles)),
+so an unlisted tool is never advertised.
 
 ### 3. The tool policy (host-side)
 

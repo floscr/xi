@@ -184,7 +184,7 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
   (assoc (state/initial-state {:mode :client})
          :web/connected? true
          :web/route route
-         :lobby {:personal-agent? false
+         :lobby {:agent-id nil
                  :rooms []
                  :sessions demo-sessions}))
 
