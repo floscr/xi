@@ -12,8 +12,9 @@
    time with a per-surface ctx (server gets {:ring … :ask! …}). Order
    matters: ext/compose chains handlers/gates in list order.
 
-   Eventually these entries move out of the build and get loaded at
-   runtime via SCI."
+   These built-in entries are compiled in. Extensions that are personal
+   or optional load at runtime instead, as sandboxed user extensions
+   (see docs/user-extensions.md)."
   (:require
    #?@(:node
        [[xi.ext.canvas-review :as canvas-review]

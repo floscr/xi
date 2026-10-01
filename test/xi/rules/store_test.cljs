@@ -280,18 +280,18 @@
                   (let [h (hit {:tool :read :path path})]
                     (and h (= :deny (:type (:action h))) (= :hardened (:scope h)))))]
     (testing "private key files under ~/.ssh are hard-denied (no allow button)"
-      (is (denied? "/home/floscr/.ssh/id_rsa"))
-      (is (denied? "/home/floscr/.ssh/id_ed25519"))
+      (is (denied? "/home/user/.ssh/id_rsa"))
+      (is (denied? "/home/user/.ssh/id_ed25519"))
       (is (denied? "~/.ssh/id_ecdsa_sk"))
-      (is (denied? "/home/floscr/.ssh/mycustomkey"))
-      (is (denied? "/home/floscr/.ssh/keys/id_rsa"))
+      (is (denied? "/home/user/.ssh/mycustomkey"))
+      (is (denied? "/home/user/.ssh/keys/id_rsa"))
       (testing "also for grep/find/ls read surfaces"
-        (is (= :deny (:type (:action (hit {:tool :grep :path "/home/floscr/.ssh/id_rsa"})))))))
+        (is (= :deny (:type (:action (hit {:tool :grep :path "/home/user/.ssh/id_rsa"})))))))
     (testing "public keys and non-secret ssh files are NOT hardened-denied"
-      (doseq [p ["/home/floscr/.ssh/id_rsa.pub"
-                 "/home/floscr/.ssh/config"
-                 "/home/floscr/.ssh/known_hosts"
-                 "/home/floscr/.ssh/authorized_keys"]]
+      (doseq [p ["/home/user/.ssh/id_rsa.pub"
+                 "/home/user/.ssh/config"
+                 "/home/user/.ssh/known_hosts"
+                 "/home/user/.ssh/authorized_keys"]]
         (let [h (hit {:tool :read :path p})]
           (is (not (and h (= :hardened (:scope h)))) p))))))
 
@@ -303,7 +303,7 @@
                     (and h (= :deny (:type (:action h))) (= :hardened (:scope h)))))]
     (testing "reading a private key through the shell is hard-denied (closes the sh-cat bypass)"
       (is (denied? :sh "cat ~/.ssh/id_rsa"))
-      (is (denied? :sh "cat /home/floscr/.ssh/id_ed25519"))
+      (is (denied? :sh "cat /home/user/.ssh/id_ed25519"))
       (is (denied? :sh "head -c 9 ~/.ssh/id_rsa"))
       (is (denied? :sh "base64 ~/.ssh/id_ecdsa_sk"))
       (is (denied? :sh "cp ~/.ssh/id_rsa /tmp/x"))
@@ -552,7 +552,7 @@
     (is (not (store/chained-command? "git commit -m 'a; b && c'")))
     (is (not (store/chained-command? "grep \"a|b\" file.txt"))))
   (testing "redirections are not composition"
-    (is (not (store/chained-command? "hey re:deploy-pi --service x 2>&1")))
+    (is (not (store/chained-command? "deploy app:prod --service x 2>&1")))
     (is (not (store/chained-command? "npm test >&2")))
     (is (not (store/chained-command? "npm test &> out.log")))))
 

@@ -6,8 +6,8 @@ Personal coding agent in ClojureScript + Bun.
 
 > **Before starting, stopping, restarting, or debugging ANY process** (compile,
 > shadow-cljs watch, server), run `bb check`. It reports what's running where
-> (ports 7474 main · 7475 personal · 7476 demo · 8100 dev-http · 9630 shadow,
-> bun servers, shadow watches, and the `xi` / `xi-serve` / `xi-pa` / `xi-demo`
+> (ports 7474 main · 7476 demo · 8100 dev-http · 9630 shadow,
+> bun servers, shadow watches, and the `xi` / `xi-serve` / `xi-demo`
 > tmux sessions) and prints which `bb` task manages each. **Never start
 > services by hand** (`bun target/main.js …`, `npx shadow-cljs …`) **and never
 > `kill` them by PID** — that orphans processes outside tmux and has left stuck
@@ -143,7 +143,6 @@ This repo uses the shared **clj-ui-framework** component library
 tokens, icons, and browser JS runtime), pinned as a git dependency
 in this project's `bb.edn`/`deps.edn`.
 
-- Local checkout: `~/Code/Projects/clj-ui-framework`
 - Remote (git dep source): <https://git.example.com/floscr/clj-ui-framework>
 
 Before doing UI work here, read the framework's `AGENTS.md` — it

@@ -8,8 +8,8 @@
 
 (deftest encode-cwd-xi-basic
   (testing "absolute path is encoded with leading dash"
-    (is (= "-home-floscr-Code-Projects-xi"
-           (session/encode-cwd-xi "/home/floscr/Code/Projects/xi")))))
+    (is (= "-home-user-Code-Projects-xi"
+           (session/encode-cwd-xi "/home/user/Code/Projects/xi")))))
 
 (deftest encode-cwd-xi-root
   (testing "root path"

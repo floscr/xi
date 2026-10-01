@@ -12,7 +12,7 @@
 (defn encode-cwd-claude
   "Encode CWD for Claude CLI project directory.
    Strip leading / then replace / and . with -.
-   /home/floscr/.config/dotfiles → -home-floscr--config-dotfiles"
+   /home/user/.config/dotfiles → -home-user--config-dotfiles"
   [cwd]
   (let [stripped (if (str/starts-with? cwd "/") (subs cwd 1) cwd)]
     (str "-" (str/replace stripped #"[/.]" "-"))))

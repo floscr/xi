@@ -64,10 +64,10 @@ a leaf cert. On NixOS, pull it in ephemerally with `nix-shell -p mkcert`.
    mkdir -p ~/.config/xi/tls && cd ~/.config/xi/tls
    nix-shell -p mkcert --run \
      'mkcert -cert-file xi.crt -key-file xi.key \
-        desktop.ts.local desktop 100.64.0.2 localhost 127.0.0.1'
+        desktop.ts.local desktop 192.0.2.10 localhost 127.0.0.1'
    ```
 
-   Replace `desktop.ts.local` / `100.64.0.2` with your own tailnet hostname and
+   Replace `desktop.ts.local` / `192.0.2.10` with your own tailnet hostname and
    IP. Names/IPs not in the cert's SANs will fail with "not private".
 
 3. **Restart the server** so it picks up the cert:

@@ -102,7 +102,7 @@
 
 (defn encode-cwd-xi
   "Encode CWD for Xi session directory.
-   /home/floscr/Code/Projects/xi → -home-floscr-Code-Projects-xi"
+   /home/user/Code/Projects/xi → -home-user-Code-Projects-xi"
   [cwd]
   (let [stripped (if (str/starts-with? cwd "/") (subs cwd 1) cwd)]
     (str "-" (str/replace stripped "/" "-"))))

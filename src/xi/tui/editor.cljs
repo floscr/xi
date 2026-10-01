@@ -3,6 +3,7 @@
    Renders a bordered input area at the bottom of the TUI.
    Handles character input, cursor movement, history, and paste."
   (:require [clojure.string :as str]
+            [xi.config]
             [xi.tui.ansi :as ansi]
             [xi.tui.core :as tui]
             [xi.tui.snippets :as snippets]

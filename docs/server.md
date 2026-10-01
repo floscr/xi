@@ -126,7 +126,7 @@ Auth is skipped in `--personal-agent-only` mode (single-user/local, like WS).
 {
   "room-id": "r-mte9cxsi-jaql",
   "session-id": "01a04d23-271b-7a48-a3dd-f25b97460a43",
-  "cwd": "/home/floscr/Code/Projects/xi",
+  "cwd": "/home/user/Code/Projects/xi",
   "url": "http://localhost:7474/chat/01a04d23-271b-7a48-a3dd-f25b97460a43"
 }
 ```

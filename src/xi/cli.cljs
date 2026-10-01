@@ -32,7 +32,7 @@
      --headless       server only, no local TUI
      --prompt <text>  launch the TUI with an initial prompt already submitted
                       (works standalone or with --join/--create; e.g. from
-                      `hey re` on error)
+                      a shell wrapper that reports an error)
      --join           connect to a running server's latest room instead of
                       standalone (same as the `join` subcommand)
      --create         connect to a running server on a new room instead of
@@ -406,7 +406,7 @@ See docs/cli.md for the full reference.")
                   :session (session/load-session summary)
                   :summary summary
                   :messages (session/read-session-messages summary)}))
-    ;; Auto-submit an initial prompt (e.g. launched from `hey re` with an error)
+    ;; Auto-submit an initial prompt (e.g. launched from an external launcher with an error)
     (when (seq initial-prompt)
       (dispatch! {:type :prompt/submit :room-id "main" :text initial-prompt}))))
 
@@ -822,7 +822,7 @@ See docs/cli.md for the full reference.")
                            :image img :label "image"}))
              (dispatch! {:type :input/submit :room-id room-id :text text}))))))
     ;; Auto-submit an initial prompt once the server room is joined
-    ;; (e.g. launched from `hey re --join` with an error). Fires once.
+    ;; (e.g. launched from an external launcher with --join and an error). Fires once.
     (when (seq initial-prompt)
       (let [sent? (atom false)]
         (add-tap!

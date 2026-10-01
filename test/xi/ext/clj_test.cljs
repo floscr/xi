@@ -1123,7 +1123,7 @@
   (is (= #{"cd" "npm"} (clj-ext/bg-command-clis ["cd web && npm start"])))
   (is (= #{"node"} (clj-ext/bg-command-clis ["PORT=3000 node server.js"])))
   (is (= #{"echo" "wc"} (clj-ext/bg-command-clis ["echo hi | wc -c"])))
-  (is (= #{"hey"} (clj-ext/bg-command-clis ["hey re:deploy-pi --service split-expenses 2>&1"])))
+  (is (= #{"deploy"} (clj-ext/bg-command-clis ["deploy app:prod --service api 2>&1"])))
   (is (= #{"npm"} (clj-ext/bg-command-clis ["npm run build &> build.log"]))))
 
 (deftest worker-refuses-unapproved-bg-command

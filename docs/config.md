@@ -108,7 +108,7 @@ never reach the session list (`xi.session/make-throwaway-config-dir!`).
 | `XI_TLS_PORT` | `7443` | HTTPS/`wss://` port (when certs exist). |
 | `XI_TLS_CERT` | `~/.config/xi/tls/xi.crt` | TLS certificate path. Setting it (or `XI_TLS_KEY`) forces TLS on. |
 | `XI_TLS_KEY` | `~/.config/xi/tls/xi.key` | TLS private key path. |
-| `XI_ICON` | `desktop` (`personal` in personal-agent mode) | Icon variant served at `/apple-touch-icon.png` (e.g. `hetzner`). |
+| `XI_ICON` | `desktop` (`personal` in personal-agent mode) | Icon variant served at `/apple-touch-icon.png` (e.g. `personal`). |
 
 See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 
@@ -151,7 +151,7 @@ the compile-time `config.cljc` — they are written and read at runtime.
 
 | Path | Read by | Description |
 | --- | --- | --- |
-| `~/.config/xi/prompt-files.edn` | `xi.system-prompt` | An EDN vector of markdown file paths (leading `~` expanded), e.g. `["~/.config/dotfiles/config/agent-instructions/xi.md"]`. Each existing, non-empty file is appended to the system prompt of **every** session on this machine, after AGENTS.md / profile / skill content. Missing config or files are silently skipped. Read fresh at room provisioning, so edits apply to the next session without a server restart. |
+| `~/.config/xi/prompt-files.edn` | `xi.system-prompt` | An EDN vector of markdown file paths (leading `~` expanded), e.g. `["~/notes/xi-instructions.md"]`. Each existing, non-empty file is appended to the system prompt of **every** session on this machine, after AGENTS.md / profile / skill content. Missing config or files are silently skipped. Read fresh at room provisioning, so edits apply to the next session without a server restart. |
 
 Use this for machine-local personal instructions that should not live in any
 project's AGENTS.md — e.g. pointers to task recipe docs. Machines without the

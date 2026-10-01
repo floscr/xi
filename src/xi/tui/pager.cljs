@@ -27,6 +27,7 @@
      :                 Enter command mode (focus editor)
      q / Escape        Close the buffer (Escape cancels selection first)"
   (:require [clojure.string :as str]
+            [xi.config]
             [xi.tui.ansi :as ansi]
             [xi.tui.core :as tui]
             [xi.tui.terminal :as term])
