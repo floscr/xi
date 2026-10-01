@@ -1,6 +1,6 @@
 {:paths ["scripts"]
- :deps {tmux-dev/tmux-dev {:git/url "https://git.example.com/floscr/tmux-dev"
-                            :git/sha "78a82846116d13f05c3ddd9c5d1c4639b6c3538a"}
+ :deps {tmux-dev/tmux-dev {:git/url "https://github.com/floscr/tmux-dev"
+                            :git/sha "6ef67ed56540a60b6862c656b6098139e1e6e82f"}
         ;; squint + esbuild for the browser overlay builds (scripts/overlay_build.clj)
         ;; — in-process via bb, no node/npm.
         ;; Don't pin squint back to v0.11.189 (the npm release the overlays used
