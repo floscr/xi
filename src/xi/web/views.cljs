@@ -631,6 +631,7 @@
                                   (dispatch! {:type :bubble/menu-open
                                               :index idx
                                               :text (:text entry)
+                                              :images (:images entry)
                                               :x (.-clientX e)
                                               :y (.-clientY e)})))))
          [:div {:class ["post-body"]}
@@ -2252,9 +2253,10 @@
    conversation from that message (truncates history to before it, like
    /tree edit) and resubmits the edited text. Retry forks the same way and
    resubmits the message unchanged. Delete forks the same way but discards the
-   message. Copy uses the iOS long-press fallback when the async Clipboard API
-   is unavailable."
-  [dispatch! room-id {:keys [index text x y]}]
+   message. Edit and Retry both carry the message's image attachments so the
+   fork resends them with the text. Copy uses the iOS long-press fallback when
+   the async Clipboard API is unavailable."
+  [dispatch! room-id {:keys [index text images x y]}]
   (let [close! (fn [] (dispatch! {:type :bubble/menu-close}))]
     [:div {:class ["bubble-menu-backdrop"]
            :on {:click (fn [_] (close!))}}
@@ -2267,7 +2269,8 @@
                               (.stopPropagation e)
                               (close!)
                               (dispatch! {:type :bubble/edit-start
-                                          :index index :text (or text "")}))}}
+                                          :index index :text (or text "")
+                                          :images images}))}}
        (icon/icon {:icon-name :edit :size :sm})
        [:span "Edit"]]
       [:button {:class ["bubble-menu-item"]
@@ -2282,7 +2285,8 @@
                               (.stopPropagation e)
                               (close!)
                               (dispatch! {:type :bubble/retry
-                                          :index index :text (or text "")}))}}
+                                          :index index :text (or text "")
+                                          :images images}))}}
        (icon/icon {:icon-name :refresh :size :sm})
        [:span "Retry"]]
       [:button {:class ["bubble-menu-item" "bubble-menu-item--danger"]

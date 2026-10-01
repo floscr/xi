@@ -28,6 +28,7 @@
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
             [xi.web.keymap :as keymap]
+            [xi.web.resubmit :as resubmit]
             [xi.web.router :as router]
             [xi.web.user-ext :as user-ext]
             [xi.session.sidebar :as sidebar]
@@ -572,10 +573,11 @@
 (defn- bubble-edit-save
   "Commit an inline bubble edit: fork the conversation at the edited message
    (truncate history to before it, like /tree edit) and resubmit the edited
-   text as a fresh prompt. Only invoked on Save, so tapping Edit + Cancel is a
-   no-op. Empty text just closes the editor without forking."
+   text — with the message's original image attachments — as a fresh prompt
+   (see xi.web.resubmit/fork-effects). Only invoked on Save, so tapping
+   Edit + Cancel is a no-op. Empty text just closes the editor without forking."
   [st _]
-  (let [{:keys [index text]} (:web/editing-bubble st)
+  (let [{:keys [index text images]} (:web/editing-bubble st)
         active  (state/active-room st)
         sid     (get-in st [:web/route :session-id])
         room-id (when (= (get-in active [:session :id]) sid) (:id active))
@@ -583,34 +585,25 @@
         t       (str/trim (or text ""))]
     (cond-> {:state (dissoc st :web/editing-bubble)}
       (seq t)
-      (assoc :effects
-             [[:app/dispatch {:type :tree/navigate :room-id room-id :index index}]
-              (if room-id
-                [:app/dispatch (cond-> {:type :input/submit :room-id room-id :text t}
-                                 model (assoc :model model))]
-                [:app/dispatch (cond-> {:type :submit/pending :session-id sid :text t}
-                                 model (assoc :model model))])]))))
+      (assoc :effects (resubmit/fork-effects {:room-id room-id :sid sid :index index
+                                              :text t :images images :model model})))))
 
 (defn- bubble-retry
   "Resend a user message unchanged at its node point: fork the conversation at
    that message (truncate history to before it, like Delete) and resubmit the
-   original text as a fresh prompt. Same flow as bubble-edit-save minus the
-   editor."
-  [st {:keys [index text]}]
+   original text and image attachments as a fresh prompt. Same flow as
+   bubble-edit-save minus the editor. An images-only prompt (blank text) is
+   still retried — the images are the message."
+  [st {:keys [index text images]}]
   (let [active  (state/active-room st)
         sid     (get-in st [:web/route :session-id])
         room-id (when (= (get-in active [:session :id]) sid) (:id active))
         model   (viewed-room-model st active sid)
         t       (str/trim (or text ""))]
     (cond-> {:state (dissoc st :web/bubble-menu)}
-      (seq t)
-      (assoc :effects
-             [[:app/dispatch {:type :tree/navigate :room-id room-id :index index}]
-              (if room-id
-                [:app/dispatch (cond-> {:type :input/submit :room-id room-id :text t}
-                                 model (assoc :model model))]
-                [:app/dispatch (cond-> {:type :submit/pending :session-id sid :text t}
-                                 model (assoc :model model))])]))))
+      (or (seq t) (seq images))
+      (assoc :effects (resubmit/fork-effects {:room-id room-id :sid sid :index index
+                                              :text t :images images :model model})))))
 
 (defn- prompt-nav-step
   "Move the prompt-nav cursor one step (:prompt-nav/prev = older, :next = newer)
@@ -746,18 +739,22 @@
           :copy/flash            (fn [st _] {:state   (assoc st :web/copy-flash true)
                                             :effects [[:copy/flash-clear {}]]})
           :copy/flash-off        (fn [st _] {:state (dissoc st :web/copy-flash)})
-          :bubble/menu-open      (fn [st {:keys [index text x y]}]
-                                   {:state (assoc st :web/bubble-menu {:index index :text text :x x :y y})})
+          ;; :images is the tapped entry's attachments — Edit / Retry resend
+          ;; them with the text (see xi.web.resubmit/fork-effects).
+          :bubble/menu-open      (fn [st {:keys [index text images x y]}]
+                                   {:state (assoc st :web/bubble-menu {:index index :text text :images images
+                                                                        :x x :y y})})
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
           ;; Floating Copy button surfaced when a rendered code block (`pre`)
           ;; or inline `code` is tapped (see attach-code-copy-listener!).
           :code/menu-open        (fn [st {:keys [text path x y]}]
                                    {:state (assoc st :web/code-menu {:text text :path path :x x :y y})})
           :code/menu-close       (fn [st _] {:state (dissoc st :web/code-menu)})
-          :bubble/edit-start     (fn [st {:keys [index text]}]
+          :bubble/edit-start     (fn [st {:keys [index text images]}]
                                    {:state (-> st
                                                (dissoc :web/bubble-menu)
-                                               (assoc :web/editing-bubble {:index index :text text}))})
+                                               (assoc :web/editing-bubble {:index index :text text
+                                                                           :images images}))})
           :bubble/edit-change    (fn [st {:keys [text]}]
                                    {:state (assoc-in st [:web/editing-bubble :text] text)})
           :bubble/edit-cancel    (fn [st _] {:state (dissoc st :web/editing-bubble)})
