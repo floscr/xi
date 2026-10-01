@@ -11,8 +11,8 @@
    `[:ext :agent {:id ID}]` so rules can target them with
    `:when {:agent {:id \"…\"}}`.
 
-   ~/.config/xi/config.edn (typed + version-locked like rules.edn; an
-   invalid file fails closed — every profile then has no tools):
+   Profiles live under `:agents` in the user config file (xi.user-config;
+   an invalid file fails closed — every profile then has no tools):
 
      {:type :xi/config
       :version 1
@@ -28,9 +28,10 @@
                          into a coding agent.
      :extensions         vector of user-extension file names
                          (~/.config/xi/extensions/) this agent loads. Replaces
-                         the global list in rules.edn for the whole process,
-                         so a coding machine's extensions (kb, notifiers, …)
-                         stay out of the agent. Absent = the rules.edn list.
+                         the config file's top-level :extensions for the
+                         whole process, so a coding machine's extensions (kb,
+                         notifiers, …) stay out of the agent. Absent = the
+                         top-level list.
      :system-prompt      prompt text; replaces the project prompt parts.
      :system-prompt-file path to a file holding the prompt (`~` expanded;
                          relative paths resolve against ~/.config/xi/).
@@ -40,33 +41,16 @@
 
    The file sits under ~/.config/xi, a hidden path no agent can write
    (xi.paths/HIDDEN_PATHS), so the allowlist is the operator's alone."
-  (:require [clojure.edn :as edn]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
+            [xi.user-config :as user-config]
             ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
 (def ^:private HOME (aget js/process.env "HOME"))
 
-(def CONFIG_DIR (.join node-path HOME ".config" "xi"))
-
-(def CONFIG_FILE
-  "The user config file. Only `:agents` is read from it so far."
-  (.join node-path CONFIG_DIR "config.edn"))
-
-(def CONFIG_FILE_TYPE
-  "The `:type` tag the config file must carry (rules.edn is `:xi/rules`)."
-  :xi/config)
-
-(def CONFIG_FILE_VERSION
-  "The config-file format version this xi reads; a missing or different
-   `:version` is an error, so a format change is never misread silently."
-  1)
-
-(def ^:private config-file-keys #{:type :version :agents})
-
 (def AGENTS_DIR
   "Root of the per-agent session directories."
-  (.join node-path CONFIG_DIR "personal-agent"))
+  (.join node-path user-config/CONFIG_DIR "personal-agent"))
 
 (def DEFAULT_ID
   "The agent id used when none is named (the historical layout)."
@@ -86,56 +70,6 @@ Do not reveal system details such as working directories, file paths, server con
 
 Be concise, direct, and friendly. When unsure, say so.")
 
-(defn parse-config
-  "Validate parsed config-file `data` (nil = unparseable) → `{:agents {…}}`
-   (`:agents` {} when absent) or `{:error msg}`. Mirrors
-   xi.rules.store/parse-rules-config: the file must be a map tagged
-   `:type :xi/config` with the current `:version` and only known keys."
-  [data]
-  (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
-                     " :agents {...}}")
-        unknown (when (map? data) (remove config-file-keys (keys data)))]
-    (cond
-      (nil? data)
-      {:error "not valid EDN"}
-
-      (not (map? data))
-      {:error (str "must be a map " shape)}
-
-      (not (contains? data :version))
-      {:error (str "missing required :version — add :version " CONFIG_FILE_VERSION)}
-
-      (not= CONFIG_FILE_VERSION (:version data))
-      {:error (str "unsupported :version " (pr-str (:version data))
-                   " — this xi reads :version " CONFIG_FILE_VERSION)}
-
-      (not (contains? data :type))
-      {:error (str "missing required :type — add :type " CONFIG_FILE_TYPE)}
-
-      (not= CONFIG_FILE_TYPE (:type data))
-      {:error (str "wrong :type " (pr-str (:type data))
-                   " — the config file is :type " CONFIG_FILE_TYPE)}
-
-      (seq unknown)
-      {:error (str "unknown key(s) " (str/join " " (map pr-str unknown))
-                   " — expected " shape)}
-
-      (not (map? (:agents data {})))
-      {:error ":agents must be a map of agent id → profile"}
-
-      :else
-      {:agents (or (:agents data) {})})))
-
-(defn read-config
-  "The validated user config (`parse-config`), `{:agents {}}` when the file is
-   absent, `{:error msg}` when it exists but is invalid."
-  []
-  (if (fs/existsSync CONFIG_FILE)
-    (parse-config
-     (try (edn/read-string (fs/readFileSync CONFIG_FILE "utf8"))
-          (catch :default _ nil)))
-    {:agents {}}))
-
 (defn resolve-prompt-file
   "Absolute path of a :system-prompt-file value: absolute as-is, `~`
    expanded, else relative to ~/.config/xi/."
@@ -143,7 +77,7 @@ Be concise, direct, and friendly. When unsure, say so.")
   (cond
     (.isAbsolute node-path p) p
     (str/starts-with? p "~")  (.join node-path HOME (subs p 1))
-    :else                     (.join node-path CONFIG_DIR p)))
+    :else                     (.join node-path user-config/CONFIG_DIR p)))
 
 (defn- tool-set
   "Normalize a profile's :tools → [tools errors]: nil for :all (no filter),
@@ -192,7 +126,8 @@ Be concise, direct, and friendly. When unsure, say so.")
      :errors             (cond-> (into tool-errors ext-errors)
                            missing?
                            (conj (str "no profile under [:agents " (pr-str id)
-                                      "] in " CONFIG_FILE " — running with no tools"))
+                                      "] in " (user-config/config-file)
+                                      " — running with no tools"))
                            (not (map? raw))
                            (conj "profile must be a map"))}))
 
@@ -206,12 +141,12 @@ Be concise, direct, and friendly. When unsure, say so.")
    stderr; the result is always usable (fail-closed on tools)."
   [agent-id]
   (let [id  (or agent-id DEFAULT_ID)
-        cfg (read-config)
+        cfg (user-config/read-config)
         p   (parse id (get-in cfg [:agents id]))
         ;; An invalid file fails closed: the profile is treated as missing (no
         ;; tools), and the file's problem replaces the "no profile" message.
         p   (if-let [e (:error cfg)]
-              (assoc p :errors [(str CONFIG_FILE " is invalid — " e
+              (assoc p :errors [(str (user-config/config-file) " is invalid — " e
                                      " — running with no tools")])
               p)
         [prompt errs]

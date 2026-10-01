@@ -10,7 +10,7 @@ provider effects, and TUI.
 > reference for every key.
 >
 > Want one without rebuilding xi? Put it into `~/.config/xi/extensions/` and
-> list it under `:extensions` in `~/.config/xi/rules.edn`.
+> list it under `:extensions` in `~/.config/xi/config.edn`.
 > These **user extensions** load at runtime in a capability sandbox; see
 > [user-extensions.md](user-extensions.md).
 

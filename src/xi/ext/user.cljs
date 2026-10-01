@@ -23,8 +23,8 @@
             [xi.core.state]
             [xi.ext.manager :as manager]
             [xi.ext.user.guard :as guard]
-            [xi.rules.store :as store]
             [xi.sandbox.sci :as sandbox]
+            [xi.user-config :as user-config]
             [xi.tools.registry :as registry]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -192,25 +192,26 @@
 (defn loaded-entries [] @loaded)
 
 (defonce ^:private enabled-override
-  ;; A 0-arg fn → set of file names that replaces the rules.edn `:extensions`
-  ;; list for this process, or nil. Set once at startup from an agent
+  ;; A 0-arg fn → set of file names that replaces the config file's top-level
+  ;; `:extensions` for this process, or nil. Set once at startup from an agent
   ;; profile's :extensions (xi.agent-profile); a fn so `/ext reload` re-reads
-  ;; the profile like it re-reads the rules file.
+  ;; the profile like it re-reads the config file.
   (atom nil))
 
 (defn set-enabled-override!
   "Make `f` (0-arg → set of file names, or nil to clear) the source of the
-   enabled-extensions list instead of the global rules file."
+   enabled-extensions list instead of the config file's top-level list."
   [f]
   (reset! enabled-override f))
 
 (defn enabled-files
   "The user-extension file names this process may load: the agent profile's
-   override when set, else the global rules file's `:extensions`."
+   override when set, else the config file's `:extensions`
+   (xi.user-config/enabled-extensions)."
   []
   (if-let [f @enabled-override]
     (set (f))
-    (store/enabled-extensions)))
+    (user-config/enabled-extensions)))
 
 (defn- path->ns
   "<dir>/my_ext/util.cljs → \"my-ext.util\" (inverse of file-ns->path)."
@@ -296,7 +297,7 @@
         (js/console.error (str "[user-ext] loaded: " (str/join ", " (map name ok)))))
       (when (seq skipped)
         (js/console.error (str "[user-ext] not enabled (list under :extensions in "
-                               (store/global-file) "): "
+                               (user-config/config-file) "): "
                                (str/join ", " (map #(node-path/basename (:file %)) skipped)))))
       (doseq [{:keys [file error]} bad]
         (js/console.error (str "[user-ext] rejected " (node-path/basename file) ": " error))))
@@ -319,7 +320,7 @@
                             (:tool-definitions (manager/composed mgr))))}))
 
 (defn install!
-  "Load the enabled files of ~/.config/xi/extensions (rules.edn `:extensions`,
+  "Load the enabled files of ~/.config/xi/extensions (config.edn `:extensions`,
    or the agent profile's — see `enabled-files`) and register each valid
    extension into `mgr` (call AFTER the built-ins + MCP are seeded). Returns
    the load report."

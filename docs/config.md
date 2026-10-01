@@ -145,34 +145,41 @@ Feature-specific variables are documented with their feature: `XI_CHROME_*`
 Some features persist runtime state under `~/.config/xi/`. These are not part of
 the compile-time `config.cljc` — they are written and read at runtime.
 
-### Agent profiles (`~/.config/xi/config.edn`)
+### User config (`~/.config/xi/config.edn`)
 
-The user config file. An EDN map tagged `:type :xi/config` with a required
-`:version` (currently `1`), exactly like `rules.edn` (`:xi/rules`); the only
-other key read so far is `:agents`, a map of agent id → profile, consumed by
-`xi --agent <id>`, `xi server --agent <id>` and `xi prompt --agent <id>`
-(`xi.agent-profile`):
+The user config file (`xi.user-config`). An EDN map tagged `:type :xi/config`
+with a required `:version` (currently `1`), exactly like `rules.edn`
+(`:xi/rules`):
 
 ```clojure
-{:type    :xi/config
- :version 1
- :agents  {"root" {:system-prompt-file "agents/root.md"
-                   :model "claude-sonnet-4-6"
-                   :extensions ["freesearch.cljs" "web.cljs"]
-                   :tools ["web_search" "fetch"]}}}
+{:type       :xi/config
+ :version    1
+ :extensions ["kb.cljs" "freesearch.cljs" "web.cljs"]
+ :agents     {"root" {:system-prompt-file "agents/root.md"
+                      :model "claude-sonnet-4-6"
+                      :extensions ["freesearch.cljs" "web.cljs"]
+                      :tools ["web_search" "fetch"]}}}
 ```
 
+| Key | Description |
+| --- | --- |
+| `:extensions` | The [user extensions](user-extensions.md#enabling) xi may load: file names in `~/.config/xi/extensions/`. The only place that can enable one. |
+| `:agents` | Agent profiles, id → profile, for `xi --agent <id>`, `xi server --agent <id>` and `xi prompt --agent <id>` (`xi.agent-profile`). Keys below. |
+
 **An invalid file fails closed**: a missing or wrong `:type`, a missing or
-unsupported `:version`, an unknown top-level key or unparseable EDN makes
-every profile load as missing — no tools — with the problem reported on
-stderr. A missing file is not an error (profiles are simply absent).
+unsupported `:version`, an unknown top-level key or unparseable EDN enables
+no extensions and makes every profile load as missing — no tools — with the
+problem reported on stderr. A missing file is not an error (nothing is
+enabled, profiles are simply absent).
+
+#### Agent profiles
 
 Profile keys:
 
 | Key | Default | Description |
 | --- | --- | --- |
 | `:tools` | none | Vector of tool names the model is given (builtins and extension tools alike), or `:all`. Unlisted tools are never advertised. A missing key or a missing profile yields **no tools** (fail closed). |
-| `:extensions` | the `rules.edn` list | Vector of user-extension file names this agent loads instead of the global `:extensions` of `rules.edn` (`[]` = none). Process-wide; `/ext reload` re-reads it. |
+| `:extensions` | the top-level list | Vector of user-extension file names this agent loads instead of the file's top-level `:extensions` (`[]` = none). Process-wide; `/ext reload` re-reads it. |
 | `:system-prompt` | generic assistant prompt | Prompt text; replaces AGENTS.md, skills, extension prompts and `prompt-files.edn`. |
 | `:system-prompt-file` | — | File holding the prompt; `~` expanded, relative paths resolve against `~/.config/xi/`. `:system-prompt` wins over it. |
 | `:model` | — | Default model for the agent; a `--model` flag wins. |

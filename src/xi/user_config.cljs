@@ -1,0 +1,116 @@
+(ns xi.user-config
+  "The user config file, ~/.config/xi/config.edn — a typed, version-locked
+   EDN map (like rules.edn, which is `:xi/rules`):
+
+     {:type       :xi/config
+      :version    1
+      :extensions [\"kb.cljs\" \"web.cljs\"]      ; user extensions xi may load
+      :agents     {\"root\" {…}}}               ; agent profiles (xi.agent-profile)
+
+   `:extensions` names the files under ~/.config/xi/extensions/ that are
+   evaluated at all — the only place that can enable one. An agent profile's
+   own `:extensions` replaces this list for that run (xi.ext.user). The file
+   lives under ~/.config/xi, a hidden path no agent can write
+   (xi.paths/HIDDEN_PATHS), so what loads is the operator's call alone.
+
+   An invalid file fails closed: nothing is enabled and every agent profile
+   loads without tools, with the problem reported by the readers."
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]
+            ["node:fs" :as fs]
+            ["node:path" :as node-path]))
+
+(def ^:private HOME (aget js/process.env "HOME"))
+
+(def CONFIG_DIR (.join node-path HOME ".config" "xi"))
+
+(defonce ^:private file-override
+  ;; Test seam: point the reader at a throwaway file (see `set-config-file!`).
+  (atom nil))
+
+(defn set-config-file!
+  "Override the config file path (nil restores ~/.config/xi/config.edn).
+   Test seam, like xi.rules.store/set-global-file!."
+  [file]
+  (reset! file-override file))
+
+(defn config-file []
+  (or @file-override (.join node-path CONFIG_DIR "config.edn")))
+
+(def CONFIG_FILE_TYPE
+  "The `:type` tag the config file must carry (rules.edn is `:xi/rules`)."
+  :xi/config)
+
+(def CONFIG_FILE_VERSION
+  "The config-file format version this xi reads; a missing or different
+   `:version` is an error, so a format change is never misread silently."
+  1)
+
+(def ^:private config-file-keys #{:type :version :extensions :agents})
+
+(defn parse-config
+  "Validate parsed config-file `data` (nil = unparseable) →
+   `{:extensions #{…} :agents {…}}` (empty when absent) or `{:error msg}`.
+   Mirrors xi.rules.store/parse-rules-config: the file must be a map tagged
+   `:type :xi/config` with the current `:version` and only known keys."
+  [data]
+  (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
+                     " :extensions [...] :agents {...}}")
+        unknown (when (map? data) (remove config-file-keys (keys data)))]
+    (cond
+      (nil? data)
+      {:error "not valid EDN"}
+
+      (not (map? data))
+      {:error (str "must be a map " shape)}
+
+      (not (contains? data :version))
+      {:error (str "missing required :version — add :version " CONFIG_FILE_VERSION)}
+
+      (not= CONFIG_FILE_VERSION (:version data))
+      {:error (str "unsupported :version " (pr-str (:version data))
+                   " — this xi reads :version " CONFIG_FILE_VERSION)}
+
+      (not (contains? data :type))
+      {:error (str "missing required :type — add :type " CONFIG_FILE_TYPE)}
+
+      (not= CONFIG_FILE_TYPE (:type data))
+      {:error (str "wrong :type " (pr-str (:type data))
+                   " — the config file is :type " CONFIG_FILE_TYPE)}
+
+      (seq unknown)
+      {:error (str "unknown key(s) " (str/join " " (map pr-str unknown))
+                   " — expected " shape)}
+
+      (not (and (sequential? (:extensions data []))
+                (every? string? (:extensions data))))
+      {:error ":extensions must be a vector of extension file names"}
+
+      (not (map? (:agents data {})))
+      {:error ":agents must be a map of agent id → profile"}
+
+      :else
+      {:extensions (set (:extensions data))
+       :agents     (or (:agents data) {})})))
+
+(defn read-config
+  "The validated user config (`parse-config`), `{:extensions #{} :agents {}}`
+   when the file is absent, `{:error msg}` when it exists but is invalid."
+  []
+  (let [file (config-file)]
+    (if (fs/existsSync file)
+      (parse-config
+       (try (edn/read-string (fs/readFileSync file "utf8"))
+            (catch :default _ nil)))
+      {:extensions #{} :agents {}})))
+
+(defn enabled-extensions
+  "The user-extension file names the config file enables under `:extensions`
+   — #{} when the file is missing, invalid (reported on stderr), or doesn't set
+   the key."
+  []
+  (let [cfg (read-config)]
+    (when-let [e (:error cfg)]
+      (js/console.error (str "xi: " (config-file) " is invalid — " e
+                             " — no user extensions enabled")))
+    (or (:extensions cfg) #{})))

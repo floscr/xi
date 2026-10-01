@@ -60,7 +60,8 @@ server-side namespaces, run `bb demo:restart`.
   `notes` (copied from `scripts/demo-extensions/`). It has a `notes_add` tool,
   a `/notes` command and a browser half at `/notes` (sidebar → Extensions →
   Notes; open a chat first, since Refresh reads through the active room).
-- `.config/xi/rules.edn` — enables it (`:extensions ["notes.cljs"]`).
+- `.config/xi/config.edn` — enables it (`:extensions ["notes.cljs"]`);
+  `.config/xi/rules.edn` is an empty, valid rules file.
 - `.local/share/xi/extensions/` — extension data dirs (`XDG_DATA_HOME` is
   redirected too, so the notes file never lands in the real one)
 

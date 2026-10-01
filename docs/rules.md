@@ -192,7 +192,11 @@ A rules file is a map with a **required** `:type` and `:version`:
 | `:version`  | Required. The rules-file format version — currently `1`. It version-locks the file: when the format (or a default-bundle alias) changes, the version bumps and an old file errors instead of being silently misread. |
 | `:rules`    | Vector of rule maps, at this file's config precedence (repo / global). |
 | `:defaults` | Optional. Replaces the default tier — see [below](#choosing-defaults-defaults). |
-| `:extensions` | Optional. Vector of file names in `~/.config/xi/extensions/` that xi may load as [user extensions](user-extensions.md#enabling). Read from the global file only; a repo file's list is ignored. |
+
+User extensions are **not** enabled here any more: the list lives under
+`:extensions` in `~/.config/xi/config.edn` (see
+[user-extensions.md](user-extensions.md#enabling)). A rules file that still
+carries `:extensions` is invalid (fails closed with a pointer).
 
 **An invalid file fails closed.** A missing or wrong `:type`, a missing or
 unsupported `:version`, a bare

@@ -51,7 +51,7 @@ Defaults to `ws://localhost:<port>`.
 `xi prompt --agent <id>` run xi as a named agent instead of a coding agent.
 Everything that makes the agent what it is lives in the profile under
 `[:agents <id>]` in `~/.config/xi/config.edn`
-(see [config.md](config.md#agent-profiles-configxiconfigedn)):
+(see [config.md](config.md#user-config-configxiconfigedn)):
 
 ```clojure
 ;; ~/.config/xi/config.edn
@@ -68,12 +68,12 @@ Everything that makes the agent what it is lives in the profile under
 
 The file is typed and version-locked like `rules.edn`; an invalid file fails
 closed (every profile loads with no tools) — see
-[config.md](config.md#agent-profiles-configxiconfigedn).
+[config.md](config.md#user-config-configxiconfigedn).
 
 | Key | Meaning |
 | --- | --- |
 | `:tools` | The tool names the model gets — builtins and extension tools alike — or `:all`. Unlisted tools are never advertised, so the model cannot call them. **Absent, or no profile at all, means no tools**: a typo can't turn a restricted agent into a coding agent. |
-| `:extensions` | The [user extension](user-extensions.md) files (`~/.config/xi/extensions/`) this agent loads, replacing the global `:extensions` list of `rules.edn` for the process. Absent = the global list; `[]` = none. Keeps a coding machine's extensions (knowledge base, notifiers, …) out of an assistant. Built-in extensions still load; their tools are hidden by `:tools` and their prompts by the profile prompt. |
+| `:extensions` | The [user extension](user-extensions.md) files (`~/.config/xi/extensions/`) this agent loads, replacing the config file's top-level `:extensions` for the process. Absent = the top-level list; `[]` = none. Keeps a coding machine's extensions (knowledge base, notifiers, …) out of an assistant. Built-in extensions still load; their tools are hidden by `:tools` and their prompts by the profile prompt. |
 | `:system-prompt` | System prompt text; replaces every project prompt part (AGENTS.md, profile, skills, extension prompts). |
 | `:system-prompt-file` | Path to a file holding the prompt (`~` expanded; relative paths resolve against `~/.config/xi/`). `:system-prompt` wins over it; with neither, a short generic assistant prompt is used. |
 | `:model` | Default model for this agent. Precedence: `--model` flag > profile > last `/model` pick > built-in default. |

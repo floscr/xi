@@ -280,10 +280,14 @@ fs.cpSync(
   path.join(DEMO_HOME, ".config", "xi", "extensions"),
   { recursive: true },
 );
-// Only files the global rules file lists under :extensions are loaded.
+// Only files the user config lists under :extensions are loaded.
+fs.writeFileSync(
+  path.join(DEMO_HOME, ".config", "xi", "config.edn"),
+  '{:type :xi/config\n :version 1\n :extensions ["notes.cljs"]}\n',
+);
 fs.writeFileSync(
   path.join(DEMO_HOME, ".config", "xi", "rules.edn"),
-  '{:type :xi/rules\n :version 1\n :extensions ["notes.cljs"]\n :rules []}\n',
+  '{:type :xi/rules\n :version 1\n :rules []}\n',
 );
 
 // Stash the key so `bb demo` / docs can echo it.

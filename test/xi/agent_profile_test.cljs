@@ -1,7 +1,8 @@
 (ns xi.agent-profile-test
   (:require [cljs.test :refer [deftest is testing]]
             [clojure.string :as str]
-            [xi.agent-profile :as profile]))
+            [xi.agent-profile :as profile]
+            [xi.user-config :as cfg]))
 
 (deftest parse-tools
   (testing "a vector of names becomes the allowlist"
@@ -28,7 +29,7 @@
       (is (= "inline" (:system-prompt p)))
       (is (nil? (:system-prompt-file p)))))
   (testing "relative prompt files resolve against the config dir"
-    (is (= (str profile/CONFIG_DIR "/agents/root.md")
+    (is (= (str cfg/CONFIG_DIR "/agents/root.md")
            (:system-prompt-file (profile/parse "a" {:system-prompt-file "agents/root.md"})))))
   (testing "absolute and ~ paths pass through"
     (is (= "/tmp/p.md" (:system-prompt-file (profile/parse "a" {:system-prompt-file "/tmp/p.md"}))))
@@ -47,22 +48,6 @@
     (let [p (profile/parse "a" {:extensions "web.cljs"})]
       (is (nil? (:extensions p)))
       (is (some #(str/includes? % ":extensions") (:errors p))))))
-
-(deftest parse-config-is-typed-and-version-locked
-  (let [err (fn [data] (:error (profile/parse-config data)))]
-    (is (re-find #"not valid EDN" (err nil)))
-    (is (re-find #"must be a map" (err [1 2])))
-    (is (re-find #"missing required :version" (err {:type :xi/config :agents {}})))
-    (is (re-find #"unsupported :version 2" (err {:type :xi/config :version 2})))
-    (is (re-find #"missing required :type" (err {:version 1 :agents {}})))
-    (is (re-find #"wrong :type :xi/rules" (err {:type :xi/rules :version 1})))
-    (is (re-find #"unknown key\(s\) :agent" (err {:type :xi/config :version 1 :agent {}})))
-    (is (re-find #":agents must be a map" (err {:type :xi/config :version 1 :agents []}))))
-  (testing "a valid file parses; :agents {} unless set"
-    (is (= {:agents {}} (profile/parse-config {:type :xi/config :version 1})))
-    (is (= {:agents {"root" {:tools ["fetch"]}}}
-           (profile/parse-config {:type :xi/config :version 1
-                                  :agents {"root" {:tools ["fetch"]}}})))))
 
 (deftest parse-model
   (is (= "claude-haiku-4-5-20251001"

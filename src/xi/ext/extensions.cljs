@@ -76,7 +76,7 @@
                     (str "\n  rejected: "
                          (str/join "; " (map #(str (:file %) " — " (:error %)) rejected))))
                   (when (seq skipped)
-                    (str "\n  not enabled (list under :extensions in rules.edn): "
+                    (str "\n  not enabled (list under :extensions in config.edn): "
                          (str/join ", " skipped)))
                   "\nTool changes apply next turn; handler/command changes need a restart."))))
 

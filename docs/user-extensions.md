@@ -1,7 +1,7 @@
 # User extensions
 
 Put a `.cljs` file into `~/.config/xi/extensions/`, list its name under
-`:extensions` in `~/.config/xi/rules.edn`, and an already-built xi loads it at
+`:extensions` in `~/.config/xi/config.edn`, and an already-built xi loads it at
 startup. No build step is needed. User extensions have the same
 shape as built-in ones ([extensions.md](extensions.md)) but run in a
 **capability sandbox**. They get no host access of their own, and every side
@@ -52,34 +52,31 @@ when there's no room cwd (e.g. in an fx).
 
 ## Enabling
 
-A file in the directory is loaded only when the **global** rules file names it:
+A file in the directory is loaded only when the user config file names it:
 
 ```clojure
-;; ~/.config/xi/rules.edn
-{:type :xi/rules
+;; ~/.config/xi/config.edn
+{:type :xi/config
  :version 1
- :extensions ["notes.cljs"]
- :rules []}
+ :extensions ["notes.cljs"]}
 ```
 
 - `:extensions` is a vector of top-level file names. A file that isn't listed
   is never read or evaluated. It is logged at startup
   (`[user-ext] not enabled (…): foo.cljs`) and reported by `/ext reload`.
-- With no rules file, no `:extensions` key, or an invalid rules file, nothing
+- With no config file, no `:extensions` key, or an invalid config file
+  (see [config.md](config.md#user-config-configxiconfigedn)), nothing
   loads.
-- Only the global file counts. `:extensions` in a repo's `.xi/rules.edn` is
-  ignored, so a checked-out project can't enable anything.
-- The list lives in the rules file because agents can't change it: writes
-  under `~/.config/xi` are hard-blocked, and a change to any other xi rules
-  file (e.g. a dotfiles source copied into place) asks every time (see
-  [rules.md](rules.md)). Dropping a file into the directory is therefore not
-  enough to get code loaded.
+- The list lives in `config.edn` because agents can't change it: writes under
+  `~/.config/xi` are hard-blocked (see [rules.md](rules.md)). Dropping a file
+  into the directory is therefore not enough to get code loaded, and a
+  checked-out project can't enable anything.
 - The list names files, not contents. Editing a file that is already enabled
   is an ordinary write under the normal write rules.
 - An **agent profile** (`xi … --agent ID`, see [cli.md](cli.md#agent-profiles))
-  may carry its own `:extensions` vector in `~/.config/xi/config.edn`; it
-  replaces the rules-file list for that process, so a restricted agent loads
-  only what it needs. Same trust level: `config.edn` is agent-unwritable too.
+  may carry its own `:extensions` vector under `[:agents ID]`; it replaces
+  the top-level list for that process, so a restricted agent loads only what
+  it needs.
 
 ## Files
 
