@@ -1,5 +1,6 @@
 (ns xi.rules.defaults-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.rules :as rules]
             [xi.rules.defaults :as defaults]))
 
@@ -111,6 +112,70 @@
     (is (nil? (rules/first-match defaults/default-rules {:tool :bb :command "bb test"})))
     (is (nil? (rules/first-match defaults/default-rules
                                  {:tool :bb :command "bb serve:personal:restart"})))))
+
+(defn- script-exec-gated?
+  "True when the default tier gates `cmd` with the script-exec rule — told apart
+   from the generic `sh-confirm` by its `:unanswered :deny`."
+  [tool cmd]
+  (= :deny (get-in (rules/first-match defaults/default-rules
+                                      {:tool tool :cli (first (str/split cmd #" ")) :command cmd})
+                   [:action :unanswered])))
+
+(deftest script-exec-gate
+  (testing "inline code and script files ask, across the interpreters"
+    (doseq [[tool cmd] [[:sh "bb -f /tmp/propfind.clj"]
+                        [:sh "bb -e (+ 1 2)"]
+                        [:sh "bb --eval (+ 1 2)"]
+                        [:sh "bb /tmp/x.clj"]
+                        [:sh "bb script.bb"]
+                        [:sh "bb -m my.ns/main"]
+                        [:bb "bb -e (slurp \"x\")"]
+                        [:bash "bb -f x.clj"]
+                        [:sh "node -e console.log(1)"]
+                        [:sh "node script.js"]
+                        [:sh "nodejs script.js"]
+                        [:sh "/usr/bin/python3 x.py"]
+                        [:sh "python3.12 -c print(1)"]
+                        [:sh "ruby -e puts(1)"]
+                        [:sh "perl -e print(1)"]
+                        [:sh "java -jar x.jar"]
+                        [:sh "bun -e console.log(1)"]
+                        [:sh "bun run script.ts"]
+                        [:sh "bun script.mjs"]
+                        [:sh "bun x cowsay"]
+                        [:sh "bunx cowsay"]
+                        [:sh "deno eval 1+1"]
+                        [:sh "deno run x.ts"]
+                        [:sh "deno --allow-all run x.ts"]
+                        [:sh "clojure -M:test"]
+                        [:sh "clojure -X:build"]
+                        [:sh "clj -e (+ 1 2)"]
+                        [:sh "clj script.clj"]]]
+      (let [rule (rules/first-match defaults/default-rules
+                                    {:tool tool :cli (first (str/split cmd #" ")) :command cmd})]
+        (is (= :ask (get-in rule [:action :type])) cmd)
+        (is (rules/arg-scoped? rule) (str cmd " is command-scoped (clj confirms it per command)")))))
+  (testing "no [a]lways, and refused when nobody can answer"
+    (let [rule (rules/first-match defaults/default-rules {:tool :sh :cli "bb" :command "bb -f x.clj"})]
+      (is (= [:yes :no] (get-in rule [:action :options])))
+      (is (= :deny (get-in rule [:action :unanswered])))))
+  (testing "task / subcommand modes and version probes don't match"
+    (doseq [cmd ["bb test" "bb tasks" "bb run build" "bb lint src/xi"
+                 "node --version" "python3 -V" "java -version"
+                 "bun test" "bun install" "bun run build" "bun build src/x.ts"
+                 "deno task dev" "deno test" "deno fmt"
+                 "clojure -Spath" "clj -Sdescribe"]]
+      (is (not (script-exec-gated? :sh cmd)) cmd)))
+  (testing "only a command-start interpreter matches, not one mentioned in an arg"
+    (is (not (script-exec-gated? :sh "grep node src")))
+    (is (not (script-exec-gated? :sh "git log -e bb"))))
+  (testing "a higher-precedence arg-scoped allow lifts it for that command only"
+    (let [allow {:match {:tool :sh :cli "bb" :command #"^bb -f scripts/"} :action {:type :allow}}
+          rs    (into [allow] defaults/default-rules)]
+      (is (= :allow (get-in (rules/first-match rs {:tool :sh :cli "bb" :command "bb -f scripts/x.clj"})
+                            [:action :type])))
+      (is (= :ask (get-in (rules/first-match rs {:tool :sh :cli "bb" :command "bb -f /tmp/x.clj"})
+                          [:action :type]))))))
 
 (deftest guarded-patterns-published
   ;; clj applies the same list to (sh …) argv strings.
@@ -248,7 +313,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 25 (count defaults/default-rules))))
+    (is (= 31 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes

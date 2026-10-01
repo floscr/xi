@@ -829,6 +829,41 @@
                    (is (str/includes? (str (get-in res [:arguments :_hint])) "(curl url)"))
                    (done)))))))
 
+(deftest gate-asks-per-script-even-for-an-allowed-interpreter
+  ;; `bb -f /tmp/x.clj` reads files the gate never sees, so the script-exec rule
+  ;; confirms that exact command even though `bb` is an allowed CLI.
+  (async done
+    (let [prompts (atom [])
+          ctx     (assoc (gate-ctx) :confirm! (fn [p & _] (swap! prompts conj p) (js/Promise.resolve true)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code "(sh \"bb\" \"-f\" \"/tmp/propfind.clj\")"}}
+                 ctx))
+          (.then (fn [res]
+                   (is (not (:intercepted res)) "approved, so it runs")
+                   ;; the script prompt comes first; the untrusted-bb per-CLI
+                   ;; approval may follow it
+                   (is (str/includes? (first @prompts) "bb -f /tmp/propfind.clj"))
+                   (is (str/includes? (first @prompts) "inline code"))
+                   (done)))))))
+
+(deftest gate-script-exec-denied-by-the-user-blocks
+  (async done
+    (let [ctx (assoc (gate-ctx) :confirm! (fn [_ & _] (js/Promise.resolve false)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code "(sh \"node\" \"-e\" \"1\")"}} ctx))
+          (.then (fn [res]
+                   (is (:intercepted res))
+                   (done)))))))
+
+(deftest gate-script-exec-refused-when-nobody-can-answer
+  ;; Headless (`xi prompt`, sub-agents): other command asks pass through, but a
+  ;; script run must not execute unseen.
+  (let [res (gate {:name "clj" :arguments {:code "(sh \"python3\" \"/tmp/x.py\")"}}
+                  (gate-ctx))]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "no client is attached"))
+    (is (str/includes? (intercepted-text res) "python3 /tmp/x.py"))))
+
 (deftest clj-tool-appends-hint
   (let [res (clj-ext/reply->result
              (clj-ext/eval-message #js {:id 0 :kind "clj" :code "(+ 1 2)"

@@ -57,6 +57,45 @@
    xi.server-control/kind."
   #"serve:(?:restart|stop)")
 
+;; ── Script / inline-code execution (script-exec) ─────────────────────────────
+;;
+;; Every pattern is anchored at the command's first token (an optional path
+;; prefix is allowed), which is the binary for a clj `(sh …)` / bash command and
+;; `bb` for the bb tool. They run over the space-joined command line, and the
+;; clj gate matches each literal `(sh …)` / background command on its own.
+
+(def script-exec-res
+  "Command lines that execute code the gate can't see: inline code (`-e`,
+   `--eval`, `-c`, `-p`) or a script file, for the usual scripting runtimes. The
+   first group (plain interpreters) treats any invocation but a bare
+   version/help flag as code execution; the rest (bb, bun, deno, clojure) have
+   task / subcommand modes that stay unmatched, e.g. `bb test`, `bun run build`,
+   `deno task dev`, `bun test`. Public: tests and docs share the list."
+  [;; Plain interpreters — any run is code execution, `python -m x` and
+   ;; `java -jar x` included.
+   #"^\s*(?:\S*/)?(?:node(?:js)?|python|pypy|ruby|perl|php|lua|luajit|Rscript|elixir|julia|sbcl|guile|racket|nbb|tsx|ts-node|java|jshell|groovy)(?:\d+(?:\.\d+)*)?(?=\s|$)(?!\s+(?:-v|-V|--version|-version|--help|-h)\s*$)"
+   ;; babashka — eval/file/stdin-expression/main/exec flags, or a script operand.
+   ;; `bb <task>` stays free: its code is the trusted bb.edn.
+   #"^\s*(?:\S*/)?bb(?=\s)(?:.*\s(?:-e|--eval|-f|--file|-i|-I|-o|-O|-m|--main|-x|--exec|--init|--repl|--nrepl-server|--socket-repl)(?=[\s=]|$)|.*\s\S*\.(?:clj[cs]?|bb)(?=\s|$)|.*\s(?:\.{1,2}/|~/|/)\S*)"
+   ;; bun — eval/print flags, x / repl / exec, or a script operand. Package
+   ;; management, `bun test`, `bun build` and `bun run <package script>` stay free.
+   #"^\s*(?:\S*/)?bun(?=\s)(?!\s+(?:test|install|i|add|remove|rm|update|pm|build|outdated|audit|info|why|-v|--version|--help|-h)(?=\s|$))(?:\s+(?:x|repl|exec)(?=\s|$)|.*\s(?:-e|--eval|-p|--print)(?=[\s=]|$)|.*\s(?:\S*\.[cm]?[jt]sx?|(?:\.{1,2}/|~/|/)\S*)(?=\s|$))"
+   ;; bunx runs a package binary fetched on the fly.
+   #"^\s*(?:\S*/)?bunx(?=\s|$)"
+   ;; deno — eval / run / repl / serve / x; `deno task|test|fmt|lint|check` stay free.
+   #"^\s*(?:\S*/)?deno(?:\s+-\S+)*\s+(?:eval|run|repl|serve|x)(?=\s|$)"
+   ;; Clojure CLI — -M / -X / -T (run a main / fn / tool), -e, -i, -m, -r, or a script.
+   #"^\s*(?:\S*/)?(?:clojure|clj)(?=\s)(?:.*\s(?:-[MXT]|-e|--eval|-i|--init|-m|--main|-r|--repl)(?=[\s:=]|$)|.*\s\S+\.clj[cs]?(?=\s|$))"])
+
+(def ^:private script-exec-action
+  {:type        :ask
+   :message     "Runs a script or inline code through an interpreter — proceed?"
+   ;; No [a]lways: a session grant would be a CLI-wide allow, which lifts the
+   ;; gate for every later script of that interpreter, not just this one.
+   :options     [:yes :no]
+   ;; Headless (`xi prompt`, sub-agents): refuse rather than run unseen code.
+   :unanswered  :deny})
+
 ;; ── /tmp cleanup nudge (was xi.ext.tmp-cleanup-intercept) ────────────────────
 
 (def ^:private tmp-rm-re
@@ -393,6 +432,19 @@
    [{:match  {:tool :browser}
      :action {:type :ask :options [:yes :no :always]}}]
 
+   ;; Interpreters running inline code or a script file (`bb -f x.clj`,
+   ;; `node -e …`, `python x.py`, `bun run x.ts`, …) — the interpreter reads the
+   ;; script itself, so neither the read/write gates nor the path guards ever see
+   ;; what it does (e.g. `slurp` of a config file). Command-scoped, so clj asks
+   ;; per exact command even when the CLI is allowlisted / `bb` is trusted.
+   ;; Placed after extension-sh (an extension's own shell-outs keep that rule's
+   ;; [a]lways) and before clj-sh. A higher-precedence `:allow` — config rule,
+   ;; `/clj allow <cli>` — lifts it, so prefer arg-scoped allows.
+   ::script-exec
+   (mapv (fn [re] {:match  {:tool #{:bash :sh :bb} :command re}
+                   :action script-exec-action})
+         script-exec-res)
+
    ;; clj (sh …) shell-outs (:sh) — "disallow * then soften", scoped to :sh so
    ;; the real bash tool is untouched. Read-only/rm CLIs auto-run; every other
    ;; CLI hits the base ask (the clj gate turns that into its per-CLI approval
@@ -454,6 +506,7 @@
    ::extension-sh
    ::net-confirm
    ::browser-confirm
+   ::script-exec
    ::clj-sh])
 
 (def default-rules

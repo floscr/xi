@@ -146,6 +146,46 @@ overlap):
   directory, so the operand check can't vouch for it) and `chmod` (a
   permission change isn't a content change — `+x` makes a written file
   runnable, `u+s` / `o+r` escalate or expose — so it always confirms).
+- **script / inline-code execution** (`script-exec`) — an interpreter run with
+  inline code or a script file → **ask**, `[y]es` / `[n]o` only, refused when
+  nobody can answer (`:unanswered :deny`). The interpreter reads the script
+  itself, so the read/write gates and path guards never see what it does (a
+  `/tmp/x.clj` that `slurp`s `~/.config/…` runs outside every check). Matches
+  `bash`, clj `(sh …)` / background commands and the `bb` tool by command line
+  (`xi.rules.defaults/script-exec-res`):
+  - **plain interpreters** — `node`/`nodejs`, `python`, `pypy`, `ruby`, `perl`,
+    `php`, `lua`, `luajit`, `Rscript`, `elixir`, `julia`, `sbcl`, `guile`,
+    `racket`, `nbb`, `tsx`, `ts-node`, `java`, `jshell`, `groovy` — any run
+    asks (`-e`, `-c`, `-p`, a script file, `-m`, `-jar`, …) except a bare
+    `--version` / `-v` / `-V` / `-version` / `--help` / `-h`. Version suffixes
+    (`python3.12`) and path prefixes (`/usr/bin/node`) match too.
+  - **`bb`** — `-e`/`--eval`, `-f`/`--file`, `-i`/`-I`/`-o`/`-O`, `-m`/`--main`,
+    `-x`/`--exec`, `--init`, `--repl`, `--nrepl-server`, `--socket-repl`, or a
+    script operand (`*.clj`/`.cljs`/`.cljc`/`.bb`, or a `./`, `../`, `~/`, `/`
+    path). `bb <task>` stays free — its code is the trusted `bb.edn`.
+  - **`bun`** — `-e`/`--eval`/`-p`/`--print`, `x`/`repl`/`exec`, or a script
+    operand (`*.js`/`.ts`/`.mjs`/… or a path); `bunx` always. `bun test`,
+    `install`/`add`/`remove`/…, `build` and `bun run <package script>` stay free.
+  - **`deno`** — `eval` / `run` / `repl` / `serve` / `x`; `task`, `test`, `fmt`,
+    `lint`, … stay free.
+  - **`clojure` / `clj`** — `-M` / `-X` / `-T`, `-e`/`--eval`, `-i`/`--init`,
+    `-m`/`--main`, `-r`/`--repl`, or a `*.clj` script; `-Spath` etc. stay free.
+
+  It is command-scoped, so clj asks per exact command even when the CLI is
+  allowlisted or `bb` is trusted via its `bb.edn`. There is deliberately no
+  `[a]lways`: a session grant is a CLI-wide allow that would lift the gate for
+  every later script. To pre-approve specific scripts, add a higher-precedence
+  **arg-scoped** allow rule:
+
+  ```clojure
+  {:match {:tool :sh :cli "bb" :command #"^bb -f scripts/"} :action {:type :allow}}
+  ```
+
+  Any `:allow` for the CLI above the defaults lifts the gate — including a
+  config rule without `:command`, `/clj allow <cli>`, and the per-CLI dialog's
+  `[a]lways` — so scope allows by `:command`. Not covered: wrappers
+  (`env node …`, `npx`, `xargs`, …), which fall to the per-CLI ask unless
+  allowlisted, and runtimes outside the list.
 - **external MCP tool** — any `mcp__<server>__<tool>` call → **ask**, with an
   informative confirm block (server, tool, and every argument). `[a]lways`
   persists a session allow-rule narrowed to that MCP server + tool. External
@@ -258,6 +298,7 @@ The built-in default tier, in order:
  :xi.rules.defaults/extension-sh
  :xi.rules.defaults/net-confirm
  :xi.rules.defaults/browser-confirm
+ :xi.rules.defaults/script-exec
  :xi.rules.defaults/clj-sh]
 ```
 
@@ -281,6 +322,7 @@ The built-in default tier, in order:
 | `extension-sh`       | 1 | ask on every user-extension shell-out (before `clj-sh`: its auto-run list relies on clj's own confinement) |
 | `net-confirm`        | 1 | ask on every user-extension network request (`[a]lways` pins extension + host) |
 | `browser-confirm`    | 1 | ask on every user-extension headless-Chrome visit (`[a]lways` pins extension + host) |
+| `script-exec`        | 6 | ask before an interpreter runs inline code or a script file (`bb -f`, `node -e`, `python x.py`, `bun x.ts`, …); no `[a]lways`, refused headless |
 | `sh-read-only`       | 1 | allow read-only CLIs via clj `(sh …)` |
 | `repository-scripts` | 2 | allow read-only `sed -n …p` and in-repo `mv`/`cp`/`mkdir`/`touch`/`rmdir` |
 | `sh-confirm`         | 1 | ask on any other clj `(sh …)` CLI |

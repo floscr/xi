@@ -186,6 +186,16 @@ step of the tool itself (`xi.ext.clj/approve`):
 
 With no client attached (e.g. `xi prompt`), confirms resolve to deny.
 
+**Interpreters running code the gate can't see** — `bb -f x.clj`, `bb -e …`,
+`node -e …`, `python x.py`, `bun x.ts`, `clojure -M …`, … — are matched by the
+`script-exec` default rule ([rules.md](rules.md)). It is command-scoped, so it
+confirms that exact command even when the CLI is allowlisted or `bb` is trusted
+via its `bb.edn` (the interpreter would otherwise read arbitrary files from
+inside a script the gate never parses). With no client attached the eval is
+blocked (`:unanswered :deny`), unlike the other command-scoped asks, which pass
+through headless. There is no `[a]lways`; pre-approve specific scripts with an
+arg-scoped `:allow` rule.
+
 `(sh …)` to a CLI that has a builtin helper (`HELPER_EQUIV`) never raises an
 approval dialog. It splits into two tiers:
 

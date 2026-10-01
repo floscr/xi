@@ -1945,15 +1945,24 @@
             ;; server-control rule on `bb serve:restart`) confirms that exact
             ;; command, even when its CLI is otherwise allowed. CLI-wide asks
             ;; (the base `sh-confirm`) stay with the per-CLI approval below.
-            rule-asks (->> cmds
+            asks      (->> cmds
                            (keep (fn [c]
                                    (let [r (cmd-decision c)]
                                      (when (and (= :ask (get-in r [:action :type]))
                                                 (rules/arg-scoped? r))
-                                       (if-let [msg (get-in r [:action :message])]
-                                         (str msg "\n\n" (:command c))
-                                         (str "Run `" (:command c) "`?"))))))
+                                       {:command (:command c)
+                                        :message (get-in r [:action :message])
+                                        :refuse-unanswered? (= :deny (get-in r [:action :unanswered]))})))))
+            rule-asks (->> asks
+                           (map (fn [{:keys [command message]}]
+                                  (if message
+                                    (str message "\n\n" command)
+                                    (str "Run `" command "`?"))))
                            distinct)
+            ;; Asks whose rule says `:unanswered :deny` (script-exec) must not
+            ;; pass when nobody can answer — unlike the other command asks,
+            ;; which pass through headless.
+            unanswerable (->> asks (filter :refuse-unanswered?) (map :command) distinct)
             ;; `rm` is auto-allowed from clj (SAFE_AUTORUN) — including rm -rf,
             ;; so drop rm commands from the guarded confirm here. bash's rm -rf
             ;; stays guarded (guarded-patterns is unchanged).
@@ -1992,6 +2001,10 @@
           denied
           (blocked (or (:message denied)
                        (str "clj: `" (:cmd denied) "` is denied by policy.")))
+
+          (and (not confirm!) (seq unanswerable))
+          (blocked (str "clj: these commands need approval but no client is "
+                        "attached to confirm: " (str/join ", " unanswerable)))
 
           :else
           ;; First clear any out-of-repo builtin reads (cat/ls/grep/…) through
