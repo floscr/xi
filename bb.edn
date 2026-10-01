@@ -29,10 +29,10 @@
           ;; browser-overlay build steps need no local framework checkout.
           (defn clj-ui-framework-dir []
             (let [sha  (-> (slurp "deps.edn") edn/read-string
-                           (get-in [:deps 'com.example.git/clj-ui-framework :git/sha]))
+                           (get-in [:deps 'io.github.floscr/clj-ui-framework :git/sha]))
                   base (or (System/getenv "GITLIBS")
                            (str (System/getProperty "user.home") "/.gitlibs"))
-                  dir  (str base "/libs/com.example.git/clj-ui-framework/" sha)]
+                  dir  (str base "/libs/io.github.floscr/clj-ui-framework/" sha)]
               (when-not (.exists (java.io.File. dir))
                 (println "Fetching clj-ui-framework" sha "into gitlibs cache …")
                 (clojure "-P"))

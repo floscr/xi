@@ -1,16 +1,16 @@
 # Frontend Components (clj-ui-framework)
 
-The web client uses [clj-ui-framework](https://git.example.com/floscr/clj-ui-framework) for UI components — a cross-target (CLJ/CLJS/Squint) library of styled form controls, buttons, icons, badges, menus, and more. Always use its components instead of raw `[:input]`/`[:button]`/`[:select]` elements.
+The web client uses [clj-ui-framework](https://github.com/floscr/clj-ui-framework) for UI components — a cross-target (CLJ/CLJS/Squint) library of styled form controls, buttons, icons, badges, menus, and more. Always use its components instead of raw `[:input]`/`[:button]`/`[:select]` elements.
 
-Its `AGENTS.md` covers per-target pitfalls, theming/tokens and adding components; its generated `docs/components.md` (`bb list-components` / `bb list-icons`) is the always-current list of components, props and icons. For an exact prop shape, read the source in the pinned gitlib: `~/.gitlibs/libs/com.example.git/clj-ui-framework/<sha>/src/ui/`.
+Its `AGENTS.md` covers per-target pitfalls, theming/tokens and adding components; its generated `docs/components.md` (`bb list-components` / `bb list-icons`) is the always-current list of components, props and icons. For an exact prop shape, read the source in the pinned gitlib: `~/.gitlibs/libs/io.github.floscr/clj-ui-framework/<sha>/src/ui/`.
 
 ## Dependency
 
 Declared as a git dep in `deps.edn`:
 
 ```clojure
-com.example.git/clj-ui-framework
-{:git/url "https://git.example.com/floscr/clj-ui-framework.git"
+io.github.floscr/clj-ui-framework
+{:git/url "https://github.com/floscr/clj-ui-framework.git"
  :git/sha "<sha>"}
 ```
 

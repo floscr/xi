@@ -30,10 +30,10 @@
 (defn framework-dir []
   (or (System/getenv "CLJ_UI_FRAMEWORK")
       (let [sha  (-> (slurp "deps.edn") edn/read-string
-                     (get-in [:deps 'com.example.git/clj-ui-framework :git/sha]))
+                     (get-in [:deps 'io.github.floscr/clj-ui-framework :git/sha]))
             base (or (System/getenv "GITLIBS")
                      (str (System/getProperty "user.home") "/.gitlibs"))]
-        (str base "/libs/com.example.git/clj-ui-framework/" sha))))
+        (str base "/libs/io.github.floscr/clj-ui-framework/" sha))))
 
 (def framework (framework-dir))
 (def dial-css  (str framework "/src/ui/dial.css"))

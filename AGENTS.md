@@ -143,7 +143,7 @@ This repo uses the shared **clj-ui-framework** component library
 tokens, icons, and browser JS runtime), pinned as a git dependency
 in this project's `bb.edn`/`deps.edn`.
 
-- Remote (git dep source): <https://git.example.com/floscr/clj-ui-framework>
+- Remote (git dep source): <https://github.com/floscr/clj-ui-framework>
 
 Before doing UI work here, read the framework's `AGENTS.md` — it
 documents the available components and icons (full generated list in
