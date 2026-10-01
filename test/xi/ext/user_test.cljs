@@ -250,10 +250,47 @@
               :commands [{:name "go"
                           :handler (fn [_ _]
                                      {:effects [[:app/dispatch {:type :prompt/submit :text "hi"}]
-                                                [:app/dispatch {:type :agent/abort}]]})}]})
-        effs (:effects ((-> ext :commands first :handler) {} {}))]
-    (is (= [[:app/dispatch {:type :prompt/submit :text "hi"}]] effs)
-        "prompt/submit allowed from a command, agent/abort still dropped")))
+                                                [:app/dispatch {:type :subagent/spawn :task "t"}]
+                                                [:app/dispatch {:type :agent/abort}]]})}]
+              :tool-registry {"t" (fn [_ {:keys [dispatch!]}]
+                                    (dispatch! {:type :subagent/spawn :task "t"})
+                                    {:content []})}})
+        effs (:effects ((-> ext :commands first :handler) {} {}))
+        seen (atom [])]
+    (is (= [[:app/dispatch {:type :prompt/submit :text "hi"}]
+            [:app/dispatch {:type :subagent/spawn :task "t"}]]
+           effs)
+        "prompt/submit + subagent/spawn allowed from a command, agent/abort still dropped")
+    ((get-in ext [:tool-registry "t"]) {} {:dispatch! (fn [ev] (swap! seen conj (:type ev)))})
+    (is (= [] @seen) "a tool fn can't spawn a sub-agent (that would skip the confirmation)")))
+
+(deftest an-fx-started-by-a-command-stays-user-initiated
+  ;; A command can't do I/O itself, so it defers to an fx; that fx may then
+  ;; submit a prompt / spawn a sub-agent. The same fx started from a handler
+  ;; (reachable from a tool's own events) may not.
+  (let [id   :ext-f
+        seen (atom [])
+        ext  (guard/wrap
+              {:id id
+               :commands [{:name "go"
+                           :handler (fn [_ _] {:effects [[:ext.ext-f/run {:a 1}]]})}]
+               :handlers {:ext.ext-f/poke (fn [_ _] {:effects [[:ext.ext-f/run {:a 1 ::guard/user-initiated true}]]})}
+               :fx {:ext.ext-f/run (fn [{:keys [dispatch!]} payload]
+                                     (swap! seen conj payload)
+                                     (dispatch! {:type :prompt/submit :text "hi"})
+                                     (dispatch! {:type :subagent/spawn :task "t"}))}})
+        run   (get-in ext [:fx :ext.ext-f/run])
+        raw   (fn [ev] (swap! seen conj (:type ev)))
+        [cmd-fx] (:effects ((-> ext :commands first :handler) {} {}))
+        [h-fx]   (:effects ((get-in ext [:handlers :ext.ext-f/poke]) {} {}))]
+    (is (true? (::guard/user-initiated (second cmd-fx))) "a command's own-fx effect is marked")
+    (is (nil? (::guard/user-initiated (second h-fx))) "a handler can't forge the mark")
+    (run {:dispatch! raw} (second cmd-fx))
+    (is (= [{:a 1} :prompt/submit :subagent/spawn] @seen)
+        "the fx sees a clean payload and may submit / spawn")
+    (reset! seen [])
+    (run {:dispatch! raw} (second h-fx))
+    (is (= [{:a 1}] @seen) "started from a handler, the same fx is blocked")))
 
 (deftest fx-dispatch-is-filtered
   (let [id :ext-c

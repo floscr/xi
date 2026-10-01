@@ -1,7 +1,7 @@
 (ns xi.ext.subagent
   "Sub-agents as background processes.
 
-   The agent (or a task command like /review) spawns a sub-agent: a background
+   The agent (or a user-initiated command) spawns a sub-agent: a background
    agent turn that runs in its OWN fresh provider context (see xi.subagent), so
    its verbose work never enters the parent conversation. The parent LLM starts
    one and polls it — spawn_subagent → list_subagents / subagent_result →

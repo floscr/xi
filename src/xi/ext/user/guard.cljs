@@ -8,7 +8,8 @@
                   [:rooms * :ext id]; every other change is discarded.
      - dispatch:  events (handler effects, fx/tool dispatch!, keybindings) are
                   limited to the extension's own :ext.<id>/* plus a tiny
-                  allowlist (:ui/status, and :prompt/submit from commands/keys).
+                  allowlist (:ui/status, and :prompt/submit / :subagent/spawn
+                  from commands/keys).
      - effects:   only the extension's own :fx types and the filtered
                   :app/dispatch pass; anything else is dropped.
      - errors:    every user fn is wrapped so a throw is logged, not fatal.
@@ -28,8 +29,9 @@
 
 (def ^:private command-allowed
   "Additional events allowed from commands / keybindings (user-initiated), but
-   NOT from tool fns — so an agent tool can't drive the turn loop."
-  #{:prompt/submit})
+   NOT from tool fns — so an agent tool can't drive the turn loop or start a
+   sub-agent without the spawn confirmation."
+  #{:prompt/submit :subagent/spawn})
 
 (defn- own-event? [id ev-type]
   (= (some-> ev-type namespace) (str "ext." (name id))))
@@ -74,6 +76,21 @@
              :when (not= slice (get-in before [:rooms rid :ext id]))]
          [:app/dispatch {:type :user-ext/sync :room-id rid :ext-id id :state slice}])))
 
+(defn- mark-fx-effects
+  "Stamp `::user-initiated` into the payload of a command's own-fx effects, and
+   strip it from a handler's, so the fx (guard-fx) knows it was started by the
+   user and may dispatch the command-only events — e.g. gather a diff in an
+   effect, then :prompt/submit. Only command results pass through here with
+   `user-initiated?`; handlers (reachable from a tool's own events) never mark."
+  [own-fx user-initiated? effects]
+  (mapv (fn [[fx-type payload :as effect]]
+          (if (and (contains? own-fx fx-type) (map? payload))
+            [fx-type (if user-initiated?
+                       (assoc payload ::user-initiated true)
+                       (dissoc payload ::user-initiated))]
+            effect))
+        effects))
+
 (defn- restrict-result
   "Sanitize a handler/command result {:state :effects} against `before`."
   [id own-fx opts before result]
@@ -82,6 +99,7 @@
           effects (filterv #(or (allow-effect? id own-fx opts %)
                                 (do (log-blocked id (str "effect " (first %))) false))
                            (:effects result))
+          effects (mark-fx-effects own-fx (:user-initiated? opts) effects)
           effects (cond-> effects state (into (sync-effects id before state)))]
       (cond-> {}
         state         (assoc :state state)
@@ -109,8 +127,12 @@
 
 (defn- guard-fx [id token opts f]
   (fn [ctx payload]
-    (try (f (guard-ctx id token opts ctx) payload)
-         (catch :default e (log-blocked id (str "fx threw: " (.-message e))) nil))))
+    (let [opts    (if (and (map? payload) (::user-initiated payload))
+                    {:user-initiated? true}
+                    opts)
+          payload (cond-> payload (map? payload) (dissoc ::user-initiated))]
+      (try (f (guard-ctx id token opts ctx) payload)
+           (catch :default e (log-blocked id (str "fx threw: " (.-message e))) nil)))))
 
 (defn- guard-tool [id token f]
   (fn [args ctx]

@@ -293,16 +293,16 @@ Extensions can contribute routes, pages, navigation entries and taps to the
 browser client. Because the web client is a separate shadow-cljs `:browser`
 build, an extension with a web UI is split in two:
 
-- `src/xi/ext/github.cljs` — the node/server half (tools, server handlers,
-  roomless events), listed in `xi.config/server`.
-- `src/xi/ext/github/web.cljs` — the browser half (routes, pages, client
-  handlers), listed in `xi.config/web`. It may require
+- `src/xi/ext/canvas_review.cljs` — the node/server half (tools, server
+  handlers, state), listed in `xi.config/server`.
+- `src/xi/ext/canvas_review/web.cljs` — the browser half (routes, pages,
+  client handlers), listed in `xi.config/web`. It may require
   `xi.web.views` (shared building blocks: `nav-group`, `overflow-menu`,
   `spinner`, `shorten-path`, `diff-rows-view`) and `ui.*` components, but
   core web namespaces never require extension code.
 
-The two halves share an `:id` and talk over the same WS events
-(e.g. `:pr/web-list` → `:pr/web-list-result`).
+The two halves share an `:id` and talk over the same WS events (the room's
+mirrored `[:ext <id>]` state plus any request/reply pair they define).
 
 ### Keys
 
@@ -316,11 +316,11 @@ The two halves share an `:id` and talk over the same WS events
 - **`:nav-items`** — data-only entries `{:menu … :label … :icon … :event …}`
   rendered by core views; stored in app state at `:web/nav-items` during
   init. Menus: `:sidebar`, `:palette` (Cmd+K), `:home-topbar`, `:overflow`.
-  Overflow items may carry `:mode` (`:project`, `:pr-detail`, …) to show
-  only in a matching topbar context; the context's `:cwd`/`:room-id`/`:number`
-  are merged into the `:event` on click.
+  Overflow items may carry `:mode` (`:project`, `:room`, …) to show only in
+  a matching topbar context; the context's `:cwd`/`:room-id` are merged into
+  the `:event` on click.
 - **`:taps`** — `(fn [dispatch!] → (fn [event state]))` factories, added via
-  `add-tap!` at init (e.g. github's fire-pending-submit-after-`:room/joined`).
+  `add-tap!` at init (e.g. fire a stashed action once `:room/joined` arrives).
 
 ### Routing hooks
 
@@ -330,13 +330,13 @@ drill-down state from the route and emitting fetch effects:
 
 ```clojure
 (defn- on-navigate [st {:keys [page cwd]}]
-  (when (= page :pr-list)
-    {:state   (assoc st :web/pr-cwd cwd)
-     :effects (when (empty? (:web/pulls st))
-                [[:app/dispatch {:type :pr/web-list}]])}))
+  (when (= page :my-list)
+    {:state   (assoc st :web/my-cwd cwd)
+     :effects (when (empty? (:web/my-items st))
+                [[:app/dispatch {:type :my-ext/load :cwd cwd}]])}))
 ```
 
-Example: `xi.ext.github.web` (/pulls PR list/detail/diff pages).
+Example: `xi.ext.canvas-review.web` (the /canvas-review page).
 
 ## Writing a New Extension
 
@@ -377,12 +377,10 @@ namespace docstring is the authoritative description.
 |-----------|--------------|
 | resume | `/trim`, `/rollover`, `/lineage`. See [resume.md](resume.md). |
 | worktree | `/worktree` — move the room into a fresh git worktree (`merge`/`list`/`remove`). |
-| review | `/review [staged\|<ref>]` — code review prompt with per-language checklists. |
 | canvas-review | Experimental node-based review canvas (`canvas_review_*` tools); has a web half. |
 | diff | `/diff` viewer buffer (see [commands.md](commands.md)); has a web half. |
 | file-view | Opens files touched by write/edit into a `:file` buffer; has a web half. |
 | file-finder | Ctrl+P fuzzy file finder (TUI). |
-| github | Roomless PR browsing via `gh`; web half: /pulls list/detail/diff. |
 | projects | `/project` / Alt+P project path picker. |
 | skills | Project-marker system-prompt injection + `/skill list\|load` (`<input />` placeholders raise a `:form` dialog). |
 | snippets | Insertable prompt snippets for the web client. |

@@ -7,9 +7,10 @@
    xi.ext.user/web-bundles) gets its own hardened SCI context
    (xi.sandbox.sci): no js/ access, no aget/eval. Its requires resolve only
    against the bundle's own sources. The exposed host namespaces are pure
-   hiccup builders: a curated slice of xi.web.views and the clj-ui-framework
-   components that render plain hiccup (ui.command / ui.context-menu are left
-   out — they hand data to a JS runtime the sanitizer can't see)."
+   hiccup builders: a curated slice of xi.web.views, the pure diff parser +
+   markdown renderer behind them, and the clj-ui-framework components that
+   render plain hiccup (ui.command / ui.context-menu are left out — they hand
+   data to a JS runtime the sanitizer can't see)."
   (:require [sci.core :as sci]
             [ui.badge]
             [ui.button]
@@ -21,6 +22,8 @@
             [ui.theme-toggle]
             [ui.toolbar]
             [xi.core.state]
+            [xi.diff :as diff]
+            [xi.markdown.hiccup :as md]
             [xi.sandbox.sci :as sandbox]
             [xi.web.user-ext.guard :as guard]
             [xi.web.views :as views]))
@@ -31,6 +34,11 @@
                      'spinner        views/spinner
                      'shorten-path   views/shorten-path
                      'diff-rows-view views/diff-rows-view}
+   ;; unified diff text → rows for views/diff-rows-view
+   'xi.diff         {'parse-diff-text diff/parse-diff-text
+                     'diff-rows       diff/diff-rows}
+   ;; markdown string → hiccup (sanitized like any other page output)
+   'xi.markdown.hiccup {'render md/render}
    'xi.core.state   (sci/copy-ns xi.core.state   (sci/create-ns 'xi.core.state))
    'ui.badge        (sci/copy-ns ui.badge        (sci/create-ns 'ui.badge))
    'ui.button       (sci/copy-ns ui.button       (sci/create-ns 'ui.button))

@@ -133,7 +133,7 @@ No on-enter callback — chain a `:route/navigate` handler:
   `:event` on click.
 - Replicant: seq-rendered siblings need `:replicant/key`.
 
-Canonical example: `src/xi/ext/github/web.cljs`.
+Canonical example: `src/xi/ext/canvas_review/web.cljs`.
 
 ## 6. Verify
 
@@ -168,4 +168,4 @@ Canonical example: `src/xi/ext/github/web.cljs`.
 | Event hook | `src/xi/ext/clipboard_image.cljs` |
 | Conditional system prompt | `src/xi/ext/skills.cljs` |
 | Factory (env-configured) | `src/xi/ext/chrome_mcp.cljs` |
-| Two-build web extension | `src/xi/ext/github.cljs` + `github/web.cljs` |
+| Two-build web extension | `src/xi/ext/canvas_review.cljs` + `canvas_review/web.cljs` |

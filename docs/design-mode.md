@@ -115,8 +115,9 @@ are skipped and retried on the next tick.
 Each queued request carries the element's CSS selector, outerHTML (truncated),
 computed styles, bounding rect, page URL, and your message. The watcher
 screenshots the page, persists it to `~/.config/xi/uploads/` (readable by
-sub-agent file tools), and dispatches `:subagent/spawn` directly — the same
-no-confirmation path `/review` uses, since the request is user-initiated. The
+sub-agent file tools), and dispatches `:subagent/spawn` directly, with no
+confirmation, since the request is user-initiated (the same path a
+user-initiated extension command takes). The
 sub-agent's prompt (`build-prompt`) tells it to locate the element's *source*
 in the project, make the change there, and **not** drive the browser — the
 user is actively using it, and the dev server hot-reloads the page.

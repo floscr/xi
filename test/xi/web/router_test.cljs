@@ -1,12 +1,35 @@
 (ns xi.web.router-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.core.state :as state]
-            [xi.ext.github.web :as github-web]
             [xi.web.router :as router]))
 
 ;; Router functions take the composed extension route table — exercise them
-;; with the real extension routes (the /pulls routes live there now).
-(def ^:private routes (:routes github-web/extension))
+;; with a representative extension entry: a `/pulls` segment whose parse fn
+;; reads a number, a sub-segment and an encoded cwd, with path fns per page.
+(defn- parse-pulls [segs]
+  (let [seg1 (first segs)]
+    (if (and seg1 (re-matches #"\d+" seg1))
+      (if (= "diff" (second segs))
+        {:page :pr-diff
+         :number (js/parseInt seg1)
+         :cwd (js/decodeURIComponent (str/join "/" (drop 2 segs)))}
+        {:page :pr-detail
+         :number (js/parseInt seg1)
+         :cwd (js/decodeURIComponent (str/join "/" (rest segs)))})
+      (cond-> {:page :pr-list}
+        seg1 (assoc :cwd (js/decodeURIComponent (str/join "/" segs)))))))
+
+(def ^:private routes
+  {"pulls" {:parse parse-pulls
+            :path {:pr-list   (fn [{:keys [cwd]}]
+                                (if cwd
+                                  (str "/pulls/" (js/encodeURIComponent cwd))
+                                  "/pulls"))
+                   :pr-detail (fn [{:keys [number cwd]}]
+                                (str "/pulls/" number "/" (js/encodeURIComponent cwd)))
+                   :pr-diff   (fn [{:keys [number cwd]}]
+                                (str "/pulls/" number "/diff/" (js/encodeURIComponent cwd)))}}})
 
 ;; ── parse-path ───────────────────────────────────────────────────────────────
 

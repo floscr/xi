@@ -28,14 +28,12 @@
         [xi.ext.extensions :as extensions]
         [xi.ext.file-finder :as file-finder]
         [xi.ext.file-view.core :as file-view]
-        [xi.ext.github :as github]
         [xi.ext.mcp :as mcp]
         [xi.ext.plan-mode :as plan-mode]
         [xi.ext.process-manager :as process-manager]
         [xi.ext.projects :as projects]
         [xi.ext.resume :as resume]
         [xi.ext.rules :as rules]
-        [xi.ext.review :as review]
         [xi.ext.session-search :as session-search]
         [xi.ext.skills :as skills]
         [xi.ext.snippets :as snippets]
@@ -52,7 +50,6 @@
        [[xi.ext.canvas-review.web :as canvas-review-web]
         [xi.ext.diff.web :as diff-web]
         [xi.ext.file-view.web :as file-view-web]
-        [xi.ext.github.web :as github-web]
         [xi.ext.subagent.web :as subagent-web]])))
 
 (def tui
@@ -125,11 +122,9 @@
       session-search/extension
       commit/extension
       resume/create
-      review/extension
       canvas-review/extension
       chrome/create
       clj-surgeon/extension
-      github/extension
       ;; clj (sandboxed SCI scripting tool)
       clj-tool/extension
       treesitter/create
@@ -172,6 +167,5 @@
      "Browser-safe extension web halves, composed by xi.web.core."
      [diff-web/extension
       file-view-web/extension
-      github-web/extension
       canvas-review-web/extension
       subagent-web/extension]))

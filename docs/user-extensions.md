@@ -172,11 +172,13 @@ The loader wraps every user fn (`xi.ext.user.guard`):
   `[:rooms * :ext <id>]`. Any other change is discarded, including rule state,
   other extensions, room and agent state, and dialogs.
 - **Dispatch:** events are limited to the extension's own `:ext.<id>/*`
-  events plus `:ui/status`. `:prompt/submit` is also allowed from **commands
-  and keybindings** (user-initiated), but never from tool fns, so an agent
-  can't drive the turn loop through an extension tool. This covers
-  `dispatch!`, handler effects and keybinding events. Anything else is dropped
-  and logged.
+  events plus `:ui/status`. `:prompt/submit` and `:subagent/spawn` are also
+  allowed from **commands and keybindings** (user-initiated), and from an
+  `:fx` that a command's effect started (so a command can gather data in an
+  effect, then submit), but never from tool fns or handlers, so an agent
+  can't drive the turn loop or start an unconfirmed sub-agent through an
+  extension tool. This covers `dispatch!`, handler effects and keybinding
+  events. Anything else is dropped and logged.
 - **Effects:** only the extension's own `:fx` types and the filtered
   `[:app/dispatch …]` get through.
 - **Errors:** a throwing handler, fx or command is logged and ignored. A
@@ -316,8 +318,11 @@ How it loads:
   so clients without web halves never download it.
 - Halves are evaluated in the same hardened SCI setup as the server side.
   Available namespaces are `clojure.*`, `xi.core.state`, a few pure
-  `xi.web.views` helpers, and the `ui.*` components (without the ones that
-  touch `js/window`).
+  `xi.web.views` helpers (`nav-group`, `overflow-menu`, `spinner`,
+  `shorten-path`, `diff-rows-view`), `xi.diff` (`parse-diff-text`,
+  `diff-rows`, which feed `diff-rows-view`), `xi.markdown.hiccup/render`
+  (markdown string → hiccup), and the `ui.*` components (without the ones
+  that touch `js/window`).
 
 What a browser half can do (`xi.web.user-ext.guard`):
 
