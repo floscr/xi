@@ -14,3 +14,5 @@ resources/public/mkcert-rootCA.crt
 # ignore any stray env files in the repo as a backstop so keys can't be committed.
 .env
 *.env
+# Local planning notes (kept on disk, not published)
+tasks/
