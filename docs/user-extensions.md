@@ -255,6 +255,12 @@ What keeps it contained:
 - **Profile.** Each extension gets its own browser on a throwaway profile, so
   none of your Chrome logins or cookies are visible to it. CDP runs over a
   pipe, so no other process can attach to the browser.
+- **Identity.** Every tab presents itself as regular Google Chrome of the
+  same build (`xi.browser.chrome/ua-override`: the `HeadlessChrome` token
+  and an ARM platform are normalized in the user agent, and the client-hint
+  brands say Google Chrome). Some sites — amazon.de among them — answer a
+  bare headless Chromium with an error page while the identical page loads
+  in Chrome; the browser is meant to see what a normal browser sees.
 
 The browser starts on the first visit and closes after five idle minutes.
 Visits from one extension run one at a time. Set `XI_CHROME_BINARY` if Chrome

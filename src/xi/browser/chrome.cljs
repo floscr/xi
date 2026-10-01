@@ -51,6 +51,38 @@
 
 ;; ── CDP over the pipe ────────────────────────────────────────────────────────
 
+(defn ua-override
+  "The identity each tab presents, derived from the browser's own user agent:
+   the same build, minus the `HeadlessChrome` token and with Google Chrome
+   client-hint brands. Sites like amazon.de answer a bare headless Chromium
+   with an error page (\"Tut uns Leid!\") while the identical page loads
+   fine in regular Chrome — the browser is meant to see what a normal
+   browser sees, so it says what a normal browser says. nil when `ua`
+   isn't a Chrome UA (nothing to normalize)."
+  [ua]
+  (when-let [[_ version] (re-find #"(?:Headless)?Chrome/(\d+(?:\.\d+)*)" (str ua))]
+    (let [major (first (str/split version #"\."))
+          ua'   (-> (str ua)
+                    (str/replace "HeadlessChrome/" "Chrome/")
+                    (str/replace #"Linux (?:aarch64|armv7l)" "Linux x86_64"))]
+      {:userAgent ua'
+       :userAgentMetadata
+       {:brands          [{:brand "Google Chrome" :version major}
+                          {:brand "Chromium"      :version major}
+                          {:brand "Not_A Brand"   :version "24"}]
+        :fullVersionList [{:brand "Google Chrome" :version version}
+                          {:brand "Chromium"      :version version}
+                          {:brand "Not_A Brand"   :version "24.0.0.0"}]
+        :fullVersion     version
+        :platform        (cond (str/includes? ua' "Mac OS X") "macOS"
+                               (str/includes? ua' "Windows")  "Windows"
+                               :else                           "Linux")
+        :platformVersion ""
+        :architecture    "x86"
+        :bitness         "64"
+        :model           ""
+        :mobile          false}})))
+
 (defn- connect
   "Wire CDP onto a Chrome spawned with --remote-debugging-pipe: messages are
    NUL-terminated JSON, written to fd 3 and read from fd 4.
@@ -124,7 +156,10 @@
                {:keys [send!]} (connect proc (fn [] (cleanup!) (on-dead)))]
            (-> (js/Promise.race #js [(send! "Browser.getVersion" nil nil) spawn-error])
                (with-timeout LAUNCH_TIMEOUT_MS "Chrome did not start in time")
-               (.then (fn [_] {:send! send! :cleanup! cleanup!}))
+               (.then (fn [^js v] {:send!    send!
+                                   :cleanup! cleanup!
+                                   ;; applied to every tab (run-visit)
+                                   :ua       (ua-override (.-userAgent v))}))
                (.catch (fn [e]
                          (cleanup!)
                          (throw (js/Error. (str (.-message e)
@@ -211,7 +246,7 @@
                                   #(poll-ready send! session wait deadline)))))))
 
 (defn- run-visit
-  [{:keys [send!]} url {:keys [wait timeout-ms] eval-js :eval}]
+  [{:keys [send! ua]} url {:keys [wait timeout-ms] eval-js :eval}]
   (-> (send! "Target.createTarget" {:url "about:blank"} nil)
       (.then
        (fn [^js t]
@@ -221,7 +256,10 @@
                (.then
                 (fn [^js a]
                   (let [session (.-sessionId a)]
-                    (-> (send! "Page.navigate" {:url url} session)
+                    (-> (if ua
+                          (send! "Emulation.setUserAgentOverride" ua session)
+                          (js/Promise.resolve nil))
+                        (.then (fn [_] (send! "Page.navigate" {:url url} session)))
                         (.then (fn [^js nav]
                                  (when-let [err (not-empty (.-errorText nav))]
                                    (throw (js/Error. (str "could not load " url ": " err
