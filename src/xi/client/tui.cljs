@@ -412,11 +412,31 @@
 
 ;; ── Dialogs (room :ui :dialogs → focused bottom-panel component) ──────────────
 
+(defn- confirm-diff-scroll
+  "New top line of a confirm dialog's expanded diff after key `data`, or nil
+   when it isn't a scroll key. `h` is the visible window height; the render
+   clamps the result to the diff's length."
+  [data top h]
+  (case data
+    ("j" "\u001b[B")  (inc top)
+    ("k" "\u001b[A")  (dec top)
+    (" " "\u001b[6~") (+ top h)
+    ("b" "\u001b[5~") (- top h)
+    "\u0004"          (+ top (quot h 2))
+    "\u0015"          (- top (quot h 2))
+    "g"               0
+    "G"               js/Number.MAX_SAFE_INTEGER
+    nil))
+
 (defn- build-confirm-dialog
   "A y/n confirm dialog rendered as a bordered box that sits above the prompt
    line. Enter = yes, Esc = no. The message word-wraps to the terminal width so
    long guarded commands no longer overflow and corrupt the layout, and the
-   editor stays visible below the dialog for context."
+   editor stays visible below the dialog for context.
+
+   A dialog carrying a :diff shows a capped preview; d expands it in place
+   into a scrollable view of the whole change (j/k, space/b, ^d/^u, g/G) and
+   d/q/Esc collapse it again. y/n and Enter still answer while expanded."
   [{:keys [message prompt diff] :as dlg} respond! editor]
   (let [text    (or message prompt "Confirm?")
         ;; A guarded write/edit's change, shown above the question so the
@@ -424,33 +444,71 @@
         ;; to keep the diff's columns intact, and capped so a big write
         ;; can't push the question off-screen.
         diff-lines (when diff (str/split-lines (view/diff-preview-text diff 30)))
+        full-lines (when diff (delay (vec (str/split-lines
+                                           (view/diff-preview-text diff ##Inf)))))
+        ;; :height is the expanded window's row count, cached by render so
+        ;; the paging keys know how far to move.
+        !view   (atom {:expanded? false :top 0 :height 10})
         options (dialog/confirm-options dlg)
         by-key  (into {} (mapcat (fn [{:keys [key value]}]
                                    [[key value] [(str/upper-case key) value]]))
                       options)
+        option-hints (mapv (fn [{:keys [key label]}]
+                             (str (ansi/fg :accent (str "[" key "]")) " " label))
+                           options)
         hint    (str "  "
-                     (str/join "   " (map (fn [{:keys [key label]}]
-                                            (str (ansi/fg :accent (str "[" key "]")) " " label))
-                                          options))
-                     "   " (ansi/fg :dim "(Enter=yes, Esc=no)"))]
+                     (str/join "   " (cond-> option-hints
+                                       diff (conj (str (ansi/fg :accent "[d]") " Full diff"))))
+                     "   " (ansi/fg :dim "(Enter=yes, Esc=no)"))
+        full-hint (str "  " (str/join "   " option-hints)
+                       "   " (ansi/fg :dim "(j/k scroll, space/b page, g/G ends, d/q/Esc back)"))
+        clip    (fn [width line]
+                  (str (ansi/truncate-to-width (str "  " line) width) ansi/reset))
+        set-view! (fn [f & args]
+                    (apply swap! !view f args)
+                    (tui/request-panel-render!))]
     {:type :dialog
      :render (fn [width]
                (let [wrapped (ansi/wrap-text text (max 1 (- width 2)))
-                     box (into [(ansi/fg :border (apply str (repeat width "─")))]
-                               (concat
-                                (map #(str (ansi/truncate-to-width (str "  " %) width)
-                                           ansi/reset)
-                                     diff-lines)
-                                (when diff-lines [""])
-                                (map #(str "  " %) wrapped)
-                                [hint ""]))]
-                 (into box (when editor ((:render editor) width)))))
+                     border  (ansi/fg :border (apply str (repeat width "─")))]
+                 (if (:expanded? @!view)
+                   ;; Fill the terminal, leaving room for the question, the
+                   ;; hint, the status line and a few chat lines.
+                   (let [lines @full-lines
+                         n     (count lines)
+                         h     (max 3 (- (term/rows) (count wrapped) 10))
+                         top   (-> (:top @!view) (min (- n h)) (max 0))
+                         end   (min n (+ top h))]
+                     (swap! !view assoc :top top :height h)
+                     (-> [border]
+                         (into (map #(clip width %)) (subvec lines top end))
+                         (conj (str "  " (ansi/fg :dim (str "lines " (inc top) "–" end " of " n)))
+                               "")
+                         (into (map #(str "  " %)) wrapped)
+                         (conj full-hint "")))
+                   (let [box (into [border]
+                                   (concat
+                                    (map #(clip width %) diff-lines)
+                                    (when diff-lines [""])
+                                    (map #(str "  " %) wrapped)
+                                    [hint ""]))]
+                     (into box (when editor ((:render editor) width)))))))
      :handle-input (fn [data]
-                     (cond
-                       (contains? by-key data) (respond! (get by-key data))
-                       (enter? data)  (respond! true)
-                       (escape? data) (respond! false)
-                       :else nil))}))
+                     (let [{:keys [expanded? top height]} @!view
+                           scroll (when expanded? (confirm-diff-scroll data top height))]
+                       (cond
+                         (and diff (#{"d" "D"} data))
+                         (set-view! assoc :expanded? (not expanded?) :top 0)
+
+                         (and expanded? (or (= "q" data) (escape? data)))
+                         (set-view! assoc :expanded? false)
+
+                         scroll (set-view! assoc :top scroll)
+
+                         (contains? by-key data) (respond! (get by-key data))
+                         (enter? data)  (respond! true)
+                         (escape? data) (respond! false)
+                         :else nil)))}))
 
 (defn- build-cwd-select-dialog
   "Missing-working-directory recovery dialog. Renders the concrete (string)
