@@ -55,14 +55,20 @@ Everything that makes the agent what it is lives in the profile under
 
 ```clojure
 ;; ~/.config/xi/config.edn
-{:agents {"root"  {:system-prompt-file "agents/root.md"
-                   :model "claude-sonnet-4-6"
-                   :extensions ["freesearch.cljs" "web.cljs"]
-                   :tools ["web_search" "fetch"]}
-          "coach" {:system-prompt-file "personal-agent/coach/prompt.md"
-                   :extensions ["freesearch.cljs"]
-                   :tools ["web_search"]}}}
+{:type    :xi/config
+ :version 1
+ :agents  {"root"  {:system-prompt-file "agents/root.md"
+                    :model "claude-sonnet-4-6"
+                    :extensions ["freesearch.cljs" "web.cljs"]
+                    :tools ["web_search" "fetch"]}
+           "coach" {:system-prompt-file "personal-agent/coach/prompt.md"
+                    :extensions ["freesearch.cljs"]
+                    :tools ["web_search"]}}}
 ```
+
+The file is typed and version-locked like `rules.edn`; an invalid file fails
+closed (every profile loads with no tools) — see
+[config.md](config.md#agent-profiles-configxiconfigedn).
 
 | Key | Meaning |
 | --- | --- |

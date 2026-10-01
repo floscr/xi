@@ -48,6 +48,22 @@
       (is (nil? (:extensions p)))
       (is (some #(str/includes? % ":extensions") (:errors p))))))
 
+(deftest parse-config-is-typed-and-version-locked
+  (let [err (fn [data] (:error (profile/parse-config data)))]
+    (is (re-find #"not valid EDN" (err nil)))
+    (is (re-find #"must be a map" (err [1 2])))
+    (is (re-find #"missing required :version" (err {:type :xi/config :agents {}})))
+    (is (re-find #"unsupported :version 2" (err {:type :xi/config :version 2})))
+    (is (re-find #"missing required :type" (err {:version 1 :agents {}})))
+    (is (re-find #"wrong :type :xi/rules" (err {:type :xi/rules :version 1})))
+    (is (re-find #"unknown key\(s\) :agent" (err {:type :xi/config :version 1 :agent {}})))
+    (is (re-find #":agents must be a map" (err {:type :xi/config :version 1 :agents []}))))
+  (testing "a valid file parses; :agents {} unless set"
+    (is (= {:agents {}} (profile/parse-config {:type :xi/config :version 1})))
+    (is (= {:agents {"root" {:tools ["fetch"]}}}
+           (profile/parse-config {:type :xi/config :version 1
+                                  :agents {"root" {:tools ["fetch"]}}})))))
+
 (deftest parse-model
   (is (= "claude-haiku-4-5-20251001"
          (:model (profile/parse "a" {:model "claude-haiku-4-5-20251001"}))))

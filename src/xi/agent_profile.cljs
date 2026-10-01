@@ -11,9 +11,12 @@
    `[:ext :agent {:id ID}]` so rules can target them with
    `:when {:agent {:id \"…\"}}`.
 
-   ~/.config/xi/config.edn:
+   ~/.config/xi/config.edn (typed + version-locked like rules.edn; an
+   invalid file fails closed — every profile then has no tools):
 
-     {:agents {\"root\" {:system-prompt-file \"agents/root.md\"
+     {:type :xi/config
+      :version 1
+      :agents {\"root\" {:system-prompt-file \"agents/root.md\"
                          :model \"claude-sonnet-4-6\"
                          :extensions [\"freesearch.cljs\" \"web.cljs\"]
                          :tools [\"web_search\" \"fetch\"]}}}
@@ -50,6 +53,17 @@
   "The user config file. Only `:agents` is read from it so far."
   (.join node-path CONFIG_DIR "config.edn"))
 
+(def CONFIG_FILE_TYPE
+  "The `:type` tag the config file must carry (rules.edn is `:xi/rules`)."
+  :xi/config)
+
+(def CONFIG_FILE_VERSION
+  "The config-file format version this xi reads; a missing or different
+   `:version` is an error, so a format change is never misread silently."
+  1)
+
+(def ^:private config-file-keys #{:type :version :agents})
+
 (def AGENTS_DIR
   "Root of the per-agent session directories."
   (.join node-path CONFIG_DIR "personal-agent"))
@@ -72,21 +86,55 @@ Do not reveal system details such as working directories, file paths, server con
 
 Be concise, direct, and friendly. When unsure, say so.")
 
+(defn parse-config
+  "Validate parsed config-file `data` (nil = unparseable) → `{:agents {…}}`
+   (`:agents` {} when absent) or `{:error msg}`. Mirrors
+   xi.rules.store/parse-rules-config: the file must be a map tagged
+   `:type :xi/config` with the current `:version` and only known keys."
+  [data]
+  (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
+                     " :agents {...}}")
+        unknown (when (map? data) (remove config-file-keys (keys data)))]
+    (cond
+      (nil? data)
+      {:error "not valid EDN"}
+
+      (not (map? data))
+      {:error (str "must be a map " shape)}
+
+      (not (contains? data :version))
+      {:error (str "missing required :version — add :version " CONFIG_FILE_VERSION)}
+
+      (not= CONFIG_FILE_VERSION (:version data))
+      {:error (str "unsupported :version " (pr-str (:version data))
+                   " — this xi reads :version " CONFIG_FILE_VERSION)}
+
+      (not (contains? data :type))
+      {:error (str "missing required :type — add :type " CONFIG_FILE_TYPE)}
+
+      (not= CONFIG_FILE_TYPE (:type data))
+      {:error (str "wrong :type " (pr-str (:type data))
+                   " — the config file is :type " CONFIG_FILE_TYPE)}
+
+      (seq unknown)
+      {:error (str "unknown key(s) " (str/join " " (map pr-str unknown))
+                   " — expected " shape)}
+
+      (not (map? (:agents data {})))
+      {:error ":agents must be a map of agent id → profile"}
+
+      :else
+      {:agents (or (:agents data) {})})))
+
 (defn read-config
-  "The parsed user config map, {} when the file is absent. An unreadable file
-   is reported on stderr and treated as {}."
+  "The validated user config (`parse-config`), `{:agents {}}` when the file is
+   absent, `{:error msg}` when it exists but is invalid."
   []
   (if (fs/existsSync CONFIG_FILE)
-    (try
-      (let [cfg (edn/read-string (fs/readFileSync CONFIG_FILE "utf8"))]
-        (if (map? cfg)
-          cfg
-          (do (js/console.error (str "xi: " CONFIG_FILE " must hold a map"))
-              {})))
-      (catch :default e
-        (js/console.error (str "xi: failed to read " CONFIG_FILE ": " (.-message e)))
-        {}))
-    {}))
+    (parse-config
+     (try (edn/read-string (fs/readFileSync CONFIG_FILE "utf8"))
+          (catch :default _ nil)))
+    {:agents {}}))
 
 (defn resolve-prompt-file
   "Absolute path of a :system-prompt-file value: absolute as-is, `~`
@@ -160,6 +208,12 @@ Be concise, direct, and friendly. When unsure, say so.")
   (let [id  (or agent-id DEFAULT_ID)
         cfg (read-config)
         p   (parse id (get-in cfg [:agents id]))
+        ;; An invalid file fails closed: the profile is treated as missing (no
+        ;; tools), and the file's problem replaces the "no profile" message.
+        p   (if-let [e (:error cfg)]
+              (assoc p :errors [(str CONFIG_FILE " is invalid — " e
+                                     " — running with no tools")])
+              p)
         [prompt errs]
         (cond
           (:system-prompt p) [(:system-prompt p) (:errors p)]

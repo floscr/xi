@@ -13,9 +13,9 @@
                               else xi.rules.defaults/default-rules
 
    Config over runtime, so a configured rule overrides a careless 'always
-   allow'. Config files are versioned maps `{:version 1 :rules [...]
-   :defaults [...]}`; an invalid file fails closed (a catch-all deny in its
-   tier). They are cached by mtime and reloaded on change (or via
+   allow'. Config files are typed, versioned maps `{:type :xi/rules
+   :version 1 :rules [...] :defaults [...]}`; an invalid file fails closed (a
+   catch-all deny in its tier). They are cached by mtime and reloaded on change (or via
    `/rules reload`)."
   (:require [clojure.string :as str]
             [cljs.tools.reader :as tr]
@@ -88,7 +88,13 @@
    change (e.g. renamed default aliases) can never be misread silently."
   1)
 
-(def ^:private rules-file-keys #{:version :rules :defaults :extensions})
+(def rules-file-type
+  "The `:type` tag every xi rules file must carry, so the file identifies
+   itself (and can't be confused with another tool's rules.edn or with xi's
+   own config.edn, `:xi/config`)."
+  :xi/rules)
+
+(def ^:private rules-file-keys #{:type :version :rules :defaults :extensions})
 
 (defn parse-rules-config
   "Validate parsed rules-file `data` (nil = unparseable). Returns
@@ -97,7 +103,8 @@
    written, nil when absent — or `{:error msg}`."
   [data]
   (let [v       rules-file-version
-        shape   (str "{:version " v " :rules [...] :defaults [...]}")
+        shape   (str "{:type " rules-file-type " :version " v
+                     " :rules [...] :defaults [...]}")
         unknown (when (map? data) (remove rules-file-keys (keys data)))]
     (cond
       (nil? data)
@@ -112,6 +119,13 @@
       (not= v (:version data))
       {:error (str "unsupported :version " (pr-str (:version data))
                    " — this xi reads :version " v)}
+
+      (not (contains? data :type))
+      {:error (str "missing required :type — add :type " rules-file-type)}
+
+      (not= rules-file-type (:type data))
+      {:error (str "wrong :type " (pr-str (:type data))
+                   " — a rules file is :type " rules-file-type)}
 
       (seq unknown)
       {:error (str "unknown key(s) " (str/join " " (map pr-str unknown))
@@ -173,8 +187,8 @@
             :message (str "Blocked: rules file " file " is invalid — " error
                           ". Every tool call is denied until it is fixed. "
                           "Agents can't edit rules files: ask the user to fix "
-                          "it (expected {:version " rules-file-version
-                          " :rules [...]}).")}})
+                          "it (expected {:type " rules-file-type " :version "
+                          rules-file-version " :rules [...]}).")}})
 
 ;; ── Hard-coded immutable rules ──────────────────────────────────────────────
 
@@ -554,14 +568,15 @@
 ;; ── Config file writing (repo / global scopes) ───────────────────────────────
 
 (defn- write-rules-file!
-  "Persist raw rules-file `data` ({:version :rules :defaults :extensions}) to `file` as
-   pretty EDN (one rule per line), creating parent dirs. Regex literals
-   round-trip via pr-str/read-string."
+  "Persist raw rules-file `data` ({:type :version :rules :defaults :extensions})
+   to `file` as pretty EDN (one rule per line), creating parent dirs. Regex
+   literals round-trip via pr-str/read-string."
   [file {:keys [version rules] :as data}]
   (fs/mkdirSync (path/dirname file) #js {:recursive true})
   (fs/writeFileSync
    file
-   (str "{:version " (pr-str version) "\n"
+   (str "{:type " (pr-str rules-file-type) "\n"
+        " :version " (pr-str version) "\n"
         (when (contains? data :defaults)
           (str " :defaults " (pr-str (:defaults data)) "\n"))
         (when (contains? data :extensions)
@@ -581,7 +596,7 @@
 (defn append-rule-file!
   "Prepend `rule` (with any :scope stripped) to the config file for `scope`
    (:repo | :global), so the newest rule wins among file rules; a missing file
-   is created at the current `:version`. The file's `:defaults` are kept as
+   is created at the current `:type` + `:version`. The file's `:defaults` are kept as
    written (aliases, unexpanded). Returns `{:file path}` on success,
    `{:error msg}` when the existing file is invalid (left untouched), nil when
    the scope has no file. Clears the mtime cache so the next check reloads."
@@ -589,7 +604,7 @@
   (when-let [file (scope-file scope cwd)]
     (let [data  (if (fs/existsSync file)
                   (read-rules-data file)
-                  {:version rules-file-version :rules []})
+                  {:type rules-file-type :version rules-file-version :rules []})
           error (:error (parse-rules-config data))]
       (if error
         {:error (str file " is invalid — " error)}

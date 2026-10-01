@@ -175,11 +175,12 @@ same match — or drop its bundle from the default tier via `:defaults` (below).
 
 ## Rules files
 
-A rules file is a map with a **required** `:version`:
+A rules file is a map with a **required** `:type` and `:version`:
 
 ```clojure
 ;; ~/.config/xi/rules.edn
-{:version 1
+{:type    :xi/rules
+ :version 1
  :rules   [{:match {:tool :read :dir "~/code/projects"} :action {:type :allow}}
            {:match {:tool :write :path #"\.sh$" :repo "config/dotfiles"}
             :action {:type :allow}}]}
@@ -187,12 +188,14 @@ A rules file is a map with a **required** `:version`:
 
 | Key         | Meaning                                                                 |
 |-------------|-------------------------------------------------------------------------|
+| `:type`     | Required, always `:xi/rules`. Identifies the file as xi's rules file (the user config file is `:xi/config`, see [config.md](config.md#agent-profiles-configxiconfigedn)); another tool's `rules.edn` can't be misread as policy. |
 | `:version`  | Required. The rules-file format version — currently `1`. It version-locks the file: when the format (or a default-bundle alias) changes, the version bumps and an old file errors instead of being silently misread. |
 | `:rules`    | Vector of rule maps, at this file's config precedence (repo / global). |
 | `:defaults` | Optional. Replaces the default tier — see [below](#choosing-defaults-defaults). |
 | `:extensions` | Optional. Vector of file names in `~/.config/xi/extensions/` that xi may load as [user extensions](user-extensions.md#enabling). Read from the global file only; a repo file's list is ignored. |
 
-**An invalid file fails closed.** A missing or unsupported `:version`, a bare
+**An invalid file fails closed.** A missing or wrong `:type`, a missing or
+unsupported `:version`, a bare
 rule vector (the pre-version format), an unknown top-level key, an alias under
 `:rules`, an unknown `:defaults` alias, or unparseable EDN makes the whole
 file invalid. It is replaced by a single catch-all **deny** in its tier whose
@@ -209,7 +212,8 @@ replaces the whole default tier — list the bundles you want, in precedence
 order, optionally mixed with inline rule maps:
 
 ```clojure
-{:version  1
+{:type     :xi/rules
+ :version  1
  :rules    [ … ]
  :defaults [:xi.rules.defaults/plan-mode
             :xi.rules.defaults/write-gates

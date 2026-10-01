@@ -147,16 +147,27 @@ the compile-time `config.cljc` — they are written and read at runtime.
 
 ### Agent profiles (`~/.config/xi/config.edn`)
 
-The user config file. An EDN map; the only key read so far is `:agents`, a
-map of agent id → profile, consumed by `xi --agent <id>`,
-`xi server --agent <id>` and `xi prompt --agent <id>` (`xi.agent-profile`):
+The user config file. An EDN map tagged `:type :xi/config` with a required
+`:version` (currently `1`), exactly like `rules.edn` (`:xi/rules`); the only
+other key read so far is `:agents`, a map of agent id → profile, consumed by
+`xi --agent <id>`, `xi server --agent <id>` and `xi prompt --agent <id>`
+(`xi.agent-profile`):
 
 ```clojure
-{:agents {"root" {:system-prompt-file "agents/root.md"
-                  :model "claude-sonnet-4-6"
-                  :extensions ["freesearch.cljs" "web.cljs"]
-                  :tools ["web_search" "fetch"]}}}
+{:type    :xi/config
+ :version 1
+ :agents  {"root" {:system-prompt-file "agents/root.md"
+                   :model "claude-sonnet-4-6"
+                   :extensions ["freesearch.cljs" "web.cljs"]
+                   :tools ["web_search" "fetch"]}}}
 ```
+
+**An invalid file fails closed**: a missing or wrong `:type`, a missing or
+unsupported `:version`, an unknown top-level key or unparseable EDN makes
+every profile load as missing — no tools — with the problem reported on
+stderr. A missing file is not an error (profiles are simply absent).
+
+Profile keys:
 
 | Key | Default | Description |
 | --- | --- | --- |

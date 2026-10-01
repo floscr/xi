@@ -337,20 +337,22 @@
       (is (re-find #"missing required :version" (err {:rules []})))
       (is (re-find #"unsupported :version 2" (err {:version 2 :rules []})))
       (is (re-find #"unsupported :version \"1\"" (err {:version "1" :rules []})))
-      (is (re-find #"unknown key\(s\) :default" (err {:version 1 :default []})))
-      (is (re-find #":rules must be a vector" (err {:version 1 :rules {:a 1}})))
+      (is (re-find #"missing required :type" (err {:version 1 :rules []})))
+      (is (re-find #"wrong :type :xi/config" (err {:type :xi/config :version 1 :rules []})))
+      (is (re-find #"unknown key\(s\) :default" (err {:type :xi/rules :version 1 :default []})))
+      (is (re-find #":rules must be a vector" (err {:type :xi/rules :version 1 :rules {:a 1}})))
       (is (re-find #"aliases under :defaults"
-                   (err {:version 1 :rules [:xi.rules.defaults/plan-mode]})))
+                   (err {:type :xi/rules :version 1 :rules [:xi.rules.defaults/plan-mode]})))
       (is (re-find #"unknown default-rules alias"
-                   (err {:version 1 :defaults [:xi.rules.defaults/nope]}))))
+                   (err {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/nope]}))))
     (testing "a valid file parses; :defaults nil unless set"
-      (is (= {:rules [] :defaults nil} (store/parse-rules-config {:version 1})))
+      (is (= {:rules [] :defaults nil} (store/parse-rules-config {:type :xi/rules :version 1})))
       (is (= {:rules [{:match {:tool :read}}] :defaults nil}
-             (store/parse-rules-config {:version 1 :rules [{:match {:tool :read}}]})))
-      (is (= [] (:defaults (store/parse-rules-config {:version 1 :defaults []}))))
+             (store/parse-rules-config {:type :xi/rules :version 1 :rules [{:match {:tool :read}}]})))
+      (is (= [] (:defaults (store/parse-rules-config {:type :xi/rules :version 1 :defaults []}))))
       (is (= (defaults/expand [:xi.rules.defaults/plan-mode])
              (:defaults (store/parse-rules-config
-                         {:version 1 :defaults [:xi.rules.defaults/plan-mode]})))))))
+                         {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/plan-mode]})))))))
 
 (deftest extensions-are-enabled-by-the-global-file-only
   (let [dir  (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-rules-ext-"))
@@ -363,14 +365,14 @@
                (try (f) (finally (store/set-global-file! prev) (store/clear-cache!))))]
     (testing "no file, no key, or an invalid file → nothing is enabled"
       (with nil #(is (= #{} (store/enabled-extensions))))
-      (with "{:version 1 :rules []}" #(is (= #{} (store/enabled-extensions))))
-      (with "{:version 1 :extensions [:kb]}" #(is (= #{} (store/enabled-extensions)))))
+      (with "{:type :xi/rules :version 1 :rules []}" #(is (= #{} (store/enabled-extensions))))
+      (with "{:type :xi/rules :version 1 :extensions [:kb]}" #(is (= #{} (store/enabled-extensions)))))
     (testing "file names only"
       (is (re-find #":extensions must be a vector of extension file names"
-                   (:error (store/parse-rules-config {:version 1 :extensions [:kb]}))))
+                   (:error (store/parse-rules-config {:type :xi/rules :version 1 :extensions [:kb]}))))
       (is (re-find #":extensions must be"
-                   (:error (store/parse-rules-config {:version 1 :extensions "kb.cljs"})))))
-    (with "{:version 1 :extensions [\"kb.cljs\"] :rules []}"
+                   (:error (store/parse-rules-config {:type :xi/rules :version 1 :extensions "kb.cljs"})))))
+    (with "{:type :xi/rules :version 1 :extensions [\"kb.cljs\"] :rules []}"
       (fn []
         (is (= #{"kb.cljs"} (store/enabled-extensions)))
         (testing "a saved rule keeps the list"
@@ -395,7 +397,7 @@
 
 (deftest repo-defaults-replace-the-default-tier
   (with-repo-rules
-    "{:version 1 :defaults [:xi.rules.defaults/mcp-confirm]}"
+    "{:type :xi/rules :version 1 :defaults [:xi.rules.defaults/mcp-confirm]}"
     (fn [repo _]
       (is (= (defaults/expand [:xi.rules.defaults/mcp-confirm])
              (store/default-rules repo)))
@@ -404,7 +406,7 @@
         (is (not-any? #(= (:match %) {:tool :sh}) rs)
             "the dropped clj-sh bundle is gone"))))
   (with-repo-rules
-    "{:version 1 :rules []}"
+    "{:type :xi/rules :version 1 :rules []}"
     (fn [repo _]
       (testing "no :defaults in the repo file → falls through (global / built-in)"
         (is (seq (store/default-rules repo)))))))
@@ -433,13 +435,14 @@
                                                   :action {:type :allow}
                                                   :scope :session})))
       (let [data (store/read-rule-edn (str (fs/readFileSync file "utf8")))]
+        (is (= :xi/rules (:type data)))
         (is (= 1 (:version data)))
         (is (= 1 (count (:rules data))))
         (is (not (contains? (first (:rules data)) :scope)))
         (is (= "\\.md$" (.-source (get-in data [:rules 0 :match :path]))))
         (is (not (contains? data :defaults))))))
   (with-repo-rules
-    "{:version 1 :defaults [:xi.rules.defaults/plan-mode] :rules [{:match {:tool :read} :action {:type :allow}}]}"
+    "{:type :xi/rules :version 1 :defaults [:xi.rules.defaults/plan-mode] :rules [{:match {:tool :read} :action {:type :allow}}]}"
     (fn [repo file]
       (store/append-rule-file! :repo repo {:match {:tool :ls} :action {:type :allow}})
       (let [data (store/read-rule-edn (str (fs/readFileSync file "utf8")))]
@@ -456,10 +459,10 @@
         not-rules  (node-path/join dir "settings.edn")
         _          (doseq [d ["xi" "other" "legacy"]]
                      (fs/mkdirSync (node-path/join dir d)))
-        _          (fs/writeFileSync xi-file "{:version 1 :rules [{:match {:tool :read :path #\"x\"} :action {:type :allow}}]}")
+        _          (fs/writeFileSync xi-file "{:type :xi/rules :version 1 :rules [{:match {:tool :read :path #\"x\"} :action {:type :allow}}]}")
         _          (fs/writeFileSync other-file "{:lint {:level :warn}}")
         _          (fs/writeFileSync legacy "[{:match {:tool :read} :action {:type :allow}}]")
-        _          (fs/writeFileSync not-rules "{:version 1}")
+        _          (fs/writeFileSync not-rules "{:type :xi/rules :version 1}")
         change?    (fn [tool args]
                      (store/xi-rules-file-change?
                       (store/decision-request {:name tool :arguments args} {:cwd dir})))]
@@ -472,9 +475,9 @@
         (is (not (change? "write" {:path not-rules :content "{:version 2}"})))
         (is (not (change? "edit" {:path legacy :edits [{:oldText ":read" :newText ":ls"}]}))))
       (testing "introducing :version (creating or migrating an xi file) counts"
-        (is (change? "edit" {:path legacy :edits [{:oldText "[" :newText "{:version 1 :rules ["}]}))
+        (is (change? "edit" {:path legacy :edits [{:oldText "[" :newText "{:type :xi/rules :version 1 :rules ["}]}))
         (is (change? "write" {:path (node-path/join dir "new" "rules.edn")
-                              :content "{:version 1 :rules []}"})))
+                              :content "{:type :xi/rules :version 1 :rules []}"})))
       (testing "shell / clj writes naming a versioned rules.edn count; reads don't"
         (is (change? "bash" {:command (str "sed -i s/read/ls/ " xi-file)}))
         (is (change? "bash" {:command "cp /tmp/x xi/rules.edn"}) "relative to cwd")

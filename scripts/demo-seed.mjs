@@ -283,7 +283,7 @@ fs.cpSync(
 // Only files the global rules file lists under :extensions are loaded.
 fs.writeFileSync(
   path.join(DEMO_HOME, ".config", "xi", "rules.edn"),
-  '{:version 1\n :extensions ["notes.cljs"]\n :rules []}\n',
+  '{:type :xi/rules\n :version 1\n :extensions ["notes.cljs"]\n :rules []}\n',
 );
 
 // Stash the key so `bb demo` / docs can echo it.

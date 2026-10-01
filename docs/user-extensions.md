@@ -56,7 +56,8 @@ A file in the directory is loaded only when the **global** rules file names it:
 
 ```clojure
 ;; ~/.config/xi/rules.edn
-{:version 1
+{:type :xi/rules
+ :version 1
  :extensions ["notes.cljs"]
  :rules []}
 ```
