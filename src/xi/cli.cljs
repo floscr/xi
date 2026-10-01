@@ -193,12 +193,13 @@ FLAGS
   --no-auto-join             Standalone: stay local, don't join a running server.
   --join, --create           Standalone: redirect onto a running server instead.
   --headless                 server: run without a local TUI (clients attach remotely).
-  --agent ID                 server/prompt: run as the named agent from
-                             ~/.config/xi/config.edn [:agents ID] — its :tools
-                             allowlist and system prompt replace the coding
-                             tools + AGENTS.md; sessions live in
+  --agent ID                 Run as the named agent from ~/.config/xi/config.edn
+                             [:agents ID] — its :tools allowlist, :extensions
+                             and system prompt replace the coding tools +
+                             AGENTS.md; sessions live in
                              ~/.config/xi/personal-agent/<ID>/. No profile =
-                             no tools.
+                             no tools. Standalone (`xi --agent ID`) stays a
+                             local room; also server and prompt.
   --debug-events             Write the full event stream as JSONL (see docs).
   --no-hardened-rules        Drop the non-overridable hardened rules tier
                              (sudo/remote-copy denies). Unsafe; agents cannot
@@ -296,6 +297,16 @@ See docs/cli.md for the full reference.")
                DEFAULT_MODEL)
    :effort "high"})
 
+(defn- install-agent-extensions!
+  "Make an agent profile's :extensions the process's enabled user-extension
+   list (xi.ext.user/enabled-files) — before `user-ext/install!` runs. A
+   profile without :extensions keeps the rules.edn list. Re-reads the
+   profile on `/ext reload`."
+  [prof]
+  (when (:extensions prof)
+    (user-ext/set-enabled-override!
+     (fn [] (or (:extensions (profile/load (:id prof))) #{})))))
+
 (defn- make-handlers
   "Base pure handler map shared by every mode. extra-commands are extension
    commands that join the built-ins for dispatch + /help."
@@ -324,9 +335,14 @@ See docs/cli.md for the full reference.")
 
 ;; ── Standalone (phase 4, unchanged) ──────────────────────────────────────────
 
-(defn- start-standalone! [{:keys [debug-events? initial-prompt session-id] :as opts}]
-  (let [{:keys [model effort]} (resolve-model-opts opts)
-        cwd (or (aget js/process.env "XI_CWD") (.cwd js/process))
+(defn- start-standalone! [{:keys [debug-events? initial-prompt session-id agent] :as opts}]
+  (let [;; --agent: a local TUI room as the named agent — the profile's
+        ;; prompt, tools, extensions and session dir, like prompt mode.
+        prof (when agent (profile/load agent))
+        _    (install-agent-extensions! prof)
+        {:keys [model effort]} (resolve-model-opts
+                                (update opts :model #(or % (:model prof))))
+        cwd (or (aget js/process.env "XI_CWD") (:dir prof) (.cwd js/process))
         ring (log/create-ring)
         ;; Standalone runs everything locally — server + client extensions.
         dialogs  (ext/create-dialogs)
@@ -336,11 +352,13 @@ See docs/cli.md for the full reference.")
         _        (mcp/install! mgr)
         _        (user-ext/install! mgr)
         composed (manager/composed mgr)
-        agents-files (system-prompt/find-agents-md cwd)
-        system-parts (into (system-prompt/load-agents-parts cwd)
-                           (ext/system-prompt-parts composed cwd))
+        agents-files (when-not prof (system-prompt/find-agents-md cwd))
+        system-parts (if prof
+                       (profile/system-parts prof)
+                       (into (system-prompt/load-agents-parts cwd)
+                             (ext/system-prompt-parts composed cwd)))
         system (system-prompt/parts->system system-parts)
-        sess (session/create-session cwd)
+        sess (session/create-session cwd (when agent {:agent agent}))
         jsonl-writer (when debug-events?
                        (core-jsonl/create-writer
                         (str (aget js/process.env "HOME")
@@ -402,10 +420,16 @@ See docs/cli.md for the full reference.")
                        :system system
                        :system-parts system-parts
                        :agents-files agents-files
-                       :ext (:room-ext-init composed)
+                       :ext (cond-> (:room-ext-init composed)
+                              prof (merge (profile/room-ext prof)))
+                       :agent-id agent
+                       :only-tools (:tools prof)
                        :session sess}})
     ;; Resume a saved session on launch (--session, e.g. after /reload).
-    (when-let [summary (and session-id (session/find-session-by-id session-id))]
+    (when-let [summary (and session-id
+                            (if agent
+                              (session/find-personal-agent-session-by-id session-id agent)
+                              (session/find-session-by-id session-id)))]
       (dispatch! {:type :session/resumed
                   :room-id "main"
                   :session (session/load-session summary)
@@ -448,6 +472,7 @@ See docs/cli.md for the full reference.")
         ;; from ~/.config/xi/config.edn.
         agent?  (some? agent)
         prof    (when agent? (profile/load agent))
+        _       (install-agent-extensions! prof)
         {:keys [model effort]} (resolve-model-opts
                                 (update opts :model #(or % (:model prof))))
         ;; --session: resume an existing conversation — load its metadata and
@@ -878,9 +903,12 @@ See docs/cli.md for the full reference.")
   ;; use the current toolchain. See xi.env.
   (env/sanitize-inherited-env!)
   (let [;; --agent: the profile's :model is the default when no --model is
-        ;; given (the server re-reads the profile per room for prompt + tools).
+        ;; given (the server re-reads the profile per room for prompt + tools)
+        ;; and its :extensions replace the rules.edn list for this process.
+        prof        (when agent (profile/load agent))
+        _           (install-agent-extensions! prof)
         server-opts (resolve-model-opts
-                     (update opts :model #(or % (when agent (:model (profile/load agent))))))
+                     (update opts :model #(or % (:model prof))))
         ring (log/create-ring)
         dialogs  (ext/create-dialogs)
         mgr      (manager/create)
@@ -974,8 +1002,10 @@ See docs/cli.md for the full reference.")
    listening on the port and auto-join isn't disabled. Always opens a fresh
    room (like the empty chat page on the web UI) rather than resuming the latest
    one — /resume still re-attaches to a live room via a {:session-id} target."
-  [{:keys [auto-join? port initial-prompt session-id] :as opts}]
-  (if-not auto-join?
+  [{:keys [auto-join? port initial-prompt session-id agent] :as opts}]
+  ;; --agent always stays local: a running server is some other agent (or a
+  ;; coding server) and provisions its rooms from its own profile.
+  (if (or (not auto-join?) agent)
     (start-standalone! opts)
     (-> (server-running? port)
         (.then (fn [running?]

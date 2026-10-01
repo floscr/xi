@@ -75,6 +75,10 @@ A file in the directory is loaded only when the **global** rules file names it:
   enough to get code loaded.
 - The list names files, not contents. Editing a file that is already enabled
   is an ordinary write under the normal write rules.
+- An **agent profile** (`xi … --agent ID`, see [cli.md](cli.md#agent-profiles))
+  may carry its own `:extensions` vector in `~/.config/xi/config.edn`; it
+  replaces the rules-file list for that process, so a restricted agent loads
+  only what it needs. Same trust level: `config.edn` is agent-unwritable too.
 
 ## Files
 

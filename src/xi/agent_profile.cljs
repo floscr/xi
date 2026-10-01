@@ -15,6 +15,7 @@
 
      {:agents {\"root\" {:system-prompt-file \"agents/root.md\"
                          :model \"claude-sonnet-4-6\"
+                         :extensions [\"freesearch.cljs\" \"web.cljs\"]
                          :tools [\"web_search\" \"fetch\"]}}}
 
    Profile keys:
@@ -22,6 +23,11 @@
                          every tool. Absent (or a missing profile) = NO tools —
                          fail closed, so a typo can't turn a restricted agent
                          into a coding agent.
+     :extensions         vector of user-extension file names
+                         (~/.config/xi/extensions/) this agent loads. Replaces
+                         the global list in rules.edn for the whole process,
+                         so a coding machine's extensions (kb, notifiers, …)
+                         stay out of the agent. Absent = the rules.edn list.
      :system-prompt      prompt text; replaces the project prompt parts.
      :system-prompt-file path to a file holding the prompt (`~` expanded;
                          relative paths resolve against ~/.config/xi/).
@@ -103,26 +109,39 @@ Be concise, direct, and friendly. When unsure, say so.")
     :else [#{} [(str ":tools must be a vector of tool names or :all, got "
                      (pr-str tools))]]))
 
+(defn- extension-set
+  "Normalize a profile's :extensions → [files errors]: nil when absent (the
+   global rules.edn list applies), else a set of file names."
+  [exts]
+  (cond
+    (nil? exts) [nil []]
+    (and (sequential? exts) (every? string? exts)) [(set exts) []]
+    :else [nil [(str ":extensions must be a vector of file names, got "
+                     (pr-str exts))]]))
+
 (defn parse
   "Pure normalization of a raw profile map (the `[:agents id]` entry, nil when
-   absent) → {:id :tools :system-prompt :system-prompt-file :model :errors}.
-   :tools is nil (= every tool) or a set of names; a missing profile is
-   reported in :errors and gets no tools. :system-prompt-file is the resolved
-   path when set and no inline prompt wins (the caller reads it)."
+   absent) → {:id :tools :extensions :system-prompt :system-prompt-file :model
+   :errors}. :tools is nil (= every tool) or a set of names; a missing profile
+   is reported in :errors and gets no tools. :extensions is nil (= the global
+   list) or a set of file names. :system-prompt-file is the resolved path when
+   set and no inline prompt wins (the caller reads it)."
   [id raw]
   (let [missing? (nil? raw)
         raw      (or raw {})
         [tools tool-errors] (tool-set (:tools raw))
+        [exts ext-errors]   (extension-set (:extensions raw))
         inline   (some-> (:system-prompt raw) str str/trim not-empty)
         pfile    (when-not inline
                    (some-> (:system-prompt-file raw) str not-empty resolve-prompt-file))
         model    (some-> (:model raw) str not-empty)]
     {:id                 id
      :tools              tools
+     :extensions         exts
      :system-prompt      inline
      :system-prompt-file pfile
      :model              model
-     :errors             (cond-> tool-errors
+     :errors             (cond-> (into tool-errors ext-errors)
                            missing?
                            (conj (str "no profile under [:agents " (pr-str id)
                                       "] in " CONFIG_FILE " — running with no tools"))

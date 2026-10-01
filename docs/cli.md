@@ -37,7 +37,7 @@ Defaults to `ws://localhost:<port>`.
 | `--no-auto-join` | standalone | Stay a local room; don't connect to a running server. |
 | `--join` / `--create` | standalone | Redirect the bare `xi` invocation onto a running server (latest / new room). |
 | `--headless` | `server` | Run the server without a local TUI; clients attach remotely. |
-| `--agent ID` | `server`, `prompt` | Run as a **named agent**: the profile `[:agents ID]` in `~/.config/xi/config.edn` decides which tools the model gets and its system prompt (no AGENTS.md/skills context), and sessions are stored per agent in `~/.config/xi/personal-agent/<ID>/` — see [Agent profiles](#agent-profiles) below. |
+| `--agent ID` | standalone, `server`, `prompt` | Run as a **named agent**: the profile `[:agents ID]` in `~/.config/xi/config.edn` decides which tools the model gets, which user extensions load, and its system prompt (no AGENTS.md/skills context); sessions are stored per agent in `~/.config/xi/personal-agent/<ID>/`. A bare `xi --agent ID` stays a local TUI room (no auto-join) — see [Agent profiles](#agent-profiles) below. |
 | `--debug-events` | standalone, `server` | Write the full event stream as JSONL (see [architecture.md](architecture.md)). |
 | `--no-hardened-rules` | all | Drop the non-overridable hardened rules tier (see [rules.md](rules.md)). Unsafe; a launch-time operator override agents cannot set. |
 | `--stream` | `prompt` | Stream response tokens to stdout as they arrive (otherwise buffered until the turn ends). |
@@ -47,23 +47,27 @@ Defaults to `ws://localhost:<port>`.
 
 ## Agent profiles
 
-`xi server --agent <id>` and `xi prompt --agent <id>` run xi as a named
-agent instead of a coding agent. Everything that makes the agent what it is
-lives in the profile under `[:agents <id>]` in `~/.config/xi/config.edn`
+`xi --agent <id>` (local TUI), `xi server --agent <id>` and
+`xi prompt --agent <id>` run xi as a named agent instead of a coding agent.
+Everything that makes the agent what it is lives in the profile under
+`[:agents <id>]` in `~/.config/xi/config.edn`
 (see [config.md](config.md#agent-profiles-configxiconfigedn)):
 
 ```clojure
 ;; ~/.config/xi/config.edn
 {:agents {"root"  {:system-prompt-file "agents/root.md"
                    :model "claude-sonnet-4-6"
+                   :extensions ["freesearch.cljs" "web.cljs"]
                    :tools ["web_search" "fetch"]}
           "coach" {:system-prompt-file "personal-agent/coach/prompt.md"
+                   :extensions ["freesearch.cljs"]
                    :tools ["web_search"]}}}
 ```
 
 | Key | Meaning |
 | --- | --- |
 | `:tools` | The tool names the model gets — builtins and extension tools alike — or `:all`. Unlisted tools are never advertised, so the model cannot call them. **Absent, or no profile at all, means no tools**: a typo can't turn a restricted agent into a coding agent. |
+| `:extensions` | The [user extension](user-extensions.md) files (`~/.config/xi/extensions/`) this agent loads, replacing the global `:extensions` list of `rules.edn` for the process. Absent = the global list; `[]` = none. Keeps a coding machine's extensions (knowledge base, notifiers, …) out of an assistant. Built-in extensions still load; their tools are hidden by `:tools` and their prompts by the profile prompt. |
 | `:system-prompt` | System prompt text; replaces every project prompt part (AGENTS.md, profile, skills, extension prompts). |
 | `:system-prompt-file` | Path to a file holding the prompt (`~` expanded; relative paths resolve against `~/.config/xi/`). `:system-prompt` wins over it; with neither, a short generic assistant prompt is used. |
 | `:model` | Default model for this agent. Precedence: `--model` flag > profile > last `/model` pick > built-in default. |
@@ -72,8 +76,14 @@ An agent's sessions live in their own directory,
 `~/.config/xi/personal-agent/<id>/` — one per consumer application (a fitness
 coach, a finance categorizer, …), fully isolated from coding sessions and from
 each other. A server started with `--agent` lists only those sessions and
-shows no projects; one-shots run in that directory. `root` is the
-conventional id for the general-purpose assistant.
+shows no projects; a local TUI (`xi --agent <id>`) and one-shots run in that
+directory. `root` is the conventional id for the general-purpose assistant;
+any string works, but keep ids shell- and path-friendly (`health-coach`,
+not `"Personal coach"`) since the id is also the directory name.
+
+One machine can hold any number of flavours this way — a research assistant
+with search tools, a coach with none, a reviewer with `:tools :all` and its
+own prompt — each a few lines of config.
 
 Whether a listed tool may *run* is still the rules engine's call: agent rooms
 carry `[:ext :agent {:id "<id>"}]`, so a rule can target one agent with

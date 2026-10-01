@@ -148,18 +148,20 @@ the compile-time `config.cljc` — they are written and read at runtime.
 ### Agent profiles (`~/.config/xi/config.edn`)
 
 The user config file. An EDN map; the only key read so far is `:agents`, a
-map of agent id → profile, consumed by `xi server --agent <id>` and
-`xi prompt --agent <id>` (`xi.agent-profile`):
+map of agent id → profile, consumed by `xi --agent <id>`,
+`xi server --agent <id>` and `xi prompt --agent <id>` (`xi.agent-profile`):
 
 ```clojure
 {:agents {"root" {:system-prompt-file "agents/root.md"
                   :model "claude-sonnet-4-6"
+                  :extensions ["freesearch.cljs" "web.cljs"]
                   :tools ["web_search" "fetch"]}}}
 ```
 
 | Key | Default | Description |
 | --- | --- | --- |
 | `:tools` | none | Vector of tool names the model is given (builtins and extension tools alike), or `:all`. Unlisted tools are never advertised. A missing key or a missing profile yields **no tools** (fail closed). |
+| `:extensions` | the `rules.edn` list | Vector of user-extension file names this agent loads instead of the global `:extensions` of `rules.edn` (`[]` = none). Process-wide; `/ext reload` re-reads it. |
 | `:system-prompt` | generic assistant prompt | Prompt text; replaces AGENTS.md, skills, extension prompts and `prompt-files.edn`. |
 | `:system-prompt-file` | — | File holding the prompt; `~` expanded, relative paths resolve against `~/.config/xi/`. `:system-prompt` wins over it. |
 | `:model` | — | Default model for the agent; a `--model` flag wins. |

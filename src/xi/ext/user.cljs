@@ -191,6 +191,27 @@
 
 (defn loaded-entries [] @loaded)
 
+(defonce ^:private enabled-override
+  ;; A 0-arg fn → set of file names that replaces the rules.edn `:extensions`
+  ;; list for this process, or nil. Set once at startup from an agent
+  ;; profile's :extensions (xi.agent-profile); a fn so `/ext reload` re-reads
+  ;; the profile like it re-reads the rules file.
+  (atom nil))
+
+(defn set-enabled-override!
+  "Make `f` (0-arg → set of file names, or nil to clear) the source of the
+   enabled-extensions list instead of the global rules file."
+  [f]
+  (reset! enabled-override f))
+
+(defn enabled-files
+  "The user-extension file names this process may load: the agent profile's
+   override when set, else the global rules file's `:extensions`."
+  []
+  (if-let [f @enabled-override]
+    (set (f))
+    (store/enabled-extensions)))
+
 (defn- path->ns
   "<dir>/my_ext/util.cljs → \"my-ext.util\" (inverse of file-ns->path)."
   [dir file]
@@ -291,7 +312,7 @@
   [mgr]
   (let [own-ids   (set (keep :id @loaded))
         own-tools (set (mapcat #(map :name (get-in % [:extension :tool-definitions])) @loaded))]
-    {:enabled     (store/enabled-extensions)
+    {:enabled     (enabled-files)
      :taken-ids   (into #{} (comp (map :id) (remove own-ids)) (manager/ext-list mgr))
      :taken-tools (-> (set (map :name (registry/tool-definitions)))
                       (into (comp (map :name) (remove own-tools))
@@ -299,8 +320,9 @@
 
 (defn install!
   "Load the enabled files of ~/.config/xi/extensions (rules.edn `:extensions`,
-   see xi.rules.store/enabled-extensions) and register each valid extension into `mgr`
-   (call AFTER the built-ins + MCP are seeded). Returns the load report."
+   or the agent profile's — see `enabled-files`) and register each valid
+   extension into `mgr` (call AFTER the built-ins + MCP are seeded). Returns
+   the load report."
   [mgr]
   (register-all! mgr (load-dir (extensions-dir) (taken mgr))))
 
@@ -315,7 +337,7 @@
    mirror-keys). `builtins` are the client's mirrored built-in extension maps;
    their ids and tools are taken, as on the server. Effects and tools are left
    out: they run on the server, which loads the directory itself."
-  ([builtins] (mirror-extensions (extensions-dir) (store/enabled-extensions) builtins))
+  ([builtins] (mirror-extensions (extensions-dir) (enabled-files) builtins))
   ([dir enabled builtins]
    (let [builtins (remove nil? builtins)]
      (->> (load-dir dir {:enabled     enabled

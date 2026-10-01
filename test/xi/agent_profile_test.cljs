@@ -35,6 +35,19 @@
     (is (str/ends-with? (:system-prompt-file (profile/parse "a" {:system-prompt-file "~/p.md"}))
                         "/p.md"))))
 
+(deftest parse-extensions
+  (testing "absent = the global rules.edn list"
+    (is (nil? (:extensions (profile/parse "a" {})))))
+  (testing "a vector of file names becomes the set"
+    (is (= #{"freesearch.cljs" "web.cljs"}
+           (:extensions (profile/parse "a" {:extensions ["freesearch.cljs" "web.cljs"]})))))
+  (testing "empty vector = no user extensions at all"
+    (is (= #{} (:extensions (profile/parse "a" {:extensions []})))))
+  (testing "malformed = global list, with an error"
+    (let [p (profile/parse "a" {:extensions "web.cljs"})]
+      (is (nil? (:extensions p)))
+      (is (some #(str/includes? % ":extensions") (:errors p))))))
+
 (deftest parse-model
   (is (= "claude-haiku-4-5-20251001"
          (:model (profile/parse "a" {:model "claude-haiku-4-5-20251001"}))))

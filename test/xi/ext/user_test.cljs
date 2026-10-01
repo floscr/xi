@@ -140,6 +140,18 @@
         "an empty allowlist loads nothing")
     (is (= [] (user/mirror-extensions dir #{} [])))))
 
+(deftest an-agent-profile-overrides-the-enabled-list
+  ;; An agent profile's :extensions replaces the rules.edn list for the
+  ;; process; the override is a fn so /ext reload re-reads the profile.
+  (try
+    (user/set-enabled-override! (fn [] ["a.cljs" "b.cljs"]))
+    (is (= #{"a.cljs" "b.cljs"} (user/enabled-files)))
+    (user/set-enabled-override! (fn [] #{}))
+    (is (= #{} (user/enabled-files)) "an empty profile list loads nothing")
+    (finally
+      (user/set-enabled-override! nil)))
+  (is (set? (user/enabled-files)) "cleared: back to the rules file"))
+
 (deftest mirror-extensions-keep-only-what-a-client-presents
   (let [dir (tmp-dir)]
     (write! dir "bell.cljs"
