@@ -721,4 +721,10 @@
  "z80" "z80_assembly"
  "zed" "zed"
  "zig" "zig"
- "zon" "zig"}
+ "zon" "zig"
+ "markdown" "markdown"
+ "md" "markdown"
+ "mkd" "markdown"
+ "mdown" "markdown"
+ "markdn" "markdown"
+ "mdx" "markdown"}

@@ -1,0 +1,19 @@
+;; Hand-written (chroma's markdown lexer relies on bygroups/delegation, which
+;; the converter can't express). The converter leaves this file alone and only
+;; re-adds its registry aliases (scripts/convert-chroma-grammars.mjs).
+[{:pattern "^[ \\t]*(?:```|~~~)[^\\n]*\\n[\\s\\S]*?^[ \\t]*(?:```|~~~)[ \\t]*$" :token :string}
+ {:pattern "^[ \\t]*(?:```|~~~)[^\\n]*$" :token :string}
+ {:pattern "^#{1,6}(?:[ \\t].*)?$" :token :keyword-decl}
+ {:pattern "^(?:=+|-+)[ \\t]*$" :token :keyword-decl}
+ {:pattern "^(?:(?:\\*[ \\t]*){3,}|(?:_[ \\t]*){3,})$" :token :keyword-decl}
+ {:pattern "^[ \\t]*>.*$" :token :comment}
+ {:pattern "^[ \\t]*(?:[-*+]|\\d+[.)])(?=[ \\t])" :token :operator}
+ {:pattern "`[^`\\n]+`" :token :string}
+ {:pattern "\\*\\*[^*\\n]+\\*\\*|__[^_\\n]+__" :token :keyword}
+ {:pattern "\\*[^*\\s][^*\\n]*\\*" :token :string-symbol}
+ {:pattern "!?\\[[^\\]\\n]*\\]" :token :name-fn}
+ {:pattern "(?<=\\])\\([^)\\n]*\\)" :token :string-symbol}
+ {:pattern "<?https?://[^\\s)>\\]]+>?" :token :string-symbol}
+ {:pattern "<\\/?[a-zA-Z][^>\\n]*>" :token :name-builtin}
+ {:pattern "\\w+" :token :text}
+ {:pattern "\\s+" :token :text}]

@@ -323,6 +323,11 @@ async function main() {
   // Add manual aliases
   if (!seen.has("cljs")) entries.push(`"cljs" "clojure"`);
   if (!seen.has("cljc")) entries.push(`"cljc" "clojure"`);
+  // Hand-written grammars (resources/highlight/grammars/<file>.edn) that chroma
+  // can't express — the .edn survives regeneration, only its aliases are re-added.
+  for (const alias of ["markdown", "md", "mkd", "mdown", "markdn", "mdx"]) {
+    if (!seen.has(alias)) entries.push(`"${alias}" "markdown"`);
+  }
   
   const registryEdn = `{${entries.join("\n ")}}`;
   writeFileSync(join(OUT_DIR, "registry.edn"), registryEdn + "\n");

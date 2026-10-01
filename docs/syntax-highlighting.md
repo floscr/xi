@@ -142,6 +142,8 @@ The script:
 
 Custom aliases (e.g. `cljs`, `cljc` → clojure) are added automatically by the converter.
 
+**Hand-written grammars:** `markdown.edn` (aliases `md`, `mkd`, `mdown`, `markdn`, `mdx`) is written by hand because chroma's markdown lexer needs bygroups/delegation. The converter never overwrites it and re-adds only its registry aliases. It highlights headings, fenced code, blockquotes, list markers, inline code, bold/italic, links and bare URLs, and inline HTML tags.
+
 ## Adding a New Grammar
 
 ### Option 1: Wait for chroma
