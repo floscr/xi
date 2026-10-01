@@ -144,3 +144,19 @@
       ;; Undo "aaa"
       (send-ctrl ed "Z")
       (is (= "" (editor-text ed))))))
+
+(deftest on-backspace-can-claim-the-key
+  (let [seen (atom [])
+        ed   (editor/make-editor {:on-submit (fn [_])
+                                  :on-backspace (fn [text]
+                                                  (swap! seen conj text)
+                                                  (= "ab" text))})]
+    (type-chars ed "ab")
+    (testing "a truthy return skips the deletion"
+      (send-key ed (str (char 127)))
+      (is (= "ab" (editor-text ed))))
+    (testing "a falsy return deletes as usual"
+      (type-chars ed "c")
+      (send-key ed (str (char 127)))
+      (is (= "ab" (editor-text ed))))
+    (is (= ["ab" "abc"] @seen))))

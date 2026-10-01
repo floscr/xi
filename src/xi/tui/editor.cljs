@@ -184,6 +184,8 @@
    opts:
      :on-submit (fn [text]) — called when user presses Enter with content
      :on-interrupt (fn []) — called on Ctrl+C
+     :on-backspace (fn [text]) — called on Backspace with the current text;
+       return truthy to mark it handled and skip the deletion
      :prompt \"xi> \" — prompt text"
   [opts]
   (let [state (atom {:lines [""]
@@ -204,6 +206,7 @@
         on-submit (:on-submit opts)
         on-interrupt (:on-interrupt opts)
         on-escape (:on-escape opts)
+        on-backspace (:on-backspace opts)
         on-palette (:on-palette opts)
         on-commands (:on-commands opts)
         on-git (:on-git opts)
@@ -679,9 +682,10 @@
                          (is-enter? data)
                          (handle-submit)
 
-                         ;; Backspace
+                         ;; Backspace — the parent may claim it first
                          (is-backspace? data)
-                         (delete-back)
+                         (when-not (and on-backspace (on-backspace (get-text)))
+                           (delete-back))
 
                          ;; Delete
                          (is-delete? data)

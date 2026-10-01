@@ -993,6 +993,16 @@
                            (when (get-in room [:agent :busy?])
                              (room-event {:type :agent/abort})))))
           :on-interrupt (fn [] (shutdown! on-exit))
+          ;; Backspace on an empty prompt un-queues the most recently queued
+          ;; message (the "⏳N queued" badge).
+          :on-backspace
+          (fn [text]
+            (let [room (current-room)
+                  qn   (count (get-in room [:agent :queued]))]
+              (when (and (= "" text) (pos? qn))
+                (dispatch! {:type :prompt/queue-remove :room-id (:id room)
+                            :index (dec qn)})
+                true)))
           :on-palette (fn []
                         (when-let [room (current-room)]
                           (dispatch! {:type :ui/menu-open :room-id (:id room)
