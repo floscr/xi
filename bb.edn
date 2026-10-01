@@ -2,7 +2,7 @@
  :deps {tmux-dev/tmux-dev {:git/url "https://git.example.com/floscr/tmux-dev"
                             :git/sha "78a82846116d13f05c3ddd9c5d1c4639b6c3538a"}
         ;; squint + esbuild for the browser overlay builds (scripts/overlay_build.clj)
-        ;; — in-process via bb, no node/npm. Same pins as the dotfiles' server-lib.
+        ;; — in-process via bb, no node/npm.
         ;; Don't pin squint back to v0.11.189 (the npm release the overlays used
         ;; to be built with): its JVM compiler doesn't munge reserved words, so
         ;; dialkit's `(defn- mk [tag class] …)` comes out as invalid JS.

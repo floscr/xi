@@ -3630,7 +3630,7 @@
 (defn- palette-snippets-page
   "Snippets as a palette sub-page (drilled from the Snippets compose button).
    Spinner while :web/snippet-list loads, then a command-item per snippet
-   grouped into Project (cwd-specific, from the dotfiles profile) and global.
+   grouped into Project (cwd-specific, from the snippets extension) and global.
    Selecting inserts the snippet's text into the current compose draft."
   [state dispatch!]
   (let [{:keys [global project] :as loaded} (:web/snippet-list state)

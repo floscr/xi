@@ -12,7 +12,7 @@
    This mirrors Emacs' `exec-path-from-shell`: capture a *clean* login-shell
    environment and reconcile `process.env` with it — refresh PATH and drop
    orphaned store-pointing vars — while preserving launcher / service vars
-   (.env's PUSHOVER_*/XI_*, TMUX, XDG_RUNTIME_DIR, …) that a login shell would
+   (.env's XI_*, TMUX, XDG_RUNTIME_DIR, …) that a login shell would
    not set. Fixing `process.env` in place means every existing tool spawn picks
    up the corrected environment with no per-tool changes."
   (:require [clojure.string :as str]))
@@ -57,7 +57,7 @@
    /nix/store — e.g. XI_CHROME_BINARY=/nix/store/…/chromium/bin/chromium. A
    login shell never sets these, so without this guard the store-pointer drop
    below would delete them and break the services that read them."
-  ["XI_" "PUSHOVER_"])
+  ["XI_"])
 
 (defn- preserved-key?
   [k]
@@ -69,7 +69,7 @@
    - :dropped — orphaned vars the clean env does not set AND whose value points
      into /nix/store (stale references left by an old generation, e.g.
      DEPS_CLJ_TOOLS_DIR / JAVA_HOME / LOCALE_ARCHIVE_2_27). Non-store orphans
-     (launcher / service vars like PUSHOVER_*/XI_*) are kept, as are launcher /
+     (launcher / service vars like XI_*) are kept, as are launcher /
      service vars matching `preserved-prefixes` even when they point into the
      store.
    - :path — the refreshed PATH from `clean`, or nil when it already matches."

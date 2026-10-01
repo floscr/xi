@@ -7,10 +7,10 @@
 
    Signal precedence:
      1. `XI_THEME_MODE` env var (`light`/`dark`) — explicit override.
-     2. The dotfiles `theme-mode` state file
+     2. An optional `theme-mode` state file
         (`$XDG_STATE_HOME/theme-mode/mode`, default `~/.local/state/theme-mode/mode`),
-        containing `light` or `dark`. This is the same file nvim/emacs/etc.
-        read to switch live.
+        containing `light` or `dark`. Any tool (a terminal theme switcher, an
+        editor hook, …) can write it to flip xi live.
      3. Default `:dark`.
 
    `refresh!` re-reads the signal (cheaply, TTL-cached) and pushes the result

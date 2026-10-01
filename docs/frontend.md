@@ -2,7 +2,7 @@
 
 The web client uses [clj-ui-framework](https://git.example.com/floscr/clj-ui-framework) for UI components — a cross-target (CLJ/CLJS/Squint) library of styled form controls, buttons, icons, badges, menus, and more. Always use its components instead of raw `[:input]`/`[:button]`/`[:select]` elements.
 
-Local checkout: `~/Code/Projects/clj-ui-framework`. Its `AGENTS.md` covers per-target pitfalls, theming/tokens and adding components; its generated `docs/components.md` (`bb list-components` / `bb list-icons`) is the always-current list of components, props and icons. For an exact prop shape, read the source in the pinned gitlib: `~/.gitlibs/libs/com.example.git/clj-ui-framework/<sha>/src/ui/`.
+Its `AGENTS.md` covers per-target pitfalls, theming/tokens and adding components; its generated `docs/components.md` (`bb list-components` / `bb list-icons`) is the always-current list of components, props and icons. For an exact prop shape, read the source in the pinned gitlib: `~/.gitlibs/libs/com.example.git/clj-ui-framework/<sha>/src/ui/`.
 
 ## Dependency
 

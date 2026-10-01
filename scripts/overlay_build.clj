@@ -1,7 +1,7 @@
 (ns overlay-build
   "Build for the browser overlay scripts (element picker, design mode, style
    editor): squint → esbuild → one minified IIFE, in pure babashka — no node,
-   no npm. Same pipeline as the dotfiles' server-lib.frontend:
+   no npm. Pipeline:
 
    - squint.compiler (bb git dep) compiles .cljs → .mjs in-process
    - babashka.esbuild (esbuild via FFI) bundles the entry module
