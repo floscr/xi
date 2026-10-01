@@ -3365,14 +3365,14 @@
           :size :sm
           :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
         [:div {:style {:display "flex" :align-items "center" :gap "0.25rem"}}
-         (when (some :unread? cards)
-           [:button {:class ["icon-btn" "icon-btn--sm"]
-                     :title "Mark all sessions as read"
-                     :on {:click (fn [_] (dispatch! {:type :session/mark-all-read}))}}
          [:button {:class ["icon-btn" "icon-btn--sm"]
                    :title "Appearance settings"
                    :on {:click (fn [_] (dispatch! {:type :appearance/open}))}}
           (icon/icon {:icon-name :settings :size :md})]
+         (when (some :unread? cards)
+           [:button {:class ["icon-btn" "icon-btn--sm"]
+                     :title "Mark all sessions as read"
+                     :on {:click (fn [_] (dispatch! {:type :session/mark-all-read}))}}
             (icon/icon {:icon-name :check :size :md})])
          (when (seq visible)
            [:button {:class ["icon-btn" "icon-btn--sm"]
@@ -4195,10 +4195,6 @@
           (icon/icon {:icon-name :arrow-up :size :md})
           (spinner))]]]]))
 
-(defn root-view
-  "Top-level view, route-driven: the session list at /, a room at /chat/:id.
-   Wrapped in a floating sidebar layout so every topbar's hamburger reveals
-   the recent-sessions drawer over the content."
 (defn- appearance-row
   "One settings row: label (+ optional hint) on the left, its control on the
    right."
@@ -4278,6 +4274,10 @@
              :on-click (fn [_] (close!))}
             "Done")))))))
 
+(defn root-view
+  "Top-level view, route-driven: the session list at /, a room at /chat/:id.
+   Wrapped in a floating sidebar layout so every topbar's hamburger reveals
+   the recent-sessions drawer over the content."
   [state dispatch! pages]
   (let [open? (boolean (:web/sidebar-open? state))
         page  (get-in state [:web/route :page])]
@@ -4296,5 +4296,6 @@
           :git-status (git-status-view state dispatch!)
           (home-view state dispatch!))))
      (command-palette state dispatch!)
+     (appearance-dialog state dispatch!)
      (auth-request-banner state dispatch!)
-     (auth-overlay state))))     (appearance-dialog state dispatch!)diff --git a/src/xi/web/core.cljs b/src/xi/web/core.cljs
+     (auth-overlay state))))

@@ -1626,10 +1626,10 @@
        (snap 30)))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
-   :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
    :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
+   :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    ;; Read a session's cached snapshot and feed it into :web/cache so the chat
    ;; view paints from it while the WS join lands.
    :cache/seed-room
@@ -2203,7 +2203,7 @@
                              ;; The config layer of the appearance settings
                              ;; (xi.web.appearance/effective-in). Seeded here
                              ;; because views must not require xi.config.
-                             :web/appearance-config config/appearance)diff --git a/src/xi/config.cljc b/src/xi/config.cljc
+                             :web/appearance-config config/appearance)
                       (cache/hydrate route))
         transport (ws-transport/create!
                    {:url        (ws-url)
