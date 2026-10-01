@@ -8,8 +8,10 @@
 
    Views:
      ?demo=sessions    → the session list
-     ?demo=chat        → a chat room mid-conversation
-     ?demo=chat-viewer → the same room in viewer mode (grouped tool rows)"
+     ?demo=chat        → a chat room mid-conversation (the configured appearance)
+     ?demo=chat-viewer → the same room forced into viewer mode (grouped,
+                         collapsed tool + thinking rows)
+     ?demo=chat-open   → the same room with every block expanded, ungrouped"
   (:require [xi.core.state :as state]))
 
 (def ^:private now (js/Date.now))
@@ -209,5 +211,10 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
   [view]
   (case view
     "chat" (chat-state)
-    "chat-viewer" (assoc (chat-state) :web/viewer-mode? true)
+    "chat-viewer" (assoc (chat-state) :web/appearance {:viewer-mode? true
+                                                       :tool-blocks :collapsed
+                                                       :thinking-blocks :collapsed})
+    "chat-open" (assoc (chat-state) :web/appearance {:viewer-mode? false
+                                                     :tool-blocks :open
+                                                     :thinking-blocks :open})
     (sessions-state)))

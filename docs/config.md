@@ -3,7 +3,7 @@
 Xi has two configuration surfaces:
 
 1. **`src/xi/config.cljc`** — compile-time config: which extensions load on each
-   surface, and the `tui` display-override map.
+   surface, the `tui` display-override map and the web `appearance` map.
 2. **Environment variables** — runtime knobs for models, ports, auth, and
    individual extensions.
 
@@ -53,6 +53,34 @@ with the config lookup in one form.
 The macro lives in its own `.clj` (`xi.config-macros`), not in `config.cljc`,
 because a `.cljc` whose requires all sit behind `:node`/`:browser` reader
 features can't be loaded as a JVM macro namespace.
+
+---
+
+## Web appearance options (`xi.config/appearance`)
+
+How the web client's chat timeline renders its collapsible blocks. Same
+pattern as `tui`: the map holds only the keys you want to change, and the
+defaults live in `xi.web.appearance`. Each browser can override these from the
+**Appearance** dialog (sidebar footer gear, chat overflow menu → "Appearance",
+or the command palette); those overrides are stored per device in
+`localStorage` (`xi/appearance`), and "Reset to defaults" drops them, landing
+back on this map.
+
+```clojure
+(def appearance
+  {:viewer-mode? false
+   :tool-blocks  :open})
+```
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `:viewer-mode?` | `true` | Fold each run of consecutive tool / thinking posts into one grouped box of header rows. |
+| `:tool-blocks` | `:collapsed` | `:open` or `:collapsed` — whether a tool call's details (arguments, result) start expanded. A tool awaiting an Allow/Deny answer is always open. |
+| `:thinking-blocks` | `:collapsed` | `:open` or `:collapsed` — whether thinking blocks start expanded. |
+
+Precedence: built-in defaults ← `xi.config/appearance` ← the browser's own
+overrides. Unknown keys and disallowed values are ignored at every layer. See
+[web-client.md](web-client.md#chat-view-chatsession-id).
 
 ---
 

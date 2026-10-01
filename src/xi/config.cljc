@@ -76,6 +76,28 @@
   "Read TUI config option `k` from `tui`, falling back to `default` when the
    key is not defined in the config. See the `deftui-opt` macro in
    xi.config-macros for the usual call site."
+(def appearance
+  "Web client appearance overrides — how the chat timeline renders its
+   collapsible blocks. Same shape as `tui`: only keys you want to change from
+   their default belong here; the defaults live in xi.web.appearance and a
+   browser's own settings (Appearance dialog, persisted per device) override
+   both. Available options (all optional):
+
+     :viewer-mode?
+       Fold each run of consecutive tool / thinking posts into one grouped
+       box of header rows.
+       Default true.
+
+     :tool-blocks
+       :open | :collapsed — whether a tool call's details (arguments, result)
+       start expanded. A tool awaiting an Allow/Deny answer is always open.
+       Default :collapsed.
+
+     :thinking-blocks
+       :open | :collapsed — whether thinking blocks start expanded.
+       Default :collapsed."
+  {})
+
   [k default]
   (get tui k default))
 

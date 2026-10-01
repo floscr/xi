@@ -193,6 +193,21 @@
 (defn save-sidebar-collapsed! [groups]
   (store-set! sidebar-collapsed-key (vec groups)))
 
+;; ── Appearance overrides ─────────────────────────────────────────────────────
+
+(def ^:private appearance-key "xi/appearance")
+
+(defn load-appearance
+  "The browser's appearance overrides (xi.web.appearance), {} when unset.
+   Validated by the consumer (`appearance/normalize`), not here."
+  []
+  (or (store-get appearance-key) {}))
+
+(defn save-appearance! [settings]
+  (if (seq settings)
+    (store-set! appearance-key settings)
+    (store-remove! appearance-key)))
+
 ;; ── Hydrate + persist ────────────────────────────────────────────────────────
 
 (defn hydrate
@@ -211,7 +226,9 @@
                         :web/command-usage (load-recent-commands)
                         :web/recent-skills (load-recent-skills)
                         :web/preferred-model (load-preferred-model)
-                        :web/sidebar-collapsed (load-sidebar-collapsed))
+                        :web/sidebar-collapsed (load-sidebar-collapsed)
+                        ;; This browser's appearance overrides (xi.web.appearance).
+                        :web/appearance (load-appearance))
       (load-lobby) (assoc :lobby (load-lobby))
       cached       (assoc-in [:web/cache sid] cached))))
 

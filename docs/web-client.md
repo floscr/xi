@@ -63,16 +63,24 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
 
 - Streaming text/thinking/tool entries rendered from room `:history` —
   the same entry maps the TUI renders
-- Thinking blocks and interesting tool blocks expanded by default
-  (`<details>` — Replicant only writes changed attrs, so manual toggles
-  survive re-renders)
-- **Viewer mode** (overflow menu → "Viewer mode", `:web/viewer-mode?`,
-  persisted to `localStorage "xi-viewer-mode"`): collapses tool posts
-  (read/write/clj/…) and thinking blocks to header-only rows and folds each
-  run of consecutive ones into a single `.viewer-tool-group` box. A run breaks on any text
-  entry or on a tool with a *pending* permission ask (which stays expanded
-  for its Allow/Deny buttons). An already-answered tool joins the group and
-  shows a decision icon (✓/✗) at the right of its header. Each collapsed
+- Tool and thinking blocks are `<details>` elements — Replicant only writes
+  changed attrs, so manual toggles survive re-renders. Whether they start
+  open or collapsed is an appearance setting (below).
+- **Appearance settings** (`xi.web.appearance`; sidebar footer gear, chat
+  overflow menu → "Appearance", or the command palette): a dialog with the
+  theme, the viewer-mode switch and an Open / Collapsed choice for tool
+  blocks and for thinking blocks. Three layers, later wins: built-in
+  defaults (viewer mode on, both block kinds collapsed) ← `xi.config/appearance`
+  in `config.cljc` ([config.md](config.md#web-appearance-options-xiconfigappearance))
+  ← this browser's overrides (`:web/appearance`, persisted to
+  `localStorage "xi/appearance"`; "Reset to defaults" clears them). Changes
+  apply live; Escape closes the dialog.
+- **Viewer mode** (`:viewer-mode?`, on by default) folds each run of
+  consecutive tool and thinking posts into a single `.viewer-tool-group` box
+  of header rows. A run breaks on any text entry or on a tool with a
+  *pending* permission ask (which always stays expanded for its Allow/Deny
+  buttons, whatever the block setting). An already-answered tool joins the
+  group and shows a decision icon (✓/✗) at the right of its header. Each
   header is still an individual `<details>` you can click to expand in place
   (`group-viewer-items` in `xi.web.views`)
 - **Timeline virtualization**: only the last 60 entries render; "Show
@@ -124,7 +132,9 @@ All under the same app atom, never sent over the wire:
 | `:web/drafts` | `{draft-key text}` compose drafts per session |
 | `:web/compose-images` | staged image attachments |
 | `:web/timeline-window` | virtualization window size |
-| `:web/viewer-mode?` | collapse tool posts into grouped headers |
+| `:web/appearance` | this browser's appearance overrides (`xi.web.appearance`) |
+| `:web/appearance-config` | `xi.config/appearance`, seeded at init (views never require `xi.config`) |
+| `:web/appearance-open?` | the Appearance dialog is showing |
 | `:web/lightbox` | open image src or absent |
 | `:web/watched` | `{session-id count-when-last-seen}` |
 | `:web/response-counts` | `{session-id count}` from the server |
@@ -142,6 +152,7 @@ src/xi/web/
   views.cljs   — pure views (state → hiccup): home, chat, compose, lightbox
   router.cljs  — route parsing, :route/navigate handler, History API effect
   cache.cljs   — localStorage offline cache (hydrate + persist tap)
+  appearance.cljs — appearance settings: defaults ← config ← browser overrides
   keymap.cljs  — view- and mode-scoped keyboard shortcuts
   demo.cljs    — fabricated data for the static `?demo=<view>` render
                  (see demo.md)

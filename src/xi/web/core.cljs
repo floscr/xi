@@ -24,6 +24,7 @@
             [xi.config :as config]
             [xi.naming :as naming]
             [xi.quick-replies :as quick-replies]
+            [xi.web.appearance :as appearance]
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
             [xi.web.keymap :as keymap]
@@ -851,9 +852,18 @@
           :web/set-wide          (fn [st {:keys [wide?]}] {:state (assoc st :web/wide? wide?)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
-          :viewer/toggle         (fn [st _] (let [on? (not (:web/viewer-mode? st))]
-                                             {:state   (assoc st :web/viewer-mode? on?)
-                                              :effects [[:viewer/persist on?]]}))
+          ;; Appearance dialog (xi.web.appearance). :web/appearance holds only
+          ;; this browser's overrides; views merge them over config + defaults.
+          :appearance/open       (fn [st _] {:state (assoc st :web/appearance-open? true)})
+          :appearance/close      (fn [st _] {:state (dissoc st :web/appearance-open?)})
+          :appearance/set        (fn [st {:keys [key value]}]
+                                   (let [settings (appearance/normalize
+                                                   (assoc (:web/appearance st) key value))]
+                                     {:state   (assoc st :web/appearance settings)
+                                      :effects [[:cache/appearance {:settings settings}]]}))
+          :appearance/reset      (fn [st _]
+                                   {:state   (assoc st :web/appearance {})
+                                    :effects [[:cache/appearance {:settings {}}]]})
           :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
           :models/web-list-result (fn [st {:keys [models]}]
@@ -1619,6 +1629,7 @@
        (snap 30)))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
+   :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
    :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
@@ -1658,13 +1669,7 @@
                        (if (= mode "auto")
                          (.removeItem js/localStorage "ui-theme")
                          (.setItem js/localStorage "ui-theme" mode))
-                       (catch :default _))))
-   :viewer/persist (fn [_ on?]
-                     (try
-                       (if on?
-                         (.setItem js/localStorage "xi-viewer-mode" "1")
-                         (.removeItem js/localStorage "xi-viewer-mode"))
-                       (catch :default _)))})
+                       (catch :default _))))})
 
 ;; ── Taps (cache persistence + unread polling + post-join URL) ─────────────────
 
@@ -2089,7 +2094,8 @@
     (.setProperty (.-style js/document.documentElement) "--app-height" "100dvh")
     (r/render (el "app")
               (views/root-view (assoc (demo/demo-state view)
-                                      :web/nav-items (:nav-items composed))
+                                      :web/nav-items (:nav-items composed)
+                                      :web/appearance-config config/appearance)
                                (fn [& _])
                                (:pages composed)))))
 
@@ -2178,7 +2184,11 @@
                      :run (fn [_ dispatch! _] (dispatch! {:type :timeline/scroll-to-bottom}))})
   (keymap/register! {:id :compose-blur :code "Escape" :view :chat :mode :insert
                      :when (fn [_] (keymap/compose-focused?))
-                     :run (fn [_ dispatch! _] (dispatch! {:type :compose/blur}))}))
+                     :run (fn [_ dispatch! _] (dispatch! {:type :compose/blur}))})
+  ;; Escape closes the Appearance dialog (an overlay, not a native <dialog>).
+  (keymap/register! {:id :appearance-close :code "Escape" :view :any :mode :any
+                     :when (fn [st] (boolean (:web/appearance-open? st)))
+                     :run (fn [_ dispatch! _] (dispatch! {:type :appearance/close}))}))
 
 (defn- real-init! []
   (let [composed  (ext/compose (web-extensions))
@@ -2186,12 +2196,17 @@
         routes    routes-ref
         stored-theme (or (try (.getItem js/localStorage "ui-theme") (catch :default _ nil))
                         "auto")
-        viewer?   (boolean (try (.getItem js/localStorage "xi-viewer-mode") (catch :default _ nil)))
+        ;; Pre-appearance-settings builds kept the viewer toggle under this
+        ;; key; the overrides now live in xi/appearance (cache/hydrate).
+        _         (try (.removeItem js/localStorage "xi-viewer-mode") (catch :default _ nil))
         route     (router/parse-path routes (.-pathname js/window.location))
         initial   (-> (state/initial-state {:mode :client})
                       (assoc :web/theme-mode stored-theme
-                             :web/viewer-mode? viewer?
-                             :web/nav-items (:nav-items composed))
+                             :web/nav-items (:nav-items composed)
+                             ;; The config layer of the appearance settings
+                             ;; (xi.web.appearance/effective-in). Seeded here
+                             ;; because views must not require xi.config.
+                             :web/appearance-config config/appearance)diff --git a/src/xi/config.cljc b/src/xi/config.cljc
                       (cache/hydrate route))
         transport (ws-transport/create!
                    {:url        (ws-url)

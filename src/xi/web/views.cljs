@@ -19,9 +19,13 @@
                                                active-first orphan-rooms
                                                sidebar-session-groups sidebar-session-order]]
             [xi.util :as util]
+            [xi.web.appearance :as appearance]
             [ui.icon :as icon]
             [ui.form :as form]
             [ui.button :as button]
+            [ui.button-group :as button-group]
+            [ui.dialog :as dialog]
+            [ui.switch :as switch]
             [ui.empty-state :as empty-state]
             [ui.toolbar :as toolbar]
             [ui.lightbox :as lightbox]
@@ -469,9 +473,13 @@
     (edit-diff-code (grammars/get-grammar (file-ext path))
                     (truncate-lines text 100))))
 
-(defn- tool-post [dispatch! {:keys [tool arguments result is-error status
-                                    permission resolved-permission
-                                    viewer-collapsed? cwd]}]
+(defn- tool-post
+  "A tool call's <details> block. `:grouped?` — it sits inside a viewer-mode
+   group (header row styling); `:collapsed?` — it starts closed (the
+   :tool-blocks appearance setting). Both are stamped by chat-view."
+  [dispatch! {:keys [tool arguments result is-error status
+                     permission resolved-permission
+                     grouped? collapsed? cwd]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments cwd)
         running?  (= :running status)
@@ -491,8 +499,8 @@
     [:div {:class ["post" "post--tool"]}
      [:details {:class (cond-> ["tool-call-block"]
                          clj? (conj "tool-call-block--clj")
-                         viewer-collapsed? (conj "tool-call-block--viewer"))
-                :open (not viewer-collapsed?)}
+                         grouped? (conj "tool-call-block--viewer"))
+                :open (not collapsed?)}
       [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
@@ -657,8 +665,8 @@
     :thinking
     [:div {:class ["post" "post--assistant" "post--thinking"]}
      [:details {:class (cond-> ["thinking-block"]
-                         (:viewer-collapsed? entry) (conj "thinking-block--viewer"))
-                :open (not (:viewer-collapsed? entry))}
+                         (:grouped? entry) (conj "thinking-block--viewer"))
+                :open (not (:collapsed? entry))}
       [:summary {:class ["thinking-toggle"]}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
@@ -2096,15 +2104,13 @@
                                    (dispatch! {:type :palette/open-skills}))}}
             (icon/icon {:icon-name :zap :size :sm})
             [:span "Skills"]])
-         (when room
-           (let [viewer? (:web/viewer-mode? state)]
-             [:button {:class ["overflow-menu-item"]
-                       :on {:click (fn [e]
-                                     (.stopPropagation e)
-                                     (dispatch! {:type :overflow/close})
-                                     (dispatch! {:type :viewer/toggle}))}}
-              (icon/icon {:icon-name (if viewer? :check :eye) :size :sm})
-              [:span (if viewer? "Viewer mode: on" "Viewer mode")]]))
+         [:button {:class ["overflow-menu-item"]
+                   :on {:click (fn [e]
+                                 (.stopPropagation e)
+                                 (dispatch! {:type :overflow/close})
+                                 (dispatch! {:type :appearance/open}))}}
+          (icon/icon {:icon-name :settings :size :sm})
+          [:span "Appearance"]]
          [:div {:class ["overflow-menu-divider"]}]
          [:button {:class ["overflow-menu-item"]
                    :on {:click (fn [e]
@@ -2593,10 +2599,12 @@
                    (str "Show " (min window-step start) " earlier messages"
                         " (" start " hidden)"))])
                (let [editing   (:web/editing-bubble state)
-                     ;; Viewer mode collapses non-text tool posts (read/write/
-                     ;; clj/…) into grouped header-only items; see
-                     ;; group-viewer-items.
-                     viewer?   (:web/viewer-mode? state)
+                     ;; Appearance settings (xi.web.appearance): viewer mode
+                     ;; folds tool/thinking posts into grouped header rows
+                     ;; (group-viewer-items); :tool-blocks / :thinking-blocks
+                     ;; decide whether each block starts open or collapsed.
+                     app       (appearance/effective-in state)
+                     viewer?   (:viewer-mode? app)
                      ;; Answered dialogs live in a web-only log, each anchored
                      ;; to the history length at answer time so its static
                      ;; bubble stays in chronological place as the turn resumes.
@@ -2626,15 +2634,21 @@
                                ;; group and show a decision icon in their header.
                                ;; Thinking blocks fold into the same group as a
                                ;; collapsed "Thinking" row.
-                               collapsible? (and viewer?
-                                                 (#{:tool-call :thinking} (:kind entry))
-                                                 (not= p perm-tool-idx))
+                               groupable? (and viewer?
+                                               (#{:tool-call :thinking} (:kind entry))
+                                               (not= p perm-tool-idx))
+                               ;; Start collapsed per the block-kind setting; a
+                               ;; tool awaiting Allow/Deny always stays open.
+                               collapsed? (and (not= p perm-tool-idx)
+                                               (appearance/block-collapsed? app (:kind entry)))
                                post  (entry->post
                                       dispatch!
                                       (cond-> (assoc entry :history-index p
                                                      :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd])))
-                                        collapsible?
-                                        (assoc :viewer-collapsed? true)
+                                        groupable?
+                                        (assoc :grouped? true)
+                                        collapsed?
+                                        (assoc :collapsed? true)
                                         (and (= :user (:kind entry)) (= p (:index editing)))
                                         (assoc :editing? true :edit-text (:text editing))
                                         (= p perm-tool-idx)
@@ -2644,7 +2658,7 @@
                                         (assoc :resolved-permission
                                                (resolved-by-tool (:id entry)))))]
                            (when post [{:key (str "h-" p)
-                                        :group? collapsible?
+                                        :group? groupable?
                                         :node (with-post-key (str "h-" p) post)}])))))
                     (range start (inc total))))))
                ;; These tail bubbles appear/disappear as a turn progresses
@@ -3351,6 +3365,10 @@
            [:button {:class ["icon-btn" "icon-btn--sm"]
                      :title "Mark all sessions as read"
                      :on {:click (fn [_] (dispatch! {:type :session/mark-all-read}))}}
+         [:button {:class ["icon-btn" "icon-btn--sm"]
+                   :title "Appearance settings"
+                   :on {:click (fn [_] (dispatch! {:type :appearance/open}))}}
+          (icon/icon {:icon-name :settings :size :md})]
             (icon/icon {:icon-name :check :size :md})])
          (when (seq visible)
            [:button {:class ["icon-btn" "icon-btn--sm"]
@@ -3955,7 +3973,13 @@
                                :on-click (fn [_]
                                            (dispatch! {:type :theme/set-mode
                                                        :mode "auto"}))}
-                              "Use system theme")))))))))
+                              "Use system theme"))
+                       :always
+                       (conj (cmd/command-item
+                              {:icon :settings
+                               :value "appearance settings viewer mode tool thinking blocks"
+                               :on-click (fn [_] (dispatch! {:type :appearance/open}))}
+                              "Appearance settings")))))))))
      (when cur-sid
        (cmd/command-group {:heading "Current session"}
          (cmd/command-item
@@ -4171,6 +4195,85 @@
   "Top-level view, route-driven: the session list at /, a room at /chat/:id.
    Wrapped in a floating sidebar layout so every topbar's hamburger reveals
    the recent-sessions drawer over the content."
+(defn- appearance-row
+  "One settings row: label (+ optional hint) on the left, its control on the
+   right."
+  [label hint control]
+  [:div {:class ["appearance-row"]}
+   [:div {:class ["appearance-row-text"]}
+    [:div {:class ["appearance-row-label"]} label]
+    (when hint [:div {:class ["form-hint"]} hint])]
+   control])
+
+(defn- open-collapsed-choice
+  "Open / Collapsed segmented control for the block-kind setting `key`."
+  [dispatch! key value]
+  (button-group/button-group {:variant :boxed}
+    (button-group/button-group-item
+     {:active (= :open value)
+      :on-click (fn [_] (dispatch! {:type :appearance/set :key key :value :open}))}
+     "Open")
+    (button-group/button-group-item
+     {:active (= :collapsed value)
+      :on-click (fn [_] (dispatch! {:type :appearance/set :key key :value :collapsed}))}
+     "Collapsed")))
+
+(defn- appearance-dialog
+  "The Appearance settings dialog (sidebar gear / overflow menu / palette).
+   Edits this browser's overrides (:web/appearance, see xi.web.appearance) on
+   top of xi.config/appearance and the built-in defaults; the timeline
+   re-renders live as each control changes. Reset drops the overrides so the
+   configured values apply again. Escape closes it (keymap binding)."
+  [state dispatch!]
+  (when (:web/appearance-open? state)
+    (let [overrides (:web/appearance state)
+          app       (appearance/effective-in state)
+          close!    (fn [] (dispatch! {:type :appearance/close}))]
+      (dialog/dialog-overlay
+       {:on-close close!
+        :class "appearance-overlay"
+        :attrs {:replicant/key "appearance-dialog"}}
+       (dialog/dialog-panel {:class "appearance-dialog"}
+         (dialog/dialog-header {}
+           [:h3 "Appearance"]
+           [:button {:class ["icon-btn" "icon-btn--sm"]
+                     :title "Close"
+                     :on {:click (fn [_] (close!))}}
+            (icon/icon {:icon-name :x :size :md})])
+         (dialog/dialog-body {:class "appearance-body"}
+           (appearance-row
+            "Theme" nil
+            (theme-toggle/theme-toggle
+             {:mode (or (:web/theme-mode state) "auto")
+              :size :sm
+              :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))}))
+           (appearance-row
+            "Viewer mode"
+            "Fold runs of tool and thinking rows into one box"
+            (switch/switch-toggle
+             {:checked (:viewer-mode? app)
+              :on-change (fn [^js e]
+                           (dispatch! {:type :appearance/set
+                                       :key :viewer-mode?
+                                       :value (boolean (.. e -target -checked))}))}))
+           (appearance-row
+            "Tool blocks"
+            "Read, edit, clj… calls and their results"
+            (open-collapsed-choice dispatch! :tool-blocks (:tool-blocks app)))
+           (appearance-row
+            "Thinking blocks" nil
+            (open-collapsed-choice dispatch! :thinking-blocks (:thinking-blocks app))))
+         (dialog/dialog-footer {}
+           (button/button
+            {:variant :ghost :size :sm
+             :disabled (not (appearance/overridden? overrides))
+             :on-click (fn [_] (dispatch! {:type :appearance/reset}))}
+            "Reset to defaults")
+           (button/button
+            {:variant :primary :size :sm
+             :on-click (fn [_] (close!))}
+            "Done")))))))
+
   [state dispatch! pages]
   (let [open? (boolean (:web/sidebar-open? state))
         page  (get-in state [:web/route :page])]
@@ -4190,4 +4293,4 @@
           (home-view state dispatch!))))
      (command-palette state dispatch!)
      (auth-request-banner state dispatch!)
-     (auth-overlay state))))
+     (auth-overlay state))))     (appearance-dialog state dispatch!)diff --git a/src/xi/web/core.cljs b/src/xi/web/core.cljs

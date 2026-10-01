@@ -348,6 +348,40 @@ body {
   background: var(--border-color, var(--bg-2));
 }
 
+/* ---- Appearance settings dialog ---- */
+/* Above the floating sidebar drawer and the popup menus (999/1000). */
+.appearance-overlay { z-index: 1100; }
+
+.appearance-dialog h3 {
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+
+.appearance-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4);
+}
+
+.appearance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4);
+}
+
+.appearance-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  min-width: 0;
+}
+
+.appearance-row-label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+
 /* ---- Project picker ---- */
 .project-picker-backdrop {
   position: fixed;
