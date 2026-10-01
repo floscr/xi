@@ -35,7 +35,7 @@
    awaited), `:url` the page's final URL, `:ready?` false when `:wait` timed
    out. Both expressions run in the page, not in xi."
   ([ctx url] (visit ctx url nil))
-  ([ctx url {:keys [wait eval timeout-ms]}]
+  ([ctx url {:keys [wait timeout-ms] :as opts}]
    (let [u     (parse-url url)
          hosts (:hosts (core/permission ctx :chrome-driver))]
      (cond
@@ -57,6 +57,6 @@
            (.then (fn [_]
                     (chrome/visit! (:extension ctx) (set hosts) (str url)
                                    {:wait       wait
-                                    :eval       eval
+                                    :eval       (:eval opts)
                                     :timeout-ms (min MAX_TIMEOUT_MS
                                                      (or timeout-ms DEFAULT_TIMEOUT_MS))}))))))))

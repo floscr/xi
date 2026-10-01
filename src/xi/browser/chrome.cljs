@@ -211,7 +211,7 @@
                                   #(poll-ready send! session wait deadline)))))))
 
 (defn- run-visit
-  [{:keys [send!]} url {:keys [wait eval timeout-ms]}]
+  [{:keys [send!]} url {:keys [wait timeout-ms] eval-js :eval}]
   (-> (send! "Target.createTarget" {:url "about:blank"} nil)
       (.then
        (fn [^js t]
@@ -230,7 +230,7 @@
                                  (poll-ready send! session wait
                                              (+ (js/Date.now) (or timeout-ms DEFAULT_TIMEOUT_MS)))))
                         (.then (fn [waited]
-                                 (-> (evaluate send! session (or eval "null"))
+                                 (-> (evaluate send! session (or eval-js "null"))
                                      (.then (fn [value]
                                               (-> (evaluate send! session "location.href")
                                                   (.then (fn [href]
