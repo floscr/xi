@@ -101,19 +101,20 @@
         (dispatch! ev)
         (log-blocked id (str "dispatch " (:type ev)))))))
 
-(defn- guard-ctx [id opts ctx]
+(defn- guard-ctx [id token opts ctx]
   (cond-> ctx
     (:dispatch! ctx) (assoc :dispatch! (guard-dispatch id opts (:dispatch! ctx)))
-    :always          (assoc :extension id)))
+    :always          (assoc :extension id)
+    token            (assoc :xi.api/token token)))
 
-(defn- guard-fx [id opts f]
+(defn- guard-fx [id token opts f]
   (fn [ctx payload]
-    (try (f (guard-ctx id opts ctx) payload)
+    (try (f (guard-ctx id token opts ctx) payload)
          (catch :default e (log-blocked id (str "fx threw: " (.-message e))) nil))))
 
-(defn- guard-tool [id f]
+(defn- guard-tool [id token f]
   (fn [args ctx]
-    (try (f args (guard-ctx id {:user-initiated? false} ctx))
+    (try (f args (guard-ctx id token {:user-initiated? false} ctx))
          (catch :default e
            (log-blocked id (str "tool threw: " (.-message e)))
            {:content [{:type "text" :text (str "extension error: " (.-message e))}]
@@ -128,30 +129,36 @@
 (defn wrap
   "Return `ext` with every user fn confined (see ns doc). :id / :init /
    :system-prompt / :prompt-badge / :tool-definitions pass through unchanged —
-   they carry no capability."
-  [ext]
-  (let [id     (:id ext)
-        own-fx (set (keys (:fx ext)))
-        h-opts {:user-initiated? false}]
-    (cond-> ext
-      (:handlers ext)
-      (update :handlers update-vals (partial guard-handler id own-fx h-opts))
+   they carry no capability.
 
-      (:fx ext)
-      (update :fx update-vals (partial guard-fx id h-opts))
+   `token` (xi.api.core/issue-token!) is stamped into every ctx handed to the
+   extension's fx and tool fns as :xi.api/token — the proof xi.api.* resolves
+   the caller from, so the extension can't pass a ctx naming another id.
+   Without one the ctx carries no xi.api capability at all."
+  ([ext] (wrap ext nil))
+  ([ext token]
+   (let [id     (:id ext)
+         own-fx (set (keys (:fx ext)))
+         h-opts {:user-initiated? false}]
+     (cond-> ext
+       (:handlers ext)
+       (update :handlers update-vals (partial guard-handler id own-fx h-opts))
 
-      (:tool-registry ext)
-      (update :tool-registry update-vals (partial guard-tool id))
+       (:fx ext)
+       (update :fx update-vals (partial guard-fx id token h-opts))
 
-      (:commands ext)
-      (update :commands
-              (fn [cmds]
-                (mapv (fn [c] (update c :handler (partial guard-command id own-fx))) cmds)))
+       (:tool-registry ext)
+       (update :tool-registry update-vals (partial guard-tool id token))
 
-      (:keybindings ext)
-      (update :keybindings
-              (fn [kbs]
-                (filterv (fn [{:keys [event]}]
-                           (or (allowed? id (:type event) {:user-initiated? true})
-                               (do (log-blocked id (str "keybinding " (:type event))) false)))
-                         kbs))))))
+       (:commands ext)
+       (update :commands
+               (fn [cmds]
+                 (mapv (fn [c] (update c :handler (partial guard-command id own-fx))) cmds)))
+
+       (:keybindings ext)
+       (update :keybindings
+               (fn [kbs]
+                 (filterv (fn [{:keys [event]}]
+                            (or (allowed? id (:type event) {:user-initiated? true})
+                                (do (log-blocked id (str "keybinding " (:type event))) false)))
+                          kbs)))))))

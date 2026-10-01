@@ -115,6 +115,13 @@ a Promise. Each call is decided by the **rules engine** like an agent tool
 call, with the request tagged `:extension <id>`. If a rule asks and there is
 no one to answer (no room, no client), the call is refused.
 
+The ctx *is* the capability. The loader stamps it with an opaque
+per-extension token (`:xi.api/token`), and `xi.api.*` resolves the caller
+from that token, not from `:extension`. A ctx that names another extension's
+id, or one you build yourself, is refused — so no extension can borrow
+another's grants or declared hosts, and the sandbox has no way to mint a
+token.
+
 | Namespace | Functions | Request |
 |---|---|---|
 | `xi.api.fs` | `read` `write` `list` `exists?` `data-dir` | `{:tool :read/:write/:ls :path …}` |

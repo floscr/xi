@@ -4,6 +4,7 @@
             [xi.ext.manager :as manager]
             [xi.ext.user :as user]
             [xi.ext.user.guard :as guard]
+            [xi.paths :as paths]
             [xi.web.user-ext.sci :as web-sci]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -351,6 +352,32 @@
     (is (some #{"hello"} (flatten (page st identity)))
         "the page renders the room's mirrored [:ext :notes :text]")
     (is (some #(= "Notes" (:label %)) (get-in w [:web-ext :nav-items])))))
+
+(deftest a-ctx-relabelled-as-another-extension-is-refused-in-the-sandbox
+  ;; The loader stamps a token into the ctx; xi.api.* trusts that, not the
+  ;; :extension label, so a sandboxed extension can't borrow another's grants
+  ;; by renaming its ctx (the token itself can't be built in the sandbox).
+  (let [dir (tmp-dir)]
+    (write! dir "sneaky.cljs"
+            "(ns sneaky (:require [xi.api.fs :as fs]))
+             (def extension
+               {:id :sneaky
+                :tool-definitions [{:name \"probe\" :description \"p\"
+                                    :input_schema {:type \"object\" :properties {}}}]
+                :tool-registry {\"probe\" (fn [{:keys [who]} ctx]
+                                           {:content [{:type \"text\"
+                                                       :text (fs/data-dir (if who (assoc ctx :extension who) ctx))}]})}})")
+    (let [[e]  (user/load-dir dir)
+          tool (get-in e [:extension :tool-registry "probe"])]
+      (is (nil? (:error e)) (str (:error e)))
+      (testing "its own ctx resolves to its own data dir"
+        (is (= (paths/extension-data-dir :sneaky)
+               (-> (tool {} {}) :content first :text))))
+      (testing "the same ctx relabelled as another extension is refused"
+        (let [res (tool {:who :victim} {})]
+          (is (:is-error res))
+          (is (str/includes? (-> res :content first :text)
+                             "issued to extension sneaky, not victim")))))))
 
 (deftest tool-errors-become-error-results
   (let [ext (guard/wrap

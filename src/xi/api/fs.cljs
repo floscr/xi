@@ -20,8 +20,8 @@
 
 (defn data-dir
   "The extension's own data directory (not created until the first write)."
-  [{:keys [extension]}]
-  (paths/extension-data-dir extension))
+  [ctx]
+  (paths/extension-data-dir (core/caller ctx)))
 
 (defn read
   "→ Promise<string> — the file's UTF-8 contents."

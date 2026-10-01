@@ -175,9 +175,12 @@
                           ext (read-var ctx nsn 'extension)]
                       (if-let [reason (validate ext taken-ids taken-tools)]
                         (assoc base :error reason)
+                        ;; the token proves to xi.api.* which extension is
+                        ;; calling (see xi.api.core/caller)
                         (cond-> (assoc base :id (:id ext)
                                             :ns nsn
-                                            :extension (guard/wrap (dissoc ext :permissions)))
+                                            :extension (guard/wrap (dissoc ext :permissions)
+                                                                   (api-core/issue-token! (:id ext))))
                           (:permissions ext) (assoc :permissions (:permissions ext)))))
                     (catch :default e
                       (assoc base :error (str "eval error: " (.-message e)))))]

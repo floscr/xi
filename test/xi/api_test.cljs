@@ -3,6 +3,7 @@
    confirm!) unless a test says otherwise, so every :ask is a refusal."
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
+            [xi.api.core :as core]
             [xi.api.fs :as xfs]
             [xi.api.http :as http]
             [xi.api.json :as json]
@@ -29,7 +30,9 @@
                       (js-delete js/process.env "XDG_DATA_HOME"))
                     (done))))))
 
-(def ^:private ctx {:extension "t" :get-state (fn [] {})})
+;; the ctx the loader would hand extension "t": the token is what xi.api.*
+;; resolves the caller from (see xi.api.core/caller)
+(def ^:private ctx {:extension "t" :xi.api/token (core/issue-token! "t") :get-state (fn [] {})})
 
 (defn- rejection
   "Promise → the rejection message (or ::resolved)."
