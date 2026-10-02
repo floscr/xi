@@ -1,18 +1,15 @@
 (ns xi.system-prompt
   "System prompt construction. Loads AGENTS.md from project root + parents.
-   Supports profile-based agents prompts via `bb profile:agents-prompt`."
+   Supports per-project agents prompts from config.edn
+   `:projects :settings` (xi.projects/agents-prompt)."
   (:require [cljs.reader :as reader]
             [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
             [xi.ext.clojure-skills :as skills]
-            [xi.tools.util :as tools-util]))
-
-(def ^:private BB_DIR
-  (str (aget js/process.env "HOME") "/.config/dotfiles/modules/scripts"))
-
-(def ^:private BB_EDN
-  (str BB_DIR "/bb.edn"))
+            [xi.projects :as projects]
+            [xi.tools.util :as tools-util]
+            [xi.user-config :as user-config]))
 
 (def ^:private PROMPT_FILES_EDN
   (str (aget js/process.env "HOME") "/.config/xi/prompt-files.edn"))
@@ -99,20 +96,12 @@ When committing changes:
         (recur parent found)))))
 
 
-(defn- fetch-profile-agents-prompt
-  "Call bb profile:agents-prompt to check if a profile defines a custom
-   agents prompt for this cwd. Returns {:prompt <str> :replace <bool>} or nil."
+(defn- project-agents-prompt
+  "The agents prompt config.edn `:projects :settings` defines for this cwd.
+   Returns {:prompt <str> :replace <bool>} or nil."
   [cwd]
   (try
-    (let [proc (js/Bun.spawnSync
-                #js ["bb" "--config" BB_EDN "profile:agents-prompt" cwd]
-                #js {:stdout "pipe" :stderr "pipe"
-                     :timeout 10000})]
-      (when (zero? (.-exitCode proc))
-        (let [stdout (str (.toString (.-stdout proc)))
-              parsed (js->clj (js/JSON.parse stdout) :keywordize-keys true)]
-          (when (:prompt parsed)
-            parsed))))
+    (projects/agents-prompt! (user-config/projects-spec) cwd)
     (catch :default _e
       nil)))
 
@@ -147,7 +136,7 @@ When committing changes:
    the agent to read each one when editing related files. When a profile
    replaces the cwd AGENTS.md (:replace), that file is omitted so the list
    matches the prompt actually inserted. nil when none."
-  ([cwd] (agents-md-prompt cwd (fetch-profile-agents-prompt cwd)))
+  ([cwd] (agents-md-prompt cwd (project-agents-prompt cwd)))
   ([cwd profile-prompt]
    (let [replaced (when (:replace profile-prompt)
                     (when-let [root (tools-util/git-root cwd)]
@@ -169,8 +158,8 @@ When committing changes:
    Also appends any active skill prompts for the project."
   [cwd]
   (let [files (find-agents-md cwd)
-        profile-prompt (fetch-profile-agents-prompt cwd)
-        ;; When profile says replace, swap out the root (cwd) AGENTS.md
+        profile-prompt (project-agents-prompt cwd)
+        ;; When the project says replace, swap out the root (cwd) AGENTS.md
         ;; The root AGENTS.md is the last entry (innermost = closest to cwd)
         effective-files (if (and profile-prompt (:replace profile-prompt) (seq files))
                           ;; Drop the innermost (root project) instruction file
@@ -222,7 +211,7 @@ When committing changes:
                      (let [rf (.resolve node-path f)]
                        (or (= rf base)
                            (str/starts-with? rf (str base (.-sep node-path))))))
-        profile-prompt (fetch-profile-agents-prompt cwd)
+        profile-prompt (project-agents-prompt cwd)
         effective-files (if (and profile-prompt (:replace profile-prompt) (seq files))
                           (let [root-dir (.resolve node-path cwd)]
                             (vec (remove #(= (.dirname node-path %) root-dir) files)))
@@ -236,7 +225,7 @@ When committing changes:
                                  :text   (str "# " (.relative node-path cwd f) "\n\n" content)}))))
                     effective-files)
         parts (if-let [pc (:prompt profile-prompt)]
-                (conj parts {:source "profile" :text pc})
+                (conj parts {:source "project" :text pc})
                 parts)
         parts (if-let [sub (agents-md-prompt cwd profile-prompt)]
                 (conj parts {:source "agents-md" :text sub})

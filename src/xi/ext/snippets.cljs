@@ -4,25 +4,23 @@
 
    - global   : ~/.config/xi/snippets.edn — a vector of {:label :text} maps
                 (or a {label text} map), shown in every chat.
-   - project  : a :snippets vector in the dotfiles profile whose :dir matches
-                the room's cwd, fetched via `bb profile:snippets <cwd>`
-                (mirrors profile:agents-prompt / profile:review-prompt). Shown
-                only in that project's chat.
+   - project  : the :snippets vector config.edn `:projects :settings` holds for
+                the room's cwd (xi.projects/snippets). Shown only in that
+                project's chat.
 
    The web client requests the list with :snippets/web-list (roomless, carries
    the active room's cwd); the server replies :snippets/web-list-result with
    {:global [...] :project [...]}. Selecting a snippet inserts its :text into
    the compose draft (see xi.web.core :snippets/picker-insert)."
   (:require [cljs.reader :as reader]
+            [xi.projects :as projects]
+            [xi.user-config :as user-config]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]))
 
 (def ^:private GLOBAL_SNIPPETS_FILE
   (.join node-path (os/homedir) ".config" "xi" "snippets.edn"))
-
-(def ^:private BB_EDN
-  (str (aget js/process.env "HOME") "/.config/dotfiles/modules/scripts/bb.edn"))
 
 (defn- normalize-snippets
   "Coerce a parsed value into a vec of {:label :text} maps, dropping anything
@@ -53,18 +51,12 @@
     (catch :default _ nil)))
 
 (defn- load-project-snippets
-  "Run `bb profile:snippets <cwd>` and parse its JSON output into snippets.
-   Returns a vec (possibly empty) or nil when there is no matching profile."
+  "The project's snippets from config.edn `:projects :settings`. Returns a vec
+   (possibly empty), or nil when `cwd` is unusable or the lookup fails."
   [cwd]
   (when (and (string? cwd) (seq cwd))
     (try
-      (let [proc (js/Bun.spawnSync
-                  #js ["bb" "--config" BB_EDN "profile:snippets" cwd]
-                  #js {:stdout "pipe" :stderr "pipe" :timeout 10000})]
-        (when (zero? (.-exitCode proc))
-          (let [stdout (str (.toString (.-stdout proc)))
-                parsed (js->clj (js/JSON.parse stdout) :keywordize-keys true)]
-            (normalize-snippets parsed))))
+      (normalize-snippets (projects/snippets! (user-config/projects-spec) cwd))
       (catch :default _ nil))))
 
 ;; ── Web snippets menu (roomless) ───────────────────────────────────────────
