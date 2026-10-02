@@ -35,7 +35,7 @@
         [xi.ext.resume :as resume]
         [xi.ext.rules :as rules]
         [xi.ext.session-search :as session-search]
-        [xi.ext.skills :as skills]
+        [xi.ext.clojure-skills :as skills]
         [xi.ext.snippets :as snippets]
         [xi.ext.subagent :as subagent]
         [xi.ext.terminal-title :as terminal-title]

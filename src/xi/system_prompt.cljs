@@ -5,7 +5,7 @@
             [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
-            [xi.ext.skills :as skills]
+            [xi.ext.clojure-skills :as skills]
             [xi.tools.util :as tools-util]))
 
 (def ^:private BB_DIR

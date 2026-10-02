@@ -1,4 +1,4 @@
-(ns xi.ext.skills
+(ns xi.ext.clojure-skills
   "Skills extension — detects project type and injects tool knowledge into
    the system prompt. Also provides on-demand skills loaded from
    ~/.config/xi/skills/*/SKILL.md via /skill list|load commands."

@@ -166,6 +166,6 @@ Canonical example: `src/xi/ext/canvas_review/web.cljs`.
 | Tools only | `src/xi/ext/session_search.cljs` |
 | Tool gate with confirm | `src/xi/ext/permission_gate.cljs` |
 | Event hook | `src/xi/ext/clipboard_image.cljs` |
-| Conditional system prompt | `src/xi/ext/skills.cljs` |
+| Conditional system prompt | `src/xi/ext/clojure_skills.cljs` |
 | Factory (env-configured) | `src/xi/ext/chrome_mcp.cljs` |
 | Two-build web extension | `src/xi/ext/canvas_review.cljs` + `canvas_review/web.cljs` |
