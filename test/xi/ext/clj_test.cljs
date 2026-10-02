@@ -434,6 +434,23 @@
     (is (:is-error res))
     (is (str/includes? (result-text res) "existing directory"))))
 
+(deftest sh-env-opt-sets-variables
+  (let [res (eval! "(sh {:env {\"XI_T_A\" 8080 :XI_T_B \"x\"}} \"printenv\" \"XI_T_A\")"
+                   {:allowed ["printenv"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "8080"))))
+
+(deftest sh-env-opt-rejects-code-loading-keys
+  (doseq [k ["PATH" "LD_PRELOAD" "NODE_OPTIONS" "BASH_ENV"]]
+    (let [res (eval! (str "(sh {:env {\"" k "\" \"x\"}} \"printenv\" \"HOME\")")
+                     {:allowed ["printenv"]})]
+      (is (:is-error res) k)
+      (is (str/includes? (result-text res) "not allowed") k))))
+
+(deftest sh-env-opt-rejects-bad-shapes
+  (is (:is-error (eval! "(sh {:env [\"A=1\"]} \"printenv\" \"A\")" {:allowed ["printenv"]})))
+  (is (:is-error (eval! "(sh {:env {\"A\" {:x 1}}} \"printenv\" \"A\")" {:allowed ["printenv"]}))))
+
 ;; ── approve (validation + approvals, run by the tool before it evaluates) ────
 
 (def ^:private gate clj-ext/approve)
@@ -1243,6 +1260,13 @@
   (is (= #{"npm"} (clj-ext/bg-command-clis ["npm run dev"])))
   (is (= #{"cd" "npm"} (clj-ext/bg-command-clis ["cd web && npm start"])))
   (is (= #{"node"} (clj-ext/bg-command-clis ["PORT=3000 node server.js"])))
+  ;; a plain `env VAR=… cmd` wrapper is a VAR= prefix — approve the real CLI
+  (is (= #{"bb"} (clj-ext/bg-command-clis ["env A=1 B=2 bb server"])))
+  (is (= #{"bb"} (clj-ext/bg-command-clis ["env bb server"])))
+  ;; but `env -i …` and a bare `env` (dumps the environment) still need approval
+  (is (= #{"env"} (clj-ext/bg-command-clis ["env -i bb server"])))
+  (is (= #{"env"} (clj-ext/bg-command-clis ["env"])))
+  (is (= #{"env"} (clj-ext/bg-command-clis ["env A=1"])))
   (is (= #{"echo" "wc"} (clj-ext/bg-command-clis ["echo hi | wc -c"])))
   (is (= #{"deploy"} (clj-ext/bg-command-clis ["deploy app:prod --service api 2>&1"])))
   (is (= #{"npm"} (clj-ext/bg-command-clis ["npm run build &> build.log"]))))
@@ -1269,6 +1293,22 @@
                    {:allowed-bg ["pwd"]})]
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) d))))
+
+(deftest process-start-env-opt
+  (let [res (eval! (str "(let [{:keys [pid]} (process/start {:env {\"XI_T_BG\" 7} } "
+                        "\"printenv XI_T_BG\")] (process/wait pid 5000))")
+                   {:allowed-bg ["printenv XI_T_BG"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "7"))))
+
+(deftest poll-until-env-opt
+  (let [res (eval! (str "(process/poll-until {:env {\"XI_T_POLL\" \"ready\"}} "
+                        "\"printenv XI_T_POLL\" "
+                        "{:until :stdout-matches :pattern \"ready\" "
+                        ":interval-ms 50 :timeout-ms 2000})")
+                   {:allowed-bg ["printenv XI_T_POLL"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) ":met? true"))))
 
 (deftest poll-until-dir-opt
   (let [d   (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-poll-dir-"))

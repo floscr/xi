@@ -52,6 +52,43 @@
             (throw (ex-info "clj: aborted (turn ended)" {:aborted true})))
           nil))))
 
+;; ── Env opt ──────────────────────────────────────────────────────────────────
+
+(def ^:private ENV_DENY
+  "Env keys an `:env` opt may not set: they change which code an approved
+   binary loads or runs, so allowing them would defeat the CLI gate."
+  #"^(PATH|BASH_ENV|ENV|NODE_OPTIONS|BUN_OPTIONS|LD_.*|DYLD_.*)$")
+
+(defn env-overlay
+  "Validate the :env of a leading opts map ((sh {:env {\"PORT\" 8080}} …)) →
+   {\"PORT\" \"8080\"} (string keys/values; keyword keys/values use their name),
+   or nil when absent. Throws on a non-map, non-scalar values, or a key in
+   ENV_DENY."
+  [env]
+  (when (some? env)
+    (when-not (map? env)
+      (throw (ex-info (str "clj: :env must be a map like {\"KEY\" \"value\"}, got "
+                           (pr-str env)) {})))
+    (into {}
+          (map (fn [[k v]]
+                 (let [k (if (keyword? k) (name k) (str k))]
+                   (when (re-matches ENV_DENY k)
+                     (throw (ex-info (str "clj: :env key not allowed: " k) {})))
+                   (when-not (or (string? v) (number? v) (keyword? v))
+                     (throw (ex-info (str "clj: :env value for " k " must be a string "
+                                          "or number, got " (pr-str v)) {})))
+                   [k (if (keyword? v) (name v) (str v))])))
+          env)))
+
+(defn child-env
+  "The child process env: this worker's process.env plus the validated
+   `overlay` (see env-overlay)."
+  [overlay]
+  (let [out (js/Object.assign #js {} (unchecked-get js/process "env"))]
+    (doseq [[k v] overlay]
+      (unchecked-set out k v))
+    out))
+
 ;; ── Registry (worker-local) ──────────────────────────────────────────────────
 ;; pid → {:pid :command :started :logfile :exit-file :room-id}. Entries stay
 ;; after natural exit (so a late wait/output still works) and are dropped on
@@ -136,14 +173,15 @@
 
 (defn- spawn-detached!
   "Spawn `cmd` via bash in its own session/process group, stdout+stderr to
-   `logfile`, exit code to `exit-file`. Returns the child (unref'd)."
-  [cmd cwd logfile exit-file]
+   `logfile`, exit code to `exit-file`. Returns the child (unref'd).
+   `env` is the validated :env overlay (or nil)."
+  [cmd cwd logfile exit-file env]
   (let [script (str "{ " cmd "\n} > " logfile " 2>&1; echo $? > " exit-file)
         child  (cp/spawn "bash" #js ["-c" script]
                          #js {:detached true
                               :stdio    "ignore"
                               :cwd      (or cwd (.cwd js/process))
-                              :env      (unchecked-get js/process "env")})]
+                              :env      (child-env env)})]
     (.unref child)
     child))
 
@@ -160,13 +198,14 @@
 
 (defn- start!
   "Spawn `cmd` detached in the background → {:pid N :log path}.
-   `dir` (optional, from a leading {:dir …} opts map) overrides the cwd."
-  [opts cmd dir]
+   `dir` / `env` (optional, from a leading {:dir … :env …} opts map) override
+   the cwd / extend the environment."
+  [opts cmd dir env]
   (require-approved! opts cmd)
   (let [cmd'      (str/trimr (str/replace (str cmd) #"\s*&\s*$" ""))
         logfile   (new-log-path)
         exit-file (str logfile ".exit")
-        child     (spawn-detached! cmd' (or dir (:cwd @opts)) logfile exit-file)
+        child     (spawn-detached! cmd' (or dir (:cwd @opts)) logfile exit-file env)
         pid       (.-pid child)
         started   (.now js/Date)
         rid       (:room-id @opts)
@@ -236,12 +275,12 @@
 (defn- run-once!
   "One poll attempt: run `cmd` via bash, merged stdout+stderr →
    {:exit N :output str}."
-  [opts cmd dir]
+  [opts cmd dir env]
   (let [^js res (cp/spawnSync "bash" #js ["-c" (str cmd)]
                               #js {:cwd (or dir (:cwd @opts) (.cwd js/process))
                                    :encoding "utf8"
                                    :timeout 30000
-                                   :env (unchecked-get js/process "env")})
+                                   :env (child-env env)})
         out (str (.-stdout res) (.-stderr res))]
     {:exit   (if (some? (.-status res)) (.-status res) -1)
      :output (if (> (count out) poll-output-cap)
@@ -258,14 +297,14 @@
   "Rerun `cmd` every :interval-ms until the :until condition holds
    (:exit-zero default | :stdout-matches | :stdout-not-matches + :pattern) or
    :timeout-ms elapses → {:met? bool :attempts N :exit N :output str}."
-  [opts cmd dir & [{:keys [until pattern interval-ms timeout-ms]}]]
+  [opts cmd dir env & [{:keys [until pattern interval-ms timeout-ms]}]]
   (require-approved! opts cmd)
   (when (and (contains? #{:stdout-matches :stdout-not-matches} until)
              (not (string? pattern)))
     (throw (ex-info "process/poll-until: :pattern (string regex) is required for stdout conditions" {})))
   (let [deadline (+ (.now js/Date) (or timeout-ms default-poll-timeout-ms))]
     (loop [attempts 1]
-      (let [res  (run-once! opts cmd dir)
+      (let [res  (run-once! opts cmd dir env)
             met? (poll-met? (or until :exit-zero) pattern res)]
         (cond
           met?
@@ -284,19 +323,20 @@
    the room runtime's opts atom — carries :allowed-bg, :cwd, :room-id and
    :abort-arr for the current eval. `resolve-dir` resolves + gates the :dir of
    an optional bb-style leading opts map on start/poll-until, e.g.
-   (process/start {:dir \"sub/project\"} \"bb build\")."
+   (process/start {:dir \"sub/project\" :env {\"PORT\" 8080}} \"bb build\")."
   [opts resolve-dir]
   (let [split (fn [args]
                 (if (map? (first args))
-                  [(some-> (:dir (first args)) resolve-dir) (rest args)]
-                  [nil args]))]
+                  (let [m (first args)]
+                    [(some-> (:dir m) resolve-dir) (env-overlay (:env m)) (rest args)])
+                  [nil nil args]))]
     {'start      (fn [& args]
-                   (let [[dir [cmd]] (split args)]
-                     (start! opts cmd dir)))
+                   (let [[dir env [cmd]] (split args)]
+                     (start! opts cmd dir env)))
      'stop       (fn [pid] (stop! opts pid))
      'wait       (fn [pid & [timeout-ms]] (wait opts pid timeout-ms))
      'list       (fn [] (list-procs opts))
      'output     (fn [pid & [n]] (output opts pid n))
      'poll-until (fn [& args]
-                   (let [[dir [cmd opt-map]] (split args)]
-                     (poll-until opts cmd dir opt-map)))}))
+                   (let [[dir env [cmd opt-map]] (split args)]
+                     (poll-until opts cmd dir env opt-map)))}))

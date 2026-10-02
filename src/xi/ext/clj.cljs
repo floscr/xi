@@ -261,15 +261,18 @@
 
 (defn- spawn-sync!
   "Run argv synchronously (under setsid, like the bash tool — no tty).
-   Optional `input` string is written to the child's stdin.
+   Optional `input` string is written to the child's stdin; optional `env` (a
+   validated :env overlay) is merged onto the inherited environment.
    Returns {:exit n :out s :err s}, output truncated."
-  ([argv cwd] (spawn-sync! argv cwd nil))
-  ([argv cwd input]
+  ([argv cwd] (spawn-sync! argv cwd nil nil))
+  ([argv cwd input] (spawn-sync! argv cwd input nil))
+  ([argv cwd input env]
    (let [opts #js {:cwd cwd
                    :encoding "utf8"
                    :timeout SH_TIMEOUT
                    :stdio (if input #js ["pipe" "pipe" "pipe"] #js ["ignore" "pipe" "pipe"])}
          _    (when input (set! (.-input opts) input))
+         _    (when (seq env) (set! (.-env opts) (proc/child-env env)))
          r    (cp/spawnSync "setsid" (clj->js argv) opts)]
      {:exit (or (.-status r) (if (.-signal r) -1 0))
       :out  (truncate (or (.-stdout r) "") MAX_SH_OUTPUT)
@@ -282,7 +285,8 @@
    stdout is empty — ffmpeg-style tools); throws ex-info with
    {:exit :out :err} on non-zero exit. Mirrors the git helper.
    An optional bb-style leading opts map takes :dir — the directory (relative
-   to the room cwd, or absolute) to run in: (sh {:dir \"sub\"} \"bb\" \"build\")."
+   to the room cwd, or absolute) to run in: (sh {:dir \"sub\"} \"bb\" \"build\") —
+   and :env, extra environment variables: (sh {:env {\"PORT\" 8080}} \"bb\" \"x\")."
   [opts]
   (fn [& argv]
     (let [[m argv] (if (map? (first argv))
@@ -318,7 +322,8 @@
         (let [dir (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts))
               git? (= "git" bin)
               _    (when git? (git-lock-gate! opts dir (rest argv)))
-              {:keys [exit out err]} (spawn-sync! (vec argv) dir)
+              {:keys [exit out err]} (spawn-sync! (vec argv) dir nil
+                                                  (proc/env-overlay (:env m)))
               _    (when git? (git-lock-settle! opts dir (rest argv)))]
           (if (zero? exit)
             (let [out' (str/trimr out)]
@@ -1000,7 +1005,9 @@
         "non-zero exit ({:exit :out :err} in ex-data); sh, process/start and "
         "process/poll-until take an optional bb-style leading opts map with "
         ":dir to run in another directory — (sh {:dir \"sub\"} \"bb\" "
-        "\"build\") — instead of cd-chaining. "
+        "\"build\") — instead of cd-chaining, and :env for extra environment "
+        "variables — (sh {:env {\"PORT\" 8080}} \"bb\" \"serve\") — instead of "
+        "an `env VAR=…` prefix. "
         "clojure.core + str/set/walk/edn aliases available. Paths accept a "
         "leading ~ or $HOME. Prefer this over "
         "bash pipelines: compute in-script, return small values. "
@@ -1610,19 +1617,31 @@
    (js/Promise.resolve {:approved #{}})
    clis))
 
+(defn- skip-env-assignments [words]
+  (drop-while #(re-matches #"[A-Za-z_][A-Za-z0-9_]*=.*" %) words))
+
+(defn- segment-cli
+  "The CLI a shell segment runs: its first word after leading VAR= bindings and
+   a plain `env VAR=… cmd` wrapper (env is just a VAR= prefix in disguise — the
+   real binary is what needs approval). `env` with options (`env -i`), or with
+   nothing after it (prints the whole environment), stays the CLI."
+  [seg]
+  (let [words  (skip-env-assignments (str/split (str/trim seg) #"\s+"))
+        inner  (when (and (= "env" (first words))
+                          (not (str/starts-with? (str (second words)) "-")))
+                 (skip-env-assignments (rest words)))]
+    (not-empty (first (if (seq inner) inner words)))))
+
 (defn bg-command-clis
   "Leading CLI names of background shell command strings (process/start /
    poll-until run whole bash command lines, unlike argv-style sh): strip
-   quoted segments, split on shell separators, skip VAR= env prefixes, take
-   each segment's first word. These join the sh literals for CLI approval."
+   quoted segments, split on shell separators, skip VAR= env prefixes (and a
+   plain `env VAR=…` wrapper), take each segment's first word. These join the
+   sh literals for CLI approval."
   [cmds]
   (->> cmds
        (mapcat (fn [cmd] (str/split (rules-store/strip-quoted (str cmd)) #"[;|&\n]+")))
-       (keep (fn [seg]
-               (->> (str/split (str/trim seg) #"\s+")
-                    (remove #(re-matches #"[A-Za-z_][A-Za-z0-9_]*=.*" %))
-                    first
-                    not-empty)))
+       (keep segment-cli)
        set))
 
 (def ^:private HELPER_EQUIV
@@ -1667,7 +1686,8 @@
    "cut"      "(str/split …)"
    "awk"      "(str/split …) + Clojure"
    "sed"      "(str/replace …) + (spit …)"
-   "tr"       "(str/replace …)"})
+   "tr"       "(str/replace …)"
+   "env"      "(sh {:env {\"KEY\" \"value\"}} \"cmd\" …) — the :env opt"})
 
 (def ^:private SAFE_AUTORUN
   "Read-only HELPER_EQUIV CLIs that are auto-allowed instead of bounced:
@@ -2239,7 +2259,9 @@
        "pipes or shell strings (compose results in Clojure instead); to run "
        "in another directory pass a bb-style leading opts map — "
        "(sh {:dir \"sub/project\"} \"bb\" \"build\") — never `cd … &&` "
-       "chains. "
+       "chains; the same map takes :env for extra environment variables — "
+       "(sh {:env {\"PORT\" 8080}} \"bb\" \"serve\") — never an `env VAR=…` "
+       "prefix. "
        "The REPL "
        "persists across your tool calls: (def x …) once, reuse it later "
        "instead of re-reading files. "
@@ -2251,7 +2273,7 @@
        "that outlives the eval) use the `process` namespace: "
        "(process/start \"npm run dev\") → {:pid :log} spawns detached with "
        "output to the :log file (start and poll-until also accept the "
-       "{:dir …} leading opts map); (process/wait pid) (optional timeout-ms, "
+       "{:dir … :env …} leading opts map); (process/wait pid) (optional timeout-ms, "
        "default 120s — re-call to keep waiting) blocks until exit → "
        "{:status :exited/:running :exit :output}; (process/output pid) → last "
        "log lines; (process/list) → tracked processes; (process/stop pid) "

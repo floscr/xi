@@ -165,7 +165,13 @@ error. To run in another directory, pass a bb-style **leading opts map** with
 `:dir` (relative to the room cwd, absolute, or `~`-prefixed) instead of
 `cd … &&` chains: `(sh {:dir "sub/project"} "bb" "build")`. The dir must
 exist and is gated like a read — an out-of-repo `:dir` raises the same
-approval dialog as reading there. Approval happens **before** eval, as the first
+approval dialog as reading there. The same map takes **`:env`** for extra
+environment variables — `(sh {:env {"PORT" 8080}} "bb" "serve")` — instead of
+an `env VAR=… cmd` prefix (which would ask to approve `env`, a CLI that runs
+anything). Keys/values are stringified (numbers and keywords fine); the overlay
+is merged onto the worker's environment, and keys that change which code an
+approved binary loads — `PATH`, `LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`,
+`NODE_OPTIONS`, `BUN_OPTIONS` — are rejected. Approval happens **before** eval, as the first
 step of the tool itself (`xi.ext.clj/approve`):
 
 1. The code is parsed (edamame) and all `(sh …)` call sites collected.
@@ -286,7 +292,7 @@ outlives a single eval — use the `process` namespace instead of `(sh …)`
 | Call | Does |
 | --- | --- |
 | `(process/start "npm run dev")` | spawn detached → `{:pid :log}` (log = capture file) |
-| `(process/start {:dir "sub"} "bb build")` | same, run in another directory (bb-style leading opts map; also on `poll-until`) |
+| `(process/start {:dir "sub" :env {"PORT" 8199}} "bb server")` | same, run in another directory / with extra env vars (bb-style leading opts map; also on `poll-until`) |
 | `(process/wait pid timeout-ms?)` | block until exit → `{:status :exited :exit :output}`, or `{:status :running …}` after the timeout (default 120s — call again to keep waiting) |
 | `(process/output pid n?)` | last n log lines (default 50) |
 | `(process/list)` | this room's processes → `[{:pid :command :alive? :uptime-ms :log :exit} …]` |
@@ -300,7 +306,9 @@ are gated exactly like the rest of the tool: the
 pre-scan collects the literals, walks them through the same checks as bash
 commands (sudo → block, remote shells → block, command-scoped `:ask` rules →
 confirm, guarded patterns → confirm, unknown CLIs → per-binary
-approval with `SAFE_AUTORUN` passing free), and injects the approved strings
+approval with `SAFE_AUTORUN` passing free; leading `VAR=…` bindings and a plain
+`env VAR=… cmd` wrapper are skipped so the real CLI is what gets approved —
+but prefer the `:env` opt), and injects the approved strings
 into the call (`:_allowed-bg`). The worker re-checks membership at runtime,
 so a **dynamically computed** command was never approved and is rejected with
 instructions to use a literal; command substitution (`$( )`, backticks) in
