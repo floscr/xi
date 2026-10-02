@@ -32,6 +32,7 @@
             [ui.sidebar :as sidebar]
             [ui.command :as cmd]
             [ui.context-menu :as context-menu]
+            [ui.popover :as popover]
             [xi.clj-result :as clj-result]
             [ui.theme-toggle :as theme-toggle]))
 
@@ -3191,10 +3192,37 @@
          distinct
          (take 5))))
 
-(defn- claude-usage-bar
-  "Claude subscription usage (rides on the lobby broadcast): the session
-   (5-hour window) percent as a thin bar colored by severity, with the
-   session reset time below it and weekly usage in the tooltip."
+(defn- claude-usage-meter
+  "One usage window in the usage popover: label · bar · percent, the bar
+   colored by severity, with a muted reset note below."
+  [label pct severity note]
+  [:div {:class ["claude-usage-meter" (str "claude-usage--" severity)]}
+   [:div {:class ["claude-usage-meter-row"]}
+    [:span {:class ["claude-usage-label"]} label]
+    [:div {:class ["claude-usage-track"]}
+     [:div {:class ["claude-usage-fill"]
+            :style {:width (str pct "%")}}]]
+    [:span {:class ["claude-usage-pct"]} (str pct "%")]]
+   (when note
+     [:div {:class ["claude-usage-note"]} note])])
+
+(defn- claude-usage-ring
+  "Radial progress ring for a percent; its color follows the severity class
+   on an ancestor (see .claude-usage--*)."
+  [pct]
+  (let [circumference 94.25] ; 2πr for r=15
+    [:svg {:class ["claude-usage-ring"] :viewBox "0 0 36 36" :aria-hidden "true"}
+     [:circle {:class ["claude-usage-ring-track"] :cx "18" :cy "18" :r "15"}]
+     [:circle {:class ["claude-usage-ring-fill"] :cx "18" :cy "18" :r "15"
+               :stroke-dasharray (str (* circumference pct 0.01) " " circumference)
+               :transform "rotate(-90 18 18)"}]]))
+
+(defn- claude-usage-popover
+  "Claude subscription usage (rides on the lobby broadcast) for the sidebar
+   footer: a ring + session percent that opens a popover with the session
+   (5-hour) and weekly windows as labelled bars and their reset times. The
+   server only reports a severity for the session window, so the weekly bar's
+   is derived from its percent."
   [state]
   (when-let [{:keys [session weekly severity session-resets-at weekly-resets-at]}
              (get-in state [:lobby :claude-usage])]
@@ -3212,20 +3240,85 @@
                                 rm (mod m 60)]
                             (cond (zero? m) "now"
                                   (zero? h) (str "in " m " min")
-                                  (zero? rm) (str "in " h (if (= h 1) " hour" " hours"))
-                                  :else (str "in " h " h " rm " min"))))))]
-      [:div {:class ["claude-usage" (str "claude-usage--" severity)]
-             :title (str "Claude session: " session "% used"
-                         " \u00b7 week: " weekly "%"
-                         (when weekly-reset (str ", resets " weekly-reset)))}
-       [:div {:class ["claude-usage-row"]}
-        [:div {:class ["claude-usage-track"]}
-         [:div {:class ["claude-usage-fill"]
-                :style {:width (str session "%")}}]]
-        [:span {:class ["claude-usage-pct"]} (str session "%")]]
-       (when (and resets-in session-reset)
-         [:div {:class ["claude-usage-reset"]}
-          (str "Resets " resets-in " at " session-reset)])])))
+                                  (zero? rm) (str "in " h " h")
+                                  :else (str "in " h " h " rm " min"))))))
+          weekly-severity (cond (nil? weekly) "normal"
+                                (>= weekly 100) "exceeded"
+                                (>= weekly 90) "critical"
+                                (>= weekly 75) "warning"
+                                :else "normal")]
+      (list
+       [:button (merge {:class ["sidebar-usage-trigger" (str "claude-usage--" severity)]
+                        :title (str "Claude usage: session " session "%"
+                                    (when weekly (str " · week " weekly "%")))
+                        :replicant/key "sidebar-usage-trigger"}
+                       (popover/trigger-attrs "sidebar-usage"))
+        (claude-usage-ring session)
+        [:span {:class ["sidebar-usage-pct"]} (str session "%")]]
+       (popover/popover-content
+        {:id    "sidebar-usage"
+         :side  :top
+         :align :start
+         :class "claude-usage"
+         :attrs {:replicant/key "sidebar-usage"}}
+        [:div {:class ["claude-usage-title"]} "Claude usage"]
+        (claude-usage-meter "Session" session severity
+                            (when session-reset
+                              (str "Resets " session-reset
+                                   (when resets-in (str " · " resets-in)))))
+        (when weekly
+          (claude-usage-meter "Week" weekly weekly-severity
+                              (when weekly-reset (str "Resets " weekly-reset)))))))))
+
+(defn- more-horizontal-icon
+  "Inline Lucide `ellipsis` SVG — the shared icon set has none (see
+   `more-vertical-icon`)."
+  []
+  [:svg {:class ["icon" "icon-sm"]
+         :xmlns "http://www.w3.org/2000/svg"
+         :viewBox "0 0 24 24"
+         :fill "none"
+         :stroke "currentColor"
+         :stroke-width "2"
+         :stroke-linecap "round"
+         :stroke-linejoin "round"
+         :aria-hidden "true"}
+   [:circle {:cx "5" :cy "12" :r "1"}]
+   [:circle {:cx "12" :cy "12" :r "1"}]
+   [:circle {:cx "19" :cy "12" :r "1"}]])
+
+(defn- sidebar-more-menu
+  "The sidebar footer's ⋯ button and its popover: labelled bulk session
+   actions instead of a row of bare icons. `items` are
+   {:label :icon :on-click :badge :danger?} maps or :separator; each click
+   closes the popover. The trigger carries a dot while `pip?`."
+  [items pip?]
+  (let [close! (fn [^js e]
+                 (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover)))]
+    (list
+     [:button (merge {:class ["sidebar-footer-btn"]
+                      :title "More actions"
+                      :replicant/key "sidebar-more-trigger"}
+                     (popover/trigger-attrs "sidebar-more-menu"))
+      (more-horizontal-icon)
+      (when pip? [:span {:class ["sidebar-footer-pip"]}])]
+     (popover/popover-content
+      {:id    "sidebar-more-menu"
+       :side  :top
+       :align :end
+       :class "sidebar-more-menu"
+       :attrs {:replicant/key "sidebar-more-menu"}}
+      (for [[i item] (map-indexed vector items)]
+        (if (= :separator item)
+          [:div {:class ["sidebar-more-sep"] :replicant/key (str "sep-" i)}]
+          (let [{:keys [label icon on-click badge danger?]} item]
+            [:button {:class         (cond-> ["sidebar-more-item"]
+                                       danger? (conj "sidebar-more-item--danger"))
+                      :replicant/key label
+                      :on            {:click (fn [e] (close! e) (on-click))}}
+             (icon/icon {:icon-name icon :size :sm})
+             [:span label]
+             (when badge [:span {:class ["sidebar-more-badge"]} badge])])))))))
 
 (defn- sidebar-section
   "Collapsible drawer group: a framework sidebar-group whose label is a quiet
@@ -3358,40 +3451,47 @@
                    :attrs     {:replicant/key (str "nav-" (:label item))}
                    :on-click  (fn [_] (dispatch! (:event item)))}
                   (:label item)))))))))
-     (sidebar/sidebar-footer {}
-       [:div {:style {:display "flex" :align-items "center" :justify-content "space-between"}}
-        (theme-toggle/theme-toggle
-         {:mode (or (:web/theme-mode state) "auto")
-          :size :sm
-          :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
-        [:div {:style {:display "flex" :align-items "center" :gap "0.25rem"}}
-         [:button {:class ["icon-btn" "icon-btn--sm"]
-                   :title "Appearance settings"
-                   :on {:click (fn [_] (dispatch! {:type :appearance/open}))}}
-          (icon/icon {:icon-name :settings :size :md})]
-         (when (some :unread? cards)
-           [:button {:class ["icon-btn" "icon-btn--sm"]
-                     :title "Mark all sessions as read"
-                     :on {:click (fn [_] (dispatch! {:type :session/mark-all-read}))}}
-            (icon/icon {:icon-name :check :size :md})])
-         (when (seq visible)
-           [:button {:class ["icon-btn" "icon-btn--sm"]
-                     :title "Hide all sessions from Recent"
-                     :on {:click (fn [_] (dispatch! {:type :session/dismiss-all}))}}
-            (icon/icon {:icon-name :eye-off :size :md})])
-         ;; NOTE: keep this fn's state reads reflected in `recent-sidebar`'s
-         ;; memo key below, or the docked sidebar can go stale.
-         (when (not pa?)
-           [:button {:class ["icon-btn" "icon-btn--sm"]
-                     :title "Prune inactive rooms — close idle sessions, kill their processes, and detach lingering clients"
-                     :on {:click (fn [_] (dispatch! {:type :rooms/prune}))}}
-            (icon/icon {:icon-name :trash :size :md})])
-         (when standalone?
-           [:button {:class ["icon-btn" "icon-btn--sm"]
-                     :title "Reload"
-                     :on {:click (fn [_] (reload-with-feedback!))}}
-            (icon/icon {:icon-name :refresh :size :md})])]]
-       (claude-usage-bar state)))))
+     ;; NOTE: keep this footer's state reads reflected in `recent-sidebar`'s
+     ;; memo key below, or the docked sidebar can go stale.
+     (let [unread (count (filter :unread? cards))
+           session-items (cond-> []
+                           (pos? unread)
+                           (conj {:label    "Mark all as read"
+                                  :icon     :check
+                                  :badge    unread
+                                  :on-click #(dispatch! {:type :session/mark-all-read})})
+                           (seq visible)
+                           (conj {:label    "Hide all from Recent"
+                                  :icon     :eye-off
+                                  :on-click #(dispatch! {:type :session/dismiss-all})}))
+           system-items (cond-> []
+                          standalone?
+                          (conj {:label    "Reload"
+                                 :icon     :refresh
+                                 :on-click reload-with-feedback!})
+                          (not pa?)
+                          (conj {:label    "Prune idle rooms"
+                                 :icon     :trash
+                                 :danger?  true
+                                 :on-click #(dispatch! {:type :rooms/prune})}))
+           items (cond-> session-items
+                   (and (seq session-items) (seq system-items)) (conj :separator)
+                   :always (into system-items))]
+       (sidebar/sidebar-footer {}
+         [:div {:class ["sidebar-footer-bar"]}
+          [:div {:class ["sidebar-footer-start"]}
+           (claude-usage-popover state)]
+          (theme-toggle/theme-toggle
+           {:mode (or (:web/theme-mode state) "auto")
+            :size :sm
+            :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
+          [:div {:class ["sidebar-footer-actions"]}
+           [:button {:class ["sidebar-footer-btn"]
+                     :title "Appearance settings"
+                     :on {:click (fn [_] (dispatch! {:type :appearance/open}))}}
+            (icon/icon {:icon-name :settings :size :sm})]
+           (when (seq items)
+             (sidebar-more-menu items (pos? unread)))]])))))
 
 (defn- recent-sidebar
   "Memoized wrapper around `recent-sidebar*`. Returns the identical cached

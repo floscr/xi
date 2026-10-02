@@ -2120,24 +2120,199 @@ code a:hover,
   padding-bottom: max(var(--size-3), calc(env(safe-area-inset-bottom) - var(--size-3)));
 }
 
-/* Claude subscription usage bar at the bottom of the sidebar drawer */
-.claude-usage {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: calc(var(--size-2) / 3) var(--size-1) 0;
+/* Light mode: a cool off-white sidebar panel (white cards on it) beside a
+   white chat surface. Dark mode keeps the regular dark surfaces. */
+:root {
+  --sidebar-bg: #f6f6f9;
+  --sidebar-card-bg: #fff;
+  --chat-bg: #fff;
 }
-.claude-usage-row {
-  display: flex;
+[data-theme="dark"] {
+  --sidebar-bg: var(--bg-0);
+  --sidebar-card-bg: var(--bg-1);
+  --chat-bg: var(--bg-0);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sidebar-bg: var(--bg-0);
+    --sidebar-card-bg: var(--bg-1);
+    --chat-bg: var(--bg-0);
+  }
+}
+/* Re-point --bg-0 inside the main column so everything painted with it
+   (topbar, composer, timeline) matches the chat surface. */
+.sidebar-layout--floating > .sidebar-layout-main {
+  --bg-0: var(--chat-bg);
+  background: var(--bg-0);
+}
+
+/* Sidebar footer: usage ring · theme toggle (centered) · settings + ⋯ */
+.sidebar-layout--floating > .sidebar .sidebar-footer {
+  padding-inline: var(--size-2);
+}
+.sidebar-footer-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: var(--size-2);
 }
-.claude-usage-reset {
-  font-size: var(--font-xs);
-  color: var(--fg-2);
+.sidebar-footer-start {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
+.sidebar-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+/* Neutral square icon button (the accent .icon-btn is too loud down here) */
+.sidebar-footer-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--fg-1);
+  cursor: pointer;
+}
+.sidebar-footer-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (hover: hover) {
+  .sidebar-footer-btn:hover { background: var(--bg-2); color: var(--fg-0); }
+}
+/* Dot on ⋯ while there are unread sessions to mark */
+.sidebar-footer-pip {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--sidebar-bg);
+}
+
+/* ⋯ popover: labelled bulk session actions */
+.sidebar-more-menu {
+  min-width: 14rem;
+  padding: var(--size-1);
+}
+.sidebar-more-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  width: 100%;
+  padding: 7px var(--size-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-0);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sidebar-more-item .icon { color: var(--fg-2); }
+.sidebar-more-item:focus-visible { outline: none; background: var(--bg-1); }
+@media (hover: hover) {
+  .sidebar-more-item:hover { background: var(--bg-1); }
+}
+.sidebar-more-item--danger,
+.sidebar-more-item--danger .icon { color: var(--danger); }
+.sidebar-more-badge {
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 9999px;
+  background: var(--accent-100);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.sidebar-more-sep {
+  height: 1px;
+  margin: var(--size-1) 2px;
+  background: var(--bg-2);
+}
+
+/* Claude subscription usage: ring + session percent in the footer, opening
+   a popover with both windows. Severity classes color the ring and bars. */
+.sidebar-usage-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 var(--size-2) 0 6px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--fg-1);
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.sidebar-usage-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (hover: hover) {
+  .sidebar-usage-trigger:hover { background: var(--bg-2); color: var(--fg-0); }
+}
+.claude-usage-ring {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.claude-usage-ring circle {
+  fill: none;
+  stroke-width: 4.5;
+}
+.claude-usage-ring-track { stroke: var(--bg-2); }
+.claude-usage-ring-fill {
+  stroke: var(--usage-color);
+  stroke-linecap: round;
+}
+.claude-usage--normal,
+.claude-usage-meter { --usage-color: var(--success); }
+.claude-usage--warning { --usage-color: var(--warning); }
+.claude-usage--critical,
+.claude-usage--exceeded { --usage-color: var(--danger); }
+
+.popover-content.claude-usage {
+  width: 16rem;
+  padding: var(--size-3);
+}
+/* Only while open: a display on the bare [popover] would override the UA's
+   display:none for the closed state and pin the panel on screen. */
+.popover-content.claude-usage:popover-open {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-3);
+}
+.claude-usage-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-0);
+}
+.claude-usage-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--font-xs);
+}
+.claude-usage-meter-row {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr 2.25rem;
+  align-items: center;
+  gap: var(--size-2);
+}
+.claude-usage-label { color: var(--fg-1); }
 .claude-usage-track {
-  flex: 1;
   height: 5px;
   border-radius: 3px;
   background-color: var(--bg-2);
@@ -2146,16 +2321,17 @@ code a:hover,
 .claude-usage-fill {
   height: 100%;
   border-radius: 3px;
-  background-color: var(--success);
+  background-color: var(--usage-color);
 }
-.claude-usage--warning .claude-usage-fill { background-color: var(--warning); }
-.claude-usage--critical .claude-usage-fill,
-.claude-usage--exceeded .claude-usage-fill { background-color: var(--danger); }
 .claude-usage-pct {
-  font-size: var(--font-xs);
-  color: var(--fg-1);
-  min-width: 30px;
+  color: var(--fg-0);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   text-align: right;
+}
+.claude-usage-note {
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Sidebar drawer: compact cards (Arc/Realm-style) ----
@@ -2262,7 +2438,7 @@ code a:hover,
   margin-bottom: var(--size-3);
   border: var(--border-0);
   border-radius: var(--radius-md);
-  background: var(--bg-1);
+  background: var(--sidebar-card-bg);
   color: var(--fg-2);
   font: inherit;
   font-size: var(--font-sm);
@@ -3400,6 +3576,7 @@ code a:hover,
 /* Recent-sessions drawer: 80% of the viewport, capped at 560px */
 .sidebar-layout--floating > .sidebar {
   width: min(80%, 560px);
+  background: var(--sidebar-bg);
 }
 
 /* On wider screens, dock the recent-sessions sidebar so it's always visible
