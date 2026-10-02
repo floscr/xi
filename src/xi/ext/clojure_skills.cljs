@@ -69,8 +69,7 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
                     (filter #(should-load? % cwd))
                     (map :content))]
     (when (seq active)
-      (str "\n\n# Active Skills\n\n"
-           (str/join "\n\n---\n\n" active)))))
+      (str/join "\n\n---\n\n" active))))
 
 ;; ── On-Demand Skills (~/.config/xi/skills/*/SKILL.md) ─────────────────────────
 
