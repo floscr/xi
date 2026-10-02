@@ -52,11 +52,24 @@
   ([msg] (js/Error. msg))
   ([msg opts] (js/Error. msg opts)))
 
+(defn- error-class
+  "Null-proto static surface for the Error aliases that still works as the
+   right-hand side of `instanceof`: SCI's `(catch Exception e …)` compiles to
+   `e instanceof <class>`, which needs a callable or a `Symbol.hasInstance`
+   method. The symbol-keyed hook isn't reachable by name from sandboxed code,
+   so `Exception/constructor` etc. stay closed."
+  []
+  (let [o (null-proto {})]
+    (js/Object.defineProperty o js/Symbol.hasInstance
+                              #js {:value (fn [x] (instance? js/Error x))})
+    o))
+
 (def ^:private default-class-overrides
   "SCI ships a default cljs `Error` class; replace it (and its aliases) with a
-   null-proto static surface plus a constructor fn, so construction and
-   `assert` keep working without exposing the real class."
-  (let [error {:class (null-proto {}) :constructor error-ctor}]
+   null-proto static surface plus a constructor fn, so construction,
+   `assert` and `(catch Exception e …)` keep working without exposing the
+   real class."
+  (let [error {:class (error-class) :constructor error-ctor}]
     {'Error error 'js/Error error 'Exception error 'Throwable error}))
 
 (defn init

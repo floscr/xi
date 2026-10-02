@@ -165,13 +165,13 @@
     (is (:is-error res))
     (is (str/includes? (result-text res) "(ex-message e)"))))
 
-(deftest eval-catch-jvm-class-hints-catch-default
-  ;; JVM-style catch classes are stubs in the sandbox, so the catch clause
-  ;; itself throws; the error result should point at (catch :default e …).
-  (doseq [clazz ["Exception" "Throwable" "Error"]]
-    (let [res (eval! (str "(try (throw (ex-info \"boom\" {})) (catch " clazz " e :caught))"))]
-      (is (:is-error res) clazz)
-      (is (str/includes? (result-text res) "(catch :default e …)") clazz))))
+(deftest eval-catch-jvm-error-classes-work
+  ;; (catch Exception e …) is honoured for error values (the stub classes
+  ;; implement Symbol.hasInstance), so JVM-style catches need no rewriting.
+  (doseq [clazz ["Exception" "Throwable" "Error" "js/Error"]]
+    (let [res (eval! (str "(try (throw (ex-info \"boom\" {})) (catch " clazz " e (ex-message e)))"))]
+      (is (not (:is-error res)) clazz)
+      (is (str/includes? (result-text res) "boom") clazz))))
 
 (deftest eval-missing-fs-namespace-hints-builtin-helpers
   (doseq [ns-name ["babashka.fs" "clojure.java.io"]]
