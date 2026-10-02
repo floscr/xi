@@ -295,6 +295,7 @@ The built-in default tier, in order:
  :xi.rules.defaults/extension-credentials
  :xi.rules.defaults/extension-data
  :xi.rules.defaults/xi-sessions
+ :xi.rules.defaults/claude-sessions
  :xi.rules.defaults/plan-mode
  :xi.rules.defaults/write-gates
  :xi.rules.defaults/bash-chained
@@ -317,6 +318,7 @@ The built-in default tier, in order:
 | `extension-credentials` | 1 | deny: user extensions reading/writing credential paths (`xi.paths/HIDDEN_PATHS`) |
 | `extension-data`     | 1 | allow: user extensions reading/writing their own data dir |
 | `xi-sessions`        | 1 | allow: read/ls/grep/find under `~/.config/xi/sessions` (lifts clj's hidden-path block for that subtree only; user extensions stay denied by `extension-credentials`) |
+| `claude-sessions`    | 1 | allow: read/ls/grep/find under `~/.claude/projects` (Claude CLI transcripts; writes stay gated) |
 | `plan-mode`          | 3 | plan mode's allow-plan-file / deny-writes / deny-mutating-bash |
 | `sensitive-writes`   | 1 | ask: write into Mail / .ssh / .gnupg / .password-store |
 | `protected-writes`   | 1 | ask: write into .env / .git/ / node_modules/ |

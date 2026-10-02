@@ -37,10 +37,9 @@
   (testing "unrelated paths pass through"
     (is (nil? (rules/first-match defaults/default-rules
                                  {:tool :write :path "src/foo.cljs"})))
-    (is (nil? (rules/first-match defaults/default-rules
-                                 {:tool :read
-                                  :path "/home/x/.claude/projects/x/memory/MEMORY.md"}))
-        "reads are not gated")))
+    (is (= :allow (action-type {:tool :read
+                                :path "/home/x/.claude/projects/x/memory/MEMORY.md"}))
+        "reads are not nudged (claude-sessions allows them)")))
 
 ;; ── Ported permission-gate policy gates ──────────────────────────────────────
 
@@ -341,13 +340,25 @@
     (is (= :deny (action-type {:tool :ls :extension true :credential-path? true
                                :path "/home/u/.config/xi/sessions"})))))
 
+(deftest claude-sessions-readable
+  (testing "the Claude transcript dir and its files are allowed for read surfaces"
+    (doseq [tool [:read :ls :grep :find]
+            path ["/home/u/.claude/projects"
+                  "/home/u/.claude/projects/-home-u-x/abc.jsonl"]]
+      (is (= :allow (action-type {:tool tool :path path})) (str tool " " path))))
+  (testing "other ~/.claude paths are not covered"
+    (is (not= :allow (action-type {:tool :read :path "/home/u/.claude/settings.json"})))
+    (is (not= :allow (action-type {:tool :read :path "/home/u/.claude/projects-old/x"}))))
+  (testing "writes are not covered"
+    (is (not= :allow (action-type {:tool :write :path "/home/u/.claude/projects/p/x.jsonl"})))))
+
 (deftest defaults-tagged-scope
   (is (every? #(= :default (:scope %)) defaults/default-rules)))
 
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 33 (count defaults/default-rules))))
+    (is (= 34 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes

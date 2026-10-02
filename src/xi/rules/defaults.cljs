@@ -127,6 +127,11 @@
    Matched against the resolved absolute path (see `:path` in docs/rules.md)."
   #"/\.config/xi/sessions(?:/|$)")
 
+(def ^:private claude-sessions-re
+  "The Claude CLI transcript dir `~/.claude/projects` and anything under it.
+   Matched against the resolved absolute path (see `:path` in docs/rules.md)."
+  #"/\.claude/projects(?:/|$)")
+
 ;; ── Plan mode (read-only exploration; toggled by xi.ext.plan-mode /plan) ──────
 
 (def ^:private plan-mode-on
@@ -339,6 +344,13 @@
    [{:match  {:tool #{:read :ls :grep :find} :path xi-sessions-re}
      :action {:type :allow}}]
 
+   ;; Claude CLI transcripts (~/.claude/projects) — where xi keeps session
+   ;; transcripts. Outside every repo, so reads would otherwise ask each time.
+   ;; Read surfaces only; writes there stay gated (no-auto-memory, outside-writes).
+   ::claude-sessions
+   [{:match  {:tool #{:read :ls :grep :find} :path claude-sessions-re}
+     :action {:type :allow}}]
+
    ;; Plan mode (read-only): allow the plan file, deny other writes/edits and any
    ;; mutating bash. Must precede the write/bash gates so plan-mode denies win
    ;; over the softer ask gates; reads/grep/find/ls and read-only bash fall
@@ -519,6 +531,7 @@
    ::extension-credentials
    ::extension-data
    ::xi-sessions
+   ::claude-sessions
    ::plan-mode
    ::write-gates
    ::bash-chained
