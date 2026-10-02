@@ -3311,9 +3311,10 @@
       (for [[i item] (map-indexed vector items)]
         (if (= :separator item)
           [:div {:class ["sidebar-more-sep"] :replicant/key (str "sep-" i)}]
-          (let [{:keys [label icon on-click badge danger?]} item]
+          (let [{:keys [label icon on-click badge danger? title]} item]
             [:button {:class         (cond-> ["sidebar-more-item"]
                                        danger? (conj "sidebar-more-item--danger"))
+                      :title         title
                       :replicant/key label
                       :on            {:click (fn [e] (close! e) (on-click))}}
              (icon/icon {:icon-name icon :size :sm})
@@ -3454,29 +3455,39 @@
      ;; NOTE: keep this footer's state reads reflected in `recent-sidebar`'s
      ;; memo key below, or the docked sidebar can go stale.
      (let [unread (count (filter :unread? cards))
-           session-items (cond-> []
-                           (pos? unread)
-                           (conj {:label    "Mark all as read"
-                                  :icon     :check
-                                  :badge    unread
-                                  :on-click #(dispatch! {:type :session/mark-all-read})})
-                           (seq visible)
-                           (conj {:label    "Hide all from Recent"
-                                  :icon     :eye-off
-                                  :on-click #(dispatch! {:type :session/dismiss-all})}))
-           system-items (cond-> []
-                          standalone?
-                          (conj {:label    "Reload"
-                                 :icon     :refresh
-                                 :on-click reload-with-feedback!})
-                          (not pa?)
-                          (conj {:label    "Prune idle rooms"
-                                 :icon     :trash
-                                 :danger?  true
-                                 :on-click #(dispatch! {:type :rooms/prune})}))
-           items (cond-> session-items
-                   (and (seq session-items) (seq system-items)) (conj :separator)
-                   :always (into system-items))]
+           ;; Cleanup actions that currently apply; "Prune all" runs every
+           ;; one of them in a single click.
+           cleanups (cond-> []
+                      (pos? unread)
+                      (conj {:label "Mark all as read"
+                             :icon  :check
+                             :badge unread
+                             :event {:type :session/mark-all-read}})
+                      (seq visible)
+                      (conj {:label "Hide all from Recent"
+                             :icon  :eye-off
+                             :event {:type :session/dismiss-all}})
+                      (not pa?)
+                      (conj {:label   "Prune idle rooms"
+                             :icon    :trash
+                             :danger? true
+                             :event   {:type :rooms/prune}}))
+           cleanup-items (mapv (fn [{:keys [event] :as item}]
+                                 (assoc item :on-click #(dispatch! event)))
+                               cleanups)
+           prune-all (when (> (count cleanups) 1)
+                       {:label    "Prune all"
+                        :icon     :zap
+                        :danger?  true
+                        :title    (str/join " · " (map :label cleanups))
+                        :on-click #(run! (comp dispatch! :event) cleanups)})
+           items (->> (cond-> cleanup-items
+                        standalone? (conj :separator
+                                          {:label    "Reload"
+                                           :icon     :refresh
+                                           :on-click reload-with-feedback!})
+                        prune-all   (conj :separator prune-all))
+                      (drop-while #{:separator}))]
        (sidebar/sidebar-footer {}
          [:div {:class ["sidebar-footer-bar"]}
           [:div {:class ["sidebar-footer-start"]}
