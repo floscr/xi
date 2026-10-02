@@ -120,6 +120,13 @@
        "auto-memory directory (~/.claude/projects/<cwd>/memory/) are blocked "
        "and were not applied. Don't save to memory — that store is disabled."))
 
+;; ── Xi session metadata (readable despite the hidden ~/.config/xi dir) ───────
+
+(def ^:private xi-sessions-re
+  "The xi session-metadata dir `~/.config/xi/sessions` and anything under it.
+   Matched against the resolved absolute path (see `:path` in docs/rules.md)."
+  #"/\.config/xi/sessions(?:/|$)")
+
 ;; ── Plan mode (read-only exploration; toggled by xi.ext.plan-mode /plan) ──────
 
 (def ^:private plan-mode-on
@@ -323,6 +330,15 @@
    [{:match  {:tool #{:read :write :edit :ls} :extension true :extension-data :own}
      :action {:type :allow}}]
 
+   ;; Xi's own session metadata (~/.config/xi/sessions) is readable. It sits
+   ;; under the hidden ~/.config/xi credential dir (client keys, ext secrets),
+   ;; so clj's `(ls …)`/`(cat …)` would otherwise be hard-blocked there — an
+   ;; engine :allow on the read is what lifts that block, for this subtree
+   ;; only. Listed after extension-credentials, so user extensions stay denied.
+   ::xi-sessions
+   [{:match  {:tool #{:read :ls :grep :find} :path xi-sessions-re}
+     :action {:type :allow}}]
+
    ;; Plan mode (read-only): allow the plan file, deny other writes/edits and any
    ;; mutating bash. Must precede the write/bash gates so plan-mode denies win
    ;; over the softer ask gates; reads/grep/find/ls and read-only bash fall
@@ -502,6 +518,7 @@
    ::no-auto-memory
    ::extension-credentials
    ::extension-data
+   ::xi-sessions
    ::plan-mode
    ::write-gates
    ::bash-chained

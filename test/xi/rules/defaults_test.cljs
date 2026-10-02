@@ -325,13 +325,29 @@
       (is (= :ask (get-in rule [:action :type])))
       (is (some #{:always} (get-in rule [:action :options]))))))
 
+(deftest xi-sessions-readable
+  (testing "the xi sessions dir and its files are allowed for read surfaces"
+    (doseq [tool [:read :ls :grep :find]
+            path ["/home/u/.config/xi/sessions"
+                  "/home/u/.config/xi/sessions/"
+                  "/home/u/.config/xi/sessions/abc.edn"]]
+      (is (= :allow (action-type {:tool tool :path path})) (str tool " " path))))
+  (testing "sibling credential files under ~/.config/xi are not covered"
+    (is (not= :allow (action-type {:tool :read :path "/home/u/.config/xi/clients.edn"})))
+    (is (not= :allow (action-type {:tool :read :path "/home/u/.config/xi/sessions-secret/k"}))))
+  (testing "writes are not covered"
+    (is (not= :allow (action-type {:tool :write :path "/home/u/.config/xi/sessions/x.edn"}))))
+  (testing "user extensions stay denied (extension-credentials sits earlier)"
+    (is (= :deny (action-type {:tool :ls :extension true :credential-path? true
+                               :path "/home/u/.config/xi/sessions"})))))
+
 (deftest defaults-tagged-scope
   (is (every? #(= :default (:scope %)) defaults/default-rules)))
 
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 32 (count defaults/default-rules))))
+    (is (= 33 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
