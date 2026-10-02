@@ -173,6 +173,22 @@
       (is (:is-error res) clazz)
       (is (str/includes? (result-text res) "(catch :default e …)") clazz))))
 
+(deftest eval-missing-fs-namespace-hints-builtin-helpers
+  (doseq [ns-name ["babashka.fs" "clojure.java.io"]]
+    (let [res (eval! (str "(require '[" ns-name " :as x])"))]
+      (is (:is-error res) ns-name)
+      (is (str/includes? (result-text res) "(glob ") ns-name))))
+
+(deftest eval-missing-shell-namespace-hints-sh
+  (let [res (eval! "(require '[clojure.java.shell :as s])")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "(sh "))))
+
+(deftest system-current-time-millis
+  (let [res (eval! "(number? (System/currentTimeMillis))")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> true"))))
+
 (deftest repl-persistence
   (eval! "(def xi-test-x 41)" {:room-id :persist})
   (let [res (eval! "(inc xi-test-x)" {:room-id :persist})]

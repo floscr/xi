@@ -40,7 +40,7 @@ SCI is allowlist-only: scripts get `clojure.core` (+ `clojure.string` as
 The interop lockdown is load-bearing for the whole sandbox — reaching
 `js/Function` would run arbitrary host code and defeat every path/sh gate:
 
-- Configured classes (`Math`, `Date`, `Long`, `Instant`, …) are exposed as
+- Configured classes (`Math`, `Date`, `Long`, `Instant`, `System`, …) are exposed as
   **null-prototype** objects holding only their intended static members, so
   `Class/constructor` reads `undefined` instead of a real constructor (SCI's
   cljs static-member access is an unchecked property read). Instance interop
@@ -81,7 +81,10 @@ See `test/xi/ext/clj_sandbox_test.cljs` for the escape corpus these close.
 Path arguments (including glob patterns) expand a leading `~` and a leading
 `$VAR` / `${VAR}` for env vars on the sandbox allowlist — so
 `(glob "$HOME/.cache/**/*.edn")` and `(cat "~/notes.md")` both work. There is
-no JVM: `System/getProperty` and other Java interop don't exist here.
+no JVM: only `System/currentTimeMillis` exists of `System` — `System/getProperty`,
+`System/getenv` and other Java interop don't (use `(env k)`). A failed `require`
+of `babashka.fs` / `clojure.java.io` / `clojure.java.shell` / `babashka.process`
+carries a hint pointing at the builtin helpers (`interop-hint` in `xi.ext.clj`).
 
 Guards, enforced inside every helper:
 

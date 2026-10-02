@@ -829,6 +829,9 @@
                                  ;; JVM-style Thread/sleep, backed by a synchronous
                                  ;; (abortable) worker-thread block.
                                  'Thread  (sandbox/null-proto {:sleep (fn [ms] (proc/sleep-abortable opts ms))})
+                                 ;; Wall-clock read only — no getenv / getProperty /
+                                 ;; exit, which would sidestep the env allowlist.
+                                 'System  (sandbox/null-proto {:currentTimeMillis (fn [] (js/Date.now))})
                                  ;; JVM-style numeric parsing statics so code
                                  ;; like (Long/parseLong s) resolves.
                                  'Long    (sandbox/null-proto {:parseLong   (fn [s & [radix]]
@@ -918,6 +921,18 @@
            "don't work: those classes don't exist here. Catch with "
            "(catch :default e …) (or (catch js/Error e …)) and read the error "
            "with (ex-message e) / (ex-data e).")
+
+      ;; JVM / babashka namespaces that don't exist in the sandbox.
+      (re-find #"Could not find namespace:? (?:babashka\.fs|clojure\.java\.io)\b" msg)
+      (str "Hint: clj runs in a sandbox — babashka.fs and clojure.java.io "
+           "don't exist. Use the builtin fs helpers instead: (ls d) (glob \"src/**/*.clj\") "
+           "(stat f) (mkdir d) (cp a b) (mv a b) (rm f) (touch f) (tmpdir) "
+           "(realpath p) (basename p) (dirname p) (cat f) (spit f s).")
+
+      (re-find #"Could not find namespace:? (?:clojure\.java\.shell|babashka\.process)\b" msg)
+      (str "Hint: clj runs in a sandbox — clojure.java.shell and babashka.process "
+           "don't exist. Use (sh \"cmd\" \"arg\" …) for synchronous CLIs, or "
+           "(process/start \"cmd\") for long-running ones.")
 
       (and (str/includes? msg "not allowed!")
            (re-find #"Method \S" msg))
