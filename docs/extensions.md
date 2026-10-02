@@ -381,7 +381,7 @@ namespace docstring is the authoritative description.
 | diff | `/diff` viewer buffer (see [commands.md](commands.md)); has a web half. |
 | file-view | Opens files touched by write/edit into a `:file` buffer; has a web half. |
 | file-finder | Ctrl+P fuzzy file finder (TUI). |
-| projects | `/project` / Alt+P project path picker. |
+| projects | `/project` / Alt+P project path picker; remembers the git repo of every room / `/cd`; list from `xi.projects` ([config.md](config.md#projects)). |
 | skills | Project-marker system-prompt injection + `/skill list\|load` (`<input />` placeholders raise a `:form` dialog). |
 | snippets | Insertable prompt snippets for the web client. |
 

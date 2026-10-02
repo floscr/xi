@@ -5,7 +5,8 @@
      {:type       :xi/config
       :version    1
       :extensions [\"kb.cljs\" \"web.cljs\"]      ; user extensions xi may load
-      :agents     {\"root\" {…}}}               ; agent profiles (xi.agent-profile)
+      :agents     {\"root\" {…}}               ; agent profiles (xi.agent-profile)
+      :projects   {:browse […] :repos […]}}     ; project dirs (xi.projects)
 
    `:extensions` names the files under ~/.config/xi/extensions/ that are
    evaluated at all — the only place that can enable one. An agent profile's
@@ -17,6 +18,7 @@
    loads without tools, with the problem reported by the readers."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
+            [xi.projects :as projects]
             ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
@@ -46,17 +48,19 @@
    `:version` is an error, so a format change is never misread silently."
   1)
 
-(def ^:private config-file-keys #{:type :version :extensions :agents})
+(def ^:private config-file-keys #{:type :version :extensions :agents :projects})
 
 (defn parse-config
   "Validate parsed config-file `data` (nil = unparseable) →
-   `{:extensions #{…} :agents {…}}` (empty when absent) or `{:error msg}`.
+   `{:extensions #{…} :agents {…} :projects {…}}` (empty / defaults when
+   absent; `:projects` per `xi.projects/parse-spec`) or `{:error msg}`.
    Mirrors xi.rules.store/parse-rules-config: the file must be a map tagged
    `:type :xi/config` with the current `:version` and only known keys."
   [data]
   (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
-                     " :extensions [...] :agents {...}}")
-        unknown (when (map? data) (remove config-file-keys (keys data)))]
+                     " :extensions [...] :agents {...} :projects {...}}")
+        unknown (when (map? data) (remove config-file-keys (keys data)))
+        spec    (when (map? data) (projects/parse-spec (:projects data)))]
     (cond
       (nil? data)
       {:error "not valid EDN"}
@@ -89,20 +93,35 @@
       (not (map? (:agents data {})))
       {:error ":agents must be a map of agent id → profile"}
 
+      (:error spec)
+      {:error (:error spec)}
+
       :else
       {:extensions (set (:extensions data))
-       :agents     (or (:agents data) {})})))
+       :agents     (or (:agents data) {})
+       :projects   spec})))
 
 (defn read-config
-  "The validated user config (`parse-config`), `{:extensions #{} :agents {}}`
-   when the file is absent, `{:error msg}` when it exists but is invalid."
+  "The validated user config (`parse-config`), all-empty when the file is
+   absent, `{:error msg}` when it exists but is invalid."
   []
   (let [file (config-file)]
     (if (fs/existsSync file)
       (parse-config
        (try (edn/read-string (fs/readFileSync file "utf8"))
             (catch :default _ nil)))
-      {:extensions #{} :agents {}})))
+      {:extensions #{} :agents {} :projects projects/default-spec})))
+
+(defn projects-spec
+  "The validated `:projects` spec (`xi.projects/parse-spec`): project dirs and
+   per-project `:settings`. Defaults when the file is missing; defaults with
+   the problem on stderr when it is invalid."
+  []
+  (let [cfg (read-config)]
+    (when-let [e (:error cfg)]
+      (js/console.error (str "xi: " (config-file) " is invalid — " e
+                             " — using no project config")))
+    (or (:projects cfg) projects/default-spec)))
 
 (defn enabled-extensions
   "The user-extension file names the config file enables under `:extensions`

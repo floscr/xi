@@ -186,13 +186,16 @@ with a required `:version` (currently `1`), exactly like `rules.edn`
  :agents     {"root" {:system-prompt-file "agents/root.md"
                       :model "claude-sonnet-4-6"
                       :extensions ["freesearch.cljs" "web.cljs"]
-                      :tools ["web_search" "fetch"]}}}
+                      :tools ["web_search" "fetch"]}}
+ :projects   {:browse ["~/Code/Projects" {:dir "~/Code/Work" :depth 2}]
+              :repos  ["~/.config/dotfiles"]}}
 ```
 
 | Key | Description |
 | --- | --- |
 | `:extensions` | The [user extensions](user-extensions.md#enabling) xi may load: file names in `~/.config/xi/extensions/`. The only place that can enable one. |
 | `:agents` | Agent profiles, id → profile, for `xi --agent <id>`, `xi server --agent <id>` and `xi prompt --agent <id>` (`xi.agent-profile`). Keys below. |
+| `:projects` | The project directories behind `/project`, Alt+P and the web projects page (`xi.projects`). [Keys below](#projects). |
 
 **An invalid file fails closed**: a missing or wrong `:type`, a missing or
 unsupported `:version`, an unknown top-level key or unparseable EDN enables
@@ -216,6 +219,67 @@ Read at every room provisioning (server) or run (prompt), so edits apply to
 the next chat without a restart. The file lives under `~/.config/xi`, a path
 agents can never write, so only the operator decides an agent's tools. Full
 semantics in [cli.md](cli.md#agent-profiles).
+
+#### Projects
+
+Xi builds its project list itself — no external `project` CLI. Three sources,
+deduplicated, existing directories only:
+
+| Source | Where it is defined | What it is |
+| --- | --- | --- |
+| `:repos` | `:projects` in `config.edn` | Single directories, listed as-is. |
+| `:browse` | `:projects` in `config.edn` | Directories scanned for repos. |
+| remembered | automatic, in `~/.config/xi/state/projects.edn` | A git repo a session ran in that neither of the above covers. Newest first, at most `:remember-limit`. |
+
+**Remembering is automatic.** There is no command to add a project: creating a
+room or `/cd`-ing anywhere inside a git repo records that repo's root (the
+nearest enclosing directory with a `.git`, never `$HOME` or `/`), so a session
+in `repo/src/deep` remembers `repo`. A directory outside any repo is not
+remembered. The record lives in the state file, not `config.edn`, because the
+config is often generated and read-only. To list a directory permanently, put it
+in `:repos` or under a `:browse` directory.
+
+The list is ordered by last visit; never-visited projects keep the order of the
+table above. Visits are recorded for every session directory (the repo root, or
+the directory itself outside a repo) — for a configured project that is what
+moves it up the list.
+
+`:projects` keys:
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `:browse` | `[]` | Vector of directories to scan. An entry is a path string (= `{:dir path}`) or `{:dir path :depth n :git? bool}`. |
+| `:browse` `:depth` | `1` | How many levels below `:dir` to look (1–`xi.projects/max-depth`, 6). `1` = direct children only. |
+| `:browse` `:git?` | `true` | `true`: a directory is a project when it contains `.git` (file or directory, so worktrees count); repos are never descended into, other directories are until `:depth` runs out. `false`: every directory down to `:depth` is a project. Hidden directories and `node_modules` are never scanned. |
+| `:repos` | `[]` | Vector of directories listed regardless of whether they are repos. |
+| `:remember-limit` | `50` | How many remembered repos (visited, but outside `:repos` / `:browse`) to list. `0` stops remembering. Visit times of listed projects are still kept for ordering. |
+| `:settings` | `{}` | Per-project prompt and snippets, keyed by project directory (see below). |
+
+**Per-project settings.** `:settings` maps a directory to the extras a chat in
+that directory gets. The key must equal the room's cwd (`~` expanded, trailing
+slash ignored) — sub-directories don't inherit.
+
+```clojure
+:settings {"~/Code/Projects/xi"
+           {:agents-prompt  "docs/agents.md"   ; file, or the prompt text itself
+            :agents-replace true               ; stands in for the project's AGENTS.md
+            :snippets [{:label "Run checks" :text "Run `bb check`, then `bb test`."}]}}
+```
+
+| Key | Description |
+| --- | --- |
+| `:agents-prompt` | Appended to the system prompt after the project's AGENTS.md files. Read as a file when one exists at that path — relative to the project directory, else absolute — otherwise used as the prompt text. |
+| `:agents-replace` | `true`: the prompt replaces the project root's own AGENTS.md / CLAUDE.md (parent directories' files still load). Default `false`. |
+| `:snippets` | Vector of `{:label :text}` maps, offered in the web client's snippets menu in that project's chats only (global snippets: `~/.config/xi/snippets.edn`). |
+
+Paths accept `~`. Missing directories are skipped, so one config can be shared
+between machines. A bad `:projects` value makes the whole file invalid (see
+above).
+
+The state file is `{:version 1 :visits {path epoch-ms}}`; Xi writes it
+atomically and keeps the newest 500 visits. Delete it to forget the remembered
+repos and the recent-use order. Programmatic access: `xi.projects/visit!`,
+`list-projects!`.
 
 ### Extra system-prompt files
 

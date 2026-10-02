@@ -1,5 +1,6 @@
 (ns xi.user-config-test
   (:require [cljs.test :refer [deftest is testing]]
+            [xi.projects :as projects]
             [xi.user-config :as cfg]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -16,13 +17,25 @@
     (is (re-find #"unknown key\(s\) :agent" (err {:type :xi/config :version 1 :agent {}})))
     (is (re-find #":extensions must be a vector" (err {:type :xi/config :version 1 :extensions [:kb]})))
     (is (re-find #":extensions must be a vector" (err {:type :xi/config :version 1 :extensions "kb.cljs"})))
-    (is (re-find #":agents must be a map" (err {:type :xi/config :version 1 :agents []}))))
+    (is (re-find #":agents must be a map" (err {:type :xi/config :version 1 :agents []})))
+    (is (re-find #":projects must be a map" (err {:type :xi/config :version 1 :projects []})))
+    (is (re-find #"unknown :projects key" (err {:type :xi/config :version 1 :projects {:dirs []}}))))
   (testing "a valid file parses; keys empty unless set"
-    (is (= {:extensions #{} :agents {}} (cfg/parse-config {:type :xi/config :version 1})))
-    (is (= {:extensions #{"kb.cljs"} :agents {"root" {:tools ["fetch"]}}}
+    (is (= {:extensions #{} :agents {} :projects projects/default-spec}
+           (cfg/parse-config {:type :xi/config :version 1})))
+    (is (= {:extensions #{"kb.cljs"} :agents {"root" {:tools ["fetch"]}}
+            :projects projects/default-spec}
            (cfg/parse-config {:type :xi/config :version 1
                               :extensions ["kb.cljs"]
-                              :agents {"root" {:tools ["fetch"]}}})))))
+                              :agents {"root" {:tools ["fetch"]}}}))))
+  (testing ":projects is validated and normalized"
+    (is (= {:browse [{:dir "~/Code" :depth 2 :git? true}]
+            :repos ["~/.config/dotfiles"]
+            :remember-limit 50
+            :settings {}}
+           (:projects (cfg/parse-config {:type :xi/config :version 1
+                                         :projects {:browse [{:dir "~/Code" :depth 2}]
+                                                    :repos ["~/.config/dotfiles"]}}))))))
 
 (deftest extensions-are-enabled-by-the-config-file-only
   (let [dir  (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-config-ext-"))

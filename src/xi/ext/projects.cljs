@@ -1,13 +1,29 @@
 (ns xi.ext.projects
   "Project path completion — /project opens a fuzzy picker of project paths
-   (from `project select --raw`). Selecting inserts the path into the editor.
-   Tab drills into git-tracked files; Shift+Tab returns to the project list.
+   (xi.projects: config.edn `:projects` plus remembered git repos).
+   Selecting inserts the path into the editor. Tab drills into git-tracked
+   files; Shift+Tab returns to the project list.
+
+   Every room creation and `/cd` records the git repo it happens in as
+   visited (`xi.projects/visit!`), so the repo sorts first and — when no
+   configured project covers it — is remembered. There is no command to add a
+   project: working in a repo is what adds it.
 
    Also serves the web client's roomless projects page: :projects/web-list
    returns the project directories, :projects/web-sessions the saved
    sessions for one project CWD."
   (:require [clojure.string :as str]
-            [xi.session :as session]))
+            [xi.core.state :as state]
+            [xi.projects :as projects]
+            [xi.session :as session]
+            [xi.user-config :as user-config]))
+
+(defn- project-paths
+  "The project directories for this machine: the config's `:projects` spec
+   (defaults, with the problem on stderr, when the file is invalid) plus the
+   state file's remembered repos and visit order."
+  []
+  (projects/list-projects! (user-config/projects-spec)))
 
 (defn- shorten-path
   "Replace $HOME prefix with ~."
@@ -23,34 +39,48 @@
   {:effects [[:project/open-picker {:room-id room-id}]]})
 
 (defn- open-picker-fx
-  "Fetch projects via the `project` CLI and open a menu of paths."
+  "List the projects and open a menu of paths."
   [{:keys [dispatch!]} {:keys [room-id]}]
-  (let [proc (js/Bun.spawn #js ["project" "select" "--raw"]
-                            #js {:stdout "pipe" :stderr "pipe"})]
-    (-> (.text (.-stdout proc))
-        (.then (fn [stdout]
-                 (let [lines (->> (str/split-lines (str/trim stdout))
-                                  (remove empty?))]
-                   (if (seq lines)
-                     (let [items (mapv (fn [p]
-                                         {:label (shorten-path p)
-                                          :description p
-                                          :event {:type :project/insert
-                                                  :room-id room-id
-                                                  :path p}})
-                                       lines)]
-                       (dispatch! {:type :ui/menu-push :room-id room-id
-                                   :menu {:id :projects :prompt "project> " :items items
-                                          :key-bindings [{:key "\t"
-                                                          :selected? true
-                                                          :event {:type :project/drill}}]}}))
-                     (dispatch! {:type :history/append :room-id room-id
-                                 :entry {:kind :status :text "No projects found."}})))))
-        (.catch (fn [err]
-                  (dispatch! {:type :history/append :room-id room-id
-                              :entry {:kind :status
-                                      :text (str "project picker failed: "
-                                                 (.-message err))}}))))))
+  (try
+    (let [dirs (project-paths)]
+      (if (seq dirs)
+        (let [items (mapv (fn [p]
+                            {:label (shorten-path p)
+                             :description p
+                             :event {:type :project/insert
+                                     :room-id room-id
+                                     :path p}})
+                          dirs)]
+          (dispatch! {:type :ui/menu-push :room-id room-id
+                      :menu {:id :projects :prompt "project> " :items items
+                             :key-bindings [{:key "\t"
+                                             :selected? true
+                                             :event {:type :project/drill}}]}}))
+        (dispatch! {:type :history/append :room-id room-id
+                    :entry {:kind :status :text "No projects found."}})))
+    (catch :default err
+      (dispatch! {:type :history/append :room-id room-id
+                  :entry {:kind :status
+                          :text (str "project picker failed: " (.-message err))}}))))
+
+;; ── Visit tracking ──────────────────────────────────
+
+(defn- visit-fx [_ctx {:keys [cwd]}]
+  (try (projects/visit! cwd)
+       (catch :default err
+         (js/console.error "[projects] visit failed:" (.-message err)))))
+
+(defn- on-room-create
+  "A room opened in a directory — remember its repo."
+  [st {:keys [room-id]}]
+  (when-let [cwd (:cwd (state/get-room st room-id))]
+    {:effects [[:project/visit {:cwd cwd}]]}))
+
+(defn- on-cwd-changed
+  "`/cd` (or a worktree switch) into a directory — remember its repo."
+  [_st {:keys [cwd]}]
+  (when cwd
+    {:effects [[:project/visit {:cwd cwd}]]}))
 
 (defn- drill-handler
   "Tab on a project — drill into its git-tracked files."
@@ -118,36 +148,25 @@
   "WS-server fx: project list + per-project sessions, replied to the
    requesting client."
   [{:keys [send!]}]
-  {;; Project list: run `project select --raw` and return dirs, plus the
-   ;; subset whose git working tree is dirty (drives the status dot).
+  {;; Project list, plus the subset whose git working tree is dirty (drives
+   ;; the status dot).
    :projects/web-list-reply
    (fn [_ {:keys [client-id]}]
-     (let [proc (js/Bun.spawn #js ["project" "select" "--raw"]
-                              #js {:stdout "pipe" :stderr "pipe"})]
-       (-> (js/Promise.all #js [(.text (.-stdout proc)) (.text (.-stderr proc))])
-           (.then (fn [outs]
-                    (let [stdout (aget outs 0)
-                          stderr (aget outs 1)
-                          dirs (->> (str/split-lines (str/trim stdout))
-                                    (remove empty?)
-                                    vec)]
-                      ;; An empty list means the CLI died before printing
-                      ;; (e.g. a stale env crashing bb) — surface its stderr
-                      ;; instead of silently replying with no projects.
-                      (when (and (empty? dirs) (not (str/blank? stderr)))
-                        (js/console.error "[projects] project select --raw produced no output:"
-                                          (subs stderr 0 (min 2000 (count stderr)))))
-                      (-> (js/Promise.all (clj->js (mapv git-dirty? dirs)))
-                          (.then (fn [flags]
-                                   (let [dirty (into #{} (keep-indexed
-                                                          (fn [i d] (when (aget flags i) d))
-                                                          dirs))]
-                                     (send! client-id {:type :projects/web-list-result
-                                                       :dirs dirs
-                                                       :dirty dirty}))))))))
+     (let [dirs (try (project-paths)
+                     (catch :default err
+                       (js/console.error "[projects] listing failed:" (.-message err))
+                       []))]
+       (-> (js/Promise.all (clj->js (mapv git-dirty? dirs)))
+           (.then (fn [flags]
+                    (let [dirty (into #{} (keep-indexed
+                                           (fn [i d] (when (aget flags i) d))
+                                           dirs))]
+                      (send! client-id {:type :projects/web-list-result
+                                        :dirs dirs
+                                        :dirty dirty}))))
            (.catch (fn [_]
                      (send! client-id {:type :projects/web-list-result
-                                       :dirs []}))))))
+                                       :dirs dirs}))))))
 
    ;; Sessions for a specific project CWD.
    :projects/web-sessions-reply
@@ -178,9 +197,12 @@
               :project/open   open-picker
               :project/drill  drill-handler
               :projects/web-list     web-list
-              :projects/web-sessions web-sessions}
+              :projects/web-sessions web-sessions
+              :room/create    on-room-create
+              :cwd/changed    on-cwd-changed}
    :fx       {:project/open-picker open-picker-fx
-              :project/open-files  open-files-fx}
+              :project/open-files  open-files-fx
+              :project/visit       visit-fx}
    :server-fx server-fx
    :roomless-events #{:projects/web-list :projects/web-sessions}
    :keybindings [{:key "alt+p"
