@@ -52,25 +52,42 @@
   ([msg] (js/Error. msg))
   ([msg opts] (js/Error. msg opts)))
 
-(defn- error-class
-  "Null-proto static surface for the Error aliases that still works as the
-   right-hand side of `instanceof`: SCI's `(catch Exception e …)` compiles to
+(defn- instance-class
+  "Null-proto static surface that still works as the right-hand side of
+   `instanceof`: SCI's `(catch Exception e …)` compiles to
    `e instanceof <class>`, which needs a callable or a `Symbol.hasInstance`
    method. The symbol-keyed hook isn't reachable by name from sandboxed code,
    so `Exception/constructor` etc. stay closed."
-  []
+  [pred]
   (let [o (null-proto {})]
     (js/Object.defineProperty o js/Symbol.hasInstance
-                              #js {:value (fn [x] (instance? js/Error x))})
+                              #js {:value (fn [x] (boolean (pred x)))})
     o))
+
+(def ^:private java-exception-methods
+  "JVM-style Throwable accessors, aliased to their portable equivalents so
+   `(.getMessage e)` works. SCI resolves instance interop by the receiver's
+   constructor name and applies these overrides instead of reflecting."
+  {'getMessage          ex-message
+   'getLocalizedMessage ex-message
+   'getCause            ex-cause})
 
 (def ^:private default-class-overrides
   "SCI ships a default cljs `Error` class; replace it (and its aliases) with a
    null-proto static surface plus a constructor fn, so construction,
-   `assert` and `(catch Exception e …)` keep working without exposing the
-   real class."
-  (let [error {:class (error-class) :constructor error-ctor}]
-    {'Error error 'js/Error error 'Exception error 'Throwable error}))
+   `assert`, `(catch Exception e …)` and `(.getMessage e)` keep working
+   without exposing the real class. `ex-info` values are ExceptionInfo
+   instances, keyed by the ctor's runtime name (it's mangled in advanced
+   builds), so they get the same accessors."
+  (let [error         {:class            (instance-class #(instance? js/Error %))
+                       :constructor      error-ctor
+                       :instance-methods java-exception-methods}
+        ex-info-class {:class            (instance-class #(instance? ExceptionInfo %))
+                       :instance-methods java-exception-methods}]
+    {'Error error 'js/Error error 'Exception error 'Throwable error
+     (symbol (.-name ExceptionInfo)) ex-info-class
+     'ExceptionInfo ex-info-class
+     'clojure.lang.ExceptionInfo ex-info-class}))
 
 (defn init
   "sci/init with the shared hardening applied: `denied-core` merged into

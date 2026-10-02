@@ -82,7 +82,12 @@ Path arguments (including glob patterns) expand a leading `~` and a leading
 `$VAR` / `${VAR}` for env vars on the sandbox allowlist — so
 `(glob "$HOME/.cache/**/*.edn")` and `(cat "~/notes.md")` both work. There is
 no JVM: only `System/currentTimeMillis` exists of `System` — `System/getProperty`,
-`System/getenv` and other Java interop don't (use `(env k)`). A failed `require`
+`System/getenv` and other Java interop don't (use `(env k)`). Exceptions are
+JVM-shaped where it's cheap: `(catch Exception e …)` / `Throwable` / `Error`
+catch any `js/Error` (incl. `ex-info`), and `(.getMessage e)`,
+`(.getLocalizedMessage e)`, `(.getCause e)` are aliased to `ex-message` /
+`ex-cause` (`xi.sandbox.sci`). Other JVM classes in `catch` still don't exist —
+use `(catch :default e …)`. A failed `require`
 of `babashka.fs` / `clojure.java.io` / `clojure.java.shell` / `babashka.process`
 carries a hint pointing at the builtin helpers (`interop-hint` in `xi.ext.clj`).
 

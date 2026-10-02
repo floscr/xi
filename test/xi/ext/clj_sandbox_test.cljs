@@ -73,7 +73,9 @@
     (is (= "=> 2.5" (ev "(Double/parseDouble \"2.5\")")))
     (is (= "=> \"1970-01-01T00:00:00.000Z\"" (ev "(str (Instant/ofEpochMilli 0))")))
     (is (= "=> true" (ev "(number? (.getTime #inst \"2020-01-01\"))")))
-    (is (= "=> :ok" (ev "(try (throw (ex-info \"x\" {})) (catch :default e :ok))"))))
+    (is (= "=> :ok" (ev "(try (throw (ex-info \"x\" {})) (catch :default e :ok))")))
+    (is (= "=> :ok" (ev "(try (throw (ex-info \"x\" {})) (catch Exception e :ok))")))
+    (is (= "=> :ok" (ev "(try (throw (ex-info \"x\" {})) (catch Throwable e :ok))"))))
   (testing "construction still works through the :constructor fns"
     (is (= "=> \"boom\"" (ev "(ex-message (Exception. \"boom\"))")))
     (is (= "=> \"x\"" (ev "(ex-message (js/Error. \"x\"))")))

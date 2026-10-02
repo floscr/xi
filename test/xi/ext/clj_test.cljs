@@ -158,12 +158,18 @@
 (deftest eval-no-js-interop
   (is (:is-error (eval! "(js/process.exit 1)"))))
 
-(deftest eval-getmessage-hints-ex-message
-  ;; Java-style (.getMessage e) doesn't exist in the CLJS/SCI sandbox; the
-  ;; error result should point at the portable (ex-message e).
-  (let [res (eval! "(try (throw (ex-info \"boom\" {})) (catch :default e (.getMessage e)))")]
-    (is (:is-error res))
-    (is (str/includes? (result-text res) "(ex-message e)"))))
+(deftest eval-java-exception-accessors-are-aliased
+  ;; Java-style (.getMessage e) / (.getCause e) are aliased to ex-message /
+  ;; ex-cause for both ex-info values and plain host errors.
+  (doseq [[code expected]
+          [["(try (throw (ex-info \"boom\" {})) (catch :default e (.getMessage e)))" "boom"]
+           ["(try (throw (ex-info \"boom\" {})) (catch Exception e (.getMessage e)))" "boom"]
+           ["(try (throw (js/Error. \"plain\")) (catch Exception e (.getMessage e)))" "plain"]
+           ["(try (cat \"/nonexistent/xi-test-file\") (catch Exception e (.getLocalizedMessage e)))" "nonexistent"]
+           ["(try (throw (ex-info \"outer\" {} (js/Error. \"inner\"))) (catch Exception e (.getMessage (.getCause e))))" "inner"]]]
+    (let [res (eval! code)]
+      (is (not (:is-error res)) code)
+      (is (str/includes? (result-text res) expected) code))))
 
 (deftest eval-catch-jvm-error-classes-work
   ;; (catch Exception e …) is honoured for error values (the stub classes
@@ -172,6 +178,14 @@
     (let [res (eval! (str "(try (throw (ex-info \"boom\" {})) (catch " clazz " e (ex-message e)))"))]
       (is (not (:is-error res)) clazz)
       (is (str/includes? (result-text res) "boom") clazz))))
+
+(deftest eval-catch-exception-reads-message-of-host-errors
+  ;; Errors raised by host helpers (not just ex-info) are readable via
+  ;; ex-message inside (catch Exception e …).
+  (let [res (eval! "(try (cat \"/nonexistent/xi-test-file\") (catch Exception e (str \"none: \" (ex-message e))))")]
+    (is (not (:is-error res)))
+    (is (str/includes? (result-text res) "none: "))
+    (is (not (str/includes? (result-text res) "none: nil")))))
 
 (deftest eval-missing-fs-namespace-hints-builtin-helpers
   (doseq [ns-name ["babashka.fs" "clojure.java.io"]]
