@@ -336,8 +336,9 @@ The built-in default tier, in order:
 | `script-exec`        | 6 | ask before an interpreter runs inline code or a script file (`bb -f`, `node -e`, `python x.py`, `bun x.ts`, …); no `[a]lways`, refused headless |
 | `sh-read-only`       | 1 | allow read-only CLIs via clj `(sh …)` |
 | `repository-scripts` | 3 | allow read-only `sed -n …p`, in-repo `mv`/`cp`/`mkdir`/`touch`/`rmdir`, and `rm` of git-tracked content (ordered before `sh-read-only` so its arg-scoped `rm` allow is reachable) |
+| `localhost-curl`     | 1 | allow `curl` via clj `(sh …)` when every URL is loopback (`localhost`, `127.0.0.1`, `[::1]`) and the flags are allowlisted (`-s -S -f -L -v -i -I -k -g`, `-m N`, `-X <METHOD>`, `-o /dev/null`); file-touching flags, `-H`, proxies and other hosts still ask |
 | `sh-confirm`         | 1 | ask on any other clj `(sh …)` CLI |
-| `clj-sh`             | → | composite: `repository-scripts` `sh-read-only` `sh-confirm` |
+| `clj-sh`             | → | composite: `repository-scripts` `localhost-curl` `sh-read-only` `sh-confirm` |
 
 ## `:match` fields
 

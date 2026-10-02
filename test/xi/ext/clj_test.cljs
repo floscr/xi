@@ -869,7 +869,7 @@
   (async done
     (let [ctx (assoc (gate-ctx) :confirm! (fn [_ & _] (js/Promise.resolve true)))]
       (-> (js/Promise.resolve
-           (gate {:name "clj" :arguments {:code "(sh \"curl\" \"http://localhost:8199/\")"}}
+           (gate {:name "clj" :arguments {:code "(sh \"curl\" \"https://example.com/\")"}}
                  ctx))
           (.then (fn [res]
                    (is (not (:intercepted res)))

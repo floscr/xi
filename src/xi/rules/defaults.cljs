@@ -291,6 +291,23 @@
    executing (`e`, `s///e`) commands never match and stay gated."
   #"^sed -n (?:(?:\d+|\$|/[^/\s]*/)(?:,(?:\d+|\$|/[^/\s]*/))?p;?)+(?: [^\s-]\S*)+$")
 
+(def localhost-curl-re
+  "A `curl` whose every URL is loopback (localhost / 127.0.0.1 / [::1], any
+   port), matched against clj's space-joined literal (sh …) args — for poking
+   dev servers. Every token must be a loopback URL or an allowlisted flag:
+   silent/fail/verbose-style switches, `-m N`, `-X <METHOD>`, `-o /dev/null`.
+   File-writing/reading (`-o file`, `-O`, `-T`, `-K`, `-d @file`), `-H`, proxies
+   and any non-loopback URL never match and stay gated. The URL must end its
+   token right after the host/port/path, so `http://localhost@evil.com` and
+   `http://localhost.evil.com` don't pass."
+  (let [url  "https?://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?(?:[/?#]\\S*)?(?= |$)"
+        flag (str "-[sSfLvikIg]+(?= |$)"
+                  "|--(?:silent|show-error|fail|location|verbose|include|head|insecure)(?= |$)"
+                  "|(?:-m|--max-time) \\d+(?= |$)"
+                  "|(?:-X|--request) (?:GET|POST|PUT|PATCH|DELETE|HEAD)(?= |$)"
+                  "|(?:-o|--output) /dev/null(?= |$)")]
+    (re-pattern (str "^curl(?: (?:" flag "))*(?: (?:" url ")(?: (?:" flag "|" url "))*)$"))))
+
 (def sh-repo-file-clis
   "File-management CLIs clj `(sh …)` may run without approval when every
    operand stays inside the git repo (or tmp) — see the `:within :repo`
@@ -499,12 +516,19 @@
     {:match  {:tool :sh :cli "rm" :tracked :git}
      :action {:type :allow}}]
 
+   ;; `curl` against loopback only (dev servers) — arg-scoped like the repo
+   ;; scripts above; a non-loopback URL or a file-touching flag falls through
+   ;; to sh-confirm.
+   ::localhost-curl
+   [{:match  {:tool :sh :cli "curl" :command localhost-curl-re}
+     :action {:type :allow}}]
+
    ::sh-confirm
    [{:match  {:tool :sh}
      :action {:type :ask :message "Run this CLI via clj (sh …)?" :options [:yes :no :always]}}]
 
    ::clj-sh
-   [::repository-scripts ::sh-read-only ::sh-confirm]})
+   [::repository-scripts ::localhost-curl ::sh-read-only ::sh-confirm]})
 
 (defn expand
   "Expand a `:defaults` vector — bundle aliases (recursively, so composites

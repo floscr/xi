@@ -256,6 +256,29 @@
     (testing "outside a git repo it asks"
       (is (= :ask (action-type {:tool :sh :cli "sed" :command "sed -n 1p f"}))))))
 
+(deftest localhost-curl
+  (let [curl (fn [cmd] (action-type {:tool :sh :cli "curl" :command cmd}))]
+    (testing "curl against loopback only is allowed"
+      (doseq [cmd ["curl http://localhost:8199/"
+                   "curl -sf http://localhost:8199/ -o /dev/null"
+                   "curl -s http://127.0.0.1:7474/api/x?a=1"
+                   "curl -sS -X POST http://localhost:3000/api"
+                   "curl --max-time 5 http://[::1]:8080"
+                   "curl http://localhost/a http://127.0.0.1/b"]]
+        (is (= :allow (curl cmd)) cmd)))
+    (testing "anything else falls to the base ask"
+      (doseq [cmd ["curl https://example.com"
+                   "curl http://localhost:8199/ http://example.com"
+                   "curl http://localhost@evil.com/"
+                   "curl http://localhost.evil.com/"
+                   "curl -o out.txt http://localhost:8199/"
+                   "curl -O http://localhost:8199/x"
+                   "curl -d @secrets http://localhost:8199/"
+                   "curl -T file http://localhost:8199/"
+                   "curl --proxy http://evil:1 http://localhost/"
+                   "curl -s"]]
+        (is (= :ask (curl cmd)) cmd)))))
+
 (deftest file-clis-within-repo
   (testing "mv/cp/mkdir/… whose operands stay in the repo are allowed"
     (doseq [cli ["mv" "cp" "mkdir" "touch" "rmdir"]]
@@ -358,13 +381,14 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 34 (count defaults/default-rules))))
+    (is (= 35 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
                              :xi.rules.defaults/outside-writes])
            (defaults/expand [:xi.rules.defaults/write-gates])))
     (is (= (defaults/expand [:xi.rules.defaults/repository-scripts
+                             :xi.rules.defaults/localhost-curl
                              :xi.rules.defaults/sh-read-only
                              :xi.rules.defaults/sh-confirm])
            (defaults/expand [:xi.rules.defaults/clj-sh]))))
