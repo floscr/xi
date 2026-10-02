@@ -18,6 +18,7 @@
             [xi.clj-result :as clj-result]
             [xi.config]
             [xi.highlight.core :as hl]
+            [xi.highlight.embedded :as embedded]
             [xi.highlight.grammars :as hl-grammars]
             [xi.highlight.theme :as hl-theme]
             [xi.tui.ansi :as ansi]
@@ -251,14 +252,17 @@
                (str/starts-with? % "- "))
           (rest lines))))
 
+(defn- colorize-tokens
+  "Merged highlight tokens → ANSI text, colored line by line."
+  [tokens]
+  (->> (hl/split-tokens-by-line tokens)
+       (mapv hl-theme/colorize)
+       (str/join "\n")))
+
 (defn- highlight-code
   "Apply syntax highlighting to plain source text."
   [grammar text]
-  (let [tokens (-> (hl/tokenize grammar text) hl/merge-adjacent)
-        lines (hl/split-tokens-by-line tokens)]
-    (->> lines
-         (mapv hl-theme/colorize)
-         (str/join "\n"))))
+  (colorize-tokens (-> (hl/tokenize grammar text) hl/merge-adjacent)))
 
 (defn- highlight-text
   "Apply syntax highlighting; auto-detects diff output."
@@ -276,8 +280,8 @@
    rendered as its own node under the `$ clj` header (not squeezed into it)."
   [arguments]
   (when-let [code (some-> (get-arg arguments :code) str str/trimr not-empty)]
-    (truncate-output (if-let [g (hl-grammars/get-grammar "clj")]
-                       (highlight-code g code)
+    (truncate-output (if-let [tokens (embedded/tokenize-clj hl-grammars/get-grammar code)]
+                       (colorize-tokens tokens)
                        code)
                      truncate-output-block-after-n-lines)))
 

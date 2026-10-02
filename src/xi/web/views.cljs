@@ -10,6 +10,7 @@
             [xi.markdown.hiccup :as md]
             [xi.highlight.core :as hl]
             [xi.highlight.bundle :as grammars]
+            [xi.highlight.embedded :as embedded]
             [xi.highlight.theme-css :as theme]
             [xi.dialog :as dlg]
             [xi.diff :as diff]
@@ -314,6 +315,20 @@
   "text → [:code …] for the no-grammar path (Bash results etc.)."
   (js/Map.))
 
+(def ^:private clj-code-cache
+  "text → [:code …] for clj tool input (see highlight-clj-code)."
+  (js/Map.))
+
+(defn- tokens->code
+  "Merged highlight tokens → hiccup [:code …], bare URLs linkified."
+  [tokens]
+  (into [:code]
+        (mapcat (fn [{:keys [type value]}]
+                  (if-let [cls (theme/token-class type)]
+                    [(into [:span {:class cls}] (md/linkify value))]
+                    (md/linkify value))))
+        tokens))
+
 (def ^:private md-cache-max 300)
 
 (def ^:private md-cache
@@ -334,15 +349,20 @@
   (let [inner (or (.get hl-cache grammar)
                   (let [m (js/Map.)] (.set hl-cache grammar m) m))]
     (or (.get inner text)
-        (let [tokens (hl/merge-adjacent (hl/tokenize grammar text))
-              result (into [:code]
-                           (mapcat (fn [{:keys [type value]}]
-                                     (if-let [cls (theme/token-class type)]
-                                       [(into [:span {:class cls}] (md/linkify value))]
-                                       (md/linkify value)))
-                                   tokens))]
+        (let [result (tokens->code (hl/merge-adjacent (hl/tokenize grammar text)))]
           (when (>= (.-size inner) code-cache-max) (.clear inner))
           (.set inner text result)
+          result))))
+
+(defn- highlight-clj-code
+  "highlight-code for clj source, whose string literals may embed code —
+   `(spit \"x.clj\" \"…\")`, `(sh \"bb\" \"-e\" \"…\")`. Memoized per text."
+  [text]
+  (or (.get clj-code-cache text)
+      (when-let [tokens (embedded/tokenize-clj grammars/get-grammar text)]
+        (let [result (tokens->code tokens)]
+          (when (>= (.-size clj-code-cache) code-cache-max) (.clear clj-code-cache))
+          (.set clj-code-cache text result)
           result))))
 
 (defn- plain-code
@@ -527,9 +547,8 @@
       (when clj-code
         [:div {:class ["tool-call-content" "tool-call-input"]}
          [:pre {:class ["tool-call-code"]}
-          (if-let [g (grammars/get-grammar "clj")]
-            (highlight-code g (truncate-lines clj-code 100))
-            (plain-code (truncate-lines clj-code 100)))]])
+          (or (highlight-clj-code (truncate-lines clj-code 100))
+              (plain-code (truncate-lines clj-code 100)))]])
       (cond
         ;; When the result carries an image (view_image, screenshots) the text is
         ;; just a "Viewed image: /path" caption — drop it and show only the image.

@@ -66,6 +66,16 @@ The web client can't read grammar files from disk, so `bundle.cljc` inlines a cu
 | **Diff views** | `edit` output gets green/red bg for added/removed lines |
 | **Git diffs** | `git_file_diff`, `git_hunk` — highlighted by file extension |
 | **Web client** | markdown code blocks in chat, via bundled grammars + CSS classes |
+| **`clj` tool input** (TUI + web) | the code, plus code embedded in its string literals — see below |
+
+### Embedded code in `clj` input
+
+`highlight/embedded.cljc` (`tokenize-clj`) re-highlights string literals that hold code:
+
+- `(spit "file.clj" "…")` — the content string, language from the path's extension.
+- `(sh "bb" "-e" "…")` — the script after an interpreter's eval flag (`bb`/`clj`/`nbb` `-e`, `node`/`bun` `-e`/`-p`, `python` `-c`, `ruby` `-e`, `bash`/`sh`/`zsh` `-c`). The interpreter must be one of the string args directly before the flag, so `(sh {:dir "x"} "bb" "-e" …)` works.
+
+The string is unescaped, tokenized with the target grammar, and each token is mapped back to the exact slice of the original source, so `\"`, `\\` and `\n` render as written. Embedded clj recurses (3 levels). Languages without a grammar (not bundled in the browser) stay plain string-coloured.
 
 ### Diff Highlighting
 
