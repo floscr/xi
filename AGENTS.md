@@ -119,6 +119,7 @@ docs/            see the index below
 | Web client · offline · UI components · demo | [web-client.md](docs/web-client.md) · [web-offline.md](docs/web-offline.md) · [frontend.md](docs/frontend.md) · [demo.md](docs/demo.md) |
 | TUI rendering · syntax highlighting | [tui-rendering.md](docs/tui-rendering.md) · [syntax-highlighting.md](docs/syntax-highlighting.md) |
 | Concurrent-edit safety (file hashes) · holds + cross-room git lock | [concurrent-edits.md](docs/concurrent-edits.md) · [git-lock.md](docs/git-lock.md) |
+| **User guide** — human-readable source of the future docs site; all new user-facing docs go here | [docs/guide/](docs/guide/README.md) |
 
 ## Conventions
 
