@@ -169,10 +169,10 @@
        "For large source files the read tool returns a tree-sitter outline "
        "(definitions with [line-ranges]) instead of full contents — this is "
        "expected, not an error. Always start with read: the outline tells you "
-       "what exists and where. Never open a file with read_source — it is a "
-       "follow-up for pulling one definition (read_source(path, symbol)) or a "
-       "range you found in the outline; read(path, offset, limit) also works "
-       "for line ranges. Whole-file read_source(path) is a last resort."))
+       "what exists and where. Then pull just the definition you need with "
+       "read_source(path, symbol) instead of reading line ranges. Never open a "
+       "file with read_source, and treat whole-file read_source(path) as a "
+       "last resort."))
 
 (defn create
   "Extension factory — nil (disabled) when the native CLI/grammars are absent."
