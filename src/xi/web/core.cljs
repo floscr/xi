@@ -1606,7 +1606,6 @@
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
      (when-let [timeline (.querySelector js/document ".timeline")]
-       (mark-programmatic-scroll!)
        (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
   :timeline/scroll-bottom
    (fn [_ _]
@@ -1619,14 +1618,13 @@
      ;; synchronous snap therefore lands at a stale position (content "flickers"
      ;; but never reaches bottom). So, like :prompt-nav/scroll, re-assert the
      ;; snap across a few animation frames until it actually lands at the
-     ;; bottom, marking each write programmatic so the re-tighten reflow can't
-     ;; be misread as the user scrolling back up.
+     ;; bottom. (The re-tighten reflow can't be misread as the user scrolling
+     ;; back up: only user gestures disable auto-scroll, see user-scrolling?.)
      (reset! auto-scroll? true)
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
      (letfn [(snap [n]
                (when-let [timeline (.querySelector js/document ".timeline")]
-                 (mark-programmatic-scroll!)
                  (set! (.-scrollTop timeline) (.-scrollHeight timeline))
                  (when (and (pos? n)
                             (> (- (.-scrollHeight timeline)
@@ -1846,11 +1844,13 @@
    scrolled away (auto-scroll? off)."
   [^js timeline]
   (reset! smooth-follow-raf nil)
-  (when @auto-scroll?
+  ;; Yield to an in-flight user gesture: the loop closes ~28% of the gap per
+  ;; frame, far faster than a wheel/touch scroll moves, so it would otherwise
+  ;; out-run the scroll-up and the listener would never see scrollTop drop.
+  (when (and @auto-scroll? (not (user-scrolling?)))
     (let [target (- (.-scrollHeight timeline) (.-clientHeight timeline))
           cur    (.-scrollTop timeline)
           delta  (- target cur)]
-      (mark-programmatic-scroll!)
       (if (<= delta 1)
         (set! (.-scrollTop timeline) target)
         (do (set! (.-scrollTop timeline) (+ cur (max 1 (* delta smooth-follow-ease))))
@@ -1858,7 +1858,7 @@
                     (js/requestAnimationFrame #(smooth-follow-step! timeline))))))))
 
 (defn- scroll-to-bottom! []
-  (when @auto-scroll?
+  (when (and @auto-scroll? (not (user-scrolling?)))
     (when-let [timeline (.querySelector js/document ".timeline")]
       ;; A session switch must land at the bottom instantly, not ease down from
       ;; the top — disarm the follow until this chat's first snap has landed.
@@ -1877,11 +1877,29 @@
             (reset! smooth-follow-raf
                     (js/requestAnimationFrame #(smooth-follow-step! timeline))))
           (do (cancel-smooth-follow!)
-              (mark-programmatic-scroll!)
               (set! (.-scrollTop timeline) target)
               ;; First snap of this chat (or a huge jump) has landed instantly;
               ;; arm smooth follow for the incremental growth that comes next.
               (reset! smooth-scroll-armed? true)))))))
+
+(defonce ^:private global-scroll-intent-attached? (atom false))
+
+(defn- attach-global-scroll-intent!
+  "Window/document halves of the user-scroll-intent tracking (pointer release,
+   scroll-up keys). Attached once — unlike the per-timeline listeners, these
+   would otherwise pile up on every fresh .timeline."
+  []
+  (when-not @global-scroll-intent-attached?
+    (reset! global-scroll-intent-attached? true)
+    (doseq [t ["pointerup" "pointercancel" "blur"]]
+      (.addEventListener js/window t (fn [] (reset! timeline-pointer-down? false))))
+    (.addEventListener js/document "keydown"
+                       (fn [^js e]
+                         (when (and (#{"ArrowUp" "PageUp" "Home"} (.-key e))
+                                    (not (.. e -target -isContentEditable))
+                                    (not (#{"INPUT" "TEXTAREA" "SELECT"}
+                                          (.. e -target -tagName))))
+                           (mark-user-scroll-intent!))))))
 
 (defn- attach-scroll-listener! []
   (when-let [timeline (.querySelector js/document ".timeline")]
@@ -1892,12 +1910,21 @@
       (reset! smooth-scroll-armed? false)
       (reset! prev-scroll-top (.-scrollTop timeline))
       ;; Unambiguous user gestures — only real input devices fire these, never
-      ;; our programmatic snaps — so they mark user intent for the scroll
-      ;; listener above.
+      ;; our snaps or layout shifts — so they mark user intent for the scroll
+      ;; listener below. Wheel counts only upward, so a wheel-down onto the
+      ;; bottom can't lend intent to a reflow landing right after it.
       (.addEventListener timeline "touchmove"
                          (fn [] (mark-user-scroll-intent!)) #js {:passive true})
       (.addEventListener timeline "wheel"
-                         (fn [] (mark-user-scroll-intent!)) #js {:passive true})
+                         (fn [^js e] (when (neg? (.-deltaY e)) (mark-user-scroll-intent!)))
+                         #js {:passive true})
+      ;; Primary button only: a right-click's native context menu can swallow
+      ;; the pointerup, which would leave the flag stuck.
+      (.addEventListener timeline "pointerdown"
+                         (fn [^js e]
+                           (when (zero? (.-button e))
+                             (reset! timeline-pointer-down? true))))
+      (attach-global-scroll-intent!)
       (.addEventListener timeline "scroll"
                          (fn []
                            (let [top     (.-scrollTop timeline)
@@ -1906,26 +1933,18 @@
                              (reset! prev-scroll-top top)
                              ;; ONLY an actual upward user scroll disables
                              ;; auto-scroll. Content growing mid-stream (or our
-                             ;; own programmatic snap-to-bottom) keeps/increases
-                             ;; scrollTop; reading at-bottom? there races the
-                             ;; growth and used to mistake it for the user
-                             ;; leaving the bottom — freezing the scroll at a
-                             ;; random spot. Snapping back to the bottom always
-                             ;; re-enables it. A scrollTop decrease within the
-                             ;; programmatic window (a snap + its reflow, e.g.
-                             ;; the down-arrow unfreezing the window) is ours,
-                             ;; not the user, so it must not disable auto-scroll.
-                             ;; EXCEPT when a touch/wheel gesture is in flight
-                             ;; (user-scroll-intent) — during streaming the
-                             ;; programmatic window is refreshed continuously,
-                             ;; so without the override a mobile user could
-                             ;; never scroll up mid-answer.
+                             ;; own snap-to-bottom) keeps/increases scrollTop;
+                             ;; reading at-bottom? there races the growth and
+                             ;; used to mistake it for the user leaving the
+                             ;; bottom — freezing the scroll at a random spot.
+                             ;; A decrease without a gesture in flight is layout
+                             ;; (render-window slide + scroll anchoring, a snap's
+                             ;; reflow), never the user. Snapping back to the
+                             ;; bottom always re-enables it.
                              (cond
                                bottom?
                                (reset! auto-scroll? true)
-                               (and (< top (- prev 2))
-                                    (or (<= (js/Date.now) @user-scroll-intent-until)
-                                        (> (js/Date.now) @programmatic-scroll-until)))
+                               (and (< top (- prev 2)) (user-scrolling?))
                                (reset! auto-scroll? false))
                              ;; Surface "scrolled up" into state so the
                              ;; scroll-to-bottom down-arrow can toggle (shown
