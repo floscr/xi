@@ -224,14 +224,16 @@ Static string or a function of `cwd`:
 Declarative key → event dispatch:
 
 ```clojure
-:keybindings [{:key   "alt+n"
+:keybindings [{:key   "alt+r"
                :event {:type :ext.notes/toggle}
                :when  (fn [state] ...)}]  ; optional guard
 ```
 
 The TUI folds `:when` into the key detection function — a guarded binding
 falls through to the editor's own handler when the guard fails. Events are
-dispatched with `:room-id` added automatically.
+dispatched with `:room-id` added automatically. Built-in TUI keys (not
+extension-contributed): Ctrl+O toggles the system-prompt buffer's preview,
+Alt+N starts a new chat in the current cwd (`/new`).
 
 ## Prompt Badges
 

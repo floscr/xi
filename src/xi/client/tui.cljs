@@ -52,7 +52,8 @@
 (def ^:private key-sequences
   "Named ext keybindings → the raw input sequences that trigger them
    (legacy + kitty CSI-u encodings). Extend as extensions need keys."
-  {"alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
+  {"alt+n"        #{(str ESC "[110;3u")}
+   "alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
    "alt+p"        #{(str ESC "p") (str ESC "[112;3u")}
    "ctrl+p"       #{(str (char 16)) (str ESC "[112;5u")}
    "ctrl+shift+n" #{(str ESC "[110;6u")}
@@ -63,11 +64,15 @@
 (def ^:private builtin-keybindings
   "Core (non-extension) editor keybindings, wired the same way as ext
    keybindings. ctrl+o toggles full/preview rendering of the system-prompt
-   buffer, gated so the key falls through to the editor elsewhere."
+   buffer, gated so the key falls through to the editor elsewhere. alt+n
+   starts a new chat in the current room's cwd (same as typing /new; mirrors
+   the web client's ALT+n)."
   [{:key   "ctrl+o"
     :event {:type :ui/prompt-toggle}
     :when  (fn [st] (= :prompt (get-in (state/active-room st)
-                                       [:ui :active-buffer])))}])
+                                       [:ui :active-buffer])))}
+   {:key   "alt+n"
+    :event {:type :command/run :name "new"}}])
 
 (defn- ->editor-keybindings
   "Translate ext keybindings ({:key :event :when}) into editor bindings

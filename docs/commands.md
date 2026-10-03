@@ -53,7 +53,7 @@ Defined in `xi.commands/built-in-commands`:
 | `/sessions` | List previous sessions |
 | `/favorites` | List favorited sessions |
 | `/favorite` | Toggle favorite on the current session |
-| `/new` | Start a new session |
+| `/new` | Start a new session in the current cwd (TUI: Alt+N, kitty keyboard protocol; web: Alt+N) |
 | `/clear` | Clear current session |
 | `/fork` | Split the conversation into a new session |
 | `/truncate` | Summarize conversation to reduce context ([compaction.md](compaction.md)) |
