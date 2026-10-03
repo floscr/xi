@@ -2124,18 +2124,20 @@
 
 (defn- session-step!
   "ALT+j/k: navigate to the next/prev session in sidebar order (no wrap).
-   When no session is active, both directions land on the first session."
+   When no chat is open (home, projects, … or a session not in the sidebar),
+   both directions land on the first session."
   [st dispatch! dir]
   (let [order (sidebar/sidebar-session-order st)
         n     (count order)]
     (when (pos? n)
-      (let [cur (get-in st [:web/route :session-id])
-            idx (first (keep-indexed (fn [i sid] (when (= sid cur) i)) order))
-            nxt (cond
-                  (nil? idx)    0
-                  (= dir :next) (min (dec n) (inc idx))
-                  :else         (max 0 (dec idx)))
-            sid (nth order nxt)]
+      (let [route (:web/route st)
+            cur   (when (= :chat (:page route)) (:session-id route))
+            idx   (first (keep-indexed (fn [i sid] (when (= sid cur) i)) order))
+            nxt   (cond
+                    (nil? idx)    0
+                    (= dir :next) (min (dec n) (inc idx))
+                    :else         (max 0 (dec idx)))
+            sid   (nth order nxt)]
         (when (not= sid cur)
           (dispatch! {:type :route/navigate :page :chat :session-id sid}))))))
 
@@ -2159,9 +2161,10 @@
 (defn- install-keybindings!
   "Register the built-in web shortcuts into the view/mode-scoped keymap.
    Global: ALT+n opens a new chat from any view; ALT+u jumps to the newest
-   finished agent with unread output (the purple dot). Chat pane, normal mode:
-   `i` focuses the composer (enter insert), `G` scrolls the timeline to the
-   bottom, ALT+j/k step to the next/prev session in sidebar order (no wrap).
+   finished agent with unread output (the purple dot); ALT+j/k step to the
+   next/prev session in sidebar order (no wrap; from a non-chat view they open
+   the first session). Chat pane, normal mode: `i` focuses the composer (enter
+   insert), `G` scrolls the timeline to the bottom.
    Chat pane, insert mode: Escape blurs the composer (back to normal).
    Physical `:code`s so they fire regardless of the character an Alt-combo
    emits on the active layout."
@@ -2179,9 +2182,9 @@
                      :run (fn [_ dispatch! _] (dispatch! {:type :palette/open-file-finder}))})
   (keymap/register! {:id :file-finder-meta :code "KeyP" :meta true :view :any :mode :any
                      :run (fn [_ dispatch! _] (dispatch! {:type :palette/open-file-finder}))})
-  (keymap/register! {:id :session-next :code "KeyJ" :alt true :view :chat :mode :any
+  (keymap/register! {:id :session-next :code "KeyJ" :alt true :view :any :mode :any
                      :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
-  (keymap/register! {:id :session-prev :code "KeyK" :alt true :view :chat :mode :any
+  (keymap/register! {:id :session-prev :code "KeyK" :alt true :view :any :mode :any
                      :run (fn [st dispatch! _] (session-step! st dispatch! :prev))})
   (keymap/register! {:id :compose-focus :code "KeyI" :view :chat :mode :normal
                      :run (fn [_ dispatch! _] (dispatch! {:type :compose/focus}))})
