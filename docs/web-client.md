@@ -183,6 +183,17 @@ shortcuts below never get swallowed by an invisible input.
 | `Ctrl/Cmd+p` | any | fuzzy file finder |
 | `Ctrl/Cmd+k` | any | command palette (ui-runtime) |
 
+### Error cards
+
+A recognised agent error renders as a plain-language card instead of the raw
+`[Error] {…}` dump: a title ("Session limit reached"), when it is back ("Claude is
+paused until 3:00 PM · back in 54 min"), the 5-hour / weekly usage meter for
+rate limits, and the original error behind a **Technical details** toggle.
+Classification is the pure `xi.error-info/describe` (rate-limit events plus message
+patterns for auth, billing / usage credits, overloaded and network failures);
+anything it doesn't recognise keeps the plain red `[Error]` line. The TUI is
+unchanged. Rendering: `error-card` in `xi.web.views`, styles `.error-card*`.
+
 ## Web-only state keys
 
 All under the same app atom, never sent over the wire:

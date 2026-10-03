@@ -923,6 +923,71 @@ body {
 .error-text { color: var(--danger); }
 .status-text { color: var(--fg-2); font-style: italic; }
 
+/* ---- Error card (xi.error-info) ----
+   A recognised agent error in plain language: title, when it is back, usage
+   meter, raw error behind a toggle. */
+.error-card {
+  width: 100%;
+  padding: var(--size-3);
+  background: color-mix(in srgb, var(--danger) 6%, var(--bg-1));
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent);
+  border-radius: var(--radius-lg);
+}
+.error-card-head { display: flex; gap: var(--size-3); align-items: flex-start; }
+.error-card-icon {
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-radius: var(--radius-md);
+}
+.error-card-text { min-width: 0; }
+.error-card-title { font-weight: 600; color: var(--fg-0); }
+.error-card-sub { color: var(--fg-2); font-size: var(--font-sm); margin-top: 2px; }
+.error-card-windows { margin-top: var(--size-3); }
+.error-card-meter {
+  height: 6px;
+  background: var(--bg-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.error-card-meter-fill {
+  height: 100%;
+  background: var(--danger);
+  border-radius: inherit;
+}
+.error-card-meter-labels {
+  display: flex; justify-content: space-between;
+  margin-top: var(--size-1);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+.error-card-meter-labels b { color: var(--fg-0); font-weight: 500; }
+.error-card-details-toggle {
+  display: flex; align-items: center; gap: var(--size-1);
+  margin-top: var(--size-3);
+  cursor: pointer;
+  list-style: none;
+  color: var(--fg-2);
+  font-size: var(--font-xs);
+}
+.error-card-details-toggle::-webkit-details-marker { display: none; }
+.error-card-details[open] > .error-card-details-toggle .tool-call-toggle-icon {
+  transform: rotate(90deg);
+}
+.error-card-raw {
+  margin: var(--size-2) 0 0;
+  padding: var(--size-2);
+  background: var(--bg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  color: var(--danger);
+  font-size: var(--font-xs);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* ---- Syntax highlighting ---- */
 :root {
   --hl-comment:  #6a737d;

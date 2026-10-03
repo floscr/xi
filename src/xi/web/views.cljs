@@ -6,6 +6,7 @@
    compose input, abort, permission dialogs). Home view + router land in 7b."
   (:require [clojure.string :as str]
             [xi.commands :as commands]
+            [xi.error-info :as error-info]
             [xi.core.state :as state]
             [xi.markdown.hiccup :as md]
             [xi.highlight.core :as hl]
@@ -685,6 +686,54 @@
                                    (dispatch! {:type :lightbox/open :src src}))}}]))
           imgs)])]]))
 
+;; ── Error card ───────────────────────────────────────────────────────────────
+
+(defn- reset-clock-time
+  "Local wall-clock time of epoch-seconds `secs`, e.g. \"3:00 PM\"."
+  [secs]
+  (.toLocaleTimeString (js/Date. (* 1000 secs)) js/undefined
+                       #js {:hour "numeric" :minute "2-digit"}))
+
+(def ^:private error-card-icons
+  {:rate-limit :clock
+   :auth       :lock
+   :billing    :alert-triangle
+   :overloaded :zap
+   :network    :circle-x})
+
+(defn- error-card
+  "Plain-language card for a recognised agent error (`xi.error-info`): what
+   happened, when it is back, the usage windows, and the raw error behind a
+   details toggle."
+  [{:keys [kind title subtitle resets-at windows raw]}]
+  (let [mins (error-info/minutes-until resets-at (.now js/Date))]
+    [:div {:class ["post" "post--assistant"]}
+     [:div {:class ["error-card" (str "error-card--" (name kind))]}
+      [:div {:class ["error-card-head"]}
+       [:div {:class ["error-card-icon"]}
+        (icon/icon {:icon-name (get error-card-icons kind :alert-triangle)})]
+       [:div {:class ["error-card-text"]}
+        [:div {:class ["error-card-title"]} title]
+        [:div {:class ["error-card-sub"]}
+         (if resets-at
+           (str subtitle " until " (reset-clock-time resets-at)
+                (when mins (str " · back in " (error-info/format-minutes mins))))
+           subtitle)]]]
+      (when (seq windows)
+        [:div {:class ["error-card-windows"]}
+         [:div {:class ["error-card-meter"]}
+          [:div {:class ["error-card-meter-fill"]
+                 :style {:width (str (min 100 (:pct (first windows))) "%")}}]]
+         [:div {:class ["error-card-meter-labels"]}
+          (for [{:keys [label pct]} windows]
+            [:span {:replicant/key label} label " " [:b (str pct "%")]])]])
+      [:details {:class ["error-card-details"]}
+       [:summary {:class ["error-card-details-toggle"]}
+        [:span {:class ["tool-call-toggle-icon"]}
+         (icon/icon {:icon-name :chevron-right :size :sm})]
+        "Technical details"]
+       [:pre {:class ["error-card-raw"]} raw]]]]))
+
 ;; ── History entry → post ─────────────────────────────────────────────────────
 
 (defn- entry->post [dispatch! entry]
@@ -802,8 +851,10 @@
     :error
     (let [msg (or (:message (:error entry)) (pr-str (:error entry)))]
       (when-not (str/includes? (str msg) "null is not an object")
-        [:div {:class ["post" "post--assistant"]}
-         [:div {:class ["post-content" "error-text"]} (str "[Error] " msg)]]))
+        (if-let [info (error-info/describe (:error entry))]
+          (error-card info)
+          [:div {:class ["post" "post--assistant"]}
+           [:div {:class ["post-content" "error-text"]} (str "[Error] " msg)]])))
 
     :aborted
     [:div {:class ["post" "post--assistant"]}
