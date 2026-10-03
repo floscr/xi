@@ -2830,10 +2830,10 @@
     [:span {:class ["project-card-name"]} (or name "New session")]
     [:span {:class ["project-card-path"]}
      (->> [(when (and show-project? cwd) (shorten-path cwd))
-           (format-relative-time timestamp)
-           (cond has-dialog? "needs response"
-                 busy? "working…"
-                 :else nil)]
+           ;; "just now" is noise; only a real age (3m ago) is useful.
+           (let [rel (format-relative-time timestamp)]
+             (when-not (= rel "just now") rel))
+           (when has-dialog? "needs response")]
           (remove str/blank?)
           (str/join " · "))]]
    ;; ⋮ opens the same context menu as right-click / long-press.
