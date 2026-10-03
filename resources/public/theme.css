@@ -2663,6 +2663,9 @@ a.btn-link {
 .dial-panel {
   display: flex;
   flex-direction: column;
+  /* Shrinkable within .dialkit-root's max-height so the body scrolls
+     instead of the panel overflowing the viewport. */
+  min-height: 0;
   background: var(--bg-0);
   border: var(--border-1);
   border-radius: var(--radius-md);
@@ -2731,7 +2734,29 @@ a.btn-link {
   flex-direction: column;
   gap: var(--size-2);
   padding: var(--size-3);
+  /* min-height: 0 lets the body shrink below its content inside the
+     panel's flex column, which is what actually engages overflow-y. */
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  /* Thin, subtle scrollbar (scoped copy of utilities.css — dial.css is
+     also injected standalone into pages that don't load the framework). */
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-2) transparent;
+}
+
+.dial-panel-body::-webkit-scrollbar { width: 4px; height: 4px; }
+.dial-panel-body::-webkit-scrollbar-track { background: transparent; }
+.dial-panel-body::-webkit-scrollbar-thumb {
+  background: var(--bg-2);
+  border-radius: 9999px;
+}
+@media (hover: hover){.dial-panel-body::-webkit-scrollbar-thumb:hover{ background: var(--fg-2); }}
+
+/* Rows keep their natural height — without this, flex squishes them
+   together (down to min-height) before the body's scrollbar kicks in. */
+.dial-panel-body > * {
+  flex-shrink: 0;
 }
 
 /* ── Minimized-to-icon state ───────────────────────────────────────── */
@@ -4697,6 +4722,193 @@ label,
 summary,
 [role="button"] {
   touch-action: manipulation;
+}
+
+
+/* Number field — reui/shadcn-style numeric input with stepper buttons.
+   The wrapper is one rounded, bordered box; the inner <input> is borderless
+   and the steppers are flat buttons that only tint on hover (no dividers). */
+
+.number-field {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  justify-content: space-between;
+  width: 100%;
+  height: var(--size-8);
+  background: var(--bg-0);
+  color: var(--fg-0);
+  border: var(--border-1);
+  border-radius: var(--radius-md);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.number-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* ── Input ─────────────────────────────────────────────────────────── */
+.number-field-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0 var(--size-3);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: center;
+  background: transparent;
+  color: inherit;
+  border: none;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.number-field-input::placeholder {
+  color: var(--fg-2);
+}
+
+/* Hide native spinner — the component provides its own steppers. */
+.number-field-input::-webkit-outer-spin-button,
+.number-field-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* ── Stepper buttons ───────────────────────────────────────────────── */
+.number-field-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0 var(--size-2);
+  color: var(--fg-1);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+@media (hover: hover){.number-field-btn:hover:not(:disabled){
+  background: var(--bg-2);
+  color: var(--fg-0);
+}}
+
+.number-field-btn:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-2));
+  color: var(--fg-0);
+}
+
+.number-field-btn:disabled {
+  color: var(--fg-2);
+  cursor: not-allowed;
+}
+
+/* Round the outer corners so the buttons hug the wrapper's radius. */
+.number-field-btn--dec {
+  border-top-left-radius: var(--radius-md);
+  border-bottom-left-radius: var(--radius-md);
+}
+
+.number-field-btn--inc {
+  border-top-right-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+
+/* ── "right" variant — both steppers after the input ───────────────── */
+.number-field--right .number-field-input {
+  text-align: left;
+}
+
+/* Full-height button cells, flush to the edge: a left border separates the
+   first stepper from the input and a divider sits between the two steppers. */
+.number-field--right .number-field-btn {
+  border-left: var(--border-1);
+}
+
+/* Decrement is no longer at the left edge, so drop its left rounding. */
+.number-field--right .number-field-btn--dec {
+  border-radius: 0;
+}
+
+/* ── "spinner" variant — detached rounded box with up/down chevrons ── */
+.number-field--spinner .number-field-input {
+  text-align: left;
+}
+
+.number-field-spin {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  align-self: stretch;
+  border-left: var(--border-1);
+}
+
+.number-field-spin .number-field-btn {
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 var(--size-2);
+  border-radius: 0;
+}
+
+/* Chevrons are small so both stack inside the field height. */
+.number-field-spin .icon {
+  width: var(--size-3);
+  height: var(--size-3);
+}
+
+/* Round the outer corners so the stepper cell hugs the wrapper radius. */
+.number-field-spin .number-field-btn--inc {
+  border-top-right-radius: var(--radius-md);
+}
+
+/* Divider between the two chevrons + hug the bottom-right corner. */
+.number-field-spin .number-field-btn--dec {
+  border-top: var(--border-1);
+  border-bottom-right-radius: var(--radius-md);
+}
+
+/* ── Sizes ─────────────────────────────────────────────────────────── */
+.number-field--sm {
+  height: var(--size-7);
+}
+
+.number-field--sm .number-field-input {
+  padding: 0 var(--size-2);
+  font-size: var(--font-xs);
+}
+
+.number-field--sm .number-field-btn {
+  padding: 0 var(--size-1);
+}
+
+.number-field--lg {
+  height: var(--size-9);
+}
+
+.number-field--lg .number-field-input {
+  padding: 0 var(--size-3);
+  font-size: var(--font-md);
+}
+
+.number-field--lg .number-field-btn {
+  padding: 0 var(--size-3);
+}
+
+/* ── Disabled ──────────────────────────────────────────────────────── */
+.number-field--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.number-field--disabled:focus-within {
+  border-color: var(--border-1);
+  box-shadow: none;
 }
 
 
@@ -6816,6 +7028,285 @@ a.sidebar-menu-item {
   width: 1.5rem;
   height: 1.5rem;
   border-radius: calc(var(--radius-xs));
+}
+
+
+/* ── Timeline ───────────────────────────────────────────────── */
+
+.ui-timeline {
+  --ui-timeline-gutter: 120px;
+  position: relative;
+  width: 100%;
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ui-timeline-tracks {
+  position: relative;
+  padding-bottom: 56px; /* room for the floating transport */
+}
+
+/* ── Ruler / scrubber ───────────────────────────────────────── */
+
+.ui-timeline-ruler {
+  position: relative;
+  height: 30px;
+  margin-left: var(--ui-timeline-gutter);
+  cursor: ew-resize;
+  outline: none;
+  /* Claim horizontal drag gestures so touch devices scrub instead of
+     scrolling the page (see player-bar for the same trick). */
+  touch-action: none;
+}
+
+.ui-timeline-ruler:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.ui-timeline-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 7px;
+  background: color-mix(in srgb, var(--fg-0) 16%, transparent);
+  pointer-events: none;
+}
+
+.ui-timeline-tick-label {
+  position: absolute;
+  bottom: 10px;
+  left: 4px;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-2);
+  white-space: nowrap;
+}
+
+/* Last tick sits at the ruler's right edge — right-align its label. */
+.ui-timeline-tick:last-child .ui-timeline-tick-label {
+  left: auto;
+  right: 4px;
+}
+
+/* ── Tracks ─────────────────────────────────────────────────── */
+
+.ui-timeline-track-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+}
+
+.ui-timeline-track {
+  display: grid;
+  grid-template-columns: var(--ui-timeline-gutter) 1fr;
+  height: 28px;
+}
+
+.ui-timeline-track-label {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--size-3);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-timeline-lane {
+  position: relative;
+}
+
+/* ── Segment bars ───────────────────────────────────────────── */
+
+.ui-timeline-bar {
+  position: absolute;
+  top: 5px;
+  height: 18px;
+  min-width: 2px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--size-2);
+  border: none;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg-0) 14%, transparent);
+  color: var(--fg-0);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+@media (hover: hover) {
+  .ui-timeline-bar:hover {
+    background: color-mix(in srgb, var(--fg-0) 20%, transparent);
+  }
+}
+
+.ui-timeline-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ui-timeline-track[data-editing] .ui-timeline-bar {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.ui-timeline-bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Resize handles ─────────────────────────────────────────── */
+/* Invisible 24px-wide hit areas straddling each segment edge, with a
+   2px accent line revealed on hover / while editing. */
+
+.ui-timeline-handle {
+  position: absolute;
+  top: 0;
+  width: 24px;
+  height: 28px;
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.ui-timeline-handle-start { translate: -18px 0; }
+.ui-timeline-handle-end   { translate: -6px 0; }
+
+.ui-timeline-handle::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+/* Align the line with the segment edge the handle controls. */
+.ui-timeline-handle-start::after { left: 17px; }
+.ui-timeline-handle-end::after   { left: 5px; }
+
+@media (hover: hover) {
+  .ui-timeline-track:hover .ui-timeline-handle::after,
+  .ui-timeline-handle:hover::after,
+  .ui-timeline-track[data-editing] .ui-timeline-handle::after {
+    opacity: 1;
+  }
+}
+
+/* Touch: keep the trim lines faintly visible so edges are discoverable. */
+.clj-ui-touch .ui-timeline-handle::after {
+  opacity: 0.65;
+}
+
+/* ── Playhead ───────────────────────────────────────────────── */
+
+.ui-timeline-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: var(--ui-timeline-gutter);
+  pointer-events: none;
+}
+
+.ui-timeline-playhead {
+  position: absolute;
+  top: 30px;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--fg-0);
+}
+
+/* Accent pentagon cap at the ruler line. */
+.ui-timeline-playhead::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: -3px;
+  width: 8px;
+  height: 10px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
+}
+
+/* ── Transport ──────────────────────────────────────────────── */
+
+.ui-timeline-transport {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  height: 40px;
+  padding: 0 var(--size-2);
+  background: var(--bg-2);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+}
+
+.ui-timeline-transport-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 9999px;
+  padding: 0;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .ui-timeline-transport-btn:hover {
+    color: var(--fg-0);
+    background: color-mix(in srgb, var(--fg-0) 10%, transparent);
+  }
+}
+
+.ui-timeline-transport-btn.ui-timeline-loop-active {
+  color: var(--accent);
+}
+
+.ui-timeline-play {
+  background: var(--fg-0);
+  color: var(--bg-0);
+  transition: scale 0.15s;
+}
+
+@media (hover: hover) {
+  .ui-timeline-play:hover {
+    scale: 1.1;
+    background: var(--fg-0);
+    color: var(--bg-0);
+  }
+}
+
+.ui-timeline-play:active {
+  scale: 0.95;
+}
+
+.ui-timeline-time {
+  padding: 0 var(--size-1);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-2);
 }
 
 

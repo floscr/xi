@@ -3468,7 +3468,7 @@
           if (truth_(raw1)) {
             const data2 = JSON.parse(raw1);
             if (truth_(data2["values"])) {
-              reset_BANG_(get(panel, "store"), js__GT_clj(data2["values"]));
+              reset_BANG_(get(panel, "store"), data2["values"]);
             }
             ;
             if (truth_(data2["presets"])) {
@@ -3582,10 +3582,10 @@
         return _EQ_(x["id"], id);
       }));
       if (truth_(p1)) {
-        reset_BANG_(get(panel, "store"), js__GT_clj(p1["values"]));
+        reset_BANG_(get(panel, "store"), p1["values"]);
       }
     } else {
-      reset_BANG_(get(panel, "store"), js__GT_clj(get(panel, "baseValues")));
+      reset_BANG_(get(panel, "store"), get(panel, "baseValues"));
     }
     ;
     refresh_updaters_BANG_(panel);
@@ -4233,6 +4233,7 @@
 
   // .compiled/gestures.mjs
   var press_ms = 500;
+  var press_visual_ms = 250;
   var slop_px = 10;
   var selector = ".context-menu-trigger, [data-long-press]";
   var press_class = "clj-ui-pressing";
@@ -4259,6 +4260,7 @@
     if (truth_(temp__23062__auto__1)) {
       const p2 = temp__23062__auto__1;
       clearTimeout(get(p2, "timer"));
+      clearTimeout(get(p2, "visual-timer"));
       clear_press_visual_BANG_(get(p2, "el"));
       return reset_BANG_(press, null);
     }
@@ -4285,9 +4287,12 @@
         cancel_BANG_();
         const x4 = e.clientX;
         const y5 = e.clientY;
-        el3.classList.add(press_class);
-        return reset_BANG_(press, { "el": el3, "x": x4, "y": y5, "timer": setTimeout((function() {
+        return reset_BANG_(press, { "el": el3, "x": x4, "y": y5, "visual-timer": setTimeout((function() {
+          return el3.classList.add(press_class);
+        }), press_visual_ms), "timer": setTimeout((function() {
+          clearTimeout(get(deref(press), "visual-timer"));
           reset_BANG_(press, null);
+          el3.classList.add(press_class);
           reset_BANG_(held, el3);
           reset_BANG_(suppress_click_QMARK_, true);
           return dispatch_contextmenu_BANG_(el3, x4, y5);
@@ -4325,6 +4330,8 @@
       if (truth_(temp__23062__auto__1)) {
         const p2 = temp__23062__auto__1;
         clearTimeout(get(p2, "timer"));
+        clearTimeout(get(p2, "visual-timer"));
+        get(p2, "el").classList.add(press_class);
         reset_BANG_(press, null);
         return reset_BANG_(held, get(p2, "el"));
       }
@@ -4456,6 +4463,128 @@
   } else {
     init_BANG_3();
   }
+
+  // .compiled/number_field.mjs
+  var num = function(v, fallback) {
+    const n1 = parseFloat(v);
+    if (truth_(isNaN(n1))) {
+      return fallback;
+    } else {
+      return n1;
+    }
+    ;
+  };
+  var closest_field = function(el) {
+    if (truth_((() => {
+      const and__23442__auto__1 = el;
+      if (truth_(and__23442__auto__1)) {
+        return el.closest;
+      } else {
+        return and__23442__auto__1;
+      }
+      ;
+    })())) {
+      return el.closest("[data-ui-number-field]");
+    }
+    ;
+  };
+  var disabled_QMARK_ = function(field) {
+    return field.hasAttribute("data-ui-number-disabled");
+  };
+  var field_input = function(field) {
+    return field.querySelector("input");
+  };
+  var round6 = function(n) {
+    return Math.round(n * 1e6) / 1e6;
+  };
+  var step_input_BANG_ = function(input, dir) {
+    if (truth_((() => {
+      const and__23442__auto__1 = input;
+      if (truth_(and__23442__auto__1)) {
+        return not(input.disabled);
+      } else {
+        return and__23442__auto__1;
+      }
+      ;
+    })())) {
+      const raw_step2 = num(input.step, 1);
+      const step3 = raw_step2 > 0 ? raw_step2 : 1;
+      const cur4 = num(input.value, 0);
+      const min_STAR_5 = !_EQ_("", input.min) ? num(input.min, null) : null;
+      const max_STAR_6 = !_EQ_("", input.max) ? num(input.max, null) : null;
+      const next7 = round6(cur4 + dir * step3);
+      const next8 = (() => {
+        const G__219 = next7;
+        const G__2110 = !(min_STAR_5 == null) ? Math.max(G__219, min_STAR_5) : G__219;
+        if (!(max_STAR_6 == null)) {
+          return Math.min(G__2110, max_STAR_6);
+        } else {
+          return G__2110;
+        }
+        ;
+      })();
+      input.value = `${next8 ?? ""}`;
+      input.dispatchEvent(new Event("input", { "bubbles": true }));
+      return input.dispatchEvent(new Event("change", { "bubbles": true }));
+    }
+    ;
+  };
+  var on_wheel = function(e) {
+    const temp__23062__auto__1 = closest_field(e.target);
+    if (truth_(temp__23062__auto__1)) {
+      const field2 = temp__23062__auto__1;
+      if (truth_(disabled_QMARK_(field2))) {
+        return null;
+      } else {
+        const temp__23062__auto__3 = field_input(field2);
+        if (truth_(temp__23062__auto__3)) {
+          const input4 = temp__23062__auto__3;
+          e.preventDefault();
+          return step_input_BANG_(input4, e.deltaY < 0 ? 1 : -1);
+        }
+        ;
+      }
+      ;
+    }
+    ;
+  };
+  var on_click2 = function(e) {
+    const temp__23062__auto__1 = (() => {
+      const and__23442__auto__2 = e.target;
+      if (truth_(and__23442__auto__2)) {
+        const and__23442__auto__3 = e.target.closest;
+        if (truth_(and__23442__auto__3)) {
+          return e.target.closest("[data-ui-number-step]");
+        } else {
+          return and__23442__auto__3;
+        }
+        ;
+      } else {
+        return and__23442__auto__2;
+      }
+      ;
+    })();
+    if (truth_(temp__23062__auto__1)) {
+      const btn4 = temp__23062__auto__1;
+      const temp__23062__auto__5 = closest_field(btn4);
+      if (truth_(temp__23062__auto__5)) {
+        const field6 = temp__23062__auto__5;
+        if (truth_(disabled_QMARK_(field6))) {
+          return null;
+        } else {
+          return step_input_BANG_(field_input(field6), num(btn4.getAttribute("data-ui-number-step"), 0));
+        }
+        ;
+      }
+      ;
+    }
+    ;
+  };
+  var init_BANG_4 = function() {
+    document.addEventListener("wheel", on_wheel, { "passive": false });
+    return document.addEventListener("click", on_click2);
+  };
+  init_BANG_4();
 
   // .compiled/panels.mjs
   var easing = "cubic-bezier(0.32, 0.72, 0, 1)";
@@ -5488,12 +5617,12 @@
     }
     ;
   };
-  var init_BANG_4 = function() {
+  var init_BANG_5 = function() {
     document.addEventListener("toggle", on_toggle, true);
     window.addEventListener("scroll", reposition_BANG_, true);
     return window.addEventListener("resize", reposition_BANG_);
   };
-  init_BANG_4();
+  init_BANG_5();
   window["__uiPopover"] = { "reposition": reposition_BANG_ };
 
   // .compiled/select.mjs
@@ -5620,25 +5749,25 @@
     ;
   };
   var open_select = (() => {
-    const f21 = (function(var_args) {
-      const args221 = [];
+    const f22 = (function(var_args) {
+      const args231 = [];
       const len__23321__auto__2 = arguments.length;
-      let i233 = 0;
+      let i243 = 0;
       while (true) {
-        if (i233 < len__23321__auto__2) {
-          args221.push(arguments[i233]);
-          let G__4 = i233 + 1;
-          i233 = G__4;
+        if (i243 < len__23321__auto__2) {
+          args231.push(arguments[i243]);
+          let G__4 = i243 + 1;
+          i243 = G__4;
           continue;
         }
         ;
         break;
       }
       ;
-      const argseq__23513__auto__5 = 1 < args221.length ? args221.slice(1) : null;
-      return f21.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
+      const argseq__23513__auto__5 = 1 < args231.length ? args231.slice(1) : null;
+      return f22.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
     });
-    f21.cljs$core$IFn$_invoke$arity$variadic = (function(trigger, args) {
+    f22.cljs$core$IFn$_invoke$arity$variadic = (function(trigger, args) {
       dismiss_BANG_2();
       const options6 = (() => {
         const passed7 = first(args);
@@ -5733,8 +5862,8 @@
       }
       ;
     });
-    f21.cljs$lang$maxFixedArity = 1;
-    return f21;
+    f22.cljs$lang$maxFixedArity = 1;
+    return f22;
   })();
   window["__uiSelect"] = open_select;
 
@@ -5767,8 +5896,8 @@
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   };
   var resolve_effective = function(mode) {
-    const G__251 = mode;
-    switch (G__251) {
+    const G__261 = mode;
+    switch (G__261) {
       case "light":
         return "light";
         break;
@@ -5797,8 +5926,8 @@
   var apply_theme_BANG_ = function(mode) {
     const el1 = document.documentElement;
     suppress_transitions_BANG_();
-    const G__262 = mode;
-    switch (G__262) {
+    const G__272 = mode;
+    switch (G__272) {
       case "light":
         return el1.setAttribute("data-theme", "light");
         break;
@@ -5838,8 +5967,8 @@
   var toggle_BANG_ = function() {
     const current1 = get_mode();
     const next_mode2 = (() => {
-      const G__273 = current1;
-      switch (G__273) {
+      const G__283 = current1;
+      switch (G__283) {
         case "auto":
           return "light";
           break;
@@ -5869,7 +5998,7 @@
       }));
     };
   };
-  var init_BANG_5 = function() {
+  var init_BANG_6 = function() {
     const mode1 = get_mode();
     apply_theme_BANG_(mode1);
     const mql2 = window.matchMedia("(prefers-color-scheme: dark)");
@@ -5881,7 +6010,7 @@
       ;
     }));
   };
-  window["__uiTheme"] = { "init": init_BANG_5, "set": set_mode_BANG_, "get": get_mode, "effective": get_effective, "toggle": toggle_BANG_, "subscribe": subscribe_BANG_ };
+  window["__uiTheme"] = { "init": init_BANG_6, "set": set_mode_BANG_, "get": get_mode, "effective": get_effective, "toggle": toggle_BANG_, "subscribe": subscribe_BANG_ };
 
   // .compiled/toast.mjs
   var container_id = "ui-toast-container";
@@ -5969,7 +6098,7 @@
     }
     return null;
   };
-  var init_BANG_6 = function() {
+  var init_BANG_7 = function() {
     scan_BANG_2();
     const obs1 = new MutationObserver((function(_, _2) {
       return scan_BANG_2();
@@ -5978,9 +6107,9 @@
   };
   window["__uiToast"] = show_BANG_;
   if ("loading" === document.readyState) {
-    document.addEventListener("DOMContentLoaded", init_BANG_6);
+    document.addEventListener("DOMContentLoaded", init_BANG_7);
   } else {
-    init_BANG_6();
+    init_BANG_7();
   }
 
   // .compiled/touch.mjs
@@ -6009,14 +6138,14 @@
       ;
     })().split(","))));
     const override_keys4 = set(map(first, viewport_overrides));
-    const kept5 = remove((function(p__28) {
-      const vec__69 = p__28;
+    const kept5 = remove((function(p__29) {
+      const vec__69 = p__29;
       const k10 = nth(vec__69, 0, null);
       const _11 = nth(vec__69, 1, null);
       return contains_QMARK_(override_keys4, k10);
     }), entries1);
-    return join(", ", map((function(p__29) {
-      const vec__1215 = p__29;
+    return join(", ", map((function(p__30) {
+      const vec__1215 = p__30;
       const k16 = nth(vec__1215, 0, null);
       const v17 = nth(vec__1215, 1, null);
       if (v17 == null) {
