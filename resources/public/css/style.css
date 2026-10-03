@@ -1823,6 +1823,27 @@ body {
   border-color: oklch(from var(--danger, var(--red-fg, #ef4444)) calc(l + 0.18) c h);
 }
 
+/* Live elapsed time of a still-running tool call; empty (hidden) for the
+   first couple of seconds. */
+.tool-call-timer {
+  color: var(--fg-3);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.tool-call-timer:empty { display: none; }
+
+/* Timer + spinner of a running tool, pinned to the right of the header; the
+   status badge (when present) sits right after it. */
+.tool-call-running {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.tool-call-running + .tool-call-status { margin-left: 0; }
+
 .tool-call-content {
   padding: 0;
 }

@@ -63,6 +63,12 @@
              :result "files" :is-error false}]
            (history st)))))
 
+(deftest tool-start-records-start-time
+  (let [st (apply-events (with-room)
+                         {:type :agent/tool-start :room-id "r" :id "t1" :tool "bash"
+                          :arguments {} :at 1700000000000})]
+    (is (= 1700000000000 (:started-at (first (history st)))))))
+
 (deftest turn-end-finalizes-and-drains-queue
   (let [st (apply-events (with-room)
                          {:type :prompt/submit :room-id "r" :text "go"}

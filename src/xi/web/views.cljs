@@ -536,11 +536,46 @@
                     (truncate-lines text 100)
                     {:data-diff-path path :data-diff-text text})))
 
+(defn format-elapsed
+  "Whole seconds as `12s` / `3m 05s`."
+  [secs]
+  (let [mins (quot secs 60)]
+    (if (>= mins 1)
+      (str mins "m " (let [s (mod secs 60)] (if (< s 10) (str "0" s) s)) "s")
+      (str secs "s"))))
+
+(def ^:private run-timer-min-secs
+  "A running tool shows its timer only once it has run this long, so quick
+   calls don't flash a counter."
+  2)
+
+(defn- run-timer-text [started-at]
+  (let [secs (quot (max 0 (- (js/Date.now) started-at)) 1000)]
+    (if (>= secs run-timer-min-secs) (format-elapsed secs) "")))
+
+(defn- run-timer
+  "Live elapsed-time label for a still-running tool call (poll-until, long
+   builds, stalled commands). The text is repainted straight into the DOM node
+   once a second — the tool block itself only re-renders on events, which
+   stop arriving exactly when a call stalls."
+  [started-at]
+  (when started-at
+    [:span {:class ["tool-call-timer"]
+            :replicant/on-mount
+            (fn [{:replicant/keys [^js node]}]
+              (aset node "__xiTimer"
+                    (js/setInterval #(set! (.-textContent node) (run-timer-text started-at))
+                                    1000)))
+            :replicant/on-unmount
+            (fn [{:replicant/keys [^js node]}]
+              (js/clearInterval (aget node "__xiTimer")))}
+     (run-timer-text started-at)]))
+
 (defn- tool-post
   "A tool call's <details> block. `:grouped?` — it sits inside a viewer-mode
    group (header row styling); `:collapsed?` — it starts closed (the
    :tool-blocks appearance setting). Both are stamped by chat-view."
-  [dispatch! {:keys [tool arguments result is-error status
+  [dispatch! {:keys [tool arguments result is-error status started-at
                      permission resolved-permission
                      grouped? collapsed? cwd]}]
   (let [name      (util/strip-mcp-prefix tool)
@@ -574,7 +609,11 @@
         (subs label (count name))]
        (when clj-preview
          [:span {:class ["clj-head-preview"]} clj-preview])
-       (when running? (spinner))
+       ;; Pinned right (collapsed or open) so a long preview can't push it away.
+       (when running?
+         [:span {:class ["tool-call-running"]}
+          (run-timer started-at)
+          (spinner)])
        ;; Right-side status badge: a filled circle with a white icon that
        ;; captures the outcome — red ✗ on error, purple ✓ when the user
        ;; confirmed the tool, grey ✗ when it was denied. Stays visible even
@@ -2478,9 +2517,7 @@
 
 (defn- subagent-duration [{:keys [started ended]}]
   (when started
-    (let [secs (quot (- (or ended (.now js/Date)) started) 1000)
-          mins (quot secs 60)]
-      (if (>= mins 1) (str mins "m " (mod secs 60) "s") (str secs "s")))))
+    (format-elapsed (quot (- (or ended (.now js/Date)) started) 1000))))
 
 (def ^:private subagent-status-label
   {:running "running" :done "done" :error "error" :stopped "stopped"})

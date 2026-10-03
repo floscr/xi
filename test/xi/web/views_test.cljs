@@ -21,6 +21,15 @@
     (is (false? (boolean (views/command-while-busy? "/bogus"))))
     (is (false? (boolean (views/command-while-busy? nil))))))
 
+;; ── format-elapsed (run timer / sub-agent duration) ─────────────────────────
+
+(deftest format-elapsed-test
+  (is (= "0s" (views/format-elapsed 0)))
+  (is (= "59s" (views/format-elapsed 59)))
+  (is (= "1m 00s" (views/format-elapsed 60)))
+  (is (= "4m 05s" (views/format-elapsed 245)))
+  (is (= "12m 30s" (views/format-elapsed 750))))
+
 ;; ── code-focus-segments (permission ask → muted / focused code) ───────────
 
 (deftest code-focus-segments-splits-around-ranges

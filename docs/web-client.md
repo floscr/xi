@@ -115,6 +115,13 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   muted (`.code-muted`, 40% opacity) so the eye lands on the `(spit …)` /
   `(sh …)` call being approved; hovering the block (pointer devices) lifts
   the muting so the whole eval reads normally. Asks without a target leave
+- **Run timer**: a still-running tool block shows a live elapsed counter
+  (`12s`, `3m 05s`) next to its spinner once it has run 2s — for
+  `process/poll-until`, long builds and stalled commands. The tool-start
+  event carries `:at` (stamped in `xi.agent/event-callbacks`), stored as the
+  entry's `:started-at`; the label repaints its own DOM text every second
+  (`run-timer`, `replicant/on-mount`) because a stalled call emits no events
+  to re-render on
   the code as is
 - Auto-scroll pinned to bottom unless you scroll up
 - Sending from a cached (not-yet-joined) session stashes the message

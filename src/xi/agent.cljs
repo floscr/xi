@@ -13,7 +13,8 @@
      {:kind :user      :text :images}
      {:kind :text      :text :done?}          ;; assistant text, folded deltas
      {:kind :thinking  :text :done?}
-     {:kind :tool-call :id :tool :arguments :result :is-error :status}
+     {:kind :tool-call :id :tool :arguments :result :is-error :status
+      :started-at}          ;; epoch ms the call began (drives the web run timer)
      {:kind :error     :error}
 
    Providers are maps {:id kw :start-turn! (fn [opts] {:promise :abort!})}
@@ -276,11 +277,12 @@
   (when (and (state/get-room st room-id) (seq text))
     {:state (update-in st [:rooms room-id :history] fold-delta :thinking text)}))
 
-(defn- tool-start [st {:keys [room-id id tool arguments]}]
+(defn- tool-start [st {:keys [room-id id tool arguments at]}]
   (when (state/get-room st room-id)
     {:state (update-in st [:rooms room-id :history] conj
-                       {:kind :tool-call :id id :tool tool
-                        :arguments arguments :status :running})}))
+                       (cond-> {:kind :tool-call :id id :tool tool
+                                :arguments arguments :status :running}
+                         at (assoc :started-at at)))}))
 
 (defn- tool-args [st {:keys [room-id id arguments]}]
   (when (state/get-room st room-id)
@@ -424,7 +426,8 @@
                      (dispatch! {:type :agent/thinking-delta :room-id room-id :text text}))
    :on-tool-start  (fn [{:keys [id name arguments]}]
                      (dispatch! {:type :agent/tool-start :room-id room-id
-                                 :id id :tool name :arguments arguments}))
+                                 :id id :tool name :arguments arguments
+                                 :at (js/Date.now)}))
    :on-tool-args   (fn [{:keys [id arguments]}]
                      (dispatch! {:type :agent/tool-args :room-id room-id
                                  :id id :arguments arguments}))
