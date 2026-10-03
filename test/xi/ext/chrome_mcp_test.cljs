@@ -59,3 +59,17 @@
            (coerce-emulate-args {:colorScheme "dark"})))
     (is (= {:args {}}
            (coerce-emulate-args {})))))
+
+(deftest saved-screenshot-path-parses-the-caption
+  (is (= "/tmp/x.png" (cm/saved-screenshot-path "Took a screenshot of the current page's viewport.\nSaved screenshot to /tmp/x.png.")))
+  (is (= "/tmp/a-b.jpeg" (cm/saved-screenshot-path "Saved screenshot to /tmp/a-b.jpeg.")))
+  (is (nil? (cm/saved-screenshot-path "Took a screenshot of the current page's viewport."))))
+
+(deftest attach-saved-screenshot-passes-through-when-nothing-to-attach
+  (testing "errors, missing files and results that already carry an image are untouched"
+    (let [saved {:content [{:type "text" :text "Saved screenshot to /tmp/xi-does-not-exist.png."}]}]
+      (is (= saved (cm/attach-saved-screenshot saved "/tmp")))
+      (is (= (assoc saved :is-error true)
+             (cm/attach-saved-screenshot (assoc saved :is-error true) "/tmp")))
+      (let [with-img (update saved :content conj {:type "image" :data "x" :mimeType "image/png"})]
+        (is (= with-img (cm/attach-saved-screenshot with-img "/tmp")))))))

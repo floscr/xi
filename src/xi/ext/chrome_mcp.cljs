@@ -43,7 +43,10 @@
             [xi.ext.design-mode :as design-mode]
             [xi.ext.element-picker :as element-picker]
             [xi.ext.style-editor :as style-editor]
-            ["node:child_process" :as child-process])
+            [xi.tools.fs :as tfs]
+            [xi.tools.view :as view]
+            ["node:child_process" :as child-process]
+            ["node:fs" :as fs])
   (:require-macros [xi.ext.chrome-mcp.defs :refer [inline-tool-defs]]))
 
 (def ^:private raw-tool-defs (inline-tool-defs))
@@ -307,6 +310,34 @@
   (and (:is-error result)
        (str/includes? (result-text result) "The selected page has been closed")))
 
+(defn saved-screenshot-path
+  "The file path from a `take_screenshot` result saved via `filePath`
+   (\"Saved screenshot to /tmp/x.png.\"), or nil when the result isn't one."
+  [text]
+  (second (re-find #"Saved screenshot to (\S+\.(?:png|jpe?g|webp))" (str text))))
+
+(defn attach-saved-screenshot
+  "A `take_screenshot` called with `filePath` returns only the \"Saved
+   screenshot to …\" caption, so the web client shows no image. Read the saved
+   file and append it as an image block (the shape `view_image` returns) so the
+   screenshot renders in the tool block. Results that already carry an image,
+   errors, and unreadable files pass through unchanged."
+  [result cwd]
+  (let [content (:content result)
+        path    (when (and (not (:is-error result))
+                           (not-any? #(= "image" (:type %)) content))
+                  (saved-screenshot-path (result-text result)))
+        file    (when path (tfs/resolve-path path cwd))
+        mime    (when file (view/image-mime file))]
+    (if (and mime (tfs/file-exists? file))
+      (try
+        (update result :content conj
+                {:type "image"
+                 :data (.toString (fs/readFileSync file) "base64")
+                 :mimeType mime})
+        (catch :default _ result))
+      result)))
+
 ;; ── Factory ──────────────────────────────────────────────────────────────────
 
 (defn create
@@ -429,7 +460,9 @@
                                                               (if-let [err (:error c)]
                                                                 (js/Promise.resolve err)
                                                                 (forward n (:args c) ctx)))
-                                                            (forward n args ctx)))]))
+                                                            (cond-> (forward n args ctx)
+                                                              (= n "take_screenshot")
+                                                              (.then #(attach-saved-screenshot % (:cwd ctx))))))]))
                                            tool-names)
                                      (:tool-registry editor))
             :on-shutdown      (fn []
