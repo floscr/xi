@@ -1794,15 +1794,16 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   margin-left: auto;
   color: #fff;
   border: 1px solid transparent;
 }
 .tool-call-status .icon,
-.tool-call-status svg { width: 12px; height: 12px; }
+.tool-call-status svg { width: 10px; height: 10px; }
 .tool-call-status--allow {
   background: linear-gradient(180deg,
     oklch(from var(--accent) calc(l + 0.08) c h),
