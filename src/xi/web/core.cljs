@@ -878,9 +878,13 @@
           :sidebar/toggle        (fn [st _]
                                    (let [open? (not (:web/sidebar-open? st))]
                                      (cond-> {:state (assoc st :web/sidebar-open? open?)}
-                                       open? (assoc :effects [[:ws/send {:type :usage/refresh}]]))))
+                                       open? (assoc :effects [[:ws/send {:type :usage/refresh}]
+                                                              [:ws/send {:type :projects/web-list}]]))))
+          ;; Opening the drawer also re-fetches the project list so the
+          ;; git-dirty dots reflect the tree now, not at page load.
           :sidebar/open          (fn [st _] {:state (assoc st :web/sidebar-open? true)
-                                             :effects [[:ws/send {:type :usage/refresh}]]})
+                                             :effects [[:ws/send {:type :usage/refresh}]
+                                                       [:ws/send {:type :projects/web-list}]]})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
           ;; Collapse/expand a drawer group (:projects, :recent, …). Kept in
           ;; state (not a native <details>) because the drawer remounts its
@@ -1167,6 +1171,8 @@
           :projects/web-list     (fn [st _ev]
                                     {:state (assoc st :web/projects-loading? true)
                                      :effects [[:ws/send {:type :projects/web-list}]]})
+          ;; Silent re-fetch (no loading flag) to refresh the git-dirty dots.
+          :projects/web-refresh  (fn [_ _] {:effects [[:ws/send {:type :projects/web-list}]]})
           :projects/web-list-result projects-web-list-result
           :projects/web-sessions (fn [st {:keys [cwd]}]
                                     {:state (assoc st :web/project-sessions-loading? true)
@@ -1756,6 +1762,8 @@
   [dispatch!]
   (fn [event state]
     (when (= :agent/turn-end (:type event))
+      ;; The turn may have edited files; refresh the project dirty dots.
+      (dispatch! {:type :projects/web-refresh})
       (let [room-id (:room-id event)
             ended   (get-in state [:rooms room-id :session :id])
             viewed  (get-in state [:web/route :session-id])]
