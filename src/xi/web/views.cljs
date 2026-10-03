@@ -3446,6 +3446,27 @@
   ;; safe to leave out of the key.)
   (atom nil))
 
+(defn- session-cleanups
+  "Cleanup actions that currently apply, given the sidebar session groups —
+   shared by the sidebar ⋯ menu and the command palette. Each is
+   {:label :icon :event} (+ :badge); \"Prune all\" runs every one of them."
+  [pa? {:keys [recent hidden earlier]}]
+  (let [unread (count (filter :unread? (concat recent hidden earlier)))]
+    (cond-> []
+      (pos? unread)
+      (conj {:label "Mark all as read"
+             :icon  :check
+             :badge unread
+             :event {:type :session/mark-all-read}})
+      (or (seq recent) (seq earlier))
+      (conj {:label "Hide all from Recent"
+             :icon  :eye-off
+             :event {:type :session/dismiss-all}})
+      (not pa?)
+      (conj {:label "Prune idle rooms"
+             :icon  :trash
+             :event {:type :rooms/prune}}))))
+
 (defn- recent-sidebar*
   "The drawer panel: framework sidebar listing recently-used projects above
    recent sessions, both sorted by last visited. Slid in/out by the floating
@@ -3464,7 +3485,6 @@
         ;; the top). Shared with ALT+j/k keyboard nav so both agree on order.
         ;; "Hidden" = dismissed this run (reversible, still fully resumable).
         {:keys [recent hidden earlier]} (when render? (sidebar-session-groups state))
-        visible  (concat recent earlier)
         cards    (concat recent hidden earlier)
         collapsed (or (:web/sidebar-collapsed state) #{})
         section  (partial sidebar-section dispatch! collapsed)]
@@ -3528,23 +3548,7 @@
                   (:label item)))))))))
      ;; NOTE: keep this footer's state reads reflected in `recent-sidebar`'s
      ;; memo key below, or the docked sidebar can go stale.
-     (let [unread (count (filter :unread? cards))
-           ;; Cleanup actions that currently apply; "Prune all" runs every
-           ;; one of them in a single click.
-           cleanups (cond-> []
-                      (pos? unread)
-                      (conj {:label "Mark all as read"
-                             :icon  :check
-                             :badge unread
-                             :event {:type :session/mark-all-read}})
-                      (seq visible)
-                      (conj {:label "Hide all from Recent"
-                             :icon  :eye-off
-                             :event {:type :session/dismiss-all}})
-                      (not pa?)
-                      (conj {:label "Prune idle rooms"
-                             :icon  :trash
-                             :event {:type :rooms/prune}}))
+     (let [cleanups (session-cleanups pa? {:recent recent :hidden hidden :earlier earlier})
            cleanup-items (mapv (fn [{:keys [event] :as item}]
                                  (assoc item :on-click #(dispatch! event)))
                                cleanups)
@@ -4051,9 +4055,9 @@
             chat-items   (mapv #(palette-chat-item % dispatch!) recents)
             project-dirs (:web/project-dirs state)
             pa?          (get-in state [:lobby :agent-id])
-            {:keys [recent hidden earlier]} (sidebar-session-groups state)
-            any-visible? (or (seq recent) (seq earlier))
-            any-unread?  (some :unread? (concat recent hidden earlier))
+            {:keys [recent hidden earlier] :as groups} (sidebar-session-groups state)
+            ;; Same cleanups as the sidebar ⋯ menu, incl. its "Prune all".
+            cleanups     (session-cleanups pa? groups)
             cur-sid      (get-in state [:web/route :session-id])
             cur-session  (when cur-sid
                            (some #(when (= cur-sid (:session-id %)) %)
@@ -4183,22 +4187,19 @@
                        (dispatch! {:type :session/delete :session-id cur-sid})
                        (dispatch! {:type :route/navigate :page :home}))}
           "Delete session")))
-     (when (and (not pa?) (or any-visible? any-unread?))
-       (apply cmd/command-group {:heading "Sessions"}
-         (cond-> []
-           any-visible?
+     (when (seq cleanups)
+       (apply cmd/command-group {:heading "Cleanup"}
+         (cond-> (mapv (fn [{:keys [label icon event]}]
+                         (cmd/command-item
+                          {:icon icon :on-click (fn [_] (dispatch! event))}
+                          label))
+                       cleanups)
+           (> (count cleanups) 1)
            (conj (cmd/command-item
-                  {:icon :eye-off
-                   :on-click (fn [_] (dispatch! {:type :session/dismiss-all}))}
-                  "Hide all sessions from Recent"))
-           :always
-           (conj (cmd/command-item
-                  {:icon :trash
-                   :on-click (fn [_]
-                               (when any-unread?
-                                 (dispatch! {:type :session/mark-all-read}))
-                               (dispatch! {:type :rooms/prune}))}
-                  "Mark all read & prune inactive rooms")))))
+                  {:icon  :zap
+                   :value (str "prune all " (str/join " " (map :label cleanups)))
+                   :on-click (fn [_] (run! (comp dispatch! :event) cleanups))}
+                  "Prune all")))))
      (when room
        (apply cmd/command-group {:heading "Commands"}
          (for [{:keys [name description]} (palette/expand-commands web-commands)]
