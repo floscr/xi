@@ -163,6 +163,7 @@ shortcuts below never get swallowed by an invisible input.
 | `G` | chat, normal | scroll the timeline to the bottom |
 | `Alt+j` / `Alt+k` | chat | next / previous session in sidebar order |
 | `Alt+a` / `Alt+d` | chat, while an ask is pending | allow / deny the pending permission request (same as `/allow`, `/deny`) |
+| `Alt+x` | chat, while the agent is busy | abort the running turn (same as the composer's abort button; TUI: `alt+x` too) |
 | `Alt+n` | any | new chat |
 | `Alt+u` | any | jump to the newest finished agent with unread output |
 | `Alt+\` | any | toggle the sidebar drawer |

@@ -57,6 +57,7 @@
    "alt+d"        #{(str ESC "d") (str ESC "[100;3u")}
    "alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
    "alt+p"        #{(str ESC "p") (str ESC "[112;3u")}
+   "alt+x"        #{(str ESC "x") (str ESC "[120;3u")}
    "ctrl+p"       #{(str (char 16)) (str ESC "[112;5u")}
    "ctrl+shift+n" #{(str ESC "[110;6u")}
    "ctrl+shift+p" #{(str ESC "[112;6u")}
@@ -68,13 +69,18 @@
    keybindings. ctrl+o toggles full/preview rendering of the system-prompt
    buffer, gated so the key falls through to the editor elsewhere. alt+n
    starts a new chat in the current room's cwd (same as typing /new; mirrors
-   the web client's ALT+n)."
+   the web client's ALT+n). alt+x aborts the running agent turn (like Esc in
+   the chat buffer, but from any buffer); gated on :busy? so the key falls
+   through to the editor when idle."
   [{:key   "ctrl+o"
     :event {:type :ui/prompt-toggle}
     :when  (fn [st] (= :prompt (get-in (state/active-room st)
                                        [:ui :active-buffer])))}
    {:key   "alt+n"
-    :event {:type :command/run :name "new"}}])
+    :event {:type :command/run :name "new"}}
+   {:key   "alt+x"
+    :event {:type :agent/abort}
+    :when  (fn [st] (boolean (get-in (state/active-room st) [:agent :busy?])))}])
 
 (defn- ->editor-keybindings
   "Translate ext keybindings ({:key :event :when}) into editor bindings

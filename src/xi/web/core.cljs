@@ -2227,7 +2227,7 @@
    finished agent with unread output (the purple dot); ALT+j/k step to the
    next/prev session in sidebar order (no wrap; from a non-chat view they open
    the first session). Chat pane, any mode: ALT+a / ALT+d allow / deny the
-   pending permission request. Chat pane, normal mode: `i` focuses the composer (enter
+   pending permission request; ALT+x aborts the running agent turn. Chat pane, normal mode: `i` focuses the composer (enter
    insert), `G` scrolls the timeline to the bottom.
    Chat pane, insert mode: Escape blurs the composer (back to normal); in any
    other text field Escape blurs that field. Insert mode only counts a
@@ -2263,6 +2263,12 @@
                        :run (fn [st dispatch! _]
                               (when-let [answer (permission-answer st option)]
                                 (dispatch! (assoc answer :type :ui/dialog-response))))}))
+  ;; ALT+x: abort the running agent turn (twin of the composer's abort button
+  ;; and the TUI's alt+x). Only bound while the agent is busy.
+  (keymap/register! {:id :agent-abort :code "KeyX" :alt true :view :chat :mode :any
+                     :when (fn [st] (boolean (get-in (state/active-room st) [:agent :busy?])))
+                     :run (fn [st dispatch! _]
+                            (dispatch! {:type :agent/abort :room-id (:id (state/active-room st))}))})
   (keymap/register! {:id :compose-focus :code "KeyI" :view :chat :mode :normal
                      :run (fn [_ dispatch! _] (dispatch! {:type :compose/focus}))})
   (keymap/register! {:id :timeline-bottom :code "KeyG" :shift true :view :chat :mode :normal
