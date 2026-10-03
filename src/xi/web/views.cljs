@@ -3507,17 +3507,15 @@
                              :icon  :eye-off
                              :event {:type :session/dismiss-all}})
                       (not pa?)
-                      (conj {:label   "Prune idle rooms"
-                             :icon    :trash
-                             :danger? true
-                             :event   {:type :rooms/prune}}))
+                      (conj {:label "Prune idle rooms"
+                             :icon  :trash
+                             :event {:type :rooms/prune}}))
            cleanup-items (mapv (fn [{:keys [event] :as item}]
                                  (assoc item :on-click #(dispatch! event)))
                                cleanups)
            prune-all (when (> (count cleanups) 1)
                        {:label    "Prune all"
                         :icon     :zap
-                        :danger?  true
                         :title    (str/join " · " (map :label cleanups))
                         :on-click #(run! (comp dispatch! :event) cleanups)})
            items (->> (cond-> cleanup-items
