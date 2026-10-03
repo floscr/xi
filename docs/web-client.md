@@ -93,10 +93,14 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   bundled browser grammars ([syntax-highlighting.md](syntax-highlighting.md))
 - **Code-block menu**: right-click (mouse) or tap (touch) a code block →
   Copy; on Read/Write/Edit tool blocks also **View file** (`:file/open`), and
-  on Write/Edit blocks **View diff** — the file's uncommitted changes in the
-  Diff tab (`:diff/reopen` with `file:<path>`, see `/diff` in
-  [commands.md](commands.md)). Tool blocks carry `data-file-path` /
-  `data-diff-path`, read by the delegated listener in `xi.web.core`
+  on every block that renders a file change (edit / `clj_replace` results and
+  permission-dialog diff previews) **View diff** — opens *that block's own
+  diff* in the Diff tab (client-local `:ui/diff-open`; no git run). Such blocks
+  carry `data-diff-path` / `data-diff-text`; `xi.diff/tool-diff->unified`
+  converts the tool's diff format (no line numbers, so hunks render without a
+  gutter). Blocks carry `data-file-path` / `data-diff-*` for the delegated
+  listener in `xi.web.core`. `write` results aren't diffs, so they have no
+  View diff
 - Auto-scroll pinned to bottom unless you scroll up
 - Sending from a cached (not-yet-joined) session stashes the message
   (`:web/pending-submit`) and fires it after `:room/joined`

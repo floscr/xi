@@ -399,9 +399,10 @@
 (defn- edit-diff-code
   "Render an edit tool's unified-diff result with per-line tinting: + lines get
    a subtle green wash, - lines a subtle red one, over the code box. The
-   path/context/gap lines stay neutral. Code is still syntax-highlighted."
-  [grammar text]
-  (into [:pre {:class ["tool-call-code" "tool-call-diff"]}]
+   path/context/gap lines stay neutral. Code is still syntax-highlighted.
+   `attrs` are extra attributes for the <pre> (the View-diff data attributes)."
+  [grammar text attrs]
+  (into [:pre (merge {:class ["tool-call-code" "tool-call-diff"]} attrs)]
         (map (fn [line]
                (let [add? (str/starts-with? line "+ ")
                      del? (str/starts-with? line "- ")
@@ -492,7 +493,8 @@
   [{:keys [diff]}]
   (when-let [{:keys [path text]} diff]
     (edit-diff-code (grammars/get-grammar (file-ext path))
-                    (truncate-lines text 100))))
+                    (truncate-lines text 100)
+                    {:data-diff-path path :data-diff-text text})))
 
 (defn- tool-post
   "A tool call's <details> block. `:grouped?` — it sits inside a viewer-mode
@@ -511,6 +513,8 @@
         clj-code  (when clj? (not-empty (str (get-arg arguments :code))))
         clj-preview (when clj-code (first (str/split-lines clj-code)))
         imgs      (seq (result-images result))
+        diff-result? (and (contains? #{"Edit" "edit" "clj_replace"} name)
+                          (not is-error))
         label     (if clj?
                     name
                     (str name (when (seq summary)
@@ -561,13 +565,14 @@
         [:div (cond-> {:class ["tool-call-content"]}
                 (tool-file-path name arguments)
                 (assoc :data-file-path (tool-file-path name arguments))
-                ;; Only tools that change the file get a View-diff action.
-                (and (contains? #{"Write" "write" "Edit" "edit" "clj_replace"} name)
-                     (tool-file-path name arguments))
-                (assoc :data-diff-path (tool-file-path name arguments)))
+                ;; A block that renders a file change carries its raw diff so
+                ;; the context menu can open exactly that change (View diff).
+                (and diff-result? (tool-file-path name arguments))
+                (assoc :data-diff-path (tool-file-path name arguments)
+                       :data-diff-text text))
          (let [shown (truncate-lines text 100)]
-           (if (and (contains? #{"Edit" "edit" "clj_replace"} name) (not is-error))
-             (edit-diff-code grammar shown)
+           (if diff-result?
+             (edit-diff-code grammar shown nil)
              [:pre {:class ["tool-call-code"]}
               (if grammar (highlight-code grammar shown) (plain-code shown))]))])
       ;; A permission gate fired for this (still-running) tool call: render the
@@ -2328,12 +2333,13 @@
   "Floating menu shown when a rendered code block (`pre`) or inline `code` is
    tapped: Copy, plus View file when the block belongs to a Read/Write/Edit
    tool call (opens the file in the room's :file buffer tab via :file/open),
-   and View diff when it belongs to a Write/Edit tool call (opens that file's
-   uncommitted changes in the :diff tab via `/diff file:<path>`).
+   and View diff when the block is a file change (an edit result or a
+   permission-dialog preview): opens exactly that block's diff in the :diff tab,
+   converted by xi.diff/tool-diff->unified — no git, no server round-trip.
    Mirrors bubble-menu's positioning/backdrop; the tap is detected by a
    delegated listener in xi.web.core. Uses the iOS long-press fallback when
    the async Clipboard API is unavailable."
-  [dispatch! room-id {:keys [text path diff-path x y]}]
+  [dispatch! room-id {:keys [text path diff-path diff-text x y]}]
   (let [close! (fn [] (dispatch! {:type :code/menu-close}))]
     [:div {:class ["bubble-menu-backdrop"]
            :on {:click (fn [_] (close!))}}
@@ -2356,14 +2362,14 @@
                                 (dispatch! {:type :file/open :path path}))}}
          (icon/icon {:icon-name :file-text :size :sm})
          [:span "View file"]])
-      (when diff-path
+      (when-let [unified (some->> diff-text (diff/tool-diff->unified diff-path))]
         [:button {:class ["bubble-menu-item"]
                   :on {:click (fn [e]
                                 (.stopPropagation e)
                                 (close!)
-                                (dispatch! {:type :diff/reopen :room-id room-id
-                                            :method (str "file:" diff-path)
-                                            :engine :git}))}}
+                                (dispatch! {:type :ui/diff-open :room-id room-id
+                                            :title (str "Diff: " (last (str/split diff-path #"/")))
+                                            :text unified :engine :git}))}}
          (icon/icon {:icon-name :code :size :sm})
          [:span "View diff"]])]]))
 

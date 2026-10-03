@@ -130,14 +130,6 @@
                    (git/commit-show-text cwd sha)
                    (when info {:commit info})))
 
-          ;; file:<path> → that one file's uncommitted changes vs HEAD (untracked
-          ;; files are synthesized as all-added). Used by the web code-block
-          ;; context menu's "View diff".
-          (and args (str/starts-with? args "file:"))
-          (let [path (subs args (count "file:"))]
-            (open! (str "Diff: " (last (str/split path #"/")))
-                   (git/session-diff-text cwd "HEAD" [path])))
-
           ;; A single token that resolves to a branch/commit → diff against it
           ;; (PR-style, vs the merge-base).
           (and args (not (re-find #"\s" args)) (git/git-ref? cwd args))

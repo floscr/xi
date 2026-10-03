@@ -1,5 +1,6 @@
 (ns xi.diff-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.diff :as diff]))
 
 (def sample
@@ -77,3 +78,40 @@
                   "bar.txt\n"
                   "-bar old")
              snip)))))
+
+;; ── tool-diff->unified ──
+
+(def tool-result
+  (str "src/foo.cljs\n"
+       "  (let [a 1]\n"
+       "-   (old a)\n"
+       "+   (new a)\n"
+       "...\n"
+       "  (tail)\n"
+       "+ (more)\n"
+       "[file-hash: abc123]"))
+
+(deftest tool-diff->unified-parses-back
+  (testing "the block's own diff round-trips through the unified parser"
+    (let [[f :as parsed] (diff/parse-diff-text
+                          (diff/tool-diff->unified "src/foo.cljs" tool-result))
+          [h1 h2] (:hunks f)]
+      (is (= 1 (count parsed)))
+      (is (= "src/foo.cljs" (:filename f)))
+      (is (= :modified (:status f)))
+      (is (= 2 (count (:hunks f))) "`...` gap splits hunks")
+      (is (= [:context :delete :add] (map :type (:lines h1))))
+      (is (= ["(let [a 1]" "  (old a)" "  (new a)"] (map #(str/trim-newline (:text %)) (:lines h1)))
+          "text after the sign prefix is kept verbatim")
+      (is (= [:context :add] (map :type (:lines h2))))
+      (is (every? nil? (mapcat (juxt :old-line :new-line) (concat (:lines h1) (:lines h2))))
+          "no line numbers are invented"))))
+
+(deftest tool-diff->unified-new-file
+  (let [[f] (diff/parse-diff-text
+             (diff/tool-diff->unified "a.txt" "a.txt\n(created new file)\n+ hi\n[file-hash: x]"))]
+    (is (= :added (:status f)))))
+
+(deftest tool-diff->unified-no-diff-lines
+  (is (nil? (diff/tool-diff->unified "a.txt" "Replaced successfully")))
+  (is (nil? (diff/tool-diff->unified "a.txt" nil))))

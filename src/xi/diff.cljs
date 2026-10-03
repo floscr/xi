@@ -13,9 +13,16 @@
      :new-count (if nc (js/parseInt nc 10) 1)
      :context (str/trim (or ctx ""))}))
 
+(defn- bump
+  "Next line number — nil stays nil, for hunks whose header carries no numbers
+   (see tool-diff->unified), so their lines render without a gutter."
+  [n]
+  (when n (inc n)))
+
 (defn parse-diff-text
   "Parse unified diff text into structured data.
-   Returns [{:filename string :status keyword :hunks [...]}]"
+   Returns [{:filename string :status keyword :hunks [...]}]. A bare `@@ @@`
+   hunk header (no ranges) yields lines with nil line numbers."
   [text]
   (when (and text (seq (str/trim text)))
     (let [lines (str/split-lines text)
@@ -72,18 +79,18 @@
                 (cond
                   (str/starts-with? line "+")
                   (let [n @new-ln]
-                    (swap! new-ln inc)
+                    (swap! new-ln bump)
                     {:type :add :text (subs line 1) :new-line n})
 
                   (str/starts-with? line "-")
                   (let [n @old-ln]
-                    (swap! old-ln inc)
+                    (swap! old-ln bump)
                     {:type :delete :text (subs line 1) :old-line n})
 
                   (str/starts-with? line " ")
                   (let [o @old-ln, n @new-ln]
-                    (swap! old-ln inc)
-                    (swap! new-ln inc)
+                    (swap! old-ln bump)
+                    (swap! new-ln bump)
                     {:type :context :text (subs line 1) :old-line o :new-line n})
 
                   ;; "\ No newline at end of file"
@@ -148,4 +155,31 @@
                                 (str/join "\n"))]
                   (str fname "\n" body))))
          (str/join "\n\n"))))
+
+(defn tool-diff->unified
+  "Convert an edit/write tool's own diff text (xi.tools.util/unified-diff: `- `,
+   `+ ` and `  ` prefixed lines, `...` between hunks, plus a path line, an
+   optional `(created new file)` note and a `[file-hash: …]` trailer) into git
+   unified-diff text for `path`, so the exact change a tool block shows opens in
+   the diff viewer. The tool diff carries no line numbers, so hunks get a bare
+   `@@ @@` header and render without a gutter. nil when there are no diff lines."
+  [path text]
+  (let [lines  (str/split-lines (or text ""))
+        sign   (fn [l]
+                 (cond (str/starts-with? l "+ ") (str "+" (subs l 2))
+                       (str/starts-with? l "- ") (str "-" (subs l 2))
+                       (str/starts-with? l "  ") (str " " (subs l 2))))
+        body   (mapcat (fn [l]
+                         (if (= "..." l)
+                           ["@@ @@"]
+                           (some-> (sign l) vector)))
+                       lines)
+        body   (if (= "@@ @@" (first body)) body (cons "@@ @@" body))]
+    (when (some #(not= "@@ @@" %) body)
+      (str/join "\n"
+                (concat [(str "diff --git a/" path " b/" path)]
+                        (when (some #{"(created new file)"} lines)
+                          ["new file mode 100644"])
+                        [(str "--- a/" path) (str "+++ b/" path)]
+                        body)))))
 

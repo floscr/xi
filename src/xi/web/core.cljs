@@ -747,9 +747,11 @@
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
           ;; Floating Copy button surfaced when a rendered code block (`pre`)
           ;; or inline `code` is tapped (see attach-code-copy-listener!).
-          :code/menu-open        (fn [st {:keys [text path diff-path x y]}]
+          :code/menu-open        (fn [st {:keys [text path diff-path diff-text x y]}]
                                    {:state (assoc st :web/code-menu {:text text :path path
-                                                                     :diff-path diff-path :x x :y y})})
+                                                                     :diff-path diff-path
+                                                                     :diff-text diff-text
+                                                                     :x x :y y})})
           :code/menu-close       (fn [st _] {:state (dissoc st :web/code-menu)})
           :bubble/edit-start     (fn [st {:keys [index text images]}]
                                    {:state (-> st
@@ -1968,14 +1970,16 @@
                                                    (.closest (str "[" a "]"))
                                                    (.getAttribute a)))
                               path (attr "data-file-path")
-                              diff-path (attr "data-diff-path")]
+                              diff-path (attr "data-diff-path")
+                              diff-text (attr "data-diff-text")]
                           (when (seq (str/trim (or text "")))
                             (d (cond-> {:type :code/menu-open
                                         :text text
                                         :x (.-clientX e)
                                         :y (.-clientY e)}
                                  path (assoc :path path)
-                                 diff-path (assoc :diff-path diff-path)))))))]
+                                 diff-text (assoc :diff-path diff-path
+                                                  :diff-text diff-text)))))))]
       (.addEventListener
        js/document "click"
        (fn [^js e]
