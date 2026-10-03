@@ -248,11 +248,22 @@
                         unread? "status-dot--unread"
                         active? "status-dot--live")]}])
 
+(def default-nav-icon
+  "Icon for extension nav items that declare none (or one the icon set lacks),
+   so every menu row keeps its label aligned with the built-in items."
+  :package)
+
 (defn nav-items-for
   "Extension nav items (from ext/compose :nav-items, stored in state at
-   init) scoped to one menu surface."
+   init) scoped to one menu surface. Items whose :icon is missing or not in
+   `icon/icon-names` get `default-nav-icon`."
   [state menu]
-  (filter #(= menu (:menu %)) (:web/nav-items state)))
+  (->> (:web/nav-items state)
+       (filter #(= menu (:menu %)))
+       (map #(update % :icon (fn [k]
+                               (if (contains? icon/icon-names k)
+                                 k
+                                 default-nav-icon))))))
 
 ;; ── Tool rendering ───────────────────────────────────────────────────────────
 

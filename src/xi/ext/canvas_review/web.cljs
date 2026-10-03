@@ -756,4 +756,4 @@
                                         (str "/canvas-review/" session-id))}}}
    :pages    {:canvas-review canvas-page}
    :nav-items [{:menu :overflow :mode :room :label "Canvas review"
-                :icon :git-branch :event {:type :canvas-review/open-page}}]})
+                :icon :layout-dashboard :event {:type :canvas-review/open-page}}]})
