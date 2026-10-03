@@ -1167,7 +1167,7 @@
           ;; Sync the light/dark theme so tool/code blocks track the terminal.
           ;; On a mode flip, drop the roomId sentinel so the room-switch branch
           ;; below rebuilds every cached block with the new palette.
-          (let [mode (theme-mode/refresh!)]
+          (let [mode (theme-mode/refresh! state)]
             (when (not= mode (.-themeMode ctx))
               (set! (.-themeMode ctx) mode)
               (set! (.-roomId ctx) nil)))

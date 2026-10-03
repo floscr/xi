@@ -8,7 +8,7 @@
                   [:rooms * :ext id]; every other change is discarded.
      - dispatch:  events (handler effects, fx/tool dispatch!, keybindings) are
                   limited to the extension's own :ext.<id>/* plus a tiny
-                  allowlist (:ui/status, and :prompt/submit / :subagent/spawn
+                  allowlist (:ui/status, :theme/set, and :prompt/submit / :subagent/spawn
                   from commands/keys).
      - effects:   only the extension's own :fx types and the filtered
                   :app/dispatch pass; anything else is dropped.
@@ -26,7 +26,7 @@
 
 (def ^:private always-allowed
   "Event types any extension may dispatch, regardless of source."
-  #{:ui/status})
+  #{:ui/status :theme/set})
 
 (def ^:private command-allowed
   "Additional events allowed from commands / keybindings (user-initiated), but

@@ -300,10 +300,11 @@
               :fx {:ext.ext-c/go (fn [{:keys [dispatch!]} _]
                                    (dispatch! {:type :ext.ext-c/done})
                                    (dispatch! {:type :ui/dialog-response})
-                                   (dispatch! {:type :ui/status :text "s"}))}})
+                                   (dispatch! {:type :ui/status :text "s"})
+                                   (dispatch! {:type :theme/set :mode :light}))}})
         raw (fn [ev] (swap! seen conj (:type ev)))]
     ((get-in ext [:fx :ext.ext-c/go]) {:dispatch! raw} {})
-    (is (= [:ext.ext-c/done :ui/status] @seen))))
+    (is (= [:ext.ext-c/done :ui/status :theme/set] @seen))))
 
 (deftest keybindings-with-forbidden-events-are-dropped
   (let [ext (guard/wrap

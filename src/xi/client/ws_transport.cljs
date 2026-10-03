@@ -65,8 +65,12 @@
    '/' landed in the still-focused editor and were lost when the menu
    finally echoed back. Server-originated menu frames (e.g. /resume pushing
    its session list, model-fetch populate) still arrive tagged :remote? and
-   mirror in like any other event."
-  #{:ui/menu-open :ui/menu-push :ui/menu-pop :ui/menu-populate :ui/menu-close})
+   mirror in like any other event.
+
+   `:theme/set` joins them: the mode belongs to this terminal, so an extension
+   in the client process sets it directly instead of asking the server."
+  #{:ui/menu-open :ui/menu-push :ui/menu-pop :ui/menu-populate :ui/menu-close
+    :theme/set})
 
 (defn- wrap-local-apply
   "remote? → mirror; else run the base handler locally — no forwarding."

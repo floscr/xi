@@ -94,6 +94,17 @@
   (when (state/get-room st room-id)
     {:state (assoc-in st [:rooms room-id :ui :active-buffer] buffer-id)}))
 
+;; ── Theme (per process) ──────────────────────────────────────────────────────
+
+(defn- theme-set
+  "Set the light/dark mode the TUI paints tool/code blocks with. `:mode` is
+   `:light`, `:dark` or nil (back to the default). Process-level, so any
+   extension can follow an OS or terminal theme switch without a core hook."
+  [st {:keys [mode]}]
+  {:state (if (#{:light :dark} mode)
+            (assoc-in st [:theme :mode] mode)
+            (update st :theme dissoc :mode))})
+
 ;; ── Registry ─────────────────────────────────────────────────────────────────
 
 (def core-handlers
@@ -109,7 +120,8 @@
    :ui/dialog-open    dialog-open
    :ui/dialog-close   dialog-close
    :ui/buffer-set     buffer-set
-   :ui/buffer-switch  buffer-switch})
+   :ui/buffer-switch  buffer-switch
+   :theme/set         theme-set})
 
 (defn chain
   "Compose handlers left→right into one. Each handler sees the state

@@ -122,7 +122,7 @@ namespace.
 | --- | --- | --- |
 | `XI_CWD` | `process.cwd()` | Working directory for the room. |
 | `ANTHROPIC_API_KEY` | — | API auth, passed through to the Claude CLI (otherwise the CLI's own login is used). |
-| `XI_THEME_MODE` | auto-detected | TUI color scheme override: `light` or `dark` (`xi.tui.theme-mode`). |
+| `XI_THEME_MODE` | unset | TUI color scheme override: `light` or `dark` (`xi.tui.theme-mode`). Wins over the `:theme/set` event; without either the TUI uses `dark`. To follow an OS or terminal theme switcher live, dispatch `:theme/set` from a [user extension](user-extensions.md#following-the-system-theme). |
 
 `CLAUDE_CONFIG_DIR` is not a Xi setting: Xi sets it internally to point the
 Claude CLI at a throwaway config mirror for side turns (titles, summaries,

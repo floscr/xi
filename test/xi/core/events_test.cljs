@@ -76,6 +76,15 @@
       (let [st' (apply-events st {:type :ui/dialog-close :room-id "a"})]
         (is (= [99] (mapv :id (get-in st' [:rooms "a" :ui :dialogs]))))))))
 
+(deftest theme-set
+  (let [st (apply-events (state/initial-state) {:type :theme/set :mode :light})]
+    (is (= :light (get-in st [:theme :mode])))
+    (testing "a later event replaces the mode"
+      (is (= :dark (get-in (apply-events st {:type :theme/set :mode :dark}) [:theme :mode]))))
+    (testing "nil or an unknown mode clears it"
+      (is (nil? (get-in (apply-events st {:type :theme/set :mode nil}) [:theme :mode])))
+      (is (nil? (get-in (apply-events st {:type :theme/set :mode :sepia}) [:theme :mode]))))))
+
 (deftest unknown-events-pass-through
   (let [st     (state/initial-state)
         result (events/handle-event events/core-handlers st {:type :ext/whatever})]

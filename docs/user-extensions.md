@@ -214,7 +214,8 @@ The loader wraps every user fn (`xi.ext.user.guard`):
   `[:rooms * :ext <id>]`. Any other change is discarded, including rule state,
   other extensions, room and agent state, and dialogs.
 - **Dispatch:** events are limited to the extension's own `:ext.<id>/*`
-  events plus `:ui/status`. `:prompt/submit` and `:subagent/spawn` are also
+  events plus `:ui/status` and `:theme/set`
+  ([below](#following-the-system-theme)). `:prompt/submit` and `:subagent/spawn` are also
   allowed from **commands and keybindings** (user-initiated), and from an
   `:fx` that a command's effect started (so a command can gather data in an
   effect, then submit), but never from tool fns or handlers, so an agent
@@ -241,6 +242,57 @@ Allowed map keys: `:id :init :handlers :fx :commands :tool-definitions
 `:tool-gate`, `:event-hooks` and `:remove-tools` are rejected, because policy
 belongs to the rules engine. `:id` and tool names
 must not clash with anything already loaded, built-ins included.
+
+## Following the system theme
+
+The TUI paints tool and code blocks in a dark or a light palette. Xi has no
+idea what your OS theme is, so an extension tells it by dispatching
+`{:type :theme/set :mode :light}` (`:light`, `:dark`, or `nil` to go back to the
+default `:dark`). The mode is process-level: it applies to the TUI of the
+process that handles the event and repaints at once. The `XI_THEME_MODE` env
+var still overrides it (see [config.md](config.md)).
+
+An extension has no file watchers, so a polling loop that reads a state file
+and dispatches on change is the simplest way to follow a theme switcher:
+
+```clojure
+;; ~/.config/xi/extensions/theme_mode.cljs
+(ns theme-mode
+  (:require [clojure.string :as str]
+            [xi.api.fs :as fs]
+            [xi.api.promise :as p]))
+
+(def ^:private state-file "~/.local/state/theme-mode/mode")
+
+(def ^:private running? (atom false))
+(def ^:private last-mode (atom ::unset))
+
+(defn- poll! [{:keys [dispatch!] :as ctx}]
+  (when @running?
+    (-> (fs/read ctx state-file)
+        (p/then #(some-> % str/trim str/lower-case))
+        (p/catch (fn [_] nil))
+        (p/then (fn [mode]
+                  (when (not= mode @last-mode)
+                    (reset! last-mode mode)
+                    ;; no file, or an unknown value → back to the default
+                    (dispatch! {:type :theme/set :mode (keyword mode)}))
+                  (p/then (p/delay 1000) (fn [_] (poll! ctx))))))))
+
+(def extension
+  {:id :theme-mode
+   :on-mount   (fn [ctx] (reset! running? true) (poll! ctx))
+   ;; a reload evaluates the file afresh, so the old loop's flag is its own
+   :on-unmount (fn [_ctx] (reset! running? false))})
+```
+
+Reading a file outside the project asks by default, and an unanswered ask in
+an effect is refused, so pre-allow it in `rules.edn`:
+
+```clojure
+{:match {:tool :read :extension "theme-mode" :path "~/.local/state/theme-mode/mode"}
+ :action {:type :allow}}
+```
 
 ## Headless Chrome
 
