@@ -84,6 +84,23 @@
               (get-in st [:lobby :sessions]))
         (when (string? dir) dir))))
 
+(defn- new-chat-view?
+  "True while the chat view shows a virtual new chat (a :web/pending-room, no
+   session id). The active room is then the *previous* room the client is
+   still attached to (or nil), so anything scoped to \"the room being viewed\"
+   — cwd, file buffers — must read the pending room instead."
+  [st]
+  (and (some? (:web/pending-room st))
+       (nil? (get-in st [:web/route :session-id]))))
+
+(defn- view-cwd
+  "cwd of the chat being viewed: the pending room's for a virtual new chat,
+   else the active room's."
+  [st]
+  (if (new-chat-view? st)
+    (get-in st [:web/pending-room :cwd])
+    (:cwd (state/active-room st))))
+
 (defn- room-new
   "Open a fresh *virtual* chat: switch to the chat view but create no server
    room yet. The room stays client-only (launch header, no spinner, nothing to
@@ -1278,7 +1295,7 @@
           ;; the active room's cwd. Same drill pattern as commits/models — the
           ;; server lists the directory and replies with :files/web-list-result.
           :palette/open-files    (fn [st _]
-                                   (let [cwd (:cwd (state/active-room st))]
+                                   (let [cwd (view-cwd st)]
                                      {:state (-> st
                                                  (assoc :web/palette-page {:kind :files}
                                                         :web/palette-open? true
@@ -1292,7 +1309,7 @@
           ;; (same one-shot :web/palette-drilling? cycle as the model/commits
           ;; pages). Paths are absolute, so cwd is only a fallback.
           :files/cd              (fn [st {:keys [path]}]
-                                   (let [cwd (:cwd (state/active-room st))]
+                                   (let [cwd (view-cwd st)]
                                      {:state (-> st
                                                  (assoc :web/palette-drilling? true)
                                                  (dissoc :web/file-list))
@@ -1305,24 +1322,39 @@
           ;; Selecting a file closes the browser and asks the server to read it;
           ;; the reply installs the :file tab (client-local, like the diff tab).
           :files/open            (fn [st {:keys [path]}]
-                                   (let [cwd (:cwd (state/active-room st))]
+                                   (let [cwd (view-cwd st)]
                                      {:state (dissoc st :web/palette-page :web/palette-open?)
                                       :effects [[:palette/close nil]
                                                 [:ws/send {:type :file/web-read :cwd cwd :path path}]]}))
+          ;; In a virtual new chat there is no room yet, so the buffer lives on
+          ;; the :web/pending-room (chat-view reads it from there).
           :file/web-read-result  (fn [st {:keys [path text error]}]
-                                   (if-let [room-id (:id (state/active-room st))]
-                                     {:state (-> st
-                                                 (assoc-in [:rooms room-id :ui :buffers :file]
-                                                           {:title path :path path
-                                                            :text (or text (str "Could not read file:\n" error))})
-                                                 (assoc-in [:rooms room-id :ui :active-buffer] :file))}
-                                     {:state st}))
+                                   (let [buf    {:title path :path path
+                                                 :text (or text (str "Could not read file:\n" error))}
+                                         room-id (:id (state/active-room st))]
+                                     (cond
+                                       (new-chat-view? st)
+                                       {:state (-> st
+                                                   (assoc-in [:web/pending-room :ui :buffers :file] buf)
+                                                   (assoc-in [:web/pending-room :ui :active-buffer] :file))}
+
+                                       room-id
+                                       {:state (-> st
+                                                   (assoc-in [:rooms room-id :ui :buffers :file] buf)
+                                                   (assoc-in [:rooms room-id :ui :active-buffer] :file))}
+
+                                       :else {:state st})))
+          ;; Tab switch in a virtual new chat (the core :ui/buffer-switch needs a
+          ;; real room id).
+          :pending/buffer-switch (fn [st {:keys [buffer-id]}]
+                                   (when (:web/pending-room st)
+                                     {:state (assoc-in st [:web/pending-room :ui :active-buffer] buffer-id)}))
           ;; Instant fuzzy file finder (Ctrl/Cmd+P): open a dedicated palette
           ;; page seeded with the room's flat file list; the page fuzzy-ranks
           ;; it client-side per keystroke. Selecting a row reuses :files/open.
           :palette/open-file-finder
           (fn [st _]
-            (let [cwd (:cwd (state/active-room st))]
+            (let [cwd (view-cwd st)]
               {:state (-> st
                           (assoc :web/palette-page {:kind :file-finder}
                                  :web/palette-open? true

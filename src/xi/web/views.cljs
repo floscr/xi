@@ -2022,31 +2022,33 @@
    page (a separate route, not a buffer switch) — shown once a review has
    been built for this session."
   [dispatch! room-id active-buffer buffers canvas?]
+  (let [;; A virtual new chat has no room id yet; its buffers live on the
+        ;; pending room (see :pending/buffer-switch).
+        switch! (fn [buffer-id]
+                  (dispatch! (if room-id
+                               {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}
+                               {:type :pending/buffer-switch :buffer-id buffer-id})))]
   [:div {:class ["tab-pill"]}
    [:button {:class ["tab-pill-item" (when (= active-buffer :chat) "tab-pill-item--active")]
-             :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
-                                             :room-id room-id :buffer-id :chat}))}}
+             :on {:click (fn [_] (switch! :chat))}}
     "Chat"]
    (when (:diff buffers)
      [:button {:class ["tab-pill-item" (when (= active-buffer :diff) "tab-pill-item--active")]
-               :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
-                                               :room-id room-id :buffer-id :diff}))}}
+               :on {:click (fn [_] (switch! :diff))}}
       "Diff"])
    (when (:file buffers)
      [:button {:class ["tab-pill-item" (when (= active-buffer :file) "tab-pill-item--active")]
-               :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
-                                               :room-id room-id :buffer-id :file}))}}
+               :on {:click (fn [_] (switch! :file))}}
       "File"])
    (when (:prompt buffers)
      [:button {:class ["tab-pill-item" (when (= active-buffer :prompt) "tab-pill-item--active")]
-               :on {:click (fn [_] (dispatch! {:type :ui/buffer-switch
-                                               :room-id room-id :buffer-id :prompt}))}}
+               :on {:click (fn [_] (switch! :prompt))}}
       "Prompt"])
    (when canvas?
      [:button {:class ["tab-pill-item"]
                :on {:click (fn [_] (dispatch! {:type :canvas-review/open-page
                                                :room-id room-id}))}}
-      "Canvas"])])
+      "Canvas"])]))
 
 ;; ── Chat view ────────────────────────────────────────────────────────────────
 
@@ -2630,8 +2632,11 @@
         ready?  (not loading?)
         pa?     (get-in state [:lobby :agent-id])
         dkey    (draft-key state)
-        buffers    (get-in room [:ui :buffers])
-        active-buf (get-in room [:ui :active-buffer] :chat)
+        ;; A virtual new chat has no room: its buffers (e.g. an opened file)
+        ;; live on the pending room.
+        ui         (if room (:ui room) (when new? (get-in state [:web/pending-room :ui])))
+        buffers    (:buffers ui)
+        active-buf (get ui :active-buffer :chat)
         canvas?    (boolean (seq (get-in room [:ext :canvas-review :diff])))
         has-tabs?  (boolean (or (:diff buffers) (:file buffers) (:prompt buffers) canvas?))
         ;; Prompt navigation over the FULL history (not just the rendered
