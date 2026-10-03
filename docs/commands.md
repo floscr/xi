@@ -9,6 +9,7 @@ them when building an app.
 
 ```clojure
 {:name        "model"                  ;; part after /
+ :aliases     ["m"]                    ;; optional extra names (e.g. /a for /allow)
  :description "Show or set model"      ;; shown in /help and TUI completion
  :handler     (fn [state ctx] …)}      ;; pure event handler
 ```
