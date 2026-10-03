@@ -558,7 +558,11 @@
         (and (seq text) (not imgs))
         [:div (cond-> {:class ["tool-call-content"]}
                 (tool-file-path name arguments)
-                (assoc :data-file-path (tool-file-path name arguments)))
+                (assoc :data-file-path (tool-file-path name arguments))
+                ;; Only tools that change the file get a View-diff action.
+                (and (contains? #{"Write" "write" "Edit" "edit" "clj_replace"} name)
+                     (tool-file-path name arguments))
+                (assoc :data-diff-path (tool-file-path name arguments)))
          (let [shown (truncate-lines text 100)]
            (if (and (contains? #{"Edit" "edit" "clj_replace"} name) (not is-error))
              (edit-diff-code grammar shown)
@@ -2321,11 +2325,13 @@
 (defn- code-copy-menu
   "Floating menu shown when a rendered code block (`pre`) or inline `code` is
    tapped: Copy, plus View file when the block belongs to a Read/Write/Edit
-   tool call (opens the file in the room's :file buffer tab via :file/open).
+   tool call (opens the file in the room's :file buffer tab via :file/open),
+   and View diff when it belongs to a Write/Edit tool call (opens that file's
+   uncommitted changes in the :diff tab via `/diff file:<path>`).
    Mirrors bubble-menu's positioning/backdrop; the tap is detected by a
    delegated listener in xi.web.core. Uses the iOS long-press fallback when
    the async Clipboard API is unavailable."
-  [dispatch! {:keys [text path x y]}]
+  [dispatch! room-id {:keys [text path diff-path x y]}]
   (let [close! (fn [] (dispatch! {:type :code/menu-close}))]
     [:div {:class ["bubble-menu-backdrop"]
            :on {:click (fn [_] (close!))}}
@@ -2347,7 +2353,17 @@
                                 (close!)
                                 (dispatch! {:type :file/open :path path}))}}
          (icon/icon {:icon-name :file-text :size :sm})
-         [:span "View file"]])]]))
+         [:span "View file"]])
+      (when diff-path
+        [:button {:class ["bubble-menu-item"]
+                  :on {:click (fn [e]
+                                (.stopPropagation e)
+                                (close!)
+                                (dispatch! {:type :diff/reopen :room-id room-id
+                                            :method (str "file:" diff-path)
+                                            :engine :git}))}}
+         (icon/icon {:icon-name :code :size :sm})
+         [:span "View diff"]])]]))
 
 (defn- subagent-duration [{:keys [started ended]}]
   (when started
@@ -2720,7 +2736,7 @@
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))
         (when-let [menu (:web/code-menu state)]
-          (code-copy-menu dispatch! menu))
+          (code-copy-menu dispatch! (:id room) menu))
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         [:div {:class ["compose-dock"]}

@@ -72,8 +72,10 @@ Defined in `xi.commands/built-in-commands`:
 Extensions add more (e.g. `/plan`, `/commit`, `/diff`, `/kb` — see
 [extensions.md](extensions.md)). `/diff` (diff extension) takes `git` \|
 `staged` \| `unstaged` \| `session-edits` \| `session-git` \|
-`session-commits` \| `<ref>`; no args → session diff. `session-git` = files
-edited this session that are still uncommitted.
+`session-commits` \| `file:<path>` \| `<ref>`; no args → session diff.
+`session-git` = files edited this session that are still uncommitted;
+`file:<path>` = one file's uncommitted changes vs `HEAD` (what the web
+client's "View diff" block action runs).
 
 ## Extension commands
 

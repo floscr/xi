@@ -91,6 +91,12 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   `xi.image`), thumbnail strip, fullscreen lightbox (`:web/lightbox`)
 - Markdown via `xi.markdown.hiccup`; code blocks highlighted with the
   bundled browser grammars ([syntax-highlighting.md](syntax-highlighting.md))
+- **Code-block menu**: right-click (mouse) or tap (touch) a code block →
+  Copy; on Read/Write/Edit tool blocks also **View file** (`:file/open`), and
+  on Write/Edit blocks **View diff** — the file's uncommitted changes in the
+  Diff tab (`:diff/reopen` with `file:<path>`, see `/diff` in
+  [commands.md](commands.md)). Tool blocks carry `data-file-path` /
+  `data-diff-path`, read by the delegated listener in `xi.web.core`
 - Auto-scroll pinned to bottom unless you scroll up
 - Sending from a cached (not-yet-joined) session stashes the message
   (`:web/pending-submit`) and fires it after `:room/joined`
