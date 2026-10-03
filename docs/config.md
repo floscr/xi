@@ -138,6 +138,7 @@ never reach the session list (`xi.session/make-throwaway-config-dir!`).
 | `XI_TLS_CERT` | `~/.config/xi/tls/xi.crt` | TLS certificate path. Setting it (or `XI_TLS_KEY`) forces TLS on. |
 | `XI_TLS_KEY` | `~/.config/xi/tls/xi.key` | TLS private key path. |
 | `XI_ICON` | `desktop` (`personal` on an agent server) | Icon variant served at `/apple-touch-icon.png`: `desktop`, `personal` or `green`. |
+| `XI_PUBLIC_HOST` | Tailscale IPv4 if `tailscale` is installed and up, else `localhost` | Host shown in the `Web: http://…` URL printed by `bb serve`, `bb serve:restart`, `bb serve:personal*` and `bb dev:url`. Cosmetic only — the server binds regardless. Read by the `host-ip` helper in `bb.edn`. |
 
 See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 

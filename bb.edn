@@ -24,12 +24,14 @@
             (spit (xi-config-file name) (str (pr-str m) "\n")))
           (defn fmt-ts [ms]
             (when ms (str (java.util.Date. (long ms)))))
-          ;; Host for the printed "Web: http://…" URLs: the Tailscale IP when
-          ;; the tailscale CLI is installed and its daemon is up, else
-          ;; localhost. Purely cosmetic — the server binds regardless — so a
-          ;; missing/stopped tailscale must never block serve / serve:restart.
-          (defn web-host []
-            (or (try (-> (shell {:out :string :err :string :continue true} "tailscale" "ip" "-4")
+          ;; Host for the printed "Web: http://…" URLs: $XI_PUBLIC_HOST when
+          ;; set, else the Tailscale IP when the tailscale CLI is installed and
+          ;; its daemon is up, else localhost. Purely cosmetic — the server
+          ;; binds regardless — so a missing/stopped tailscale must never block
+          ;; serve / serve:restart.
+          (defn host-ip []
+            (or (not-empty (clojure.string/trim (or (System/getenv "XI_PUBLIC_HOST") "")))
+                (try (-> (shell {:out :string :err :string :continue true} "tailscale" "ip" "-4")
                          :out clojure.string/trim not-empty)
                      (catch Exception _ nil))
                 "localhost"))
@@ -209,8 +211,8 @@
            :task "style-editor:build"})}
 
   dev:url
-  {:doc "Print the dev-http URL (Tailscale IP when available, else localhost) on port 8100"
-   :task (println (str "http://" (web-host) ":8100"))}
+  {:doc "Print the dev-http URL (XI_PUBLIC_HOST, else Tailscale IP when available, else localhost) on port 8100"
+   :task (println (str "http://" (host-ip) ":8100"))}
 
   dev:personal
   {:doc "Start headless server as the root agent profile (foreground)"
@@ -218,7 +220,7 @@
 
   serve:personal
   {:doc "Start tmux personal-agent serve session (port 7475)"
-   :task (do (td/start (assoc pa-serve-config :print [(str "Web: http://" (web-host) ":7475")]))
+   :task (do (td/start (assoc pa-serve-config :print [(str "Web: http://" (host-ip) ":7475")]))
              (td/attach pa-serve-config))}
 
   serve:personal:stop
@@ -227,12 +229,12 @@
 
   serve:personal:restart
   {:doc "Restart tmux personal-agent serve session"
-   :task (td/restart (assoc pa-serve-config :print [(str "Web: http://" (web-host) ":7475")]))}
+   :task (td/restart (assoc pa-serve-config :print [(str "Web: http://" (host-ip) ":7475")]))}
 
   serve
   {:doc "Start tmux serve session (stops the dev session — both run the shadow watch)"
    :task (do (stop-dev-watch!)
-             (td/start (assoc serve-config :print [(str "Web: http://" (web-host) ":7474")]))
+             (td/start (assoc serve-config :print [(str "Web: http://" (host-ip) ":7474")]))
              (td/attach serve-config))}
 
   serve:stop
@@ -321,7 +323,7 @@
   {:doc "Restart tmux serve session (stops the dev session, reaps leaked headless :7474 servers first)"
    :task (do (stop-dev-watch!)
              (reap-stray-serve!)
-             (td/restart (assoc serve-config :print [(str "Web: http://" (web-host) ":7474")])))}
+             (td/restart (assoc serve-config :print [(str "Web: http://" (host-ip) ":7474")])))}
 
   serve:await-build
   {:doc "Block until the shadow watch writes a fresh target/main.js (max 180s) — the serve session's server window runs this before starting bun"
