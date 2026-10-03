@@ -161,6 +161,22 @@ body {
                 transparent 100%);
 }
 
+/* Desktop (wide + mouse): no top fade — content stays fully legible right up
+   to the header. Phones and tablets (narrow or touch-only) keep it. The
+   bottom fade under the quick-command bar is unchanged. */
+@media (min-width: 769px) and (hover: hover) {
+  .topbar--chat + .timeline {
+    -webkit-mask-image: linear-gradient(to bottom,
+                          rgba(0, 0, 0, 1) 0,
+                          rgba(0, 0, 0, 1) calc(100% - var(--quick-cmd-h)),
+                          transparent 100%);
+    mask-image: linear-gradient(to bottom,
+                  rgba(0, 0, 0, 1) 0,
+                  rgba(0, 0, 0, 1) calc(100% - var(--quick-cmd-h)),
+                  transparent 100%);
+  }
+}
+
 /* When the quick-command bar is shown the timeline reserves its height and
    lets chat content scroll behind the frosted buttons. More specific than the
    rule above so the custom-property override actually wins. */
