@@ -525,7 +525,9 @@
       [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
-       [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))} label]
+       [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))}
+        [:span {:class ["tool-call-action"]} name]
+        (subs label (count name))]
        (when clj-preview
          [:span {:class ["clj-head-preview"]} clj-preview])
        (when running? (spinner))

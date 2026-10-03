@@ -1693,6 +1693,12 @@ body {
   flex: 1;
 }
 
+/* The action (tool name: grep, read, …) sits one step above the muted
+   arguments: lighter in dark mode, darker in light mode. */
+.tool-call-action {
+  color: var(--fg-1);
+}
+
 /* Bash: show the full command instead of clipping it to one line. */
 .tool-call-toggle--wrap {
   align-items: flex-start;
