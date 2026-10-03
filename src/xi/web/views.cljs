@@ -3463,7 +3463,7 @@
              :icon  :eye-off
              :event {:type :session/dismiss-all}})
       (not pa?)
-      (conj {:label "Prune idle rooms"
+      (conj {:label "Close idle rooms"
              :icon  :trash
              :event {:type :rooms/prune}}))))
 
