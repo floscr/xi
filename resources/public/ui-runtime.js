@@ -6114,7 +6114,7 @@
 
   // .compiled/touch.mjs
   var mq = window.matchMedia("(hover: none)");
-  var viewport_overrides = [["width", "device-width"], ["initial-scale", "1.0"], ["maximum-scale", "1.0"], ["user-scalable", "no"], ["viewport-fit", "cover"]];
+  var viewport_overrides = [["width", "device-width"], ["initial-scale", "1.0"], ["maximum-scale", "1.0"], ["user-scalable", "no"]];
   var merge_viewport = function(existing) {
     const entries1 = map((function(s) {
       const i2 = s.indexOf("=");
