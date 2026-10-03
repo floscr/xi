@@ -2272,34 +2272,76 @@
       (cond-> {:type :route/navigate :page :home}
         cwd (assoc :dir cwd)))))
 
+(defn- launch-logo
+  "The Xi mark: a blocky X and i sharing one gradient."
+  []
+  [:svg {:class ["launch-logo"] :viewBox "0 0 64 40" :aria-hidden "true"}
+   [:defs
+    [:linearGradient {:id "launch-logo-gradient" :gradientUnits "userSpaceOnUse"
+                      :x1 "0" :y1 "0" :x2 "64" :y2 "40"}
+     [:stop {:offset "0" :stop-color "#e83fb4"}]
+     [:stop {:offset "0.55" :stop-color "#8b4cf0"}]
+     [:stop {:offset "1" :stop-color "#3b8fd6"}]]]
+   [:g {:fill "url(#launch-logo-gradient)"}
+    ;; X: two crossing diagonals
+    [:polygon {:points "0,0 9,0 36,40 27,40"}]
+    [:polygon {:points "27,0 36,0 9,40 0,40"}]
+    ;; i: dot + stem
+    [:rect {:x "46" :y "0" :width "9" :height "9"}]
+    [:rect {:x "46" :y "15" :width "9" :height "25"}]]])
+
+(def ^:private launch-tips
+  "Key chip + description pairs for the launch card's Tips grid. Only things
+   the web client really binds (see the Keyboard table in docs/web-client.md)."
+  [["/" "commands"]
+   ["Alt N" "new chat"]
+   ["Ctrl K" "command palette"]
+   ["Ctrl P" "find files"]])
+
 (defn- launch-header
-  "Welcome/info block shown at the top of an empty chat — mirrors the TUI
-   launch header (Xi banner, model, cwd, AGENTS.md files). Works for a virtual
-   (not-yet-joined) room too: model/agents-files are simply omitted until the
-   first prompt creates the real room."
+  "Welcome card at the top of every chat's timeline: Xi logo, tips, the
+   current model / cwd / AGENTS.md files and a footer hint. It is ordinary
+   timeline content, so it scrolls away with the conversation and can be
+   scrolled back to. Works for a virtual (not-yet-joined) room too:
+   model/agents-files are simply omitted until the first prompt creates the
+   real room."
   [{:keys [model cwd agents-files pa? dispatch!]}]
   [:div {:class ["launch-header"]}
-   [:div {:class ["launch-title"]}
-    [:span {:class ["launch-brand"]} "Xi"]
-    [:span {:class ["launch-tagline"]}
-     (if pa? " — personal agent" " — coding agent")]]
-   (when model
-     [:div {:class ["launch-meta"]}
-      [:span {:class ["launch-label"]} "Model: "]
-      [:span {:class ["launch-value" "launch-value--clickable"]
-             :on {:click (fn [_] (dispatch! {:type :palette/open-models}))}}
-       model]])
-   (when cwd
-     [:div {:class ["launch-meta"]}
-      [:span {:class ["launch-label"]} "cwd: "]
-      [:span {:class ["launch-value"]} (shorten-path cwd)]])
-   [:div {:class ["launch-hint"]} "Type /help for commands."]
-   (when-let [files (seq agents-files)]
-     [:div {:class ["launch-meta"]}
-      [:span {:class ["launch-label"]} "Loaded "]
-      [:span {:class ["launch-value"]} (str (count files) " AGENTS.md")]
-      [:span {:class ["launch-label"]}
-       (str " file" (when (> (count files) 1) "s"))]])])
+   [:div {:class ["launch-hero"]}
+    (launch-logo)
+    [:div {:class ["launch-tagline"]}
+     (if pa? "personal agent" "coding agent")]]
+   [:div {:class ["launch-section"]}
+    [:div {:class ["launch-section-title"]} "Tips"]
+    [:div {:class ["launch-tips"]}
+     (for [[k label] launch-tips]
+       [:div {:class ["launch-tip"] :replicant/key k}
+        [:kbd {:class ["launch-kbd"]} k]
+        [:span label]])]]
+   (when (or model cwd (seq agents-files))
+     [:div {:class ["launch-section"]}
+      [:div {:class ["launch-section-title"]} "Session"]
+      [:dl {:class ["launch-facts"]}
+       (when model
+         (list
+          [:dt {:replicant/key "model-k"} "Model"]
+          [:dd {:replicant/key "model-v"}
+           [:span {:class ["launch-value" "launch-value--clickable"]
+                   :on {:click (fn [_] (dispatch! {:type :palette/open-models}))}}
+            model]]))
+       (when cwd
+         (list
+          [:dt {:replicant/key "cwd-k"} "cwd"]
+          [:dd {:replicant/key "cwd-v"}
+           [:span {:class ["launch-value"] :title cwd} cwd]]))
+       (when-let [files (seq agents-files)]
+         (list
+          [:dt {:replicant/key "agents-k"} "Loaded"]
+          [:dd {:replicant/key "agents-v"}
+           [:span {:class ["launch-value"]}
+            (str (count files) " AGENTS.md file" (when (> (count files) 1) "s"))]]))]])
+   [:div {:class ["launch-footer"]}
+    "Type /help for the full list of commands."]])
 
 (defn- clamp-bubble-menu!
   "Keep the tap menu inside the visible viewport: flip it above the tap point
@@ -2665,14 +2707,17 @@
                         (dispatch! {:type :ui/dialog-close
                                     :room-id room-id :dialog-id id}))))]
               (list
-               (when (and (zero? total)
-                          (not (:web/optimistic state))
-                          (not (:web/pending-submit state))
-                          (not (:web/pending-command state)))
+               ;; Part of the scrollable timeline, not an empty-state: shown
+               ;; whenever the window reaches the first entry, so it stays
+               ;; above the conversation and can be scrolled back to.
+               (when (zero? start)
                  (with-post-key "tl-launch-header"
                                 (launch-header
                                  {:model model
-                                  :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
+                                  :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd])
+                                           (when sid
+                                             (some (fn [s] (when (= sid (:session-id s)) (:cwd s)))
+                                                   (get-in state [:lobby :sessions]))))
                                   :agents-files (get-in room [:agent :agents-files])
                                   :pa? pa?
                                   :dispatch! dispatch!})))

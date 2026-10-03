@@ -2662,27 +2662,97 @@ code a:hover,
 .launch-header {
   display: flex;
   flex-direction: column;
-  gap: var(--size-1);
-  padding: var(--size-4) 0 var(--size-2);
-  color: var(--fg-2);
+  margin: var(--size-4) 0 var(--size-6);
+  border: var(--border-0);
+  border-radius: var(--radius-lg);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-1);
+  color: var(--fg-1);
   font-size: var(--font-sm);
+  overflow: hidden;
 }
 
-.launch-title {
-  margin-bottom: var(--size-1);
+.launch-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-3);
+  padding: var(--size-8) var(--size-4) var(--size-6);
+  border-bottom: var(--border-0);
 }
 
-.launch-brand {
-  font-weight: 700;
-  color: var(--fg-0);
+.launch-logo {
+  width: 96px;
+  height: auto;
 }
 
 .launch-tagline {
   color: var(--fg-2);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: var(--font-xs);
 }
 
-.launch-label {
+.launch-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  padding: var(--size-4) var(--size-5);
+}
+
+.launch-section + .launch-section {
+  padding-top: 0;
+}
+
+.launch-section-title {
+  color: var(--fg-1);
+  font-weight: 600;
+}
+
+.launch-tips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--size-2) var(--size-4);
+}
+
+.launch-tip {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-1);
+}
+
+.launch-kbd {
+  min-width: 1.8em;
+  padding: 1px 6px;
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--fg-1);
+  font: inherit;
+  font-size: var(--font-xs);
+  text-align: center;
+}
+
+.launch-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--size-1) var(--size-4);
+  margin: 0;
+}
+
+.launch-facts dt {
   color: var(--fg-2);
+}
+
+.launch-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
 }
 
 .launch-value {
@@ -2697,7 +2767,9 @@ code a:hover,
   text-decoration: underline;
 }
 
-.launch-hint {
+.launch-footer {
+  padding: var(--size-3) var(--size-5);
+  border-top: var(--border-0);
   color: var(--fg-2);
 }
 

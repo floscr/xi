@@ -61,6 +61,13 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
 
 ### Chat view (`/chat/:session-id`)
 
+- **Launch card**: the first block of every chat's timeline (rendered while
+  the virtualization window reaches the first entry) — Xi logo, a Tips grid of
+  key chips, a Session section with the current model (click to switch) / cwd /
+  loaded AGENTS.md files, and a footer hint. It is ordinary timeline content,
+  not an empty-state, so it scrolls away with the conversation and you can
+  scroll back up to it (`launch-header` in `xi.web.views`; tips live in
+  `launch-tips`)
 - Streaming text/thinking/tool entries rendered from room `:history` —
   the same entry maps the TUI renders
 - Tool and thinking blocks are `<details>` elements — Replicant only writes
