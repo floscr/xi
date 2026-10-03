@@ -521,9 +521,7 @@
                                 (str " " (if bash?
                                            (str summary)
                                            (first (str/split-lines (str summary))))))))]
-    ;; .post--focus marks the one post awaiting an answer: while a dialog is
-    ;; pending the timeline dims every other child (.timeline-content--focus).
-    [:div {:class (cond-> ["post" "post--tool"] permission (conj "post--focus"))}
+    [:div {:class ["post" "post--tool"]}
      [:details {:class (cond-> ["tool-call-block"]
                          clj? (conj "tool-call-block--clj")
                          grouped? (conj "tool-call-block--viewer"))
@@ -1448,7 +1446,7 @@
                     ;; actually clears the live dialog everywhere.
                     (dispatch! {:type :ui/dialog-close
                                 :room-id room-id :dialog-id id}))]
-      [:div {:class ["post" "post--assistant" "post--dialog" "post--focus"]}
+      [:div {:class ["post" "post--assistant" "post--dialog"]}
        [:div {:class ["post-body" "dialog-bubble"]}
         [:div {:class ["dialog-message"]} (or message text)]
         (dialog-diff live-dialog)
@@ -2578,12 +2576,7 @@
        (list
         [:div {:class ["timeline"
                        (when-not pa? "timeline--float-footer")]}
-         ;; A pending dialog (permission ask, select, form…) is the one thing
-         ;; that needs the user's attention: dim everything but the post that
-         ;; carries it (.post--focus) so the eye lands on the ask.
-         [:div {:class ["timeline-content"
-                        (when (seq (get-in room [:ui :dialogs]))
-                          "timeline-content--focus")]}
+         [:div {:class ["timeline-content"]}
           (if ready?
             (let [entries (vec history)
                   total   (count entries)
@@ -2837,10 +2830,10 @@
     [:span {:class ["project-card-name"]} (or name "New session")]
     [:span {:class ["project-card-path"]}
      (->> [(when (and show-project? cwd) (shorten-path cwd))
-           ;; "just now" is noise; only a real age (3m ago) is useful.
-           (let [rel (format-relative-time timestamp)]
-             (when-not (= rel "just now") rel))
-           (when has-dialog? "needs response")]
+           (format-relative-time timestamp)
+           (cond has-dialog? "needs response"
+                 busy? "working…"
+                 :else nil)]
           (remove str/blank?)
           (str/join " · "))]]
    ;; ⋮ opens the same context menu as right-click / long-press.

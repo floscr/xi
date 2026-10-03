@@ -1970,28 +1970,6 @@ code a:hover,
   flex-wrap: wrap;
 }
 
-/* ---- Dialog focus: dim everything but the post awaiting an answer ----
-   While a dialog is pending, .timeline-content--focus fades every sibling of
-   the .post--focus post (the gated tool block, or the standalone dialog
-   bubble) so the ask stands out. Hovering a dimmed post restores it so the
-   surrounding context stays readable. The transition lives on every child so
-   the undim animates too once the dialog is answered. */
-.timeline-content > * {
-  transition: opacity 0.25s ease;
-}
-
-.timeline-content--focus > :not(.post--focus) {
-  opacity: 0.4;
-}
-
-.timeline-content--focus > :not(.post--focus):hover {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .timeline-content > * { transition: none; }
-}
-
 /* ---- Thinking blocks ---- */
 .thinking-block { margin: var(--size-1) 0; }
 
