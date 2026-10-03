@@ -2731,32 +2731,6 @@ code a:hover,
   font-weight: 600;
 }
 
-.launch-tips {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--size-2) var(--size-4);
-}
-
-.launch-tip {
-  display: flex;
-  align-items: center;
-  gap: var(--size-2);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--fg-1);
-}
-
-.launch-kbd {
-  min-width: 1.8em;
-  padding: 1px 6px;
-  border: var(--border-0);
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
-  color: var(--fg-1);
-  font: inherit;
-  font-size: var(--font-xs);
-  text-align: center;
-}
-
 .launch-facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

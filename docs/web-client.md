@@ -62,12 +62,11 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
 ### Chat view (`/chat/:session-id`)
 
 - **Launch card**: the first block of every chat's timeline (rendered while
-  the virtualization window reaches the first entry) — Xi logo, a Tips grid of
-  key chips, a Session section with the current model (click to switch) / cwd /
-  loaded AGENTS.md files, and a footer hint. It is ordinary timeline content,
-  not an empty-state, so it scrolls away with the conversation and you can
-  scroll back up to it (`launch-header` in `xi.web.views`; tips live in
-  `launch-tips`)
+  the virtualization window reaches the first entry) — Xi logo, a Session
+  section with the current model (click to switch) / cwd / loaded AGENTS.md
+  files, and a footer hint. It is ordinary timeline content, not an
+  empty-state, so it scrolls away with the conversation and you can scroll
+  back up to it (`launch-header` in `xi.web.views`)
 - Streaming text/thinking/tool entries rendered from room `:history` —
   the same entry maps the TUI renders
 - Tool and thinking blocks are `<details>` elements — Replicant only writes
@@ -115,6 +114,7 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   muted (`.code-muted`, 40% opacity) so the eye lands on the `(spit …)` /
   `(sh …)` call being approved; hovering the block (pointer devices) lifts
   the muting so the whole eval reads normally. Asks without a target leave
+  the code as is
 - **Run timer**: a still-running tool block shows a live elapsed counter
   (`12s`, `3m 05s`) next to its spinner once it has run 2s — for
   `process/poll-until`, long builds and stalled commands. The tool-start
@@ -122,7 +122,6 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   entry's `:started-at`; the label repaints its own DOM text every second
   (`run-timer`, `replicant/on-mount`) because a stalled call emits no events
   to re-render on
-  the code as is
 - Auto-scroll pinned to bottom unless you scroll up
 - Sending from a cached (not-yet-joined) session stashes the message
   (`:web/pending-submit`) and fires it after `:room/joined`

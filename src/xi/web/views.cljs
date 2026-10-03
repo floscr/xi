@@ -2348,16 +2348,8 @@
     [:rect {:x "46" :y "0" :width "9" :height "9"}]
     [:rect {:x "46" :y "15" :width "9" :height "25"}]]])
 
-(def ^:private launch-tips
-  "Key chip + description pairs for the launch card's Tips grid. Only things
-   the web client really binds (see the Keyboard table in docs/web-client.md)."
-  [["/" "commands"]
-   ["Alt N" "new chat"]
-   ["Ctrl K" "command palette"]
-   ["Ctrl P" "find files"]])
-
 (defn- launch-header
-  "Welcome card at the top of every chat's timeline: Xi logo, tips, the
+  "Welcome card at the top of every chat's timeline: Xi logo, the
    current model / cwd / AGENTS.md files and a footer hint. It is ordinary
    timeline content, so it scrolls away with the conversation and can be
    scrolled back to. Works for a virtual (not-yet-joined) room too:
@@ -2369,13 +2361,6 @@
     (launch-logo)
     [:div {:class ["launch-tagline"]}
      (if pa? "personal agent" "coding agent")]]
-   [:div {:class ["launch-section"]}
-    [:div {:class ["launch-section-title"]} "Tips"]
-    [:div {:class ["launch-tips"]}
-     (for [[k label] launch-tips]
-       [:div {:class ["launch-tip"] :replicant/key k}
-        [:kbd {:class ["launch-kbd"]} k]
-        [:span label]])]]
    (when (or model cwd (seq agents-files))
      [:div {:class ["launch-section"]}
       [:div {:class ["launch-section-title"]} "Session"]
