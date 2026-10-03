@@ -2123,8 +2123,10 @@
    :cwd …} navigates to the roomless git-status page. nil hides the item."
   ([dispatch! state] (overflow-menu dispatch! state nil))
   ([dispatch! state git-ctx]
-   (let [open? (:web/overflow-menu? state)
-         room  (state/active-room state)]
+   (let [open?     (:web/overflow-menu? state)
+         room      (state/active-room state)
+         ext-items (filter #(or (nil? (:mode %)) (= (:mode %) (:mode git-ctx)))
+                           (nav-items-for state :overflow))]
     [:div {:class ["overflow-menu-wrap"]}
      [:button {:class ["icon-btn" "icon-btn--sm"]
                :title "More"
@@ -2159,20 +2161,6 @@
                                                           :cwd (:cwd git-ctx)})))}}
             (icon/icon {:icon-name :code :size :sm})
             [:span "Git status"]])
-         ;; Extension nav items: :mode-less items always show; :mode-scoped
-         ;; ones only in the matching git-ctx mode, with the ctx keys merged
-         ;; into their event (so e.g. a :project item receives the :cwd).
-         (for [item (nav-items-for state :overflow)
-               :when (or (nil? (:mode item)) (= (:mode item) (:mode git-ctx)))]
-           [:button {:class ["overflow-menu-item"]
-                     :replicant/key (str "nav-" (:label item))
-                     :on {:click (fn [e]
-                                   (.stopPropagation e)
-                                   (dispatch! {:type :overflow/close})
-                                   (dispatch! (merge (:event item)
-                                                     (select-keys git-ctx [:cwd :room-id :number]))))}}
-            (icon/icon {:icon-name (:icon item) :size :sm})
-            [:span (:label item)]])
          (when room
            [:button {:class ["overflow-menu-item"]
                      :on {:click (fn [e]
@@ -2196,6 +2184,24 @@
                                  (dispatch! {:type :appearance/open}))}}
           (icon/icon {:icon-name :settings :size :sm})
           [:span "Appearance"]]
+         ;; Extension nav items get their own section: :mode-less items always
+         ;; show; :mode-scoped ones only in the matching git-ctx mode, with the
+         ;; ctx keys merged into their event (so e.g. a :project item receives
+         ;; the :cwd).
+         (when (seq ext-items)
+           (list
+            [:div {:class ["overflow-menu-divider"]
+                   :replicant/key "overflow-ext-divider"}]
+            (for [item ext-items]
+              [:button {:class ["overflow-menu-item"]
+                        :replicant/key (str "nav-" (:label item))
+                        :on {:click (fn [e]
+                                      (.stopPropagation e)
+                                      (dispatch! {:type :overflow/close})
+                                      (dispatch! (merge (:event item)
+                                                        (select-keys git-ctx [:cwd :room-id :number]))))}}
+               (icon/icon {:icon-name (:icon item) :size :sm})
+               [:span (:label item)]])))
          [:div {:class ["overflow-menu-divider"]}]
          [:button {:class ["overflow-menu-item"]
                    :on {:click (fn [e]
