@@ -277,7 +277,7 @@
    router paths (e.g. /chat/...). Returns a Promise<Response>.
 
    icon-variant selects which favicon this instance serves at the shared
-   /apple-touch-icon.png URL: \"personal\" and \"hetzner\" map to their
+   /apple-touch-icon.png URL: \"personal\" and \"green\" map to their
    -<variant>.png sibling, everything else (incl. \"desktop\") keeps the base
    file. Each host only ever runs one variant, so URL-level caching stays
    consistent."
@@ -287,7 +287,7 @@
         pathname (js/decodeURIComponent (.-pathname url))
         rel  (if (= "/" pathname) "index.html" (.replace pathname #"^/+" ""))
         rel  (if (and (= rel "apple-touch-icon.png")
-                      (contains? #{"personal" "hetzner"} icon-variant))
+                      (contains? #{"personal" "green"} icon-variant))
                (str "apple-touch-icon-" icon-variant ".png")
                rel)
         ;; Normalize + contain to public-dir (no path traversal)
@@ -347,7 +347,7 @@
   (let [sockets (js/Map.)
         agent?  (some? agent-id)
         ;; Which favicon this instance serves at /apple-touch-icon.png. XI_ICON
-        ;; overrides (e.g. hetzner--xi sets "hetzner"); otherwise agent
+        ;; overrides (e.g. "green"); otherwise agent
         ;; hosts get the warm "personal" icon and coding hosts the "desktop" one.
         icon-variant (or (some-> (aget js/process.env "XI_ICON")
                                   (.trim)

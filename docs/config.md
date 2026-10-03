@@ -137,7 +137,7 @@ never reach the session list (`xi.session/make-throwaway-config-dir!`).
 | `XI_TLS_PORT` | `7443` | HTTPS/`wss://` port (when certs exist). |
 | `XI_TLS_CERT` | `~/.config/xi/tls/xi.crt` | TLS certificate path. Setting it (or `XI_TLS_KEY`) forces TLS on. |
 | `XI_TLS_KEY` | `~/.config/xi/tls/xi.key` | TLS private key path. |
-| `XI_ICON` | `desktop` (`personal` on an agent server) | Icon variant served at `/apple-touch-icon.png` (e.g. `personal`). |
+| `XI_ICON` | `desktop` (`personal` on an agent server) | Icon variant served at `/apple-touch-icon.png`: `desktop`, `personal` or `green`. |
 
 See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 
