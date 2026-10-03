@@ -481,9 +481,9 @@
                                                (true? value)  2
                                                :else          1))
                                        (dlg/confirm-options dialog))]
-    [:button {:class ["confirm-btn" (if (false? value)
-                                      "confirm-btn--deny"
-                                      "confirm-btn--allow")]
+    [:button {:class ["confirm-btn" (cond (false? value) "confirm-btn--deny"
+                                          (true? value)  "confirm-btn--allow"
+                                          :else          "confirm-btn--extra")]
               :on {:click (fn [_] (answer! value))}}
      label]))
 

@@ -2823,16 +2823,32 @@ code a:hover,
   transition: background-color 0.15s;
 }
 
+/* Clear hierarchy: Allow is the one solid button, extras (Always, …) are
+   accent-outlined, Deny is a quiet ghost pushed to the far left. */
 .confirm-btn--deny {
-  background: var(--bg-1);
+  margin-right: auto;
+  background: transparent;
+  border-color: transparent;
   color: var(--fg-1);
 }
 
 .confirm-btn--deny:hover {
   background: var(--bg-2, rgba(128,128,128,0.2));
+  color: var(--red-fg, #ef4444);
+}
+
+.confirm-btn--extra {
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.confirm-btn--extra:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .confirm-btn--allow {
+  padding-inline: var(--size-6);
   background: var(--accent);
   color: var(--bg-0);
 }
