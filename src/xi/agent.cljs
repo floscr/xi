@@ -491,6 +491,7 @@
                        ;; option keywords from xi.dialog/confirm-option; the
                        ;; renderers build their buttons/keys from that data.
                        ;; :diff {:path :text} previews a write/edit's change.
+                       ;; :call {:name :arguments} names the gated tool call.
                        :confirm!  (when ask!
                                     (fn confirm!
                                       ([message] (confirm! message nil))
@@ -499,7 +500,8 @@
                                              {:room-id room-id
                                               :dialog  (cond-> {:type :confirm :message message}
                                                          (:options opts) (assoc :options (:options opts))
-                                                         (:diff opts)    (assoc :diff (:diff opts)))}))))}
+                                                         (:diff opts)    (assoc :diff (:diff opts))
+                                                         (:call opts)    (assoc :call (:call opts)))}))))}
              policy1 (when tool-policy
                      (fn [tool-call] (tool-policy tool-call tool-ctx)))
              ;; The turn's cwd doesn't exist on this host (e.g. a Pi session

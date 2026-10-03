@@ -2583,10 +2583,11 @@
                             (min fs natural)
                             natural)
                   ;; Permission-gate correlation: the gate fires while its
-                  ;; tool-call is already in history as a :running entry (and
-                  ;; gating serializes the turn, so there's exactly one). Attach
-                  ;; the first pending :confirm dialog to that tool block so the
-                  ;; ask renders as a zone inside the same grey box.
+                  ;; tool-call is already in history as a :running entry. Other
+                  ;; tool calls can be running too (parallel calls), so the
+                  ;; dialog's :call picks the gated one (dlg/permission-tool-index).
+                  ;; Attach the first pending :confirm dialog to that tool block
+                  ;; so the ask renders as a zone inside the same grey box.
                   resolved-list (get-in state [:web/resolved-dialogs (:id room)])
                   resolved-by-tool (into {} (keep (fn [e] (when-let [t (:tool-id e)] [t e]))
                                                   resolved-list))
@@ -2595,12 +2596,7 @@
                   ;; running tool were scrolled off we must NOT suppress the
                   ;; standalone dialog, or its answer buttons would vanish.
                   perm-tool-idx (when (= :confirm (:type pending-dialog))
-                                  (->> (range (dec total) (dec start) -1)
-                                       (filter (fn [i]
-                                                 (let [e (nth entries i)]
-                                                   (and (= :tool-call (:kind e))
-                                                        (= :running (:status e))))))
-                                       first))
+                                  (dlg/permission-tool-index pending-dialog entries start))
                   perm-answer!
                   (when perm-tool-idx
                     (let [{:keys [id type message text options]} pending-dialog

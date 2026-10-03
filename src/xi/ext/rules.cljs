@@ -280,7 +280,12 @@
                               :else   (ask-message req)))
                            (let [diff (ask-diff req)]
                              (cond-> {:options (recommend-options options req)}
-                               diff (assoc :diff diff))))
+                               diff (assoc :diff diff)
+                               ;; which tool call is gated, so a client can
+                               ;; render the ask on that call's block
+                               (:tool-name req)
+                               (assoc :call {:name      (:tool-name req)
+                                             :arguments (:arguments req)}))))
                  (.then (fn [ans]
                           (cond
                             (= ans :recommend)

@@ -38,6 +38,37 @@
   (is (= [{:name "rule" :label "Rule" :value "{:a 1}"}]
          (dialog/form-fields {:fields [{:name "rule" :value "{:a 1}"}]}))))
 
+(def ^:private parallel-history
+  "A write waiting on its ask, with a grep started (and still running) after it."
+  [{:kind :tool-call :id "w" :status :running
+    :tool "mcp__xi-tools__write" :arguments {"path" "/a.clj" "content" "x"}}
+   {:kind :tool-call :id "g" :status :running
+    :tool "mcp__xi-tools__grep" :arguments {:pattern "log-in"}}])
+
+(deftest permission-tool-index-picks-the-gated-call
+  (is (= 0 (dialog/permission-tool-index
+            {:call {:name "write" :arguments {:path "/a.clj" :content "x"}}}
+            parallel-history 0))
+      "matches by name (sans MCP prefix) and arguments (key type ignored), not recency"))
+
+(deftest permission-tool-index-no-call-falls-back-to-newest-running
+  (is (= 1 (dialog/permission-tool-index {} parallel-history 0))))
+
+(deftest permission-tool-index-nil-without-a-match
+  (is (nil? (dialog/permission-tool-index
+             {:call {:name "write" :arguments {:path "/other.clj"}}}
+             parallel-history 0))
+      "standalone dialog instead of the wrong block")
+  (is (nil? (dialog/permission-tool-index
+             {:call {:name "write" :arguments {:path "/a.clj" :content "x"}}}
+             parallel-history 1))
+      "entries before the rendered window are not considered"))
+
+(deftest permission-tool-index-ignores-finished-calls
+  (is (nil? (dialog/permission-tool-index
+             {:call {:name "grep" :arguments {:pattern "log-in"}}}
+             (assoc-in parallel-history [1 :status] :done) 0))))
+
 (deftest resolved-label-from-options
   (let [d {:options [:yes :no :always]}]
     (is (= "Allowed" (dialog/resolved-label d true)))

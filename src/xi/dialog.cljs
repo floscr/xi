@@ -10,7 +10,9 @@
    A :form dialog carries :fields — a vector of {:name … :label …} maps —
    and resolves to a map of field name → entered text (or nil on cancel).
    Emitters only need a field's :name; :label defaults to a humanized name."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [clojure.walk :as walk]
+            [xi.util :as util]))
 
 (def confirm-option
   "Canonical confirm options, keyed by the keyword that appears in a dialog's
@@ -50,6 +52,34 @@
   (or (some #(when (= (:value %) value) (:resolved-label %))
             (confirm-options dialog))
       (if value "Allowed" "Denied")))
+
+(defn- same-call?
+  "Does history `entry` (a :tool-call) belong to the gated `call`
+   ({:name :arguments}) a confirm dialog was raised for? Tool names compare
+   without their MCP prefix and arguments with string keys, since the entry's
+   come from the provider stream and the call's from the runner frame."
+  [{:keys [name arguments]} entry]
+  (and (= (util/strip-mcp-prefix (str name))
+          (util/strip-mcp-prefix (str (:tool entry))))
+       (= (walk/stringify-keys (or arguments {}))
+          (walk/stringify-keys (or (:arguments entry) {})))))
+
+(defn permission-tool-index
+  "Index in `entries` (≥ `start`) of the running tool call a pending :confirm
+   `dialog` is gating, or nil. Several tool calls can be running at once while
+   one waits on its permission ask, so the dialog's :call ({:name :arguments}
+   of the gated call) picks the entry; the newest running match wins. A dialog
+   without :call falls back to the newest running tool call. No match → nil,
+   so the caller renders the dialog standalone and its buttons never vanish."
+  [dialog entries start]
+  (let [call (:call dialog)]
+    (->> (range (dec (count entries)) (dec start) -1)
+         (filter (fn [i]
+                   (let [e (nth entries i)]
+                     (and (= :tool-call (:kind e))
+                          (= :running (:status e))
+                          (or (nil? call) (same-call? call e))))))
+         first)))
 
 (defn humanize-name
   "\"commit-message\" → \"Commit message\"."
