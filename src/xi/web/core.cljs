@@ -1409,24 +1409,26 @@
 ;; upward USER scroll apart from content growth / our own snap-to-bottom (both
 ;; of which keep or increase scrollTop). See attach-scroll-listener!.
 (defonce ^:private prev-scroll-top (atom 0))
-;; Timestamp (ms) until which scrollTop changes are treated as programmatic, not
-;; a user gesture. A snap-to-bottom (the down-arrow, prompt-nav resume, the
-;; ResizeObserver, the post-render RAF) can trigger a reflow — e.g. unfreezing
-;; the render window trims nodes above the viewport, so the browser shifts
-;; scrollTop DOWN — and that decrease must NOT be mistaken for the user
-;; scrolling up and disable auto-scroll. See scroll listener + mark-programmatic-scroll!.
-(defonce ^:private programmatic-scroll-until (atom 0))
-(defn- mark-programmatic-scroll! []
-  (reset! programmatic-scroll-until (+ (js/Date.now) 250)))
+;; Only the user may turn auto-scroll off: a scrollTop decrease counts as
+;; "scrolled up" solely while a user gesture is in flight. Layout alone moves
+;; scrollTop down all the time — the render window slides on every appended
+;; entry, dropping the top node in the same render that grows the bottom, and
+;; Chrome's scroll anchoring then lowers scrollTop by the dropped height while
+;; the new content leaves us > 40px from the bottom. Treating that as the user
+;; (as a former "outside the programmatic-snap window" heuristic did whenever
+;; the stream had paused) silently dropped follow mode mid-answer.
+;;
 ;; Timestamp (ms) until which scrollTop changes are treated as a USER gesture,
-;; refreshed on every touchmove/wheel on the timeline. This overrides the
-;; programmatic window above: while a stream is appending, snap-to-bottom runs
-;; on every content growth and keeps the programmatic window perpetually open,
-;; which used to swallow the user's touch-scroll up (mobile especially — touch
-;; scrolling emits only scroll events) and yank them back to the bottom.
+;; refreshed on touchmove, upward wheel, and scroll-up keys.
 (defonce ^:private user-scroll-intent-until (atom 0))
 (defn- mark-user-scroll-intent! []
   (reset! user-scroll-intent-until (+ (js/Date.now) 400)))
+;; True while a pointer is held down on the timeline — a scrollbar drag or a
+;; drag-select past the edge, which fire no wheel/touch events.
+(defonce ^:private timeline-pointer-down? (atom false))
+(defn- user-scrolling? []
+  (or @timeline-pointer-down?
+      (<= (js/Date.now) @user-scroll-intent-until)))
 ;; Set at init (see below); referenced by the scroll listener to push the
 ;; scrolled-up flag into state. Declared here so attach-scroll-listener! can
 ;; reach it without a forward reference.
@@ -1501,6 +1503,12 @@
      (js/requestAnimationFrame
       (fn []
         (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
+          ;; A modal <dialog> left `open` elsewhere (e.g. the palette shell
+          ;; whose content was unrendered — invisible, but still modal) makes
+          ;; the rest of the page inert, so .focus() would silently no-op and
+          ;; the keyboard would be stuck. Close any such stray first.
+          (doseq [^js d (array-seq (.querySelectorAll js/document "dialog[open]"))]
+            (when-not (.contains d el) (.close d)))
           (.focus el #js {:preventScroll true})))))
    ;; Escape from the composer: drop focus back to the page (normal mode).
    :compose/blur
@@ -2165,7 +2173,10 @@
    next/prev session in sidebar order (no wrap; from a non-chat view they open
    the first session). Chat pane, normal mode: `i` focuses the composer (enter
    insert), `G` scrolls the timeline to the bottom.
-   Chat pane, insert mode: Escape blurs the composer (back to normal).
+   Chat pane, insert mode: Escape blurs the composer (back to normal); in any
+   other text field Escape blurs that field. Insert mode only counts a
+   *visible* field (xi.web.keymap/current-mode), so focus stranded in a hidden
+   input never swallows the normal-mode keys.
    Physical `:code`s so they fire regardless of the character an Alt-combo
    emits on the active layout."
   []
@@ -2193,6 +2204,15 @@
   (keymap/register! {:id :compose-blur :code "Escape" :view :chat :mode :insert
                      :when (fn [_] (keymap/compose-focused?))
                      :run (fn [_ dispatch! _] (dispatch! {:type :compose/blur}))})
+  ;; Escape in any other text field (sidebar search, bubble edit, diff
+  ;; modify…) drops its focus so the next key lands in normal mode — `i` then
+  ;; reaches the composer without a mouse. Fields inside an open <dialog> are
+  ;; left to the dialog's own Escape (cancel → close), and a field whose
+  ;; handler preventDefaults Escape (skill form) opts out automatically.
+  (keymap/register! {:id :field-blur :code "Escape" :view :any :mode :insert
+                     :when (fn [_] (and (not (keymap/compose-focused?))
+                                        (not (keymap/in-open-dialog?))))
+                     :run (fn [_ _ _] (keymap/blur-active!))})
   ;; Escape closes the Appearance dialog (an overlay, not a native <dialog>).
   (keymap/register! {:id :appearance-close :code "Escape" :view :any :mode :any
                      :when (fn [st] (boolean (:web/appearance-open? st)))

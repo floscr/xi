@@ -3,8 +3,8 @@
 
    A small registry of bindings, each tagged with the view(s) and editing
    mode it applies to. On every keydown we resolve the current view (from
-   `[:web/route :page]`) and the current mode (`:insert` when a text field is
-   focused, else `:normal`) and run the first binding that matches.
+   `[:web/route :page]`) and the current mode (`:insert` when a *visible* text
+   field is focused, else `:normal`) and run the first binding that matches.
 
    Views don't need an explicit mount/unmount lifecycle: a binding is simply
    inert while its `:view`/`:mode` don't match the current context, so scoping
@@ -62,10 +62,36 @@
    (some-> (.-activeElement js/document)
            (.closest ".compose-input-wrapper"))))
 
+(defn- visible?
+  "True when `el` is actually rendered — not display:none / visibility:hidden
+   (or content-visibility:hidden) anywhere up the tree. Browsers leave focus
+   on a text field that gets hidden *after* it was focused (a panel closed by
+   CSS, a popover that unrendered its content…), and that invisible field
+   then swallows every keystroke. Engines without checkVisibility fall back to
+   the offsetParent test (nil for display:none, except position:fixed)."
+  [^js el]
+  (if (.-checkVisibility el)
+    (.checkVisibility el #js {:visibilityProperty true})
+    (or (some? (.-offsetParent el))
+        (= "fixed" (.-position (js/getComputedStyle el))))))
+
 (defn current-mode
-  "`:insert` when a text field is focused, else `:normal`."
+  "`:insert` when a *visible* text field is focused, else `:normal`. A hidden
+   text field that still holds focus doesn't own the keyboard — normal-mode
+   shortcuts (`i` → composer) keep working instead of typing into the void."
   []
-  (if (editable? (.-activeElement js/document)) :insert :normal))
+  (let [el (.-activeElement js/document)]
+    (if (and (editable? el) (visible? el)) :insert :normal)))
+
+(defn in-open-dialog?
+  "True when the focused element sits inside an open native <dialog>."
+  []
+  (boolean (some-> (.-activeElement js/document) (.closest "dialog[open]"))))
+
+(defn blur-active!
+  "Drop focus from whatever element holds it (back to <body> / normal mode)."
+  []
+  (some-> (.-activeElement js/document) .blur))
 
 (defn- view-matches? [want cur]
   (cond

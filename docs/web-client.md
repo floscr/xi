@@ -138,6 +138,27 @@ See [web-offline.md](web-offline.md): localStorage cache hydrates before
 the socket opens; the transport reconnects with 1s→30s backoff and replays
 the last room join.
 
+### Keyboard
+
+`xi.web.keymap` dispatches every keydown to view- and mode-scoped bindings
+(registered in `xi.web.core/install-keybindings!`). Mode is `:insert` while a
+**visible** text field has focus, else `:normal`; focus stranded in a hidden
+field (a closed panel, an unrendered popover) counts as normal mode, so the
+shortcuts below never get swallowed by an invisible input.
+
+| Key | Where | Action |
+|---|---|---|
+| `i` | chat, normal | focus the composer (closes a stray open `<dialog>` first) |
+| `Escape` | composer | blur the composer (back to normal) |
+| `Escape` | any other text field | blur that field (not inside an open `<dialog>`) |
+| `G` | chat, normal | scroll the timeline to the bottom |
+| `Alt+j` / `Alt+k` | chat | next / previous session in sidebar order |
+| `Alt+n` | any | new chat |
+| `Alt+u` | any | jump to the newest finished agent with unread output |
+| `Alt+\` | any | toggle the sidebar drawer |
+| `Ctrl/Cmd+p` | any | fuzzy file finder |
+| `Ctrl/Cmd+k` | any | command palette (ui-runtime) |
+
 ## Web-only state keys
 
 All under the same app atom, never sent over the wire:
