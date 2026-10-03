@@ -83,6 +83,12 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   group and shows a decision icon (✓/✗) at the right of its header. Each
   header is still an individual `<details>` you can click to expand in place
   (`group-viewer-items` in `xi.web.views`)
+- **Dialog focus**: while a dialog is pending (permission ask, select,
+  form…) the timeline gets `.timeline-content--focus` and every post except
+  the one carrying the ask (`.post--focus` — the gated tool block, or the
+  standalone dialog bubble) fades to 40% opacity so the eye lands on the
+  question. Hovering a dimmed post restores it; the fade animates both ways
+  and is disabled under `prefers-reduced-motion`.
 - **Timeline virtualization**: only the last 60 entries render; "Show
   earlier" expands by 40 (`:web/timeline-window`, reset on navigation)
 - **Per-session compose drafts** (`:web/drafts`, keyed by session id;
