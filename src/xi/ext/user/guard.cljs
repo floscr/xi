@@ -19,7 +19,8 @@
 
    Policy (whether a tool call / xi.api.* op runs at all) is NOT here — that is
    the rules engine, which sees these calls tagged :extension id."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xi.api.core :as api-core]))
 
 ;; ── Event allowlist ──────────────────────────────────────────────────────────
 
@@ -112,16 +113,19 @@
     (try (restrict-result id own-fx opts before (f before event))
          (catch :default e (log-blocked id (str "handler threw: " (.-message e))) nil))))
 
-(defn- guard-dispatch [id opts dispatch!]
+(defn- guard-dispatch [id token opts dispatch!]
   (when dispatch!
     (fn [ev]
-      (if (allowed? id (:type ev) opts)
-        (dispatch! ev)
-        (log-blocked id (str "dispatch " (:type ev)))))))
+      (cond
+        ;; code of an unmounted (reloaded / removed) extension: its late
+        ;; callbacks must not touch the app any more
+        (and token (not (api-core/active? token))) nil
+        (allowed? id (:type ev) opts) (dispatch! ev)
+        :else (log-blocked id (str "dispatch " (:type ev)))))))
 
 (defn- guard-ctx [id token opts ctx]
   (cond-> ctx
-    (:dispatch! ctx) (assoc :dispatch! (guard-dispatch id opts (:dispatch! ctx)))
+    (:dispatch! ctx) (assoc :dispatch! (guard-dispatch id token opts (:dispatch! ctx)))
     :always          (assoc :extension id)
     token            (assoc :xi.api/token token)))
 
@@ -141,6 +145,14 @@
            (log-blocked id (str "tool threw: " (.-message e)))
            {:content [{:type "text" :text (str "extension error: " (.-message e))}]
             :is-error true}))))
+
+(defn- guard-hook
+  "A lifecycle hook (:on-mount / :on-unmount): called with the host ctx
+   ({:dispatch! :get-state}) turned into the extension's capability ctx."
+  [id token f]
+  (fn [ctx]
+    (try (f (guard-ctx id token {:user-initiated? false} ctx))
+         (catch :default e (log-blocked id (str "lifecycle hook threw: " (.-message e))) nil))))
 
 (defn- guard-command [id own-fx f]
   (let [opts {:user-initiated? true}]
@@ -171,6 +183,9 @@
 
        (:tool-registry ext)
        (update :tool-registry update-vals (partial guard-tool id token))
+
+       (:on-mount ext)   (update :on-mount (partial guard-hook id token))
+       (:on-unmount ext) (update :on-unmount (partial guard-hook id token))
 
        (:commands ext)
        (update :commands

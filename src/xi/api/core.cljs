@@ -35,6 +35,13 @@
   [id->permissions]
   (reset! declared id->permissions))
 
+;; extension id → {key → dispose fn}: what an extension holds open (spawned
+;; processes, its headless browser). `dispose!` releases all of it when the
+;; extension unmounts (reload / removal), so old code leaves nothing running.
+(defonce ^:private owned (atom {}))
+
+(defonce ^:private own-seq (atom 0))
+
 (defn issue-token!
   "Mint the capability token for extension `id` — an opaque object the loader
    stamps into every ctx it hands that extension (`:xi.api/token`, see
@@ -43,6 +50,30 @@
   (let [t (js/Object.freeze #js {})]
     (.set tokens t id)
     t))
+
+(defn revoke!
+  "Invalidate a token for good: every later xi.api.* call made with a ctx that
+   carries it is refused. Done when its extension unmounts, so closures of the
+   OLD code (a timer, an in-flight promise) can't act after a reload."
+  [token]
+  (when token (.delete tokens token)))
+
+(defn active?
+  "True while `token` is valid, i.e. its extension hasn't unmounted."
+  [token]
+  (boolean (and token (.has tokens token))))
+
+(defn dispose!
+  "Release everything extension `id` still owns → how many resources there were.
+   A failing disposer is logged, never fatal."
+  [id]
+  (let [ds (vals (get @owned id))]
+    (swap! owned dissoc id)
+    (doseq [d ds]
+      (try (d)
+           (catch :default e
+             (js/console.error (str "[user-ext " (name id) "] dispose failed: " (.-message e))))))
+    (count ds)))
 
 (defn caller
   "The id of the extension behind `ctx`, proven by its token. Throws when the
@@ -64,6 +95,18 @@
   "The calling extension's declaration for permission `k`, or nil."
   [ctx k]
   (get-in @declared [(caller ctx) k]))
+
+(defn own!
+  "Register `dispose` (0-arg) as a resource the extension behind `ctx` holds
+   open → a 0-arg release fn for when the resource ends on its own. `dispose!`
+   runs whatever is still registered. Throws for a revoked / foreign ctx.
+   With a `key`, the registration is idempotent: one resource per key (a
+   shared browser, say), a later call replaces the earlier disposer."
+  ([ctx dispose] (own! ctx (swap! own-seq inc) dispose))
+  ([ctx key dispose]
+   (let [id (caller ctx)]
+     (swap! owned assoc-in [id key] dispose)
+     (fn release [] (swap! owned update id dissoc key)))))
 
 (defn base-cwd
   "Where an extension's relative paths resolve: the room cwd, else its data dir."

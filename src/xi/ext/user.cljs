@@ -73,6 +73,9 @@
   #{:id :init :handlers :fx :commands :tool-definitions :tool-registry
     :system-prompt :keybindings :prompt-badge :on-shutdown :on-enable
     :on-disable :permissions
+    ;; load lifecycle: (fn [ctx]) after the extension is (re)registered / before
+    ;; it is replaced or removed (see "Mount lifecycle" below)
+    :on-mount :on-unmount
     ;; web half, collected but not composed node-side
     :routes :pages :nav-items :taps})
 
@@ -177,11 +180,12 @@
                         (assoc base :error reason)
                         ;; the token proves to xi.api.* which extension is
                         ;; calling (see xi.api.core/caller)
-                        (cond-> (assoc base :id (:id ext)
-                                            :ns nsn
-                                            :extension (guard/wrap (dissoc ext :permissions)
-                                                                   (api-core/issue-token! (:id ext))))
-                          (:permissions ext) (assoc :permissions (:permissions ext)))))
+                        (let [token (api-core/issue-token! (:id ext))]
+                          (cond-> (assoc base :id (:id ext)
+                                              :ns nsn
+                                              :token token
+                                              :extension (guard/wrap (dissoc ext :permissions) token))
+                            (:permissions ext) (assoc :permissions (:permissions ext))))))
                     (catch :default e
                       (assoc base :error (str "eval error: " (.-message e)))))]
         (recur (rest files)
@@ -271,7 +275,28 @@
                      :user-ext/sync
                      (fn [st {:keys [room-id ext-id state]}]
                        (when (get-in st [:rooms room-id])
-                         {:state (assoc-in st [:rooms room-id :ext ext-id] state)}))}
+                         {:state (assoc-in st [:rooms room-id :ext ext-id] state)}))
+                     ;; an extension (re)mounted: its :init keys the live slices
+                     ;; lack are seeded (existing values win, so a reload keeps
+                     ;; its state), and changed room slices are synced to clients
+                     :user-ext/mounted
+                     (fn [st {:keys [ext-id room-init process-init]}]
+                       (let [seed  (fn [init] #(merge init %))
+                             st'   (cond-> st
+                                     process-init (update-in [:ext ext-id] (seed process-init)))
+                             st''  (if room-init
+                                     (reduce #(update-in %1 [:rooms %2 :ext ext-id] (seed room-init))
+                                             st' (keys (:rooms st')))
+                                     st')
+                             slice #(get-in %1 [:rooms %2 :ext ext-id])
+                             moved (filter #(not= (slice st %) (slice st'' %)) (keys (:rooms st'')))]
+                         (when-not (= st st'')
+                           {:state   st''
+                            :effects (mapv (fn [rid] [:app/dispatch {:type    :user-ext/sync
+                                                                      :room-id rid
+                                                                      :ext-id  ext-id
+                                                                      :state   (slice st'' rid)}])
+                                           moved)})))}
    :server-fx       (fn [{:keys [send!]}]
                       {:user-ext/web-sources-reply
                        (fn [_ {:keys [client-id]}]
@@ -279,12 +304,64 @@
                                            :extensions (web-bundles)}))})
    :roomless-events #{:user-ext/web-sources}})
 
+;; ── Mount lifecycle ───────────────────────────────────────────────────────
+
+;; A loaded extension is *mounted* once the app is running (`start!`) and
+;; *unmounted* when a reload replaces it or its file goes away:
+;;
+;;   mount    seed the extension's `:init` state into the rooms that already
+;;            exist (new keys only, the existing slice wins — state survives a
+;;            reload), then call its `:on-mount (fn [ctx])`;
+;;   unmount  call its `:on-unmount (fn [ctx])`, release everything it still
+;;            owns (xi.api.core/dispose!: spawned processes, its browser) and
+;;            revoke its token, so closures of the old code (timers, in-flight
+;;            promises) can neither call xi.api.* nor dispatch any more.
+;;
+;; `ctx` is {:dispatch! :get-state :extension :xi.api/token}: the capability
+;; ctx handlers' fx get, minus a room. Room state is NOT reset on reload.
+
+(defonce ^:private host
+  ;; {:dispatch! :get-state} of the running app; nil until `start!`
+  (atom nil))
+
+(defn- mount! [{:keys [id extension]}]
+  (when-let [h @host]
+    ((:dispatch! h) {:type         :user-ext/mounted
+                     :ext-id       id
+                     :room-init    (get-in extension [:init :room])
+                     :process-init (get-in extension [:init :process])})
+    (when-let [f (:on-mount extension)] (f h))))
+
+(defn- unmount! [{:keys [id extension token]}]
+  (when-let [f (and @host (:on-unmount extension))] (f @host))
+  (api-core/dispose! id)
+  (api-core/revoke! token))
+
+(defn start!
+  "Tell the loader the app is running (`app` is xi.core.app/create-app's
+   result): extensions mount from now on, and the ones already loaded mount now.
+   Call once after create-app; before it, loading only registers."
+  [{:keys [dispatch! state]}]
+  (reset! host {:dispatch! dispatch! :get-state (fn [] @state)})
+  (doseq [entry @loaded :when (:extension entry)]
+    (mount! entry)))
+
+(defn stop!
+  "Unmount every loaded extension and forget the app (shutdown; tests)."
+  []
+  (doseq [entry @loaded :when (:id entry)]
+    (unmount! entry))
+  (reset! host nil))
+
 (defn- register-all!
-  "Register the accepted extensions of `entries` into `mgr`; unregister any
-   previously-loaded user id that's no longer present (file deleted / renamed /
-   now rejected). Logs a one-line summary."
+  "Unmount the previously-loaded extensions, register the accepted extensions
+   of `entries` into `mgr` (unregistering any previously-loaded user id that's
+   no longer present: file deleted / renamed / now rejected) and mount them.
+   Logs a one-line summary."
   [mgr entries]
   (let [new-ids (set (keep :id entries))]
+    (doseq [old @loaded :when (:id old)]
+      (unmount! old))
     (doseq [old (set (keep :id @loaded)) :when (not (contains? new-ids old))]
       (manager/unregister! mgr old))
     (reset! loaded entries)
@@ -293,6 +370,8 @@
                                      entries))
     (doseq [{:keys [extension]} entries :when extension]
       (manager/register! mgr extension))
+    (doseq [entry entries :when (:extension entry)]
+      (mount! entry))
     (let [ok      (keep :id entries)
           bad     (filter :error entries)
           skipped (filter :skipped? entries)]
@@ -327,8 +406,8 @@
    or the agent profile's — see `enabled-files`) and register each valid
    extension into `mgr` (call AFTER the built-ins + MCP are seeded). Returns
    the load report."
-  [mgr]
-  (register-all! mgr (load-dir (extensions-dir) (taken mgr))))
+  ([mgr] (install! mgr (extensions-dir)))
+  ([mgr dir] (register-all! mgr (load-dir dir (taken mgr)))))
 
 (def ^:private mirror-keys
   "What a TUI client needs of a user extension: the handlers (an event type
@@ -353,11 +432,16 @@
           (mapv #(select-keys % mirror-keys))))))
 
 (defn reload!
-  "Re-evaluate the extensions dir and re-register (dropping ids whose file is
-   gone). Tool changes apply next turn; handler/command/keybinding changes need
-   a restart, same as built-ins. → {:loaded [ids] :rejected [{:file :error}]}."
-  [mgr]
-  (let [entries (register-all! mgr (load-dir (extensions-dir) (taken mgr)))]
-    {:loaded   (vec (keep :id entries))
-     :rejected (mapv #(select-keys % [:file :error]) (filter :error entries))
-     :skipped  (mapv #(node-path/basename (:file %)) (filter :skipped? entries))}))
+  "Re-evaluate the extensions dir (each file in a fresh sandbox, siblings
+   included) and swap it in live: the old extensions unmount, the new ones
+   register and mount, ids whose file is gone are dropped. Handlers, commands
+   and fx follow at once where the assembly reads them through
+   xi.ext.manager/live-view (server, standalone); tool changes apply next turn;
+   keybindings need a restart. Room state is kept.
+   → {:loaded [ids] :rejected [{:file :error}] :skipped [file names]}."
+  ([mgr] (reload! mgr (extensions-dir)))
+  ([mgr dir]
+   (let [entries (register-all! mgr (load-dir dir (taken mgr)))]
+     {:loaded   (vec (keep :id entries))
+      :rejected (mapv #(select-keys % [:file :error]) (filter :error entries))
+      :skipped  (mapv #(node-path/basename (:file %)) (filter :skipped? entries))})))

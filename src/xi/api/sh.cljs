@@ -37,22 +37,25 @@
     s))
 
 (defn- spawn!
-  "Run argv in dir → Promise<{:exit :out :err}>, killed after TIMEOUT_MS.
+  "Run argv in dir → Promise<{:exit :out :err}>, killed after TIMEOUT_MS or
+   when the extension behind `ctx` unmounts (xi.api.core/dispose!).
    node:child_process (not Bun.spawn) so it runs under node tests too."
-  [argv dir]
+  [ctx argv dir]
   (js/Promise.
    (fn [resolve _]
-     (let [out   #js []
-           err   #js []
-           proc  (cp/spawn (first argv) (clj->js (rest argv))
-                           #js {:cwd dir :env (child-env)
-                                :stdio #js ["ignore" "pipe" "pipe"]})
-           timer (js/setTimeout #(.kill proc) TIMEOUT_MS)
-           done  (fn [code msg]
-                   (js/clearTimeout timer)
-                   (resolve {:exit (or code -1)
-                             :out  (clip (.join out ""))
-                             :err  (clip (str (.join err "") msg))}))]
+     (let [out     #js []
+           err     #js []
+           proc    (cp/spawn (first argv) (clj->js (rest argv))
+                             #js {:cwd dir :env (child-env)
+                                  :stdio #js ["ignore" "pipe" "pipe"]})
+           release (core/own! ctx #(.kill proc))
+           timer   (js/setTimeout #(.kill proc) TIMEOUT_MS)
+           done    (fn [code msg]
+                     (release)
+                     (js/clearTimeout timer)
+                     (resolve {:exit (or code -1)
+                               :out  (clip (.join out ""))
+                               :err  (clip (str (.join err "") msg))}))]
        (.on (.-stdout proc) "data" #(.push out (str %)))
        (.on (.-stderr proc) "data" #(.push err (str %)))
        (.on proc "error" #(done -1 (.-message %)))
@@ -86,7 +89,7 @@
                        (fs/mkdirSync dir #js {:recursive true}))
                      (if (server-control/kind cmd)
                        (server-control/run-detached! cmd dir)
-                       (-> (spawn! argv dir)
+                       (-> (spawn! ctx argv dir)
                            (.then (fn [{:keys [exit out err] :as r}]
                                     (if (zero? exit)
                                       (let [out' (str/trimr out)]

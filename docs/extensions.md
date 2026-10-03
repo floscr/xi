@@ -371,7 +371,7 @@ namespace docstring is the authoritative description.
 | subagent | Background sub-agents (`spawn_subagent` …); `/subagents`. |
 | chrome | Proxies `chrome-devtools-mcp` as xi tools (opt-in, `XI_CHROME_TOOLS`). Hosts element-picker (`/pick`), design-mode (`/design`) and style-editor. See [chrome-mcp.md](chrome-mcp.md), [element-picker.md](element-picker.md), [design-mode.md](design-mode.md), [style-editor.md](style-editor.md). |
 | mcp | Wraps external MCP servers (`~/.config/xi/mcp.edn`) as extensions; `/mcp`. See [mcp-servers.md](mcp-servers.md). |
-| extensions | `/ext list\|enable\|disable\|reload` over the live extension manager (`reload` re-reads [user extensions](user-extensions.md)). |
+| extensions | `/ext list\|enable\|disable\|reload` over the live extension manager (`reload` re-reads [user extensions](user-extensions.md); agents get the same as the `ext_reload` tool). |
 
 **Sessions, review & workflow**
 

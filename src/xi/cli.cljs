@@ -371,45 +371,53 @@ See docs/cli.md for the full reference.")
                  :commands (commands/all-commands (:commands composed))
                  :prompt-badge (fn [st] (ext/prompt-badges composed st))
                  :keybindings (:keybindings composed)})
-        handlers (-> (make-handlers (:commands composed))
-                     (ext/merge-handlers composed)
-                     (merge (:handlers dialogs)))
-        {:keys [dispatch!]}
-        (app/create-app {:initial-state (state/initial-state
-                                         {:mode :standalone
-                                          :port (:port opts)
-                                          :ext (:process-ext-init composed)})
-                         :handlers      handlers
-                         :transform-event (ext/transform-event composed)
-                         :effects       (merge (agent/create-fx
-                                                providers
-                                                (tooling-opts mgr (:ask! dialogs)))
-                                               (subagent/create-fx
-                                                providers
-                                                (subagent-opts mgr (:ask! dialogs)))
-                                               (fx/create-fx ring providers
-                                                 {:system-prompt-fn
-                                                  (fn [cwd]
-                                                    (let [parts (into (system-prompt/load-agents-parts cwd)
-                                                                      (ext/system-prompt-parts composed cwd))]
-                                                      {:system       (system-prompt/parts->system parts)
-                                                       :system-parts parts}))})
-                                               (compaction/create-fx providers)
-                                               (naming/create-fx providers
-                                               {:make-config-dir!   session/make-throwaway-config-dir!
-                                                :remove-config-dir! session/remove-config-dir!})
-                                               (quick-replies/create-fx providers
-                                               {:make-config-dir!   session/make-throwaway-config-dir!
-                                                :remove-config-dir! session/remove-config-dir!})
-                                               (summary/create-fx providers
-                                               {:make-config-dir!   session/make-throwaway-config-dir!
-                                                :remove-config-dir! session/remove-config-dir!})
-                                               (:fx composed)
-                                               (:fx dialogs)
-                                               (:effects client))
-                         :on-render     (:render client)
-                         :ring          ring
-                         :jsonl-writer  jsonl-writer})]
+        ;; Late-bound (xi.core.app): a live extension reload recomposes, and the
+        ;; handlers (commands included) and fx are rebuilt from the new set. The
+        ;; TUI's command completion list (above) is fixed at startup.
+        handlers (manager/live-view
+                  mgr
+                  (fn [composed]
+                    (-> (make-handlers (:commands composed))
+                        (ext/merge-handlers composed)
+                        (merge (:handlers dialogs)))))
+        static-fx (merge (agent/create-fx
+                          providers
+                          (tooling-opts mgr (:ask! dialogs)))
+                         (subagent/create-fx
+                          providers
+                          (subagent-opts mgr (:ask! dialogs)))
+                         (fx/create-fx ring providers
+                           {:system-prompt-fn
+                            (fn [cwd]
+                              (let [parts (into (system-prompt/load-agents-parts cwd)
+                                                (ext/system-prompt-parts (manager/composed mgr) cwd))]
+                                {:system       (system-prompt/parts->system parts)
+                                 :system-parts parts}))})
+                         (compaction/create-fx providers)
+                         (naming/create-fx providers
+                         {:make-config-dir!   session/make-throwaway-config-dir!
+                          :remove-config-dir! session/remove-config-dir!})
+                         (quick-replies/create-fx providers
+                         {:make-config-dir!   session/make-throwaway-config-dir!
+                          :remove-config-dir! session/remove-config-dir!})
+                         (summary/create-fx providers
+                         {:make-config-dir!   session/make-throwaway-config-dir!
+                          :remove-config-dir! session/remove-config-dir!}))
+        app (app/create-app {:initial-state (state/initial-state
+                                             {:mode :standalone
+                                              :port (:port opts)
+                                              :ext (:process-ext-init composed)})
+                             :handlers      handlers
+                             :transform-event (ext/transform-event composed)
+                             :effects       (manager/live-view
+                                             mgr
+                                             (fn [composed]
+                                               (merge static-fx (:fx composed) (:fx dialogs) (:effects client))))
+                             :on-render     (:render client)
+                             :ring          ring
+                             :jsonl-writer  jsonl-writer})
+        {:keys [dispatch!]} app
+        _ (user-ext/start! app)]
     (when jsonl-writer
       (js/process.on "exit" (fn [] ((:flush! jsonl-writer)))))
     (dispatch! {:type :room/create
@@ -920,10 +928,15 @@ See docs/cli.md for the full reference.")
                 {:server-opts server-opts
                  :providers providers
                  :agent-id agent
-                 :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts composed cwd))
-                 :room-ext-init (:room-ext-init composed)
+                 :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts (manager/composed mgr) cwd))
+                 :room-ext-init (manager/live-view mgr :room-ext-init)
                  :ext composed})
-        handlers (-> (make-handlers (:commands composed))
+        ;; Late-bound (xi.core.app): a live extension reload recomposes, and the
+        ;; handlers (commands included) and fx are rebuilt from the new set.
+        handlers (manager/live-view
+                  mgr
+                  (fn [composed]
+                   (-> (make-handlers (:commands composed))
                      (ext/merge-handlers composed)
                      (merge (:handlers dialogs))
                      (merge rm/handlers)
@@ -938,41 +951,45 @@ See docs/cli.md for the full reference.")
                      (update :agent/turn-end events/chain rm/turn-end-room-cleanup)
                      (assoc :client/disconnect
                             (events/chain rm/client-disconnect-cleanup
-                                          (:client/disconnect events/core-handlers))))
+                                          (:client/disconnect events/core-handlers))))))
         app (app/create-app {:initial-state (state/initial-state
                                              {:mode :server
                                               :port port
                                               :ext (:process-ext-init composed)})
                              :handlers handlers
                              :transform-event (ext/transform-event composed)
-                             :effects  (merge (agent/create-fx
-                                               providers
-                                               (tooling-opts mgr (:ask! dialogs)))
-                                              (subagent/create-fx
-                                               providers
-                                               (subagent-opts mgr (:ask! dialogs)))
-                                              (fx/create-fx ring providers
-                                                {:system-prompt-fn
-                                                 (fn [cwd]
-                                                   (let [parts (into (system-prompt/load-agents-parts cwd)
-                                                                     (ext/system-prompt-parts composed cwd))]
-                                                     {:system       (system-prompt/parts->system parts)
-                                                      :system-parts parts}))})
-                                              (compaction/create-fx providers)
-                                              (naming/create-fx providers
-                                               {:make-config-dir!   session/make-throwaway-config-dir!
-                                                :remove-config-dir! session/remove-config-dir!})
-                                              (quick-replies/create-fx providers
-                                               {:make-config-dir!   session/make-throwaway-config-dir!
-                                                :remove-config-dir! session/remove-config-dir!})
-                                              (summary/create-fx providers
-                                               {:make-config-dir!   session/make-throwaway-config-dir!
-                                                :remove-config-dir! session/remove-config-dir!})
-                                              (:fx composed)
-                                              (:fx dialogs)
-                                              (:fx server))
+                             :effects  (let [static-fx
+                                             (merge (agent/create-fx
+                                                     providers
+                                                     (tooling-opts mgr (:ask! dialogs)))
+                                                    (subagent/create-fx
+                                                     providers
+                                                     (subagent-opts mgr (:ask! dialogs)))
+                                                    (fx/create-fx ring providers
+                                                      {:system-prompt-fn
+                                                       (fn [cwd]
+                                                         (let [parts (into (system-prompt/load-agents-parts cwd)
+                                                                           (ext/system-prompt-parts (manager/composed mgr) cwd))]
+                                                           {:system       (system-prompt/parts->system parts)
+                                                            :system-parts parts}))})
+                                                    (compaction/create-fx providers)
+                                                    (naming/create-fx providers
+                                                     {:make-config-dir!   session/make-throwaway-config-dir!
+                                                      :remove-config-dir! session/remove-config-dir!})
+                                                    (quick-replies/create-fx providers
+                                                     {:make-config-dir!   session/make-throwaway-config-dir!
+                                                      :remove-config-dir! session/remove-config-dir!})
+                                                    (summary/create-fx providers
+                                                     {:make-config-dir!   session/make-throwaway-config-dir!
+                                                      :remove-config-dir! session/remove-config-dir!}))]
+                                         ;; the extensions' fx follow the live composition
+                                         (manager/live-view
+                                          mgr
+                                          (fn [composed]
+                                            (merge static-fx (:fx composed) (:fx dialogs) (:fx server)))))
                              :on-runaway (fn [msg] (log-crash! "dispatch-livelock" msg))
                              :ring ring})
+        _ (user-ext/start! app)
         {actual-port :port} ((:start! server) app {:port port})]
     (if headless?
       (do (js/console.error (str "[xi] Headless server on ws://localhost:" actual-port))

@@ -90,28 +90,65 @@
       (contains? url-attrs attr)                             (not (unsafe-url? attr v))
       :else                                                  true)))
 
-(defn- sanitize-attrs [attrs]
-  (let [attrs (into {} (filter (fn [[k v]] (safe-attr? k v))) attrs)]
+(defn- sanitize-attrs [bind attrs]
+  (let [attrs (into {} (filter (fn [[k v]] (safe-attr? k v))) (bind attrs))]
     (cond-> attrs
       (map? (:on attrs))
       (update :on #(into {} (remove (fn [[_ h]] (string? h))) %)))))
 
 (defn sanitize
   "Strip anything script-capable from a hiccup tree (see ns doc). Blocked
-   elements vanish with their children."
-  [node]
-  (cond
-    (and (vector? node) (keyword? (first node)))
-    (when-not (contains? blocked-tags (tag-name (first node)))
-      (let [[tag & more] node
-            [attrs children] (if (map? (first more)) [(first more) (rest more)] [nil more])]
-        (into (cond-> [tag] attrs (conj (sanitize-attrs attrs)))
-              (map sanitize)
-              children)))
+   elements vanish with their children. `bind` (attrs → attrs, default
+   identity) rewrites an element's attributes first (see `ui-binder`)."
+  ([node] (sanitize node identity))
+  ([node bind]
+   (cond
+     (and (vector? node) (keyword? (first node)))
+     (when-not (contains? blocked-tags (tag-name (first node)))
+       (let [[tag & more] node
+             [attrs children] (if (map? (first more)) [(first more) (rest more)] [nil more])]
+         (into (cond-> [tag] attrs (conj (sanitize-attrs bind attrs)))
+               (map #(sanitize % bind))
+               children)))
 
-    (vector? node) (mapv sanitize node)
-    (seq? node)    (map sanitize node)
-    :else          node))
+     (vector? node) (mapv #(sanitize % bind) node)
+     (seq? node)    (map #(sanitize % bind) node)
+     :else          node)))
+
+;; ── Per-extension UI state ───────────────────────────────────────────────────
+
+;; Page-local state that lives in the browser only, at [:user-ext/ui <id> & path]
+;; of the app state (so a page reads it from the `state` it is rendered with).
+;; It never reaches the server or other clients. The sandbox can't read a DOM
+;; event, so the HOST wires an input to it: `:bind [:code]` among an input's
+;; attributes becomes its :value plus an :input handler writing that path.
+;; A page writes it itself with {:type :ext-ui/set :path [..] :value v}.
+
+(defn- ui-path? [path]
+  (and (vector? path) (seq path) (every? #(or (keyword? %) (string? %)) path)))
+
+(defn- ui-value? [v]
+  (or (nil? v) (string? v) (boolean? v) (number? v)))
+
+(defn ui-binder
+  "The `bind` fn for `sanitize`: turns an element's `:bind path` attribute into
+   the current value of that path in extension `id`'s UI state (read from
+   `state`) and an :input handler that writes it back through `dispatch!`
+   (the host's, unfiltered). An invalid path just drops the attribute."
+  [id state dispatch!]
+  (fn [attrs]
+    (if-not (contains? attrs :bind)
+      attrs
+      (let [path (:bind attrs)
+            attrs (dissoc attrs :bind)]
+        (if-not (ui-path? path)
+          attrs
+          (-> attrs
+              (assoc :value (str (get-in state (into [:user-ext/ui id] path))))
+              (assoc-in [:on :input]
+                        (fn [e]
+                          (dispatch! {:type :user-ext/ui-set :ext-id id :path path
+                                      :value (some-> e .-target .-value)})))))))))
 
 ;; ── Wrapping ─────────────────────────────────────────────────────────────────
 
@@ -133,6 +170,10 @@
     (let [t (:type ev)]
       (cond
         (own-event? id t)                  (dispatch! {:type :user-ext/forward :event ev})
+        (= :ext-ui/set t)                  (if (and (ui-path? (:path ev)) (ui-value? (:value ev)))
+                                             (dispatch! {:type :user-ext/ui-set :ext-id id
+                                                         :path (:path ev) :value (:value ev)})
+                                             (log-blocked id "ext-ui/set with a bad path or value"))
         (contains? passthrough-events t)   (dispatch! ev)
         :else                              (log-blocked id (str "dispatch " t))))))
 
@@ -150,7 +191,8 @@
       (update :pages update-vals
               (fn [f]
                 (fn [state dispatch!]
-                  (try (sanitize (f state (guard-dispatch id dispatch!)))
+                  (try (sanitize (f state (guard-dispatch id dispatch!))
+                                 (ui-binder id state dispatch!))
                        (catch :default e (error-box id (.-message e)))))))
 
       (:taps ext)

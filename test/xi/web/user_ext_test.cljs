@@ -54,6 +54,35 @@
             {:type :route/navigate :page :notes/list}]
            @seen))))
 
+(deftest ext-ui-set-writes-the-extensions-own-ui-state
+  (let [seen (atom [])
+        d    (guard/guard-dispatch :notes #(swap! seen conj %))]
+    (d {:type :ext-ui/set :path [:code] :value "abc"})
+    (d {:type :ext-ui/set :path [:code] :value nil})
+    (d {:type :ext-ui/set :path [] :value "x"})
+    (d {:type :ext-ui/set :path [:a] :value {:evil true}})
+    (d {:type :ext-ui/set :path "code" :value "x"})
+    (is (= [{:type :user-ext/ui-set :ext-id :notes :path [:code] :value "abc"}
+            {:type :user-ext/ui-set :ext-id :notes :path [:code] :value nil}]
+           @seen)
+        "the id is the extension's own; empty paths and non-scalar values are dropped")))
+
+(deftest bound-input-reads-and-writes-the-extensions-ui-state
+  (let [seen (atom [])
+        ext  (guard/wrap {:id :notes
+                          :pages {:notes/p (fn [_ _] [:input {:bind [:code] :type "text"}])}})
+        page (get-in ext [:pages :notes/p])
+        st   {:user-ext/ui {:notes {:code "hello"} :other {:code "secret"}}}
+        [_ attrs] (page st #(swap! seen conj %))]
+    (is (= "hello" (:value attrs)) "reads its own slice, never another extension's")
+    (is (not (contains? attrs :bind)))
+    ((get-in attrs [:on :input]) #js {:target #js {:value "hello!"}})
+    (is (= [{:type :user-ext/ui-set :ext-id :notes :path [:code] :value "hello!"}] @seen))
+    (testing "unset state is an empty input; a bad path just drops the attribute"
+      (is (= "" (:value (second (page {} identity)))))
+      (let [bad (guard/wrap {:id :notes :pages {:notes/p (fn [_ _] [:input {:bind "nope"}])}})]
+        (is (= [:input {}] ((get-in bad [:pages :notes/p]) {} identity)))))))
+
 (deftest forward-event-adds-room-and-menu-ctx
   (is (= {:type :ext.notes/save :text "x" :room-id "r1" :cwd "/p"}
          (guard/forward-event {:type :user-ext/forward :cwd "/p"

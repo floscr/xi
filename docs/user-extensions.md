@@ -90,11 +90,53 @@ A file in the directory is loaded only when the user config file names it:
   **browser half** (see [Browser halves](#browser-halves)).
 
 `/ext list` shows loaded extensions. `/ext reload` re-reads the enabled list
-and the directory. Tool
-changes apply on the next turn. Handler, command and keybinding changes need a
-server restart, the same as for built-in extensions. Rejected files are logged
-with the reason (`[user-ext] rejected foo.cljs: …`) and reported by
+and the directory. Agents can do the same with the `ext_reload` tool (no
+arguments): call it after editing an extension file; a file that fails to
+evaluate comes back as an error result with the reason. Rejected files are
+logged with the reason (`[user-ext] rejected foo.cljs: …`) and reported by
 `/ext reload`.
+
+### Live reload: mount and unmount
+
+A reload needs no server restart. Every enabled file is re-evaluated in a
+fresh sandbox (its sibling namespaces too), and the extension is swapped in
+while the server runs:
+
+1. **Unmount** the old code: its `:on-unmount` runs, everything it still owns
+   is released, and its capability token is revoked.
+2. **Register** the new code, so handlers, commands and fx are the new ones
+   from the next event on.
+3. **Mount** the new code: `:init` keys the live room slices lack are seeded
+   (existing values win), then `:on-mount` runs.
+
+```clojure
+(def extension
+  {:id :notes
+   :init {:room {:items []}}
+   ;; ctx: {:dispatch! … :get-state …}, the extension's own capability
+   :on-mount   (fn [{:keys [dispatch!]}] (dispatch! {:type :ext.notes/load}))
+   :on-unmount (fn [_ctx] …)})
+```
+
+- **State survives.** Room and process slices (`[:ext <id>]`) are not reset.
+  A new `:init` key appears, a removed one stays until you clear it.
+- **Auto-unmounted:** child processes started with `xi.api.sh` are killed
+  and the extension's headless browser is closed. After unmount the old
+  code's `xi.api.*` calls are refused and its `dispatch!` goes nowhere, so a
+  timer or in-flight promise from the previous version can't act on the new
+  one. Write `:on-unmount` only for what the extension holds itself (it
+  cannot hold host resources: there is no `js/`).
+- **A hook that throws** is logged and ignored; the reload carries on.
+- **A file that no longer evaluates** is rejected and its old version is
+  unmounted, so nothing half-old keeps running. Fix the file and reload again.
+- **Live where the app reads the composition late:** the server and
+  standalone TUI. Handlers, commands, fx and the system prompt follow at once;
+  tool definitions apply from the next turn. Keybindings and a TUI client's
+  command-completion list are fixed at startup, and a browser half applies on
+  the next page load.
+- An in-flight fx call of the old code keeps running until it finishes
+  (SCI can't be interrupted); it just can no longer call `xi.api.*` or
+  dispatch.
 
 ## The sandbox
 
@@ -192,7 +234,10 @@ The loader wraps every user fn (`xi.ext.user.guard`):
 
 Allowed map keys: `:id :init :handlers :fx :commands :tool-definitions
 :tool-registry :system-prompt :keybindings :prompt-badge :on-shutdown
-:on-enable :on-disable :permissions` (see [Headless Chrome](#headless-chrome)).
+:on-enable :on-disable :on-mount :on-unmount :permissions` (see
+[Headless Chrome](#headless-chrome); `:on-mount` / `:on-unmount` are the
+[reload lifecycle](#live-reload-mount-and-unmount)). `:on-enable` /
+`:on-disable` still fire for `/ext enable|disable`.
 `:tool-gate`, `:event-hooks` and `:remove-tools` are rejected, because policy
 belongs to the rules engine. `:id` and tool names
 must not clash with anything already loaded, built-ins included.
@@ -335,6 +380,18 @@ What a browser half can do (`xi.web.user-ext.guard`):
 - **dispatch!** sends the extension's own `:ext.<id>/*` events to the server
   (tagged with the active room) and passes `:route/navigate` / `:nav/back`.
   Anything else is dropped. The same applies to nav-item events.
+- **UI state (browser-only):** the sandbox can't read a DOM event, so a page
+  keeps things like an input's text in per-extension UI state that lives in
+  the browser (never sent to the server or other clients, gone on reload). It
+  sits at `[:user-ext/ui <id> & path]` of the `state` a page is rendered with;
+  a page reads only its own id's slice by convention. Put `:bind [:code]` among
+  an input's attributes (for `ui.form/form-input`: `:attrs {:bind [:code]}`)
+  and the host sets its `:value` from that path and writes every keystroke
+  back. A page writes a path itself with
+  `(dispatch! {:type :ext-ui/set :path [:code] :value nil})` (paths: non-empty
+  vector of keywords/strings; values: nil, string, boolean or number). Read the
+  state while rendering and close over it in a button's `:on-click` to send it
+  to the server half as an ordinary `:ext.<id>/*` event.
 - **Rendering:** page output is sanitized before replicant renders it.
   Script-capable tags (`script`, `iframe`, `object`, `style`, …), string
   `on*` handlers, `innerHTML`/`srcdoc`, and `javascript:`/`vbscript:`/non-image

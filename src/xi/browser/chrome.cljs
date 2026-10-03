@@ -277,6 +277,12 @@
                                                             :value (js->clj value :keywordize-keys true)}))))))))))))
                (.finally close-tab!)))))))
 
+(defn close-extension!
+  "Shut down extension `id`'s browser, if it has one (it unmounted). The next
+   visit launches a fresh one."
+  [id]
+  (close! id))
+
 (defn visit!
   "Load `url` in extension `id`'s browser (allowed to reach `hosts` only), wait
    for the `:wait` JS expression to turn truthy (default: the page loaded) or

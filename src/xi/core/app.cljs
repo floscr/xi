@@ -30,10 +30,14 @@
 (defn create-app
   "Options:
      :initial-state   required — see xi.core.state
-     :handlers        event-type → pure handler (see xi.core.events)
+     :handlers        event-type → pure handler (see xi.core.events), or a
+                      0-arg fn returning that map: it is called per event, so
+                      the set can change while the app runs (live extension
+                      reload — see xi.ext.manager/live-view)
      :transform-event optional (fn [state event] → event'|nil) — pre-dispatch
                       transform (extension event hooks); nil blocks the event
-     :effects         fx-type → (fn [{:keys [dispatch! state get-state]} payload])
+     :effects         fx-type → (fn [{:keys [dispatch! state get-state]} payload]),
+                      or a 0-arg fn returning that map (called per effect)
      :on-render       (fn [state dispatch!]) — called after state changes
      :schedule-render (fn [thunk]) — defaults to queueMicrotask (sync in tests)
      :ring            log ring buffer (xi.core.log/create-ring)
@@ -47,10 +51,19 @@
   (let [runaway-ms (or runaway-batch-ms RUNAWAY_BATCH_MS)
         ;; Built-in effect: re-dispatch an event (lets handlers chain flows,
         ;; e.g. draining a queued prompt by re-entering the normal code path).
-        effects  (merge {:app/dispatch       (fn [{:keys [dispatch!]} event] (dispatch! event))
-                         :app/dispatch-after (fn [{:keys [dispatch!]} {:keys [ms event]}]
-                                               (js/setTimeout #(dispatch! event) ms))}
-                        effects)
+        builtin-fx {:app/dispatch       (fn [{:keys [dispatch!]} event] (dispatch! event))
+                    :app/dispatch-after (fn [{:keys [dispatch!]} {:keys [ms event]}]
+                                          (js/setTimeout #(dispatch! event) ms))}
+        ;; late-bound sets resolve per use; plain maps are fixed
+        resolve-handlers (if (fn? handlers) handlers (constantly handlers))
+        resolve-effects  (if (fn? effects)
+                           (let [cache (atom nil)] ; [effects-map merged]
+                             (fn []
+                               (let [m (effects)]
+                                 (if (identical? m (first @cache))
+                                   (second @cache)
+                                   (second (reset! cache [m (merge builtin-fx m)]))))))
+                           (constantly (merge builtin-fx effects)))
         !state    (atom initial-state)
         get-state (fn [] @!state)
         schedule  (or schedule-render (fn [thunk] (js/queueMicrotask thunk)))
@@ -59,7 +72,7 @@
         ctx      #js {:queue #js [] :processing false :renderScheduled false
                       :lastRendered initial-state :eventSeq 0 :taps #js []}]
     (letfn [(run-effect! [dispatch! [fx-type payload :as effect]]
-              (if-let [fx-handler (get effects fx-type)]
+              (if-let [fx-handler (get (resolve-effects) fx-type)]
                 (try
                   (fx-handler {:dispatch! dispatch! :state @!state :get-state get-state} payload)
                   (catch :default e
@@ -85,7 +98,7 @@
             (process-event! [dispatch! event]
               (let [{state' :state fx :effects}
                     (try
-                      (events/handle-event handlers @!state event)
+                      (events/handle-event (resolve-handlers) @!state event)
                       (catch :default e
                         (js/console.error "[app] handler failed:" (str (:type event)) e)
                         {:state @!state :effects []}))]

@@ -331,9 +331,11 @@
                          server.
      :ext-system-prompt-parts  (fn [cwd] → [{:source :text}]) — extension
                          system prompt parts with source attribution.
-     :room-ext-init      map of ext-id → initial room-scoped state, seeded
-                         into each provisioned room's [:ext] (mirrors to
-                         clients via the :room/joined snapshot).
+     :room-ext-init      map of ext-id → initial room-scoped state, or a 0-arg
+                         fn returning it (read per provisioned room, so a live
+                         extension reload shows up in new rooms), seeded into
+                         each provisioned room's [:ext] (mirrors to clients
+                         via the :room/joined snapshot).
      :ext                the composed extension map (ext/compose) — the
                          server consumes :roomless-events, :no-broadcast,
                          :lobby-relevant (unioned onto its base sets) and
@@ -392,7 +394,7 @@
                        :agents-files (when-not agent?
                                        (system-prompt/find-agents-md cwd))
                        :session      session
-                       :ext          (cond-> room-ext-init
+                       :ext          (cond-> (if (fn? room-ext-init) (room-ext-init) room-ext-init)
                                        prof (merge (profile/room-ext prof)))
                        :agent-id     agent-id
                        :only-tools   (:tools prof)

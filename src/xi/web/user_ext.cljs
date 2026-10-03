@@ -54,6 +54,12 @@
      (when (get-in st [:rooms room-id])
        {:state (assoc-in st [:rooms room-id :ext ext-id] state)}))
 
+   ;; a page's browser-only UI state (xi.web.user-ext.guard, "Per-extension
+   ;; UI state"): a bound input's text, or an :ext-ui/set from the page
+   :user-ext/ui-set
+   (fn [st {:keys [ext-id path value]}]
+     {:state (assoc-in st (into [:user-ext/ui ext-id] path) value)})
+
    :user-ext/forward
    (fn [st ev]
      (when-let [out (guard/forward-event ev (:id (state/active-room st)))]

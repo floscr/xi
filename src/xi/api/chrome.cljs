@@ -55,6 +55,8 @@
        :else
        (-> (core/gate! ctx {:tool :browser :host (.-hostname u) :command (str url)})
            (.then (fn [_]
+                    ;; the browser is the extension's: closed when it unmounts
+                    (core/own! ctx ::browser #(chrome/close-extension! (:extension ctx)))
                     (chrome/visit! (:extension ctx) (set hosts) (str url)
                                    {:wait       wait
                                     :eval       (:eval opts)

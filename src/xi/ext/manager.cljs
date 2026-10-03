@@ -9,13 +9,14 @@
    extension's tools appear/vanish the moment it is enabled/disabled — no
    restart.
 
-   Scope, honestly: only the *use-time* surfaces hot-swap — the tool
-   definitions and tool registry, which the provider re-reads per turn. The *construction-time* surfaces (reducer :handlers,
-   :event-hooks, command dispatch, :keybindings, :system-prompt, :taps,
-   :routes) are captured once into create-app / the TUI client / the WS
-   server at assembly, so toggling an extension that contributes those does
-   not fully take effect until a reload. MCP extensions only ever contribute
-   tools, so they are covered completely.
+   Scope: the tool definitions and registry hot-swap (the provider re-reads
+   them per turn). Server and standalone assemblies also read reducer
+   :handlers, :fx, command dispatch, the system prompt and room :init through
+   `live-view`, so those follow the composition too. Still captured once at
+   assembly: :event-hooks, :keybindings, :taps and :routes, and a TUI
+   client's command completion list (a joined TUI keeps the commands it
+   mirrored on join). MCP extensions only ever contribute tools, so they are
+   covered completely.
 
    Lifecycle hooks on an extension map (both optional):
      :on-enable  (fn [])  — called when the extension becomes enabled
@@ -57,6 +58,21 @@
   "The current composed assembly (of the enabled extensions)."
   [{:keys [composed]}]
   @composed)
+
+(defn live-view
+  "A 0-arg fn returning `(build composed)` for the CURRENT composition, rebuilt
+   only when the composition changed (register!/enable!/disable!/unregister!
+   recompose). Hand it to xi.core.app/create-app as :handlers / :effects (or
+   call it per use for a system prompt, room init, …) and the surfaces that
+   were frozen at assembly follow a live extension reload instead."
+  [mgr build]
+  (let [cache (atom nil)] ; [composed value]
+    (fn []
+      (let [c   (composed mgr)
+            hit @cache]
+        (if (and hit (identical? (first hit) c))
+          (second hit)
+          (second (reset! cache [c (build c)])))))))
 
 (defn ext-list
   "Snapshot of the registry in registration order:

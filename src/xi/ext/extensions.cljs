@@ -1,6 +1,8 @@
 (ns xi.ext.extensions
   "Control surface for the live extension manager (xi.ext.manager):
-   `/ext list | enable <id> | disable <id>` toggles extensions at runtime.
+   `/ext list | enable <id> | disable <id>` toggles extensions at runtime,
+   and `/ext reload` / the agent-callable `ext_reload` tool re-read the user
+   extensions.
 
    Only use-time surfaces hot-swap (tool definitions + registry — see the manager
    docstring); toggling an extension that contributes reducer handlers,
@@ -64,34 +66,68 @@
                      (str (name kw) " already "
                           (if (= action :enable) "enabled." "disabled.")))))))))
 
+(defn- reload-report
+  "Re-evaluate ~/.config/xi/extensions and re-register (xi.ext.user) →
+   {:text :rejected?}, the report shared by `/ext reload` and ext_reload."
+  [reload!]
+  (let [{:keys [loaded rejected skipped]} (reload!)]
+    {:rejected? (boolean (seq rejected))
+     :text
+     (str "Reloaded user extensions."
+          (when (seq loaded)
+            (str "\n  loaded: " (str/join ", " (map name loaded))))
+          (when (seq rejected)
+            (str "\n  rejected: "
+                 (str/join "; " (map #(str (:file %) " — " (:error %)) rejected))))
+          (when (seq skipped)
+            (str "\n  not enabled (list under :extensions in config.edn): "
+                 (str/join ", " skipped)))
+          "\nLive: handlers, commands, fx, state init (existing room state is kept); "
+          "tool definitions from the next turn; a web half on the next page load. "
+          "Keybindings need a restart.")}))
+
 (defn- reload-fx
-  "Re-evaluate ~/.config/xi/extensions and re-register (xi.ext.user)."
-  [mgr {:keys [dispatch!]} {:keys [room-id]}]
-  (let [{:keys [loaded rejected skipped]} (user-ext/reload! mgr)]
-    (status! dispatch! room-id
-             (str "Reloaded user extensions."
-                  (when (seq loaded)
-                    (str "\n  loaded: " (str/join ", " (map name loaded))))
-                  (when (seq rejected)
-                    (str "\n  rejected: "
-                         (str/join "; " (map #(str (:file %) " — " (:error %)) rejected))))
-                  (when (seq skipped)
-                    (str "\n  not enabled (list under :extensions in config.edn): "
-                         (str/join ", " skipped)))
-                  "\nTool changes apply next turn; handler/command changes need a restart."))))
+  [reload! {:keys [dispatch!]} {:keys [room-id]}]
+  (status! dispatch! room-id (:text (reload-report reload!))))
+
+(def ^:private reload-tool-def
+  {:name "ext_reload"
+   :description (str "Re-evaluate the enabled user extensions in ~/.config/xi/extensions "
+                     "(the same as `/ext reload`) and report which loaded or were rejected, "
+                     "with the eval error. Call it after editing an extension file to check "
+                     "that it still evaluates and to pick up its changes — no restart. "
+                     "Each extension is unmounted (its :on-unmount runs; spawned processes "
+                     "and its browser are stopped) and the new code mounted. Live at once: "
+                     "handlers, commands, fx; tool definitions from the next turn; the "
+                     "browser half on the next page load. Room state is kept. Not live: "
+                     "keybindings. Files not listed under :extensions in config.edn are "
+                     "never loaded.")
+   :input_schema {:type "object" :properties {} :required []}})
+
+(defn- reload-tool
+  "ext_reload tool body. A rejected file is an error result, so the agent
+   sees its own eval failure."
+  [reload! _args _ctx]
+  (let [{:keys [text rejected?]} (reload-report reload!)]
+    {:content [{:type "text" :text text}] :is-error rejected?}))
 
 (defn create
-  "Factory — returns the control extension, or nil when no manager is in ctx."
-  [{:keys [manager]}]
-  (when manager
-    {:id       :extensions
-     :commands [{:name "ext"
-                 :description "List or toggle runtime extensions"
-                 :handler ext-command
-                 :subcommands [{:name "list" :description "List registered extensions"}
-                               {:name "enable" :description "Enable an extension by id"}
-                               {:name "disable" :description "Disable an extension by id"}
-                               {:name "reload" :description "Reload user extensions from ~/.config/xi/extensions"}]}]
-     :fx       {:ext/list   (partial list-fx manager)
-                :ext/toggle (partial toggle-fx manager)
-                :ext/reload (partial reload-fx manager)}}))
+  "Factory — returns the control extension, or nil when no manager is in ctx.
+   ctx :reload! (0-arg → user-ext/reload! report) defaults to reloading the
+   manager's user extensions; tests inject a stub."
+  [{:keys [manager] :as ctx}]
+  (let [reload! (or (:reload! ctx) #(user-ext/reload! manager))]
+    (when manager
+      {:id       :extensions
+       :commands [{:name "ext"
+                   :description "List or toggle runtime extensions"
+                   :handler ext-command
+                   :subcommands [{:name "list" :description "List registered extensions"}
+                                 {:name "enable" :description "Enable an extension by id"}
+                                 {:name "disable" :description "Disable an extension by id"}
+                                 {:name "reload" :description "Reload user extensions from ~/.config/xi/extensions"}]}]
+       :tool-definitions [reload-tool-def]
+       :tool-registry    {"ext_reload" (partial reload-tool reload!)}
+       :fx       {:ext/list   (partial list-fx manager)
+                  :ext/toggle (partial toggle-fx manager)
+                  :ext/reload (partial reload-fx reload!)}})))

@@ -46,6 +46,30 @@
     (dispatch! {:type :ping})
     (is (= [:ping :pong] @order))))
 
+(deftest late-bound-handlers-and-effects-follow-the-current-set
+  ;; :handlers / :effects as 0-arg fns are re-read per event / effect, so a
+  ;; live extension reload swaps the set without rebuilding the app.
+  (let [said (atom [])
+        hs   (atom {:ping (fn [_ _] {:effects [[:fx/say {:w "old"}]]})})
+        fxs  (atom {:fx/say (fn [_ {:keys [w]}] (swap! said conj [:old w]))})
+        {:keys [dispatch!]}
+        (app/create-app {:initial-state   (state/initial-state)
+                         :handlers        (fn [] (merge events/core-handlers @hs))
+                         :effects         (fn [] @fxs)
+                         :schedule-render (fn [thunk] (thunk))
+                         :ring            (log/create-ring 100)})]
+    (dispatch! {:type :ping})
+    (is (= [[:old "old"]] @said))
+    (reset! hs  {:ping (fn [_ _] {:effects [[:fx/say {:w "new"}]]})})
+    (reset! fxs {:fx/say (fn [_ {:keys [w]}] (swap! said conj [:new w]))})
+    (dispatch! {:type :ping})
+    (is (= [[:old "old"] [:new "new"]] @said))
+    (testing "the built-in :app/dispatch still works with a replaced effect set"
+      (reset! hs {:bounce (fn [_ _] {:effects [[:app/dispatch {:type :landed}]]})
+                  :landed (fn [_ _] {:effects [[:fx/say {:w "landed"}]]})})
+      (dispatch! {:type :bounce})
+      (is (= [:new "landed"] (peek @said))))))
+
 (deftest reentrant-dispatch-is-queued
   ;; An effect dispatching two events mid-drain must not interleave.
   (let [order (atom [])
