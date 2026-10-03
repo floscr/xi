@@ -1991,6 +1991,15 @@ code a:hover,
    the code is muted so the eye lands on the call being approved. */
 .tool-call-code .code-muted {
   opacity: 0.4;
+  transition: opacity 0.15s ease;
+}
+
+/* Hovering the block lifts the muting so the whole eval reads normally
+   while deciding; it comes back once the pointer leaves. */
+@media (hover: hover) {
+  .tool-call-code:hover .code-muted {
+    opacity: 1;
+  }
 }
 
 /* ---- Thinking blocks ---- */

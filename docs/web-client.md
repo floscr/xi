@@ -106,7 +106,9 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   [clj-tool.md](clj-tool.md)) renders the tool block's code in segments
   (`code-focus-segments`): the ranges keep full contrast, everything else is
   muted (`.code-muted`, 40% opacity) so the eye lands on the `(spit …)` /
-  `(sh …)` call being approved. Asks without a target leave the code as is
+  `(sh …)` call being approved; hovering the block (pointer devices) lifts
+  the muting so the whole eval reads normally. Asks without a target leave
+  the code as is
 - Auto-scroll pinned to bottom unless you scroll up
 - Sending from a cached (not-yet-joined) session stashes the message
   (`:web/pending-submit`) and fires it after `:room/joined`
