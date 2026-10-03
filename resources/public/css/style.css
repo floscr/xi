@@ -2214,18 +2214,6 @@ code a:hover,
 @media (hover: hover) {
   .sidebar-footer-btn:hover { background: var(--bg-2); color: var(--fg-0); }
 }
-/* Dot on ⋯ while there are unread sessions to mark */
-.sidebar-footer-pip {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 2px var(--sidebar-bg);
-}
-
 /* ⋯ popover: labelled bulk session actions */
 .sidebar-more-menu {
   min-width: 14rem;

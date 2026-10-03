@@ -3366,8 +3366,8 @@
   "The sidebar footer's ⋯ button and its popover: labelled bulk session
    actions instead of a row of bare icons. `items` are
    {:label :icon :on-click :badge :danger?} maps or :separator; each click
-   closes the popover. The trigger carries a dot while `pip?`."
-  [items pip?]
+   closes the popover."
+  [items]
   (let [close! (fn [^js e]
                  (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover)))]
     (list
@@ -3375,8 +3375,7 @@
                       :title "More actions"
                       :replicant/key "sidebar-more-trigger"}
                      (popover/trigger-attrs "sidebar-more-menu"))
-      (more-horizontal-icon)
-      (when pip? [:span {:class ["sidebar-footer-pip"]}])]
+      (more-horizontal-icon)]
      (popover/popover-content
       {:id    "sidebar-more-menu"
        :side  :top
@@ -3575,7 +3574,7 @@
                      :on {:click (fn [_] (dispatch! {:type :appearance/open}))}}
             (icon/icon {:icon-name :settings :size :sm})]
            (when (seq items)
-             (sidebar-more-menu items (pos? unread)))]])))))
+             (sidebar-more-menu items))]])))))
 
 (defn- recent-sidebar
   "Memoized wrapper around `recent-sidebar*`. Returns the identical cached
