@@ -30,9 +30,11 @@
 
 (def ^:private command-allowed
   "Additional events allowed from commands / keybindings (user-initiated), but
-   NOT from tool fns — so an agent tool can't drive the turn loop or start a
-   sub-agent without the spawn confirmation."
-  #{:prompt/submit :subagent/spawn})
+   NOT from tool fns — so an agent tool can't drive the turn loop, start a
+   sub-agent without the spawn confirmation, or open chats on its own.
+   :chat/start {:text :cwd :client-id} opens a new chat seeded with a user
+   message (see xi.server.room-manager)."
+  #{:prompt/submit :subagent/spawn :chat/start})
 
 (defn- own-event? [id ev-type]
   (= (some-> ev-type namespace) (str "ext." (name id))))
@@ -65,6 +67,15 @@
     (or (contains? own-fx fx-type)
         (and (= :app/dispatch fx-type)
              (allowed? id (:type payload) opts)))))
+
+(defn- strip-dispatch-mark
+  "A handler's `[:app/dispatch ev]` never carries the client stamp."
+  [effects]
+  (mapv (fn [[fx-type payload :as effect]]
+          (if (and (= :app/dispatch fx-type) (map? payload))
+            [fx-type (dissoc payload ::user-initiated)]
+            effect))
+        effects))
 
 (defn- sync-effects
   "One :user-ext/sync per room whose [:rooms rid :ext id] slice changed.
@@ -100,7 +111,9 @@
           effects (filterv #(or (allow-effect? id own-fx opts %)
                                 (do (log-blocked id (str "effect " (first %))) false))
                            (:effects result))
-          effects (mark-fx-effects own-fx (:user-initiated? opts) effects)
+          effects (->> effects
+                       strip-dispatch-mark
+                       (mark-fx-effects own-fx (:user-initiated? opts)))
           effects (cond-> effects state (into (sync-effects id before state)))]
       (cond-> {}
         state         (assoc :state state)
@@ -108,10 +121,17 @@
 
 ;; ── Wrappers ─────────────────────────────────────────────────────────────────
 
-(defn- guard-handler [id own-fx opts f]
+(defn- guard-handler
+  "An own event a connected client sent (a click in a browser half) arrives
+   stamped `::user-initiated` by the WS server, so its handler may use the
+   command-only events. Anything the extension itself dispatches is stripped
+   of the stamp (guard-dispatch, restrict-result), so it can't forge one."
+  [id own-fx opts f]
   (fn [before event]
-    (try (restrict-result id own-fx opts before (f before event))
-         (catch :default e (log-blocked id (str "handler threw: " (.-message e))) nil))))
+    (let [opts  (if (::user-initiated event) {:user-initiated? true} opts)
+          event (dissoc event ::user-initiated)]
+      (try (restrict-result id own-fx opts before (f before event))
+           (catch :default e (log-blocked id (str "handler threw: " (.-message e))) nil)))))
 
 (defn- guard-dispatch [id token opts dispatch!]
   (when dispatch!
@@ -120,7 +140,7 @@
         ;; code of an unmounted (reloaded / removed) extension: its late
         ;; callbacks must not touch the app any more
         (and token (not (api-core/active? token))) nil
-        (allowed? id (:type ev) opts) (dispatch! ev)
+        (allowed? id (:type ev) opts) (dispatch! (dissoc ev ::user-initiated))
         :else (log-blocked id (str "dispatch " (:type ev)))))))
 
 (defn- guard-ctx [id token opts ctx]

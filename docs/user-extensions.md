@@ -215,13 +215,16 @@ The loader wraps every user fn (`xi.ext.user.guard`):
   other extensions, room and agent state, and dialogs.
 - **Dispatch:** events are limited to the extension's own `:ext.<id>/*`
   events plus `:ui/status` and `:theme/set`
-  ([below](#following-the-system-theme)). `:prompt/submit` and `:subagent/spawn` are also
-  allowed from **commands and keybindings** (user-initiated), and from an
-  `:fx` that a command's effect started (so a command can gather data in an
-  effect, then submit), but never from tool fns or handlers, so an agent
-  can't drive the turn loop or start an unconfirmed sub-agent through an
-  extension tool. This covers `dispatch!`, handler effects and keybinding
-  events. Anything else is dropped and logged.
+  ([below](#following-the-system-theme)). `:prompt/submit`, `:subagent/spawn`
+  and `:chat/start` ([below](#starting-a-chat)) are also allowed from
+  **commands and keybindings** (user-initiated), from an `:fx` that a
+  command's effect started (so a command can gather data in an effect, then
+  submit), and from the handler of an own event **a connected client sent**
+  (a click in a browser half; the WS server marks those as the user's). They
+  are never allowed from tool fns, or from handlers reached by a tool's own
+  events, so an agent can't drive the turn loop, start an unconfirmed
+  sub-agent or open chats through an extension tool. This covers `dispatch!`,
+  handler effects and keybinding events. Anything else is dropped and logged.
 - **Effects:** only the extension's own `:fx` types and the filtered
   `[:app/dispatch …]` get through.
 - **Errors:** a throwing handler, fx or command is logged and ignored. A
@@ -242,6 +245,33 @@ Allowed map keys: `:id :init :handlers :fx :commands :tool-definitions
 `:tool-gate`, `:event-hooks` and `:remove-tools` are rejected, because policy
 belongs to the rules engine. `:id` and tool names
 must not clash with anything already loaded, built-ins included.
+
+## Starting a chat
+
+`{:type :chat/start :text "…" :cwd "/project" :client-id id}` opens a new
+chat whose first user message is `:text`, and the agent starts working on it
+at once (a background room, like `POST /api/rooms`). `:cwd` defaults to the
+dispatching room's. With `:client-id`, that client is navigated to the new
+chat; without it the chat just shows up in the lobby.
+
+The usual use is a button in a browser half. A click arrives at the server
+half as the extension's own event, carrying the clicking client's `:client-id`
+and the active `:room-id`, and its handler turns it into the chat:
+
+```clojure
+;; browser half
+(button/button {:on-click (fn [_] (dispatch! {:type :ext.notes/discuss :n 3}))} "Discuss")
+
+;; server half
+:handlers
+{:ext.notes/discuss
+ (fn [_st {:keys [client-id n]}]
+   {:effects [[:app/dispatch {:type :chat/start
+                              :client-id client-id
+                              :text (str "Let's go through note " n)}]]})}
+```
+
+Commands and keybindings can dispatch it the same way. Tool fns can't.
 
 ## Following the system theme
 

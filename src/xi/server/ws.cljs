@@ -36,6 +36,7 @@
   (:require [xi.agent-profile :as profile]
             [xi.auth :as auth]
             [xi.ext.diff.git :as diff-git]
+            [xi.ext.user.guard :as user-guard]
             [xi.fx :as fx]
             [xi.server.files :as files]
             [xi.server.room-manager :as rm]
@@ -45,6 +46,20 @@
 
 (def DEFAULT_PORT 7474)
 (def DEFAULT_TLS_PORT 7443)
+
+(def DEFAULT_HOST
+  "Address the server binds. Loopback: a fresh install is reachable only from
+   the machine it runs on; remote access is opt-in via XI_HOST / --host."
+  "127.0.0.1")
+
+(defn resolve-host
+  "Bind address: an explicit `host` (--host), else XI_HOST, else DEFAULT_HOST.
+   Blank values count as unset."
+  [host]
+  (let [clean (fn [v] (when (string? v) (not-empty (.trim v))))]
+    (or (clean host)
+        (clean (aget js/process.env "XI_HOST"))
+        DEFAULT_HOST)))
 
 (def ^:private base-no-broadcast
   "Room-scoped event types that are connection bookkeeping, not room state.
@@ -60,6 +75,11 @@
     :read-state/changed
     :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
     :ui/dialog-open :ui/dialog-response})
+
+(defn- ext-event?
+  "An event of an extension (`:ext.<id>/…`)."
+  [ev]
+  (some-> (:type ev) namespace (.startsWith "ext.")))
 
 (def ^:private pre-join-types
   "Event types a client may send before joining a room."
@@ -479,6 +499,21 @@
                 (when-not (session/turn-completed? summary)
                   (dispatch! {:type :prompt/submit :room-id room-id :text "continue"})))))))
 
+      ;; Open a new chat seeded with a user message (the :chat/start event,
+      ;; see xi.server.room-manager). The room runs in the background like an
+      ;; /api/rooms one; the requesting client, if any, is sent to it.
+      :chat/start
+      (fn [{:keys [dispatch!]} {:keys [client-id cwd text]}]
+        (let [room-id (str "r-" (.toString (js/Date.now) 36)
+                           "-" (.toString (rand-int 1000000) 36))
+              {:keys [session room]} (build-room {:cwd cwd})]
+          (dispatch! {:type :room/create :room-id room-id :room room})
+          (dispatch! {:type :prompt/submit :room-id room-id :text text})
+          (when client-id
+            (send-event! client-id {:type       :route/navigate
+                                    :page       :chat
+                                    :session-id (:id session)}))))
+
       ;; Send the full lobby payload (rooms + saved sessions) to one client.
       :lobby/send
       (fn [{:keys [state]} {:keys [client-id]}]
@@ -618,8 +653,9 @@
      ext-fx)
 
      :start!
-     (fn [{:keys [dispatch! state add-tap!]} {:keys [port]}]
+     (fn [{:keys [dispatch! state add-tap!]} {:keys [port host]}]
        (let [port (or port DEFAULT_PORT)
+             host (resolve-host host)
              public-dir (resolve-public-dir)
              ;; An agent server is single-user/local: skip HTTPS (no iOS
              ;; PWA durable-storage concern) and skip client-key pairing.
@@ -847,7 +883,8 @@
                                           #js {:status  400
                                                :headers #js {"Content-Type" "application/json"}}))))))))
              opts
-             #js {:port port
+             #js {:port     port
+                   :hostname host
                    :fetch
                    (fn [^js req ^js srv]
                      (let [headers  (.-headers req)
@@ -904,7 +941,11 @@
                           (let [cid (.. ws -data -cid)]
                             (if-let [ev (wire/decode data)]
                               (let [room-id (get-in @state [:connection :clients cid :room-id])
-                                    ev (assoc ev :client-id cid)]
+                                    ev (cond-> (assoc ev :client-id cid)
+                                         ;; an extension event a connected client sent
+                                         ;; (a click in a browser half) is the user's
+                                         ;; doing; see xi.ext.user.guard/guard-handler
+                                         (ext-event? ev) (assoc ::user-guard/user-initiated true))]
                                 (cond
                                   ;; ─ Transport-level auth, never dispatched ─
                                   (= :auth/hello (:type ev))
@@ -968,6 +1009,7 @@
              tls-server (when tls
                           (js/Bun.serve
                            #js {:port      tls-port
+                                :hostname  host
                                 :tls       tls
                                 :fetch     (.-fetch opts)
                                 :websocket (.-websocket opts)}))]
@@ -1005,9 +1047,11 @@
             (when (lobby-relevant (:type event))
               (schedule-lobby-broadcast!))))
 
-         (js/console.error (str "[ws] Listening on ws://localhost:" port
+         (js/console.error (str "[ws] Listening on ws://" host ":" port
                                 (when tls-server
-                                  (str " + wss://localhost:" tls-port))))
+                                  (str " + wss://" host ":" tls-port))
+                                (when-not (#{"127.0.0.1" "localhost" "::1"} host)
+                                  " (reachable from the network)")))
          {:port  port
           :stop! (fn []
                    (js/clearInterval auth-poll)

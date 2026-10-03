@@ -377,8 +377,20 @@
                           targets))})))
 
 
+(defn- chat-start
+  "Open a new chat seeded with `text` as its first user message. cwd defaults
+   to the dispatching room's. :client-id, when given, is sent to the new chat.
+   Extensions get this event from commands, keybindings and client clicks only
+   (xi.ext.user.guard)."
+  [st {:keys [room-id client-id cwd text]}]
+  (when (and (string? text) (seq text))
+    {:effects [[:chat/start (cond-> {:text text
+                                     :cwd  (or cwd (get-in st [:rooms room-id :cwd]))}
+                              client-id (assoc :client-id client-id))]]}))
+
 (def handlers
-  {:room/join              room-join
+  {:chat/start             chat-start
+   :room/join              room-join
    :room/attach            room-attach
    :room/leave             room-leave
    :room/list              room-list

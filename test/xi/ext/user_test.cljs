@@ -292,6 +292,39 @@
     (run {:dispatch! raw} (second h-fx))
     (is (= [{:a 1}] @seen) "started from a handler, the same fx is blocked")))
 
+(deftest a-client-click-may-start-a-chat
+  ;; The WS server stamps an own event a connected client sent (a click in a
+  ;; browser half) ::guard/user-initiated; its handler may then use the
+  ;; command-only events. The extension can't mint the stamp itself.
+  (let [id   :ext-g
+        seen (atom [])
+        ext  (guard/wrap
+              {:id id
+               :handlers {:ext.ext-g/go    (fn [_ ev]
+                                             (swap! seen conj ev)
+                                             {:effects [[:app/dispatch {:type :chat/start :text "hi"
+                                                                        ::guard/user-initiated true}]]})
+                          :ext.ext-g/other (fn [_ _] {:effects [[:app/dispatch {:type :chat/start :text "hi"}]]})}
+               :tool-registry {"t" (fn [_ {:keys [dispatch!]}]
+                                     (dispatch! {:type :ext.ext-g/go ::guard/user-initiated true})
+                                     (dispatch! {:type :chat/start :text "hi"})
+                                     {:content []})}})
+        go    (get-in ext [:handlers :ext.ext-g/go])
+        other (get-in ext [:handlers :ext.ext-g/other])
+        raw   (fn [ev] (swap! seen conj ev))]
+    (is (= [[:app/dispatch {:type :chat/start :text "hi"}]]
+           (:effects (go {} {:type :ext.ext-g/go ::guard/user-initiated true})))
+        "stamped event: :chat/start passes, minus any stamp the handler copied into it")
+    (is (= [{:type :ext.ext-g/go}] @seen) "the handler sees an event without the stamp")
+    (is (empty? (:effects (go {} {:type :ext.ext-g/go})))
+        "an unstamped event can't start a chat")
+    (is (empty? (:effects (other {} {:type :ext.ext-g/other})))
+        "neither can another handler")
+    (reset! seen [])
+    ((get-in ext [:tool-registry "t"]) {} {:dispatch! raw})
+    (is (= [{:type :ext.ext-g/go}] @seen)
+        "a tool's own event loses a forged stamp, and :chat/start is blocked for it")))
+
 (deftest fx-dispatch-is-filtered
   (let [id :ext-c
         seen (atom [])

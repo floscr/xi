@@ -31,6 +31,16 @@
       (is (= "/y" (:cwd payload)))
       (is (= "r-ya-7" (:room-id payload))))))  ;; (.toString 1234 36) => "ya"
 
+(deftest chat-start-opens-a-seeded-chat
+  (let [st (server-state-with-room)]
+    (is (= [[:chat/start {:text "do it" :cwd "/x" :client-id "c1"}]]
+           (:effects (handle st {:type :chat/start :room-id "r1" :client-id "c1" :text "do it"})))
+        "cwd defaults to the dispatching room's")
+    (is (= [[:chat/start {:text "do it" :cwd "/y"}]]
+           (:effects (handle st {:type :chat/start :cwd "/y" :text "do it"}))))
+    (is (empty? (:effects (handle st {:type :chat/start :room-id "r1" :text ""})))
+        "no message, no chat")))
+
 (deftest join-latest-attaches-to-most-recent
   (let [st (apply-events (server-state-with-room)
                          {:type :room/create :room-id "r2" :room {:created 200}})
