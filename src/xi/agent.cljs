@@ -22,6 +22,7 @@
    in-flight turn handles, which are runtime resources, not app state)."
   (:require [clojure.string :as str]
             [xi.core.state :as state]
+            [xi.dialog :as dialog]
             [xi.util :as util]))
 
 ;; ── History folding (pure) ───────────────────────────────────────────────────
@@ -448,21 +449,6 @@
        first
        :pid))
 
-(defn scope-confirm-to-call
-  "`ctx` with its :confirm! tagging every dialog with :call — the {:name
-   :arguments} of `tool-call`, the call being gated — so a client renders the
-   ask on that call's block rather than guessing among parallel running calls
-   (xi.dialog/permission-tool-index). Done here, once, so every policy-time ask
-   (rules, the clj / bash gates) carries it. No :confirm! → ctx unchanged."
-  [ctx {:keys [name arguments]}]
-  (if-let [confirm! (:confirm! ctx)]
-    (let [call {:name name :arguments arguments}]
-      (assoc ctx :confirm!
-             (fn scoped
-               ([message] (scoped message nil))
-               ([message opts] (confirm! message (assoc opts :call call))))))
-    ctx))
-
 (defn create-fx
   "Provider effects. `providers` is a map of provider-id → provider.
    In-flight turn handles live here — runtime resources, not app state.
@@ -524,7 +510,7 @@
                                                          (:target opts)  (assoc :target (:target opts)))}))))}
              policy1 (when tool-policy
                      (fn [tool-call]
-                       (tool-policy tool-call (scope-confirm-to-call tool-ctx tool-call))))
+                       (tool-policy tool-call (dialog/scope-confirm-to-call tool-ctx tool-call))))
              ;; The turn's cwd doesn't exist on this host (e.g. a Pi session
              ;; with cwd=/var/lib/xi opened elsewhere). Ask the user where to
              ;; run, persist it on the room, then replay the turn fresh.

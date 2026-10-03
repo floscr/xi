@@ -81,7 +81,8 @@
 
              :else
              (-> (tools/run-tool exec-fn (or (:arguments gated) arguments)
-                                 (assoc tool-ctx :cwd cwd :client-pid client-pid))
+                                 (assoc tool-ctx :cwd cwd :client-pid client-pid)
+                                 tool-call)
                  (.then (fn [{:keys [content is-error]}]
                           #js {:content (clj->js content)
                                :isError is-error})))))))))

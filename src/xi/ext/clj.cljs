@@ -134,6 +134,10 @@
   [opts kind resolved {:keys [op raw]}]
   (when-let [[verdict root] (await-main-thread! opts #js {:gateRequest (name kind)
                                                           :path        (str resolved)
+                                                          ;; which call hit it, so
+                                                          ;; the main thread asks
+                                                          ;; with that call's ctx
+                                                          :gateId      (some-> (:gate-id @opts) str)
                                                           ;; which helper hit the
                                                           ;; gate, with the path as
                                                           ;; written: lets the ask
@@ -956,7 +960,7 @@
            "for .startsWith, (str/lower-case s) for .toLowerCase, "
            "(str/split s #\",\") for .split."))))
 
-(defn- eval-code! [{:keys [code room-id cwd allowed allowed-commands allowed-writes
+(defn- eval-code! [{:keys [code room-id gate-id cwd allowed allowed-commands allowed-writes
                            allowed-reads allowed-bg abort-arr]}]
   (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default))
         prints (atom "")
@@ -968,6 +972,7 @@
            :allowed-bg (set allowed-bg)
            :abort-arr abort-arr
            :room-id (or room-id :default)
+           :gate-id gate-id
            :commit-outs commit-outs)
     (try
       (let [v   (sci/binding [sci/print-fn     #(swap! prints str %)
@@ -1069,7 +1074,12 @@
 ;; key). Both are captured by `approve` on each call.
 (defonce ^:private app-dispatch! (atom nil))
 (defonce ^:private room-ids (atom {}))      ;; room-key str → room-id
-(defonce ^:private gate-ctxs (atom {}))     ;; room-key str → tool ctx (runtime path gate)
+(defonce ^:private gate-ctxs (atom {}))     ;; room-key str → tool ctx (git gate, fallback)
+;; gate-id → the tool ctx (scoped :confirm!, :code) of ONE in-flight clj call.
+;; Calls overlap (parallel tool calls queue on the room's worker), so a runtime
+;; path gate must find the ctx of the call that hit it, not the room's newest.
+(defonce ^:private call-ctxs (atom {}))
+(defonce ^:private gate-seq (atom 0))
 
 (defn- settle-worker-death!
   "A room's worker died (crash / exit / terminate) with evals possibly in
@@ -1184,7 +1194,8 @@
   [^js m]
   (let [sab     (.-sab m)
         i32     (js/Int32Array. sab 0 2)
-        ctx     (get @gate-ctxs (.-roomKey m))
+        ctx     (or (some->> (.-gateId m) (get @call-ctxs))
+                    (get @gate-ctxs (.-roomKey m)))
         path    (.-path m)
         settle! (fn [root]
                   (let [bytes (when root (.encode (js/TextEncoder.) (str root)))]
@@ -1301,6 +1312,7 @@
   (-> (run-in-worker #js {:kind    "clj"
                           :code    (str (:code args))
                           :roomId  (room-key (:_room-id args))
+                          :gateId  (some-> (:_gate-id args) str)
                           :allowed (clj->js (vec (:_allowed args)))
                           :allowedCommands (clj->js (vec (:_allowed-commands args)))
                           :allowedWrites (clj->js (vec (:_allowed-writes args)))
@@ -1373,6 +1385,7 @@
       "clj"
       (let [res (eval-code! {:code    (str (.-code m))
                              :room-id (.-roomId m)
+                             :gate-id (.-gateId m)
                              :allowed (js->clj (.-allowed m))
                              :allowed-commands (js->clj (.-allowedCommands m))
                              :allowed-writes (js->clj (.-allowedWrites m))
@@ -1948,6 +1961,12 @@
         ;; (dynamic out-of-repo path mid-eval) can run the same approval
         ;; dialogs (see on-gate-request).
         _       (when room-id (swap! gate-ctxs assoc (room-key room-id) ctx))
+        ;; ...and per call (:gate-id from clj-tool, else minted here) so a
+        ;; runtime gate from an overlapping call can't pick up another call's
+        ;; scoped :confirm! / :code (see call-ctxs).
+        gate-id (or (:gate-id ctx) (str "g" (swap! gate-seq inc)))
+        ctx     (assoc ctx :gate-id gate-id)
+        _       (swap! call-ctxs assoc gate-id ctx)
         ;; A trusted bb.edn (sha in the trust store) makes `bb` an allowed CLI
         ;; for (sh "bb" …), same as the dedicated bb tool. Session-allowed CLIs
         ;; are no longer a private allowlist — they live as session rules and
@@ -1957,6 +1976,7 @@
         inject  (fn [allowed allowed-commands hint]
                   (cond-> (update tool-call :arguments assoc
                                   :_room-id room-id
+                                  :_gate-id gate-id
                                   :_allowed (vec allowed)
                                   :_allowed-commands (vec allowed-commands))
                     (seq bg) (update :arguments assoc :_allowed-bg bg)
@@ -2249,13 +2269,18 @@
 
 (defn- clj-tool
   "The clj tool: `approve` the call (validation + approvals), then evaluate
-   it in the room's worker with the grants it was given."
+   it in the room's worker with the grants it was given. The call's gate ctx
+   (call-ctxs) lives until its eval settles."
   [args ctx]
-  (-> (js/Promise.resolve (approve {:name "clj" :arguments (public-args args)} ctx))
-      (.then (fn [v]
-               (if (:intercepted v)
-                 (:result v)
-                 (run-clj (:arguments v) ctx))))))
+  (let [gate-id (str "g" (swap! gate-seq inc))
+        done!   #(swap! call-ctxs dissoc gate-id)]
+    (-> (js/Promise.resolve (approve {:name "clj" :arguments (public-args args)}
+                                     (assoc ctx :gate-id gate-id)))
+        (.then (fn [v]
+                 (if (:intercepted v)
+                   (:result v)
+                   (run-clj (:arguments v) ctx))))
+        (.finally done!))))
 
 ;; ── Command + state ──────────────────────────────────────────────────────────
 

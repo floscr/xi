@@ -138,6 +138,16 @@ Guards, enforced inside every helper:
   `(spit p …)` is singled out even though its path isn't in the source. The
   web client mutes the rest of the block's code around those ranges
   ([web-client.md](web-client.md)).
+- **Asks belong to their own call**: every ask a clj call raises is tagged
+  with that call (`:call {:name :arguments}`), which is how a client picks the
+  block to render it on (`xi.dialog/permission-tool-index`). `tools/run-tool`
+  scopes the tool ctx's `confirm!` per call (`xi.dialog/scope-confirm-to-call`),
+  so the gate's asks — raised inside the tool, unlike rules asks raised in the
+  policy hook — never fall back to "the newest running tool". Parallel clj calls
+  queue on the room's one worker, so each call also gets a gate id
+  (`:_gate-id`, echoed by the worker's `gateRequest`) and the main thread
+  answers a runtime path gate with *that call's* ctx and code, not the room's
+  latest.
 - **Directory deletion**: the builtin `(rm dir)` recursively deletes a whole
   tree, so the gate statically scans `rm`'s literal path args and, for any that
   resolve to an **existing directory**, raises a confirm before the eval runs —

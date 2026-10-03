@@ -21,6 +21,32 @@
                      (is (re-find #"Xi truncated" (:text (first content))))
                      (done))))))))
 
+(deftest run-tool-scopes-asks-raised-by-the-tool-to-its-call
+  ;; A tool that asks from inside its exec (the clj gate) must tag the ask with
+  ;; its own call, or a client attaches it to whichever block runs newest.
+  (async done
+    (let [asked (atom nil)
+          call  {:name "clj" :arguments {:code "(cat \"/x\")"}}
+          exec  (fn [_args ctx]
+                  ((:confirm! ctx) "Read outside the project repo?" {:options [:yes :no]})
+                  {:content [{:type "text" :text "ok"}]})
+          ctx   {:confirm! (fn [m opts] (reset! asked [m opts]) true)}]
+      (-> (registry/run-tool exec {} ctx call)
+          (.then (fn [_]
+                   (is (= call (:call (second @asked))))
+                   (is (= [:yes :no] (:options (second @asked))))
+                   (done)))))))
+
+(deftest run-tool-without-a-call-leaves-the-ctx-alone
+  (async done
+    (let [seen (atom nil)
+          ctx  {:confirm! (fn [_ opts] (reset! seen opts) true)}
+          exec (fn [_args ctx] ((:confirm! ctx) "?" {:x 1}) {:content []})]
+      (-> (registry/run-tool exec {} ctx)
+          (.then (fn [_]
+                   (is (= {:x 1} @seen))
+                   (done)))))))
+
 (deftest run-tool-normalizes-errors
   (testing "a throwing exec-fn becomes an error tool result"
     (async done

@@ -90,6 +90,22 @@
 
       :else {:dialog-id (:id dialog) :value value})))
 
+(defn scope-confirm-to-call
+  "`ctx` with its :confirm! tagging every dialog with :call — the {:name
+   :arguments} of `tool-call`, the call being gated — so a client renders the
+   ask on that call's block rather than guessing among parallel running calls
+   (`permission-tool-index`). Applied to both halves of a call's gating: the
+   policy hook and the tool's own exec ctx (the clj gate asks from inside the
+   tool), so every ask carries it. No :confirm! → ctx unchanged."
+  [ctx {:keys [name arguments]}]
+  (if-let [confirm! (:confirm! ctx)]
+    (let [call {:name name :arguments arguments}]
+      (assoc ctx :confirm!
+             (fn scoped
+               ([message] (scoped message nil))
+               ([message opts] (confirm! message (assoc opts :call call))))))
+    ctx))
+
 (defn- same-call?
   "Does history `entry` (a :tool-call) belong to the gated `call`
    ({:name :arguments}) a confirm dialog was raised for? Tool names compare

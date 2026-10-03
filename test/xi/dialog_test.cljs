@@ -89,6 +89,25 @@
 
 (defn- room-with [& dialogs] {:ui {:dialogs (vec dialogs)}})
 
+(deftest scope-confirm-to-call-tags-every-ask-with-the-gated-call
+  (let [asked (atom [])
+        ctx   {:room-id "r"
+               :confirm! (fn [message opts] (swap! asked conj [message opts]) :answer)}
+        call  {:name "clj" :arguments {:code "(sh \"claude\")"}}
+        scoped (dialog/scope-confirm-to-call ctx call)]
+    (is (= :answer ((:confirm! scoped) "allow?" {:options [:yes :no]})))
+    ((:confirm! scoped) "bare")
+    (is (= [["allow?" {:options [:yes :no]
+                       :call {:name "clj" :arguments {:code "(sh \"claude\")"}}}]
+            ["bare" {:call {:name "clj" :arguments {:code "(sh \"claude\")"}}}]]
+           @asked)
+        "opts are kept; the 1-arity gets just the :call")
+    (is (= "r" (:room-id scoped)) "the rest of the ctx is untouched")))
+
+(deftest scope-confirm-to-call-without-confirm-is-a-no-op
+  (let [ctx {:room-id "r"}]
+    (is (= ctx (dialog/scope-confirm-to-call ctx {:name "clj" :arguments {}})))))
+
 (deftest answer-targets-the-first-pending-confirm
   (let [room (room-with {:id "d1" :type :confirm :options [:yes :no :always]}
                         {:id "d2" :type :confirm})]

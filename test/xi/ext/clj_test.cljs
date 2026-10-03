@@ -1401,6 +1401,21 @@
                    (is (= [call] (range-texts code (get-in @seen [:target :ranges]))))
                    (done)))))))
 
+(deftest gate-gives-every-call-its-own-gate-id
+  ;; Overlapping clj calls share a room; the runtime path gate finds each
+  ;; call's ctx (scoped confirm!, code) through the id injected as :_gate-id.
+  (async done
+    (let [call #(js/Promise.resolve
+                 (gate {:name "clj" :arguments {:code "(+ 1 2)"}}
+                       (assoc (gate-ctx) :confirm! (fn [_ & _] (js/Promise.resolve true)))))]
+      (-> (js/Promise.all #js [(call) (call)])
+          (.then (fn [^js rs]
+                   (let [id1 (get-in (aget rs 0) [:arguments :_gate-id])
+                         id2 (get-in (aget rs 1) [:arguments :_gate-id])]
+                     (is (string? id1))
+                     (is (not= id1 id2))
+                     (done))))))))
+
 (deftest gate-ask-targets-the-cli-call
   (async done
     (let [seen (atom nil)

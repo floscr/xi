@@ -113,7 +113,8 @@
     :else
     (let [exec-fn (get registry name)]
       (if exec-fn
-        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx)
+        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx
+                            {:name name :arguments arguments})
             (.then (fn [{:keys [content is-error]}]
                      {:type "function_call_output" :call_id call_id
                       :output (str (when is-error "[error] ")

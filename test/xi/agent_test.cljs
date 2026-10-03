@@ -283,25 +283,6 @@
     (is (not (str/includes? (:system payload) "user: new prompt"))
         "the replayed prompt is not duplicated into the injected context")))
 
-(deftest scope-confirm-to-call-tags-every-ask-with-the-gated-call
-  (let [asked (atom [])
-        ctx   {:room-id "r"
-               :confirm! (fn [message opts] (swap! asked conj [message opts]) :answer)}
-        call  {:name "clj" :arguments {:code "(sh \"claude\")"}}
-        scoped (agent/scope-confirm-to-call ctx call)]
-    (is (= :answer ((:confirm! scoped) "allow?" {:options [:yes :no]})))
-    ((:confirm! scoped) "bare")
-    (is (= [["allow?" {:options [:yes :no]
-                       :call {:name "clj" :arguments {:code "(sh \"claude\")"}}}]
-            ["bare" {:call {:name "clj" :arguments {:code "(sh \"claude\")"}}}]]
-           @asked)
-        "opts are kept; the 1-arity gets just the :call")
-    (is (= "r" (:room-id scoped)) "the rest of the ctx is untouched")))
-
-(deftest scope-confirm-to-call-without-confirm-is-a-no-op
-  (let [ctx {:room-id "r"}]
-    (is (= ctx (agent/scope-confirm-to-call ctx {:name "clj" :arguments {}})))))
-
 (deftest abort-only-when-busy
   (let [busy (apply-events (with-room) {:type :prompt/submit :room-id "r" :text "x"})]
     (is (= [[:provider/abort {:room-id "r"}]]

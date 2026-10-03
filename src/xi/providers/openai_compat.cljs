@@ -88,7 +88,8 @@
     :else
     (let [exec-fn (get registry name)]
       (if exec-fn
-        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx)
+        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx
+                            {:name name :arguments arguments})
             (.then (fn [{:keys [content]}]
                      {:role "tool" :tool_call_id id
                       :content (util/extract-text-content content)})))
