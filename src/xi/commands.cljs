@@ -512,16 +512,18 @@
    :navigate on user messages to include the response). Clears the provider
    session and flags :inject-history? so the next turn starts a fresh
    provider session with the truncated conversation injected as context
-   (see xi.agent/history->context)."
+   (see xi.agent/history->context). The dropped provider session id is
+   recorded as superseded so its transcript stays claimed by this session
+   instead of resurfacing as a duplicate card (state/drop-provider-session)."
   [st {:keys [room-id index mode editor-text]}]
   (when-let [room (state/get-room st room-id)]
     (let [history (:history room)
           new-history (subvec (vec history) 0 index)]
       (cond-> {:state (-> st
                           (assoc-in [:rooms room-id :history] new-history)
-                          (update-in [:rooms room-id :session] assoc
-                                     :provider-session-id nil
-                                     :inject-history? true)
+                          (update-in [:rooms room-id :session]
+                                     #(-> (state/drop-provider-session %)
+                                          (assoc :inject-history? true)))
                           (update-in [:rooms room-id :ui] dissoc :tree-open?)
                           (update-in [:rooms room-id :agent] assoc :busy? false :queued []))}
         editor-text

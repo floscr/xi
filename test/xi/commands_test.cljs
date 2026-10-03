@@ -174,16 +174,30 @@
   (let [st (apply-events (with-room)
                          {:type :prompt/submit :room-id "r" :text "hello"}
                          {:type :agent/text-delta :room-id "r" :text "world"}
-                         {:type :agent/turn-end :room-id "r"}
+                         {:type :agent/turn-end :room-id "r" :provider-session-id "cli-1"}
                          {:type :prompt/submit :room-id "r" :text "again"}
                          {:type :agent/text-delta :room-id "r" :text "reply"})
         ;; Navigate to index 2 (keep first 2 entries)
         {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 2})]
     (is (= 2 (count (history state))))
     (is (nil? (get-in state [:rooms "r" :session :provider-session-id])))
+    (is (= ["cli-1"] (get-in state [:rooms "r" :session :superseded-cli-session-ids]))
+        "the dropped Claude session stays claimed so its transcript isn't listed as a duplicate")
     (is (true? (get-in state [:rooms "r" :session :inject-history?]))
         "flags the session so the next turn injects the truncated history")
     (is (nil? (get-in state [:rooms "r" :ui :tree-open?])))))
+
+(deftest tree-navigate-accumulates-superseded-sessions
+  (let [st (-> (apply-events (with-room)
+                             {:type :prompt/submit :room-id "r" :text "hello"}
+                             {:type :agent/turn-end :room-id "r" :provider-session-id "cli-1"})
+               (assoc-in [:rooms "r" :session :superseded-cli-session-ids] ["cli-0"]))
+        {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 0})
+        ;; A second fork before any new turn has nothing live to record.
+        {again :state} (handle state {:type :tree/navigate :room-id "r" :index 0})]
+    (is (= ["cli-0" "cli-1"] (get-in state [:rooms "r" :session :superseded-cli-session-ids])))
+    (is (= ["cli-0" "cli-1"] (get-in again [:rooms "r" :session :superseded-cli-session-ids]))
+        "no duplicate entries")))
 
 (deftest tree-close-clears-flag
   (let [st (apply-events (with-room)

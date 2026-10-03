@@ -341,8 +341,10 @@
                        last)]
       (when idx
         (let [user-ent (nth history idx)
-              room'    (assoc-in room [:session :provider-session-id] nil)]
-          {:state   (assoc-in st [:rooms room-id :session :provider-session-id] nil)
+              ;; Drop the dead id but keep it on record as superseded, so a
+              ;; transcript it did leave behind stays claimed by this session.
+              room'    (update room :session state/drop-provider-session)]
+          {:state   (assoc-in st [:rooms room-id :session] (:session room'))
            :effects [(build-turn-effect
                       {:room room'
                        :resume-id nil

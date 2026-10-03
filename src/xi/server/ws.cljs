@@ -94,11 +94,16 @@
 (defn- saved-sessions
   "All saved-session summaries, minus those shadowed by a live room's
    provider-session-id (Claude CLI ids) — prevents a duplicate card during
-   the first agent turn before Xi's own :session/sync has run."
+   the first agent turn before Xi's own :session/sync has run. A live room's
+   superseded ids (a fork's previous Claude sessions, not yet persisted by
+   that sync either) shadow their transcripts the same way."
   [st agent-id]
   (let [live-pids (into #{}
-                        (keep (fn [[_ room]]
-                                (get-in room [:session :provider-session-id])))
+                        (comp (mapcat (fn [[_ room]]
+                                        (let [sess (:session room)]
+                                          (cons (:provider-session-id sess)
+                                                (:superseded-cli-session-ids sess)))))
+                              (remove nil?))
                         (:rooms st))]
     (cond->> (lobby-sessions agent-id)
       (seq live-pids)

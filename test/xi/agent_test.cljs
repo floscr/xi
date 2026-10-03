@@ -272,6 +272,8 @@
         [[fx-type payload]] effects]
     (is (nil? (get-in state [:rooms "r" :session :provider-session-id]))
         "the dead session id is cleared")
+    (is (= ["dead-sid"] (get-in state [:rooms "r" :session :superseded-cli-session-ids]))
+        "…but recorded as superseded so any transcript it left stays claimed")
     (is (= :provider/start-turn fx-type))
     (is (= "new prompt" (:prompt payload)) "the pending prompt is replayed")
     (is (nil? (:resume-session-id payload)) "no resume on the fresh turn")

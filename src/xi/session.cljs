@@ -118,11 +118,18 @@
 ;; {
 ;;   "id": "<uuid>",
 ;;   "cli_session_id": "<claude-cli-session-id>",
+;;   "superseded_cli_session_ids": ["<earlier claude-cli-session-id>", ...],
 ;;   "cwd": "/path/to/project",
 ;;   "created": "<ISO timestamp>",
 ;;   "name": "Session title",
 ;;   "model": "claude-opus-4-6"
 ;; }
+;;
+;; superseded_cli_session_ids (optional) lists the Claude CLI sessions this Xi
+;; session owned before a fork (retry / edit / tree navigate) or dead-session
+;; retry started a fresh one (xi.core.state/drop-provider-session). Listings
+;; treat those transcripts as part of this session, not as sessions of their
+;; own.
 
 (defn create-session
   "Create a new Xi session. Returns session state map.
@@ -420,6 +427,7 @@
        :aborted-at (:aborted-at data)
        :truncated-from (:truncated-from data)
        :subagent-origin (:subagent-origin data)
+       :superseded-cli-session-ids (:superseded-cli-session-ids data)
        :user-messages nil})
     (catch :default _e nil)))
 
@@ -657,6 +665,19 @@
             (swap! summary-cache assoc filepath {:mtime mtime :summary summary})
             summary))))))
 
+(defn- claimed-cli-ids
+  "Every Claude CLI id the given Xi sessions own — each one's current
+   transcript plus the ones a fork or dead-session retry superseded (see the
+   metadata format above). Raw Claude transcripts matching any of these are
+   hidden from listings: they belong to an Xi session, not to a conversation
+   of their own."
+  [xi-sessions]
+  (into #{}
+        (comp (mapcat (fn [s] (cons (:cli-session-id s)
+                                    (:superseded-cli-session-ids s))))
+              (remove nil?))
+        xi-sessions))
+
 (defn- sessions-for-cwd
   "Session summaries recorded under a single CWD, from all sources, with
    Claude sessions that already have Xi metadata filtered out. Unsorted,
@@ -669,7 +690,7 @@
         claude-sessions (->> (list-dir-files (claude-project-dir cwd) ".jsonl")
                              (keep #(cached-summary read-claude-session-summary %))
                              (remove :empty?))
-        xi-ids (set (keep :cli-session-id xi-sessions))
+        xi-ids (claimed-cli-ids xi-sessions)
         ;; Don't show claude sessions that have Xi metadata (avoid duplicates)
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
     ;; Claude summaries don't record their own cwd; backfill the dir they
@@ -716,7 +737,7 @@
                              ;; Drop aborted stubs with no assistant reply.
                              (remove :empty?))
         ;; Dedup: Xi meta takes priority over claude sessions with same session-id
-        xi-ids (set (keep :cli-session-id xi-sessions))
+        xi-ids (claimed-cli-ids xi-sessions)
         claude-filtered (remove #(contains? xi-ids (:session-id %)) claude-sessions)]
     (->> (concat xi-sessions claude-filtered)
          (sort-by #(or (:last-accessed %) (:timestamp %)))
@@ -983,7 +1004,11 @@
         ;; marker hides a promoted session from listings; the promoted list
         ;; reseeds the sub-agents panel on resume (xi.ext.subagent.handlers).
         (:subagent-origin data) (assoc :subagent-origin (:subagent-origin data))
-        (:promoted-subagents data) (assoc :promoted-subagents (:promoted-subagents data))))
+        (:promoted-subagents data) (assoc :promoted-subagents (:promoted-subagents data))
+        ;; Keep the superseded Claude ids so their transcripts stay claimed
+        ;; (deduped out of listings) across future saves.
+        (seq (:superseded-cli-session-ids data))
+        (assoc :superseded-cli-session-ids (vec (:superseded-cli-session-ids data)))))
 
     :claude
     {:id (:session-id summary)

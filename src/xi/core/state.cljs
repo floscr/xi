@@ -88,3 +88,17 @@
   "Process-local extension state for ext-id (never crosses the wire)."
   [state ext-id]
   (get-in state [:ext ext-id]))
+
+(defn drop-provider-session
+  "Detach a room's session from its live provider (Claude CLI) session so the
+   next turn starts a fresh one, remembering the id it replaces under
+   :superseded-cli-session-ids. Listings dedup raw Claude transcripts against
+   the ids an Xi session claims (xi.session/claimed-cli-ids); without this
+   record a fork (retry / edit / tree navigate) or a dead-session retry left
+   the previous transcript orphaned — a duplicate card for the same
+   conversation in the lobby."
+  [session]
+  (let [old (or (:provider-session-id session) (:cli-session-id session))]
+    (cond-> (assoc session :provider-session-id nil)
+      old (update :superseded-cli-session-ids
+                  (fn [ids] (vec (distinct (conj (or ids []) old))))))))
