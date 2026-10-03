@@ -74,7 +74,7 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   open or collapsed is an appearance setting (below).
 - **Appearance settings** (`xi.web.appearance`; sidebar footer gear, chat
   overflow menu → "Appearance", or the command palette): a dialog with the
-  theme, the viewer-mode switch and an Open / Collapsed choice for tool
+  theme, the viewer-mode and super-collapsed switches and an Open / Collapsed choice for tool
   blocks and for thinking blocks. Three layers, later wins: built-in
   defaults (viewer mode on, both block kinds collapsed) ← `xi.config/appearance`
   in `config.cljc` ([config.md](config.md#web-appearance-options-xiconfigappearance))
@@ -89,6 +89,13 @@ Lists live rooms and saved sessions from the lobby mirror (`:lobby`):
   group and shows a decision icon (✓/✗) at the right of its header. Each
   header is still an individual `<details>` you can click to expand in place
   (`group-viewer-items` in `xi.web.views`)
+- **Super collapsed** (`:super-collapsed?`, off by default; needs viewer
+  mode) folds each viewer group whose blocks are *all* collapsed into one
+  summary row: step count, the newest block (action + argument), a spinner
+  while a tool is running and a red ✗ if any failed. The row is a `<details>`;
+  click it to reveal the usual header rows in place. A group containing an
+  open block (`:tool-blocks` / `:thinking-blocks` `:open`) is left unfolded.
+  Summary logic is pure, in `xi.web.viewer-group`
 - **Timeline virtualization**: only the last 60 entries render; "Show
   earlier" expands by 40 (`:web/timeline-window`, reset on navigation)
 - **Per-session compose drafts** (`:web/drafts`, keyed by session id;

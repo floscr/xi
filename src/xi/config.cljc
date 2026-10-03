@@ -88,6 +88,13 @@
        box of header rows.
        Default true.
 
+     :super-collapsed?
+       Fold every viewer group whose blocks are all collapsed into a single
+       summary row (step count + the latest block); click it to reveal the
+       header rows. Has no effect without :viewer-mode?, and a group holding an
+       open block (:tool-blocks / :thinking-blocks :open) stays unfolded.
+       Default false.
+
      :tool-blocks
        :open | :collapsed — whether a tool call's details (arguments, result)
        start expanded. A tool awaiting an Allow/Deny answer is always open.

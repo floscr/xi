@@ -107,8 +107,9 @@ transport, no live data — from the fabricated data in `src/xi/web/demo.cljs`
 (`demo-sessions` for the list, `demo-history` for the chat timeline). Views:
 `sessions` (session list), `chat` (a coding conversation, rendered with the
 configured appearance), `chat-viewer` (the same chat forced into viewer mode:
-grouped, collapsed tool + thinking rows) and `chat-open` (every block
-expanded, ungrouped); any other value falls back to the session list. Use it for README/marketing screenshots that
+grouped, collapsed tool + thinking rows), `chat-super` (viewer mode with
+`:super-collapsed?` — each collapsed group folded into one summary row) and
+`chat-open` (every block expanded, ungrouped); any other value falls back to the session list. Use it for README/marketing screenshots that
 must never leak real sessions.
 
 To capture them via the Chrome DevTools MCP: emulate `390x844x3,mobile,touch`

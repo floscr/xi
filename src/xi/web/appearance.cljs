@@ -17,20 +17,25 @@
 (def defaults
   "Built-in values, one per setting:
 
-     :viewer-mode?    fold each run of consecutive tool / thinking posts into
-                      one grouped box of header rows (viewer mode)
-     :tool-blocks     :open | :collapsed — whether a tool call's details
-                      start expanded
-     :thinking-blocks :open | :collapsed — same for thinking blocks"
-  {:viewer-mode?    true
-   :tool-blocks     :collapsed
-   :thinking-blocks :collapsed})
+     :viewer-mode?     fold each run of consecutive tool / thinking posts into
+                       one grouped box of header rows (viewer mode)
+     :super-collapsed? fold every viewer group whose blocks are all collapsed
+                       into one summary row (step count + latest block);
+                       click it to reveal the header rows. Needs viewer mode
+     :tool-blocks      :open | :collapsed — whether a tool call's details
+                       start expanded
+     :thinking-blocks  :open | :collapsed — same for thinking blocks"
+  {:viewer-mode?     true
+   :super-collapsed? false
+   :tool-blocks      :collapsed
+   :thinking-blocks  :collapsed})
 
 (def choices
   "Allowed values per setting; anything else is ignored by `normalize`."
-  {:viewer-mode?    #{true false}
-   :tool-blocks     #{:open :collapsed}
-   :thinking-blocks #{:open :collapsed}})
+  {:viewer-mode?     #{true false}
+   :super-collapsed? #{true false}
+   :tool-blocks      #{:open :collapsed}
+   :thinking-blocks  #{:open :collapsed}})
 
 (defn normalize
   "Keep only the known settings of `m` whose values are allowed (`choices`).

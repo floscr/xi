@@ -1786,6 +1786,54 @@ body {
   background: transparent;
 }
 
+/* ---- Super collapsed: a whole group folded into one summary row ---- */
+/* The summary reads like a tool header: chevron, step count, then the newest
+   block (muted args after its action). Opening it shows the usual rows below a
+   hairline. */
+.viewer-group-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  cursor: pointer;
+  color: var(--fg-2);
+  font-size: var(--font-xs);
+  padding: var(--size-1) var(--size-2);
+  list-style: none;
+}
+.viewer-group-summary::-webkit-details-marker { display: none; }
+
+@media (hover: hover) {
+  .viewer-group-summary:hover { color: var(--fg-0); }
+}
+
+.viewer-tool-group--super[open] > .viewer-group-summary .tool-call-toggle-icon {
+  transform: rotate(90deg);
+}
+
+.viewer-group-count {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--fg-1);
+}
+
+.viewer-group-latest {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+}
+
+.viewer-group-latest::before {
+  content: "·";
+  margin-right: var(--size-1);
+}
+
+.viewer-group-rows {
+  border-top: var(--border-0);
+}
+
 /* Right-side status badge: a filled circle with a white icon pinned to the
    right of the header, capturing the tool's outcome. Stays visible even when
    collapsed into a viewer group. */

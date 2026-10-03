@@ -6,6 +6,7 @@
   (testing "no overrides → viewer mode on, tool + thinking blocks collapsed"
     (let [app (appearance/effective nil)]
       (is (true? (:viewer-mode? app)))
+      (is (false? (:super-collapsed? app)) "super collapsed is opt-in")
       (is (= :collapsed (:tool-blocks app)))
       (is (= :collapsed (:thinking-blocks app)))))
   (testing "every default key is present"
@@ -27,7 +28,8 @@
     (testing "invalid configured values are dropped"
       (is (= :collapsed (:tool-blocks (appearance/effective {:tool-blocks :sideways} nil)))))
     (testing "effective-in reads both layers from state"
-      (is (= {:viewer-mode? true :tool-blocks :collapsed :thinking-blocks :open}
+      (is (= {:viewer-mode? true :super-collapsed? false
+              :tool-blocks :collapsed :thinking-blocks :open}
              (appearance/effective-in {:web/appearance-config configured
                                        :web/appearance {:tool-blocks :collapsed}}))))))
 

@@ -21,6 +21,7 @@
                                                sidebar-session-groups sidebar-session-order]]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
+            [xi.web.viewer-group :as viewer-group]
             [ui.icon :as icon]
             [ui.form :as form]
             [ui.button :as button]
@@ -2597,19 +2598,67 @@
             label)])
         chips)])))
 
+(defn- block-info
+  "Describe a tool / thinking history `entry` for the super-collapsed summary
+   row (see xi.web.viewer-group). Nil for other kinds."
+  [entry cwd]
+  (case (:kind entry)
+    :tool-call (let [name (util/strip-mcp-prefix (:tool entry))]
+                 {:kind     :tool-call
+                  :name     name
+                  :detail   (some-> (tool-summary name (:arguments entry) cwd)
+                                    str str/split-lines first)
+                  :running? (= :running (:status entry))
+                  :error?   (boolean (:is-error entry))})
+    :thinking  {:kind :thinking :name "Thinking"}
+    nil))
+
+(defn- super-group
+  "One summary row standing in for a run of collapsed viewer rows: step count,
+   the newest block (name + argument), a spinner while anything is running and
+   an error badge if a tool failed. A <details>, so clicking it reveals the
+   usual header rows in place; Replicant only writes changed attrs, so the
+   user's open/closed choice survives re-renders as the run grows."
+  [run-key run]
+  (let [{n :count :keys [error-count running? latest]}
+        (viewer-group/summarize (map :info run))]
+    [:details {:class ["viewer-tool-group" "viewer-tool-group--super"]
+               :replicant/key (str "vg-" run-key)}
+     [:summary {:class ["viewer-group-summary"]}
+      [:span {:class ["tool-call-toggle-icon"]}
+       (icon/icon {:icon-name :chevron-right :size :sm})]
+      [:span {:class ["viewer-group-count"]} (viewer-group/count-label n)]
+      (when latest
+        [:span {:class ["viewer-group-latest"]}
+         [:span {:class ["tool-call-action"]} (:name latest)]
+         (when (seq (:detail latest))
+           (str " " (:detail latest)))])
+      (when running?
+        [:span {:class ["tool-call-running"]} (spinner)])
+      (when (pos? error-count)
+        [:span {:class ["tool-call-status" "tool-call-status--error"]
+                :title (str error-count (if (= 1 error-count) " error" " errors"))}
+         (icon/icon {:icon-name :x :size :sm})])]
+     [:div {:class ["viewer-group-rows"]} (map :node run)]]))
+
 (defn- group-viewer-items
   "Viewer mode: collapse runs of consecutive collapsible tool and thinking
    posts into a single grouped container that shows just their headers.
-   `items` is an ordered seq of {:key :node :group?}. Runs of :group? true fold into one
-   `.viewer-tool-group`; everything else (text, dialogs, non-collapsible
-   tools) passes through unchanged, breaking the run."
-  [items]
+   `items` is an ordered seq of {:key :node :group? :collapsed? :info}. Runs of
+   :group? true fold into one `.viewer-tool-group`; everything else (text,
+   dialogs, non-collapsible tools) passes through unchanged, breaking the run.
+   With `super?`, a run whose blocks are all :collapsed? folds further into one
+   `super-group` summary row."
+  [super? items]
   (mapcat
    (fn [run]
      (if (:group? (first run))
-       [[:div {:class ["viewer-tool-group"]
-               :replicant/key (str "vg-" (:key (first run)))}
-         (map :node run)]]
+       (let [run-key (:key (first run))]
+         [(if (and super? (viewer-group/super-collapsible? run))
+            (super-group run-key run)
+            [:div {:class ["viewer-tool-group"]
+                   :replicant/key (str "vg-" run-key)}
+             (map :node run)])])
        (map :node run)))
    (partition-by :group? items)))
 
@@ -2793,6 +2842,7 @@
                                                      :node (resolved-dialog-post (:key e) e)})
                                             (remove :tool-id (get by-anchor p))))]
                  (group-viewer-items
+                  (and viewer? (:super-collapsed? app))
                   (concat
                    ;; Resolved bubbles anchored above the visible window: pin at top.
                    (mapcat ritems (sort (filter #(< % start) (keys by-anchor))))
@@ -2834,6 +2884,9 @@
                                                (resolved-by-tool (:id entry)))))]
                            (when post [{:key (str "h-" p)
                                         :group? groupable?
+                                        :collapsed? collapsed?
+                                        :info (when groupable?
+                                                (block-info entry (or (:cwd room) (get-in state [:web/pending-room :cwd]))))
                                         :node (with-post-key (str "h-" p) post)}])))))
                     (range start (inc total))))))
                ;; These tail bubbles appear/disappear as a turn progresses
@@ -4534,6 +4587,16 @@
               :on-change (fn [^js e]
                            (dispatch! {:type :appearance/set
                                        :key :viewer-mode?
+                                       :value (boolean (.. e -target -checked))}))}))
+           (appearance-row
+            "Super collapsed"
+            "Fold collapsed groups into one summary row (needs viewer mode)"
+            (switch/switch-toggle
+             {:checked (:super-collapsed? app)
+              :disabled (not (:viewer-mode? app))
+              :on-change (fn [^js e]
+                           (dispatch! {:type :appearance/set
+                                       :key :super-collapsed?
                                        :value (boolean (.. e -target -checked))}))}))
            (appearance-row
             "Tool blocks"

@@ -75,6 +75,7 @@ back on this map.
 | Key | Default | Description |
 | --- | --- | --- |
 | `:viewer-mode?` | `true` | Fold each run of consecutive tool / thinking posts into one grouped box of header rows. |
+| `:super-collapsed?` | `false` | Fold every viewer group whose blocks are all collapsed into one summary row (step count + latest block). Needs `:viewer-mode?`; a group holding an open block stays unfolded. |
 | `:tool-blocks` | `:collapsed` | `:open` or `:collapsed` — whether a tool call's details (arguments, result) start expanded. A tool awaiting an Allow/Deny answer is always open. |
 | `:thinking-blocks` | `:collapsed` | `:open` or `:collapsed` — whether thinking blocks start expanded. |
 
