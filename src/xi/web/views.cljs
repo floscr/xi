@@ -375,6 +375,35 @@
         (.set plain-code-cache text result)
         result)))
 
+(defn code-focus-segments
+  "Split `text` into [muted? segment] pairs around the [start end) char
+   `ranges` a permission ask targets (the dialog's :target): text outside
+   every range is muted, text inside is not. Ranges are clamped to the text
+   (it may be truncated for display) and taken in order; empty pieces are
+   dropped."
+  [text ranges]
+  (let [n (count text)]
+    (loop [pos 0 rs (sort ranges) out []]
+      (if-let [[s e] (first rs)]
+        (let [s (min (max s pos) n)
+              e (min (max e s) n)]
+          (recur e (rest rs)
+                 (cond-> out
+                   (< pos s) (conj [true (subs text pos s)])
+                   (< s e)   (conj [false (subs text s e)]))))
+        (cond-> out (< pos n) (conj [true (subs text pos n)]))))))
+
+(defn- focused-clj-code
+  "Highlighted clj `text` with everything outside the ask's `ranges` muted
+   (.code-muted). Each segment is highlighted on its own — the ranges are
+   whole forms, so every piece tokenizes like it would in context."
+  [text ranges]
+  (into [:code]
+        (map (fn [[muted? s]]
+               (into [:span {:class (if muted? "code-muted" "code-focus")}]
+                     (rest (or (highlight-clj-code s) (plain-code s))))))
+        (code-focus-segments text ranges)))
+
 (defn- render-md
   "Memoized `md/render`: identical text yields the *identical* hiccup object so
    Replicant's `unchanged?` short-circuits via identical? and skips re-diffing
@@ -551,10 +580,16 @@
                    :title (or label (if deny? "Denied" "Allowed"))}
             (icon/icon {:icon-name (if deny? :x :check) :size :sm})]))]
       (when clj-code
-        [:div {:class ["tool-call-content" "tool-call-input"]}
-         [:pre {:class ["tool-call-code"]}
-          (or (highlight-clj-code (truncate-lines clj-code 100))
-              (plain-code (truncate-lines clj-code 100)))]])
+        ;; A pending ask that targets part of this code (the (spit …) /
+        ;; (sh …) call it is about) mutes the rest so the eye lands there.
+        (let [shown  (truncate-lines clj-code 100)
+              target (get-in permission [:dialog :target])
+              ranges (when (= :code (:arg target)) (seq (:ranges target)))]
+          [:div {:class ["tool-call-content" "tool-call-input"]}
+           [:pre {:class ["tool-call-code"]}
+            (if ranges
+              (focused-clj-code shown ranges)
+              (or (highlight-clj-code shown) (plain-code shown)))]]))
       (cond
         ;; When the result carries an image (view_image, screenshots) the text is
         ;; just a "Viewed image: /path" caption — drop it and show only the image.
@@ -702,7 +737,8 @@
       [:summary {:class ["thinking-toggle"]}
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
-       [:span {:style {:font-weight "500"}} "Thinking"]]
+       [:span {:class ["tool-call-toggle-label"]}
+        [:span {:class ["tool-call-action"]} "Thinking"]]]
       (into [:pre {:class ["thinking-text"]}] (md/linkify (:text entry)))]]
 
     :tool-call

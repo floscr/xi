@@ -509,6 +509,8 @@
                        ;; renderers build their buttons/keys from that data.
                        ;; :diff {:path :text} previews a write/edit's change.
                        ;; :call {:name :arguments} names the gated tool call.
+                       ;; :target {:arg :ranges} locates, inside that call's
+                       ;; argument, the part the ask is about.
                        :confirm!  (when ask!
                                     (fn confirm!
                                       ([message] (confirm! message nil))
@@ -518,7 +520,8 @@
                                               :dialog  (cond-> {:type :confirm :message message}
                                                          (:options opts) (assoc :options (:options opts))
                                                          (:diff opts)    (assoc :diff (:diff opts))
-                                                         (:call opts)    (assoc :call (:call opts)))}))))}
+                                                         (:call opts)    (assoc :call (:call opts))
+                                                         (:target opts)  (assoc :target (:target opts)))}))))}
              policy1 (when tool-policy
                      (fn [tool-call]
                        (tool-policy tool-call (scope-confirm-to-call tool-ctx tool-call))))

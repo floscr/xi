@@ -1347,3 +1347,70 @@
     (let [text (result-text res)]
       (is (str/includes? text ":met? false"))
       (is (str/includes? text ":note")))))
+
+;; ── Ask targets: which call in the code a confirm dialog is about ───────────
+
+(defn- range-texts
+  "The substrings of `code` that [start end) `ranges` cover."
+  [code ranges]
+  (mapv (fn [[s e]] (subs code s e)) ranges))
+
+(deftest form-ranges-locate-list-forms
+  (let [code "(def x 1)\n(spit \"/etc/x\" \"hi\")\n(cp \"a\" \"b\")"]
+    (is (= ["(spit \"/etc/x\" \"hi\")"]
+           (range-texts code (clj-ext/form-ranges code #(= 'spit (first %))))))
+    (is (= ["(spit \"/etc/x\" \"hi\")" "(cp \"a\" \"b\")"]
+           (range-texts code (clj-ext/form-ranges code #(contains? #{'spit 'cp} (first %))))))
+    (testing "nested matches merge into the enclosing range"
+      (let [code "(do (spit \"a\" (spit \"b\" 1)))"]
+        (is (= ["(spit \"a\" (spit \"b\" 1))"]
+               (range-texts code (clj-ext/form-ranges code #(= 'spit (first %))))))))
+    (testing "unparseable code has no ranges"
+      (is (= [] (clj-ext/form-ranges "(oops" (constantly true)))))))
+
+(deftest path-ask-target-narrows-to-the-literal-path
+  (let [code "(spit \"/etc/x\" 1)\n(spit \"/tmp/y\" 2)"
+        t    (clj-ext/path-ask-target code :write {:literals ["/etc/x"]})]
+    (is (= :code (:arg t)))
+    (is (= ["(spit \"/etc/x\" 1)"] (range-texts code (:ranges t))))))
+
+(deftest path-ask-target-dynamic-path-uses-the-helper-that-asked
+  (let [code "(let [p (str a \"/b\")] (spit p 1))\n(cp \"a\" \"b\")"]
+    (is (= ["(spit p 1)"]
+           (range-texts code (:ranges (clj-ext/path-ask-target
+                                       code :write {:op "spit" :literals ["/x/b"]})))))
+    (testing "without the helper name every write helper call is a candidate"
+      (is (= ["(spit p 1)" "(cp \"a\" \"b\")"]
+             (range-texts code (:ranges (clj-ext/path-ask-target
+                                         code :write {:literals ["/x/b"]}))))))
+    (testing "nothing to point at → no target (the block renders as usual)"
+      (is (nil? (clj-ext/path-ask-target "(+ 1 2)" :write {:op "spit"}))))))
+
+(deftest gate-ask-targets-the-outside-read-call
+  (async done
+    (let [seen (atom nil)
+          call (str "(cat \"" (os/homedir) "/xi-gate-read.txt\")")
+          code (str "(def a 1)\n" call)
+          ctx  (assoc (gate-ctx) :cwd (os/tmpdir)
+                      :confirm! (fn [_ opts]
+                                  (reset! seen opts)
+                                  (js/Promise.resolve false)))]
+      (-> (js/Promise.resolve (gate {:name "clj" :arguments {:code code}} ctx))
+          (.then (fn [_]
+                   (is (= :code (get-in @seen [:target :arg])))
+                   (is (= [call] (range-texts code (get-in @seen [:target :ranges]))))
+                   (done)))))))
+
+(deftest gate-ask-targets-the-cli-call
+  (async done
+    (let [seen (atom nil)
+          code "(def a 1)\n(sh \"ssh\" \"host\" \"ls\")\n(sh \"ls\")"
+          ctx  (assoc (gate-ctx)
+                      :confirm! (fn [_ opts]
+                                  (reset! seen opts)
+                                  (js/Promise.resolve false)))]
+      (-> (js/Promise.resolve (gate {:name "clj" :arguments {:code code}} ctx))
+          (.then (fn [_]
+                   (is (= ["(sh \"ssh\" \"host\" \"ls\")"]
+                          (range-texts code (get-in @seen [:target :ranges]))))
+                   (done)))))))

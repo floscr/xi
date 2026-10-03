@@ -20,3 +20,20 @@
     (is (false? (boolean (views/command-while-busy? "hello world"))))
     (is (false? (boolean (views/command-while-busy? "/bogus"))))
     (is (false? (boolean (views/command-while-busy? nil))))))
+
+;; ── code-focus-segments (permission ask → muted / focused code) ───────────
+
+(deftest code-focus-segments-splits-around-ranges
+  (let [text "(def a 1)\n(spit p 1)\n(cp a b)"]
+    (testing "text outside the ranges is muted, inside is not"
+      (is (= [[true "(def a 1)\n"] [false "(spit p 1)"] [true "\n(cp a b)"]]
+             (views/code-focus-segments text [[10 20]]))))
+    (testing "several ranges, given in any order"
+      (is (= [[true "(def a 1)\n"] [false "(spit p 1)"] [true "\n"] [false "(cp a b)"]]
+             (views/code-focus-segments text [[21 29] [10 20]]))))
+    (testing "ranges past the (truncated) text are clamped"
+      (is (= [[true "(def a 1)\n"] [false "(spit p 1)\n(cp a b)"]]
+             (views/code-focus-segments text [[10 999]])))
+      (is (= [[true text]] (views/code-focus-segments text [[500 600]]))))
+    (testing "a range covering everything mutes nothing"
+      (is (= [[false text]] (views/code-focus-segments text [[0 (count text)]]))))))

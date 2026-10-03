@@ -128,6 +128,16 @@ Guards, enforced inside every helper:
   (computed, non-string) out-of-repo path raises the same dialog **at runtime**
   via the worker’s `gateRequest` round-trip (see reads above); on deny the
   write throws ("user denied writing outside the repo").
+- **Ask targets**: every clj approval dialog (out-of-repo path, CLI, guarded
+  or rule-asked command, directory deletion) carries a `:target`
+  `{:arg :code :ranges [[start end] …]}` — the character ranges of the call
+  form(s) in the code that raised it (`ask-target` / `form-ranges`, from
+  edamame's location metadata). A static path ask points at the helper call
+  naming the literal; a runtime `gateRequest` also posts the helper that hit
+  the gate (`:op`) and the path as written (`:raw`), so a dynamic
+  `(spit p …)` is singled out even though its path isn't in the source. The
+  web client mutes the rest of the block's code around those ranges
+  ([web-client.md](web-client.md)).
 - **Directory deletion**: the builtin `(rm dir)` recursively deletes a whole
   tree, so the gate statically scans `rm`'s literal path args and, for any that
   resolve to an **existing directory**, raises a confirm before the eval runs —

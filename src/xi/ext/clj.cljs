@@ -131,9 +131,15 @@
    mid-eval (a dynamic path the static gate couldn't pre-approve); blocks
    until the user answers the approval dialog. Returns the approved root
    string, :denied, or nil when there is no parent thread to ask."
-  [opts kind resolved]
+  [opts kind resolved {:keys [op raw]}]
   (when-let [[verdict root] (await-main-thread! opts #js {:gateRequest (name kind)
-                                                          :path        (str resolved)})]
+                                                          :path        (str resolved)
+                                                          ;; which helper hit the
+                                                          ;; gate, with the path as
+                                                          ;; written: lets the ask
+                                                          ;; point at that call
+                                                          :op          (some-> op str)
+                                                          :raw         (str raw)})]
     (if (= :allowed verdict) root :denied)))
 
 (defn- git-lock-gate!
@@ -168,8 +174,9 @@
    to :allowed-reads so further reads under it pass without a round-trip.
    Credential paths are hard-blocked as defense-in-depth UNLESS the user has
    explicitly approved them at the gate (they sit under an :allowed-reads /
-   :allowed-writes root) — an explicit approval overrides the block."
-  [opts p]
+   :allowed-writes root) — an explicit approval overrides the block.
+   `op` (optional) names the helper asking, for the approval dialog's target."
+  [opts p & [op]]
   (let [cwd      (opts-cwd opts)
         resolved (paths/real-resolve cwd (str p))
         real-cwd (paths/real-resolve cwd ".")
@@ -182,7 +189,7 @@
             (paths/within-tmp? cwd resolved)
             approved?)
       resolved
-      (let [verdict (runtime-gate! opts :read resolved)]
+      (let [verdict (runtime-gate! opts :read resolved {:op op :raw p})]
         (cond
           (string? verdict)
           (do (swap! opts update :allowed-reads (fnil conj #{}) verdict)
@@ -200,8 +207,9 @@
    out-of-repo roots the user pre-approved at the gate (`:allowed-writes` in
    opts) are writable from clj scripts. An unapproved out-of-repo path raises
    the approval dialog at runtime via runtime-gate! (the eval blocks until
-   answered); the approved root is added to :allowed-writes."
-  [opts p]
+   answered); the approved root is added to :allowed-writes. `op` (optional)
+   names the helper asking, for the approval dialog's target."
+  [opts p & [op]]
   (let [cwd      (opts-cwd opts)
         resolved (paths/real-resolve cwd (str p))
         real-cwd (paths/real-resolve cwd ".")
@@ -210,7 +218,7 @@
             (paths/within-tmp? cwd resolved)
             (some #(paths/path-within? resolved %) allowed))
       resolved
-      (let [verdict (runtime-gate! opts :write resolved)]
+      (let [verdict (runtime-gate! opts :write resolved {:op op :raw p})]
         (cond
           (string? verdict)
           (do (swap! opts update :allowed-writes (fnil conj #{}) verdict)
@@ -253,8 +261,8 @@
 ;; refreshed before every eval (the SCI ctx itself is long-lived).
 
 
-(defn- read-file [opts p]
-  (fs/readFileSync (resolve-read opts p) "utf8"))
+(defn- read-file [opts p & [op]]
+  (fs/readFileSync (resolve-read opts p (or op 'cat)) "utf8"))
 
 (defn- regex->str [pattern]
   (if (regexp? pattern) (.-source pattern) (str pattern)))
@@ -352,7 +360,7 @@
   (fn [pattern & [p]]
     (check-search-args! "grep" pattern p)
     (let [cwd    (opts-cwd opts)
-          target (resolve-read opts (or p "."))
+          target (resolve-read opts (or p ".") 'grep)
           {:keys [exit out err]}
           (spawn-sync! ["rg" "-n" "--no-heading" "--max-count" "500"
                         "-e" (regex->str pattern) target]
@@ -366,7 +374,7 @@
   (fn [pattern & [dir]]
     (check-search-args! "find" pattern dir)
     (let [cwd (opts-cwd opts)
-          target (resolve-read opts (or dir "."))
+          target (resolve-read opts (or dir ".") 'find)
           {:keys [exit out err]} (spawn-sync! ["fd" "--" (str pattern) target] cwd)]
       (if (zero? exit)
         ;; fd exits 0 with empty stdout when nothing matches; split-lines on ""
@@ -536,22 +544,22 @@
     {'cat    cat'
      'slurp  cat'
      'spit   (fn [p s & [{:keys [append]}]]
-               (fs/writeFileSync (resolve-write opts p) (str s)
+               (fs/writeFileSync (resolve-write opts p 'spit) (str s)
                                  #js {:flag (if append "a" "w")})
                nil)
      'ls     (fn [& [p]]
-               (let [dir (resolve-read opts (or p "."))]
+               (let [dir (resolve-read opts (or p ".") 'ls)]
                  (->> (fs/readdirSync dir #js {:withFileTypes true})
                       (mapv #(str (.-name %) (when (.isDirectory %) "/")))
                       sort vec)))
-     'head   (fn [p & [n]] (vec (take (or n 10) (str/split-lines (read-file opts p)))))
-     'tail   (fn [p & [n]] (vec (take-last (or n 10) (str/split-lines (read-file opts p)))))
+     'head   (fn [p & [n]] (vec (take (or n 10) (str/split-lines (read-file opts p 'head)))))
+     'tail   (fn [p & [n]] (vec (take-last (or n 10) (str/split-lines (read-file opts p 'tail)))))
      'glob   (fn [pattern]
                (let [cwd (opts-cwd opts)
                      pat (paths/expand-home (str pattern))]
                  ;; Confine glob to the allowed roots: resolve-read on the
                  ;; pattern's literal base dir throws when it escapes the repo.
-                 (resolve-read opts (glob-base pat))
+                 (resolve-read opts (glob-base pat) 'glob)
                  (->> (if (exists? js/Bun)
                         (js/Array.from (.scanSync (js/Bun.Glob. pat)
                                                   #js {:cwd cwd}))
@@ -561,26 +569,26 @@
      'grep   (grep-fn opts)
      'find   (find-fn opts)
      'mkdir  (fn [p]
-               (let [dir (resolve-write opts p)]
+               (let [dir (resolve-write opts p 'mkdir)]
                  (fs/mkdirSync dir #js {:recursive true})
                  dir))
      'cp     (fn [from to]
-               (fs/cpSync (resolve-read opts from)
-                          (resolve-write opts to)
+               (fs/cpSync (resolve-read opts from 'cp)
+                          (resolve-write opts to 'cp)
                           #js {:recursive true})
                nil)
      'mv     (fn [from to]
-               (fs/renameSync (resolve-write opts from)
-                              (resolve-write opts to))
+               (fs/renameSync (resolve-write opts from 'mv)
+                              (resolve-write opts to 'mv))
                nil)
      'rm     (fn [& paths]
                (doseq [p paths]
-                 (fs/rmSync (resolve-write opts p)
+                 (fs/rmSync (resolve-write opts p 'rm)
                             #js {:force true :recursive true}))
                nil)
      'tmpdir (fn [] (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-clj-")))
      'stat   (fn [p]
-               (let [s (fs/statSync (resolve-read opts p))]
+               (let [s (fs/statSync (resolve-read opts p 'stat))]
                  {:size     (.-size s)
                   :dir?     (.isDirectory s)
                   :file?    (.isFile s)
@@ -588,7 +596,7 @@
                   :mtime-ms (js/Math.round (.-mtimeMs s))
                   :mtime    (.toISOString (.-mtime s))
                   :ctime    (.toISOString (.-ctime s))}))
-     'realpath (fn [p] (fs/realpathSync (resolve-read opts p)))
+     'realpath (fn [p] (fs/realpathSync (resolve-read opts p 'realpath)))
      'basename (fn [p & [ext]] (if ext (node-path/basename (str p) (str ext))
                                        (node-path/basename (str p))))
      'dirname  (fn [p] (node-path/dirname (str p)))
@@ -600,7 +608,7 @@
                            (when (fs/existsSync p) p)))
                        (str/split (or (aget js/process.env "PATH") "") #":"))))
      'touch  (fn [p]
-               (let [f (resolve-write opts p)
+               (let [f (resolve-write opts p 'touch)
                      now (js/Date.)]
                  (if (fs/existsSync f)
                    (fs/utimesSync f now now)
@@ -1106,11 +1114,15 @@
     (let [tool (if (= :write kind) #{:write :edit} kind)]
       {:match {:tool tool :repo repo} :action {:type :allow}})))
 
+(declare path-ask-target)
+
 (defn- approve-outside-path
   "Approve one out-of-repo read/write `path` (kind :read or :write) by consulting
    the rules engine as a {:tool :read/:write} request, then falling back to a
    dialog. Returns a promise of the approved root (the repo root when granted a
-   repo, else the resolved path) or nil when denied/blocked.
+   repo, else the resolved path) or nil when denied/blocked. The dialog carries
+   a :target locating the call in the ctx's :code (path-ask-target) — `hit`
+   {:op :raw} says which helper hit a runtime gate and the path as written.
 
    - engine :allow    → auto-approve, no dialog (this is how a repo-scoped
      session rule from a prior [r], or any config/hardened allow, skips the ask)
@@ -1118,9 +1130,12 @@
    - engine :ask/none → dialog [y]/[n]/[r allow repo]; [r] persists a repo-scoped
      session allow-rule (via :ext.rules/add) so later access under that repo
      skips the dialog. Auto-approves when headless (no confirm!)."
-  [kind path {:keys [confirm! dispatch! get-state room-id] :as _ctx} cwd]
+  [kind path {:keys [confirm! dispatch! get-state room-id code] :as _ctx} cwd & [hit]]
   (let [resolved (paths/real-resolve cwd (str path))
         repo     (rules-store/git-root (node-path/dirname resolved))
+        target   (when code
+                   (path-ask-target code kind {:op       (:op hit)
+                                               :literals [(str path) (:raw hit) resolved]}))
         st       (when get-state (get-state))
         ruleset  (rules-store/ordered-rules st room-id cwd)
         ext-st   (get-in st [:rooms room-id :ext])
@@ -1146,7 +1161,9 @@
                            (str (if (= :write kind) "Write" "Read")
                                 " outside the project repo?"))
                        resolved repo)
-                      (when repo {:options [:yes :no :allow-repo]}))
+                      (cond-> {}
+                        repo   (assoc :options [:yes :no :allow-repo])
+                        target (assoc :target target)))
             (.then (fn [answer]
                      (cond
                        (= answer :repo)
@@ -1180,7 +1197,8 @@
     (if-not ctx
       (settle! nil)
       (-> (approve-outside-path (if (= "write" (.-gateRequest m)) :write :read)
-                                path ctx (:cwd ctx))
+                                path ctx (:cwd ctx)
+                                {:op (.-op m) :raw (.-raw m)})
           (.then settle!)
           (.catch (fn [_] (settle! nil)))))))
 
@@ -1508,6 +1526,131 @@
       @acc)
     (catch :default err {:parse-error (.-message err)})))
 
+(defn- line-starts
+  "Char offset of the start of every line in `code` (line 1 → 0)."
+  [code]
+  (reduce (fn [acc i] (conj acc (inc i)))
+          [0]
+          (keep-indexed (fn [i c] (when (= c \newline) i)) code)))
+
+(defn- merge-ranges
+  "Sort [start end] char ranges and merge the overlapping/touching ones."
+  [ranges]
+  (reduce (fn [acc [s e]]
+            (let [[ps pe] (peek acc)]
+              (if (and pe (<= s pe))
+                (conj (pop acc) [ps (max pe e)])
+                (conj acc [s e]))))
+          []
+          (sort ranges)))
+
+(defn form-ranges
+  "Char ranges [start end) in `code` of every list form satisfying `pred`
+   (called with the form), nested ones included, merged when they overlap.
+   Edamame's location metadata (1-based :row/:col, exclusive :end-col) is
+   mapped onto string offsets so a client can highlight exactly the call an
+   approval ask is about. [] when the code doesn't parse."
+  [code pred]
+  (try
+    (let [starts (line-starts code)
+          offset (fn [row col] (+ (nth starts (dec row)) (dec col)))]
+      (->> (e/parse-string-all code SCAN_OPTS)
+           (tree-seq coll? #(if (map? %) (concat (keys %) (vals %)) (seq %)))
+           (filter #(and (seq? %) (pred %)))
+           (keep (fn [f]
+                   (let [{:keys [row col end-row end-col]} (meta f)]
+                     (when (and row col end-row end-col)
+                       [(offset row col) (offset end-row end-col)]))))
+           merge-ranges))
+    (catch :default _ [])))
+
+(defn- strip-opts-map
+  "The args of a (sh …) / (process/start …) form without a leading opts map."
+  [args]
+  (if (map? (first args)) (rest args) args))
+
+(defn- ask-target
+  "A confirm dialog's :target for `code`: {:arg :code :ranges [[s e] …]} over
+   the forms `pred` picks (see form-ranges), or nil when nothing matched —
+   then the client shows the block as usual instead of dimming all of it."
+  [code pred]
+  (when-let [ranges (seq (form-ranges (str code) pred))]
+    {:arg :code :ranges (vec ranges)}))
+
+(defn path-ask-target
+  "Target of an out-of-repo path ask: the builtin read/write helper calls of
+   `kind` in `code` — narrowed to the helper `op` (symbol name) that hit the
+   gate when known, and to the call(s) naming one of `literals` (the raw /
+   resolved path) when any does. Dynamic paths with several candidate calls
+   highlight them all rather than guessing one."
+  [code kind {:keys [op literals]}]
+  (let [heads (if (seq (str op))
+                #{(symbol (str op))}
+                (set (keys (if (= :write kind) WRITE_HELPER_TARGETS READ_HELPER_TARGETS))))
+        lits  (set (remove nil? literals))
+        head? (fn [f] (contains? heads (first f)))
+        lit?  (fn [f] (some #(and (string? %) (contains? lits %)) (rest f)))]
+    (or (ask-target code (fn [f] (and (head? f) (lit? f))))
+        (ask-target code head?))))
+
+(defn- skip-env-assignments [words]
+  (drop-while #(re-matches #"[A-Za-z_][A-Za-z0-9_]*=.*" %) words))
+
+(defn- segment-cli
+  "The CLI a shell segment runs: its first word after leading VAR= bindings and
+   a plain `env VAR=… cmd` wrapper (env is just a VAR= prefix in disguise — the
+   real binary is what needs approval). `env` with options (`env -i`), or with
+   nothing after it (prints the whole environment), stays the CLI."
+  [seg]
+  (let [words  (skip-env-assignments (str/split (str/trim seg) #"\s+"))
+        inner  (when (and (= "env" (first words))
+                          (not (str/starts-with? (str (second words)) "-")))
+                 (skip-env-assignments (rest words)))]
+    (not-empty (first (if (seq inner) inner words)))))
+
+(defn bg-command-clis
+  "Leading CLI names of background shell command strings (process/start /
+   poll-until run whole bash command lines, unlike argv-style sh): strip
+   quoted segments, split on shell separators, skip VAR= env prefixes (and a
+   plain `env VAR=…` wrapper), take each segment's first word. These join the
+   sh literals for CLI approval."
+  [cmds]
+  (->> cmds
+       (mapcat (fn [cmd] (str/split (rules-store/strip-quoted (str cmd)) #"[;|&\n]+")))
+       (keep segment-cli)
+       set))
+
+(defn- cli-ask-target
+  "Target of a CLI approval ask: the (sh \"cli\" …) calls and the background
+   command strings ((process/start \"cli …\")) that run `cli`."
+  [code cli]
+  (ask-target code
+              (fn [f]
+                (let [args (strip-opts-map (rest f))]
+                  (case (first f)
+                    sh (= cli (first args))
+                    (process/start process/poll-until)
+                    (and (string? (first args))
+                         (contains? (bg-command-clis [(first args)]) cli))
+                    false)))))
+
+(defn- command-ask-target
+  "Target of a command ask (an arg-scoped :ask rule, a guarded pattern): the
+   sh / background call whose literal command line is `command`."
+  [code command]
+  (ask-target code
+              (fn [f]
+                (let [args (strip-opts-map (rest f))]
+                  (case (first f)
+                    sh (= command (str/join " " (filter string? args)))
+                    (process/start process/poll-until) (= command (first args))
+                    false)))))
+
+(defn- rm-ask-target
+  "Target of a directory-deletion ask: the (rm …) call(s) naming `path`."
+  [code path]
+  (ask-target code (fn [f] (and (= 'rm (first f)) (some #(= path %) (rest f))))))
+
 (defn- sh-summary
   "Derive the (sh …) view {:literals :commands :dynamic? :shell-c?} from a
    scan-code result. :commands joins each call's literal string args — used for
@@ -1592,8 +1735,8 @@
   "Confirm each cli in turn. Resolves to {:approved #{…}} or {:denied cli}.
    :always answers persist as a session allow-rule (via :ext.rules/add) — except
    `bb`, whose :always records the project's bb.edn sha in the persistent trust
-   store."
-  [confirm! dispatch! room-id cwd clis]
+   store. Each ask targets the call(s) running that cli in `code`."
+  [confirm! dispatch! room-id cwd code clis]
   (reduce
    (fn [chain cli]
      (.then chain
@@ -1601,7 +1744,9 @@
               (if (:denied acc)
                 acc
                 (-> (confirm! (str "clj: allow running `" cli "`?")
-                              {:options [:yes :no :always]})
+                              (cond-> {:options [:yes :no :always]}
+                                (cli-ask-target code cli)
+                                (assoc :target (cli-ask-target code cli))))
                     (.then (fn [answer]
                              (cond
                                (= answer :always)
@@ -1617,32 +1762,8 @@
    (js/Promise.resolve {:approved #{}})
    clis))
 
-(defn- skip-env-assignments [words]
-  (drop-while #(re-matches #"[A-Za-z_][A-Za-z0-9_]*=.*" %) words))
 
-(defn- segment-cli
-  "The CLI a shell segment runs: its first word after leading VAR= bindings and
-   a plain `env VAR=… cmd` wrapper (env is just a VAR= prefix in disguise — the
-   real binary is what needs approval). `env` with options (`env -i`), or with
-   nothing after it (prints the whole environment), stays the CLI."
-  [seg]
-  (let [words  (skip-env-assignments (str/split (str/trim seg) #"\s+"))
-        inner  (when (and (= "env" (first words))
-                          (not (str/starts-with? (str (second words)) "-")))
-                 (skip-env-assignments (rest words)))]
-    (not-empty (first (if (seq inner) inner words)))))
 
-(defn bg-command-clis
-  "Leading CLI names of background shell command strings (process/start /
-   poll-until run whole bash command lines, unlike argv-style sh): strip
-   quoted segments, split on shell separators, skip VAR= env prefixes (and a
-   plain `env VAR=…` wrapper), take each segment's first word. These join the
-   sh literals for CLI approval."
-  [cmds]
-  (->> cmds
-       (mapcat (fn [cmd] (str/split (rules-store/strip-quoted (str cmd)) #"[;|&\n]+")))
-       (keep segment-cli)
-       set))
 
 (def ^:private HELPER_EQUIV
   "CLIs that have a builtin helper — (sh …) to these carries a hint pointing at
@@ -1735,10 +1856,13 @@
     ruleset)))
 
 (defn- confirm-all!
-  "Confirm each prompt in turn; resolves false on the first deny."
+  "Confirm each {:prompt :target} in turn; resolves false on the first deny."
   [confirm! prompts]
-  (reduce (fn [chain prompt]
-            (.then chain (fn [ok?] (if ok? (confirm! prompt) false))))
+  (reduce (fn [chain {:keys [prompt target]}]
+            (.then chain (fn [ok?]
+                           (if ok?
+                             (confirm! prompt (when target {:target target}))
+                             false))))
           (js/Promise.resolve true)
           prompts))
 
@@ -1773,8 +1897,8 @@
    resolves :ok? false on the first deny. With no confirm! attached (headless),
    directory deletions pass through (parity with the clj gate's other guarded
    confirms); out-of-repo dirs stay blocked by resolve-write since they're not
-   injected as approved write roots."
-  [confirm! cwd dirs]
+   injected as approved write roots. Each ask targets the (rm …) in `code`."
+  [confirm! cwd code dirs]
   (reduce
    (fn [chain p]
      (.then chain
@@ -1786,7 +1910,8 @@
                   :else
                   (-> (confirm! (str "Recursively delete directory `" p "`"
                                      (when outside? " — OUTSIDE the project repo")
-                                     "?"))
+                                     "?")
+                                (when-let [t (rm-ask-target code p)] {:target t}))
                       (.then (fn [yes?]
                                (if yes?
                                  (cond-> acc
@@ -1816,6 +1941,9 @@
         ;; dispatched into app state (see on-process-event).
         _       (when dispatch! (reset! app-dispatch! dispatch!))
         _       (when room-id (swap! room-ids assoc (room-key room-id) room-id))
+        ;; The ctx the approval dialogs see also carries the code, so each
+        ;; ask can point at the call it is about (:target, see ask-target).
+        ctx     (assoc ctx :code code)
         ;; Capture the gate ctx per room so a worker's runtime gateRequest
         ;; (dynamic out-of-repo path mid-eval) can run the same approval
         ;; dialogs (see on-gate-request).
@@ -1991,9 +2119,10 @@
                                         :refuse-unanswered? (= :deny (get-in r [:action :unanswered]))})))))
             rule-asks (->> asks
                            (map (fn [{:keys [command message]}]
-                                  (if message
-                                    (str message "\n\n" command)
-                                    (str "Run `" command "`?"))))
+                                  {:prompt (if message
+                                             (str message "\n\n" command)
+                                             (str "Run `" command "`?"))
+                                   :target (command-ask-target code command)}))
                            distinct)
             ;; Asks whose rule says `:unanswered :deny` (script-exec) must not
             ;; pass when nobody can answer — unlike the other command asks,
@@ -2012,7 +2141,10 @@
                       (filter (fn [cmd]
                                 (some #(str/includes? cmd %) rules-defaults/guarded-patterns))
                               bg))
-            confirms (concat rule-asks (map #(str "Guarded command: " %) guarded))
+            confirms (concat rule-asks
+                             (map (fn [cmd] {:prompt (str "Guarded command: " cmd)
+                                             :target (command-ask-target code cmd)})
+                                  guarded))
             ;; Builtin (rm dir) targets that are existing directories — a
             ;; recursive tree deletion. Gate each with its own confirm (handled
             ;; below, in or out of repo), so they're excluded from the generic
@@ -2069,7 +2201,7 @@
                    ;; Confirm every recursive (rm dir) tree deletion before it
                    ;; runs; out-of-repo dirs the user OKs are injected as write
                    ;; roots so resolve-write lets them through.
-                   (-> (confirm-rm-dirs confirm! cwd rm-dirs)
+                   (-> (confirm-rm-dirs confirm! cwd code rm-dirs)
                        (.then
                         (fn [{rm-ok? :ok? rm-roots :approved-roots}]
                           (if-not rm-ok?
@@ -2102,7 +2234,7 @@
                                                      "attached to confirm: " (str/join ", " needed')))
 
                                        :else
-                                       (-> (approve-clis! confirm! dispatch! room-id cwd needed')
+                                       (-> (approve-clis! confirm! dispatch! room-id cwd code needed')
                                            (.then (fn [{:keys [approved denied]}]
                                                     (if denied
                                                       (blocked (str "clj: user denied running `" denied "`"))

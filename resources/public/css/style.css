@@ -1986,6 +1986,13 @@ code a:hover,
   flex-wrap: wrap;
 }
 
+/* While a permission ask targets part of the block's code (the dialog's
+   :target ranges — the (spit …) / (sh …) call that raised it), the rest of
+   the code is muted so the eye lands on the call being approved. */
+.tool-call-code .code-muted {
+  opacity: 0.4;
+}
+
 /* ---- Thinking blocks ---- */
 .thinking-block { margin: var(--size-1) 0; }
 
@@ -2840,9 +2847,9 @@ code a:hover,
 }
 
 /* Clear hierarchy: Allow is the one solid button, extras (Always, …) are
-   accent-outlined, Deny is a quiet ghost pushed to the far left. */
+   accent-outlined, Deny is a quiet ghost. The buttons stay grouped (the
+   container decides left/right alignment) so wide layouts don't split them. */
 .confirm-btn--deny {
-  margin-right: auto;
   background: transparent;
   border-color: transparent;
   color: var(--fg-1);
