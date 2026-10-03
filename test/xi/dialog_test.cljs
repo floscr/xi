@@ -76,3 +76,29 @@
     (is (= "Always allowed" (dialog/resolved-label d :always)))
     (is (= "Allowed" (dialog/resolved-label d :unknown-truthy))
         "unknown truthy value falls back to Allowed")))
+
+(deftest answer-option-parses-allow-and-deny-args
+  (is (= :yes (dialog/answer-option :allow nil)))
+  (is (= :yes (dialog/answer-option :allow "  ")))
+  (is (= :always (dialog/answer-option :allow "a")))
+  (is (= :always (dialog/answer-option :allow "Always")))
+  (is (= :allow-repo (dialog/answer-option :allow "r")))
+  (is (= :allow-repo (dialog/answer-option :allow "repo")))
+  (is (nil? (dialog/answer-option :allow "bogus")))
+  (is (= :no (dialog/answer-option :deny "whatever"))))
+
+(defn- room-with [& dialogs] {:ui {:dialogs (vec dialogs)}})
+
+(deftest answer-targets-the-first-pending-confirm
+  (let [room (room-with {:id "d1" :type :confirm :options [:yes :no :always]}
+                        {:id "d2" :type :confirm})]
+    (is (= {:dialog-id "d1" :value true} (dialog/answer room :yes)))
+    (is (= {:dialog-id "d1" :value false} (dialog/answer room :no)))
+    (is (= {:dialog-id "d1" :value :always} (dialog/answer room :always)))))
+
+(deftest answer-errors-when-nothing-to-answer-or-option-not-offered
+  (is (:error (dialog/answer (room-with) :yes)))
+  (is (:error (dialog/answer (room-with {:id "s" :type :select}) :yes))
+      "a non-confirm dialog in front is not a permission request")
+  (is (:error (dialog/answer (room-with {:id "d" :type :confirm}) :allow-repo))
+      "a plain yes/no ask doesn't offer repo writes"))

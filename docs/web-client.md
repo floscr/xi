@@ -155,6 +155,7 @@ shortcuts below never get swallowed by an invisible input.
 | `Escape` | any other text field | blur that field (not inside an open `<dialog>`) |
 | `G` | chat, normal | scroll the timeline to the bottom |
 | `Alt+j` / `Alt+k` | chat | next / previous session in sidebar order |
+| `Alt+a` / `Alt+d` | chat, while an ask is pending | allow / deny the pending permission request (same as `/allow`, `/deny`) |
 | `Alt+n` | any | new chat |
 | `Alt+u` | any | jump to the newest finished agent with unread output |
 | `Alt+\` | any | toggle the sidebar drawer |

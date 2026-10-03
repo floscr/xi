@@ -64,6 +64,8 @@ Defined in `xi.commands/built-in-commands`:
 | `/buffers` | Switch buffer view (chat / logs / prompt / diff) |
 | `/cd` | Change working directory |
 | `/debug` | Copy debug info to clipboard |
+| `/allow` (`/a`) | Allow the pending permission request; `/allow always` (`/a a`) allows and stops asking, `/allow repo` (`/a r`) allows writes to that repo. Alt+A in both clients |
+| `/deny` (`/d`) | Deny the pending permission request. Alt+D in both clients |
 | `/holds` | Show who holds this room's shared resources (the git index; see [git-lock.md](git-lock.md)) |
 | `/release` | Force-release holds on this room's shared resources |
 | `/reload` | Restart Xi (picks up recompiled code) |

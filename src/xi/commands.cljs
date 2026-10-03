@@ -19,6 +19,7 @@
    output and status lines, rendered dim by the TUI."
   (:require [clojure.string :as str]
             [xi.core.state :as state]
+            [xi.dialog :as dialog]
             [xi.util :as util]))
 
 ;; ── Helpers ──────────────────────────────────────────────────────────────────
@@ -162,14 +163,33 @@
   (status st room-id
           (str "Commands:\n"
                (str/join "\n"
-                         (mapcat (fn [{:keys [name description subcommands]}]
+                         (mapcat (fn [{:keys [name aliases description subcommands]}]
                                    (cons (str "  /" name
+                                               (when (seq aliases)
+                                                 (str " (" (str/join ", " (map #(str "/" %) aliases)) ")"))
                                                (when description (str " — " description)))
                                          (map (fn [{sub-name :name sub-desc :description}]
                                                 (str "    " name " " sub-name
                                                      (when sub-desc (str " — " sub-desc))))
                                               subcommands)))
                                  commands)))))
+
+(defn- cmd-answer
+  "/allow [always|repo] and /deny — answer the room's pending permission
+   confirm from the prompt, like its buttons/keys. Dispatches the canonical
+   :ui/dialog-response so the dialog owner resolves it and every client
+   clears it (xi.client.ws-transport drops the dialog on the echo)."
+  [verb]
+  (fn [st {:keys [room-id args]}]
+    (let [option (dialog/answer-option verb args)
+          {:keys [dialog-id value error]}
+          (if option
+            (dialog/answer (state/get-room st room-id) option)
+            {:error (str "Unknown /allow option \"" args "\" — use always (a) or repo (r).")})]
+      (if error
+        (status st room-id error)
+        {:effects [[:app/dispatch {:type :ui/dialog-response :room-id room-id
+                                   :dialog-id dialog-id :value value}]]}))))
 
 (defn- cmd-quit [_st _ctx]
   {:effects [[:app/quit {}]]})
@@ -371,6 +391,14 @@
    {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers}
    {:name "cd"       :description "Change working directory"            :handler cmd-cd}
    {:name "debug"    :description "Copy debug info to clipboard"       :handler cmd-debug}
+   {:name "allow"    :aliases ["a"]
+    :description "Allow the pending permission request (always/a, repo/r)"
+    :subcommands [{:name "always" :description "Allow and don't ask again"}
+                  {:name "repo"   :description "Allow writes to this repo"}]
+    :handler (cmd-answer :allow)}
+   {:name "deny"     :aliases ["d"]
+    :description "Deny the pending permission request"
+    :handler (cmd-answer :deny)}
    {:name "holds"    :description "Show who holds this room's shared resources (git index)"
     :handler (fn [_st {:keys [room-id]}] {:effects [[:holds/list {:room-id room-id}]]})}
    {:name "release"  :description "Force-release holds on this room's shared resources (git index)"
@@ -425,7 +453,9 @@
    (built-ins + extension commands). Each command handler is invoked with
    the full :commands list in its ctx so e.g. /help can enumerate them."
   [commands]
-  (let [by-name (into {} (map (juxt :name identity)) commands)]
+  (let [by-name (into {} (mapcat (fn [cmd]
+                                   (map #(vector % cmd) (cons (:name cmd) (:aliases cmd)))))
+                      commands)]
     (fn command-run [st {:keys [room-id name args remote? client-id]}]
       (when (state/get-room st room-id)
         (if-let [cmd (get by-name name)]

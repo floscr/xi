@@ -19,6 +19,7 @@
             [xi.core.app :as app]
             [xi.core.events :as events]
             [xi.core.state :as state]
+            [xi.dialog :as dlg]
             [xi.diff :as diff]
             [xi.ext.core :as ext]
             [xi.config :as config]
@@ -269,6 +270,30 @@
       (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
                                    cwd        (assoc :cwd cwd)
                                    join-model (assoc :model join-model))]]))))
+
+(defn- dialog-response
+  "Web :ui/dialog-response: the transport's forward/clear, plus — when the
+   echo clears a dialog still live here (answered by /allow, a keybinding or
+   another client; a button answer already dropped it optimistically via
+   :web/dialog-resolved) — the same decision-pill record the buttons log, so
+   the answer stays visible in the timeline."
+  [st {:keys [room-id dialog-id value remote?] :as ev}]
+  (let [room   (get-in st [:rooms room-id])
+        dialog (when remote? (some #(when (= dialog-id (:id %)) %) (get-in room [:ui :dialogs])))
+        res    (ws-transport/dialog-response st ev)]
+    (if-not dialog
+      res
+      (let [{:keys [type message text options]} dialog
+            history  (vec (:history room))
+            tool-idx (when (= :confirm type) (dlg/permission-tool-index dialog history 0))]
+        (update res :state update-in [:web/resolved-dialogs room-id] (fnil conj [])
+                (cond-> {:key     dialog-id
+                         :anchor  (count history)
+                         :message (or message text)
+                         :type    type
+                         :value   value
+                         :label   (views/dialog-decision-label type options value)}
+                  tool-idx (assoc :tool-id (:id (nth history tool-idx)))))))))
 
 (defn- submit-clear-pending [st _]
   {:state (dissoc st :web/pending-submit)})
@@ -814,6 +839,7 @@
                                                           (fnil conj []) entry)
                                                (update-in [:rooms room-id :ui :dialogs]
                                                           (fn [ds] (vec (remove #(= dialog-id (:id %)) ds)))))})
+          :ui/dialog-response    dialog-response
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
           :web/optimistic-set    optimistic-set
@@ -2185,12 +2211,23 @@
     (when sid
       (dispatch! {:type :route/navigate :page :chat :session-id sid}))))
 
+(defn- permission-answer
+  "{:room-id :dialog-id :value} answering the active chat's pending permission
+   request with confirm `option`, or nil when there is none (or it doesn't
+   offer that choice)."
+  [st option]
+  (let [room (state/active-room st)
+        {:keys [dialog-id value]} (dlg/answer room option)]
+    (when dialog-id
+      {:room-id (:id room) :dialog-id dialog-id :value value})))
+
 (defn- install-keybindings!
   "Register the built-in web shortcuts into the view/mode-scoped keymap.
    Global: ALT+n opens a new chat from any view; ALT+u jumps to the newest
    finished agent with unread output (the purple dot); ALT+j/k step to the
    next/prev session in sidebar order (no wrap; from a non-chat view they open
-   the first session). Chat pane, normal mode: `i` focuses the composer (enter
+   the first session). Chat pane, any mode: ALT+a / ALT+d allow / deny the
+   pending permission request. Chat pane, normal mode: `i` focuses the composer (enter
    insert), `G` scrolls the timeline to the bottom.
    Chat pane, insert mode: Escape blurs the composer (back to normal); in any
    other text field Escape blurs that field. Insert mode only counts a
@@ -2216,6 +2253,16 @@
                      :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
   (keymap/register! {:id :session-prev :code "KeyK" :alt true :view :any :mode :any
                      :run (fn [st dispatch! _] (session-step! st dispatch! :prev))})
+  ;; ALT+a / ALT+d: allow / deny the pending permission request — the keyboard
+  ;; twins of /allow and /deny. Only bound while an ask is pending, so ALT+d
+  ;; otherwise keeps its browser meaning.
+  (doseq [[id code option] [[:permission-allow "KeyA" :yes]
+                            [:permission-deny  "KeyD" :no]]]
+    (keymap/register! {:id id :code code :alt true :view :chat :mode :any
+                       :when (fn [st] (some? (permission-answer st option)))
+                       :run (fn [st dispatch! _]
+                              (when-let [answer (permission-answer st option)]
+                                (dispatch! (assoc answer :type :ui/dialog-response))))}))
   (keymap/register! {:id :compose-focus :code "KeyI" :view :chat :mode :normal
                      :run (fn [_ dispatch! _] (dispatch! {:type :compose/focus}))})
   (keymap/register! {:id :timeline-bottom :code "KeyG" :shift true :view :chat :mode :normal

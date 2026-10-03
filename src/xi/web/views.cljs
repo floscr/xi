@@ -957,7 +957,7 @@
   (contains? web-command-names name))
 
 (def ^:private while-busy-command-names
-  (into #{} (comp (filter :while-busy?) (map :name)) web-commands))
+  (into #{} (comp (filter :while-busy?) (mapcat #(cons (:name %) (:aliases %)))) web-commands))
 
 (defn command-while-busy?
   "True when `text` is a slash command flagged :while-busy? — safe to submit
@@ -979,10 +979,16 @@
         (command-while-busy? t))))
 
 (defn- match-commands
-  "Filter commands (and their subcommands) by prefix query (text after the /)."
+  "Filter commands (and their subcommands) by prefix query (text after the /).
+   An exact name/alias hit sorts first, so Enter on \"/d\" runs /deny rather
+   than whichever d-command happens to be listed earlier."
   [query]
-  (let [q (str/lower-case (or query ""))]
-    (filterv #(str/starts-with? (:name %) q) (palette/expand-commands web-commands))))
+  (let [q      (str/lower-case (or query ""))
+        exact? (fn [{:keys [name aliases]}] (boolean (or (= name q) (some #{q} aliases))))]
+    (->> (palette/expand-commands web-commands)
+         (filter #(or (str/starts-with? (:name %) q) (exact? %)))
+         (sort-by (complement exact?))
+         vec)))
 
 (defn dispatch-command!
   "Fire a slash command, decoupled from the compose draft. Accepts
@@ -1420,7 +1426,7 @@
                                  fields)))}
        "Submit")]]))
 
-(defn- dialog-decision-label
+(defn dialog-decision-label
   "Human label for the choice the user made on a now-resolved dialog."
   [type options value]
   (case type

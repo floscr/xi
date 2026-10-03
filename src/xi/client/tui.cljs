@@ -53,6 +53,8 @@
   "Named ext keybindings → the raw input sequences that trigger them
    (legacy + kitty CSI-u encodings). Extend as extensions need keys."
   {"alt+n"        #{(str ESC "[110;3u")}
+   "alt+a"        #{(str ESC "a") (str ESC "[97;3u")}
+   "alt+d"        #{(str ESC "d") (str ESC "[100;3u")}
    "alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
    "alt+p"        #{(str ESC "p") (str ESC "[112;3u")}
    "ctrl+p"       #{(str (char 16)) (str ESC "[112;5u")}
@@ -441,7 +443,8 @@
 
    A dialog carrying a :diff shows a capped preview; d expands it in place
    into a scrollable view of the whole change (j/k, space/b, ^d/^u, g/G) and
-   d/q/Esc collapse it again. y/n and Enter still answer while expanded."
+   d/q/Esc collapse it again. y/n and Enter still answer while expanded.
+   Alt+a / Alt+d allow / deny too, mirroring the web client's shortcuts."
   [{:keys [message prompt diff] :as dlg} respond! editor]
   (let [text    (or message prompt "Confirm?")
         ;; A guarded write/edit's change, shown above the question so the
@@ -455,9 +458,12 @@
         ;; the paging keys know how far to move.
         !view   (atom {:expanded? false :top 0 :height 10})
         options (dialog/confirm-options dlg)
-        by-key  (into {} (mapcat (fn [{:keys [key value]}]
-                                   [[key value] [(str/upper-case key) value]]))
-                      options)
+        by-key  (-> {}
+                    (into (map #(vector % true)) (key-sequences "alt+a"))
+                    (into (map #(vector % false)) (key-sequences "alt+d"))
+                    (into (mapcat (fn [{:keys [key value]}]
+                                    [[key value] [(str/upper-case key) value]]))
+                          options))
         option-hints (mapv (fn [{:keys [key label]}]
                              (str (ansi/fg :accent (str "[" key "]")) " " label))
                            options)

@@ -133,6 +133,17 @@
   {:state (cond-> (update st :rooms dissoc room-id)
             (= room-id (:active-room st)) (assoc :active-room nil))})
 
+(defn dialog-response
+  "The user's own dialog answer is forwarded to the server (the resolver
+   lives there); the server's :remote? echo removes the answered dialog from
+   the local room mirror."
+  [st {:keys [room-id dialog-id remote?] :as ev}]
+  (if remote?
+    (when (some #(= dialog-id (:id %)) (get-in st [:rooms room-id :ui :dialogs]))
+      {:state (update-in st [:rooms room-id :ui :dialogs]
+                         (fn [ds] (vec (remove #(= dialog-id (:id %)) ds))))})
+    {:effects [[:ws/send ev]]}))
+
 (defn lobby-state [st ev]
   {:state (assoc st :lobby (select-keys ev [:rooms :sessions :read :agent-id :started-at :claude-usage]))})
 
@@ -168,13 +179,13 @@
          (assoc :input/submit (wrap-input-submit client-side-fx (get base-handlers :input/submit) wrap-opts)
                 :command/run  (wrap-command-run client-side-fx (get base-handlers :command/run) wrap-opts)
                 ;; Dialog answers must reach the server (it holds the
-                ;; pending resolver); removal mirrors back via room state.
-                ;; Only forward the user's own answer — the server echoes
-                ;; the event back tagged :remote?, and re-forwarding that
-                ;; echo would loop endlessly (server re-echoes each time).
-                :ui/dialog-response
-                (fn [_st ev]
-                  (when-not (:remote? ev) {:effects [[:ws/send ev]]}))
+                ;; pending resolver). Only forward the user's own answer —
+                ;; the server echoes the event back tagged :remote?, and
+                ;; re-forwarding that echo would loop endlessly (server
+                ;; re-echoes each time). The echo instead drops the dialog
+                ;; locally, so an answer given anywhere (another client, a
+                ;; server-side /allow) clears it here too.
+                :ui/dialog-response dialog-response
                 :room/joined  room-joined
                 :room/left    room-left
                 :lobby/state  lobby-state)

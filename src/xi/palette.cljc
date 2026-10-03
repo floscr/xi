@@ -62,14 +62,21 @@
    {:name "commit"   :description "Review changes and create a git commit"}
    {:name "review"   :description "Review git changes against the code-review methodology"
     :subcommands [{:name "staged" :description "Review staged changes vs HEAD"}]}
-   {:name "debug"    :description "Copy debug info to clipboard" :while-busy? true}])
+   {:name "debug"    :description "Copy debug info to clipboard" :while-busy? true}
+   ;; Answer the pending permission ask — only ever useful mid-turn.
+   {:name "allow"    :aliases ["a"] :description "Allow the pending permission request" :while-busy? true
+    :subcommands [{:name "always" :description "Allow and don't ask again"}
+                  {:name "repo"   :description "Allow writes to this repo"}]}
+   {:name "deny"     :aliases ["d"] :description "Deny the pending permission request" :while-busy? true}])
 
 (defn expand-commands
   "Flatten commands + their subcommands into a single suggestion list, where
-   each subcommand becomes a `parent sub` entry (e.g. \"diff staged\")."
+   each subcommand becomes a `parent sub` entry (e.g. \"diff staged\").
+   A parent's :aliases ride along for alias-aware matching."
   [commands]
-  (mapcat (fn [{:keys [name description subcommands]}]
-            (cons {:name name :description description}
+  (mapcat (fn [{:keys [name description subcommands aliases]}]
+            (cons (cond-> {:name name :description description}
+                    aliases (assoc :aliases aliases))
                   (map (fn [{sub-name :name sub-desc :description}]
                          {:name (str name " " sub-name) :description sub-desc})
                        subcommands)))

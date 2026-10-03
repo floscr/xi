@@ -447,3 +447,28 @@
         st (apply-events (with-room) {:type :prompt/submit :room-id "r" :text "hi"})
         {:keys [effects]} (chained st {:type :agent/turn-end :room-id "r"})]
     (is (not (some #(= :session/sync (first %)) effects)))))
+
+;; ── /allow /deny ─────────────────────────────────────────────────────────────
+
+(defn- with-dialog [st dialog]
+  (assoc-in st [:rooms "r" :ui :dialogs] [dialog]))
+
+(deftest allow-deny-answer-the-pending-confirm
+  (let [st (with-dialog (with-room) {:id "dlg-1" :type :confirm :options [:yes :no :always :allow-repo]})
+        run (fn [name args] (:effects (handle st {:type :command/run :room-id "r" :name name :args args})))
+        answered (fn [value] [[:app/dispatch {:type :ui/dialog-response :room-id "r"
+                                              :dialog-id "dlg-1" :value value}]])]
+    (is (= (answered true) (run "allow" nil)))
+    (is (= (answered true) (run "a" nil)) "/a aliases /allow")
+    (is (= (answered :always) (run "a" "a")))
+    (is (= (answered :always) (run "allow" "always")))
+    (is (= (answered :repo) (run "a" "r")))
+    (is (= (answered false) (run "deny" nil)))
+    (is (= (answered false) (run "d" nil)))))
+
+(deftest allow-reports-when-nothing-to-answer
+  (let [st (:state (handle (with-room) {:type :command/run :room-id "r" :name "allow"}))]
+    (is (= "No pending permission request." (:text (peek (history st))))))
+  (let [st (with-dialog (with-room) {:id "dlg-1" :type :confirm})
+        st (:state (handle st {:type :command/run :room-id "r" :name "a" :args "zzz"}))]
+    (is (str/includes? (:text (peek (history st))) "Unknown /allow option"))))

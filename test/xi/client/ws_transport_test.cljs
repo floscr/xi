@@ -107,3 +107,13 @@
                                 {:type :lobby/state :remote? true
                                  :rooms [{:id "r9"}]})]
     (is (= [{:id "r9"}] (get-in state' [:lobby :rooms])))))
+
+(deftest dialog-response-forwards-own-answer-and-clears-on-echo
+  (let [st (assoc-in (joined-state) [:rooms "r1" :ui :dialogs] [{:id "dlg-1" :type :confirm}])
+        ev {:type :ui/dialog-response :room-id "r1" :dialog-id "dlg-1" :value true}
+        own (handle st ev)]
+    (is (= [[:ws/send ev]] (:effects own)))
+    (is (= st (:state own)) "own answer waits for the server's echo")
+    (let [{st' :state effects :effects} (handle st (assoc ev :remote? true))]
+      (is (= [] (get-in st' [:rooms "r1" :ui :dialogs])) "echo drops the answered dialog")
+      (is (empty? effects) "the echo is never re-forwarded"))))

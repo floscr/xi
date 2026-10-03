@@ -53,6 +53,43 @@
             (confirm-options dialog))
       (if value "Allowed" "Denied")))
 
+(def ^:private allow-arg-option
+  "`/allow <arg>` spellings → the confirm option they pick."
+  {nil      :yes
+   "always" :always
+   "a"      :always
+   "repo"   :allow-repo
+   "r"      :allow-repo})
+
+(defn answer-option
+  "Confirm option an answer command picks — `verb` is :allow or :deny,
+   `args` the command's trailing text (nil → plain allow). nil for an
+   unknown /allow argument."
+  [verb args]
+  (case verb
+    :deny  :no
+    :allow (allow-arg-option (some-> args str/trim str/lower-case not-empty))
+    nil))
+
+(defn answer
+  "Resolve answering the room's pending confirm with `option` (a
+   `confirm-option` key). The answered dialog is the one every client
+   renders — the first in the room's :ui :dialogs. Returns
+   {:dialog-id :value} or {:error text} when there is nothing to answer or
+   the dialog doesn't offer that choice (e.g. /allow repo on a plain ask)."
+  [room option]
+  (let [dialog (first (get-in room [:ui :dialogs]))
+        value  (:value (confirm-option option))]
+    (cond
+      (not= :confirm (:type dialog))
+      {:error "No pending permission request."}
+
+      (not-any? #(= value (:value %)) (confirm-options dialog))
+      {:error (str "This request doesn't offer \""
+                   (:label (confirm-option option)) "\".")}
+
+      :else {:dialog-id (:id dialog) :value value})))
+
 (defn- same-call?
   "Does history `entry` (a :tool-call) belong to the gated `call`
    ({:name :arguments}) a confirm dialog was raised for? Tool names compare
