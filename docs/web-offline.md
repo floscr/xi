@@ -37,9 +37,16 @@ updating. Two guards keep it small:
   restores it. This is the big one: the untrimmed list was hundreds of KB.
 - **Room LRU.** `save-room!` keeps at most `max-cached-rooms` (15) room
   snapshots, pruning the least-recently-saved (and any legacy keys) on
-  every write. On a `QuotaExceededError` it drops every other room and
-  retries with only the current one, so one oversized write can't poison
-  the store.
+  every write. On a `QuotaExceededError` it evicts the other rooms
+  **oldest first, one at a time**, retrying after each, so the most
+  recently opened chats survive (the snapshot is encoded once, not per
+  retry).
+- **Oversized rooms.** A snapshot longer than `max-room-chars` (5 Mi
+  UTF-16 chars, more than any browser's whole quota) is skipped without
+  evicting anything. One that still doesn't fit with every other room gone
+  is recorded in `too-big` (by history length), so later persists skip it
+  instead of re-encoding megabytes on every `:lobby/state` only to fail
+  again. A shorter history (`/compact`) gets another try.
 
 ## Hydrate
 
@@ -215,8 +222,10 @@ session-id mismatch so a navigation race can't send into the wrong room).
 - **No service worker.** If the page itself can't load, the app won't
   start. Offline support covers "page loaded but WS backend is down."
 - **localStorage limits.** Long sessions with heavy tool results can
-  approach the ~5MB quota; writes fail safe (warn + continue). The lobby
-  trim + room LRU (see "Keeping the store under quota") bound the total so
-  the cache doesn't overflow and stall.
+  approach the quota (Chromium ~5M chars, Safari about half); writes fail
+  safe (warn + continue). The lobby trim, room LRU and oversized-room skip
+  (see "Keeping the store under quota") bound the total so the cache
+  doesn't overflow and stall. A session too big to cache paints from the
+  server every time.
 - **Lobby may be stale offline.** Sessions created elsewhere appear on the
   next `:lobby/state`.

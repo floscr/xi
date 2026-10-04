@@ -33,16 +33,21 @@
       (transit/read reader raw))
     (catch :default _ nil)))
 
-(defn- store-set!
-  "Write v under k. Returns true on success, false on failure (e.g. quota)
-   so callers can evict and retry."
-  [k v]
+(defn- store-set-raw!
+  "Write an already-encoded string under k. Returns true on success, false on
+   failure (e.g. quota) so callers can evict and retry. Quiet: a quota miss
+   is expected while evicting."
+  [k raw]
   (try
-    (.setItem js/localStorage k (transit/write writer v))
+    (.setItem js/localStorage k raw)
     true
-    (catch :default e
-      (js/console.warn "[cache] write failed:" e)
-      false)))
+    (catch :default _ false)))
+
+(defn- store-set!
+  "Encode v and write it under k. Returns true on success, false on failure."
+  [k v]
+  (or (store-set-raw! k (transit/write writer v))
+      (do (js/console.warn "[cache] write failed:" k) false)))
 
 (defn- store-remove! [k]
   (try (.removeItem js/localStorage k) (catch :default _ nil)))
@@ -146,30 +151,60 @@
          (identical? (:history prev) (:history payload))
          (= (dissoc prev :history) (dissoc payload :history)))))
 
+;; Sessions whose snapshot didn't fit even with every other room evicted:
+;; {sid history-count-at-failure}. Without this, every later persist (each
+;; :lobby/state tick) re-encodes megabytes only to fail again. A shorter
+;; history (e.g. after /compact) gets another try.
+(defonce ^:private too-big (atom {}))
+
+;; No browser's whole localStorage holds more than this many UTF-16 chars
+;; (Chromium: 10 MiB of UTF-16; Firefox and Safari allow less), so a snapshot
+;; past it is skipped outright instead of evicting every other room first.
+(def ^:private max-room-chars (* 5 1024 1024))
+
+(defn- store-evicting!
+  "Write the encoded snapshot `raw` for session-id, evicting the other cached
+   rooms least-recently-saved first, one at a time, until it fits. `lru` is
+   most-recent-first with session-id at its head. Returns the surviving LRU,
+   or nil when it doesn't fit even alone."
+  [session-id raw lru]
+  (loop [kept (vec lru)]
+    (cond
+      (store-set-raw! (room-key session-id) raw) kept
+      (<= (count kept) 1)                        nil
+      :else (do (store-remove! (room-key (peek kept)))
+                (recur (pop kept))))))
+
 (defn save-room!
   "Cache a room's renderable slice (history + model) under its session id, then
    prune to the most-recently-saved rooms so the store can't overflow. On a
-   quota failure, drop every other cached room and retry with just this one.
-   A no-op when the slice is the one already stored."
+   quota failure, evict the oldest other rooms until it fits; a room too big
+   for the quota on its own is remembered and skipped. A no-op when the slice
+   is the one already stored."
   [session-id room]
   (when (and session-id (seq (:history room)))
-    (let [payload (room-slice room)]
-      (when-not (unchanged-room? session-id payload)
-        (let [lru (->> (load-room-lru)
+    (let [payload (room-slice room)
+          n       (count (:history payload))]
+      (when-not (or (unchanged-room? session-id payload)
+                    (when-let [failed-n (get @too-big session-id)] (>= n failed-n)))
+        (let [raw (transit/write writer payload)
+              lru (->> (load-room-lru)
                        (remove #(= % session-id))
                        (cons session-id)
                        (take max-cached-rooms)
                        vec)]
-          (if (store-set! (room-key session-id) payload)
+          ;; Drop strays + rooms past the cap first: on a quota miss that alone
+          ;; may free enough.
+          (prune-rooms! lru)
+          (if-let [kept (when (<= (count raw) max-room-chars)
+                          (store-evicting! session-id raw lru))]
             (do (reset! last-saved [session-id payload])
-                (prune-rooms! lru)
-                (store-set! room-lru-key lru))
-            ;; Quota hit: this session plus the others won't fit. Evict every
-            ;; other room and retry with only this one cached.
-            (do (prune-rooms! [session-id])
-                (when (store-set! (room-key session-id) payload)
-                  (reset! last-saved [session-id payload])
-                  (store-set! room-lru-key [session-id])))))))))
+                (swap! too-big dissoc session-id)
+                (store-set! room-lru-key kept))
+            (do (swap! too-big assoc session-id n)
+                (store-set! room-lru-key (vec (rest lru)))
+                (js/console.warn "[cache] room snapshot exceeds the storage quota; not caching"
+                                 session-id))))))))
 
 ;; One-entry memo of the last decoded room: [session-id raw decoded]. A chat
 ;; switch reads the same snapshot more than once (paint seed + join hash) and a
