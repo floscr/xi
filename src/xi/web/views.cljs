@@ -3046,7 +3046,12 @@
                  (when has-dialog? "project-card--dialog")
                  (when current? "project-card--current")]
          :replicant/key (or session-id (str "card-" name))
-         :on {:click (fn [_] (dispatch! {:type :route/navigate
+         ;; Decode the cached history on pointerdown so the click that
+         ;; follows (≈100ms later on touch) finds it ready.
+         :on {:pointerdown (fn [_] (when session-id
+                                     (dispatch! {:type :cache/prefetch
+                                                 :session-id session-id})))
+              :click (fn [_] (dispatch! {:type :route/navigate
                                          :page :chat :session-id session-id}))}}
    ;; The chat icon is faded unless the session has a live room; its badge is
    ;; the session's status dot (working > unread > live, see

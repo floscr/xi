@@ -76,7 +76,14 @@
                                 (take max-cached-sessions))]
                 (vec (distinct (concat favs recent))))))))
 
-(defn save-lobby! [lobby] (when lobby (store-set! lobby-key (trim-lobby lobby))))
+;; The lobby map last written. :lobby/state re-fires the save with the same map
+;; whenever any other event ticks the persist tap, so skip identical ones.
+(defonce ^:private last-lobby (atom nil))
+
+(defn save-lobby! [lobby]
+  (when (and lobby (not (identical? lobby @last-lobby)))
+    (when (store-set! lobby-key (trim-lobby lobby))
+      (reset! last-lobby lobby))))
 (defn load-lobby [] (store-get lobby-key))
 
 ;; ── Per-session room snapshot ────────────────────────────────────────────────
@@ -115,31 +122,84 @@
     (doseq [sid (all-cached-sids)]
       (when-not (keep sid) (store-remove! (room-key sid))))))
 
+(defn- room-slice
+  "The persisted slice of a room map. Always carries all four keys (nil when
+   absent) so a slice built on save equals the one decoded from storage."
+  [room]
+  {:history   (:history room)
+   :model     (:model room)
+   :msg-hash  (:msg-hash room)
+   :msg-count (:msg-count room)})
+
+;; [session-id payload] of the snapshot last written to (or decoded from)
+;; localStorage. save-room! fires on every :lobby/state and :room/joined, which
+;; on a chat switch carry the very history we just loaded from the cache;
+;; re-encoding hundreds of KB and rewriting it synchronously right as the switch
+;; settles is pure jank. The history is compared by identity (O(1)): a cache
+;; hit promotes the decoded vector itself into the room, and any real change
+;; (append, resume) yields a new vector.
+(defonce ^:private last-saved (atom nil))
+
+(defn- unchanged-room? [session-id payload]
+  (let [[sid prev] @last-saved]
+    (and (= sid session-id)
+         (identical? (:history prev) (:history payload))
+         (= (dissoc prev :history) (dissoc payload :history)))))
+
 (defn save-room!
   "Cache a room's renderable slice (history + model) under its session id, then
    prune to the most-recently-saved rooms so the store can't overflow. On a
-   quota failure, drop every other cached room and retry with just this one."
-  [session-id {:keys [history model msg-hash msg-count]}]
-  (when (and session-id (seq history))
-    (let [payload {:history history :model model :msg-hash msg-hash :msg-count msg-count}
-          lru     (->> (load-room-lru)
+   quota failure, drop every other cached room and retry with just this one.
+   A no-op when the slice is the one already stored."
+  [session-id room]
+  (when (and session-id (seq (:history room)))
+    (let [payload (room-slice room)]
+      (when-not (unchanged-room? session-id payload)
+        (let [lru (->> (load-room-lru)
                        (remove #(= % session-id))
                        (cons session-id)
                        (take max-cached-rooms)
                        vec)]
-      (if (store-set! (room-key session-id) payload)
-        (do (prune-rooms! lru)
-            (store-set! room-lru-key lru))
-        ;; Quota hit: this session plus the others won't fit. Evict every other
-        ;; room and retry with only this one cached.
-        (do (prune-rooms! [session-id])
-            (when (store-set! (room-key session-id) payload)
-              (store-set! room-lru-key [session-id])))))))
+          (if (store-set! (room-key session-id) payload)
+            (do (reset! last-saved [session-id payload])
+                (prune-rooms! lru)
+                (store-set! room-lru-key lru))
+            ;; Quota hit: this session plus the others won't fit. Evict every
+            ;; other room and retry with only this one cached.
+            (do (prune-rooms! [session-id])
+                (when (store-set! (room-key session-id) payload)
+                  (reset! last-saved [session-id payload])
+                  (store-set! room-lru-key [session-id])))))))))
+
+;; One-entry memo of the last decoded room: [session-id raw decoded]. A chat
+;; switch reads the same snapshot more than once (paint seed + join hash) and a
+;; tap prefetches it on pointerdown, so only the first read pays the transit
+;; decode. Keyed on the raw string, so a save-room! in between can never serve
+;; stale data — the cheap getItem still runs, only the parse is skipped.
+(defonce ^:private last-room (atom nil))
 
 (defn load-room
   "Cached {:history :model :msg-hash :msg-count} for a session, or nil."
   [session-id]
-  (when session-id (store-get (room-key session-id))))
+  (when session-id
+    (try
+      (when-let [raw (.getItem js/localStorage (room-key session-id))]
+        (let [[sid memo-raw decoded] @last-room]
+          (if (and (= sid session-id) (= memo-raw raw))
+            decoded
+            (let [decoded (transit/read reader raw)]
+              (reset! last-room [session-id raw decoded])
+              ;; Storage now holds exactly this; see last-saved.
+              (reset! last-saved [session-id (room-slice decoded)])
+              decoded))))
+      (catch :default _ nil))))
+
+(defn prefetch-room!
+  "Decode a session's cached snapshot ahead of time (see load-room's memo) so
+   the tap that follows doesn't pay for it. Returns nil."
+  [session-id]
+  (load-room session-id)
+  nil)
 
 ;; ── Watched sessions (unread) ────────────────────────────────────────────────
 

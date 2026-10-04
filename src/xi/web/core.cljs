@@ -708,6 +708,11 @@
           :web/cache-seed        (fn [st {:keys [session-id room]}]
                                    (when (and session-id room)
                                      {:state (assoc-in st [:web/cache session-id] room)}))
+          ;; Pointerdown on a session card: decode its cached snapshot while
+          ;; the finger is still down. No state change → no render.
+          :cache/prefetch        (fn [_ {:keys [session-id]}]
+                                   (when session-id
+                                     {:effects [[:cache/prefetch-room {:session-id session-id}]]}))
           ;; The server compared our :cached-msg-hash against the on-disk
           ;; session and confirmed we're current, so it SKIPPED re-sending the
           ;; (potentially large) resume payload. Promote our cached snapshot
@@ -1709,6 +1714,10 @@
    (fn [{:keys [dispatch!]} {:keys [session-id]}]
      (when-let [room (cache/load-room session-id)]
        (dispatch! {:type :web/cache-seed :session-id session-id :room room})))
+   ;; Warm the decode memo on pointerdown so the click that follows is cheap.
+   :cache/prefetch-room
+   (fn [_ {:keys [session-id]}]
+     (cache/prefetch-room! session-id))
    ;; Dispatch a :room/join carrying our cached message-hash + count (if any)
    ;; so the server can skip re-sending an unchanged session's history over the
    ;; wire (answers :session/current), or ship only the new tail when our cache

@@ -75,6 +75,22 @@ you tap another chat inside the app, `router/navigate` also emits a
 `:room/joined` round-trips (noticeable on slow mobile links). `:room/joined`
 then overwrites it with the live room.
 
+Decoding a cached room (transit, with tool results) is the expensive part of
+the tap, and a switch reads the snapshot twice (`:cache/seed-room` and
+`:room/join-with-cache`). `cache/load-room` therefore memoizes the last decoded
+room, keyed on the raw localStorage string (a `save-room!` in between can't
+serve stale data). Session cards also dispatch `:cache/prefetch` on
+`pointerdown`, which warms that memo while the finger is still down, so by the
+time `click` fires the decode is already done. The timeline's virtualized
+window and the join/hash handshake are unchanged.
+
+The persist tap fires on every `:lobby/state` / `:room/joined`, so after a
+switch it used to re-encode and rewrite the whole room (and the lobby) it had
+just loaded. `save-room!` now skips when the history is the *identical* vector
+already stored (the cache-promoted history is the decoded object itself, so the
+check is O(1)), and `save-lobby!` skips an identical lobby map. Real changes
+(appends, resumes) produce new values and still write.
+
 ### Painting cache while the server history resumes
 
 Opening an idle session goes through a disk **resume**: the server installs
