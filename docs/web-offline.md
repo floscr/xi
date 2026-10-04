@@ -19,7 +19,7 @@ immediately on page load, even when the backend is down.
 | Key | Contents |
 |---|---|
 | `xi/lobby` | last `{:rooms :sessions}` for an instant home paint |
-| `xi/room/<session-id>` | last `{:history :model}` per session for chat paint |
+| `xi/room/<session-id>` | last `{:history :model :msg-hash :msg-count :history-hash}` per session for chat paint |
 | `xi/room-lru` | `[sid …]` most-recent-first, caps the room snapshots |
 | `xi/watched` | `{session-id response-count-when-last-seen}` (unread) |
 
@@ -116,8 +116,42 @@ and otherwise falls through to the cache:
 - **no cache** — fall back to the blocking `Connecting…` spinner, since there
   is nothing to paint.
 
-The live re-attach path (`:room/joined` carries the full history) is
-authoritative on arrival, so it never shows the `Updating…` hint.
+The live re-attach path (`:room/joined` carries the full history, or the
+cached one spliced back in, see below) is authoritative on arrival, so it
+never shows the `Updating…` hint.
+
+### Live-room transfer skip (`:history-base` / `:history-tail`)
+
+The `:session/current` skip below only covers the **disk resume**. A session
+whose room is still live (another client attached, a turn running, an
+orphaned busy room) is joined by `:room/attach`, which used to send the whole
+room snapshot, history and all: re-opening a long chat re-downloaded and
+re-decoded megabytes it already had cached (2.9 MB per switch for an 11 MB
+transcript).
+
+The live path now uses a fingerprint of the rendered history itself:
+
+1. **Cache it.** `save-room!` stores `:history-hash` (`(hash history)`)
+   with each snapshot.
+2. **Echo it.** `:room/join-with-cache` adds `:cached-history-hash` and
+   `:cached-history-count` to the join; `room-join` forwards them on the
+   live room's `:room/attach`.
+3. **Elide.** `room-manager/joined-payload` hashes the room's first
+   `count` history entries. On a match the `:room/joined` carries the room
+   **without** `:history`, plus `:history-base {:hash :count}` and the
+   newer entries as `:history-tail` (empty when nothing changed).
+4. **Splice.** The web client's `:room/joined` handler
+   (`room-joined-from-cache`) checks the base against its `:web/cache`
+   snapshot and installs `cached-history ++ tail`. With an empty tail it
+   installs the cached vector itself, so the persist tap's identity check
+   skips the rewrite too. If the cache no longer matches, it paints what it
+   has and re-joins without the fingerprint to get a full snapshot.
+
+A rewritten history, or an entry still streaming since the snapshot, fails
+the hash and falls back to the full snapshot. Clients that send no
+fingerprint (the TUI, reconnect replays) always get the full room. Observed:
+re-opening the 11 MB session's live room dropped from a 2.9 MB `:room/joined`
+to 10.5 KB, with no long tasks on the main thread.
 
 ### Hash-validated transfer skip (`:session/current`)
 

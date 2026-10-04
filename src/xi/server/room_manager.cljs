@@ -118,8 +118,16 @@
 
    Targets: \"new\" | \"latest\" | room-id | {:session-id sid} (resume a
    saved session into a fresh room)."
-  [st {:keys [client-id target cwd model cached-msg-hash cached-msg-count join-token] :as ev}]
+  [st {:keys [client-id target cwd model cached-msg-hash cached-msg-count
+              cached-history-hash cached-history-count join-token] :as ev}]
   (let [target     (or target "latest")
+        ;; Attaching to a live room: forward the client's cached-history
+        ;; fingerprint so room-attach can skip what it already has.
+        attach     (fn [room-id]
+                     [:app/dispatch
+                      (cond-> {:type :room/attach :client-id client-id :room-id room-id}
+                        cached-history-hash (assoc :cached-history-hash cached-history-hash
+                                                   :cached-history-count cached-history-count))])
         ;; A session-id may ride on the event (web navigation always carries
         ;; it) or inside a {:session-id …} target (mobile reconnect).
         session-id (or (:session-id ev)
@@ -133,9 +141,7 @@
         live       (when session-id (room-for-session st session-id))]
     (cond
       live
-      {:effects [[:app/dispatch {:type :room/attach
-                                 :client-id client-id
-                                 :room-id live}]]}
+      {:effects [(attach live)]}
 
       (map? target)
       ;; Map target {:session-id sid} with no live room — resume from disk.
@@ -151,9 +157,7 @@
                        (= "latest" target) (latest-room-id st)
                        :else               (when (state/get-room st target) target))]
         (if existing
-          {:effects [[:app/dispatch {:type :room/attach
-                                     :client-id client-id
-                                     :room-id existing}]]}
+          {:effects [(attach existing)]}
           {:effects [[:room/setup (cond-> {:client-id        client-id
                                            :room-id          (gen-room-id ev)
                                            :cwd              cwd
@@ -166,13 +170,41 @@
                                     ;; fires into THIS new room only.
                                     join-token       (assoc :join-token join-token))]]})))))
 
-(defn- room-attach [st {:keys [client-id room-id join-token]}]
-  (when (state/get-room st room-id)
+(defn joined-payload
+  "The room part of a :room/joined event: {:room snapshot}, or — when the
+   client says it already caches this room's history (or a clean prefix of
+   it) as `cached-hash` over its first `cached-count` entries — the snapshot
+   without :history plus {:history-base {:hash :count} :history-tail […]}, so
+   re-opening a live chat ships only what's new instead of the whole
+   transcript (megabytes for a long session). The client splices its cached
+   history back in front of the tail. A history rewritten or still streaming
+   into the cached last entry fails the hash → full snapshot. Hashes are cljs
+   `hash` on both ends (same code, equal values ↔ equal hashes, as for the
+   disk resume's :msg-hash); vectors and their maps cache them, so only
+   entries new since the last attach cost anything."
+  [room cached-hash cached-count]
+  (let [history (:history room)
+        n       (count history)]
+    (if (and (some? cached-hash)
+             (vector? history)
+             (integer? cached-count)
+             (< 0 cached-count)
+             (<= cached-count n)
+             (= cached-hash (hash (if (= cached-count n)
+                                    history
+                                    (subvec history 0 cached-count)))))
+      {:room         (dissoc room :history)
+       :history-base {:hash cached-hash :count cached-count}
+       :history-tail (subvec history cached-count)}
+      {:room room})))
+
+(defn- room-attach [st {:keys [client-id room-id join-token cached-history-hash cached-history-count]}]
+  (when-let [room (state/get-room st room-id)]
     {:state   (assoc-in st [:connection :clients client-id :room-id] room-id)
      :effects [[:ws/send-to {:client-id client-id
-                             :event (cond-> {:type :room/joined
-                                             :room-id room-id
-                                             :room (state/get-room st room-id)}
+                             :event (cond-> (merge {:type :room/joined :room-id room-id}
+                                                   (joined-payload room cached-history-hash
+                                                                   cached-history-count))
                                       join-token (assoc :join-token join-token))}]]}))
 
 ;; ── Client departure / cleanup ───────────────────────────────────────────────

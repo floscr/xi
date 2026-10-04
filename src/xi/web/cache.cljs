@@ -11,7 +11,9 @@
 
    Keys:
      xi/lobby            last {:rooms :sessions} for an instant home paint
-     xi/room/<sid>       last {:history :model :msg-hash :msg-count} per session for chat paint
+     xi/room/<sid>       last {:history :model :msg-hash :msg-count :history-hash}
+                         per session for chat paint (:history-hash lets a
+                         live-room join skip re-sending it, see save-room!)
      xi/room-lru         [sid …] most-recent-first, caps the room snapshots
      xi/watched          {session-id response-count-when-last-seen}"
   (:require [clojure.string :as str]
@@ -180,14 +182,18 @@
    prune to the most-recently-saved rooms so the store can't overflow. On a
    quota failure, evict the oldest other rooms until it fits; a room too big
    for the quota on its own is remembered and skipped. A no-op when the slice
-   is the one already stored."
+   is the one already stored.
+
+   The stored payload also carries :history-hash (cljs `hash` of the history),
+   which a live-room join echoes so the server can elide the history it would
+   otherwise re-send (xi.server.room-manager/joined-payload)."
   [session-id room]
   (when (and session-id (seq (:history room)))
     (let [payload (room-slice room)
           n       (count (:history payload))]
       (when-not (or (unchanged-room? session-id payload)
                     (when-let [failed-n (get @too-big session-id)] (>= n failed-n)))
-        (let [raw (transit/write writer payload)
+        (let [raw (transit/write writer (assoc payload :history-hash (hash (:history payload))))
               lru (->> (load-room-lru)
                        (remove #(= % session-id))
                        (cons session-id)

@@ -196,7 +196,12 @@ banner or `bb serve:approve <code>`). See [client-auth.md](client-auth.md).
    provisions a room first (session + AGENTS.md), then attaches.
 3. The server replies with `:room/joined` carrying a **room snapshot** —
    the client installs it and mirrors all subsequent broadcasts through
-   the same pure reducers.
+   the same pure reducers. A join may carry `:cached-history-hash` +
+   `:cached-history-count` (the web client's cached history fingerprint);
+   when they match a prefix of the live room's history, the snapshot omits
+   `:history` and sends `:history-base {:hash :count}` + `:history-tail`
+   instead, and the client splices its cache back in
+   ([web-offline.md](web-offline.md#live-room-transfer-skip-history-base--history-tail)).
 4. Roomless clients get `:lobby/state` instead.
 
 After joining, everything is ordinary events both ways: `:input/submit`,

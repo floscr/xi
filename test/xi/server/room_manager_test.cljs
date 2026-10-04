@@ -2,7 +2,8 @@
   (:require [cljs.test :refer [deftest is testing]]
             [xi.core.events :as events]
             [xi.core.state :as state]
-            [xi.server.room-manager :as rm]))
+            [xi.server.room-manager :as rm]
+            [xi.wire :as wire]))
 
 (def handlers (merge events/core-handlers rm/handlers))
 
@@ -124,6 +125,58 @@
     (let [st (server-state-with-room)]
       (is (= {:state st :effects []}
              (handle st {:type :room/attach :client-id "c1" :room-id "nope"}))))))
+
+;; ── Cache-elided :room/joined (live-room re-open) ────────────────────────────
+
+(def ^:private history
+  [{:role :user :text "hi" :ts 1}
+   {:role :assistant :blocks [{:type :text :text "hello"}
+                              {:type :tool-use :id "t1" :name "read"
+                               :input {:path "/a"} :result {:content [{:type "text" :text "x"}]
+                                                            :is-error false}}]}
+   {:role :user :text "more" :ts 3 :images nil :tags #{:a :b}}])
+
+(deftest joined-payload-elides-cached-history
+  (let [room {:cwd "/x" :history history}]
+    (testing "no fingerprint → full snapshot"
+      (is (= {:room room} (rm/joined-payload room nil nil))))
+    (testing "cache holds the whole history → no history on the wire"
+      (is (= {:room {:cwd "/x"} :history-base {:hash (hash history) :count 3} :history-tail []}
+             (rm/joined-payload room (hash history) 3))))
+    (testing "cache holds a clean prefix → only the tail"
+      (is (= {:room {:cwd "/x"}
+              :history-base {:hash (hash (subvec history 0 2)) :count 2}
+              :history-tail [(nth history 2)]}
+             (rm/joined-payload room (hash (subvec history 0 2)) 2))))
+    (testing "stale / rewritten cache → full snapshot"
+      (is (= {:room room} (rm/joined-payload room (hash [(first history)]) 2)))
+      (is (= {:room room} (rm/joined-payload room (hash history) 4)) "cache longer than room")
+      (is (= {:room room} (rm/joined-payload room (hash []) 0))))))
+
+(deftest history-hash-survives-the-wire
+  ;; The client fingerprints the history it decoded off the wire / out of
+  ;; localStorage (both transit); the server hashes its own. They must agree.
+  (let [ev {:type :room/joined :room {:history history}}]
+    (is (= (hash history) (hash (get-in (wire/decode (wire/encode ev)) [:room :history]))))))
+
+(deftest attach-with-matching-fingerprint-sends-only-the-tail
+  (let [st (-> (server-state-with-room)
+               (assoc-in [:rooms "r1" :history] history))
+        send (fn [ev] (-> (handle st (merge {:type :room/attach :client-id "c1" :room-id "r1"} ev))
+                          :effects first second :event))]
+    (let [ev (send {:cached-history-hash (hash (subvec history 0 2)) :cached-history-count 2})]
+      (is (not (contains? (:room ev) :history)))
+      (is (= "/x" (get-in ev [:room :cwd])))
+      (is (= [(nth history 2)] (:history-tail ev))))
+    (is (= history (get-in (send {:cached-history-hash 123 :cached-history-count 2}) [:room :history]))
+        "mismatch → full history"))
+  (testing "join forwards the fingerprint to the live room's attach"
+    (let [st (assoc-in (server-state-with-room) [:rooms "r1" :session] {:id "s1"})]
+      (is (= [[:app/dispatch {:type :room/attach :client-id "c1" :room-id "r1"
+                              :cached-history-hash 42 :cached-history-count 7}]]
+             (:effects (handle st {:type :room/join :client-id "c1" :session-id "s1"
+                                   :target {:session-id "s1"}
+                                   :cached-history-hash 42 :cached-history-count 7})))))))
 
 ;; ── :room/leave + auto-destroy ───────────────────────────────────────────────
 

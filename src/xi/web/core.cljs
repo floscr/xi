@@ -207,6 +207,31 @@
 (defn- connection-status [st {:keys [connected?]}]
   {:state (assoc st :web/connected? connected?)})
 
+(defn room-joined-from-cache
+  ":room/joined, splicing a cache-elided history back in. When our join
+   echoed the cached history's fingerprint and it matched the live room, the
+   server sent the snapshot WITHOUT :history plus :history-base {:hash
+   :count} and only the newer :history-tail
+   (xi.server.room-manager/joined-payload); the base is the :web/cache
+   snapshot seeded on navigate. An empty tail keeps that vector itself, so
+   the persist tap sees an identical history and skips the rewrite. If our
+   cache no longer matches the base (evicted / replaced since the join), paint
+   what we have and re-join without the fingerprint for a full snapshot."
+  [st {:keys [room-id room history-base history-tail] :as ev}]
+  (if-not history-base
+    (ws-transport/room-joined st ev)
+    (let [cached (get-in st [:web/cache (get-in room [:session :id])])
+          base   (:history cached)]
+      (if (and (vector? base)
+               (= (:count history-base) (count base))
+               (= (:hash history-base) (:history-hash cached)))
+        (ws-transport/room-joined
+         st (assoc ev :room (assoc room :history (if (seq history-tail)
+                                                   (into base history-tail)
+                                                   base))))
+        (-> (ws-transport/room-joined st (assoc ev :room (assoc room :history (or base []))))
+            (assoc :effects [[:ws/send {:type :room/join :target room-id}]]))))))
+
 (defn- compose-add-images
   "Stage client-resized images ({:data b64 :media-type mime}) for the next
    prompt; they ride along on :input/submit and clear on send."
@@ -748,6 +773,7 @@
                             (:model cached)
                             (assoc-in [:rooms room-id :agent :model] (:model cached)))}))))
           :connection/status     connection-status
+          :room/joined           room-joined-from-cache
           ;; ─ Client auth (transport-level handshake, xi.server.ws) ─
           :auth/pending          (fn [st {:keys [code]}]
                                    {:state (assoc st :web/auth {:status :pending :code code})})
@@ -1721,15 +1747,18 @@
    ;; Dispatch a :room/join carrying our cached message-hash + count (if any)
    ;; so the server can skip re-sending an unchanged session's history over the
    ;; wire (answers :session/current), or ship only the new tail when our cache
-   ;; is a clean prefix (answers :session/resumed-tail). Reads localStorage,
-   ;; hence an effect.
+   ;; is a clean prefix (answers :session/resumed-tail). For a live room the
+   ;; history fingerprint does the same job (see room-joined-from-cache).
+   ;; Reads localStorage, hence an effect.
    :room/join-with-cache
    (fn [{:keys [dispatch!]} {:keys [target session-id]}]
-     (let [{:keys [msg-hash msg-count]} (cache/load-room session-id)]
+     (let [{:keys [msg-hash msg-count history history-hash]} (cache/load-room session-id)]
        (dispatch! (cond-> {:type :room/join :target target}
-                    session-id (assoc :session-id session-id)
-                    msg-hash   (assoc :cached-msg-hash msg-hash)
-                    msg-count  (assoc :cached-msg-count msg-count)))))
+                    session-id   (assoc :session-id session-id)
+                    msg-hash     (assoc :cached-msg-hash msg-hash)
+                    msg-count    (assoc :cached-msg-count msg-count)
+                    history-hash (assoc :cached-history-hash history-hash
+                                        :cached-history-count (count history))))))
    :theme/apply  (fn [_ mode]
                    (let [el js/document.documentElement]
                      ;; Suppress transitions during switch

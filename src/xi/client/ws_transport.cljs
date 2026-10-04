@@ -123,11 +123,12 @@
 
 ;; ── Client-only handlers ─────────────────────────────────────────────────────
 
-(defn- room-joined
+(defn room-joined
   "Install the server's room snapshot and make it active. Menu state is
    stripped: menus are per-client UI handled locally (local-ui-events), so a
    menu frame a server-side flow once pushed (and the client since closed
-   locally) must not resurrect from the snapshot."
+   locally) must not resurrect from the snapshot. Public so the web client
+   can wrap it (it splices a cache-elided history back in first)."
   [st {:keys [room-id room]}]
   {:state (-> st
               (assoc-in [:rooms room-id] (update room :ui dissoc :menu :menu-stack))
