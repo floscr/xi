@@ -25,16 +25,20 @@
           (defn fmt-ts [ms]
             (when ms (str (java.util.Date. (long ms)))))
           ;; Host for the printed "Web: http://…" URLs: $XI_PUBLIC_HOST when
-          ;; set, else the Tailscale IP when the tailscale CLI is installed and
-          ;; its daemon is up, else localhost. Purely cosmetic — the server
-          ;; binds regardless — so a missing/stopped tailscale must never block
-          ;; serve / serve:restart.
+          ;; set. The server binds loopback unless $XI_HOST says otherwise, so
+          ;; only then (XI_HOST set, not loopback) is the Tailscale IP tried
+          ;; (when the tailscale CLI is installed and its daemon is up); else
+          ;; localhost. Purely cosmetic, so a missing/stopped tailscale must
+          ;; never block serve / serve:restart.
           (defn host-ip []
-            (or (not-empty (clojure.string/trim (or (System/getenv "XI_PUBLIC_HOST") "")))
-                (try (-> (shell {:out :string :err :string :continue true} "tailscale" "ip" "-4")
-                         :out clojure.string/trim not-empty)
-                     (catch Exception _ nil))
-                "localhost"))
+            (let [bind (clojure.string/trim (or (System/getenv "XI_HOST") ""))
+                  remote? (not (contains? #{"" "127.0.0.1" "localhost" "::1"} bind))]
+              (or (not-empty (clojure.string/trim (or (System/getenv "XI_PUBLIC_HOST") "")))
+                  (when remote?
+                    (try (-> (shell {:out :string :err :string :continue true} "tailscale" "ip" "-4")
+                             :out clojure.string/trim not-empty)
+                         (catch Exception _ nil)))
+                  "localhost")))
           ;; Resolve the pinned clj-ui-framework gitlib checkout (from deps.edn's
           ;; :git/sha), fetching it into the gitlibs cache if absent — so the
           ;; browser-overlay build steps need no local framework checkout.

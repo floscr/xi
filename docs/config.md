@@ -134,11 +134,12 @@ never reach the session list (`xi.session/make-throwaway-config-dir!`).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `XI_PORT` | `7474` | WS port (plain `ws://`, TUI + web) when `--port` is omitted — in every mode: the server binds it, `join`/`create`/`sessions` and standalone auto-join connect to it, `/browser-open` opens it. |
+| `XI_HOST` | `127.0.0.1` | Address the server binds (both the `ws://` and the TLS listener) when `--host` is omitted. Loopback by default; set `0.0.0.0` (all interfaces) or a specific address (e.g. a Tailscale IP) to accept remote clients. See [server.md](server.md#bind-address). |
 | `XI_TLS_PORT` | `7443` | HTTPS/`wss://` port (when certs exist). |
 | `XI_TLS_CERT` | `~/.config/xi/tls/xi.crt` | TLS certificate path. Setting it (or `XI_TLS_KEY`) forces TLS on. |
 | `XI_TLS_KEY` | `~/.config/xi/tls/xi.key` | TLS private key path. |
 | `XI_ICON` | `desktop` (`personal` on an agent server) | Icon variant served at `/apple-touch-icon.png`: `desktop`, `personal` or `green`. |
-| `XI_PUBLIC_HOST` | Tailscale IPv4 if `tailscale` is installed and up, else `localhost` | Host shown in the `Web: http://…` URL printed by `bb serve`, `bb serve:restart`, `bb serve:personal*` and `bb dev:url`. Cosmetic only — the server binds regardless. Read by the `host-ip` helper in `bb.edn`. |
+| `XI_PUBLIC_HOST` | Tailscale IPv4 if `XI_HOST` is set to a non-loopback address and `tailscale` is installed and up, else `localhost` | Host shown in the `Web: http://…` URL printed by `bb serve`, `bb serve:restart`, `bb serve:personal*` and `bb dev:url`. Cosmetic only — `XI_HOST` decides what the server binds. Read by the `host-ip` helper in `bb.edn`. |
 
 See [tls-https.md](tls-https.md) for the HTTPS/`wss://` setup.
 

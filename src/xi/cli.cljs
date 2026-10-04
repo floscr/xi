@@ -29,6 +29,7 @@
      --session SID    resume the saved session with this id on launch
                       (standalone, join, or create)
      --port N         WS port (server/join/create; default 7474)
+     --host ADDR      server bind address (default 127.0.0.1; XI_HOST)
      --headless       server only, no local TUI
      --prompt <text>  launch the TUI with an initial prompt already submitted
                       (works standalone or with --join/--create; e.g. from
@@ -187,6 +188,8 @@ USAGE
 
 FLAGS
   --port N                   Override the default port (7474). All modes.
+  --host ADDR                server: bind address (default 127.0.0.1, this machine
+                             only; 0.0.0.0 = all interfaces, for remote clients).
   --model NAME               Override the default model.
   --session ID               Resume a saved session by id (standalone/join/create).
   --prompt TEXT              Send an initial prompt on launch (standalone/client).
@@ -214,6 +217,7 @@ FLAGS
 
 ENVIRONMENT
   XI_PORT                    Default port when --port is omitted. All modes.
+  XI_HOST                    Server bind address when --host is omitted.
   XI_CWD                     Working directory the agent runs in.
   ANTHROPIC_API_KEY          Auth (otherwise the Claude CLI's own login).
 
@@ -257,6 +261,7 @@ See docs/cli.md for the full reference.")
           "--model"        (recur (nnext args) (assoc opts :model (second args)))
           "--session"      (recur (nnext args) (assoc opts :session-id (second args)))
           "--port"         (recur (nnext args) (assoc opts :port (js/parseInt (second args) 10)))
+          "--host"         (recur (nnext args) (assoc opts :host (second args)))
           (recur (next args)
                  (cond
                    ;; Positional URL for join/create
@@ -904,7 +909,7 @@ See docs/cli.md for the full reference.")
   "Host rooms over WS. The server app runs providers + sessions and has no
    renderer; unless --headless, a local TUI joins through the same WS path
    as any remote client."
-  [{:keys [port headless? agent] :as opts}]
+  [{:keys [port host headless? agent] :as opts}]
   (install-crash-guard!)
   ;; A long-lived server can outlive the nix generation it was launched under;
   ;; drop stale /nix/store env vars (e.g. DEPS_CLJ_TOOLS_DIR) so spawned tools
@@ -990,9 +995,9 @@ See docs/cli.md for the full reference.")
                              :on-runaway (fn [msg] (log-crash! "dispatch-livelock" msg))
                              :ring ring})
         _ (user-ext/start! app)
-        {actual-port :port} ((:start! server) app {:port port})]
+        {actual-port :port} ((:start! server) app {:port port :host host})]
     (if headless?
-      (do (js/console.error (str "[xi] Headless server on ws://localhost:" actual-port))
+      (do (js/console.error (str "[xi] Headless server on ws://" (ws/resolve-host host) ":" actual-port))
           (js/console.error "[xi] Connect with: xi join"))
       (start-client! {:target "new" :port actual-port}))))
 

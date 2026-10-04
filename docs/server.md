@@ -56,6 +56,26 @@ xi join                        # from another terminal
 # or open http://localhost:7474 in a browser
 ```
 
+#### Bind address
+
+The server listens on **loopback (`127.0.0.1`) only**, so a fresh install is
+reachable from the machine it runs on and nothing else — a laptop on public
+wifi does not expose an agent billed to your subscription. To serve other
+devices (phone, another machine, a VPN/Tailscale address), opt in:
+
+```bash
+xi server --headless --host 0.0.0.0          # all interfaces
+XI_HOST=100.64.0.10 xi server --headless     # one specific address
+```
+
+`--host` wins over `XI_HOST`; a blank value means unset. The setting applies to
+both the plain and the TLS listener. Prefer a specific address (a VPN
+interface) over `0.0.0.0` where you can, and note that the pairing handshake
+is what protects a coding server once it is reachable (see
+[client-auth.md](client-auth.md)); an agent server (`--agent`) does not pair,
+so only expose it on a network you trust. The startup line says when the
+server is reachable from the network.
+
 ### Join / Create (`xi join`, `xi create`)
 
 A TUI client over `xi.client.ws-transport` (forward + mirror — see
