@@ -16,14 +16,14 @@
           (defn fmt-ts [ms]
             (when ms (str (java.util.Date. (long ms)))))
           ;; Host for the printed "Web: http://…" URLs: $XI_PUBLIC_HOST when
-          ;; set. The server binds loopback unless $XI_HOST says otherwise, so
-          ;; only then (XI_HOST set, not loopback) is the Tailscale IP tried
-          ;; (when the tailscale CLI is installed and its daemon is up); else
-          ;; localhost. Purely cosmetic, so a missing/stopped tailscale must
-          ;; never block serve / serve:restart.
+          ;; set. The server binds all interfaces unless $XI_HOST narrows it,
+          ;; so unless XI_HOST is loopback the Tailscale IP is tried (when the
+          ;; tailscale CLI is installed and its daemon is up); else localhost.
+          ;; Purely cosmetic, so a missing/stopped tailscale must never block
+          ;; serve / serve:restart.
           (defn host-ip []
             (let [bind (clojure.string/trim (or (System/getenv "XI_HOST") ""))
-                  remote? (not (contains? #{"" "127.0.0.1" "localhost" "::1"} bind))]
+                  remote? (not (contains? #{"127.0.0.1" "localhost" "::1"} bind))]
               (or (not-empty (clojure.string/trim (or (System/getenv "XI_PUBLIC_HOST") "")))
                   (when remote?
                     (try (-> (shell {:out :string :err :string :continue true} "tailscale" "ip" "-4")

@@ -58,22 +58,20 @@ xi join                        # from another terminal
 
 #### Bind address
 
-The server listens on **loopback (`127.0.0.1`) only**, so a fresh install is
-reachable from the machine it runs on and nothing else — a laptop on public
-wifi does not expose an agent billed to your subscription. To serve other
-devices (phone, another machine, a VPN/Tailscale address), opt in:
+The server listens on **all interfaces (`0.0.0.0`)**, so `localhost`, a
+Tailscale address and the LAN all reach it. To narrow it, set a bind address:
 
 ```bash
-xi server --headless --host 0.0.0.0          # all interfaces
+xi server --headless --host 127.0.0.1        # this machine only
 XI_HOST=100.64.0.10 xi server --headless     # one specific address
 ```
 
 `--host` wins over `XI_HOST`; a blank value means unset. The setting applies to
-both the plain and the TLS listener. Prefer a specific address (a VPN
-interface) over `0.0.0.0` where you can, and note that the pairing handshake
-is what protects a coding server once it is reachable (see
+both the plain and the TLS listener. On a machine that joins untrusted
+networks (public wifi), bind `127.0.0.1` or a VPN address instead. The pairing
+handshake is what protects a coding server once it is reachable (see
 [client-auth.md](client-auth.md)); an agent server (`--agent`) does not pair,
-so only expose it on a network you trust. The startup line says when the
+so only run it where the network is trusted. The startup line says when the
 server is reachable from the network.
 
 ### Join / Create (`xi join`, `xi create`)

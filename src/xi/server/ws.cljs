@@ -48,9 +48,10 @@
 (def DEFAULT_TLS_PORT 7443)
 
 (def DEFAULT_HOST
-  "Address the server binds. Loopback: a fresh install is reachable only from
-   the machine it runs on; remote access is opt-in via XI_HOST / --host."
-  "127.0.0.1")
+  "Address the server binds: all interfaces, so localhost, a Tailscale address
+   and the LAN all reach it. Narrow it with XI_HOST / --host (e.g. 127.0.0.1
+   for this machine only)."
+  "0.0.0.0")
 
 (defn resolve-host
   "Bind address: an explicit `host` (--host), else XI_HOST, else DEFAULT_HOST.

@@ -29,7 +29,7 @@
      --session SID    resume the saved session with this id on launch
                       (standalone, join, or create)
      --port N         WS port (server/join/create; default 7474)
-     --host ADDR      server bind address (default 127.0.0.1; XI_HOST)
+     --host ADDR      server bind address (default 0.0.0.0; XI_HOST)
      --headless       server only, no local TUI
      --prompt <text>  launch the TUI with an initial prompt already submitted
                       (works standalone or with --join/--create; e.g. from
@@ -190,8 +190,8 @@ USAGE
 
 FLAGS
   --port N                   Override the default port (7474). All modes.
-  --host ADDR                server: bind address (default 127.0.0.1, this machine
-                             only; 0.0.0.0 = all interfaces, for remote clients).
+  --host ADDR                server: bind address (default 0.0.0.0, all interfaces;
+                             127.0.0.1 = this machine only).
   --model NAME               Override the default model.
   --session ID               Resume a saved session by id (standalone/join/create).
   --prompt TEXT              Send an initial prompt on launch (standalone/client).
