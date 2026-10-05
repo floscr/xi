@@ -326,10 +326,9 @@
   {:doc "Show recent output from the demo server window"
    :task (td/logs demo-config {:lines 40})}
 
-  treesitter:install
-  {:doc "nix-build the xi-treesitter CLI + grammars into ~/.config/xi/treesitter"
-   :task (shell "nix-build" "packages/xi-treesitter"
-                "-o" (str (System/getProperty "user.home") "/.config/xi/treesitter"))}
+  treesitter:build
+  {:doc "Rebuild resources/treesitter (web-tree-sitter runtime + WASM grammars) from its manifest.json; optionally only the named grammars. $TREE_SITTER overrides the tree-sitter command (e.g. \"steam-run tree-sitter\" on NixOS)."
+   :task (apply shell "bun" "scripts/build-treesitter-wasm.mjs" *command-line-args*)}
 
   claude:build
   {:doc "Force a nix build of the pinned Claude CLI (packages/providers/anthropic/nix) to the packages/providers/anthropic/claude out-link. Optional: the runner builds it itself when it is missing or not the pinned version."
