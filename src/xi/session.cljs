@@ -131,16 +131,23 @@
 ;; treat those transcripts as part of this session, not as sessions of their
 ;; own.
 
+(defn stored-agent
+  "The agent id of a session's on-disk metadata. Sessions written before agent
+   profiles carry only `:personal-agent? true` (no :agent); they live in the
+   default agent's dir, so they read back as that agent."
+  [data]
+  (or (:agent data)
+      (when (:personal-agent? data) profile/DEFAULT_ID)))
+
 (defn create-session
   "Create a new Xi session. Returns session state map.
    opts:
      :agent - named agent id: the session is stored in that agent's dir
               (~/.config/xi/personal-agent/<id>/) instead of the cwd's
-              project dir, and flagged :personal-agent? on disk so later
-              saves land there too."
+              project dir, and carries :agent on disk so later saves land
+              there too."
   [cwd & [opts]]
-  (let [pa? (some? (:agent opts))
-        dir (if pa?
+  (let [dir (if (:agent opts)
               (personal-agent-dir (:agent opts))
               (xi-session-dir cwd))
         session-id (gen-uuid-v7)
@@ -150,8 +157,7 @@
                       :cwd cwd
                       :created timestamp
                       :name nil
-                      :model nil
-                      :personal-agent? pa?}
+                      :model nil}
                (:agent opts) (assoc :agent (:agent opts)))]
     (when-not (fs/existsSync dir)
       (fs/mkdirSync dir #js {:recursive true}))
@@ -172,7 +178,7 @@
   "Persist session metadata to disk."
   [session]
   (let [dir (or (:_dir session)
-                (if (:personal-agent? session)
+                (if (:agent session)
                   (personal-agent-dir (:agent session))
                   (xi-session-dir (:cwd session))))
         filepath (.join node-path dir (str (:id session) ".json"))
@@ -187,7 +193,7 @@
   "The on-disk directory holding a session's metadata + sidecars."
   [session]
   (or (:_dir session)
-      (if (:personal-agent? session)
+      (if (:agent session)
         (personal-agent-dir (:agent session))
         (xi-session-dir (:cwd session)))))
 
@@ -995,9 +1001,8 @@
                :name (:name data)
                :model (:model data)
                :source :xi}
-        ;; Keep the flag so resumed sessions save back to the PA dir
-        (:personal-agent? data) (assoc :personal-agent? true)
-        (:agent data) (assoc :agent (:agent data))
+        ;; Keep the agent so resumed sessions save back to its dir
+        (stored-agent data) (assoc :agent (stored-agent data))
         ;; Keep the /truncate lineage link so it survives future saves
         (:truncated-from data) (assoc :truncated-from (:truncated-from data))
         ;; Keep the sub-agent links so they survive future saves — the origin

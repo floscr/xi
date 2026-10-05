@@ -6,6 +6,15 @@
             ["node:os" :as os]
             ["node:path" :as path]))
 
+(deftest stored-agent-reads-agent-or-legacy-flag
+  (is (= "coach" (session/stored-agent {:agent "coach" :personal-agent? true})))
+  (is (= "coach" (session/stored-agent {:agent "coach"})))
+  (testing "pre-profile sessions carry only the flag and belong to root"
+    (is (= "root" (session/stored-agent {:personal-agent? true}))))
+  (testing "project sessions have neither"
+    (is (nil? (session/stored-agent {:cwd "/tmp"})))
+    (is (nil? (session/stored-agent {:personal-agent? false})))))
+
 (deftest encode-cwd-xi-basic
   (testing "absolute path is encoded with leading dash"
     (is (= "-home-user-Code-Projects-xi"
