@@ -22,18 +22,9 @@
       (is (thrown-with-msg? js/Error #"not an extension ctx"
                             (core/caller {:extension :mine :xi.api/token "mine"}))))))
 
-(deftest permission-and-base-cwd-go-through-the-verified-caller
-  (let [mine  (core/issue-token! :shop)
-        other (core/issue-token! :other)]
-    (core/set-permissions! {:shop {:chrome-driver {:hosts ["amazon.de"]}}})
-    (try
-      (is (= {:hosts ["amazon.de"]}
-             (core/permission {:extension :shop :xi.api/token mine} :chrome-driver)))
-      (is (thrown-with-msg? js/Error #"issued to extension other, not shop"
-                            (core/permission {:extension :shop :xi.api/token other} :chrome-driver))
-          ":other can't read :shop's declaration by relabelling its ctx")
-      (is (= "/room" (core/base-cwd {:cwd "/room" :extension :shop :xi.api/token mine})))
-      (is (thrown-with-msg? js/Error #"not an extension ctx"
-                            (core/base-cwd {:extension :shop}))
-          "without a room cwd the data dir is the caller's, so the caller must be proven")
-      (finally (core/set-permissions! {})))))
+(deftest base-cwd-goes-through-the-verified-caller
+  (let [mine (core/issue-token! :shop)]
+    (is (= "/room" (core/base-cwd {:cwd "/room" :extension :shop :xi.api/token mine})))
+    (is (thrown-with-msg? js/Error #"not an extension ctx"
+                          (core/base-cwd {:extension :shop}))
+        "without a room cwd the data dir is the caller's, so the caller must be proven")))

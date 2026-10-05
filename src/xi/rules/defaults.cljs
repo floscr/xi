@@ -476,13 +476,6 @@
    [{:match  {:tool :net}
      :action {:type :ask :options [:yes :no :always]}}]
 
-   ;; Headless-Chrome visits from user extensions (xi.api.chrome), already
-   ;; limited to the hosts the extension declares — each host still asks;
-   ;; [a]lways persists a session allow-rule pinned to extension + host.
-   ::browser-confirm
-   [{:match  {:tool :browser}
-     :action {:type :ask :options [:yes :no :always]}}]
-
    ;; Interpreters running inline code or a script file (`bb -f x.clj`,
    ;; `node -e …`, `python x.py`, `bun run x.ts`, …) — the interpreter reads the
    ;; script itself, so neither the read/write gates nor the path guards ever see
@@ -572,7 +565,6 @@
    ::subagent-confirm
    ::extension-sh
    ::net-confirm
-   ::browser-confirm
    ::script-exec
    ::clj-sh])
 

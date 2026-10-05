@@ -2,6 +2,7 @@
   "MCP server trust: once per server, revoked by a change to its code or entry."
   (:require [cljs.test :refer [deftest is testing use-fixtures]]
             [xi.mcp.trust :as trust]
+            [xi.user-config :as user-config]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as path]))
@@ -68,3 +69,33 @@
   (trust/trust! :x)
   (trust/untrust! :x)
   (is (not (trust/trusted? :x))))
+
+(deftest extension-servers-are-trusted-by-their-id
+  (write-registry! {})
+  (trust/set-extension-entries! :shop {"shop/browser" {:command "npx" :args ["pkg@1"]}})
+  (try
+    (is (not (trust/trusted? "shop/browser")))
+    (is (= "shop/browser" (:id (trust/trust! "shop/browser"))))
+    (is (trust/trusted? "shop/browser"))
+    (testing "a changed declaration asks again"
+      (trust/set-extension-entries! :shop {"shop/browser" {:command "npx" :args ["pkg@2"]}})
+      (is (not (trust/trusted? "shop/browser"))))
+    (finally (trust/set-extension-entries! :shop nil))))
+
+(deftest config-trusts-a-server-outright
+  (let [config (file "config.edn")]
+    (write-registry! {:chrome {:command "bun" :args ["server.js"]}})
+    (fs/writeFileSync config (pr-str {:type :xi/config :version 1
+                                      :trusted-mcp-servers ["chrome" "shop/browser"]}))
+    (user-config/set-config-file! config)
+    (try
+      (is (trust/trusted? :chrome) "no store entry needed")
+      (testing "a changed entry stays trusted: the config is the decision"
+        (write-registry! {:chrome {:command "bun" :args ["other.js"]}})
+        (is (trust/trusted? "chrome")))
+      (testing "extension servers by their <ext>/<name> id"
+        (trust/set-extension-entries! :shop {"shop/browser" {:command "npx"}})
+        (is (trust/trusted? "shop/browser")))
+      (finally
+        (trust/set-extension-entries! :shop nil)
+        (user-config/set-config-file! "/nonexistent/xi-test/config.edn")))))

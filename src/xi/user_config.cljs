@@ -6,7 +6,8 @@
       :version    1
       :extensions [\"kb.cljs\" \"web.cljs\"]      ; user extensions xi may load
       :agents     {\"root\" {…}}               ; agent profiles (xi.agent-profile)
-      :projects   {:browse […] :repos […]}}     ; project dirs (xi.projects)
+      :projects   {:browse […] :repos […]}      ; project dirs (xi.projects)
+      :trusted-mcp-servers [\"chrome\" \"shop/browser\"]} ; MCP servers that never ask (xi.mcp.trust)
 
    `:extensions` names the files under ~/.config/xi/extensions/ that are
    evaluated at all — the only place that can enable one. An agent profile's
@@ -48,7 +49,8 @@
    `:version` is an error, so a format change is never misread silently."
   1)
 
-(def ^:private config-file-keys #{:type :version :extensions :agents :projects})
+(def ^:private config-file-keys
+  #{:type :version :extensions :agents :projects :trusted-mcp-servers})
 
 (defn parse-config
   "Validate parsed config-file `data` (nil = unparseable) →
@@ -58,7 +60,8 @@
    `:type :xi/config` with the current `:version` and only known keys."
   [data]
   (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
-                     " :extensions [...] :agents {...} :projects {...}}")
+                     " :extensions [...] :agents {...} :projects {...}"
+                     " :trusted-mcp-servers [...]}")
         unknown (when (map? data) (remove config-file-keys (keys data)))
         spec    (when (map? data) (projects/parse-spec (:projects data)))]
     (cond
@@ -93,13 +96,18 @@
       (not (map? (:agents data {})))
       {:error ":agents must be a map of agent id → profile"}
 
+      (not (and (sequential? (:trusted-mcp-servers data []))
+                (every? string? (:trusted-mcp-servers data))))
+      {:error ":trusted-mcp-servers must be a vector of MCP server ids"}
+
       (:error spec)
       {:error (:error spec)}
 
       :else
-      {:extensions (set (:extensions data))
-       :agents     (or (:agents data) {})
-       :projects   spec})))
+      {:extensions          (set (:extensions data))
+       :agents              (or (:agents data) {})
+       :projects            spec
+       :trusted-mcp-servers (set (:trusted-mcp-servers data))})))
 
 (defn read-config
   "The validated user config (`parse-config`), all-empty when the file is
@@ -110,7 +118,8 @@
       (parse-config
        (try (edn/read-string (fs/readFileSync file "utf8"))
             (catch :default _ nil)))
-      {:extensions #{} :agents {} :projects projects/default-spec})))
+      {:extensions #{} :agents {} :projects projects/default-spec
+       :trusted-mcp-servers #{}})))
 
 (defn projects-spec
   "The validated `:projects` spec (`xi.projects/parse-spec`): project dirs and
@@ -133,3 +142,10 @@
       (js/console.error (str "xi: " (config-file) " is invalid — " e
                              " — no user extensions enabled")))
     (or (:extensions cfg) #{})))
+
+(defn trusted-mcp-servers
+  "The MCP server ids the config file trusts outright (`:trusted-mcp-servers`:
+   mcp.edn ids, or an extension's \"<extension>/<name>\") — #{} when the file
+   is missing, invalid or doesn't set the key. See xi.mcp.trust."
+  []
+  (or (:trusted-mcp-servers (read-config)) #{}))

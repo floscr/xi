@@ -55,27 +55,27 @@
       (is (= {:parsed {:a [1 2]} :json "{\"q\":\"a%20b\"}"}
              (get-in e [:extension :init :room]))))))
 
-(deftest declared-permissions-are-kept-off-the-extension-map
+(deftest declared-mcp-servers-are-kept-off-the-extension-map
   (let [dir (tmp-dir)]
     (write! dir "shop.cljs"
             "(ns shop)
              (def extension {:id :shop
-                             :permissions {:chrome-driver {:hosts [\"amazon.de\"]}}})")
+                             :mcp-servers {:browser {:command \"npx\" :args [\"pkg@1\"]}}})")
     (let [[e] (user/load-dir dir)]
       (is (nil? (:error e)))
-      (is (= {:chrome-driver {:hosts ["amazon.de"]}} (:permissions e)))
-      (is (not (contains? (:extension e) :permissions))))))
+      (is (= {:browser {:command "npx" :args ["pkg@1"]}} (:mcp-servers e)))
+      (is (not (contains? (:extension e) :mcp-servers))))))
 
-(deftest malformed-permissions-reject-the-file
-  (doseq [[perms why] [["{:chrome-driver {:hosts []}}"            #":chrome-driver needs :hosts"]
-                       ["{:chrome-driver {:hosts [\"https://x.com\"]}}" #":chrome-driver needs :hosts"]
-                       ["{:chrome-driver {:hosts [\"*.x.com\"]}}" #":chrome-driver needs :hosts"]
-                       ["{:chrome-driver {:hosts [\"localhost\"]}}" #":chrome-driver needs :hosts"]
-                       ["{:filesystem true}"                     #"unknown permissions: :filesystem"]
-                       ["[:chrome-driver]"                       #":permissions must be a map"]]]
+(deftest malformed-mcp-servers-reject-the-file
+  (doseq [[servers why] [["[:browser]"                          #":mcp-servers must be a map"]
+                         ["{\"browser\" {:command \"x\"}}"    #"simple keywords"]
+                         ["{:Browser {:command \"x\"}}"        #"simple keywords"]
+                         ["{:browser {}}"                       #"browser needs a :command"]
+                         ["{:browser {:command \"x\" :args [1]}}" #":args must be strings"]
+                         ["{:browser {:transport :http :url \"ftp://x\"}}" #"http\(s\) :url"]]]
     (let [dir (tmp-dir)]
-      (write! dir "p.cljs" (str "(ns p) (def extension {:id :p :permissions " perms "})"))
-      (is (re-find why (str (:error (first (user/load-dir dir))))) perms))))
+      (write! dir "p.cljs" (str "(ns p) (def extension {:id :p :mcp-servers " servers "})"))
+      (is (re-find why (str (:error (first (user/load-dir dir))))) servers))))
 
 (deftest rejects-tool-gate-and-event-hooks
   (let [dir (tmp-dir)]

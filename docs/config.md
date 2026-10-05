@@ -163,7 +163,6 @@ See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider and
 
 | Variable | Default | Used by | Description |
 | --- | --- | --- | --- |
-| `XI_CHROME_BINARY` | auto-detected | `xi.browser.chrome` | Chrome/Chromium binary for the headless browser user extensions drive through `xi.api.chrome`. Otherwise common install paths, then `google-chrome-stable` on `PATH`. See [user-extensions.md](user-extensions.md#headless-chrome). |
 | `XI_GIT_LOCK_WAIT_SECS` | `600` | `xi.git-lock` (git-index hold) | How long a room waits for another room's git-index hold before its git op fails with an error naming the holder. See [git-lock.md](git-lock.md). |
 
 Feature-specific variables are documented with their feature: `XI_TREESITTER_DIR`
@@ -192,7 +191,8 @@ with a required `:version` (currently `1`), exactly like `rules.edn`
                       :extensions ["freesearch.cljs" "web.cljs"]
                       :tools ["web_search" "fetch"]}}
  :projects   {:browse ["~/Code/Projects" {:dir "~/Code/Work" :depth 2}]
-              :repos  ["~/.config/dotfiles"]}}
+              :repos  ["~/.config/dotfiles"]}
+ :trusted-mcp-servers ["chrome" "product-search/browser"]}
 ```
 
 | Key | Description |
@@ -200,6 +200,7 @@ with a required `:version` (currently `1`), exactly like `rules.edn`
 | `:extensions` | The [user extensions](user-extensions.md#enabling) xi may load: file names in `~/.config/xi/extensions/`. The only place that can enable one. |
 | `:agents` | Agent profiles, id → profile, for `xi --agent <id>`, `xi server --agent <id>` and `xi prompt --agent <id>` (`xi.agent-profile`). Keys below. |
 | `:projects` | The project directories behind `/project`, Alt+P and the web projects page (`xi.projects`). [Keys below](#projects). |
+| `:trusted-mcp-servers` | MCP servers whose calls never ask: `mcp.edn` ids, or an extension's `"<extension>/<name>"` (`xi.mcp.trust`). Trusted as they are, with no code fingerprint: the config is the decision. Servers not listed are trusted at runtime instead (`[a]lways`, `/mcp trust`), until their code changes. See [mcp-servers.md](mcp-servers.md#trusting-a-server-once-until-its-code-changes). |
 
 **An invalid file fails closed**: a missing or wrong `:type`, a missing or
 unsupported `:version`, an unknown top-level key or unparseable EDN enables

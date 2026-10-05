@@ -19,15 +19,17 @@
     (is (re-find #":extensions must be a vector" (err {:type :xi/config :version 1 :extensions "kb.cljs"})))
     (is (re-find #":agents must be a map" (err {:type :xi/config :version 1 :agents []})))
     (is (re-find #":projects must be a map" (err {:type :xi/config :version 1 :projects []})))
-    (is (re-find #"unknown :projects key" (err {:type :xi/config :version 1 :projects {:dirs []}}))))
+    (is (re-find #"unknown :projects key" (err {:type :xi/config :version 1 :projects {:dirs []}})))
+    (is (re-find #":trusted-mcp-servers must be a vector" (err {:type :xi/config :version 1 :trusted-mcp-servers [:chrome]}))))
   (testing "a valid file parses; keys empty unless set"
-    (is (= {:extensions #{} :agents {} :projects projects/default-spec}
+    (is (= {:extensions #{} :agents {} :projects projects/default-spec :trusted-mcp-servers #{}}
            (cfg/parse-config {:type :xi/config :version 1})))
     (is (= {:extensions #{"kb.cljs"} :agents {"root" {:tools ["fetch"]}}
-            :projects projects/default-spec}
+            :projects projects/default-spec :trusted-mcp-servers #{"chrome"}}
            (cfg/parse-config {:type :xi/config :version 1
                               :extensions ["kb.cljs"]
-                              :agents {"root" {:tools ["fetch"]}}}))))
+                              :agents {"root" {:tools ["fetch"]}}
+                              :trusted-mcp-servers ["chrome"]}))))
   (testing ":projects is validated and normalized"
     (is (= {:browse [{:dir "~/Code" :depth 2 :git? true}]
             :repos ["~/.config/dotfiles"]

@@ -171,8 +171,7 @@ token.
 | `xi.api.fs` | `read` `write` `list` `exists?` `data-dir` | `{:tool :read/:write/:ls :path …}` |
 | `xi.api.sh` | `(sh ctx "cmd" "arg" …)` (optional `{:dir …}` before the argv) | `{:tool :sh :cli :command :argv}` |
 | `xi.api.http` | `(fetch ctx url {:method :headers :body :timeout-ms})` (http(s) only) → `{:status :ok? :url :headers :body}`; `url-encode` `url-decode` (pure) | `{:tool :net :host …}` |
-| `xi.api.chrome` | `(visit ctx url {:wait :eval :timeout-ms})` (https only, declared hosts only) → `{:url :ready? :value}`; see [Headless Chrome](#headless-chrome) | `{:tool :browser :host …}` |
-| `xi.api.mcp` | `(call ctx server tool args {:room-id})` → the tool result `{:content :is-error}`, over the agent's own connection to that [MCP server](mcp-servers.md#calling-servers-from-user-extensions) | `{:tool :mcp :mcp-server :mcp-tool}` |
+| `xi.api.mcp` | `(call ctx server tool args {:room-id})` → the tool result `{:content :is-error}`, from one of the extension's [own MCP servers](#mcp-servers-of-your-own) or a [configured one](mcp-servers.md#calling-servers-from-user-extensions) | `{:tool :mcp :mcp-server :mcp-tool}` |
 | `xi.api.dialog` | `confirm` `select` `alert` `form`; see [Dialogs](#dialogs) | (no request) |
 | `xi.api.json` | `parse` `stringify` `pretty` | (no request) |
 | `xi.api.promise` | `then` `catch` `all` `resolve` `reject` `delay` | (no request) |
@@ -197,8 +196,9 @@ Defaults that apply to extensions (see [rules.md](rules.md)):
   denied.
 - Every shell command asks. clj's read-only auto-run list doesn't apply,
   because a real process has none of clj's confinement.
-- Every network host asks, and so does every host a headless-Chrome visit
-  opens.
+- Every network host asks.
+- An MCP server asks until it's trusted (once, until its code changes; see
+  [below](#mcp-servers-of-your-own)).
 - `[a]lways` saves a session rule pinned to that extension (and host or exact
   command). It never extends to the agent or to other extensions.
 
@@ -207,7 +207,6 @@ Pre-allow things permanently in `~/.config/xi/rules.edn`:
 ```clojure
 {:match {:tool :sh :extension "notify" :cli "notify-send"} :action {:type :allow}}
 {:match {:tool :net :extension "pushover" :host "api.pushover.net"} :action {:type :allow}}
-{:match {:tool :browser :extension "shop"} :action {:type :allow}}
 ```
 
 ### What an extension can touch in xi itself
@@ -242,9 +241,9 @@ The loader wraps every user fn (`xi.ext.user.guard`):
 
 Allowed map keys: `:id :init :handlers :fx :commands :tool-definitions
 :tool-registry :system-prompt :keybindings :prompt-badge :on-shutdown
-:on-enable :on-disable :on-mount :on-unmount :permissions` (see
-[Headless Chrome](#headless-chrome); `:on-mount` / `:on-unmount` are the
-[reload lifecycle](#live-reload-mount-and-unmount)). `:on-enable` /
+:on-enable :on-disable :on-mount :on-unmount :mcp-servers` (see
+[MCP servers of your own](#mcp-servers-of-your-own); `:on-mount` /
+`:on-unmount` are the [reload lifecycle](#live-reload-mount-and-unmount)). `:on-enable` /
 `:on-disable` still fire for `/ext enable|disable`.
 `:tool-gate`, `:event-hooks` and `:remove-tools` are rejected, because policy
 belongs to the rules engine. `:id` and tool names
@@ -349,35 +348,34 @@ an effect is refused, so pre-allow it in `rules.edn`:
  :action {:type :allow}}
 ```
 
-## Headless Chrome
+## MCP servers of your own
 
-Some sites block scripted HTTP or only render their content with JavaScript,
-so `xi.api.http` gets nothing useful from them. For those, `xi.api.chrome`
-loads the page in a headless Chrome and evaluates a JS expression in it.
-
-An extension has to declare the hosts it drives first:
+An extension that needs more than `xi.api.*` offers — a headless browser, a
+database, a language server — brings it as an MCP server. `:mcp-servers`
+declares them, each in the shape of an `mcp.edn` entry
+([mcp-servers.md](mcp-servers.md)):
 
 ```clojure
 ;; ~/.config/xi/extensions/shop.cljs
 (ns shop
   (:require [clojure.string :as str]
-            [xi.api.chrome :as chrome]
             [xi.api.http :as http]
+            [xi.api.mcp :as mcp]
             [xi.api.promise :as p]))
 
-(def ^:private titles-js
-  "[...document.querySelectorAll('h2')].map(h => h.innerText)")
-
 (defn- search [{:keys [query]} ctx]
-  (-> (chrome/visit ctx (str "https://www.example-shop.com/s?q=" (http/url-encode query))
-                    {:wait "document.querySelectorAll('h2').length"
-                     :eval titles-js})
-      (p/then (fn [{:keys [value]}]
-                {:content [{:type "text" :text (str/join "\n" value)}]}))))
+  (-> (mcp/call ctx :browser "navigate_page"
+                {:type "url" :url (str "https://www.example-shop.com/s?q=" (http/url-encode query))})
+      (p/then (fn [_]
+                (mcp/call ctx :browser "evaluate_script"
+                          {:function "() => [...document.querySelectorAll('h2')].map(h => h.innerText)"})))
+      (p/then (fn [res] {:content (:content res)}))))
 
 (def extension
   {:id :shop
-   :permissions {:chrome-driver {:hosts ["example-shop.com"]}}
+   :mcp-servers {:browser {:command "npx"
+                           :args ["-y" "chrome-devtools-mcp@1.10.1" "--headless" "--isolated"
+                                  "--no-usage-statistics" "--no-page-id-routing"]}}
    :tool-definitions [{:name "shop_search"
                        :description "Search example-shop.com."
                        :input_schema {:type "object"
@@ -386,46 +384,23 @@ An extension has to declare the hosts it drives first:
    :tool-registry {"shop_search" search}})
 ```
 
-`(visit ctx url {:wait :eval :timeout-ms})`:
+- **Private.** A declared server is the extension's own: it isn't offered to
+  the agent, and only this extension reaches it, through `xi.api.mcp/call`
+  with the server's name (`:browser`). Other extensions can't call it.
+- **Trusted once.** Each server is `"<extension>/<name>"` (`"shop/browser"`)
+  to the rules engine and to MCP trust. Its first call asks, showing the
+  server and the call; `[a]lways` trusts it until its command line or the
+  code it runs changes ([trust](mcp-servers.md#trusting-a-server-once-until-its-code-changes)).
+  `/mcp trust shop/browser` does it without a call, and `/mcp list` shows
+  declared servers with their extension. Calls from an `:fx` can't be asked
+  about, so trust the server before using one from an effect.
+- **Lifecycle.** Nothing is started until the first call. The server is
+  stopped when the extension unmounts (a reload, its file removed) and when
+  xi exits. It runs as you, with xi's environment, like any `mcp.edn` server.
 
-- Opens the https `url` in a fresh tab.
-- Polls `:wait` (a JS expression) until it is truthy: a positive number, a
-  non-empty string, or true. The default waits for the page to finish
-  loading. It gives up after `:timeout-ms` (default 15s, max 60s) and goes on.
-- Evaluates `:eval` in the page. A returned Promise is awaited.
-- Returns `{:url <final URL> :ready? <false if :wait timed out> :value <the
-  :eval result as Clojure data, keyword keys>}`.
-
-Both expressions run in the page, not in xi.
-
-What keeps it contained:
-
-- **Declared hosts.** `:permissions {:chrome-driver {:hosts [...]}}` lists the
-  hosts, and each also covers its subdomains (`"amazon.de"` covers
-  `www.amazon.de`). Without the declaration, or for a URL outside it, `visit`
-  is refused before anything is asked. A malformed declaration rejects the
-  whole file.
-- **Rules.** Each visit is also a `{:tool :browser :host …}` request. By
-  default it asks, and `[a]lways` grants that extension the host for the
-  session.
-- **Network.** The browser's only way out is a proxy that tunnels HTTPS to the
-  declared hosts and refuses everything else. That covers the page's own
-  requests, redirects, WebSockets and your `:eval` code, and it includes
-  localhost. A site that loads its scripts or data from another domain needs
-  that domain declared too.
-- **Profile.** Each extension gets its own browser on a throwaway profile, so
-  none of your Chrome logins or cookies are visible to it. CDP runs over a
-  pipe, so no other process can attach to the browser.
-- **Identity.** Every tab presents itself as regular Google Chrome of the
-  same build (`xi.browser.chrome/ua-override`: the `HeadlessChrome` token
-  and an ARM platform are normalized in the user agent, and the client-hint
-  brands say Google Chrome). Some sites — amazon.de among them — answer a
-  bare headless Chromium with an error page while the identical page loads
-  in Chrome; the browser is meant to see what a normal browser sees.
-
-The browser starts on the first visit and closes after five idle minutes.
-Visits from one extension run one at a time. Set `XI_CHROME_BINARY` if Chrome
-isn't found (see [config.md](config.md)).
+A malformed `:mcp-servers` rejects the file: names are simple keywords, each
+entry a stdio `:command` (with string `:args`, `:env`, `:cwd`) or
+`:transport :http` with an http(s) `:url`.
 
 ## Browser halves
 

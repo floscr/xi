@@ -165,6 +165,17 @@ Code a command downloads (`npx -y pkg@latest`) is outside the fingerprint:
 pin a version (`pkg@1.2.3`) so an upgrade is an entry change. The store is
 `~/.config/xi/ext/mcp-trust.edn` (`{:servers {"<id>" "<sha256>"}}`).
 
+**In config.** To trust a server for good, list it in `~/.config/xi/config.edn`
+(a file agents can't write):
+
+```clojure
+:trusted-mcp-servers ["chrome" "product-search/browser"]
+```
+
+A listed server is trusted as it is, with no fingerprint (rebuilding it never
+asks): the config is the decision. Extension servers go by their
+`"<extension>/<name>"` id. `/mcp list` says which trust applies.
+
 Because the gate is an ordinary default rule, you can still override it: an
 `:ask` / `:deny` rule of your own for a server or tool applies whether or not
 the server is trusted.
@@ -230,6 +241,14 @@ tagged with the extension, so the same gate applies: a trusted server's calls
 run, an untrusted one asks. An extension usually calls from an effect, where
 there is no dialog to answer, so trust the server first (one `[a]lways` on an
 agent call, or `/mcp trust <id>`). Disabled or unknown servers reject.
+
+### Servers an extension declares
+
+An extension can also bring MCP servers of its own (`:mcp-servers` in its
+map, entries shaped like `mcp.edn`'s). Those are private to it: not offered to
+the agent, callable only by that extension, started on first use and stopped
+when it unmounts. They are `"<extension>/<name>"` to the rules and to trust.
+See [user-extensions.md](user-extensions.md#mcp-servers-of-your-own).
 
 ## Writing a server
 

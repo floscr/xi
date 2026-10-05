@@ -53,9 +53,9 @@
             :mcp (cond-> {:tool :mcp}
                    (:mcp-server req) (assoc :mcp-server (:mcp-server req))
                    (:mcp-tool req)   (assoc :mcp-tool (:mcp-tool req)))
-            ;; a network / browser grant covers the host, not one exact URL
-            (:net :browser) (cond-> {:tool (:tool req)}
-                              (:host req) (assoc :host (:host req)))
+            ;; a network grant covers the host, not one exact URL
+            :net (cond-> {:tool (:tool req)}
+                   (:host req) (assoc :host (:host req)))
             (cond-> {:tool (:tool req)}
               ;; :other lumps every extension tool together — pin the exact
               ;; tool so [a]lways on spawn_subagent can't allow all of them.
@@ -187,9 +187,6 @@
     (cond
       (= :net tool)
       (str "Network request — approve?\n\nHost: " host "\n\n" command)
-
-      (= :browser tool)
-      (str "Open in headless Chrome — approve?\n\nHost: " host "\n\n" command)
 
       (= :mcp tool)
       (str "MCP tool call — approve?\n\n"

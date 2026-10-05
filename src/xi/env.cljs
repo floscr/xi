@@ -54,7 +54,7 @@
 (def ^:private preserved-prefixes
   "Env-key prefixes for launcher / service vars that are intentionally set by
    xi's own launcher (systemd unit, .env) and legitimately point into
-   /nix/store — e.g. XI_CHROME_BINARY=/nix/store/…/chromium/bin/chromium. A
+   /nix/store — e.g. XI_TREESITTER_DIR=/nix/store/…-xi-treesitter. A
    login shell never sets these, so without this guard the store-pointer drop
    below would delete them and break the services that read them."
   ["XI_"])

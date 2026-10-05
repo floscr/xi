@@ -13,6 +13,13 @@
    fingerprint, and the server is asked about again. Code a command line
    downloads (`npx -y pkg@latest`) is outside it — pin the version.
 
+   Servers user extensions declare (:mcp-servers) are trusted the same way,
+   under their \"<extension>/<name>\" id.
+
+   Or trust a server in ~/.config/xi/config.edn (`:trusted-mcp-servers`, a
+   file agents can't write): a listed server is trusted as it is, without
+   a fingerprint — the config is the decision.
+
    The store, ~/.config/xi/ext/mcp-trust.edn, keeps one trusted fingerprint
    per server id: {:servers {\"chrome\" \"<sha256>\"}}. Written by the MCP
    ask's \"Always\" answer and `/mcp trust <id>`.
@@ -21,6 +28,7 @@
    default `::mcp-confirm` rule asks only for untrusted servers."
   (:require [cljs.reader :as reader]
             [clojure.string :as str]
+            [xi.user-config :as user-config]
             ["node:crypto" :as crypto]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -50,6 +58,30 @@
   "The MCP registry map (id -> entry), or {} when absent/unreadable."
   []
   (or (read-edn (registry-file)) {}))
+
+;; ext-id → {"<ext>/<name>" entry}: the servers user extensions declare
+;; (:mcp-servers, see xi.ext.mcp), so they're trusted the same way.
+(defonce ^:private extension-entries (atom {}))
+
+(defn set-extension-entries!
+  "Record (or with nil, forget) the servers extension `ext` declares."
+  [ext entries]
+  (if (seq entries)
+    (swap! extension-entries assoc ext entries)
+    (swap! extension-entries dissoc ext)))
+
+(defn- id-str
+  "A server id as the store keys it: \"chrome\", \"product-search/browser\"."
+  [id]
+  (if (keyword? id) (subs (str id) 1) (str id)))
+
+(defn entry-for
+  "The entry of server `id`: an extension's \"<ext>/<name>\" server, else the
+   mcp.edn entry; nil when there is none."
+  [id]
+  (let [id (id-str id)]
+    (or (some #(get % id) (vals @extension-entries))
+        (get (read-registry) (keyword id)))))
 
 ;; ── Fingerprint ──────────────────────────────────────────────────────────────
 
@@ -125,30 +157,37 @@
     (fs/mkdirSync (node-path/dirname f) #js {:recursive true})
     (fs/writeFileSync f (str (pr-str m) "\n"))))
 
+(defn configured?
+  "Whether config.edn's `:trusted-mcp-servers` lists server `id`."
+  [id]
+  (contains? (user-config/trusted-mcp-servers) (id-str id)))
+
 (defn trusted-entry?
-  "Whether server `id` with registry `entry` is trusted as it is now."
+  "Whether server `id` with registry `entry` is trusted as it is now: listed
+   in config.edn, or its fingerprint is the one the store trusted."
   [id entry]
   (boolean
    (when entry
-     (when-let [s (get-in (read-store) [:servers (name id)])]
-       (= s (fingerprint entry))))))
+     (or (configured? id)
+         (when-let [s (get-in (read-store) [:servers (id-str id)])]
+           (= s (fingerprint entry)))))))
 
 (defn trusted?
-  "Whether configured server `id` (string or keyword) is trusted. An id that
-   isn't in mcp.edn is not."
+  "Whether server `id` (string or keyword; an mcp.edn id or an extension's
+   \"<ext>/<name>\") is trusted. An unknown id is not."
   [id]
-  (trusted-entry? id (get (read-registry) (keyword id))))
+  (trusted-entry? id (entry-for id)))
 
 (defn trust!
-  "Trust server `id` as it is configured now → {:id :sha}, or nil when it
-   isn't in mcp.edn."
+  "Trust server `id` as it is configured now → {:id :sha}, or nil when no
+   such server is configured."
   [id]
-  (when-let [entry (get (read-registry) (keyword id))]
+  (when-let [entry (entry-for id)]
     (let [s (fingerprint entry)]
-      (write-store! (assoc-in (read-store) [:servers (name id)] s))
-      {:id (name id) :sha s})))
+      (write-store! (assoc-in (read-store) [:servers (id-str id)] s))
+      {:id (id-str id) :sha s})))
 
 (defn untrust!
   "Forget server `id`'s trust; its next call asks again."
   [id]
-  (write-store! (update (read-store) :servers dissoc (name id))))
+  (write-store! (update (read-store) :servers dissoc (id-str id))))

@@ -12,7 +12,7 @@
    The caller is resolved from the token, never from :extension: the token is
    an opaque object the loader minted for that extension (`issue-token!`) and
    the sandbox cannot build one, so a ctx that names another extension's id
-   is refused instead of borrowing its grants and declared permissions.
+   is refused instead of borrowing its grants.
    Without a room cwd, paths resolve against the extension's data dir. An :ask
    with no confirm! (no room / no client) is a refusal, never a pass."
   (:require [clojure.string :as str]
@@ -20,23 +20,13 @@
             [xi.paths :as paths]
             [xi.rules.store :as store]))
 
-;; Extension id → its declared `:permissions` map, set by the loader
-;; (xi.ext.user). Capabilities that need an up-front declaration read it here,
-;; never from ctx, which the extension's own code passes in.
-(defonce ^:private declared (atom {}))
-
 ;; token object → extension id, for every token ever issued. Keyed by object
 ;; identity, so a token stays valid exactly as long as some ctx closure holds
 ;; it and can't be forged from a value.
 (defonce ^:private tokens (js/WeakMap.))
 
-(defn set-permissions!
-  "Replace the declared permissions of every loaded user extension."
-  [id->permissions]
-  (reset! declared id->permissions))
-
 ;; extension id → {key → dispose fn}: what an extension holds open (spawned
-;; processes, its headless browser). `dispose!` releases all of it when the
+;; processes). `dispose!` releases all of it when the
 ;; extension unmounts (reload / removal), so old code leaves nothing running.
 (defonce ^:private owned (atom {}))
 
@@ -91,17 +81,12 @@
 
       :else id)))
 
-(defn permission
-  "The calling extension's declaration for permission `k`, or nil."
-  [ctx k]
-  (get-in @declared [(caller ctx) k]))
-
 (defn own!
   "Register `dispose` (0-arg) as a resource the extension behind `ctx` holds
    open → a 0-arg release fn for when the resource ends on its own. `dispose!`
    runs whatever is still registered. Throws for a revoked / foreign ctx.
    With a `key`, the registration is idempotent: one resource per key (a
-   shared browser, say), a later call replaces the earlier disposer."
+   shared process, say), a later call replaces the earlier disposer."
   ([ctx dispose] (own! ctx (swap! own-seq inc) dispose))
   ([ctx key dispose]
    (let [id (caller ctx)]

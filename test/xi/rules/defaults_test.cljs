@@ -344,13 +344,6 @@
                                              :bb-trusted? false})
                          [:action :unanswered])))))
 
-(deftest extension-browser-visits-ask
-  (testing "a headless-Chrome visit from a user extension asks, offering [a]lways"
-    (let [rule (rules/first-match defaults/default-rules
-                                  {:tool :browser :extension "shop" :host "www.amazon.de"})]
-      (is (= :ask (get-in rule [:action :type])))
-      (is (some #{:always} (get-in rule [:action :options]))))))
-
 (deftest xi-sessions-readable
   (testing "the xi sessions dir and its files are allowed for read surfaces"
     (doseq [tool [:read :ls :grep :find]
@@ -385,7 +378,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 35 (count defaults/default-rules))))
+    (is (= 34 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes

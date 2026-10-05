@@ -12,7 +12,6 @@
    fetch; they are not composed here."
   (:require [clojure.string :as str]
             [sci.core :as sci]
-            [xi.api.chrome]
             [xi.api.core :as api-core]
             [xi.api.dialog]
             [xi.api.fs]
@@ -23,6 +22,7 @@
             [xi.api.sh]
             [xi.core.events]
             [xi.core.state]
+            [xi.ext.mcp :as mcp-ext]
             [xi.ext.manager :as manager]
             [xi.ext.user.guard :as guard]
             [xi.sandbox.sci :as sandbox]
@@ -40,8 +40,7 @@
 (def ^:private exposed-namespaces
   "The host namespaces a user extension may require. Pure xi helpers + the
    rules-gated capabilities. Nothing here performs an un-gated side effect."
-  {'xi.api.chrome  (sci/copy-ns xi.api.chrome  (sci/create-ns 'xi.api.chrome))
-   'xi.api.dialog  (sci/copy-ns xi.api.dialog  (sci/create-ns 'xi.api.dialog))
+  {'xi.api.dialog  (sci/copy-ns xi.api.dialog  (sci/create-ns 'xi.api.dialog))
    'xi.api.fs      (sci/copy-ns xi.api.fs      (sci/create-ns 'xi.api.fs))
    'xi.api.sh      (sci/copy-ns xi.api.sh      (sci/create-ns 'xi.api.sh))
    'xi.api.http    (sci/copy-ns xi.api.http    (sci/create-ns 'xi.api.http))
@@ -76,33 +75,50 @@
    is the rules engine's job) and no :event-hooks (rewrites/blocks any event)."
   #{:id :init :handlers :fx :commands :tool-definitions :tool-registry
     :system-prompt :keybindings :prompt-badge :on-shutdown :on-enable
-    :on-disable :permissions
+    :on-disable
+    ;; MCP servers of its own, private to it (see mcp-servers-error)
+    :mcp-servers
     ;; load lifecycle: (fn [ctx]) after the extension is (re)registered / before
     ;; it is replaced or removed (see "Mount lifecycle" below)
     :on-mount :on-unmount
     ;; web half, collected but not composed node-side
     :routes :pages :nav-items :taps})
 
-(defn- host-name? [h]
-  (boolean (and (string? h)
-                (re-matches #"(?i)[a-z0-9-]+(?:\.[a-z0-9-]+)+" h))))
-
-(defn- permissions-error
-  "→ nil when `perms` (an extension's `:permissions`) is well-formed, else why
-   not. The only permission so far is :chrome-driver (xi.api.chrome)."
-  [perms]
+(defn- mcp-server-error
+  "→ nil when `entry` (one value of `:mcp-servers`) is a usable server, else
+   why not. The shape of an mcp.edn entry: a stdio `:command` (+ `:args`
+   `:env` `:cwd`) or `:transport :http` with a `:url`, plus `:timeout-ms`
+   and `:code-paths`."
+  [entry]
   (cond
-    (nil? perms) nil
-    (not (map? perms)) ":permissions must be a map"
-    (seq (remove #{:chrome-driver} (keys perms)))
-    (str "unknown permissions: " (str/join ", " (remove #{:chrome-driver} (keys perms))))
+    (not (map? entry)) "must be a map"
+    (= :http (:transport entry))
+    (when-not (and (string? (:url entry)) (re-find #"^https?://" (:url entry)))
+      ":http needs an http(s) :url")
+    (not (and (string? (:command entry)) (seq (:command entry)))) "needs a :command"
+    (not (every? string? (:args entry))) ":args must be strings"
+    (and (:env entry) (not (and (map? (:env entry))
+                                (every? string? (keys (:env entry)))
+                                (every? string? (vals (:env entry))))))
+    ":env must map strings to strings"
+    :else nil))
 
-    (contains? perms :chrome-driver)
-    (let [hosts (:hosts (:chrome-driver perms))]
-      (when-not (and (map? (:chrome-driver perms)) (vector? hosts) (seq hosts)
-                     (every? host-name? hosts))
-        (str ":chrome-driver needs :hosts, a non-empty vector of host names "
-             "like \"amazon.de\" (no scheme, port or wildcard)")))))
+(defn- mcp-servers-error
+  "→ nil when `servers` (an extension's `:mcp-servers`: {name entry}) is
+   well-formed, else why not."
+  [servers]
+  (cond
+    (nil? servers) nil
+    (not (map? servers)) ":mcp-servers must be a map of name → server"
+    :else
+    (some (fn [[n entry]]
+            (cond
+              (not (and (keyword? n) (re-matches #"[a-z0-9][a-z0-9-]*" (name n))))
+              (str ":mcp-servers names must be simple keywords like :browser, not " (pr-str n))
+              :else
+              (when-let [why (mcp-server-error entry)]
+                (str ":mcp-servers " (name n) " " why))))
+          servers)))
 
 (defn validate
   "→ nil when `ext` is a usable user extension, else a rejection reason.
@@ -115,7 +131,7 @@
     (seq (remove allowed-keys (keys ext)))
     (str "disallowed keys: "
          (str/join ", " (sort (remove allowed-keys (keys ext)))))
-    (permissions-error (:permissions ext)) (permissions-error (:permissions ext))
+    (mcp-servers-error (:mcp-servers ext)) (mcp-servers-error (:mcp-servers ext))
     (some taken-tools (map :name (:tool-definitions ext)))
     (str "tool name already in use: "
          (str/join ", " (filter taken-tools (map :name (:tool-definitions ext)))))
@@ -198,8 +214,8 @@
                           (cond-> (assoc base :id (:id ext)
                                               :ns nsn
                                               :token token
-                                              :extension (guard/wrap (dissoc ext :permissions) token))
-                            (:permissions ext) (assoc :permissions (:permissions ext))))))
+                                              :extension (guard/wrap (dissoc ext :mcp-servers) token))
+                            (:mcp-servers ext) (assoc :mcp-servers (:mcp-servers ext))))))
                     (catch :default e
                       (assoc base :error (str "eval error: " (.-message e)))))]
         (recur (rest files)
@@ -348,6 +364,7 @@
 
 (defn- unmount! [{:keys [id extension token]}]
   (when-let [f (and @host (:on-unmount extension))] (f @host))
+  (mcp-ext/clear-extension-servers! id)
   (api-core/dispose! id)
   (api-core/revoke! token))
 
@@ -385,9 +402,9 @@
     (doseq [old (set (keep :id @loaded)) :when (not (contains? new-ids old))]
       (manager/unregister! mgr old))
     (reset! loaded entries)
-    (api-core/set-permissions! (into {} (keep (fn [{:keys [id permissions]}]
-                                                (when (and id permissions) [id permissions])))
-                                     entries))
+    ;; an extension's own MCP servers: registered now, spawned on first use
+    (doseq [{:keys [id mcp-servers]} entries :when (and id mcp-servers)]
+      (mcp-ext/set-extension-servers! id mcp-servers))
     (doseq [{:keys [extension]} entries :when extension]
       (manager/register! mgr extension))
     (doseq [entry entries :when (:extension entry)]

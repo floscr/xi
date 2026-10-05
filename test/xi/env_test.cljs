@@ -27,7 +27,7 @@
 (deftest plan-sanitize-preserves-store-pointing-service-vars
   (testing "launcher/service vars are kept even when they point into /nix/store"
     (let [inherited {"PATH" "/bin"
-                     "XI_CHROME_BINARY" "/nix/store/abc-chromium/bin/chromium"
+                     "XI_BUNDLE" "/nix/store/abc-xi/main.js"
                      "XI_TREESITTER_DIR" "/nix/store/def-xi-treesitter"
                      "DEPS_CLJ_TOOLS_DIR" "/nix/store/aaa/clojure_tools"}
           clean     {"PATH" "/bin"}

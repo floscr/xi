@@ -197,17 +197,13 @@
     (reset! conn nil)
     (-> p (.then (fn [c] ((:close c)))) (.catch (fn [_] nil)))))
 
-(defn build-extension
-  "Build an MCP server extension from a registry entry (which must carry :id).
-   Advertises the on-disk cached tools synchronously; spawns the server lazily
-   (memoized) on the first tool call, and again after it died; closes it on
-   :on-disable and at shutdown. Each call carries the turn context as `_meta`
-   (see call-meta). Tools named in the entry's `:hidden-tools` aren't offered
-   to the agent; user extensions still reach them (xi.api.mcp)."
-  [{:keys [id] :as entry}]
-  (let [hidden   (set (:hidden-tools entry))
-        cached   (remove #(contains? hidden (:name %)) (read-cached-tools id))
-        conn     (atom nil)                    ;; memoized client promise
+(defn- server-conn
+  "The connection to one server: {:call (fn [tool args ctx] → Promise<xi
+   tool result>) :stop! (fn [])}. Spawned lazily (memoized) on the first
+   call, and again after it died. Each call carries the turn context as
+   `_meta` (see call-meta). `label` names the server in errors."
+  [label entry]
+  (let [conn     (atom nil)                    ;; memoized client promise
         live     (atom nil)                    ;; the connected client, once up
         connect! (fn []
                    (when-let [c @live]
@@ -229,10 +225,27 @@
                                    (reset! conn nil)
                                    (reset! live nil))
                                  {:content  [{:type "text"
-                                              :text (str "MCP server '" (name id)
+                                              :text (str "MCP server '" label
                                                          "' error: " (.-message e))}]
-                                  :is-error true}))))
-        stop!    (fn [] (reset! live nil) (close-conn! conn))]
+                                  :is-error true}))))]
+    {:call  call
+     ;; kill a live child right away (this also runs from the process exit
+     ;; hook, where a promise would never settle), then drop the connection
+     :stop! (fn []
+              (when-let [c @live] ((:close c)))
+              (reset! live nil)
+              (close-conn! conn))}))
+
+(defn build-extension
+  "Build an MCP server extension from a registry entry (which must carry :id).
+   Advertises the on-disk cached tools synchronously; spawns the server lazily
+   on the first tool call (server-conn); closes it on :on-disable and at
+   shutdown. Tools named in the entry's `:hidden-tools` aren't offered to the
+   agent; user extensions still reach them (xi.api.mcp)."
+  [{:keys [id] :as entry}]
+  (let [hidden   (set (:hidden-tools entry))
+        cached   (remove #(contains? hidden (:name %)) (read-cached-tools id))
+        {:keys [call stop!]} (server-conn (name id) entry)]
     (swap! callers assoc (keyword id) call)
     {:id               (ext-id id)
      :tool-definitions (mapv #(normalize-tool-def id %) cached)
@@ -265,6 +278,63 @@
       (js/Promise.reject (js/Error. (str "MCP server '" (name kid) "' is disabled")))
 
       :else (f tool args ctx))))
+
+;; ── Servers user extensions declare (:mcp-servers) ───────────────────────────────
+;;
+;; A user extension may bring its own MCP servers: `:mcp-servers {name entry}`,
+;; entries shaped like mcp.edn's. They're private to that extension (never
+;; offered to the agent, callable only by it through xi.api.mcp) and live as
+;; long as it's mounted. Each gets the id "<extension>/<name>", which is what
+;; the rules engine and MCP trust see.
+
+;; id → {:owner ext-id :call … :stop! …}
+(defonce ^:private ext-servers (atom {}))
+
+;; They aren't manager extensions, so :on-shutdown never reaches them: stop
+;; them when xi exits.
+(defonce ^:private stop-on-exit
+  (.on js/process "exit"
+       (fn [] (doseq [[_ {:keys [stop!]}] @ext-servers] (stop!)))))
+
+(defn extension-server-id
+  "The id of server `server-name` declared by extension `ext`."
+  [ext server-name]
+  (str (name ext) "/" (name server-name)))
+
+(defn clear-extension-servers!
+  "Stop and forget every server extension `ext` declared."
+  [ext]
+  (doseq [[id {:keys [owner stop!]}] @ext-servers :when (= owner ext)]
+    (stop!)
+    (swap! ext-servers dissoc id))
+  (trust/set-extension-entries! ext nil))
+
+(defn set-extension-servers!
+  "Make `servers` ({name entry}) the servers of extension `ext`, replacing
+   (and stopping) the ones it declared before. Nothing is spawned until the
+   first call."
+  [ext servers]
+  (clear-extension-servers! ext)
+  (let [entries (into {} (map (fn [[n entry]] [(extension-server-id ext n) entry])) servers)]
+    (trust/set-extension-entries! ext entries)
+    (doseq [[id entry] entries]
+      (swap! ext-servers assoc id (assoc (server-conn id entry) :owner ext)))))
+
+(defn extension-servers
+  "{id {:owner ext-id}} of every declared extension server (for /mcp list)."
+  []
+  (update-vals @ext-servers #(select-keys % [:owner])))
+
+(defn call-extension-tool!
+  "Call `tool` on extension server `id` for extension `caller` → Promise<xi
+   tool result>. Rejects unless `caller` declared that server. No policy
+   here: xi.api.mcp gates first."
+  [caller id tool args ctx]
+  (let [{:keys [owner call]} (get @ext-servers id)]
+    (cond
+      (nil? call)       (js/Promise.reject (js/Error. (str "MCP server '" id "' is not declared")))
+      (not= owner caller) (js/Promise.reject (js/Error. (str "MCP server '" id "' belongs to another extension")))
+      :else             (call tool args ctx))))
 
 ;; ── Install (called from xi.cli after seed!) ──────────────────────────────────
 
@@ -321,22 +391,32 @@
                          (str "Failed to refresh '" (name kid) "': " (.-message e)))))))
 
 (defn- render-list [mgr]
-  (let [reg (read-registry)]
-    (if (empty? reg)
+  (let [reg  (read-registry)
+        exts (extension-servers)]
+    (if (and (empty? reg) (empty? exts))
       "No MCP servers configured. Add one with /mcp add <id> <command> [args...]"
       (str "MCP servers:\n"
            (str/join "\n"
-                     (map (fn [[id entry]]
-                            (let [enabled? (manager/known? mgr (ext-id id))
-                                  on?      (some #(and (= (:id %) (ext-id id)) (:enabled? %))
-                                                 (manager/ext-list mgr))
-                                  n        (count (read-cached-tools id))]
-                              (str "  " (if on? "[x]" "[ ]") " " (name id)
-                                   " (" (name (or (:transport entry) :stdio)) ", "
-                                   n " tool" (when (not= n 1) "s") ", "
-                                   (if (trust/trusted-entry? id entry) "trusted" "asks") ")"
-                                   (when-not enabled? "  — not loaded, restart or /mcp refresh"))))
-                          reg))))))
+                     (concat
+                      (map (fn [[id entry]]
+                             (let [enabled? (manager/known? mgr (ext-id id))
+                                   on?      (some #(and (= (:id %) (ext-id id)) (:enabled? %))
+                                                  (manager/ext-list mgr))
+                                   n        (count (read-cached-tools id))]
+                               (str "  " (if on? "[x]" "[ ]") " " (name id)
+                                    " (" (name (or (:transport entry) :stdio)) ", "
+                                    n " tool" (when (not= n 1) "s") ", "
+                                    (cond (trust/configured? id) "trusted in config.edn"
+                                          (trust/trusted-entry? id entry) "trusted"
+                                          :else "asks") ")"
+                                    (when-not enabled? "  — not loaded, restart or /mcp refresh"))))
+                           reg)
+                      (map (fn [[id {:keys [owner]}]]
+                             (str "  [x] " id " (from extension " (name owner) ", "
+                                  (cond (trust/configured? id) "trusted in config.edn"
+                                        (trust/trusted? id) "trusted"
+                                        :else "asks") ")"))
+                           (sort-by key exts))))))))
 
 (defn- add-fx [mgr {:keys [dispatch!]} {:keys [room-id id command args]}]
   (cond
@@ -428,7 +508,7 @@
     (str/blank? id)
     (status! dispatch! room-id (str "Usage: /mcp " (if untrust? "untrust" "trust") " <id>"))
 
-    (not (contains? (read-registry) (keyword id)))
+    (nil? (trust/entry-for id))
     (status! dispatch! room-id (str "Unknown MCP server '" id "'. Use /mcp list."))
 
     untrust?
