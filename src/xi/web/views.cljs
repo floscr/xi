@@ -940,10 +940,10 @@
        (.readAsDataURL reader file)))))
 
 (defn- add-files!
-  "Stage a seq of Files as compose attachments: images are downscaled; every
-   other file type (PDF, zip, text, …) is read as-is and referenced by path
-   server-side."
-  [dispatch! files]
+  "Stage a seq of Files as compose attachments of the chat `draft-key`: images
+   are downscaled; every other file type (PDF, zip, text, …) is read as-is and
+   referenced by path server-side."
+  [dispatch! draft-key files]
   (when (seq files)
     (-> (js/Promise.all
          (to-array
@@ -954,7 +954,8 @@
                files)))
         (.then (fn [results]
                  (when-let [valid (seq (remove nil? (array-seq results)))]
-                   (dispatch! {:type :compose/add-images :images (vec valid)}))))
+                   (dispatch! {:type :compose/add-images :draft-key draft-key
+                               :images (vec valid)}))))
         (.catch (fn [err] (js/console.error "[xi-web] attachment read failed:" err))))))
 
 (defn- handle-compose-paste! [dispatch! draft-key ^js e]
@@ -966,7 +967,7 @@
                                (.getAsFile item))))))]
     (if (seq files)
       (do (.preventDefault e)
-          (add-files! dispatch! files))
+          (add-files! dispatch! draft-key files))
       ;; Long / code-like text pastes get wrapped in a bare ``` fence at the
       ;; cursor, with newlines added so the fences sit on their own lines.
       (let [text (some-> (.-clipboardData e) (.getData "text"))]
@@ -992,7 +993,20 @@
                         :draft-key draft-key
                         :text new-value})))))))
 
-(defn- compose-image-strip [dispatch! images]
+(defn- sync-compose-draft!
+  "The composer textarea carries its value as child text, which only sets the
+   *default* value: once the user has typed, the DOM value is dirty and a
+   re-render with another chat's draft no longer shows. The element is reused
+   across chats, so on a chat switch (tracked in a data attribute — never on
+   plain typing, which would race the async render) write the new chat's draft
+   into the DOM explicitly."
+  [^js node draft-key draft]
+  (let [k (str draft-key)]
+    (when-not (= k (.getAttribute node "data-draft-key"))
+      (.setAttribute node "data-draft-key" k)
+      (set! (.-value node) (or draft "")))))
+
+(defn- compose-image-strip [dispatch! draft-key images]
   (when (seq images)
     [:div {:class ["compose-images"]}
      (map-indexed
@@ -1002,14 +1016,16 @@
            (icon/icon {:icon-name :file-text :size :md})
            [:span {:class ["compose-attachment-name"]} (or name "file")]
            [:button {:class ["compose-attachment-remove"]
-                     :on {:click (fn [_] (dispatch! {:type :compose/remove-image :idx idx}))}}
+                     :on {:click (fn [_] (dispatch! {:type :compose/remove-image
+                                                     :draft-key draft-key :idx idx}))}}
             (icon/icon {:icon-name :x :size :sm})]]
           [:div {:replicant/key idx :class ["compose-image-thumb"]}
            (let [src (str "data:" media-type ";base64," data)]
              [:img {:src src :alt "attachment" :class ["lightbox-thumb"]
                     :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}])
            [:button {:class ["compose-image-remove"]
-                     :on {:click (fn [_] (dispatch! {:type :compose/remove-image :idx idx}))}}
+                     :on {:click (fn [_] (dispatch! {:type :compose/remove-image
+                                                     :draft-key draft-key :idx idx}))}}
             (icon/icon {:icon-name :x :size :sm})]]))
       images)]))
 
@@ -1157,7 +1173,7 @@
         (set! (.-value el) ""))
       (dispatch! {:type :compose/clear-draft :draft-key draft-key})
       (when (seq images)
-        (dispatch! {:type :compose/clear-images}))
+        (dispatch! {:type :compose/clear-images :draft-key draft-key}))
       (if room-id
         (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
                      (seq images) (assoc :images (vec images))))
@@ -1302,7 +1318,7 @@
      ;; clipped away by the frame's overflow:hidden.
      (when (and queue-open? (seq queued) (not cmd-open?))
        (queue-popover dispatch! room-id queued))
-     (compose-image-strip dispatch! images)
+     (compose-image-strip dispatch! draft-key images)
      [:div {:class ["compose-frame"]}
       (when-not cmd-open?
         (floating-actions dispatch! room-id pa? prompt-nav nav-ctx scrolled-up?
@@ -1320,14 +1336,17 @@
                :multiple true
                :style {:display "none"}
                :on {:change (fn [^js e]
-                              (add-files! dispatch! (array-seq (.. e -target -files)))
+                              (add-files! dispatch! draft-key (array-seq (.. e -target -files)))
                               (set! (.. e -target -value) ""))}}]
       [:div {:class ["compose-input-wrapper"]}
        (form/form-textarea-auto
         {:placeholder (if busy? "Working…" "Message…")
          :value (or draft "")
          :max-rows 6
-         :attrs {:replicant/on-mount
+         :attrs {:replicant/on-render
+                 (fn [{:replicant/keys [^js node]}]
+                   (sync-compose-draft! node draft-key draft))
+                 :replicant/on-mount
                  (fn [{:replicant/keys [^js node]}]
                    ;; Autofocus the input when starting a fresh chat so the
                    ;; user can type immediately. preventScroll avoids a jump
@@ -3004,7 +3023,7 @@
          (when (:web/copy-flash state) (copy-toast))
          (if-let [form (:web/skill-form state)]
            (skill-form-compose dispatch! form)
-           (compose-box dispatch! room busy? (:web/compose-images state)
+           (compose-box dispatch! room busy? (get-in state [:web/compose-images dkey])
                         dkey (get-in state [:web/drafts dkey]) sid
                         (:web/cmd-selected state)
                         (get-in state [:lobby :agent-id])

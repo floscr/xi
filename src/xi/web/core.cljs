@@ -235,16 +235,18 @@
 
 (defn- compose-add-images
   "Stage client-resized images ({:data b64 :media-type mime}) for the next
-   prompt; they ride along on :input/submit and clear on send."
-  [st {:keys [images]}]
-  {:state (update st :web/compose-images (fnil into []) images)})
+   prompt of the chat `draft-key`; they ride along on :input/submit and clear
+   on send. Scoped per chat like the text draft so they don't follow the user
+   into another session."
+  [st {:keys [draft-key images]}]
+  {:state (update-in st [:web/compose-images draft-key] (fnil into []) images)})
 
-(defn- compose-remove-image [st {:keys [idx]}]
-  {:state (update st :web/compose-images
-                  (fn [imgs] (into (subvec imgs 0 idx) (subvec imgs (inc idx)))))})
+(defn- compose-remove-image [st {:keys [draft-key idx]}]
+  {:state (update-in st [:web/compose-images draft-key]
+                     (fn [imgs] (into (subvec imgs 0 idx) (subvec imgs (inc idx)))))})
 
-(defn- compose-clear-images [st _]
-  {:state (assoc st :web/compose-images [])})
+(defn- compose-clear-images [st {:keys [draft-key]}]
+  {:state (update st :web/compose-images dissoc draft-key)})
 
 (defn- compose-set-draft
   "Track the compose text per session so drafts survive navigation."
