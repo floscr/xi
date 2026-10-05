@@ -249,3 +249,58 @@
               [{:type "assistant" :message {:stop_reason "end_turn"}}
                {:type "user" :message {:content "next prompt"}}])))
     (is (not (session/transcript-turn-complete? [])))))
+
+;; ── Throwaway config dir credentials ─────────────────────────────────────────
+
+(defn- with-live-config-dir
+  "Run (f live-dir) with CLAUDE_CONFIG_DIR at a temp dir holding a
+   .credentials.json of `credentials`."
+  [credentials f]
+  (let [live (.mkdtempSync fs (.join path (os/tmpdir) "xi-test-live-"))
+        prev (aget js/process.env "CLAUDE_CONFIG_DIR")]
+    (fs/writeFileSync (.join path live ".credentials.json") credentials "utf8")
+    (aset js/process.env "CLAUDE_CONFIG_DIR" live)
+    (try (f live)
+         (finally
+           (if prev
+             (aset js/process.env "CLAUDE_CONFIG_DIR" prev)
+             (js-delete js/process.env "CLAUDE_CONFIG_DIR"))
+           (fs/rmSync live #js {:recursive true :force true})))))
+
+(defn- refresh-in!
+  "What the Claude CLI does on a token refresh: rename a temp file over
+   <dir>/.credentials.json (replacing a symlink rather than writing through it)."
+  [dir credentials]
+  (let [tmp (.join path dir ".credentials.json.tmp")]
+    (fs/writeFileSync tmp credentials "utf8")
+    (fs/renameSync tmp (.join path dir ".credentials.json"))))
+
+(defn- live-credentials [live]
+  (fs/readFileSync (.join path live ".credentials.json") "utf8"))
+
+(deftest throwaway-refresh-is-saved-back
+  (with-live-config-dir "old"
+    (fn [live]
+      (let [dir (session/make-throwaway-config-dir!)]
+        (refresh-in! dir "new")
+        (is (= "old" (live-credentials live)) "the rename left the live file stale")
+        (session/remove-config-dir! dir)
+        (is (= "new" (live-credentials live)))
+        (is (not (fs/existsSync dir)))))))
+
+(deftest throwaway-refresh-loses-to-a-newer-live-login
+  (with-live-config-dir "old"
+    (fn [live]
+      (let [dir (session/make-throwaway-config-dir!)]
+        (refresh-in! dir "stale-refresh")
+        (fs/writeFileSync (.join path live ".credentials.json") "relogin" "utf8")
+        (session/remove-config-dir! dir)
+        (is (= "relogin" (live-credentials live)))))))
+
+(deftest throwaway-without-refresh-leaves-live-alone
+  (with-live-config-dir "old"
+    (fn [live]
+      (let [dir (session/make-throwaway-config-dir!)]
+        (session/sync-credentials-back! dir)
+        (session/remove-config-dir! dir)
+        (is (= "old" (live-credentials live)))))))

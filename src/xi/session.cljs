@@ -265,6 +265,15 @@
           (invalidate-listing-cache!))))
     (catch :default _e nil)))
 
+;; Throwaway config dir -> {:src the live config dir :credentials its
+;; .credentials.json content when the dir was made}. See
+;; sync-credentials-back!.
+(defonce ^:private throwaway-dirs (atom {}))
+
+(defn- read-credentials [dir]
+  (try (fs/readFileSync (.join node-path dir ".credentials.json") "utf8")
+       (catch :default _e nil)))
+
 (defn make-throwaway-config-dir!
   "Create a temp CLAUDE_CONFIG_DIR mirroring the real Claude config via
    symlinks but with a fresh, empty `projects/` dir. Used for throwaway turns
@@ -282,13 +291,41 @@
           (fs/symlinkSync (.join node-path src entry)
                           (.join node-path base entry))))
       (fs/mkdirSync (.join node-path base "projects"))
+      (swap! throwaway-dirs assoc base {:src src :credentials (read-credentials src)})
       base)
     (catch :default _e nil)))
 
+(defn sync-credentials-back!
+  "Save OAuth tokens a throwaway run refreshed into the live config. The
+   Claude CLI writes a refreshed login by renaming a temp file over
+   <config-dir>/.credentials.json, which replaces the throwaway dir's symlink
+   instead of writing through it. The refresh also rotated the live refresh
+   token, so dropping the copy leaves ~/.claude logged out on the next start.
+   Copied only while the live file is unchanged since the dir was made, so a
+   newer login (another refresh, `claude /login`, an account switch) wins."
+  [dir]
+  (when-let [{:keys [src credentials]} (get @throwaway-dirs dir)]
+    (try
+      (let [refreshed (.join node-path dir ".credentials.json")
+            live      (.join node-path src ".credentials.json")]
+        (when (and (fs/existsSync refreshed)
+                   (not (.isSymbolicLink (fs/lstatSync refreshed)))
+                   (= credentials (read-credentials src)))
+          (let [staged (str live ".xi-" (.toString (crypto/randomBytes 4) "hex"))]
+            (fs/copyFileSync refreshed staged)
+            (fs/chmodSync staged 384)
+            (fs/renameSync staged live))))
+      (catch :default e
+        (js/console.error (str "[session] credentials sync-back failed: " (.-message e)))))))
+
 (defn remove-config-dir!
   "Recursively remove a throwaway dir from make-throwaway-config-dir!.
-   Symlinks are unlinked; their targets (the live config) are untouched."
+   Symlinks are unlinked; their targets (the live config) are untouched.
+   Tokens refreshed inside it are saved back first."
   [dir]
+  (when dir
+    (sync-credentials-back! dir)
+    (swap! throwaway-dirs dissoc dir))
   (when (and dir (fs/existsSync dir))
     (try (fs/rmSync dir #js {:recursive true :force true})
          (catch :default _e nil))))
