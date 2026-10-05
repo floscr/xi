@@ -3045,8 +3045,9 @@
 (defn- session-menu-items
   "ui.context-menu entries for a session card: bookmark toggle, hide/show in
    Recent (only where the caller opts in via :dismissable?), and Delete. Hiding
-   and deleting are gated on idle — a busy card or one awaiting a dialog
-   response can't be dismissed or removed."
+   is gated on idle — a busy card or one awaiting a dialog response can't be
+   dismissed. Delete is always offered: the server keeps a busy room alive and
+   just suppresses its card (see room_manager/session-delete)."
   [dispatch! {:keys [session-id favorite? dismissed? dismissable? busy? has-dialog?]}]
   (let [idle? (not (or busy? has-dialog?))]
     (cond-> [{:label    (if favorite? "Remove bookmark" "Bookmark")
@@ -3056,7 +3057,7 @@
       (conj {:label    (if dismissed? "Show in recent" "Hide from recent")
              :icon     (if dismissed? :eye :eye-off)
              :on-click #(dispatch! {:type :dismissed/toggle :session-id session-id})})
-      idle?
+      true
       (conj {:type :separator}
             {:label    "Delete"
              :icon     :trash
