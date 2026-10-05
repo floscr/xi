@@ -16,3 +16,5 @@ resources/public/mkcert-rootCA.crt
 *.env
 # Local planning notes (kept on disk, not published)
 tasks/
+# npm package staging (bb package)
+dist/

@@ -13,11 +13,14 @@
 ;; ── Resource resolution ───────────────────────────────────────────────────────
 
 (defn- find-xi-root
-  "Walk up from the main script's directory to find xi's project root.
-   Looks for package.json."
+  "Walk up from the compiled script's directory to find xi's project root.
+   Looks for package.json. Starts at __dirname (the real location, even when
+   xi was started through a symlinked bin), else the argv script."
   []
   (let [script-path (aget js/process.argv 1)
-        start-dir (when script-path (.dirname path (.resolve path script-path)))]
+        start-dir (if (exists? js/__dirname)
+                    js/__dirname
+                    (when script-path (.dirname path (.resolve path script-path))))]
     (when start-dir
       (loop [dir start-dir]
         (let [pkg (.join path dir "package.json")]

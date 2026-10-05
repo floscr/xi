@@ -1,8 +1,19 @@
 {
-  "name": "xi",
+  "name": "xi-agent",
   "version": "0.1.0",
+  "description": "Xi — an extendable coding agent for the terminal, with a web UI that joins the same sessions.",
   "private": true,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/floscr/xi.git"
+  },
+  "bin": {
+    "xi": "bin/xi.js"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
   "devDependencies": {
     "shadow-cljs": "3.4.9"
   }

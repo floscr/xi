@@ -97,7 +97,9 @@ src/xi/          cli (entry + assembly), config.cljc (extensions/providers/
 test/xi/         mirrors src/
 resources/       web client (public/), syntax grammars, treesitter/ (WASM
                  runtime + grammars for outlines)
-scripts/         bb/node build helpers (demo seed, codegen, treesitter WASM)
+bin/             `xi` launcher (the npm bin; hands over to bun)
+scripts/         bb/node build helpers (demo seed, codegen, treesitter WASM,
+                 build-package.mjs → `bb package`)
 packages/        outside xi's own bundle: bb-client/ (JVM client lib),
                  providers/anthropic/ (SDK runner + pinned CLI),
                  mcp-bb-example/ (babashka MCP server example)
@@ -118,6 +120,7 @@ docs/            see the index below
 | Providers | [mcp-tool-bridge.md](docs/mcp-tool-bridge.md) · [providers-zen.md](docs/providers-zen.md) · [providers-openai.md](docs/providers-openai.md) |
 | Web client · offline · UI components · demo | [web-client.md](docs/web-client.md) · [web-offline.md](docs/web-offline.md) · [frontend.md](docs/frontend.md) · [demo.md](docs/demo.md) |
 | TUI rendering · syntax highlighting | [tui-rendering.md](docs/tui-rendering.md) · [syntax-highlighting.md](docs/syntax-highlighting.md) |
+| npm package layout · `bb package` | [packaging.md](docs/packaging.md) |
 | Concurrent-edit safety (file hashes) · holds + cross-room git lock | [concurrent-edits.md](docs/concurrent-edits.md) · [git-lock.md](docs/git-lock.md) |
 | **User guide** — human-readable source of the future docs site; all new user-facing docs go here | [docs/guide/](docs/guide/README.md) |
 

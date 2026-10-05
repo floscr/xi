@@ -37,13 +37,26 @@ import { fileURLToPath } from "node:url";
 // but not node_modules). npm output goes to stderr (fd 2) — stdout is the
 // protocol frame stream and must stay clean. The host reads no frames until we
 // send some, and its `start` frame just buffers in the stdin pipe meanwhile.
+//
+// Not when the SDK already resolves from a parent node_modules: an npm-installed
+// xi declares the SDK as a dependency of the xi package itself, in a directory
+// that may be read-only, so there is nothing to install here.
 
 const runnerDir = dirname(fileURLToPath(import.meta.url));
 const installMarker = join(runnerDir, "node_modules", ".xi-installed");
 
+function sdkResolvable() {
+  try {
+    import.meta.resolve("@anthropic-ai/claude-agent-sdk");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function depsState() {
   if (!existsSync(join(runnerDir, "node_modules", "@anthropic-ai", "claude-agent-sdk")))
-    return "missing";
+    return sdkResolvable() ? "external" : "missing";
   // Installed by hand (no marker yet): trust it and start tracking from now.
   if (!existsSync(installMarker)) return "untracked";
   try {
@@ -59,7 +72,7 @@ if (deps === "missing" || deps === "stale") {
   process.stderr.write("[runner] deps " + deps + " — running npm install in " + runnerDir + "\n");
   execSync("npm install", { cwd: runnerDir, stdio: ["ignore", 2, 2] });
 }
-if (deps !== "ok") {
+if (deps !== "ok" && deps !== "external") {
   try { writeFileSync(installMarker, new Date().toISOString() + "\n"); } catch { }
 }
 

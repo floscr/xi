@@ -326,6 +326,10 @@
   {:doc "Show recent output from the demo server window"
    :task (td/logs demo-config {:lines 40})}
 
+  package
+  {:doc "Assemble the npm package in dist/pkg from release builds (the dev watch is left alone) and pack it to dist/<name>-<version>.tgz. `bb package --no-pack` only stages."
+   :task (apply shell "bun" "scripts/build-package.mjs" *command-line-args*)}
+
   treesitter:build
   {:doc "Rebuild resources/treesitter (web-tree-sitter runtime + WASM grammars) from its manifest.json; optionally only the named grammars. $TREE_SITTER overrides the tree-sitter command (e.g. \"steam-run tree-sitter\" on NixOS)."
    :task (apply shell "bun" "scripts/build-treesitter-wasm.mjs" *command-line-args*)}
