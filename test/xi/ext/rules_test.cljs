@@ -1,7 +1,8 @@
 (ns xi.ext.rules-test
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
-            [xi.ext.rules :as rules-ext]))
+            [xi.ext.rules :as rules-ext]
+            ["node:fs" :as fs]))
 
 (defn- ctx [state]
   {:get-state (fn [] state)
@@ -339,6 +340,28 @@
             (.then (fn [_]
                      (is (= path (get-in @opts [:diff :path])))
                      (is (str/includes? (get-in @opts [:diff :text]) "+ hello"))
+                     (done))))))))
+
+(deftest ask-rule-on-doomed-edit-fails-without-asking
+  (testing "an edit whose oldText isn't in the file errors out right away — the
+           user is never asked to approve a call that can only fail"
+    (async done
+      (let [rule   {:match {:tool :edit} :action {:type :ask}}
+            state  (state-with [:ext :rules :rules] rule)
+            path   "/tmp/xi-rules-doomed-edit.txt"
+            _      (fs/writeFileSync path "actual content" "utf8")
+            tc     {:name "edit"
+                    :arguments {:path path :edits [{:oldText "missing" :newText "x"}]}}
+            asked? (atom false)
+            c      (assoc (ctx state)
+                          :confirm! (fn [_ _] (reset! asked? true)
+                                      (js/Promise.resolve true)))]
+        (-> (rules-ext/tool-policy tc c)
+            (.then (fn [out]
+                     (is (false? @asked?))
+                     (is (true? (get-in out [:result :is-error])))
+                     (is (str/includes? (get-in out [:result :content 0 :text])
+                                        "Could not find the exact text"))
                      (done))))))))
 
 (deftest mcp-default-rule-always-trusts-the-server

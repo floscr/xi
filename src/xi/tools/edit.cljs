@@ -35,10 +35,31 @@
           {:ok content}
           edits))
 
+(defn- stale-message [path expected actual]
+  (str "File has changed since it was last read "
+       "(expected hash " expected ", current " actual "). Re-read "
+       path " before editing."))
+
+(defn validate
+  "Dry-run `execute`'s checks without writing anything → the error message the
+   call would fail with, or nil when it would apply. Lets the permission layer
+   reject a doomed edit before asking the user to approve it."
+  [{:keys [path edits expectedHash]} {:keys [cwd]}]
+  (try
+    (let [resolved (tfs/resolve-path path cwd)
+          original (if (tfs/file-exists? resolved)
+                     (fs/readFileSync resolved "utf8")
+                     "")
+          actual   (util/content-hash original)]
+      (if (and expectedHash (not= expectedHash actual))
+        (stale-message path expectedHash actual)
+        (:error (apply-edits original edits))))
+    (catch :default _ nil)))
+
 (defn preview
   "Unified diff the edit would produce, without writing anything — shown in
    the permission dialog before the call runs. nil when the edits don't apply
-   (the tool reports that error itself once allowed) or change nothing."
+   (see `validate`) or change nothing."
   [{:keys [path edits]} {:keys [cwd]}]
   (try
     (let [resolved (tfs/resolve-path path cwd)
@@ -63,10 +84,7 @@
           original (fs/readFileSync resolved "utf8")]
       (if (and expectedHash (not= expectedHash (util/content-hash original)))
         {:content [{:type "text"
-                    :text (str "File has changed since it was last read "
-                               "(expected hash " expectedHash ", current "
-                               (util/content-hash original) "). Re-read "
-                               path " before editing.")}]
+                    :text (stale-message path expectedHash (util/content-hash original))}]
          :is-error true}
         (let [result (apply-edits original edits)]
           (if (:error result)
