@@ -42,6 +42,13 @@
     (is (empty? (:effects (handle st {:type :chat/start :room-id "r1" :text ""})))
         "no message, no chat")))
 
+(deftest cwd-agents-files-replies-to-the-asking-client
+  (let [st (server-state-with-room)]
+    (is (= [[:cwd/agents-files-reply {:client-id "c1" :cwd "/y"}]]
+           (:effects (handle st {:type :cwd/agents-files :client-id "c1" :cwd "/y"}))))
+    (is (empty? (:effects (handle st {:type :cwd/agents-files :client-id "c1"})))
+        "no cwd, no lookup")))
+
 (deftest join-latest-attaches-to-most-recent
   (let [st (apply-events (server-state-with-room)
                          {:type :room/create :room-id "r2" :room {:created 200}})

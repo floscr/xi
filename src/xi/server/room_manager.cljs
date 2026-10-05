@@ -249,6 +249,13 @@
   [_st {:keys [client-id]}]
   {:effects [[:sessions/all-reply {:client-id client-id}]]})
 
+(defn- cwd-agents-files
+  "Roomless: the AGENTS.md files that apply to `cwd`, for the launch header of
+   a virtual new chat (no room exists yet to read them from)."
+  [_st {:keys [client-id cwd]}]
+  (when (string? cwd)
+    {:effects [[:cwd/agents-files-reply {:client-id client-id :cwd cwd}]]}))
+
 (defn- models-web-list
   [_st {:keys [client-id]}]
   {:effects [[:models/web-list-reply {:client-id client-id}]]})
@@ -429,6 +436,7 @@
    :session/counts         session-counts
    :sessions/all           sessions-all
    :models/web-list        models-web-list
+   :cwd/agents-files       cwd-agents-files
    :session/content-search session-content-search
    :session/web-search     session-web-search
    :diff/web-load          diff-web-load

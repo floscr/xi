@@ -113,8 +113,9 @@
                                            (:web/preferred-model st)
                                            (assoc :model (:web/preferred-model st))))
                 (assoc :web/timeline-window nil))
-   :effects [[:history/push {:route {:page :chat}}]
-             [:compose/focus]]})
+   :effects (cond-> [[:history/push {:route {:page :chat}}]
+                     [:compose/focus]]
+              (room-new-cwd st) (conj [:ws/send {:type :cwd/agents-files :cwd (room-new-cwd st)}]))})
 
 (defn- counts-result
   "Store per-session response counts (ride along on :lobby/state).
@@ -1246,8 +1247,14 @@
                                                                            (assoc :model (:web/preferred-model st))))
                                                 (assoc :web/timeline-window nil)
                                                 (assoc :web/sidebar-open? false))
-                                     :effects [[:history/push {:route {:page :chat}}]
-                                               [:compose/focus]]})
+                                     :effects (cond-> [[:history/push {:route {:page :chat}}]
+                                                       [:compose/focus]]
+                                                cwd (conj [:ws/send {:type :cwd/agents-files :cwd cwd}]))})
+          ;; AGENTS.md files for the virtual new chat's cwd (launch header).
+          ;; Dropped when the pending room moved on to another cwd meanwhile.
+          :cwd/agents-files-result (fn [st {:keys [cwd agents-files]}]
+                                     (when (= cwd (get-in st [:web/pending-room :cwd]))
+                                       {:state (assoc-in st [:web/pending-room :agents-files] agents-files)}))
           ;; Command palette second level: Tab on a project row opens its
           ;; action page; back/close return to the top level. The reset-filter
           ;; effect re-syncs ui-runtime.js (clears the query, re-highlights).

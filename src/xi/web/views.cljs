@@ -2404,9 +2404,10 @@
   "Welcome card at the top of every chat's timeline: Xi logo, the
    current model / cwd / AGENTS.md files and a footer hint. It is ordinary
    timeline content, so it scrolls away with the conversation and can be
-   scrolled back to. Works for a virtual (not-yet-joined) room too:
-   model/agents-files are simply omitted until the first prompt creates the
-   real room."
+   scrolled back to. Works for a virtual (not-yet-joined) room too: the
+   caller fills model (server default from :lobby/state) and agents-files
+   (fetched via :cwd/agents-files) from the pending room, so the card matches
+   the real room's once the first prompt creates it."
   [{:keys [model cwd agents-files pa? dispatch!]}]
   [:div {:class ["launch-header"]}
    [:div {:class ["launch-hero"]}
@@ -2753,9 +2754,12 @@
         authoritative? (boolean (seq room-history))
         history (if authoritative? room-history (:history cached))
         busy?   (get-in room [:agent :busy?])
-        model   (or (get-in room [:agent :model]) (:model cached)
-                    (get-in state [:web/pending-room :model]))
         new?    (nil? sid)
+        ;; A virtual new chat has no room yet: fall back to the server's
+        ;; default model (rides on :lobby/state) like the room it becomes.
+        model   (or (get-in room [:agent :model]) (:model cached)
+                    (get-in state [:web/pending-room :model])
+                    (when new? (get-in state [:lobby :model])))
         ;; The server's history for an existing session is still in flight
         ;; (nothing optimistic/pending to show in the meantime).
         resuming? (and (not new?)
@@ -2878,7 +2882,9 @@
                                            (when sid
                                              (some (fn [s] (when (= sid (:session-id s)) (:cwd s)))
                                                    (get-in state [:lobby :sessions]))))
-                                  :agents-files (get-in room [:agent :agents-files])
+                                  :agents-files (or (get-in room [:agent :agents-files])
+                                                    (when new?
+                                                      (get-in state [:web/pending-room :agents-files])))
                                   :pa? pa?
                                   :dispatch! dispatch!})))
                (when (pos? start)

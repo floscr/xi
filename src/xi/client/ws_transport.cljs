@@ -150,7 +150,7 @@
     {:effects [[:ws/send ev]]}))
 
 (defn lobby-state [st ev]
-  {:state (assoc st :lobby (select-keys ev [:rooms :sessions :read :agent-id :started-at :claude-usage]))})
+  {:state (assoc st :lobby (select-keys ev [:rooms :sessions :read :agent-id :started-at :claude-usage :model]))})
 
 (defn make-handlers
   "Client-mode handler map from the server-equivalent pure handlers:

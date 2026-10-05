@@ -102,7 +102,7 @@
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
   #{:client/update :session/counts :sessions/all :models/web-list
-    :session/content-search :session/web-search
+    :cwd/agents-files :session/content-search :session/web-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
     :favorites/toggle :dismissed/toggle :session/delete :session/mark-read
     :rooms/prune})
@@ -550,6 +550,15 @@
           (send! client-id (wire/encode {:type     :sessions/all-result
                                          :sessions sessions
                                          :counts   counts}))))
+
+      ;; AGENTS.md files for a cwd, so a virtual (not-yet-created) web chat
+      ;; can show the same launch-header facts as the room it will become.
+      :cwd/agents-files-reply
+      (fn [_ {:keys [client-id cwd]}]
+        (send! client-id (wire/encode {:type         :cwd/agents-files-result
+                                       :cwd          cwd
+                                       :agents-files (when-not agent?
+                                                       (system-prompt/find-agents-md cwd))})))
 
       ;; Model list for web clients.
       :models/web-list-reply
