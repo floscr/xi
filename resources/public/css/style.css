@@ -742,6 +742,11 @@ body {
   color: #fff;
 }
 
+.post--user .markdown blockquote {
+  border-left-color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.85);
+}
+
 .post--user .post-content a {
   color: #fff;
   text-decoration: underline;
