@@ -58,21 +58,22 @@ xi join                        # from another terminal
 
 #### Bind address
 
-The server listens on **all interfaces (`0.0.0.0`)**, so `localhost`, a
-Tailscale address and the LAN all reach it. To narrow it, set a bind address:
+The server listens on **all interfaces (`0.0.0.0`)**, so `localhost`,
+`127.0.0.1`, a Tailscale address and the LAN all reach it. `--host` /
+`XI_HOST` take a comma-separated list of addresses and only ever *add* to
+that: loopback is always bound next to them.
 
 ```bash
-xi server --headless --host 127.0.0.1        # this machine only
-XI_HOST=100.64.0.10 xi server --headless     # one specific address
+XI_HOST=100.64.0.10 xi server --headless          # 127.0.0.1 + 100.64.0.10
+xi server --headless --host 100.64.0.10,192.168.1.5
 ```
 
-`--host` wins over `XI_HOST`; a blank value means unset. The setting applies to
-both the plain and the TLS listener. On a machine that joins untrusted
-networks (public wifi), bind `127.0.0.1` or a VPN address instead. The pairing
-handshake is what protects a coding server once it is reachable (see
-[client-auth.md](client-auth.md)); an agent server (`--agent`) does not pair,
-so only run it where the network is trusted. The startup line says when the
-server is reachable from the network.
+`--host` wins over `XI_HOST`; a blank value means unset. `0.0.0.0` (or `::`)
+in the list already covers every address and stands alone. The setting applies
+to both the plain and the TLS listener. The pairing handshake is what protects
+a coding server once it is reachable (see [client-auth.md](client-auth.md)); an
+agent server (`--agent`) does not pair, so only run it where the network is
+trusted. The startup line says when the server is reachable from the network.
 
 ### Join / Create (`xi join`, `xi create`)
 

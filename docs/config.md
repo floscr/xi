@@ -135,7 +135,7 @@ never reach the session list (`xi.session/make-throwaway-config-dir!`).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `XI_PORT` | `7474` | WS port (plain `ws://`, TUI + web) when `--port` is omitted — in every mode: the server binds it, `join`/`create`/`sessions` and standalone auto-join connect to it, `/browser-open` opens it. |
-| `XI_HOST` | `0.0.0.0` | Address the server binds (both the `ws://` and the TLS listener) when `--host` is omitted. All interfaces by default, so localhost, a Tailscale IP and the LAN reach it; set `127.0.0.1` for this machine only, or a specific address to bind one interface. See [server.md](server.md#bind-address). |
+| `XI_HOST` | `0.0.0.0` | Comma-separated addresses the server binds (both the `ws://` and the TLS listener) when `--host` is omitted. All interfaces by default, so localhost, a Tailscale IP and the LAN reach it. Listed addresses only widen: loopback is always bound alongside them. See [server.md](server.md#bind-address). |
 | `XI_TLS_PORT` | `7443` | HTTPS/`wss://` port (when certs exist). |
 | `XI_TLS_CERT` | `~/.config/xi/tls/xi.crt` | TLS certificate path. Setting it (or `XI_TLS_KEY`) forces TLS on. |
 | `XI_TLS_KEY` | `~/.config/xi/tls/xi.key` | TLS private key path. |

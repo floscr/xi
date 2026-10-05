@@ -33,7 +33,8 @@
    create-server closure (runtime resources, not app state).
 
    Deferred to later phases: :visibility tracking."
-  (:require [xi.agent-profile :as profile]
+  (:require [clojure.string :as str]
+            [xi.agent-profile :as profile]
             [xi.auth :as auth]
             [xi.ext.diff.git :as diff-git]
             [xi.ext.user.guard :as user-guard]
@@ -48,19 +49,29 @@
 (def DEFAULT_TLS_PORT 7443)
 
 (def DEFAULT_HOST
-  "Address the server binds: all interfaces, so localhost, a Tailscale address
-   and the LAN all reach it. Narrow it with XI_HOST / --host (e.g. 127.0.0.1
-   for this machine only)."
+  "Address the server binds: all interfaces, so localhost, 127.0.0.1, a
+   Tailscale address and the LAN all reach it."
   "0.0.0.0")
 
-(defn resolve-host
-  "Bind address: an explicit `host` (--host), else XI_HOST, else DEFAULT_HOST.
-   Blank values count as unset."
+(def ^:private LOOPBACK_HOST "127.0.0.1")
+
+(defn resolve-hosts
+  "Addresses to listen on: an explicit `host` (--host), else XI_HOST — each a
+   comma-separated list — else DEFAULT_HOST. Blank values count as unset.
+   Extra addresses only widen: loopback is always bound alongside them, so
+   `XI_HOST=100.64.0.2` serves localhost and the Tailscale address. 0.0.0.0 (or
+   ::) already covers every address and stands alone."
   [host]
-  (let [clean (fn [v] (when (string? v) (not-empty (.trim v))))]
-    (or (clean host)
-        (clean (aget js/process.env "XI_HOST"))
-        DEFAULT_HOST)))
+  (let [clean (fn [v] (when (string? v) (not-empty (.trim v))))
+        listed (->> (str/split (or (clean host)
+                                   (clean (aget js/process.env "XI_HOST"))
+                                   "")
+                              #",")
+                    (keep clean)
+                    (map #(if (= "localhost" %) LOOPBACK_HOST %)))]
+    (if (or (empty? listed) (some #{"0.0.0.0" "::"} listed))
+      [DEFAULT_HOST]
+      (vec (distinct (cons LOOPBACK_HOST listed))))))
 
 (def ^:private base-no-broadcast
   "Room-scoped event types that are connection bookkeeping, not room state.
@@ -655,7 +666,7 @@
      :start!
      (fn [{:keys [dispatch! state add-tap!]} {:keys [port host]}]
        (let [port (or port DEFAULT_PORT)
-             host (resolve-host host)
+             hosts (resolve-hosts host)
              public-dir (resolve-public-dir)
              ;; An agent server is single-user/local: skip HTTPS (no iOS
              ;; PWA durable-storage concern) and skip client-key pairing.
@@ -884,7 +895,6 @@
                                                :headers #js {"Content-Type" "application/json"}}))))))))
              opts
              #js {:port     port
-                   :hostname host
                    :fetch
                    (fn [^js req ^js srv]
                      (let [headers  (.-headers req)
@@ -1005,14 +1015,17 @@
              ;; since Bun binds one protocol per port.
              tls-port (or (some-> (aget js/process.env "XI_TLS_PORT") js/parseInt)
                           DEFAULT_TLS_PORT)
-             server (js/Bun.serve opts)
-             tls-server (when tls
-                          (js/Bun.serve
-                           #js {:port      tls-port
-                                :hostname  host
-                                :tls       tls
-                                :fetch     (.-fetch opts)
-                                :websocket (.-websocket opts)}))]
+             ;; One listener per bind address (resolve-hosts), sharing the handlers.
+             servers (mapv #(js/Bun.serve (js/Object.assign #js {:hostname %} opts))
+                           hosts)
+             tls-servers (when tls
+                           (mapv #(js/Bun.serve
+                                   #js {:port      tls-port
+                                        :hostname  %
+                                        :tls       tls
+                                        :fetch     (.-fetch opts)
+                                        :websocket (.-websocket opts)})
+                                 hosts))]
 
          ;; The transport is a tap: every processed room event is echoed to
          ;; that room's clients (sender included — clients never apply their
@@ -1047,10 +1060,10 @@
             (when (lobby-relevant (:type event))
               (schedule-lobby-broadcast!))))
 
-         (js/console.error (str "[ws] Listening on ws://" host ":" port
-                                (when tls-server
-                                  (str " + wss://" host ":" tls-port))
-                                (when-not (#{"127.0.0.1" "localhost" "::1"} host)
+         (js/console.error (str "[ws] Listening on ws://" (str/join "," hosts) ":" port
+                                (when tls-servers
+                                  (str " + wss://" (str/join "," hosts) ":" tls-port))
+                                (when-not (every? #{"127.0.0.1" "::1"} hosts)
                                   " (reachable from the network)")))
          {:port  port
           :stop! (fn []
@@ -1058,5 +1071,5 @@
                    (when-let [t @lobby-timer]
                      (js/clearTimeout t)
                      (reset! lobby-timer nil))
-                   (.stop server)
-                   (when tls-server (.stop tls-server)))}))}))
+                   (doseq [^js s (concat servers tls-servers)]
+                     (.stop s)))}))}))

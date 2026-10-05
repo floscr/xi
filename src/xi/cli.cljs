@@ -29,7 +29,7 @@
      --session SID    resume the saved session with this id on launch
                       (standalone, join, or create)
      --port N         WS port (server/join/create; default 7474)
-     --host ADDR      server bind address (default 0.0.0.0; XI_HOST)
+     --host ADDR,...  server bind addresses (default 0.0.0.0; XI_HOST)
      --headless       server only, no local TUI
      --prompt <text>  launch the TUI with an initial prompt already submitted
                       (works standalone or with --join/--create; e.g. from
@@ -190,8 +190,8 @@ USAGE
 
 FLAGS
   --port N                   Override the default port (7474). All modes.
-  --host ADDR                server: bind address (default 0.0.0.0, all interfaces;
-                             127.0.0.1 = this machine only).
+  --host ADDR[,ADDR]         server: bind addresses (default 0.0.0.0, all interfaces;
+                             loopback is always bound too).
   --model NAME               Override the default model.
   --session ID               Resume a saved session by id (standalone/join/create).
   --prompt TEXT              Send an initial prompt on launch (standalone/client).
@@ -999,7 +999,7 @@ See docs/cli.md for the full reference.")
         _ (user-ext/start! app {:ask! (:ask! dialogs)})
         {actual-port :port} ((:start! server) app {:port port :host host})]
     (if headless?
-      (do (js/console.error (str "[xi] Headless server on ws://" (ws/resolve-host host) ":" actual-port))
+      (do (js/console.error (str "[xi] Headless server on ws://" (str/join "," (ws/resolve-hosts host)) ":" actual-port))
           (js/console.error "[xi] Connect with: xi join"))
       (start-client! {:target "new" :port actual-port}))))
 
