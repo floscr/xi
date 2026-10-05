@@ -366,13 +366,12 @@
   [{:keys [server-opts providers agent-id ext-system-prompt-parts room-ext-init ext]}]
   (let [sockets (js/Map.)
         agent?  (some? agent-id)
-        ;; Which favicon this instance serves at /apple-touch-icon.png. XI_ICON
-        ;; overrides (e.g. "green"); otherwise agent
-        ;; hosts get the warm "personal" icon and coding hosts the "desktop" one.
+        ;; Which favicon this instance serves at /apple-touch-icon.png:
+        ;; XI_ICON ("desktop", "personal" or "green"), default "desktop".
         icon-variant (or (some-> (aget js/process.env "XI_ICON")
                                   (.trim)
                                   (as-> v (when (pos? (.-length v)) v)))
-                         (if agent? "personal" "desktop"))
+                         "desktop")
         send!   (fn [client-id payload]
                   (when-let [ws (.get sockets client-id)]
                     (try (.send ws payload) (catch :default _ nil))))
