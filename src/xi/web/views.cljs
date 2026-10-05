@@ -2590,6 +2590,14 @@
                                   (dispatch! {:type :subagent/promote
                                               :room-id room-id :sub-id id})))}}
          (icon/icon {:icon-name :message-circle :size :sm})])
+      (when-not (= :running status)
+        [:button {:class ["subagent-dismiss"]
+                  :title "Dismiss"
+                  :on {:click (fn [e]
+                                (.stopPropagation e)
+                                (dispatch! {:type :subagent/dismiss
+                                            :room-id room-id :sub-id id}))}}
+         (icon/icon {:icon-name :x :size :sm})])
       (when (= :running status)
         [:button {:class ["subagent-stop"]
                   :title "Stop sub-agent"
@@ -2624,7 +2632,15 @@
           [:span {:class ["subagents-title"]} "Sub-agents"]
           [:span {:class ["subagents-count"]} (count agents)]
           (when (pos? running)
-            [:span {:class ["subagents-running"]} (spinner) (str running " running")])]
+            [:span {:class ["subagents-running"]} (spinner) (str running " running")])
+          (when (< running (count agents))
+            [:button {:class ["subagents-clear"]
+                      :title "Dismiss finished sub-agents"
+                      :on {:click (fn [e]
+                                    (.stopPropagation e)
+                                    (dispatch! {:type :subagent/dismiss
+                                                :room-id room-id}))}}
+             (icon/icon {:icon-name :x :size :sm})])]
          (when open?
            [:div {:class ["subagents-list"]}
             (map (fn [c] (subagent-child dispatch! room-id c)) agents)])]))))

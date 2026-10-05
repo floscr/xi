@@ -198,6 +198,20 @@
   (when (find-child st room-id sub-id)
     {:state (update-child st room-id sub-id #(update % :expanded? not))}))
 
+(defn dismiss
+  "Remove finished sub-agents from the panel: the one named by :sub-id, or
+   every non-running one when absent. Running children are never dropped (they
+   would keep streaming events into a missing entry); the panel hides itself
+   once the list is empty."
+  [st {:keys [room-id sub-id]}]
+  (when (seq (agents st room-id))
+    {:state (update-in st [:rooms room-id :ext ext-id :agents]
+                       (fn [as]
+                         (filterv (fn [a]
+                                    (or (= :running (:status a))
+                                        (and sub-id (not= sub-id (:id a)))))
+                                  as)))}))
+
 (def handlers
   "The pure state-updating handlers, shared by the node + web builds."
   {:subagent/spawn           spawn
@@ -211,4 +225,5 @@
    :subagent/session-init    session-init
    :subagent/promoted        promoted
    :subagent/toggle-collapse toggle-collapse
-   :subagent/toggle-child    toggle-child})
+   :subagent/toggle-child    toggle-child
+   :subagent/dismiss         dismiss})

@@ -4405,6 +4405,13 @@ code a:hover,
   font-variant-numeric: tabular-nums;
 }
 
+.subagents-clear {
+  margin-left: auto;
+}
+.subagents-running ~ .subagents-clear { margin-left: var(--size-2); }
+
+.subagents-clear,
+.subagent-dismiss,
 .subagent-stop,
 .subagent-open {
   display: inline-flex;
@@ -4415,6 +4422,8 @@ code a:hover,
   cursor: pointer;
   color: var(--fg-3);
 }
+.subagents-clear:hover,
+.subagent-dismiss:hover { color: var(--fg-0); }
 .subagent-stop:hover { color: var(--danger, #dc2626); }
 .subagent-open:hover { color: var(--accent, var(--fg-0)); }
 

@@ -48,6 +48,13 @@
                     (fn [_st ev]
                       (when-not (:remote? ev)
                         {:effects [[:ws/send ev]]}))
+                    ;; Dismiss mutates server state too (so a reload doesn't
+                    ;; bring the panel back): apply locally, forward the click.
+                    :subagent/dismiss
+                    (fn [st ev]
+                      (when-let [res (h/dismiss st ev)]
+                        (cond-> res
+                          (not (:remote? ev)) (assoc :effects [[:ws/send ev]]))))
                     :subagent/promote promote
                     :subagent/promoted promoted)
    :fx       {:subagent/start    (fn [_ _] nil)
