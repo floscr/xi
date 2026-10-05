@@ -343,3 +343,15 @@
            (is (false? @!aborted))
            (done)))
        10)))))
+(deftest room-client-pid-finds-the-driving-client
+  (let [st (assoc-in (state/initial-state {:mode :server}) [:connection :clients]
+                     {"web" {:room-id "r1" :pid 11 :platform "web"}
+                      "tui" {:room-id "r1" :pid 22 :platform "tui"}
+                      "other" {:room-id "r2" :pid 33 :platform "tui"}})]
+    (testing "a server prefers the room's TUI client"
+      (is (= 22 (agent/room-client-pid st "r1"))))
+    (testing "no client in the room, no pid"
+      (is (nil? (agent/room-client-pid st "r3")))))
+  (testing "standalone, the TUI is this process"
+    (is (= (.-pid js/process)
+           (agent/room-client-pid (state/initial-state {:mode :standalone}) "main")))))

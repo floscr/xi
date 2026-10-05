@@ -443,14 +443,17 @@
 
 (defn room-client-pid
   "Pid of the client driving `room-id` (preferring a TUI client), or nil, from
-   the connection registry. Threaded into the tool ctx; MCP servers get it as
-   _meta `xi/clientPid` (xi.ext.mcp/call-meta)."
+   the connection registry. In standalone mode there is no registry: the TUI
+   is this process, so it's this process' pid. Threaded into the tool ctx; MCP
+   servers get it as _meta `xi/clientPid` (xi.ext.mcp/call-meta)."
   [st room-id]
-  (->> (vals (get-in st [:connection :clients]))
-       (filter (fn [c] (and (= room-id (:room-id c)) (:pid c))))
-       (sort-by (fn [c] (if (= "tui" (:platform c)) 0 1)))
-       first
-       :pid))
+  (or (->> (vals (get-in st [:connection :clients]))
+           (filter (fn [c] (and (= room-id (:room-id c)) (:pid c))))
+           (sort-by (fn [c] (if (= "tui" (:platform c)) 0 1)))
+           first
+           :pid)
+      (when (= :standalone (get-in st [:connection :mode]))
+        (.-pid js/process))))
 
 (defn create-fx
   "Provider effects. `providers` is a map of provider-id → provider.
