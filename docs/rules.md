@@ -470,8 +470,10 @@ reports why.
 
 ## Recommend a rule from a guard dialog
 
-Every `:ask` rule's confirm dialog carries an extra **Recommend a rule** option
-(key `?`) alongside allow/deny/always. Choosing it:
+Behind the `recommend-rule?` feature flag in `xi.config` (default `false`; see
+[config.md](config.md#feature-flags-xiconfig)). When enabled, every `:ask`
+rule's confirm dialog carries an extra **Recommend a rule** option (key `?`)
+alongside allow/deny/always. Choosing it:
 
 1. Safely **denies** the current tool call (nothing runs).
 2. Spawns a background sub-agent with the guarded call's context (tool, path,

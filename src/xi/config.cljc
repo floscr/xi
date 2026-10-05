@@ -113,6 +113,14 @@
    turns never call the model."
   false)
 
+(def recommend-rule?
+  "When true, every :ask rule's confirm dialog carries a \"Recommend a rule\"
+   option that spawns a sub-agent to draft a rule for the guarded call and opens
+   an editable save dialog with its answer (xi.ext.rules). Threaded into the
+   rules engine as the tool-policy ctx key :recommend-rule? by xi.cli — the
+   extension can't require xi.config (config requires it). Default false."
+  false)
+
 #?(:node
    (def server
      "Extensions whose state + provider/tool hooks run server-side (server,

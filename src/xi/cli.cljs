@@ -144,7 +144,9 @@
   [manager ask!]
   {;; Policy is core, not an extension surface: every tool call is decided by
    ;; the rules engine before it runs. Extensions can't add to or skip it.
-   :tool-policy            rules-ext/tool-policy
+   :tool-policy            (fn [tool-call ctx]
+                             (rules-ext/tool-policy
+                              tool-call (assoc ctx :recommend-rule? config/recommend-rule?)))
    :extra-tool-definitions (fn [] (:tool-definitions (manager/composed manager)))
    :extra-tool-registry    (fn [] (:tool-registry (manager/composed manager)))
    :remove-tools           (fn [] (:remove-tools (manager/composed manager)))

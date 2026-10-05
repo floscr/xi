@@ -93,12 +93,16 @@
 (defn- recommend-options
   "A confirm's option list for decision request `req`: the repo grant is
    dropped when there is no rule to save for it (see allow-repo-rule-from-req),
-   and the recommend-a-rule option is appended."
-  [options req]
+   and the recommend-a-rule option is appended when `recommend?` (the
+   xi.config/recommend-rule? flag, threaded in as ctx :recommend-rule?) —
+   otherwise it is removed, even if a rule's :options listed it."
+  [options req recommend?]
   (let [opts (cond->> (vec (or options [:yes :no :always]))
                (not (allow-repo-rule-from-req req)) (into [] (remove #{:repo :allow-repo})))]
-    (cond-> opts
-      (not (some #{:recommend-rule} opts)) (conj :recommend-rule))))
+    (if recommend?
+      (cond-> opts
+        (not (some #{:recommend-rule} opts)) (conj :recommend-rule))
+      (into [] (remove #{:recommend-rule}) opts))))
 
 (defn- recommend-task
   "Build the sub-agent prompt: the guarded-call context + the rule schema,
@@ -265,7 +269,7 @@
                                     (m nil) / with recommend-a-rule
      {:decision :nudge :message m}  a :nudge rule
      {:decision :pass}              an unknown action type"
-  [{:keys [type message options unanswered]} req {:keys [confirm! dispatch! room-id]}]
+  [{:keys [type message options unanswered]} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
   (case type
     :allow {:decision :allow}
     :deny  {:decision :deny :message (or message "Blocked by rule.")}
@@ -279,7 +283,7 @@
                               message message
                               :else   (ask-message req)))
                            (let [diff (ask-diff req)]
-                             (cond-> {:options (recommend-options options req)}
+                             (cond-> {:options (recommend-options options req recommend-rule?)}
                                diff (assoc :diff diff))))
                  (.then (fn [ans]
                           (cond

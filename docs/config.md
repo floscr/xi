@@ -111,6 +111,7 @@ namespace.
 | Flag | Default | What it does | Owner |
 | --- | --- | --- | --- |
 | `quick-replies?` | `false` (disabled) | After each finished assistant turn, run a cheap model (Haiku) over the final message to detect a decision point (yes/no, pick-one) and show one-tap **quick-reply chips** below the response. The response text is never modified — chips are additive UI, and tapping one sends a predefined message. A cheap regex gate runs first, so most turns never call the model. Set to `true` to enable. | `xi.quick-replies` |
+| `recommend-rule?` | `false` (disabled) | Adds a **Recommend a rule** option (key `?`) to every `:ask` rule's confirm dialog: it denies the call, spawns a background sub-agent to draft a rule for it, and opens an editable save dialog with the result. See [rules.md](rules.md#recommend-a-rule-from-a-guard-dialog). Set to `true` to enable. Applies to tool calls decided via `xi.cli`'s tool-policy; `xi.api.*` calls from user extensions never offer it. | `xi.ext.rules` (via `xi.cli`) |
 
 ---
 

@@ -185,6 +185,7 @@
           tc         {:name "bash" :arguments {:command "ls"}}
           dispatched (atom [])
           c          (assoc (ctx state)
+                            :recommend-rule? true
                             :confirm!  (fn [_ _] (js/Promise.resolve :recommend))
                             :dispatch! (fn [ev] (swap! dispatched conj ev)))]
       (-> (rules-ext/tool-policy tc c)
@@ -192,6 +193,27 @@
                    (is (:intercepted out))
                    (is (:is-error (:result out)))
                    (is (some #(= :subagent/spawn (:type %)) @dispatched))
+                   (done)))))))
+
+(deftest recommend-option-is-gated-by-the-flag
+  (let [rule  {:match {:tool :bash} :action {:type :ask}}
+        state (state-with [:ext :rules :rules] rule)
+        tc    {:name "bash" :arguments {:command "ls"}}
+        opts  (fn [flag?]
+                (let [seen (atom nil)
+                      c    (cond-> (assoc (ctx state)
+                                          :confirm! (fn [_ o] (reset! seen (:options o))
+                                                      (js/Promise.resolve true)))
+                             flag? (assoc :recommend-rule? true))]
+                  (-> (rules-ext/tool-policy tc c)
+                      (.then (fn [_] @seen)))))]
+    (async done
+      (-> (opts false)
+          (.then (fn [off]
+                   (is (not (some #{:recommend-rule} off)))
+                   (opts true)))
+          (.then (fn [on]
+                   (is (some #{:recommend-rule} on))
                    (done)))))))
 
 (deftest extract-rule-parses-fenced-and-bare
