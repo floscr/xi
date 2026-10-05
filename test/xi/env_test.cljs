@@ -16,7 +16,7 @@
 (deftest plan-sanitize-preserves-service-vars
   (testing "orphaned non-store vars (launcher/service) are kept, not dropped"
     (let [inherited {"PATH" "/bin"
-                     "XI_CHROME_TOOLS" "1"
+                     "XI_HOST" "127.0.0.1"
                      "TMUX" "/tmp/tmux-1000/default,123,0"
                      "DEPS_CLJ_TOOLS_DIR" "/nix/store/aaa/clojure_tools"}
           clean     {"PATH" "/bin"}
@@ -28,7 +28,7 @@
   (testing "launcher/service vars are kept even when they point into /nix/store"
     (let [inherited {"PATH" "/bin"
                      "XI_CHROME_BINARY" "/nix/store/abc-chromium/bin/chromium"
-                     "XI_CHROME_TOOLS_DIR" "/nix/store/def-tools"
+                     "XI_TREESITTER_DIR" "/nix/store/def-xi-treesitter"
                      "DEPS_CLJ_TOOLS_DIR" "/nix/store/aaa/clojure_tools"}
           clean     {"PATH" "/bin"}
           {:keys [dropped]} (env/plan-sanitize inherited clean)]

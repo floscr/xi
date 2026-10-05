@@ -48,8 +48,7 @@ server, and the browser client are all assemblies of the same pure handlers.
   > pure fn directly rather than dispatching the effect. Example: `:image/process`
   > resizes then dispatches `:prompt/submit`; from fx code, resize inline via
   > `xi.image/process-images` and dispatch `:prompt/submit` with `:images`
-  > yourself. (This bit the element picker, back when it was a built-in
-  > extension.)
+  > yourself.
 - **Taps observe** every processed event (with the post-event state). The WS
   server's broadcast, the web client's localStorage persistence, and the
   event log are all taps.
