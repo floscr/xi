@@ -108,13 +108,27 @@
      (swap! owned assoc-in [id key] dispose)
      (fn release [] (swap! owned update id dissoc key)))))
 
+;; {:ask! :dispatch! :get-state} of the running app for xi.api.dialog: the
+;; dialog opener (xi.ext.core/create-dialogs) plus the app's own, unguarded
+;; dispatch. Set by the loader (xi.ext.user/start!); nil before that and in
+;; processes without dialogs.
+(defonce ^:private dialogs (atom nil))
+
+(defn set-dialog-host!
+  "Install (or with nil, remove) the app xi.api.dialog opens dialogs in."
+  [h]
+  (reset! dialogs h))
+
+(defn dialog-host [] @dialogs)
+
 (defn base-cwd
   "Where an extension's relative paths resolve: the room cwd, else its data dir."
   [{:keys [cwd] :as ctx}]
   (or cwd (paths/extension-data-dir (caller ctx))))
 
-(defn- describe [{:keys [tool path command host]}]
-  (str (name tool) " " (or host command path)))
+(defn- describe [{:keys [tool path command host mcp-server mcp-tool]}]
+  (str (name tool) " " (or host command path
+                             (when mcp-server (str mcp-server "/" mcp-tool)))))
 
 (defn gate!
   "Decide request map `m` ({:tool …} plus its target) for the extension behind

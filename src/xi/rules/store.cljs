@@ -20,6 +20,7 @@
   (:require [clojure.string :as str]
             [cljs.tools.reader :as tr]
             [xi.bb-trust :as bb-trust]
+            [xi.mcp.trust :as mcp-trust]
             [xi.rules :as rules]
             [xi.rules.defaults :as defaults]
             [xi.rules.nodes :as nodes]
@@ -512,7 +513,8 @@
    `:xi-rules-file` rules, `:own-data?` for
    `:extension-data` rules (symlink-canonical, so a link out of the data dir
    doesn't count), `:chained?` for `:chained` rules (`:bash` commands), and
-   `:bb-trusted?` for `:bb-trusted` rules (`:bb` calls)."
+   `:bb-trusted?` for `:bb-trusted` rules (`:bb` calls), and `:mcp-trusted?`
+   for `:mcp-trusted` rules (`:mcp` calls)."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (paths/real-resolve (:effective-cwd req) (str (:path req))))]
@@ -537,6 +539,8 @@
       (assoc :chained? (chained-command? (:command req)))
       (and (= :bb (:tool req)) (rules/needs-bb-trusted? ruleset))
       (assoc :bb-trusted? (bb-trust/trusted? (:effective-cwd req)))
+      (and (= :mcp (:tool req)) (:mcp-server req) (rules/needs-mcp-trusted? ruleset))
+      (assoc :mcp-trusted? (mcp-trust/trusted? (:mcp-server req)))
       (and (:path req) (:extension req) (rules/needs-extension-data? ruleset))
       (assoc :own-data? (paths/path-within?
                          (paths/real-resolve (:effective-cwd req) (str (:path req)))

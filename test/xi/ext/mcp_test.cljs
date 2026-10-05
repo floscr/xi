@@ -33,6 +33,14 @@
   (testing "absent content defaults to an empty text block"
     (is (= [{:type "text" :text ""}] (:content (mcp/normalize-result #js {}))))))
 
+(deftest call-meta-carries-the-turn-context
+  (is (= {"xi/cwd" "/proj" "xi/roomId" "r1" "xi/clientPid" 42 "xi/extension" "design"}
+         (mcp/call-meta {:cwd "/proj" :room-id "r1" :client-pid 42 :extension :design
+                         :confirm! identity})))
+  (testing "absent context is left out, not sent as null"
+    (is (= {"xi/cwd" "/proj"} (mcp/call-meta {:cwd "/proj"})))
+    (is (= {} (mcp/call-meta {})))))
+
 (deftest enabled-entry?-defaults-to-true
   (is (true?  (mcp/enabled-entry? {})))
   (is (true?  (mcp/enabled-entry? {:enabled true})))

@@ -1,0 +1,9 @@
+{:paths ["src" "test"]
+ :tasks
+ {serve {:doc      "Run the example MCP server on stdin/stdout"
+         :requires ([hello-mcp.main])
+         :task     (hello-mcp.main/-main)}
+  test  {:doc      "Unit tests + a stdio round trip through a real bb process"
+         :requires ([clojure.test :as t] [mcp.server-test])
+         :task     (let [{:keys [fail error]} (t/run-tests 'mcp.server-test)]
+                     (System/exit (if (zero? (+ fail error)) 0 1)))}}}

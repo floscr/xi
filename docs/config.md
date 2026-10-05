@@ -166,9 +166,9 @@ See [providers-zen.md](providers-zen.md) for the OpenCode Zen provider and
 | `XI_CHROME_BINARY` | auto-detected | `xi.browser.chrome` | Chrome/Chromium binary for the headless browser user extensions drive through `xi.api.chrome`. Otherwise common install paths, then `google-chrome-stable` on `PATH`. See [user-extensions.md](user-extensions.md#headless-chrome). |
 | `XI_GIT_LOCK_WAIT_SECS` | `600` | `xi.git-lock` (git-index hold) | How long a room waits for another room's git-index hold before its git op fails with an error naming the holder. See [git-lock.md](git-lock.md). |
 
-Feature-specific variables are documented with their feature: `XI_CHROME_*`
-(browser tools) in [chrome-mcp.md](chrome-mcp.md), `XI_TREESITTER_DIR` in
-[treesitter.md](treesitter.md).
+Feature-specific variables are documented with their feature: `XI_TREESITTER_DIR`
+in [treesitter.md](treesitter.md). An MCP server's own variables go in its
+`mcp.edn` entry's `:env` ([mcp-servers.md](mcp-servers.md)).
 
 ---
 
@@ -314,6 +314,7 @@ full walkthrough.
 | --- | --- | --- |
 | `~/.config/xi/ext/clj.edn` | `xi.ext.clj` | Global config for the sandboxed `clj` scripting tool. An EDN map; `:allow-clis` is a vector of CLI binary names (e.g. `["ffmpeg" "jq"]`) that `(sh …)` may run without a confirm dialog, in every room. `:helper-hints` (default `true`) — set to `false` to stop appending "prefer the builtin helpers" hints to auto-run `(sh …)` results if they degrade model output (auto-run itself stays on). Read once per server process. |
 | `~/.config/xi/ext/bb-trust.edn` | `xi.bb-trust` | Trust store for the `bb` tool. An EDN map `{:shas #{"<sha256>" …}}` of trusted `bb.edn` content hashes. When the nearest `bb.edn` (walking up from the room cwd) hashes to one of these, `bb <task>` (and `(sh "bb" …)`) run without a confirm dialog; editing `bb.edn` changes its sha and auto-revokes trust. Written at runtime by `/clj trust-bb` or the `bb` approval dialog's "always" answer — not hand-edited. See [clj-tool.md](clj-tool.md). |
+| `~/.config/xi/ext/mcp-trust.edn` | `xi.mcp.trust` | Trust store for MCP servers. An EDN map `{:servers {"<id>" "<sha256>"}}`: one fingerprint per trusted server, over its `mcp.edn` entry and its code. A trusted server's tool calls run without a confirm dialog until the fingerprint changes. Written at runtime by `/mcp trust <id>` or the MCP approval dialog's "always" answer — not hand-edited. See [mcp-servers.md](mcp-servers.md#trusting-a-server-once-until-its-code-changes). |
 
 Per-session (room) allowances are managed at runtime instead: approving a
 confirm dialog with "always" or running `/clj allow <cli>` adds the binary to

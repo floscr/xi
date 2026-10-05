@@ -341,23 +341,23 @@
                      (is (str/includes? (get-in @opts [:diff :text]) "+ hello"))
                      (done))))))))
 
-(deftest mcp-default-rule-always-narrows-to-server-and-tool
+(deftest mcp-default-rule-always-trusts-the-server
   (async done
     (let [state      (state-with [:ext :rules :rules] {:match {:tool :read}
                                                        :action {:type :allow}})
           tc         {:name "mcp__render__list_services" :arguments {}}
           dispatched (atom nil)
           c          (assoc (ctx state)
-                            :confirm!  (fn [_ _] (js/Promise.resolve :always))
+                            ;; the test registry has no servers, so render is
+                            ;; untrusted and the call asks
+                            :confirm!  (fn [_ _] (js/Promise.resolve :trust-mcp))
                             :dispatch! (fn [ev] (reset! dispatched ev)))]
       (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
-                   (is (= tc out))
-                   (is (= :ext.rules/add (:type @dispatched)))
-                   (is (= {:tool :mcp :mcp-server "render" :mcp-tool "list_services"}
-                          (get-in @dispatched [:rule :match]))
-                       ":always narrows the allow-rule to this mcp server + tool")
-                   (is (= :allow (get-in @dispatched [:rule :action :type])))
+                   (is (= tc out) "approved")
+                   (is (= :mcp/trust (:type @dispatched)))
+                   (is (= "render" (:mcp-server @dispatched))
+                       "[a]lways trusts the server of this call")
                    (done)))))))
 
 (deftest subagent-spawn-asks-with-task-and-always-pins-the-tool

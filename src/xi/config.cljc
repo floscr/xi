@@ -18,7 +18,6 @@
   (:require
    #?@(:node
        [[xi.ext.canvas-review :as canvas-review]
-        [xi.ext.chrome-mcp :as chrome]
         [xi.ext.clipboard-image :as clipboard-image]
         [xi.ext.clj :as clj-tool]
         [xi.ext.clj-surgeon :as clj-surgeon]
@@ -138,7 +137,6 @@
       commit/extension
       resume/create
       canvas-review/extension
-      chrome/create
       clj-surgeon/extension
       ;; clj (sandboxed SCI scripting tool)
       clj-tool/extension

@@ -14,9 +14,11 @@
             [sci.core :as sci]
             [xi.api.chrome]
             [xi.api.core :as api-core]
+            [xi.api.dialog]
             [xi.api.fs]
             [xi.api.http]
             [xi.api.json]
+            [xi.api.mcp]
             [xi.api.promise :as api-promise]
             [xi.api.sh]
             [xi.core.events]
@@ -39,10 +41,12 @@
   "The host namespaces a user extension may require. Pure xi helpers + the
    rules-gated capabilities. Nothing here performs an un-gated side effect."
   {'xi.api.chrome  (sci/copy-ns xi.api.chrome  (sci/create-ns 'xi.api.chrome))
+   'xi.api.dialog  (sci/copy-ns xi.api.dialog  (sci/create-ns 'xi.api.dialog))
    'xi.api.fs      (sci/copy-ns xi.api.fs      (sci/create-ns 'xi.api.fs))
    'xi.api.sh      (sci/copy-ns xi.api.sh      (sci/create-ns 'xi.api.sh))
    'xi.api.http    (sci/copy-ns xi.api.http    (sci/create-ns 'xi.api.http))
    'xi.api.json    (sci/copy-ns xi.api.json    (sci/create-ns 'xi.api.json))
+   'xi.api.mcp     (sci/copy-ns xi.api.mcp     (sci/create-ns 'xi.api.mcp))
    'xi.api.promise api-promise/sci-namespace
    'xi.core.state  (sci/copy-ns xi.core.state  (sci/create-ns 'xi.core.state))
    'xi.core.events (sci/copy-ns xi.core.events (sci/create-ns 'xi.core.events))})
@@ -119,13 +123,23 @@
 
 ;; ── Loading ──────────────────────────────────────────────────────────────────
 
+(defn- file-entry?
+  "A regular file, or a symlink to one (an extension that lives in another
+   checkout, linked into the extensions dir)."
+  [dir ^js e]
+  (or (.isFile e)
+      (and (.isSymbolicLink e)
+           (try (.isFile (fs/statSync (node-path/join dir (.-name e))))
+                (catch :default _ false)))))
+
 (defn- list-files
-  "Top-level *.cljs files in `dir`, sorted; [] when the dir is absent."
+  "Top-level *.cljs files in `dir` (symlinks to files included), sorted; []
+   when the dir is absent."
   [dir]
   (if (fs/existsSync dir)
     (->> (fs/readdirSync dir #js {:withFileTypes true})
          (keep (fn [^js e]
-                 (when (and (.isFile e) (str/ends-with? (.-name e) ".cljs"))
+                 (when (and (str/ends-with? (.-name e) ".cljs") (file-entry? dir e))
                    (node-path/join dir (.-name e)))))
          sort vec)
     []))
@@ -340,18 +354,24 @@
 (defn start!
   "Tell the loader the app is running (`app` is xi.core.app/create-app's
    result): extensions mount from now on, and the ones already loaded mount now.
-   Call once after create-app; before it, loading only registers."
-  [{:keys [dispatch! state]}]
-  (reset! host {:dispatch! dispatch! :get-state (fn [] @state)})
-  (doseq [entry @loaded :when (:extension entry)]
-    (mount! entry)))
+   Call once after create-app; before it, loading only registers.
+   `ask!` (xi.ext.core/create-dialogs) powers xi.api.dialog; without it
+   extension dialogs are refused."
+  ([app] (start! app nil))
+  ([{:keys [dispatch! state]} {:keys [ask!]}]
+   (let [h {:dispatch! dispatch! :get-state (fn [] @state)}]
+     (reset! host h)
+     (api-core/set-dialog-host! (when ask! (assoc h :ask! ask!))))
+   (doseq [entry @loaded :when (:extension entry)]
+     (mount! entry))))
 
 (defn stop!
   "Unmount every loaded extension and forget the app (shutdown; tests)."
   []
   (doseq [entry @loaded :when (:id entry)]
     (unmount! entry))
-  (reset! host nil))
+  (reset! host nil)
+  (api-core/set-dialog-host! nil))
 
 (defn- register-all!
   "Unmount the previously-loaded extensions, register the accepted extensions

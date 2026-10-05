@@ -245,7 +245,7 @@
    in a rule's :options). A fixed allowlist: rules files are data anyone with
    repo access can write, and an option must not become a way to dispatch
    arbitrary events on a click."
-  #{:ext.clj/trust-bb})
+  #{:ext.clj/trust-bb :mcp/trust})
 
 (defn- option-event
   "The allowlisted event of the option in `options` the user answered with
@@ -315,9 +315,11 @@
                             ;; rule's "trust bb.edn") → approve + dispatch it
                             (option-event options ans)
                             (do (when dispatch!
-                                  (dispatch! (assoc (option-event options ans)
-                                                    :room-id room-id
-                                                    :cwd (:effective-cwd req))))
+                                  (dispatch! (cond-> (assoc (option-event options ans)
+                                                           :room-id room-id
+                                                           :cwd (:effective-cwd req))
+                                               ;; the MCP trust option trusts the call's server
+                                               (:mcp-server req) (assoc :mcp-server (:mcp-server req)))))
                                 {:decision :approved})
 
                             ans   {:decision :approved}

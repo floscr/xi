@@ -441,12 +441,18 @@
    [{:match  {:tool #{:bash :bb :sh} :command server-control-re}
      :action {:type :ask :options [:yes :no]}}]
 
-   ;; External MCP tools are third-party code — every call is confirmed (with an
-   ;; informative server/tool/arguments block built by the rules ext). [a]lways
-   ;; persists a session allow-rule narrowed to that mcp server + tool.
+   ;; External MCP servers are third-party code: a call to a server that isn't
+   ;; trusted is confirmed (with an informative server/tool/arguments block
+   ;; built by the rules ext). [a]lways trusts the server (xi.mcp.trust), so
+   ;; its calls — the agent's and user extensions' — run without asking until
+   ;; its code or mcp.edn entry changes.
    ::mcp-confirm
-   [{:match  {:tool :mcp}
-     :action {:type :ask :options [:yes :no :always]}}]
+   [{:match  {:tool :mcp :mcp-trusted false}
+     :action {:type :ask
+              :options [:yes :no
+                        {:value :trust-mcp :key "a" :label "Always (trust this server)"
+                         :resolved-label "MCP server trusted"
+                         :event {:type :mcp/trust}}]}}]
 
    ;; A sub-agent runs a whole unattended agent turn — every spawn is confirmed
    ;; (the dialog shows the task). [a]lways persists a session allow-rule

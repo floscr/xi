@@ -95,11 +95,12 @@ src/xi/          cli (entry + assembly), config.cljc (extensions/providers/
                  providers/, server/, client/ (TUI), tui/, web/ (browser),
                  ext/ (extensions), markdown/, highlight/, mcp/
 test/xi/         mirrors src/
-resources/       web client (public/), overlay scripts, grammars, chrome tools
-scripts/         bb/node build helpers (overlay build, demo seed, codegen)
-packages/        outside the shadow-cljs build: bb-client/ (JVM client lib),
+resources/       web client (public/), grammars
+scripts/         bb/node build helpers (demo seed, codegen)
+packages/        outside xi's own bundle: bb-client/ (JVM client lib),
                  providers/anthropic/ (SDK runner + pinned CLI),
-                 xi-treesitter/ (native outline CLI)
+                 xi-treesitter/ (native outline CLI),
+                 mcp-bb-example/ (babashka MCP server example)
 docs/            see the index below
 ```
 
@@ -115,7 +116,6 @@ docs/            see the index below
 | Extensions · user extensions (runtime, sandboxed) · runtime toggling + external MCP | [extensions.md](docs/extensions.md) · [writing-extensions.md](docs/writing-extensions.md) · [user-extensions.md](docs/user-extensions.md) · [mcp-servers.md](docs/mcp-servers.md) |
 | Rules / permissions · `clj` tool · tree-sitter reads | [rules.md](docs/rules.md) · [clj-tool.md](docs/clj-tool.md) · [treesitter.md](docs/treesitter.md) |
 | Providers | [mcp-tool-bridge.md](docs/mcp-tool-bridge.md) · [providers-zen.md](docs/providers-zen.md) · [providers-openai.md](docs/providers-openai.md) |
-| Browser tools | [chrome-mcp.md](docs/chrome-mcp.md) · [element-picker.md](docs/element-picker.md) · [design-mode.md](docs/design-mode.md) · [style-editor.md](docs/style-editor.md) |
 | Web client · offline · UI components · demo | [web-client.md](docs/web-client.md) · [web-offline.md](docs/web-offline.md) · [frontend.md](docs/frontend.md) · [demo.md](docs/demo.md) |
 | TUI rendering · syntax highlighting | [tui-rendering.md](docs/tui-rendering.md) · [syntax-highlighting.md](docs/syntax-highlighting.md) |
 | Concurrent-edit safety (file hashes) · holds + cross-room git lock | [concurrent-edits.md](docs/concurrent-edits.md) · [git-lock.md](docs/git-lock.md) |

@@ -87,7 +87,7 @@
    Persist the fresh title immediately via :session/sync. The title turn
    resolves out of band and often *after* the turn-end that first wrote the
    session file (e.g. a short turn whose title turn is still running, or one
-   with a large first message like the element picker's), so without this the
+   with a large first message like a design-mode request's), so without this the
    provisional name would linger on disk until some later turn-end synced the
    room — which for a one-shot picker session may never happen. :session/sync
    no-ops until the session has a provider-session-id, so an early landing is

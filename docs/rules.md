@@ -193,10 +193,12 @@ overlap):
   `[a]lways` — so scope allows by `:command`. Not covered: wrappers
   (`env node …`, `npx`, `xargs`, …), which fall to the per-CLI ask unless
   allowlisted, and runtimes outside the list.
-- **external MCP tool** — any `mcp__<server>__<tool>` call → **ask**, with an
-  informative confirm block (server, tool, and every argument). `[a]lways`
-  persists a session allow-rule narrowed to that MCP server + tool. External
-  servers are third-party code, so nothing they expose runs without approval.
+- **external MCP tool** — an `mcp__<server>__<tool>` call to a server that
+  isn't trusted (`:mcp-trusted false`) → **ask**, with an informative confirm
+  block (server, tool, and every argument). `[a]lways` trusts the server
+  (`xi.mcp.trust`, the same as `/mcp trust <id>`): its calls run without
+  asking until its code or `mcp.edn` entry changes. See
+  [mcp-servers.md](mcp-servers.md#trusting-a-server-once-until-its-code-changes).
 - **sub-agent spawn** — `spawn_subagent` (`:tool-name`) → **ask**; the dialog
   shows the task. `[a]lways` persists a session allow-rule pinned to
   `spawn_subagent` (never to `:other` at large). A sub-agent's own tool calls
@@ -328,7 +330,7 @@ The built-in default tier, in order:
 | `bb-trust`           | 1 | ask before running `bb` with an untrusted `bb.edn`; `[a]lways` trusts it |
 | `bash-guards`        | 2 | deny remote shells, ask on destructive bash / bb task command lines |
 | `server-control`     | 1 | ask on `bb serve:restart` / `serve:stop` (bash, bb tool, clj sh) |
-| `mcp-confirm`        | 1 | ask on every external MCP tool call |
+| `mcp-confirm`        | 1 | ask on a call to an untrusted MCP server; `[a]lways` trusts it |
 | `subagent-confirm`   | 1 | ask on every `spawn_subagent` call |
 | `extension-sh`       | 1 | ask on every user-extension shell-out (before `clj-sh`: its auto-run list relies on clj's own confinement) |
 | `net-confirm`        | 1 | ask on every user-extension network request (`[a]lways` pins extension + host) |
@@ -358,6 +360,7 @@ All present fields are **ANDed**; an absent field is no constraint.
 | `:dir`        | absolute **path prefix** of the effective cwd (`~` expanded)         |
 | `:mcp-server` | MCP server id (for `mcp__<server>__<tool>` calls) — string/glob     |
 | `:mcp-tool`   | MCP tool name — string/glob (`"*"` = any)                            |
+| `:mcp-trusted` | MCP server trust predicate (opt-in) — `true` / `false` matches an `:mcp` call by whether its server is trusted as it is now (`~/.config/xi/ext/mcp-trust.edn`, written by `/mcp trust` and the MCP ask's `[a]lways`) |
 | `:when`       | submap predicate over room ext state; a map value matches recursively (nested submap, ignoring extra keys), e.g. `{:plan-mode {:enabled? true}}`. Rooms of a named agent (`--agent ID`) carry `{:agent {:id "ID"}}`, so `{:agent {:id "root"}}` scopes a rule to that agent and `{:agent {}}` to any agent room |
 | `:node`       | tree-sitter AST predicate (opt-in) — `{:type … :name … :contains …}` |
 | `:outside`    | location predicate (opt-in) — `:cwd` matches when the target path resolves outside the effective cwd (and tmp); symlinks are canonicalized |

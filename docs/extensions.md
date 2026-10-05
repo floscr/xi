@@ -253,10 +253,10 @@ get `{}`). Factories close over runtime resources and may return nil when
 unconfigured:
 
 ```clojure
-;; chrome: nil when XI_CHROME_TOOLS is unset → ext/compose drops it
-(defn create [_ctx]
-  (when (seq (env "XI_CHROME_TOOLS"))
-    {:id :chrome ...}))
+;; mcp: nil without a :manager in ctx (the client mirror) → ext/compose drops it
+(defn create [{:keys [manager]}]
+  (when manager
+    {:id :mcp ...}))
 
 ;; events: closes over the ring buffer from ctx
 (defn create [{:keys [ring]}]
@@ -369,7 +369,6 @@ namespace docstring is the authoritative description.
 | session-search | Search previous sessions by title and content. |
 | events | Agent tool for inspecting the session event log. |
 | subagent | Background sub-agents (`spawn_subagent` …); `/subagents`. |
-| chrome | Proxies `chrome-devtools-mcp` as xi tools (opt-in, `XI_CHROME_TOOLS`). Hosts element-picker (`/pick`), design-mode (`/design`) and style-editor. See [chrome-mcp.md](chrome-mcp.md), [element-picker.md](element-picker.md), [design-mode.md](design-mode.md), [style-editor.md](style-editor.md). |
 | mcp | Wraps external MCP servers (`~/.config/xi/mcp.edn`) as extensions; `/mcp`. See [mcp-servers.md](mcp-servers.md). |
 | extensions | `/ext list\|enable\|disable\|reload` over the live extension manager (`reload` re-reads [user extensions](user-extensions.md); agents get the same as the `ext_reload` tool). |
 

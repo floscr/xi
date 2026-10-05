@@ -88,6 +88,15 @@ An EDN map keyed by server id:
 - `:auth` — an `:http` server's auth *descriptor* (never the secret itself);
   see [HTTP transport](#http-transport-streamable-http--api-key).
 - `:enabled` — load it at startup (default `true` when the key is absent).
+- `:timeout-ms` — cap on each request to the server (default `120000`; `<= 0`
+  disables), so a wedged server surfaces as an error instead of hanging the
+  turn. Raise it for tools that wait on the user.
+- `:code-paths` — files or directories that are part of the server's code
+  besides the files its command line names; see
+  [Trusting a server](#trusting-a-server-once-until-its-code-changes).
+- `:hidden-tools` — tool names not offered to the agent. They stay callable by
+  user extensions ([below](#calling-servers-from-user-extensions)), for
+  servers that have tools meant for an extension rather than the model.
 
 ### Tool cache: `~/.config/xi/mcp/<id>/tools.edn`
 
@@ -103,15 +112,16 @@ Discovered tools are advertised as `mcp__<id>__<tool>` (the ecosystem
 convention) so they never collide with Xi's built-in tools. The wrapper strips
 the `mcp__<id>__` prefix before forwarding the call to the server.
 
-### Tool gate: every MCP tool call is confirmed
+### Tool gate: untrusted servers are confirmed, trusted ones aren't
 
-External MCP servers are third-party code, so **nothing they expose runs without
-an explicit approval.** This gate is a **built-in default rule** in the
-[rules engine](rules.md) — `{:match {:tool :mcp} :action {:type :ask …}}` — not
-code in the `:mcp` extension. It matches every `mcp__<id>__<tool>` call (built-in
-Xi tools with bare names are untouched) and raises a confirm dialog before the
-call is forwarded. The rules ext builds an informative block carrying as much
-info as possible — the server, the tool, and every argument:
+External MCP servers are third-party code, so **a server runs nothing until you
+approve it.** This gate is a **built-in default rule** in the
+[rules engine](rules.md) — `{:match {:tool :mcp :mcp-trusted false} :action
+{:type :ask …}}` — not code in the `:mcp` extension. It matches every
+`mcp__<id>__<tool>` call to a server that isn't trusted (built-in Xi tools with
+bare names are untouched) and raises a confirm dialog before the call is
+forwarded. The rules ext builds an informative block carrying as much info as
+possible — the server, the tool, and every argument:
 
 ```
 MCP tool call — approve?
@@ -126,21 +136,38 @@ Arguments:
 
 Approve and the call proceeds; deny and it is blocked. In headless mode with no
 client attached to approve, the confirm resolves to its safe default (deny), so
-MCP tools never run unattended.
+an untrusted server never runs unattended.
 
-**Allow always (per session).** The dialog offers a third choice besides
-yes/no — `[a]llow always` in the TUI, an **Always** button on the web. Choosing
-it approves this call *and* persists a session allow-rule narrowed to that MCP
-server + tool (`{:match {:tool :mcp :mcp-server … :mcp-tool …} :action {:type
-:allow}}`), so every later call to that same tool skips the prompt. The rule is
-session-scoped (room-scoped runtime state): it lives as long as the room does
-and is cleared when the session ends. To make it permanent, commit an `:allow`
-rule to `~/.config/xi/rules.edn` or `<repo>/.xi/rules.edn` (see
-[rules.md](rules.md)).
+### Trusting a server: once, until its code changes
 
-Because it is an ordinary default rule, you can override it: a higher-precedence
-`:allow` rule for a server/tool silences the prompt, and an `:ask`/`:deny` rule
-of your own can tighten or widen it.
+The dialog's third choice — `[a]lways` in the TUI, **Always (trust this
+server)** on the web — approves the call *and trusts the server*: from then
+on its calls run without asking, in every room and for user extensions too
+(`xi.api.mcp`), across restarts. `/mcp trust <id>` does the same without
+waiting for a call; `/mcp untrust <id>` takes it back; `/mcp list` shows which
+servers are trusted.
+
+Trust is content-addressed (`xi.mcp.trust`), like `bb.edn` trust: it records a
+sha256 of the server's code, and **any change to that code asks again**. The
+fingerprint covers
+
+- the entry's `:transport`, `:command`, `:args`, `:url`, `:cwd` and
+  `:code-paths` (not `:env` / `:enabled` / `:timeout-ms`), so an edited entry
+  asks again;
+- the content of every file the `:command` or `:args` name (a value with a `/`
+  that is an existing file, relative to `:cwd`) — e.g. the built bundle a
+  `bun` / `node` server runs, so a rebuild with changed code asks again;
+- every file under the entry's `:code-paths` (files or directories; `.git`
+  and `node_modules` skipped), for code the command line doesn't name, such as
+  a bb server's `src/`.
+
+Code a command downloads (`npx -y pkg@latest`) is outside the fingerprint:
+pin a version (`pkg@1.2.3`) so an upgrade is an entry change. The store is
+`~/.config/xi/ext/mcp-trust.edn` (`{:servers {"<id>" "<sha256>"}}`).
+
+Because the gate is an ordinary default rule, you can still override it: an
+`:ask` / `:deny` rule of your own for a server or tool applies whether or not
+the server is trusted.
 
 ### `/mcp` command
 
@@ -151,6 +178,8 @@ of your own can tighten or widen it.
 /mcp disable <id>                  # disable a server (persists :enabled false)
 /mcp remove <id>                   # unregister + delete its registry entry and tool cache
 /mcp refresh <id>                  # reconnect, re-cache tools, re-register
+/mcp trust <id>                    # run its tools without asking, until its code changes
+/mcp untrust <id>                  # ask again
 /mcp auth <id>                     # OAuth for hosted servers — not implemented yet
 ```
 
@@ -162,6 +191,89 @@ Example:
 
 adds a stdio MCP server `context7`, connects, caches its tools, and registers it
 enabled — its `mcp__context7__*` tools are available on the next turn.
+
+### Turn context: `_meta`
+
+Every `tools/call` carries the calling turn's context in the request's
+`_meta` (the MCP spec's slot for out-of-band data), so a server can act on it
+without a tool argument the model would have to fill in:
+
+| Key | Value |
+|---|---|
+| `xi/cwd` | the room's working directory |
+| `xi/roomId` | the room making the call |
+| `xi/clientPid` | OS pid of the client driving the room (a TUI), when there is one; sub-agents pass their parent's |
+| `xi/extension` | the user extension making the call, when it isn't the agent |
+
+Absent values are left out. See `xi.ext.mcp/call-meta`.
+
+### Lifecycle
+
+A stdio server is spawned on its first call and shared by every room. When it
+exits, the next call starts a new one. xi kills it on `/mcp disable` and at
+shutdown; a well-behaved server also exits when its stdin closes. Its stderr
+is drained (a full pipe would block it), and the tail is quoted when it dies.
+
+## Calling servers from user extensions
+
+`xi.api.mcp/call` lets a [user extension](user-extensions.md) call a
+configured server's tools over the agent's own connection, so a stateful
+server (a browser) is shared rather than started twice:
+
+```clojure
+(mcp/call ctx :chrome "list_pages" {})          ; → Promise<{:content … :is-error …}>
+(mcp/call ctx :chrome "design_poll" {:pageId 3} {:room-id room-id})
+```
+
+Each call is a rules request `{:tool :mcp :mcp-server :mcp-tool :arguments}`
+tagged with the extension, so the same gate applies: a trusted server's calls
+run, an untrusted one asks. An extension usually calls from an effect, where
+there is no dialog to answer, so trust the server first (one `[a]lways` on an
+agent call, or `/mcp trust <id>`). Disabled or unknown servers reject.
+
+## Writing a server
+
+An MCP server is a process that reads JSON-RPC requests from stdin, one per
+line, and writes replies to stdout. Conventions worth keeping (they're what
+the spec, [modex](https://github.com/theronic/modex) and
+[mcp-clj](https://github.com/hugoduncan/mcp-clj) do):
+
+- stdout carries protocol only; log to stderr.
+- Answer `initialize` (`protocolVersion`, `capabilities {tools {}}`,
+  `serverInfo`), `ping`, `tools/list`, `tools/call`; send no reply to
+  `notifications/*`; unknown methods get JSON-RPC error `-32601`.
+- A tool that fails is a **result** with `isError: true`, so the model sees
+  why. JSON-RPC errors are for protocol faults.
+- Read context from `_meta`, not from extra tool arguments.
+
+Two small implementations live in this repo, both dependency-free:
+
+- **ClojureScript (bun/node):** `xi.mcp.server` (`src/xi/mcp/server.cljs`),
+  the counterpart of xi's client. A server built on it can live anywhere
+  that has xi on its classpath (e.g. a `:local/root` dependency).
+- **Babashka:** [`packages/mcp-bb-example`](../packages/mcp-bb-example/)
+  (`mcp.server` + two example tools, one reading `_meta` `xi/cwd`).
+  `bb mcp:bb-example:test` runs its tests, including a stdio round trip.
+  Register it with:
+
+  ```clojure
+  {:bb-example {:command "bb"
+                :args ["--config" "/path/to/xi/packages/mcp-bb-example/bb.edn"
+                       "-m" "hello-mcp.main"]
+                ;; -m names a namespace, not a file: list the code so a
+                ;; change to it re-asks (see "Trusting a server")
+                :code-paths ["/path/to/xi/packages/mcp-bb-example/src"]}}
+  ```
+
+### Example: browser tools
+
+Browser automation needs no xi code: register the upstream
+`chrome-devtools-mcp` server (pin a version, so an upgrade re-asks for
+trust):
+
+```clojure
+{:chrome {:command "npx" :args ["-y" "chrome-devtools-mcp@1.8.0"]}}
+```
 
 ## Wire protocol (stdio)
 
@@ -228,9 +340,13 @@ you need it:
 2. Put your key in `~/.config/xi/ext/render.env` (`RENDER_API_KEY=…`).
 3. `/mcp enable render`, then `/mcp refresh render` to cache its tools.
 
-Once enabled, every Render tool call is still confirmed by the MCP default rule —
-unless you `[a]llow always` a given tool, which persists a session allow-rule for
-it (e.g. approve `list_logs` once with `[a]` and later log reads run un-prompted).
+Once enabled, Render tool calls are confirmed by the MCP default rule until you
+trust the server (`[a]lways` on one call, or `/mcp trust render`). A hosted
+server's code isn't on your disk, so its trust covers only the entry (its
+`:url`). Render's tools can deploy and change env vars — if you'd rather keep
+confirming those while trusting the reads, add an `:ask` rule for the risky
+tools, e.g. `{:match {:tool :mcp :mcp-server "render" :mcp-tool "*deploy*"}
+:action {:type :ask}}`.
 
 The hosted-OAuth flow (`/mcp auth`) remains unimplemented — API-key auth covers
 Render and most hosted servers without it.
@@ -242,6 +358,8 @@ Render and most hosted servers without it.
 - `src/xi/ext/mcp.cljs` — MCP-as-extension helper + registry/cache I/O + `/mcp` command + `:auth` resolution
 - `src/xi/ext/config.cljs` — generic per-extension gitignored config/secret loader
 - `src/xi/mcp/client.cljs` — JSON-RPC MCP client (stdio `connect` + Streamable-HTTP `connect-http`)
+- `src/xi/mcp/server.cljs` — stdio MCP server for ClojureScript servers
+- `src/xi/api/mcp.cljs` — `xi.api.mcp/call` for user extensions
 - `src/xi/cli.cljs` — creates the manager, seeds it, calls `mcp/install!`, and
   wires the fn-valued tooling seam (`tooling-opts`)
 - `src/xi/tools/registry.cljs` — `resolve-tooling` derefs the tooling seam per turn

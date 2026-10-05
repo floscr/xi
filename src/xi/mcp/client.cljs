@@ -25,13 +25,44 @@
    Then `tools/list` to discover tools and `tools/call` to invoke one.
 
    `connect`/`connect-http` both return a promise of a client map:
-     {:request :notify :close :server-info}   (stdio also carries :proc)
+     {:request :notify :close :dead? :server-info}   (stdio also carries :proc)
    where (:request client) is (fn [method params] → Promise<js-result>), so
-   list-tools/call-tool work uniformly across transports."
+   list-tools/call-tool work uniformly across transports. `(:dead? client)`
+   is true once a stdio server has exited (never for HTTP); the caller drops
+   the client and reconnects.
+
+   Every request is capped by `:timeout-ms` (default 120000; <= 0 disables),
+   so a wedged server surfaces as an error instead of hanging the turn."
   (:require [clojure.string :as str]
             ["node:child_process" :as child-process]))
 
 (def ^:private PROTOCOL_VERSION "2024-11-05")
+
+(def default-timeout-ms 120000)
+
+(def ^:private STDERR_TAIL 2000)
+
+(defn- timeout-ms [opts]
+  (let [t (:timeout-ms opts)]
+    (if (number? t) t default-timeout-ms)))
+
+(defn- with-timeout
+  "Reject `p` with a timeout error after `ms` (no cap when ms <= 0); `on-timeout`
+   runs first so the caller can drop its bookkeeping."
+  [p ms method on-timeout]
+  (if (pos? ms)
+    (js/Promise.
+     (fn [resolve reject]
+       (let [timer (js/setTimeout
+                    (fn []
+                      (on-timeout)
+                      (reject (js/Error. (str "MCP request " method " timed out after "
+                                              (js/Math.round (/ ms 1000)) "s"))))
+                    ms)]
+         (.then p
+                (fn [v] (js/clearTimeout timer) (resolve v))
+                (fn [e] (js/clearTimeout timer) (reject e))))))
+    p))
 
 (defn- spawn-stdio
   "Spawn an MCP stdio server. `env` (a map) is merged over the current env."
@@ -48,10 +79,14 @@
 (defn- make-client
   "Wire up request/response correlation over a spawned subprocess. Returns
    the client map (before the initialize handshake)."
-  [^js proc]
+  [^js proc opts]
   (let [next-id (atom 0)
         pending (atom {})            ;; id -> {:resolve :reject}
         buf     (atom "")
+        dead    (atom false)
+        ;; stderr must be drained (a full pipe blocks the server); its tail
+        ;; explains an exit
+        err-buf (atom "")
         write!  (fn [obj]
                   (.write (.-stdin proc)
                           (str (js/JSON.stringify (clj->js obj)) "\n")))
@@ -79,34 +114,52 @@
         reject-all! (fn [err]
                       (doseq [[_ {:keys [reject]}] @pending] (reject err))
                       (reset! pending {}))
+        died!   (fn [err]
+                  (reset! dead true)
+                  (reject-all! err))
         request (fn [method params]
-                  (js/Promise.
-                   (fn [resolve reject]
-                     (let [id (swap! next-id inc)]
-                       (swap! pending assoc id {:resolve resolve :reject reject})
-                       (try
-                         (write! {:jsonrpc "2.0" :id id :method method
-                                  :params (or params {})})
-                         (catch :default e
-                           (swap! pending dissoc id)
-                           (reject e)))))))
+                  (if @dead
+                    (js/Promise.reject (js/Error. "MCP server exited"))
+                    (let [id (swap! next-id inc)]
+                      (with-timeout
+                        (js/Promise.
+                         (fn [resolve reject]
+                           (swap! pending assoc id {:resolve resolve :reject reject})
+                           (try
+                             (write! {:jsonrpc "2.0" :id id :method method
+                                      :params (or params {})})
+                             (catch :default e
+                               (swap! pending dissoc id)
+                               (reject e)))))
+                        (timeout-ms opts) method
+                        #(swap! pending dissoc id)))))
         notify  (fn [method params]
                   (try (write! {:jsonrpc "2.0" :method method
                                 :params (or params {})})
                        (catch :default _ nil)))
         close   (fn [] (try (.kill proc) (catch :default _ nil)))]
     (.on (.-stdout proc) "data" on-data)
-    (.on proc "exit" (fn [_code]
-                       (reject-all! (js/Error. "MCP server exited"))))
-    (.on proc "error" (fn [e] (reject-all! e)))
-    {:proc proc :request request :notify notify :close close}))
+    (.on (.-stderr proc) "data"
+         (fn [chunk]
+           (swap! err-buf #(let [s (str % chunk)]
+                             (subs s (max 0 (- (count s) STDERR_TAIL)))))))
+    ;; a write to a dead child's stdin errors asynchronously (EPIPE)
+    (.on (.-stdin proc) "error" (fn [e] (died! e)))
+    (.on proc "exit" (fn [code]
+                       (let [tail (str/trim @err-buf)]
+                         (died! (js/Error. (str "MCP server exited (code " code ")"
+                                                (when (seq tail) (str ": " tail))))))))
+    (.on proc "error" (fn [e] (died! e)))
+    {:proc proc :request request :notify notify :close close
+     :dead? (fn [] @dead)}))
 
 (defn connect
-  "Spawn an MCP stdio server and perform the initialize handshake. Returns a
-   promise of the client map with :server-info attached."
+  "Spawn an MCP stdio server ({:command :args :env :cwd :timeout-ms}) and
+   perform the initialize handshake. Returns a promise of the client map with
+   :server-info attached."
   [opts]
   (let [proc   (spawn-stdio opts)
-        client (make-client proc)]
+        client (make-client proc opts)]
     (-> ((:request client) "initialize"
          {:protocolVersion PROTOCOL_VERSION
           :capabilities    {}
@@ -152,7 +205,7 @@
    map, e.g. an Authorization pair) onto each request and threading any
    Mcp-Session-Id the server assigns. Returns the client map (before the
    initialize handshake)."
-  [url base-headers]
+  [url base-headers opts]
   (let [next-id (atom 0)
         session (atom nil)
         headers (fn []
@@ -167,8 +220,10 @@
                                      :body    (js/JSON.stringify (clj->js body))}))
         request (fn [method params]
                   (let [id (swap! next-id inc)]
-                    (-> (post {:jsonrpc "2.0" :id id :method method
-                               :params  (or params {})})
+                    (-> (with-timeout
+                          (post {:jsonrpc "2.0" :id id :method method
+                                 :params  (or params {})})
+                          (timeout-ms opts) method (fn []))
                         (.then (fn [^js resp]
                                  (when-let [sid (.get (.-headers resp) "mcp-session-id")]
                                    (reset! session sid))
@@ -191,15 +246,15 @@
                   (when @session
                     (-> (js/fetch url #js {:method "DELETE" :headers (headers)})
                         (.catch (fn [_] nil)))))]
-    {:request request :notify notify :close close}))
+    {:request request :notify notify :close close :dead? (constantly false)}))
 
 (defn connect-http
   "Connect to a Streamable-HTTP MCP server at `:url`, sending `:headers` (a
    clj map, e.g. {\"Authorization\" \"Bearer …\"}) on every request. Performs
    the initialize handshake and returns a promise of the client map with
    :server-info attached."
-  [{:keys [url headers]}]
-  (let [client (make-http-client url headers)]
+  [{:keys [url headers] :as opts}]
+  (let [client (make-http-client url headers opts)]
     (-> ((:request client) "initialize"
          {:protocolVersion PROTOCOL_VERSION
           :capabilities    {}
@@ -220,6 +275,11 @@
 
 (defn call-tool
   "Invoke a tool by (unqualified) name with a JS arguments object. Returns a
-   promise of the raw JS result ({content, isError})."
-  [client tool-name arguments]
-  ((:request client) "tools/call" {:name tool-name :arguments (or arguments #js {})}))
+   promise of the raw JS result ({content, isError}). `meta` (a map), when
+   given, goes out as the request's `_meta`: the MCP spec's slot for context
+   that isn't a tool argument."
+  ([client tool-name arguments] (call-tool client tool-name arguments nil))
+  ([client tool-name arguments meta]
+   ((:request client) "tools/call"
+    (cond-> {:name tool-name :arguments (or arguments #js {})}
+      (seq meta) (assoc :_meta meta)))))

@@ -11,7 +11,8 @@
    like process-manager's proc-handles. The provider tool ctx uses the PARENT
    room-id, so a sub-agent's tools (git, canvas_review_*, confirmations) act in
    the parent room; only its conversation is separate."
-  (:require [xi.agent :as agent]))
+  (:require [xi.agent :as agent]
+            [xi.session :as session]))
 
 ;; sub-id -> {:abort! fn :room-id str}. Process-local; never crosses the wire.
 (defonce ^:private registry (atom {}))
@@ -112,10 +113,9 @@
                                    ([_message] (js/Promise.resolve false))
                                    ([_message _copts] (js/Promise.resolve false)))}
             policy1    (when tool-policy (fn [tool-call] (tool-policy tool-call tool-ctx)))
-            ;; The PARENT room's driving-client pid: chrome-mcp scopes a turn to
-            ;; that client's terminal workspace. Without it a sub-agent's
-            ;; browser calls would fall back to guessing a workspace and could
-            ;; act where the *user* is looking (see xi.ext.chrome-mcp.guard).
+            ;; The PARENT room's driving-client pid, so a sub-agent's MCP calls
+            ;; carry the same _meta "xi/clientPid" as the parent's (a browser
+            ;; server scopes to that terminal, see xi.ext.mcp/call-meta).
             client-pid (agent/room-client-pid (get-state) room-id)
             {:keys [promise abort!]}
             ((:start-turn! prov)
@@ -150,7 +150,11 @@
                (dispatch! {:type :subagent/error :room-id room-id :sub-id sub-id
                            :error {:type "error" :message (str (.-message err))}})
                (dispatch! {:type :subagent/turn-end :room-id room-id :sub-id sub-id
-                           :aborted? false}))))))
+                           :aborted? false})))
+            ;; The kept config dir outlives the turn; save a login refreshed
+            ;; during it now, not at cleanup (see session/sync-credentials-back!).
+            (.finally
+             (fn [] (when config-dir (session/sync-credentials-back! config-dir)))))))
 
     :subagent/abort
     (fn [_ {:keys [sub-id]}]

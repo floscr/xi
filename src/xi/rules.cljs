@@ -20,6 +20,7 @@
                :tracked :git             ; every :sh operand git-tracked in the repo (opt-in)
                :chained true             ; a :bash command that composes shell commands (opt-in)
                :bb-trusted false         ; a :bb call whose bb.edn is (not) in the trust store (opt-in)
+               :mcp-trusted false        ; an :mcp call whose server is (not) trusted (opt-in)
                :xi-rules-file true}      ; changes an xi rules.edn (opt-in)
       :action {:type :allow|:deny|:nudge|:ask
                :message \"...\"
@@ -251,6 +252,17 @@
            (some? (:bb-trusted? req))
            (= spec (:bb-trusted? req)))))
 
+(defn- match-mcp-trusted
+  "MCP server trust match (opt-in). `:mcp-trusted true|false` matches an
+   `:mcp` call by whether its server is trusted as it is now (xi.mcp.trust) —
+   the store computes `:mcp-trusted?` only when such a rule is in play (nil,
+   i.e. not an MCP call, never matches)."
+  [spec req]
+  (or (nil? spec)
+      (and (boolean? spec)
+           (some? (:mcp-trusted? req))
+           (= spec (:mcp-trusted? req)))))
+
 (defn- match-cli
   "CLI (binary) spec for `:tool :sh` shell-outs: string → exact binary match,
    set → membership, regex → re-find, against `(:cli req)` (the command's first
@@ -306,6 +318,7 @@
          (match-tracked    (:tracked m)    req)
          (match-chained    (:chained m)    req)
          (match-bb-trusted (:bb-trusted m) req)
+         (match-mcp-trusted (:mcp-trusted m) req)
          (match-xi-rules-file (:xi-rules-file m) req))))
 
 (defn first-match
@@ -367,6 +380,12 @@
    a `:bash` command and populate `:chained?` on the request."
   [rules]
   (boolean (some #(some-> (canonical %) :match :chained) rules)))
+
+(defn needs-mcp-trusted?
+  "True when any rule carries an `:mcp-trusted` matcher (true or false), so
+   the store should read the MCP trust store and populate `:mcp-trusted?`."
+  [rules]
+  (boolean (some #(some? (some-> (canonical %) :match :mcp-trusted)) rules)))
 
 (defn needs-bb-trusted?
   "True when any rule carries a `:bb-trusted` matcher (true or false), so the

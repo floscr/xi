@@ -1,15 +1,6 @@
 {:paths ["scripts"]
  :deps {tmux-dev/tmux-dev {:git/url "https://github.com/floscr/tmux-dev"
-                            :git/sha "6ef67ed56540a60b6862c656b6098139e1e6e82f"}
-        ;; squint + esbuild for the browser overlay builds (scripts/overlay_build.clj)
-        ;; — in-process via bb, no node/npm.
-        ;; Don't pin squint back to v0.11.189 (the npm release the overlays used
-        ;; to be built with): its JVM compiler doesn't munge reserved words, so
-        ;; dialkit's `(defn- mk [tag class] …)` comes out as invalid JS.
-        io.github.squint-cljs/squint {:git/url "https://github.com/squint-cljs/squint"
-                                      :git/sha "e83befd03153b842d45cd25a77fefb915f120eb7"}
-        io.github.babashka/babashka.esbuild {:git/url "https://github.com/babashka/babashka.esbuild"
-                                             :git/sha "c25eeb3d86ad739428e600375a96ad4024b379b9"}}
+                            :git/sha "6ef67ed56540a60b6862c656b6098139e1e6e82f"}}
  :tasks
  {:requires ([tmux-dev.core :as td]
              [clojure.edn :as edn])
@@ -39,19 +30,6 @@
                              :out clojure.string/trim not-empty)
                          (catch Exception _ nil)))
                   "localhost")))
-          ;; Resolve the pinned clj-ui-framework gitlib checkout (from deps.edn's
-          ;; :git/sha), fetching it into the gitlibs cache if absent — so the
-          ;; browser-overlay build steps need no local framework checkout.
-          (defn clj-ui-framework-dir []
-            (let [sha  (-> (slurp "deps.edn") edn/read-string
-                           (get-in [:deps 'io.github.floscr/clj-ui-framework :git/sha]))
-                  base (or (System/getenv "GITLIBS")
-                           (str (System/getProperty "user.home") "/.gitlibs"))
-                  dir  (str base "/libs/io.github.floscr/clj-ui-framework/" sha)]
-              (when-not (.exists (java.io.File. dir))
-                (println "Fetching clj-ui-framework" sha "into gitlibs cache …")
-                (clojure "-P"))
-              dir))
           (def config {:session "xi"
                        :windows [["watch" "npx shadow-cljs watch main web"]]
                        :print   ["Web: http://localhost:7474"]})
@@ -182,37 +160,9 @@
   {:doc "Watch-compile and rerun tests on changes"
    :task (shell "npx shadow-cljs watch test")}
 
-  chrome:sync-tools
-  {:doc "Regenerate resources/chrome/tools.edn from chrome-devtools-mcp's live tools/list"
-   :task (shell "node" "scripts/sync-chrome-tools.mjs")}
-
-  dialkit:css
-  {:doc "Regenerate resources/dialkit/dial.css from clj-ui-framework's dial.css + resolved theme tokens"
-   :task (shell {:extra-env {"CLJ_UI_FRAMEWORK" (clj-ui-framework-dir)}}
-                "bb" "scripts/gen-dialkit-css.clj")}
-
-  ;; The overlay builds run squint + esbuild in-process (scripts/overlay_build.clj).
-  ;; requiring-resolve keeps the compiler off the startup path of every other task.
-  picker:build
-  {:doc "Compile the element-picker (squint → esbuild, in-process) to resources/element-picker/picker.js"
-   :task ((requiring-resolve 'overlay-build/build!)
-          {:dir "resources/element-picker" :entry "picker" :out "picker.js"
-           :task "picker:build"})}
-
-  design:build
-  {:doc "Compile the design-mode browser script (squint → esbuild, in-process) to resources/design-mode/design.js"
-   :task ((requiring-resolve 'overlay-build/build!)
-          {:dir "resources/design-mode" :entry "design" :out "design.js"
-           :task "design:build"})}
-
-  style-editor:build
-  {:doc "Compile the style-editor (squint → esbuild, in-process) to resources/style-editor/style-editor.js"
-   :task ((requiring-resolve 'overlay-build/build!)
-          {:dir "resources/style-editor" :entry "style-editor" :out "style-editor.js"
-           ;; the dialkit runtime the overlay `(:require [dial])`s lives in the
-           ;; pinned clj-ui-framework gitlib, not a local checkout
-           :paths [(str (clj-ui-framework-dir) "/src/ui/js")]
-           :task "style-editor:build"})}
+  mcp:bb-example:test
+  {:doc "Test the example babashka MCP server (packages/mcp-bb-example), incl. a stdio round trip"
+   :task (shell {:dir "packages/mcp-bb-example"} "bb" "test")}
 
   dev:url
   {:doc "Print the dev-http URL (XI_PUBLIC_HOST, else Tailscale IP when available, else localhost) on port 8100"

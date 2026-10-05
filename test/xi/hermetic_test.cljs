@@ -3,6 +3,7 @@
    namespace before it runs any test, so the top-level side effects here apply
    to the whole run."
   (:require [cljs.test :refer [deftest is]]
+            [xi.mcp.trust :as mcp-trust]
             [xi.rules.store :as rules-store]
             [xi.user-config :as user-config]))
 
@@ -17,6 +18,9 @@
 ;; Keep the user's real ~/.config/xi/rules.edn and config.edn out of the tests.
 (rules-store/set-global-file! test-global-rules-file)
 (user-config/set-config-file! test-config-file)
+;; ~/.config/xi/mcp.edn and the MCP trust store: no servers, none trusted.
+(mcp-trust/set-registry-file! "/nonexistent/xi-test/mcp.edn")
+(mcp-trust/set-trust-file! "/nonexistent/xi-test/mcp-trust.edn")
 
 (deftest global-rules-file-is-isolated
   (is (= test-global-rules-file (rules-store/global-file))))

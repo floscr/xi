@@ -85,11 +85,15 @@
                                  {:tool :bash :command "ls -la"})))))
 
 (deftest mcp-default-gate
-  (testing "every external MCP tool call asks by default"
-    (is (= :ask (action-type {:tool :mcp :mcp-server "render" :mcp-tool "deploy"})))
-    (is (= [:yes :no :always]
-           (get-in (rules/first-match defaults/default-rules {:tool :mcp})
-                   [:action :options]))))
+  (testing "a call to an untrusted MCP server asks; [a]lways trusts the server"
+    (let [req  {:tool :mcp :mcp-server "render" :mcp-tool "deploy" :mcp-trusted? false}
+          rule (rules/first-match defaults/default-rules req)]
+      (is (= :ask (get-in rule [:action :type])))
+      (is (= :mcp/trust
+             (some #(get-in % [:event :type]) (get-in rule [:action :options]))))))
+  (testing "a trusted server's calls run without a prompt"
+    (is (nil? (action-type {:tool :mcp :mcp-server "render" :mcp-tool "deploy"
+                            :mcp-trusted? true}))))
   (testing "non-mcp tools are not caught by the mcp gate"
     (is (nil? (rules/first-match defaults/default-rules
                                  {:tool :read :path "src/foo.cljs"})))))
@@ -402,7 +406,7 @@
            (defaults/expand [{:match {:tool :read} :action {:type :allow}}]))))
   (testing "a subset keeps only the chosen bundles"
     (let [rs (defaults/expand [:xi.rules.defaults/mcp-confirm])]
-      (is (= :ask (get-in (rules/first-match rs {:tool :mcp}) [:action :type])))
+      (is (= :ask (get-in (rules/first-match rs {:tool :mcp :mcp-trusted? false}) [:action :type])))
       (is (nil? (rules/first-match rs {:tool :sh :cli "cat"})))))
   (testing "unknown aliases and non-rule entries throw"
     (is (thrown-with-msg? js/Error #"unknown default-rules alias"

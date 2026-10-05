@@ -443,8 +443,8 @@
 
 (defn room-client-pid
   "Pid of the client driving `room-id` (preferring a TUI client), or nil, from
-   the connection registry. Threaded into the tool ctx so chrome-mcp can scope
-   to that client's terminal workspace (see xi.ext.chrome-mcp.guard)."
+   the connection registry. Threaded into the tool ctx; MCP servers get it as
+   _meta `xi/clientPid` (xi.ext.mcp/call-meta)."
   [st room-id]
   (->> (vals (get-in st [:connection :clients]))
        (filter (fn [c] (and (= room-id (:room-id c)) (:pid c))))

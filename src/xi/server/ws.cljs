@@ -679,9 +679,9 @@
                  (set! (.. ws -data -authed) true)
                  (dispatch! {:type :client/connect :client-id cid
                              :client (cond-> {:kind :remote}
-                                       ;; pid + platform (from :auth/hello) let
-                                       ;; chrome-mcp scope to the client's
-                                       ;; terminal workspace (xi.ext.chrome-mcp.guard)
+                                       ;; pid + platform (from :auth/hello): the
+                                       ;; room's driving pid goes to MCP servers
+                                       ;; as _meta (xi.ext.mcp/call-meta)
                                        (.. ws -data -clientPid)
                                        (assoc :pid (.. ws -data -clientPid))
                                        (.. ws -data -clientPlatform)

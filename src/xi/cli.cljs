@@ -106,7 +106,7 @@
 
 (defn- server-extensions
   "Extensions whose state + provider hooks live server-side (xi.config/server).
-   nils (e.g. chrome without XI_CHROME_TOOLS) are dropped by ext/compose. `ask!`
+   nils (factories that opt out) are dropped by ext/compose. `ask!`
    (the dialog ask! from ext/create-dialogs) is threaded into extensions that
    raise their own confirm dialogs from effects (worktree removal); nil in
    the client mirror, where those effects never run. `manager` (xi.ext.manager)
@@ -424,7 +424,7 @@ See docs/cli.md for the full reference.")
                              :ring          ring
                              :jsonl-writer  jsonl-writer})
         {:keys [dispatch!]} app
-        _ (user-ext/start! app)]
+        _ (user-ext/start! app {:ask! (:ask! dialogs)})]
     (when jsonl-writer
       (js/process.on "exit" (fn [] ((:flush! jsonl-writer)))))
     (dispatch! {:type :room/create
@@ -720,9 +720,9 @@ See docs/cli.md for the full reference.")
                     :hello {:client-key  (auth/ensure-client-key!)
                             :client-name (str "tui@" (.hostname (js/require "node:os")))
                             :platform    "tui"
-                            ;; This process' pid — the server resolves its
-                            ;; terminal window's xmonad workspace to scope
-                            ;; chrome-mcp (see xi.ext.chrome-mcp.guard).
+                            ;; This process' pid — passed on to MCP servers
+                            ;; as _meta "xi/clientPid" (xi.ext.mcp/call-meta),
+                            ;; e.g. so a browser server acts near this terminal.
                             :pid         (.-pid js/process)}
                     :target target
                     :cwd cwd
@@ -996,7 +996,7 @@ See docs/cli.md for the full reference.")
                                             (merge static-fx (:fx composed) (:fx dialogs) (:fx server)))))
                              :on-runaway (fn [msg] (log-crash! "dispatch-livelock" msg))
                              :ring ring})
-        _ (user-ext/start! app)
+        _ (user-ext/start! app {:ask! (:ask! dialogs)})
         {actual-port :port} ((:start! server) app {:port port :host host})]
     (if headless?
       (do (js/console.error (str "[xi] Headless server on ws://" (ws/resolve-host host) ":" actual-port))

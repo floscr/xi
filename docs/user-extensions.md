@@ -81,7 +81,9 @@ A file in the directory is loaded only when the user config file names it:
 ## Files
 
 - Each enabled **top-level** `*.cljs` file in `~/.config/xi/extensions/` is one
-  extension, loaded alphabetically after the built-ins and MCP servers.
+  extension, loaded alphabetically after the built-ins and MCP servers. A
+  symlink to a file counts, so an extension can live in another checkout
+  (link its sibling directory too).
 - A file defines `extension`: the extension map for the server side (tools,
   handlers, commands, fx, system prompt, …).
 - A file may require its own sibling namespaces: `(:require [notes.util])` loads
@@ -170,6 +172,8 @@ token.
 | `xi.api.sh` | `(sh ctx "cmd" "arg" …)` (optional `{:dir …}` before the argv) | `{:tool :sh :cli :command :argv}` |
 | `xi.api.http` | `(fetch ctx url {:method :headers :body :timeout-ms})` (http(s) only) → `{:status :ok? :url :headers :body}`; `url-encode` `url-decode` (pure) | `{:tool :net :host …}` |
 | `xi.api.chrome` | `(visit ctx url {:wait :eval :timeout-ms})` (https only, declared hosts only) → `{:url :ready? :value}`; see [Headless Chrome](#headless-chrome) | `{:tool :browser :host …}` |
+| `xi.api.mcp` | `(call ctx server tool args {:room-id})` → the tool result `{:content :is-error}`, over the agent's own connection to that [MCP server](mcp-servers.md#calling-servers-from-user-extensions) | `{:tool :mcp :mcp-server :mcp-tool}` |
+| `xi.api.dialog` | `confirm` `select` `alert` `form`; see [Dialogs](#dialogs) | (no request) |
 | `xi.api.json` | `parse` `stringify` `pretty` | (no request) |
 | `xi.api.promise` | `then` `catch` `all` `resolve` `reject` `delay` | (no request) |
 
@@ -245,6 +249,27 @@ Allowed map keys: `:id :init :handlers :fx :commands :tool-definitions
 `:tool-gate`, `:event-hooks` and `:remove-tools` are rejected, because policy
 belongs to the rules engine. `:id` and tool names
 must not clash with anything already loaded, built-ins included.
+
+## Dialogs
+
+`xi.api.dialog` asks the user something in a room and resolves to the answer:
+
+```clojure
+(dialog/confirm ctx "Delete the cache?")                      ; → true / false
+(dialog/select  ctx "Which tab?" [{:label "Docs" :value 3} …]) ; → 3, nil when dismissed
+(dialog/alert   ctx "Done.")                                  ; → nil once dismissed
+(dialog/form    ctx "Commit" [{:name "msg" :label "Message"}]) ; → {"msg" …}, nil on cancel
+```
+
+- Each takes a trailing opts map with `:room-id`. Tool fns have a room in
+  their ctx; an `:fx` gets it from its payload, so pass it.
+- The text is prefixed `[extension <id>]`, so the user knows it isn't the
+  agent asking.
+- Opening a dialog changes nothing by itself, so it isn't a rules request.
+  With no client connected at all, it resolves at once to the safe default
+  (`false` / `nil`), like every other dialog.
+- A `select` option is `{:label :value}` or a plain value (shown with `str`);
+  a `form` field takes `:name`, optional `:label` and a prefilled `:value`.
 
 ## Starting a chat
 
