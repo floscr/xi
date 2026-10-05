@@ -381,7 +381,7 @@ The `:dir` itself is treated as a read.
 ### Tree-sitter node targeting (`:node`)
 
 A `:node` matcher is **opt-in**: only when some rule carries one does the store
-parse the target with tree-sitter (`xi.rules.nodes` → the `xi-treesitter` CLI)
+parse the target with tree-sitter (`xi.rules.nodes` → the in-process WASM parser, see [treesitter.md](treesitter.md))
 and populate the request's `:nodes` — a seq of `{:type <ts-node-type> :name
 <name-field> :text <source>}`. The matcher then checks each `:node` subfield
 against those nodes: `:type` (regex `re-find` or glob-string full-match on the

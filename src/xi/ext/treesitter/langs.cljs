@@ -1,5 +1,6 @@
 (ns xi.ext.treesitter.langs
-  "Per-language skeleton extractors over the xi-treesitter JSON parse tree.
+  "Per-language skeleton extractors over the JSON-shaped parse tree
+   (see xi.ext.treesitter.parse).
 
    Each extractor is (fn [root src-buffer] → [entry]) where entries are the
    maps xi.ext.treesitter.skeleton formats. The generic trick used everywhere:
@@ -10,7 +11,7 @@
             [xi.ext.treesitter.parse :as p]))
 
 (def ext->lang
-  "File extension → grammar name (<lang>.so + tree_sitter_<lang>)."
+  "File extension → grammar name (grammars/<lang>.wasm)."
   {"ts" "typescript" "mts" "typescript" "cts" "typescript"
    "tsx" "tsx"
    "js" "javascript" "jsx" "javascript" "mjs" "javascript" "cjs" "javascript"

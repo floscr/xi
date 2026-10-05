@@ -95,11 +95,11 @@ src/xi/          cli (entry + assembly), config.cljc (extensions/providers/
                  providers/, server/, client/ (TUI), tui/, web/ (browser),
                  ext/ (extensions), markdown/, highlight/, mcp/
 test/xi/         mirrors src/
-resources/       web client (public/), grammars
-scripts/         bb/node build helpers (demo seed, codegen)
+resources/       web client (public/), syntax grammars, treesitter/ (WASM
+                 runtime + grammars for outlines)
+scripts/         bb/node build helpers (demo seed, codegen, treesitter WASM)
 packages/        outside xi's own bundle: bb-client/ (JVM client lib),
                  providers/anthropic/ (SDK runner + pinned CLI),
-                 xi-treesitter/ (native outline CLI),
                  mcp-bb-example/ (babashka MCP server example)
 docs/            see the index below
 ```

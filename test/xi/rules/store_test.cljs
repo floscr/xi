@@ -1,5 +1,5 @@
 (ns xi.rules.store-test
-  (:require [cljs.test :refer [deftest is testing]]
+  (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.rules :as rules]
             [xi.rules.defaults :as defaults]
@@ -207,26 +207,33 @@
                    base [{:match {:tool :read :credential :read}}])))))))
 
 (deftest enrich-request-populates-nodes-only-when-needed
-  (if-not (ts/available?)
-    (is true "skipped")
-    (let [path (node-path/join (os/tmpdir)
-                               (str (.getTime (js/Date.)) "-xi-store-node.ts"))
-          _    (fs/writeFileSync path "export function fn0(a) {\n  return a;\n}\n")
-          base (store/decision-request
-                {:name "edit"
-                 :arguments {:path path
-                             :edits [{:oldText "return a;" :newText "return a + 1;"}]}}
-                {:cwd (os/tmpdir)})]
-      (testing "no :node rule → request is untouched"
-        (is (not (contains? (store/enrich-request base [{:match {:tool :edit}}])
-                            :nodes))))
-      (testing "a :node rule → :nodes is computed and the enclosing def matches"
-        (let [ruleset [{:match {:tool :edit :node {:type "function_declaration"}}
-                        :action {:type :deny}}]
-              req     (store/enrich-request base ruleset)]
-          (is (some #(= "function_declaration" (:type %)) (:nodes req)))
-          (is (= :deny (get-in (rules/first-match ruleset req) [:action :type])))))
-      (fs/unlinkSync path))))
+  ;; enrich-request is synchronous, so wait for the WASM runtime to load first.
+  (async done
+    (if-not (ts/available?)
+      (do (is true "skipped") (done))
+      (-> (ts/ready!)
+          (.then
+           (fn [_]
+             (let [path (node-path/join (os/tmpdir)
+                                        (str (.getTime (js/Date.)) "-xi-store-node.ts"))
+                   _    (fs/writeFileSync path "export function fn0(a) {\n  return a;\n}\n")
+                   base (store/decision-request
+                         {:name "edit"
+                          :arguments {:path path
+                                      :edits [{:oldText "return a;" :newText "return a + 1;"}]}}
+                         {:cwd (os/tmpdir)})]
+               (testing "no :node rule → request is untouched"
+                 (is (not (contains? (store/enrich-request base [{:match {:tool :edit}}])
+                                     :nodes))))
+               (testing "a :node rule → :nodes is computed and the enclosing def matches"
+                 (let [ruleset [{:match {:tool :edit :node {:type "function_declaration"}}
+                                 :action {:type :deny}}]
+                       req     (store/enrich-request base ruleset)]
+                   (is (some #(= "function_declaration" (:type %)) (:nodes req)))
+                   (is (= :deny (get-in (rules/first-match ruleset req) [:action :type])))))
+               (fs/unlinkSync path))))
+          (.catch (fn [e] (is false (str e))))
+          (.finally done)))))
 
 (deftest hardened-tier-prepended-and-flag-removable
   (let [rs (store/ordered-rules {} "r1" (os/tmpdir))]

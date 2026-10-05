@@ -1,5 +1,5 @@
 (ns xi.ext.treesitter.core-test
-  "read override + read_source behavior. Skipped when the native CLI is absent."
+  "read override + read_source behavior. Skipped when the grammars are absent."
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.ext.treesitter.core :as core]

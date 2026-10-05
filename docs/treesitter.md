@@ -10,40 +10,55 @@ large fraction of that.
 
 Two pieces:
 
-1. **A native CLI** (`packages/xi-treesitter`) — a small C program built via nix
-   that dlopens nix-built tree-sitter grammar `.so` files, parses a file, and
-   prints the parse tree as compact JSON. Bun shells out to it (Bun cannot
-   load grammar `.so` files directly: `bun:ffi` doesn't support by-value
-   structs, which `TSNode` is).
+1. **A parse layer** (`xi.ext.treesitter.parse`) — [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web)
+   (tree-sitter compiled to WASM) running in-process under Bun, with one
+   `.wasm` grammar per language. Nothing to install, no native binary, no
+   per-platform build: the runtime and the grammars are vendored in
+   `resources/treesitter/` and ship with Xi.
 2. **An extension** (`src/xi/ext/treesitter/`) — overrides the builtin `read`
    tool (a `:tool-registry` entry of the same name, which wins over the
    builtin) to return the outline, falling back to the builtin read; plus a
    `read_source` tool for literal code. Being a plain tool, not a gate, a rules
    `:allow` on `read` can't skip the outline.
 
-The extension is a factory that returns `nil` when the CLI isn't installed, so
-everything silently stays off until you run the install step.
+The extension is a factory that returns `nil` when `resources/treesitter` can't
+be found, in which case reads silently stay plain. The runtime and all grammars
+load in the background at startup (about 40 ms, ~40 MB resident).
 
-## Install
+## Where the files live
+
+```
+resources/treesitter/
+  manifest.json            — pinned runtime version + each grammar's repo/rev
+  web-tree-sitter.cjs      — the runtime (+ web-tree-sitter.wasm, .LICENSE)
+  grammars/<lang>.wasm     — one grammar per language
+```
+
+Xi looks in `$XI_TREESITTER_DIR` when set, else `resources/treesitter` next to
+the compiled script, else under the working directory. The directory must
+contain `web-tree-sitter.cjs`, `web-tree-sitter.wasm` and `grammars/`.
+
+### Rebuilding or updating grammars
 
 ```bash
-bb treesitter:install
-# = nix-build packages/xi-treesitter -o ~/.config/xi/treesitter
+bb treesitter:build               # runtime + every grammar in manifest.json
+bb treesitter:build python rust   # only these grammars
 ```
 
-This builds the CLI and a grammar bundle
-(`pkgs.tree-sitter.withPlugins`) and symlinks the result at
-`~/.config/xi/treesitter`:
+Each grammar is fetched at the exact `rev` in `manifest.json` and compiled with
+`tree-sitter build --wasm` (tree-sitter CLI ≥ 0.26; it downloads its own
+wasi-sdk, so no emscripten or Docker). The same inputs produce byte-identical
+`.wasm` files. Set `$TREE_SITTER` when the plain binary can't run, e.g. on
+NixOS, where the downloaded wasi-sdk needs an FHS shell:
 
-```
-~/.config/xi/treesitter/
-  bin/xi-treesitter     — the parse CLI
-  grammars/<lang>.so    — grammar shared objects
+```bash
+TREE_SITTER="steam-run tree-sitter" bb treesitter:build
 ```
 
-Discovery is via `$XI_TREESITTER_DIR` (default `~/.config/xi/treesitter`).
-Restart the server (`bb serve:restart`) after installing — the factory checks
-availability at assembly time.
+To bump a grammar, change its `rev` in `manifest.json`, rebuild it, and run
+`bb test` — the extractor tests catch node-type changes. A grammar must be
+built for the pinned `web-tree-sitter` version (the ABI has to match), so bump
+the runtime and rebuild every grammar together.
 
 ## What the model sees
 
@@ -93,7 +108,7 @@ through to the builtin read:
 |---|---|
 | Tool + args | `read` with `path`, no `offset`/`limit` |
 | Language | extension maps to a supported grammar (see below) |
-| Grammar installed | `grammars/<lang>.so` exists |
+| Grammar present | `grammars/<lang>.wasm` exists |
 | File size | ≥ 120 lines and < 2 MB |
 | Worth it | outline text < 50% of the file's size |
 | No errors | any parse/extract failure → silent fall-through |
@@ -118,18 +133,13 @@ whenever the clj extension is on (`:remove-tools`), which is the normal setup.
 | CSS | `.css` | @import/@charset/@namespace, rule selectors (custom `--props` listed as children), @media/@supports + nested selectors, @keyframes, other at-rules |
 | Clojure | `.clj .cljs .cljc .bb` | ns + require libspecs, def/defonce, defn (multi-arity arglists), defmethod (named `fn :dispatch`), defmacro, defprotocol/defrecord/deftype + methods, generic `def*` forms; recurses into `#?(...)` reader conditionals |
 
-To add a language: add the grammar to `packages/xi-treesitter/default.nix`,
-re-run `bb treesitter:install`, then add an extension mapping + extractor in
-`src/xi/ext/treesitter/langs.cljs`.
+To add a language: add it to `manifest.json`, run `bb treesitter:build <lang>`,
+then add an extension mapping + extractor in `src/xi/ext/treesitter/langs.cljs`.
 
-## The CLI
+## The parse tree
 
-```
-xi-treesitter <grammar-dir> <lang> <file>
-```
-
-dlopens `<grammar-dir>/<lang>.so`, resolves `tree_sitter_<lang>`, parses
-`<file>`, and prints the tree as JSON on stdout:
+`parse-file` (Promise) and `parse-file-sync` return the tree as plain JS
+objects in the shape below, so the extractors don't depend on the WASM API:
 
 ```json
 {"t":"program","sr":0,"er":411,"sb":0,"eb":10184,"c":[
@@ -138,27 +148,28 @@ dlopens `<grammar-dir>/<lang>.so`, resolves `tree_sitter_<lang>`, parses
 
 - `t` node type · `sr`/`er` 0-based start/end row · `sb`/`eb` byte offsets ·
   `a: 1` anonymous node · `f` field name · `c` children.
-- Node text is never in the JSON — callers slice it from the source buffer via
-  `sb`/`eb` (byte offsets, so multi-byte UTF-8 stays correct).
-- Exit codes: 2 usage · 3 grammar load · 4 file read · 5 ABI mismatch ·
-  6 parse failure.
+- Node text is never in the tree — callers slice it from the source buffer via
+  `sb`/`eb`. web-tree-sitter reports UTF-16 indices, so `parse` translates them
+  to UTF-8 byte offsets and multi-byte text stays correct.
 
-Performance: ~40 ms for a 4000-line file (2.6 MB JSON), well under
-interactive-read latency.
+`parse-file-sync` exists for the rules engine's `:node` matcher, which runs in a
+synchronous pipeline. It works once the runtime has loaded and returns `nil`
+before that, so in the first moments after startup a `:node` rule does not
+match (the same as when a grammar is missing).
 
 ## Source layout
 
 ```
-packages/xi-treesitter/
-  main.c        — the CLI (TSTreeCursor walk → JSON)
-  default.nix   — build: CLI + tree-sitter.withPlugins grammar bundle
+resources/treesitter/        — vendored runtime + grammars (see above)
+scripts/build-treesitter-wasm.mjs — rebuilds them from manifest.json
 src/xi/ext/treesitter/
-  parse.cljs    — CLI discovery/spawn, JS node accessors, text helpers
+  parse.cljs    — loading, WASM → JSON-shaped tree, JS node accessors, text helpers
   langs.cljs    — extension → language map + per-language extractors
   skeleton.cljs — entries → outline text; symbol table for read_source
   core.cljs     — the extension: read override, read_source, system prompt, factory
 ```
 
-Tests: `test/xi/ext/treesitter/` — pure formatter tests plus end-to-end
-per-language extractor tests and `read`/`read_source` tests that spawn the real
-CLI (skipped when it isn't installed).
+Tests: `test/xi/ext/treesitter/` — pure formatter tests, the parse layer
+(`parse_test.cljs`: all grammars load, UTF-8 offsets, sync/async parsing), and
+end-to-end per-language extractor and `read`/`read_source` tests. They run
+against the vendored grammars, so they don't need anything installed.

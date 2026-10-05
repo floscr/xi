@@ -1,7 +1,6 @@
 (ns xi.ext.treesitter.langs-test
-  "End-to-end extractor tests — spawn the native xi-treesitter CLI on small
-   fixture sources. Skipped (pass vacuously) when the CLI/grammars are not
-   installed at ~/.config/xi/treesitter."
+  "End-to-end extractor tests — parse small fixture sources with the vendored
+   WASM grammars. Skipped (pass vacuously) when resources/treesitter is absent."
   (:require [cljs.test :refer [deftest is testing async]]
             [xi.ext.treesitter.parse :as p]
             [xi.ext.treesitter.langs :as langs]
@@ -14,7 +13,7 @@
   [lang ext source f]
   (async done
     (if-not (and (p/available?) (p/grammar? lang))
-      (do (is true "treesitter CLI not installed — skipped") (done))
+      (do (is true "treesitter grammars not installed — skipped") (done))
       (let [path (node-path/join (os/tmpdir) (str "xi-ts-test." ext))]
         (fs/writeFileSync path source)
         (-> (p/parse-file lang path)

@@ -10,8 +10,8 @@
    Adds `read_source` for literal code: whole file, a line range, or one named
    definition located via tree-sitter node boundaries.
 
-   Requires the native CLI + grammars at ~/.config/xi/treesitter (see
-   packages/xi-treesitter and docs/treesitter.md); the factory returns nil when
+   Parsing is in-process WASM with the runtime and grammars vendored under
+   resources/treesitter (see docs/treesitter.md); the factory returns nil when
    they are missing, so the extension silently stays off."
   (:require [clojure.string :as str]
             [xi.ext.treesitter.parse :as p]
@@ -175,9 +175,12 @@
        "last resort."))
 
 (defn create
-  "Extension factory — nil (disabled) when the native CLI/grammars are absent."
+  "Extension factory — nil (disabled) when the runtime/grammars are absent.
+   Starts loading the WASM runtime in the background so the synchronous rules
+   `:node` consult is ready by the first tool call."
   [_ctx]
   (when (p/available?)
+    (p/ready!)
     {:id :treesitter
      :tool-definitions [read-source-def]
      :tool-registry {"read"        read-with-outline

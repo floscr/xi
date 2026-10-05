@@ -1,7 +1,7 @@
 (ns xi.rules.nodes
   "Tree-sitter node extraction for the rules engine's opt-in `:node` matcher.
 
-   Node-only: shells out (synchronously) to the xi-treesitter CLI via
+   Node-only: parses (synchronously, in-process) via
    `xi.ext.treesitter.parse`. Returns a seq of {:type :name :text} maps that the
    pure matcher (`xi.rules`'s `match-node`) checks — `:type` is the raw
    tree-sitter node type, `:name` the node's `name` field text, `:text` its
