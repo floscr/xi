@@ -60,6 +60,12 @@
                        (with-out-str (stacktrace/print-stack-trace e)))}))))
 
 (defn start! [{:keys [port] :or {port 4322}}]
-  (http/run-server (wrap-errors handle) {:port port})
-  (livereload/watch!)
-  (println (str "Dev server running at http://localhost:" port)))
+  (let [url (str "http://localhost:" port)]
+    (try
+      (http/run-server (wrap-errors handle) {:port port})
+      (catch java.net.BindException _
+        (binding [*out* *err*]
+          (println (str "Port " port " is already in use — a dev server is probably already running at " url)))
+        (System/exit 1)))
+    (livereload/watch!)
+    (println (str "Dev server running at " url))))
