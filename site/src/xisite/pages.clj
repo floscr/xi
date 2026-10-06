@@ -89,14 +89,14 @@ xi server                  # plus the web client on localhost:7474")
 (defn home []
   (ui/render-page
    (ui/layout
-    {:title "Xi — a coding harness you can shape"
+    {:title "Xi — an AI harness you can shape"
      :description core/site-description
      :path "/"
      :body-class "home"}
     [:section.hero
      [:div.wrap
-      [:p.eyebrow "Coding harness · terminal and browser"]
-      [:h1 "A coding harness you can shape."]
+      [:p.eyebrow "AI harness · terminal and browser"]
+      [:h1 "An AI harness you can shape."]
       [:p.lede
        "An AI harness with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
       [:div.hero-actions
