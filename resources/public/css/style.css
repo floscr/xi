@@ -581,12 +581,16 @@ body {
   max-width: 85%;
 }
 
-/* Sender id above a prompt from another user on a shared server. */
-.post-sender {
-  font-size: var(--font-xs);
-  font-weight: 600;
-  color: var(--fg-2);
-  margin: 0 var(--size-2) var(--size-1) 0;
+/* The sender's avatar on the bottom-right corner of a prompt bubble from
+   another user on a shared server (last bubble of a run). It hangs half
+   outside the bubble, so the post makes room for it. */
+.post--user .post-body { position: relative; }
+.post--badged { padding-right: 10px; padding-bottom: 12px; }
+.post-badge {
+  position: absolute;
+  right: -10px;
+  bottom: -9px;
+  display: inline-flex;
 }
 
 .post--tappable .post-body {

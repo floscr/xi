@@ -284,6 +284,24 @@
        (when (pos? more)
          [:span {:class ["avatar" "avatar--more"]} (str "+" more)])])))
 
+(defn- other-user
+  "The avatar data {:id :name :avatar} of `user` when it is somebody other than
+  this client's own user; nil for the viewer themselves and for unattributed
+  prompts (e.g. resumed from disk)."
+  [state user]
+  (when (and user (not= user (state/own-user state)))
+    (assoc (get-in state [:lobby :profiles user]) :id user)))
+
+(defn- last-of-run?
+  "True when history entry `p` is not followed by another prompt from the same
+  user: only the last bubble of a run carries its sender's avatar."
+  [entries p]
+  (let [entry (nth entries p)
+        nxt   (nth entries (inc p) nil)]
+    (not (and nxt
+              (= :user (:kind nxt))
+              (= (:user nxt) (:user entry))))))
+
 (def default-nav-icon
   "Icon for extension nav items that declare none (or one the icon set lacks),
    so every menu row keeps its label aligned with the built-in items."
@@ -817,14 +835,16 @@
 
 ;; ── History entry → post ─────────────────────────────────────────────────────
 
-(defn- post-sender
-  "Sender label for a :user entry from another user on a shared server:
-   nil for the viewer's own prompts (and unattributed ones, e.g. resumed from
-   disk), else the sender's user id. `:viewer` is this client's user id,
-   stamped on the entry by the timeline."
-  [{:keys [user viewer]}]
-  (when (and user (not= user viewer))
-    [:div {:class ["post-sender"]} user]))
+(defn- post-badge
+  "The sender's avatar on the bottom-right corner of a :user bubble from
+   another user on a shared server (their name is its tooltip). nil for the
+   viewer's own prompts, unattributed ones (e.g. resumed from disk) and all
+   but the last bubble of a run by one sender. `:sender` is the user's avatar
+   data, stamped on the entry by the timeline (see other-user and
+   last-of-run?). Goes inside the bubble, which is its positioning context."
+  [{:keys [sender]}]
+  (when sender
+    [:span {:class ["post-badge"]} (user-avatar sender)]))
 
 (defn- entry->post [dispatch! entry]
   (case (:kind entry)
@@ -869,8 +889,8 @@
         ;; /commit prompt): collapsed to a one-line user bubble that expands
         ;; on press, so the long generated text doesn't dominate the timeline.
         (:collapsed-label entry)
-        [:div {:class ["post" "post--user" "post--user-collapsed"]}
-         (post-sender entry)
+        [:div {:class ["post" "post--user" "post--user-collapsed"
+                       (when (:sender entry) "post--badged")]}
          [:details {:class ["post-body" "user-collapse"]}
           [:summary {:class ["user-collapse-summary"]}
            [:span {:class ["tool-call-toggle-icon"]}
@@ -878,10 +898,12 @@
            [:span {:class ["user-collapse-label"]} (:collapsed-label entry)]]
           (when (seq (:text entry))
             [:div {:class ["post-content" "user-collapse-content"]}
-             (render-md (:text entry))])]]
+             (render-md (:text entry))])
+          (post-badge entry)]]
 
         :else
-        [:div (cond-> {:class ["post" "post--user" (when idx "post--tappable")]}
+        [:div (cond-> {:class ["post" "post--user" (when idx "post--tappable")
+                               (when (:sender entry) "post--badged")]}
                 idx (assoc :data-history-index idx)
                 idx (assoc :on (block-context-menu-on
                                 (fn [^js e]
@@ -891,7 +913,6 @@
                                               :images (:images entry)
                                               :x (.-clientX e)
                                               :y (.-clientY e)})))))
-         (post-sender entry)
          [:div {:class ["post-body"]}
           (if-let [imgs (seq (:images entry))]
             [:div {:class ["user-images"]}
@@ -914,7 +935,8 @@
               (when (pos? n)
                 [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
           (when (seq (:text entry))
-            [:div {:class ["post-content"]} (render-md (:text entry))])]]))
+            [:div {:class ["post-content"]} (render-md (:text entry))])
+          (post-badge entry)]]))
 
     :text
     [:div {:class ["post" "post--assistant"]}
@@ -1324,8 +1346,9 @@
   [dispatch! room-id queued]
   [:div {:class ["queue-popover"]}
    (map-indexed
-    (fn [idx {:keys [text images]}]
+    (fn [idx {:keys [text images sender]}]
       [:div {:class ["queue-item"] :replicant/key idx}
+       (when sender (user-avatar sender))
        [:div {:class ["queue-item-text"]}
         (let [t (str/trim (or text ""))]
           (if (seq t)
@@ -3163,8 +3186,11 @@
                                       dispatch!
                                       (cond-> (assoc entry :history-index p
                                                      :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
-                                                     ;; other users' prompts get a sender label
-                                                     :viewer (state/own-user state))
+                                                     ;; other users' prompts get their avatar on
+                                                     ;; the last bubble of a run
+                                                     :sender (when (and (= :user (:kind entry))
+                                                                        (last-of-run? entries p))
+                                                               (other-user state (:user entry))))
                                         groupable?
                                         (assoc :grouped? true)
                                         collapsed?
@@ -3245,7 +3271,13 @@
              (skill-form-compose dispatch! (:web/skill-form state))
 
              :else
-             (compose-box dispatch! room busy? (get-in state [:web/compose-images dkey])
+             (compose-box dispatch!
+                          ;; queued prompts from other users show their avatar
+                          (update-in room [:agent :queued]
+                                     (fn [queued]
+                                       (mapv #(assoc % :sender (other-user state (:user %)))
+                                             queued)))
+                          busy? (get-in state [:web/compose-images dkey])
                           dkey (get-in state [:web/drafts dkey]) sid
                           (:web/cmd-selected state)
                           (get-in state [:lobby :agent-id])
