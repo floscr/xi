@@ -3850,6 +3850,51 @@
          :stroke "currentColor"
          :stroke-width "2"
          :stroke-linecap "round"
+(defn- switch-user!
+  "Act as user `id` from this browser: claim it (localStorage xi-user, sent in
+   :auth/hello) and reconnect. A device the server assigns a user to
+   (`xi clients user`) keeps that user. Unauthenticated by design; see
+   xi.server.ws."
+  [id]
+  (try (.setItem js/localStorage "xi-user" id) (catch :default _ nil))
+  (.reload js/location))
+
+(defn- user-switcher
+  "The sidebar footer's user avatar and the popover to switch user. Only when
+   the server has more than one user to be (config :users plus root)."
+  [state]
+  (let [ids (get-in state [:lobby :user-ids])]
+    (when (> (count ids) 1)
+      (let [me       (state/own-user state)
+            profiles (get-in state [:lobby :profiles])
+            person   (fn [id] (assoc (get profiles id) :id id))
+            label    (fn [p] (or (:name p) (:id p)))
+            close!   (fn [^js e]
+                       (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover)))]
+        (list
+         [:button (merge {:class ["sidebar-footer-btn" "sidebar-user-trigger"]
+                          :title (str "Signed in as " (label (person me)))
+                          :replicant/key "sidebar-user-trigger"}
+                         (popover/trigger-attrs "sidebar-user-menu"))
+          (user-avatar (person me))]
+         (popover/popover-content
+          {:id    "sidebar-user-menu"
+           :side  :top
+           :align :start
+           :class "sidebar-more-menu"
+           :attrs {:replicant/key "sidebar-user-menu"}}
+          (for [id ids
+                :let [p (person id)]]
+            [:button {:class         ["sidebar-more-item" "sidebar-user-item"]
+                      :replicant/key (str "user-" id)
+                      :on            {:click (fn [e]
+                                               (close! e)
+                                               (when (not= id me) (switch-user! id)))}}
+             (user-avatar p)
+             [:span (label p)]
+             (when (= id me)
+               (icon/icon {:icon-name :check :size :sm}))])))))))
+
          :stroke-linejoin "round"
          :aria-hidden "true"}
    [:circle {:cx "5" :cy "12" :r "1"}]
@@ -4072,6 +4117,7 @@
                      :on {:click (fn [_] (dispatch! {:type :appearance/open}))}}
             (icon/icon {:icon-name :settings :size :sm})]
            (when (seq items)
+           (user-switcher state)
              (sidebar-more-menu items))]])))))
 
 (defn- recent-sidebar
@@ -4088,7 +4134,8 @@
                 (:web/sidebar-collapsed state)
                 (:web/project-dirty state)
                 (:web/theme-mode state)
-                (:web/nav-items state)]
+                (:web/nav-items state)
+                (state/own-user state)]
         cached @recent-sidebar-cache]
     (if (and cached (= (:sig cached) sig))
       (:html cached)

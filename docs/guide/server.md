@@ -89,6 +89,14 @@ An assignment applies the next time the device connects and wins over
 whatever the device claims. A browser without one can claim an id itself by
 setting the `xi-user` key in its local storage; otherwise it is `root`.
 
+When the config declares users besides `root`, the web client's sidebar shows
+the current user's avatar left of the Claude usage. Clicking it lists every
+user; picking one sets `xi-user` and reloads the page as that user. A device
+with an assignment from `xi clients user` stays on that user. There is no
+login: anyone who can connect can pick any user, and the config is the only
+list of who exists. Checking who may be whom is left to
+[extensions](extensions.md).
+
 An id is lowercase letters, digits, `.`, `_` or `-`, up to 64 characters.
 Anything else counts as `root`.
 

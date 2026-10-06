@@ -64,6 +64,13 @@
   [host id ext-id]
   (get-in (user host id) [:ext ext-id]))
 
+(defn declared-ids
+  "The users the config declares plus root, sorted: who a client may switch to.
+   Rides on the lobby payload as :user-ids; only a list with more than one
+   entry gives the web client a user switcher."
+  []
+  (vec (sort (conj (set (keys (user-config/users))) util/root-user))))
+
 (defn public-profiles
   "The public profile ({:name :avatar}, see xi.avatar) of every declared user
    and of everyone attached to one of `rooms` (room summaries with :users),

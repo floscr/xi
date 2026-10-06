@@ -299,6 +299,7 @@
                           :sessions   sessions
                           :counts     counts
                           :profiles   (users/public-profiles rooms)
+                          :user-ids   (users/declared-ids)
                           :started-at server-started-at
                           :read       (session/load-read-state)}
                    model    (assoc :model model)

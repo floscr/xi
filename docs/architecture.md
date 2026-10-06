@@ -274,7 +274,10 @@ extension territory, keyed by the id.
   receives and mirrors at `[:lobby :profiles]`. `sidebar/room-people` turns a
   room's `:users` into avatar data for session cards (`:people`), empty while
   only one user is known so single-user servers look as before; the web
-  `avatar-stack` draws them on cards and in the chat topbar.
+  `avatar-stack` draws them on cards and in the chat topbar. The payload also
+  carries `:user-ids` (`users/declared-ids`: config users plus root); with more
+  than one, the sidebar footer shows the user switcher, which sets
+  localStorage `xi-user` and reloads (the claim `:auth/hello` sends).
 - **User records and extension state**: `[:users id]` holds `{:id :name
   :meta :ui :ext}` server-side (never on the wire). `:name`/`:meta` come from
   config.edn `:users` (`xi.user-config`, validated, read-only); `:ui` and `:ext`
