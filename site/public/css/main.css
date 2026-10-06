@@ -285,7 +285,7 @@ a.btn:hover { text-decoration: none; }
 /* ---------- docs ---------- */
 
 .docs-shell {
-  max-width: 1320px;
+  max-width: var(--wrap);
   margin: 0 auto;
   padding: 40px 24px 80px;
   display: grid;
