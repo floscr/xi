@@ -1,6 +1,7 @@
 (ns xisite.pages
   "Page renderers: home, docs index, docs page. Each returns a full html string."
   (:require [hiccup2.core :as h]
+            [ui.badge :as badge]
             [ui.button :as button]
             [ui.card :as card]
             [xisite.core :as core]
@@ -87,6 +88,17 @@ fns:
   async function retry<T>(fn: () => Promise<T>): Promise<T> [44-61]
 
 read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
+
+(def ^:private users-sample
+  ";; ~/.config/xi/config.edn
+:users {\"alice\" {:name \"Alice\"
+                :avatar \"https://example.com/a.png\"
+                :meta {:team \"ops\"}}
+        \"bob\"   {:name \"Bob\"}}")
+
+(def ^:private users-cli-sample
+  "xi join --user alice            # this terminal acts as alice
+xi clients user iPhone bob      # pin a paired phone to bob")
 
 (defn- code [lang source]
   (md/code-block-hiccup lang source))
@@ -259,6 +271,20 @@ read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
          ["Built in." "TypeScript, JavaScript, Python, Rust, Go, Clojure, Nix, Bash and CSS. Grammars ship with Xi; nothing to install."]])
        [:p [:a {:href "/docs/reading-code/"} "How the agent reads code →"]]]
       [:div.feature-code (code "text" outline-sample)]]]
+
+    [:section.feature {:id "users"}
+     [:div.wrap.split
+      [:div.feature-text
+       [:p.eyebrow "Multi-user " (badge/badge {:variant :secondary :size :sm} "Beta")]
+       [:h2 "First-class multi-user."]
+       [:p "Use Xi with your team. Share one server and every connection acts as a user, so each person keeps their own identity and settings across terminal, browser and phone."]
+       (feature-list
+        [["User settings." "Theme, collapsed groups, preferred model, and which chats are read or hidden are kept per user on the server, so they follow each person from device to device."]
+         ["Profiles are optional." "Declare a name and avatar in the config, or don't: an undeclared user is a circle with initials. Extensions can read profiles and keep data per user."]])
+       [:p [:a {:href "/docs/server/#users"} "Users and servers →"]]]
+      [:div.feature-code
+       (code "clojure" users-sample)
+       (code "sh" users-cli-sample)]]]
 
     [:section.feature.architecture {:id "architecture"}
      [:div.wrap

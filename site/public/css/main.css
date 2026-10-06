@@ -178,6 +178,23 @@ a.btn:hover { text-decoration: none; }
 .feature { padding: 88px 0; border-top: var(--border-0); }
 .feature.alt { background: var(--bg-1); }
 .feature-code, .feature-text { min-width: 0; }
+.feature-code > * + * { margin-top: 16px; }
+/* sticker: yellow pill with dark orange text, slight tilt */
+.eyebrow .badge {
+  margin-left: 8px;
+  vertical-align: 1px;
+  height: auto;
+  padding: 5px 14px;
+  background: #ffd84d;
+  color: oklch(0.45 0.15 50);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border: 0;
+  box-shadow: none;
+  transform: rotate(-6deg);
+}
 .feature h2 { font-size: clamp(1.8rem, 3.2vw, 2.5rem); margin-bottom: 18px; max-width: 18ch; }
 .feature-text > p { color: var(--fg-1); font-size: 1.05rem; margin-bottom: 22px; max-width: 520px; }
 .feature-text > p:last-child { margin-bottom: 0; font-weight: 500; }
