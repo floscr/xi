@@ -52,7 +52,9 @@
             [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
+            [xi.user-state :as user-state]
             [xi.user-state.store :as user-store]
+            [xi.users :as users]
             [xi.util :as util]
             [xi.wire :as wire]))
 
@@ -103,6 +105,15 @@
   "An event of an extension (`:ext.<id>/…`)."
   [ev]
   (some-> (:type ev) namespace (.startsWith "ext.")))
+
+(def ^:private server-only-types
+  "Event types only the server itself may dispatch. A client's events go
+   through the same dispatch (they are the wire protocol), so without this a
+   connected client could install a user's record or what an extension keeps
+   about them, rewrite a room's presence, or register itself under another
+   identity. They are dropped at the socket."
+  #{:user/loaded :user/ui-set :user/ext-set :room/presence
+    :client/connect :client/disconnect})
 
 (def ^:private pre-join-types
   "Event types a client may send before joining a room."
@@ -455,7 +466,7 @@
       ;; device of that user (the sender too: it converges on what the
       ;; server stored). Invalid writes were already dropped by the handler.
       :user-state/save
-      (fn [{:keys [get-state]} {:keys [user key value]}]
+      (fn [{:keys [get-state dispatch!]} {:keys [user key value]}]
         (when (user-store/set-key! user key value)
           (doseq [[cid client] (get-in (get-state) [:connection :clients])
                   :when (= user (:user client))]
@@ -479,6 +490,8 @@
                        join-token (assoc :join-token join-token)))
           (when summary
             (let [;; Clip long tool outputs before they cross the wire — every
+          ;; keep the user's record in app state current for extensions
+          (dispatch! {:type :user/ui-set :user user :key key :value value})
                   ;; client caps tool results at render, so a resumed transcript
                   ;; must not ship thousands of unshown lines.
                   messages (vec (session/truncate-message-results
@@ -741,7 +754,7 @@
                  ;; the user's UI state (theme, layout, …): follows them to
                  ;; every device (xi.user-state)
                  (send-event! cid {:type :user-state/state :user user
-                                   :state (user-store/load-state user)})
+                                   :state (user-state/client-view (user-store/load-state user))})
                  (send! cid (lobby-payload @state agent-id (:model server-opts)))))
              resolve-pending!
              (fn [code approved?]
@@ -750,6 +763,9 @@
                  (auth/remove-pending! code)
                  (when-let [^js ws (.get sockets (.-cid e))]
                    (set! (.. ws -data -pendingCode) nil)
+                 ;; the user's record (declared profile + stored state) goes
+                 ;; into app state, where extensions read it (xi.users)
+                 (dispatch! (users/loaded-event user))
                    (if approved?
                      (admit! ws)
                      (do (send-event! (.-cid e) {:type :auth/denied :reason "denied"})
@@ -1038,6 +1054,10 @@
                                   (dispatch! ev)
 
                                   room-id
+                                  (server-only-types (:type ev))
+                                  (send! cid (wire/encode {:type :error
+                                                           :text (str "Not a client event: " (:type ev))}))
+
                                   (dispatch! (assoc ev :room-id room-id))
 
                                   :else

@@ -91,16 +91,28 @@ setting the `xi-user` key in its local storage; otherwise it is `root`.
 An id is lowercase letters, digits, `.`, `_` or `-`, up to 64 characters.
 Anything else counts as `root`.
 
+To give people a profile, declare them in the config file:
+
+```clojure
+:users {"alice" {:name "Alice" :meta {:team "ops"}}
+        "bob"   {:name "Bob"}}
+```
+
+That is optional. A user nobody declared works the same; the declaration adds
+a display name and metadata that extensions can read. See
+[Configuration](configuration.md#users).
+
 A user's web client choices, such as the theme and which sidebar groups are
 collapsed, are kept per user on the server, so they follow the user from one
 device to the next. See [The web client](web-client.md#what-follows-you).
 Configuration is not per user: the config file, rules, MCP servers and
 extensions are the same for everyone.
 
-That is all the server does with users. Display names, roles and real
-authentication are left to [extensions](extensions.md): every event a
-client sends carries the sender's user id, and a room's member list is
-part of its state, so an extension can build on them.
+That is all the server does with users. Roles and real authentication are
+left to [extensions](extensions.md): every event a client sends carries the
+sender's user id, a room's member list is part of its state, and extensions can
+read a user's profile and keep their own data about each user. See
+[Users and their state](extensions-reference.md#users-and-their-state).
 
 ## Chats keep running
 

@@ -41,15 +41,45 @@
         {}))
     (catch :default _ {})))
 
+(defn- write! [user m]
+  (let [f   (file user)
+        tmp (str f ".tmp")]
+    (.mkdirSync fs (dir) #js {:recursive true})
+    (.writeFileSync fs tmp (str (pr-str m) "\n") #js {:mode MODE-0600})
+    (.renameSync fs tmp f)
+    true))
+
 (defn set-key!
   "Store `v` under `k` for `user`. True when written; false (nothing
    touched) when the key is unknown or the value invalid."
   [user k v]
   (when (user-state/valid? k v)
-    (let [f   (file user)
-          tmp (str f ".tmp")]
-      (.mkdirSync fs (dir) #js {:recursive true})
-      (.writeFileSync fs tmp (str (pr-str (assoc (load-state user) k v)) "\n")
-                      #js {:mode MODE-0600})
-      (.renameSync fs tmp f)
-      true)))
+    (write! user (assoc (load-state user) k v))))
+
+(defn ext-state
+  "What extension `ext-id` keeps about `user`, nil when nothing."
+  [user ext-id]
+  (get-in (load-state user) [:ext ext-id]))
+
+(defn set-ext!
+  "Keep `value` as extension `ext-id`'s state for `user` (nil forgets it).
+   True when written; false (nothing touched) when it is not plain data, is
+   too large, or the user already holds the maximum number of extensions."
+  [user ext-id value]
+  (when (keyword? ext-id)
+    (let [state (load-state user)
+          ext   (if (nil? value)
+                  (dissoc (:ext state) ext-id)
+                  (assoc (:ext state) ext-id value))]
+      (when (user-state/valid? :ext ext)
+        (write! user (assoc state :ext ext))))))
+
+(defn known-users
+  "The ids that have a state file, sorted."
+  []
+  (try
+    (->> (.readdirSync fs (dir))
+         (keep #(second (re-matches #"(.+)\.edn" %)))
+         sort
+         vec)
+    (catch :default _ [])))

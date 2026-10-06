@@ -81,6 +81,7 @@
             [xi.session.recent :as recent]
             [xi.subagent :as subagent]
             [xi.system-prompt :as system-prompt]
+            [xi.users :as users]
             [xi.util :as util]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
@@ -451,6 +452,9 @@ See docs/guide/command-line.md for the full reference.")
         _ (user-ext/start! app {:ask! (:ask! dialogs)})]
     (when jsonl-writer
       (js/process.on "exit" (fn [] ((:flush! jsonl-writer)))))
+    ;; this process' own user: their record (profile + stored state) is in
+    ;; state for extensions, as it is for a client's user on a server
+    (dispatch! (users/loaded-event (own-user opts)))
     (dispatch! {:type :room/create
                 :room-id "main"
                 :room {:model model
@@ -636,6 +640,7 @@ See docs/guide/command-line.md for the full reference.")
          ;; Exiting synchronously here would race — and lose — that write.
          :agent/turn-end (js/setTimeout finish! 0)
          nil)))
+    (dispatch! (users/loaded-event (own-user opts)))
     (dispatch! {:type :room/create
                 :room-id "main"
                 :room {:model model
@@ -1031,6 +1036,9 @@ See docs/guide/command-line.md for the full reference.")
                              :on-runaway (fn [msg] (log-crash! "dispatch-livelock" msg))
                              :ring ring})
         _ (user-ext/start! app {:ask! (:ask! dialogs)})
+        ;; the server's own user (--user / XI_USER): rooms it provisions itself
+        ;; (the HTTP API, prompts without a client) act for them
+        _ ((:dispatch! app) (users/loaded-event (own-user opts)))
         {actual-port :port} ((:start! server) app {:port port :host host})]
     (if headless?
       (do (js/console.error (str "[xi] Headless server on ws://" (str/join "," (ws/resolve-hosts host)) ":" actual-port))

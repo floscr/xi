@@ -32,6 +32,31 @@
     (is (not (user-state/valid? :recent-skills [(apply str (repeat 101 "x"))])))
     (is (not (user-state/valid? :preferred-model (apply str (repeat 201 "x")))))))
 
+(deftest plain-data-is-what-survives-the-state-file
+  (is (user-state/plain-data? nil))
+  (is (user-state/plain-data? {:n 1 :s "x" :k :v :b true :v [1 2 #{3}] :m {"a" nil} :l '(1 2)}))
+  (testing "anything the file could not read back is refused"
+    (is (not (user-state/plain-data? inc)))
+    (is (not (user-state/plain-data? 'a-symbol)))
+    (is (not (user-state/plain-data? {:f inc})))
+    (is (not (user-state/plain-data? [(js-obj)])))
+    (is (not (user-state/plain-data? (atom 1)))))
+  (testing "bounded depth and size"
+    (is (not (user-state/plain-data? (reduce (fn [v _] [v]) [] (range 20)))))
+    (is (not (user-state/plain-data? (vec (range 6000)))))))
+
+(deftest ext-state-is-server-only
+  (testing ":ext validates as a map of keyword → plain data under the size limit"
+    (is (user-state/valid? :ext {:notes {:n 1} :todo ["a"]}))
+    (is (not (user-state/valid? :ext {"notes" {:n 1}})))
+    (is (not (user-state/valid? :ext {:notes inc})))
+    (is (not (user-state/valid? :ext {:notes (apply str (repeat 70000 "x"))}))))
+  (testing "a client may never write it"
+    (is (not (user-state/client-valid? :ext {:notes {:n 1}})))
+    (is (user-state/client-valid? :theme "dark") "UI keys are still client-writable"))
+  (testing "and never sees it"
+    (is (= {:theme "dark"} (user-state/client-view {:theme "dark" :ext {:notes {:n 1}}})))))
+
 (deftest normalize-keeps-only-valid-entries
   (is (= {:theme "light"}
          (user-state/normalize {:theme "light" :theme-x 1 :appearance 5})))
@@ -58,6 +83,34 @@
   (is (= {:theme "dark" :appearance {:viewer-mode? false}} (store/load-state "alice")))
   (is (= {:theme "light"} (store/load-state "bob")) "users never see each other's state")
   (is (= {} (store/load-state "root")) "root is a user like any other"))
+
+(deftest store-keeps-extension-state-apart-from-ui-state
+  (store/set-key! "alice" :theme "dark")
+  (is (true? (store/set-ext! "alice" :notes {:n 1})))
+  (is (true? (store/set-ext! "alice" :todo ["a" "b"])))
+  (is (= {:n 1} (store/ext-state "alice" :notes)))
+  (is (= {:theme "dark" :ext {:notes {:n 1} :todo ["a" "b"]}} (store/load-state "alice")))
+  (testing "setting a UI key keeps the extension state, and the other way round"
+    (store/set-key! "alice" :theme "light")
+    (store/set-ext! "alice" :notes {:n 2})
+    (is (= {:theme "light" :ext {:notes {:n 2} :todo ["a" "b"]}} (store/load-state "alice"))))
+  (testing "nil forgets one extension's entry"
+    (store/set-ext! "alice" :notes nil)
+    (is (= {:todo ["a" "b"]} (:ext (store/load-state "alice")))))
+  (testing "another user has their own"
+    (is (nil? (store/ext-state "bob" :todo)))))
+
+(deftest store-refuses-extension-state-that-is-not-data
+  (is (not (store/set-ext! "alice" :notes inc)))
+  (is (not (store/set-ext! "alice" :notes (apply str (repeat 70000 "x")))))
+  (is (not (store/set-ext! "alice" "notes" {:n 1})) "the extension id is a keyword")
+  (is (not (.existsSync fs (store/file "alice"))) "nothing was written"))
+
+(deftest store-lists-the-users-it-has-state-for
+  (is (= [] (store/known-users)))
+  (store/set-key! "bob" :theme "dark")
+  (store/set-ext! "alice" :notes {:n 1})
+  (is (= ["alice" "bob"] (store/known-users))))
 
 (deftest store-rejects-invalid-writes
   (is (not (store/set-key! "alice" :theme "sepia")))

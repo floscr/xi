@@ -468,7 +468,7 @@
    user's state; the :user-state/save effect persists it and tells the
    user's other devices. Unknown keys and invalid values are dropped."
   [_st {:keys [user key value]}]
-  (when (user-state/valid? key value)
+  (when (user-state/client-valid? key value)
     {:effects [[:user-state/save {:user (util/user-id user) :key key :value value}]]}))
 
 (def handlers

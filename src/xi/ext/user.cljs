@@ -20,6 +20,7 @@
             [xi.api.mcp]
             [xi.api.promise :as api-promise]
             [xi.api.sh]
+            [xi.api.user]
             [xi.core.events]
             [xi.core.state]
             [xi.ext.mcp :as mcp-ext]
@@ -46,6 +47,7 @@
    'xi.api.http    (sci/copy-ns xi.api.http    (sci/create-ns 'xi.api.http))
    'xi.api.json    (sci/copy-ns xi.api.json    (sci/create-ns 'xi.api.json))
    'xi.api.mcp     (sci/copy-ns xi.api.mcp     (sci/create-ns 'xi.api.mcp))
+   'xi.api.user    (sci/copy-ns xi.api.user    (sci/create-ns 'xi.api.user))
    'xi.api.promise api-promise/sci-namespace
    'xi.core.state  (sci/copy-ns xi.core.state  (sci/create-ns 'xi.core.state))
    'xi.core.events (sci/copy-ns xi.core.events (sci/create-ns 'xi.core.events))})
@@ -380,6 +382,7 @@
   ([{:keys [dispatch! state]} {:keys [ask!]}]
    (let [h {:dispatch! dispatch! :get-state (fn [] @state)}]
      (reset! host h)
+     (api-core/set-app-host! h)
      (api-core/set-dialog-host! (when ask! (assoc h :ask! ask!))))
    (doseq [entry @loaded :when (:extension entry)]
      (mount! entry))))
@@ -390,6 +393,7 @@
   (doseq [entry @loaded :when (:id entry)]
     (unmount! entry))
   (reset! host nil)
+  (api-core/set-app-host! nil)
   (api-core/set-dialog-host! nil))
 
 (defn- register-all!

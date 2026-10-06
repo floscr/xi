@@ -124,8 +124,11 @@ new events.
 Events a connected client sent carry `:client-id` and `:user` (the sender's
 user id, stamped by `xi.server.ws`; see architecture.md "Users"). Use
 `state/event-user` to resolve the acting user for any event, including ones
-with no client (standalone input, server automation). Presence is
-`[:rooms rid :members]`, kept current by `:room/presence`.
+with no client (standalone input, server automation); it falls back to the
+only user in the event's room, then to the process' own user. Presence is
+`[:rooms rid :members]`, kept current by `:room/presence`. User records
+(`[:users id]`, with the data extensions keep per user) and `xi.api.user`:
+see architecture.md "Users".
 
 Extension handlers chain AFTER the base handler for each event type:
 

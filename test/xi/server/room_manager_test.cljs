@@ -393,6 +393,9 @@
   (let [st (two-user-state)]
     (is (= {"c1" {:user "alice" :platform "web"}} (get-in st [:rooms "r1" :members]))
         "the joiner is in the room's member list")
+    (testing "extension state is the server's: a client can never write it"
+      (is (empty? (:effects (handle st {:type :user-state/set :user "alice"
+                                        :key :ext :value {:notes {:role :admin}}})))))
     (let [{:keys [state effects]} (handle st {:type :room/attach :client-id "c2" :room-id "r1"})
           members {"c1" {:user "alice" :platform "web"} "c2" {:user "bob" :platform "tui"}}]
       (is (= members (get-in state [:rooms "r1" :members])))

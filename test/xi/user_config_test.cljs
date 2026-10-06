@@ -22,10 +22,11 @@
     (is (re-find #"unknown :projects key" (err {:type :xi/config :version 1 :projects {:dirs []}})))
     (is (re-find #":trusted-mcp-servers must be a vector" (err {:type :xi/config :version 1 :trusted-mcp-servers [:chrome]}))))
   (testing "a valid file parses; keys empty unless set"
-    (is (= {:extensions #{} :agents {} :projects projects/default-spec :trusted-mcp-servers #{}}
+    (is (= {:extensions #{} :agents {} :projects projects/default-spec :users {}
+            :trusted-mcp-servers #{}}
            (cfg/parse-config {:type :xi/config :version 1})))
     (is (= {:extensions #{"kb.cljs"} :agents {"root" {:tools ["fetch"]}}
-            :projects projects/default-spec :trusted-mcp-servers #{"chrome"}}
+            :projects projects/default-spec :users {} :trusted-mcp-servers #{"chrome"}}
            (cfg/parse-config {:type :xi/config :version 1
                               :extensions ["kb.cljs"]
                               :agents {"root" {:tools ["fetch"]}}
@@ -38,6 +39,45 @@
            (:projects (cfg/parse-config {:type :xi/config :version 1
                                          :projects {:browse [{:dir "~/Code" :depth 2}]
                                                     :repos ["~/.config/dotfiles"]}}))))))
+
+(deftest users-are-declared-in-the-config-file
+  (let [err   (fn [users] (:error (cfg/parse-config {:type :xi/config :version 1 :users users})))
+        users (fn [users] (:users (cfg/parse-config {:type :xi/config :version 1 :users users})))]
+    (testing "a declared user may have a name and read-only metadata"
+      (is (= {"alice" {:name "Alice" :meta {:team "ops" :admin? true}}
+              "bob"   {}
+              "root"  {:name "Operator"}}
+             (users {"alice" {:name "Alice" :meta {:team "ops" :admin? true}}
+                     "bob"   {}
+                     "root"  {:name "Operator"}}))))
+    (testing "malformed declarations reject the whole file"
+      (is (re-find #":users must be a map" (err ["alice"])))
+      (is (re-find #"ids must be lowercase" (err {"Alice" {}})) "ids are the normalized slug")
+      (is (re-find #"ids must be lowercase" (err {"has space" {}})))
+      (is (re-find #"ids must be lowercase" (err {:alice {}})))
+      (is (re-find #"must be a map like" (err {"alice" "Alice"})))
+      (is (re-find #"allows only :name and :meta" (err {"alice" {:role :admin}})))
+      (is (re-find #":name must be a non-blank string" (err {"alice" {:name ""}})))
+      (is (re-find #":name must be a non-blank string" (err {"alice" {:name :alice}})))
+      (is (re-find #":meta must be a map of plain data" (err {"alice" {:meta [1 2]}})))
+      (is (re-find #":meta must be a map of plain data" (err {"alice" {:meta {:f inc}}}))
+          "functions are not data"))))
+
+(deftest users-reader-returns-the-declared-users
+  (let [dir  (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-config-users-"))
+        file (node-path/join dir "config.edn")
+        prev (cfg/config-file)
+        with (fn [content f]
+               (when content (fs/writeFileSync file content))
+               (cfg/set-config-file! file)
+               (try (f) (finally (cfg/set-config-file! prev))))]
+    (with "{:type :xi/config :version 1 :users {\"alice\" {:name \"Alice\" :meta {:team \"ops\"}}}}"
+      #(is (= {"alice" {:name "Alice" :meta {:team "ops"}}} (cfg/users))))
+    (with "{:type :xi/config :version 1}"
+      #(is (= {} (cfg/users)) "no key, no users"))
+    (with "{:type :xi/config :version 1 :users {\"BAD\" {}}}"
+      #(is (= {} (cfg/users)) "an invalid file declares nobody (fails closed)"))
+    (fs/rmSync dir #js {:recursive true :force true})))
 
 (deftest extensions-are-enabled-by-the-config-file-only
   (let [dir  (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-config-ext-"))

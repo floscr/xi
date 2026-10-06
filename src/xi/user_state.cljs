@@ -4,7 +4,9 @@
    new chats start with, recently used commands and skills.
 
    This is state, not configuration. Configuration (config.edn, rules, MCP
-   servers, extensions) stays global to the server. User state used to live
+   servers, extensions) stays global to the server; the one exception is
+   `:users` in config.edn, which declares who exists (xi.user-config). User
+   state used to live
    only in the browser's localStorage, so it belonged to a device; now the
    server keeps it per user id (xi.user-state.store) and every client of that
    user mirrors it (xi.web.user-state), with localStorage as the instant
@@ -14,7 +16,40 @@
    their validators. The server validates every client write against it —
    unknown keys and bad values are dropped — so a client can never grow the
    store with arbitrary data. To add a piece of per-user state, add a key
-   here and bind it in xi.web.user-state.")
+   here and bind it in xi.web.user-state.
+
+   One key is not UI state: `:ext` holds what each extension keeps about the
+   user, {ext-id data}. Clients can neither read nor write it (it never goes
+   over the wire to them); extensions reach it through xi.api.user, which
+   proves who is calling, so an extension only ever touches its own entry.")
+
+(defn plain-data?
+  "Is `v` plain EDN data — nil, booleans, numbers, strings, keywords, and
+   vectors / lists / sets / maps of those — of bounded depth and size? What an
+   extension may keep as user state: it must survive a round trip through the
+   state file, so no functions, atoms, JS objects or symbols."
+  [v]
+  (let [n (volatile! 0)]
+    (letfn [(ok? [x depth]
+              (vswap! n inc)
+              (and (<= depth 12)
+                   (<= @n 5000)
+                   (cond
+                     (or (nil? x) (boolean? x) (number? x) (string? x) (keyword? x)) true
+                     (map? x)  (every? (fn [[k val]] (and (ok? k (inc depth)) (ok? val (inc depth)))) x)
+                     (or (sequential? x) (set? x)) (every? #(ok? % (inc depth)) x)
+                     :else false)))]
+      (ok? v 0))))
+
+(def max-ext-bytes
+  "Most state one extension may keep for one user, as printed EDN."
+  65536)
+
+(defn ext-value?
+  "May an extension keep `v` as a user's state? Plain data, bounded in size."
+  [v]
+  (and (plain-data? v)
+       (<= (count (pr-str v)) max-ext-bytes)))
 
 (defn- bounded-strings? [v max-count max-len]
   (and (sequential? v)
@@ -42,7 +77,14 @@
    :preferred-model  {:valid? (fn [v] (and (string? v) (<= 1 (count v) 200)))}
    ;; most-recent-first command / skill names for the quick bar and palette
    :recent-commands  {:valid? (fn [v] (bounded-strings? v 20 100))}
-   :recent-skills    {:valid? (fn [v] (bounded-strings? v 20 100))}})
+   :recent-skills    {:valid? (fn [v] (bounded-strings? v 20 100))}
+   ;; {ext-id data}: what each extension keeps about the user. Written only
+   ;; by the server (xi.users), never by a client.
+   :ext              {:client-writable? false
+                      :valid? (fn [m]
+                                (and (map? m)
+                                     (<= (count m) 32)
+                                     (every? (fn [[k v]] (and (keyword? k) (ext-value? v))) m)))}})
 
 (defn valid?
   "Is `k` a known user-state key and `v` an allowed value for it?"
@@ -50,8 +92,21 @@
   (boolean (when-let [{:keys [valid?]} (get registry k)]
              (valid? v))))
 
+(defn client-valid?
+  "`valid?`, and the key is one a client may write (not `:ext`)."
+  [k v]
+  (boolean (and (valid? k v)
+                (not (false? (get-in registry [k :client-writable?]))))))
+
 (defn normalize
   "Keep only the known keys of `m` whose values are valid. Tolerates nil and
    non-map input (a missing, hand-edited or corrupt state file)."
   [m]
   (into {} (filter (fn [[k v]] (valid? k v))) (when (map? m) m)))
+
+(defn client-view
+  "The part of a user's state a client may see: everything but `:ext`."
+  [m]
+  (into {}
+        (remove (fn [[k _]] (false? (get-in registry [k :client-writable?]))))
+        m))

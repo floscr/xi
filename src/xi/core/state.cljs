@@ -10,6 +10,7 @@
                  :user    \"root\"      ;; this process' own user id (xi.util/user-id)
                  :clients {client-id {:kind :tui|:web :visible? bool :user \"alice\"}}}
     :rooms      {room-id {:id :history :session :agent :members :ext :ui}}
+    :users      {user-id {:id :name :meta :ui :ext}}  ;; server-side, never on the wire
     :active-room room-id | nil
     :ext        {}}   ;; process-local extension state, keyed by extension id
 
@@ -27,7 +28,13 @@
    :user] and stamps :user on every event a client sends; a room's
    :members (room-scoped, mirrored) lists who is attached; :user history
    entries carry the sender. Roles and authentication are extension
-   territory, keyed by the id."
+   territory, keyed by the id.
+
+   `:users` is the record of each user the process has loaded (xi.users):
+   :name and :meta from the config file (read-only), :ui the user's UI state
+   (theme, …) and :ext what each extension keeps about them, {ext-id data},
+   persisted per user (xi.user-state.store). Extensions read it from state;
+   they change their entry only through xi.api.user."
   (:require [xi.util :as util]))
 
 (defn make-room
@@ -73,6 +80,8 @@
                   ;; resolve to their safe defaults (xi.ext.core/create-dialogs)
                   clientless? (assoc :clientless? true))
     :rooms       {}
+    ;; who the process knows: loaded at connect (xi.users), server-side only
+    :users       {}
     :active-room nil
     ;; process-local extension state, keyed by extension id (seeded from
     ;; the composed :process-ext-init); never crosses the wire
@@ -118,6 +127,26 @@
       (let [users (room-users (get-in state [:rooms (:room-id event)]))]
         (when (= 1 (count users)) (first users)))
       (own-user state)))
+
+(defn turn-user
+  "The user a room's current turn acts for: whoever sent the latest prompt,
+   else this process' own user. What a tool call or sub-agent in that turn
+   does it does on behalf of this user."
+  [state room-id]
+  (let [history (get-in state [:rooms room-id :history])]
+    (or (when (vector? history)
+          (some #(when (= :user (:kind %)) (:user %)) (rseq history)))
+        (own-user state))))
+
+(defn user-record
+  "The loaded record of user `user-id`: {:id :name :meta :ui :ext}, or nil."
+  [state user-id]
+  (get-in state [:users user-id]))
+
+(defn user-ext
+  "What extension `ext-id` keeps about user `user-id` (nil when nothing)."
+  [state user-id ext-id]
+  (get-in state [:users user-id :ext ext-id]))
 
 (defn room-ext
   "Room-scoped extension state for ext-id (mirrors to clients)."

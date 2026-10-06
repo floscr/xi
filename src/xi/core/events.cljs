@@ -52,6 +52,43 @@
               (some? visible?)
               (assoc-in [:connection :clients client-id :visible?] visible?))}))
 
+;; ── Users (server-side records) ───────────────────────────────────────────────────────
+
+(defn- blank-user [id]
+  {:id id :name nil :meta {} :ui {} :ext {}})
+
+(defn- user-loaded
+  "Install a user's record (xi.users/loaded-event): the config's profile
+   (:name, read-only :meta) with the stored state — :ui, and :ext, what each
+   extension keeps about them. Replaces any earlier copy, so a reconnect
+   picks up a config edit."
+  [st {:keys [user profile ui ext]}]
+  (when user
+    {:state (assoc-in st [:users user]
+                      {:id   user
+                       :name (:name profile)
+                       :meta (or (:meta profile) {})
+                       :ui   (or ui {})
+                       :ext  (or ext {})})}))
+
+(defn- user-ui-set
+  "One piece of a user's UI state was saved (xi.server.ws :user-state/save)."
+  [st {:keys [user key value]}]
+  (when (and user key)
+    {:state (assoc-in (update-in st [:users user] #(or % (blank-user user)))
+                      [:users user :ui key] value)}))
+
+(defn- user-ext-set
+  "Extension `ext`'s state for `user` was saved (xi.users/set-ext-state!).
+   nil forgets it. This is the only way the :ext slice changes, and only
+   xi.api.user / xi.users send it, so an extension handler cannot."
+  [st {:keys [user ext value]}]
+  (when (and user (keyword? ext))
+    (let [st (update-in st [:users user] #(or % (blank-user user)))]
+      {:state (if (nil? value)
+                (update-in st [:users user :ext] dissoc ext)
+                (assoc-in st [:users user :ext ext] value))})))
+
 ;; ── Presence (per room, mirrored) ────────────────────────────────────────────
 
 (defn- room-presence
@@ -126,6 +163,9 @@
    :client/disconnect client-disconnect
    :client/update     client-update
    :room/presence     room-presence
+   :user/loaded       user-loaded
+   :user/ui-set       user-ui-set
+   :user/ext-set      user-ext-set
    :history/append    history-append
    :agent/busy        agent-busy
    :agent/set-model   agent-set-model

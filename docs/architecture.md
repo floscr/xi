@@ -266,6 +266,24 @@ extension territory, keyed by the id.
 - **Rendering**: the TUI and web label a prompt with its sender when it is
   not the viewer's own user; the web chat topbar lists the other users
   attached to the room.
+- **User records and extension state**: `[:users id]` holds `{:id :name
+  :meta :ui :ext}` server-side (never on the wire). `:name`/`:meta` come from
+  config.edn `:users` (`xi.user-config`, validated, read-only); `:ui` and `:ext`
+  are the persisted per-user state. `xi.users` loads the record at connect
+  (`:user/loaded`, dispatched by `admit!` and at startup for the process' own
+  user) and is the only writer of `:ext`: `set-ext-state!` validates (plain
+  data, `xi.user-state/ext-value?`, 64 KB), persists via the store, then
+  dispatches `:user/ext-set`. Extensions reach it through `xi.api.user`, which
+  resolves the caller from its token, so an extension only touches its own
+  entry; `xi.ext.user.guard` already drops handler changes outside the
+  extension's own slices, which covers `:users`. `xi.server.ws` rejects the
+  server-only events (`:user/*`, `:room/presence`, `:client/*`) when a client
+  sends them, `:ext` is excluded from `xi.user-state/client-view` (what
+  `:user-state/state` carries) and from `client-valid?` (what `:user-state/set`
+  accepts). The acting user reaches tools as `:user` in the tool ctx
+  (`state/turn-user`: the latest prompt's sender). `state/event-user` resolves
+  an event's user: the stamp, else the sole user in its room, else the process'
+  own user (slash commands that submit prompts run server-side with no stamp).
 - **UI state**: the web client's browser-only state (theme, appearance,
   collapsed groups, preferred model, recent commands/skills) is per user.
   `xi.user-state` is the registry (known keys + validators, browser-safe);

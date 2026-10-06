@@ -501,6 +501,9 @@
                        :get-state get-state
                        :room-id   room-id
                        :cwd       cwd
+                       ;; who the turn acts for: the sender of the latest
+                       ;; prompt. xi.api.user reads it as "the current user".
+                       :user      (state/turn-user (get-state) room-id)
                        ;; Raise a confirm dialog and resolve to the answer.
                        ;; The dialog waits in the room for an answer, also
                        ;; while no client is connected; only prompt mode

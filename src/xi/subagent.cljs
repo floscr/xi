@@ -12,6 +12,7 @@
    room-id, so a sub-agent's tools (git, canvas_review_*, confirmations) act in
    the parent room; only its conversation is separate."
   (:require [xi.agent :as agent]
+            [xi.core.state :as state]
             [xi.session :as session]))
 
 ;; sub-id -> {:abort! fn :room-id str}. Process-local; never crosses the wire.
@@ -102,6 +103,8 @@
                       :get-state get-state
                       :room-id   room-id
                       :cwd       cwd
+                      ;; acts for whoever's prompt the parent turn answers
+                      :user      (state/turn-user (get-state) room-id)
                       :sub-id    sub-id
                       ;; Auto-deny (never open a dialog): a background sub-agent
                       ;; has no interactive operator in its own turn, so a

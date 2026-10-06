@@ -63,6 +63,59 @@
     (testing "unknown rooms are no-ops"
       (is (= st (apply-events st {:type :room/presence :room-id "ghost" :members {"c" {:user "x"}}}))))))
 
+(deftest user-records
+  (let [loaded {:type :user/loaded :user "alice"
+                :profile {:name "Alice" :meta {:team "ops"}}
+                :ui {:theme "dark"} :ext {:notes {:n 1}}}
+        st     (apply-events (state/initial-state {:mode :server}) loaded)]
+    (testing "loading installs the declared profile with the stored state"
+      (is (= {:id "alice" :name "Alice" :meta {:team "ops"} :ui {:theme "dark"} :ext {:notes {:n 1}}}
+             (state/user-record st "alice")))
+      (is (= {:n 1} (state/user-ext st "alice" :notes)))
+      (is (nil? (state/user-ext st "alice" :other)))
+      (is (nil? (state/user-record st "bob"))))
+    (testing "an undeclared user loads with no name and no metadata"
+      (let [st (apply-events (state/initial-state) {:type :user/loaded :user "carol"})]
+        (is (= {:id "carol" :name nil :meta {} :ui {} :ext {}} (state/user-record st "carol")))))
+    (testing "a reconnect replaces the record, so a config edit shows up"
+      (let [st' (apply-events st (assoc-in loaded [:profile :name] "Alice B."))]
+        (is (= "Alice B." (:name (state/user-record st' "alice"))))))
+    (testing "saved UI state and extension state update the record"
+      (let [st' (apply-events st
+                              {:type :user/ui-set :user "alice" :key :theme :value "light"}
+                              {:type :user/ext-set :user "alice" :ext :notes :value {:n 2}}
+                              {:type :user/ext-set :user "alice" :ext :todo :value ["a"]})]
+        (is (= "light" (get-in st' [:users "alice" :ui :theme])))
+        (is (= {:notes {:n 2} :todo ["a"]} (get-in st' [:users "alice" :ext])))
+        (is (= "Alice" (:name (state/user-record st' "alice"))) "the profile is untouched"))
+      (testing "nil forgets an extension's entry"
+        (is (= {} (get-in (apply-events st {:type :user/ext-set :user "alice" :ext :notes :value nil})
+                          [:users "alice" :ext])))))
+    (testing "a write for a user not loaded yet starts a record"
+      (let [st' (apply-events (state/initial-state) {:type :user/ext-set :user "dan" :ext :notes :value 1})]
+        (is (= {:notes 1} (get-in st' [:users "dan" :ext])))))
+    (testing "events without a user or extension id change nothing"
+      (is (= st (apply-events st {:type :user/ext-set :ext :notes :value 1})))
+      (is (= st (apply-events st {:type :user/ext-set :user "alice" :ext "notes" :value 1}))))))
+
+(deftest turn-user-is-the-latest-prompts-sender
+  (let [st (apply-events (state/initial-state {:user "carol"})
+                         {:type :room/create :room-id "a"}
+                         {:type :history/append :room-id "a" :entry {:kind :user :text "1" :user "alice"}}
+                         {:type :history/append :room-id "a" :entry {:kind :text :text "ok"}}
+                         {:type :history/append :room-id "a" :entry {:kind :user :text "2" :user "bob"}}
+                         {:type :history/append :room-id "a" :entry {:kind :text :text "ok"}})]
+    (is (= "bob" (state/turn-user st "a")) "the latest prompt, not the first")
+    (testing "no prompt yet, or an unattributed one → the process' own user"
+      (is (= "carol" (state/turn-user (apply-events (state/initial-state {:user "carol"})
+                                                    {:type :room/create :room-id "b"})
+                                      "b")))
+      (is (= "carol" (state/turn-user (apply-events (state/initial-state {:user "carol"})
+                                                    {:type :room/create :room-id "b"}
+                                                    {:type :history/append :room-id "b"
+                                                     :entry {:kind :user :text "old"}})
+                                      "b"))))))
+
 (deftest own-and-event-user
   (testing "every process has a user; root unless told otherwise"
     (is (= "root" (state/own-user (state/initial-state))))

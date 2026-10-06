@@ -7,7 +7,16 @@
       :extensions [\"kb.cljs\" \"web.cljs\"]      ; user extensions xi may load
       :agents     {\"root\" {…}}               ; agent profiles (xi.agent-profile)
       :projects   {:browse […] :repos […]}      ; project dirs (xi.projects)
+      :users      {\"alice\" {:name \"Alice\" :meta {:team \"ops\"}}} ; who exists (see below)
       :trusted-mcp-servers [\"chrome\" \"shop/browser\"]} ; MCP servers that never ask (xi.mcp.trust)
+
+   `:users` declares users by id (xi.util/user-id slugs), each with an optional
+   display `:name` and read-only `:meta` (plain data an extension can read, e.g.
+   a team or role). `root` always exists and may be declared to give it a name.
+   An id nobody declared still works: a user is whoever a connection says it is
+   (xi.server.ws), the declaration only adds a profile to it. What a user *does*
+   — their UI state and what extensions keep about them — is state, not config,
+   and lives in ~/.config/xi/state/users/ (xi.user-state.store).
 
    `:extensions` names the files under ~/.config/xi/extensions/ that are
    evaluated at all — the only place that can enable one. An agent profile's
@@ -20,6 +29,8 @@
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [xi.projects :as projects]
+            [xi.user-state :as user-state]
+            [xi.util :as util]
             ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
@@ -50,7 +61,39 @@
   1)
 
 (def ^:private config-file-keys
-  #{:type :version :extensions :agents :projects :trusted-mcp-servers})
+  #{:type :version :extensions :agents :projects :users :trusted-mcp-servers})
+
+(defn- users-error
+  "→ nil when `users` is a well-formed `:users` map, else why not."
+  [users]
+  (cond
+    (not (map? users))
+    ":users must be a map of user id → {:name … :meta …}"
+
+    :else
+    (some (fn [[id profile]]
+            (cond
+              (not (and (string? id) (= id (util/user-id id))))
+              (str ":users ids must be lowercase letters, digits, '.', '_' or '-' (up to 64), not "
+                   (pr-str id))
+
+              (not (map? profile))
+              (str ":users " id " must be a map like {:name \"Name\" :meta {…}}")
+
+              (seq (remove #{:name :meta} (keys profile)))
+              (str ":users " id " allows only :name and :meta")
+
+              (and (contains? profile :name)
+                   (not (and (string? (:name profile))
+                             (<= 1 (count (str/trim (:name profile))) 100))))
+              (str ":users " id " :name must be a non-blank string of up to 100 characters")
+
+              (and (contains? profile :meta)
+                   (not (and (map? (:meta profile))
+                             (user-state/ext-value? (:meta profile)))))
+              (str ":users " id " :meta must be a map of plain data (strings, numbers, "
+                   "keywords, vectors, maps) under 64 KB")))
+          users)))
 
 (defn parse-config
   "Validate parsed config-file `data` (nil = unparseable) →
@@ -61,7 +104,7 @@
   [data]
   (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
                      " :extensions [...] :agents {...} :projects {...}"
-                     " :trusted-mcp-servers [...]}")
+                     " :users {...} :trusted-mcp-servers [...]}")
         unknown (when (map? data) (remove config-file-keys (keys data)))
         spec    (when (map? data) (projects/parse-spec (:projects data)))]
     (cond
@@ -100,6 +143,9 @@
                 (every? string? (:trusted-mcp-servers data))))
       {:error ":trusted-mcp-servers must be a vector of MCP server ids"}
 
+      (users-error (:users data {}))
+      {:error (users-error (:users data {}))}
+
       (:error spec)
       {:error (:error spec)}
 
@@ -107,6 +153,7 @@
       {:extensions          (set (:extensions data))
        :agents              (or (:agents data) {})
        :projects            spec
+       :users               (or (:users data) {})
        :trusted-mcp-servers (set (:trusted-mcp-servers data))})))
 
 (defn read-config
@@ -119,7 +166,7 @@
        (try (edn/read-string (fs/readFileSync file "utf8"))
             (catch :default _ nil)))
       {:extensions #{} :agents {} :projects projects/default-spec
-       :trusted-mcp-servers #{}})))
+       :users {} :trusted-mcp-servers #{}})))
 
 (defn projects-spec
   "The validated `:projects` spec (`xi.projects/parse-spec`): project dirs and
@@ -142,6 +189,17 @@
       (js/console.error (str "xi: " (config-file) " is invalid — " e
                              " — no user extensions enabled")))
     (or (:extensions cfg) #{})))
+
+(defn users
+  "The users the config file declares, {id {:name :meta}} — {} when the file
+   is missing, invalid (reported on stderr) or doesn't set the key. `root` is
+   always a user whether declared or not (see xi.users)."
+  []
+  (let [cfg (read-config)]
+    (when-let [e (:error cfg)]
+      (js/console.error (str "xi: " (config-file) " is invalid — " e
+                             " — no users declared")))
+    (or (:users cfg) {})))
 
 (defn trusted-mcp-servers
   "The MCP server ids the config file trusts outright (`:trusted-mcp-servers`:

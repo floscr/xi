@@ -9,6 +9,9 @@
  :projects {:browse ["~/code"]
             :repos  ["~/.config/dotfiles"]}
 
+ :users {"alice" {:name "Alice" :meta {:team "ops"}}
+         "bob"   {:name "Bob"}}
+
  :trusted-mcp-servers ["browser"]
 
  :agents {"assistant" {:system-prompt "You are a concise assistant."
@@ -23,6 +26,7 @@ an old file wrong.
 | --- | --- | --- |
 | `:extensions` | The extension files in `~/.config/xi/extensions/` that Xi may load. A file not listed here is never read. | [Extensions](extensions.md) |
 | `:projects` | Where to look for projects, and per-project prompts and snippets. | [Projects](projects.md), keys below |
+| `:users` | The people who use this server: an id, an optional display `:name` and read-only `:meta` that [extensions](extensions-reference.md#users-and-their-state) can read. | [Users](server.md#users), keys below |
 | `:trusted-mcp-servers` | MCP servers whose tools run without asking: `mcp.edn` ids, or an extension's `"<extension>/<name>"`. Trusted as they are, with no code fingerprint. | [MCP servers](mcp-servers.md#trusting-a-server) |
 | `:agents` | Profiles for `xi --agent <id>`: a fixed tool set and prompt. | [Agent profiles](agents.md), keys below |
 
@@ -38,6 +42,24 @@ picks up a changed `:extensions` list.
 | `:repos` | `[]` | Directories listed as they are, repository or not. |
 | `:remember-limit` | `50` | How many repositories you worked in to list on their own; `0` turns remembering off. Kept in `~/.config/xi/state/projects.edn`, never in the config. |
 | `:settings` | `{}` | Per-directory extras, keyed by the exact project path: `:agents-prompt` (a file or the text, added after the project's `AGENTS.md`), `:agents-replace` (`true` replaces the project root's own `AGENTS.md`), `:snippets` (`[{:label :text}]` for the web client's snippets menu). |
+
+### `:users`
+
+A map from user id to a profile. Declaring a user is optional: an id nobody
+declared still works, because a user is whoever a connection says it is. The
+declaration only adds a profile to it. `root` always exists and may be
+declared to give it a name.
+
+| Key | Default | Does |
+| --- | --- | --- |
+| `:name` | none | A display name, up to 100 characters. |
+| `:meta` | `{}` | Plain data about the user, such as a team or a role. Read-only: extensions can read it, nothing can change it but you editing this file. Plain data means strings, numbers, booleans, keywords, and vectors, sets and maps of those, under 64 KB. |
+
+Ids are lowercase letters, digits, `.`, `_` or `-`, up to 64 characters. The
+profile is read when a user connects, so an edit shows for their next
+connection. What a user *does* is not configuration: their web client choices
+and what extensions keep about them are stored apart, in
+`~/.config/xi/state/users/<id>.edn`.
 
 ### `:agents`
 
@@ -80,7 +102,7 @@ drop one setting while keeping the rest.
 | `~/.config/xi/client-key`, `clients.edn` | Your own device key and the paired devices, each with an optional user assignment. See [Server mode](server.md#pairing). |
 | `~/.config/xi/tls/` | Certificate and key for [HTTPS](https.md). |
 | `~/.config/xi/sessions/`, `personal-agent/` | Saved chats. See [Sessions](sessions.md). |
-| `~/.config/xi/state/users/<user>.edn` | One user's web client choices: theme, appearance, collapsed groups, preferred model, recent commands and skills. Written by Xi; see [The web client](web-client.md#what-follows-you). |
+| `~/.config/xi/state/users/<user>.edn` | One user's web client choices (theme, appearance, collapsed groups, preferred model, recent commands and skills) and the data extensions keep about them. Written by Xi; see [The web client](web-client.md#what-follows-you) and [Users and their state](extensions-reference.md#users-and-their-state). |
 
 Everything under `~/.config/xi` is off-limits to the agent: no tool can read
 the keys in it or write to it. The exception is the sessions directory, which

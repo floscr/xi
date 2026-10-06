@@ -106,6 +106,21 @@
 
 (defn dialog-host [] @dialogs)
 
+;; {:dispatch! :get-state} of the running app, WITHOUT the guard on the
+;; extension's own dispatch: what xi.api.user writes user state through (its
+;; events are core ones an extension may not dispatch itself). Set by the
+;; loader (xi.ext.user/start!); nil before that. Kept here, not in
+;; xi.api.user, for the reason the dialog host is: the sandbox gets every
+;; public var of an api namespace and must not be able to swap it.
+(defonce ^:private app-host (atom nil))
+
+(defn set-app-host!
+  "Install (or with nil, remove) the unguarded app host."
+  [h]
+  (reset! app-host h))
+
+(defn get-app-host [] @app-host)
+
 (defn base-cwd
   "Where an extension's relative paths resolve: the room cwd, else its data dir."
   [{:keys [cwd] :as ctx}]

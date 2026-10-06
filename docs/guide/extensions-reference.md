@@ -65,15 +65,71 @@ Events of Xi's that are useful to react to:
 | `:room/presence` | `:room-id` `:members` | Who is in a room changed; `:members` is client id to `{:user :platform}` |
 | `:route/navigate` | `:page` … | The web client changed page (web half taps) |
 
-### Users
+### Users and their state
 
 On a shared server every event a client sends carries `:user`, the sender's
-user id (`root` by default; see [Users](server.md#users)). In state,
+user id (`root` by default; see [Users](server.md#users)). A command's handler
+is given it too, as `:user` next to `:room-id` and `:args`. In state,
 `[:connection :user]` is the id this process acts as, a room's `:members`
 lists who is attached, and a `:user` history entry carries its sender under
-`:user`. Xi only tells users apart. Roles, names and authentication are
-yours to add: keep them in your extension's state keyed by the id, and read
-`:user` off the events you handle.
+`:user`. Xi only tells users apart; roles and authentication are yours to add.
+
+Each user the server has seen has a record at `[:users <id>]`:
+
+```clojure
+{:id "alice"
+ :name "Alice"                 ; from config.edn :users, or nil
+ :meta {:team "ops"}           ; from config.edn :users, read-only
+ :ui   {:theme "dark" …}       ; their web client choices
+ :ext  {:my-ext {…}}}          ; what each extension keeps about them
+```
+
+Read it with plain state access: `(xi.core.state/user-record st "alice")`,
+`(xi.core.state/user-ext st "alice" :my-ext)`. The record is server-side only
+and never goes to a browser or terminal. A handler cannot change it: like the
+rest of the state outside the extension's own slices, a change to `:users` is
+dropped. The data an extension keeps is changed through `xi.api.user`.
+
+### `xi.api.user`
+
+Who is acting, and a place for the extension to keep data per user. These
+functions are synchronous and are not rules requests: the state is the
+extension's own, like its data directory.
+
+| Function | Does |
+| --- | --- |
+| `(current ctx)` | The user id this call acts for. In a tool call, the user whose prompt started the turn; elsewhere the user the server itself acts as. |
+| `(info ctx)` `(info ctx id)` | `{:id :name :meta :ui}`, read-only. Holds nothing of any extension's data. |
+| `(users ctx)` | `[{:id :name} …]`: every user the server knows. |
+| `(state ctx)` `(state ctx id)` | What this extension keeps for the user, nil when nothing. |
+| `(set-state! ctx value)` `(set-state! ctx id value)` | Keep `value` for the user and persist it. nil forgets it. Returns `value`. |
+
+```clojure
+(ns visits (:require [xi.api.user :as user]))
+
+(def extension
+  {:id :visits
+   :tool-registry
+   {"visit" (fn [_ ctx]
+              (let [n (inc (or (:n (user/state ctx)) 0))]
+                (user/set-state! ctx {:n n})
+                {:content [{:type "text"
+                            :text (str (:name (user/info ctx)) ": visit " n)}]}))}})
+```
+
+What the extension can touch is fixed by who it is. It reads and writes only
+its own entry; another extension's data is not reachable, and `:name`, `:meta`
+and `:ui` cannot be changed from here. A value has to be plain data (nil,
+booleans, numbers, strings, keywords, and vectors, lists, sets and maps of
+those) under 64 KB printed, or the call throws and nothing is written. Passing
+an `id` that is not a plain user id throws too.
+
+A handler or an effect has no `ctx` with a user in it. Take the id from the
+event that started the work, a command's `:user` or a client event's `:user`,
+and pass it explicitly: `(user/state ctx (:user payload))`.
+
+Writes go to `~/.config/xi/state/users/<id>.edn` and update `[:users <id> :ext]`
+at once, so they survive a restart and handlers see them straight away.
 
 ## `xi.api.*`
 
@@ -156,7 +212,8 @@ to the agent or to another extension.
 
 Available: `clojure.core`, `clojure.string`, `clojure.set`, `clojure.walk`,
 `clojure.edn`, `xi.core.state` (pure helpers: `active-room`, `get-room`,
-`room-ext`, `mode`, `port`), `xi.core.events`, and `xi.api.*`.
+`room-ext`, `mode`, `port`, `own-user`, `user-record`, `user-ext`),
+`xi.core.events`, and `xi.api.*`.
 
 Not available: `js/` interop, `node:*` and npm requires, `aget`, `eval`,
 `resolve`, class constructors, environment variables, `.then`.
