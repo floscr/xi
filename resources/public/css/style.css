@@ -1016,8 +1016,10 @@ body {
 .error-card {
   width: 100%;
   padding: var(--size-3);
-  background: color-mix(in srgb, var(--danger) 6%, var(--bg-1));
-  border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent);
+  /* Tints are the danger hue itself at low alpha (oklch), not danger mixed
+     into the grey surface: a mix reads as muddy grey-pink, alpha stays red. */
+  background: oklch(from var(--danger) l c h / 0.08);
+  border: 1px solid oklch(from var(--danger) l c h / 0.28);
   border-radius: var(--radius-lg);
 }
 .error-card-head { display: flex; gap: var(--size-3); align-items: flex-start; }
@@ -1026,16 +1028,22 @@ body {
   width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
   color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  background: oklch(from var(--danger) l c h / 0.16);
   border-radius: var(--radius-md);
 }
 .error-card-text { min-width: 0; }
-.error-card-title { font-weight: 600; color: var(--fg-0); }
-.error-card-sub { color: var(--fg-2); font-size: var(--font-sm); margin-top: 2px; }
+/* Text is the theme's foreground nudged toward the danger hue (oklch), so it
+   stays legible in light and dark but never reads as grey on the red card. */
+.error-card {
+  --error-fg-0: color-mix(in oklch, var(--danger) 18%, var(--fg-0));
+  --error-fg-2: color-mix(in oklch, var(--danger) 55%, var(--fg-1));
+}
+.error-card-title { font-weight: 600; color: var(--error-fg-0); }
+.error-card-sub { color: var(--error-fg-2); font-size: var(--font-sm); margin-top: 2px; }
 .error-card-windows { margin-top: var(--size-3); }
 .error-card-meter {
   height: 6px;
-  background: var(--bg-2);
+  background: oklch(from var(--danger) l c h / 0.16);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -1048,15 +1056,25 @@ body {
   display: flex; justify-content: space-between;
   margin-top: var(--size-1);
   font-size: var(--font-xs);
-  color: var(--fg-2);
+  color: var(--error-fg-2);
 }
-.error-card-meter-labels b { color: var(--fg-0); font-weight: 500; }
+.error-card-meter-labels b { color: var(--error-fg-0); font-weight: 600; }
+.error-card-actions { margin-top: var(--size-3); }
+/* Continue: solid danger-hue button instead of the purple primary */
+.error-card .error-card-continue {
+  background: var(--danger);
+  border-color: transparent;
+  color: oklch(from var(--danger) 0.98 0.01 h);
+}
+.error-card .error-card-continue:hover {
+  background: oklch(from var(--danger) calc(l - 0.06) c h);
+}
 .error-card-details-toggle {
   display: flex; align-items: center; gap: var(--size-1);
   margin-top: var(--size-3);
   cursor: pointer;
   list-style: none;
-  color: var(--fg-2);
+  color: var(--error-fg-2);
   font-size: var(--font-xs);
 }
 .error-card-details-toggle::-webkit-details-marker { display: none; }
@@ -1074,6 +1092,8 @@ body {
   white-space: pre-wrap;
   word-break: break-all;
 }
+/* highlighted EDN brings its own token colours */
+.error-card-raw code { color: var(--hl-var); }
 
 /* ---- Syntax highlighting ---- */
 :root {

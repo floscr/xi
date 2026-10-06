@@ -6,7 +6,15 @@
    falls back to the raw message.
 
    Shape: {:kind :title :subtitle :resets-at :windows [{:label :pct}] :raw}
-   :resets-at is epoch seconds; :raw is the original error as a string.")
+   :resets-at is epoch seconds; :raw is the original error as a string —
+   pretty-printed EDN (with :edn? true) when the error was a bare map."
+  (:require [clojure.string :as str]
+            #?(:clj [clojure.pprint :as pprint]
+               :cljs [cljs.pprint :as pprint])))
+
+(defn- pretty-edn [x]
+  (str/trim (with-out-str (binding [pprint/*print-right-margin* 60]
+                            (pprint/pprint x)))))
 
 (def ^:private window-labels
   {"five_hour" "5-hour window"
@@ -64,11 +72,15 @@
   "Friendly description of `error` (a map with :type/:message, or anything
    `pr-str`able), or nil when it isn't a recognised failure."
   [error]
-  (let [raw (or (:message error) (pr-str error))
+  (let [msg (:message error)
+        raw (or msg (pr-str error))
         d   (if (= "rate_limit" (:type error))
               (rate-limit error)
               (from-message (str raw)))]
-    (when d (assoc d :raw (str raw)))))
+    (when d
+      (if (and (nil? msg) (map? error))
+        (assoc d :raw (pretty-edn error) :edn? true)
+        (assoc d :raw (str raw))))))
 
 (defn minutes-until
   "Whole minutes (rounded up) from `now-ms` until `resets-at` (epoch seconds);

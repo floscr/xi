@@ -1,5 +1,7 @@
 (ns xi.error-info-test
   (:require [cljs.test :refer [deftest is testing]]
+            [cljs.reader]
+            [clojure.string]
             [xi.error-info :as ei]))
 
 (def rate-limit-error
@@ -16,7 +18,12 @@
     (is (= 1791032400 (:resets-at d)))
     (is (= [{:label "5-hour window" :pct 100} {:label "Weekly" :pct 27}]
            (:windows d)))
-    (is (string? (:raw d))))
+    (is (string? (:raw d)))
+    (is (:edn? d)))
+  (testing "raw is pretty-printed EDN that round-trips, over several lines"
+    (let [raw (:raw (ei/describe rate-limit-error))]
+      (is (< 3 (count (clojure.string/split-lines raw))))
+      (is (= rate-limit-error (cljs.reader/read-string raw)))))
   (testing "weekly window"
     (is (= "Weekly limit reached"
            (:title (ei/describe (assoc-in rate-limit-error [:info :rateLimitType] "seven_day"))))))

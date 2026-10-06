@@ -803,8 +803,9 @@
 (defn- error-card
   "Plain-language card for a recognised agent error (`xi.error-info`): what
    happened, when it is back, the usage windows, and the raw error behind a
-   details toggle."
-  [{:keys [kind title subtitle resets-at windows raw]}]
+   details toggle. A rate-limit card carries a Continue button that re-prompts
+   the chat (`room-id` is stamped on the entry by the timeline)."
+  [dispatch! {:keys [kind title subtitle resets-at windows raw edn? room-id]}]
   (let [mins (error-info/minutes-until resets-at (.now js/Date))]
     [:div {:class ["post" "post--assistant"]}
      [:div {:class ["error-card" (str "error-card--" (name kind))]}
@@ -826,12 +827,21 @@
          [:div {:class ["error-card-meter-labels"]}
           (for [{:keys [label pct]} windows]
             [:span {:replicant/key label} label " " [:b (str pct "%")]])]])
+      (when (and room-id (= :rate-limit kind))
+        [:div {:class ["error-card-actions"]}
+         (button/button
+          {:variant :primary :size :sm :class "error-card-continue"
+           :on-click (fn [_] (dispatch! {:type :input/submit
+                                         :room-id room-id
+                                         :text "continue"}))}
+          "Continue")])
       [:details {:class ["error-card-details"]}
        [:summary {:class ["error-card-details-toggle"]}
         [:span {:class ["tool-call-toggle-icon"]}
          (icon/icon {:icon-name :chevron-right :size :sm})]
         "Technical details"]
-       [:pre {:class ["error-card-raw"]} raw]]]]))
+       [:pre {:class ["error-card-raw"]}
+        (if edn? (or (highlight-clj-code raw) (plain-code raw)) raw)]]]]))
 
 ;; ── History entry → post ─────────────────────────────────────────────────────
 
@@ -966,7 +976,7 @@
     (let [msg (or (:message (:error entry)) (pr-str (:error entry)))]
       (when-not (str/includes? (str msg) "null is not an object")
         (if-let [info (error-info/describe (:error entry))]
-          (error-card info)
+          (error-card dispatch! (assoc info :room-id (:room-id entry)))
           [:div {:class ["post" "post--assistant"]}
            [:div {:class ["post-content" "error-text"]} (str "[Error] " msg)]])))
 
@@ -3186,6 +3196,7 @@
                                       dispatch!
                                       (cond-> (assoc entry :history-index p
                                                      :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
+                                                     :room-id (:id room)
                                                      ;; other users' prompts get their avatar on
                                                      ;; the last bubble of a run
                                                      :sender (when (and (= :user (:kind entry))
