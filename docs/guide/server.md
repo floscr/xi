@@ -91,6 +91,12 @@ setting the `xi-user` key in its local storage; otherwise it is `root`.
 An id is lowercase letters, digits, `.`, `_` or `-`, up to 64 characters.
 Anything else counts as `root`.
 
+A user's web client choices, such as the theme and which sidebar groups are
+collapsed, are kept per user on the server, so they follow the user from one
+device to the next. See [The web client](web-client.md#what-follows-you).
+Configuration is not per user: the config file, rules, MCP servers and
+extensions are the same for everyone.
+
 That is all the server does with users. Display names, roles and real
 authentication are left to [extensions](extensions.md): every event a
 client sends carries the sender's user id, and a room's member list is

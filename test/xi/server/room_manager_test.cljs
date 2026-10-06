@@ -352,6 +352,22 @@
                                      :session-id "other"})]
       (is (= [[:session/delete-reply {:session-id "other"}]] effects)))))
 
+;; ── Per-user UI state ──
+
+(deftest user-state-set-saves-for-the-stamped-user
+  (let [st (server-state-with-room)]
+    (is (= [[:user-state/save {:user "alice" :key :theme :value "dark"}]]
+           (:effects (handle st {:type :user-state/set :client-id "c1" :user "alice"
+                                 :key :theme :value "dark"})))
+        "the user is the one the server stamped, so a client writes only its own")
+    (is (= [[:user-state/save {:user "root" :key :theme :value "dark"}]]
+           (:effects (handle st {:type :user-state/set :client-id "c1"
+                                 :key :theme :value "dark"})))
+        "an unstamped event is root")
+    (testing "unknown keys and invalid values never reach disk"
+      (is (empty? (:effects (handle st {:type :user-state/set :user "alice" :key :theme :value "sepia"}))))
+      (is (empty? (:effects (handle st {:type :user-state/set :user "alice" :key :nope :value "x"})))))))
+
 ;; ── Presence (who is in a room) ──
 
 (defn- presence-effects

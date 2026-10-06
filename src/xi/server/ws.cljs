@@ -52,6 +52,7 @@
             [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
+            [xi.user-state.store :as user-store]
             [xi.util :as util]
             [xi.wire :as wire]))
 
@@ -111,7 +112,7 @@
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
-  #{:client/update :session/counts :sessions/all :models/web-list
+  #{:client/update :user-state/set :session/counts :sessions/all :models/web-list
     :cwd/agents-files :session/content-search :session/web-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
     :favorites/toggle :dismissed/toggle :session/delete :session/mark-read
@@ -450,6 +451,16 @@
       (fn [_ {:keys [client-id event]}]
         (send! client-id (wire/encode event)))
 
+      ;; Persist one piece of a user's UI state, then tell every connected
+      ;; device of that user (the sender too: it converges on what the
+      ;; server stored). Invalid writes were already dropped by the handler.
+      :user-state/save
+      (fn [{:keys [get-state]} {:keys [user key value]}]
+        (when (user-store/set-key! user key value)
+          (doseq [[cid client] (get-in (get-state) [:connection :clients])
+                  :when (= user (:user client))]
+            (send-event! cid {:type :user-state/changed :key key :value value}))))
+
       ;; Provision a room: session + AGENTS.md are per-cwd (impure), then
       ;; re-enter the pure path via :room/create + :room/attach. With
       ;; :session-id, resume a saved session into the new room instead of
@@ -727,6 +738,10 @@
                                        (.. ws -data -clientPlatform)
                                        (assoc :platform (.. ws -data -clientPlatform)))})
                  (send-event! cid {:type :auth/ok :user user})
+                 ;; the user's UI state (theme, layout, …): follows them to
+                 ;; every device (xi.user-state)
+                 (send-event! cid {:type :user-state/state :user user
+                                   :state (user-store/load-state user)})
                  (send! cid (lobby-payload @state agent-id (:model server-opts)))))
              resolve-pending!
              (fn [code approved?]

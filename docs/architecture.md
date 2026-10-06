@@ -266,6 +266,19 @@ extension territory, keyed by the id.
 - **Rendering**: the TUI and web label a prompt with its sender when it is
   not the viewer's own user; the web chat topbar lists the other users
   attached to the room.
+- **UI state**: the web client's browser-only state (theme, appearance,
+  collapsed groups, preferred model, recent commands/skills) is per user.
+  `xi.user-state` is the registry (known keys + validators, browser-safe);
+  `xi.user-state.store` keeps one EDN file per user under
+  `~/.config/xi/state/users/`. Clients send `:user-state/set {:key :value}`
+  (roomless; the server's `:user` stamp decides whose state it writes, and the
+  handler drops unknown keys and invalid values); the `:user-state/save`
+  effect persists it and sends `:user-state/changed` to all of that user's
+  devices, and `admit!` sends `:user-state/state` after `:auth/ok`. This is
+  state, not configuration: config.edn, rules, MCP and extensions stay global.
+  Server-global state that predates this (favorites, read state, hidden
+  sessions, snippets) is unchanged. See
+  [web-client-internals.md](web-client-internals.md).
 
 ## Room lifecycle and auth
 

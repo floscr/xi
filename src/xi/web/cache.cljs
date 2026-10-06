@@ -283,7 +283,23 @@
 (defn load-preferred-model [] (store-get preferred-model-key))
 
 (defn save-preferred-model! [model]
-  (when (string? model) (store-set! preferred-model-key model)))
+  (if (string? model)
+    (store-set! preferred-model-key model)
+    (store-remove! preferred-model-key)))
+
+;; ── Whose UI state this is ─────────────────────────────────────────────────────────
+
+(def ^:private cached-user-key "xi/user")
+
+(defn load-cached-user
+  "The user id whose UI state (theme, appearance, …) this browser cached last,
+   nil for a cache from before per-user state. The server's copy replaces it;
+   a different user on a shared browser must not inherit it (xi.web.user-state)."
+  []
+  (store-get cached-user-key))
+
+(defn save-cached-user! [user]
+  (when (string? user) (store-set! cached-user-key user)))
 
 ;; ── Collapsed sidebar groups ─────────────────────────────────────────────────
 
@@ -328,8 +344,10 @@
                         :web/recent-skills (load-recent-skills)
                         :web/preferred-model (load-preferred-model)
                         :web/sidebar-collapsed (load-sidebar-collapsed)
-                        ;; This browser's appearance overrides (xi.web.appearance).
-                        :web/appearance (load-appearance))
+                        ;; The appearance overrides (xi.web.appearance).
+                        :web/appearance (load-appearance)
+                        ;; whose UI state the values above are (see load-cached-user)
+                        :web/cached-user (load-cached-user))
       (load-lobby) (assoc :lobby (load-lobby))
       cached       (assoc-in [:web/cache sid] cached))))
 

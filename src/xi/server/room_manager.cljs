@@ -21,6 +21,7 @@
    disconnects while the agent is idle, or when a turn ends with no
    clients attached."
   (:require [xi.core.state :as state]
+            [xi.user-state :as user-state]
             [xi.util :as util]))
 
 ;; ── Queries (pure) ───────────────────────────────────────────────────────────
@@ -461,8 +462,18 @@
                                      :cwd  (or cwd (get-in st [:rooms room-id :cwd]))}
                               client-id (assoc :client-id client-id))]]}))
 
+(defn- user-state-set
+  "A client changed one piece of its user's UI state (xi.user-state). The
+   server stamps :user on the event, so a client can only write its own
+   user's state; the :user-state/save effect persists it and tells the
+   user's other devices. Unknown keys and invalid values are dropped."
+  [_st {:keys [user key value]}]
+  (when (user-state/valid? key value)
+    {:effects [[:user-state/save {:user (util/user-id user) :key key :value value}]]}))
+
 (def handlers
   {:chat/start             chat-start
+   :user-state/set         user-state-set
    :room/join              room-join
    :room/attach            room-attach
    :room/leave             room-leave

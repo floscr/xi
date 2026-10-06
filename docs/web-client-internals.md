@@ -44,8 +44,22 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `.viewer-tool-group`; a run breaks on text or on a pending permission ask
   (always expanded). **Super collapsed** (`xi.web.viewer-group`, pure) folds a
   fully collapsed group into one summary row. Appearance layering:
-  `xi.web.appearance` defaults ← `xi.config/appearance` ← `localStorage
-  "xi/appearance"`.
+  `xi.web.appearance` defaults ← `xi.config/appearance` ← the user's
+  overrides (per-user state, see below; `localStorage "xi/appearance"` is
+  its cache).
+- **Per-user UI state** (`xi.user-state`, `xi.web.user-state`): theme,
+  appearance, collapsed sidebar groups, preferred model and recent
+  commands/skills live on the server per user
+  (`~/.config/xi/state/users/<user>.edn`, `xi.user-state.store`);
+  localStorage is the instant cache. `xi.web.user-state/bindings` maps each
+  registry key to its state path and the effect that mirrors it. The server
+  sends `:user-state/state` after `:auth/ok` (server wins; keys it lacks are
+  seeded up from the cache) and `:user-state/changed` to every device of the
+  user on a write. A change is sent with `user-state/set-effect` next to the
+  existing `:cache/*` effect; the startup theme dispatch is `:init? true` so
+  it never overwrites the server's. The cache records its owner
+  (`xi/user`): a different user on a shared browser resets to defaults
+  instead of inheriting or seeding the previous user's values.
 - **Timeline virtualization**: last 60 entries render; "Show earlier" adds 40
   (`:web/timeline-window`, reset on navigation).
 - **Code-block menu**: right-click / tap → Copy; on Read/Write/Edit blocks

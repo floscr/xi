@@ -47,9 +47,10 @@ docstring, and in this table.
 
 ## Web appearance defaults (`xi.config/appearance`)
 
-Defaults for the web client's collapsible blocks; the browser's Appearance
-dialog overrides them per device (`localStorage "xi/appearance"`). Precedence:
-built-in defaults (`xi.web.appearance`) ← this map ← browser overrides.
+Defaults for the web client's collapsible blocks; the Appearance dialog
+overrides them per user (the `:appearance` key of the user's state,
+`xi.user-state`, mirrored to `localStorage "xi/appearance"`). Precedence:
+built-in defaults (`xi.web.appearance`) ← this map ← the user's overrides.
 Unknown keys and bad values are ignored at every layer.
 
 | Key | Default | Description |

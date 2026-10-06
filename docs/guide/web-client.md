@@ -94,8 +94,23 @@ The gear in the sidebar footer (or "Appearance" in the chat menu and the
 command palette) opens the appearance dialog: theme, whether tool and
 thinking blocks start open or collapsed, **viewer mode** (runs of tool calls
 fold into one box of header rows) and **super collapsed** (a fully collapsed
-run shows as one summary line with a step count). Settings are per browser;
-"Reset to defaults" drops them.
+run shows as one summary line with a step count). "Reset to defaults" drops
+them.
+
+### What follows you
+
+These choices belong to your [user](server.md#users), not to the browser:
+the theme, the appearance settings, which sidebar groups are collapsed, the
+model new chats start with, and your recently used commands and skills. Change
+them on your phone and your laptop follows; a colleague on the same server has
+their own. The server keeps them per user in `~/.config/xi/state/users/`. The
+browser also keeps a copy so the page paints with the right theme before it
+connects, and works offline.
+
+The first time a browser connects after this was introduced, whatever it
+already had is saved to the server for its user, so nothing resets. On a
+browser shared by several users, one user's settings are never handed to
+another.
 
 ## Reference
 

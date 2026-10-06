@@ -27,6 +27,7 @@
             [xi.quick-replies :as quick-replies]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
+            [xi.web.user-state :as user-state]
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
             [xi.web.keymap :as keymap]
@@ -414,12 +415,18 @@
                    (take max-recent-commands)
                    vec)]
     {:state   (assoc st :web/command-usage usage)
-     :effects [[:cache/recent-commands {:commands usage}]]}))
+     :effects [[:cache/recent-commands {:commands usage}]
+               (user-state/set-effect :recent-commands usage)]}))
 
-(defn- theme-set-mode [st {:keys [mode]}]
+(defn- theme-set-mode
+  "Switch the theme. The user's choice is also sent to the server (per-user
+   UI state, xi.user-state); the startup dispatch that applies the cached
+   theme is marked :init? and must not, or it would overwrite the server's."
+  [st {:keys [mode init?]}]
   (let [m (if (#{"auto" "light" "dark"} mode) mode "auto")]
     {:state   (assoc st :web/theme-mode m)
-     :effects [[:theme/apply m]]}))
+     :effects (cond-> [[:theme/apply m]]
+                (not init?) (conj (user-state/set-effect :theme m)))}))
 
 ;; ── Interactive diff selection / actions ──────────────────────────────────────
 
@@ -712,6 +719,7 @@
 
 (defn- web-handlers [routes]
   (merge (router/handlers routes)
+         user-state/handlers
          {:room/new              room-new
           ;; Keyboard insert-mode toggle: `i` focuses the composer, Escape
           ;; blurs it (both emit their matching DOM effect).
@@ -957,7 +965,8 @@
                                                      (disj collapsed group)
                                                      (conj collapsed group))]
                                      {:state   (assoc st :web/sidebar-collapsed collapsed)
-                                      :effects [[:cache/sidebar-collapsed {:groups collapsed}]]}))
+                                      :effects [[:cache/sidebar-collapsed {:groups collapsed}]
+                                                (user-state/set-effect :sidebar-collapsed collapsed)]}))
           :web/set-wide          (fn [st {:keys [wide?]}] {:state (assoc st :web/wide? wide?)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
@@ -969,10 +978,12 @@
                                    (let [settings (appearance/normalize
                                                    (assoc (:web/appearance st) key value))]
                                      {:state   (assoc st :web/appearance settings)
-                                      :effects [[:cache/appearance {:settings settings}]]}))
+                                      :effects [[:cache/appearance {:settings settings}]
+                                                (user-state/set-effect :appearance settings)]}))
           :appearance/reset      (fn [st _]
                                    {:state   (assoc st :web/appearance {})
-                                    :effects [[:cache/appearance {:settings {}}]]})
+                                    :effects [[:cache/appearance {:settings {}}]
+                                              (user-state/set-effect :appearance {})]})
           :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
           :models/web-list-result (fn [st {:keys [models]}]
@@ -995,7 +1006,8 @@
                                           base   (-> st
                                                      (dissoc :web/model-list :web/palette-page :web/palette-open?)
                                                      (assoc :web/preferred-model model))
-                                          persist [:cache/preferred-model {:model model}]]
+                                          persist [:cache/preferred-model {:model model}]
+                                          sync    (user-state/set-effect :preferred-model model)]
                                       (cond
                                         ;; Live room for the viewed session: apply
                                         ;; now, and optimistically reflect the pick
@@ -1005,7 +1017,7 @@
                                         ;; mirror back.
                                         rid
                                         {:state (assoc-in base [:rooms rid :agent :model] model)
-                                         :effects [persist
+                                         :effects [persist sync
                                                    [:palette/close nil]
                                                    [:ws/send {:type :input/submit
                                                               :room-id rid :text text}]]}
@@ -1017,13 +1029,13 @@
                                         ;; :model (see submit-pending/web-command).
                                         (:web/pending-room base)
                                         {:state (assoc-in base [:web/pending-room :model] model)
-                                         :effects [persist [:palette/close nil]]}
+                                         :effects [persist sync [:palette/close nil]]}
                                         ;; Fallback (rare: a cached session whose
                                         ;; room is still joining) — send to the
                                         ;; active room if there is one.
                                         :else
                                         {:state base
-                                         :effects (cond-> [persist [:palette/close nil]]
+                                         :effects (cond-> [persist sync [:palette/close nil]]
                                                     (:id active)
                                                     (conj [:ws/send {:type :input/submit
                                                                      :room-id (:id active) :text text}]))})))
@@ -1050,7 +1062,8 @@
                                                        (take 8)
                                                        vec)
                                           st      (assoc st :web/recent-skills recents)
-                                          record  [:cache/recent-skills {:skills recents}]]
+                                          record  [:cache/recent-skills {:skills recents}]
+                                          sync    (user-state/set-effect :recent-skills recents)]
                                       (if (seq (:inputs skill))
                                         ;; The form renders in the chat view's
                                         ;; compose dock (the composer reshapes
@@ -1068,7 +1081,7 @@
                                                             :images []}))
                                          :effects (cond-> [[:palette/close nil]
                                                            [:ws/send {:type :skill/web-get :name name}]
-                                                           record]
+                                                           record sync]
                                                     (not= :chat (get-in st [:web/route :page]))
                                                     (conj [:app/dispatch {:type :route/navigate
                                                                           :page :chat :session-id nil}]))}
@@ -1085,7 +1098,7 @@
                                                                   :room-id rid :text text}]
                                                        [:app/dispatch {:type :submit/pending
                                                                        :session-id sid :text text}])
-                                                     record]}))))
+                                                     record sync]}))))
           :skill/web-get-result  (fn [st {:keys [name body]}]
                                     (when (= name (get-in st [:web/skill-form :name]))
                                       {:state (assoc-in st [:web/skill-form :body] body)}))
@@ -1771,6 +1784,7 @@
    :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
+   :cache/user (fn [_ {:keys [user]}] (cache/save-cached-user! user))
    ;; Read a session's cached snapshot and feed it into :web/cache so the chat
    ;; view paints from it while the WS join lands.
    :cache/seed-room
@@ -2501,7 +2515,7 @@
       (add-tap! (make-tap dispatch!)))
     (router/init! routes dispatch!)
     ;; Apply stored theme immediately (before first render)
-    (dispatch! {:type :theme/set-mode :mode stored-theme})
+    (dispatch! {:type :theme/set-mode :mode stored-theme :init? true})
     ;; Track visual viewport height so the mobile keyboard doesn't push
     ;; the compose box off-screen.  Falls back to window.innerHeight.
     (let [set-vh! (fn []

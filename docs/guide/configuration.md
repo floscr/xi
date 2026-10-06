@@ -80,6 +80,7 @@ drop one setting while keeping the rest.
 | `~/.config/xi/client-key`, `clients.edn` | Your own device key and the paired devices, each with an optional user assignment. See [Server mode](server.md#pairing). |
 | `~/.config/xi/tls/` | Certificate and key for [HTTPS](https.md). |
 | `~/.config/xi/sessions/`, `personal-agent/` | Saved chats. See [Sessions](sessions.md). |
+| `~/.config/xi/state/users/<user>.edn` | One user's web client choices: theme, appearance, collapsed groups, preferred model, recent commands and skills. Written by Xi; see [The web client](web-client.md#what-follows-you). |
 
 Everything under `~/.config/xi` is off-limits to the agent: no tool can read
 the keys in it or write to it. The exception is the sessions directory, which
@@ -111,7 +112,8 @@ Settings that belong to the machine rather than to you:
 
 A few display defaults are compiled into Xi rather than read from a file:
 the web client's appearance defaults (viewer mode, whether tool and thinking
-blocks start open) and the terminal's output truncation. The web client
-overrides the appearance per browser from its Appearance dialog. Changing the
+blocks start open) and the terminal's output truncation. Each user overrides
+the appearance from the web client's Appearance dialog; those choices are
+user state, not configuration. Changing the
 compiled defaults means editing `src/xi/config.cljc` and rebuilding; see
 [`docs/config.md`](../config.md) in the repository.
