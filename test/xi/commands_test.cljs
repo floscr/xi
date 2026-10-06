@@ -420,13 +420,13 @@
                                  :summary {:source :xi}
                                  :messages messages})
         h (history state)]
-    (is (= :status (:kind (first h))))
-    (is (str/includes? (:text (first h)) "My session"))
-    (is (= {:kind :user :text "question"} (nth h 1)))
-    (is (= {:kind :text :text "answer" :done? true} (nth h 2)))
+    (is (= {:kind :user :text "question"} (nth h 0))
+        "no \"Resumed: …\" status line — the loaded blocks speak for themselves")
+    (is (= {:kind :text :text "answer" :done? true} (nth h 1)))
     (is (= {:kind :tool-call :id "t1" :tool "bash" :arguments {:command "ls"}
             :status :done :result "files" :is-error false}
-           (nth h 3)))
+           (nth h 2)))
+    (is (= 3 (count h)))
     (is (= "cli-1" (get-in state [:rooms "r" :session :provider-session-id]))
         "provider session id mirrored for resume")))
 

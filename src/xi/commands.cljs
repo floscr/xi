@@ -669,15 +669,10 @@
           ;; Land the room in the session's cwd via the same validated path the
           ;; /cd command uses (rebuilds the system prompt + AGENTS.md list). The
           ;; worktree extension refines this for now-removed sibling worktrees.
-          change-cwd? (and resume-cwd (not= resume-cwd (:cwd room)))
-          label (str "Resumed: "
-                     (or (:name session) (:cli-session-id session) (:id session))
-                     (case (:source summary) :claude " [claude]" "")
-                     " (" (count messages) " messages)")]
+          change-cwd? (and resume-cwd (not= resume-cwd (:cwd room)))]
       {:state (-> st
                   (assoc-in [:rooms room-id :session] session')
-                  (assoc-in [:rooms room-id :history]
-                            (into [(status-entry label)] (messages->history messages)))
+                  (assoc-in [:rooms room-id :history] (messages->history messages))
                   (assoc-in [:rooms room-id :msg-hash] msg-hash)
                   (assoc-in [:rooms room-id :msg-count] (or msg-count (count messages)))
                   (update-in [:rooms room-id :agent] assoc :busy? false :queued [])
