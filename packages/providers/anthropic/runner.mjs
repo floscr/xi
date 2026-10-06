@@ -27,6 +27,7 @@
 
 import { execFileSync, execSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -253,6 +254,25 @@ function ensurePinnedClaude() {
   }
 }
 
+// The SDK's own binary for this machine. Left to itself the SDK tries the musl
+// build before the glibc one, and a package manager installs both optional
+// dependencies on a glibc box (bun does), so it picks a musl ELF that cannot
+// start there (no musl loader: "not found", exit 1). Choose by the libc we
+// actually run on. Linux only; elsewhere the SDK's own pick is fine.
+function sdkNativeBinary() {
+  if (process.platform !== "linux") return null;
+  const glibc = !!process.report?.getReport?.().header?.glibcVersionRuntime;
+  const pkg = "claude-agent-sdk-linux-" + process.arch + (glibc ? "" : "-musl");
+  try {
+    const dirs = createRequire(import.meta.url).resolve.paths("@anthropic-ai/claude-agent-sdk") || [];
+    for (const dir of dirs) {
+      const bin = join(dir, "@anthropic-ai", pkg, "claude");
+      if (existsSync(bin)) return bin;
+    }
+  } catch { }
+  return null;
+}
+
 function resolveClaudeExecutable() {
   const override = process.env.XI_CLAUDE_CLI_PATH;
   if (override) return override;
@@ -260,10 +280,9 @@ function resolveClaudeExecutable() {
   if (existsSync(pinnedClaude)) return realpathSync(pinnedClaude);
   try {
     const w = execSync("which claude", { encoding: "utf8" }).trim();
-    return w ? realpathSync(w) : null;
-  } catch {
-    return null;
-  }
+    if (w) return realpathSync(w);
+  } catch { }
+  return sdkNativeBinary();
 }
 
 // ── Claude CLI lifetime ────────────────────────────────────────────────────────
