@@ -6,13 +6,19 @@
    `[data-theme=light|dark]` on <html>, or `prefers-color-scheme` when unset."
   (:require [ui.css.gen :as gen]))
 
+(def ^:private radii
+  "Rounder than the framework's 4/6/10/16px. The dark theme block carries its
+   own copy of every token, so these go into both."
+  {:radius-xs "6px" :radius-sm "8px" :radius-md "14px" :radius-lg "22px"})
+
 (def theme-opts
   "Deep-merged over the framework's default tokens (purple on grey)."
   {:scales {:color {:gray   {:hue 255 :chroma-scale 0.55}
                     :accent {:hue 263 :chroma-scale 0.9}}}
    ;; light theme: one step deeper than the framework's accent-500, which is
    ;; what the site's blue always was. Dark keeps the framework's accent-400.
-   :tokens {:accent "var(--accent-600)"}})
+   :tokens (merge {:accent "var(--accent-600)"} radii)
+   :themes {:dark radii}})
 
 (defn css
   "Framework tokens + every component's CSS, as one string."

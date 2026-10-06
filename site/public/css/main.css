@@ -55,7 +55,7 @@ code, pre, kbd {
 :not(pre) > code {
   background: var(--bg-1);
   padding: 0.12em 0.4em;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   font-size: 0.86em;
 }
 
@@ -226,7 +226,7 @@ a.btn:hover { text-decoration: none; }
 .phone { margin: 0; }
 .phone img {
   width: 100%;
-  border-radius: 28px;
+  border-radius: calc(var(--radius-lg) + 12px);
   border: var(--border-1);
   box-shadow: var(--shadow-3);
   background: var(--bg-1);
@@ -301,7 +301,7 @@ a.btn:hover { text-decoration: none; }
 .docs-sidebar a {
   display: block;
   padding: 5px 10px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   color: var(--fg-1);
 }
 .docs-sidebar a:hover { color: var(--fg-0); background: var(--bg-1); text-decoration: none; }
