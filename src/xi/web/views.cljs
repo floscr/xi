@@ -267,6 +267,8 @@
    (avatar/initials id name)
    (when url
      [:img {:class ["avatar-img"] :src url :alt "" :loading "lazy"
+            ;; the image host learns nothing about which Xi address is in use
+            :referrerpolicy "no-referrer"
             :on {:error (fn [e] (set! (.. e -target -style -display) "none"))}}])])
 
 (defn- avatar-stack
