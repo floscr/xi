@@ -175,8 +175,9 @@
                                  commands)))))
 
 (defn- cmd-answer
-  "/allow [always|repo] and /deny — answer the room's pending permission
-   confirm from the prompt, like its buttons/keys. Dispatches the canonical
+  "/allow [always|repo] and /deny [reason] — answer the room's pending
+   permission confirm from the prompt, like its buttons/keys. A /deny reason
+   is told to the model (xi.dialog/with-deny-reason). Dispatches the canonical
    :ui/dialog-response so the dialog owner resolves it and every client
    clears it (xi.client.ws-transport drops the dialog on the echo)."
   [verb]
@@ -188,8 +189,10 @@
             {:error (str "Unknown /allow option \"" args "\" — use always (a) or repo (r).")})]
       (if error
         (status st room-id error)
-        {:effects [[:app/dispatch {:type :ui/dialog-response :room-id room-id
-                                   :dialog-id dialog-id :value value}]]}))))
+        {:effects [[:app/dispatch (cond-> {:type :ui/dialog-response :room-id room-id
+                                           :dialog-id dialog-id :value value}
+                                    (and (= :deny verb) (not (str/blank? args)))
+                                    (assoc :reason (str/trim args)))]]}))))
 
 (defn- cmd-quit [_st _ctx]
   {:effects [[:app/quit {}]]})
@@ -397,7 +400,7 @@
                   {:name "repo"   :description "Allow writes to this repo"}]
     :handler (cmd-answer :allow)}
    {:name "deny"     :aliases ["d"]
-    :description "Deny the pending permission request"
+    :description "Deny the pending permission request (/deny <reason> tells the agent why)"
     :handler (cmd-answer :deny)}
    {:name "holds"    :description "Show who holds this room's shared resources (git index)"
     :handler (fn [_st {:keys [room-id]}] {:effects [[:holds/list {:room-id room-id}]]})}

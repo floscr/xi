@@ -162,6 +162,24 @@
                    (is (nil? out))
                    (done)))))))
 
+(deftest ask-rule-deny-with-reason-tells-the-model
+  (async done
+    (let [rule  {:match {:tool :bash} :action {:type :ask}}
+          state (state-with [:ext :rules :rules] rule)
+          tc    {:name "bash" :arguments {:command "rm -rf build"}}
+          c     (assoc (ctx state)
+                       :confirm! (fn [_ {:keys [on-reason]}]
+                                   (on-reason "run make clean instead")
+                                   (js/Promise.resolve false)))]
+      (-> (rules-ext/tool-policy tc c)
+          (.then (fn [out]
+                   (is (get-in out [:result :is-error]))
+                   (is (= (str "The user denied this tool call.\n"
+                               "To tell you how to proceed, the user said:\n"
+                               "run make clean instead")
+                          (get-in out [:result :content 0 :text])))
+                   (done)))))))
+
 (deftest ask-rule-persists-session-allow-on-always
   (async done
     (let [rule       {:match {:tool :bash} :action {:type :ask}}

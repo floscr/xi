@@ -133,6 +133,46 @@
     (testing "unknown dialog-id is a no-op"
       (is (nil? (handler st {:room-id "r" :dialog-id "nope" :value true}))))))
 
+(deftest dialog-response-forwards-a-reason-only-with-a-deny
+  (let [handler (get-in (ext/create-dialogs) [:handlers :ui/dialog-response])
+        st (-> (state/initial-state)
+               (assoc-in [:rooms "r"] (state/make-room "r" nil))
+               (assoc-in [:rooms "r" :ui :dialogs] [{:id "dlg-1" :type :confirm}]))
+        effect (fn [ev] (first (:effects (handler st (merge {:room-id "r" :dialog-id "dlg-1"} ev)))))]
+    (is (= [:dialog/resolve {:dialog-id "dlg-1" :value false :reason "why"}]
+           (effect {:value false :reason "why"})))
+    (is (= [:dialog/resolve {:dialog-id "dlg-1" :value true}]
+           (effect {:value true :reason "why"}))
+        "an allow never carries a reason")
+    (is (= [:dialog/resolve {:dialog-id "dlg-1" :value false}]
+           (effect {:value false :reason "  "})))))
+
+(deftest dialog-ask-with-on-reason-offers-and-delivers-it
+  (async done
+    (let [{:keys [ask! handlers fx]} (ext/create-dialogs)
+          resolve-fx (get fx :dialog/resolve)
+          opened     (atom nil)
+          reason     (atom nil)
+          st (-> (state/initial-state)
+                 (assoc-in [:connection :clients "c"] {:room-id "r"})
+                 (assoc-in [:rooms "r"] (state/make-room "r" nil)))
+          dispatch! (fn [ev]
+                      (when (= :ui/dialog-open (:type ev))
+                        (reset! opened (:dialog ev))
+                        (let [st'    (assoc-in st [:rooms "r" :ui :dialogs] [(:dialog ev)])
+                              result ((get handlers :ui/dialog-response)
+                                      st' {:room-id "r" :dialog-id (get-in ev [:dialog :id])
+                                           :value false :reason "nope"})]
+                          (resolve-fx {} (second (first (:effects result)))))))
+          v (ask! {:dispatch! dispatch! :state st}
+                  {:room-id "r" :dialog {:type :confirm :message "ok?"}
+                   :on-reason #(reset! reason %)})]
+      (is (false? v) "still resolves to the plain deny")
+      (is (= "nope" @reason) "the reason reached the asker first")
+      (is (true? (:deny-reason? @opened)) "clients are told to offer it")
+      (is (not (contains? @opened :on-reason)) "the callback never enters the dialog data")
+      (done))))
+
 (deftest dialog-ask-clientless-resolves-default
   (async done
     (let [{:keys [ask!]} (ext/create-dialogs)

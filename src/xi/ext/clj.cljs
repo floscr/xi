@@ -35,6 +35,7 @@
             [edamame.core :as e]
             [sci.core :as sci]
             [xi.bb-trust :as bb-trust]
+            [xi.dialog :as dialog]
             [xi.ext.clj-process :as proc]
             [xi.ext.clj-socket :as sock]
             [xi.git-lock :as git-lock]
@@ -1944,7 +1945,14 @@
    ask. Runs as part of the tool (clj-tool) — it is not a policy hook.
    Public for tests."
   [tool-call {:keys [get-state room-id confirm! dispatch! cwd] :as ctx}]
-  (let [code    (str (get-in tool-call [:arguments :code]))
+  (let [;; Every ask below offers deny-with-reason; a reason the user gives
+        ;; rides the refusal (this `blocked` shadows the plain one) so the
+        ;; model learns why.
+        deny-reason (volatile! nil)
+        confirm! (dialog/capture-deny-reason confirm! deny-reason)
+        ctx     (assoc ctx :confirm! confirm!)
+        blocked (fn [text] (blocked (dialog/with-deny-reason text @deny-reason)))
+        code    (str (get-in tool-call [:arguments :code]))
         scan    (scan-code code)
         sh      (sh-summary scan)
         bg      (vec (:bg scan))

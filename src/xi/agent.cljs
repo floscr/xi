@@ -505,12 +505,15 @@
                        ;; :call {:name :arguments} names the gated tool call.
                        ;; :target {:arg :ranges} locates, inside that call's
                        ;; argument, the part the ask is about.
+                       ;; :on-reason (fn [reason]) offers deny-with-reason
+                       ;; (xi.dialog/capture-deny-reason).
                        :confirm!  (when ask!
                                     (fn confirm!
                                       ([message] (confirm! message nil))
                                       ([message opts]
                                        (ask! {:dispatch! dispatch! :state (get-state)}
-                                             {:room-id room-id
+                                             {:room-id   room-id
+                                              :on-reason (:on-reason opts)
                                               :dialog  (cond-> {:type :confirm :message message}
                                                          (:options opts) (assoc :options (:options opts))
                                                          (:diff opts)    (assoc :diff (:diff opts))

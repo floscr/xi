@@ -234,37 +234,49 @@
    sleep): it shows up when one (re)joins, and extensions can notify on its
    :ui/dialog-open. Only a process no client can ever attach to (prompt
    mode, `:clientless?` in its connection state) resolves to a safe default
-   immediately (false/nil)."
+   immediately (false/nil).
+
+   The request may carry `:on-reason` (fn [reason]) — a runtime callback,
+   never part of the mirrored dialog data. It marks the dialog
+   :deny-reason? so clients offer *deny with reason*; a deny answered with
+   one (:ui/dialog-response's :reason) calls it before the promise resolves
+   to `false` (xi.dialog/capture-deny-reason)."
   []
   (let [pending (js/Map.)
         counter #js {:n 0}
         safe-default (fn [dialog]
                        (case (:type dialog) :confirm false nil))]
     {:ask!
-     (fn [{:keys [dispatch! state]} {:keys [room-id dialog]}]
+     (fn [{:keys [dispatch! state]} {:keys [room-id dialog on-reason]}]
        (if (clientless? state)
          (js/Promise.resolve (safe-default dialog))
          (js/Promise.
           (fn [resolve _reject]
             (set! (.-n counter) (inc (.-n counter)))
             (let [id (str "dlg-" (.-n counter))]
-              (.set pending id resolve)
+              (.set pending id {:resolve resolve :on-reason on-reason})
               (dispatch! {:type :ui/dialog-open
                           :room-id room-id
-                          :dialog (assoc dialog :id id)}))))))
+                          :dialog (cond-> (assoc dialog :id id)
+                                    on-reason (assoc :deny-reason? true))}))))))
 
      :handlers
      {:ui/dialog-response
-      (fn [st {:keys [room-id dialog-id value]}]
+      (fn [st {:keys [room-id dialog-id value reason]}]
         (when (some #(= dialog-id (:id %))
                     (get-in st [:rooms room-id :ui :dialogs]))
           {:state   (update-in st [:rooms room-id :ui :dialogs]
                                (fn [ds] (vec (remove #(= dialog-id (:id %)) ds))))
-           :effects [[:dialog/resolve {:dialog-id dialog-id :value value}]]}))}
+           :effects [[:dialog/resolve (cond-> {:dialog-id dialog-id :value value}
+                                        ;; a reason only ever rides a deny
+                                        (and (not value) (string? reason)
+                                             (not (str/blank? reason)))
+                                        (assoc :reason reason))]]}))}
 
      :fx
      {:dialog/resolve
-      (fn [_ {:keys [dialog-id value]}]
-        (when-let [resolve (.get pending dialog-id)]
+      (fn [_ {:keys [dialog-id value reason]}]
+        (when-let [{:keys [resolve on-reason]} (.get pending dialog-id)]
           (.delete pending dialog-id)
+          (when (and reason on-reason) (on-reason reason))
           (resolve value)))}}))

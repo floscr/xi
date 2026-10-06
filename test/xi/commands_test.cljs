@@ -464,7 +464,11 @@
     (is (= (answered :always) (run "allow" "always")))
     (is (= (answered :repo) (run "a" "r")))
     (is (= (answered false) (run "deny" nil)))
-    (is (= (answered false) (run "d" nil)))))
+    (is (= (answered false) (run "d" nil)))
+    (testing "/deny <reason> carries the reason for the model"
+      (is (= [[:app/dispatch {:type :ui/dialog-response :room-id "r" :dialog-id "dlg-1"
+                              :value false :reason "use the test db"}]]
+             (run "deny" "  use the test db "))))))
 
 (deftest allow-reports-when-nothing-to-answer
   (let [st (:state (handle (with-room) {:type :command/run :room-id "r" :name "allow"}))]

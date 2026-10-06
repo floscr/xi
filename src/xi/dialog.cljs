@@ -106,6 +106,26 @@
                ([message opts] (confirm! message (assoc opts :call call))))))
     ctx))
 
+(defn capture-deny-reason
+  "`confirm!` whose asks offer *deny with reason* (the dialog gets
+   :deny-reason?, see xi.ext.core/create-dialogs), recording the reason the
+   user typed into the volatile `box`. The answer itself stays `false`, so
+   every boolean caller keeps working; a gate reads `box` to tell the model
+   why (`with-deny-reason`). nil `confirm!` → nil (headless)."
+  [confirm! box]
+  (when confirm!
+    (fn capturing
+      ([message] (capturing message nil))
+      ([message opts] (confirm! message (assoc opts :on-reason #(vreset! box %)))))))
+
+(defn with-deny-reason
+  "A gate's denial text `base` plus the reason the user denied with — what the
+   model reads in the tool result. Blank `reason` → `base` unchanged."
+  [base reason]
+  (if (str/blank? reason)
+    base
+    (str base "\nTo tell you how to proceed, the user said:\n" (str/trim reason))))
+
 (defn- same-call?
   "Does history `entry` (a :tool-call) belong to the gated `call`
    ({:name :arguments}) a confirm dialog was raised for? Tool names compare

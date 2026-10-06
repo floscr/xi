@@ -26,6 +26,7 @@
    hard-block live in `xi.rules.store`."
   (:require [clojure.string :as str]
             [xi.bb-trust :as bb-trust]
+            [xi.dialog :as dialog]
             [xi.rules :as rules]
             [xi.rules.store :as store]
             [xi.tools.edit :as edit]
@@ -270,72 +271,78 @@
                                     (a deny instead when the action says
                                     `:unanswered :deny`)
      {:decision :deny :message m}   a :deny rule, or an :ask answered no
-                                    (m nil) / with recommend-a-rule
+                                    (m nil, or the user's deny reason) /
+                                    with recommend-a-rule
      {:decision :nudge :message m}  a :nudge rule
      {:decision :pass}              an unknown action type"
   [{:keys [type message options unanswered]} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
-  (case type
-    :allow {:decision :allow}
-    :deny  {:decision :deny :message (or message "Blocked by rule.")}
-    :nudge {:decision :nudge :message (or message "")}
-    :ask   (if-let [error (and confirm! (doomed-edit req))]
-             {:decision :deny :message error}
-             (if confirm!
-               (-> (confirm! (with-requester
-                              req
+  (let [deny-reason (volatile! nil)]
+    (case type
+      :allow {:decision :allow}
+      :deny  {:decision :deny :message (or message "Blocked by rule.")}
+      :nudge {:decision :nudge :message (or message "")}
+      :ask   (if-let [error (and confirm! (doomed-edit req))]
+               {:decision :deny :message error}
+               (if confirm!
+                 (-> ((dialog/capture-deny-reason confirm! deny-reason)
+                      (with-requester
+                       req
+                       (cond
+                         (and message (:path req))
+                         (store/with-path-target message (:path req) (:repo req))
+                         message message
+                         :else   (ask-message req)))
+                      (let [diff (ask-diff req)]
+                        (cond-> {:options (recommend-options options req recommend-rule?)}
+                          diff (assoc :diff diff))))
+                     (.then (fn [ans]
                               (cond
-                                (and message (:path req))
-                                (store/with-path-target message (:path req) (:repo req))
-                                message message
-                                :else   (ask-message req)))
-                             (let [diff (ask-diff req)]
-                               (cond-> {:options (recommend-options options req recommend-rule?)}
-                                 diff (assoc :diff diff))))
-                   (.then (fn [ans]
-                            (cond
-                              (= ans :recommend)
-                              (do (spawn-recommend! dispatch! room-id req message)
-                                  {:decision :deny :message recommend-blocked-msg})
+                                (= ans :recommend)
+                                (do (spawn-recommend! dispatch! room-id req message)
+                                    {:decision :deny :message recommend-blocked-msg})
 
-                              ;; [a]lways → persist a narrow path/command allow-rule
-                              (= ans :always)
-                              (do (when dispatch!
-                                    (dispatch! {:type    :ext.rules/add
-                                                :room-id room-id
-                                                :scope   :session
-                                                :rule    (allow-rule-from-req req)}))
-                                  {:decision :approved})
+                                ;; [a]lways → persist a narrow path/command allow-rule
+                                (= ans :always)
+                                (do (when dispatch!
+                                      (dispatch! {:type    :ext.rules/add
+                                                  :room-id room-id
+                                                  :scope   :session
+                                                  :rule    (allow-rule-from-req req)}))
+                                    {:decision :approved})
 
-                              ;; [r] allow-repo → persist a repo-scoped allow-rule
-                              ;; (falls back to a one-time allow when not in a repo)
-                              (= ans :repo)
-                              (do (when-let [rule (and dispatch!
-                                                       (allow-repo-rule-from-req req))]
-                                    (dispatch! {:type    :ext.rules/add
-                                                :room-id room-id
-                                                :scope   :session
-                                                :rule    rule}))
-                                  {:decision :approved})
+                                ;; [r] allow-repo → persist a repo-scoped allow-rule
+                                ;; (falls back to a one-time allow when not in a repo)
+                                (= ans :repo)
+                                (do (when-let [rule (and dispatch!
+                                                         (allow-repo-rule-from-req req))]
+                                      (dispatch! {:type    :ext.rules/add
+                                                  :room-id room-id
+                                                  :scope   :session
+                                                  :rule    rule}))
+                                    {:decision :approved})
 
-                              ;; an option carrying an event (the bb-trust
-                              ;; rule's "trust bb.edn") → approve + dispatch it
-                              (option-event options ans)
-                              (do (when dispatch!
-                                    (dispatch! (cond-> (assoc (option-event options ans)
-                                                             :room-id room-id
-                                                             :cwd (:effective-cwd req))
-                                                 ;; the MCP trust option trusts the call's server
-                                                 (:mcp-server req) (assoc :mcp-server (:mcp-server req)))))
-                                  {:decision :approved})
+                                ;; an option carrying an event (the bb-trust
+                                ;; rule's "trust bb.edn") → approve + dispatch it
+                                (option-event options ans)
+                                (do (when dispatch!
+                                      (dispatch! (cond-> (assoc (option-event options ans)
+                                                               :room-id room-id
+                                                               :cwd (:effective-cwd req))
+                                                   ;; the MCP trust option trusts the call's server
+                                                   (:mcp-server req) (assoc :mcp-server (:mcp-server req)))))
+                                    {:decision :approved})
 
-                              ans   {:decision :approved}
-                              :else {:decision :deny :message nil}))))
-               (if (= :deny unanswered)
-                 {:decision :deny
-                  :message  (str "Blocked: this call needs approval, but no client "
-                                 "is attached to confirm it.")}
-                 {:decision :unanswered})))
-    {:decision :pass}))
+                                ans   {:decision :approved}
+                                :else {:decision :deny
+                                       :message  (when-let [r @deny-reason]
+                                                   (dialog/with-deny-reason
+                                                    "The user denied this tool call." r))}))))
+                 (if (= :deny unanswered)
+                   {:decision :deny
+                    :message  (str "Blocked: this call needs approval, but no client "
+                                   "is attached to confirm it.")}
+                   {:decision :unanswered})))
+      {:decision :pass})))
 
 (defn- decide*
   "`decide!`, but synchronous unless it has to ask (value or Promise)."

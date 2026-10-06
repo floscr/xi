@@ -541,18 +541,29 @@
 (defn- confirm-buttons
   "Answer buttons for a :confirm dialog, driven by its normalized :options
    data (xi.dialog) instead of hardcoded per-option markup. Deny-style
-   options render first, plain Allow last, extras in between."
-  [dialog answer!]
+   options render first, plain Allow last, extras in between. When the ask
+   takes a reason (:deny-reason?), Deny grows a ⋯ twin that calls
+   `deny-reason!` (the composer becomes the reason field)."
+  [dialog answer! deny-reason!]
   (for [{:keys [value label]} (sort-by (fn [{:keys [value]}]
                                          (cond (false? value) 0
                                                (true? value)  2
                                                :else          1))
-                                       (dlg/confirm-options dialog))]
-    [:button {:class ["confirm-btn" (cond (false? value) "confirm-btn--deny"
-                                          (true? value)  "confirm-btn--allow"
-                                          :else          "confirm-btn--extra")]
-              :on {:click (fn [_] (answer! value))}}
-     label]))
+                                       (dlg/confirm-options dialog))
+        :let [btn [:button {:class ["confirm-btn" (cond (false? value) "confirm-btn--deny"
+                                                        (true? value)  "confirm-btn--allow"
+                                                        :else          "confirm-btn--extra")]
+                            :on {:click (fn [_] (answer! value))}}
+                   label]]]
+    (if (and (false? value) deny-reason! (:deny-reason? dialog))
+      [:span {:class ["confirm-split"]}
+       btn
+       [:button {:class ["confirm-btn" "confirm-btn--deny" "confirm-btn--more"]
+                 :title "Deny with reason…"
+                 :aria-label "Deny with reason"
+                 :on {:click (fn [_] (deny-reason!))}}
+        "⋯"]]
+      btn)))
 
 (defn- dialog-diff
   "A confirm dialog's :diff preview ({:path :text} — the change a guarded
@@ -656,11 +667,12 @@
          [:span {:class ["tool-call-status" "tool-call-status--error"] :title "Error"}
           (icon/icon {:icon-name :x :size :sm})]
          (some? resolved-permission)
-         (let [{:keys [value label]} resolved-permission
+         (let [{:keys [value label reason]} resolved-permission
                deny? (not value)]
            [:span {:class ["tool-call-status"
                            (if deny? "tool-call-status--deny" "tool-call-status--allow")]
-                   :title (or label (if deny? "Denied" "Allowed"))}
+                   :title (str (or label (if deny? "Denied" "Allowed"))
+                               (when reason (str ": " reason)))}
             (icon/icon {:icon-name (if deny? :x :check) :size :sm})]))]
       (when clj-code
         ;; A pending ask that targets part of this code (the (spit …) /
@@ -698,14 +710,14 @@
               (if grammar (highlight-code grammar shown) (plain-code shown))]))])
       ;; A permission gate fired for this (still-running) tool call: render the
       ;; ask as a zone inside the same grey box, joined to the code above.
-      (when-let [{:keys [dialog answer!]} permission]
+      (when-let [{:keys [dialog answer! deny-reason!]} permission]
         (let [{:keys [message text]} dialog]
           [:div {:class ["tool-call-content"]}
            (dialog-diff dialog)
            [:div {:class ["tool-call-permission"]}
             [:div {:class ["tool-call-permission-msg"]} (or message text)]
             [:div {:class ["tool-call-permission-actions"]}
-             (confirm-buttons dialog answer!)]]]))
+             (confirm-buttons dialog answer! deny-reason!)]]]))
       (when imgs
         [:div {:class ["tool-call-content" "user-images"]}
          (map-indexed
@@ -1499,6 +1511,71 @@
                                                           images draft-key draft))}}
             (icon/icon {:icon-name :arrow-up :size :md})]]))]]]))
 
+(defn- deny-reason-compose
+  "The composer turned into the reason field of a *deny with reason* (the ⋯
+   beside a permission ask's Deny). Replaces .compose-box while
+   :web/deny-reason targets an ask still pending in this room; the normal
+   draft is untouched underneath. Enter denies with the typed reason — the
+   gate hands it to the model — Shift+Enter breaks the line, Esc goes back to
+   the composer without answering."
+  [dispatch! {:keys [text]} {dmsg :message dtext :text}]
+  (let [submit! #(dispatch! {:type :deny-reason/submit})]
+    [:div {:class ["compose-box" "deny-compose"]}
+     [:div {:class ["compose-frame" "skill-compose-frame"]}
+      [:div {:class ["skill-compose-head" "deny-compose-head"]}
+       (icon/icon {:icon-name :shield :size :sm})
+       [:span {:class ["skill-compose-name"]} "Deny with reason"]
+       [:span {:class ["skill-compose-desc"]} (or dmsg dtext)]
+       [:button {:class ["icon-btn" "skill-compose-close"] :type "button"
+                 :title "Back to the composer (the request stays pending)"
+                 :on {:click (fn [_] (dispatch! {:type :deny-reason/cancel}))}}
+        (icon/icon {:icon-name :x :size :sm})]]
+      [:div {:class ["compose-input-row"]}
+       [:div {:class ["compose-input-wrapper"]}
+        (form/form-textarea-auto
+         {:placeholder "Tell the agent why — or what to do instead…"
+          :value (or text "")
+          :max-rows 6
+          :attrs {:replicant/on-mount
+                  (fn [{:replicant/keys [^js node]}]
+                    (.focus node #js {:preventScroll true}))
+                  :on {:input (fn [^js e]
+                                (dispatch! {:type :deny-reason/set-text
+                                            :text (.. e -target -value)}))
+                       ;; iOS Return (no Enter keydown) — see compose-box.
+                       :beforeinput (fn [^js e]
+                                      (when (= "insertLineBreak" (.-inputType e))
+                                        (.preventDefault e)
+                                        (submit!)))
+                       :keydown
+                       (fn [^js e]
+                         (cond
+                           (= "Escape" (.-key e))
+                           (do (.preventDefault e)
+                               (dispatch! {:type :deny-reason/cancel}))
+
+                           ;; Manual newline so beforeinput doesn't submit.
+                           (and (= "Enter" (.-key e)) (.-shiftKey e))
+                           (let [^js el (.-target e)
+                                 start  (.-selectionStart el)
+                                 v      (.-value el)
+                                 nv     (str (subs v 0 start) "\n" (subs v (.-selectionEnd el)))]
+                             (.preventDefault e)
+                             (set! (.-value el) nv)
+                             (set! (.-selectionStart el) (inc start))
+                             (set! (.-selectionEnd el) (inc start))
+                             (dispatch! {:type :deny-reason/set-text :text nv}))
+
+                           (= "Enter" (.-key e))
+                           (do (.preventDefault e) (submit!))))}}})]
+       [:div {:class ["compose-actions"]}
+        [:button {:class ["icon-btn" "deny-compose-send"] :type "button"
+                  :title "Deny with this reason"
+                  :on {:click (fn [_] (submit!))}}
+         (icon/icon {:icon-name :arrow-up :size :md})]]]
+      [:div {:class ["skill-compose-footer"]}
+       [:span {:class ["skill-compose-hint"]} "Enter to deny · Esc to go back"]]]]))
+
 ;; ── Permission dialog ────────────────────────────────────────────────────────
 
 (def ^:private cwd-custom-sentinel "__custom__")
@@ -1597,7 +1674,7 @@
   "Static bubble for an already-answered dialog: the original message plus a
    pill showing which decision the user made. Rendered from the web-only
    :web/resolved-dialogs log so answered confirms stay visible in the timeline."
-  [key {:keys [message type value label]}]
+  [key {:keys [message type value label reason]}]
   (let [deny?  (and (= type :confirm) (not value))
         allow? (and (= type :confirm) value)]
     [:div {:class ["post" "post--assistant" "post--dialog" "post--dialog-resolved"]
@@ -1609,7 +1686,9 @@
                            allow? "dialog-decision--allow"
                            :else  "dialog-decision--neutral")]}
        (icon/icon {:icon-name (if deny? :x :check) :size :sm})
-       [:span label]]]]))
+       [:span label]]
+      (when reason
+        [:div {:class ["dialog-deny-reason"]} reason])]]))
 
 (defn- dialog-post
   "Render a pending dialog (confirm/select/alert/cwd-select) as an inline,
@@ -1660,7 +1739,9 @@
              [:button {:class ["confirm-btn" "confirm-btn--allow"]
                        :on {:click (fn [_] (answer! nil))}} "OK"]
              ;; :confirm (default)
-             (confirm-buttons live-dialog answer!))])]])))
+             (confirm-buttons live-dialog answer!
+                              #(dispatch! {:type :deny-reason/start
+                                           :room-id room-id :dialog-id id})))])]])))
 
 ;; ── Diff view ────────────────────────────────────────────────────────────────
 
@@ -3007,7 +3088,11 @@
                                         (assoc :editing? true :edit-text (:text editing))
                                         (= p perm-tool-idx)
                                         (assoc :permission {:dialog pending-dialog
-                                                            :answer! perm-answer!})
+                                                            :answer! perm-answer!
+                                                            :deny-reason!
+                                                            #(dispatch! {:type :deny-reason/start
+                                                                         :room-id (:id room)
+                                                                         :dialog-id (:id pending-dialog)})})
                                         (resolved-by-tool (:id entry))
                                         (assoc :resolved-permission
                                                (resolved-by-tool (:id entry)))))]
@@ -3058,17 +3143,29 @@
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         [:div {:class ["compose-dock"]}
          (when (:web/copy-flash state) (copy-toast))
-         (if-let [form (:web/skill-form state)]
-           (skill-form-compose dispatch! form)
-           (compose-box dispatch! room busy? (get-in state [:web/compose-images dkey])
-                        dkey (get-in state [:web/drafts dkey]) sid
-                        (:web/cmd-selected state)
-                        (get-in state [:lobby :agent-id])
-                        (:web/queue-popover? state)
-                        (:web/prompt-nav state)
-                        nav-ctx
-                        (:web/scrolled-up? state)
-                        (false? (:web/connected? state))))]))]))
+         ;; Deny with reason (⋯ beside Deny) holds the dock only while that
+         ;; ask is still pending here — answered elsewhere, the composer is back.
+         (let [deny-reason (:web/deny-reason state)
+               deny-dialog (when (and room (= (:room-id deny-reason) (:id room)))
+                             (some #(when (= (:dialog-id deny-reason) (:id %)) %)
+                                   (get-in room [:ui :dialogs])))]
+           (cond
+             deny-dialog
+             (deny-reason-compose dispatch! deny-reason deny-dialog)
+
+             (:web/skill-form state)
+             (skill-form-compose dispatch! (:web/skill-form state))
+
+             :else
+             (compose-box dispatch! room busy? (get-in state [:web/compose-images dkey])
+                          dkey (get-in state [:web/drafts dkey]) sid
+                          (:web/cmd-selected state)
+                          (get-in state [:lobby :agent-id])
+                          (:web/queue-popover? state)
+                          (:web/prompt-nav state)
+                          nav-ctx
+                          (:web/scrolled-up? state)
+                          (false? (:web/connected? state)))))]))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 

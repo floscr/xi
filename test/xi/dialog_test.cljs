@@ -104,6 +104,25 @@
         "opts are kept; the 1-arity gets just the :call")
     (is (= "r" (:room-id scoped)) "the rest of the ctx is untouched")))
 
+(deftest capture-deny-reason-records-the-reason-and-keeps-the-answer
+  (let [box      (volatile! nil)
+        asked    (atom nil)
+        confirm! (fn [message opts]
+                   (reset! asked [message (dissoc opts :on-reason)])
+                   ((:on-reason opts) "not that file")
+                   false)
+        wrapped  (dialog/capture-deny-reason confirm! box)]
+    (is (false? (wrapped "allow?" {:options [:yes :no]})) "the answer passes through")
+    (is (= ["allow?" {:options [:yes :no]}] @asked) "other opts are kept")
+    (is (= "not that file" @box)))
+  (is (nil? (dialog/capture-deny-reason nil (volatile! nil))) "headless stays nil"))
+
+(deftest with-deny-reason-appends-only-a-real-reason
+  (is (= "Blocked." (dialog/with-deny-reason "Blocked." nil)))
+  (is (= "Blocked." (dialog/with-deny-reason "Blocked." "  ")))
+  (is (= "Blocked.\nTo tell you how to proceed, the user said:\nuse rg"
+         (dialog/with-deny-reason "Blocked." " use rg "))))
+
 (deftest scope-confirm-to-call-without-confirm-is-a-no-op
   (let [ctx {:room-id "r"}]
     (is (= ctx (dialog/scope-confirm-to-call ctx {:name "clj" :arguments {}})))))

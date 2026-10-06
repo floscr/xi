@@ -67,7 +67,7 @@
    {:name "allow"    :aliases ["a"] :description "Allow the pending permission request" :while-busy? true
     :subcommands [{:name "always" :description "Allow and don't ask again"}
                   {:name "repo"   :description "Allow writes to this repo"}]}
-   {:name "deny"     :aliases ["d"] :description "Deny the pending permission request" :while-busy? true}])
+   {:name "deny"     :aliases ["d"] :description "Deny the pending permission request (/deny <reason> tells the agent why)" :while-busy? true}])
 
 (defn expand-commands
   "Flatten commands + their subcommands into a single suggestion list, where

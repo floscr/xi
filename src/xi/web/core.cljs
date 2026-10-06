@@ -322,7 +322,7 @@
    another client; a button answer already dropped it optimistically via
    :web/dialog-resolved) — the same decision-pill record the buttons log, so
    the answer stays visible in the timeline."
-  [st {:keys [room-id dialog-id value remote?] :as ev}]
+  [st {:keys [room-id dialog-id value reason remote?] :as ev}]
   (let [room   (get-in st [:rooms room-id])
         dialog (when remote? (some #(when (= dialog-id (:id %)) %) (get-in room [:ui :dialogs])))
         res    (ws-transport/dialog-response st ev)]
@@ -338,7 +338,19 @@
                          :type    type
                          :value   value
                          :label   (views/dialog-decision-label type options value)}
+                  reason   (assoc :reason reason)
                   tool-idx (assoc :tool-id (:id (nth history tool-idx)))))))))
+
+(defn- deny-reason-submit
+  "Send the reason typed into the deny-reason composer: deny the ask with it
+   (the echo logs the decision pill, see `dialog-response`). A blank reason
+   is a plain deny."
+  [st _]
+  (when-let [{:keys [room-id dialog-id text]} (:web/deny-reason st)]
+    {:state   (dissoc st :web/deny-reason)
+     :effects [[:app/dispatch (cond-> {:type :ui/dialog-response :room-id room-id
+                                       :dialog-id dialog-id :value false}
+                                (not (str/blank? text)) (assoc :reason (str/trim text)))]]}))
 
 (defn- submit-clear-pending [st _]
   {:state (dissoc st :web/pending-submit)})
@@ -891,6 +903,17 @@
                                                (update-in [:rooms room-id :ui :dialogs]
                                                           (fn [ds] (vec (remove #(= dialog-id (:id %)) ds)))))})
           :ui/dialog-response    dialog-response
+          ;; Deny with reason: the Deny button's ⋯ turns the composer into a
+          ;; reason field (views/deny-reason-compose); sending answers the ask
+          ;; `false` + :reason, which the gate hands the model.
+          :deny-reason/start     (fn [st {:keys [room-id dialog-id]}]
+                                   {:state (assoc st :web/deny-reason
+                                                  {:room-id room-id :dialog-id dialog-id :text ""})})
+          :deny-reason/set-text  (fn [st {:keys [text]}]
+                                   (when (:web/deny-reason st)
+                                     {:state (assoc-in st [:web/deny-reason :text] text)}))
+          :deny-reason/cancel    (fn [st _] {:state (dissoc st :web/deny-reason)})
+          :deny-reason/submit    deny-reason-submit
           :submit/pending        submit-pending
           :submit/clear-pending  submit-clear-pending
           :web/optimistic-set    optimistic-set

@@ -3074,6 +3074,31 @@ code a:hover,
   filter: brightness(1.1);
 }
 
+/* Deny + its ⋯ (deny with reason) read as one quiet split button. */
+.confirm-split {
+  display: inline-flex;
+  align-items: stretch;
+}
+.confirm-split > .confirm-btn--deny:first-child { padding-right: var(--size-2); }
+.confirm-btn--more {
+  padding-inline: var(--size-2);
+  letter-spacing: 0.05em;
+}
+
+/* The reason a confirm was denied with, under its decision pill. */
+.dialog-deny-reason {
+  margin-top: var(--size-1);
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+  white-space: pre-wrap;
+}
+
+/* Deny with reason: the composer reshaped (skill-compose-* layout) with a
+   red accent so it can't be mistaken for a normal message. */
+.deny-compose-head > .icon { color: var(--red-fg, #ef4444); }
+.deny-compose .compose-input-row { padding-top: var(--size-1); }
+.deny-compose-send { color: var(--red-fg, #ef4444); }
+
 /* ── "Copied" toast (native copy confirmation) ───────────────────────── */
 
 /* Wraps the composer so the toast can anchor directly above the actions bar,
