@@ -81,6 +81,7 @@
             [xi.session.recent :as recent]
             [xi.subagent :as subagent]
             [xi.system-prompt :as system-prompt]
+            [xi.user-state.store :as user-store]
             [xi.users :as users]
             [xi.util :as util]
             ["node:fs" :as fs]
@@ -321,9 +322,13 @@ See docs/guide/command-line.md for the full reference.")
                         (valid-port (aget js/process.env "XI_PORT"))
                         ws/DEFAULT_PORT)))
 
-(defn- resolve-model-opts [{:keys [model]}]
+(defn- resolve-model-opts
+  "The model and effort this process starts with: --model, else the model its
+   own user last picked (xi.user-state :preferred-model), else the default. A
+   server hands every other user their own preference over this (xi.server.ws)."
+  [{:keys [model] :as opts}]
   {:model  (or model
-               (session/load-preferred-model)
+               (:preferred-model (user-store/load-state (own-user opts)))
                DEFAULT_MODEL)
    :effort "high"})
 

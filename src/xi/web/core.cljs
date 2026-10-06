@@ -1222,8 +1222,9 @@
                                    {:state (assoc st :web/git-status-text text
                                                      :web/git-status-cwd cwd
                                                      :web/git-status-loading? false)})
-          ;; Session bookmarks. Flip locally for a snappy star, then forward:
-          ;; the server persists and rebroadcasts an authoritative :lobby/state.
+          ;; Session favorites. Flip locally for a snappy star, then forward:
+          ;; the server persists them for this user and rebroadcasts an
+          ;; authoritative :lobby/state.
           ;; Project-session listings aren't rebroadcast, so the local flip is
           ;; what keeps that view in sync until it's re-fetched.
           :favorites/toggle      (fn [st {:keys [session-id]}]
@@ -2382,6 +2383,8 @@
     (r/render (el "app")
               (views/root-view (assoc (demo/demo-state view)
                                       :web/nav-items (:nav-items composed)
+                                      :web/sidebar-groups (:sidebar-groups composed)
+                                      :web/session-menu-items (:session-menu-items composed)
                                       :web/appearance-config config/appearance)
                                (fn [& _])
                                (:pages composed)))))

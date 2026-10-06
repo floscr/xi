@@ -169,6 +169,17 @@
     (is (= "opus" (get-in state [:rooms "r" :agent :model])))
     (is (= :status (:kind (peek (history state)))))))
 
+(deftest model-command-remembers-the-model-for-the-sender
+  (let [persist (fn [ev]
+                  (->> (:effects (handle (with-room) (merge {:type :command/run :room-id "r"
+                                                             :name "model" :args "opus"} ev)))
+                       (filter #(= :model/persist-preferred (first %)))))]
+    (is (= [[:model/persist-preferred {:model "opus" :user "alice"}]]
+           (persist {:user "alice"})))
+    (testing "an unstamped command is the process' own user's"
+      (is (= [[:model/persist-preferred {:model "opus" :user "root"}]]
+             (persist {}))))))
+
 (deftest model-command-bare-fetches-models
   (let [{:keys [effects]} (handle (with-room)
                                   {:type :command/run :room-id "r" :name "model"})]
@@ -187,7 +198,32 @@
 (deftest resume-command-bare-lists-sessions
   (let [{:keys [effects]} (handle (with-room)
                                   {:type :command/run :room-id "r" :name "resume"})]
-    (is (= [[:session/list {:room-id "r"}]] effects))))
+    (is (= [[:session/list {:room-id "r" :user "root"}]] effects))))
+
+(deftest favorite-commands-act-for-the-sender
+  (let [run (fn [name ev]
+              (:effects (handle (with-room)
+                                (merge {:type :command/run :room-id "r" :name name} ev))))]
+    (is (= [[:session/list-favorites {:room-id "r" :user "alice"}]]
+           (run "favorites" {:user "alice"})))
+    (is (= [[:session/list {:room-id "r" :user "alice"}]]
+           (run "sessions" {:user "alice"})))
+    (testing "/favorite stars the room's session for the sender"
+      (let [sid (get-in (with-room) [:rooms "r" :session :id])]
+        (is (= [[:session/favorite-toggle {:room-id "r" :session-id sid :user "alice"}]]
+               (run "favorite" {:user "alice"})))))
+    (testing "an unstamped command is the process' own user's"
+      (is (= [[:session/list-favorites {:room-id "r" :user "root"}]]
+             (run "favorites" {}))))))
+
+(deftest menu-star-toggles-the-selected-session-for-the-presser
+  (let [{:keys [effects]} (handle (with-room)
+                                  {:type :session/toggle-favorite :room-id "r"
+                                   :selected {:summary {:session-id "s9"}}
+                                   :reopen "favorites" :user "alice"})]
+    (is (= [[:session/favorite-toggle {:room-id "r" :session-id "s9"
+                                       :reopen "favorites" :user "alice"}]]
+           effects))))
 
 (deftest prompt-command-opens-buffer
   (let [{:keys [state]} (handle (with-room)

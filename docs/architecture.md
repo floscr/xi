@@ -306,17 +306,27 @@ extension territory, keyed by the id.
   effect persists it and sends `:user-state/changed` to all of that user's
   devices, and `admit!` sends `:user-state/state` after `:auth/ok`. This is
   state, not configuration: config.edn, rules, MCP and extensions stay global.
-  Two more keys, `:read-state` (`{session-id seen-response-count}`) and
-  `:dismissed` (session ids hidden from Recent, oldest first), are server-kept
-  like `:ext`: not `:client-writable?`, absent from `client-view`. The lobby is
-  therefore built per user: `lobby-base` is the shared part, `for-user` adds
-  the user's `:dismissed?` flags and `:read`, and `broadcast-lobby!` encodes
-  one payload per connected user (`last-lobby` is `{user payload}`).
+  Three more keys, `:read-state` (`{session-id seen-response-count}`),
+  `:dismissed` (session ids hidden from Recent, oldest first) and `:favorites`
+  (session ids the user starred, oldest first), are server-kept like `:ext`:
+  not `:client-writable?`, absent from `client-view`. The lobby is therefore
+  built per user: `lobby-base` is the shared part, `for-user` adds the user's
+  `:dismissed?` and `:favorite?` flags and `:read`, and `broadcast-lobby!`
+  encodes one payload per connected user (`last-lobby` is `{user payload}`).
+  Because the capped session list is shared, `lobby-base` keeps every session
+  any user starred (`store/all-favorite-ids`); session listings carry no
+  `:favorite?` themselves, whoever sends one tags it for its recipient
+  (`session/annotate-favorites`). A user who never starred a chat starts from
+  the old global `~/.config/xi/favorites.json` (read-only now).
   `:session/mark-read` and `:dismissed/toggle` act for `state/event-user`; a
   prompt un-hides its session for its sender. A user who never marked a chat
   starts from the old global `~/.config/xi/read-state.json` (read-only now).
-  Server-global state that predates this (favorites, snippets, recent
-  projects) is unchanged. See [web-client-internals.md](web-client-internals.md).
+  `/model` writes the sender's `:preferred-model` (`:model/persist-preferred`
+  in `xi.fx`, the same key the web client syncs); a new room and the lobby's
+  `:model` read it before the server's default (`build-room`, `for-user`). The
+  old global `preferred-model.json` is gone and not migrated.
+  Server-global state that predates this (snippets, recent projects) is
+  unchanged. See [web-client-internals.md](web-client-internals.md).
 
 ## Room lifecycle and auth
 

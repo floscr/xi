@@ -49,9 +49,6 @@
 (def ^:private READ_STATE_FILE
   (.join node-path HOME ".config" "xi" "read-state.json"))
 
-(def ^:private PREFERRED_MODEL_FILE
-  (.join node-path HOME ".config" "xi" "preferred-model.json"))
-
 (def ^:private COUNT_CACHE_FILE
   (.join node-path HOME ".config" "xi" "response-counts-cache.json"))
 
@@ -532,11 +529,6 @@
       primary
       (get (claude-transcript-index) fname))))
 
-;; ── Favorites (source-agnostic bookmarks) ─────────────────────────────────────
-;; Favorites live in one JSON file keyed by the summary's :session-id, so
-;; Xi/Claude sessions can all be starred without editing their own files.
-
-
 (defn delete-session!
   "Delete a session by its summary map (must contain :filepath and :source).
    Returns true if the primary file was deleted, false if it was not found.
@@ -562,64 +554,30 @@
     (when deleted? (invalidate-listing-cache!))
     deleted?))
 
-(defn load-favorites
-  "Set of favorited session-ids from ~/.config/xi/favorites.json (or #{})."
+;; ── Favorites (source-agnostic stars) ──────────────────────────────────────────────────
+;; Which chats are starred is per user (xi.user-state.store), keyed by the
+;; summary's :session-id so Xi/Claude sessions can all be starred without
+;; editing their own files. Listings carry no :favorite? — whoever sends one
+;; tags it for the user it is going to (annotate-favorites).
+
+(defn load-legacy-favorites
+  "The old global favorites, a vec of session-ids from
+   ~/.config/xi/favorites.json. [] when missing or unreadable. Only read, as
+   the starting point of a user who has not starred anything yet — otherwise
+   the upgrade would empty everyone's favorites."
   []
   (try
     (if (fs/existsSync FAVORITES_FILE)
       (->> (js/JSON.parse (fs/readFileSync FAVORITES_FILE "utf8"))
            (js->clj)
-           (set))
-      #{})
-    (catch :default _e #{})))
+           (filterv string?))
+      [])
+    (catch :default _e [])))
 
 (defn annotate-favorites
-  "Tag each summary with :favorite? using a favorites set. The 1-arity reads
-   the set from disk once; the 2-arity is pure (for tests / batch use)."
-  ([summaries] (annotate-favorites summaries (load-favorites)))
-  ([summaries favs]
-   (mapv #(assoc % :favorite? (contains? favs (:session-id %))) summaries)))
-
-(defn favorite?
-  "True when session-id is currently favorited."
-  [session-id]
-  (contains? (load-favorites) session-id))
-
-(defn toggle-favorite!
-  "Add/remove session-id from favorites. Returns the new favorite? state."
-  [session-id]
-  (let [favs  (load-favorites)
-        fav?  (contains? favs session-id)
-        favs' (if fav? (disj favs session-id) (conj favs session-id))]
-    (try
-      (fs/mkdirSync (.dirname node-path FAVORITES_FILE) #js {:recursive true})
-      (fs/writeFileSync FAVORITES_FILE (js/JSON.stringify (clj->js (vec favs'))))
-      (catch :default e
-        (js/console.error "[session] favorites write failed:" e)))
-    (not fav?)))
-
-;; ── Preferred model (last model chosen via /model) ────────────────────────────
-;; Persisted so a model picked via /model becomes the default for new sessions.
-
-(defn load-preferred-model
-  "The last model chosen via /model (from ~/.config/xi/preferred-model.json),
-   or nil when none has been saved / the file is missing or invalid."
-  []
-  (try
-    (when (fs/existsSync PREFERRED_MODEL_FILE)
-      (let [m (js->clj (js/JSON.parse (fs/readFileSync PREFERRED_MODEL_FILE "utf8")))]
-        (get m "model")))
-    (catch :default _e nil)))
-
-(defn save-preferred-model!
-  "Persist model as the default for new sessions."
-  [model]
-  (try
-    (fs/mkdirSync (.dirname node-path PREFERRED_MODEL_FILE) #js {:recursive true})
-    (fs/writeFileSync PREFERRED_MODEL_FILE
-                      (js/JSON.stringify #js {:model model}))
-    (catch :default e
-      (js/console.error "[session] preferred-model write failed:" e))))
+  "Tag each summary with :favorite? using a set of favorited session-ids."
+  [summaries favs]
+  (mapv #(assoc % :favorite? (contains? favs (:session-id %))) summaries))
 
 ;; ── Dismissed (hidden from Recent) ────────────────────────────────────────────
 ;; Reversible "archive from the recent list". The session stays fully on disk
@@ -710,20 +668,19 @@
    worktree — so /resume from the main repo also surfaces sessions started
    inside its worktrees."
   [cwd]
-  (annotate-favorites
-   (->> (git-project-cwds cwd)
-        (mapcat sessions-for-cwd)
-        ;; Promoted sub-agent sessions stay out of the pickers — they are
-        ;; opened through their origin session's sub-agents UI instead.
-        (remove :subagent-origin)
-        (sort-by #(or (:last-accessed %) (:timestamp %)))
-        reverse
-        vec)))
+  (->> (git-project-cwds cwd)
+       (mapcat sessions-for-cwd)
+       ;; Promoted sub-agent sessions stay out of the pickers — they are
+       ;; opened through their origin session's sub-agents UI instead.
+       (remove :subagent-origin)
+       (sort-by #(or (:last-accessed %) (:timestamp %)))
+       reverse
+       vec))
 
 (def ^:private all-sessions-cache-ttl-ms 2000)
 
 (defn- scan-all-sessions
-  "The raw (un-annotated) all-CWDs session scan behind list-all-sessions."
+  "The all-CWDs session scan behind list-all-sessions."
   []
   (let [;; Xi: each subdir under XI_SESSIONS_DIR is an encoded CWD
         xi-sessions (->> (list-dir-subdirs XI_SESSIONS_DIR)
@@ -764,12 +721,11 @@
 (defn list-all-sessions
   "List sessions across ALL CWDs from all sources. Returns vec of session
    summaries, newest first. Each summary includes :cwd. The underlying disk
-   scan is cached briefly (see all-sessions-cache) — favorites
-   annotation stays per-call so toggles reflect instantly. Promoted sub-agent
+   scan is cached briefly (see all-sessions-cache). Promoted sub-agent
    sessions (:subagent-origin) are filtered out — they are reachable only
    through their origin session's sub-agents UI (or a direct id/URL)."
   []
-  (annotate-favorites (into [] (remove :subagent-origin) (all-sessions-raw))))
+  (into [] (remove :subagent-origin) (all-sessions-raw)))
 
 (defn- list-all-personal-agent-session-files
   "All session metadata files across every named-agent subdir of the
@@ -786,11 +742,10 @@
   [& [agent-id]]
   (let [xi-sessions (->> (list-dir-files (personal-agent-dir agent-id) ".json")
                          (keep #(cached-summary read-xi-session-meta %)))]
-    (annotate-favorites
-     (->> xi-sessions
-          (sort-by #(or (:last-accessed %) (:timestamp %)))
-          reverse
-          vec))))
+    (->> xi-sessions
+         (sort-by #(or (:last-accessed %) (:timestamp %)))
+         reverse
+         vec)))
 
 (defn- summary-matches-id? [session-id summary]
   (or (= session-id (:session-id summary))

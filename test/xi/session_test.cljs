@@ -147,23 +147,6 @@
                  (session/annotate-favorites
                   [{:session-id "x"} {:session-id "y"}] #{}))))))
 
-(def ^:private favorites-file
-  (.join path (or (aget js/process.env "HOME") (os/homedir)) ".config" "xi" "favorites.json"))
-
-(defn- with-favorites-backup
-  "Run f with the real favorites file snapshotted and restored afterwards, so
-   the round-trip test can't clobber the user's bookmarks."
-  [f]
-  (let [existed? (fs/existsSync favorites-file)
-        backup   (when existed? (fs/readFileSync favorites-file "utf8"))]
-    (try
-      (f)
-      (finally
-        (if existed?
-          (fs/writeFileSync favorites-file backup "utf8")
-          (when (fs/existsSync favorites-file)
-            (fs/rmSync favorites-file)))))))
-
 (deftest truncate-message-results-clips-tool-results
   (testing "tool-result text is clipped to the resume cap; other blocks pass through"
     (let [long-text (str/join "\n" (map str (range 250)))
@@ -185,18 +168,6 @@
   (testing "a short tool-result is returned unchanged"
     (let [messages [{:type :tool-result :tool-use-id "t1" :content "one\ntwo"}]]
       (is (= messages (session/truncate-message-results messages))))))
-
-(deftest toggle-favorite-round-trip
-  (testing "toggle adds then removes a session-id, load/favorite? reflect it"
-    (with-favorites-backup
-      (fn []
-        (let [id (str "test-fav-" (js/Date.now))]
-          (is (false? (session/favorite? id)) "not favorited initially")
-          (is (true? (session/toggle-favorite! id)) "toggle on returns true")
-          (is (true? (session/favorite? id)) "now favorited")
-          (is (contains? (session/load-favorites) id) "present in the set")
-          (is (false? (session/toggle-favorite! id)) "toggle off returns false")
-          (is (false? (session/favorite? id)) "no longer favorited"))))))
 
 ;; ── Dismissed (hidden from Recent) ────────────────────────────────────────────
 

@@ -147,7 +147,7 @@
   (->> (if agent-id
          (session/list-personal-agent-sessions agent-id)
          (session/list-all-sessions))
-       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite?]))))
+       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source]))))
 
 (defn- saved-sessions
   "All saved-session summaries, minus those shadowed by a live room's
@@ -176,8 +176,9 @@
   100)
 
 (defn- cap-sessions
-  "Trim a newest-first summary list to the recent cap, keeping all favorites
-   and any session in keep-ids (live rooms). Preserves order."
+  "Trim a newest-first summary list to the recent cap, keeping every session
+   in keep-ids (live rooms, and anything any user starred — the list is shared
+   by all users, see `for-user`). Preserves order."
   [sessions keep-ids]
   (if (<= (count sessions) lobby-session-cap)
     sessions
@@ -185,8 +186,7 @@
                        (comp (take lobby-session-cap) (keep :session-id))
                        sessions)]
       (filterv (fn [s]
-                 (or (:favorite? s)
-                     (contains? recent (:session-id s))
+                 (or (contains? recent (:session-id s))
                      (contains? keep-ids (:session-id s))))
                sessions))))
 
@@ -290,13 +290,20 @@
 
 (defn- for-user
   "The lobby/session-list `payload` as `user` sees it: the chats they hid
-   from Recent tagged :dismissed?, and (for a lobby) their own read markers."
+   from Recent tagged :dismissed?, the ones they starred tagged :favorite?,
+   and (for a lobby) their own read markers and the model their next chat
+   starts with."
   [payload user]
-  (let [stored (user-store/load-state user)]
-    (cond-> (update payload :sessions session/annotate-dismissed
-                    (set (:dismissed stored)))
-      (= :lobby/state (:type payload))
-      (assoc :read (read-state-of stored)))))
+  (let [stored (user-store/load-state user)
+        lobby? (= :lobby/state (:type payload))]
+    (cond-> (-> payload
+                (update :sessions session/annotate-dismissed
+                        (set (:dismissed stored)))
+                (update :sessions session/annotate-favorites
+                        (user-store/favorite-ids user)))
+      lobby?                    (assoc :read (read-state-of stored))
+      (and lobby? (:preferred-model stored))
+      (assoc :model (:preferred-model stored)))))
 
 (defn- lobby-base
   "The :lobby/state payload map: live rooms + saved sessions (+ the server's
@@ -314,7 +321,9 @@
         ;; its home view is the only listing surface and its corpus is small.
         sessions (cond-> (saved-sessions st agent-id)
                    (nil? agent-id)
-                   (cap-sessions (into #{} (keep :session-id) rooms)))
+                   (cap-sessions (into (user-store/all-favorite-ids)
+                                       (keep :session-id)
+                                       rooms)))
         ;; Response counts ride along so clients don't each round-trip a
         ;; :session/counts query for every session on every lobby refresh —
         ;; one count pass per broadcast instead of one per client.
@@ -507,7 +516,9 @@
                             (assoc :id session-id)))]
             {:cwd     cwd
              :session session
-             :room    {:model        (or model (:model server-opts))
+             :room    {:model        (or model
+                                         (:preferred-model (user-store/load-state user))
+                                         (:model server-opts))
                        :effort       (or effort (:effort server-opts))
                        :cwd          cwd
                        :system       system
@@ -699,12 +710,12 @@
                                                        :last-accessed :timestamp
                                                        :snippet])))})))
 
-      ;; Toggle a session bookmark, then fan a fresh lobby out to every client
-      ;; (the :favorites/changed dispatch is lobby-relevant, so the tap
-      ;; rebroadcasts with updated :favorite? flags).
+      ;; Toggle a session's favorite star for `user`, then fan a fresh lobby
+      ;; out (:favorites/changed is lobby-relevant, so the tap rebroadcasts;
+      ;; each user's lobby carries their own :favorite? flags).
       :favorites/toggle-reply
-      (fn [{:keys [dispatch!]} {:keys [session-id]}]
-        (session/toggle-favorite! session-id)
+      (fn [{:keys [dispatch!]} {:keys [session-id user]}]
+        (user-store/toggle-favorite! user session-id)
         (dispatch! {:type :favorites/changed}))
 
       ;; Toggle a session's dismissed (hidden-from-recent) flag for `user`,

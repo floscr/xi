@@ -18,13 +18,14 @@
    store with arbitrary data. To add a piece of per-user state, add a key
    here and bind it in xi.web.user-state.
 
-   Three keys are not UI state and are kept by the server alone — clients can
+   Four keys are not UI state and are kept by the server alone — clients can
    neither read nor write them. `:ext` holds what each extension keeps about
    the user, {ext-id data}; extensions reach it through xi.api.user, which
    proves who is calling, so an extension only ever touches its own entry.
-   `:read-state` and `:dismissed` are the user's unread markers and the chats
-   they hid from Recent: the lobby is built per user from them (xi.server.ws),
-   so they reach a client as the lobby's `:read` and `:dismissed?` flags.")
+   `:read-state`, `:dismissed` and `:favorites` are the user's unread markers,
+   the chats they hid from Recent and the chats they starred: the lobby is
+   built per user from them (xi.server.ws), so they reach a client as the
+   lobby's `:read`, `:dismissed?` and `:favorite?` flags.")
 
 (defn plain-data?
   "Is `v` plain EDN data — nil, booleans, numbers, strings, keywords, and
@@ -67,6 +68,10 @@
   "Most chats one user keeps hidden from Recent."
   1000)
 
+(def max-favorites
+  "Most chats one user keeps starred."
+  1000)
+
 (def registry
   "Known keys → {:valid? (fn [value] → bool)}."
   {;; \"auto\" | \"light\" | \"dark\"
@@ -103,6 +108,9 @@
    ;; session ids hidden from the user's Recent group, oldest first
    :dismissed        {:client-writable? false
                       :valid? (fn [v] (bounded-strings? v max-dismissed 200))}
+   ;; session ids the user starred, oldest first (the newest star is last)
+   :favorites        {:client-writable? false
+                      :valid? (fn [v] (bounded-strings? v max-favorites 200))}
    ;; {ext-id data}: what each extension keeps about the user. Written only
    ;; by the server (xi.users), never by a client.
    :ext              {:client-writable? false

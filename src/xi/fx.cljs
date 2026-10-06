@@ -14,6 +14,7 @@
             [xi.image :as image]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
+            [xi.user-state.store :as user-store]
             [xi.util :as util]))
 
 (defn- room-of [state room-id]
@@ -257,10 +258,11 @@
                   (js/console.error "[fx] session mark-interrupted failed:" e)))))))
 
    :session/list
-   (fn [{:keys [dispatch! state]} {:keys [room-id]}]
+   (fn [{:keys [dispatch! state]} {:keys [room-id user]}]
      (let [room (room-of state room-id)
-           cwd-sessions (list-room-sessions room :cwd)
-           all-sessions (list-room-sessions room :all)
+           favs (user-store/favorite-ids (util/user-id user))
+           cwd-sessions (session/annotate-favorites (list-room-sessions room :cwd) favs)
+           all-sessions (session/annotate-favorites (list-room-sessions room :all) favs)
            tag-summary (fn [items summaries]
                          (mapv (fn [item s] (assoc item :summary s))
                                items summaries))
@@ -282,9 +284,11 @@
                                                     :room-id room-id :reopen "sessions"}}]}}))))
 
    :session/list-favorites
-   (fn [{:keys [dispatch! state]} {:keys [room-id]}]
+   (fn [{:keys [dispatch! state]} {:keys [room-id user]}]
      (let [room (room-of state room-id)
-           all  (list-room-sessions room :all)
+           all  (session/annotate-favorites
+                 (list-room-sessions room :all)
+                 (user-store/favorite-ids (util/user-id user)))
            ;; Resume works by index into the full :all list, so keep each
            ;; favorite's original index even after filtering.
            items (->> (map-indexed vector all)
@@ -304,9 +308,9 @@
                                                     :room-id room-id :reopen "favorites"}}]}}))))
 
    :session/favorite-toggle
-   (fn [{:keys [dispatch!]} {:keys [room-id session-id reopen]}]
+   (fn [{:keys [dispatch!]} {:keys [room-id session-id reopen user]}]
      (when session-id
-       (let [fav? (session/toggle-favorite! session-id)]
+       (let [fav? (user-store/toggle-favorite! (util/user-id user) session-id)]
          (dispatch! {:type :ui/status :room-id room-id
                      :text (if fav? "★ Added to favorites" "☆ Removed from favorites")})
          ;; Lobby-relevant: refresh any attached web clients' session lists.
@@ -393,10 +397,15 @@
           (dispatch! {:type :ui/menu-populate :room-id room-id :id :model
                       :menu {:prompt "model> " :items items}})))))
 
+   ;; The model a user's new chats start with: kept in their own state
+   ;; (xi.user-state :preferred-model), the same key the web client syncs.
    :model/persist-preferred
-   (fn [_ctx {:keys [model]}]
+   (fn [{:keys [dispatch!]} {:keys [model user]}]
      (when (seq model)
-       (session/save-preferred-model! model)))
+       (let [user (util/user-id user)]
+         (when (user-store/set-key! user :preferred-model model)
+           (dispatch! {:type :user/ui-set :user user
+                       :key :preferred-model :value model})))))
 
    :cwd/change
    (fn [{:keys [dispatch! state]} {:keys [room-id path]}]

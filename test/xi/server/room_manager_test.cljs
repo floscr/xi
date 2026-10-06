@@ -318,6 +318,16 @@
                                      :session-id "other"})]
       (is (= [[:dismissed/toggle-reply {:session-id "other" :user "root"}]] effects)))))
 
+(deftest favorites-toggle-stars-for-the-sender
+  (let [st (state-with-sessioned-room)]
+    (is (= [[:favorites/toggle-reply {:session-id "s1" :user "alice"}]]
+           (:effects (handle st {:type :favorites/toggle :client-id "c1"
+                                 :user "alice" :session-id "s1"}))))
+    (testing "an unstamped event is the process' own user's"
+      (is (= [[:favorites/toggle-reply {:session-id "s1" :user "root"}]]
+             (:effects (handle st {:type :favorites/toggle :client-id "c1"
+                                   :session-id "s1"})))))))
+
 (deftest dismissed-toggle-and-mark-read-act-for-the-sender
   (let [st (state-with-sessioned-room)]
     (is (= [[:dismissed/toggle-reply {:session-id "s1" :user "alice"}]

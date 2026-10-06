@@ -26,7 +26,7 @@ For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full
 | --- | --- | --- |
 | `--port N` | all | The port (default `7474`, or `XI_PORT`). |
 | `--host ADDR` | `server` | Addresses to bind, comma-separated (default all interfaces, or `XI_HOST`). Loopback is always bound too. |
-| `--model NAME` | all | The model. Without it: the last one picked with `/model`, else the built-in default. |
+| `--model NAME` | all | The model. Without it: the last one your [user](server.md#users) picked with `/model`, else the built-in default. |
 | `--session ID` | `xi`, `join`, `create`, `prompt` | Resume a saved chat instead of starting a new one. |
 | `--prompt TEXT` | `xi`, `join`, `create` | Send this message as soon as the chat is ready. |
 | `--no-auto-join` | `xi` | Stay local even when a server is running. |

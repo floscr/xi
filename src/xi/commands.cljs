@@ -200,7 +200,7 @@
 (defn- cmd-reload [st {:keys [room-id]}]
   {:effects [[:app/reload {:session-id (get-in st [:rooms room-id :session :id])}]]})
 
-(defn- cmd-model [st {:keys [room-id args]}]
+(defn- cmd-model [st {:keys [room-id args user]}]
   (if (seq args)
     (let [provider (util/provider-for-model args)
           has-session? (get-in st [:rooms room-id :session :provider-session-id])]
@@ -208,14 +208,14 @@
                   (assoc-in [:rooms room-id :agent :model] args)
                   (assoc-in [:rooms room-id :agent :provider] provider)
                   (append-history room-id (status-entry (str "Model set to: " args))))
-       :effects (cond-> [[:model/persist-preferred {:model args}]]
+       :effects (cond-> [[:model/persist-preferred {:model args :user user}]]
                   has-session? (conj [:session/sync {:room-id room-id}]))})
     {:effects [[:models/fetch {:room-id room-id}]]}))
 
-(defn- cmd-resume [st {:keys [room-id args]}]
+(defn- cmd-resume [st {:keys [room-id args user]}]
   (cond
     (nil? args)
-    {:effects [[:session/list {:room-id room-id}]]}
+    {:effects [[:session/list {:room-id room-id :user user}]]}
 
     ;; `id:<session-id>` — resume a specific session (used by the palette Chats
     ;; section), not an index into the listing.
@@ -231,17 +231,17 @@
         (status st room-id (str "Invalid session: " args))
         {:effects [[:session/load {:room-id room-id :scope scope :index n}]]}))))
 
-(defn- cmd-sessions [_st {:keys [room-id]}]
-  {:effects [[:session/list {:room-id room-id}]]})
+(defn- cmd-sessions [_st {:keys [room-id user]}]
+  {:effects [[:session/list {:room-id room-id :user user}]]})
 
-(defn- cmd-favorites [_st {:keys [room-id]}]
-  {:effects [[:session/list-favorites {:room-id room-id}]]})
+(defn- cmd-favorites [_st {:keys [room-id user]}]
+  {:effects [[:session/list-favorites {:room-id room-id :user user}]]})
 
 (defn- cmd-favorite
   "Toggle the favorite star on the current session (no picker)."
-  [st {:keys [room-id]}]
+  [st {:keys [room-id user]}]
   (if-let [sid (get-in st [:rooms room-id :session :id])]
-    {:effects [[:session/favorite-toggle {:room-id room-id :session-id sid}]]}
+    {:effects [[:session/favorite-toggle {:room-id room-id :session-id sid :user user}]]}
     (status st room-id "No active session to favorite.")))
 
 (defn- cmd-new [_st {:keys [room-id]}]
@@ -645,10 +645,11 @@
 (defn- session-toggle-favorite
   "Menu keybinding (* in /resume or /favorites) toggled a star. Defers the
    disk write to the :session/favorite-toggle effect, keyed by the selected
-   summary's :session-id."
-  [st {:keys [room-id selected reopen]}]
+   summary's :session-id; the star is the pressing user's (state/event-user)."
+  [st {:keys [room-id selected reopen] :as ev}]
   (if-let [sid (get-in selected [:summary :session-id])]
-    {:effects [[:session/favorite-toggle {:room-id room-id :session-id sid :reopen reopen}]]}
+    {:effects [[:session/favorite-toggle {:room-id room-id :session-id sid :reopen reopen
+                                          :user (state/event-user st ev)}]]}
     (status st room-id "No session selected.")))
 
 (defn- session-resumed [st {:keys [room-id session summary messages msg-hash msg-count]}]

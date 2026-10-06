@@ -16,7 +16,8 @@
             [xi.core.state :as state]
             [xi.projects :as projects]
             [xi.session :as session]
-            [xi.user-config :as user-config]))
+            [xi.user-config :as user-config]
+            [xi.user-state.store :as user-store]))
 
 (defn- project-paths
   "The project directories for this machine: the config's `:projects` spec
@@ -130,9 +131,10 @@
   {:effects [[:projects/web-list-reply {:client-id client-id}]]})
 
 (defn- web-sessions
-  "Roomless: return sessions for a specific CWD."
-  [_st {:keys [client-id cwd]}]
-  {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd}]]})
+  "Roomless: return sessions for a specific CWD, starred as the sender has them."
+  [st {:keys [client-id cwd] :as ev}]
+  {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd
+                                            :user (state/event-user st ev)}]]})
 
 (defn- git-dirty?
   "Resolve to true when the git working tree at `dir` has uncommitted changes.
@@ -170,7 +172,7 @@
 
    ;; Sessions for a specific project CWD.
    :projects/web-sessions-reply
-   (fn [{:keys [state]} {:keys [client-id cwd]}]
+   (fn [{:keys [state]} {:keys [client-id cwd user]}]
      (let [;; Provider session ids held by live rooms must be hidden from
            ;; the saved-session list to avoid a duplicate card during the
            ;; first agent turn before Xi's own :session/sync has run.
@@ -178,12 +180,13 @@
                            (keep (fn [[_ room]]
                                    (get-in room [:session :provider-session-id])))
                            (:rooms state))
-           sessions (cond->> (session/list-sessions cwd)
-                      (seq live-pids)
-                      (filterv #(not (contains? live-pids (:session-id %))))
-                      :always
-                      (mapv #(select-keys % [:session-id :name :cwd
-                                             :last-accessed :timestamp :source :favorite?])))]
+           sessions (->> (session/list-sessions cwd)
+                         (remove #(contains? live-pids (:session-id %))))
+           sessions (session/annotate-favorites
+                     sessions (user-store/favorite-ids user))
+           sessions (mapv #(select-keys % [:session-id :name :cwd
+                                           :last-accessed :timestamp :source :favorite?])
+                          sessions)]
        (send! client-id {:type :projects/web-sessions-result
                          :cwd cwd
                          :sessions sessions})))})

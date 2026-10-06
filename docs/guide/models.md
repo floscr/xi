@@ -61,7 +61,7 @@ your plan's. Zen's preview ids (`gpt-6-astra`) exist only on Zen; use
 
 | Use | Model |
 | --- | --- |
-| A chat | The one you picked, else the last `/model` pick, else the default |
+| A chat | The one you picked, else your last `/model` pick (kept per [user](server.md#users), in the web client and the terminal alike), else the default |
 | Naming a chat, `/summary`, `/truncate` | A cheaper Claude model, always |
 | An [agent profile](agents.md) | Its `:model`, unless `--model` says otherwise |
 

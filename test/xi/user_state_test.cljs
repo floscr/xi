@@ -16,7 +16,7 @@
 
 (deftest valid-rejects-unknown-keys-and-bad-values
   (testing "unknown key"
-    (is (not (user-state/valid? :favorites ["a"])))
+    (is (not (user-state/valid? :bookmarks ["a"])))
     (is (not (user-state/valid? "theme" "dark"))))
   (testing "bad values"
     (is (not (user-state/valid? :theme "sepia")))
@@ -84,10 +84,13 @@
   (is (= {:theme "light"} (store/load-state "bob")) "users never see each other's state")
   (is (= {} (store/load-state "root")) "root is a user like any other"))
 
-(deftest read-markers-and-hidden-chats-are-server-only
+(deftest read-markers-hidden-chats-and-favorites-are-server-only
   (testing "they validate"
     (is (user-state/valid? :read-state {"s1" 3 "s2" 0}))
     (is (user-state/valid? :dismissed ["s1" "s2"]))
+    (is (user-state/valid? :favorites ["s1" "s2"]))
+    (is (not (user-state/valid? :favorites [""])))
+    (is (not (user-state/valid? :favorites "s1")))
     (is (not (user-state/valid? :read-state {"s1" -1})))
     (is (not (user-state/valid? :read-state {"s1" "3"})))
     (is (not (user-state/valid? :read-state {:s1 3})))
@@ -96,8 +99,10 @@
   (testing "a client may neither write nor see them"
     (is (not (user-state/client-valid? :read-state {"s1" 3})))
     (is (not (user-state/client-valid? :dismissed ["s1"])))
+    (is (not (user-state/client-valid? :favorites ["s1"])))
     (is (= {:theme "dark"}
-           (user-state/client-view {:theme "dark" :read-state {"s1" 3} :dismissed ["s1"]})))))
+           (user-state/client-view {:theme "dark" :read-state {"s1" 3}
+                                    :dismissed ["s1"] :favorites ["s1"]})))))
 
 (deftest store-keeps-read-markers-per-user
   (is (nil? (:read-state (store/load-state "alice"))) "nothing marked yet")
@@ -134,6 +139,31 @@
       (is (= user-state/max-dismissed (count hidden)))
       (is (not (contains? hidden "s0")))
       (is (contains? hidden (str "s" user-state/max-dismissed))))))
+
+(deftest store-stars-chats-per-user
+  ;; A user with no stored favorites starts from the legacy global file, so
+  ;; these assert on the ids they toggle rather than on the whole set.
+  (is (true? (store/toggle-favorite! "alice" "fav-s1")) "starred")
+  (is (true? (store/toggle-favorite! "alice" "fav-s2")))
+  (is (contains? (store/favorite-ids "alice") "fav-s1"))
+  (is (not (contains? (store/favorite-ids "bob") "fav-s1")) "bob has not starred it")
+  (testing "the newest star is last"
+    (is (= ["fav-s1" "fav-s2"] (take-last 2 (store/favorites "alice")))))
+  (is (false? (store/toggle-favorite! "alice" "fav-s1")) "unstarred")
+  (is (not (contains? (store/favorite-ids "alice") "fav-s1")))
+  (is (contains? (store/favorite-ids "alice") "fav-s2"))
+  (testing "every user's stars are kept in the shared lobby list"
+    (store/toggle-favorite! "bob" "fav-s3")
+    (let [all (store/all-favorite-ids)]
+      (is (contains? all "fav-s2"))
+      (is (contains? all "fav-s3"))))
+  (testing "past the cap the oldest stars fall away"
+    (doseq [i (range (inc user-state/max-favorites))]
+      (store/toggle-favorite! "carol" (str "s" i)))
+    (let [favs (store/favorite-ids "carol")]
+      (is (= user-state/max-favorites (count favs)))
+      (is (not (contains? favs "s0")))
+      (is (contains? favs (str "s" user-state/max-favorites))))))
 
 (deftest store-keeps-extension-state-apart-from-ui-state
   (store/set-key! "alice" :theme "dark")
