@@ -149,9 +149,6 @@ a.btn:hover { text-decoration: none; }
   color: var(--fg-2);
 }
 
-/* framework ghost button (dark tokens via the block's data-theme), tucked into the bar */
-.code-copy { margin: -4px -8px -4px 0; text-transform: none; letter-spacing: 0; font-family: var(--sans); }
-
 .code-block pre {
   padding: 16px 18px;
   overflow-x: auto;
