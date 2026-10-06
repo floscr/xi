@@ -99,7 +99,7 @@
         html (rewrite-links html)]
     (str/replace html #"(?:<p>)?§CODEBLOCK(\d+)§(?:</p>)?"
                  (fn [[_ idx]]
-                   (str/re-quote-replacement (nth @blocks (parse-long idx)))))))
+                   (nth @blocks (parse-long idx))))))
 
 (defn split-title
   "A guide page starts with `# Title` and, usually, a one-paragraph summary (empty when a heading follows).
