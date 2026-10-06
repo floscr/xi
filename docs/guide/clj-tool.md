@@ -1,8 +1,10 @@
 # The clj tool
 
-Instead of a shell, the agent gets `clj`: a Clojure REPL with file helpers
-that runs inside Xi. Scripts filter and aggregate in the runtime, real
-commands run one at a time, and only the result enters the conversation.
+Xi agents run sandboxed Clojure instead of single-line shell commands. The
+`clj` tool is a Clojure REPL with file helpers that runs inside Xi, so commands
+are readable scripts rather than pipe chains. They filter and aggregate in the
+runtime, real commands run one at a time, and only the result enters the
+conversation.
 
 ## What the agent sees
 
