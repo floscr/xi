@@ -68,6 +68,7 @@ lines; each page line is `- [Title](file.md) — one-line hook`.
 
 **Everyday use**
 - [Projects](projects.md) — how Xi finds your projects, per-project prompt and snippets
+- [Project instructions](project-instructions.md) — `AGENTS.md`: which files load, and how the agent learns about the ones in subdirectories
 - [Sessions](sessions.md) — resume, go back with `/tree`, summarise, trim and roll over
 - [The web client](web-client.md) — the same session on any device, pairing, offline, keyboard
 - [Slash commands](commands.md) — the commands you type into the chat

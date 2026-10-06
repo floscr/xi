@@ -132,7 +132,8 @@ entry if it should have them. Snippets you want everywhere belong in
 `~/.config/xi/snippets.edn` instead.
 
 The prompt is read when a chat starts (and when you `/cd` into the project), so
-an edit applies to the next chat.
+an edit applies to the next chat. How the project's own `AGENTS.md` files are
+found and loaded is on [Project instructions](project-instructions.md).
 
 ## A complete example
 

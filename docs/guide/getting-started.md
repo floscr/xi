@@ -68,7 +68,9 @@ If the project has an `AGENTS.md` (or `CLAUDE.md`) file, Xi reads it into the
 system prompt at the start of every chat. That is where you tell the agent how
 the project is built and tested, what to avoid, and where things are. Files in
 parent directories load too, so a `~/code/AGENTS.md` applies to every project
-below it.
+below it. Other `AGENTS.md` files inside the repository are listed for the
+agent to read when it works near them. See
+[Project instructions](project-instructions.md).
 
 ## Where things live
 
