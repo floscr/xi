@@ -2483,6 +2483,8 @@ code a:hover,
 .claude-usage--warning { --usage-color: var(--warning); }
 .claude-usage--critical,
 .claude-usage--exceeded { --usage-color: var(--danger); }
+/* Outdated reading: empty ring + "?", muted. */
+.claude-usage--unknown { --usage-color: var(--fg-1); }
 
 .popover-content.claude-usage {
   width: 16rem;

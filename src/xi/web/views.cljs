@@ -3721,14 +3721,23 @@
 
 (defn- claude-usage-ring
   "Radial progress ring for a percent; its color follows the severity class
-   on an ancestor (see .claude-usage--*)."
+   on an ancestor (see .claude-usage--*). A nil percent draws the bare track."
   [pct]
   (let [circumference 94.25] ; 2πr for r=15
     [:svg {:class ["claude-usage-ring"] :viewBox "0 0 36 36" :aria-hidden "true"}
      [:circle {:class ["claude-usage-ring-track"] :cx "18" :cy "18" :r "15"}]
-     [:circle {:class ["claude-usage-ring-fill"] :cx "18" :cy "18" :r "15"
-               :stroke-dasharray (str (* circumference pct 0.01) " " circumference)
-               :transform "rotate(-90 18 18)"}]]))
+     (when pct
+       [:circle {:class ["claude-usage-ring-fill"] :cx "18" :cy "18" :r "15"
+                 :stroke-dasharray (str (* circumference pct 0.01) " " circumference)
+                 :transform "rotate(-90 18 18)"}])]))
+
+(defn- usage-window-outdated?
+  "True once a usage window's reset time has passed: the window rolled over,
+   so the cached percent no longer describes it."
+  [resets-at]
+  (when resets-at
+    (let [ms (.getTime (js/Date. resets-at))]
+      (and (not (js/isNaN ms)) (<= ms (js/Date.now))))))
 
 (defn- claude-usage-popover
   "Claude subscription usage (rides on the lobby broadcast) for the sidebar
@@ -3754,34 +3763,43 @@
                             (cond (zero? m) "now"
                                   (zero? h) (str "in " m " min")
                                   (zero? rm) (str "in " h " h")
-                                  :else (str "in " h " h " rm " min"))))))
-          weekly-severity (cond (nil? weekly) "normal"
-                                (>= weekly 100) "exceeded"
-                                (>= weekly 90) "critical"
-                                (>= weekly 75) "warning"
-                                :else "normal")]
-      (list
-       [:button (merge {:class ["sidebar-usage-trigger" (str "claude-usage--" severity)]
-                        :title (str "Claude usage: session " session "%"
-                                    (when weekly (str " · week " weekly "%")))
-                        :replicant/key "sidebar-usage-trigger"}
-                       (popover/trigger-attrs "sidebar-usage"))
-        (claude-usage-ring session)
-        [:span {:class ["sidebar-usage-pct"]} (str session "%")]]
-       (popover/popover-content
-        {:id    "sidebar-usage"
-         :side  :top
-         :align :start
-         :class "claude-usage"
-         :attrs {:replicant/key "sidebar-usage"}}
-        [:div {:class ["claude-usage-title"]} "Claude usage"]
-        (claude-usage-meter "Session" session severity
-                            (when session-reset
-                              (str "Resets " session-reset
-                                   (when resets-in (str " · " resets-in)))))
-        (when weekly
-          (claude-usage-meter "Week" weekly weekly-severity
-                              (when weekly-reset (str "Resets " weekly-reset)))))))))
+                                  :else (str "in " h " h " rm " min"))))))]
+      (let [outdated? (usage-window-outdated? session-resets-at)
+            severity  (if outdated? "unknown" severity)
+            weekly    (when-not (usage-window-outdated? weekly-resets-at) weekly)
+            weekly-severity (cond (nil? weekly) "normal"
+                                  (>= weekly 100) "exceeded"
+                                  (>= weekly 90) "critical"
+                                  (>= weekly 75) "warning"
+                                  :else "normal")]
+        (list
+         [:button (merge {:class ["sidebar-usage-trigger" (str "claude-usage--" severity)]
+                          :title (if outdated?
+                                   "Claude usage: unavailable"
+                                   (str "Claude usage: session " session "%"
+                                        (when weekly (str " · week " weekly "%"))))
+                          :replicant/key "sidebar-usage-trigger"}
+                         (popover/trigger-attrs "sidebar-usage"))
+          (claude-usage-ring (when-not outdated? session))
+          [:span {:class ["sidebar-usage-pct"]} (if outdated? "?" (str session "%"))]]
+         (popover/popover-content
+          {:id    "sidebar-usage"
+           :side  :top
+           :align :start
+           :class "claude-usage"
+           :attrs {:replicant/key "sidebar-usage"}}
+          [:div {:class ["claude-usage-title"]} "Claude usage"]
+          (if outdated?
+            [:div {:class ["claude-usage-note"]}
+             "Unavailable — the last reading is out of date and could not be refreshed."]
+            (list
+             (claude-usage-meter "Session" session severity
+                                 (when session-reset
+                                   (str "Resets " session-reset
+                                        (when resets-in (str " · " resets-in)))))
+             (when weekly
+               (claude-usage-meter "Week" weekly weekly-severity
+                                   (when weekly-reset (str "Resets " weekly-reset))))))))))))
 
 (defn- more-horizontal-icon
   "Inline Lucide `ellipsis` SVG — the shared icon set has none (see

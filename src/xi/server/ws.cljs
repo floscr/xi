@@ -250,6 +250,28 @@
                        (on-change))))))
         (.catch (fn [_] nil)))))
 
+(defn- claude-credentials-mtime
+  "mtime (ms) of the Claude credentials file, nil when it is missing."
+  []
+  (try (.-mtimeMs (.statSync (js/require "node:fs")
+                             (str (session/claude-config-dir) "/.credentials.json")))
+       (catch :default _ nil)))
+
+(defn- watch-claude-credentials!
+  "Refetch usage as soon as the credentials file changes (an account switch
+   via claude-swap or a token refresh) instead of waiting for the next
+   5-minute tick, which would leave the sidebar on the previous account's
+   reading, or none, in between."
+  [on-change]
+  (let [seen (atom (claude-credentials-mtime))]
+    (js/setInterval
+     (fn []
+       (let [m (claude-credentials-mtime)]
+         (when (not= m @seen)
+           (reset! seen m)
+           (fetch-claude-usage! on-change))))
+     10000)))
+
 (defn- lobby-payload
   "The :lobby/state wire payload: live rooms + saved sessions (+ the server's
    default :model, so a deferred TUI client can render the same launch header
@@ -860,6 +882,7 @@
              _ (fetch-claude-usage! schedule-lobby-broadcast!)
              _ (js/setInterval #(fetch-claude-usage! schedule-lobby-broadcast!)
                                (* 5 60 1000))
+             _ (watch-claude-credentials! schedule-lobby-broadcast!)
              ;; HTTP API: programmatically create a room (and optionally kick
              ;; off a turn) so an external service can spawn a background
              ;; agent session and hand back a web-client URL to open it.

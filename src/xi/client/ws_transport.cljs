@@ -149,8 +149,16 @@
                          (fn [ds] (vec (remove #(= dialog-id (:id %)) ds))))})
     {:effects [[:ws/send ev]]}))
 
-(defn lobby-state [st ev]
-  {:state (assoc st :lobby (select-keys ev [:rooms :sessions :read :agent-id :started-at :claude-usage :model]))})
+(defn lobby-state
+  "Replace the lobby slice. The Claude usage reading is the one key kept across
+   updates when the payload omits it (server restarted, fetch failing): the
+   sidebar keeps showing the last reading until it is outdated."
+  [st ev]
+  (let [lobby (select-keys ev [:rooms :sessions :read :agent-id :started-at :claude-usage :model])
+        prev  (get-in st [:lobby :claude-usage])]
+    {:state (assoc st :lobby (cond-> lobby
+                               (and prev (not (:claude-usage lobby)))
+                               (assoc :claude-usage prev)))}))
 
 (defn auth-ok
   "The server admitted us and tells us which user this connection acts as
