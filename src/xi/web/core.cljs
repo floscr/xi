@@ -2084,6 +2084,42 @@
                                           (.. e -target -tagName))))
                            (mark-user-scroll-intent!))))))
 
+(def ^:private load-earlier-threshold-px
+  "Scrolling within this distance of the top of the timeline loads the
+   previous batch of messages."
+  600)
+
+(defonce ^:private load-earlier-pending? (atom false))
+
+(defn- maybe-load-earlier!
+  "Near the top of the timeline with older entries hidden: press the
+   \"Show earlier messages\" button for the user. Widening the window prepends
+   nodes above the viewport; Chrome's scroll anchoring keeps the content in
+   place, but Safari has none, so if scrollTop is still where it was after the
+   render, shift it down by the added height ourselves."
+  [^js timeline]
+  (when (and (not @load-earlier-pending?)
+             (< (.-scrollTop timeline) load-earlier-threshold-px))
+    (when-let [btn (.querySelector timeline ".load-earlier button")]
+      (let [top-before    (.-scrollTop timeline)
+            height-before (.-scrollHeight timeline)]
+        (reset! load-earlier-pending? true)
+        (.click btn)
+        ;; Two frames: the dispatch re-renders on the next one, anchoring
+        ;; (if any) settles after it.
+        (js/requestAnimationFrame
+         (fn []
+           (js/requestAnimationFrame
+            (fn []
+              (let [delta (- (.-scrollHeight timeline) height-before)]
+                (when (and (pos? delta)
+                           (<= (js/Math.abs (- (.-scrollTop timeline) top-before)) 2))
+                  (set! (.-scrollTop timeline) (+ top-before delta))
+                  (reset! prev-scroll-top (.-scrollTop timeline))))
+              (reset! load-earlier-pending? false)
+              ;; Still near the top (short batch): keep loading.
+              (maybe-load-earlier! timeline)))))))))
+
 (defn- attach-scroll-listener! []
   (when-let [timeline (.querySelector js/document ".timeline")]
     (when-not (identical? timeline @tracked-timeline)
@@ -2099,7 +2135,11 @@
       (.addEventListener timeline "touchmove"
                          (fn [] (mark-user-scroll-intent!)) #js {:passive true})
       (.addEventListener timeline "wheel"
-                         (fn [^js e] (when (neg? (.-deltaY e)) (mark-user-scroll-intent!)))
+                         (fn [^js e]
+                           (when (neg? (.-deltaY e))
+                             (mark-user-scroll-intent!)
+                             ;; At scrollTop 0 no scroll event follows the wheel.
+                             (maybe-load-earlier! timeline)))
                          #js {:passive true})
       ;; Primary button only: a right-click's native context menu can swallow
       ;; the pointerup, which would leave the flag stuck.
@@ -2114,6 +2154,7 @@
                                  prev    @prev-scroll-top
                                  bottom? (at-bottom? timeline)]
                              (reset! prev-scroll-top top)
+                             (when (< top prev) (maybe-load-earlier! timeline))
                              ;; ONLY an actual upward user scroll disables
                              ;; auto-scroll. Content growing mid-stream (or our
                              ;; own snap-to-bottom) keeps/increases scrollTop;
