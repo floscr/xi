@@ -338,6 +338,17 @@
   {:doc "Assemble the npm package in dist/pkg from release builds (the dev watch is left alone) and pack it to dist/<name>-<version>.tgz. `bb package --no-pack` only stages."
    :task (apply shell "bun" "scripts/build-package.mjs" *command-line-args*)}
 
+  package:publish
+  {:doc "Publish the npm package: run `bb package`, then `npm publish` the tarball it produced (dist/<name>-<version>.tgz, public access). `--no-build` publishes the existing tarball. Needs `npm login` once."
+   :requires ([cheshire.core :as json])
+   :task (let [{:keys [name version]} (json/parse-string (slurp "package.json") true)
+               tgz (str "dist/" name "-" version ".tgz")]
+           (when-not (some #{"--no-build"} *command-line-args*)
+             (shell "bun" "scripts/build-package.mjs"))
+           (when-not (fs/exists? tgz)
+             (throw (ex-info (str "no tarball at " tgz " — run bb package first") {})))
+           (shell "npm" "publish" tgz "--access" "public"))}
+
   package:serve
   {:doc "Try the npm package like a user gets it: pack it, install the tarball into dist/try and run the installed xi as a foreground headless server (Ctrl-C stops it; port 7477, isolated HOME in dist/try/home). `--port N` changes the port, `--no-build` reuses the existing tarball."
    :task (apply shell "bun" "scripts/try-package.mjs" *command-line-args*)}

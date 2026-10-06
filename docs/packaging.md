@@ -28,7 +28,7 @@ resources/public/               web client; js/ is the release :web build
 resources/highlight/            syntax-highlighting grammars
 resources/treesitter/           web-tree-sitter runtime + WASM grammars
 packages/providers/anthropic/runner.mjs    the Claude SDK runner
-LICENSE, THIRD_PARTY_NOTICES.md (README.md once it exists)
+LICENSE, THIRD_PARTY_NOTICES.md, README.md
 ```
 
 Left out on purpose: `nix/` and the `claude` out-link (the Nix-pinned Claude
@@ -60,8 +60,19 @@ install needs no Nix and no separate Claude CLI.
 ## Name
 
 `xi` is taken on npm (an unrelated CMS) as is `xi-cli`, so the package is
-`xi-agent`. The repo's `package.json` is still `private: true`; flip that (and
-add a `bb` publish step) when it is time to publish.
+`xi-agent`.
+
+## Publishing
+
+```bash
+npm login                      # once per machine (browser login)
+bb package:publish             # bb package, then npm publish dist/<name>-<version>.tgz
+bb package:publish --no-build  # publish the tarball already in dist/
+```
+
+The task publishes the packed tarball, not the working tree, so what goes up
+is exactly what `bb package` staged. Bump `version` in the repo's
+`package.json` before each release; npm refuses to republish a version.
 
 ## Testing a package
 
@@ -83,3 +94,29 @@ delete it for a first-run experience.
 The trial directory has its own `package.json` on purpose: `bun add` installs
 into the nearest one above its cwd, and without it would install into the
 repo root.
+
+### On a clean machine (Docker)
+
+`bb package:serve` still runs on your OS with your Bun. To see what a new user
+sees (only Bun, nothing else installed), use a container:
+
+```bash
+bb package:docker              # build, recreate the container, wait, sign in to Claude
+bb package:docker approve 1234 # pair the browser that shows code 1234
+bb package:docker login        # sign in to Claude again
+bb package:docker down         # remove the container (--fresh: and its home)
+```
+
+`scripts/try-package-docker.mjs` installs the packed tarball into an
+`oven/bun` container the way `bun install -g xi-agent` does, and runs
+`xi server --headless` there on host port 7478 (`--port N`; `--no-build`
+reuses `dist/*.tgz`). The home directory is a named volume, so the Claude
+login and the paired browsers survive re-running `bb package:docker`;
+`--fresh` forgets them. With `ANTHROPIC_API_KEY` set in your shell the login
+step is skipped and the key is passed in.
+
+The container runs the server as the non-root `bun` user: Xi starts the Claude
+CLI with `--dangerously-skip-permissions`, which the CLI refuses as root
+("Claude Code process exited with code 1"). The image's `BUN_INSTALL_BIN` is
+`/usr/local/bin`, which `bun` cannot write, so the script points it at
+`~/.bun/bin`.

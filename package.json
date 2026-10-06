@@ -2,7 +2,6 @@
   "name": "xi-agent",
   "version": "0.1.0",
   "description": "Xi — an extendable coding harness for the terminal, with a web UI that joins the same sessions.",
-  "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
