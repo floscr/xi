@@ -77,7 +77,7 @@ File `src/xi/ext/my_thing.cljs`, ns `xi.ext.my-thing`, events namespaced
             {:effects [[:my-thing/start {:room-id room-id :args args}]]})}
 
 ;; policy — there is no hook. Whether a tool call runs is decided by the rules
-;; engine (docs/rules.md); add a default rule in xi.rules.defaults instead. A tool
+;; engine (docs/guide/rules-reference.md); add a default rule in xi.rules.defaults instead. A tool
 ;; that needs to confirm something itself uses its ctx's :confirm!
 ;; (fn [msg] → Promise<bool>), false when no client is attached.
 

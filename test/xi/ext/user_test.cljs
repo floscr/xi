@@ -372,10 +372,10 @@
         (is (= "tick" (-> (f {} {:dispatch! (fn [_])}) :content first :text)))))))
 
 (deftest the-documented-example-works
-  ;; docs/user-extensions.md's example, loaded + its tool run end to end:
+  ;; the guide's tutorial extension (docs/guide/extension-tutorial-tool.md), loaded + its tool run end to end:
   ;; sandbox → guard → xi.api.fs → rules (extension-data allow) → disk.
   (cljs.test/async done
-    (let [doc     (str (fs/readFileSync "docs/user-extensions.md" "utf8"))
+    (let [doc     (str (fs/readFileSync "docs/guide/extension-tutorial-tool.md" "utf8"))
           example (second (re-find #"(?s)```clojure\n;; ~/.config/xi/extensions/notes.cljs\n(.*?)```" doc))
           dir     (tmp-dir)
           data    (tmp-dir)
@@ -390,10 +390,10 @@
         ;; the assertions instead of throwing inside cljs.test's runner
         (-> (js/Promise.resolve (tool {:text "one"} ctx))
             (.then (fn [r1]
-                     (is (= "added" (-> r1 :content first :text)) (pr-str r1))
+                     (is (= "Noted." (-> r1 :content first :text)) (pr-str r1))
                      (tool {:text "two"} ctx)))
             (.then (fn [res]
-                     (is (= "added" (-> res :content first :text)))
+                     (is (= "Noted." (-> res :content first :text)))
                      (is (= "one\ntwo\n"
                             (str (fs/readFileSync
                                   (node-path/join data "xi" "extensions" "notes" "notes.md")

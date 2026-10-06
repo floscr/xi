@@ -5,23 +5,26 @@ is plain Markdown that reads well on its own (in an editor, on GitHub, in a
 terminal). The site in [`site/`](../../site/) renders it: `bb site:dev` from
 the repo root serves it live, `bb site:build` writes it to `site/dist/`.
 
-It is written for people who use Xi. It is not the contributor / agent
-reference — that is [`docs/`](..), which stays as it is.
+It is **the** documentation for people who use Xi: every option, flag,
+command and rule a user can set is documented here and nowhere else. The
+files in [`docs/`](..) are for contributors and agents working in the repo:
+how things are built, not how to use them.
 
 ## How this differs from `docs/`
 
-| | `docs/*.md` (reference) | `docs/guide/` (this guide) |
+| | `docs/*.md` (internals) | `docs/guide/` (this guide) |
 | --- | --- | --- |
 | Reader | Contributors and agents working in the repo | Someone installing and using Xi |
-| Shape | Exhaustive: every key, event, flag | Task-first: "how do I …", then why |
+| Content | Architecture, design decisions, build and test setup, wire formats | Everything a user can do or configure |
 | Tone | Terse, internal names allowed | Plain language; internal names only when the reader needs them |
 | Indexed from | `AGENTS.md` | This file |
-| Source of truth for | Option tables, event/field lists, protocol details | Explanations, walkthroughs, examples |
 
-**Don't duplicate the reference.** A guide page explains and shows the common
-path, then links to the reference page for the full list of options. If an
-option's behaviour changes, the reference is updated (as `AGENTS.md` already
-requires) and the guide only changes if the explanation does.
+**A user-facing change is documented here.** A new option, flag, command or
+rule field gets its row in the matching reference page (`configuration.md`,
+`command-line.md`, `rules-reference.md`, `clj-tool-reference.md`,
+`extensions-reference.md`). An introduction page changes only if the
+explanation does. Internals that help someone change the code go in
+`docs/`.
 
 ## Writing rules
 
@@ -37,7 +40,7 @@ requires) and the guide only changes if the explanation does.
 5. **Plain CommonMark + GFM tables.** No generator-specific syntax, no raw
    HTML, no includes. Fenced code blocks always carry a language.
 6. **Relative links only**, to other `.md` files (`projects.md#remembered-projects`).
-   Reference pages are linked as `../config.md#projects`; the site turns those
+   Internals pages are linked as `../architecture.md`; the site turns those
    into links to the repository.
 7. **First line is the page title** (`# Title`), followed by a one-paragraph
    summary. That is all the metadata a page has; the site uses the summary
@@ -65,13 +68,18 @@ lines; each page line is `- [Title](file.md) — one-line hook`.
 
 **Everyday use**
 - [Projects](projects.md) — how Xi finds your projects, per-project prompt and snippets
+- [Sessions](sessions.md) — resume, go back with `/tree`, summarise, trim and roll over
 - [The web client](web-client.md) — the same session on any device, pairing, offline, keyboard
 - [Slash commands](commands.md) — the commands you type into the chat
+- [Command line](command-line.md) — every subcommand and flag of `xi`
 
 **Making it yours**
-- [Configuration](configuration.md) — `config.edn`: where it lives, what goes in it, how it fails
+- [Configuration](configuration.md) — `config.edn`, the other files, environment variables
+- [Models](models.md) — Claude, Ollama, OpenCode Zen, OpenAI Codex
 - [Permissions and rules](rules.md) — what Xi may do on its own, and how to change it
+- [Rules reference](rules-reference.md) — every match field, action and default bundle
 - [The clj tool](clj-tool.md) — how the agent runs commands, and how you approve them
+- [clj tool reference](clj-tool-reference.md) — every helper, gate and option
 - [MCP servers](mcp-servers.md) — give the agent tools from any MCP server
 - [Extensions](extensions.md) — add tools, commands, keys and pages with one file
 - [Tutorial: a tool](extension-tutorial-tool.md) — your first extension, step by step
@@ -84,4 +92,6 @@ lines; each page line is `- [Title](file.md) — one-line hook`.
 
 **Running it**
 - [Server mode](server.md) — one server, many clients, from any device
+- [HTTPS](https.md) — a certificate for the web client, and trusting it on a phone
 - [One-shot prompts](prompt.md) — `xi prompt` from scripts and other programs
+- [Babashka client](babashka-client.md) — call Xi from Babashka and JVM programs

@@ -7,7 +7,7 @@
    spit/tmpdir/…). There is no JS interop, no filesystem, no process access
    beyond those helpers.
 
-   Design goals (see docs/clj-tool.md):
+   Design goals (see docs/guide/clj-tool-reference.md):
    - readable structured scripts instead of unreviewable bash pipe chains
    - computation happens in the runtime, only distilled values enter context
    - REPL persistence: (def x …) survives across calls (external memory)

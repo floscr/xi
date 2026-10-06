@@ -109,7 +109,7 @@ fn-valued and deref'd fresh each turn, so `/ext enable|disable` takes
 effect on the next turn.
 
 On an agent run (`--agent`), the definitions are filtered to the profile's
-`:tools` (`:only-tools` on the room; see [cli.md](cli.md#agent-profiles)),
+`:tools` (`:only-tools` on the room; see the guide's [agent profiles](guide/agents.md)),
 so an unlisted tool is never advertised.
 
 ### 3. The tool policy (host-side)
@@ -134,7 +134,7 @@ asks and `/commit` confirm work. Tool exec-fns get the same ctx.
 
 Tool-call policy (allow / deny / nudge / ask / confirm) is driven by the
 declarative **rules engine** (`xi.ext.rules` + `xi.rules.store` /
-`xi.rules`) — see [rules.md](rules.md) for the full reference. In precedence
+`xi.rules`) — see the guide's [rules reference](guide/rules-reference.md) for the full reference. In precedence
 order: an immutable hard-block (agents can never write the rules files), a
 hardened tier (`sudo`, remote-copy shells, …), repo/global config
 (`.xi/rules.edn`, `~/.config/xi/rules.edn`), runtime session rules, then the

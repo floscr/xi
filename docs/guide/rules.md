@@ -39,6 +39,12 @@ do, and for an edit, the diff it would make.
 `/allow`, `/deny`, `Alt+a` and `Alt+d` answer it from the keyboard. An answer
 of `a` or `r` adds a rule that lives with the chat; `/rules` shows it.
 
+To tell the agent why you said no, deny with a reason. In the web client,
+click the `⋯` next to Deny: the message box becomes a reason field, and
+Enter denies the call (Esc goes back without answering). In either client,
+`/deny <reason>` does the same. The agent gets your reason in the tool result,
+so it can change course instead of retrying.
+
 ## Writing your own rules
 
 Put rules in `~/.config/xi/rules.edn`. They apply to every project.
@@ -147,5 +153,5 @@ Write an `:allow` there instead.
 
 ## Reference
 
-Every match key, action option, and default bundle:
-[the rules reference](../rules.md).
+Every match field, action option, and default bundle:
+[Rules reference](rules-reference.md).

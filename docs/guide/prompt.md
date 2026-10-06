@@ -56,7 +56,7 @@ Run from the same directory each time; the session is tied to it.
   `--agent` with a profile that has only the tools the task needs, and
   `--no-store`.
 
-## Reference
+## From Babashka
 
-[Prompt mode](../prompt-mode.md) and, for Babashka programs, the
-[client library](../bb-client.md).
+The [Babashka client](babashka-client.md) wraps all of this in one function
+for services written in Babashka or Clojure.

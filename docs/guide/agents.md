@@ -67,4 +67,5 @@ profile; without it, the top-level list loads.
 
 ## Reference
 
-[Agent profiles in the CLI reference](../cli.md#agent-profiles).
+Every profile key: [Configuration](configuration.md#agents). The flags:
+[Command line](command-line.md).

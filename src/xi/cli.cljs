@@ -230,7 +230,7 @@ EXAMPLES
   git diff | xi -p --no-store \"review this\"   # pipe + ephemeral run
   xi --session <id>                          # resume a saved session
 
-See docs/cli.md for the full reference.")
+See docs/guide/command-line.md for the full reference.")
 
 (defn- parse-args [args]
   (loop [args (seq args) opts {:command :standalone :auto-join? true}]

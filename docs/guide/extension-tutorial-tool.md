@@ -120,6 +120,7 @@ events under its own prefix.
 ## The whole file
 
 ```clojure
+;; ~/.config/xi/extensions/notes.cljs
 (ns notes
   (:require [xi.api.fs :as fs]
             [xi.api.promise :as p]))

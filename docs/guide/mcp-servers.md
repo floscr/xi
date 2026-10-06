@@ -112,7 +112,21 @@ RENDER_API_KEY=rnd_your_key_here
 
 Xi reads the key when it connects and sends it as `Authorization: Bearer …`.
 A hosted server's code is not on your disk, so trusting it covers its entry
-only.
+only. Literal headers go under `:headers`. A hosted server that assigns a
+session id on the first request gets it echoed on every later one.
+
+## How a server runs
+
+- A stdio server is started on its first call and shared by every chat.
+  When it exits, the next call starts a new one. `/mcp disable` and quitting
+  Xi stop it; a well-behaved server also exits when its input closes.
+- Each call carries the calling chat's context in the request's `_meta`:
+  `xi/cwd` (the working directory), `xi/roomId`, `xi/clientPid` (the
+  terminal driving the chat, when there is one) and `xi/extension` (when an
+  extension, not the agent, is calling). A server can act on these without
+  a tool argument the model would have to fill in.
+- A call that takes longer than `:timeout-ms` fails instead of hanging the
+  turn.
 
 ## From an extension
 
@@ -129,10 +143,26 @@ An extension can also bring a server of its own that only it can use. See
 ## Writing a server
 
 An MCP server is a program that reads JSON-RPC requests from stdin, one per
-line, and answers on stdout. Xi ships two small, dependency-free ones to
-start from: a ClojureScript one in `src/xi/mcp/server.cljs` and a Babashka
-one in `packages/mcp-bb-example/`. The reference page explains the handful of
-methods a server has to answer.
+line, and answers on stdout. The conventions that matter:
+
+- stdout carries protocol only; log to stderr.
+- Answer `initialize` (with `protocolVersion`, `capabilities {tools {}}`,
+  `serverInfo`), `ping`, `tools/list` and `tools/call`; send no reply to
+  `notifications/*`; answer unknown methods with JSON-RPC error `-32601`.
+- A tool that fails returns a result with `isError: true`, so the model sees
+  why. JSON-RPC errors are for protocol faults.
+- Read context from `_meta`, not from extra tool arguments.
+
+Xi ships two small, dependency-free servers to start from: a ClojureScript
+one in `src/xi/mcp/server.cljs` and a Babashka one in
+`packages/mcp-bb-example/`. Register the Babashka one with:
+
+```clojure
+{:bb-example {:command "bb"
+              :args ["--config" "/path/to/xi/packages/mcp-bb-example/bb.edn"
+                     "-m" "hello-mcp.main"]
+              :code-paths ["/path/to/xi/packages/mcp-bb-example/src"]}}
+```
 
 ## When something is off
 
@@ -150,7 +180,9 @@ trust it again.
 
 **The tool list is stale after updating the server.** `/mcp refresh <id>`.
 
-## Reference
+## Rules for MCP tools
 
-Registry keys, the trust fingerprint, the HTTP transport and the wire
-protocol: [the MCP reference](../mcp-servers.md).
+A call to a server is a rules request `{:tool :mcp :mcp-server "id"
+:mcp-tool "name"}`. The default that asks for untrusted servers is the
+`mcp-confirm` bundle; your own rules can single out a server or a tool, see
+the [rules reference](rules-reference.md).

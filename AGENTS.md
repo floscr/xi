@@ -113,18 +113,15 @@ site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:bui
 | Topic | Doc |
 |---|---|
 | Core loop, state, events, connection layer | [architecture.md](docs/architecture.md) |
-| CLI commands, flags · config options + env vars | [cli.md](docs/cli.md) · [config.md](docs/config.md) |
-| Server, rooms, HTTP API · client auth · TLS | [server.md](docs/server.md) · [client-auth.md](docs/client-auth.md) · [tls-https.md](docs/tls-https.md) |
-| One-shot `xi prompt` · bb client lib | [prompt-mode.md](docs/prompt-mode.md) · [bb-client.md](docs/bb-client.md) |
-| Slash commands · `/tree` · compaction · resume | [commands.md](docs/commands.md) · [session-tree.md](docs/session-tree.md) · [compaction.md](docs/compaction.md) · [resume.md](docs/resume.md) |
-| Extensions · user extensions (runtime, sandboxed) · runtime toggling + external MCP | [extensions.md](docs/extensions.md) · [writing-extensions.md](docs/writing-extensions.md) · [user-extensions.md](docs/user-extensions.md) · [mcp-servers.md](docs/mcp-servers.md) |
-| Rules / permissions · `clj` tool · tree-sitter reads | [rules.md](docs/rules.md) · [clj-tool.md](docs/clj-tool.md) · [treesitter.md](docs/treesitter.md) |
-| Providers | [mcp-tool-bridge.md](docs/mcp-tool-bridge.md) · [providers-zen.md](docs/providers-zen.md) · [providers-openai.md](docs/providers-openai.md) |
-| Web client · offline · UI components · demo | [web-client.md](docs/web-client.md) · [web-offline.md](docs/web-offline.md) · [frontend.md](docs/frontend.md) · [demo.md](docs/demo.md) |
+| Compile-time config (`config.cljc`: extension/provider vectors, TUI opts, appearance, flags) | [config.md](docs/config.md) |
+| Built-in extensions: every key, dialogs, hooks, web halves · recipe for a new one | [extensions.md](docs/extensions.md) · [writing-extensions.md](docs/writing-extensions.md) |
+| MCP client internals (manager, trust fingerprint, wire protocol) · tree-sitter reads | [mcp-internals.md](docs/mcp-internals.md) · [treesitter.md](docs/treesitter.md) |
+| Providers (map shape, adapters, Zen/Codex internals) · the Claude SDK runner | [providers.md](docs/providers.md) · [mcp-tool-bridge.md](docs/mcp-tool-bridge.md) |
+| Web client internals · offline cache · UI components · demo | [web-client-internals.md](docs/web-client-internals.md) · [web-offline.md](docs/web-offline.md) · [frontend.md](docs/frontend.md) · [demo.md](docs/demo.md) |
 | TUI rendering · syntax highlighting | [tui-rendering.md](docs/tui-rendering.md) · [syntax-highlighting.md](docs/syntax-highlighting.md) |
 | npm package layout · `bb package` · `bb package:serve` | [packaging.md](docs/packaging.md) |
 | Concurrent-edit safety (file hashes) · holds + cross-room git lock | [concurrent-edits.md](docs/concurrent-edits.md) · [git-lock.md](docs/git-lock.md) |
-| **User guide** — source of the docs site; all new user-facing docs go here. Navigation = the Pages list in its README | [docs/guide/](docs/guide/README.md) |
+| **User guide** — THE user documentation (CLI, config, rules, clj tool, MCP, extensions, server, web client, models, sessions, prompt mode, bb client). Every user-facing option is documented there, nowhere else. Navigation = the Pages list in its README | [docs/guide/](docs/guide/README.md) |
 | Home page + docs site (bb, hiccup, markdown-clj; `bb site:dev` on :4322) | [site/](site/) |
 
 ## Conventions
@@ -135,7 +132,11 @@ site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:bui
 - **Web UI: always use clj-ui-framework `ui.*` components** — never hand-roll
   `[:select]`/`[:input]`/`[:button]` when a component exists. See
   [docs/frontend.md](docs/frontend.md) and the section below.
-- **Always document config options** in [docs/config.md](docs/config.md). An
+- **Always document options.** User-facing ones (`config.edn` keys, files
+  under `~/.config/xi`, env vars, flags, rule fields, clj helpers) go in the
+  guide's reference pages ([docs/guide/configuration.md](docs/guide/configuration.md),
+  `command-line.md`, `rules-reference.md`, `clj-tool-reference.md`,
+  `extensions-reference.md`); compile-time ones in [docs/config.md](docs/config.md). An
   option's *default* lives in its consuming namespace; TUI options are
   declared with `deftui-opt` (`xi.config-macros`), e.g.
   `(deftui-opt truncate-output-block-after-n-lines 100 "doc…")`, which reads

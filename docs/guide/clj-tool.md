@@ -105,4 +105,4 @@ plain `bash` tool instead. `/ext enable clj` brings it back.
 
 ## Reference
 
-Every helper, option and gate: [the clj tool reference](../clj-tool.md).
+Every helper, option and gate: [clj tool reference](clj-tool-reference.md).

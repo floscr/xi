@@ -44,11 +44,22 @@ xi clients revoke iPhone    # by name or key prefix
 ```
 
 An already-paired browser shows a banner for the request and can approve it
-too. The server picks approvals up within two seconds.
+too. The server picks approvals up within two seconds. Revoking a device
+applies to its next connection.
 
 A browser page from another site can never reach the server: the key is
 required before any message is processed, and the server refuses connections
-from other origins.
+from other origins. The device name and platform shown with a code are what
+the device claims; the code is the check.
+
+| File | What |
+| --- | --- |
+| `~/.config/xi/client-key` | The key of the terminal on this machine, created on first run and trusted as is |
+| `~/.config/xi/clients.edn` | Approved devices |
+| `~/.config/xi/pending-clients.edn` | Requests waiting for approval |
+
+The web client keeps its key in the browser's storage, so each browser pairs
+once. A server started with `--agent` does not pair at all.
 
 ## Chats keep running
 
@@ -56,17 +67,35 @@ A chat whose agent is working stays open with nobody watching. Close the
 laptop, and the task finishes; the result waits in the chat list. A chat only
 closes when it is idle and empty.
 
-Starting work without a client at all is possible too:
+## Starting a chat over HTTP
+
+Another program can start a chat without a client attached:
 
 ```sh
 curl -sX POST http://localhost:7474/api/rooms \
   -H "Authorization: Bearer $(cat ~/.config/xi/client-key)" \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"Run the tests and fix what fails","cwd":"/home/me/my-app"}'
-# → {"session-id":"…","url":"http://localhost:7474/chat/…"}
 ```
 
-Open the returned URL to watch, or to continue.
+```json
+{"room-id": "r-…", "session-id": "01a0…", "cwd": "/home/me/my-app",
+ "url": "http://localhost:7474/chat/01a0…"}
+```
+
+The key goes in `Authorization: Bearer <key>` or `X-Xi-Client-Key`; any
+approved key works, and the local `client-key` file is one. The body is
+JSON, every field optional:
+
+| Field | Does |
+| --- | --- |
+| `prompt` | The first message; with it, the agent starts at once |
+| `cwd` | The directory to work in; default the server's |
+| `model` | A model; default the server's |
+
+`401` is a bad key, `405` a method other than POST, `400` a body that is
+not JSON. The same endpoint is served on the HTTPS port. Open the returned
+URL to watch, or to continue the chat.
 
 ## HTTPS
 
@@ -80,8 +109,8 @@ mkdir -p ~/.config/xi/tls
 xi server --headless
 ```
 
-The phone needs to trust the certificate once. The reference page walks
-through it: [TLS and HTTPS](../tls-https.md).
+The phone needs to trust the certificate once. [HTTPS](https.md) walks
+through it.
 
 ## Keeping it up
 
@@ -102,6 +131,6 @@ it to see, or wait; it closes when the turn ends.
 
 ## Reference
 
-Bind addresses, the HTTP API, the room lifecycle and the wire protocol:
-[the server reference](../server.md). Pairing in depth:
-[client authentication](../client-auth.md).
+Every flag: [Command line](command-line.md). How rooms, broadcast and the
+wire protocol work inside: [`docs/architecture.md`](../architecture.md) in the
+repository.

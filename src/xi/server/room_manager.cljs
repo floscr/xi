@@ -213,7 +213,7 @@
 ;; (iOS Safari drops the socket on navigation), so any abort-on-disconnect —
 ;; even behind a grace period — eventually kills a live agent. Busy orphaned
 ;; rooms keep running; turn-end-room-cleanup reaps them. Only IDLE clientless
-;; rooms are closed here. See docs/server.md "Busy rooms keep running".
+;; rooms are closed here. See docs/architecture.md "Room lifecycle and auth".
 
 (defn- room-leave [st {:keys [client-id]}]
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]

@@ -56,7 +56,7 @@ server-side namespaces, run `bb demo:restart`.
 - `.claude/projects/<enc>/*.jsonl` — matching Claude transcripts
 - `.config/xi/clients.edn` — pre-approved demo client key
 - `.config/xi/favorites.json` — a couple of bookmarked sessions
-- `.config/xi/extensions/` — the demo [user extension](user-extensions.md)
+- `.config/xi/extensions/` — the demo [user extension](guide/extension-tutorial-web.md)
   `notes` (copied from `scripts/demo-extensions/`). It has a `notes_add` tool,
   a `/notes` command and a browser half at `/notes` (sidebar → Extensions →
   Notes; open a chat first, since Refresh reads through the active room).

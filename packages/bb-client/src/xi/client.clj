@@ -15,7 +15,7 @@
 
    The agent's profile (tools, system prompt, model) is the [:agents <agent>]
    entry of ~/.config/xi/config.edn and its sessions live in
-   ~/.config/xi/personal-agent/<agent>/ — see docs/cli.md (\"Agent profiles\")
+   ~/.config/xi/personal-agent/<agent>/ — see docs/guide/agents.md
    in the xi repo. \"root\" is the default profile.
 
    Uses ProcessBuilder directly (babashka.process thread pools die under

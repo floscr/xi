@@ -10,7 +10,7 @@
      2. The mode in state, set by the `:theme/set` event
         (`{:type :theme/set :mode :light}`). A user extension can dispatch it
         to follow an OS or terminal theme switcher live; see
-        docs/user-extensions.md.
+        docs/guide/extensions-reference.md.
      3. Default `:dark`.
 
    `refresh!` resolves the signal and pushes the result into

@@ -177,9 +177,9 @@ compaction, TUI, WS):
   server-side extensions (minus terminal-title), no renderer. A tap collects
   `:agent/text-delta` output and exits on `:agent/turn-end`; `--stream` writes
   tokens live. Dialogs run in `:server` mode with no clients, so they resolve
-  to their safe defaults. See [prompt-mode.md](prompt-mode.md).
+  to their safe defaults. See [Prompt mode](#prompt-mode) below.
 - The web client (`xi.web.core`) is the same assembly pattern in the
-  browser — see [web-client.md](web-client.md).
+  browser — see [web-client-internals.md](web-client-internals.md).
 
 Extensions compose into the assembly as data — see
 [extensions.md](extensions.md).
@@ -190,3 +190,108 @@ Extensions compose into the assembly as data — see
   text deltas coalesced per turn. Feeds the `/logs` buffer and `/events`.
 - Opt-in `--debug-events` writes full JSONL to
   `~/.pi/agent/logs/<session>.events.jsonl` via a buffered writer.
+
+## Commands
+
+Slash commands are data composed at assembly: `xi.commands/built-in-commands`
+plus every extension's `:commands`, merged by `xi.cli` (built-ins win on a
+name clash). `parse-input` routes editor text: `/name args` becomes
+`:command/run {:name :args}`, anything else `:prompt/submit`.
+`make-command-run` closes over the merged vector and calls the command's
+handler with `{:room-id :args :commands}`; `all-commands` feeds TUI
+completion and `/help`. A command handler is an ordinary pure handler; I/O
+goes through effects. In client mode commands are forwarded like any event,
+except `/quit` and `/reload`, which `ws-transport` handles locally. The user
+list is in the guide ([commands](guide/commands.md)).
+
+## Session tools
+
+- **`/truncate`** (`xi.compaction`): `:compact/request` runs a summary turn
+  through the Claude provider (always `COMPACT_MODEL`, resuming the room's
+  provider session), then `[:session/new]` with `:after-prompt` starts a
+  fresh session whose first user message is the summary in
+  `<conversation-summary>`. `:keep-history?` keeps the old entries on screen
+  flagged `:no-llm? true` above a divider; `:truncated-from` links the new
+  session to the old one, and `xi.session/read-session-messages` follows the
+  chain on resume (blocks tagged `:pre-truncation?`). `history->context` and
+  `history->messages` skip `:no-llm?` entries, so the model never sees them.
+  `abort-handler` is chained onto `:agent/abort`.
+- **`/tree`** (`xi.commands`, `xi.tui.history-selector`): works on room
+  `:history` directly. `:tree/navigate {:index :mode}` truncates the history,
+  clears `[:session :provider-session-id]` and sets `:inject-history?`; the
+  next turn starts a fresh provider session with the kept exchanges rendered
+  into the system prompt by `xi.agent/history->context`. Once a provider
+  session id lands, resume takes over. Nothing on disk changes.
+- **`/trim`, `/rollover`, `/lineage`** (`xi.ext.resume`): `/trim` rewrites
+  the Claude CLI transcript in place (backup next to it, placeholders citing
+  backup file + line), keeping the session id; since every turn re-resumes
+  with `--resume <id>`, it applies on the next turn. `/rollover` starts a
+  fresh session with a `<session-lineage>` block of ancestor transcript paths
+  (same `:truncated-from` chain as compaction). The extension adds a
+  system-prompt note explaining the placeholders. Room state:
+  `[:ext :resume {:pending …}]` for the trim preview.
+
+## Room lifecycle and auth
+
+- Rooms are created by `:room/join` targets (`"new"`, `"latest"`, a room
+  id, `{:session-id sid}`), attached with `:room/attach` → `:room/joined`
+  snapshot. A join may carry the web client's cached-history fingerprint so
+  the snapshot elides what the client already has
+  ([web-offline.md](web-offline.md)).
+- **Auto-destroy**: a room closes when its last client leaves or disconnects
+  while the agent is **idle**, or when a turn ends with no clients attached
+  (`turn-end-room-cleanup`).
+- **Never abort a busy room on disconnect.** A client disconnect is
+  indistinguishable from navigating to another chat (iOS Safari drops the
+  socket on every navigation), so any abort-on-disconnect, even behind a
+  grace period, kills running agents. This has been reintroduced and
+  reverted repeatedly (`50ac3fe` → `a74a7b5` → `cb88424` → `c5141fa` →
+  `cd027c2`). `room-leave` and `client-disconnect-cleanup` may close a room
+  only when it is idle and empty; never schedule a delayed `:agent/abort`.
+- **Auth handshake** is transport-level (`xi.server.ws`), never dispatched
+  into app state: `:auth/hello {:client-key :client-name :platform}` →
+  `:auth/ok` | `:auth/pending {:code}` | `:auth/denied`. Pending clients get
+  `:auth/required` for everything else; authed clients receive
+  `:auth/request` and may `:auth/approve` / `:auth/deny`; the server also
+  polls `~/.config/xi/clients.edn` every 2s so `xi clients approve` works
+  from a shell. Cross-host `Origin` headers are refused at upgrade
+  (hostnames only, ports ignored, so the dev-http page on :8100 can open
+  :7474). Keys: `~/.config/xi/client-key` (local TUI, implicitly trusted),
+  `clients.edn`, `pending-clients.edn`, all mode 0600. The web client's key
+  lives in `localStorage` (`xi-client-key`).
+- **HTTP API**: `POST /api/rooms` (same fetch handler on the plain and TLS
+  ports) provisions a room and optionally starts a turn; auth by client key
+  header, skipped on an `--agent` server.
+- **Crash guard**: `install-crash-guard!` (server only) logs
+  `unhandledRejection` / `uncaughtException` to stderr and
+  `~/.config/xi/crash.log` instead of exiting; typically an `EPIPE` from a
+  runner subprocess pipe.
+
+## Prompt mode
+
+`xi prompt` is the standalone assembly minus the renderer and the
+`terminal-title` extension (its ANSI escapes would corrupt stdout): a tap
+collects `:agent/text-delta` (echoed live under `--stream`) and
+`:agent/turn-end` flushes and exits. Initial state is `:server` mode with no
+clients, so dialogs resolve to their safe defaults. No auto-titling turn.
+`--no-store` runs against a throwaway `CLAUDE_CONFIG_DIR` and skips the Xi
+session save. See `xi.cli/start-prompt!`.
+
+## The clj tool's worker
+
+SCI eval is synchronous and `(sh …)` uses `spawnSync`, so evaluating on the
+server's event loop froze every room for the command's duration. `clj` and
+`bb` post the request to a **per-room worker thread** (`target/main.js`
+re-enters itself as a `node:worker_threads` Worker; `xi.cli/main`'s
+`isMainThread` guard → `xi.ext.clj-worker` → `xi.ext.clj/eval-message`).
+Each worker holds its own SCI runtimes (so `def` persists per room), is
+spawned lazily and terminated on `:room/close`, `/clj reset` and
+`/ext disable clj`. Gates that need the main thread (runtime path asks, git
+holds) use a `gateRequest` message and block on `Atomics.wait` on a
+`SharedArrayBuffer`, which the turn's abort flag also wakes. Loopback
+sockets spawn a nested bridge worker owning the async `net.Socket` and
+stream bytes through a ring buffer. Pre-scan + approval runs before eval
+(`xi.ext.clj/approve`) and injects the approved set into the call's
+arguments (`:_allowed`, `:_allowed-commands`, `:_allowed-bg`), which `sh`
+re-checks at runtime. Tests: `test/xi/ext/clj_test.cljs`,
+`clj_sandbox_test.cljs` (the interop escape corpus).

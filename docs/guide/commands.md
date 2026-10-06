@@ -13,9 +13,14 @@ message. `/help` lists everything that is available in the current setup.
 | `/favorite` | Mark the current chat as a favourite; `/favorites` lists them |
 | `/cd <dir>` | Change the working directory of this chat |
 | `/project` | Pick one of your [projects](projects.md) (also `Alt+p`) |
-| `/model [name]` | Show or switch the model |
+| `/model [name]` | Show or switch the [model](models.md) |
 | `/fork` | Continue the conversation in a new chat, keeping this one as it is |
+| `/tree` | Go back to an earlier point of the chat and continue from there |
 | `/truncate` | Summarise the conversation so far to make room for more |
+| `/trim`, `/rollover`, `/lineage` | Shrink the model's context while keeping every detail recoverable; see [Sessions](sessions.md) |
+| `/summary` | Describe what this chat is about |
+| `/clear` | Empty the chat |
+| `/reload` | Restart Xi |
 | `/quit` | Leave Xi |
 
 ## Permissions
@@ -25,7 +30,7 @@ message. `/help` lists everything that is available in the current setup.
 | `/allow` (`/a`) | Allow the pending request (also `Alt+a`) |
 | `/allow always` | Allow it and stop asking for the same thing this session |
 | `/allow repo` | Allow writes anywhere in that repository |
-| `/deny` (`/d`) | Deny it (also `Alt+d`) |
+| `/deny` (`/d`) | Deny it (also `Alt+d`). `/deny <reason>` tells the agent why |
 | `/rules` | Show the rules in effect, in order; `/rules reload` re-reads the files |
 | `/plan` | Toggle plan mode: the agent may read and write a plan, nothing else |
 
@@ -39,6 +44,10 @@ message. `/help` lists everything that is available in the current setup.
 | `/buffers` | Switch between the chat, the log, the system prompt and the diff view |
 | `/events` | Show the event log of this chat |
 | `/prompt` | Show the system prompt the agent gets |
+| `/holds`, `/release` | Show who holds the repository's git index when two chats share it; force it free |
+| `/ps`, `/kill <pid>` | Background processes the agent started; stop one |
+| `/subagents` | Background sub-agents of this chat |
+| `/debug` | Copy debugging details to the clipboard |
 
 ## Extending
 
@@ -56,7 +65,5 @@ An extension adds a command with a `:commands` entry; it then shows up in
 `/help` and in the terminal's completion like a built-in one. See
 [Tutorial: a command and a key](extension-tutorial-command.md).
 
-## Reference
-
-The full list, with every argument, is in
-[the commands reference](../commands.md).
+In the terminal, the names complete as you type. Built-in commands win over
+an extension's command of the same name.

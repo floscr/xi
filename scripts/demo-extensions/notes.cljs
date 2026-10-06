@@ -1,5 +1,5 @@
 ;; Demo user extension — installed into .demo-home/.config/xi/extensions by
-;; scripts/demo-seed.mjs. See docs/user-extensions.md.
+;; scripts/demo-seed.mjs. See docs/guide/extension-tutorial-web.md.
 (ns notes
   (:require [xi.api.fs :as fs]
             [xi.api.promise :as p]))

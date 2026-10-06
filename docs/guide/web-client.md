@@ -35,7 +35,7 @@ devices and `xi clients revoke <name>` removes one.
 
 > On iPhone, a home-screen app served over plain HTTP loses its pairing on
 > most launches. Serve the client over HTTPS to fix that; see
-> [Server mode](server.md#https).
+> [HTTPS](https.md).
 
 ## What you can do
 
@@ -88,7 +88,16 @@ reads it from the server's state; run it on the machine the server runs on.
 **The page is stale after an update.** Reload once; the client is served by
 the same process as the server, so a restarted server serves the new client.
 
+## Appearance
+
+The gear in the sidebar footer (or "Appearance" in the chat menu and the
+command palette) opens the appearance dialog: theme, whether tool and
+thinking blocks start open or collapsed, **viewer mode** (runs of tool calls
+fold into one box of header rows) and **super collapsed** (a fully collapsed
+run shows as one summary line with a step count). Settings are per browser;
+"Reset to defaults" drops them.
+
 ## Reference
 
-Every detail of the client is in [the web client reference](../web-client.md)
-and [offline behaviour](../web-offline.md).
+How the client stays usable offline, in the repository:
+[`docs/web-offline.md`](../web-offline.md).

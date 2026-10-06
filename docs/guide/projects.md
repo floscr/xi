@@ -175,4 +175,4 @@ remembered repositories and the recent-use order. The config is untouched.
 
 ## Reference
 
-Every key, default and limit is in [the configuration reference](../config.md#projects).
+Every key, default and limit: [Configuration](configuration.md#projects).

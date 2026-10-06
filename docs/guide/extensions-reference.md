@@ -195,7 +195,6 @@ that fails to evaluate is reported and its old version unloaded.
 - System-prompt text steers the agent, but the agent's tool calls still go
   through the rules.
 
-The full reference, including the guard rules and the loader, is in
-[user extensions](../user-extensions.md); the built-in extension surface
-(which includes keys user extensions cannot use) is in
-[extensions](../extensions.md).
+Xi's own built-in extensions use a larger surface (event hooks, tool
+replacement, server routing) that is compiled into Xi; it is described for
+contributors in [`docs/extensions.md`](../extensions.md) in the repository.

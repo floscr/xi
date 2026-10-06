@@ -5,14 +5,18 @@ are no registration atoms or global state — extensions are plain
 ClojureScript maps wired through `xi.cli` into the core event loop,
 provider effects, and TUI.
 
-> Writing a new extension? Follow the step-by-step recipe in
+> Writing a new **built-in** extension? Follow the step-by-step recipe in
 > [writing-extensions.md](writing-extensions.md) — this file is the
 > reference for every key.
 >
 > Want one without rebuilding xi? Put it into `~/.config/xi/extensions/` and
-> list it under `:extensions` in `~/.config/xi/config.edn`.
-> These **user extensions** load at runtime in a capability sandbox; see
-> [user-extensions.md](user-extensions.md).
+> list it under `:extensions` in `~/.config/xi/config.edn`. These **user
+> extensions** load at runtime in a capability sandbox (`xi.ext.user`,
+> `xi.ext.user.guard`, `xi.sandbox.sci`, `xi.api.*`) with a subset of the
+> keys below; they are documented for users in the guide
+> ([extensions](guide/extensions.md), [reference](guide/extensions-reference.md))
+> and the tutorial example is exercised end to end by
+> `test/xi/ext/user_test.cljs`.
 
 ## Extension Shape
 
@@ -154,7 +158,7 @@ sub-agent turn, `:room-id` is the parent room and `:confirm!` auto-denies).
 So a tool can mutate state by dispatching events itself — implement tools in
 `:tool-registry`, never inside a gate. Policy (whether a call may run at all)
 belongs in rules: add a default rule to `xi.rules.defaults`, matching
-extension tools by `:tool-name` (see [rules.md](rules.md)).
+extension tools by `:tool-name` (see the guide's [rules reference](guide/rules-reference.md)).
 
 A `:tool-registry` entry named like a builtin (`read`, `bash`, …) replaces
 the builtin's implementation for every provider (the treesitter `read`
@@ -186,6 +190,18 @@ headless). Dialog types:
 
 Adding a new option keyword or dialog field requires no renderer changes —
 both clients build the UI from the dialog map.
+
+**Deny with a reason.** A gate that wants the user's reason for a deny wraps
+its `confirm!` with `xi.dialog/capture-deny-reason`, which passes
+`:on-reason` to `ask!`. `ask!` marks the dialog `:deny-reason? true` (the
+clients' cue to offer the option: the web `⋯` beside Deny, `/deny <reason>`
+in both clients) and keeps the callback out of the mirrored dialog data. A
+`:ui/dialog-response` with `:value false :reason "…"` calls the callback
+before the promise resolves, and the answer stays a plain `false`, so boolean
+callers are unaffected. The gate builds the tool result with
+`xi.dialog/with-deny-reason` ("The user denied this tool call. To tell you how
+to proceed, the user said: …"; the clj gate keeps its own first line). Asks
+without `:on-reason` don't offer the option; a reason sent anyway is dropped.
 
 ## Event Hooks
 
@@ -287,7 +303,7 @@ runtime-toggleable extensions to contribute only tools.
 **External MCP servers** are built on this: `xi.ext.mcp` wraps each
 configured MCP server (`~/.config/xi/mcp.edn`) as an extension contributing
 `mcp__<id>__*` tools and registers it into the manager. See
-[mcp-servers.md](mcp-servers.md).
+[mcp-internals.md](mcp-internals.md).
 
 ## Web Client Surface
 
@@ -354,14 +370,14 @@ namespace docstring is the authoritative description.
 
 | Extension | What it does |
 |-----------|--------------|
-| rules | Declarative rules engine — every allow/deny/confirm policy; `/rules`. Loaded first. See [rules.md](rules.md). |
+| rules | Declarative rules engine — every allow/deny/confirm policy; `/rules`. Loaded first. User docs: [rules](guide/rules.md), [reference](guide/rules-reference.md); the engine's request shape and `decide!` live in `xi.ext.rules` / `xi.rules.store`. |
 | plan-mode | Read-only exploration mode (`/plan`, 📋 badge). The read-only policy itself is a default rule. |
 
 **Agent tools**
 
 | Extension | What it does |
 |-----------|--------------|
-| clj | Sandboxed Clojure (SCI) scripting tool + `bb` tool — replaces bash. See [clj-tool.md](clj-tool.md). |
+| clj | Sandboxed Clojure (SCI) scripting tool + `bb` tool — replaces bash. User docs: [clj tool reference](guide/clj-tool-reference.md); worker and gate internals in [architecture.md](architecture.md#the-clj-tools-worker). |
 | process-manager | Registry of background processes started via clj's `process` ns; `/ps`, `/kill`. |
 | treesitter | Large-file `read` → structural outline; `read_source`. See [treesitter.md](treesitter.md). |
 | clj-surgeon | Structural Clojure refactoring tools; auto-fixes parens after write/edit. |
@@ -369,20 +385,20 @@ namespace docstring is the authoritative description.
 | session-search | Search previous sessions by title and content. |
 | events | Agent tool for inspecting the session event log. |
 | subagent | Background sub-agents (`spawn_subagent` …); `/subagents`. |
-| mcp | Wraps external MCP servers (`~/.config/xi/mcp.edn`) as extensions; `/mcp`. See [mcp-servers.md](mcp-servers.md). |
-| extensions | `/ext list\|enable\|disable\|reload` over the live extension manager (`reload` re-reads [user extensions](user-extensions.md); agents get the same as the `ext_reload` tool). |
+| mcp | Wraps external MCP servers (`~/.config/xi/mcp.edn`) as extensions; `/mcp`. See [mcp-internals.md](mcp-internals.md). |
+| extensions | `/ext list\|enable\|disable\|reload` over the live extension manager (`reload` re-reads [user extensions](guide/extensions.md); agents get the same as the `ext_reload` tool). |
 
 **Sessions, review & workflow**
 
 | Extension | What it does |
 |-----------|--------------|
-| resume | `/trim`, `/rollover`, `/lineage`. See [resume.md](resume.md). |
+| resume | `/trim`, `/rollover`, `/lineage`. See [architecture.md](architecture.md#session-tools) and the guide's [sessions](guide/sessions.md). |
 | worktree | `/worktree` — move the room into a fresh git worktree (`merge`/`list`/`remove`). |
 | canvas-review | Experimental node-based review canvas (`canvas_review_*` tools); has a web half. |
-| diff | `/diff` viewer buffer (see [commands.md](commands.md)); has a web half. |
+| diff | `/diff` viewer buffer (`git` \| `staged` \| `unstaged` \| `session-edits` \| `session-git` \| `session-commits` \| `<ref>`; no args = session diff); has a web half. |
 | file-view | Opens files touched by write/edit into a `:file` buffer; has a web half. |
 | file-finder | Ctrl+P fuzzy file finder (TUI). |
-| projects | `/project` / Alt+P project path picker; remembers the git repo of every room / `/cd`; list from `xi.projects` ([config.md](config.md#projects)). |
+| projects | `/project` / Alt+P project path picker; remembers the git repo of every room / `/cd`; list from `xi.projects` ([guide: configuration](guide/configuration.md#projects)). |
 | skills | Project-marker system-prompt injection + `/skill list\|load` (`<input />` placeholders raise a `:form` dialog). |
 | snippets | Insertable prompt snippets for the web client. |
 

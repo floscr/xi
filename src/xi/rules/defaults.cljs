@@ -124,12 +124,12 @@
 
 (def ^:private xi-sessions-re
   "The xi session-metadata dir `~/.config/xi/sessions` and anything under it.
-   Matched against the resolved absolute path (see `:path` in docs/rules.md)."
+   Matched against the resolved absolute path (see `:path` in docs/guide/rules-reference.md)."
   #"/\.config/xi/sessions(?:/|$)")
 
 (def ^:private claude-sessions-re
   "The Claude CLI transcript dir `~/.claude/projects` and anything under it.
-   Matched against the resolved absolute path (see `:path` in docs/rules.md)."
+   Matched against the resolved absolute path (see `:path` in docs/guide/rules-reference.md)."
   #"/\.claude/projects(?:/|$)")
 
 ;; ── Plan mode (read-only exploration; toggled by xi.ext.plan-mode /plan) ──────

@@ -274,7 +274,7 @@ if (favorites.length) {
   );
 }
 
-// Demo user extension (server + web half) — docs/user-extensions.md.
+// Demo user extension (server + web half) — docs/guide/extension-tutorial-web.md.
 fs.cpSync(
   path.join(REPO, "scripts", "demo-extensions"),
   path.join(DEMO_HOME, ".config", "xi", "extensions"),

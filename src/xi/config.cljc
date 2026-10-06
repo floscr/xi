@@ -14,7 +14,7 @@
 
    These built-in entries are compiled in. Extensions that are personal
    or optional load at runtime instead, as sandboxed user extensions
-   (see docs/user-extensions.md)."
+   (see docs/guide/extensions.md)."
   (:require
    #?@(:node
        [[xi.ext.canvas-review :as canvas-review]
