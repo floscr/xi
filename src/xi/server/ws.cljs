@@ -69,6 +69,9 @@
 
 (def ^:private LOOPBACK_HOST "127.0.0.1")
 
+(def ^:private uuid-re
+  #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
 (defn resolve-hosts
   "Addresses to listen on: an explicit `host` (--host), else XI_HOST — each a
    comma-separated list — else DEFAULT_HOST. Blank values count as unset.
@@ -476,7 +479,7 @@
         ;; edit applies to the next room without a restart.
         ;; Returns {:cwd :session :room}.
         build-room
-        (fn [{:keys [cwd summary model effort user]}]
+        (fn [{:keys [cwd summary model effort user session-id]}]
           (let [cwd (or (:cwd summary) cwd (.cwd js/process))
                 prof (when agent? (profile/load agent-id))
                 system-parts (if prof
@@ -490,9 +493,18 @@
                           ;; a fresh session records who opened it (the
                           ;; joining client's user, or the server's own for
                           ;; rooms it provisions itself)
-                          (session/create-session
-                           cwd (cond-> {:user (util/user-id user)}
-                                 agent? (assoc :agent agent-id))))]
+                          (cond-> (session/create-session
+                                   cwd (cond-> {:user (util/user-id user)}
+                                         agent? (assoc :agent agent-id)))
+                            ;; A client asked for a session that has nothing on
+                            ;; disk — a blank chat that outlived its room (server
+                            ;; restart). Keep its id: minting a new one made every
+                            ;; reconnect re-pin the client to yet another blank
+                            ;; session, and left its /chat/<id> URL pointing at a
+                            ;; session that never joined. The id ends up in a file
+                            ;; path, so only a well-formed uuid is honoured.
+                            (and session-id (re-matches uuid-re session-id))
+                            (assoc :id session-id)))]
             {:cwd     cwd
              :session session
              :room    {:model        (or model (:model server-opts))
@@ -538,7 +550,8 @@
                           (session/find-personal-agent-session-by-id session-id agent-id)
                           (session/find-session-by-id session-id)))
               user    (get-in (get-state) [:connection :clients client-id :user])
-              {:keys [session room]} (build-room {:cwd cwd :summary summary :model model :user user})]
+              {:keys [session room]} (build-room {:cwd cwd :summary summary :model model :user user
+                                                  :session-id session-id})]
           (dispatch! {:type :room/create :room-id room-id :room room})
           (dispatch! (cond-> {:type :room/attach :client-id client-id :room-id room-id}
                        join-token (assoc :join-token join-token)))

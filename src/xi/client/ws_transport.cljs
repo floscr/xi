@@ -318,6 +318,11 @@
                        :auth/denied  (do (js/console.error "[ws] connection denied by server")
                                          (set! (.-closed ctx) true))
                        nil)
+                     ;; The server closed the room under us (its blank session
+                     ;; was deleted, a prune): forget the pin, or the next
+                     ;; reconnect / server restart re-joins and resurrects it.
+                     (when (= :room/left (:type ev))
+                       (set! (.-lastJoin ctx) nil))
                      ;; Pin lastJoin to the room's current session-id so
                      ;; reconnects re-attach instead of creating a new room
                      ;; (critical on mobile where WS drops are frequent). Track
