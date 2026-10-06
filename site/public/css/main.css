@@ -136,19 +136,6 @@ a.btn:hover { text-decoration: none; }
   box-shadow: var(--shadow-3);
 }
 
-.code-block-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--code-border);
-  font-family: var(--mono);
-  font-size: 11.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg-2);
-}
-
 .code-block pre {
   padding: 16px 18px;
   overflow-x: auto;

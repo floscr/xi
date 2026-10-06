@@ -11,13 +11,11 @@
 ;; --- Code blocks ---
 
 (defn code-block-hiccup
-  "A fenced code block: header with the language, highlighted <pre><code>.
-   The block is always dark, so it opts into the framework's dark tokens
-   (`data-theme=\"dark\"` re-scopes them to this subtree)."
+  "A fenced code block: highlighted <pre><code>. The block is always dark, so
+   it opts into the framework's dark tokens (`data-theme=\"dark\"` re-scopes
+   them to this subtree)."
   [lang source]
   [:div.code-block {:data-theme "dark"}
-   [:div.code-block-bar
-    [:span.code-block-lang (or lang "text")]]
    [:pre [:code {:data-language (or lang "text")}
           (seq (highlight/highlight lang source))]]])
 
