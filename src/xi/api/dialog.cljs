@@ -18,8 +18,9 @@
    opened with the host's dispatch, which the loader installs in xi.api.core
    (`set-dialog-host!`). It lives there because the sandbox gets every public
    var of this namespace, and must not be able to swap the host.
-   A server with no client attached answers at once with the safe default
-   (false / nil), like every other dialog."
+   Like every other dialog it waits in the room until someone answers, also
+   while no client is connected; only prompt mode, where no client can ever
+   attach, answers at once with the safe default (false / nil)."
   (:require [clojure.string :as str]
             [xi.api.core :as core]))
 

@@ -494,8 +494,10 @@
                        :room-id   room-id
                        :cwd       cwd
                        ;; Raise a confirm dialog and resolve to the answer.
-                       ;; ask! resolves to a safe default (false) when no
-                       ;; client is attached (see xi.ext.core/create-dialogs).
+                       ;; The dialog waits in the room for an answer, also
+                       ;; while no client is connected; only prompt mode
+                       ;; resolves it to a safe default (false) at once
+                       ;; (see xi.ext.core/create-dialogs).
                        ;; opts may carry {:options [:yes :no :always …]} —
                        ;; option keywords from xi.dialog/confirm-option; the
                        ;; renderers build their buttons/keys from that data.

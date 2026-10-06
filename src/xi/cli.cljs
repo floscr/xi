@@ -568,10 +568,12 @@ See docs/guide/command-line.md for the full reference.")
                      (merge (:handlers dialogs)))
         {:keys [dispatch! add-tap!]}
         (app/create-app {:initial-state (state/initial-state
-                                         ;; :server mode → create-dialogs' ask!
-                                         ;; auto-resolves (no clients attached).
-                                         {:mode :server
-                                          :ext (:process-ext-init composed)})
+                                         ;; no client ever attaches → create-
+                                         ;; dialogs' ask! resolves at once to
+                                         ;; the safe default
+                                         {:mode        :server
+                                          :clientless? true
+                                          :ext         (:process-ext-init composed)})
                          :handlers      handlers
                          :transform-event (ext/transform-event composed)
                          :effects       (merge (agent/create-fx

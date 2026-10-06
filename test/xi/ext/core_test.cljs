@@ -133,16 +133,31 @@
     (testing "unknown dialog-id is a no-op"
       (is (nil? (handler st {:room-id "r" :dialog-id "nope" :value true}))))))
 
-(deftest dialog-ask-server-no-clients-resolves-default
+(deftest dialog-ask-clientless-resolves-default
   (async done
     (let [{:keys [ask!]} (ext/create-dialogs)
-          st (-> (state/initial-state)
-                 (assoc-in [:connection :mode] :server)
+          opened (atom nil)
+          st (-> (state/initial-state {:mode :server :clientless? true})
                  (assoc-in [:rooms "r"] (state/make-room "r" nil)))
-          v  (ask! {:dispatch! (fn [_]) :state st}
+          v  (ask! {:dispatch! #(reset! opened %) :state st}
                    {:room-id "r" :dialog {:type :confirm :prompt "ok?"}})]
-      (is (false? v) "no clients in room → safe default (false) immediately")
+      (is (false? v) "prompt mode (no client can attach) → safe default (false)")
+      (is (nil? @opened) "without opening a dialog")
       (done))))
+
+(deftest dialog-ask-server-no-clients-stays-open
+  ;; a phone that went to sleep leaves the server with no clients; the ask
+  ;; must still open so it shows when one reconnects
+  (let [{:keys [ask!]} (ext/create-dialogs)
+        opened (atom nil)
+        st (-> (state/initial-state {:mode :server})
+               (assoc-in [:rooms "r"] (state/make-room "r" nil)))
+        settled (atom false)]
+    (.then (ask! {:dispatch! #(when (= :ui/dialog-open (:type %)) (reset! opened %)) :state st}
+                 {:room-id "r" :dialog {:type :confirm :prompt "ok?"}})
+           (fn [_] (reset! settled true)))
+    (is (= "r" (:room-id @opened)) "the dialog opens in the room")
+    (is (false? @settled) "and waits for an answer")))
 
 (deftest dialog-ask-resolves-on-response
   (async done

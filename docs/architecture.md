@@ -176,8 +176,8 @@ compaction, TUI, WS):
 - `xi prompt <text>` (aka `xi -p`) — one-shot headless run: the same core +
   server-side extensions (minus terminal-title), no renderer. A tap collects
   `:agent/text-delta` output and exits on `:agent/turn-end`; `--stream` writes
-  tokens live. Dialogs run in `:server` mode with no clients, so they resolve
-  to their safe defaults. See [Prompt mode](#prompt-mode) below.
+  tokens live. Its state is `:server` mode marked `:clientless?`, so dialogs
+  resolve to their safe defaults. See [Prompt mode](#prompt-mode) below.
 - The web client (`xi.web.core`) is the same assembly pattern in the
   browser — see [web-client-internals.md](web-client-internals.md).
 
@@ -272,8 +272,9 @@ list is in the guide ([commands](guide/commands.md)).
 `xi prompt` is the standalone assembly minus the renderer and the
 `terminal-title` extension (its ANSI escapes would corrupt stdout): a tap
 collects `:agent/text-delta` (echoed live under `--stream`) and
-`:agent/turn-end` flushes and exits. Initial state is `:server` mode with no
-clients, so dialogs resolve to their safe defaults. No auto-titling turn.
+`:agent/turn-end` flushes and exits. Initial state is `:server` mode marked
+`:clientless?` (no client can ever attach), so dialogs resolve to their safe
+defaults; a regular server keeps them open while no client is connected. No auto-titling turn.
 `--no-store` runs against a throwaway `CLAUDE_CONFIG_DIR` and skips the Xi
 session save. See `xi.cli/start-prompt!`.
 

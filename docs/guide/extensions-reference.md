@@ -115,8 +115,9 @@ tool call. Not a rules request.
 | `(alert ctx "Done.")` | nil |
 | `(form ctx "Title" [{:name "msg" :label "Message"}])` | `{"msg" "…"}`, nil on cancel |
 
-The text is shown prefixed with the extension's id. With no client attached,
-every dialog resolves to its safe default at once.
+The text is shown prefixed with the extension's id. A dialog waits for an
+answer even while no client is connected, and shows when one joins; only in
+`xi prompt` mode does it resolve to its safe default at once.
 
 ### `xi.api.json` and `xi.api.promise`
 

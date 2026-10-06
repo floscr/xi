@@ -49,11 +49,14 @@
 
 (defn initial-state
   ([] (initial-state nil))
-  ([{:keys [mode connection-id ext port]}]
+  ([{:keys [mode connection-id ext port clientless?]}]
    {:connection (cond-> {:id      (or connection-id (random-uuid))
                          :mode    (or mode :standalone)
                          :clients {}}
-                  port (assoc :port port))
+                  port (assoc :port port)
+                  ;; no client can ever attach (prompt mode): dialogs
+                  ;; resolve to their safe defaults (xi.ext.core/create-dialogs)
+                  clientless? (assoc :clientless? true))
     :rooms       {}
     :active-room nil
     ;; process-local extension state, keyed by extension id (seeded from

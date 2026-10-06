@@ -146,7 +146,8 @@ A 2-arg function that intercepts tool execution:
 
 The gate ctx: `{:dispatch! :get-state :room-id :cwd :confirm!}`.
 `:confirm!` is `(fn [message] → Promise<bool>)` — raises a confirm dialog;
-resolves to `false` (safe default) when no client is attached. A second
+resolves to `false` (safe default) at once only in prompt mode, where no
+client can ever attach; otherwise it waits for an answer. A second
 arg `{:options [:yes :no :always …]}` adds extra choices as data — option
 keywords from `xi.dialog/confirm-option` (e.g. `:always` resolves
 `:always`, `:allow-repo` resolves `:repo`); the TUI and web render the
@@ -174,8 +175,10 @@ Dialogs are **data**, not templates. `ext/create-dialogs` returns `ask!`:
 
 It pushes the dialog map into the room's `[:ui :dialogs]`; the TUI and web
 render it generically from the data, and the promise resolves with the
-user's answer (or a safe default — `false`/`nil` — when the server is truly
-headless). Dialog types:
+user's answer. It waits for one even while no client is connected (the
+dialog shows when a client joins); only prompt mode (`:clientless?` in the
+connection state) resolves to a safe default — `false`/`nil` — at once.
+Dialog types:
 
 - `{:type :confirm :message … :options [:yes :no :always …]}` — option
   keywords come from `xi.dialog/confirm-option` (label, key hint, resolved
