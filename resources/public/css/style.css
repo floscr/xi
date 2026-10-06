@@ -2531,7 +2531,7 @@ code a:hover,
   text-align: right;
 }
 .claude-usage-note {
-  color: var(--fg-2);
+  color: var(--fg-1);
   font-variant-numeric: tabular-nums;
 }
 
