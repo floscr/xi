@@ -2918,10 +2918,18 @@
         model   (or (get-in room [:agent :model]) (:model cached)
                     (get-in state [:web/pending-room :model])
                     (when new? (get-in state [:lobby :model])))
+        ;; A joined room whose session was never persisted (no provider/CLI
+        ;; id: a new chat nobody has prompted yet, reopened by its URL or the
+        ;; sidebar) has no history to wait for — a disk resume always carries
+        ;; one of the ids. Without this it spun on "Connecting…" forever.
+        fresh?  (and (some? room)
+                     (not (get-in room [:session :cli-session-id]))
+                     (not (get-in room [:session :provider-session-id])))
         ;; The server's history for an existing session is still in flight
         ;; (nothing optimistic/pending to show in the meantime).
         resuming? (and (not new?)
                        (not authoritative?)
+                       (not fresh?)
                        (not (:web/optimistic state))
                        (not (:web/pending-submit state))
                        (not (:web/pending-command state)))
@@ -3205,10 +3213,11 @@
 
 (defn- session-menu-items
   "ui.context-menu entries for a session card: bookmark toggle, hide/show in
-   Recent (only where the caller opts in via :dismissable?), and Delete. Hiding
-   is gated on idle — a busy card or one awaiting a dialog response can't be
-   dismissed. Delete is always offered: the server keeps a busy room alive and
-   just suppresses its card (see room_manager/session-delete)."
+   Recent (only where the caller opts in via :dismissable?), copy session ID,
+   and Delete. Hiding is gated on idle — a busy card or one awaiting
+   a dialog response can't be dismissed. Delete is always offered: the server
+   keeps a busy room alive and just suppresses its card (see
+   room_manager/session-delete)."
   [dispatch! {:keys [session-id favorite? dismissed? dismissable? busy? has-dialog?]}]
   (let [idle? (not (or busy? has-dialog?))]
     (cond-> [{:label    (if favorite? "Remove bookmark" "Bookmark")
@@ -3218,6 +3227,10 @@
       (conj {:label    (if dismissed? "Show in recent" "Hide from recent")
              :icon     (if dismissed? :eye :eye-off)
              :on-click #(dispatch! {:type :dismissed/toggle :session-id session-id})})
+      true
+      (conj {:label    "Copy session ID"
+             :icon     :copy
+             :on-click #(copy! dispatch! session-id)})
       true
       (conj {:type :separator}
             {:label    "Delete"
