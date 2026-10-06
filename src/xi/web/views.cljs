@@ -295,6 +295,8 @@
     ("clj")         (get-arg args :code)
     ("Read" "read")  (relativize-path (or (get-arg args :file_path) (get-arg args :path)) cwd)
     ("Write" "write") (relativize-path (or (get-arg args :file_path) (get-arg args :path)) cwd)
+    ("bb")          (str/join " " (cons (or (not-empty (get-arg args :task)) "tasks")
+                                        (map str (get-arg args :args))))
     ("Edit" "edit")  (relativize-path (or (get-arg args :file_path) (get-arg args :path)) cwd)
     ("Grep" "grep")  (get-arg args :pattern)
     ("Glob" "find")  (get-arg args :pattern)

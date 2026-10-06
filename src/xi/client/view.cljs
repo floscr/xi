@@ -76,6 +76,8 @@
   (case tool-name
     "bash"  (get-arg arguments :command)
     "clj"   (get-arg arguments :code)
+    "bb"    (str/join " " (cons (or (not-empty (get-arg arguments :task)) "tasks")
+                                (map str (get-arg arguments :args))))
     ("read" "write" "edit") (arg-file-path arguments)
     "ls"    (get-arg arguments :path)
     "grep"  (str (get-arg arguments :pattern)
