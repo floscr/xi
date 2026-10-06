@@ -135,6 +135,9 @@ body {
   flex-shrink: 0;
 }
 .project-card-trail > * { grid-area: 1 / 1; }
+/* The avatars are positioned, so without this they paint over the button and
+   swallow its click even when faded out. */
+.project-card-trail .session-more-btn { position: relative; z-index: 1; }
 .project-card-trail .avatar-stack { margin: 0; transition: opacity 0.15s; }
 @media (hover: hover) {
   .project-card:hover .project-card-trail .avatar-stack { opacity: 0; }
