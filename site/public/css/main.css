@@ -124,7 +124,6 @@ a.btn:hover { text-decoration: none; }
 }
 .site-nav .btn { color: var(--fg-1); }
 .site-nav .btn:hover, .site-nav .btn.is-active { color: var(--fg-0); background: var(--bg-1); }
-.site-nav .theme-toggle { margin-left: 8px; }
 
 /* ---------- code blocks ---------- */
 

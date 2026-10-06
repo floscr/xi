@@ -1,9 +1,8 @@
 (ns xisite.ui
-  "Layout: head, header, footer, page wrapper. Buttons and the theme toggle
-   are clj-ui-framework components; their tokens and CSS come from /css/ui.css."
+  "Layout: head, header, footer, page wrapper. Buttons are
+   clj-ui-framework components; their tokens and CSS come from /css/ui.css."
   (:require [hiccup2.core :as h]
             [ui.button :as button]
-            [ui.theme-toggle :as theme-toggle]
             [xisite.core :as core]
             [xisite.livereload :as livereload]
             [xisite.theme :as theme]))
@@ -44,7 +43,7 @@
 
 (defn- nav-button [{:keys [href active?]} & children]
   (apply button/button
-         {:variant :ghost :size :sm :href href
+         {:variant :ghost :href href
           :class (when active? "is-active")
           :attrs (cond-> {} active? (assoc :aria-current "page"))}
          children))
@@ -57,8 +56,7 @@
       [:nav.site-nav
        (nav-button {:href "/docs/" :active? (and docs? (not= path "/docs/getting-started/"))} "Docs")
        (nav-button {:href "/docs/getting-started/" :active? (= path "/docs/getting-started/")} "Install")
-       (nav-button {:href core/repo-url} github-icon [:span "GitHub"])
-       (theme-toggle/theme-toggle {:size :sm})]]]))
+       (nav-button {:href core/repo-url} github-icon [:span "GitHub"])]]]))
 
 (defn footer []
   [:footer.site-footer
