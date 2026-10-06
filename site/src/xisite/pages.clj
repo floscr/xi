@@ -197,7 +197,7 @@ xi                         # connect a client")
      [:div.wrap.split
       [:div.feature-text
        [:p.eyebrow "Extensions"]
-       [:h2 "Extend it with a file."]
+       [:h2 "Extension."]
        [:p "Drop a ClojureScript file into " [:code "~/.config/xi/extensions/"]
         ", list it in your config, and it loads. No build step. "
         [:code "/ext reload"] " swaps a changed file in while the server runs."]
