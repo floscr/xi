@@ -109,11 +109,6 @@ A dev server or a long build runs in the background:
 `/ps` lists a chat's processes and `/kill` stops one. A chat with a running
 process is kept open.
 
-## Turning it off
-
-`/ext disable clj` removes the tool for the next turn and gives the agent a
-plain `bash` tool instead. `/ext enable clj` brings it back.
-
 ## Reference
 
 Every helper, option and gate: [clj tool reference](clj-tool-reference.md).
