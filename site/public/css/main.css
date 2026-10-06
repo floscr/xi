@@ -133,7 +133,6 @@ a.btn:hover { text-decoration: none; }
   border-radius: var(--radius-md);
   overflow: hidden;
   color: var(--code-fg);
-  box-shadow: var(--shadow-3);
 }
 
 .code-block pre {
