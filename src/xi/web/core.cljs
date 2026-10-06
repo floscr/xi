@@ -235,6 +235,21 @@
         (-> (ws-transport/room-joined st (assoc ev :room (assoc room :history (or base []))))
             (assoc :effects [[:ws/send {:type :room/join :target room-id}]]))))))
 
+(defn- room-left-web
+  "The transport's :room/left, plus: when the room we were viewing is closed
+   under us (its blank session deleted from another client, a prune), leave
+   its now-dead /chat/<session-id> for home. Without a room the chat view
+   would wait on \"Connecting…\" forever. Our own leave already navigated
+   away, so the route no longer matches and this stays a no-op."
+  [st {:keys [room-id] :as ev}]
+  (let [sid      (get-in st [:rooms room-id :session :id])
+        viewing? (and sid
+                      (= :chat (get-in st [:web/route :page]))
+                      (= sid (get-in st [:web/route :session-id])))]
+    (cond-> (ws-transport/room-left st ev)
+      viewing? (update :effects (fnil conj [])
+                       [:app/dispatch {:type :route/navigate :page :home}]))))
+
 (defn- compose-add-images
   "Stage client-resized images ({:data b64 :media-type mime}) for the next
    prompt of the chat `draft-key`; they ride along on :input/submit and clear
@@ -798,6 +813,7 @@
                             (assoc-in [:rooms room-id :agent :model] (:model cached)))}))))
           :connection/status     connection-status
           :room/joined           room-joined-from-cache
+          :room/left             room-left-web
           ;; ─ Client auth (transport-level handshake, xi.server.ws) ─
           :auth/pending          (fn [st {:keys [code]}]
                                    {:state (assoc st :web/auth {:status :pending :code code})})

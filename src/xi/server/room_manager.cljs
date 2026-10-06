@@ -376,6 +376,14 @@
                     (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
                     close-rids)}))
 
+(defn- blank-room?
+  "A live room nobody has prompted: no history and a session that never got a
+   provider/CLI id, i.e. nothing on disk and nothing to lose."
+  [room]
+  (and (empty? (:history room))
+       (not (get-in room [:session :cli-session-id]))
+       (not (get-in room [:session :provider-session-id]))))
+
 (defn- session-delete
   "Roomless: permanently delete a saved session by id. The unlink + lobby
    rebroadcast happen in the :session/delete-reply effect (needs disk access).
@@ -389,6 +397,11 @@
    go too. To avoid stranding that client we swap its room to a fresh blank
    session (:session/new, no save) rather than closing the room out from
    under it; a clientless room is simply closed.
+
+   A blank room (see blank-room?) is the exception: swapping it to a fresh
+   blank session just recreates the same \"New session\" card, so the delete
+   never takes while any client has it open. Its clients are detached with
+   :room/left (as rooms-prune does) and the room is closed.
 
    keep-alive? rooms can't be torn down — a running turn, a pending dialog,
    live background processes, or a running sub-agent must not be killed by a
@@ -407,15 +420,29 @@
         {kept true live false}
         (group-by #(keep-alive? (get-in st [:rooms %])) all-rids)
         {closable false attached true}
-        (group-by #(boolean (seq (clients-in-room st %))) live)]
-    {:state (reduce (fn [s rid]
-                      (assoc-in s [:rooms rid :session :deleted?] true))
-                    st kept)
+        (group-by #(boolean (seq (clients-in-room st %))) live)
+        {blank true swap false}
+        (group-by #(blank-room? (get-in st [:rooms %])) attached)
+        detached (for [[cid client] (get-in st [:connection :clients])
+                       :let  [rid (:room-id client)]
+                       :when (some #{rid} blank)]
+                   [cid rid])]
+    {:state (as-> st s
+              (reduce (fn [s rid]
+                        (assoc-in s [:rooms rid :session :deleted?] true))
+                      s kept)
+              (reduce (fn [s [cid _]]
+                        (update-in s [:connection :clients cid] dissoc :room-id))
+                      s detached))
      :effects (-> [[:session/delete-reply {:session-id session-id}]]
+                  (into (map (fn [[cid rid]]
+                               [:ws/send-to {:client-id cid
+                                             :event {:type :room/left :room-id rid}}]))
+                        detached)
                   (into (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
-                        closable)
+                        (concat closable blank))
                   (into (map (fn [rid] [:session/new {:room-id rid :save-current? false}]))
-                        attached))}))
+                        swap))}))
 
 (defn- session-mark-read
   "Roomless: record a session as seen up to its current response count. The

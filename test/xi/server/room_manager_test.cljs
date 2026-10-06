@@ -332,8 +332,9 @@
   (testing "a room someone is viewing is reset to a fresh session, NOT closed
             — otherwise it lingers in the lobby and re-persists the deleted
             session (delete would appear to do nothing)"
-    (let [st (apply-events (state-with-sessioned-room)
-                           {:type :room/attach :client-id "c1" :room-id "r1"})
+    (let [st (-> (state-with-sessioned-room)
+                 (assoc-in [:rooms "r1" :session :provider-session-id] "p1")
+                 (apply-events {:type :room/attach :client-id "c1" :room-id "r1"}))
           {:keys [effects]} (handle st {:type :session/delete :client-id "c1"
                                         :session-id "s1"})]
       (is (some #(= % [:session/delete-reply {:session-id "s1"}]) effects)
@@ -342,6 +343,23 @@
           "swaps the attached room to a fresh session")
       (is (not-any? #(= % [:app/dispatch {:type :room/close :room-id "r1"}]) effects)
           "does not strand the attached client by closing the room"))))
+
+(deftest session-delete-closes-attached-blank-room
+  (testing "a never-prompted room is closed and its clients detached — swapping
+            it to a fresh blank session would just recreate the same card"
+    (let [st (apply-events (state-with-sessioned-room)
+                           {:type :room/attach :client-id "c1" :room-id "r1"})
+          {:keys [state effects]} (handle st {:type :session/delete :client-id "c1"
+                                              :session-id "s1"})]
+      (is (some #(= % [:ws/send-to {:client-id "c1"
+                                    :event {:type :room/left :room-id "r1"}}]) effects)
+          "tells the attached client it left")
+      (is (some #(= % [:app/dispatch {:type :room/close :room-id "r1"}]) effects)
+          "closes the room")
+      (is (not-any? #(= :session/new (first %)) effects)
+          "no replacement blank session")
+      (is (nil? (get-in state [:connection :clients "c1" :room-id]))
+          "client is detached"))))
 
 (deftest session-delete-spares-busy-room
   (testing "a room mid-turn is left running — a lobby delete must not kill a live turn"

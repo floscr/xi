@@ -134,7 +134,10 @@
               (assoc-in [:rooms room-id] (update room :ui dissoc :menu :menu-stack))
               (assoc :active-room room-id))})
 
-(defn- room-left [st {:keys [room-id]}]
+(defn room-left
+  "Drop the room mirror. Public so the web client can wrap it (it leaves the
+   dead URL of a room the server closed under it)."
+  [st {:keys [room-id]}]
   {:state (cond-> (update st :rooms dissoc room-id)
             (= room-id (:active-room st)) (assoc :active-room nil))})
 
