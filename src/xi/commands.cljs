@@ -420,7 +420,7 @@
    the web bubble menu): the user may have picked a new model after the
    original turn, so apply it to the room before the fork's turn starts —
    otherwise the fork would reuse the room's prior model."
-  [st {:keys [room-id text images client-id model]}]
+  [st {:keys [room-id text images client-id model user]}]
   (when-let [room (state/get-room st room-id)]
     (let [model-change? (and model (not= model (get-in room [:agent :model])))
           st     (cond-> st
@@ -434,7 +434,8 @@
         (= :command (:type parsed))
         (cond-> {:effects [[:app/dispatch (cond-> {:type :command/run :room-id room-id
                                                    :name (:name parsed) :args (:args parsed)}
-                                            client-id (assoc :client-id client-id))]]}
+                                            client-id (assoc :client-id client-id)
+                                            user      (assoc :user user))]]}
           model-change? (assoc :state st))
 
         ;; Prompt — possibly images-only (nil text → provider omits the
@@ -443,10 +444,12 @@
         (let [prompt-text (:text parsed)]
           (if (seq images)
             {:state   (assoc-in st [:rooms room-id :ui :pending-images] [])
-             :effects [[:image/process {:room-id room-id :text prompt-text
-                                        :images images}]]}
-            (cond-> {:effects [[:app/dispatch {:type :prompt/submit :room-id room-id
-                                               :text prompt-text}]]}
+             :effects [[:image/process (cond-> {:room-id room-id :text prompt-text
+                                                :images images}
+                                         user (assoc :user user))]]}
+            (cond-> {:effects [[:app/dispatch (cond-> {:type :prompt/submit :room-id room-id
+                                                       :text prompt-text}
+                                                user (assoc :user user))]]}
               model-change? (assoc :state st))))
 
         :else nil))))
@@ -459,13 +462,17 @@
   (let [by-name (into {} (mapcat (fn [cmd]
                                    (map #(vector % cmd) (cons (:name cmd) (:aliases cmd)))))
                       commands)]
-    (fn command-run [st {:keys [room-id name args remote? client-id]}]
+    (fn command-run [st {:keys [room-id name args remote? client-id] :as ev}]
       (when (state/get-room st room-id)
         (if-let [cmd (get by-name name)]
           ((:handler cmd) st {:room-id   room-id
                               :args      (when (seq args) args)
                               :commands  commands
-                              :client-id client-id})
+                              :client-id client-id
+                              ;; who ran it: the sender the server stamped,
+                              ;; else the sole user in the room, else this
+                              ;; process' own user (state/event-user)
+                              :user      (state/event-user st ev)})
           ;; Mirrored (:remote?) command the client has no code for — it's a
           ;; server-side extension command (/commit, /kb, …). The server ran
           ;; the real work and broadcasts the resulting events separately, so

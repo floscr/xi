@@ -102,17 +102,22 @@
   [state]
   (get-in state [:connection :user] util/root-user))
 
-(defn event-user
-  "The user an event acts for: the :user the server stamped on a client's
-   event, else this process' own user (standalone input, server-side
-   automation such as the HTTP API or a queued prompt drain)."
-  [state event]
-  (or (:user event) (own-user state)))
-
 (defn room-users
   "Distinct user ids attached to a room, in attach order."
   [room]
   (vec (distinct (map :user (vals (:members room))))))
+
+(defn event-user
+  "The user an event acts for: the :user the server stamped on a client's
+   event. An event with none — server-side automation such as a slash command
+   that submits a prompt — acts for the one user in its room when there is
+   exactly one, else for this process' own user (standalone input, the HTTP
+   API, a queued prompt drain in a shared room)."
+  [state event]
+  (or (:user event)
+      (let [users (room-users (get-in state [:rooms (:room-id event)]))]
+        (when (= 1 (count users)) (first users)))
+      (own-user state)))
 
 (defn room-ext
   "Room-scoped extension state for ext-id (mirrors to clients)."

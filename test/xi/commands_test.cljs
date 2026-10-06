@@ -50,6 +50,40 @@
                             :name "model" :args "opus"}]]
            effects))))
 
+(deftest input-submit-keeps-the-sender
+  ;; Typed input arrives as :input/submit and is re-dispatched as a prompt or
+  ;; a command; the user the server stamped must survive that hop, or every
+  ;; prompt would read as the server's own user's.
+  (let [st (with-room)]
+    (is (= [[:app/dispatch {:type :prompt/submit :room-id "r" :text "hi" :user "alice"}]]
+           (:effects (handle st {:type :input/submit :room-id "r" :text "hi" :user "alice"}))))
+    (is (= [[:app/dispatch {:type :command/run :room-id "r" :name "model" :args "opus" :user "alice"}]]
+           (:effects (handle st {:type :input/submit :room-id "r" :text "/model opus" :user "alice"}))))
+    (testing "through the image path too"
+      (let [st (apply-events st {:type :ui/attach-image :room-id "r" :image {:data "x"}})]
+        (is (= "alice" (-> (handle st {:type :input/submit :room-id "r" :text "look" :user "alice"})
+                           :effects first second :user)))))
+    (testing "and the whole way into the history entry"
+      (let [{:keys [effects]} (handle st {:type :input/submit :room-id "r" :text "hi" :user "alice"})
+            [_ prompt] (first effects)]
+        (is (= "alice" (:user (first (history (:state (handle st prompt)))))))))))
+
+(deftest command-handlers-learn-who-ran-them
+  (let [seen    (atom nil)
+        cmd     {:name "who" :handler (fn [_ ctx] (reset! seen ctx) nil)}
+        run     (:command/run (commands/command-handlers [cmd]))
+        st      (with-room)]
+    (run st {:type :command/run :room-id "r" :name "who" :user "alice"})
+    (is (= "alice" (:user @seen)) "the stamped sender")
+    (run st {:type :command/run :room-id "r" :name "who"})
+    (is (= "root" (:user @seen)) "no sender, nobody in the room: the process' own user")
+    (run (assoc-in st [:rooms "r" :members] {"c1" {:user "bob"}})
+         {:type :command/run :room-id "r" :name "who"})
+    (is (= "bob" (:user @seen)) "no sender, one user in the room: that user")
+    (run (assoc-in st [:rooms "r" :members] {"c1" {:user "bob"} "c2" {:user "dan"}})
+         {:type :command/run :room-id "r" :name "who"})
+    (is (= "root" (:user @seen)) "no sender, several users: not guessed")))
+
 (deftest input-submit-with-pending-images
   (let [st (apply-events (with-room)
                          {:type :ui/attach-image :room-id "r" :image {:data "x"}})
