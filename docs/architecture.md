@@ -272,7 +272,7 @@ extension territory, keyed by the id.
   server publishes `xi.users/public-profiles` (declared users + everyone in a
   room, never `:meta`) as `:profiles` on `:lobby/state`, which every client
   receives and mirrors at `[:lobby :profiles]`. `sidebar/room-people` turns a
-  room's `:users` into avatar data for session cards (`:people`), empty while
+  room's `:users` (minus the viewer's own) into avatar data for session cards (`:people`), empty while
   only one user is known so single-user servers look as before; the web
   `avatar-stack` draws them on cards and in the chat topbar. The payload also
   carries `:user-ids` (`users/declared-ids`: config users plus root); with more

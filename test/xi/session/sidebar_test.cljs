@@ -4,12 +4,22 @@
 
 (def profiles {"root" {} "alice" {:name "Alice" :avatar "https://example.com/a.png"}})
 
-(defn- lobby [profiles rooms]
-  {:lobby {:profiles profiles :rooms rooms}})
+(defn- lobby
+  ([profiles rooms] (lobby profiles rooms "root"))
+  ([profiles rooms me]
+   {:connection {:user me}
+    :lobby {:profiles profiles :rooms rooms}}))
 
 (deftest room-people-resolves-profiles
-  (is (= [{:id "alice" :name "Alice" :avatar "https://example.com/a.png"} {:id "root"}]
-         (sb/room-people (lobby profiles []) ["alice" "root"]))))
+  (is (= [{:id "alice" :name "Alice" :avatar "https://example.com/a.png"}]
+         (sb/room-people (lobby profiles []) ["alice"]))))
+
+(deftest room-people-leaves-out-the-viewer
+  (is (= ["alice"] (mapv :id (sb/room-people (lobby profiles []) ["alice" "root"])))
+      "root views: only alice")
+  (is (= ["root"] (mapv :id (sb/room-people (lobby profiles [] "alice") ["alice" "root"])))
+      "alice views: only root")
+  (is (= [] (sb/room-people (lobby profiles []) ["root"])) "alone in the room"))
 
 (deftest room-people-stays-quiet-on-a-single-user-server
   (testing "only one user known: no avatars on every live chat"
@@ -20,11 +30,11 @@
   (let [state (lobby profiles [{:id "r1" :session-id "s1" :users ["alice" "root"]}
                                {:id "r2" :session-id "s1" :users ["alice"]}
                                {:id "r3" :session-id "s2" :users []}])]
-    (testing "a session backed by a live room"
-      (is (= ["alice" "root"]
+    (testing "a session backed by a live room: the others, not the viewer"
+      (is (= ["alice"]
              (mapv :id (:people (sb/session-status state {:session-id "s1"}))))))
     (testing "a session with no live room has nobody"
       (is (= [] (:people (sb/session-status state {:session-id "gone"})))))
     (testing "an orphan room merges the users of its rooms"
-      (is (= ["alice" "root"]
+      (is (= ["alice"]
              (mapv :id (:people (first (sb/orphan-rooms state [])))))))))

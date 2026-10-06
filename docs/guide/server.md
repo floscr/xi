@@ -67,7 +67,8 @@ Several people can share one server. Every connection belongs to a **user**,
 a short id such as `root`, `alice` or `team-ops`. Xi uses it to tell people
 apart: a prompt someone else sent shows their id above it, the chat's
 top bar shows who else is in the room, and live chats in the list show an
-avatar for each user in them (once the server knows more than one user). Nothing is verified. Pairing decides
+avatar for each other user in them (once the server knows more than one
+user). Nothing is verified. Pairing decides
 whether a device may connect at all; the user id only says who it is.
 
 The default user is `root`. A terminal picks another with `--user`:

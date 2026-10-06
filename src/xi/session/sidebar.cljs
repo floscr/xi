@@ -5,7 +5,8 @@
    flat navigation order, plus the per-session live-status enrichment both
    surfaces render. Kept surface-neutral (no hiccup, no ANSI) so the TUI and
    web agree on grouping and ALT+j/k order."
-  (:require [xi.palette :as palette]
+  (:require [xi.core.state :as cstate]
+            [xi.palette :as palette]
             [xi.session.recent :as recent]))
 
 (defn format-relative-time [t]
@@ -20,14 +21,18 @@
               :else      (str (js/Math.floor (/ m 1440)) "d ago"))))))
 
 (defn room-people
-  "The users attached to a room as avatar data [{:id :name :avatar}], from the
-   public profiles on the lobby payload. Empty on a single-user server (only
-   one user known): an avatar on every live chat would be noise there, and
-   the common case stays as quiet as before."
+  "The other users attached to a room as avatar data [{:id :name :avatar}],
+   from the public profiles on the lobby payload: the viewer's own user is
+   left out, as in the chat top bar. Empty on a single-user server (only one
+   user known): an avatar on every live chat would be noise there, and the
+   common case stays as quiet as before."
   [state user-ids]
-  (let [profiles (get-in state [:lobby :profiles])]
+  (let [profiles (get-in state [:lobby :profiles])
+        me       (cstate/own-user state)]
     (if (> (count profiles) 1)
-      (mapv (fn [id] (assoc (get profiles id) :id id)) user-ids)
+      (->> user-ids
+           (remove #{me})
+           (mapv (fn [id] (assoc (get profiles id) :id id))))
       [])))
 
 (defn session-status
