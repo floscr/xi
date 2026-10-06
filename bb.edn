@@ -340,7 +340,8 @@
 
   package:publish
   {:doc "Publish the npm package: run `bb package`, then `npm publish` the tarball it produced (dist/<name>-<version>.tgz, public access). `--no-build` publishes the existing tarball. Needs `npm login` once."
-   :requires ([cheshire.core :as json])
+   :requires ([babashka.fs :as fs]
+              [cheshire.core :as json])
    :task (let [{:keys [name version]} (json/parse-string (slurp "package.json") true)
                tgz (str "dist/" name "-" version ".tgz")]
            (when-not (some #{"--no-build"} *command-line-args*)
