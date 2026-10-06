@@ -191,21 +191,8 @@ read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
        [:p [:a {:href "/docs/clj-tool/"} "The clj tool →"]]]
       [:div.feature-code (code "clojure" clj-sample)]]]
 
-    [:section.feature.alt {:id "outlines"}
+    [:section.feature.alt {:id "rules"}
      [:div.wrap.split.reverse
-      [:div.feature-text
-       [:p.eyebrow "Code reading"]
-       [:h2 "Files are read as syntax trees first."]
-       [:p "When the agent reads a large source file, Xi parses it with tree-sitter and returns an outline: imports, types and signatures with their line ranges. The agent asks for the code of a single definition only when it needs it."]
-       (feature-list
-        [["Fewer tokens." "A 2,000-line file costs a few dozen lines of context. File reads are most of what an agent spends."]
-         ["Exact when it matters." "read_source returns the literal code of one function, class or line range, so edits work from the real text."]
-         ["Built in." "TypeScript, JavaScript, Python, Rust, Go, Clojure, Nix, Bash and CSS. Grammars ship with Xi; nothing to install."]])
-       [:p [:a {:href "/docs/reading-code/"} "How the agent reads code →"]]]
-      [:div.feature-code (code "text" outline-sample)]]]
-
-    [:section.feature {:id "rules"}
-     [:div.wrap.split
       [:div.feature-text
        [:p.eyebrow "Permissions"]
        [:h2 "Permission rules."]
@@ -217,8 +204,8 @@ read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
        [:p [:a {:href "/docs/rules/"} "Permissions and rules →"]]]
       [:div.feature-code (code "clojure" rules-sample)]]]
 
-    [:section.feature.alt {:id "extensions"}
-     [:div.wrap.split.reverse
+    [:section.feature {:id "extensions"}
+     [:div.wrap.split
       [:div.feature-text
        [:p.eyebrow "Extensions"]
        [:h2 "Extension."]
@@ -232,8 +219,8 @@ read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
        [:p [:a {:href "/docs/extensions/"} "Writing extensions →"]]]
       [:div.feature-code (code "clojure" extension-sample)]]]
 
-    [:section.feature {:id "mcp"}
-     [:div.wrap.split
+    [:section.feature.alt {:id "mcp"}
+     [:div.wrap.split.reverse
       [:div.feature-text
        [:p.eyebrow "MCP"]
        [:h2 "Plug in any MCP server."]
@@ -245,8 +232,8 @@ read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
        [:p [:a {:href "/docs/mcp-servers/"} "Adding MCP servers →"]]]
       [:div.feature-code (code "sh" mcp-sample)]]]
 
-    [:section.feature.alt {:id "web"}
-     [:div.wrap.split.reverse
+    [:section.feature {:id "web"}
+     [:div.wrap.split
       [:div.feature-text
        [:p.eyebrow "Web client"]
        [:h2 "Start at your desk. Continue on your phone."]
@@ -259,6 +246,19 @@ read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
       [:div.phones
        (phone "/img/web-sessions.png" "The web client's session list on a phone")
        (phone "/img/web-chat.png" "A chat in the web client, with a diff from an edit")]]]
+
+    [:section.feature.alt {:id "outlines"}
+     [:div.wrap.split.reverse
+      [:div.feature-text
+       [:p.eyebrow "Code reading"]
+       [:h2 "Files are read as syntax trees first."]
+       [:p "When the agent reads a large source file, Xi parses it with tree-sitter and returns an outline: imports, types and signatures with their line ranges. The agent asks for the code of a single definition only when it needs it."]
+       (feature-list
+        [["Fewer tokens." "A 2,000-line file costs a few dozen lines of context. File reads are most of what an agent spends."]
+         ["Exact when it matters." "read_source returns the literal code of one function, class or line range, so edits work from the real text."]
+         ["Built in." "TypeScript, JavaScript, Python, Rust, Go, Clojure, Nix, Bash and CSS. Grammars ship with Xi; nothing to install."]])
+       [:p [:a {:href "/docs/reading-code/"} "How the agent reads code →"]]]
+      [:div.feature-code (code "text" outline-sample)]]]
 
     [:section.feature.architecture {:id "architecture"}
      [:div.wrap
