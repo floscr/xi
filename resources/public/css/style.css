@@ -706,12 +706,18 @@ body {
 
 .post-content p:last-child { margin-bottom: 0; }
 
+/* Key link styling to `.markdown` (the root of every md/render output), not
+   just `.post-content`: assistant text posts render as .post-body > .markdown
+   with no .post-content wrapper, so a .post-content-only rule left their links
+   at the browser-default blue (a regression we hit repeatedly). */
+.markdown a,
 .post-content a {
   color: var(--accent);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
+.markdown a:hover,
 .post-content a:hover {
   text-decoration-color: var(--accent);
 }
