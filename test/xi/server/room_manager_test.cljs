@@ -364,6 +364,9 @@
            (:effects (handle st {:type :user-state/set :client-id "c1"
                                  :key :theme :value "dark"})))
         "an unstamped event is root")
+    (testing "extension state is the server's: a client can never write it"
+      (is (empty? (:effects (handle st {:type :user-state/set :user "alice"
+                                        :key :ext :value {:notes {:role :admin}}})))))
     (testing "unknown keys and invalid values never reach disk"
       (is (empty? (:effects (handle st {:type :user-state/set :user "alice" :key :theme :value "sepia"}))))
       (is (empty? (:effects (handle st {:type :user-state/set :user "alice" :key :nope :value "x"})))))))
@@ -393,9 +396,6 @@
   (let [st (two-user-state)]
     (is (= {"c1" {:user "alice" :platform "web"}} (get-in st [:rooms "r1" :members]))
         "the joiner is in the room's member list")
-    (testing "extension state is the server's: a client can never write it"
-      (is (empty? (:effects (handle st {:type :user-state/set :user "alice"
-                                        :key :ext :value {:notes {:role :admin}}})))))
     (let [{:keys [state effects]} (handle st {:type :room/attach :client-id "c2" :room-id "r1"})
           members {"c1" {:user "alice" :platform "web"} "c2" {:user "bob" :platform "tui"}}]
       (is (= members (get-in state [:rooms "r1" :members])))

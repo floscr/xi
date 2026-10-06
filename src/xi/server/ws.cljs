@@ -468,6 +468,8 @@
       :user-state/save
       (fn [{:keys [get-state dispatch!]} {:keys [user key value]}]
         (when (user-store/set-key! user key value)
+          ;; keep the user's record in app state current for extensions
+          (dispatch! {:type :user/ui-set :user user :key key :value value})
           (doseq [[cid client] (get-in (get-state) [:connection :clients])
                   :when (= user (:user client))]
             (send-event! cid {:type :user-state/changed :key key :value value}))))
@@ -490,8 +492,6 @@
                        join-token (assoc :join-token join-token)))
           (when summary
             (let [;; Clip long tool outputs before they cross the wire — every
-          ;; keep the user's record in app state current for extensions
-          (dispatch! {:type :user/ui-set :user user :key key :value value})
                   ;; client caps tool results at render, so a resumed transcript
                   ;; must not ship thousands of unshown lines.
                   messages (vec (session/truncate-message-results
@@ -741,6 +741,9 @@
                                             (.. ws -data -clientUser)))]
                  (set! (.. ws -data -authed) true)
                  (set! (.. ws -data -user) user)
+                 ;; the user's record (declared profile + stored state) goes
+                 ;; into app state, where extensions read it (xi.users)
+                 (dispatch! (users/loaded-event user))
                  (dispatch! {:type :client/connect :client-id cid
                              :client (cond-> {:kind :remote :user user}
                                        ;; pid + platform (from :auth/hello): the
@@ -763,9 +766,6 @@
                  (auth/remove-pending! code)
                  (when-let [^js ws (.get sockets (.-cid e))]
                    (set! (.. ws -data -pendingCode) nil)
-                 ;; the user's record (declared profile + stored state) goes
-                 ;; into app state, where extensions read it (xi.users)
-                 (dispatch! (users/loaded-event user))
                    (if approved?
                      (admit! ws)
                      (do (send-event! (.-cid e) {:type :auth/denied :reason "denied"})
@@ -1031,6 +1031,10 @@
                                   (not (authed? ws))
                                   (send! cid (wire/encode {:type :auth/required}))
 
+                                  (server-only-types (:type ev))
+                                  (send! cid (wire/encode {:type :error
+                                                           :text (str "Not a client event: " (:type ev))}))
+
                                   (= :auth/approve (:type ev))
                                   (when-let [^js e (.get pending (:code ev))]
                                     (auth/approve! (.-key e) {:name (.-name e)
@@ -1054,10 +1058,6 @@
                                   (dispatch! ev)
 
                                   room-id
-                                  (server-only-types (:type ev))
-                                  (send! cid (wire/encode {:type :error
-                                                           :text (str "Not a client event: " (:type ev))}))
-
                                   (dispatch! (assoc ev :room-id room-id))
 
                                   :else
