@@ -84,6 +84,57 @@
   (is (= {:theme "light"} (store/load-state "bob")) "users never see each other's state")
   (is (= {} (store/load-state "root")) "root is a user like any other"))
 
+(deftest read-markers-and-hidden-chats-are-server-only
+  (testing "they validate"
+    (is (user-state/valid? :read-state {"s1" 3 "s2" 0}))
+    (is (user-state/valid? :dismissed ["s1" "s2"]))
+    (is (not (user-state/valid? :read-state {"s1" -1})))
+    (is (not (user-state/valid? :read-state {"s1" "3"})))
+    (is (not (user-state/valid? :read-state {:s1 3})))
+    (is (not (user-state/valid? :dismissed [""])))
+    (is (not (user-state/valid? :dismissed "s1"))))
+  (testing "a client may neither write nor see them"
+    (is (not (user-state/client-valid? :read-state {"s1" 3})))
+    (is (not (user-state/client-valid? :dismissed ["s1"])))
+    (is (= {:theme "dark"}
+           (user-state/client-view {:theme "dark" :read-state {"s1" 3} :dismissed ["s1"]})))))
+
+(deftest store-keeps-read-markers-per-user
+  (is (nil? (:read-state (store/load-state "alice"))) "nothing marked yet")
+  (is (true? (store/mark-read! "alice" {} "s1" 2)))
+  (is (true? (store/mark-read! "alice" {"s1" 2} "s2" 5)))
+  (is (= {"s1" 2 "s2" 5} (:read-state (store/load-state "alice"))))
+  (is (nil? (:read-state (store/load-state "bob"))) "bob has read nothing")
+  (testing "the base map is what the markers are written on top of"
+    (store/mark-read! "bob" {"old" 1} "s1" 4)
+    (is (= {"old" 1 "s1" 4} (:read-state (store/load-state "bob")))))
+  (testing "past the cap the newest marker survives"
+    (let [full (into {} (map (fn [i] [(str "s" i) 1])) (range user-state/max-read-state))]
+      (store/mark-read! "alice" full "fresh" 9)
+      (let [m (:read-state (store/load-state "alice"))]
+        (is (= user-state/max-read-state (count m)))
+        (is (= 9 (get m "fresh")))))))
+
+(deftest store-hides-chats-per-user
+  (is (= #{} (store/dismissed "alice")))
+  (is (true? (store/toggle-dismissed! "alice" "s1")) "hidden")
+  (is (true? (store/toggle-dismissed! "alice" "s2")))
+  (is (= #{"s1" "s2"} (store/dismissed "alice")))
+  (is (= #{} (store/dismissed "bob")) "bob still sees it in Recent")
+  (is (false? (store/toggle-dismissed! "alice" "s1")) "shown again")
+  (is (= #{"s2"} (store/dismissed "alice")))
+  (testing "un-hiding writes nothing when the chat was not hidden"
+    (is (nil? (store/undismiss! "alice" "s1")))
+    (is (true? (store/undismiss! "alice" "s2")))
+    (is (= #{} (store/dismissed "alice"))))
+  (testing "past the cap the oldest chats fall back to Recent"
+    (doseq [i (range (inc user-state/max-dismissed))]
+      (store/toggle-dismissed! "carol" (str "s" i)))
+    (let [hidden (store/dismissed "carol")]
+      (is (= user-state/max-dismissed (count hidden)))
+      (is (not (contains? hidden "s0")))
+      (is (contains? hidden (str "s" user-state/max-dismissed))))))
+
 (deftest store-keeps-extension-state-apart-from-ui-state
   (store/set-key! "alice" :theme "dark")
   (is (true? (store/set-ext! "alice" :notes {:n 1})))

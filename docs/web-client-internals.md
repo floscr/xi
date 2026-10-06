@@ -94,8 +94,11 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   links `/chat/:sid` hydrate from cache, then join over WS. Extension routes
   are consulted before the built-in ones.
 - Unread: `:session/counts` → `:session/counts-result` (`:web/response-counts`)
-  compared with `:web/watched` (localStorage); viewing marks read
-  (`:session/mark-read` + `:cache/watch`).
+  compared with the lobby's `:read` (the server's markers for *this user*, see
+  architecture.md) and `:web/watched` (a localStorage overlay for an instant
+  clear); viewing marks read (`:session/mark-read` + `:cache/watch`). A browser
+  that connects as a different user than it cached for drops `:web/watched`
+  with the rest of the cached user state (`xi.web.user-state/reset-all`).
 - `visibilitychange` dispatches `:client/update {:visible? …}` so the server
   can suppress notifications while a visible client is attached.
 

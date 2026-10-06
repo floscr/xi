@@ -258,6 +258,11 @@
   (when session-id
     (store-set! watched-key (dissoc (load-watched) session-id))))
 
+(defn clear-watched!
+  "Forget every read marker this browser cached — they were another user's."
+  []
+  (store-remove! watched-key))
+
 ;; ── Recently-executed commands (quick-command bar) ───────────────────────────
 
 (def ^:private recent-commands-key "xi/recent-commands")

@@ -21,7 +21,7 @@ immediately on page load, even when the backend is down.
 | `xi/lobby` | last `{:rooms :sessions}` for an instant home paint |
 | `xi/room/<session-id>` | last `{:history :model :msg-hash :msg-count :history-hash}` per session for chat paint |
 | `xi/room-lru` | `[sid …]` most-recent-first, caps the room snapshots |
-| `xi/watched` | `{session-id response-count-when-last-seen}` (unread) |
+| `xi/watched` | `{session-id response-count-when-last-seen}` (unread overlay on the server's per-user markers; cleared when the browser connects as another user) |
 
 ### Keeping the store under quota
 

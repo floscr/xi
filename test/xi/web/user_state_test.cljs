@@ -52,10 +52,13 @@
     (is (not-any? #(= :ws/send (first %)) effects))))
 
 (deftest another-user-does-not-inherit-the-cache
-  (let [st (assoc browser :web/cached-user "alice")
+  (let [st (assoc browser :web/cached-user "alice"
+                  :web/watched {"s1" 3})
         {:keys [state effects]} (run st {:type :user-state/state :user "bob"
                                          :state {:sidebar-collapsed [:projects]}})]
     (is (= "auto" (:web/theme-mode state)) "alice's theme is dropped")
+    (is (= {} (:web/watched state)) "and what she had read")
+    (is (some #{[:cache/clear-watched {}]} effects))
     (is (= {} (:web/appearance state)))
     (is (nil? (:web/preferred-model state)))
     (is (= [] (:web/command-usage state)))

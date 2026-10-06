@@ -357,8 +357,9 @@
   {:effects [[:favorites/toggle-reply {:session-id session-id}]]})
 
 (defn- dismissed-toggle
-  "Roomless: hide/show a session in the recent list by id. The persist + lobby
-   rebroadcast happen in the :dismissed/toggle-reply effect (needs disk access).
+  "Roomless: hide/show a session in the sender's recent list by id. The persist
+   + lobby rebroadcast happen in the :dismissed/toggle-reply effect (needs disk
+   access).
 
    As a courtesy we also tear down the session's live room when it is safe to
    do so — i.e. it holds no client, its agent isn't mid-turn, no dialog is
@@ -366,13 +367,14 @@
    frees a lingering, finished job the user is dismissing without ever killing
    a running turn, a room someone is still viewing, or a dev server. A room
    that fails these checks is simply left running (it auto-closes later)."
-  [st {:keys [session-id]}]
+  [st {:keys [session-id] :as ev}]
   (let [close-rids (for [[rid room] (:rooms st)
                          :when (and (= session-id (get-in room [:session :id]))
                                     (not (keep-alive? room))
                                     (empty? (clients-in-room st rid)))]
                      rid)]
-    {:effects (into [[:dismissed/toggle-reply {:session-id session-id}]]
+    {:effects (into [[:dismissed/toggle-reply {:session-id session-id
+                                               :user       (state/event-user st ev)}]]
                     (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
                     close-rids)}))
 
@@ -445,12 +447,14 @@
                         swap))}))
 
 (defn- session-mark-read
-  "Roomless: record a session as seen up to its current response count. The
-   authoritative count is recomputed server-side (in the reply effect), so the
-   client only needs to name the session. The persist + lobby rebroadcast
-   happen in the :session/mark-read-reply effect (needs disk access)."
-  [_st {:keys [session-id]}]
-  {:effects [[:session/mark-read-reply {:session-id session-id}]]})
+  "Roomless: record a session as seen by the sender up to its current response
+   count. The authoritative count is recomputed server-side (in the reply
+   effect), so the client only needs to name the session. The persist + lobby
+   rebroadcast happen in the :session/mark-read-reply effect (needs disk
+   access)."
+  [st {:keys [session-id] :as ev}]
+  {:effects [[:session/mark-read-reply {:session-id session-id
+                                        :user       (state/event-user st ev)}]]})
 
 (defn- rooms-prune
   "Roomless: force-close every inactive room (see prunable?). For each target

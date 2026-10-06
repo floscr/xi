@@ -45,6 +45,7 @@
   (:require [clojure.string :as str]
             [xi.agent-profile :as profile]
             [xi.auth :as auth]
+            [xi.core.state :as core-state]
             [xi.ext.diff.git :as diff-git]
             [xi.ext.user.guard :as user-guard]
             [xi.fx :as fx]
@@ -143,7 +144,7 @@
   (->> (if agent-id
          (session/list-personal-agent-sessions agent-id)
          (session/list-all-sessions))
-       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite? :dismissed?]))))
+       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source :favorite?]))))
 
 (defn- saved-sessions
   "All saved-session summaries, minus those shadowed by a live room's
@@ -272,10 +273,33 @@
            (fetch-claude-usage! on-change))))
      10000)))
 
-(defn- lobby-payload
-  "The :lobby/state wire payload: live rooms + saved sessions (+ the server's
+(defn- client-user
+  "The user the client `cid` acts as (root when it is not connected)."
+  [st cid]
+  (util/user-id (get-in st [:connection :clients cid :user])))
+
+(defn- read-state-of
+  "The {session-id seen-response-count} in a user's `stored` state. A user who
+   never marked a chat starts from the old global file, so the upgrade doesn't
+   turn every chat unread."
+  [stored]
+  (or (:read-state stored) (session/load-legacy-read-state)))
+
+(defn- for-user
+  "The lobby/session-list `payload` as `user` sees it: the chats they hid
+   from Recent tagged :dismissed?, and (for a lobby) their own read markers."
+  [payload user]
+  (let [stored (user-store/load-state user)]
+    (cond-> (update payload :sessions session/annotate-dismissed
+                    (set (:dismissed stored)))
+      (= :lobby/state (:type payload))
+      (assoc :read (read-state-of stored)))))
+
+(defn- lobby-base
+  "The :lobby/state payload map: live rooms + saved sessions (+ the server's
    default :model, so a deferred TUI client can render the same launch header
-   pre-join as the room it will create).
+   pre-join as the room it will create). The same for every user; `for-user`
+   adds what differs.
    Filters out external (Claude/Pi) sessions whose id matches a live room's
    provider-session-id — prevents a duplicate card during the first agent
    turn before Xi's own :session/sync has run."
@@ -294,18 +318,22 @@
         counts   (session/count-session-responses
                   (into [] (keep :session-id) sessions)
                   {:personal-agent? (some? agent-id)})]
-    (wire/encode (cond-> {:type       :lobby/state
-                          :rooms      rooms
-                          :sessions   sessions
-                          :counts     counts
-                          :profiles   (users/public-profiles rooms)
-                          :user-ids   (users/declared-ids)
-                          :started-at server-started-at
-                          :read       (session/load-read-state)}
-                   model    (assoc :model model)
-                   ;; Clients key their "no projects" views on this.
-                   agent-id (assoc :agent-id agent-id)
-                   @claude-usage   (assoc :claude-usage @claude-usage)))))
+    (cond-> {:type       :lobby/state
+             :rooms      rooms
+             :sessions   sessions
+             :counts     counts
+             :profiles   (users/public-profiles rooms)
+             :user-ids   (users/declared-ids)
+             :started-at server-started-at}
+      model    (assoc :model model)
+      ;; Clients key their "no projects" views on this.
+      agent-id (assoc :agent-id agent-id)
+      @claude-usage   (assoc :claude-usage @claude-usage))))
+
+(defn- lobby-payload
+  "The encoded :lobby/state for one `user` (see `lobby-base`, `for-user`)."
+  [st agent-id model user]
+  (wire/encode (for-user (lobby-base st agent-id model) user)))
 
 ;; ── Static file serving (resources/public, SPA fallback) ──────────────────────
 
@@ -591,7 +619,8 @@
       ;; Send the full lobby payload (rooms + saved sessions) to one client.
       :lobby/send
       (fn [{:keys [state]} {:keys [client-id]}]
-        (send! client-id (lobby-payload state agent-id (:model server-opts))))
+        (send! client-id (lobby-payload state agent-id (:model server-opts)
+                                        (client-user state client-id))))
 
       ;; Reply to an unread-count query: assistant-turn counts per session.
       :session/counts-reply
@@ -610,9 +639,11 @@
               counts   (session/count-session-responses
                         (into [] (keep :session-id) sessions)
                         {:personal-agent? agent?})]
-          (send! client-id (wire/encode {:type     :sessions/all-result
-                                         :sessions sessions
-                                         :counts   counts}))))
+          (send! client-id (wire/encode
+                            (-> {:type     :sessions/all-result
+                                 :sessions sessions
+                                 :counts   counts}
+                                (for-user (client-user state client-id)))))))
 
       ;; AGENTS.md files for a cwd, so a virtual (not-yet-created) web chat
       ;; can show the same launch-header facts as the room it will become.
@@ -663,12 +694,12 @@
         (session/toggle-favorite! session-id)
         (dispatch! {:type :favorites/changed}))
 
-      ;; Toggle a session's dismissed (hidden-from-recent) flag, then fan a
-      ;; fresh lobby out to every client (:dismissed/changed is lobby-relevant,
-      ;; so the tap rebroadcasts with updated :dismissed? flags).
+      ;; Toggle a session's dismissed (hidden-from-recent) flag for `user`,
+      ;; then fan a fresh lobby out (:dismissed/changed is lobby-relevant, so
+      ;; the tap rebroadcasts; each user's lobby carries their own flags).
       :dismissed/toggle-reply
-      (fn [{:keys [dispatch!]} {:keys [session-id]}]
-        (session/toggle-dismissed! session-id)
+      (fn [{:keys [dispatch!]} {:keys [session-id user]}]
+        (user-store/toggle-dismissed! user session-id)
         (dispatch! {:type :dismissed/changed}))
 
       ;; Permanently delete a saved session's on-disk file, then fan a fresh
@@ -681,15 +712,17 @@
           (session/delete-session! summary))
         (dispatch! {:type :session/deleted}))
 
-      ;; Persist a session's seen-count at its current (authoritative) response
-      ;; count, then fan a fresh lobby out so every device clears the dot
-      ;; (:read-state/changed is lobby-relevant, so the tap rebroadcasts).
+      ;; Persist a session's seen-count for `user` at its current
+      ;; (authoritative) response count, then fan a fresh lobby out so every
+      ;; device of that user clears the dot (:read-state/changed is
+      ;; lobby-relevant, so the tap rebroadcasts).
       :session/mark-read-reply
-      (fn [{:keys [dispatch!]} {:keys [session-id]}]
+      (fn [{:keys [dispatch!]} {:keys [session-id user]}]
         (let [n (get (session/count-session-responses
                       [session-id] {:personal-agent? agent?})
                      session-id 0)]
-          (session/mark-session-read! session-id n)
+          (user-store/mark-read! user (read-state-of (user-store/load-state user))
+                                 session-id n)
           (dispatch! {:type :read-state/changed})))
 
       ;; Combined working-tree diff for a CWD (roomless git-status view).
@@ -782,7 +815,7 @@
                  ;; every device (xi.user-state)
                  (send-event! cid {:type :user-state/state :user user
                                    :state (user-state/client-view (user-store/load-state user))})
-                 (send! cid (lobby-payload @state agent-id (:model server-opts)))))
+                 (send! cid (lobby-payload @state agent-id (:model server-opts) user))))
              resolve-pending!
              (fn [code approved?]
                (when-let [^js e (.get pending code)]
@@ -850,19 +883,28 @@
              ;; Last broadcast lobby payload (encoded). Many lobby-relevant
              ;; events produce a byte-identical lobby; skipping those saves
              ;; every client a decode + re-render + localStorage rewrite.
-             last-lobby (atom nil)
+             last-lobby (atom {})
              broadcast-lobby!
              (fn [st]
                ;; Push to every connected client, not just roomless ones: the
                ;; recent-sessions drawer lives on every page, so clients
                ;; attached to a room still need fresh lobby state to keep its
-               ;; list and unread/active/dialog markers live.
-               (let [cids (keys (get-in st [:connection :clients]))]
-                 (when (seq cids)
-                   (let [payload (lobby-payload st agent-id (:model server-opts))]
-                     (when (not= payload @last-lobby)
-                       (reset! last-lobby payload)
-                       (doseq [cid cids] (send! cid payload)))))))
+               ;; list and unread/active/dialog markers live. One payload per
+               ;; user (hidden chats and read markers are theirs); the shared
+               ;; part is built once. `last-lobby` is {user payload}.
+               (let [by-user (group-by #(client-user st %)
+                                       (keys (get-in st [:connection :clients])))]
+                 (when (seq by-user)
+                   (let [base (lobby-base st agent-id (:model server-opts))
+                         sent @last-lobby]
+                     (reset! last-lobby
+                             (into {}
+                                   (map (fn [[user cids]]
+                                          (let [payload (wire/encode (for-user base user))]
+                                            (when (not= payload (get sent user))
+                                              (doseq [cid cids] (send! cid payload)))
+                                            [user payload])))
+                                   by-user))))))
              ;; Coalesce lobby broadcasts: lobby-relevant events arrive in
              ;; bursts (prompt/submit → session-init → dialog events, turn
              ;; ends across rooms), and each broadcast re-reads the session
@@ -1146,13 +1188,13 @@
                   (when-let [cids (seq (rm/clients-in-room st room-id))]
                     (let [payload (wire/encode event)]
                       (doseq [cid cids] (send! cid payload)))))))
-            ;; A new prompt into a hidden (dismissed) session un-hides it —
-            ;; fresh activity belongs back in Recent. Clear the flag before
-            ;; the lobby broadcast below (:prompt/submit is lobby-relevant)
-            ;; so the rebroadcast carries the updated :dismissed? state.
+            ;; A new prompt into a session its sender hid un-hides it for
+            ;; them — fresh activity belongs back in Recent. Clear the flag
+            ;; before the lobby broadcast below (:prompt/submit is
+            ;; lobby-relevant) so the rebroadcast carries the updated state.
             (when (= :prompt/submit (:type event))
               (when-let [sid (get-in st [:rooms (:room-id event) :session :id])]
-                (session/undismiss! sid)))
+                (user-store/undismiss! (core-state/event-user st event) sid)))
             (when (lobby-relevant (:type event))
               (schedule-lobby-broadcast!))))
 

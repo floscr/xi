@@ -102,7 +102,10 @@ them.
 
 These choices belong to your [user](server.md#users), not to the browser:
 the theme, the appearance settings, which sidebar groups are collapsed, the
-model new chats start with, and your recently used commands and skills. Change
+model new chats start with, and your recently used commands and skills. So do
+the chats you have read (the unread dots) and the chats you hid from Recent:
+the same chat can be unread for you and read for a colleague, and hidden for one
+of you only. Change
 them on your phone and your laptop follows; a colleague on the same server has
 their own. The server keeps them per user in `~/.config/xi/state/users/`. The
 browser also keeps a copy so the page paints with the right theme before it

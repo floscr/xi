@@ -1826,6 +1826,7 @@
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/user (fn [_ {:keys [user]}] (cache/save-cached-user! user))
+   :cache/clear-watched (fn [_ _] (cache/clear-watched!))
    ;; Read a session's cached snapshot and feed it into :web/cache so the chat
    ;; view paints from it while the WS join lands.
    :cache/seed-room

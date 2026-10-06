@@ -18,10 +18,13 @@
    store with arbitrary data. To add a piece of per-user state, add a key
    here and bind it in xi.web.user-state.
 
-   One key is not UI state: `:ext` holds what each extension keeps about the
-   user, {ext-id data}. Clients can neither read nor write it (it never goes
-   over the wire to them); extensions reach it through xi.api.user, which
-   proves who is calling, so an extension only ever touches its own entry.")
+   Three keys are not UI state and are kept by the server alone — clients can
+   neither read nor write them. `:ext` holds what each extension keeps about
+   the user, {ext-id data}; extensions reach it through xi.api.user, which
+   proves who is calling, so an extension only ever touches its own entry.
+   `:read-state` and `:dismissed` are the user's unread markers and the chats
+   they hid from Recent: the lobby is built per user from them (xi.server.ws),
+   so they reach a client as the lobby's `:read` and `:dismissed?` flags.")
 
 (defn plain-data?
   "Is `v` plain EDN data — nil, booleans, numbers, strings, keywords, and
@@ -56,6 +59,14 @@
        (<= (count v) max-count)
        (every? #(and (string? %) (<= 1 (count %) max-len)) v)))
 
+(def max-read-state
+  "Most chats one user's read markers cover."
+  20000)
+
+(def max-dismissed
+  "Most chats one user keeps hidden from Recent."
+  1000)
+
 (def registry
   "Known keys → {:valid? (fn [value] → bool)}."
   {;; \"auto\" | \"light\" | \"dark\"
@@ -78,6 +89,20 @@
    ;; most-recent-first command / skill names for the quick bar and palette
    :recent-commands  {:valid? (fn [v] (bounded-strings? v 20 100))}
    :recent-skills    {:valid? (fn [v] (bounded-strings? v 20 100))}
+   ;; Server-kept like :ext: the lobby carries each user's own copy
+   ;; (xi.server.ws), so a client neither reads nor writes these.
+   ;; {session-id seen-response-count}: a chat is unread past its count
+   :read-state       {:client-writable? false
+                      :valid? (fn [m]
+                                (and (map? m)
+                                     (<= (count m) max-read-state)
+                                     (every? (fn [[k n]]
+                                               (and (string? k) (<= 1 (count k) 200)
+                                                    (integer? n) (not (neg? n))))
+                                             m)))}
+   ;; session ids hidden from the user's Recent group, oldest first
+   :dismissed        {:client-writable? false
+                      :valid? (fn [v] (bounded-strings? v max-dismissed 200))}
    ;; {ext-id data}: what each extension keeps about the user. Written only
    ;; by the server (xi.users), never by a client.
    :ext              {:client-writable? false

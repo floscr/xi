@@ -74,6 +74,47 @@
       (when (user-state/valid? :ext ext)
         (write! user (assoc state :ext ext))))))
 
+;; ── Read markers and hidden chats ───────────────────────────────────────────
+;; What the lobby shows each user differently: which chats they have caught up
+;; with, and which they hid from Recent. Server-kept (never on the client wire).
+
+(defn mark-read!
+  "Record `session-id` as seen up to `n` responses by `user`, on top of
+   `base` (the {session-id count} map the user's markers currently read as; it
+   is not always what is stored, see xi.server.ws/read-state-of). Past the cap
+   the map keeps an arbitrary `max-read-state` of its entries."
+  [user base session-id n]
+  (let [m (assoc base session-id n)]
+    (set-key! user :read-state
+              (if (> (count m) user-state/max-read-state)
+                (into {session-id n} (take (dec user-state/max-read-state)) (dissoc m session-id))
+                m))))
+
+(defn dismissed
+  "The set of session ids `user` hid from Recent."
+  [user]
+  (set (:dismissed (load-state user))))
+
+(defn toggle-dismissed!
+  "Hide `session-id` from `user`'s Recent, or show it again. Returns the new
+   dismissed? state, nil when nothing could be written."
+  [user session-id]
+  (let [v       (vec (:dismissed (load-state user)))
+        hidden? (boolean (some #{session-id} v))
+        v'      (if hidden?
+                  (filterv #(not= session-id %) v)
+                  (vec (take-last user-state/max-dismissed (conj v session-id))))]
+    (when (set-key! user :dismissed v')
+      (not hidden?))))
+
+(defn undismiss!
+  "Show `session-id` in `user`'s Recent again; a no-op (nothing written) when
+   it was not hidden."
+  [user session-id]
+  (let [v (vec (:dismissed (load-state user)))]
+    (when (some #{session-id} v)
+      (set-key! user :dismissed (filterv #(not= session-id %) v)))))
+
 (defn known-users
   "The ids that have a state file, sorted."
   []

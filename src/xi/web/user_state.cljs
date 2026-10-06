@@ -98,7 +98,11 @@
                   (fn [st [_ {:keys [path default fx]}]]
                     {:state (assoc st path default) :effects (fx default)})
                   bindings)]
-    (update r :state assoc :web/recent-commands [])))
+    ;; the unread overlay is the other user's too; the server's :read for this
+    ;; user comes with the lobby
+    (-> r
+        (update :state assoc :web/recent-commands [] :web/watched {})
+        (update :effects conj [:cache/clear-watched {}]))))
 
 (defn user-state
   "`:user-state/state {:user :state}` — the user's whole stored state, sent

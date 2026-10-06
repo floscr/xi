@@ -622,69 +622,31 @@
       (js/console.error "[session] preferred-model write failed:" e))))
 
 ;; ── Dismissed (hidden from Recent) ────────────────────────────────────────────
-;; Reversible "archive from the recent list": session-ids the user has hidden
-;; from the sidebar Recent group this run. The session stays fully on disk and
-;; resumable (it still shows in All sessions / search) — this only moves the
-;; card into the sidebar's "Hidden" group. Deliberately in-memory (process
-;; local, not a file): the hidden list is a per-focus-session convenience and
-;; is scrapped on server restart, so a restart gives a clean Recent list again.
-
-(defonce ^:private dismissed-set (atom #{}))
-
-(defn load-dismissed
-  "The current in-memory set of dismissed (hidden-from-Recent) session-ids."
-  []
-  @dismissed-set)
+;; Reversible "archive from the recent list". The session stays fully on disk
+;; and resumable (it still shows in All sessions / search); the sidebar moves
+;; its card into the "Hidden" group. Which chats are hidden is per user
+;; (xi.user-state.store), so listings carry no :dismissed? — the server tags
+;; them for the client it is sending to.
 
 (defn annotate-dismissed
-  "Tag each summary with :dismissed? using a dismissed set. The 1-arity reads
-   the live in-memory set; the 2-arity is pure (for tests / batch use)."
-  ([summaries] (annotate-dismissed summaries (load-dismissed)))
-  ([summaries dismissed]
-   (mapv #(assoc % :dismissed? (contains? dismissed (:session-id %))) summaries)))
+  "Tag each summary with :dismissed? using a set of dismissed session-ids."
+  [summaries dismissed]
+  (mapv #(assoc % :dismissed? (contains? dismissed (:session-id %))) summaries))
 
-(defn toggle-dismissed!
-  "Add/remove session-id from the in-memory dismissed set. Returns the new
-   dismissed? state."
-  [session-id]
-  (let [d? (contains? @dismissed-set session-id)]
-    (if d?
-      (swap! dismissed-set disj session-id)
-      (swap! dismissed-set conj session-id))
-    (not d?)))
+;; ── Read state (legacy, pre-per-user) ─────────────────────────────────────────
+;; Unread markers are per user now (xi.user-state.store). This file is what
+;; every user shared before; it is only read, as the starting point of a user
+;; who has not marked anything yet — otherwise every chat would show unread.
 
-(defn undismiss!
-  "Remove session-id from the in-memory dismissed set (no-op when not
-   dismissed). Used to auto-unhide a session the moment it sees new activity —
-   a hidden session the user prompts again clearly belongs back in Recent."
-  [session-id]
-  (swap! dismissed-set disj session-id))
-
-;; ── Read state (cross-device unread markers) ──────────────────────────────
-;; Persisted {session-id → seen-response-count}. A session is unread when its
-;; current assistant-turn count exceeds the seen count. Stored server-side and
-;; shipped in the lobby payload so the marker syncs across every client/device.
-
-(defn load-read-state
-  "Persisted {session-id → seen-response-count}. {} when missing or unreadable."
+(defn load-legacy-read-state
+  "The old global {session-id → seen-response-count} from
+   ~/.config/xi/read-state.json. {} when missing or unreadable."
   []
   (try
     (if (fs/existsSync READ_STATE_FILE)
       (js->clj (js/JSON.parse (fs/readFileSync READ_STATE_FILE "utf8")))
       {})
     (catch :default _e {})))
-
-(defn mark-session-read!
-  "Record session-id as seen at `n` assistant responses. Returns the updated
-   read-state map."
-  [session-id n]
-  (let [state' (assoc (load-read-state) session-id n)]
-    (try
-      (fs/mkdirSync (.dirname node-path READ_STATE_FILE) #js {:recursive true})
-      (fs/writeFileSync READ_STATE_FILE (js/JSON.stringify (clj->js state')))
-      (catch :default e
-        (js/console.error "[session] read-state write failed:" e)))
-    state'))
 
 (defonce ^:private summary-cache
   ;; filepath -> {:mtime <ms> :summary <map|nil>}. Memoizes the per-file
@@ -748,16 +710,15 @@
    worktree — so /resume from the main repo also surfaces sessions started
    inside its worktrees."
   [cwd]
-  (annotate-dismissed
-   (annotate-favorites
-    (->> (git-project-cwds cwd)
-         (mapcat sessions-for-cwd)
-         ;; Promoted sub-agent sessions stay out of the pickers — they are
-         ;; opened through their origin session's sub-agents UI instead.
-         (remove :subagent-origin)
-         (sort-by #(or (:last-accessed %) (:timestamp %)))
-         reverse
-         vec))))
+  (annotate-favorites
+   (->> (git-project-cwds cwd)
+        (mapcat sessions-for-cwd)
+        ;; Promoted sub-agent sessions stay out of the pickers — they are
+        ;; opened through their origin session's sub-agents UI instead.
+        (remove :subagent-origin)
+        (sort-by #(or (:last-accessed %) (:timestamp %)))
+        reverse
+        vec)))
 
 (def ^:private all-sessions-cache-ttl-ms 2000)
 
@@ -803,13 +764,12 @@
 (defn list-all-sessions
   "List sessions across ALL CWDs from all sources. Returns vec of session
    summaries, newest first. Each summary includes :cwd. The underlying disk
-   scan is cached briefly (see all-sessions-cache) — favorites/dismissed
+   scan is cached briefly (see all-sessions-cache) — favorites
    annotation stays per-call so toggles reflect instantly. Promoted sub-agent
    sessions (:subagent-origin) are filtered out — they are reachable only
    through their origin session's sub-agents UI (or a direct id/URL)."
   []
-  (annotate-dismissed
-   (annotate-favorites (into [] (remove :subagent-origin) (all-sessions-raw)))))
+  (annotate-favorites (into [] (remove :subagent-origin) (all-sessions-raw))))
 
 (defn- list-all-personal-agent-session-files
   "All session metadata files across every named-agent subdir of the
@@ -826,12 +786,11 @@
   [& [agent-id]]
   (let [xi-sessions (->> (list-dir-files (personal-agent-dir agent-id) ".json")
                          (keep #(cached-summary read-xi-session-meta %)))]
-    (annotate-dismissed
-     (annotate-favorites
-      (->> xi-sessions
-           (sort-by #(or (:last-accessed %) (:timestamp %)))
-           reverse
-           vec)))))
+    (annotate-favorites
+     (->> xi-sessions
+          (sort-by #(or (:last-accessed %) (:timestamp %)))
+          reverse
+          vec))))
 
 (defn- summary-matches-id? [session-id summary]
   (or (= session-id (:session-id summary))

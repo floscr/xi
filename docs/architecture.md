@@ -306,9 +306,17 @@ extension territory, keyed by the id.
   effect persists it and sends `:user-state/changed` to all of that user's
   devices, and `admit!` sends `:user-state/state` after `:auth/ok`. This is
   state, not configuration: config.edn, rules, MCP and extensions stay global.
-  Server-global state that predates this (favorites, read state, hidden
-  sessions, snippets) is unchanged. See
-  [web-client-internals.md](web-client-internals.md).
+  Two more keys, `:read-state` (`{session-id seen-response-count}`) and
+  `:dismissed` (session ids hidden from Recent, oldest first), are server-kept
+  like `:ext`: not `:client-writable?`, absent from `client-view`. The lobby is
+  therefore built per user: `lobby-base` is the shared part, `for-user` adds
+  the user's `:dismissed?` flags and `:read`, and `broadcast-lobby!` encodes
+  one payload per connected user (`last-lobby` is `{user payload}`).
+  `:session/mark-read` and `:dismissed/toggle` act for `state/event-user`; a
+  prompt un-hides its session for its sender. A user who never marked a chat
+  starts from the old global `~/.config/xi/read-state.json` (read-only now).
+  Server-global state that predates this (favorites, snippets, recent
+  projects) is unchanged. See [web-client-internals.md](web-client-internals.md).
 
 ## Room lifecycle and auth
 

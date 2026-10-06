@@ -117,7 +117,8 @@ client, the metadata is not. See
 
 A user's web client choices, such as the theme and which sidebar groups are
 collapsed, are kept per user on the server, so they follow the user from one
-device to the next. See [The web client](web-client.md#what-follows-you).
+device to the next. So are which chats they have read and which they hid from
+the Recent list. See [The web client](web-client.md#what-follows-you).
 Configuration is not per user: the config file, rules, MCP servers and
 extensions are the same for everyone.
 
