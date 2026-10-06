@@ -18,3 +18,7 @@ resources/public/mkcert-rootCA.crt
 tasks/
 # npm package staging (bb package)
 dist/
+# rendered site (bb site:build)
+site/dist/
+site/dist-next/
+site/dist-old/

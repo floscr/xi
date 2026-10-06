@@ -164,6 +164,14 @@
   {:doc "Test the example babashka MCP server (packages/mcp-bb-example), incl. a stdio round trip"
    :task (shell {:dir "packages/mcp-bb-example"} "bb" "test")}
 
+  site:dev
+  {:doc "Serve the home page + docs site (site/, rendered from docs/guide) on :4322 with live reload"
+   :task (shell {:dir "site"} "bb" "dev")}
+
+  site:build
+  {:doc "Build the home page + docs site into site/dist"
+   :task (shell {:dir "site"} "bb" "build")}
+
   dev:url
   {:doc "Print the dev-http URL (XI_PUBLIC_HOST, else Tailscale IP when available, else localhost) on port 8100"
    :task (println (str "http://" (host-ip) ":8100"))}

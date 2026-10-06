@@ -103,7 +103,9 @@ scripts/         bb/node build helpers (demo seed, codegen, treesitter WASM,
 packages/        outside xi's own bundle: bb-client/ (JVM client lib),
                  providers/anthropic/ (SDK runner + pinned CLI),
                  mcp-bb-example/ (babashka MCP server example)
-docs/            see the index below
+docs/            see the index below; docs/guide/ is the user guide the site renders
+site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:build`
+                 from the root render docs/guide/*.md into site/dist)
 ```
 
 ## Docs index
@@ -120,9 +122,10 @@ docs/            see the index below
 | Providers | [mcp-tool-bridge.md](docs/mcp-tool-bridge.md) · [providers-zen.md](docs/providers-zen.md) · [providers-openai.md](docs/providers-openai.md) |
 | Web client · offline · UI components · demo | [web-client.md](docs/web-client.md) · [web-offline.md](docs/web-offline.md) · [frontend.md](docs/frontend.md) · [demo.md](docs/demo.md) |
 | TUI rendering · syntax highlighting | [tui-rendering.md](docs/tui-rendering.md) · [syntax-highlighting.md](docs/syntax-highlighting.md) |
-| npm package layout · `bb package` | [packaging.md](docs/packaging.md) |
+| npm package layout · `bb package` · `bb package:serve` | [packaging.md](docs/packaging.md) |
 | Concurrent-edit safety (file hashes) · holds + cross-room git lock | [concurrent-edits.md](docs/concurrent-edits.md) · [git-lock.md](docs/git-lock.md) |
-| **User guide** — human-readable source of the future docs site; all new user-facing docs go here | [docs/guide/](docs/guide/README.md) |
+| **User guide** — source of the docs site; all new user-facing docs go here. Navigation = the Pages list in its README | [docs/guide/](docs/guide/README.md) |
+| Home page + docs site (bb, hiccup, markdown-clj; `bb site:dev` on :4322) | [site/](site/) |
 
 ## Conventions
 

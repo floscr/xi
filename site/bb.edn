@@ -1,0 +1,26 @@
+{:paths ["src" "../resources"]
+ :deps {hiccup/hiccup {:mvn/version "2.0.0"}
+        markdown-clj/markdown-clj {:mvn/version "1.12.3"}}
+ :tasks
+ {dev
+  {:doc "Dev server on :4322 — renders every request from docs/guide + src, live-reloads the browser on change"
+   :requires ([xisite.server :as server])
+   :task (do (server/start! {:port (or (some-> (System/getenv "PORT") parse-long) 4322)})
+             (deref (promise)))}
+
+  build
+  {:doc "Render the site into dist/ (staged in dist-next/, swapped in atomically)"
+   :requires ([babashka.fs :as fs]
+              [xisite.build :as build])
+   :task (let [staging "dist-next"
+               backup "dist-old"]
+           (doseq [d [staging backup]]
+             (when (fs/exists? d) (fs/delete-tree d)))
+           (build/build! staging)
+           (when (fs/exists? "dist") (fs/move "dist" backup))
+           (fs/move staging "dist")
+           (when (fs/exists? backup) (fs/delete-tree backup)))}
+
+  open
+  {:doc "Open the dev server in the browser"
+   :task (shell "xdg-open" "http://localhost:4322")}}}
