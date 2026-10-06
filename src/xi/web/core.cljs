@@ -1614,6 +1614,11 @@
 ;; Pending requestAnimationFrame id for the follow loop (nil when idle).
 (defonce ^:private smooth-follow-raf (atom nil))
 (def ^:private smooth-scroll-max-vh 1.25)
+;; After a chat switch, snaps stay instant (and never arm the follow) until this
+;; timestamp — the history is still loading in several steps. Easing is also only
+;; armed while the agent is busy, i.e. blocks are actually streaming in.
+(defonce ^:private smooth-scroll-settle-until (atom 0))
+(def ^:private smooth-scroll-settle-ms 1500)
 ;; Fraction of the remaining distance the follow loop closes each frame (ease-out).
 (def ^:private smooth-follow-ease 0.28)
 
@@ -2032,11 +2037,14 @@
   (when (and @auto-scroll? (not (user-scrolling?)))
     (when-let [timeline (.querySelector js/document ".timeline")]
       ;; A session switch must land at the bottom instantly, not ease down from
-      ;; the top — disarm the follow until this chat's first snap has landed.
-      (let [sid (some-> @app-ref :state deref (get-in [:web/route :session-id]))]
+      ;; the top — disarm the follow and open a settle window while the chat's
+      ;; history (cache hydrate, snapshot, tail) is still arriving.
+      (let [st  (some-> @app-ref :state deref)
+            sid (get-in st [:web/route :session-id])]
         (when (not= sid @smooth-scroll-session)
           (reset! smooth-scroll-session sid)
           (reset! smooth-scroll-armed? false)
+          (reset! smooth-scroll-settle-until (+ (js/Date.now) smooth-scroll-settle-ms))
           (cancel-smooth-follow!)))
       (let [target (- (.-scrollHeight timeline) (.-clientHeight timeline))
             delta  (- target (.-scrollTop timeline))]
@@ -2049,9 +2057,13 @@
                     (js/requestAnimationFrame #(smooth-follow-step! timeline))))
           (do (cancel-smooth-follow!)
               (set! (.-scrollTop timeline) target)
-              ;; First snap of this chat (or a huge jump) has landed instantly;
-              ;; arm smooth follow for the incremental growth that comes next.
-              (reset! smooth-scroll-armed? true)))))))
+              ;; Only live streaming earns the easing: a chat that is merely
+              ;; loading (or idle and re-laying-out images) always snaps.
+              ;; Arm once the settle window is over and the agent is busy.
+              (when (and (> (js/Date.now) @smooth-scroll-settle-until)
+                         (some-> @app-ref :state deref state/active-room
+                                 :agent :busy?))
+                (reset! smooth-scroll-armed? true))))))))
 
 (defonce ^:private global-scroll-intent-attached? (atom false))
 
