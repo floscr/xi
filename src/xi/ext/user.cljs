@@ -273,13 +273,15 @@
   "The browser half of a loaded extension, as source: its `<ns>.web`
    namespace plus every sibling under the extension's subdir (the browser
    resolves requires against these). nil when the extension has no
-   `<name>/web.cljs`."
-  [dir {:keys [id ns]}]
+   `<name>/web.cljs`. `:tools` names the server half's tools, the only ones
+   its :tool-views may render."
+  [dir {:keys [id ns extension]}]
   (let [web-ns (str ns ".web")]
     (when (fs/existsSync (file-ns->path dir web-ns))
       (let [root (node-path/dirname (file-ns->path dir web-ns))]
         {:id      id
          :ns      web-ns
+         :tools   (mapv :name (:tool-definitions extension))
          :sources (into {}
                         (map (fn [f] [(path->ns dir f) (str (fs/readFileSync f "utf8"))]))
                         (cljs-files-under root))}))))

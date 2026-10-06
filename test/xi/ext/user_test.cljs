@@ -417,6 +417,7 @@
                :active-room "r1"}]
     (is (nil? (:error e)) (str (:error e)))
     (is (= #{"notes_add"} (set (map :name (get-in e [:extension :tool-definitions])))))
+    (is (= ["notes_add"] (:tools b)) "the bundle names the tools its :tool-views may render")
     (is (nil? (:error w)) (str (:error w)))
     (is (= "/notes" ((get-in w [:web-ext :routes "notes" :path :notes/list]) {})))
     (is (fn? page))

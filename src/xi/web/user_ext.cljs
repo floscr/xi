@@ -9,13 +9,15 @@
    :user-ext/forward (see xi.web.user-ext.guard).
 
    Only the surfaces the web client can extend after startup are supported:
-   :pages (pages-ref), :routes (routes-ref), :nav-items (state) and :taps.
+   :pages (pages-ref), :routes (routes-ref), :nav-items (state), :taps and
+   :tool-views (xi.web.tool-views).
    Handlers/fx are baked into the app at startup — the logic of a user
    extension lives in its server half."
   (:require [clojure.string :as str]
             [shadow.lazy :as lazy]
             [xi.core.state :as state]
             [xi.web.router :as router]
+            [xi.web.tool-views :as tool-views]
             [xi.web.user-ext.guard :as guard]))
 
 (def ^:private evaluator (lazy/loadable xi.web.user-ext.sci/load!))
@@ -41,10 +43,12 @@
      (when (seq extensions)
        {:effects [[:user-ext/load {:bundles extensions}]]}))
 
+   ;; always a state change: tool blocks already on screen re-render with the
+   ;; tool views that just registered
    :user-ext/loaded
    (fn [st {:keys [nav-items]}]
-     (when (seq nav-items)
-       {:state (update st :web/nav-items (fnil into []) nav-items)}))
+     {:state (cond-> (assoc st :user-ext/loaded? true)
+               (seq nav-items) (update :web/nav-items (fnil into []) nav-items))})
 
    ;; a user extension's room slice changed server-side (xi.ext.user.guard);
    ;; the browser can't replay that extension's server reducer, so the slice
@@ -87,6 +91,8 @@
             (js/console.error (str "[user-ext] rejected web half of " (name id) ": " error)))
           (swap! pages-ref merge (apply merge {} (map :pages ok)))
           (swap! routes-ref merge (apply merge {} (map :routes ok)))
+          (doseq [{:keys [id tool-views]} ok :when tool-views]
+            (tool-views/register! id tool-views))
           (when-let [add-tap! (:add-tap! @app-ref)]
             (doseq [make-tap (mapcat :taps ok)]
               (add-tap! (make-tap dispatch!))))

@@ -18,7 +18,7 @@
 (def allowed-keys
   "Web-half keys a user extension may declare. No :handlers / :fx — those are
    baked into the web client at startup; logic lives in the server half."
-  #{:id :routes :pages :nav-items :taps})
+  #{:id :routes :pages :nav-items :taps :tool-views})
 
 (def builtin-segments
   "First URL segments the web client routes itself."
@@ -28,11 +28,15 @@
   (and (keyword? kw) (= (namespace kw) (name id))))
 
 (defn validate
-  "→ nil when `ext` is a usable web half, else a rejection reason."
-  [ext {:keys [taken-ids taken-segments taken-pages]}]
+  "→ nil when `ext` is a usable web half, else a rejection reason.
+   `own-tools` — the tool names its server half defines; :tool-views may only
+   render those."
+  [ext {:keys [taken-ids taken-segments taken-pages own-tools]}]
   (let [id    (:id ext)
         pages (keys (:pages ext))
-        segs  (keys (:routes ext))]
+        segs  (keys (:routes ext))
+        views (:tool-views ext)
+        alien (when (map? views) (remove (set own-tools) (keys views)))]
     (cond
       (not (map? ext))                "no `web-extension` map"
       (not (keyword? id))             "missing keyword :id"
@@ -48,6 +52,10 @@
                                        (contains? taken-segments %)) segs)))
       (seq (filter #(contains? taken-pages %) pages))
       (str "page already in use: " (str/join ", " (filter #(contains? taken-pages %) pages)))
+      (and (some? views) (not (map? views)))
+      ":tool-views must be a map of tool name → fn"
+      (seq alien)
+      (str ":tool-views may only render the extension's own tools: " (str/join ", " alien))
       :else nil)))
 
 ;; ── Hiccup sanitizing ────────────────────────────────────────────────────────
@@ -182,8 +190,9 @@
    (str "Extension " (name id) " failed to render: " msg)])
 
 (defn wrap
-  "`ext` with every user fn confined: pages sanitized + guarded, taps guarded,
-   route parse/path fns isolated, nav items limited to allowed events."
+  "`ext` with every user fn confined: pages and tool views sanitized + guarded,
+   taps guarded, route parse/path fns isolated, nav items limited to allowed
+   events. A throwing tool view yields nil, so the block shows its plain text."
   [ext]
   (let [id (:id ext)]
     (cond-> ext
@@ -194,6 +203,15 @@
                   (try (sanitize (f state (guard-dispatch id dispatch!))
                                  (ui-binder id state dispatch!))
                        (catch :default e (error-box id (.-message e)))))))
+
+      (map? (:tool-views ext))
+      (update :tool-views update-vals
+              (fn [f]
+                (fn [call slice]
+                  (try (sanitize (f call slice))
+                       (catch :default e
+                         (log-blocked id (str "tool view threw: " (.-message e)))
+                         nil)))))
 
       (:taps ext)
       (update :taps

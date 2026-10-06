@@ -41,6 +41,24 @@
     (is (re-find #"disallowed keys.*handlers" (guard/validate (assoc ok :handlers {}) {})))
     (is (re-find #"already in use" (guard/validate ok {:taken-ids #{:notes}})))))
 
+(deftest tool-views-render-only-the-extensions-own-tools
+  (let [ok {:id :notes :tool-views {"notes_add" (fn [_])}}]
+    (is (nil? (guard/validate ok {:own-tools ["notes_add"]})))
+    (is (re-find #"own tools: write"
+                 (guard/validate (assoc-in ok [:tool-views "write"] (fn [_]))
+                                 {:own-tools ["notes_add"]}))
+        "a web half can't restyle a builtin or another extension's tool")
+    (is (re-find #"must be a map" (guard/validate (assoc ok :tool-views [:x]) {})))))
+
+(deftest wrapped-tool-view-is-sanitized-and-falls-back-on-a-throw
+  (let [ext (guard/wrap {:id :notes
+                         :tool-views {"notes_add" (fn [{:keys [arguments]} slice]
+                                                    [:p [:script "x"] (:title arguments) (:n slice)])
+                                      "notes_boom" (fn [_ _] (throw (js/Error. "kaput")))}})]
+    (is (= [:p nil "hi" 1] ((get-in ext [:tool-views "notes_add"]) {:arguments {:title "hi"}} {:n 1})))
+    (is (nil? ((get-in ext [:tool-views "notes_boom"]) {} nil))
+        "nil → the tool block shows its plain text result")))
+
 ;; ── dispatch filtering + forwarding ──────────────────────────────────────────
 
 (deftest guarded-dispatch

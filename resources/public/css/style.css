@@ -1972,6 +1972,17 @@ body {
   border-top: var(--border-0);
 }
 
+/* A user extension's own view of its tool's result (xi.web.tool-views):
+   ordinary prose, not the monospace code panel. */
+.tool-call-content--ext {
+  padding: var(--size-2) var(--size-3);
+  font-size: var(--font-sm);
+  color: var(--fg-0);
+  max-height: 50vh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
 .tool-call-code {
   margin: 0;
   white-space: pre-wrap;

@@ -22,6 +22,7 @@
                                                sidebar-session-groups sidebar-session-order]]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
+            [xi.web.tool-views :as tool-views]
             [xi.web.viewer-group :as viewer-group]
             [ui.icon :as icon]
             [ui.form :as form]
@@ -576,10 +577,11 @@
 (defn- tool-post
   "A tool call's <details> block. `:grouped?` — it sits inside a viewer-mode
    group (header row styling); `:collapsed?` — it starts closed (the
-   :tool-blocks appearance setting). Both are stamped by chat-view."
+   :tool-blocks appearance setting); `:room-ext` — the room's extension
+   slices, for extension tool views. All stamped by chat-view."
   [dispatch! {:keys [tool arguments result is-error status started-at
                      permission resolved-permission
-                     grouped? collapsed? cwd]}]
+                     grouped? collapsed? cwd room-ext]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments cwd)
         running?  (= :running status)
@@ -590,6 +592,11 @@
         clj-code  (when clj? (not-empty (str (get-arg arguments :code))))
         clj-preview (when clj-code (first (str/split-lines clj-code)))
         imgs      (seq (result-images result))
+        ;; a user extension's view of its own tool's result (xi.web.tool-views)
+        ext-view  (when (and (not running?) (seq text) (not imgs))
+                    (tool-views/render {:tool name :arguments arguments
+                                        :text text :is-error is-error}
+                                       room-ext))
         diff-result? (and (contains? #{"Edit" "edit" "clj_replace"} name)
                           (not is-error))
         label     (if clj?
@@ -647,6 +654,9 @@
         ;; just a "Viewed image: /path" caption — drop it and show only the image.
         (and clj? (seq text))
         (clj-result-view text is-error)
+
+        ext-view
+        [:div {:class ["tool-call-content" "tool-call-content--ext"]} ext-view]
 
         (and (seq text) (not imgs))
         [:div (cond-> {:class ["tool-call-content"]}
@@ -2966,6 +2976,9 @@
                                         (assoc :grouped? true)
                                         collapsed?
                                         (assoc :collapsed? true)
+                                        ;; extension tool views read their room slice
+                                        (= :tool-call (:kind entry))
+                                        (assoc :room-ext (:ext room))
                                         (and (= :user (:kind entry)) (= p (:index editing)))
                                         (assoc :editing? true :edit-text (:text editing))
                                         (= p perm-tool-idx)

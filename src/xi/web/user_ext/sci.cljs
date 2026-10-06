@@ -3,8 +3,8 @@
    the lazily loaded `:user-ext` shadow module (SCI only ships to browsers
    whose server actually has user web halves).
 
-   Each bundle ({:id :ns :sources {ns-name source}}, from the server's
-   xi.ext.user/web-bundles) gets its own hardened SCI context
+   Each bundle ({:id :ns :sources {ns-name source} :tools [name …]}, from the
+   server's xi.ext.user/web-bundles) gets its own hardened SCI context
    (xi.sandbox.sci): no js/ access, no aget/eval. Its requires resolve only
    against the bundle's own sources. The exposed host namespaces are pure
    hiccup builders: a curated slice of xi.web.views, the pure diff parser +
@@ -79,7 +79,8 @@
                         :else
                         (if-let [reason (guard/validate ext {:taken-ids ids
                                                              :taken-segments segs
-                                                             :taken-pages pages})]
+                                                             :taken-pages pages
+                                                             :own-tools (:tools b)})]
                           {:id (:id b) :error reason}
                           {:id (:id b) :web-ext (guard/wrap ext)})))
                     (catch :default e

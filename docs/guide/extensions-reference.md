@@ -154,7 +154,7 @@ A sibling namespace is loaded from the extension's directory:
 ## Browser halves
 
 `<name>/web.cljs` defines `web-extension` with the same `:id` and only these
-keys: `:routes`, `:pages`, `:nav-items`, `:taps`.
+keys: `:routes`, `:pages`, `:nav-items`, `:taps`, `:tool-views`.
 
 | Key | Shape |
 | --- | --- |
@@ -162,6 +162,14 @@ keys: `:routes`, `:pages`, `:nav-items`, `:taps`.
 | `:pages` | `{page-kw (fn [state dispatch!] → hiccup)}`; page keywords are namespaced with the id |
 | `:nav-items` | `[{:menu :sidebar/:palette/:home-topbar/:overflow :label "…" :icon :kw :event {…}}]`; overflow items may set `:mode :room` or `:project` |
 | `:taps` | `[(fn [dispatch!] → (fn [event state]))]` |
+| `:tool-views` | `{"tool_name" (fn [call slice] → hiccup or nil)}`; only the extension's own tools |
+
+A tool view replaces the text result in the chat's block for one of the
+extension's own tools. `call` is the finished call, `{:tool :arguments :text
+:is-error}`, with argument keys as keywords. `slice` is the extension's room
+slice, so a view can show data the server half keeps there; a tool fn can put
+it there by dispatching its own `:ext.<id>/*` event. nil, or a view that
+throws, shows the text result instead.
 
 Pages may use `clojure.*`, `xi.core.state`, `ui.*` components (minus the
 ones that touch `js/window`), `xi.web.views` helpers (`nav-group`,
