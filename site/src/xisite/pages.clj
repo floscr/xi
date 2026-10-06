@@ -312,13 +312,13 @@ xi                         # connect a client")
           [:a.docs-card-link {:href path}
            (card/card {:class "docs-card"}
                       [:strong nav-title]
-                      (when (seq summary) [:span summary]))])]]))))
+                      [:span summary])])]]))))
 
 (defn docs-page [sections {:keys [title summary html headings path source-path prev next]}]
   (ui/render-page
    (docs-layout
     {:title title
-     :description (when (seq summary) summary)
+     :description summary
      :path path
      :sections sections
      :headings (filter #(= 2 (:level %)) headings)}

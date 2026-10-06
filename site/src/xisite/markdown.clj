@@ -13,13 +13,10 @@
 (defn code-block-hiccup
   "A fenced code block: highlighted <pre><code>. The block is always dark, so it opts into the framework's
    dark tokens (`data-theme=\"dark\"` re-scopes them to this subtree). An optional `output` source is
-   shown as a second highlighted <pre> in the same wrapper, divided from the code by a border. An optional
-   `title` (a ```lang title=\"…\" fence) is a header above the code."
-  ([lang source] (code-block-hiccup lang source nil nil))
-  ([lang source output] (code-block-hiccup lang source output nil))
-  ([lang source output title]
+   shown as a second highlighted <pre> in the same wrapper, divided from the code by a border."
+  ([lang source] (code-block-hiccup lang source nil))
+  ([lang source output]
    [:div.code-block {:data-theme "dark"}
-    (when title [:div.code-title title])
     [:pre [:code {:data-language (or lang "text")}
            (seq (highlight/highlight lang source))]]
     (when output
@@ -79,19 +76,19 @@
 ;; --- Rendering ---
 
 (def ^:private code-fence-re
-  "A fence (optionally with a `title=\"…\"` header), optionally followed directly by an ```output fence (the result of the code above it)."
-  #"(?ms)^```([\w-]*)(?:[ \t]+title=\"([^\"\n]*)\")?[ \t]*\n(.*?)^```[ \t]*$(?:\n+^```output[ \t]*\n(.*?)^```[ \t]*$)?")
+  "A fence, optionally followed directly by an ```output fence (the result of the code above it)."
+  #"(?ms)^```([\w-]*)[ \t]*\n(.*?)^```[ \t]*$(?:\n+^```output[ \t]*\n(.*?)^```[ \t]*$)?")
 
 (defn render-body
   "Markdown → html string."
   [body]
   (let [blocks (atom [])
         body (str/replace body code-fence-re
-                          (fn [[_ lang title source output]]
+                          (fn [[_ lang source output]]
                             (let [lang (when (seq lang) lang)
                                   source (str/replace source #"\n\z" "")
                                   output (some-> output (str/replace #"\n\z" ""))
-                                  html (str (h/html (code-block-hiccup lang source output title)))]
+                                  html (str (h/html (code-block-hiccup lang source output)))]
                               (swap! blocks conj html)
                               (str "\n§CODEBLOCK" (dec (count @blocks)) "§\n"))))
         html (md/md-to-html-string body :heading-anchors false)
@@ -102,15 +99,13 @@
                    (nth @blocks (parse-long idx))))))
 
 (defn split-title
-  "A guide page starts with `# Title` and, usually, a one-paragraph summary (empty when a heading follows).
+  "A guide page starts with `# Title` and a one-paragraph summary.
    → {:title :summary :body} (body still includes the summary)."
   [text]
   (let [lines (str/split-lines text)
         title (some->> lines (drop-while str/blank?) first (re-find #"^#\s+(.*)$") second)
         rest-lines (->> lines (drop-while str/blank?) rest (drop-while str/blank?))
-        summary (if (some-> (first rest-lines) (str/starts-with? "#"))
-                   ""
-                   (->> rest-lines (take-while (complement str/blank?)) (str/join " ")))
+        summary (->> rest-lines (take-while (complement str/blank?)) (str/join " "))
         body (str/join "\n" (->> lines (drop-while str/blank?) rest))]
     {:title (or title "Untitled")
      :summary (str/replace summary #"[`*_]" "")
