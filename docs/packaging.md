@@ -66,8 +66,20 @@ add a `bb` publish step) when it is time to publish.
 ## Testing a package
 
 ```bash
-bb package
-mkdir /tmp/try && cd /tmp/try && npm init -y
-npm install <repo>/dist/xi-agent-0.1.0.tgz
-HOME=/tmp/try/home XI_HOST=127.0.0.1 ./node_modules/.bin/xi server --headless --port 7490
+bb package:serve               # pack, install the tarball, run it on :7477 (Ctrl-C stops)
+bb package:serve --port 7490   # another port
+bb package:serve --no-build    # reuse the tarball already in dist/
 ```
+
+`scripts/try-package.mjs` runs the package the way a user gets it: it packs
+(`bb package`), installs the tarball into a fresh `dist/try`, and runs the
+installed `xi server --headless` in the foreground — no tmux, and nothing
+else (dev :7474, personal :7475, demo :7476) is touched. `HOME` and
+`XDG_DATA_HOME` point at `dist/try/home`, so your `~/.config/xi` and sessions
+are not used: pairing starts fresh and Claude auth is not shared (set
+`ANTHROPIC_API_KEY` to send prompts). `dist/try/home` survives between runs;
+delete it for a first-run experience.
+
+The trial directory has its own `package.json` on purpose: `bun add` installs
+into the nearest one above its cwd, and without it would install into the
+repo root.
