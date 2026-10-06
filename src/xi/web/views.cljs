@@ -3361,8 +3361,6 @@
       ;; its own click handler — the trigger's :attrs would replace it.
       (context-menu/context-menu-trigger
        {:items (session-menu-items dispatch! card-data)
-   ;; Who is in the room right now (multi-user servers only).
-   (avatar-stack people)
         :class "project-card-trigger"
         :attrs {:replicant/key session-id}}
        card)
@@ -3702,6 +3700,7 @@
                                           :active? true :busy? (:busy? r)
                                           :has-dialog? (:has-dialog? r)
                                           :error? (:error? r)
+                                          :people (sb/room-people state (:users r))
                                           :favorite? (contains? fav-ids (:session-id r))})))
               ;; All sessions link (hide when filtering)
               (when-not (seq query)
@@ -3713,7 +3712,6 @@
                  [:div {:class ["project-card-info"]}
                   [:span {:class ["project-card-name"]} "All sessions"]]
                  [:div {:class ["project-card-chevron"]}
-                                          :people (sb/room-people state (:users r))
                   (icon/icon {:icon-name :chevron-right :size :sm})]])
               ;; Favorites link (hide when filtering)
               (when-not (seq query)
@@ -3845,17 +3843,6 @@
                (claude-usage-meter "Week" weekly weekly-severity
                                    (when weekly-reset (str "Resets " weekly-reset))))))))))))
 
-(defn- more-horizontal-icon
-  "Inline Lucide `ellipsis` SVG — the shared icon set has none (see
-   `more-vertical-icon`)."
-  []
-  [:svg {:class ["icon" "icon-sm"]
-         :xmlns "http://www.w3.org/2000/svg"
-         :viewBox "0 0 24 24"
-         :fill "none"
-         :stroke "currentColor"
-         :stroke-width "2"
-         :stroke-linecap "round"
 (defn- switch-user!
   "Act as user `id` from this browser: claim it (localStorage xi-user, sent in
    :auth/hello) and reconnect. A device the server assigns a user to
@@ -3901,6 +3888,17 @@
              (when (= id me)
                (icon/icon {:icon-name :check :size :sm}))])))))))
 
+(defn- more-horizontal-icon
+  "Inline Lucide `ellipsis` SVG — the shared icon set has none (see
+   `more-vertical-icon`)."
+  []
+  [:svg {:class ["icon" "icon-sm"]
+         :xmlns "http://www.w3.org/2000/svg"
+         :viewBox "0 0 24 24"
+         :fill "none"
+         :stroke "currentColor"
+         :stroke-width "2"
+         :stroke-linecap "round"
          :stroke-linejoin "round"
          :aria-hidden "true"}
    [:circle {:cx "5" :cy "12" :r "1"}]
@@ -4112,6 +4110,7 @@
        (sidebar/sidebar-footer {}
          [:div {:class ["sidebar-footer-bar"]}
           [:div {:class ["sidebar-footer-start"]}
+           (user-switcher state)
            (claude-usage-popover state)]
           (theme-toggle/theme-toggle
            {:mode (or (:web/theme-mode state) "auto")
@@ -4123,7 +4122,6 @@
                      :on {:click (fn [_] (dispatch! {:type :appearance/open}))}}
             (icon/icon {:icon-name :settings :size :sm})]
            (when (seq items)
-           (user-switcher state)
              (sidebar-more-menu items))]])))))
 
 (defn- recent-sidebar

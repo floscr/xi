@@ -2496,6 +2496,14 @@ code a:hover,
   background: var(--bg-2);
 }
 
+/* User switcher: the current user's avatar left of the usage; the popover
+   reuses the ⋯ menu's rows. The avatar's cut-out ring is for overlapping
+   stacks, not here. */
+.sidebar-user-trigger { width: auto; padding: 0 4px; }
+.sidebar-user-trigger .avatar,
+.sidebar-user-item .avatar { box-shadow: none; }
+.sidebar-user-item .icon { margin-left: auto; color: var(--accent); }
+
 /* Claude subscription usage: ring + session percent in the footer, opening
    a popover with both windows. Severity classes color the ring and bars. */
 .sidebar-usage-trigger {
@@ -2516,14 +2524,6 @@ code a:hover,
 }
 .sidebar-usage-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 @media (hover: hover) {
-/* User switcher: the current user's avatar left of the usage; the popover
-   reuses the ⋯ menu's rows. The avatar's cut-out ring is for overlapping
-   stacks, not here. */
-.sidebar-user-trigger { width: auto; padding: 0 4px; }
-.sidebar-user-trigger .avatar,
-.sidebar-user-item .avatar { box-shadow: none; }
-.sidebar-user-item .icon { margin-left: auto; color: var(--accent); }
-
   .sidebar-usage-trigger:hover { background: var(--bg-2); color: var(--fg-0); }
 }
 .claude-usage-ring {
