@@ -15,7 +15,7 @@ minutes, one package.
 ## Install
 
 ```sh
-npm install -g xi-agent
+bun install -g xi-agent
 ```
 
 The package installs one command, `xi`. Check it works:
@@ -99,7 +99,7 @@ lists the rest.
 ## When something is off
 
 **`xi: command not found` after installing.** npm's global bin directory is
-not on your `PATH`. `npm prefix -g` prints the prefix; add its `bin/` to your
+not on your `PATH`. `bun pm bin -g` prints it; add that directory to your
 shell's `PATH`.
 
 **"Bun is required".** The launcher found Node but no Bun. Install Bun and

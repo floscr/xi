@@ -8,7 +8,7 @@
 ;; --- Home ---
 
 (def ^:private install-sample
-  "npm install -g xi-agent    # needs Bun
+  "bun install -g xi-agent
 xi                         # terminal client
 xi server                  # plus the web client on localhost:7474")
 
