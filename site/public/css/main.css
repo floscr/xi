@@ -288,8 +288,8 @@ a.btn:hover { text-decoration: none; }
   margin: 0 auto;
   padding: 40px 24px 80px;
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr) 200px;
-  gap: 56px;
+  grid-template-columns: 220px minmax(0, 1fr) 180px;
+  gap: 40px;
   align-items: start;
 }
 
