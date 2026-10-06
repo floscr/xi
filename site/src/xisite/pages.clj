@@ -327,8 +327,4 @@ xi                         # connect a client")
     [:div.docs-footer
      [:div.docs-pager
       (when prev [:a.prev {:href (:path prev)} [:small "Previous"] (:nav-title prev)])
-      (when next [:a.next {:href (:path next)} [:small "Next"] (:nav-title next)])]
-     (button/button {:variant :ghost :size :sm :icon-left :edit
-                     :href (str core/repo-url "/edit/master/" source-path)
-                     :attrs {:rel "noopener"}}
-                    "Edit this page")])))
+      (when next [:a.next {:href (:path next)} [:small "Next"] (:nav-title next)])]])))
