@@ -50,13 +50,18 @@
              (users {"alice" {:name "Alice" :meta {:team "ops" :admin? true}}
                      "bob"   {}
                      "root"  {:name "Operator"}}))))
+    (testing "a user may declare an avatar image"
+      (is (= {"alice" {:name "Alice" :avatar "https://example.com/a.png"}}
+             (users {"alice" {:name "Alice" :avatar "https://example.com/a.png"}}))))
     (testing "malformed declarations reject the whole file"
       (is (re-find #":users must be a map" (err ["alice"])))
       (is (re-find #"ids must be lowercase" (err {"Alice" {}})) "ids are the normalized slug")
       (is (re-find #"ids must be lowercase" (err {"has space" {}})))
       (is (re-find #"ids must be lowercase" (err {:alice {}})))
       (is (re-find #"must be a map like" (err {"alice" "Alice"})))
-      (is (re-find #"allows only :name and :meta" (err {"alice" {:role :admin}})))
+      (is (re-find #"allows only :name, :avatar and :meta" (err {"alice" {:role :admin}})))
+      (is (re-find #":avatar must be an http\(s\) image URL" (err {"alice" {:avatar "javascript:alert(1)"}})))
+      (is (re-find #":avatar must be an http\(s\) image URL" (err {"alice" {:avatar "/local.png"}})))
       (is (re-find #":name must be a non-blank string" (err {"alice" {:name ""}})))
       (is (re-find #":name must be a non-blank string" (err {"alice" {:name :alice}})))
       (is (re-find #":meta must be a map of plain data" (err {"alice" {:meta [1 2]}})))

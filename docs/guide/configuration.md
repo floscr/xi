@@ -9,7 +9,8 @@
  :projects {:browse ["~/code"]
             :repos  ["~/.config/dotfiles"]}
 
- :users {"alice" {:name "Alice" :meta {:team "ops"}}
+ :users {"alice" {:name "Alice" :avatar "https://example.com/alice.png"
+                 :meta {:team "ops"}}
          "bob"   {:name "Bob"}}
 
  :trusted-mcp-servers ["browser"]
@@ -26,7 +27,7 @@ an old file wrong.
 | --- | --- | --- |
 | `:extensions` | The extension files in `~/.config/xi/extensions/` that Xi may load. A file not listed here is never read. | [Extensions](extensions.md) |
 | `:projects` | Where to look for projects, and per-project prompts and snippets. | [Projects](projects.md), keys below |
-| `:users` | The people who use this server: an id, an optional display `:name` and read-only `:meta` that [extensions](extensions-reference.md#users-and-their-state) can read. | [Users](server.md#users), keys below |
+| `:users` | The people who use this server: an id, an optional display `:name` and `:avatar`, and read-only `:meta` that [extensions](extensions-reference.md#users-and-their-state) can read. | [Users](server.md#users), keys below |
 | `:trusted-mcp-servers` | MCP servers whose tools run without asking: `mcp.edn` ids, or an extension's `"<extension>/<name>"`. Trusted as they are, with no code fingerprint. | [MCP servers](mcp-servers.md#trusting-a-server) |
 | `:agents` | Profiles for `xi --agent <id>`: a fixed tool set and prompt. | [Agent profiles](agents.md), keys below |
 
@@ -52,7 +53,8 @@ declared to give it a name.
 
 | Key | Default | Does |
 | --- | --- | --- |
-| `:name` | none | A display name, up to 100 characters. |
+| `:name` | none | A display name, up to 100 characters. Public: every client sees it. |
+| `:avatar` | none | An `http://` or `https://` image URL, up to 2048 characters. Public: every client sees it. Without one, the web client draws a circle with the user's initials on a colour taken from their id. Any other kind of address is rejected. |
 | `:meta` | `{}` | Plain data about the user, such as a team or a role. Read-only: extensions can read it, nothing can change it but you editing this file. Plain data means strings, numbers, booleans, keywords, and vectors, sets and maps of those, under 64 KB. |
 
 Ids are lowercase letters, digits, `.`, `_` or `-`, up to 64 characters. The

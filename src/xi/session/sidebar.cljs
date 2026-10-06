@@ -19,6 +19,17 @@
               (< m 1440) (str (js/Math.floor (/ m 60)) "h ago")
               :else      (str (js/Math.floor (/ m 1440)) "d ago"))))))
 
+(defn room-people
+  "The users attached to a room as avatar data [{:id :name :avatar}], from the
+   public profiles on the lobby payload. Empty on a single-user server (only
+   one user known): an avatar on every live chat would be noise there, and
+   the common case stays as quiet as before."
+  [state user-ids]
+  (let [profiles (get-in state [:lobby :profiles])]
+    (if (> (count profiles) 1)
+      (mapv (fn [id] (assoc (get profiles id) :id id)) user-ids)
+      [])))
+
 (defn session-status
   "Enrich a session map with live indicator flags derived from app state:
    :active? (has a live room), :busy?, :has-dialog? (needs response),
@@ -49,6 +60,7 @@
      :busy?       (boolean (:busy? room))
      :has-dialog? (boolean (:has-dialog? room))
      :error?      (boolean (:error? room))
+     :people      (room-people state (:users room))
      :unread?     (> (get counts sid 0) seen)}))
 
 (defn active-first
@@ -88,7 +100,8 @@
                    :active?     true
                    :busy?       (boolean (some :busy? rooms))
                    :has-dialog? (boolean (some :has-dialog? rooms))
-                   :error?      (boolean (some :error? rooms))}))))))
+                   :error?      (boolean (some :error? rooms))
+                   :people      (room-people state (distinct (mapcat :users rooms)))}))))))
 
 (defn sidebar-session-groups
   "Session cards for the drawer sidebar, split into the display groups

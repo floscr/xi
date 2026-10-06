@@ -7,12 +7,14 @@
       :extensions [\"kb.cljs\" \"web.cljs\"]      ; user extensions xi may load
       :agents     {\"root\" {…}}               ; agent profiles (xi.agent-profile)
       :projects   {:browse […] :repos […]}      ; project dirs (xi.projects)
-      :users      {\"alice\" {:name \"Alice\" :meta {:team \"ops\"}}} ; who exists (see below)
+      :users      {\"alice\" {:name \"Alice\" :avatar \"https://…/a.png\" :meta {:team \"ops\"}}} ; who exists (see below)
       :trusted-mcp-servers [\"chrome\" \"shop/browser\"]} ; MCP servers that never ask (xi.mcp.trust)
 
    `:users` declares users by id (xi.util/user-id slugs), each with an optional
-   display `:name` and read-only `:meta` (plain data an extension can read, e.g.
-   a team or role). `root` always exists and may be declared to give it a name.
+   display `:name`, an `:avatar` (an http(s) image URL; without one the web UI
+   draws the user's initials) and read-only `:meta` (plain data an extension can
+   read, e.g. a team or role). `:name` and `:avatar` are public — every client
+   sees them (xi.avatar); `:meta` stays on the server. `root` always exists and may be declared to give it a name.
    An id nobody declared still works: a user is whoever a connection says it is
    (xi.server.ws), the declaration only adds a profile to it. What a user *does*
    — their UI state and what extensions keep about them — is state, not config,
@@ -28,6 +30,7 @@
    loads without tools, with the problem reported by the readers."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
+            [xi.avatar :as avatar]
             [xi.projects :as projects]
             [xi.user-state :as user-state]
             [xi.util :as util]
@@ -80,13 +83,17 @@
               (not (map? profile))
               (str ":users " id " must be a map like {:name \"Name\" :meta {…}}")
 
-              (seq (remove #{:name :meta} (keys profile)))
-              (str ":users " id " allows only :name and :meta")
+              (seq (remove #{:name :avatar :meta} (keys profile)))
+              (str ":users " id " allows only :name, :avatar and :meta")
 
               (and (contains? profile :name)
                    (not (and (string? (:name profile))
                              (<= 1 (count (str/trim (:name profile))) 100))))
               (str ":users " id " :name must be a non-blank string of up to 100 characters")
+
+              (and (contains? profile :avatar)
+                   (not (avatar/url? (:avatar profile))))
+              (str ":users " id " :avatar must be an http(s) image URL")
 
               (and (contains? profile :meta)
                    (not (and (map? (:meta profile))

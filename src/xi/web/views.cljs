@@ -5,6 +5,7 @@
    Phase 7a: the online chat view (topbar, timeline of history entries,
    compose input, abort, permission dialogs). Home view + router land in 7b."
   (:require [clojure.string :as str]
+            [xi.avatar :as avatar]
             [xi.commands :as commands]
             [xi.error-info :as error-info]
             [xi.core.state :as state]
@@ -253,6 +254,33 @@
                         error?  "status-dot--error"
                         unread? "status-dot--unread"
                         active? "status-dot--live")]}])
+
+(defn- user-avatar
+  "A user's avatar: their image over a circle of initials on a colour from
+  their id (xi.avatar). The initials are the fallback — they show for a user
+  with no image and under one that fails to load (hidden on error)."
+  [{:keys [id name] url :avatar}]
+  [:span {:class ["avatar"]
+          :replicant/key (str "avatar-" id)
+          :title (or name id)
+          :style {:background-color (str "hsl(" (avatar/hue id) " 55% 42%)")}}
+   (avatar/initials id name)
+   (when url
+     [:img {:class ["avatar-img"] :src url :alt "" :loading "lazy"
+            :on {:error (fn [e] (set! (.. e -target -style -display) "none"))}}])])
+
+(defn- avatar-stack
+  "Overlapping avatars of the users in a room (up to 3, then +n); nothing when
+  `people` is empty. `title` is the hover text of the whole stack."
+  [people]
+  (when (seq people)
+    (let [shown (take 3 people)
+          more  (- (count people) (count shown))]
+      [:span {:class ["avatar-stack"]
+              :title (str/join ", " (map #(or (:name %) (:id %)) people))}
+       (for [p shown] (user-avatar p))
+       (when (pos? more)
+         [:span {:class ["avatar" "avatar--more"]} (str "+" more)])])))
 
 (def default-nav-icon
   "Icon for extension nav items that declare none (or one the icon set lacks),
@@ -2481,13 +2509,16 @@
    :members, kept current by :room/presence). Nothing when we are alone — the
    common single-user case stays as quiet as before."
   [state room]
-  (let [me     (state/own-user state)
-        others (remove #{me} (state/room-users room))]
+  (let [me       (state/own-user state)
+        profiles (get-in state [:lobby :profiles])
+        others   (->> (state/room-users room)
+                      (remove #{me})
+                      (mapv (fn [id] (assoc (get profiles id) :id id))))]
     (when (seq others)
       [:span {:class ["topbar-presence"]
-              :title (str "Also here: " (str/join ", " others))}
-       (icon/icon {:icon-name :users :size :sm})
-       [:span (str/join ", " others)]])))
+              :title (str "Also here: " (str/join ", " (map #(or (:name %) (:id %)) others)))}
+       (avatar-stack others)
+       [:span (str/join ", " (map #(or (:name %) (:id %)) others))]])))
 
 (defn- optimistic-post
   "An optimistic user bubble rendered at the tail of the timeline the instant a
@@ -3275,7 +3306,7 @@
   "Session row. Secondary actions (bookmark, hide from Recent, delete) live in
    a ui.context-menu on the card: right-click, long-press on touch (the
    framework's gesture runtime), or the ⋮ button."
-  [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project?]
+  [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project? people]
               :as card-data}]
   (let [card
   [:div {:class ["project-card"
@@ -3324,6 +3355,8 @@
       ;; its own click handler — the trigger's :attrs would replace it.
       (context-menu/context-menu-trigger
        {:items (session-menu-items dispatch! card-data)
+   ;; Who is in the room right now (multi-user servers only).
+   (avatar-stack people)
         :class "project-card-trigger"
         :attrs {:replicant/key session-id}}
        card)
@@ -3674,6 +3707,7 @@
                  [:div {:class ["project-card-info"]}
                   [:span {:class ["project-card-name"]} "All sessions"]]
                  [:div {:class ["project-card-chevron"]}
+                                          :people (sb/room-people state (:users r))
                   (icon/icon {:icon-name :chevron-right :size :sm})]])
               ;; Favorites link (hide when filtering)
               (when-not (seq query)

@@ -65,8 +65,9 @@ once. A server started with `--agent` does not pair at all.
 
 Several people can share one server. Every connection belongs to a **user**,
 a short id such as `root`, `alice` or `team-ops`. Xi uses it to tell people
-apart: a prompt someone else sent shows their id above it, and the chat's
-top bar lists who else is in the room. Nothing is verified. Pairing decides
+apart: a prompt someone else sent shows their id above it, the chat's
+top bar shows who else is in the room, and live chats in the list show an
+avatar for each user in them (once the server knows more than one user). Nothing is verified. Pairing decides
 whether a device may connect at all; the user id only says who it is.
 
 The default user is `root`. A terminal picks another with `--user`:
@@ -94,12 +95,15 @@ Anything else counts as `root`.
 To give people a profile, declare them in the config file:
 
 ```clojure
-:users {"alice" {:name "Alice" :meta {:team "ops"}}
+:users {"alice" {:name "Alice" :avatar "https://example.com/alice.png"
+                :meta {:team "ops"}}
         "bob"   {:name "Bob"}}
 ```
 
-That is optional. A user nobody declared works the same; the declaration adds
-a display name and metadata that extensions can read. See
+That is optional. A user nobody declared works the same, and shows as a circle
+with their initials; the declaration adds a display name, an avatar image and
+metadata that extensions can read. The name and avatar are visible to every
+client, the metadata is not. See
 [Configuration](configuration.md#users).
 
 A user's web client choices, such as the theme and which sidebar groups are

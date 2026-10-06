@@ -266,6 +266,15 @@ extension territory, keyed by the id.
 - **Rendering**: the TUI and web label a prompt with its sender when it is
   not the viewer's own user; the web chat topbar lists the other users
   attached to the room.
+- **Avatars**: `xi.avatar` (pure, cljc) holds the public profile
+  `{:name :avatar}` (config `:users`; `:avatar` must be an http(s) URL, so
+  nothing else reaches an `<img src>`), initials and the id-derived hue. The
+  server publishes `xi.users/public-profiles` (declared users + everyone in a
+  room, never `:meta`) as `:profiles` on `:lobby/state`, which every client
+  receives and mirrors at `[:lobby :profiles]`. `sidebar/room-people` turns a
+  room's `:users` into avatar data for session cards (`:people`), empty while
+  only one user is known so single-user servers look as before; the web
+  `avatar-stack` draws them on cards and in the chat topbar.
 - **User records and extension state**: `[:users id]` holds `{:id :name
   :meta :ui :ext}` server-side (never on the wire). `:name`/`:meta` come from
   config.edn `:users` (`xi.user-config`, validated, read-only); `:ui` and `:ext`

@@ -21,6 +21,7 @@
    (xi.ext.user.guard), and clients cannot forge the events that do
    (xi.server.ws drops them)."
   (:require [clojure.string :as str]
+            [xi.avatar :as avatar]
             [xi.user-config :as user-config]
             [xi.user-state :as user-state]
             [xi.user-state.store :as store]
@@ -62,6 +63,15 @@
   "What extension `ext-id` keeps about user `id`, nil when nothing."
   [host id ext-id]
   (get-in (user host id) [:ext ext-id]))
+
+(defn public-profiles
+  "The public profile ({:name :avatar}, see xi.avatar) of every declared user
+   and of everyone attached to one of `rooms` (room summaries with :users),
+   {id profile}. Rides on the lobby payload so any client can draw a user's
+   avatar; :meta never leaves the server."
+  [rooms]
+  (let [declared (user-config/users)]
+    (avatar/profiles declared (into (set (keys declared)) (mapcat :users) rooms))))
 
 (defn user-list
   "Every user the process knows, [{:id :name}] sorted by id: the declared

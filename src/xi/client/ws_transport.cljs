@@ -157,7 +157,7 @@
    updates when the payload omits it (server restarted, fetch failing): the
    sidebar keeps showing the last reading until it is outdated."
   [st ev]
-  (let [lobby (select-keys ev [:rooms :sessions :read :agent-id :started-at :claude-usage :model])
+  (let [lobby (select-keys ev [:rooms :sessions :read :profiles :agent-id :started-at :claude-usage :model])
         prev  (get-in st [:lobby :claude-usage])]
     {:state (assoc st :lobby (cond-> lobby
                                (and prev (not (:claude-usage lobby)))
