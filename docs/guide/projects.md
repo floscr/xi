@@ -27,17 +27,11 @@ projects.
 
 ## Where projects come from
 
-Xi combines three sources into one list. Each directory appears once, and
-directories that don't exist on this machine are skipped.
-
-| Source | You set it with | What it is |
+| Source | Key | What it is |
 | --- | --- | --- |
-| Single repos | `:repos` in the config | Directories listed exactly as you wrote them. |
-| Browsed | `:browse` in the config | Directories Xi scans for repos. |
-| Remembered | nothing — automatic | Git repos you worked in that neither of the above covers. |
-
-The list is ordered by when you last used each project, most recent first.
-Projects you have never opened keep the order above.
+| Single repos | `:repos` | Directories listed exactly as you wrote them. |
+| Browsed | `:browse` | Directories Xi scans for repos. |
+| Remembered | — | Git repos you worked in that neither of the above covers. |
 
 ## Scanning for repos: `:browse`
 
@@ -149,30 +143,6 @@ found and loaded is on [Project instructions](project-instructions.md).
                         :snippets [{:label "Run checks"
                                     :text  "Run the tests and report what fails."}]}}}}
 ```
-
-## When something is off
-
-**The list is empty.** Directories that don't exist are skipped without a
-message, so a typo in a path looks like an empty list. Check the paths, and
-that `:depth` is deep enough to reach your repos — with the default `:git?
-true`, a directory without a `.git` isn't a project.
-
-**Xi says the config is invalid.** The message names the problem, for example
-`:projects :browse entries must be a dir string or {:dir d :depth 1..6 :git?
-bool}`. Xi rejects the *whole* file when any part is invalid, so until it is
-fixed your extensions and agent profiles from the same file are off too, and no
-project settings apply. Fix the line it names.
-
-**A project is missing from a scanned directory.** Hidden directories are
-skipped, and with `:git? true` a folder without a `.git` is only searched
-through, not listed. Raise `:depth`, or use `:git? false`.
-
-**A directory I worked in is missing from the list.** Only git repositories are
-remembered: a directory without a `.git` is never added. Put it in `:repos` if
-you want it listed anyway.
-
-**Start over.** Delete `~/.config/xi/state/projects.edn` to forget all
-remembered repositories and the recent-use order. The config is untouched.
 
 ## Reference
 
