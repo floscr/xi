@@ -86,6 +86,67 @@ xi                         # connect a client")
   [:figure.phone
    [:img {:src src :alt alt :width "585" :height "1266"}]])
 
+;; --- Architecture diagram (inline SVG; colours come from .arch-* in main.css) ---
+
+(defn- arch-group [x y w h label]
+  [:g
+   [:rect.arch-group {:x x :y y :width w :height h :rx 14}]
+   [:text.arch-label {:x (+ x 16) :y (+ y 24)} label]])
+
+(defn- arch-box
+  ([x y w h title] (arch-box x y w h title nil))
+  ([x y w h title sub]
+   [:g
+    [:rect.arch-box {:x x :y y :width w :height h :rx 8}]
+    (if sub
+      [:g
+       [:text.arch-title {:x (+ x 14) :y (+ y 22)} title]
+       [:text.arch-sub {:x (+ x 14) :y (+ y 40)} sub]]
+      [:text.arch-title {:x (+ x 14) :y (+ y (/ h 2) 5)} title])]))
+
+(defn- arch-arrow [x1 y1 x2 y2 & {:keys [both?]}]
+  [:line.arch-line.arch-arrow
+   (cond-> {:x1 x1 :y1 y1 :x2 x2 :y2 y2 :marker-end "url(#arch-head)"}
+     both? (assoc :marker-start "url(#arch-head)"))])
+
+(defn- architecture-diagram []
+  [:svg.arch-svg {:viewBox "0 0 960 364" :role "img"
+                  :aria-label "Xi architecture: terminal, web, one-shot and Babashka clients connect over WebSocket to the Xi server, which holds rooms, the event queue, rules and extensions, and talks to model providers, the clj tool and MCP servers."}
+   [:defs
+    [:marker {:id "arch-head" :viewBox "0 0 10 10" :refX 8 :refY 5 :markerWidth 7 :markerHeight 7
+              :orient "auto-start-reverse"}
+     [:path.arch-head {:d "M 0 0 L 10 5 L 0 10 z"}]]]
+   ;; clients
+   (arch-group 10 20 230 334 "CLIENTS")
+   (arch-box 26 54 198 56 "Terminal" "TUI, standalone or connected")
+   (arch-box 26 122 198 56 "Web client" "browser, phone, installable")
+   (arch-box 26 190 198 56 "xi prompt" "one-shot, no TUI")
+   (arch-box 26 258 198 56 "Babashka client" "drive a session from a script")
+   ;; server
+   (arch-group 330 20 300 334 "XI SERVER")
+   (arch-box 346 54 268 56 "Rooms" "one state per session")
+   (arch-box 346 122 268 56 "Event queue" "every action is an event, handled purely")
+   (arch-box 346 190 268 56 "Rules" "allow, ask, deny or nudge each tool call")
+   (arch-box 346 258 268 56 "Extensions" "tools, commands, keys, pages")
+   ;; models and tools
+   (arch-group 720 20 230 170 "MODELS")
+   (arch-box 736 50 198 28 "Claude · Agent SDK")
+   (arch-box 736 84 198 28 "OpenAI · Codex")
+   (arch-box 736 118 198 28 "Ollama")
+   (arch-box 736 152 198 28 "Zen")
+   (arch-group 720 204 230 150 "TOOLS")
+   (arch-box 736 234 198 28 "clj REPL")
+   (arch-box 736 268 198 28 "MCP servers")
+   (arch-box 736 302 198 28 "Files and shell, gated")
+   ;; connections
+   (arch-arrow 240 187 330 187 :both? true)
+   [:text.arch-sub.arch-edge {:x 285 :y 172 :text-anchor "middle"} "WebSocket"]
+   [:text.arch-sub.arch-edge {:x 285 :y 207 :text-anchor "middle"} "events"]
+   (arch-arrow 630 105 720 105)
+   [:text.arch-sub.arch-edge {:x 675 :y 92 :text-anchor "middle"} "providers"]
+   (arch-arrow 630 279 720 279 :both? true)
+   [:text.arch-sub.arch-edge {:x 675 :y 266 :text-anchor "middle"} "tool calls"]])
+
 (defn home []
   (ui/render-page
    (ui/layout
@@ -103,6 +164,32 @@ xi                         # connect a client")
        [:a.button.primary {:href "/docs/getting-started/"} "Get started"]
        [:a.button {:href "/docs/"} "Read the docs"]]
       (code "sh" install-sample)]]
+
+    [:section.feature {:id "clj"}
+     [:div.wrap.split
+      [:div.feature-text
+       [:p.eyebrow "Scripting"]
+       [:h2 "The agent scripts in Clojure, not shell pipelines."]
+       [:p "Instead of a bash tool, Xi gives the agent a persistent Clojure REPL with file helpers. Scripts filter and aggregate in the runtime; only the result enters the conversation."]
+       (feature-list
+        [["Small context." "Load a large file once, query it across calls. The file never enters the conversation."]
+         ["Reviewable." "Every real command runs argv-style through one call you can read. No quoting tricks, no hidden pipes."]
+         ["Gated." "Read-only tools run freely. Anything else asks once, or is allowed by a rule."]])
+       [:p [:a {:href "/docs/clj-tool/"} "The clj tool →"]]]
+      [:div.feature-code (code "clojure" clj-sample)]]]
+
+    [:section.feature.alt {:id "rules"}
+     [:div.wrap.split.reverse
+      [:div.feature-text
+       [:p.eyebrow "Rules"]
+       [:h2 "Rules you can read."]
+       [:p "What the agent may do on its own is a list of rules in a file, evaluated top to bottom. Allow, deny, ask, or nudge it in another direction."]
+       (feature-list
+        [["Scoped." "Match on the tool, the path, the command, the git repo, or the extension making the call."]
+         ["Layered." "Repo rules beat global rules; both beat anything granted in the moment. A hardened tier stays out of reach."]
+         ["Agents can't touch them." "The rules files are off-limits to every tool. Only you edit them."]])
+       [:p [:a {:href "/docs/rules/"} "Permissions and rules →"]]]
+      [:div.feature-code (code "clojure" rules-sample)]]]
 
     [:section.feature {:id "extensions"}
      [:div.wrap.split
@@ -132,32 +219,6 @@ xi                         # connect a client")
        [:p [:a {:href "/docs/mcp-servers/"} "Adding MCP servers →"]]]
       [:div.feature-code (code "sh" mcp-sample)]]]
 
-    [:section.feature {:id "clj"}
-     [:div.wrap.split
-      [:div.feature-text
-       [:p.eyebrow "Scripting"]
-       [:h2 "The agent scripts in Clojure, not shell pipelines."]
-       [:p "Instead of a bash tool, Xi gives the agent a persistent Clojure REPL with file helpers. Scripts filter and aggregate in the runtime; only the result enters the conversation."]
-       (feature-list
-        [["Small context." "Load a large file once, query it across calls. The file never enters the conversation."]
-         ["Reviewable." "Every real command runs argv-style through one call you can read. No quoting tricks, no hidden pipes."]
-         ["Gated." "Read-only tools run freely. Anything else asks once, or is allowed by a rule."]])
-       [:p [:a {:href "/docs/clj-tool/"} "The clj tool →"]]]
-      [:div.feature-code (code "clojure" clj-sample)]]]
-
-    [:section.feature.alt {:id "rules"}
-     [:div.wrap.split.reverse
-      [:div.feature-text
-       [:p.eyebrow "Rules"]
-       [:h2 "Rules you can read."]
-       [:p "What the agent may do on its own is a list of rules in a file, evaluated top to bottom. Allow, deny, ask, or nudge it in another direction."]
-       (feature-list
-        [["Scoped." "Match on the tool, the path, the command, the git repo, or the extension making the call."]
-         ["Layered." "Repo rules beat global rules; both beat anything granted in the moment. A hardened tier stays out of reach."]
-         ["Agents can't touch them." "The rules files are off-limits to every tool. Only you edit them."]])
-       [:p [:a {:href "/docs/rules/"} "Permissions and rules →"]]]
-      [:div.feature-code (code "clojure" rules-sample)]]]
-
     [:section.feature {:id "web"}
      [:div.wrap.split
       [:div.feature-text
@@ -172,6 +233,14 @@ xi                         # connect a client")
       [:div.phones
        (phone "/img/web-sessions.png" "The web client's session list on a phone")
        (phone "/img/web-chat.png" "A chat in the web client, with a diff from an edit")]]]
+
+    [:section.feature.architecture {:id "architecture"}
+     [:div.wrap
+      [:div.arch-intro
+       [:p.eyebrow "Architecture"]
+       [:h2 "One server, every surface."]
+       [:p "A server holds each session as one state and runs every action through a single event queue. Terminal, browser and scripts are clients of the same session. Models, the clj tool and MCP servers sit behind rules you wrote."]]
+      [:div.arch (architecture-diagram)]]]
 
     [:section.under-the-hood
      [:div.wrap

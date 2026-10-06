@@ -290,6 +290,21 @@ code, pre, kbd {
 }
 .phone:last-child { margin-top: 48px; }
 
+.architecture { background: var(--bg-2); }
+.arch-intro { max-width: 640px; margin-bottom: 40px; }
+.arch-intro h2 { max-width: none; }
+.arch-intro p:last-child { margin-bottom: 0; color: var(--fg-2); font-size: 1.05rem; }
+.arch { overflow-x: auto; }
+.arch-svg { display: block; width: 100%; min-width: 720px; height: auto; font-family: var(--sans); }
+.arch-group { fill: var(--bg); stroke: var(--border-2); stroke-width: 1; }
+.arch-box { fill: var(--bg-2); stroke: var(--border-2); stroke-width: 1; }
+.arch-label { fill: var(--fg-3); font-size: 11px; font-weight: 600; letter-spacing: 0.09em; }
+.arch-title { fill: var(--fg); font-size: 13.5px; font-weight: 600; }
+.arch-sub { fill: var(--fg-3); font-size: 11.5px; }
+.arch-edge { font-size: 11px; }
+.arch-line { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+.arch-head { fill: var(--accent); }
+
 .under-the-hood { padding: 80px 0; border-top: 1px solid var(--border); }
 .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
 .trio h3 { font-size: 1.15rem; margin-bottom: 10px; }
