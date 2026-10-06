@@ -368,6 +368,21 @@ xi clients user iPhone bob      # pin a paired phone to bob")
                       [:strong nav-title]
                       (when (seq summary) [:span summary]))])]]))))
 
+(defn changelog
+  "The release notes: CHANGELOG.md at the repo root, set like a docs page without the sidebar."
+  []
+  (let [{:keys [title summary body]} (md/split-title (slurp core/changelog-file))]
+    (ui/render-page
+     (ui/layout
+      {:title (str title " · Xi")
+       :description summary
+       :path "/changelog/"
+       :body-class "changelog"}
+      [:div.changelog-shell
+       [:article.docs-content
+        [:h1 title]
+        (h/raw (md/render-body body))]]))))
+
 (defn docs-page [sections {:keys [title summary html headings path source-path prev next]}]
   (ui/render-page
    (docs-layout

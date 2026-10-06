@@ -17,7 +17,7 @@
 //     resources/highlight/    syntax grammars
 //     resources/treesitter/   web-tree-sitter runtime + WASM grammars
 //     packages/providers/anthropic/runner.mjs   the Claude SDK runner
-//     LICENSE, THIRD_PARTY_NOTICES.md, README.md (when present)
+//     LICENSE, THIRD_PARTY_NOTICES.md, README.md, CHANGELOG.md (when present)
 //
 // Paths between these are relative (the bundle finds resources/ and packages/
 // next to target/), so the layout above is part of the contract.
@@ -71,7 +71,7 @@ copy("resources/public", undefined, (src) => {
   return !(name === "/js" || name.startsWith("/js/") || name === "/mkcert-rootCA.crt");
 });
 copy("packages/providers/anthropic/runner.mjs");
-for (const f of ["LICENSE", "THIRD_PARTY_NOTICES.md", "README.md"]) {
+for (const f of ["LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "CHANGELOG.md"]) {
   if (existsSync(rel(f))) copy(f);
 }
 

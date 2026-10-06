@@ -12,6 +12,7 @@
         pages (docs/pages sections)]
     (merge
      {"/" (pages/home)
+      "/changelog/" (pages/changelog)
       "/docs/" (pages/docs-index sections)}
      (into {} (for [page pages]
                 [(:path page) (pages/docs-page sections page)])))))

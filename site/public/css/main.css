@@ -292,6 +292,13 @@ a.btn:hover { text-decoration: none; }
 
 /* ---------- docs ---------- */
 
+/* the changelog: a docs-style column without the sidebar */
+.changelog-shell {
+  max-width: var(--wrap);
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+
 .docs-shell {
   max-width: var(--wrap);
   margin: 0 auto;

@@ -49,13 +49,15 @@
          children))
 
 (defn header [path]
-  (let [docs? (.startsWith ^String path "/docs")]
+  (let [docs? (.startsWith ^String path "/docs")
+        changelog? (= path "/changelog/")]
     [:header.site-header
      [:div.site-header-inner
       [:a.brand {:href "/"} logo [:span "xi"]]
       [:nav.site-nav
        (nav-button {:href "/docs/" :active? (and docs? (not= path "/docs/getting-started/"))} "Docs")
        (nav-button {:href "/docs/getting-started/" :active? (= path "/docs/getting-started/")} "Install")
+       (nav-button {:href "/changelog/" :active? changelog?} "Changelog")
        (nav-button {:href core/repo-url} github-icon [:span "GitHub"])]]]))
 
 (defn footer []
@@ -64,7 +66,8 @@
     [:span "Xi is MIT licensed. Made by "
      [:a {:href "https://florianschroedl.com" :rel "noopener"} "Florian Schrödl"] "."]
     [:span [:a {:href core/repo-url :rel "noopener"} "Source"] " · "
-     [:a {:href "/docs/"} "Docs"]]]])
+     [:a {:href "/docs/"} "Docs"] " · "
+     [:a {:href "/changelog/"} "Changelog"]]]])
 
 (defn render-page [hiccup]
   (str "<!DOCTYPE html>" (h/html {:mode :html} hiccup)))
