@@ -61,6 +61,35 @@
       (is (= 1 (count @errors)))
       (is (re-find #"login has expired" (:message (first @errors)))))))
 
+(deftest flagged-assistant-message-is-an-error-not-prose
+  (let [texts  (atom [])
+        errors (atom [])
+        cbs    {:on-text  #(swap! texts conj %)
+                :on-error #(swap! errors conj %)}
+        state  (atom {})
+        notice "You've hit your session limit · resets 6pm (Europe/Vienna)"
+        feed!  #(anthropic/process-sdk-message (clj->js %) cbs state)]
+    (feed! {:type "assistant" :error "rate_limit"
+            :message {:content [{:type "text" :text notice}]}})
+    (testing "the notice is reported as an error, not streamed as text"
+      (is (empty? @texts))
+      (is (= [{:type "error" :message notice}] @errors)))
+    (testing "the failed result repeating it is not reported twice"
+      (feed! {:type "result" :is_error true :result notice})
+      (is (= 1 (count @errors))))))
+
+(deftest failed-result-with-known-failure-is-reported
+  (let [errors (atom [])
+        cbs    {:on-error #(swap! errors conj %)}
+        feed!  (fn [result]
+                 (anthropic/process-sdk-message
+                  (clj->js {:type "result" :is_error true :result result})
+                  cbs (atom {})))]
+    (feed! "You've hit your session limit · resets 6pm")
+    (is (= 1 (count @errors)))
+    (feed! "Something unrelated broke")
+    (is (= 1 (count @errors)) "unrecognised failures stay quiet")))
+
 (defn- stream-event [event]
   (clj->js {:type "stream_event" :event event}))
 

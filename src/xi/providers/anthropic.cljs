@@ -11,6 +11,7 @@
    dependency on the rules engine here."
   (:require ["node:fs" :as fs]
             [clojure.string :as str]
+            [xi.error-info :as error-info]
             [xi.providers.runner :as runner]
             [xi.tools.registry :as tools]
             [xi.util :as util]))
@@ -235,8 +236,27 @@
 
       nil)))
 
-(defn- process-assistant-message
-  "Fallback for runs without partial stream events."
+(defn- report-error!
+  "Surface `msg` as an :on-error once per turn, so the same failure arriving
+   as an assistant message and again as the `result` isn't shown twice."
+  [callbacks state msg]
+  (when-not (:error-reported @state)
+    (swap! state assoc :error-reported true)
+    (when-let [f (:on-error callbacks)]
+      (f {:type "error" :message msg}))))
+
+(defn- assistant-text
+  "The concatenated text blocks of an SDK assistant message."
+  [^js message]
+  (some->> (some-> message .-message .-content (js->clj :keywordize-keys true))
+           (filter #(= "text" (:type %)))
+           (map :text)
+           (apply str)))
+
+
+(defn- process-assistant-message-content
+  "Stream an assistant message's blocks through the callbacks — only when no
+   partial stream events were seen, since those already delivered them."
   [^js message callbacks state]
   (when-not (:saw-stream-events @state)
     (let [^js msg (.-message message)
@@ -257,6 +277,17 @@
             nil)))
       (when usage
         (swap! state update :usage merge usage)))))
+
+(defn- process-assistant-message
+  "Fallback for runs without partial stream events. A message the CLI flags
+   with `error` (rate limit, auth, billing, …) is synthetic: its text is the
+   failure notice, so it is reported as an error — rendered by
+   `xi.error-info` — instead of streaming as assistant prose."
+  [^js message callbacks state]
+  (if (and (.-error message) (not (str/blank? (assistant-text message))))
+    (report-error! callbacks state (assistant-text message))
+    (process-assistant-message-content message callbacks state)))
+
 
 (defn- extract-tool-results-from-user-msg
   [^js message callbacks]
@@ -306,6 +337,12 @@
                :result-text result-text
                :is-error (boolean (.-is_error message))
                :cost cost :done true)
+        ;; A failed result repeats the failure notice (usage limit, auth, …).
+        ;; Report it when nothing earlier did — but only for failures the
+        ;; user can act on, so other error results stay quiet as before.
+        (when (and (.-is_error message) (string? result-text)
+                   (error-info/describe {:message result-text}))
+          (report-error! callbacks state result-text))
         (when usage
           (swap! state update :usage merge
                  (js->clj usage :keywordize-keys true))))
