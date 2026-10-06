@@ -263,6 +263,17 @@
     (is (= "r1" (:id b)))
     (is (= 1 (:clients b)))))
 
+(deftest summaries-flag-rooms-whose-last-turn-failed
+  (let [errored (assoc-in (joined-state) [:rooms "r1" :history]
+                          [{:kind :user :text "hi"}
+                           {:kind :error :error {:type "error" :message "boom"}}])
+        error?  #(:error? (first (rm/room-summaries %)))]
+    (is (true? (error? errored)))
+    (testing "a running turn hides it"
+      (is (false? (error? (apply-events errored {:type :agent/busy :room-id "r1" :busy? true})))))
+    (testing "a healthy room is not flagged"
+      (is (false? (error? (joined-state)))))))
+
 ;; ── :dismissed/toggle ────────────────────────────────────────────────────────
 
 (defn- state-with-sessioned-room

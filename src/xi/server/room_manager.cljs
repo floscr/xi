@@ -87,6 +87,14 @@
   (and (not (get-in room [:agent :busy?]))
        (empty? (get-in room [:ui :dialogs]))))
 
+(defn- room-errored?
+  "True when the room's last turn ended in an error: the newest history entry
+   is an :error and nothing is running. A new prompt (or an interrupt) pushes a
+   later entry, which clears it."
+  [room]
+  (and (not (get-in room [:agent :busy?]))
+       (= :error (:kind (last (:history room))))))
+
 (defn room-summaries
   "Lobby-facing room list, newest first. Rooms whose session was deleted
    while still keep-alive (see session-delete) are dropped so the deleted
@@ -103,6 +111,7 @@
                :cwd          (:cwd room)
                :busy?        (boolean (get-in room [:agent :busy?]))
                :has-dialog?  (boolean (seq (get-in room [:ui :dialogs])))
+               :error?       (room-errored? room)
                :users        (state/room-users room)}))
        (sort-by :created)
        reverse

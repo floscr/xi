@@ -22,7 +22,7 @@
 (defn session-status
   "Enrich a session map with live indicator flags derived from app state:
    :active? (has a live room), :busy?, :has-dialog? (needs response),
-   :unread? (more responses than last watched). Centralizes the logic shared
+   :error? (last turn failed), :unread? (more responses than last watched). Centralizes the logic shared
    by every session listing so indicators aren't computed twice.
 
    :unread? relies on the web-only :web/response-counts / :web/watched slices;
@@ -48,6 +48,7 @@
      :active?     (boolean room)
      :busy?       (boolean (:busy? room))
      :has-dialog? (boolean (:has-dialog? room))
+     :error?      (boolean (:error? room))
      :unread?     (> (get counts sid 0) seen)}))
 
 (defn active-first
@@ -86,7 +87,8 @@
                    :current?    (= sid (get-in state [:web/route :session-id]))
                    :active?     true
                    :busy?       (boolean (some :busy? rooms))
-                   :has-dialog? (boolean (some :has-dialog? rooms))}))))))
+                   :has-dialog? (boolean (some :has-dialog? rooms))
+                   :error?      (boolean (some :error? rooms))}))))))
 
 (defn sidebar-session-groups
   "Session cards for the drawer sidebar, split into the display groups

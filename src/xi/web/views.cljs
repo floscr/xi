@@ -236,7 +236,8 @@
 (defn card-status-indicator
   "Session status dot for session cards (badge on the chat icon) and palette
   chat rows (trailing slot). Shows the single most important state:
-  working (flashing purple) > unread (orange) > live room (green) > nothing.
+  working (flashing purple) > failed turn (red) > unread (orange) > live room
+  (green) > nothing.
 
   A single, ALWAYS-present node whose class toggles. Do NOT replace this with a
   `cond` returning different elements or nil — those swap element identity /
@@ -245,10 +246,11 @@
   the agent stops) and appends a second one on the next state change (the old
   doubled-spinner bug). One stable node means Replicant only ever patches the
   `class` attribute. Hidden via CSS when it carries no state modifier."
-  [{:keys [busy? unread? active?]}]
+  [{:keys [busy? error? unread? active?]}]
   [:span {:replicant/key "status-indicator"
           :class ["status-dot"
                   (cond busy?   "status-dot--busy"
+                        error?  "status-dot--error"
                         unread? "status-dot--unread"
                         active? "status-dot--live")]}])
 
@@ -3273,7 +3275,7 @@
   "Session row. Secondary actions (bookmark, hide from Recent, delete) live in
    a ui.context-menu on the card: right-click, long-press on touch (the
    framework's gesture runtime), or the ⋮ button."
-  [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? unread? show-project?]
+  [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project?]
               :as card-data}]
   (let [card
   [:div {:class ["project-card"
@@ -3293,13 +3295,14 @@
    [:div {:class ["project-card-icon" "project-card-icon--badged"
                   (when-not (or active? has-dialog?) "project-card-icon--idle")]
           :title (cond busy?   "Working…"
+                       error?  "Last turn failed"
                        unread? "Unread responses"
                        active? "Live on the server"
                        :else   nil)}
     (cond
       has-dialog? (icon/icon {:icon-name :alert-circle :size :sm})
       :else       (message-circle-icon))
-    (card-status-indicator {:busy? busy? :unread? unread? :active? active?})]
+    (card-status-indicator {:busy? busy? :error? error? :unread? unread? :active? active?})]
    [:div {:class ["project-card-info"]}
     [:span {:class ["project-card-name"]} (or name "New session")]
     [:span {:class ["project-card-path"]}
@@ -3659,6 +3662,7 @@
                                           :show-project? true
                                           :active? true :busy? (:busy? r)
                                           :has-dialog? (:has-dialog? r)
+                                          :error? (:error? r)
                                           :favorite? (contains? fav-ids (:session-id r))})))
               ;; All sessions link (hide when filtering)
               (when-not (seq query)
@@ -4108,7 +4112,7 @@
      it appear as a search result while typing. Used by the Sessions group
      so every session (incl. Earlier) is reachable by search."
   ([card dispatch!] (palette-chat-item card dispatch! nil))
-  ([{:keys [session-id name cwd has-dialog? busy? unread? active?]} dispatch!
+  ([{:keys [session-id name cwd has-dialog? busy? error? unread? active?]} dispatch!
     {:keys [search?]}]
    (let [label (or name "New session")]
      [:button (cond-> {:class ["command-item"] :role "option" :type "button"
@@ -4122,7 +4126,7 @@
                   :size :sm :class "command-item-icon"})
       [:span {:class ["command-item-label"]} label]
       [:div {:class ["command-item-status"]}
-       (card-status-indicator {:busy? busy? :unread? unread? :active? active?})]])))
+       (card-status-indicator {:busy? busy? :error? error? :unread? unread? :active? active?})]])))
 
 (defn- palette-project-actions
   "Command items for a project's second-level page (Tab-drilled from a project

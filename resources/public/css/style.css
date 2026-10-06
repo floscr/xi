@@ -2678,8 +2678,8 @@ code a:hover,
 }
 
 /* Session status dot (see card-status-indicator): one dot, most important
-   state wins — working (flashing accent purple) > unread (orange) > live room
-   (green). Hidden when the node carries no state modifier. */
+   state wins — working (flashing accent purple) > failed turn (red) > unread
+   (orange) > live room (green). Hidden when the node carries no state modifier. */
 .status-dot {
   /* Optional cut-out ring (set by the icon badge); kept in a var so the busy
      glow animation can layer on top of it instead of replacing it. */
@@ -2692,12 +2692,14 @@ code a:hover,
   box-shadow: var(--dot-ring);
 }
 .status-dot--busy,
+.status-dot--error,
 .status-dot--unread,
 .status-dot--live { display: block; }
 .status-dot--busy {
   background-color: var(--accent);
   animation: status-dot-glow 1.4s ease-in-out infinite;
 }
+.status-dot--error { background-color: var(--danger, #ef4444); }
 .status-dot--unread { background-color: var(--warning, #f5a623); }
 .status-dot--live { background-color: var(--success); }
 /* Working: the dot brightens and throws an accent glow, then settles. */
@@ -2777,7 +2779,7 @@ code a:hover,
   align-items: center;
   flex-shrink: 0;
 }
-.command-item-status:not(:has(.status-dot--busy, .status-dot--unread, .status-dot--live)) {
+.command-item-status:not(:has(.status-dot--busy, .status-dot--error, .status-dot--unread, .status-dot--live)) {
   display: none;
 }
 
