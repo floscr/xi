@@ -125,6 +125,21 @@ body {
 }
 .avatar-stack > .avatar + .avatar { margin-left: -7px; }
 
+/* A session card's trailing slot: the room's avatars and the hover-only ⋮
+   share one grid cell, so the avatars sit at the card's edge and the ⋮ takes
+   their place on hover instead of pushing them. */
+.project-card-trail {
+  display: grid;
+  align-items: center;
+  justify-items: end;
+  flex-shrink: 0;
+}
+.project-card-trail > * { grid-area: 1 / 1; }
+.project-card-trail .avatar-stack { margin: 0; transition: opacity 0.15s; }
+@media (hover: hover) {
+  .project-card:hover .project-card-trail .avatar-stack { opacity: 0; }
+}
+
 /* Other users attached to this chat (multi-user server). Hidden when alone. */
 .topbar-presence {
   display: inline-flex;

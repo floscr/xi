@@ -3346,12 +3346,16 @@
            (when has-dialog? "needs response")]
           (remove str/blank?)
           (str/join " · "))]]
-   ;; ⋮ opens the same context menu as right-click / long-press.
-   (when session-id
-     [:button {:class ["project-card-action" "session-more-btn"]
-               :title "More actions"
-               :on {:click open-card-menu!}}
-      (more-vertical-icon)])]]
+   ;; One slot at the card's edge: who is in the room right now (multi-user
+   ;; servers only), swapped for the ⋮ on hover so neither pushes the other.
+   [:div {:class ["project-card-trail"]}
+    (avatar-stack people)
+    ;; ⋮ opens the same context menu as right-click / long-press.
+    (when session-id
+      [:button {:class ["project-card-action" "session-more-btn"]
+                :title "More actions"
+                :on {:click open-card-menu!}}
+       (more-vertical-icon)])]]]
     (if session-id
       ;; The trigger wraps the card (rather than being it) so the card keeps
       ;; its own click handler — the trigger's :attrs would replace it.
