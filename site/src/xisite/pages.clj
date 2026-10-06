@@ -76,6 +76,18 @@ xi                         # connect a client")
   {:match  {:tool #{:read :grep :find :ls} :path #\"^~/Code(?:/|$)\"}
    :action {:type :allow}}]}")
 
+(def ^:private outline-sample
+  "read(\"src/client.ts\")        # 412 lines, parsed to a syntax tree
+
+imports: [1-6]
+types:
+  export interface Config [8-14]
+fns:
+  export function createClient(config: Config): Client [16-42]
+  async function retry<T>(fn: () => Promise<T>): Promise<T> [44-61]
+
+read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
+
 (defn- code [lang source]
   (md/code-block-hiccup lang source))
 
@@ -179,8 +191,21 @@ xi                         # connect a client")
        [:p [:a {:href "/docs/clj-tool/"} "The clj tool →"]]]
       [:div.feature-code (code "clojure" clj-sample)]]]
 
-    [:section.feature.alt {:id "rules"}
+    [:section.feature.alt {:id "outlines"}
      [:div.wrap.split.reverse
+      [:div.feature-text
+       [:p.eyebrow "Code reading"]
+       [:h2 "Files are read as syntax trees first."]
+       [:p "When the agent reads a large source file, Xi parses it with tree-sitter and returns an outline: imports, types and signatures with their line ranges. The agent asks for the code of a single definition only when it needs it."]
+       (feature-list
+        [["Fewer tokens." "A 2,000-line file costs a few dozen lines of context. File reads are most of what an agent spends."]
+         ["Exact when it matters." "read_source returns the literal code of one function, class or line range, so edits work from the real text."]
+         ["Built in." "TypeScript, JavaScript, Python, Rust, Go, Clojure, Nix, Bash and CSS. Grammars ship with Xi; nothing to install."]])
+       [:p [:a {:href "/docs/reading-code/"} "How the agent reads code →"]]]
+      [:div.feature-code (code "text" outline-sample)]]]
+
+    [:section.feature {:id "rules"}
+     [:div.wrap.split
       [:div.feature-text
        [:p.eyebrow "Permissions"]
        [:h2 "Permission rules."]
@@ -192,8 +217,8 @@ xi                         # connect a client")
        [:p [:a {:href "/docs/rules/"} "Permissions and rules →"]]]
       [:div.feature-code (code "clojure" rules-sample)]]]
 
-    [:section.feature {:id "extensions"}
-     [:div.wrap.split
+    [:section.feature.alt {:id "extensions"}
+     [:div.wrap.split.reverse
       [:div.feature-text
        [:p.eyebrow "Extensions"]
        [:h2 "Extension."]
@@ -207,8 +232,8 @@ xi                         # connect a client")
        [:p [:a {:href "/docs/extensions/"} "Writing extensions →"]]]
       [:div.feature-code (code "clojure" extension-sample)]]]
 
-    [:section.feature.alt {:id "mcp"}
-     [:div.wrap.split.reverse
+    [:section.feature {:id "mcp"}
+     [:div.wrap.split
       [:div.feature-text
        [:p.eyebrow "MCP"]
        [:h2 "Plug in any MCP server."]
@@ -220,8 +245,8 @@ xi                         # connect a client")
        [:p [:a {:href "/docs/mcp-servers/"} "Adding MCP servers →"]]]
       [:div.feature-code (code "sh" mcp-sample)]]]
 
-    [:section.feature {:id "web"}
-     [:div.wrap.split
+    [:section.feature.alt {:id "web"}
+     [:div.wrap.split.reverse
       [:div.feature-text
        [:p.eyebrow "Web client"]
        [:h2 "Start at your desk. Continue on your phone."]
