@@ -108,6 +108,32 @@
                    :error?      (boolean (some :error? rooms))
                    :people      (room-people state (distinct (mapcat :users rooms)))}))))))
 
+(defn extension-group
+  "One extension-declared sidebar group (a `:sidebar-groups` entry, see
+   xi.ext.core) as {:id :label :more :cards :total}: the lobby's sessions
+   whose `:where` key is truthy, most recently visited first, `:limit` of
+   them as session cards; :total counts them all and :more is passed through
+   (the caller shows it when :total exceeds the cards). Read from the lobby's
+   sessions rather than the Recent list, so a session stays reachable however
+   old it is (the server always sends every favorite)."
+  [state {:keys [where limit] :as group}]
+  (let [found (->> (get-in state [:lobby :sessions])
+                   (filter where)
+                   (sort-by palette/session-time #(compare %2 %1)))]
+    (assoc (select-keys group [:id :label :more])
+           :cards (->> (cond->> found limit (take limit))
+                       (mapv #(session-status state %)))
+           :total (count found))))
+
+(defn extension-groups
+  "The non-empty extension sidebar groups (see `extension-group`) in
+   declaration order. They repeat sessions of the Recent / Hidden / Earlier
+   groups, so keyboard navigation (`sidebar-session-order`) leaves them out."
+  [state groups]
+  (->> groups
+       (map #(extension-group state %))
+       (filterv (comp seq :cards))))
+
 (defn sidebar-session-groups
   "Session cards for the drawer sidebar, split into the display groups
    Recent / Hidden / Earlier (in render order). Busy agents pin to the top,

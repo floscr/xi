@@ -127,6 +127,8 @@ Never sent over the wire:
 | `:web/pending-submit` | message stashed until `:room/joined` |
 | `:web/connected?` | transport status |
 | `:web/nav-items` | extension nav entries, stored at init |
+| `:web/sidebar-groups` | extension sidebar groups (`:sidebar-groups`), stored at init; evaluated by `sidebar/extension-groups` |
+| `:web/session-menu-items` | extension entries of every session card's context menu, stored at init |
 | `:user-ext/ui` | per-extension browser-only UI state (`:bind` inputs) |
 | `:lobby` | rooms + sessions mirror (shared shape with the TUI client) |
 

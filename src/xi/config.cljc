@@ -48,6 +48,7 @@
        :browser
        [[xi.ext.canvas-review.web :as canvas-review-web]
         [xi.ext.diff.web :as diff-web]
+        [xi.ext.favorites.web :as favorites-web]
         [xi.ext.file-view.web :as file-view-web]
         [xi.ext.subagent.web :as subagent-web]])))
 
@@ -179,6 +180,7 @@
    (def web
      "Browser-safe extension web halves, composed by xi.web.core."
      [diff-web/extension
+      favorites-web/extension
       file-view-web/extension
       canvas-review-web/extension
       subagent-web/extension]))

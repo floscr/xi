@@ -26,7 +26,7 @@ Step-by-step recipe. Key reference: [extensions.md](extensions.md).
 | TUI shortcut | `:keybindings` |
 | Prompt indicator | `:prompt-badge` |
 | Initial state | `:init` |
-| Browser UI | `:routes` `:pages` `:nav-items` `:taps` |
+| Browser UI | `:routes` `:pages` `:nav-items` `:sidebar-groups` `:session-menu-items` `:taps` |
 | WS server hooks | `:server-fx` `:roomless-events` `:no-broadcast` |
 | Exit cleanup | `:on-shutdown` |
 
@@ -131,6 +131,10 @@ No on-enter callback — chain a `:route/navigate` handler:
 - `:nav-items` — data-only; `:menu` ∈ `:sidebar :palette :home-topbar
   :overflow`; overflow items may set `:mode`, ctx keys are merged into
   `:event` on click.
+- `:sidebar-groups` — data-only drawer groups of the sessions whose
+  `:where` key is truthy, `:limit` of them; `:session-menu-items` —
+  data-only entries of every session card's context menu (`:event` gets the
+  card's `:session-id`). See `xi.ext.favorites.web` for both.
 - Replicant: seq-rendered siblings need `:replicant/key`.
 
 Canonical example: `src/xi/ext/canvas_review/web.cljs`.

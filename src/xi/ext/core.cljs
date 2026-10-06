@@ -85,6 +85,20 @@
                    nav entries rendered by the core views; :event is
                    dispatched on click (:overflow items get the menu's
                    ctx keys merged in; :mode scopes them to a ctx mode)
+     :sidebar-groups [{:id kw :label str :where session-key :limit n
+                     :more {:label str :icon kw :event {…}}}] — data-only
+                   drawer sidebar groups, between Drafts and Recent: the
+                   sessions whose `:where` key is truthy (a per-user flag the
+                   server puts on every session, e.g. :favorite?), most
+                   recently visited first, at most :limit of them. :more is
+                   an optional trailing row shown when there are more
+                   sessions than :limit.
+     :session-menu-items [{:label str :label-on str :flag session-key
+                         :icon kw :event {…}}] — data-only entries of every
+                   session card's context menu, above the core ones. :event
+                   is dispatched with the card's :session-id merged in;
+                   :label-on replaces :label while the session's :flag key
+                   is truthy (Add to favorites → Remove from favorites).
      :taps         [(fn [dispatch!] → tap-fn)] — app taps installed at init
 
    `compose` merges a list of extensions into the pieces the per-mode
@@ -139,6 +153,8 @@
      :routes           (apply merge {} (keep :routes exts))
      :pages            (apply merge {} (keep :pages exts))
      :nav-items        (vec (mapcat :nav-items exts))
+     :sidebar-groups   (vec (mapcat :sidebar-groups exts))
+     :session-menu-items (vec (mapcat :session-menu-items exts))
      :taps             (vec (mapcat :taps exts))
      :keybindings      (vec (mapcat :keybindings exts))
      :badges           (vec (keep :prompt-badge exts))

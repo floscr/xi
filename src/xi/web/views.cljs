@@ -3307,18 +3307,26 @@
   [cards]
   (map #(assoc % :show-project? true) cards))
 
+(defn- ext-session-menu-item
+  "ui.context-menu entry for an extension's `:session-menu-items` declaration
+   (see xi.ext.core), for the session card `card`: its :event with the card's
+   :session-id merged in, labelled :label-on while the card's :flag key is set."
+  [dispatch! {:keys [session-id] :as card}
+   {:keys [label label-on flag icon event]}]
+  {:label    (if (and label-on (get card flag)) label-on label)
+   :icon     icon
+   :on-click #(dispatch! (assoc event :session-id session-id))})
+
 (defn- session-menu-items
-  "ui.context-menu entries for a session card: bookmark toggle, hide/show in
-   Recent (only where the caller opts in via :dismissable?), copy session ID,
-   and Delete. Hiding is gated on idle — a busy card or one awaiting
-   a dialog response can't be dismissed. Delete is always offered: the server
-   keeps a busy room alive and just suppresses its card (see
-   room_manager/session-delete)."
-  [dispatch! {:keys [session-id favorite? dismissed? dismissable? busy? has-dialog?]}]
+  "ui.context-menu entries for a session card: the extensions' items (e.g.
+   Add to favorites, see `:session-menu-items`), hide/show in Recent (only
+   where the caller opts in via :dismissable?), copy session ID, and Delete.
+   Hiding is gated on idle — a busy card or one awaiting a dialog response
+   can't be dismissed. Delete is always offered: the server keeps a busy room
+   alive and just suppresses its card (see room_manager/session-delete)."
+  [dispatch! ext-items {:keys [session-id dismissed? dismissable? busy? has-dialog?] :as card}]
   (let [idle? (not (or busy? has-dialog?))]
-    (cond-> [{:label    (if favorite? "Remove bookmark" "Bookmark")
-              :icon     :star
-              :on-click #(dispatch! {:type :favorites/toggle :session-id session-id})}]
+    (cond-> (mapv #(ext-session-menu-item dispatch! card %) ext-items)
       (and dismissable? idle?)
       (conj {:label    (if dismissed? "Show in recent" "Hide from recent")
              :icon     (if dismissed? :eye :eye-off)
@@ -3348,10 +3356,10 @@
         (open! trigger (.-left r) (.-bottom r))))))
 
 (defn- session-card
-  "Session row. Secondary actions (bookmark, hide from Recent, delete) live in
-   a ui.context-menu on the card: right-click, long-press on touch (the
-   framework's gesture runtime), or the ⋮ button."
-  [dispatch! {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project? people]
+  "Session row. Secondary actions (the extensions' — favorite — hide from
+   Recent, delete) live in a ui.context-menu on the card: right-click,
+   long-press on touch (the framework's gesture runtime), or the ⋮ button."
+  [dispatch! state {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project? people]
               :as card-data}]
   (let [card
   [:div {:class ["project-card"
@@ -3403,7 +3411,7 @@
       ;; The trigger wraps the card (rather than being it) so the card keeps
       ;; its own click handler — the trigger's :attrs would replace it.
       (context-menu/context-menu-trigger
-       {:items (session-menu-items dispatch! card-data)
+       {:items (session-menu-items dispatch! (:web/session-menu-items state) card-data)
         :class "project-card-trigger"
         :attrs {:replicant/key session-id}}
        card)
@@ -3541,9 +3549,9 @@
         :else
         [:div {:class ["project-list"]}
          (for [o orphans]
-           (session-card dispatch! o))
+           (session-card dispatch! state o))
          (for [s (active-first state sessions)]
-           (session-card dispatch! s))])]]))
+           (session-card dispatch! state s))])]]))
 
 
 
@@ -3578,9 +3586,9 @@
         (or (seq sessions) (seq orphans))
         [:div {:class ["project-list"]}
          (for [o (with-projects orphans)]
-           (session-card dispatch! o))
+           (session-card dispatch! state o))
          (for [s (with-projects (active-first state sessions))]
-           (session-card dispatch! s))]
+           (session-card dispatch! state s))]
 
         (seq query)
         (empty-state/empty-state {} [:p "No matching sessions."])
@@ -3589,7 +3597,7 @@
         (empty-state/empty-state {} [:p "No sessions yet."]))]]))
 
 (defn- favorites-view
-  "Flat list of bookmarked sessions (filtered from the lobby sessions)."
+  "Flat list of the user's favorite sessions (filtered from the lobby sessions)."
   [state dispatch!]
   (let [raw-query  (get-in state [:web/search :favorites])
         query      (str/lower-case (str/trim (or raw-query "")))
@@ -3609,7 +3617,7 @@
         (seq sessions)
         [:div {:class ["project-list"]}
          (for [s (with-projects (active-first state sessions))]
-           (session-card dispatch! s))]
+           (session-card dispatch! state s))]
 
         (seq query)
         (empty-state/empty-state {} [:p "No matching favorites."])
@@ -3617,7 +3625,7 @@
         :else
         (empty-state/empty-state {}
          [:p "No favorites yet."]
-         [:p {:class ["empty-state-hint"]} "Tap the star on a session to bookmark it."]))]]))
+         [:p {:class ["empty-state-hint"]} "Add a session to your favorites from its menu."]))]]))
 
 (defn- personal-agent-home-view
   "Home view for personal-agent mode: a flat session list with no project
@@ -3661,9 +3669,9 @@
            (or (seq sessions) (seq orphans))
            [:div {:class ["project-list"]}
             (for [o orphans]
-              (session-card dispatch! o))
+              (session-card dispatch! state o))
             (for [s (active-first state sessions)]
-              (session-card dispatch! s))]
+              (session-card dispatch! state s))]
 
            (seq query)
            (empty-state/empty-state {} [:p "No matching sessions."])
@@ -3750,7 +3758,7 @@
              (if (seq matched-sessions)
                [:div {:class ["project-list"]}
                 (for [s (with-projects (active-first state matched-sessions))]
-                  (session-card dispatch! s))]
+                  (session-card dispatch! state s))]
                (empty-state/empty-state {} [:p "No matching sessions."]))]
 
             :else
@@ -3760,7 +3768,7 @@
               ;; Active orphan rooms first (hide when filtering)
               (when-not (seq query)
                 (for [r orphans]
-                  (session-card dispatch! {:session-id (:session-id r)
+                  (session-card dispatch! state {:session-id (:session-id r)
                                           :name (or (:session-name r) "New session")
                                           :cwd (:cwd r)
                                           :show-project? true
@@ -3778,17 +3786,6 @@
                   (message-circle-icon)]
                  [:div {:class ["project-card-info"]}
                   [:span {:class ["project-card-name"]} "All sessions"]]
-                 [:div {:class ["project-card-chevron"]}
-                  (icon/icon {:icon-name :chevron-right :size :sm})]])
-              ;; Favorites link (hide when filtering)
-              (when-not (seq query)
-                [:div {:class ["project-card"]
-                       :replicant/key "favorites"
-                       :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :favorites}))}}
-                 [:div {:class ["project-card-icon"]}
-                  (icon/icon {:icon-name :star :size :sm})]
-                 [:div {:class ["project-card-info"]}
-                  [:span {:class ["project-card-name"]} "Favorites"]]
                  [:div {:class ["project-card-chevron"]}
                   (icon/icon {:icon-name :chevron-right :size :sm})]])
               ;; Project directories
@@ -4095,6 +4092,9 @@
         ;; the top). Shared with ALT+j/k keyboard nav so both agree on order.
         ;; "Hidden" = dismissed this run (reversible, still fully resumable).
         {:keys [recent hidden earlier]} (when render? (sidebar-session-groups state))
+        ;; Groups extensions declare (:sidebar-groups), e.g. Favorites.
+        ext-groups (when render?
+                     (sb/extension-groups state (:web/sidebar-groups state)))
         cards    (concat recent hidden earlier)
         drafts   (:web/draft-chats state)
         collapsed (or (:web/sidebar-collapsed state) #{})
@@ -4137,20 +4137,33 @@
            (section {:id :drafts :label "Drafts"}
              (for [d (rseq drafts)]
                (draft-chat-card dispatch! state d))))
+         ;; Extension groups (e.g. Favorites). Their sessions also show in
+         ;; their time group below.
+         (for [{:keys [id label cards total more]} ext-groups]
+           (section {:id id :label label}
+             (for [c (with-projects cards)]
+               (session-card dispatch! state c))
+             (when (and more (> total (count cards)))
+               (sidebar/sidebar-menu-item
+                {:icon-name (:icon more)
+                 :class     "sidebar-row"
+                 :attrs     {:replicant/key (str "more-" (name id))}
+                 :on-click  (fn [_] (dispatch! (:event more)))}
+                (:label more)))))
          (when (seq recent)
            (section {:id :recent :label "Recent"}
              (for [c (with-projects recent)]
-               (session-card dispatch! (assoc c :dismissable? true)))))
+               (session-card dispatch! state (assoc c :dismissable? true)))))
          ;; Hidden group sits between Recent and Earlier. Its cards keep the
          ;; toggle (now an eye → "Show in recent") so the user can restore them.
          (when (seq hidden)
            (section {:id :hidden :label "Hidden"}
              (for [c (with-projects hidden)]
-               (session-card dispatch! (assoc c :dismissable? true)))))
+               (session-card dispatch! state (assoc c :dismissable? true)))))
          (when (seq earlier)
            (section {:id :earlier :label "Earlier"}
              (for [c (with-projects earlier)]
-               (session-card dispatch! c))))
+               (session-card dispatch! state c))))
          ;; Entries contributed by extensions (:nav-items with :menu :sidebar,
          ;; e.g. Image Graphs) — last, below the core session groups.
          (let [ext-items (when (not pa?) (nav-items-for state :sidebar))]
@@ -4214,6 +4227,8 @@
                 (:web/project-dirty state)
                 (:web/theme-mode state)
                 (:web/nav-items state)
+                (:web/sidebar-groups state)
+                (:web/session-menu-items state)
                 (state/own-user state)]
         cached @recent-sidebar-cache]
     (if (and cached (= (:sig cached) sig))
@@ -4796,7 +4811,7 @@
          (cmd/command-item
           {:icon :star
            :on-click (fn [_] (dispatch! {:type :favorites/toggle :session-id cur-sid}))}
-          (if cur-fav? "Remove bookmark" "Bookmark session"))
+          (if cur-fav? "Remove from favorites" "Add to favorites"))
          (cmd/command-item
           {:icon (if cur-hidden? :eye :eye-off)
            :on-click (fn [_] (dispatch! {:type :dismissed/toggle :session-id cur-sid}))}

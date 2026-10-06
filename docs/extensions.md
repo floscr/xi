@@ -48,6 +48,8 @@ provider effects, and TUI.
    :routes           {"seg" {:parse fn :path {page-kw fn} :roomless-pages #{page-kw}}}
    :pages            {page-kw (fn [state dispatch!] → hiccup)}
    :nav-items        [{:menu :sidebar|:palette|:home-topbar|:overflow ...}]
+   :sidebar-groups   [{:id kw :label str :where session-key :limit n :more {...}}]
+   :session-menu-items [{:label str :label-on str :flag session-key :icon kw :event {...}}]
    :taps             [(fn [dispatch!] → tap-fn)]})
 ```
 
@@ -349,6 +351,21 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   Overflow items may carry `:mode` (`:project`, `:room`, …) to show only in
   a matching topbar context; the context's `:cwd`/`:room-id` are merged into
   the `:event` on click.
+- **`:sidebar-groups`** — data-only groups of the drawer sidebar, shown
+  between Drafts and Recent: `{:id kw :label str :where session-key
+  :limit n :more {:label :icon :event}}`. A group lists the lobby's sessions
+  whose `:where` key is truthy (a per-user flag the server puts on each
+  session, such as `:favorite?`), most recently visited first, at most
+  `:limit` of them; `:more` is a closing row that appears once there are more
+  sessions than the limit. Empty groups are not drawn. The sessions also stay
+  in their Recent / Earlier group, so ALT+j/k skips the extension groups. The
+  group collapses like the core ones (its `:id` is the collapse key).
+- **`:session-menu-items`** — data-only entries of every session card's
+  context menu (right-click, long-press, the ⋮ button), listed above the core
+  ones: `{:label str :label-on str :flag session-key :icon kw :event {…}}`.
+  `:event` is dispatched with the card's `:session-id` merged in; `:label-on`
+  replaces `:label` while the card's `:flag` key is truthy (Add to favorites →
+  Remove from favorites).
 - **`:taps`** — `(fn [dispatch!] → (fn [event state]))` factories, added via
   `add-tap!` at init (e.g. fire a stashed action once `:room/joined` arrives).
 
@@ -409,6 +426,7 @@ namespace docstring is the authoritative description.
 | canvas-review | Experimental node-based review canvas (`canvas_review_*` tools); has a web half. |
 | diff | `/diff` viewer buffer (`git` \| `staged` \| `unstaged` \| `session-edits` \| `session-git` \| `session-commits` \| `<ref>`; no args = session diff); has a web half. |
 | file-view | Opens files touched by write/edit into a `:file` buffer; has a web half. |
+| favorites | Web only (`xi.ext.favorites.web`): the sidebar's Favorites group (5 most recent), "Add to favorites" in the session context menu, and the ⋮ menu entry opening the Favorites view. The stars themselves are per-user core state ([architecture.md](architecture.md#users)). |
 | file-finder | Ctrl+P fuzzy file finder (TUI). |
 | projects | `/project` / Alt+P project path picker; remembers the git repo of every room / `/cd`; list from `xi.projects` ([guide: configuration](guide/configuration.md#projects)). |
 | skills | Project-marker system-prompt injection + `/skill list\|load` (`<input />` placeholders raise a `:form` dialog). |

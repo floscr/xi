@@ -2535,6 +2535,8 @@
         initial   (-> (state/initial-state {:mode :client})
                       (assoc :web/theme-mode stored-theme
                              :web/nav-items (:nav-items composed)
+                             :web/sidebar-groups (:sidebar-groups composed)
+                             :web/session-menu-items (:session-menu-items composed)
                              ;; The config layer of the appearance settings
                              ;; (xi.web.appearance/effective-in). Seeded here
                              ;; because views must not require xi.config.

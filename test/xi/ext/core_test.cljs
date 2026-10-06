@@ -47,6 +47,18 @@
       (is (= 1 (count (:keybindings composed))))
       (is (= 1 (count (:on-shutdown-fns composed)))))))
 
+(deftest compose-collects-web-sidebar-contributions
+  (let [composed (ext/compose
+                  [{:id :a :sidebar-groups [{:id :ga}] :session-menu-items [{:label "A"}]}
+                   {:id :b :sidebar-groups [{:id :gb}] :session-menu-items [{:label "B"}]}
+                   {:id :c}])]
+    (testing "in extension order"
+      (is (= [:ga :gb] (mapv :id (:sidebar-groups composed))))
+      (is (= ["A" "B"] (mapv :label (:session-menu-items composed)))))
+    (testing "none declared → empty, not nil"
+      (is (= [] (:sidebar-groups (ext/compose [{:id :c}]))))
+      (is (= [] (:session-menu-items (ext/compose [{:id :c}])))))))
+
 (deftest merge-handlers-chains-after-base
   (let [order (atom [])
         base  {:foo (fn [st _] (swap! order conj :base) {:state st})}

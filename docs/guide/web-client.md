@@ -61,6 +61,20 @@ Recent chats are cached on the device, so the list and the last open chat
 paint at once, before the connection is back. Messages you send while offline
 are kept and sent when the connection returns.
 
+## Favorites
+
+Star a chat from its menu (right-click, long-press, or the ⋮ on the card):
+"Add to favorites". The sidebar then lists your five most recent favorites in
+a **Favorites** group, with an "All favorites" row when there are more, and
+**Favorites** in the ⋮ menu of any page opens the full list. Favorites are
+yours: a colleague on the same server stars their own. Chats you starred
+before favorites became per-user are everyone's starting point, until a user
+stars or unstars something.
+
+The group, the menu entry and the "Add to favorites" item come from the
+built-in favorites extension; leaving `xi.ext.favorites.web` out of the web
+extensions in `src/xi/config.cljc` removes all three.
+
 ## Keyboard
 
 | Key | Does |
