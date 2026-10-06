@@ -782,6 +782,15 @@
 
 ;; ── History entry → post ─────────────────────────────────────────────────────
 
+(defn- post-sender
+  "Sender label for a :user entry from another user on a shared server:
+   nil for the viewer's own prompts (and unattributed ones, e.g. resumed from
+   disk), else the sender's user id. `:viewer` is this client's user id,
+   stamped on the entry by the timeline."
+  [{:keys [user viewer]}]
+  (when (and user (not= user viewer))
+    [:div {:class ["post-sender"]} user]))
+
 (defn- entry->post [dispatch! entry]
   (case (:kind entry)
     :user
@@ -826,6 +835,7 @@
         ;; on press, so the long generated text doesn't dominate the timeline.
         (:collapsed-label entry)
         [:div {:class ["post" "post--user" "post--user-collapsed"]}
+         (post-sender entry)
          [:details {:class ["post-body" "user-collapse"]}
           [:summary {:class ["user-collapse-summary"]}
            [:span {:class ["tool-call-toggle-icon"]}
@@ -846,6 +856,7 @@
                                               :images (:images entry)
                                               :x (.-clientX e)
                                               :y (.-clientY e)})))))
+         (post-sender entry)
          [:div {:class ["post-body"]}
           (if-let [imgs (seq (:images entry))]
             [:div {:class ["user-images"]}
@@ -2445,6 +2456,19 @@
           (icon/icon {:icon-name :refresh :size :sm})
           [:span "Reload"]]]))])))
 
+(defn- presence-line
+  "Who else is in this room: the other users attached right now (room
+   :members, kept current by :room/presence). Nothing when we are alone — the
+   common single-user case stays as quiet as before."
+  [state room]
+  (let [me     (state/own-user state)
+        others (remove #{me} (state/room-users room))]
+    (when (seq others)
+      [:span {:class ["topbar-presence"]
+              :title (str "Also here: " (str/join ", " others))}
+       (icon/icon {:icon-name :users :size :sm})
+       [:span (str/join ", " others)]])))
+
 (defn- optimistic-post
   "An optimistic user bubble rendered at the tail of the timeline the instant a
    prompt is sent, before the server echoes the real :user entry back (instant
@@ -2936,7 +2960,8 @@
        ;; flight. Show a quiet inline hint instead of blanking to a spinner.
        (when (and resuming? (seq history))
          [:span {:class ["topbar-updating"]}
-          (spinner) [:span "Updating…"]])]
+          (spinner) [:span "Updating…"]])
+       (presence-line state room)]
       (offline-badge state)
       (when has-tabs?
         (tab-bar dispatch! (:id room) active-buf buffers canvas?))
@@ -3076,7 +3101,9 @@
                                post  (entry->post
                                       dispatch!
                                       (cond-> (assoc entry :history-index p
-                                                     :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd])))
+                                                     :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
+                                                     ;; other users' prompts get a sender label
+                                                     :viewer (state/own-user state))
                                         groupable?
                                         (assoc :grouped? true)
                                         collapsed?

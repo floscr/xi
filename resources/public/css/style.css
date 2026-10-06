@@ -89,6 +89,16 @@ body {
   border-width: 1.5px;
 }
 
+/* Other users attached to this chat (multi-user server). Hidden when alone. */
+.topbar-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  font-weight: 500;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
 /* ---- Chat transparent header (all widths) ----
    In the chat view the header floats over the timeline: its buttons stay put
    as bordered chips (matching the burger toggle) while the conversation
@@ -515,6 +525,14 @@ body {
   border-radius: var(--radius-lg);
   padding: var(--size-3) var(--size-4);
   max-width: 85%;
+}
+
+/* Sender id above a prompt from another user on a shared server. */
+.post-sender {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-2);
+  margin: 0 var(--size-2) var(--size-1) 0;
 }
 
 .post--tappable .post-body {

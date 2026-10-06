@@ -61,7 +61,19 @@ Events of Xi's that are useful to react to:
 | --- | --- | --- |
 | `:agent/turn-end` | `:room-id` `:aborted?` | A turn finished |
 | `:ui/dialog-open` | `:room-id` `:dialog` | A dialog opened; `(:type dialog)` is `:confirm` for a permission request |
+| `:prompt/submit` | `:room-id` `:text` `:user` | Someone sent a prompt |
+| `:room/presence` | `:room-id` `:members` | Who is in a room changed; `:members` is client id to `{:user :platform}` |
 | `:route/navigate` | `:page` … | The web client changed page (web half taps) |
+
+### Users
+
+On a shared server every event a client sends carries `:user`, the sender's
+user id (`root` by default; see [Users](server.md#users)). In state,
+`[:connection :user]` is the id this process acts as, a room's `:members`
+lists who is attached, and a `:user` history entry carries its sender under
+`:user`. Xi only tells users apart. Roles, names and authentication are
+yours to add: keep them in your extension's state keyed by the id, and read
+`:user` off the events you handle.
 
 ## `xi.api.*`
 

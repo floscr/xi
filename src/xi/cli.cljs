@@ -31,6 +31,9 @@
      --port N         WS port (server/join/create; default 7474)
      --host ADDR,...  server bind addresses (default 0.0.0.0; XI_HOST)
      --headless       server only, no local TUI
+     --user ID        the user this process acts as (default root / XI_USER);
+                      a joining client claims it, a server owns its prompts
+                      under it — see the Users note in xi.server.ws
      --prompt <text>  launch the TUI with an initial prompt already submitted
                       (works standalone or with --join/--create; e.g. from
                       a shell wrapper that reports an error)
@@ -78,6 +81,7 @@
             [xi.session.recent :as recent]
             [xi.subagent :as subagent]
             [xi.system-prompt :as system-prompt]
+            [xi.util :as util]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
             ["node:worker_threads" :as wt]))
@@ -182,10 +186,13 @@ USAGE
   xi sessions [flags]        List saved chats (the web sidebar's Recent set),
                              then exit. Machine-facing; no TUI, no server.
   xi clients [action]        Manage approved web clients: list (default),
-                             pending, approve <code>, revoke <key-prefix|name>.
+                             pending, approve <code>, revoke <key-prefix|name>,
+                             user <key-prefix|name> <user-id|->.
                              Edits ~/.config/xi/clients.edn; a running server
                              picks approvals up within ~2s. For approving
                              pairing codes over ssh on a headless server.
+                             `user` assigns a paired device to a user id (`-`
+                             clears it); applies on its next connection.
   xi help                    Show this help (also --help, -h).
 
 FLAGS
@@ -205,6 +212,11 @@ FLAGS
                              ~/.config/xi/personal-agent/<ID>/. No profile =
                              no tools. Standalone (`xi --agent ID`) stays a
                              local room; also server and prompt.
+  --user ID                  Act as this user (default root, or XI_USER). A
+                             server stamps every client's events with its user;
+                             a joining TUI claims this id (a device assignment
+                             in clients.edn wins). No authentication — users are
+                             told apart, not verified. All modes.
   --debug-events             Write the full event stream as JSONL (see docs).
   --no-hardened-rules        Drop the non-overridable hardened rules tier
                              (sudo/remote-copy denies). Unsafe; agents cannot
@@ -221,6 +233,7 @@ ENVIRONMENT
   XI_PORT                    Default port when --port is omitted. All modes.
   XI_HOST                    Server bind address when --host is omitted.
   XI_CWD                     Working directory the agent runs in.
+  XI_USER                    Default for --user.
   ANTHROPIC_API_KEY          Auth (otherwise the Claude CLI's own login).
 
 EXAMPLES
@@ -258,6 +271,7 @@ See docs/guide/command-line.md for the full reference.")
           "--no-auto-join" (recur (next args) (assoc opts :auto-join? false))
           "--headless"     (recur (next args) (assoc opts :headless? true))
           "--agent"        (recur (nnext args) (assoc opts :agent (second args)))
+          "--user"         (recur (nnext args) (assoc opts :user (second args)))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
           "--no-hardened-rules" (recur (next args) (assoc opts :no-hardened-rules? true))
           "--model"        (recur (nnext args) (assoc opts :model (second args)))
@@ -289,6 +303,14 @@ See docs/guide/command-line.md for the full reference.")
 (defn- valid-port [v]
   (let [n (js/parseInt v 10)]
     (when (and (js/Number.isInteger n) (< 0 n 65536)) n)))
+
+(defn- own-user
+  "The user this process acts as: --user, else XI_USER, else root
+   (xi.util/user-id). A standalone TUI and a server own their prompts under
+   it; a joining client claims it in :auth/hello (the server may override
+   it from clients.edn)."
+  [opts]
+  (util/user-id (or (:user opts) (aget js/process.env "XI_USER"))))
 
 (defn resolve-port
   "Settle :port once for every mode: --port, else XI_PORT, else the default.
@@ -365,7 +387,8 @@ See docs/guide/command-line.md for the full reference.")
                        (into (system-prompt/load-agents-parts cwd)
                              (ext/system-prompt-parts composed cwd)))
         system (system-prompt/parts->system system-parts)
-        sess (session/create-session cwd (when agent {:agent agent}))
+        sess (session/create-session cwd (cond-> {:user (own-user opts)}
+                                           agent (assoc :agent agent)))
         jsonl-writer (when debug-events?
                        (core-jsonl/create-writer
                         (str (aget js/process.env "HOME")
@@ -413,6 +436,7 @@ See docs/guide/command-line.md for the full reference.")
         app (app/create-app {:initial-state (state/initial-state
                                              {:mode :standalone
                                               :port (:port opts)
+                                              :user (own-user opts)
                                               :ext (:process-ext-init composed)})
                              :handlers      handlers
                              :transform-event (ext/transform-event composed)
@@ -536,7 +560,8 @@ See docs/guide/command-line.md for the full reference.")
         sess (if loaded
                (assoc loaded :provider-session-id (:cli-session-id loaded))
                (session/create-session
-                cwd (when agent? {:agent agent})))
+                cwd (cond-> {:user (own-user opts)}
+                      agent? (assoc :agent agent))))
         acc  #js {:out "" :error nil}
         finish!
         (fn []
@@ -573,6 +598,7 @@ See docs/guide/command-line.md for the full reference.")
                                          ;; the safe default
                                          {:mode        :server
                                           :clientless? true
+                                          :user        (own-user opts)
                                           :ext         (:process-ext-init composed)})
                          :handlers      handlers
                          :transform-event (ext/transform-event composed)
@@ -722,6 +748,9 @@ See docs/guide/command-line.md for the full reference.")
                     :hello {:client-key  (auth/ensure-client-key!)
                             :client-name (str "tui@" (.hostname (js/require "node:os")))
                             :platform    "tui"
+                            ;; who we act as (--user / XI_USER); the server
+                            ;; answers :auth/ok with the user it settled on
+                            :user        (own-user opts)
                             ;; This process' pid — passed on to MCP servers
                             ;; as _meta "xi/clientPid" (xi.ext.mcp/call-meta),
                             ;; e.g. so a browser server acts near this terminal.
@@ -796,7 +825,9 @@ See docs/guide/command-line.md for the full reference.")
                                                   (fn [st {:keys [code]}]
                                                     {:state (assoc st :client/auth {:status :pending :code code})})
                                                   :auth/ok
-                                                  (fn [st _] {:state (dissoc st :client/auth)})
+                                                  (fn [st ev]
+                                                    (let [st (dissoc st :client/auth)]
+                                                      {:state (or (:state (ws-transport/auth-ok st ev)) st)}))
                                                   :auth/denied
                                                   (fn [st _] {:state (assoc st :client/auth {:status :denied})})
                                                   ;; Client-local optimistic
@@ -964,6 +995,7 @@ See docs/guide/command-line.md for the full reference.")
         app (app/create-app {:initial-state (state/initial-state
                                              {:mode :server
                                               :port port
+                                              :user (own-user opts)
                                               :ext (:process-ext-init composed)})
                              :handlers handlers
                              :transform-event (ext/transform-event composed)
@@ -1003,7 +1035,7 @@ See docs/guide/command-line.md for the full reference.")
     (if headless?
       (do (js/console.error (str "[xi] Headless server on ws://" (str/join "," (ws/resolve-hosts host)) ":" actual-port))
           (js/console.error "[xi] Connect with: xi join"))
-      (start-client! {:target "new" :port actual-port}))))
+      (start-client! {:target "new" :port actual-port :user (:user opts)}))))
 
 ;; ── Entry ────────────────────────────────────────────────────────────────────
 
@@ -1148,9 +1180,10 @@ See docs/guide/command-line.md for the full reference.")
       (let [clients (auth/approved-clients)]
         (if (empty? clients)
           (println "No approved clients (the local TUI key is trusted implicitly).")
-          (doseq [[k {:keys [name platform approved-at last-seen]}] clients]
+          (doseq [[k {:keys [name platform approved-at last-seen user]}] clients]
             (println (str "  " (subs k 0 (min 8 (count k))) "…  "
                           (or name "unknown") " (" (or platform "?") ")"
+                          (when user (str "  user " user))
                           "  approved " (fmt-ts approved-at)
                           (when last-seen (str "  last seen " (fmt-ts last-seen))))))))
 
@@ -1183,15 +1216,20 @@ See docs/guide/command-line.md for the full reference.")
               (println (str "Approved " (or (:client-name entry) "unknown")
                             " (" arg ") — the server admits it within ~2s.")))))
 
-      "revoke"
+      ("revoke" "user")
       (let [clients (auth/approved-clients)
             hits    (filter (fn [[k {:keys [name]}]]
                               (or (and arg (str/starts-with? k arg))
                                   (= name arg)))
-                            clients)]
+                            clients)
+            usage   (if (= action "user")
+                      "usage: xi clients user <key-prefix|name> <user-id|->   (see xi clients list)"
+                      "usage: xi clients revoke <key-prefix|name>   (see xi clients list)")
+            user-id (when (= action "user") (second (next clients-args)))
+            short   (fn [k] (str (subs k 0 (min 8 (count k))) "…"))]
         (cond
-          (nil? arg)
-          (die! "usage: xi clients revoke <key-prefix|name>   (see xi clients list)")
+          (or (nil? arg) (and (= action "user") (nil? user-id)))
+          (die! usage)
 
           (empty? hits)
           (die! (str "No approved client matches " arg "."))
@@ -1199,17 +1237,34 @@ See docs/guide/command-line.md for the full reference.")
           (> (count hits) 1)
           (apply die! "Ambiguous — matches:"
                  (map (fn [[k {:keys [name]}]]
-                        (str "  " (subs k 0 (min 8 (count k))) "…  " (or name "unknown")))
+                        (str "  " (short k) "  " (or name "unknown")))
                       hits))
+
+          (= action "revoke")
+          (let [[k {:keys [name]}] (first hits)]
+            (auth/revoke! k)
+            (println (str "Revoked " (or name "unknown") " (" (short k) ").")))
+
+          ;; `-` clears the assignment: the device is back to the user it
+          ;; claims itself (or root).
+          (= user-id "-")
+          (let [[k {:keys [name]}] (first hits)]
+            (auth/set-user! k nil)
+            (println (str (or name "unknown") " (" (short k) ") no longer assigned to a user"
+                          " — applies on its next connection.")))
+
+          (not= user-id (util/user-id user-id))
+          (die! (str "Invalid user id " (pr-str user-id)
+                     " — lowercase letters, digits, '.', '_' or '-', up to 64 chars."))
 
           :else
           (let [[k {:keys [name]}] (first hits)]
-            (auth/revoke! k)
-            (println (str "Revoked " (or name "unknown")
-                          " (" (subs k 0 (min 8 (count k))) "…).")))))
+            (auth/set-user! k user-id)
+            (println (str (or name "unknown") " (" (short k) ") now acts as user " user-id
+                          " — applies on its next connection.")))))
 
       (die! (str "Unknown clients action: " action)
-            "usage: xi clients [list|pending|approve <code>|revoke <key-prefix|name>]"))
+            "usage: xi clients [list|pending|approve <code>|revoke <key-prefix|name>|user <key-prefix|name> <user-id|->]"))
     (js/process.exit 0)))
 
 (defn- silence-worker-console!

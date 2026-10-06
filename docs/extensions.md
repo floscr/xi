@@ -121,6 +121,12 @@ Effects are data `[[:fx/type payload] …]`. Effect handlers receive
 `{:dispatch! :get-state …}` — they perform side effects and may dispatch
 new events.
 
+Events a connected client sent carry `:client-id` and `:user` (the sender's
+user id, stamped by `xi.server.ws`; see architecture.md "Users"). Use
+`state/event-user` to resolve the acting user for any event, including ones
+with no client (standalone input, server automation). Presence is
+`[:rooms rid :members]`, kept current by `:room/presence`.
+
 Extension handlers chain AFTER the base handler for each event type:
 
 ```clojure

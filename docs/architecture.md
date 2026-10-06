@@ -75,11 +75,13 @@ server, and the browser client are all assemblies of the same pure handlers.
 ```clojure
 {:connection {:id      uuid
               :mode    :standalone | :server | :client
-              :clients {client-id {:kind :tui/:web :visible? … :room-id …}}}
+              :user    "root"            ;; this process' own user id
+              :clients {client-id {:kind :tui/:web :visible? … :room-id … :user "alice"}}}
  :rooms      {room-id {:history  []        ;; chat history (see below)
                        :session  {:id … :provider-session-id … :name …}
                        :agent    {:busy? false :model "…" :provider :anthropic
                                   :queued []}
+                       :members  {client-id {:user "alice" :platform "web"}} ;; presence
                        :cwd      "/path"
                        :ext      {ext-id {…}}   ;; room-scoped extension state
                        :ui       {:dialogs [] :buffers {} :active-buffer :chat
@@ -92,7 +94,8 @@ server, and the browser client are all assemblies of the same pure handlers.
 - **Standalone is just "not connected"** — one local room, same shape, same
   code paths as server/client modes.
 - **History entries** are maps `{:kind :user | :text | :thinking |
-  :tool-call | :error | :aborted | :status …}`. Streaming deltas fold into
+  :tool-call | :error | :aborted | :status …}`. A `:user` entry carries
+  `:user`, the sender's user id (see [Users](#users)). Streaming deltas fold into
   the trailing open entry; `:agent/turn-end` finalizes it (`:done? true`),
   clears busy, stores `:last-usage`/`:last-cost`, and records the provider
   session id (used as `:resume-session-id` next turn).
@@ -231,6 +234,39 @@ list is in the guide ([commands](guide/commands.md)).
   system-prompt note explaining the placeholders. Room state:
   `[:ext :resume {:pending …}]` for the trim preview.
 
+## Users
+
+Every connection belongs to a **user**: a plain string id, `"root"` by
+default (`xi.util/user-id` normalizes claims; anything invalid is root).
+There is no authentication — device pairing stays the only trust check — and
+no roles; the core only tells users apart. Names, roles and real auth are
+extension territory, keyed by the id.
+
+- **Resolution** happens once, in the WS server's `admit!`:
+  `clients.edn`'s `:user` for the device key (`xi clients user …`) wins,
+  else the `:user` the client claimed in `:auth/hello` (TUI: `--user` /
+  `XI_USER`; web: `localStorage xi-user`), else root. The local TUI key is
+  implicitly trusted, so its claim stands.
+- **State**: `[:connection :user]` is the process' own user (standalone
+  input, the server's HTTP API and other clientless prompts act as it; a
+  client sets it from `:auth/ok {:user}`). `[:connection :clients cid :user]`
+  is the server registry. `[:rooms rid :members]` is presence: `client-id →
+  {:user :platform}`, room-scoped so it mirrors, maintained by the room
+  manager and broadcast as `:room/presence` on attach, leave and disconnect
+  (a client switching rooms refreshes both). `state/own-user`,
+  `state/event-user`, `state/room-users` are the accessors.
+- **Wire**: the server stamps `:user` next to `:client-id` on every event a
+  client sends, so the pure reducers (and every mirror re-running them)
+  attribute it identically. `prompt-submit` stores it on the `:user` history
+  entry and on queued prompts; a drained queue is attributed to its first
+  prompt. Lobby room summaries carry `:users`.
+- **Persistence**: a session records `:user` (its creator) in its metadata.
+  Attribution of individual messages is in-memory only for now — a resumed
+  transcript renders without senders, and the model is not told who speaks.
+- **Rendering**: the TUI and web label a prompt with its sender when it is
+  not the viewer's own user; the web chat topbar lists the other users
+  attached to the room.
+
 ## Room lifecycle and auth
 
 - Rooms are created by `:room/join` targets (`"new"`, `"latest"`, a room
@@ -249,15 +285,16 @@ list is in the guide ([commands](guide/commands.md)).
   `cd027c2`). `room-leave` and `client-disconnect-cleanup` may close a room
   only when it is idle and empty; never schedule a delayed `:agent/abort`.
 - **Auth handshake** is transport-level (`xi.server.ws`), never dispatched
-  into app state: `:auth/hello {:client-key :client-name :platform}` →
-  `:auth/ok` | `:auth/pending {:code}` | `:auth/denied`. Pending clients get
+  into app state: `:auth/hello {:client-key :client-name :platform :user}` →
+  `:auth/ok {:user}` | `:auth/pending {:code}` | `:auth/denied`. Pending clients get
   `:auth/required` for everything else; authed clients receive
   `:auth/request` and may `:auth/approve` / `:auth/deny`; the server also
   polls `~/.config/xi/clients.edn` every 2s so `xi clients approve` works
   from a shell. Cross-host `Origin` headers are refused at upgrade
   (hostnames only, ports ignored, so the dev-http page on :8100 can open
   :7474). Keys: `~/.config/xi/client-key` (local TUI, implicitly trusted),
-  `clients.edn`, `pending-clients.edn`, all mode 0600. The web client's key
+  `clients.edn` (entries may carry `:user`, see [Users](#users)),
+  `pending-clients.edn`, all mode 0600. The web client's key
   lives in `localStorage` (`xi-client-key`).
 - **HTTP API**: `POST /api/rooms` (same fetch handler on the plain and TLS
   ports) provisions a room and optionally starts a turn; auth by client key

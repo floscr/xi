@@ -25,6 +25,7 @@
             [xi.config :as config]
             [xi.naming :as naming]
             [xi.quick-replies :as quick-replies]
+            [xi.util :as util]
             [xi.web.appearance :as appearance]
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
@@ -792,7 +793,11 @@
           ;; ─ Client auth (transport-level handshake, xi.server.ws) ─
           :auth/pending          (fn [st {:keys [code]}]
                                    {:state (assoc st :web/auth {:status :pending :code code})})
-          :auth/ok               (fn [st _] {:state (dissoc st :web/auth)})
+          :auth/ok               (fn [st ev]
+                                   ;; admitted: clear the pairing banner and
+                                   ;; record which user we act as
+                                   (let [st (dissoc st :web/auth)]
+                                     {:state (or (:state (ws-transport/auth-ok st ev)) st)}))
           :auth/denied           (fn [st _] {:state (assoc st :web/auth {:status :denied})})
           :auth/request          (fn [st {:keys [code client-name platform]}]
                                    {:state (assoc-in st [:web/auth-requests code]
@@ -2236,6 +2241,16 @@
         (try (.setItem js/localStorage "xi-client-key" k) (catch :default _ nil))
         k)))
 
+(defn- claimed-user
+  "The user id this browser claims in :auth/hello: `localStorage xi-user`
+   when set (nil otherwise — the server then uses the device's clients.edn
+   assignment, else root). Client-claimed and unauthenticated by design;
+   see xi.server.ws."
+  []
+  (some-> (try (.getItem js/localStorage "xi-user") (catch :default _ nil))
+          not-empty
+          util/user-id))
+
 (defn- device-name
   "Human label shown in pairing approvals. Client-claimed — the pairing code
    comparison is the actual security, not this label."
@@ -2420,9 +2435,10 @@
                       (cache/hydrate route))
         transport (ws-transport/create!
                    {:url        (ws-url)
-                    :hello      {:client-key  (ensure-client-key!)
-                                 :client-name (device-name)
-                                 :platform    "web"}
+                    :hello      (cond-> {:client-key  (ensure-client-key!)
+                                         :client-name (device-name)
+                                         :platform    "web"}
+                                  (claimed-user) (assoc :user (claimed-user)))
                     ;; nil → the router drives joins; reconnect replays them.
                     :target     nil
                     :reconnect? true

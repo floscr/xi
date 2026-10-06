@@ -20,7 +20,8 @@
    policy subsumes it): a room is closed when its last client leaves or
    disconnects while the agent is idle, or when a turn ends with no
    clients attached."
-  (:require [xi.core.state :as state]))
+  (:require [xi.core.state :as state]
+            [xi.util :as util]))
 
 ;; ── Queries (pure) ───────────────────────────────────────────────────────────
 
@@ -31,6 +32,25 @@
         (keep (fn [[cid client]]
                 (when (= room-id (:room-id client)) cid)))
         (get-in st [:connection :clients])))
+
+(defn room-members
+  "Presence for room-id from the connection registry: client-id → {:user
+   :platform}. The registry never crosses the wire, so this derived map is
+   stored on the room (:members) and broadcast as :room/presence."
+  [st room-id]
+  (into {}
+        (keep (fn [[cid client]]
+                (when (= room-id (:room-id client))
+                  [cid (cond-> {:user (or (:user client) util/root-user)}
+                         (:platform client) (assoc :platform (:platform client)))])))
+        (get-in st [:connection :clients])))
+
+(defn- presence-effect
+  "Broadcast room-id's current members to its clients (xi.core.events
+   installs them on every mirror)."
+  [st room-id]
+  [:app/dispatch {:type :room/presence :room-id room-id
+                  :members (room-members st room-id)}])
 
 (defn keep-alive?
   "A room must survive client departure / idle reaping while its agent is
@@ -81,7 +101,8 @@
                :session-name (get-in room [:session :name])
                :cwd          (:cwd room)
                :busy?        (boolean (get-in room [:agent :busy?]))
-               :has-dialog?  (boolean (seq (get-in room [:ui :dialogs])))}))
+               :has-dialog?  (boolean (seq (get-in room [:ui :dialogs])))
+               :users        (state/room-users room)}))
        (sort-by :created)
        reverse
        vec))
@@ -199,13 +220,24 @@
       {:room room})))
 
 (defn- room-attach [st {:keys [client-id room-id join-token cached-history-hash cached-history-count]}]
-  (when-let [room (state/get-room st room-id)]
-    {:state   (assoc-in st [:connection :clients client-id :room-id] room-id)
-     :effects [[:ws/send-to {:client-id client-id
-                             :event (cond-> (merge {:type :room/joined :room-id room-id}
-                                                   (joined-payload room cached-history-hash
-                                                                   cached-history-count))
-                                      join-token (assoc :join-token join-token))}]]}))
+  (when (state/get-room st room-id)
+    (let [previous (get-in st [:connection :clients client-id :room-id])
+          st'      (assoc-in st [:connection :clients client-id :room-id] room-id)
+          ;; Presence rides in the snapshot (the joiner sees itself at once)
+          ;; and is broadcast to everyone already in the room.
+          st'      (assoc-in st' [:rooms room-id :members] (room-members st' room-id))
+          room     (state/get-room st' room-id)]
+      {:state   st'
+       :effects (cond-> [[:ws/send-to {:client-id client-id
+                                       :event (cond-> (merge {:type :room/joined :room-id room-id}
+                                                             (joined-payload room cached-history-hash
+                                                                             cached-history-count))
+                                                join-token (assoc :join-token join-token))}]
+                         (presence-effect st' room-id)]
+                  ;; A client switching rooms sends no :room/leave for the
+                  ;; one it left — refresh that room's presence too.
+                  (and previous (not= previous room-id) (state/get-room st' previous))
+                  (conj (presence-effect st' previous)))})))
 
 ;; ── Client departure / cleanup ───────────────────────────────────────────────
 ;; RECURRING PITFALL: never abort a BUSY room when its last client leaves or
@@ -220,15 +252,17 @@
     (let [st'    (update-in st [:connection :clients client-id] dissoc :room-id)
           empty? (empty? (clients-in-room st' room-id))
           keep?  (keep-alive? (get-in st' [:rooms room-id]))]
-      (cond-> {:state   st'
-               :effects [[:ws/send-to {:client-id client-id
-                                       :event {:type :room/left :room-id room-id}}]]}
-        ;; Last client navigated away from an idle room — close it now.
-        ;; Busy rooms (and rooms with a pending dialog) keep running with no
-        ;; client attached (background agents are the point of a headless
-        ;; server); turn-end-room-cleanup reaps them once the turn ends.
-        (and empty? (not keep?))
-        (update :effects conj [:app/dispatch {:type :room/close :room-id room-id}])))))
+      {:state   st'
+       :effects [[:ws/send-to {:client-id client-id
+                               :event {:type :room/left :room-id room-id}}]
+                 ;; Last client navigated away from an idle room — close it now.
+                 ;; Busy rooms (and rooms with a pending dialog) keep running with no
+                 ;; client attached (background agents are the point of a headless
+                 ;; server); turn-end-room-cleanup reaps them once the turn ends.
+                 ;; A room that lives on tells its remaining clients who is left.
+                 (if (and empty? (not keep?))
+                   [:app/dispatch {:type :room/close :room-id room-id}]
+                   (presence-effect st' room-id))]})))
 
 (defn- room-list [_st {:keys [client-id]}]
   ;; The full payload (rooms + saved sessions) is built impurely in the WS
@@ -463,9 +497,13 @@
   [st {:keys [client-id]}]
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
     (let [others (remove #{client-id} (clients-in-room st room-id))]
-      (when (and (empty? others)
-                 (not (keep-alive? (get-in st [:rooms room-id]))))
-        {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]}))))
+      (if (and (empty? others)
+               (not (keep-alive? (get-in st [:rooms room-id]))))
+        {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]}
+        ;; The room lives on without this client: refresh its presence
+        ;; (computed without the leaver — the core handler drops it next).
+        {:effects [(presence-effect (update-in st [:connection :clients] dissoc client-id)
+                                    room-id)]}))))
 
 
 (defn turn-end-room-cleanup

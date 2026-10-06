@@ -7,8 +7,9 @@
    {:connection {:id      uuid
                  :mode    :standalone | :server | :client
                  :port    int | nil   ;; server/standalone: the (would-be) WS port
-                 :clients {client-id {:kind :tui|:web :visible? bool}}}
-    :rooms      {room-id {:id :history :session :agent :ext :ui}}
+                 :user    \"root\"      ;; this process' own user id (xi.util/user-id)
+                 :clients {client-id {:kind :tui|:web :visible? bool :user \"alice\"}}}
+    :rooms      {room-id {:id :history :session :agent :members :ext :ui}}
     :active-room room-id | nil
     :ext        {}}   ;; process-local extension state, keyed by extension id
 
@@ -19,7 +20,14 @@
                   (e.g. the rules engine's server-session rules)
 
     Standalone = one local room, connected to nothing. Server hosts N rooms.
-   Client mirrors remote rooms into the same shape."
+   Client mirrors remote rooms into the same shape.
+
+   Users: every connection belongs to a user (a string id, \"root\" by
+   default). The server records it per client in [:connection :clients cid
+   :user] and stamps :user on every event a client sends; a room's
+   :members (room-scoped, mirrored) lists who is attached; :user history
+   entries carry the sender. Roles and authentication are extension
+   territory, keyed by the id."
   (:require [xi.util :as util]))
 
 (defn make-room
@@ -31,6 +39,8 @@
     :cwd     cwd
     :created created                  ;; ms timestamp (servers resolve "latest" by it)
     :history []                       ;; event-sourced chat history (local cache)
+    :members {}                       ;; presence: client-id → {:user :platform} (mirrored,
+                                      ;; maintained by the room manager via :room/presence)
     :session session                  ;; current session map (+ :provider-session-id)
     :agent   {:busy?           false
               :provider        (or provider (util/provider-for-model model))
@@ -49,9 +59,14 @@
 
 (defn initial-state
   ([] (initial-state nil))
-  ([{:keys [mode connection-id ext port clientless?]}]
+  ([{:keys [mode connection-id ext port clientless? user]}]
    {:connection (cond-> {:id      (or connection-id (random-uuid))
                          :mode    (or mode :standalone)
+                         ;; this process' own user: the person at a standalone
+                         ;; TUI, the operator of a server (HTTP-started and
+                         ;; other clientless prompts are theirs); a client
+                         ;; learns its resolved user from :auth/ok
+                         :user    (util/user-id user)
                          :clients {}}
                   port (assoc :port port)
                   ;; no client can ever attach (prompt mode): dialogs
@@ -81,6 +96,23 @@
   "The WS port this process serves (server) or would join (standalone), or nil."
   [state]
   (get-in state [:connection :port]))
+
+(defn own-user
+  "This process' user id (see initial-state)."
+  [state]
+  (get-in state [:connection :user] util/root-user))
+
+(defn event-user
+  "The user an event acts for: the :user the server stamped on a client's
+   event, else this process' own user (standalone input, server-side
+   automation such as the HTTP API or a queued prompt drain)."
+  [state event]
+  (or (:user event) (own-user state)))
+
+(defn room-users
+  "Distinct user ids attached to a room, in attach order."
+  [room]
+  (vec (distinct (map :user (vals (:members room))))))
 
 (defn room-ext
   "Room-scoped extension state for ext-id (mirrors to clients)."

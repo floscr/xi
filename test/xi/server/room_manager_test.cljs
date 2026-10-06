@@ -197,10 +197,18 @@
     (is (some #(= % [:app/dispatch {:type :room/close :room-id "r1"}]) effects))
     (is (some #(= :room/left (get-in % [1 :event :type])) effects))))
 
+(defn- closes-or-aborts?
+  "Does a handler result's effect list close the room or abort its agent?
+   (Presence refreshes are dispatched too, so look at the event type.)"
+  [effects]
+  (boolean (some #(and (= :app/dispatch (first %))
+                       (#{:room/close :agent/abort} (get-in % [1 :type])))
+                 effects)))
+
 (deftest leave-busy-room-survives
   (let [st (apply-events (joined-state) {:type :agent/busy :room-id "r1" :busy? true})
         {:keys [effects]} (handle st {:type :room/leave :client-id "c1"})]
-    (is (not-any? #(= :app/dispatch (first %)) effects))))
+    (is (not (closes-or-aborts? effects)))))
 
 (deftest leave-with-running-subagent-survives
   ;; A background sub-agent (e.g. the /canvas-review builder) runs while the
@@ -221,7 +229,7 @@
                          {:type :client/connect :client-id "c2" :client {:kind :remote}}
                          {:type :room/attach :client-id "c2" :room-id "r1"})
         {:keys [effects]} (handle st {:type :room/leave :client-id "c1"})]
-    (is (not-any? #(= :app/dispatch (first %)) effects))))
+    (is (not (closes-or-aborts? effects)))))
 
 (deftest disconnect-cleanup
   (testing "last idle client → close"
@@ -230,7 +238,7 @@
                                                    {:client-id "c1"})))))
   (testing "busy room → keep running (no abort, no close)"
     (let [st (apply-events (joined-state) {:type :agent/busy :room-id "r1" :busy? true})]
-      (is (nil? (rm/client-disconnect-cleanup st {:client-id "c1"})))))
+      (is (not (closes-or-aborts? (:effects (rm/client-disconnect-cleanup st {:client-id "c1"})))))))
   (testing "client without a room → no-op"
     (is (nil? (rm/client-disconnect-cleanup (server-state-with-room) {:client-id "c1"})))))
 
@@ -343,3 +351,68 @@
                                     {:type :session/delete :client-id "c1"
                                      :session-id "other"})]
       (is (= [[:session/delete-reply {:session-id "other"}]] effects)))))
+
+;; ── Presence (who is in a room) ──
+
+(defn- presence-effects
+  "The :room/presence events among a handler result's effects, by room."
+  [effects]
+  (into {} (keep (fn [[fx ev]]
+                   (when (and (= :app/dispatch fx) (= :room/presence (:type ev)))
+                     [(:room-id ev) (:members ev)])))
+        effects))
+
+(defn- two-user-state
+  "r1 with alice (web, c1) attached; bob (tui, c2) connected in the lobby."
+  []
+  (apply-events (state/initial-state {:mode :server})
+                {:type :client/connect :client-id "c1"
+                 :client {:kind :remote :user "alice" :platform "web"}}
+                {:type :client/connect :client-id "c2"
+                 :client {:kind :remote :user "bob" :platform "tui"}}
+                {:type :room/create :room-id "r1" :room {:created 100 :cwd "/x"}}
+                {:type :room/attach :client-id "c1" :room-id "r1"}))
+
+(deftest attach-records-and-broadcasts-presence
+  (let [st (two-user-state)]
+    (is (= {"c1" {:user "alice" :platform "web"}} (get-in st [:rooms "r1" :members]))
+        "the joiner is in the room's member list")
+    (let [{:keys [state effects]} (handle st {:type :room/attach :client-id "c2" :room-id "r1"})
+          members {"c1" {:user "alice" :platform "web"} "c2" {:user "bob" :platform "tui"}}]
+      (is (= members (get-in state [:rooms "r1" :members])))
+      (is (= members (get-in (first effects) [1 :event :room :members]))
+          "the :room/joined snapshot already carries the joiner")
+      (is (= {"r1" members} (presence-effects effects))
+          "and everyone in the room is told")
+      (is (= ["alice" "bob"] (state/room-users (state/get-room state "r1"))))
+      (is (= ["alice" "bob"] (:users (first (rm/room-summaries state))))
+          "the lobby summary lists the users")))
+  (testing "a client without a user is root"
+    (let [st (apply-events (server-state-with-room) {:type :room/attach :client-id "c1" :room-id "r1"})]
+      (is (= {"c1" {:user "root"}} (get-in st [:rooms "r1" :members]))))))
+
+(deftest switching-rooms-refreshes-both-rooms-presence
+  ;; A re-attach sends no :room/leave for the room left behind, so its
+  ;; presence must be refreshed from the attach.
+  (let [st (apply-events (two-user-state)
+                         {:type :room/create :room-id "r2" :room {:created 200}}
+                         {:type :room/attach :client-id "c2" :room-id "r1"})
+        {:keys [state effects]} (handle st {:type :room/attach :client-id "c2" :room-id "r2"})]
+    (is (= {"r2" {"c2" {:user "bob" :platform "tui"}}
+            "r1" {"c1" {:user "alice" :platform "web"}}}
+           (presence-effects effects)))
+    (is (= {"c2" {:user "bob" :platform "tui"}} (get-in state [:rooms "r2" :members])))))
+
+(deftest leave-and-disconnect-refresh-presence-of-a-surviving-room
+  (let [st (apply-events (two-user-state) {:type :room/attach :client-id "c2" :room-id "r1"})]
+    (testing "leave: the remaining client learns who is left"
+      (let [{:keys [effects]} (handle st {:type :room/leave :client-id "c2"})]
+        (is (= {"r1" {"c1" {:user "alice" :platform "web"}}} (presence-effects effects)))
+        (is (not-any? #(= :room/close (get-in % [1 :type])) effects))))
+    (testing "disconnect: computed without the leaver"
+      (is (= {"r1" {"c1" {:user "alice" :platform "web"}}}
+             (presence-effects (:effects (rm/client-disconnect-cleanup st {:client-id "c2"}))))))
+    (testing "the last client leaving an idle room closes it instead"
+      (let [{:keys [effects]} (handle (two-user-state) {:type :room/leave :client-id "c1"})]
+        (is (empty? (presence-effects effects)))
+        (is (some #(= % [:app/dispatch {:type :room/close :room-id "r1"}]) effects))))))

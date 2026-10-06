@@ -47,6 +47,33 @@
     (is (= ["c1"] (keys (get-in (apply-events st {:type :client/disconnect :client-id "c2"})
                                 [:connection :clients]))))))
 
+(deftest room-presence
+  (let [st (apply-events (state/initial-state {:mode :server})
+                         {:type :room/create :room-id "a"}
+                         {:type :room/presence :room-id "a"
+                          :members {"c1" {:user "alice" :platform "web"}
+                                    "c2" {:user "root" :platform "tui"}}})]
+    (is (= {"c1" {:user "alice" :platform "web"} "c2" {:user "root" :platform "tui"}}
+           (get-in st [:rooms "a" :members])))
+    (is (= ["alice" "root"] (state/room-users (state/get-room st "a"))))
+    (testing "a fresh room has nobody in it"
+      (is (= {} (:members (state/make-room "x")))))
+    (testing "nil members clears the room"
+      (is (= {} (get-in (apply-events st {:type :room/presence :room-id "a"}) [:rooms "a" :members]))))
+    (testing "unknown rooms are no-ops"
+      (is (= st (apply-events st {:type :room/presence :room-id "ghost" :members {"c" {:user "x"}}}))))))
+
+(deftest own-and-event-user
+  (testing "every process has a user; root unless told otherwise"
+    (is (= "root" (state/own-user (state/initial-state))))
+    (is (= "alice" (state/own-user (state/initial-state {:user "Alice"})))
+        "ids are normalized")
+    (is (= "root" (state/own-user (state/initial-state {:user "not a slug!"})))))
+  (testing "an event acts for the user the server stamped on it, else ours"
+    (let [st (state/initial-state {:user "alice"})]
+      (is (= "bob" (state/event-user st {:type :prompt/submit :user "bob"})))
+      (is (= "alice" (state/event-user st {:type :prompt/submit}))))))
+
 (deftest history-and-agent
   (let [st (apply-events (state/initial-state)
                          {:type :room/create :room-id "a"}

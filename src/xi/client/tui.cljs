@@ -673,8 +673,13 @@
 (defn sync-history!
   "Reconcile the block cache (ctx.blocks, a JS array of
    #js {:entry e :block {:nodes :update!}}) against the room history.
-   Returns true when anything changed."
-  [^js ctx history]
+   `viewer` is this client's user id: blocks label other users' prompts by
+   sender, so a changed viewer (the server settled on another user at
+   :auth/ok) rebuilds the cache. Returns true when anything changed."
+  [^js ctx history viewer]
+  (when (not= viewer (.-viewer ctx))
+    (set! (.-viewer ctx) viewer)
+    (.splice (.-blocks ctx) 0))
   (let [blocks (.-blocks ctx)
         n (count history)]
     (loop [i 0 changed? (> (.-length blocks) n)]
@@ -695,7 +700,7 @@
             :else
             (do (.splice blocks i)
                 (doseq [e (subvec (vec history) i)]
-                  (.push blocks #js {:entry e :block (view/entry->block e)}))
+                  (.push blocks #js {:entry e :block (view/entry->block e viewer)}))
                 true)))))))
 
 (defn- loader-visible?
@@ -722,8 +727,8 @@
            (get-in room [:agent :busy?])      "\u27f3 ")
          "Xi: " label)))
 
-(defn- sync-chat! [^js ctx room loader]
-  (let [history-changed? (sync-history! ctx (:history room))
+(defn- sync-chat! [^js ctx room loader viewer]
+  (let [history-changed? (sync-history! ctx (:history room) viewer)
         show-loader? (loader-visible? room)
         loader-toggled? (not= show-loader? (.-loaderShown ctx))
         title (terminal-title room)]
@@ -1218,7 +1223,7 @@
                                              :cwd (:cwd room)
                                              :agents-files (get-in room [:agent :agents-files])}))
                   (set! (.-chatDirty ctx) true)))
-              (sync-chat! ctx room loader)
+              (sync-chat! ctx room loader (state/own-user state))
               (sync-view! ctx room ring dispatch!)
               (sync-bottom-panel! ctx room dispatch!)
               (tui/request-render!)))

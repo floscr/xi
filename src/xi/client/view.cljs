@@ -310,32 +310,42 @@
 (defn- never-update [_ _] false)
 
 (defn- user-label
-  "Highlighted 'you:' prefix — an accent gutter bar plus a bold accent label —
-   so the user's own prompts stand out when scanning scrollback."
-  []
+  "Highlighted sender prefix — an accent gutter bar plus a bold accent label —
+   so prompts stand out when scanning scrollback. Our own prompts read
+   'you:'; another user's prompts on a shared server read by their id."
+  [sender]
   (str (ansi/fg :accent "▌ ")
-       (ansi/fg :accent (ansi/fg :bold "you"))
+       (ansi/fg :accent (ansi/fg :bold (or sender "you")))
        ": "))
 
 (defn- user-message-nodes
   "Node(s) for a user message. Renders code fences through markdown."
-  [text suffix]
+  [text sender suffix]
   (if (str/includes? text "```")
     (let [first-nl (str/index-of text "\n")
           first-line (if first-nl (subs text 0 first-nl) text)
           rest-text (when first-nl (subs text (inc first-nl)))]
-      [(node/text (str (user-label) first-line suffix))
+      [(node/text (str (user-label sender) first-line suffix))
        (when rest-text
          (md/make-markdown rest-text))])
-    [(node/text (str (user-label) text suffix))]))
+    [(node/text (str (user-label sender) text suffix))]))
 
-(defn- user-block [entry]
+(defn entry-sender
+  "The user id to label a :user entry with, or nil for the viewer's own
+   prompts (and entries without attribution, e.g. resumed from disk)."
+  [entry viewer]
+  (let [u (:user entry)]
+    (when (and u (not= u viewer)) u)))
+
+(defn- user-block [entry viewer]
   (let [n (or (some-> (:images entry) count)
               (:image-count entry))
         suffix (when (and n (pos? n))
                  (str " " (ansi/fg :dim (str "(📎 " n " image" (when (> n 1) "s") ")"))))]
     {:nodes (-> [(comp/make-spacer 1)]
-                (into (remove nil?) (user-message-nodes (:text entry) suffix))
+                (into (remove nil?) (user-message-nodes (:text entry)
+                                                        (entry-sender entry viewer)
+                                                        suffix))
                 (conj (comp/make-spacer 1)))
      :update! never-update}))
 
@@ -505,17 +515,20 @@
    :update! never-update})
 
 (defn entry->block
-  "Build a block for a history entry. See ns docstring for the shape."
-  [entry]
+  "Build a block for a history entry. See ns docstring for the shape.
+   `viewer` is this client's user id (xi.core.state/own-user): prompts from
+   other users are labelled with their id instead of 'you'."
+  ([entry] (entry->block entry nil))
+  ([entry viewer]
   (case (:kind entry)
-    :user      (user-block entry)
+    :user      (user-block entry viewer)
     :text      (text-block entry)
     :thinking  (thinking-block entry)
     :tool-call (tool-block entry)
     :status    (status-block entry)
     :error     (error-block entry)
     :aborted   (aborted-block entry)
-    {:nodes [] :update! never-update}))
+    {:nodes [] :update! never-update})))
 
 ;; ── Launch header ────────────────────────────────────────────────────────────
 

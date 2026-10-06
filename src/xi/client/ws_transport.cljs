@@ -152,6 +152,15 @@
 (defn lobby-state [st ev]
   {:state (assoc st :lobby (select-keys ev [:rooms :sessions :read :agent-id :started-at :claude-usage :model]))})
 
+(defn auth-ok
+  "The server admitted us and tells us which user this connection acts as
+   (clients.edn assignment, our :auth/hello claim, or root — xi.server.ws).
+   Record it so the renderers can tell our own prompts from other users'.
+   The TUI and web clients compose this into their :auth/ok handlers."
+  [st {:keys [user]}]
+  (when user
+    {:state (assoc-in st [:connection :user] user)}))
+
 (defn make-handlers
   "Client-mode handler map from the server-equivalent pure handlers:
    every base type forwards locally / mirrors remotely, plus the

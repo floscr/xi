@@ -53,8 +53,13 @@
         (handle st {:type :prompt/submit :remote? true :room-id "r1" :text "hi"})]
     (is (= [] effects) "provider effects must be stripped")
     (is (true? (get-in state' [:rooms "r1" :agent :busy?])))
-    (is (= {:kind :user :text "hi" :images nil}
-           (first (get-in state' [:rooms "r1" :history]))))
+    (is (= {:kind :user :text "hi" :images nil :user "root"}
+           (first (get-in state' [:rooms "r1" :history])))
+        "an unstamped mirror falls back to this client's own user")
+    (testing "the server's :user stamp is what the mirror stores"
+      (let [{s :state} (handle st {:type :prompt/submit :remote? true :room-id "r1"
+                                   :text "hi" :user "alice"})]
+        (is (= "alice" (:user (first (get-in s [:rooms "r1" :history])))))))
     (testing "delta + turn-end replay"
       (let [st2 (-> state'
                     (as-> s (:state (handle s {:type :agent/text-delta :remote? true

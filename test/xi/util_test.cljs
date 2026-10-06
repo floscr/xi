@@ -3,6 +3,21 @@
             [clojure.string :as str]
             [xi.util :as util]))
 
+;; ── user-id ──
+
+(deftest user-id-normalizes-and-defaults
+  (is (= "root" util/root-user))
+  (is (= "alice" (util/user-id "alice")))
+  (is (= "alice" (util/user-id "  Alice ")) "trimmed and lower-cased")
+  (is (= "a.b_c-9" (util/user-id "a.b_c-9")))
+  (testing "missing or invalid claims are root"
+    (is (= "root" (util/user-id nil)))
+    (is (= "root" (util/user-id "")))
+    (is (= "root" (util/user-id "has space")))
+    (is (= "root" (util/user-id "-leading")))
+    (is (= "root" (util/user-id (apply str (repeat 65 "a")))))
+    (is (= "root" (util/user-id 42)))))
+
 ;; ── truncate ──
 
 (deftest truncate-short-string

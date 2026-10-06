@@ -24,7 +24,7 @@
   (let [{:keys [state effects]}
         (events/handle-event all-handlers (with-room)
                              {:type :prompt/submit :room-id "r" :text "hi"})]
-    (is (= [{:kind :user :text "hi" :images nil}] (:history (state/get-room state "r"))))
+    (is (= [{:kind :user :text "hi" :images nil :user "root"}] (:history (state/get-room state "r"))))
     (is (true? (get-in state [:rooms "r" :agent :busy?])))
     (let [[[fx-type payload]] effects]
       (is (= :provider/start-turn fx-type))
@@ -37,7 +37,20 @@
                          {:type :prompt/submit :room-id "r" :text "first"}
                          {:type :prompt/submit :room-id "r" :text "second"})]
     (is (= 1 (count (history st))) "second prompt not appended to history")
-    (is (= [{:text "second" :images nil}] (get-in st [:rooms "r" :agent :queued])))))
+    (is (= [{:text "second" :images nil :user "root"}] (get-in st [:rooms "r" :agent :queued])))))
+
+(deftest prompt-submit-attributes-the-sender
+  ;; The server stamps :user on every client event; the history entry and a
+  ;; queued prompt keep it so every mirror labels the prompt the same way.
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "hi" :user "alice"}
+                         {:type :prompt/submit :room-id "r" :text "later" :user "bob"})]
+    (is (= "alice" (:user (first (history st)))))
+    (is (= [{:text "later" :images nil :user "bob"}] (get-in st [:rooms "r" :agent :queued]))))
+  (testing "an unstamped submit (standalone input, server automation) is this process' user"
+    (let [st (apply-events (assoc-in (with-room) [:connection :user] "carol")
+                           {:type :prompt/submit :room-id "r" :text "hi"})]
+      (is (= "carol" (:user (first (history st))))))))
 
 (deftest deltas-fold-into-entries
   (let [st (apply-events (with-room)
@@ -85,7 +98,7 @@
     (is (= "sid-1" (get-in state [:rooms "r" :session :provider-session-id])))
     (is (= [] (get-in state [:rooms "r" :agent :queued])))
     (is (= [[:app/dispatch {:type :prompt/submit :room-id "r"
-                            :text "queued!" :images []}]]
+                            :text "queued!" :images [] :user "root"}]]
            effects))))
 
 (deftest turn-end-settles-running-tool-call
@@ -109,7 +122,7 @@
         (events/handle-event all-handlers st {:type :agent/turn-end :room-id "r"})]
     (is (= [] (get-in state [:rooms "r" :agent :queued])))
     (is (= [[:app/dispatch {:type :prompt/submit :room-id "r"
-                            :text "first\n\nsecond" :images []}]]
+                            :text "first\n\nsecond" :images [] :user "root"}]]
            effects)
         "all queued prompts are combined into one submission")))
 
@@ -122,7 +135,7 @@
         {:keys [state]}
         (events/handle-event all-handlers st
                              {:type :prompt/queue-remove :room-id "r" :index 1})]
-    (is (= [{:text "a" :images nil} {:text "c" :images nil}]
+    (is (= [{:text "a" :images nil :user "root"} {:text "c" :images nil :user "root"}]
            (get-in state [:rooms "r" :agent :queued])))))
 
 (deftest resume-session-id-flows-into-next-turn
@@ -217,7 +230,7 @@
           (events/handle-event all-handlers st
                                {:type :prompt/submit :room-id "r" :text "second"})
           payload (second (first effects))]
-      (is (= [{:kind :user :text "first" :images nil}
+      (is (= [{:kind :user :text "first" :images nil :user "root"}
               {:kind :text :text "answer" :done? true}]
              (:history payload))
           "prior turns are threaded through, current prompt excluded")

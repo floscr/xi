@@ -206,6 +206,23 @@
   [text]
   (if text (str/replace text collapse-marker-re "") text))
 
+(def root-user
+  "The default user id. Every connection belongs to a user; one that claims
+   none (or an invalid one) is root. Users are plain string ids — names,
+   roles and authentication are extension territory, keyed by this id."
+  "root")
+
+(def ^:private user-id-re #"^[a-z0-9][a-z0-9._-]{0,63}$")
+
+(defn user-id
+  "Normalize a claimed user id: trimmed and lower-cased; `root-user` when it
+   is missing or not a plain slug (letters, digits, `.`, `_`, `-`; up to 64
+   chars). Shared by the server (resolving a connection's user), the CLI
+   (`--user` / `XI_USER`) and the web client."
+  [s]
+  (let [s (when (string? s) (str/lower-case (str/trim s)))]
+    (if (and s (re-matches user-id-re s)) s root-user)))
+
 (def ^:private session-title-max 60)
 
 (defn session-title

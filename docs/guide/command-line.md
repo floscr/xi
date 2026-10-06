@@ -14,7 +14,7 @@ version of this page.
 | `xi create [url]` | A terminal client in a new chat on a running server. |
 | `xi prompt <text>` (`xi -p`) | Send one message, print the answer, exit. Reads stdin when `<text>` is omitted. See [One-shot prompts](prompt.md). |
 | `xi sessions` | List saved chats as tab-separated lines. `--all` lists every chat, `--limit N` caps it, `--json` prints JSON. |
-| `xi clients [action]` | Manage paired devices: `list` (default), `pending`, `approve <code>`, `revoke <prefix-or-name>`. See [Server mode](server.md#pairing). |
+| `xi clients [action]` | Manage paired devices: `list` (default), `pending`, `approve <code>`, `revoke <prefix-or-name>`, `user <prefix-or-name> <user-id>` (`-` clears). See [Server mode](server.md#pairing) and [Users](server.md#users). |
 | `xi help` | This, shorter. Also `--help` and `-h`. |
 
 For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full
@@ -33,6 +33,7 @@ For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full
 | `--join` / `--create` | `xi` | Put a plain `xi` onto the running server, in the latest or a new chat. |
 | `--headless` | `server` | No terminal client. |
 | `--agent ID` | `xi`, `server`, `prompt` | Run an [agent profile](agents.md). A plain `xi --agent ID` stays local. |
+| `--user ID` | all | The user this process acts as (default `root`, or `XI_USER`). A joining terminal claims it; a server owns its own prompts under it. See [Users](server.md#users). |
 | `--stream` | `prompt` | Print tokens as they arrive. |
 | `--no-store` | `prompt` | Leave no session behind. |
 | `--json` | `prompt`, `sessions` | Machine-readable output. |
@@ -42,7 +43,7 @@ For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full
 
 ## Environment
 
-`XI_PORT`, `XI_HOST`, `XI_CWD`, `ANTHROPIC_API_KEY` and the rest are listed
+`XI_PORT`, `XI_HOST`, `XI_CWD`, `XI_USER`, `ANTHROPIC_API_KEY` and the rest are listed
 in [Configuration](configuration.md#environment-variables).
 
 ## Examples
@@ -60,4 +61,6 @@ xi prompt --agent coach --json "hi"
 
 xi sessions --json | jq '.[0]'
 xi clients approve 1234
+xi join --user alice                       # act as alice on a shared server
+xi clients user iPhone alice               # assign a paired phone to alice
 ```

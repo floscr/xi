@@ -52,6 +52,17 @@
               (some? visible?)
               (assoc-in [:connection :clients client-id :visible?] visible?))}))
 
+;; ── Presence (per room, mirrored) ────────────────────────────────────────────
+
+(defn- room-presence
+  "Install a room's member list: client-id → {:user :platform}. The room
+   manager derives it from the connection registry on attach / leave /
+   disconnect and dispatches it so every client's mirror learns who is in
+   the room (the registry itself never crosses the wire)."
+  [st {:keys [room-id members]}]
+  (when (state/get-room st room-id)
+    {:state (assoc-in st [:rooms room-id :members] (or members {}))}))
+
 ;; ── History ──────────────────────────────────────────────────────────────────
 
 (defn- history-append [st {:keys [room-id entry]}]
@@ -114,6 +125,7 @@
    :client/connect    client-connect
    :client/disconnect client-disconnect
    :client/update     client-update
+   :room/presence     room-presence
    :history/append    history-append
    :agent/busy        agent-busy
    :agent/set-model   agent-set-model

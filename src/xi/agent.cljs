@@ -235,7 +235,10 @@
                           label (update :text util/with-collapse-marker label))]
     {:state   (-> st
                   (update-in [:rooms (:id room) :history] conj
-                             (cond-> {:kind :user :text (:text prompt) :images (:images prompt)}
+                             (cond-> {:kind :user :text (:text prompt) :images (:images prompt)
+                                      ;; who sent it — clients label prompts from
+                                      ;; other users by this id
+                                      :user (:user prompt)}
                                label (assoc :collapsed-label label)))
                   (update-in [:rooms (:id room)] dissoc :msg-hash :msg-count)
                   (assoc-in [:rooms (:id room) :agent :busy?] true))
@@ -248,7 +251,9 @@
   (cond-> {:text   (->> (map :text prompts)
                         (remove str/blank?)
                         (str/join "\n\n"))
-           :images (into [] (mapcat :images) prompts)}
+           :images (into [] (mapcat :images) prompts)
+           ;; merged prompts from several users are attributed to the first
+           :user   (:user (first prompts))}
     ;; A lone queued skill/command prompt keeps its collapsed label; once merged
     ;; with other queued prompts the single label no longer fits, so drop it.
     (and (= 1 (count prompts)) (:collapsed-label (first prompts)))
@@ -256,9 +261,12 @@
 
 ;; ── Event handlers (pure) ────────────────────────────────────────────────────
 
-(defn- prompt-submit [st {:keys [room-id text images collapsed-label]}]
+(defn- prompt-submit [st {:keys [room-id text images collapsed-label] :as ev}]
   (when-let [room (state/get-room st room-id)]
-    (let [prompt (cond-> {:text text :images images}
+    (let [prompt (cond-> {:text text :images images
+                          ;; the server stamps :user on client events; local
+                          ;; and server-side submits are this process' user
+                          :user (state/event-user st ev)}
                    collapsed-label (assoc :collapsed-label collapsed-label))]
       (if (get-in room [:agent :busy?])
         ;; Busy — queue for after the current turn settles

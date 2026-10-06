@@ -2,7 +2,9 @@
   "Client-key authentication store — the filesystem is the root of trust.
 
    Approved client keys live in ~/.config/xi/clients.edn (map of key →
-   {:name :platform :approved-at :last-seen}). Pending pairing requests are
+   {:name :platform :approved-at :last-seen :user}). `:user` assigns the
+   device to a user id (`xi clients user <device> <id>`); it wins over the
+   user the client claims in its :auth/hello (xi.server.ws). Pending pairing requests are
    mirrored to ~/.config/xi/pending-clients.edn so `bb serve:approve <code>`
    can approve a client by moving its entry across; the server polls the
    approved file while requests are pending (xi.server.ws).
@@ -71,6 +73,24 @@
 (defn revoke! [client-key]
   (write-edn-file! (clients-file)
                    (dissoc (approved-clients) client-key)))
+
+(defn user-for-key
+  "The user id clients.edn assigns to an approved key, or nil when the
+   device has none (the client's own claim then stands)."
+  [client-key]
+  (get-in (approved-clients) [client-key :user]))
+
+(defn set-user!
+  "Assign an approved device to a user id (nil clears the assignment).
+   Applies to the device's next connection."
+  [client-key user-id]
+  (let [clients (approved-clients)]
+    (when (contains? clients client-key)
+      (write-edn-file! (clients-file)
+                       (if user-id
+                         (assoc-in clients [client-key :user] user-id)
+                         (update clients client-key dissoc :user)))
+      true)))
 
 (defn touch!
   "Record :last-seen (and freshen name/platform) for an already-approved key.

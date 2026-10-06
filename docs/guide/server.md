@@ -55,11 +55,46 @@ the device claims; the code is the check.
 | File | What |
 | --- | --- |
 | `~/.config/xi/client-key` | The key of the terminal on this machine, created on first run and trusted as is |
-| `~/.config/xi/clients.edn` | Approved devices |
+| `~/.config/xi/clients.edn` | Approved devices, each with an optional `:user` assignment |
 | `~/.config/xi/pending-clients.edn` | Requests waiting for approval |
 
 The web client keeps its key in the browser's storage, so each browser pairs
 once. A server started with `--agent` does not pair at all.
+
+## Users
+
+Several people can share one server. Every connection belongs to a **user**,
+a short id such as `root`, `alice` or `team-ops`. Xi uses it to tell people
+apart: a prompt someone else sent shows their id above it, and the chat's
+top bar lists who else is in the room. Nothing is verified. Pairing decides
+whether a device may connect at all; the user id only says who it is.
+
+The default user is `root`. A terminal picks another with `--user`:
+
+```sh
+xi join --user alice               # this terminal acts as alice
+XI_USER=alice xi                   # the same, from the environment
+```
+
+A paired browser or phone is assigned on the server:
+
+```sh
+xi clients                          # devices, with their user if assigned
+xi clients user iPhone alice        # by name or key prefix
+xi clients user iPhone -            # back to unassigned
+```
+
+An assignment applies the next time the device connects and wins over
+whatever the device claims. A browser without one can claim an id itself by
+setting the `xi-user` key in its local storage; otherwise it is `root`.
+
+An id is lowercase letters, digits, `.`, `_` or `-`, up to 64 characters.
+Anything else counts as `root`.
+
+That is all the server does with users. Display names, roles and real
+authentication are left to [extensions](extensions.md): every event a
+client sends carries the sender's user id, and a room's member list is
+part of its state, so an extension can build on them.
 
 ## Chats keep running
 

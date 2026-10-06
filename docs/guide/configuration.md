@@ -77,7 +77,7 @@ drop one setting while keeping the rest.
 | `~/.config/xi/ext/clj.edn` | `{:allow-clis [...] :helper-hints true}` for the [clj tool](clj-tool-reference.md). |
 | `~/.config/xi/ext/bb-trust.edn` | Trusted `bb.edn` hashes. Written by Xi. |
 | `~/.config/xi/ext/mcp-trust.edn` | Trusted MCP server fingerprints. Written by Xi. |
-| `~/.config/xi/client-key`, `clients.edn` | Your own device key and the paired devices. See [Server mode](server.md#pairing). |
+| `~/.config/xi/client-key`, `clients.edn` | Your own device key and the paired devices, each with an optional user assignment. See [Server mode](server.md#pairing). |
 | `~/.config/xi/tls/` | Certificate and key for [HTTPS](https.md). |
 | `~/.config/xi/sessions/`, `personal-agent/` | Saved chats. See [Sessions](sessions.md). |
 
@@ -95,6 +95,7 @@ Settings that belong to the machine rather than to you:
 | `XI_PORT` | `7474` | The port the server listens on and clients connect to. |
 | `XI_HOST` | all interfaces | Addresses the server binds, comma-separated. Loopback is always included. |
 | `XI_CWD` | the current directory | The directory a chat starts in. |
+| `XI_USER` | `root` | The user this process acts as; `--user` wins. See [Users](server.md#users). |
 | `XI_THEME_MODE` | `dark` | `light` or `dark` for the terminal's code blocks. An extension can set it live; see the [extension reference](extensions-reference.md). |
 | `XI_TLS_PORT` | `7443` | The HTTPS port, when a certificate is configured. |
 | `XI_TLS_CERT`, `XI_TLS_KEY` | `~/.config/xi/tls/xi.crt`, `xi.key` | Certificate and key. Setting either turns HTTPS on. |

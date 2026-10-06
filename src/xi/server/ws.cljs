@@ -9,9 +9,10 @@
    loop; clients are renderers + input.
 
    Handshake (auth is transport-level, never dispatched into the app):
-     connect → client sends {:type :auth/hello :client-key … :client-name … :platform …}
-     server  → {:type :auth/ok} when the key is approved (clients.edn or the
-               local ~/.config/xi/client-key — see xi.auth), else
+     connect → client sends {:type :auth/hello :client-key … :client-name …
+               :platform … :user …}
+     server  → {:type :auth/ok :user …} when the key is approved (clients.edn
+               or the local ~/.config/xi/client-key — see xi.auth), else
                {:type :auth/pending :code \"1234\"} and the connection is
                parked: every other event is answered with {:type :auth/required}.
                Pending requests are broadcast to authed clients as
@@ -32,6 +33,14 @@
    clients can't address rooms they're not in. Sockets live in the
    create-server closure (runtime resources, not app state).
 
+   Users: every admitted connection belongs to a user id — the one
+   clients.edn assigns to its key (`xi clients user`), else the one it claimed
+   in :auth/hello, else root (xi.util/user-id). It is recorded on the
+   client entry (:client/connect), echoed in :auth/ok, and stamped as :user
+   on every event the client sends, so room handlers and every mirror see the
+   same sender. No authentication: the claim is taken at face value (device
+   pairing is the trust check); roles are for extensions.
+
    Deferred to later phases: :visibility tracking."
   (:require [clojure.string :as str]
             [xi.agent-profile :as profile]
@@ -43,6 +52,7 @@
             [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
+            [xi.util :as util]
             [xi.wire :as wire]))
 
 (def DEFAULT_PORT 7474)
@@ -402,7 +412,7 @@
         ;; edit applies to the next room without a restart.
         ;; Returns {:cwd :session :room}.
         build-room
-        (fn [{:keys [cwd summary model effort]}]
+        (fn [{:keys [cwd summary model effort user]}]
           (let [cwd (or (:cwd summary) cwd (.cwd js/process))
                 prof (when agent? (profile/load agent-id))
                 system-parts (if prof
@@ -413,8 +423,12 @@
                 system (system-prompt/parts->system system-parts)
                 session (if summary
                           (session/load-session summary)
+                          ;; a fresh session records who opened it (the
+                          ;; joining client's user, or the server's own for
+                          ;; rooms it provisions itself)
                           (session/create-session
-                           cwd (when agent? {:agent agent-id})))]
+                           cwd (cond-> {:user (util/user-id user)}
+                                 agent? (assoc :agent agent-id))))]
             {:cwd     cwd
              :session session
              :room    {:model        (or model (:model server-opts))
@@ -442,12 +456,13 @@
       ;; starting fresh (the :session/resumed broadcast fills the client's
       ;; mirror right after the empty :room/joined snapshot).
       :room/setup
-      (fn [{:keys [dispatch!]} {:keys [client-id room-id cwd model session-id cached-msg-hash cached-msg-count join-token]}]
+      (fn [{:keys [dispatch! get-state]} {:keys [client-id room-id cwd model session-id cached-msg-hash cached-msg-count join-token]}]
         (let [summary (when session-id
                         (if agent?
                           (session/find-personal-agent-session-by-id session-id agent-id)
                           (session/find-session-by-id session-id)))
-              {:keys [session room]} (build-room {:cwd cwd :summary summary :model model})]
+              user    (get-in (get-state) [:connection :clients client-id :user])
+              {:keys [session room]} (build-room {:cwd cwd :summary summary :model model :user user})]
           (dispatch! {:type :room/create :room-id room-id :room room})
           (dispatch! (cond-> {:type :room/attach :client-id client-id :room-id room-id}
                        join-token (assoc :join-token join-token)))
@@ -695,10 +710,15 @@
                      (send! (.. ws -data -cid) payload)))))
              admit!
              (fn [^js ws]
-               (let [cid (.. ws -data -cid)]
+               (let [cid  (.. ws -data -cid)
+                     ;; clients.edn's assignment for this device wins over the
+                     ;; user the client claimed in :auth/hello; neither → root
+                     user (util/user-id (or (auth/user-for-key (.. ws -data -clientKey))
+                                            (.. ws -data -clientUser)))]
                  (set! (.. ws -data -authed) true)
+                 (set! (.. ws -data -user) user)
                  (dispatch! {:type :client/connect :client-id cid
-                             :client (cond-> {:kind :remote}
+                             :client (cond-> {:kind :remote :user user}
                                        ;; pid + platform (from :auth/hello): the
                                        ;; room's driving pid goes to MCP servers
                                        ;; as _meta (xi.ext.mcp/call-meta)
@@ -706,7 +726,7 @@
                                        (assoc :pid (.. ws -data -clientPid))
                                        (.. ws -data -clientPlatform)
                                        (assoc :platform (.. ws -data -clientPlatform)))})
-                 (send-event! cid {:type :auth/ok})
+                 (send-event! cid {:type :auth/ok :user user})
                  (send! cid (lobby-payload @state agent-id (:model server-opts)))))
              resolve-pending!
              (fn [code approved?]
@@ -721,12 +741,14 @@
                          (try (.close ws) (catch :default _ nil)))))
                  (notify-authed! {:type :auth/resolved :code code :approved? approved?})))
              handle-hello!
-             (fn [^js ws {:keys [client-key client-name platform pid]}]
+             (fn [^js ws {:keys [client-key client-name platform pid user]}]
                (let [cid (.. ws -data -cid)]
                  ;; Stash identity on the socket so admit! (which may run later,
                  ;; after pairing approval) can record it into the client entry.
                  (when pid (set! (.. ws -data -clientPid) pid))
                  (when platform (set! (.. ws -data -clientPlatform) platform))
+                 (when (string? client-key) (set! (.. ws -data -clientKey) client-key))
+                 (when user (set! (.. ws -data -clientUser) user))
                  (cond
                    (authed? ws) nil
 
@@ -884,7 +906,9 @@
                                   model  (some-> (aget body "model") str)
                                   room-id (str "r-" (.toString (js/Date.now) 36)
                                                "-" (.toString (rand-int 1000000) 36))
-                                  {:keys [session room]} (build-room {:cwd cwd :model model})
+                                  ;; no client: the room is the server operator's
+                                  {:keys [session room]} (build-room {:cwd cwd :model model
+                                                                      :user (get-in @state [:connection :user])})
                                   session-id (:id session)
                                   host (or (.get headers "host") (str "localhost:" port))]
                               (dispatch! {:type :room/create :room-id room-id :room room})
@@ -961,6 +985,9 @@
                             (if-let [ev (wire/decode data)]
                               (let [room-id (get-in @state [:connection :clients cid :room-id])
                                     ev (cond-> (assoc ev :client-id cid)
+                                         ;; the sender's resolved user (admit!) — handlers
+                                         ;; and every mirror attribute the event to it
+                                         (authed? ws) (assoc :user (.. ws -data -user))
                                          ;; an extension event a connected client sent
                                          ;; (a click in a browser half) is the user's
                                          ;; doing; see xi.ext.user.guard/guard-handler
