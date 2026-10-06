@@ -343,7 +343,8 @@
    :requires ([babashka.fs :as fs]
               [cheshire.core :as json])
    :task (let [{:keys [name version]} (json/parse-string (slurp "package.json") true)
-               tgz (str "dist/" name "-" version ".tgz")]
+               ;; ./ matters: npm reads a bare dist/x.tgz as a GitHub owner/repo shorthand
+               tgz (str "./dist/" name "-" version ".tgz")]
            (when-not (some #{"--no-build"} *command-line-args*)
              (shell "bun" "scripts/build-package.mjs"))
            (when-not (fs/exists? tgz)
