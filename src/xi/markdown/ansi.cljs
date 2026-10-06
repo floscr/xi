@@ -44,6 +44,25 @@
 (def ^:private code-bg "\033[48;2;67;76;94m")
 (def ^:private code-fg "\033[38;2;255;255;255m")
 
+(declare render-block)
+
+(defn- render-list-item
+  "Lines of one list item: `prefix` + wrapped inline text, then its nested
+   child blocks indented under the text."
+  [prefix tokens child-blocks width]
+  (let [prefix-w (ansi/visible-width prefix)
+        cont-pad (apply str (repeat prefix-w " "))
+        item-w (max 1 (- width prefix-w))
+        wrapped (ansi/wrap-text (render-inline tokens) item-w)]
+    (into (vec (map-indexed
+                (fn [i line]
+                  {:text (str (if (zero? i) prefix cont-pad) line) :code? false})
+                wrapped))
+          (mapcat (fn [b]
+                    (map (fn [l] (update l :text #(str cont-pad %)))
+                         (render-block b item-w))))
+          child-blocks)))
+
 (defn- render-block
   "Render a block token to a seq of {:text :code?} maps."
   [block width]
@@ -83,39 +102,21 @@
                     {:text "" :code? true}]))))
 
         :ul
-        (let [[_ items] block
-              prefix "  • "
-              prefix-w (count prefix)
-              cont-pad (apply str (repeat prefix-w " "))
-              item-w (max 1 (- width prefix-w))]
+        (let [[_ items children] block]
           (into []
-                (mapcat
-                 (fn [tokens]
-                   (let [text (render-inline tokens)
-                         wrapped (ansi/wrap-text text item-w)]
-                     (map-indexed
-                      (fn [i line]
-                        {:text (str (if (zero? i) prefix cont-pad) line) :code? false})
-                      wrapped))))
+                (comp (map-indexed (fn [i tokens]
+                                     (render-list-item "  • " tokens (nth children i nil) width)))
+                      cat)
                 items))
 
         :ol
-        (let [[_ items] block
-              max-num (count items)]
+        (let [[_ items children] block]
           (into []
-                (mapcat
-                 (fn [[i tokens]]
-                   (let [prefix (str "  " (inc i) ". ")
-                         prefix-w (ansi/visible-width prefix)
-                         cont-pad (apply str (repeat prefix-w " "))
-                         item-w (max 1 (- width prefix-w))
-                         text (render-inline tokens)
-                         wrapped (ansi/wrap-text text item-w)]
-                     (map-indexed
-                      (fn [vi line]
-                        {:text (str (if (zero? vi) prefix cont-pad) line) :code? false})
-                      wrapped))))
-                (map-indexed vector items)))
+                (comp (map-indexed (fn [i tokens]
+                                     (render-list-item (str "  " (inc i) ". ") tokens
+                                                       (nth children i nil) width)))
+                      cat)
+                items))
 
         :checkbox-list
         (let [[_ items] block

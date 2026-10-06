@@ -127,17 +127,14 @@
                            tokens))
              (into [:code] (linkify code)))])
 
-        :ul
-        (let [[_ items] block]
-          (into [:ul]
-                (for [item items]
-                  (into [:li] (render-inline item)))))
-
-        :ol
-        (let [[_ items] block]
-          (into [:ol]
-                (for [item items]
-                  (into [:li] (render-inline item)))))
+        (:ul :ol)
+        (let [[_ items children] block]
+          (into [tag]
+                (map-indexed
+                 (fn [i item]
+                   (into [:li] (concat (render-inline item)
+                                       (map render-block (nth children i nil)))))
+                 items)))
 
         :checkbox-list
         (let [[_ items] block]

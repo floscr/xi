@@ -160,3 +160,7 @@
             (str "Line exceeds width " width ": visible="
                  (ansi/visible-width text)
                  " text=" (pr-str (ansi/strip-ansi text))))))))
+
+(deftest ul-nested-items-indent-under-parent
+  (let [lines (map ansi/strip-ansi (texts (md-ansi/render "- parent\n  - child\n- next" 40)))]
+    (is (= ["  • parent" "      • child" "  • next"] lines))))

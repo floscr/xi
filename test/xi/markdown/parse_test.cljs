@@ -72,3 +72,22 @@
   (testing "non-URL words starting with h are left as plain text"
     (is (= ["hello there"]
            (parse/parse-inline "hello there")))))
+
+(deftest nested-lists
+  (testing "indented items become child blocks of the item above"
+    (let [[block :as blocks] (parse/parse "- **A:**\n  - a1\n  - a2\n- **B:**\n  - b1")
+          [tag items children] block]
+      (is (= 1 (count blocks)))
+      (is (= :ul tag))
+      (is (= 2 (count items)))
+      (is (= [[:ul [["a1"] ["a2"]]] ] (first children)))
+      (is (= [[:ul [["b1"]]]] (second children)))))
+  (testing "flat lists keep the two-element shape"
+    (is (= [[:ul [["a"] ["b"]]]] (parse/parse "- a\n- b"))))
+  (testing "ordered parents with bullet children, and a blank line before the child"
+    (let [[[tag _ children]] (parse/parse "1. one\n\n   - x\n2. two")]
+      (is (= :ol tag))
+      (is (= [[:ul [["x"]]]] (first children)))
+      (is (nil? (second children)))))
+  (testing "text after the list is not swallowed"
+    (is (= 2 (count (parse/parse "- a\n  - b\n\nafter"))))))

@@ -194,11 +194,42 @@
 (defn- blank-line? [line]
   (str/blank? line))
 
+(defn- indented-line?
+  "True if line is non-blank and starts with whitespace."
+  [line]
+  (boolean (re-find #"^\s+\S" line)))
+
+(defn- dedent
+  "Strip the smallest common leading indent from the non-blank lines."
+  [lines]
+  (let [indent (fn [l] (count (re-find #"^\s*" l)))
+        n (apply min (map indent (remove blank-line? lines)))]
+    (mapv #(if (blank-line? %) "" (subs % n)) lines)))
+
+(defn- consume-item-children
+  "Take the indented lines that belong to the list item just before `lines`
+   (blank lines count only when more indented lines follow them).
+   Returns [dedented-child-lines remaining-lines]."
+  [lines]
+  (let [[child-lines remaining]
+        (loop [ls lines
+               acc []]
+          (cond
+            (empty? ls) [acc ls]
+            (indented-line? (first ls)) (recur (rest ls) (conj acc (first ls)))
+            (and (blank-line? (first ls))
+                 (indented-line? (first (drop-while blank-line? ls))))
+            (recur (rest ls) (conj acc (first ls)))
+            :else [acc ls]))]
+    [(if (seq child-lines) (dedent child-lines) []) remaining]))
+
 (defn- consume-list-items
   "Consume consecutive list items of the same type from lines.
    Skips blank lines between items so loose lists (items separated by a
    blank line) stay a single list block instead of restarting numbering.
-   Returns [items remaining-lines]."
+   Indented lines after an item are its children (a nested list or any
+   other blocks), returned dedented for the caller to parse.
+   Returns [items remaining-lines], items being {:text :children-lines}."
   [lines item-fn]
   (loop [lines lines
          items []]
@@ -207,7 +238,9 @@
       [items lines]
 
       (item-fn (first lines))
-      (recur (rest lines) (conj items (item-fn (first lines))))
+      (let [[children remaining] (consume-item-children (rest lines))]
+        (recur remaining (conj items {:text (item-fn (first lines))
+                                      :children-lines children})))
 
       ;; Blank line between items: continue only if a later non-blank line
       ;; is another item of the same type (a loose list).
@@ -264,7 +297,15 @@
    Returns a vector of block tokens."
   [text]
   (when (and text (not (str/blank? text)))
-    (let [lines (str/split-lines text)]
+    (let [lines (str/split-lines text)
+          ;; [tag item-inlines] — plus, only when some item has children, a
+          ;; third element: per-item vector of nested blocks (nil if none).
+          list-block (fn [tag items]
+                       (let [children (mapv #(when (seq (:children-lines %))
+                                               (parse (str/join "\n" (:children-lines %))))
+                                            items)]
+                         (cond-> [tag (mapv (comp parse-inline :text) items)]
+                           (some some? children) (conj children))))]
       (loop [lines lines
              blocks (transient [])]
         (if (empty? lines)
@@ -321,13 +362,13 @@
               (ul-item-line? line)
               (let [[items remaining] (consume-list-items lines ul-item-line?)]
                 (recur remaining
-                       (conj! blocks [:ul (mapv parse-inline items)])))
+                       (conj! blocks (list-block :ul items))))
 
               ;; Ordered list
               (ol-item-line? line)
               (let [[items remaining] (consume-list-items lines ol-item-line?)]
                 (recur remaining
-                       (conj! blocks [:ol (mapv parse-inline items)])))
+                       (conj! blocks (list-block :ol items))))
 
               ;; Blockquote
               (blockquote-line? line)

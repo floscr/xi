@@ -74,3 +74,12 @@
                    (filter #(some #{"button-group-item"} (:class (second %)))))]
     (is (= 2 (count items)))
     (is (every? #(fn? (get-in (second %) [:on :click])) items))))
+
+(deftest nested-list-renders-inside-li
+  (let [[li-a li-b] (filter #(and (vector? %) (= :li (first %)))
+                            (find-tag (md/render "- A\n  - a1\n  - a2\n- B") :ul))]
+    (testing "the nested list sits inside its parent's li"
+      (is (= 3 (count (find-all li-a :li))))
+      (is (some? (find-tag (vec (rest li-a)) :ul))))
+    (testing "an item without children stays flat"
+      (is (nil? (find-tag (vec (rest li-b)) :ul))))))
