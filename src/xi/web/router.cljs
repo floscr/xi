@@ -79,6 +79,19 @@
   (some (fn [r] (when (= session-id (:session-id r)) (:id r)))
         (get-in st [:lobby :rooms])))
 
+(defn stash-draft-chat
+  "Park the virtual new chat (:web/pending-room) in :web/draft-chats when the
+   user typed something into it, so leaving it doesn't lose the prompt: the
+   sidebar lists it under Drafts and `:draft-chat/open` brings it back. The
+   text itself stays in :web/drafts, keyed by the pending room's id. An empty
+   new chat is dropped as before. In-memory only — nothing is sent anywhere."
+  [st]
+  (let [{:keys [id] :as pending} (:web/pending-room st)]
+    (if (and pending (not (str/blank? (get-in st [:web/drafts id]))))
+      (update st :web/draft-chats
+              #(conj (filterv (fn [r] (not= id (:id r))) %) pending))
+      st)))
+
 (defn navigate
   "Set the route; push/replace history; drive the implied room change.
      roomless    set of pages that imply leaving the active room
@@ -173,10 +186,11 @@
                 (assoc :web/pending-read active-sid)
                 ;; Leaving the virtual new chat for a real destination (a
                 ;; session or home): drop its pending-room so its draft
-                ;; can't resurface in another chat. A fresh virtual chat gets a
-                ;; new pending-room (with a new id) via :room/new.
+                ;; can't resurface in another chat — a typed-in one is parked
+                ;; as a sidebar draft first. A fresh virtual chat gets a new
+                ;; pending-room (with a new id) via :room/new.
                 (or (not= page :chat) session-id)
-                (dissoc :web/pending-room)
+                (-> stash-draft-chat (dissoc :web/pending-room))
                 ;; Sync the git-status cwd from the route
                 (= page :git-status) (assoc :web/git-status-cwd cwd)
                 ;; Sync project dir drill-down from the route

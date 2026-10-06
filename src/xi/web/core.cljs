@@ -103,21 +103,47 @@
     (get-in st [:web/pending-room :cwd])
     (:cwd (state/active-room st))))
 
+(defn- open-pending-room
+  "Show `pending` as the virtual new chat (see room-new). A typed-in chat being
+   replaced is parked as a sidebar draft first, so opening another new chat
+   never costs the prompt."
+  [st pending]
+  (let [cwd (:cwd pending)]
+    {:state   (-> (router/stash-draft-chat st)
+                  (assoc :web/route {:page :chat :session-id nil})
+                  (assoc :web/pending-room pending)
+                  (assoc :web/timeline-window nil))
+     :effects (cond-> [[:history/push {:route {:page :chat}}]
+                       [:compose/focus]]
+                cwd (conj [:ws/send {:type :cwd/agents-files :cwd cwd}]))}))
+
+(defn- fresh-pending-room [st cwd]
+  (cond-> {:id (random-uuid) :cwd cwd}
+    (:web/preferred-model st) (assoc :model (:web/preferred-model st))))
+
 (defn- room-new
   "Open a fresh *virtual* chat: switch to the chat view but create no server
    room yet. The room stays client-only (launch header, no spinner, nothing to
    clean up) until the first prompt, which fires :room/join + submits via
    submit-pending / pending-submit-tap."
   [st _]
-  {:state   (-> st
-                (assoc :web/route {:page :chat :session-id nil})
-                (assoc :web/pending-room (cond-> {:id (random-uuid) :cwd (room-new-cwd st)}
-                                           (:web/preferred-model st)
-                                           (assoc :model (:web/preferred-model st))))
-                (assoc :web/timeline-window nil))
-   :effects (cond-> [[:history/push {:route {:page :chat}}]
-                     [:compose/focus]]
-              (room-new-cwd st) (conj [:ws/send {:type :cwd/agents-files :cwd (room-new-cwd st)}]))})
+  (open-pending-room st (fresh-pending-room st (room-new-cwd st))))
+
+(defn- draft-chat-open
+  "Resume a parked draft chat (see router/stash-draft-chat) from the sidebar."
+  [st {:keys [id]}]
+  (when-let [pending (some #(when (= id (:id %)) %) (:web/draft-chats st))]
+    (-> (update st :web/draft-chats #(filterv (fn [r] (not= id (:id r))) %))
+        (open-pending-room pending)
+        (assoc-in [:state :web/sidebar-open?] false))))
+
+(defn- draft-chat-discard
+  "Drop a parked draft chat and its text."
+  [st {:keys [id]}]
+  {:state (-> st
+              (update :web/draft-chats #(filterv (fn [r] (not= id (:id r))) %))
+              (update :web/drafts dissoc id)
+              (update :web/compose-images dissoc id))})
 
 (defn- counts-result
   "Store per-session response counts (ride along on :lobby/state).
@@ -1299,16 +1325,10 @@
                                        :effects [[:palette/close nil]
                                                  [:projects/sync-textarea {:text new-text}]]}))
           :projects/new-session   (fn [st {:keys [cwd]}]
-                                    {:state (-> st
-                                                (assoc :web/route {:page :chat :session-id nil})
-                                                (assoc :web/pending-room (cond-> {:id (random-uuid) :cwd cwd}
-                                                                           (:web/preferred-model st)
-                                                                           (assoc :model (:web/preferred-model st))))
-                                                (assoc :web/timeline-window nil)
-                                                (assoc :web/sidebar-open? false))
-                                     :effects (cond-> [[:history/push {:route {:page :chat}}]
-                                                       [:compose/focus]]
-                                                cwd (conj [:ws/send {:type :cwd/agents-files :cwd cwd}]))})
+                                    (-> (open-pending-room st (fresh-pending-room st cwd))
+                                        (assoc-in [:state :web/sidebar-open?] false)))
+          :draft-chat/open        draft-chat-open
+          :draft-chat/discard     draft-chat-discard
           ;; AGENTS.md files for the virtual new chat's cwd (launch header).
           ;; Dropped when the pending room moved on to another cwd meanwhile.
           :cwd/agents-files-result (fn [st {:keys [cwd agents-files]}]

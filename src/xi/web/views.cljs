@@ -3409,6 +3409,30 @@
        card)
       card)))
 
+(defn- draft-chat-card
+  "Sidebar row for a parked draft chat (see router/stash-draft-chat): the first
+   line of its unsent prompt, the project it would run in. Click resumes it;
+   the trailing x discards it with its text."
+  [dispatch! state {:keys [id cwd]}]
+  (let [text (some->> (str/split-lines (get-in state [:web/drafts id] ""))
+                      (some #(when-not (str/blank? %) (str/trim %))))]
+    [:div {:class ["project-card"]
+           :replicant/key (str "draft-" id)
+           :title text
+           :on {:click (fn [_] (dispatch! {:type :draft-chat/open :id id}))}}
+     [:div {:class ["project-card-icon" "project-card-icon--idle"]}
+      (icon/icon {:icon-name :edit :size :sm})]
+     [:div {:class ["project-card-info"]}
+      [:span {:class ["project-card-name"]} text]
+      (when cwd
+        [:span {:class ["project-card-path"]} (shorten-path cwd)])]
+     [:button {:class ["project-card-action"]
+               :title "Discard draft"
+               :on {:click (fn [^js e]
+                             (.stopPropagation e)
+                             (dispatch! {:type :draft-chat/discard :id id}))}}
+      (icon/icon {:icon-name :x :size :sm})]]))
+
 (defn- project-dir-card
   "Card for a project directory in the home view. `dirty?` draws an orange
    status dot on the folder icon when the project's git tree has changes."
@@ -4072,6 +4096,7 @@
         ;; "Hidden" = dismissed this run (reversible, still fully resumable).
         {:keys [recent hidden earlier]} (when render? (sidebar-session-groups state))
         cards    (concat recent hidden earlier)
+        drafts   (:web/draft-chats state)
         collapsed (or (:web/sidebar-collapsed state) #{})
         section  (partial sidebar-section dispatch! collapsed)]
     (sidebar/sidebar
@@ -4106,6 +4131,12 @@
                :attrs     {:replicant/key "all-projects"}
                :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home}))}
               "All projects")))
+         ;; New chats left with a prompt typed into them (client-local, not a
+         ;; session yet) so switching away doesn't lose the text.
+         (when (seq drafts)
+           (section {:id :drafts :label "Drafts"}
+             (for [d (rseq drafts)]
+               (draft-chat-card dispatch! state d))))
          (when (seq recent)
            (section {:id :recent :label "Recent"}
              (for [c (with-projects recent)]
@@ -4179,6 +4210,7 @@
                 (get-in state [:web/route :session-id])
                 (get-in state [:web/route :page])
                 (:web/sidebar-collapsed state)
+                (:web/draft-chats state)
                 (:web/project-dirty state)
                 (:web/theme-mode state)
                 (:web/nav-items state)

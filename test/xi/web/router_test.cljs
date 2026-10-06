@@ -219,3 +219,25 @@
           {:keys [effects]} (router/navigate roomless st {:page :chat :session-id "other-sid"})]
       (is (not (has-dispatch? effects :room/leave))
           "a drafted prompt means the room isn't truly empty"))))
+
+(deftest navigate-away-parks-typed-new-chat-as-draft
+  (let [pending {:id (random-uuid) :cwd "/proj"}
+        base    (assoc (state/initial-state) :web/pending-room pending)]
+    (testing "a new chat with text is parked in :web/draft-chats"
+      (let [{:keys [state]} (nav (assoc-in base [:web/drafts (:id pending)] "half-typed")
+                                 {:page :home})]
+        (is (nil? (:web/pending-room state)))
+        (is (= [pending] (:web/draft-chats state)))
+        (is (= "half-typed" (get-in state [:web/drafts (:id pending)]))
+            "the text stays under the pending room's id")))
+    (testing "an empty or blank new chat is dropped"
+      (is (empty? (:web/draft-chats (:state (nav base {:page :home})))))
+      (is (empty? (:web/draft-chats
+                   (:state (nav (assoc-in base [:web/drafts (:id pending)] "  \n")
+                                {:page :home}))))))
+    (testing "parking twice doesn't duplicate"
+      (let [st (-> base
+                   (assoc-in [:web/drafts (:id pending)] "x")
+                   router/stash-draft-chat
+                   router/stash-draft-chat)]
+        (is (= 1 (count (:web/draft-chats st))))))))
