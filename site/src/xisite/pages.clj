@@ -160,7 +160,7 @@ xi                         # connect a client")
      [:div.wrap
       [:h1 "A coding harness you can shape."]
       [:p.lede
-       "An AI harness with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
+       "A coding harness with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
       [:div.hero-actions
        (button/button {:variant :primary :size :lg :href "/docs/getting-started/"} "Get started")
        (button/button {:variant :secondary :size :lg :href "/docs/"} "Read the docs")]
