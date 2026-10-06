@@ -141,6 +141,14 @@ a.btn:hover { text-decoration: none; }
   font-size: 13.5px;
   line-height: 1.65;
 }
+.code-block .code-title {
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--code-border);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--code-fg);
+  opacity: 0.8;
+}
 .code-block code { font-size: inherit; background: none; padding: 0; }
 .code-block pre.code-output { border-top: 1px solid var(--code-border); }
 
@@ -317,6 +325,7 @@ a.btn:hover { text-decoration: none; }
 .docs-content { max-width: 760px; min-width: 0; }
 .docs-content > h1 { font-size: 2.4rem; margin-bottom: 12px; }
 .docs-content > h1 + p { font-size: 1.15rem; color: var(--fg-1); }
+.docs-content > h1 + h2 { margin-top: 24px; padding-top: 0; border-top: 0; }
 .docs-content h2 {
   font-size: 1.55rem;
   margin: 52px 0 16px;
