@@ -9,8 +9,8 @@
 
 (def ^:private install-sample
   "bun install -g xi-agent
-xi                         # terminal client
-xi server                  # plus the web client on localhost:7474")
+xi server                  # start the server, web client on localhost:7474
+xi                         # connect a client")
 
 (def ^:private extension-sample
   ";; ~/.config/xi/extensions/notes.cljs
