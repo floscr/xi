@@ -16,7 +16,7 @@ Everything in it is optional; Xi runs fine without the file.
  :projects {:browse ["~/code"]
             :repos  ["~/.config/dotfiles"]}
 
- :trusted-mcp-servers ["context7"]
+ :trusted-mcp-servers ["browser"]
 
  :agents {"assistant" {:system-prompt "You are a concise assistant."
                        :tools ["web_search" "fetch"]}}}

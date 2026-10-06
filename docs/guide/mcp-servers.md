@@ -7,11 +7,11 @@ other tool.
 ## Add a server
 
 ```text
-/mcp add context7 npx -y @upstash/context7-mcp@1.0.14
+/mcp add browser npx -y chrome-devtools-mcp@1.10.1 --headless
 ```
 
 Xi starts the server once, asks it for its tools, writes them to a cache, and
-registers them as `mcp__context7__<tool>`. From the next turn on, the agent
+registers them as `mcp__browser__<tool>`. From the next turn on, the agent
 can call them. The server process itself is only started when a tool is
 first called, so an unused server costs nothing.
 
@@ -19,10 +19,10 @@ first called, so an unused server costs nothing.
 whether it is trusted.
 
 ```text
-/mcp disable context7    # keep it registered, offer no tools
-/mcp enable context7
-/mcp refresh context7    # re-read its tool list after an update
-/mcp remove context7
+/mcp disable browser    # keep it registered, offer no tools
+/mcp enable browser
+/mcp refresh browser    # re-read its tool list after an update
+/mcp remove browser
 ```
 
 Pin a version in the command, as above. A server installed as `@latest`
@@ -36,12 +36,12 @@ with the server, the tool and every argument:
 ```text
 MCP tool call — approve?
 
-Server: context7
-Tool:   get-library-docs
+Server: browser
+Tool:   navigate_page
 
 Arguments:
-  context7CompatibleLibraryID: /facebook/react
-  topic: hooks
+  type: url
+  url: https://example.com
 ```
 
 `y` runs this call. `a` (**Always**) runs it and trusts the server: its calls
@@ -53,7 +53,7 @@ call, `/mcp untrust <id>` takes it back.
 To trust a server for good, name it in your [config](configuration.md):
 
 ```clojure
-:trusted-mcp-servers ["context7"]
+:trusted-mcp-servers ["browser"]
 ```
 
 A server listed there is trusted as it is, rebuilds included.
@@ -71,9 +71,9 @@ server, add a [rule](rules.md):
 `/mcp add` writes to `~/.config/xi/mcp.edn`. You can edit it by hand:
 
 ```clojure
-{:context7 {:transport :stdio
+{:browser  {:transport :stdio
             :command   "npx"
-            :args      ["-y" "@upstash/context7-mcp@1.0.14"]}
+            :args      ["-y" "chrome-devtools-mcp@1.10.1" "--headless"]}
 
  :docs     {:transport :stdio
             :command   "bb"

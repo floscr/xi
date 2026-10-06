@@ -43,10 +43,10 @@ xi server                  # plus the web client on localhost:7474")
                 {:effects [[:ext.notes/show {:room-id room-id}]]})}]})")
 
 (def ^:private mcp-sample
-  "/mcp add context7 npx -y @upstash/context7-mcp@1.0.14
+  "/mcp add browser npx -y chrome-devtools-mcp@1.10.1 --headless
 # connects, caches the tool list, done — tools are there on the next turn
 
-/mcp trust context7
+/mcp trust browser
 # run its tools without asking, until the server's code changes")
 
 (def ^:private clj-sample
