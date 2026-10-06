@@ -35,6 +35,10 @@ The model acts through **tools**: read a file, edit it, search, run a command,
 fetch a page. Xi offers a fixed set of built-in tools, and you add more through
 [extensions](extensions.md) and [MCP servers](mcp-servers.md).
 
+Reading a large source file returns an outline of its syntax tree, not the
+file; the agent asks for the definitions it needs. See
+[How the agent reads code](reading-code.md).
+
 One built-in tool stands out: instead of a shell, the agent gets a sandboxed
 Clojure REPL called [`clj`](clj-tool.md). Real commands run through it one at
 a time, argv-style, so you can read every one before it runs.

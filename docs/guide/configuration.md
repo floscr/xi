@@ -99,7 +99,7 @@ Settings that belong to the machine rather than to you:
 | `XI_TLS_PORT` | `7443` | The HTTPS port, when a certificate is configured. |
 | `XI_TLS_CERT`, `XI_TLS_KEY` | `~/.config/xi/tls/xi.crt`, `xi.key` | Certificate and key. Setting either turns HTTPS on. |
 | `XI_ICON` | `desktop` | The home-screen icon variant: `desktop`, `personal` or `green`. |
-| `XI_TREESITTER_DIR` | bundled | Where the tree-sitter runtime and grammars for file outlines are. |
+| `XI_TREESITTER_DIR` | bundled | Where the tree-sitter runtime and grammars for [file outlines](reading-code.md) are. |
 | `XI_GIT_LOCK_WAIT_SECS` | `600` | How long a chat waits for another chat's git operation on the same repository. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | The Ollama endpoint. |
 | `OPENCODE_API_KEY`, `OPENCODE_ZEN_API_KEY` | — | The OpenCode Zen key. See [Models](models.md). |
