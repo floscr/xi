@@ -98,7 +98,7 @@ xi server                  # plus the web client on localhost:7474")
       [:p.eyebrow "Coding harness · terminal and browser"]
       [:h1 "A coding harness you can shape."]
       [:p.lede
-       "Instead of a shell, the model gets a Clojure REPL, so every command is readable before it runs. Rules you write decide what it may do on its own. Shape the rest with extensions and MCP servers."]
+       "An AI harness with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
       [:div.hero-actions
        [:a.button.primary {:href "/docs/getting-started/"} "Get started"]
        [:a.button {:href "/docs/"} "Read the docs"]]

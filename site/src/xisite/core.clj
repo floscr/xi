@@ -4,7 +4,7 @@
 (def site-url "https://xi.florianschroedl.com")
 (def site-title "Xi")
 (def site-description
-  "A coding harness for the terminal and the browser. The model scripts in Clojure instead of a shell, rules you write decide what it may do, and extensions and MCP servers shape the rest.")
+  "An AI harness for the terminal and the browser, with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support.")
 
 (def repo-url "https://github.com/floscr/xi")
 
