@@ -342,6 +342,10 @@
   {:doc "Try the npm package like a user gets it: pack it, install the tarball into dist/try and run the installed xi as a foreground headless server (Ctrl-C stops it; port 7477, isolated HOME in dist/try/home). `--port N` changes the port, `--no-build` reuses the existing tarball."
    :task (apply shell "bun" "scripts/try-package.mjs" *command-line-args*)}
 
+  package:docker
+  {:doc "One shot: try the npm package on a clean Bun container (build, recreate, wait, Claude login). Subcommands: `approve <code>` pairs a browser, `login`, `down [--fresh]`. Port 7478 (`--port N`); `--no-build` reuses dist/*.tgz; `--fresh` forgets login and pairings."
+   :task (apply shell "bun" "scripts/try-package-docker.mjs" *command-line-args*)}
+
   treesitter:build
   {:doc "Rebuild resources/treesitter (web-tree-sitter runtime + WASM grammars) from its manifest.json; optionally only the named grammars. $TREE_SITTER overrides the tree-sitter command (e.g. \"steam-run tree-sitter\" on NixOS)."
    :task (apply shell "bun" "scripts/build-treesitter-wasm.mjs" *command-line-args*)}
