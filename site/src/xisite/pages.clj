@@ -159,7 +159,7 @@ xi                         # connect a client")
     [:section.hero
      [:div.wrap
       [:p.eyebrow "AI harness · terminal and browser"]
-      [:h1 "An AI harness you can shape."]
+      [:h1 "A coding harness you can shape."]
       [:p.lede
        "An AI harness with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
       [:div.hero-actions
