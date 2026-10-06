@@ -1,6 +1,6 @@
 # Xi
 
-Personal coding agent in ClojureScript + Bun.
+Personal coding harness in ClojureScript + Bun.
 
 ## Processes: run `bb check` first
 

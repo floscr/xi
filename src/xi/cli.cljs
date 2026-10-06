@@ -168,7 +168,7 @@
 (def ^:private DEFAULT_MODEL "claude-opus-4-8")
 
 (def ^:private HELP_TEXT
-  "xi — a personal coding agent (ClojureScript + Bun)
+  "xi — a personal coding harness (ClojureScript + Bun)
 
 USAGE
   xi [flags]                 Standalone TUI. One local room; auto-joins a

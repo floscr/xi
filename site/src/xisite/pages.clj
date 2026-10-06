@@ -89,14 +89,14 @@ xi server                  # plus the web client on localhost:7474")
 (defn home []
   (ui/render-page
    (ui/layout
-    {:title "Xi — a coding agent you can shape"
+    {:title "Xi — a coding harness you can shape"
      :description core/site-description
      :path "/"
      :body-class "home"}
     [:section.hero
      [:div.wrap
-      [:p.eyebrow "Coding agent · terminal and browser"]
-      [:h1 "A coding agent you can shape."]
+      [:p.eyebrow "Coding harness · terminal and browser"]
+      [:h1 "A coding harness you can shape."]
       [:p.lede
        "Xi runs in your terminal and keeps going in your browser. Add tools with a file in a folder, plug in MCP servers, and decide what it may do with rules you can read."]
       [:div.hero-actions

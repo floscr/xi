@@ -525,7 +525,7 @@
    approval on the server, or after the server denied this client key."
   [{:keys [status code]}]
   (node/children
-   [(node/text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent")))
+   [(node/text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding harness")))
     (node/spacer)
     (case status
       :pending
@@ -552,7 +552,7 @@
   "Header components shown at the top of a room's chat."
   [{:keys [model cwd agents-files]}]
   (node/children
-   [(node/text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding agent")))
+   [(node/text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding harness")))
     (when model
       (node/text (str (ansi/fg :dim "Model: ") (ansi/fg :accent model))))
     (when cwd

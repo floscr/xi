@@ -37,7 +37,7 @@ On failure: `{:ok false :error "…"}`.
 | Key | Does |
 | --- | --- |
 | `:message` | The prompt (required) |
-| `:agent` | An [agent profile](agents.md). Without it the run is a full coding agent. |
+| `:agent` | An [agent profile](agents.md). Without it the run has the full coding toolset. |
 | `:session-id` | Continue that conversation |
 | `:model` | Another model |
 | `:no-store?` | Leave no session behind |

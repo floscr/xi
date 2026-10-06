@@ -1,7 +1,7 @@
 # Agent profiles
 
 Run Xi as an assistant with a fixed set of tools and its own instructions
-instead of as a coding agent. A profile is a few lines of config; the sessions
+instead of as a coding harness. A profile is a few lines of config; the sessions
 it creates are kept apart from your coding chats.
 
 ## A profile

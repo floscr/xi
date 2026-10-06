@@ -37,7 +37,7 @@ The root TUI is itself a Container. At startup, `cli.cljs` builds this tree:
 ```
 root (Container)
 ├── chat-container (Container)
-│   ├── Text "Xi — coding agent"
+│   ├── Text "Xi — coding harness"
 │   ├── Text "Model: claude-sonnet-..."
 │   ├── Text "Type /quit to exit..."
 │   ├── Spacer

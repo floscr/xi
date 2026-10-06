@@ -55,7 +55,7 @@
      :agent           - agent profile id (~/.config/xi/config.edn [:agents id]:
                         its :tools allowlist + system prompt); sessions are
                         stored per agent in ~/.config/xi/personal-agent/<id>/.
-                        Without it the run is a full coding agent in the
+                        Without it the run is a full coding harness in the
                         temp dir — pass \"root\" for the default restricted
                         profile.
      :session-id      - continue a saved conversation (pass back the
