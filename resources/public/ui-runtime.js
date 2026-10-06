@@ -4358,6 +4358,327 @@
   }));
   window["__uiLongPress"] = dispatch_contextmenu_BANG_;
 
+  // .compiled/lightbox.mjs
+  var overlay_sel = ".lightbox-overlay";
+  var image_sel = ".lightbox-image";
+  var max_scale = 5;
+  var pinch_min = 0.75;
+  var pinch_max = 6;
+  var double_tap_scale = 2.5;
+  var double_tap_ms = 300;
+  var tap_slop_px = 10;
+  var double_tap_slop_px = 30;
+  var identity_zoom = { "s": 1, "tx": 0, "ty": 0 };
+  var pointers = /* @__PURE__ */ new Map();
+  var gesture = atom(null);
+  var suppress_click_QMARK_2 = atom(false);
+  var last_tap = atom(null);
+  var clamp2 = function(lo, hi, v) {
+    return Math.min(hi, Math.max(lo, v));
+  };
+  var rel = function(x, y) {
+    return [x - window.innerWidth / 2, y - window.innerHeight / 2];
+  };
+  var zoom_of = function(img) {
+    const or__23426__auto__1 = img["__uiZoom"];
+    if (truth_(or__23426__auto__1)) {
+      return or__23426__auto__1;
+    } else {
+      return identity_zoom;
+    }
+    ;
+  };
+  var zoom_at = function(z, s, px, py) {
+    const k1 = s / get(z, "s");
+    return assoc(z, "s", s, "tx", px - k1 * (px - get(z, "tx")), "ty", py - k1 * (py - get(z, "ty")));
+  };
+  var settle = function(img, z) {
+    const s1 = clamp2(1, max_scale, get(z, "s"));
+    const mx2 = Math.max(0, (s1 * img.offsetWidth - window.innerWidth) / 2);
+    const my3 = Math.max(0, (s1 * img.offsetHeight - window.innerHeight) / 2);
+    return assoc(z, "s", s1, "tx", clamp2(-mx2, mx2, get(z, "tx")), "ty", clamp2(-my3, my3, get(z, "ty")));
+  };
+  var apply_zoom_BANG_ = function(img, z, animate_QMARK_) {
+    img["__uiZoom"] = z;
+    const st1 = img.style;
+    st1.transition = truth_(animate_QMARK_) ? "" : "none";
+    st1.transform = 1 === get(z, "s") ? "" : `${"translate("}${get(z, "tx") ?? ""}${"px, "}${get(z, "ty") ?? ""}${"px) scale("}${get(z, "s") ?? ""}${")"}`;
+    if (get(z, "s") > 1) {
+      return img.setAttribute("data-zoomed", "");
+    } else {
+      return img.removeAttribute("data-zoomed");
+    }
+    ;
+  };
+  var reset_zoom_BANG_ = function(img) {
+    img["__uiZoom"] = null;
+    img.style.transform = "";
+    return img.removeAttribute("data-zoomed");
+  };
+  var current_points = function() {
+    return Array.from(pointers.values());
+  };
+  var rebase_BANG_ = function() {
+    const temp__23062__auto__1 = deref(gesture);
+    if (truth_(temp__23062__auto__1)) {
+      const g2 = temp__23062__auto__1;
+      const pts3 = current_points();
+      return reset_BANG_(gesture, assoc(g2, "z0", zoom_of(get(g2, "img")), "pts0", pts3, "max-pointers", Math.max(get(g2, "max-pointers"), pts3.length)));
+    }
+    ;
+  };
+  var midpoint = function(a, b) {
+    return rel((get(a, "x") + get(b, "x")) / 2, (get(a, "y") + get(b, "y")) / 2);
+  };
+  var distance = function(a, b) {
+    return Math.hypot(get(a, "x") - get(b, "x"), get(a, "y") - get(b, "y"));
+  };
+  var track_BANG_ = function() {
+    const map__12 = deref(gesture);
+    const img3 = get(map__12, "img");
+    const z04 = get(map__12, "z0");
+    const pts05 = get(map__12, "pts0");
+    const pts6 = current_points();
+    if (pts6.length >= 2) {
+      const a013 = pts05[0];
+      const b014 = pts05[1];
+      const a15 = pts6[0];
+      const b16 = pts6[1];
+      const vec__717 = midpoint(a013, b014);
+      const mx018 = nth(vec__717, 0, null);
+      const my019 = nth(vec__717, 1, null);
+      const vec__1020 = midpoint(a15, b16);
+      const mx21 = nth(vec__1020, 0, null);
+      const my22 = nth(vec__1020, 1, null);
+      const s23 = clamp2(pinch_min, pinch_max, get(z04, "s") * (distance(a15, b16) / Math.max(1, distance(a013, b014))));
+      const z24 = zoom_at(z04, s23, mx018, my019);
+      return apply_zoom_BANG_(img3, assoc(z24, "tx", get(z24, "tx") + (mx21 - mx018), "ty", get(z24, "ty") + (my22 - my019)), false);
+    } else {
+      if (get(z04, "s") > 1) {
+        const p025 = pts05[0];
+        const p26 = pts6[0];
+        return apply_zoom_BANG_(img3, assoc(z04, "tx", get(z04, "tx") + (get(p26, "x") - get(p025, "x")), "ty", get(z04, "ty") + (get(p26, "y") - get(p025, "y"))), false);
+      }
+    }
+    ;
+  };
+  var tap_BANG_ = function(img, x, y) {
+    const now1 = Date.now();
+    const prev2 = deref(last_tap);
+    if (truth_((() => {
+      const and__23442__auto__3 = prev2;
+      if (truth_(and__23442__auto__3)) {
+        return now1 - get(prev2, "t") < double_tap_ms && Math.hypot(x - get(prev2, "x"), y - get(prev2, "y")) < double_tap_slop_px;
+      } else {
+        return and__23442__auto__3;
+      }
+      ;
+    })())) {
+      const z7 = zoom_of(img);
+      const vec__48 = rel(x, y);
+      const px9 = nth(vec__48, 0, null);
+      const py10 = nth(vec__48, 1, null);
+      reset_BANG_(last_tap, null);
+      return apply_zoom_BANG_(img, get(z7, "s") > 1 ? identity_zoom : settle(img, zoom_at(z7, double_tap_scale, px9, py10)), true);
+    } else {
+      return reset_BANG_(last_tap, { "t": now1, "x": x, "y": y });
+    }
+    ;
+  };
+  var on_pointerdown2 = function(e) {
+    const t1 = e.target;
+    const overlay2 = (() => {
+      const G__213 = t1;
+      if (G__213 == null) {
+        return null;
+      } else {
+        return G__213.closest(overlay_sel);
+      }
+      ;
+    })();
+    if (truth_((() => {
+      const and__23442__auto__4 = overlay2;
+      if (truth_(and__23442__auto__4)) {
+        return not(t1.closest(".lightbox-close")) && (() => {
+          const or__23426__auto__5 = !("mouse" === e.pointerType);
+          if (or__23426__auto__5) {
+            return or__23426__auto__5;
+          } else {
+            return e.button === 0;
+          }
+          ;
+        })();
+      } else {
+        return and__23442__auto__4;
+      }
+      ;
+    })())) {
+      const temp__23062__auto__6 = overlay2.querySelector(image_sel);
+      if (truth_(temp__23062__auto__6)) {
+        const img7 = temp__23062__auto__6;
+        if (truth_((() => {
+          const or__23426__auto__8 = pointers.size === 0;
+          if (or__23426__auto__8) {
+            return or__23426__auto__8;
+          } else {
+            return !_EQ_(img7, get(deref(gesture), "img"));
+          }
+          ;
+        })())) {
+          pointers.clear();
+          reset_BANG_(suppress_click_QMARK_2, false);
+          reset_BANG_(gesture, { "img": img7, "moved": false, "on-image": img7.contains(t1), "max-pointers": 0 });
+        }
+        ;
+        const x9 = e.clientX;
+        const y10 = e.clientY;
+        pointers.set(e.pointerId, { "x": x9, "y": y10, "x0": x9, "y0": y10 });
+        if ("mouse" === e.pointerType) {
+          e.preventDefault();
+        }
+        ;
+        return rebase_BANG_();
+      }
+      ;
+    }
+    ;
+  };
+  var on_pointermove3 = function(e) {
+    const id1 = e.pointerId;
+    if (truth_(pointers.has(id1))) {
+      const p2 = pointers.get(id1);
+      const x3 = e.clientX;
+      const y4 = e.clientY;
+      pointers.set(id1, assoc(p2, "x", x3, "y", y4));
+      if (Math.hypot(x3 - get(p2, "x0"), y4 - get(p2, "y0")) > tap_slop_px) {
+        swap_BANG_(gesture, assoc, "moved", true);
+      }
+      ;
+      return track_BANG_();
+    }
+    ;
+  };
+  var on_pointer_end2 = function(e) {
+    const id1 = e.pointerId;
+    if (truth_(pointers.has(id1))) {
+      pointers.delete(id1);
+      if (pointers.size > 0) {
+        return rebase_BANG_();
+      } else {
+        const map__23 = deref(gesture);
+        const img4 = get(map__23, "img");
+        const moved5 = get(map__23, "moved");
+        const on_image6 = get(map__23, "on-image");
+        const max_pointers7 = get(map__23, "max-pointers");
+        reset_BANG_(gesture, null);
+        if (truth_(moved5)) {
+          reset_BANG_(suppress_click_QMARK_2, true);
+        }
+        ;
+        if (truth_(not(moved5) && (() => {
+          const and__23442__auto__8 = on_image6;
+          if (truth_(and__23442__auto__8)) {
+            return 1 === max_pointers7 && "pointerup" === e.type;
+          } else {
+            return and__23442__auto__8;
+          }
+          ;
+        })())) {
+          return tap_BANG_(img4, e.clientX, e.clientY);
+        } else {
+          return apply_zoom_BANG_(img4, settle(img4, zoom_of(img4)), true);
+        }
+        ;
+      }
+      ;
+    }
+    ;
+  };
+  var on_wheel = function(e) {
+    const temp__23062__auto__1 = (() => {
+      const G__222 = e.target;
+      if (G__222 == null) {
+        return null;
+      } else {
+        return G__222.closest(overlay_sel);
+      }
+      ;
+    })();
+    if (truth_(temp__23062__auto__1)) {
+      const overlay3 = temp__23062__auto__1;
+      const temp__23062__auto__4 = overlay3.querySelector(image_sel);
+      if (truth_(temp__23062__auto__4)) {
+        const img5 = temp__23062__auto__4;
+        e.preventDefault();
+        const z9 = zoom_of(img5);
+        const dy10 = e.deltaY * (1 === e.deltaMode ? 16 : 1);
+        const k11 = Math.exp(-dy10 * (truth_(e.ctrlKey) ? 0.01 : 2e-3));
+        const vec__612 = rel(e.clientX, e.clientY);
+        const px13 = nth(vec__612, 0, null);
+        const py14 = nth(vec__612, 1, null);
+        return apply_zoom_BANG_(img5, settle(img5, zoom_at(z9, clamp2(1, max_scale, get(z9, "s") * k11), px13, py14)), false);
+      }
+      ;
+    }
+    ;
+  };
+  var on_click_capture2 = function(e) {
+    if (truth_(deref(suppress_click_QMARK_2))) {
+      reset_BANG_(suppress_click_QMARK_2, false);
+      e.preventDefault();
+      return e.stopPropagation();
+    }
+    ;
+  };
+  var on_load_capture = function(e) {
+    const t1 = e.target;
+    if (truth_((() => {
+      const and__23442__auto__2 = t1.matches;
+      if (truth_(and__23442__auto__2)) {
+        return t1.matches(image_sel);
+      } else {
+        return and__23442__auto__2;
+      }
+      ;
+    })())) {
+      return reset_zoom_BANG_(t1);
+    }
+    ;
+  };
+  var on_dragstart = function(e) {
+    const t1 = e.target;
+    if (truth_((() => {
+      const and__23442__auto__2 = t1;
+      if (truth_(and__23442__auto__2)) {
+        const and__23442__auto__3 = t1.closest;
+        if (truth_(and__23442__auto__3)) {
+          return t1.closest(overlay_sel);
+        } else {
+          return and__23442__auto__3;
+        }
+        ;
+      } else {
+        return and__23442__auto__2;
+      }
+      ;
+    })())) {
+      return e.preventDefault();
+    }
+    ;
+  };
+  if (truth_(window["__uiLightboxZoom"])) {
+  } else {
+    window["__uiLightboxZoom"] = true;
+    document.addEventListener("pointerdown", on_pointerdown2, true);
+    document.addEventListener("pointermove", on_pointermove3, true);
+    document.addEventListener("pointerup", on_pointer_end2, true);
+    document.addEventListener("pointercancel", on_pointer_end2, true);
+    document.addEventListener("click", on_click_capture2, true);
+    document.addEventListener("wheel", on_wheel, { "capture": true, "passive": false });
+    document.addEventListener("load", on_load_capture, true);
+    document.addEventListener("dragstart", on_dragstart, true);
+  }
+
   // .compiled/masonry.mjs
   var raf = atom(null);
   var observed = /* @__PURE__ */ new Set();
@@ -4514,12 +4835,12 @@
       const max_STAR_6 = !_EQ_("", input.max) ? num(input.max, null) : null;
       const next7 = round6(cur4 + dir * step3);
       const next8 = (() => {
-        const G__219 = next7;
-        const G__2110 = !(min_STAR_5 == null) ? Math.max(G__219, min_STAR_5) : G__219;
+        const G__239 = next7;
+        const G__2310 = !(min_STAR_5 == null) ? Math.max(G__239, min_STAR_5) : G__239;
         if (!(max_STAR_6 == null)) {
-          return Math.min(G__2110, max_STAR_6);
+          return Math.min(G__2310, max_STAR_6);
         } else {
-          return G__2110;
+          return G__2310;
         }
         ;
       })();
@@ -4529,7 +4850,7 @@
     }
     ;
   };
-  var on_wheel = function(e) {
+  var on_wheel2 = function(e) {
     const temp__23062__auto__1 = closest_field(e.target);
     if (truth_(temp__23062__auto__1)) {
       const field2 = temp__23062__auto__1;
@@ -4581,7 +4902,7 @@
     ;
   };
   var init_BANG_4 = function() {
-    document.addEventListener("wheel", on_wheel, { "passive": false });
+    document.addEventListener("wheel", on_wheel2, { "passive": false });
     return document.addEventListener("click", on_click2);
   };
   init_BANG_4();
@@ -4593,7 +4914,7 @@
   var key_step_fast = 50;
   var pan_threshold = 3;
   var axes_config = { "horizontal": { "client": "clientWidth", "extent": "width", "cursor": "col-resize", "grow": "ArrowRight", "shrink": "ArrowLeft", "sepOrient": "vertical" }, "vertical": { "client": "clientHeight", "extent": "height", "cursor": "row-resize", "grow": "ArrowDown", "shrink": "ArrowUp", "sepOrient": "horizontal" } };
-  var clamp2 = function(v, lo, hi) {
+  var clamp3 = function(v, lo, hi) {
     return Math.min(Math.max(v, lo), hi);
   };
   var round2 = function(v) {
@@ -4957,7 +5278,7 @@
   };
   var apply_size_BANG_ = function(panel, px) {
     const b1 = bounds(panel);
-    const v2 = clamp2(px, b1.min, b1.max);
+    const v2 = clamp3(px, b1.min, b1.max);
     const total3 = group_extent(panel.group);
     if (truth_((() => {
       const and__23442__auto__4 = panel.collapsed;
@@ -5069,7 +5390,7 @@
         }
         ;
       })();
-      const next7 = truth_(collapse5) ? 0 : Math.round(clamp2(pixels4, s1.min, s1.max));
+      const next7 = truth_(collapse5) ? 0 : Math.round(clamp3(pixels4, s1.min, s1.max));
       if (!_EQ_(truth_(collapse5) ? true : false, truth_(s1.sessionCollapsed) ? true : false)) {
         drag_collapse_BANG_(panel, collapse5);
       }
@@ -5143,7 +5464,7 @@
       const next9 = key1 === "End" ? b3.max : key1 === "Home" ? b3.min : key1 === "PageDown" ? t8 + step7 : key1 === "PageUp" ? t8 - step7 : _EQ_(key1, axes2["grow"]) ? t8 + step7 : _EQ_(key1, axes2["shrink"]) ? t8 - step7 : "else" ? null : null;
       if (!(next9 == null)) {
         e.preventDefault();
-        return apply_size_BANG_(panel, clamp2(next9, b3.min, b3.max));
+        return apply_size_BANG_(panel, clamp3(next9, b3.min, b3.max));
       }
       ;
     }
@@ -5509,7 +5830,7 @@
   // .compiled/popover.mjs
   var gap = 8;
   var edge = 8;
-  var clamp3 = function(v, lo, hi) {
+  var clamp4 = function(v, lo, hi) {
     return Math.max(lo, Math.min(v, hi));
   };
   var align_h = function(tr, cw, align) {
@@ -5571,8 +5892,8 @@
     const vh10 = window.innerHeight;
     const left11 = side1 === "left" ? tr5.left - cw7 - gap : side1 === "right" ? tr5.right + gap : "else" ? align_h(tr5, cw7, align3) : null;
     const top12 = side1 === "top" ? tr5.top - ch8 - gap : side1 === "bottom" ? tr5.bottom + gap : "else" ? align_v(tr5, ch8, align3) : null;
-    content.style.left = `${clamp3(left11, edge, vw9 - cw7 - edge) ?? ""}px`;
-    return content.style.top = `${clamp3(top12, edge, vh10 - ch8 - edge) ?? ""}px`;
+    content.style.left = `${clamp4(left11, edge, vw9 - cw7 - edge) ?? ""}px`;
+    return content.style.top = `${clamp4(top12, edge, vh10 - ch8 - edge) ?? ""}px`;
   };
   var current = { "content": null, "trigger": null };
   var reposition_BANG_ = function() {
@@ -5749,25 +6070,25 @@
     ;
   };
   var open_select = (() => {
-    const f22 = (function(var_args) {
-      const args231 = [];
+    const f24 = (function(var_args) {
+      const args251 = [];
       const len__23321__auto__2 = arguments.length;
-      let i243 = 0;
+      let i263 = 0;
       while (true) {
-        if (i243 < len__23321__auto__2) {
-          args231.push(arguments[i243]);
-          let G__4 = i243 + 1;
-          i243 = G__4;
+        if (i263 < len__23321__auto__2) {
+          args251.push(arguments[i263]);
+          let G__4 = i263 + 1;
+          i263 = G__4;
           continue;
         }
         ;
         break;
       }
       ;
-      const argseq__23513__auto__5 = 1 < args231.length ? args231.slice(1) : null;
-      return f22.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
+      const argseq__23513__auto__5 = 1 < args251.length ? args251.slice(1) : null;
+      return f24.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
     });
-    f22.cljs$core$IFn$_invoke$arity$variadic = (function(trigger, args) {
+    f24.cljs$core$IFn$_invoke$arity$variadic = (function(trigger, args) {
       dismiss_BANG_2();
       const options6 = (() => {
         const passed7 = first(args);
@@ -5862,8 +6183,8 @@
       }
       ;
     });
-    f22.cljs$lang$maxFixedArity = 1;
-    return f22;
+    f24.cljs$lang$maxFixedArity = 1;
+    return f24;
   })();
   window["__uiSelect"] = open_select;
 
@@ -5896,8 +6217,8 @@
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   };
   var resolve_effective = function(mode) {
-    const G__261 = mode;
-    switch (G__261) {
+    const G__281 = mode;
+    switch (G__281) {
       case "light":
         return "light";
         break;
@@ -5926,8 +6247,8 @@
   var apply_theme_BANG_ = function(mode) {
     const el1 = document.documentElement;
     suppress_transitions_BANG_();
-    const G__272 = mode;
-    switch (G__272) {
+    const G__292 = mode;
+    switch (G__292) {
       case "light":
         return el1.setAttribute("data-theme", "light");
         break;
@@ -5967,8 +6288,8 @@
   var toggle_BANG_ = function() {
     const current1 = get_mode();
     const next_mode2 = (() => {
-      const G__283 = current1;
-      switch (G__283) {
+      const G__303 = current1;
+      switch (G__303) {
         case "auto":
           return "light";
           break;
@@ -6138,14 +6459,14 @@
       ;
     })().split(","))));
     const override_keys4 = set(map(first, viewport_overrides));
-    const kept5 = remove((function(p__29) {
-      const vec__69 = p__29;
+    const kept5 = remove((function(p__31) {
+      const vec__69 = p__31;
       const k10 = nth(vec__69, 0, null);
       const _11 = nth(vec__69, 1, null);
       return contains_QMARK_(override_keys4, k10);
     }), entries1);
-    return join(", ", map((function(p__30) {
-      const vec__1215 = p__30;
+    return join(", ", map((function(p__32) {
+      const vec__1215 = p__32;
       const k16 = nth(vec__1215, 0, null);
       const v17 = nth(vec__1215, 1, null);
       if (v17 == null) {

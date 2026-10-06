@@ -4723,6 +4723,9 @@ a.btn-link {
   justify-content: center;
   cursor: zoom-out;
   animation: lightbox-in 0.15s ease;
+  /* pinch / pan are handled by the ui/js/lightbox runtime */
+  touch-action: none;
+  overscroll-behavior: contain;
 }
 
 @keyframes lightbox-in {
@@ -4736,6 +4739,19 @@ a.btn-link {
   object-fit: contain;
   border-radius: var(--radius-lg);
   cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  /* snap-back after a gesture; the runtime disables it while tracking */
+  transition: transform 0.2s ease;
+}
+
+.lightbox-image[data-zoomed] {
+  cursor: grab;
+}
+
+.lightbox-image[data-zoomed]:active {
+  cursor: grabbing;
 }
 
 .lightbox-close {
