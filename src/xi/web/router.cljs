@@ -216,13 +216,27 @@
 ;; whether history.back() has somewhere to go or needs a fallback route.
 (defonce nav-depth (atom 0))
 
+;; iOS gives a home-screen PWA a native back/forward swipe that walks session
+;; history, and no web API reliably disables it (a touchstart preventDefault
+;; at the screen edge is best-effort at most, and iOS 26 adds a swipe-back
+;; from anywhere in the content). There's no browser back button in
+;; standalone mode either, so pushing entries only feeds that gesture: there,
+;; every navigation replaces the current entry instead, leaving the swipe
+;; nothing to go back to. In-app back buttons use their :nav/back fallback.
+(def ^:private no-history?
+  (boolean
+   (or (and (exists? js/navigator) (true? (.-standalone js/navigator)))
+       (and (exists? js/window.matchMedia)
+            (.-matches (.matchMedia js/window "(display-mode: standalone)"))))))
+
 (defn history-effect
   "The `:history/push` effect — pushState/replaceState the route's path.
-   Closed over the composed extension route table."
+   Closed over the composed extension route table. Always replaces in a
+   standalone PWA (see `no-history?`)."
   [routes]
   (fn [_ctx {:keys [route replace?]}]
     (let [path (route->path routes route)]
-      (if replace?
+      (if (or replace? no-history?)
         (.replaceState js/window.history #js {:navDepth @nav-depth} "" path)
         (when (not= path (.-pathname js/window.location))
           (let [d (swap! nav-depth inc)]
@@ -241,7 +255,7 @@
    Called once after the app is created."
   [routes dispatch!]
   ;; Restore nav-depth from history.state (survives page reloads)
-  (when-let [d (some-> js/history.state (.-navDepth))]
+  (when-let [d (and (not no-history?) (some-> js/history.state (.-navDepth)))]
     (reset! nav-depth d))
   (let [route->ev (fn [] (assoc (parse-path routes (.-pathname js/window.location))
                                 :type :route/navigate :replace? true))]

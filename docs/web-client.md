@@ -141,6 +141,13 @@ join/leave dispatches (`xi.web.router`). `popstate` re-dispatches navigate
 with `:replace? true`. Deep-linking `/chat/:sid` hydrates from cache, then
 joins/resumes the session over WS.
 
+In a standalone (home-screen) PWA every navigation **replaces** the history
+entry instead of pushing one. iOS's back/forward swipe walks session history
+and no web API reliably disables it (touchstart `preventDefault` at the edge
+is best-effort, and iOS 26 adds a swipe-back from anywhere), so the PWA keeps
+a single entry and the gesture has nothing to navigate to. In-app back
+buttons (`:nav/back`) fall back to their `:fallback` route there.
+
 ### Unread tracking
 
 Server round-trip `:session/counts` → `:session/counts-result`
