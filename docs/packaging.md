@@ -70,8 +70,11 @@ bb package:publish             # bb package, then npm publish dist/<name>-<versi
 bb package:publish --no-build  # publish the tarball already in dist/
 ```
 
-The task publishes the packed tarball, not the working tree, so what goes up
-is exactly what `bb package` staged. Bump `version` in the repo's
+npm refuses to publish without two-factor authentication on the account
+(`403 Two-factor authentication … is required`): enable it on npmjs.com
+(Account → Two-Factor Authentication), after which `npm publish` prompts for
+the one-time code. The task publishes the packed tarball, not the working
+tree, so what goes up is exactly what `bb package` staged. Bump `version` in the repo's
 `package.json` before each release; npm refuses to republish a version.
 
 ## Testing a package
