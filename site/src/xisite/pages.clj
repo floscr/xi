@@ -265,21 +265,25 @@ xi                         # connect a client")
 
 ;; --- Docs ---
 
-(defn- sidebar [sections current-path]
+(defn- sidebar-subsections
+  "The current page's headings, nested under its sidebar link."
+  [headings]
+  (when (seq headings)
+    [:div.docs-subsections
+     (for [{:keys [id text]} headings]
+       [:a {:href (str "#" id)} text])]))
+
+(defn- sidebar [sections current-path headings]
   [:nav.docs-sidebar {:aria-label "Documentation"}
    [:a.docs-sidebar-home {:href "/docs/" :class (when (= current-path "/docs/") "active")} "Overview"]
    (for [{:keys [title pages]} sections]
      [:div.docs-section
       [:div.docs-section-title title]
-      (for [{:keys [path nav-title]} pages]
-        [:a {:href path :class (when (= path current-path) "active")} nav-title])])])
-
-(defn- toc [headings]
-  (when (seq headings)
-    [:nav.docs-toc {:aria-label "On this page"}
-     [:div.docs-toc-title "On this page"]
-     (for [{:keys [level id text]} headings]
-       [:a {:href (str "#" id) :class (str "level-" level)} text])]))
+      (for [{:keys [path nav-title]} pages
+            :let [active? (= path current-path)]]
+        (list
+         [:a {:href path :class (when active? "active")} nav-title]
+         (when active? (sidebar-subsections headings))))])])
 
 (defn- docs-layout [{:keys [title description path sections headings]} & body]
   (ui/layout
@@ -291,9 +295,8 @@ xi                         # connect a client")
     (button/button {:variant :secondary :size :sm :icon-left :menu :class "docs-nav-toggle"
                     :attrs {:type "button" :aria-expanded "false" :aria-controls "docs-sidebar"}}
                    "Menu")
-    [:div#docs-sidebar.docs-sidebar-wrap (sidebar sections path)]
-    (into [:article.docs-content] body)
-    (toc headings)]))
+    [:div#docs-sidebar.docs-sidebar-wrap (sidebar sections path headings)]
+    (into [:article.docs-content] body)]))
 
 (defn docs-index [sections]
   (ui/render-page
