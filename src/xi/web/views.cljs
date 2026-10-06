@@ -20,6 +20,7 @@
             [xi.session.sidebar :as sb :refer [format-relative-time session-status
                                                active-first orphan-rooms
                                                sidebar-session-groups sidebar-session-order]]
+            [xi.tui.snippets :as snippets]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
             [xi.web.tool-views :as tool-views]
@@ -1465,6 +1466,21 @@
                                               :draft-key draft-key}))
                               nil))
                           (cond
+                            ;; Tab expands a snippet trigger before the caret
+                            ;; (c → continue), like the TUI. Anywhere else Tab
+                            ;; keeps its default focus move.
+                            (and (= "Tab" (.-key e)) (not (.-shiftKey e))
+                                 (= (.. e -target -selectionStart)
+                                    (.. e -target -selectionEnd)))
+                            (let [^js el (.-target e)]
+                              (when-let [{:keys [text caret]}
+                                         (snippets/expand-at (.-value el) (.-selectionStart el))]
+                                (.preventDefault e)
+                                (set! (.-value el) text)
+                                (.setSelectionRange el caret caret)
+                                (dispatch! {:type :compose/set-draft
+                                            :draft-key draft-key :text text})))
+
                             ;; Shift+Enter inserts a newline, like the TUI. We
                             ;; insert it manually and preventDefault so the
                             ;; beforeinput "insertLineBreak" handler above does

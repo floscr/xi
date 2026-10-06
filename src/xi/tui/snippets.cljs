@@ -10,6 +10,22 @@
   [trigger]
   (get @snippets trigger))
 
+(defn expand-at
+  "Expand the snippet trigger that ends at `caret` in multi-line `text`. The
+   word is delimited by whitespace, so it also works after a newline (the web
+   composer). Returns {:text new-text :caret new-caret}, or nil when the word
+   before the caret is not a snippet trigger."
+  [text caret]
+  (let [before     (subs text 0 caret)
+        word-start (loop [i (dec (count before))]
+                     (cond
+                       (neg? i) 0
+                       (re-matches #"\s" (.charAt before i)) (inc i)
+                       :else (recur (dec i))))]
+    (when-let [expansion (expand (subs before word-start))]
+      {:text  (str (subs before 0 word-start) expansion (subs text caret))
+       :caret (+ word-start (count expansion))})))
+
 (defn add!
   "Register a snippet. Returns nil."
   [trigger expansion]

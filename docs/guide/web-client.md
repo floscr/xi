@@ -67,6 +67,7 @@ are kept and sent when the connection returns.
 | --- | --- |
 | `i` | Focus the message box |
 | `Esc` | Leave the message box |
+| `Tab` (in the message box) | Expand the snippet word before the cursor: `c` becomes `continue`, `rec` becomes `in a recent change`. Anywhere else Tab moves focus as usual. |
 | `G` | Scroll to the bottom |
 | `Alt+j` / `Alt+k` | Next / previous chat |
 | `Alt+n` | New chat |

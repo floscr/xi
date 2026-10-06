@@ -10,6 +10,20 @@
   (testing "unknown trigger returns nil"
     (is (nil? (snippets/expand "xyz")))))
 
+(deftest expand-at-test
+  (testing "trigger at the start of the text"
+    (is (= {:text "continue" :caret 8} (snippets/expand-at "c" 1))))
+
+  (testing "trigger after a space or a newline, text after the caret kept"
+    (is (= {:text "ok continue now" :caret 11} (snippets/expand-at "ok c now" 4)))
+    (is (= {:text "a\ncontinue" :caret 10} (snippets/expand-at "a\nc" 3))))
+
+  (testing "no expansion mid-word, for unknown words or an empty word"
+    (is (nil? (snippets/expand-at "abc" 3)))
+    (is (nil? (snippets/expand-at "xyz" 3)))
+    (is (nil? (snippets/expand-at "c " 2)))
+    (is (nil? (snippets/expand-at "" 0)))))
+
 (deftest add-remove-test
   (testing "add and expand custom snippet"
     (snippets/add! "thx" "thanks")
