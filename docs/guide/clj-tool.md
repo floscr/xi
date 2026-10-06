@@ -6,7 +6,7 @@ are readable scripts rather than pipe chains. They filter and aggregate in the
 runtime, real commands run one at a time, and only the result enters the
 conversation.
 
-## What the agent sees
+## What an agent executes
 
 ```clojure
 ;; count TODOs per file — only the summary comes back
