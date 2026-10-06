@@ -143,6 +143,7 @@ a.btn:hover { text-decoration: none; }
   line-height: 1.65;
 }
 .code-block code { font-size: inherit; background: none; padding: 0; }
+.code-block pre.code-output { border-top: 1px solid var(--code-border); }
 
 .hl-comment { color: #6c7486; font-style: italic; }
 .hl-string { color: #a8d8a1; }

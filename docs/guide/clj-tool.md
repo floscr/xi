@@ -14,7 +14,10 @@ conversation.
      (map (fn [f] [f (count (re-seq #"TODO" (cat f)))]))
      (filter (fn [[_ n]] (pos? n)))
      (into {}))
-;; => {"src/app/core.cljs" 3, "src/app/db.cljs" 1}
+```
+
+```output
+{"src/app/core.cljs" 3, "src/app/db.cljs" 1}
 ```
 
 Instead of a piped shell command:

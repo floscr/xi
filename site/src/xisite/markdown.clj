@@ -11,13 +11,17 @@
 ;; --- Code blocks ---
 
 (defn code-block-hiccup
-  "A fenced code block: highlighted <pre><code>. The block is always dark, so
-   it opts into the framework's dark tokens (`data-theme=\"dark\"` re-scopes
-   them to this subtree)."
-  [lang source]
-  [:div.code-block {:data-theme "dark"}
-   [:pre [:code {:data-language (or lang "text")}
-          (seq (highlight/highlight lang source))]]])
+  "A fenced code block: highlighted <pre><code>. The block is always dark, so it opts into the framework's
+   dark tokens (`data-theme=\"dark\"` re-scopes them to this subtree). An optional `output` source is
+   shown as a second highlighted <pre> in the same wrapper, divided from the code by a border."
+  ([lang source] (code-block-hiccup lang source nil))
+  ([lang source output]
+   [:div.code-block {:data-theme "dark"}
+    [:pre [:code {:data-language (or lang "text")}
+           (seq (highlight/highlight lang source))]]
+    (when output
+      [:pre.code-output [:code {:data-language (or lang "text")}
+                         (seq (highlight/highlight lang output))]])]))
 
 ;; --- Heading ids (github-slugger style) ---
 
@@ -71,17 +75,20 @@
 
 ;; --- Rendering ---
 
-(def ^:private code-fence-re #"(?ms)^```([\w-]*)[ \t]*\n(.*?)^```[ \t]*$")
+(def ^:private code-fence-re
+  "A fence, optionally followed directly by an ```output fence (the result of the code above it)."
+  #"(?ms)^```([\w-]*)[ \t]*\n(.*?)^```[ \t]*$(?:\n+^```output[ \t]*\n(.*?)^```[ \t]*$)?")
 
 (defn render-body
   "Markdown → html string."
   [body]
   (let [blocks (atom [])
         body (str/replace body code-fence-re
-                          (fn [[_ lang source]]
+                          (fn [[_ lang source output]]
                             (let [lang (when (seq lang) lang)
                                   source (str/replace source #"\n\z" "")
-                                  html (str (h/html (code-block-hiccup lang source)))]
+                                  output (some-> output (str/replace #"\n\z" ""))
+                                  html (str (h/html (code-block-hiccup lang source output)))]
                               (swap! blocks conj html)
                               (str "\n§CODEBLOCK" (dec (count @blocks)) "§\n"))))
         html (md/md-to-html-string body :heading-anchors false)
