@@ -183,8 +183,8 @@ xi                         # connect a client")
     [:section.feature.alt {:id "rules"}
      [:div.wrap.split.reverse
       [:div.feature-text
-       [:p.eyebrow "Rules"]
-       [:h2 "Rules you can read."]
+       [:p.eyebrow "Permissions"]
+       [:h2 "Permission rules."]
        [:p "What the agent may do on its own is a list of rules in a file, evaluated top to bottom. Allow, deny, ask, or nudge it in another direction."]
        (feature-list
         [["Scoped." "Match on the tool, the path, the command, the git repo, or the extension making the call."]
