@@ -1,13 +1,6 @@
 # Configuration
 
-Xi reads one optional file, `~/.config/xi/config.edn`. It names your
-extensions, your projects, your agent profiles and the MCP servers you trust.
-Everything in it is optional; Xi runs fine without the file.
-
-## The file
-
-```clojure
-;; ~/.config/xi/config.edn
+```clojure title="~/.config/xi/config.edn"
 {:type    :xi/config
  :version 1
 
