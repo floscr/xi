@@ -33,8 +33,9 @@
    NOT from tool fns — so an agent tool can't drive the turn loop, start a
    sub-agent without the spawn confirmation, or open chats on its own.
    :chat/start {:text :cwd :client-id} opens a new chat seeded with a user
-   message (see xi.server.room-manager)."
-  #{:prompt/submit :subagent/spawn :chat/start})
+   message (see xi.server.room-manager). :session/resume {:room-id
+   :session-id} loads a saved session into the room, as /resume id:<id> does."
+  #{:prompt/submit :subagent/spawn :chat/start :session/resume})
 
 (defn- own-event? [id ev-type]
   (= (some-> ev-type namespace) (str "ext." (name id))))

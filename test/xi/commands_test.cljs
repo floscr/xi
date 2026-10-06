@@ -198,32 +198,15 @@
 (deftest resume-command-bare-lists-sessions
   (let [{:keys [effects]} (handle (with-room)
                                   {:type :command/run :room-id "r" :name "resume"})]
-    (is (= [[:session/list {:room-id "r" :user "root"}]] effects))))
+    (is (= [[:session/list {:room-id "r"}]] effects))))
 
-(deftest favorite-commands-act-for-the-sender
-  (let [run (fn [name ev]
-              (:effects (handle (with-room)
-                                (merge {:type :command/run :room-id "r" :name name} ev))))]
-    (is (= [[:session/list-favorites {:room-id "r" :user "alice"}]]
-           (run "favorites" {:user "alice"})))
-    (is (= [[:session/list {:room-id "r" :user "alice"}]]
-           (run "sessions" {:user "alice"})))
-    (testing "/favorite stars the room's session for the sender"
-      (let [sid (get-in (with-room) [:rooms "r" :session :id])]
-        (is (= [[:session/favorite-toggle {:room-id "r" :session-id sid :user "alice"}]]
-               (run "favorite" {:user "alice"})))))
-    (testing "an unstamped command is the process' own user's"
-      (is (= [[:session/list-favorites {:room-id "r" :user "root"}]]
-             (run "favorites" {}))))))
-
-(deftest menu-star-toggles-the-selected-session-for-the-presser
-  (let [{:keys [effects]} (handle (with-room)
-                                  {:type :session/toggle-favorite :room-id "r"
-                                   :selected {:summary {:session-id "s9"}}
-                                   :reopen "favorites" :user "alice"})]
-    (is (= [[:session/favorite-toggle {:room-id "r" :session-id "s9"
-                                       :reopen "favorites" :user "alice"}]]
-           effects))))
+(deftest session-resume-loads-the-session-by-id
+  (is (= [[:session/load {:room-id "r" :scope :all :session-id "s1"}]]
+         (:effects (handle (with-room)
+                           {:type :session/resume :room-id "r" :session-id "s1"}))))
+  (testing "no such room, or no id: nothing"
+    (is (empty? (:effects (handle (with-room) {:type :session/resume :room-id "nope" :session-id "s1"}))))
+    (is (empty? (:effects (handle (with-room) {:type :session/resume :room-id "r"}))))))
 
 (deftest prompt-command-opens-buffer
   (let [{:keys [state]} (handle (with-room)

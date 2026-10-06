@@ -18,7 +18,7 @@
 (def allowed-keys
   "Web-half keys a user extension may declare. No :handlers / :fx — those are
    baked into the web client at startup; logic lives in the server half."
-  #{:id :routes :pages :nav-items :taps :tool-views})
+  #{:id :routes :pages :nav-items :taps :tool-views :sidebar-groups :session-menu-items})
 
 (def builtin-segments
   "First URL segments the web client routes itself."
@@ -26,6 +26,30 @@
 
 (defn- own-ns? [id kw]
   (and (keyword? kw) (= (namespace kw) (name id))))
+
+(defn- valid-group?
+  "A `:sidebar-groups` entry: a map with an :id namespaced by the extension (so
+   it can't take over a core group's collapsed state), a string :label, a
+   keyword :where, an optional positive integer :limit and an optional :more
+   row {:label …}."
+  [id g]
+  (and (map? g)
+       (own-ns? id (:id g))
+       (string? (:label g))
+       (keyword? (:where g))
+       (or (nil? (:limit g)) (pos-int? (:limit g)))
+       (or (nil? (:more g))
+           (and (map? (:more g)) (string? (:label (:more g)))))))
+
+(defn- valid-menu-item?
+  "A `:session-menu-items` entry: a map with a string :label, an optional
+   string :label-on and keyword :flag, and an :event map."
+  [m]
+  (and (map? m)
+       (string? (:label m))
+       (or (nil? (:label-on m)) (string? (:label-on m)))
+       (or (nil? (:flag m)) (keyword? (:flag m)))
+       (map? (:event m))))
 
 (defn validate
   "→ nil when `ext` is a usable web half, else a rejection reason.
@@ -52,6 +76,14 @@
                                        (contains? taken-segments %)) segs)))
       (seq (filter #(contains? taken-pages %) pages))
       (str "page already in use: " (str/join ", " (filter #(contains? taken-pages %) pages)))
+      (and (some? (:sidebar-groups ext))
+           (not (and (sequential? (:sidebar-groups ext))
+                     (every? #(valid-group? id %) (:sidebar-groups ext)))))
+      ":sidebar-groups must be maps {:id :<ext>/… :label str :where kw [:limit n] [:more {:label str …}]}"
+      (and (some? (:session-menu-items ext))
+           (not (and (sequential? (:session-menu-items ext))
+                     (every? valid-menu-item? (:session-menu-items ext)))))
+      ":session-menu-items must be maps {:label str :event {…} [:label-on str] [:flag kw]}"
       (and (some? views) (not (map? views)))
       ":tool-views must be a map of tool name → fn"
       (seq alien)
@@ -185,6 +217,20 @@
         (contains? passthrough-events t)   (dispatch! ev)
         :else                              (log-blocked id (str "dispatch " t))))))
 
+(defn- forwardable
+  "`event` as the core views may dispatch it for extension `id` (they add the
+   menu or card ctx to it as-is): an own event becomes the forward wrapper,
+   navigation passes, anything else is blocked — nil."
+  [id event]
+  (cond
+    (own-event? id (:type event))
+    {:type :user-ext/forward :event event}
+
+    (contains? passthrough-events (:type event))
+    event
+
+    :else (do (log-blocked id (str "event " (:type event))) nil)))
+
 (defn- error-box [id msg]
   [:div {:class "user-ext-error"}
    (str "Extension " (name id) " failed to render: " msg)])
@@ -250,7 +296,27 @@
                                 (assoc item :event {:type :user-ext/forward :event event})
                                 (contains? passthrough-events (:type event)) item
                                 :else (do (log-blocked id (str "nav item event " (:type event))) nil))))
-                      items))))))
+                      items)))
+
+      (:session-menu-items ext)
+      (update :session-menu-items
+              (fn [items]
+                (into []
+                      (keep (fn [item]
+                              (when-let [event (forwardable id (:event item))]
+                                (assoc item :event event))))
+                      items)))
+
+      (:sidebar-groups ext)
+      (update :sidebar-groups
+              (fn [groups]
+                (mapv (fn [g]
+                        (cond-> g
+                          (:more g)
+                          (update :more (fn [more]
+                                          (when-let [event (forwardable id (:event more))]
+                                            (assoc more :event event))))))
+                      groups))))))
 
 (defn forward-event
   "The event a :user-ext/forward wrapper sends to the server: the inner event,

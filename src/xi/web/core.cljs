@@ -1222,27 +1222,6 @@
                                    {:state (assoc st :web/git-status-text text
                                                      :web/git-status-cwd cwd
                                                      :web/git-status-loading? false)})
-          ;; Session favorites. Flip locally for a snappy star, then forward:
-          ;; the server persists them for this user and rebroadcasts an
-          ;; authoritative :lobby/state.
-          ;; Project-session listings aren't rebroadcast, so the local flip is
-          ;; what keeps that view in sync until it's re-fetched.
-          :favorites/toggle      (fn [st {:keys [session-id]}]
-                                   (let [flip (fn [ss]
-                                                (mapv #(if (= (:session-id %) session-id)
-                                                         (update % :favorite? not)
-                                                         %)
-                                                      ss))]
-                                     {:state (-> st
-                                                 (update-in [:lobby :sessions] flip)
-                                                 (update :web/project-sessions flip)
-                                                 ;; some-> : leave a nil (not
-                                                 ;; loaded) list nil — an empty
-                                                 ;; vec would shadow the lobby
-                                                 ;; fallback in the all view.
-                                                 (update :web/all-sessions #(some-> % flip)))
-                                      :effects [[:ws/send {:type :favorites/toggle
-                                                           :session-id session-id}]]}))
           ;; Hide/show a session in the recent list. Flip locally so the card
           ;; drops out of (or returns to) Recent instantly, then forward: the
           ;; server persists, closes any lingering idle room, and rebroadcasts

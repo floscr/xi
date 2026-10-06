@@ -325,6 +325,28 @@
     (is (= [{:type :ext.ext-g/go}] @seen)
         "a tool's own event loses a forged stamp, and :chat/start is blocked for it")))
 
+(deftest a-command-may-resume-a-session-but-a-tool-may-not
+  ;; :session/resume {:room-id :session-id} loads a saved session (what
+  ;; /resume id:<id> does): user-initiated, like :chat/start.
+  (let [id    :ext-r
+        seen  (atom [])
+        ev    {:type :session/resume :room-id "r" :session-id "s1"}
+        ext   (guard/wrap
+               {:id id
+                :commands [{:name "pick"
+                            :handler (fn [_ _] {:effects [[:app/dispatch ev]]})}]
+                :handlers {:ext.ext-r/go (fn [_ _] {:effects [[:app/dispatch ev]]})}
+                :tool-registry {"t" (fn [_ {:keys [dispatch!]}]
+                                      (dispatch! ev)
+                                      {:content []})}})
+        cmd   (:handler (first (:commands ext)))]
+    (is (= [[:app/dispatch ev]] (:effects (cmd {} {:room-id "r"})))
+        "a command may dispatch it")
+    (is (empty? (:effects ((get-in ext [:handlers :ext.ext-r/go]) {} {:type :ext.ext-r/go})))
+        "a handler of an unstamped own event may not")
+    ((get-in ext [:tool-registry "t"]) {} {:dispatch! (fn [e] (swap! seen conj e))})
+    (is (empty? @seen) "a tool may not")))
+
 (deftest fx-dispatch-is-filtered
   (let [id :ext-c
         seen (atom [])

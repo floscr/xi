@@ -134,7 +134,9 @@ No on-enter callback — chain a `:route/navigate` handler:
 - `:sidebar-groups` — data-only drawer groups of the sessions whose
   `:where` key is truthy, `:limit` of them; `:session-menu-items` —
   data-only entries of every session card's context menu (`:event` gets the
-  card's `:session-id`). See `xi.ext.favorites.web` for both.
+  card's `:session-id`). Also open to user extensions; the favorites extension
+  in the author's dotfiles is the worked example (stars kept per user with
+  `xi.api.user`, shown by `:session-flags`, see extensions-reference.md).
 - Replicant: seq-rendered siblings need `:replicant/key`.
 
 Canonical example: `src/xi/ext/canvas_review/web.cljs`.

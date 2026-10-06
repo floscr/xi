@@ -184,7 +184,6 @@
          (or (alt-j data) (= data "j") (= data arrow-down)) (do (move! :next) true)
          (or (alt-k data) (= data "k") (= data arrow-up))   (do (move! :prev) true)
          (= data "x")                                   (do (act! :dismissed/toggle) true)
-         (= data "s")                                   (do (act! :favorites/toggle) true)
          (= data "m")                                   (do (act! :session/mark-read) true)
          (= data ctrl-c)                                false      ;; let quit through
          :else                                          true))}))

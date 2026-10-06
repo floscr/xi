@@ -61,20 +61,6 @@ Recent chats are cached on the device, so the list and the last open chat
 paint at once, before the connection is back. Messages you send while offline
 are kept and sent when the connection returns.
 
-## Favorites
-
-Star a chat from its menu (right-click, long-press, or the ⋮ on the card):
-"Add to favorites". The sidebar then lists your five most recent favorites in
-a **Favorites** group, with an "All favorites" row when there are more, and
-**Favorites** in the ⋮ menu of any page opens the full list. Favorites are
-yours: a colleague on the same server stars their own. Chats you starred
-before favorites became per-user are everyone's starting point, until a user
-stars or unstars something.
-
-The group, the menu entry and the "Add to favorites" item come from the
-built-in favorites extension; leaving `xi.ext.favorites.web` out of the web
-extensions in `src/xi/config.cljc` removes all three.
-
 ## Keyboard
 
 | Key | Does |
@@ -117,9 +103,10 @@ them.
 These choices belong to your [user](server.md#users), not to the browser:
 the theme, the appearance settings, which sidebar groups are collapsed, the
 model new chats start with, and your recently used commands and skills. So do
-the chats you have read (the unread dots), the chats you hid from Recent and
-the chats you starred: the same chat can be unread for you and read for a
-colleague, and hidden or starred for one of you only. Change
+the chats you have read (the unread dots) and the chats you hid from Recent:
+the same chat can be unread for you and read for a colleague, and hidden for
+one of you only. What an [extension](extensions.md) keeps about you, such as
+a list of favorite chats, is yours too. Change
 them on your phone and your laptop follows; a colleague on the same server has
 their own. The server keeps them per user in `~/.config/xi/state/users/`. The
 browser also keeps a copy so the page paints with the right theme before it

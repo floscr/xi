@@ -12,7 +12,6 @@ point, summarising, trimming, and rolling over with pointers to the past.
 | `/new` (`Alt+n`) | A new chat in the same directory. |
 | `/clear` | Empty the current chat and start fresh in it. |
 | `/fork` | Continue in a new chat; the current one stays as it is. |
-| `/favorite` | Mark the chat; `/favorites` lists marked ones. |
 | `/sessions` | List saved chats. From a shell, `xi sessions`. |
 
 A chat remembers its directory, model and name. Xi names a chat from its

@@ -43,9 +43,6 @@
   []
   (.join node-path (claude-config-dir) "projects"))
 
-(def ^:private FAVORITES_FILE
-  (.join node-path HOME ".config" "xi" "favorites.json"))
-
 (def ^:private READ_STATE_FILE
   (.join node-path HOME ".config" "xi" "read-state.json"))
 
@@ -553,31 +550,6 @@
     (rm! canvas)
     (when deleted? (invalidate-listing-cache!))
     deleted?))
-
-;; ── Favorites (source-agnostic stars) ──────────────────────────────────────────────────
-;; Which chats are starred is per user (xi.user-state.store), keyed by the
-;; summary's :session-id so Xi/Claude sessions can all be starred without
-;; editing their own files. Listings carry no :favorite? — whoever sends one
-;; tags it for the user it is going to (annotate-favorites).
-
-(defn load-legacy-favorites
-  "The old global favorites, a vec of session-ids from
-   ~/.config/xi/favorites.json. [] when missing or unreadable. Only read, as
-   the starting point of a user who has not starred anything yet — otherwise
-   the upgrade would empty everyone's favorites."
-  []
-  (try
-    (if (fs/existsSync FAVORITES_FILE)
-      (->> (js/JSON.parse (fs/readFileSync FAVORITES_FILE "utf8"))
-           (js->clj)
-           (filterv string?))
-      [])
-    (catch :default _e [])))
-
-(defn annotate-favorites
-  "Tag each summary with :favorite? using a set of favorited session-ids."
-  [summaries favs]
-  (mapv #(assoc % :favorite? (contains? favs (:session-id %))) summaries))
 
 ;; ── Dismissed (hidden from Recent) ────────────────────────────────────────────
 ;; Reversible "archive from the recent list". The session stays fully on disk

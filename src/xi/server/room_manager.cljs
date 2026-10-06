@@ -350,14 +350,6 @@
   [_st {:keys [client-id cwd]}]
   {:effects [[:files/web-tree-reply {:client-id client-id :cwd cwd}]]})
 
-(defn- favorites-toggle
-  "Roomless: star/unstar a session by id, for the sender. The write + lobby
-   rebroadcast happen in the :favorites/toggle-reply effect (needs disk
-   access)."
-  [st {:keys [session-id] :as ev}]
-  {:effects [[:favorites/toggle-reply {:session-id session-id
-                                       :user       (state/event-user st ev)}]]})
-
 (defn- dismissed-toggle
   "Roomless: hide/show a session in the sender's recent list by id. The persist
    + lobby rebroadcast happen in the :dismissed/toggle-reply effect (needs disk
@@ -531,7 +523,6 @@
    :files/web-list         files-web-list
    :files/web-tree         files-web-tree
    :file/web-read          file-web-read
-   :favorites/toggle       favorites-toggle
    :dismissed/toggle       dismissed-toggle
    :session/delete         session-delete
    :session/mark-read      session-mark-read

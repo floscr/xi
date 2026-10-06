@@ -49,9 +49,13 @@ and `:remove-tools` are not available: whether a tool call runs is the
 - An extension's own events and effects are named `:ext.<id>/…`. A handler
   may dispatch those, plus `:ui/status` (text in the status line) and
   `:theme/set` (`:light`, `:dark` or nil for the terminal's code blocks).
-- `:prompt/submit`, `:chat/start` and `:subagent/spawn` may be dispatched from
-  commands, keybindings, effects a command started, and handlers of own
-  events a client sent (a click in a page). Never from tools.
+- `:prompt/submit`, `:chat/start`, `:subagent/spawn` and `:session/resume`
+  (`{:room-id … :session-id …}`: load a saved session into the chat, as
+  `/resume id:<id>` does) may be dispatched from commands, keybindings,
+  effects a command started, and handlers of own events a client sent (a
+  click in a page). Never from tools.
+- An own event a client sends needs no chat: it also arrives from the home
+  view and the sidebar, with `:user` and no `:room-id`.
 - Effects are returned from handlers as `{:effects [[:ext.<id>/name payload] …]}`;
   `[:app/dispatch event]` is the one built-in effect, and dispatches the event.
 
@@ -124,6 +128,16 @@ booleans, numbers, strings, keywords, and vectors, lists, sets and maps of
 those) under 64 KB printed, or the call throws and nothing is written. Passing
 an `id` that is not a plain user id throws too.
 
+#### Session flags
+
+An extension that keeps `{:session-flags {:favorite? ["<session-id>" …]}}` in
+its user state makes the server tag each of that user's sessions with
+`:favorite? true|false` (and the live rooms too): that is how a web half knows
+which sessions are starred. A flag is a keyword ending in `?`; the lobby's own
+(`:dismissed? :active? :busy? :unread? :current? :has-dialog? :error?`) are
+reserved. Writing the state refreshes every device of the user. The favorites
+extension in the author's dotfiles is the worked example.
+
 A handler or an effect has no `ctx` with a user in it. Take the id from the
 event that started the work, a command's `:user` or a client event's `:user`,
 and pass it explicitly: `(user/state ctx (:user payload))`.
@@ -170,6 +184,18 @@ and `:url` is the final one. Request: `{:tool :net :host …}`.
 key from the extension's `:mcp-servers`, or the id of a server in `mcp.edn`.
 Request: `{:tool :mcp :mcp-server … :mcp-tool …}`; a trusted server runs,
 an untrusted one asks.
+
+### `xi.api.sessions`
+
+Synchronous and read-only, like `xi.api.user`; not a rules request. It exposes
+four fields of saved-session metadata, never a conversation.
+
+| Function | Does |
+| --- | --- |
+| `(summaries ctx ids)` | `[{:session-id :name :cwd :last-accessed} …]` for the ids that name a saved session, in the order given; unknown ids are left out. |
+
+An extension that keeps session ids shows them by name with it, and opens one
+by dispatching `:session/resume` from a command.
 
 ### `xi.api.dialog`
 
@@ -224,7 +250,8 @@ A sibling namespace is loaded from the extension's directory:
 ## Browser halves
 
 `<name>/web.cljs` defines `web-extension` with the same `:id` and only these
-keys: `:routes`, `:pages`, `:nav-items`, `:taps`, `:tool-views`.
+keys: `:routes`, `:pages`, `:nav-items`, `:taps`, `:tool-views`,
+`:sidebar-groups`, `:session-menu-items`.
 
 | Key | Shape |
 | --- | --- |
@@ -233,6 +260,8 @@ keys: `:routes`, `:pages`, `:nav-items`, `:taps`, `:tool-views`.
 | `:nav-items` | `[{:menu :sidebar/:palette/:home-topbar/:overflow :label "…" :icon :kw :event {…}}]`; overflow items may set `:mode :room` or `:project` |
 | `:taps` | `[(fn [dispatch!] → (fn [event state]))]` |
 | `:tool-views` | `{"tool_name" (fn [call slice] → hiccup or nil)}`; only the extension's own tools |
+| `:sidebar-groups` | `[{:id :<ext>/group :label "…" :where :flag? :limit 5 :more {:label "…" :icon :kw :event {…}}}]`: a drawer group (between Drafts and Recent) of the sessions whose `:where` flag is true, most recent first; `:more` is a closing row shown when there are more than `:limit`. The `:id` is namespaced with the extension's id. |
+| `:session-menu-items` | `[{:label "…" :label-on "…" :flag :flag? :icon :kw :event {…}}]`: entries of every session's context menu and the palette's "Current session" group. The `:event` gets the session's `:session-id`; `:label-on` replaces `:label` while the session's `:flag` is true. |
 
 A tool view replaces the text result in the chat's block for one of the
 extension's own tools. `call` is the finished call, `{:tool :arguments :text
@@ -248,7 +277,9 @@ ones that touch `js/window`), `xi.web.views` helpers (`nav-group`,
 
 `dispatch!` sends `:ext.<id>/*` events to the server (tagged with the active
 chat and the client), passes `:route/navigate` and `:nav/back`, and drops
-everything else. Browser-only state lives at `[:user-ext/ui <id> …]`: an
+everything else. The events of `:nav-items`, `:sidebar-groups` and
+`:session-menu-items` follow the same rule: an own event is sent to the
+server, navigation passes, anything else is dropped. Browser-only state lives at `[:user-ext/ui <id> …]`: an
 input with `:bind [:k]` (in `:attrs` for `ui.form` inputs) keeps its value
 there, and `{:type :ext-ui/set :path [:k] :value v}` writes it. Output is
 sanitised: no script-capable tags, no string event handlers, no

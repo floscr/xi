@@ -98,8 +98,10 @@
 (def ^:private base-lobby-relevant
   "Events after which lobby (roomless) clients get a fresh :lobby/state.
    Extensions add theirs via :lobby-relevant."
-  #{:room/create :room/close :room/attach :room/leave :favorites/changed
+  #{:room/create :room/close :room/attach :room/leave
     :dismissed/changed
+    ;; an extension's per-user state may carry session flags (for-user)
+    :user/ext-set
     :session/deleted
     :read-state/changed
     :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
@@ -130,7 +132,7 @@
   #{:client/update :user-state/set :session/counts :sessions/all :models/web-list
     :cwd/agents-files :session/content-search :session/web-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
-    :favorites/toggle :dismissed/toggle :session/delete :session/mark-read
+    :dismissed/toggle :session/delete :session/mark-read
     :rooms/prune})
 
 (defn- gen-client-id []
@@ -177,8 +179,8 @@
 
 (defn- cap-sessions
   "Trim a newest-first summary list to the recent cap, keeping every session
-   in keep-ids (live rooms, and anything any user starred — the list is shared
-   by all users, see `for-user`). Preserves order."
+   in keep-ids (live rooms, and anything any user's extensions flagged — the
+   list is shared by all users, see `for-user`). Preserves order."
   [sessions keep-ids]
   (if (<= (count sessions) lobby-session-cap)
     sessions
@@ -290,17 +292,20 @@
 
 (defn- for-user
   "The lobby/session-list `payload` as `user` sees it: the chats they hid
-   from Recent tagged :dismissed?, the ones they starred tagged :favorite?,
-   and (for a lobby) their own read markers and the model their next chat
-   starts with."
+   from Recent tagged :dismissed?, the flags their extensions keep tagged on
+   every session (xi.user-state/session-flags, e.g. :favorite?), and (for a
+   lobby) their own read markers and the model their next chat starts with."
   [payload user]
   (let [stored (user-store/load-state user)
+        flags  (user-state/session-flags stored)
         lobby? (= :lobby/state (:type payload))]
     (cond-> (-> payload
                 (update :sessions session/annotate-dismissed
                         (set (:dismissed stored)))
-                (update :sessions session/annotate-favorites
-                        (user-store/favorite-ids user)))
+                (update :sessions user-state/annotate-session-flags flags))
+      ;; a live room hides its saved session from the list, so its summary
+      ;; carries the flags too
+      lobby?                    (update :rooms user-state/annotate-session-flags flags)
       lobby?                    (assoc :read (read-state-of stored))
       (and lobby? (:preferred-model stored))
       (assoc :model (:preferred-model stored)))))
@@ -321,7 +326,7 @@
         ;; its home view is the only listing surface and its corpus is small.
         sessions (cond-> (saved-sessions st agent-id)
                    (nil? agent-id)
-                   (cap-sessions (into (user-store/all-favorite-ids)
+                   (cap-sessions (into (user-store/all-flagged-session-ids)
                                        (keep :session-id)
                                        rooms)))
         ;; Response counts ride along so clients don't each round-trip a
@@ -709,14 +714,6 @@
                                 (mapv #(select-keys % [:session-id :name :cwd
                                                        :last-accessed :timestamp
                                                        :snippet])))})))
-
-      ;; Toggle a session's favorite star for `user`, then fan a fresh lobby
-      ;; out (:favorites/changed is lobby-relevant, so the tap rebroadcasts;
-      ;; each user's lobby carries their own :favorite? flags).
-      :favorites/toggle-reply
-      (fn [{:keys [dispatch!]} {:keys [session-id user]}]
-        (user-store/toggle-favorite! user session-id)
-        (dispatch! {:type :favorites/changed}))
 
       ;; Toggle a session's dismissed (hidden-from-recent) flag for `user`,
       ;; then fan a fresh lobby out (:dismissed/changed is lobby-relevant, so
@@ -1150,6 +1147,11 @@
 
                                   room-id
                                   (dispatch! (assoc ev :room-id room-id))
+
+                                  ;; an extension's own event needs no room: the
+                                  ;; sidebar and the home view are roomless
+                                  (ext-event? ev)
+                                  (dispatch! ev)
 
                                   :else
                                   (send! cid (wire/encode

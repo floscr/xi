@@ -10,7 +10,6 @@ message. `/help` lists everything that is available in the current setup.
 | `/new` | Start a new chat in the same directory (also `Alt+n`) |
 | `/resume` | Pick a previous chat to continue |
 | `/sessions` | List previous chats |
-| `/favorite` | Mark the current chat as a favourite; `/favorites` lists them |
 | `/cd <dir>` | Change the working directory of this chat |
 | `/project` | Pick one of your [projects](projects.md) (also `Alt+p`) |
 | `/model [name]` | Show or switch the [model](models.md) |

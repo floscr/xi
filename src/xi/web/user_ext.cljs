@@ -4,13 +4,13 @@
    Once connected, the client asks the server for the web halves
    (:user-ext/web-sources, roomless). When some exist, the `:user-ext` shadow
    module (SCI + xi.web.user-ext.sci) is loaded lazily, the halves are
-   evaluated in the sandbox, and their pages / routes / nav items / taps are
-   added to the running web client. Their own events reach the server via
+   evaluated in the sandbox, and their pages / routes / nav items / sidebar
+   groups / session menu items / taps are added to the running web client. Their own events reach the server via
    :user-ext/forward (see xi.web.user-ext.guard).
 
    Only the surfaces the web client can extend after startup are supported:
-   :pages (pages-ref), :routes (routes-ref), :nav-items (state), :taps and
-   :tool-views (xi.web.tool-views).
+   :pages (pages-ref), :routes (routes-ref), :nav-items, :sidebar-groups and
+   :session-menu-items (state), :taps and :tool-views (xi.web.tool-views).
    Handlers/fx are baked into the app at startup — the logic of a user
    extension lives in its server half."
   (:require [clojure.string :as str]
@@ -46,9 +46,12 @@
    ;; always a state change: tool blocks already on screen re-render with the
    ;; tool views that just registered
    :user-ext/loaded
-   (fn [st {:keys [nav-items]}]
+   (fn [st {:keys [nav-items sidebar-groups session-menu-items]}]
      {:state (cond-> (assoc st :user-ext/loaded? true)
-               (seq nav-items) (update :web/nav-items (fnil into []) nav-items))})
+               (seq nav-items)          (update :web/nav-items (fnil into []) nav-items)
+               (seq sidebar-groups)     (update :web/sidebar-groups (fnil into []) sidebar-groups)
+               (seq session-menu-items) (update :web/session-menu-items (fnil into [])
+                                                session-menu-items))})
 
    ;; a user extension's room slice changed server-side (xi.ext.user.guard);
    ;; the browser can't replay that extension's server reducer, so the slice
@@ -96,7 +99,10 @@
           (when-let [add-tap! (:add-tap! @app-ref)]
             (doseq [make-tap (mapcat :taps ok)]
               (add-tap! (make-tap dispatch!))))
-          (dispatch! {:type :user-ext/loaded :nav-items (vec (mapcat :nav-items ok))})
+          (dispatch! {:type :user-ext/loaded
+                      :nav-items (vec (mapcat :nav-items ok))
+                      :sidebar-groups (vec (mapcat :sidebar-groups ok))
+                      :session-menu-items (vec (mapcat :session-menu-items ok))})
           ;; a deep link into a user page landed before its route existed
           (let [path (.-pathname js/window.location)]
             (when (contains? added (first-segment path))

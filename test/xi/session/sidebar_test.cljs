@@ -59,6 +59,31 @@
           state  (with-sessions (cons old recent))]
       (is (= ["old"] (mapv :session-id (:cards (sb/extension-group state favorites-group))))))))
 
+(deftest extension-group-includes-flagged-live-rooms
+  (testing "a live room hides its saved session from the list, so it joins the group by its own flag, first"
+    (let [state (-> (with-sessions [{:session-id "a" :favorite? true :timestamp 1}])
+                    (assoc-in [:lobby :rooms]
+                              [{:id "r1" :session-id "live" :session-name "Live one"
+                                :favorite? true :users []}
+                               {:id "r2" :session-id "a" :favorite? true :users []}
+                               {:id "r3" :session-id "plain" :users []}]))
+          {:keys [cards total]} (sb/extension-group state favorites-group)]
+      (is (= ["live" "a"] (mapv :session-id cards))
+          "a room whose session is in the list is not listed twice")
+      (is (= 2 total))
+      (is (true? (:active? (first cards))))
+      (is (= "Live one" (:name (first cards)))))))
+
+(deftest orphan-room-cards-carry-the-extension-flags
+  (let [state (assoc-in (with-sessions [])
+                        [:lobby :rooms]
+                        [{:id "r1" :session-id "live" :favorite? true :work? false :busy? true
+                          :users []}])
+        [card] (sb/orphan-rooms state [])]
+    (is (true? (:favorite? card)))
+    (is (false? (:work? card)))
+    (is (true? (:busy? card)) "the room's own :busy? is the card's, not a flag copied over it")))
+
 (deftest empty-extension-groups-are-left-out
   (let [state (with-sessions [{:session-id "a" :favorite? true :timestamp 2}
                               {:session-id "b" :timestamp 1}])

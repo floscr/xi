@@ -19,6 +19,7 @@
             [xi.api.json]
             [xi.api.mcp]
             [xi.api.promise :as api-promise]
+            [xi.api.sessions]
             [xi.api.sh]
             [xi.api.user]
             [xi.core.events]
@@ -43,6 +44,7 @@
    rules-gated capabilities. Nothing here performs an un-gated side effect."
   {'xi.api.dialog  (sci/copy-ns xi.api.dialog  (sci/create-ns 'xi.api.dialog))
    'xi.api.fs      (sci/copy-ns xi.api.fs      (sci/create-ns 'xi.api.fs))
+   'xi.api.sessions (sci/copy-ns xi.api.sessions (sci/create-ns 'xi.api.sessions))
    'xi.api.sh      (sci/copy-ns xi.api.sh      (sci/create-ns 'xi.api.sh))
    'xi.api.http    (sci/copy-ns xi.api.http    (sci/create-ns 'xi.api.http))
    'xi.api.json    (sci/copy-ns xi.api.json    (sci/create-ns 'xi.api.json))

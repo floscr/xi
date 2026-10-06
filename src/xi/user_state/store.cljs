@@ -7,7 +7,6 @@
    connection. User ids are slugs (xi.util/user-id), so a client-claimed id
    can never escape the directory."
   (:require [cljs.reader :as reader]
-            [xi.session :as session]
             [xi.user-state :as user-state]
             [xi.util :as util]))
 
@@ -126,40 +125,18 @@
          vec)
     (catch :default _ [])))
 
-;; ── Favorites ──────────────────────────────────────────────────────────────────────────────────
-;; The chats a user starred. A user who never starred one starts from the old
-;; global ~/.config/xi/favorites.json (read-only now), so the upgrade doesn't
-;; empty everyone's favorites.
+;; ── Session flags ───────────────────────────────────────────────────────────
+;; An extension may keep `:session-flags` ({flag-key [session-id …]}, e.g.
+;; {:favorite? ["…"]}) in its per-user entry; the lobby shows each user the
+;; flags of their own entries on every session (xi.user-state/session-flags).
 
-(defn favorites
-  "The session ids `user` starred, oldest star first."
-  [user]
-  (or (:favorites (load-state user))
-      (session/load-legacy-favorites)))
-
-(defn favorite-ids
-  "The set of session ids `user` starred."
-  [user]
-  (set (favorites user)))
-
-(defn toggle-favorite!
-  "Star `session-id` for `user`, or unstar it. Returns the new favorite?
-   state, nil when nothing could be written."
-  [user session-id]
-  (let [v    (favorites user)
-        fav? (boolean (some #{session-id} v))
-        v'   (if fav?
-               (filterv #(not= session-id %) v)
-               (vec (take-last user-state/max-favorites (conj v session-id))))]
-    (when (set-key! user :favorites v')
-      (not fav?))))
-
-(defn all-favorite-ids
-  "Every session id any user starred (plus the legacy global ones): what the
-   shared lobby list must keep however old they are, since each user's own
-   stars are only applied when it is sent to them."
+(defn all-flagged-session-ids
+  "Every session id any user's extensions flagged: what the shared lobby list
+   must keep however old they are, since each user's own flags are only
+   applied when it is sent to them."
   []
-  (into (set (session/load-legacy-favorites))
-        (mapcat #(:favorites (load-state %)))
+  (into #{}
+        (comp (map load-state)
+              (mapcat #(vals (user-state/session-flags %)))
+              cat)
         (known-users)))
-

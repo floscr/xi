@@ -18,7 +18,8 @@
      xi/watched          {session-id response-count-when-last-seen}"
   (:require [clojure.string :as str]
             [cognitect.transit :as transit]
-            [xi.core.state :as state]))
+            [xi.core.state :as state]
+            [xi.user-state :as user-state]))
 
 ;; ── Primitives ───────────────────────────────────────────────────────────────
 
@@ -61,7 +62,7 @@
 ;; How many saved sessions to keep in the cached lobby. The real list can be
 ;; thousands of entries (hundreds of KB) — far more than a first paint needs
 ;; and enough on its own to blow the localStorage quota, after which *every*
-;; write silently fails. A first paint only needs the recent + favorited ones;
+;; write silently fails. A first paint only needs the recent + flagged ones;
 ;; the live WS :lobby/state restores the full list once connected.
 (def ^:private max-cached-sessions 80)
 
@@ -69,14 +70,15 @@
   (or (:last-accessed s) (:timestamp s) ""))
 
 (defn- trim-lobby
-  "Shrink the cached lobby's :sessions to favorites + the most-recently-accessed
+  "Shrink the cached lobby's :sessions to the ones an extension flagged (e.g.
+   favorites) + the most-recently-accessed
    N, so the cache stays small. :rooms (live rooms only) is left as-is."
   [lobby]
   (update lobby :sessions
           (fn [sessions]
             (if (<= (count sessions) max-cached-sessions)
               sessions
-              (let [favs   (filter :favorite? sessions)
+              (let [favs   (filter #(some true? (vals (user-state/extension-flags %))) sessions)
                     recent (->> sessions
                                 (sort-by session-recency)
                                 reverse

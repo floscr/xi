@@ -7,7 +7,8 @@
    web agree on grouping and ALT+j/k order."
   (:require [xi.core.state :as cstate]
             [xi.palette :as palette]
-            [xi.session.recent :as recent]))
+            [xi.session.recent :as recent]
+            [xi.user-state :as user-state]))
 
 (defn format-relative-time [t]
   (let [ms (cond (number? t) t
@@ -54,19 +55,22 @@
         seen    (max (get-in state [:lobby :read sid] 0)
                      (get-in state [:web/watched sid] 0))
         room    (some (fn [r] (when (= (:session-id r) sid) r)) rooms)]
-    {:session-id  sid
-     :name        (:name s)
-     :cwd         (:cwd s)
-     :timestamp   (or (:last-accessed s) (:timestamp s))
-     :favorite?   (boolean (:favorite? s))
-     :dismissed?  (boolean (:dismissed? s))
-     :current?    (and sid (= sid (get-in state [:web/route :session-id])))
-     :active?     (boolean room)
-     :busy?       (boolean (:busy? room))
-     :has-dialog? (boolean (:has-dialog? room))
-     :error?      (boolean (:error? room))
-     :people      (room-people state (:users room))
-     :unread?     (> (get counts sid 0) seen)}))
+    (merge
+     ;; the user's extension flags (e.g. :favorite?), which an extension's
+     ;; sidebar groups and session menu items key on
+     (user-state/extension-flags s)
+     {:session-id  sid
+      :name        (:name s)
+      :cwd         (:cwd s)
+      :timestamp   (or (:last-accessed s) (:timestamp s))
+      :dismissed?  (boolean (:dismissed? s))
+      :current?    (and sid (= sid (get-in state [:web/route :session-id])))
+      :active?     (boolean room)
+      :busy?       (boolean (:busy? room))
+      :has-dialog? (boolean (:has-dialog? room))
+      :error?      (boolean (:error? room))
+      :people      (room-people state (:users room))
+      :unread?     (> (get counts sid 0) seen)})))
 
 (defn active-first
   "Enrich disk sessions with live indicators (via session-status) and pin the
@@ -98,15 +102,19 @@
           ;; session instead of colliding on :replicant/key.
           (group-by :session-id)
           (mapv (fn [[sid rooms]]
-                  {:session-id  sid
-                   :name        (or (some :session-name rooms) "New session")
-                   :cwd         (some :cwd rooms)
-                   :current?    (= sid (get-in state [:web/route :session-id]))
-                   :active?     true
-                   :busy?       (boolean (some :busy? rooms))
-                   :has-dialog? (boolean (some :has-dialog? rooms))
-                   :error?      (boolean (some :error? rooms))
-                   :people      (room-people state (distinct (mapcat :users rooms)))}))))))
+                  (merge
+                   ;; the user's extension flags (e.g. :favorite?) ride on
+                   ;; the room summary (xi.server.ws/for-user)
+                   (user-state/extension-flags (first rooms))
+                   {:session-id  sid
+                    :name        (or (some :session-name rooms) "New session")
+                    :cwd         (some :cwd rooms)
+                    :current?    (= sid (get-in state [:web/route :session-id]))
+                    :active?     true
+                    :busy?       (boolean (some :busy? rooms))
+                    :has-dialog? (boolean (some :has-dialog? rooms))
+                    :error?      (boolean (some :error? rooms))
+                    :people      (room-people state (distinct (mapcat :users rooms)))})))))))
 
 (defn extension-group
   "One extension-declared sidebar group (a `:sidebar-groups` entry, see
@@ -114,12 +122,18 @@
    whose `:where` key is truthy, most recently visited first, `:limit` of
    them as session cards; :total counts them all and :more is passed through
    (the caller shows it when :total exceeds the cards). Read from the lobby's
-   sessions rather than the Recent list, so a session stays reachable however
-   old it is (the server always sends every favorite)."
+   sessions and live rooms rather than the Recent list, so a session stays
+   reachable however old it is (the server sends every flagged session,
+   however old)."
   [state {:keys [where limit] :as group}]
-  (let [found (->> (get-in state [:lobby :sessions])
-                   (filter where)
-                   (sort-by palette/session-time #(compare %2 %1)))]
+  (let [sessions (get-in state [:lobby :sessions])
+        ;; a live room hides its saved session from the lobby list, so rooms
+        ;; the list leaves out come first: they are what is open right now
+        live     (filter where (orphan-rooms state sessions))
+        found    (concat live
+                         (->> sessions
+                              (filter where)
+                              (sort-by palette/session-time #(compare %2 %1))))]
     (assoc (select-keys group [:id :label :more])
            :cards (->> (cond->> found limit (take limit))
                        (mapv #(session-status state %)))

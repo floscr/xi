@@ -128,25 +128,6 @@
           "text block clipped to the cap")
       (is (= "AAAA" (get-in img-blk [:source :data])) "image block untouched"))))
 
-;; ── Favorites ─────────────────────────────────────────────────────────────────
-
-(deftest annotate-favorites-tags-matching-ids
-  (testing "summaries whose session-id is in the set get :favorite? true"
-    (let [summaries [{:session-id "a" :name "one"}
-                     {:session-id "b" :name "two"}
-                     {:session-id "c" :name "three"}]
-          tagged (session/annotate-favorites summaries #{"a" "c"})]
-      (is (= [true false true] (mapv :favorite? tagged)))
-      (is (= ["one" "two" "three"] (mapv :name tagged))
-          "other keys are preserved"))))
-
-(deftest annotate-favorites-empty-set
-  (testing "empty favorites set tags everything false"
-    (is (= [false false]
-           (mapv :favorite?
-                 (session/annotate-favorites
-                  [{:session-id "x"} {:session-id "y"}] #{}))))))
-
 (deftest truncate-message-results-clips-tool-results
   (testing "tool-result text is clipped to the resume cap; other blocks pass through"
     (let [long-text (str/join "\n" (map str (range 250)))

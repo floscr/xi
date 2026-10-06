@@ -18,14 +18,62 @@
    store with arbitrary data. To add a piece of per-user state, add a key
    here and bind it in xi.web.user-state.
 
-   Four keys are not UI state and are kept by the server alone — clients can
+   Three keys are not UI state and are kept by the server alone — clients can
    neither read nor write them. `:ext` holds what each extension keeps about
    the user, {ext-id data}; extensions reach it through xi.api.user, which
    proves who is calling, so an extension only ever touches its own entry.
-   `:read-state`, `:dismissed` and `:favorites` are the user's unread markers,
-   the chats they hid from Recent and the chats they starred: the lobby is
-   built per user from them (xi.server.ws), so they reach a client as the
-   lobby's `:read`, `:dismissed?` and `:favorite?` flags.")
+   `:read-state` and `:dismissed` are the user's unread markers and the chats
+   they hid from Recent: the lobby is built per user from them (xi.server.ws),
+   so they reach a client as the lobby's `:read` and `:dismissed?` flags. An
+   extension's entry may also hold `:session-flags`, which the lobby turns into
+   more flags the same way (see `session-flags`)."
+  (:require [clojure.string :as str]))
+
+(def reserved-flags
+  "Session flags an extension may not set: the lobby and the sidebar compute
+   these themselves."
+  #{:dismissed? :active? :busy? :unread? :current? :has-dialog? :error?})
+
+(defn session-flags
+  "The flags the extensions keep for a user, {flag-key #{session-id}}, from the
+   `:session-flags` ({flag-key [session-id …]}) in each entry of `stored`'s
+   `:ext`. A flag is a keyword ending in `?` that is not one of
+   `reserved-flags`; anything else in the entry is ignored. Two extensions
+   keeping the same flag add up."
+  [stored]
+  (reduce (fn [acc [flag ids]]
+            (if (and (keyword? flag)
+                     (str/ends-with? (name flag) "?")
+                     (not (reserved-flags flag))
+                     (sequential? ids))
+              (update acc flag (fnil into #{}) (filter string? ids))
+              acc))
+          {}
+          (mapcat (fn [[_ entry]]
+                    (let [m (when (map? entry) (:session-flags entry))]
+                      (when (map? m) m)))
+                  (:ext stored))))
+
+(defn extension-flags
+  "The extension flags tagged on session summary `s` (see `session-flags`), as
+   booleans: every keyword ending in `?` that is not one of `reserved-flags`."
+  [s]
+  (into {}
+        (keep (fn [[k v]]
+                (when (and (keyword? k)
+                           (str/ends-with? (name k) "?")
+                           (not (reserved-flags k)))
+                  [k (boolean v)])))
+        s))
+
+(defn annotate-session-flags
+  "Tag each summary with every flag of `flags` ({flag-key #{session-id}}):
+   true when its session id is in the set, false otherwise."
+  [summaries flags]
+  (mapv (fn [s]
+          (reduce-kv (fn [s flag ids] (assoc s flag (contains? ids (:session-id s))))
+                     s flags))
+        summaries))
 
 (defn plain-data?
   "Is `v` plain EDN data — nil, booleans, numbers, strings, keywords, and
@@ -68,10 +116,6 @@
   "Most chats one user keeps hidden from Recent."
   1000)
 
-(def max-favorites
-  "Most chats one user keeps starred."
-  1000)
-
 (def registry
   "Known keys → {:valid? (fn [value] → bool)}."
   {;; \"auto\" | \"light\" | \"dark\"
@@ -108,9 +152,6 @@
    ;; session ids hidden from the user's Recent group, oldest first
    :dismissed        {:client-writable? false
                       :valid? (fn [v] (bounded-strings? v max-dismissed 200))}
-   ;; session ids the user starred, oldest first (the newest star is last)
-   :favorites        {:client-writable? false
-                      :valid? (fn [v] (bounded-strings? v max-favorites 200))}
    ;; {ext-id data}: what each extension keeps about the user. Written only
    ;; by the server (xi.users), never by a client.
    :ext              {:client-writable? false

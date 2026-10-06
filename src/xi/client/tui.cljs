@@ -378,7 +378,7 @@
 
 ;; Commands/actions whose selection opens a sub-picker: in the palette they
 ;; drill in-place (push a frame, keep the palette open) instead of closing.
-(def ^:private palette-drill-commands #{"model" "resume" "sessions" "favorites"})
+(def ^:private palette-drill-commands #{"model" "resume" "sessions"})
 (def ^:private palette-drill-actions  #{:change-model :skills})
 
 (defn- palette-menu

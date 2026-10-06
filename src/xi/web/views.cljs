@@ -3302,7 +3302,7 @@
 
 (defn- with-projects
   "Tag session cards to display their owning project in the description line.
-   Used by cross-project listings (All sessions, Favorites, the sidebar) so a
+   Used by cross-project listings (All sessions, the sidebar) so a
    session shows which project it belongs to; the per-project view omits it."
   [cards]
   (map #(assoc % :show-project? true) cards))
@@ -3318,8 +3318,8 @@
    :on-click #(dispatch! (assoc event :session-id session-id))})
 
 (defn- session-menu-items
-  "ui.context-menu entries for a session card: the extensions' items (e.g.
-   Add to favorites, see `:session-menu-items`), hide/show in Recent (only
+  "ui.context-menu entries for a session card: the extensions' items
+   (see `:session-menu-items`), hide/show in Recent (only
    where the caller opts in via :dismissable?), copy session ID, and Delete.
    Hiding is gated on idle — a busy card or one awaiting a dialog response
    can't be dismissed. Delete is always offered: the server keeps a busy room
@@ -3356,7 +3356,7 @@
         (open! trigger (.-left r) (.-bottom r))))))
 
 (defn- session-card
-  "Session row. Secondary actions (the extensions' — favorite — hide from
+  "Session row. Secondary actions (the extensions', hide from
    Recent, delete) live in a ui.context-menu on the card: right-click,
    long-press on touch (the framework's gesture runtime), or the ⋮ button."
   [dispatch! state {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project? people]
@@ -3596,41 +3596,10 @@
         :else
         (empty-state/empty-state {} [:p "No sessions yet."]))]]))
 
-(defn- favorites-view
-  "Flat list of the user's favorite sessions (filtered from the lobby sessions)."
-  [state dispatch!]
-  (let [raw-query  (get-in state [:web/search :favorites])
-        query      (str/lower-case (str/trim (or raw-query "")))
-        content?   (boolean (get-in state [:web/content-search :favorites]))
-        matches    (get-in state [:web/content-matches :favorites])
-        sessions   (->> (get-in state [:lobby :sessions])
-                        (filter :favorite?))
-        sessions   (filter-sessions sessions query content? matches)]
-    [:div {:class ["container"] :replicant/key "favorites"}
-     [:div {:class ["topbar"]}
-      (nav-group dispatch! (fn [_] (dispatch! {:type :route/navigate :page :home})))
-      [:div {:class ["topbar-title"]} "Favorites"]
-      (overflow-menu dispatch! state)]
-     [:div {:class ["home"]}
-      (search-box dispatch! :favorites "Search favorites\u2026" raw-query content?)
-      (cond
-        (seq sessions)
-        [:div {:class ["project-list"]}
-         (for [s (with-projects (active-first state sessions))]
-           (session-card dispatch! state s))]
-
-        (seq query)
-        (empty-state/empty-state {} [:p "No matching favorites."])
-
-        :else
-        (empty-state/empty-state {}
-         [:p "No favorites yet."]
-         [:p {:class ["empty-state-hint"]} "Add a session to your favorites from its menu."]))]]))
-
 (defn- personal-agent-home-view
   "Home view for personal-agent mode: a flat session list with no project
    navigation (the personal agent has no projects). Supports name/content
-   search and a link to the favorites list."
+   search."
   [state dispatch!]
   (let [raw-query   (get-in state [:web/search :personal-agent])
         query       (str/lower-case (str/trim (or raw-query "")))
@@ -3645,11 +3614,6 @@
       (menu-button dispatch!)
       [:div {:class ["topbar-title"]} "Xi"]
       (offline-badge state)
-      (when connected?
-        [:button {:class ["icon-btn"]
-                  :title "Favorites"
-                  :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :favorites}))}}
-         (icon/icon {:icon-name :star :size :md})])
       (when connected?
         [:button {:class ["icon-btn"]
                   :on {:click (fn [_] (dispatch! {:type :room/new}))}}
@@ -3682,18 +3646,11 @@
 (defn- home-view [state dispatch!]
   (let [selected-dir (:web/selected-project-dir state)]
     (cond
-      (and (get-in state [:lobby :agent-id])
-           (= selected-dir :favorites))
-      (favorites-view state dispatch!)
-
       (get-in state [:lobby :agent-id])
       (personal-agent-home-view state dispatch!)
 
       (= selected-dir :all)
       (all-sessions-view state dispatch!)
-
-      (= selected-dir :favorites)
-      (favorites-view state dispatch!)
 
       selected-dir
       (project-sessions-view state dispatch!)
@@ -3714,13 +3671,6 @@
             loading?   (:web/projects-loading? state)
             rooms      (get-in state [:lobby :rooms])
             connected? (:web/connected? state)
-            ;; Session-ids the user has favorited (from disk sessions in the
-            ;; lobby); used to light up the star on live/orphan room cards,
-            ;; which are built from :rooms and don't carry :favorite? directly.
-            fav-ids    (->> (get-in state [:lobby :sessions])
-                            (filter :favorite?)
-                            (map :session-id)
-                            set)
             ;; Active rooms without a known project
             orphans    (filter (fn [r] (:session-id r)) rooms)]
         [:div {:class ["container"] :replicant/key "home"}
@@ -3775,8 +3725,7 @@
                                           :active? true :busy? (:busy? r)
                                           :has-dialog? (:has-dialog? r)
                                           :error? (:error? r)
-                                          :people (sb/room-people state (:users r))
-                                          :favorite? (contains? fav-ids (:session-id r))})))
+                                          :people (sb/room-people state (:users r))})))
               ;; All sessions link (hide when filtering)
               (when-not (seq query)
                 [:div {:class ["project-card"]
@@ -4015,7 +3964,7 @@
      ;; The framework conj's :class as ONE token, so collapsed-ness rides a
      ;; data attribute rather than a second class.
      {:class "sidebar-section"
-      :attrs {:replicant/key  (str "section-" (name id))
+      :attrs {:replicant/key  (str "section-" (subs (str id) 1))
               :data-collapsed (when-not open? "true")}
       :label [:button {:class ["sidebar-section-toggle"]
                        :aria-expanded (str open?)
@@ -4092,7 +4041,7 @@
         ;; the top). Shared with ALT+j/k keyboard nav so both agree on order.
         ;; "Hidden" = dismissed this run (reversible, still fully resumable).
         {:keys [recent hidden earlier]} (when render? (sidebar-session-groups state))
-        ;; Groups extensions declare (:sidebar-groups), e.g. Favorites.
+        ;; Groups extensions declare (:sidebar-groups).
         ext-groups (when render?
                      (sb/extension-groups state (:web/sidebar-groups state)))
         cards    (concat recent hidden earlier)
@@ -4137,7 +4086,7 @@
            (section {:id :drafts :label "Drafts"}
              (for [d (rseq drafts)]
                (draft-chat-card dispatch! state d))))
-         ;; Extension groups (e.g. Favorites). Their sessions also show in
+         ;; Extension groups (:sidebar-groups). Their sessions also show in
          ;; their time group below.
          (for [{:keys [id label cards total more]} ext-groups]
            (section {:id id :label label}
@@ -4147,7 +4096,7 @@
                (sidebar/sidebar-menu-item
                 {:icon-name (:icon more)
                  :class     "sidebar-row"
-                 :attrs     {:replicant/key (str "more-" (name id))}
+                 :attrs     {:replicant/key (str "more-" (subs (str id) 1))}
                  :on-click  (fn [_] (dispatch! (:event more)))}
                 (:label more)))))
          (when (seq recent)
@@ -4697,7 +4646,6 @@
             cur-session  (when cur-sid
                            (some #(when (= cur-sid (:session-id %)) %)
                                  (get-in state [:lobby :sessions])))
-            cur-fav?     (boolean (:favorite? cur-session))
             cur-hidden?  (boolean (:dismissed? cur-session))
             ;; Search-only tier: every session (Recent + Hidden + Earlier),
             ;; invisible at the empty query (data-command-search-only) and
@@ -4808,10 +4756,11 @@
                               "Appearance settings")))))))))
      (when cur-sid
        (cmd/command-group {:heading "Current session"}
-         (cmd/command-item
-          {:icon :star
-           :on-click (fn [_] (dispatch! {:type :favorites/toggle :session-id cur-sid}))}
-          (if cur-fav? "Remove from favorites" "Add to favorites"))
+         ;; The extensions' session menu items (e.g. Add to favorites)
+         (for [item (:web/session-menu-items state)
+               :let [{:keys [label icon on-click]}
+                     (ext-session-menu-item dispatch! (assoc cur-session :session-id cur-sid) item)]]
+           (cmd/command-item {:icon icon :on-click (fn [_] (on-click))} label))
          (cmd/command-item
           {:icon (if cur-hidden? :eye :eye-off)
            :on-click (fn [_] (dispatch! {:type :dismissed/toggle :session-id cur-sid}))}

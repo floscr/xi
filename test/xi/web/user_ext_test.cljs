@@ -41,6 +41,57 @@
     (is (re-find #"disallowed keys.*handlers" (guard/validate (assoc ok :handlers {}) {})))
     (is (re-find #"already in use" (guard/validate ok {:taken-ids #{:notes}})))))
 
+(deftest validate-sidebar-groups-and-session-menu-items
+  (let [group {:id :favs/group :label "Favorites" :where :favorite? :limit 5
+               :more {:label "All" :event {:type :ext.favs/open}}}
+        item  {:label "Add" :label-on "Remove" :flag :favorite?
+               :event {:type :ext.favs/toggle}}
+        ok    {:id :favs :sidebar-groups [group] :session-menu-items [item]}]
+    (is (nil? (guard/validate ok {})))
+    (testing "a group's id is namespaced by the extension, so it can't take a core group's collapsed state"
+      (is (re-find #":sidebar-groups must be"
+                   (guard/validate (assoc-in ok [:sidebar-groups 0 :id] :recent) {})))
+      (is (re-find #":sidebar-groups must be"
+                   (guard/validate (assoc-in ok [:sidebar-groups 0 :id] :other/group) {}))))
+    (testing "shapes"
+      (doseq [bad [(assoc group :label :x) (assoc group :where "favorite?")
+                   (assoc group :limit 0) (assoc group :more {:event {}})]]
+        (is (re-find #":sidebar-groups must be"
+                     (guard/validate (assoc ok :sidebar-groups [bad]) {}))))
+      (is (nil? (guard/validate (assoc ok :sidebar-groups [(dissoc group :limit :more)]) {}))
+          "limit and more are optional")
+      (doseq [bad [(dissoc item :event) (assoc item :label nil) (assoc item :flag "x")
+                   (assoc item :label-on 1)]]
+        (is (re-find #":session-menu-items must be"
+                     (guard/validate (assoc ok :session-menu-items [bad]) {}))))
+      (is (re-find #":sidebar-groups must be"
+                   (guard/validate (assoc ok :sidebar-groups {:id 1}) {}))))))
+
+(deftest wrapped-sidebar-groups-and-menu-items-only-carry-allowed-events
+  (let [ext (guard/wrap
+             {:id :favs
+              :sidebar-groups
+              [{:id :favs/group :label "F" :where :favorite?
+                :more {:label "All" :event {:type :route/navigate :page :favs/list}}}
+               {:id :favs/other :label "G" :where :favorite?
+                :more {:label "Evil" :event {:type :agent/abort}}}]
+              :session-menu-items
+              [{:label "Add" :event {:type :ext.favs/toggle}}
+               {:label "Go" :event {:type :route/navigate :page :favs/list}}
+               {:label "Evil" :event {:type :agent/abort}}]})]
+    (testing "own events become forwards (the card's :session-id merges into the wrapper); navigation passes; the rest is dropped"
+      (is (= [{:label "Add" :event {:type :user-ext/forward :event {:type :ext.favs/toggle}}}
+              {:label "Go" :event {:type :route/navigate :page :favs/list}}]
+             (:session-menu-items ext))))
+    (is (= {:type :route/navigate :page :favs/list}
+           (get-in ext [:sidebar-groups 0 :more :event])))
+    (is (nil? (get-in ext [:sidebar-groups 1 :more])) "a blocked :more row is dropped, the group stays")
+    (testing "the forward reaches the server as the extension's event with the session id"
+      (is (= {:type :ext.favs/toggle :session-id "s1" :room-id "r1"}
+             (guard/forward-event (assoc (get-in ext [:session-menu-items 0 :event])
+                                         :session-id "s1")
+                                  "r1"))))))
+
 (deftest tool-views-render-only-the-extensions-own-tools
   (let [ok {:id :notes :tool-views {"notes_add" (fn [_])}}]
     (is (nil? (guard/validate ok {:own-tools ["notes_add"]})))

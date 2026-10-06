@@ -42,7 +42,6 @@
                        dir  (cond
                               (nil? seg2) nil
                               (= seg2 "all") :all
-                              (= seg2 "favorites") :favorites
                               :else (js/decodeURIComponent seg2))]
                    (cond-> {:page :home}
                      dir (assoc :dir dir)))
@@ -60,7 +59,6 @@
     ;; :home — use /projects/:cwd when drilling into a directory
     (cond
       (= dir :all) "/projects/all"
-      (= dir :favorites) "/projects/favorites"
       dir          (str "/projects/" (js/encodeURIComponent dir))
       :else        "/"))))
 
@@ -148,7 +146,7 @@
                   (conj [:app/dispatch {:type :room/leave}])
 
                   ;; Fetch sessions when drilling into a project directory
-                  (and (= page :home) dir (not= dir :all) (not= dir :favorites))
+                  (and (= page :home) dir (not= dir :all))
                   (conj [:app/dispatch {:type :projects/web-sessions :cwd dir}])
 
                   ;; The all-sessions view needs the full list — the lobby
@@ -204,7 +202,7 @@
                                      ;; time (the capped lobby keeps painting).
                                      (not= dir :all) (dissoc :web/all-sessions)
                                      ;; Clear old data when drilling into a new dir
-                                     (and dir (not= dir :all) (not= dir :favorites))
+                                     (and dir (not= dir :all))
                                      (-> (dissoc :web/project-sessions)
                                          (update :web/search dissoc :project-sessions)
                                          (update :web/content-search dissoc :project-sessions)

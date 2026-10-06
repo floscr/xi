@@ -17,6 +17,7 @@
             [xi.projects :as projects]
             [xi.session :as session]
             [xi.user-config :as user-config]
+            [xi.user-state :as user-state]
             [xi.user-state.store :as user-store]))
 
 (defn- project-paths
@@ -131,7 +132,8 @@
   {:effects [[:projects/web-list-reply {:client-id client-id}]]})
 
 (defn- web-sessions
-  "Roomless: return sessions for a specific CWD, starred as the sender has them."
+  "Roomless: return sessions for a specific CWD, flagged as the sender's
+   extensions have them (xi.user-state/session-flags)."
   [st {:keys [client-id cwd] :as ev}]
   {:effects [[:projects/web-sessions-reply {:client-id client-id :cwd cwd
                                             :user (state/event-user st ev)}]]})
@@ -182,11 +184,11 @@
                            (:rooms state))
            sessions (->> (session/list-sessions cwd)
                          (remove #(contains? live-pids (:session-id %))))
-           sessions (session/annotate-favorites
-                     sessions (user-store/favorite-ids user))
-           sessions (mapv #(select-keys % [:session-id :name :cwd
-                                           :last-accessed :timestamp :source :favorite?])
-                          sessions)]
+           flags    (user-state/session-flags (user-store/load-state user))
+           sessions (->> (user-state/annotate-session-flags sessions flags)
+                         (mapv #(select-keys % (into [:session-id :name :cwd :last-accessed
+                                                      :timestamp :source]
+                                                     (keys flags)))))]
        (send! client-id {:type :projects/web-sessions-result
                          :cwd cwd
                          :sessions sessions})))})

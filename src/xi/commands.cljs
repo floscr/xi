@@ -212,10 +212,10 @@
                   has-session? (conj [:session/sync {:room-id room-id}]))})
     {:effects [[:models/fetch {:room-id room-id}]]}))
 
-(defn- cmd-resume [st {:keys [room-id args user]}]
+(defn- cmd-resume [st {:keys [room-id args]}]
   (cond
     (nil? args)
-    {:effects [[:session/list {:room-id room-id :user user}]]}
+    {:effects [[:session/list {:room-id room-id}]]}
 
     ;; `id:<session-id>` — resume a specific session (used by the palette Chats
     ;; section), not an index into the listing.
@@ -231,18 +231,8 @@
         (status st room-id (str "Invalid session: " args))
         {:effects [[:session/load {:room-id room-id :scope scope :index n}]]}))))
 
-(defn- cmd-sessions [_st {:keys [room-id user]}]
-  {:effects [[:session/list {:room-id room-id :user user}]]})
-
-(defn- cmd-favorites [_st {:keys [room-id user]}]
-  {:effects [[:session/list-favorites {:room-id room-id :user user}]]})
-
-(defn- cmd-favorite
-  "Toggle the favorite star on the current session (no picker)."
-  [st {:keys [room-id user]}]
-  (if-let [sid (get-in st [:rooms room-id :session :id])]
-    {:effects [[:session/favorite-toggle {:room-id room-id :session-id sid :user user}]]}
-    (status st room-id "No active session to favorite.")))
+(defn- cmd-sessions [_st {:keys [room-id]}]
+  {:effects [[:session/list {:room-id room-id}]]})
 
 (defn- cmd-new [_st {:keys [room-id]}]
   {:effects [[:session/new {:room-id room-id :save-current? true}]]})
@@ -381,8 +371,6 @@
    {:name "model"    :description "Show or set model"                  :handler cmd-model}
    {:name "resume"   :description "Resume a previous session"          :handler cmd-resume}
    {:name "sessions" :description "List previous sessions"             :handler cmd-sessions}
-   {:name "favorites" :description "List favorited sessions"           :handler cmd-favorites}
-   {:name "favorite"  :description "Toggle favorite on the current session" :handler cmd-favorite}
    {:name "new"      :description "Start a new session"                :handler cmd-new}
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
    {:name "fork"     :description "Split the conversation into a new session" :handler cmd-fork}
@@ -642,15 +630,13 @@
                                   (status-entry "Forked into a new session — the original is preserved."))
                   (update-in [:rooms room-id :agent] assoc :busy? false :queued []))})))
 
-(defn- session-toggle-favorite
-  "Menu keybinding (* in /resume or /favorites) toggled a star. Defers the
-   disk write to the :session/favorite-toggle effect, keyed by the selected
-   summary's :session-id; the star is the pressing user's (state/event-user)."
-  [st {:keys [room-id selected reopen] :as ev}]
-  (if-let [sid (get-in selected [:summary :session-id])]
-    {:effects [[:session/favorite-toggle {:room-id room-id :session-id sid :reopen reopen
-                                          :user (state/event-user st ev)}]]}
-    (status st room-id "No session selected.")))
+(defn- session-resume
+  "Load a saved session by id into a room. What an extension's command
+   dispatches (xi.ext.user.guard, `:session/resume`) to open a session it
+   lists; /resume id:<id> does the same."
+  [st {:keys [room-id session-id]}]
+  (when (and (state/get-room st room-id) (string? session-id))
+    {:effects [[:session/load {:room-id room-id :scope :all :session-id session-id}]]}))
 
 (defn- session-resumed [st {:keys [room-id session summary messages msg-hash msg-count]}]
   (when-let [room (state/get-room st room-id)]
@@ -752,8 +738,8 @@
     :ui/clear-images clear-images
     :session/created session-created
     :session/forked  session-forked
+    :session/resume  session-resume
     :session/resumed session-resumed
-    :session/toggle-favorite session-toggle-favorite
     :session/updated session-updated
     :cwd/changed    cwd-changed}))
 
