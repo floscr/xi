@@ -439,11 +439,11 @@
       (str (str/join "\n" (take n lines))
            "\n… (" (- (count lines) n) " more lines)"))))
 
-(defn- edit-diff-code
-  "Render an edit tool's unified-diff result with per-line tinting: + lines get
-   a subtle green wash, - lines a subtle red one, over the code box. The
-   path/context/gap lines stay neutral. Code is still syntax-highlighted.
-   `attrs` are extra attributes for the <pre> (the View-diff data attributes)."
+(def ^:private diff-code-cache
+  "grammar (nil for none) → (js/Map text→[attrs [:pre …]]) for edit-diff-code."
+  (js/Map.))
+
+(defn- edit-diff-code*
   [grammar text attrs]
   (into [:pre (merge {:class ["tool-call-code" "tool-call-diff"]} attrs)]
         (map (fn [line]
@@ -456,9 +456,33 @@
                    [:span {:class (cond-> ["tool-diff-line"] cls (conj cls))}
                     [:span {:class ["tool-diff-sign"]
                             :data-sign (cond add? "+" del? "-" :else " ")}]
-                    (if grammar (highlight-code grammar body) body)]
+                    ;; Not highlight-code: the whole block is memoized below,
+                    ;; and one cache entry per diff line would flood hl-cache.
+                    (if grammar
+                      (tokens->code (hl/merge-adjacent (hl/tokenize grammar body)))
+                      body)]
                    [:span {:class ["tool-diff-line"]} line]))))
         (str/split-lines text)))
+
+(defn- edit-diff-code
+  "Render an edit tool's unified-diff result with per-line tinting: + lines get
+   a subtle green wash, - lines a subtle red one, over the code box. The
+   path/context/gap lines stay neutral. Code is still syntax-highlighted.
+   `attrs` are extra attributes for the <pre> (the View-diff data attributes).
+   Memoized per (grammar, text, attrs) as one block, like highlight-code:
+   tokenizing line by line through highlight-code made every diff line its own
+   cache entry, so a diff-heavy chat overflowed the cache, cleared it on every
+   render and re-tokenized all its diffs per keystroke in the composer."
+  [grammar text attrs]
+  (let [inner (or (.get diff-code-cache grammar)
+                  (let [m (js/Map.)] (.set diff-code-cache grammar m) m))
+        [cached-attrs cached] (.get inner text)]
+    (if (and cached (= attrs cached-attrs))
+      cached
+      (let [result (edit-diff-code* grammar text attrs)]
+        (when (>= (.-size inner) code-cache-max) (.clear inner))
+        (.set inner text [attrs result])
+        result))))
 
 (defn- result-images
   "Extract image blocks from a tool result, tolerating both the MCP shape
