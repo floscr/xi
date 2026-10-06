@@ -17,6 +17,12 @@ conversation.
 ;; => {"src/app/core.cljs" 3, "src/app/db.cljs" 1}
 ```
 
+Instead of a piped shell command:
+
+```sh
+grep -c TODO $(find src -name '*.cljs') | grep -v ':0$'
+```
+
 The REPL is persistent for the chat: something `def`'d in one call is there
 in the next. A large log file can be loaded once and queried many times
 without ever being pasted into the conversation.
