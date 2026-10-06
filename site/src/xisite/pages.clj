@@ -1,6 +1,8 @@
 (ns xisite.pages
   "Page renderers: home, docs index, docs page. Each returns a full html string."
   (:require [hiccup2.core :as h]
+            [ui.button :as button]
+            [ui.card :as card]
             [xisite.core :as core]
             [xisite.markdown :as md]
             [xisite.ui :as ui]))
@@ -161,8 +163,8 @@ xi                         # connect a client")
       [:p.lede
        "An AI harness with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
       [:div.hero-actions
-       [:a.button.primary {:href "/docs/getting-started/"} "Get started"]
-       [:a.button {:href "/docs/"} "Read the docs"]]
+       (button/button {:variant :primary :size :lg :href "/docs/getting-started/"} "Get started")
+       (button/button {:variant :secondary :size :lg :href "/docs/"} "Read the docs")]
       (code "sh" install-sample)]]
 
     [:section.feature {:id "clj"}
@@ -258,7 +260,9 @@ xi                         # connect a client")
       [:div
        [:h2 "Install Xi"]
        [:p "One package, one command. Sign in with your Claude account or an API key."]]
-      [:a.button.primary {:href "/docs/getting-started/"} "Getting started →"]]])))
+      (button/button {:variant :primary :size :lg :href "/docs/getting-started/"
+                      :icon-right :arrow-right}
+                     "Getting started")]])))
 
 ;; --- Docs ---
 
@@ -285,8 +289,9 @@ xi                         # connect a client")
     :path path
     :body-class "docs"}
    [:div.docs-shell
-    [:button.docs-nav-toggle {:type "button" :aria-expanded "false"
-                              :aria-controls "docs-sidebar"} "Menu"]
+    (button/button {:variant :secondary :size :sm :icon-left :menu :class "docs-nav-toggle"
+                    :attrs {:type "button" :aria-expanded "false" :aria-controls "docs-sidebar"}}
+                   "Menu")
     [:div#docs-sidebar.docs-sidebar-wrap (sidebar sections path)]
     (into [:article.docs-content] body)
     (toc headings)]))
@@ -305,9 +310,10 @@ xi                         # connect a client")
        [:h2 title]
        [:div.docs-cards
         (for [{:keys [path nav-title summary]} pages]
-          [:a.docs-card {:href path}
-           [:strong nav-title]
-           [:span summary]])]]))))
+          [:a.docs-card-link {:href path}
+           (card/card {:class "docs-card"}
+                      [:strong nav-title]
+                      [:span summary])])]]))))
 
 (defn docs-page [sections {:keys [title summary html headings path source-path prev next]}]
   (ui/render-page
@@ -323,5 +329,7 @@ xi                         # connect a client")
      [:div.docs-pager
       (when prev [:a.prev {:href (:path prev)} [:small "Previous"] (:nav-title prev)])
       (when next [:a.next {:href (:path next)} [:small "Next"] (:nav-title next)])]
-     [:a.docs-edit {:href (str core/repo-url "/edit/master/" source-path) :rel "noopener"}
-      "Edit this page"]])))
+     (button/button {:variant :ghost :size :sm :icon-left :edit
+                     :href (str core/repo-url "/edit/master/" source-path)
+                     :attrs {:rel "noopener"}}
+                    "Edit this page")])))

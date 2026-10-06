@@ -6,7 +6,8 @@
             [xisite.build :as build]
             [xisite.core :as core]
             [xisite.docs :as docs]
-            [xisite.livereload :as livereload]))
+            [xisite.livereload :as livereload]
+            [xisite.theme :as theme]))
 
 (def ^:private content-types
   {"html" "text/html; charset=utf-8"
@@ -30,6 +31,12 @@
                       (fs/path docs/guide-dir "img" (subs uri (count "/docs/img/"))))]
       (cond
         (= uri "/__livereload") (livereload/version-response req)
+        (= uri "/css/ui.css") {:status 200
+                               :headers {"Content-Type" (content-types "css")}
+                               :body (theme/css)}
+        (= uri "/js/ui-runtime.js") {:status 200
+                                    :headers {"Content-Type" (content-types "js")}
+                                    :body (theme/js)}
         (and (not= uri "/") (fs/regular-file? static)) (static-response static)
         (and guide-img (fs/regular-file? guide-img)) (static-response guide-img)
         :else

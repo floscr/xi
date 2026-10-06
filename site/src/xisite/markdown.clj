@@ -5,16 +5,24 @@
   (:require [clojure.string :as str]
             [hiccup2.core :as h]
             [markdown.core :as md]
+            [ui.button :as button]
             [xisite.core :as core]
             [xisite.highlight :as highlight]))
 
 ;; --- Code blocks ---
 
 (defn code-block-hiccup
-  "A fenced code block: header with the language, highlighted <pre><code>."
+  "A fenced code block: header with the language and a copy button,
+   highlighted <pre><code>. The block is always dark, so it opts into the
+   framework's dark tokens (`data-theme=\"dark\"` re-scopes them to this
+   subtree), which also themes the copy button."
   [lang source]
-  [:div.code-block
-   [:div.code-block-bar [:span.code-block-lang (or lang "text")]]
+  [:div.code-block {:data-theme "dark"}
+   [:div.code-block-bar
+    [:span.code-block-lang (or lang "text")]
+    (button/button {:variant :ghost :size :sm :icon-left :copy
+                    :class "code-copy" :attrs {:type "button"}}
+                   "Copy")]
    [:pre [:code {:data-language (or lang "text")}
           (seq (highlight/highlight lang source))]]])
 

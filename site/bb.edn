@@ -1,5 +1,9 @@
 {:paths ["src" "../resources"]
  :deps {hiccup/hiccup {:mvn/version "2.0.0"}
+        ;; same pin as the xi app's deps.edn; GitHub URL because that sha is pushed there
+        io.github.floscr/clj-ui-framework
+        {:git/url "https://github.com/floscr/clj-ui-framework.git"
+         :git/sha "7036dddc58b6232551ae7b8b4fde1ccd9fbfed2c"}
         markdown-clj/markdown-clj {:mvn/version "1.12.3"}}
  :tasks
  {dev

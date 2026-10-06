@@ -105,7 +105,10 @@ packages/        outside xi's own bundle: bb-client/ (JVM client lib),
                  mcp-bb-example/ (babashka MCP server example)
 docs/            see the index below; docs/guide/ is the user guide the site renders
 site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:build`
-                 from the root render docs/guide/*.md into site/dist)
+                 from the root render docs/guide/*.md into site/dist). UI is
+                 clj-ui-framework: buttons, cards, theme toggle, tokens and the
+                 light/dark/system theme (site/src/xisite/theme.clj); main.css only
+                 holds site layout and uses the framework's tokens
 ```
 
 ## Docs index
