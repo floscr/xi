@@ -4760,7 +4760,15 @@
                                                 (dispatch! {:type :palette/search-input :query v})
                                                 finder-page?
                                                 (dispatch! {:type :file-finder/input :query v}))))
-                                   :close (fn [_] (dispatch! {:type :palette/closed}))}}}]
+                                   ;; `close` is a queued task: a drill's close +
+                                   ;; reopen (Enter/click on a project row) can
+                                   ;; land it after the dialog is open again
+                                   ;; (task vs. animation-frame order differs by
+                                   ;; browser) — a stale event must not blank the
+                                   ;; open palette.
+                                   :close (fn [^js e]
+                                            (when-not (.-open (.-target e))
+                                              (dispatch! {:type :palette/closed})))}}}]
     (cond
       ;; Closed: render just the dialog shell (observer stays attached via the
       ;; stable :replicant/key). No children means near-zero per-keystroke cost.
