@@ -21,6 +21,7 @@
             [xi.api.promise :as api-promise]
             [xi.api.sessions]
             [xi.api.sh]
+            [xi.api.time]
             [xi.api.user]
             [xi.core.events]
             [xi.core.state]
@@ -50,6 +51,7 @@
    'xi.api.json    (sci/copy-ns xi.api.json    (sci/create-ns 'xi.api.json))
    'xi.api.mcp     (sci/copy-ns xi.api.mcp     (sci/create-ns 'xi.api.mcp))
    'xi.api.user    (sci/copy-ns xi.api.user    (sci/create-ns 'xi.api.user))
+   'xi.api.time    (sci/copy-ns xi.api.time    (sci/create-ns 'xi.api.time))
    'xi.api.promise api-promise/sci-namespace
    'xi.core.state  (sci/copy-ns xi.core.state  (sci/create-ns 'xi.core.state))
    'xi.core.events (sci/copy-ns xi.core.events (sci/create-ns 'xi.core.events))})

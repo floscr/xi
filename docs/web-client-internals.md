@@ -99,7 +99,10 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   handler emitting `[:history/push]` and room join/leave dispatches
   (`xi.web.router`); `popstate` re-dispatches with `:replace? true`. Deep
   links `/chat/:sid` hydrate from cache, then join over WS. Extension routes
-  are consulted before the built-in ones.
+  are consulted before the built-in ones. A path whose first segment is
+  unknown falls back to home but keeps its URL (`pending-extension-path?`,
+  `:keep-url?`): a user extension's page is re-routed once its web half has
+  loaded (`xi.web.user-ext`).
 - Unread: `:session/counts` → `:session/counts-result` (`:web/response-counts`)
   compared with the lobby's `:read` (the server's markers for *this user*, see
   architecture.md) and `:web/watched` (a localStorage overlay for an instant
@@ -146,6 +149,7 @@ Never sent over the wire:
 | `:web/sidebar-groups` | extension sidebar groups (`:sidebar-groups`), stored at init; evaluated by `sidebar/extension-groups` |
 | `:web/session-menu-items` | extension entries of every session card's context menu, stored at init |
 | `:user-ext/ui` | per-extension browser-only UI state (`:bind` inputs) |
+| `:user-ext/state` | per-extension slice a user extension's server half pushed to this user (`:user-ext/push`), reduced by the web half's `:handlers` |
 | `:lobby` | rooms + sessions mirror (shared shape with the TUI client) |
 
 ## Source files

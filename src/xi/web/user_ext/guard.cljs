@@ -16,9 +16,11 @@
   (:require [clojure.string :as str]))
 
 (def allowed-keys
-  "Web-half keys a user extension may declare. No :handlers / :fx — those are
-   baked into the web client at startup; logic lives in the server half."
-  #{:id :routes :pages :nav-items :taps :tool-views :sidebar-groups :session-menu-items})
+  "Web-half keys a user extension may declare. No :fx; :handlers are reducers
+   over the extension's own browser slice only (see `wrap`) — logic lives in
+   the server half."
+  #{:id :routes :pages :nav-items :taps :tool-views :sidebar-groups :session-menu-items
+    :handlers})
 
 (def builtin-segments
   "First URL segments the web client routes itself."
@@ -26,6 +28,14 @@
 
 (defn- own-ns? [id kw]
   (and (keyword? kw) (= (namespace kw) (name id))))
+
+(defn- own-event-type? [id kw]
+  (and (keyword? kw) (= (namespace kw) (str "ext." (name id)))))
+
+(defn- own-state-path?
+  "A `:badge-path` may only read the extension's own browser slice."
+  [id path]
+  (and (vector? path) (= :user-ext/state (first path)) (= id (second path))))
 
 (defn- valid-group?
   "A `:sidebar-groups` entry: a map with an :id namespaced by the extension (so
@@ -88,6 +98,11 @@
       ":tool-views must be a map of tool name → fn"
       (seq alien)
       (str ":tool-views may only render the extension's own tools: " (str/join ", " alien))
+      (and (some? (:handlers ext))
+           (not (and (map? (:handlers ext))
+                     (every? (fn [[k f]] (and (own-event-type? id k) (fn? f)))
+                             (:handlers ext)))))
+      (str ":handlers must be a map of :ext." (name id) "/… event types to fns")
       :else nil)))
 
 ;; ── Hiccup sanitizing ────────────────────────────────────────────────────────
@@ -170,25 +185,54 @@
 (defn- ui-value? [v]
   (or (nil? v) (string? v) (boolean? v) (number? v)))
 
+(defn- enter-handler
+  "Enter in a bound field (`:on-enter event`): send the extension's own event
+   with the field's text as :text, then clear the field. Shift+Enter keeps
+   its newline. iOS Safari's Return fires no Enter keydown in a textarea but
+   a `beforeinput` of type insertLineBreak, so both paths lead here."
+  [id path event dispatch!]
+  (fn [e]
+    (.preventDefault e)
+    (let [text (str (some-> e .-target .-value))]
+      (dispatch! {:type :user-ext/forward :event (assoc event :text text)})
+      (dispatch! {:type :user-ext/ui-set :ext-id id :path path :value ""}))))
+
 (defn ui-binder
   "The `bind` fn for `sanitize`: turns an element's `:bind path` attribute into
    the current value of that path in extension `id`'s UI state (read from
    `state`) and an :input handler that writes it back through `dispatch!`
-   (the host's, unfiltered). An invalid path just drops the attribute."
+   (the host's, unfiltered). An invalid path just drops the attribute.
+
+   A bound field may also carry `:on-enter {:type :ext.<id>/… …}`: Enter
+   (without Shift) sends that own event to the server with the field's text
+   as :text and clears the field — the sandbox can't read key events itself."
   [id state dispatch!]
   (fn [attrs]
     (if-not (contains? attrs :bind)
-      attrs
-      (let [path (:bind attrs)
-            attrs (dissoc attrs :bind)]
+      (dissoc attrs :on-enter)
+      (let [path     (:bind attrs)
+            on-enter (:on-enter attrs)
+            attrs    (dissoc attrs :bind :on-enter)]
         (if-not (ui-path? path)
           attrs
-          (-> attrs
-              (assoc :value (str (get-in state (into [:user-ext/ui id] path))))
-              (assoc-in [:on :input]
-                        (fn [e]
-                          (dispatch! {:type :user-ext/ui-set :ext-id id :path path
-                                      :value (some-> e .-target .-value)})))))))))
+          (cond-> (-> attrs
+                      (assoc :value (str (get-in state (into [:user-ext/ui id] path))))
+                      (assoc-in [:on :input]
+                                (fn [e]
+                                  (dispatch! {:type :user-ext/ui-set :ext-id id :path path
+                                              :value (some-> e .-target .-value)}))))
+            (and (map? on-enter) (own-event-type? id (:type on-enter)))
+            (as-> a
+              (let [send! (enter-handler id path on-enter dispatch!)]
+                (-> a
+                    (assoc-in [:on :keydown]
+                              (fn [e]
+                                (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)))
+                                  (send! e))))
+                    (assoc-in [:on :beforeinput]
+                              (fn [e]
+                                (when (= "insertLineBreak" (.-inputType e))
+                                  (send! e)))))))))))))
 
 ;; ── Wrapping ─────────────────────────────────────────────────────────────────
 
@@ -238,10 +282,27 @@
 (defn wrap
   "`ext` with every user fn confined: pages and tool views sanitized + guarded,
    taps guarded, route parse/path fns isolated, nav items limited to allowed
-   events. A throwing tool view yields nil, so the block shows its plain text."
+   events, handlers reduced to their own slice. A throwing tool view yields
+   nil, so the block shows its plain text.
+
+   `:handlers` are `(fn [slice event] → slice')` over the extension's browser
+   slice at [:user-ext/state <id>]; the host (xi.web.user-ext) applies them to
+   events its server half pushed (:user-ext/push). They see nothing else and
+   get no dispatch!. A handler that throws or returns a non-map keeps the
+   slice as it was."
   [ext]
   (let [id (:id ext)]
     (cond-> ext
+      (:handlers ext)
+      (update :handlers update-vals
+              (fn [f]
+                (fn [slice event]
+                  (try (let [r (f slice event)]
+                         (if (map? r) r slice))
+                       (catch :default e
+                         (log-blocked id (str "handler threw: " (.-message e)))
+                         slice)))))
+
       (:pages ext)
       (update :pages update-vals
               (fn [f]
@@ -288,6 +349,11 @@
                 (into []
                       (keep (fn [{:keys [event] :as item}]
                               (cond
+                                ;; a badge may read the extension's own slice only
+                                (and (contains? item :badge-path)
+                                     (not (own-state-path? id (:badge-path item))))
+                                (do (log-blocked id "nav item :badge-path outside [:user-ext/state <id> …]")
+                                    (recur (dissoc item :badge-path)))
                                 (nil? event) item
                                 ;; the core views dispatch :event as-is (merging the
                                 ;; menu ctx in), so an own event must already be the

@@ -16,7 +16,10 @@ provider effects, and TUI.
 > keys below; they are documented for users in the guide
 > ([extensions](guide/extensions.md), [reference](guide/extensions-reference.md))
 > and the tutorial example is exercised end to end by
-> `test/xi/ext/user_test.cljs`.
+> `test/xi/ext/user_test.cljs`. Their roomless channel to browsers: an own
+> event dispatched with `:to-users` / `:to-client` is sent by `xi.server.ws`
+> as `:user-ext/push` to those devices, where the web half's `:handlers`
+> reduce it into `[:user-ext/state <id>]` (`xi.web.user-ext`).
 
 ## Extension Shape
 
@@ -365,7 +368,10 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   the remaining path segments and returns a route map (`{:page kw …}`);
   `(:path entry)` maps `page-kw → (fn [route] → url-path)` for
   `route->path`; `:roomless-pages` is a set of pages that imply leaving the
-  active room on navigation (unioned with the base `#{:home}`).
+  active room on navigation (unioned with the base `#{:home}`). The router
+  rebuilds the route from a fixed key set; a `:params` map is the one key it
+  keeps verbatim, so an extension page's own ids (`/messages/<conv>`) ride
+  there and come back to its `:path` fn and page.
 - **`:pages`** — `{page-kw (fn [state dispatch!] → hiccup)}`; `root-view`
   consults this table before its built-in cases.
 - **`:nav-items`** — data-only entries `{:menu … :label … :icon … :event …}`
@@ -373,7 +379,9 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   init. Menus: `:sidebar`, `:palette` (Cmd+K), `:home-topbar`, `:overflow`.
   Overflow items may carry `:mode` (`:project`, `:room`, …) to show only in
   a matching topbar context; the context's `:cwd`/`:room-id` are merged into
-  the `:event` on click.
+  the `:event` on click. A sidebar item may carry `:badge-path`, a state path
+  whose positive number is drawn as a badge (`views/nav-badge`; the sidebar
+  memo key includes it).
 - **`:sidebar-groups`** — data-only groups of the drawer sidebar, shown
   between Drafts and Recent: `{:id kw :label str :where session-key
   :limit n :more {:label :icon :event}}`. A group lists the lobby's sessions

@@ -68,6 +68,21 @@
   [routes]
   (into #{:home} (mapcat :roomless-pages) (vals (routes-of routes))))
 
+(def builtin-segments
+  "First URL segments parse-path routes itself."
+  #{"chat" "projects" "git-status"})
+
+(defn pending-extension-path?
+  "A path whose first segment is neither built in nor in `routes`: most likely
+   a user extension's page, whose route only exists once the web half has
+   loaded (xi.web.user-ext re-dispatches the navigation then). Its URL must
+   survive the home fallback until that happens."
+  [routes path]
+  (let [seg (first (filter seq (str/split (or path "/") #"/")))]
+    (boolean (and seg
+                  (not (contains? builtin-segments seg))
+                  (not (contains? (routes-of routes) seg))))))
+
 ;; ── Navigation (pure handler) ────────────────────────────────────────────────
 
 (defn- session->room-id
@@ -95,14 +110,19 @@
      roomless    set of pages that imply leaving the active room
      :page       :home | :chat
      :session-id (chat only)
-     :replace?   true for popstate / initial load (no new history entry)"
-  [roomless st {:keys [page session-id file task-id dir cwd number replace?]}]
+     :params     a map an extension route keeps on the route as is (its
+                 :parse fn returns it, its :path fn and page read it)
+     :replace?   true for popstate / initial load (no new history entry)
+     :keep-url?  leave the address bar alone (a deep link into a page whose
+                 route is still loading, see pending-extension-path?)"
+  [roomless st {:keys [page session-id file task-id dir cwd number params replace? keep-url?]}]
   (let [route      (cond-> {:page page :session-id session-id}
-                     file    (assoc :file file)
-                     task-id (assoc :task-id task-id)
-                     dir     (assoc :dir dir)
-                     cwd     (assoc :cwd cwd)
-                     number  (assoc :number number))
+                     file         (assoc :file file)
+                     task-id      (assoc :task-id task-id)
+                     dir          (assoc :dir dir)
+                     cwd          (assoc :cwd cwd)
+                     number       (assoc :number number)
+                     (map? params) (assoc :params params))
         active-room (state/active-room st)
         active-sid (get-in active-room [:session :id])
         ;; Already viewing this session (e.g. the post-join URL fix) → don't
@@ -118,7 +138,8 @@
              (empty? (:history active-room))
              (not (get-in active-room [:agent :busy?]))
              (str/blank? (get-in st [:web/drafts (or active-sid :new)])))
-        effects (cond-> [[:history/push {:route route :replace? replace?}]]
+        effects (cond-> [[:history/push (cond-> {:route route :replace? replace?}
+                                          keep-url? (assoc :keep-url? true))]]
                   ;; Leave (→ server-side close) the empty room BEFORE joining
                   ;; the next one, so the server frees it instead of orphaning
                   ;; it (room/leave acts on the client's current membership).
@@ -246,13 +267,14 @@
    Closed over the composed extension route table. Always replaces in a
    standalone PWA (see `no-history?`)."
   [routes]
-  (fn [_ctx {:keys [route replace?]}]
-    (let [path (route->path routes route)]
-      (if (or replace? no-history?)
-        (.replaceState js/window.history #js {:navDepth @nav-depth} "" path)
-        (when (not= path (.-pathname js/window.location))
-          (let [d (swap! nav-depth inc)]
-            (.pushState js/window.history #js {:navDepth d} "" path)))))))
+  (fn [_ctx {:keys [route replace? keep-url?]}]
+    (when-not keep-url?
+      (let [path (route->path routes route)]
+        (if (or replace? no-history?)
+          (.replaceState js/window.history #js {:navDepth @nav-depth} "" path)
+          (when (not= path (.-pathname js/window.location))
+            (let [d (swap! nav-depth inc)]
+              (.pushState js/window.history #js {:navDepth d} "" path))))))))
 
 (defn back-effect
   "The `:nav/back` effect — go back in browser history when the app owns
@@ -269,8 +291,14 @@
   ;; Restore nav-depth from history.state (survives page reloads)
   (when-let [d (and (not no-history?) (some-> js/history.state (.-navDepth)))]
     (reset! nav-depth d))
-  (let [route->ev (fn [] (assoc (parse-path routes (.-pathname js/window.location))
-                                :type :route/navigate :replace? true))]
+  (let [route->ev (fn []
+                    (let [path (.-pathname js/window.location)]
+                      (cond-> (assoc (parse-path routes path)
+                                     :type :route/navigate :replace? true)
+                        ;; an unknown segment falls back to home for now, but
+                        ;; the URL stays: a user extension's page is re-routed
+                        ;; once its web half has loaded (xi.web.user-ext)
+                        (pending-extension-path? routes path) (assoc :keep-url? true))))]
     (dispatch! (route->ev))
     (.addEventListener js/window "popstate"
                        (fn [_]

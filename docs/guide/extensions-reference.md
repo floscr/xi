@@ -58,6 +58,12 @@ and `:remove-tools` are not available: whether a tool call runs is the
   view and the sidebar, with `:user` and no `:room-id`.
 - Effects are returned from handlers as `{:effects [[:ext.<id>/name payload] …]}`;
   `[:app/dispatch event]` is the one built-in effect, and dispatches the event.
+- An own event dispatched with `:to-users #{"alice" …}` is also sent to every
+  connected device of those users, one with `:to-client <client-id>` to that
+  one client (the id a client's event arrived with). In the browser the
+  extension's [web half](#browser-halves) reduces it into its own slice with a
+  `:handlers` entry. Only the server half can address an event this way: the
+  two keys are dropped from anything a client sends.
 
 Events of Xi's that are useful to react to:
 
@@ -213,6 +219,11 @@ The text is shown prefixed with the extension's id. A dialog waits for an
 answer even while no client is connected, and shows when one joins; only in
 `xi prompt` mode does it resolve to its safe default at once.
 
+### `xi.api.time`
+
+`(now)` → milliseconds since the epoch. The sandbox has no `js/Date`; this is
+the clock, on the server and in a web half alike. Not a rules request.
+
 ### `xi.api.json` and `xi.api.promise`
 
 `json/parse` (keyword keys; `{:keywordize? false}` for strings),
@@ -251,14 +262,15 @@ A sibling namespace is loaded from the extension's directory:
 
 `<name>/web.cljs` defines `web-extension` with the same `:id` and only these
 keys: `:routes`, `:pages`, `:nav-items`, `:taps`, `:tool-views`,
-`:sidebar-groups`, `:session-menu-items`.
+`:sidebar-groups`, `:session-menu-items`, `:handlers`.
 
 | Key | Shape |
 | --- | --- |
-| `:routes` | `{"segment" {:parse (fn [segments] → {:page kw …}) :path {page-kw (fn [route] → "/url")}}}` |
+| `:routes` | `{"segment" {:parse (fn [segments] → {:page kw …}) :path {page-kw (fn [route] → "/url")}}}`. A route may carry a `:params` map (`{:page :chat/thread :params {:conv "c1"}}`): it stays on the route as is, so `:path` and the page read it back from `[:web/route :params]`. |
 | `:pages` | `{page-kw (fn [state dispatch!] → hiccup)}`; page keywords are namespaced with the id |
-| `:nav-items` | `[{:menu :sidebar/:palette/:home-topbar/:overflow :label "…" :icon :kw :event {…}}]`; overflow items may set `:mode :room` or `:project` |
+| `:nav-items` | `[{:menu :sidebar/:palette/:home-topbar/:overflow :label "…" :icon :kw :event {…}}]`; overflow items may set `:mode :room` or `:project`. A sidebar item may set `:badge-path [:user-ext/state <id> …]`: the positive number at that path of the extension's browser slice shows as a badge (an unread count). |
 | `:taps` | `[(fn [dispatch!] → (fn [event state]))]` |
+| `:handlers` | `{:ext.<id>/event (fn [slice event] → slice')}`: pure reducers over the extension's browser slice at `[:user-ext/state <id>]`, run when the server half [pushes](#events-and-effects) that event to this user. They see nothing but the slice and get no `dispatch!`; a throw or a non-map result keeps the slice. |
 | `:tool-views` | `{"tool_name" (fn [call slice] → hiccup or nil)}`; only the extension's own tools |
 | `:sidebar-groups` | `[{:id :<ext>/group :label "…" :where :flag? :limit 5 :more {:label "…" :icon :kw :event {…}}}]`: a drawer group (between Drafts and Recent) of the sessions whose `:where` flag is true, most recent first; `:more` is a closing row shown when there are more than `:limit`. The `:id` is namespaced with the extension's id. |
 | `:session-menu-items` | `[{:label "…" :label-on "…" :flag :flag? :icon :kw :event {…}}]`: entries of every session's context menu and the palette's "Current session" group. The `:event` gets the session's `:session-id`; `:label-on` replaces `:label` while the session's `:flag` is true. |
@@ -272,8 +284,9 @@ throws, shows the text result instead.
 
 Pages may use `clojure.*`, `xi.core.state`, `ui.*` components (minus the
 ones that touch `js/window`), `xi.web.views` helpers (`nav-group`,
-`overflow-menu`, `spinner`, `shorten-path`, `diff-rows-view`), `xi.diff`
-(`parse-diff-text`, `diff-rows`) and `xi.markdown.hiccup/render`.
+`overflow-menu`, `spinner`, `shorten-path`, `diff-rows-view`, `user-avatar`,
+`avatar-stack`), `xi.diff` (`parse-diff-text`, `diff-rows`),
+`xi.markdown.hiccup/render` and `xi.api.time/now`.
 
 `dispatch!` sends `:ext.<id>/*` events to the server (tagged with the active
 chat and the client), passes `:route/navigate` and `:nav/back`, and drops
@@ -281,7 +294,11 @@ everything else. The events of `:nav-items`, `:sidebar-groups` and
 `:session-menu-items` follow the same rule: an own event is sent to the
 server, navigation passes, anything else is dropped. Browser-only state lives at `[:user-ext/ui <id> …]`: an
 input with `:bind [:k]` (in `:attrs` for `ui.form` inputs) keeps its value
-there, and `{:type :ext-ui/set :path [:k] :value v}` writes it. Output is
+there, and `{:type :ext-ui/set :path [:k] :value v}` writes it. A bound field
+may add `:on-enter {:type :ext.<id>/send …}`: Enter (not Shift+Enter) sends
+that event to the server with the field's text as `:text` and clears the
+field — a page cannot read key events itself. What the server half pushed to
+this user lives at `[:user-ext/state <id>]` (see `:handlers`). Output is
 sanitised: no script-capable tags, no string event handlers, no
 `javascript:` URLs.
 

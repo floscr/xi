@@ -157,8 +157,13 @@ Refresh. Both are there, on every device in the chat.
 
 - Use the `ui.*` components (`ui.button`, `ui.form`, `ui.badge`, `ui.icon`,
   …), plain hiccup, `xi.core.state` helpers, a few view helpers from
-  `xi.web.views` (`spinner`, `shorten-path`, `diff-rows-view`) and
-  `xi.markdown.hiccup/render` for markdown.
+  `xi.web.views` (`spinner`, `shorten-path`, `diff-rows-view`, `user-avatar`,
+  `avatar-stack`), `xi.markdown.hiccup/render` for markdown and
+  `xi.api.time/now` for the clock.
+- Show data that is not tied to a chat: the server half dispatches one of its
+  events with `:to-users #{…}` or `:to-client <id>`, and the web half's
+  `:handlers` fold it into the extension's own slice at
+  `[:user-ext/state <id>]`. See the [reference](extensions-reference.md#browser-halves).
 - Dispatch its own `:ext.<id>/*` events, `:route/navigate` and `:nav/back`.
   Anything else is dropped and logged in the browser console.
 - Nothing dangerous: script tags, inline handlers and `javascript:` links are

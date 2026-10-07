@@ -10,9 +10,12 @@
 
    Only the surfaces the web client can extend after startup are supported:
    :pages (pages-ref), :routes (routes-ref), :nav-items, :sidebar-groups and
-   :session-menu-items (state), :taps and :tool-views (xi.web.tool-views).
-   Handlers/fx are baked into the app at startup — the logic of a user
-   extension lives in its server half."
+   :session-menu-items (state), :taps and :tool-views (xi.web.tool-views),
+   and :handlers — reducers over the extension's own browser slice at
+   [:user-ext/state <id>], applied when its server half pushes one of its
+   events to this user (:user-ext/push, see xi.server.ws). App handlers/fx
+   are baked in at startup — the logic of a user extension lives in its
+   server half."
   (:require [clojure.string :as str]
             [shadow.lazy :as lazy]
             [xi.core.state :as state]
@@ -23,6 +26,16 @@
 (def ^:private evaluator (lazy/loadable xi.web.user-ext.sci/load!))
 
 (defonce ^:private requested? (atom false))
+
+(defonce ^:private reducers
+  ;; ext-id → {event-type (fn [slice event] → slice')}, the guarded :handlers
+  ;; of every loaded web half (xi.web.user-ext.guard/wrap)
+  (atom {}))
+
+(defn register-handlers!
+  "Install a loaded web half's (guarded) :handlers for `:user-ext/push`."
+  [ext-id handlers]
+  (swap! reducers assoc ext-id handlers))
 
 (defn request-tap
   "App tap: on the first connect, ask the server for user web halves."
@@ -61,6 +74,18 @@
      (when (get-in st [:rooms room-id])
        {:state (assoc-in st [:rooms room-id :ext ext-id] state)}))
 
+   ;; a user extension's server half pushed one of its own events to this
+   ;; user (:to-users / :to-client, xi.server.ws): the web half's reducer for
+   ;; it updates the extension's browser slice, which its pages render
+   :user-ext/push
+   (fn [st {:keys [ext-id event]}]
+     (when-let [f (get-in @reducers [ext-id (:type event)])]
+       (let [path   [:user-ext/state ext-id]
+             before (get-in st path)
+             after  (f before event)]
+         (when (not= before after)
+           {:state (assoc-in st path after)}))))
+
    ;; a page's browser-only UI state (xi.web.user-ext.guard, "Per-extension
    ;; UI state"): a bound input's text, or an :ext-ui/set from the page
    :user-ext/ui-set
@@ -96,6 +121,8 @@
           (swap! routes-ref merge (apply merge {} (map :routes ok)))
           (doseq [{:keys [id tool-views]} ok :when tool-views]
             (tool-views/register! id tool-views))
+          (doseq [{:keys [id handlers]} ok :when handlers]
+            (register-handlers! id handlers))
           (when-let [add-tap! (:add-tap! @app-ref)]
             (doseq [make-tap (mapcat :taps ok)]
               (add-tap! (make-tap dispatch!))))

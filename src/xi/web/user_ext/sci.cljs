@@ -14,6 +14,7 @@
   (:require [sci.core :as sci]
             [ui.badge]
             [ui.button]
+            [ui.chat]
             [ui.empty-state]
             [ui.form]
             [ui.icon]
@@ -21,6 +22,7 @@
             [ui.sidebar]
             [ui.theme-toggle]
             [ui.toolbar]
+            [xi.api.time :as time]
             [xi.core.state]
             [xi.diff :as diff]
             [xi.markdown.hiccup :as md]
@@ -33,7 +35,11 @@
                      'overflow-menu  views/overflow-menu
                      'spinner        views/spinner
                      'shorten-path   views/shorten-path
-                     'diff-rows-view views/diff-rows-view}
+                     'diff-rows-view views/diff-rows-view
+                     'user-avatar    views/user-avatar
+                     'avatar-stack   views/avatar-stack}
+   ;; the clock (a sandbox has no js/Date)
+   'xi.api.time     {'now time/now}
    ;; unified diff text → rows for views/diff-rows-view
    'xi.diff         {'parse-diff-text diff/parse-diff-text
                      'diff-rows       diff/diff-rows}
@@ -42,6 +48,7 @@
    'xi.core.state   (sci/copy-ns xi.core.state   (sci/create-ns 'xi.core.state))
    'ui.badge        (sci/copy-ns ui.badge        (sci/create-ns 'ui.badge))
    'ui.button       (sci/copy-ns ui.button       (sci/create-ns 'ui.button))
+   'ui.chat         (sci/copy-ns ui.chat         (sci/create-ns 'ui.chat))
    'ui.empty-state  (sci/copy-ns ui.empty-state  (sci/create-ns 'ui.empty-state))
    'ui.form         (sci/copy-ns ui.form         (sci/create-ns 'ui.form))
    'ui.icon         (sci/copy-ns ui.icon         (sci/create-ns 'ui.icon))

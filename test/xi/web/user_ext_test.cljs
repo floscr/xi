@@ -1,5 +1,6 @@
 (ns xi.web.user-ext-test
   (:require [cljs.test :refer [deftest is testing]]
+            [xi.web.user-ext :as user-ext]
             [xi.web.user-ext.guard :as guard]
             [xi.web.user-ext.sci :as user-sci]))
 
@@ -38,7 +39,7 @@
         "a user page can't claim a built-in page like :chat")
     (is (re-find #"segment already in use" (guard/validate (assoc ok :routes {"chat" {}}) {})))
     (is (re-find #"segment already in use" (guard/validate ok {:taken-segments #{"notes"}})))
-    (is (re-find #"disallowed keys.*handlers" (guard/validate (assoc ok :handlers {}) {})))
+    (is (re-find #"disallowed keys.*fx" (guard/validate (assoc ok :fx {}) {})))
     (is (re-find #"already in use" (guard/validate ok {:taken-ids #{:notes}})))))
 
 (deftest validate-sidebar-groups-and-session-menu-items
@@ -202,3 +203,89 @@
     (is (re-find #"eval error" (:error a)) "no js/ access")
     (is (re-find #"must match" (:error b)))
     (is (re-find #"eval error.*aget is not allowed" (:error c)) "denied core fns rejected at load")))
+
+;; ── pushed events → web-half reducers ──────────────────────────────────────────────
+
+(deftest validate-handlers
+  (let [ok {:id :chat :handlers {:ext.chat/msg (fn [s _] s)}}]
+    (is (nil? (guard/validate ok {})))
+    (is (re-find #":handlers must be" (guard/validate (assoc ok :handlers {:ext.other/msg (fn [s _] s)}) {}))
+        "only the extension's own event types")
+    (is (re-find #":handlers must be" (guard/validate (assoc ok :handlers {:ext.chat/msg 1}) {})))
+    (is (re-find #":handlers must be" (guard/validate (assoc ok :handlers [:ext.chat/msg]) {})))))
+
+(deftest wrapped-handlers-reduce-their-own-slice-only
+  (let [ext (guard/wrap {:id :chat
+                         :handlers {:ext.chat/msg  (fn [slice {:keys [text]}]
+                                                     (update slice :msgs (fnil conj []) text))
+                                    :ext.chat/boom (fn [_ _] (throw (js/Error. "kaput")))
+                                    :ext.chat/junk (fn [_ _] "not a map")}})
+        h   (:handlers ext)]
+    (is (= {:msgs ["hi"]} ((:ext.chat/msg h) nil {:type :ext.chat/msg :text "hi"})))
+    (is (= {:msgs ["a"]} ((:ext.chat/boom h) {:msgs ["a"]} {})) "a throw keeps the slice")
+    (is (= {:msgs ["a"]} ((:ext.chat/junk h) {:msgs ["a"]} {})) "a non-map keeps the slice")))
+
+(deftest push-applies-the-registered-reducer-to-the-extensions-slice
+  (let [ext  (guard/wrap {:id :chat
+                          :handlers {:ext.chat/msg (fn [slice {:keys [text]}]
+                                                     (update slice :msgs (fnil conj []) text))}})
+        push (get user-ext/handlers :user-ext/push)]
+    (user-ext/register-handlers! :chat (:handlers ext))
+    (let [st  {:user-ext/state {:other {:x 1}}}
+          st' (:state (push st {:ext-id :chat :event {:type :ext.chat/msg :text "hi"}}))]
+      (is (= {:msgs ["hi"]} (get-in st' [:user-ext/state :chat])))
+      (is (= {:x 1} (get-in st' [:user-ext/state :other])) "another extension's slice is untouched")
+      (is (nil? (push st {:ext-id :chat :event {:type :ext.chat/unknown}})) "no reducer, no change")
+      (is (nil? (push st {:ext-id :nobody :event {:type :ext.nobody/msg}}))))))
+
+(deftest nav-item-badge-path-reads-only-the-extensions-slice
+  (let [ext (guard/wrap {:id :chat
+                         :nav-items [{:menu :sidebar :label "Chat" :badge-path [:user-ext/state :chat :unread]
+                                      :event {:type :route/navigate :page :chat/inbox}}
+                                     {:menu :sidebar :label "Spy" :badge-path [:lobby :rooms]
+                                      :event {:type :route/navigate :page :chat/inbox}}]})
+        [mine spy] (:nav-items ext)]
+    (is (= [:user-ext/state :chat :unread] (:badge-path mine)))
+    (is (not (contains? spy :badge-path)) "a path outside the slice is dropped, the item kept")
+    (is (= "Spy" (:label spy)))))
+
+(deftest bound-field-on-enter-sends-the-text-and-clears
+  (let [seen (atom [])
+        ext  (guard/wrap {:id :chat
+                          :pages {:chat/p (fn [_ _]
+                                            [:textarea {:bind [:draft]
+                                                        :on-enter {:type :ext.chat/send :conv "c1"}}])}})
+        page (get-in ext [:pages :chat/p])
+        [_ attrs] (page {:user-ext/ui {:chat {:draft "hello"}}} #(swap! seen conj %))
+        prevented (atom 0)
+        ev   (fn [m] (clj->js (merge {:preventDefault (fn [] (swap! prevented inc))
+                                      :target #js {:value "typed"}}
+                                     m)))]
+    (is (not (contains? attrs :on-enter)))
+    ((get-in attrs [:on :keydown]) (ev {:key "Enter" :shiftKey true}))
+    (is (empty? @seen) "Shift+Enter keeps its newline")
+    ((get-in attrs [:on :keydown]) (ev {:key "Enter" :shiftKey false}))
+    (is (= [{:type :user-ext/forward :event {:type :ext.chat/send :conv "c1" :text "typed"}}
+            {:type :user-ext/ui-set :ext-id :chat :path [:draft] :value ""}]
+           @seen))
+    (is (= 1 @prevented))
+    ((get-in attrs [:on :beforeinput]) (ev {:inputType "insertLineBreak"}))
+    (is (= 4 (count @seen)) "iOS Return (beforeinput) sends too")
+    (testing "a foreign event is not wired"
+      (let [bad (guard/wrap {:id :chat :pages {:chat/p (fn [_ _] [:input {:bind [:d] :on-enter {:type :agent/abort}}])}})
+            [_ a] ((get-in bad [:pages :chat/p]) {} identity)]
+        (is (nil? (get-in a [:on :keydown])))
+        (is (not (contains? a :on-enter)))))))
+
+(deftest load!-accepts-handlers-and-the-clock
+  (let [bundle {:id :chat :ns "chat.web"
+                :sources {"chat.web"
+                          (str "(ns chat.web (:require [xi.api.time :as time]))"
+                               "(def web-extension"
+                               "  {:id :chat"
+                               "   :handlers {:ext.chat/msg (fn [s ev] (assoc s :last (:text ev)))}"
+                               "   :pages {:chat/p (fn [_ _] [:p (if (pos? (time/now)) \"ticking\" \"stopped\")])}})")}}
+        [r] (user-sci/load! [bundle] {})]
+    (is (nil? (:error r)) (str (:error r)))
+    (is (= {:last "x"} ((get-in r [:web-ext :handlers :ext.chat/msg]) {} {:text "x"})))
+    (is (= [:p "ticking"] ((get-in r [:web-ext :pages :chat/p]) {} identity)))))

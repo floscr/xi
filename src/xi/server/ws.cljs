@@ -1111,7 +1111,11 @@
                           (let [cid (.. ws -data -cid)]
                             (if-let [ev (wire/decode data)]
                               (let [room-id (get-in @state [:connection :clients cid :room-id])
-                                    ev (cond-> (assoc ev :client-id cid)
+                                    ev (cond-> (-> ev
+                                                   (assoc :client-id cid)
+                                                   ;; the push addressing only a server
+                                                   ;; half may set (see the tap below)
+                                                   (dissoc :to-users :to-client))
                                          ;; the sender's resolved user (admit!) — handlers
                                          ;; and every mirror attribute the event to it
                                          (authed? ws) (assoc :user (.. ws -data -user))
@@ -1222,6 +1226,26 @@
                   (when-let [cids (seq (rm/clients-in-room st room-id))]
                     (let [payload (wire/encode event)]
                       (doseq [cid cids] (send! cid payload)))))))
+            ;; A user extension's push: its server half dispatched one of its
+            ;; own events addressed with :to-users (every connected device of
+            ;; those users) or :to-client (one client). It goes out wrapped as
+            ;; :user-ext/push so the browser hands it to the web half's
+            ;; reducer (xi.web.user-ext). Only a server half can address an
+            ;; event: the keys are stripped from everything a client sends,
+            ;; and the guard lets an extension dispatch only its own events.
+            (when (and (ext-event? event)
+                       (or (:to-users event) (:to-client event)))
+              (let [users   (set (:to-users event))
+                    targets (if (seq users)
+                              (keep (fn [[cid c]] (when (contains? users (:user c)) cid))
+                                    (get-in st [:connection :clients]))
+                              [(:to-client event)])
+                    payload (wire/encode
+                             {:type   :user-ext/push
+                              :ext-id (keyword (subs (namespace (:type event)) 4))
+                              :event  (dissoc event :to-users :to-client :client-id
+                                              ::user-guard/user-initiated)})]
+                (doseq [cid targets :when cid] (send! cid payload))))
             ;; A new prompt into a session its sender hid un-hides it for
             ;; them — fresh activity belongs back in Recent. Clear the flag
             ;; before the lobby broadcast below (:prompt/submit is

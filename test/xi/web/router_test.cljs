@@ -134,6 +134,27 @@
               effects)
         "fetches sessions for the dir")))
 
+(deftest navigate-keeps-extension-params
+  (testing "a :params map rides on the route untouched"
+    (let [{:keys [state effects]} (nav {:page :chat/thread :params {:conv "c1" :msg "m2"}})]
+      (is (= {:page :chat/thread :session-id nil :params {:conv "c1" :msg "m2"}}
+             (:web/route state)))
+      (is (= {:conv "c1" :msg "m2"}
+             (get-in (first (filter #(= :history/push (first %)) effects)) [1 :route :params])))))
+  (testing "anything but a map is dropped"
+    (is (not (contains? (:web/route (:state (nav {:page :home :params "x"}))) :params)))))
+
+(deftest pending-extension-paths-keep-their-url
+  (testing "an unknown first segment is a not-yet-loaded extension page"
+    (is (true? (router/pending-extension-path? routes "/messages/dm~a~b")))
+    (is (false? (router/pending-extension-path? routes "/pulls/42")) "a loaded extension route")
+    (is (false? (router/pending-extension-path? routes "/chat/sid")))
+    (is (false? (router/pending-extension-path? routes "/"))))
+  (testing ":keep-url? rides on the history effect"
+    (let [{:keys [effects]} (nav {:page :home :replace? true :keep-url? true})]
+      (is (= {:route {:page :home :session-id nil} :replace? true :keep-url? true}
+             (second (first (filter #(= :history/push (first %)) effects))))))))
+
 (deftest navigate-to-all-sessions
   (let [{:keys [state effects]} (nav {:page :home :dir :all})]
     (is (= :all (:web/selected-project-dir state)))

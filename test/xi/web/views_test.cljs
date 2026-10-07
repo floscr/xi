@@ -40,6 +40,14 @@
 
 ;; ── format-elapsed (run timer / sub-agent duration) ─────────────────────────
 
+(deftest nav-badge-reads-a-positive-number-at-the-path
+  (let [st {:user-ext/state {:chat {:unread 3 :zero 0 :text "x"}}}]
+    (is (= "3" (views/nav-badge st {:badge-path [:user-ext/state :chat :unread]})))
+    (is (nil? (views/nav-badge st {:badge-path [:user-ext/state :chat :zero]})))
+    (is (nil? (views/nav-badge st {:badge-path [:user-ext/state :chat :text]})))
+    (is (nil? (views/nav-badge st {:badge-path [:user-ext/state :chat :missing]})))
+    (is (nil? (views/nav-badge st {:label "no badge"})))))
+
 (deftest format-elapsed-test
   (is (= "0s" (views/format-elapsed 0)))
   (is (= "59s" (views/format-elapsed 59)))

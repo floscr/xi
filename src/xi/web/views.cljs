@@ -256,10 +256,11 @@
                         unread? "status-dot--unread"
                         active? "status-dot--live")]}])
 
-(defn- user-avatar
+(defn user-avatar
   "A user's avatar: their image over a circle of initials on a colour from
   their id (xi.avatar). The initials are the fallback — they show for a user
-  with no image and under one that fails to load (hidden on error)."
+  with no image and under one that fails to load (hidden on error). Public:
+  user extensions' web halves draw people with it too."
   [{:keys [id name] url :avatar}]
   [:span {:class ["avatar"]
           :replicant/key (str "avatar-" id)
@@ -272,9 +273,10 @@
             :referrerpolicy "no-referrer"
             :on {:error (fn [e] (set! (.. e -target -style -display) "none"))}}])])
 
-(defn- avatar-stack
+(defn avatar-stack
   "Overlapping avatars of the users in a room (up to 3, then +n); nothing when
-  `people` is empty. `title` is the hover text of the whole stack."
+  `people` is empty. `title` is the hover text of the whole stack. Public,
+  like `user-avatar`."
   [people]
   (when (seq people)
     (let [shown (take 3 people)
@@ -319,6 +321,15 @@
                                (if (contains? icon/icon-names k)
                                  k
                                  default-nav-icon))))))
+
+(defn nav-badge
+  "The badge text of a nav item with a `:badge-path`: the positive number at
+   that state path (an unread count), else nil. Data-only, so an extension
+   can show a count on its sidebar entry without a view of its own."
+  [state {:keys [badge-path]}]
+  (when (vector? badge-path)
+    (let [v (get-in state badge-path)]
+      (when (and (number? v) (pos? v)) (str v)))))
 
 ;; ── Tool rendering ───────────────────────────────────────────────────────────
 
@@ -4227,6 +4238,9 @@
                  (sidebar/sidebar-menu-item
                   {:icon-name (:icon item)
                    :class     "sidebar-row"
+                   ;; :badge-path — a state path whose positive number shows as
+                   ;; a badge (an unread count); see nav-badge
+                   :badge     (nav-badge state item)
                    :attrs     {:replicant/key (str "nav-" (:label item))}
                    :on-click  (fn [_] (dispatch! (:event item)))}
                   (:label item)))))))))
@@ -4281,6 +4295,8 @@
                 (:web/project-dirty state)
                 (:web/theme-mode state)
                 (:web/nav-items state)
+                ;; the badges of :badge-path nav items (nav-badge)
+                (mapv #(nav-badge state %) (:web/nav-items state))
                 (:web/sidebar-groups state)
                 (:web/session-menu-items state)
                 (state/own-user state)]
