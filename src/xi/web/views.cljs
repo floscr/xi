@@ -25,6 +25,7 @@
             [xi.util :as util]
             [xi.web.appearance :as appearance]
             [xi.web.keymap :as keymap]
+            [xi.web.palette-items :as palette-items]
             [xi.web.tool-views :as tool-views]
             [xi.web.viewer-group :as viewer-group]
             [ui.icon :as icon]
@@ -310,6 +311,14 @@
    so every menu row keeps its label aligned with the built-in items."
   :package)
 
+(defn- with-default-icon
+  "`item` with a :icon missing from `icon/icon-names` set to `default-nav-icon`."
+  [item]
+  (update item :icon (fn [k]
+                       (if (contains? icon/icon-names k)
+                         k
+                         default-nav-icon))))
+
 (defn nav-items-for
   "Extension nav items (from ext/compose :nav-items, stored in state at
    init) scoped to one menu surface. Items whose :icon is missing or not in
@@ -317,10 +326,7 @@
   [state menu]
   (->> (:web/nav-items state)
        (filter #(= menu (:menu %)))
-       (map #(update % :icon (fn [k]
-                               (if (contains? icon/icon-names k)
-                                 k
-                                 default-nav-icon))))))
+       (map with-default-icon)))
 
 (defn nav-badge
   "The badge text of a nav item with a `:badge-path`: the positive number at
@@ -4825,7 +4831,8 @@
                      {:icon :file-text
                       :on-click (fn [_] (dispatch! {:type :palette/open-file-finder}))}
                      "Find file…"))
-         :always (into (for [item (nav-items-for state :palette)]
+         :always (into (for [item (concat (nav-items-for state :palette)
+                                          (map with-default-icon (palette-items/items state)))]
                          (cmd/command-item {:icon (:icon item)
                                             :on-click (fn [_] (dispatch! (:event item)))}
                            (:label item))))))

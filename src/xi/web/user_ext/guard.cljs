@@ -19,8 +19,8 @@
   "Web-half keys a user extension may declare. No :fx; :handlers are reducers
    over the extension's own browser slice only (see `wrap`) — logic lives in
    the server half."
-  #{:id :routes :pages :nav-items :taps :tool-views :sidebar-groups :session-menu-items
-    :handlers})
+  #{:id :routes :pages :nav-items :palette-items :taps :tool-views :sidebar-groups
+    :session-menu-items :handlers})
 
 (def builtin-segments
   "First URL segments the web client routes itself."
@@ -94,6 +94,8 @@
            (not (and (sequential? (:session-menu-items ext))
                      (every? valid-menu-item? (:session-menu-items ext)))))
       ":session-menu-items must be maps {:label str :event {…} [:label-on str] [:flag kw]}"
+      (and (some? (:palette-items ext)) (not (fn? (:palette-items ext))))
+      ":palette-items must be a fn of the app state → [{:label str :icon kw :event {…}}]"
       (and (some? views) (not (map? views)))
       ":tool-views must be a map of tool name → fn"
       (seq alien)
@@ -363,6 +365,20 @@
                                 (contains? passthrough-events (:type event)) item
                                 :else (do (log-blocked id (str "nav item event " (:type event))) nil))))
                       items)))
+
+      (:palette-items ext)
+      (update :palette-items
+              (fn [f]
+                (fn [state]
+                  (try (into []
+                             (keep (fn [item]
+                                     (when (and (map? item) (string? (:label item)))
+                                       (when-let [event (forwardable id (:event item))]
+                                         (assoc item :event event)))))
+                             (f state))
+                       (catch :default e
+                         (log-blocked id (str "palette items threw: " (.-message e)))
+                         [])))))
 
       (:session-menu-items ext)
       (update :session-menu-items

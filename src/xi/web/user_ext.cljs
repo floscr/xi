@@ -10,7 +10,7 @@
 
    Only the surfaces the web client can extend after startup are supported:
    :pages (pages-ref), :routes (routes-ref), :nav-items, :sidebar-groups and
-   :session-menu-items (state), :taps and :tool-views (xi.web.tool-views),
+   :session-menu-items (state), :taps and :tool-views (xi.web.tool-views), :palette-items (xi.web.palette-items),
    and :handlers — reducers over the extension's own browser slice at
    [:user-ext/state <id>], applied when its server half pushes one of its
    events to this user (:user-ext/push, see xi.server.ws). App handlers/fx
@@ -19,6 +19,7 @@
   (:require [clojure.string :as str]
             [shadow.lazy :as lazy]
             [xi.core.state :as state]
+            [xi.web.palette-items :as palette-items]
             [xi.web.router :as router]
             [xi.web.tool-views :as tool-views]
             [xi.web.user-ext.guard :as guard]))
@@ -121,6 +122,8 @@
           (swap! routes-ref merge (apply merge {} (map :routes ok)))
           (doseq [{:keys [id tool-views]} ok :when tool-views]
             (tool-views/register! id tool-views))
+          (doseq [{:keys [id palette-items]} ok :when palette-items]
+            (palette-items/register! id palette-items))
           (doseq [{:keys [id handlers]} ok :when handlers]
             (register-handlers! id handlers))
           (when-let [add-tap! (:add-tap! @app-ref)]

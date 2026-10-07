@@ -261,7 +261,7 @@ A sibling namespace is loaded from the extension's directory:
 ## Browser halves
 
 `<name>/web.cljs` defines `web-extension` with the same `:id` and only these
-keys: `:routes`, `:pages`, `:nav-items`, `:taps`, `:tool-views`,
+keys: `:routes`, `:pages`, `:nav-items`, `:palette-items`, `:taps`, `:tool-views`,
 `:sidebar-groups`, `:session-menu-items`, `:handlers`.
 
 | Key | Shape |
@@ -269,6 +269,7 @@ keys: `:routes`, `:pages`, `:nav-items`, `:taps`, `:tool-views`,
 | `:routes` | `{"segment" {:parse (fn [segments] → {:page kw …}) :path {page-kw (fn [route] → "/url")}}}`. A route may carry a `:params` map (`{:page :chat/thread :params {:conv "c1"}}`): it stays on the route as is, so `:path` and the page read it back from `[:web/route :params]`. |
 | `:pages` | `{page-kw (fn [state dispatch!] → hiccup)}`; page keywords are namespaced with the id |
 | `:nav-items` | `[{:menu :sidebar/:palette/:home-topbar/:overflow :label "…" :icon :kw :event {…}}]`; overflow items may set `:mode :room` or `:project`. A sidebar item may set `:badge-path [:user-ext/state <id> …]`: the positive number at that path of the extension's browser slice shows as a badge (an unread count). |
+| `:palette-items` | `(fn [state] → [{:label "…" :icon :kw :event {…}}])`: entries computed from the app state on every render and listed in the Cmd+K palette's Navigate group (e.g. one row per account stored in the extension's room slice). Events follow the `:nav-items` rule; a throw yields no entries. |
 | `:taps` | `[(fn [dispatch!] → (fn [event state]))]` |
 | `:handlers` | `{:ext.<id>/event (fn [slice event] → slice')}`: pure reducers over the extension's browser slice at `[:user-ext/state <id>]`, run when the server half [pushes](#events-and-effects) that event to this user. They see nothing but the slice and get no `dispatch!`; a throw or a non-map result keeps the slice. |
 | `:tool-views` | `{"tool_name" (fn [call slice] → hiccup or nil)}`; only the extension's own tools |
