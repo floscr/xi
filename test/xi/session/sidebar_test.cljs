@@ -97,6 +97,39 @@
     (is (= 2 (count (sb/sidebar-session-order state)))
         "a favorite is listed once: its time group already has it")))
 
+(deftest attention-order-ranks-dialog-then-unread-then-running
+  (let [cards [{:session-id "idle"    :timestamp 9}
+               {:session-id "run-old" :timestamp 1 :busy? true}
+               {:session-id "run-new" :timestamp 8 :busy? true}
+               {:session-id "unr-old" :timestamp 2 :unread? true}
+               {:session-id "unr-new" :timestamp 7 :unread? true}
+               {:session-id "ask"     :timestamp 3 :busy? true :has-dialog? true :unread? true}]]
+    (is (= ["ask" "unr-new" "unr-old" "run-new" "run-old"]
+           (sb/attention-order cards))
+        "idle sessions are left out; a dialog outranks everything and is listed once")))
+
+(deftest attention-order-treats-busy-unread-as-running
+  (is (= ["b" "a"]
+         (sb/attention-order [{:session-id "a" :timestamp 1 :busy? true}
+                              {:session-id "b" :timestamp 0 :unread? true}
+                              ])))
+  (is (= ["a"] (sb/attention-order [{:session-id "a" :timestamp 1 :busy? true :unread? true}]))))
+
+(deftest next-attention-jump-walks-the-order-and-wraps
+  (let [order ["ask" "unr" "run"]]
+    (testing "first press from an unrelated chat goes to the top"
+      (is (= {:sid "ask" :visited #{"x" "ask"}}
+             (sb/next-attention-jump order "x" #{}))))
+    (testing "the dialog stays pending, yet the next press moves on"
+      (is (= "unr" (:sid (sb/next-attention-jump order "ask" #{"x" "ask"}))))
+      (is (= "run" (:sid (sb/next-attention-jump order "unr" #{"x" "ask" "unr"})))))
+    (testing "exhausted: the chain restarts from the top, skipping the current chat"
+      (is (= {:sid "ask" :visited #{"run" "ask"}}
+             (sb/next-attention-jump order "run" #{"x" "ask" "unr" "run"}))))
+    (testing "nothing but the current chat: nowhere to go"
+      (is (nil? (sb/next-attention-jump ["ask"] "ask" #{})))
+      (is (nil? (sb/next-attention-jump [] "x" #{}))))))
+
 (deftest live-rooms-carry-who-is-in-them
   (let [state (lobby profiles [{:id "r1" :session-id "s1" :users ["alice" "root"]}
                                {:id "r2" :session-id "s1" :users ["alice"]}

@@ -35,7 +35,6 @@
             [xi.web.router :as router]
             [xi.web.user-ext :as user-ext]
             [xi.session.sidebar :as sidebar]
-            [xi.session.recent :as recent]
             [xi.web.views :as views]))
 
 ;; ── Base handlers (browser-safe merge) ───────────────────────────────────────
@@ -2423,21 +2422,25 @@
         (when (not= sid cur)
           (dispatch! {:type :route/navigate :page :chat :session-id sid}))))))
 
-(defn- jump-to-newest-unread!
-  "ALT+u: jump to the most recently active *finished* session that still has
-   unread output (the purple unread dot) — an agent that completed its turn
-   while you were elsewhere. Busy/running sessions are skipped (not finished
-   yet); the current session is skipped too, so repeated presses cycle through
-   unread finished agents newest-first. No-op when nothing qualifies."
+(defonce ^:private attention-chain
+  ;; {:last sid :visited #{sid}} — the sessions the current run of ALT+u
+  ;; presses already landed on. Any other navigation breaks the chain.
+  (atom nil))
+
+(defn- jump-to-attention!
+  "ALT+u: jump to the session that most needs you — one waiting on a dialog,
+   then the newest finished one with unread output (the purple dot), then the
+   newest running one (see `sidebar/attention-order`). Pressing again moves to
+   the next candidate: sessions this chain of presses already visited are
+   skipped, and the order wraps once exhausted. No-op when nothing qualifies."
   [st dispatch!]
   (let [{:keys [recent hidden earlier]} (sidebar/sidebar-session-groups st)
-        cur (get-in st [:web/route :session-id])
-        sid (->> (concat recent hidden earlier)
-                 (filter #(and (:unread? %) (not (:busy? %))))
-                 (remove #(= (:session-id %) cur))
-                 (sort-by #(recent/->ms (:timestamp %)) >)
-                 (some :session-id))]
-    (when sid
+        cur     (get-in st [:web/route :session-id])
+        chain   @attention-chain
+        visited (if (and cur (= cur (:last chain))) (:visited chain) #{})
+        order   (sidebar/attention-order (concat recent hidden earlier))]
+    (when-let [{:keys [sid visited]} (sidebar/next-attention-jump order cur visited)]
+      (reset! attention-chain {:last sid :visited visited})
       (dispatch! {:type :route/navigate :page :chat :session-id sid}))))
 
 (defn- permission-answer
@@ -2452,8 +2455,9 @@
 
 (defn- install-keybindings!
   "Register the built-in web shortcuts into the view/mode-scoped keymap.
-   Global: ALT+n opens a new chat from any view; ALT+u jumps to the newest
-   finished agent with unread output (the purple dot); ALT+j/k step to the
+   Global: ALT+n opens a new chat from any view; ALT+u jumps to the session
+   needing you most (pending dialog → newest unread → newest running;
+   repeat presses walk that order); ALT+j/k step to the
    next/prev session in sidebar order (no wrap; from a non-chat view they open
    the first session). Chat pane, any mode: ALT+a / ALT+d allow / deny the
    pending permission request; ALT+x aborts the running agent turn. Chat pane, normal mode: `i` focuses the composer (enter
@@ -2469,8 +2473,8 @@
                      :run (fn [_ dispatch! _] (dispatch! {:type :room/new}))})
   (keymap/register! {:id :sidebar-toggle :code "Backslash" :alt true :view :any :mode :any
                      :run (fn [_ dispatch! _] (dispatch! {:type :sidebar/toggle}))})
-  (keymap/register! {:id :jump-newest-unread :code "KeyU" :alt true :view :any :mode :any
-                     :run (fn [st dispatch! _] (jump-to-newest-unread! st dispatch!))})
+  (keymap/register! {:id :jump-attention :code "KeyU" :alt true :view :any :mode :any
+                     :run (fn [st dispatch! _] (jump-to-attention! st dispatch!))})
   ;; Ctrl/Cmd+P: instant fuzzy file finder (handle-keydown preventDefaults, so
   ;; the browser's print dialog never opens). :mode :any so it fires while the
   ;; composer is focused too.

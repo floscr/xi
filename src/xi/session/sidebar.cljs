@@ -178,6 +178,38 @@
         {recent true earlier false} (group-by #(recent/recent? now started %) visible)]
     {:recent (vec recent) :hidden (vec hidden) :earlier (vec earlier)}))
 
+(defn attention-order
+  "Session-ids worth jumping to, most pressing first: sessions waiting on a
+   dialog, then finished ones with unread output, then running ones. Each tier
+   is newest-first, and a session lands in the first tier it qualifies for.
+   `cards` are session-status maps (see `sidebar-session-groups`)."
+  [cards]
+  (let [newest-first #(sort-by (fn [c] (recent/->ms (:timestamp c))) > %)
+        waiting?     :has-dialog?
+        unread?      #(and (:unread? %) (not (:busy? %)))
+        running?     :busy?]
+    (->> (concat (newest-first (filter waiting? cards))
+                 (newest-first (filter #(and (not (waiting? %)) (unread? %)) cards))
+                 (newest-first (filter #(and (not (waiting? %)) (not (unread? %)) (running? %)) cards)))
+         (keep :session-id)
+         distinct
+         vec)))
+
+(defn next-attention-jump
+  "Where the next press of the jump-to-attention key goes: `{:sid :visited}`,
+   or nil when `order` (see `attention-order`) holds nothing but `cur`.
+   `visited` is the set of sessions the current chain of presses already
+   landed on. They are skipped, so repeated presses walk the whole order
+   (dialog → unread → running) instead of bouncing between the top two while
+   a dialog stays pending. Once the order is exhausted the chain restarts from
+   the top."
+  [order cur visited]
+  (let [skip (conj visited cur)]
+    (if-let [sid (first (remove skip order))]
+      {:sid sid :visited (conj skip sid)}
+      (when-let [sid (first (remove #{cur} order))]
+        {:sid sid :visited #{cur sid}}))))
+
 (defn sidebar-session-order
   "Flattened session-ids as shown in the drawer sidebar
    (Recent \u2192 Hidden \u2192 Earlier). Used by ALT+j/k session navigation."
