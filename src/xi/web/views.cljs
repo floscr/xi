@@ -572,12 +572,16 @@
           result)))
 
 (defn- tool-file-path
-  "The file a Read/Write/Edit tool block refers to, for the View-file action."
+  "The file a tool block refers to, for the View-file action: the file
+   read/write/edit tools (SDK and xi names), read_source, and the single-file
+   clj-surgeon / git tools that take a `file` argument."
   [tool args]
   (case tool
-    ("Read" "read" "Write" "write" "Edit" "edit")
+    ("Read" "read" "Write" "write" "Edit" "edit" "read_source")
     (or (get-arg args :file_path) (get-arg args :path))
-    "clj_replace" (get-arg args :file)
+    ("clj_replace" "clj_outline" "clj_deps" "clj_fix_declares" "clj_mv"
+     "clj_fix_parens" "clj_topo" "git_hunk")
+    (get-arg args :file)
     nil))
 
 (defn- clj-result-view
@@ -2876,8 +2880,9 @@
 
 (defn- code-copy-menu
   "Floating menu shown when a rendered code block (`pre`) or inline `code` is
-   tapped: Copy, plus View file when the block belongs to a Read/Write/Edit
-   tool call (opens the file in the room's :file buffer tab via :file/open),
+   tapped: Copy, plus View file when the block belongs to a tool call that
+   names a file (see tool-file-path; opens it in the room's :file buffer tab
+   via :file/open),
    and View diff when the block is a file change (an edit result or a
    permission-dialog preview): opens exactly that block's diff in the :diff tab,
    converted by xi.diff/tool-diff->unified — no git, no server round-trip.
