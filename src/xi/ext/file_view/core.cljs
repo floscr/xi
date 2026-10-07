@@ -21,22 +21,21 @@
 
 (defn- file-load-fx
   "Read the file relative to the room's cwd and install it as the :file buffer,
-   then switch to it. On failure, surface a status line instead."
+   then switch to it. On failure the buffer's text carries the error: the web
+   client has no status line, so a :ui/status would fail silently there."
   [{:keys [dispatch! state]} {:keys [room-id path]}]
   (let [room     (state/get-room state room-id)
         cwd      (or (:cwd room) (.cwd js/process))
-        resolved (tfs/resolve-path path cwd)]
-    (if-not (fs/existsSync resolved)
-      (dispatch! {:type :ui/status :room-id room-id
-                  :text (str "File not found: " path)})
-      (try
-        (let [text (fs/readFileSync resolved "utf8")]
-          (dispatch! {:type :ui/buffer-set :room-id room-id :buffer-id :file
-                      :buffer {:title path :path path :text text}})
-          (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id :file}))
-        (catch :default e
-          (dispatch! {:type :ui/status :room-id room-id
-                      :text (str "Could not read " path ": " (.-message e))}))))))
+        resolved (tfs/resolve-path path cwd)
+        text     (try
+                   (if (fs/existsSync resolved)
+                     (fs/readFileSync resolved "utf8")
+                     (str "File not found:\n" resolved))
+                   (catch :default e
+                     (str "Could not read " resolved ":\n" (.-message e))))]
+    (dispatch! {:type :ui/buffer-set :room-id room-id :buffer-id :file
+                :buffer {:title path :path path :text text}})
+    (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id :file})))
 
 (def extension
   {:id           :file-view
