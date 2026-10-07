@@ -2391,11 +2391,13 @@ code a:hover,
   }
 }
 
-/* Currently-open chat */
+/* Currently-open chat: a purple tint fading out to the right, hairline accent border */
 .project-card--current {
-  --card-ring: var(--bg-1);
-  background-color: var(--bg-1);
-  border: var(--border-0);
+  --card-ring: color-mix(in srgb, var(--accent) 14%, var(--bg-0));
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--accent) 26%, transparent),
+    color-mix(in srgb, var(--accent) 7%, transparent));
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 /* Needs-response: a warm hairline + warning icon */
