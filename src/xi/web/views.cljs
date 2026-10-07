@@ -4833,7 +4833,8 @@
                :copy-debug   (fn [_]
                                (copy! dispatch! (commands/debug-text room)))
                :reload       (fn [_] (reload-with-feedback!))))]
-       (let [actions (for [{:keys [key label icon]} (palette/actions (boolean room))]
+       (let [actions (for [{:keys [key label icon]} (palette/actions (boolean room)
+                                                        (boolean (:web/pending-room state)))]
                        (cmd/command-item {:icon icon :on-click (action-onclick key)} label))
              ;; The pushover user extension seeds every room's [:ext :pushover]
              ;; state, so its presence means the server has it loaded — only

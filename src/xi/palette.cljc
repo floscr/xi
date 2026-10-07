@@ -89,13 +89,16 @@
    surface maps :key to its own event/handler (see the mapping tables in
    xi.client.tui and xi.web.views). :room? gates the item on an active room."
   [{:key :new-chat     :label "New chat"        :icon :plus}
-   {:key :change-model :label "Change model"    :icon :layers  :room? true}
+   {:key :change-model :label "Change model"    :icon :layers  :room? true :pending? true}
    {:key :skills       :label "Skills"          :icon :zap     :room? true}
    {:key :git-status   :label "Git status"      :icon :code    :room? true}
    {:key :copy-debug   :label "Copy debug info" :icon :copy    :room? true}
    {:key :reload       :label "Reload"          :icon :refresh}])
 
 (defn actions
-  "Action items visible given `room?` (drops the room-scoped ones with no room)."
-  [room?]
-  (filterv #(or (not (:room? %)) room?) action-items))
+  "Action items visible given `room?` (drops the room-scoped ones with no room).
+   `pending?` — a not-yet-created chat (web) — keeps the ones flagged :pending?
+   (the choice is remembered on the pending room until it exists)."
+  ([room?] (actions room? false))
+  ([room? pending?]
+   (filterv #(or (not (:room? %)) room? (and pending? (:pending? %))) action-items)))
