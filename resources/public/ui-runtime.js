@@ -845,21 +845,15 @@
   };
   var item_text = function(el) {
     const v1 = el.dataset.commandValue;
-    return (() => {
-      const or__23426__auto__2 = v1;
+    return (!(v1 == null) ? v1 : (() => {
+      const or__23426__auto__2 = el.textContent;
       if (truth_(or__23426__auto__2)) {
         return or__23426__auto__2;
       } else {
-        const or__23426__auto__3 = el.textContent;
-        if (truth_(or__23426__auto__3)) {
-          return or__23426__auto__3;
-        } else {
-          return "";
-        }
-        ;
+        return "";
       }
       ;
-    })().toLowerCase();
+    })()).toLowerCase();
   };
   var item_label = function(el) {
     const lbl1 = el.querySelector(".command-item-label");
@@ -1107,20 +1101,12 @@
     const list3 = dialog.querySelector(".command-list");
     const searching_QMARK_4 = !_EQ_(q1, "");
     items(dialog).forEach((function(el) {
-      const match5 = (() => {
+      const match5 = searching_QMARK_4 ? item_text(el).includes(q1) : not(el.dataset.commandSearchOnly);
+      el.hidden = not(match5);
+      if (truth_((() => {
         const or__23426__auto__6 = !searching_QMARK_4;
         if (or__23426__auto__6) {
           return or__23426__auto__6;
-        } else {
-          return item_text(el).includes(q1);
-        }
-        ;
-      })();
-      el.hidden = not(match5);
-      if (truth_((() => {
-        const or__23426__auto__7 = !searching_QMARK_4;
-        if (or__23426__auto__7) {
-          return or__23426__auto__7;
         } else {
           return not(match5);
         }
@@ -1139,12 +1125,12 @@
     }
     ;
     Array.from(dialog.querySelectorAll(".command-group")).forEach((function(grp) {
-      const visible8 = Array.from(grp.querySelectorAll(".command-item")).filter((function(el) {
+      const visible7 = Array.from(grp.querySelectorAll(".command-item")).filter((function(el) {
         return not(el.hidden);
       }));
-      grp.hidden = visible8.length === 0;
-      if (truth_(searching_QMARK_4 && visible8.length > 0)) {
-        return grp.style.order = visible8.reduce((function(best, el) {
+      grp.hidden = visible7.length === 0;
+      if (truth_(searching_QMARK_4 && visible7.length > 0)) {
+        return grp.style.order = visible7.reduce((function(best, el) {
           return Math.min(best, item_order(el));
         }), Infinity);
       } else {
@@ -1152,14 +1138,14 @@
       }
       ;
     }));
-    const vis9 = visible_items(dialog);
-    if (vis9.length === 0) {
+    const vis8 = visible_items(dialog);
+    if (vis8.length === 0) {
       list3.classList.add("command-list--empty");
     } else {
       list3.classList.remove("command-list--empty");
     }
     ;
-    set_active_BANG_(dialog, vis9.length > 0 ? vis9[0] : null);
+    set_active_BANG_(dialog, vis8.length > 0 ? vis8[0] : null);
     if (truth_(dialog.hasAttribute("data-command-hints"))) {
       return show_hints_BANG_(dialog);
     }

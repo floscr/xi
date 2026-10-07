@@ -4356,35 +4356,35 @@
       [:div {:class ["command-item-status"]}
        (card-status-indicator {:busy? busy? :error? error? :unread? unread? :active? active?})]])))
 
-(defn- palette-project-actions
-  "Command items for a project's second-level page (Tab-drilled from a project
-   row). Mirrors the project three-dots overflow menu — new chat, git status,
-   search — plus any :project-scoped extension nav items, with open sessions
-   last."
+(defn- project-actions
+  "A project's palette actions as data ({:icon :label :on-click}) — the rows of
+   its second-level page (Tab on a project row) and, flattened, the search-only
+   `project · action` rows under the top-level Projects group. Mirrors the
+   project three-dots overflow menu — new chat, git status, search — plus any
+   :project-scoped extension nav items, with open sessions last."
   [state dispatch! cwd]
   (concat
-   [(cmd/command-item
-     {:icon :plus
-      :on-click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}
-     "New chat")
-    (cmd/command-item
-     {:icon :code
-      :on-click (fn [_] (dispatch! {:type :git-status/open :cwd cwd}))}
-     "Git status")
-    (cmd/command-item
-     {:icon :search
-      :on-click (fn [_] (dispatch! {:type :palette/open-search :cwd cwd}))}
-     "Search session text")]
+   [{:icon :plus :label "New chat"
+     :on-click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}
+    {:icon :code :label "Git status"
+     :on-click (fn [_] (dispatch! {:type :git-status/open :cwd cwd}))}
+    {:icon :search :label "Search session text"
+     :on-click (fn [_] (dispatch! {:type :palette/open-search :cwd cwd}))}]
    (for [item (nav-items-for state :overflow)
          :when (contains? #{nil :project} (:mode item))]
-     (cmd/command-item
-      {:icon (:icon item)
-       :on-click (fn [_] (dispatch! (merge (:event item) {:cwd cwd})))}
-      (:label item)))
-   [(cmd/command-item
-     {:icon :folder-open
-      :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd cwd}))}
-     "Open sessions")]))
+     {:icon (:icon item) :label (:label item)
+      :on-click (fn [_] (dispatch! (merge (:event item) {:cwd cwd})))})
+   ;; :list — the framework icon set has no :folder-open; an unknown name
+   ;; renders no icon at all.
+   [{:icon :list :label "Open sessions"
+     :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd cwd}))}]))
+
+(defn- palette-project-actions
+  "Command items for a project's second-level page (Tab-drilled from a project
+   row): one row per `project-actions` entry."
+  [state dispatch! cwd]
+  (for [{:keys [icon label on-click]} (project-actions state dispatch! cwd)]
+    (cmd/command-item {:icon icon :on-click on-click} label)))
 
 (defn- palette-search-page
   "Full-text session search as a palette sub-page (drilled from a project's
@@ -4814,19 +4814,34 @@
                            (:label item))))))
      (when (seq project-dirs)
        (apply cmd/command-group {:heading "Projects"}
-         (for [d project-dirs]
-           (cmd/command-item
-            {:icon :folder
-             :shortcut "⇥"
-             :value (str "project " (shorten-path d) " " d)
-             :attrs {:data-palette-drill d
-                     :data-palette-label (shorten-path d)}
-             ;; Mouse click drills into the project action sub-page (same as
-             ;; keyboard Tab); :reopen? keeps the panel open past the runtime's
-             ;; force-close. "Open sessions" inside the sub-page navigates.
-             :on-click (fn [_] (dispatch! {:type :palette/drill :cwd d
-                                           :label (shorten-path d) :reopen? true}))}
-            (shorten-path d)))))
+         (mapcat
+          (fn [d]
+            (let [short (shorten-path d)]
+              (cons
+               (cmd/command-item
+                {:icon :folder
+                 :shortcut "⇥"
+                 :value (str "project " short " " d)
+                 :attrs {:data-palette-drill d
+                         :data-palette-label short}
+                 ;; Mouse click drills into the project action sub-page (same as
+                 ;; keyboard Tab); :reopen? keeps the panel open past the runtime's
+                 ;; force-close. "Open sessions" inside the sub-page navigates.
+                 :on-click (fn [_] (dispatch! {:type :palette/drill :cwd d
+                                               :label short :reopen? true}))}
+                short)
+               ;; A project row has no action of its own (Enter/Tab drill), so
+               ;; its sub-page rows ride along flattened as search-only
+               ;; `project · action` items: hidden at the empty query, and while
+               ;; typing "xi new" lands on "xi · New chat" without drilling.
+               (for [{:keys [icon label on-click]} (project-actions state dispatch! d)]
+                 (cmd/command-item
+                  {:icon icon
+                   :value (str short " " label " " d)
+                   :attrs {:data-command-search-only "true"}
+                   :on-click on-click}
+                  (str short " · " label))))))
+          project-dirs)))
      ;; Actions come from the shared xi.palette spec (same labels/icons/order as
      ;; the TUI Ctrl+/ palette); the web maps each :key to its own handler.
      (let [action-onclick
