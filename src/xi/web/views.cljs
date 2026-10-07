@@ -640,11 +640,12 @@
         "⋯"]]
       btn)))
 
-(defn- dialog-diff
-  "A confirm dialog's :diff preview ({:path :text} — the change a guarded
-   write/edit is about to make), rendered like the edit tool's result diff."
-  [{:keys [diff]}]
-  (when-let [{:keys [path text]} diff]
+(defn- diff-preview
+  "A change preview ({:path :text} — the diff a guarded write/edit asked to
+   make; its ask's :diff, kept on the tool-call entry by :ui/dialog-open),
+   rendered like the edit tool's result diff."
+  [{:keys [path text] :as diff}]
+  (when diff
     (edit-diff-code (grammars/get-grammar (file-ext path))
                     (truncate-lines text 100)
                     {:data-diff-path path :data-diff-text text})))
@@ -689,7 +690,7 @@
    group (header row styling); `:collapsed?` — it starts closed (the
    :tool-blocks appearance setting); `:room-ext` — the room's extension
    slices, for extension tool views. All stamped by chat-view."
-  [dispatch! {:keys [tool arguments result is-error status started-at
+  [dispatch! {:keys [tool arguments result is-error status started-at diff
                      permission resolved-permission
                      grouped? collapsed? cwd room-ext]}]
   (let [name      (util/strip-mcp-prefix tool)
@@ -709,6 +710,12 @@
                                        room-ext))
         diff-result? (and (contains? #{"Edit" "edit" "clj_replace"} name)
                           (not is-error))
+        ;; The change a guarded write/edit asked to make: shown while its ask
+        ;; is pending, after a deny, and when the turn was interrupted under
+        ;; it — a finished call's own result speaks for itself.
+        preview   (when (not= :done status)
+                    (or diff (get-in permission [:dialog :diff])))
+        denied?   (and (some? resolved-permission) (not (:value resolved-permission)))
         label     (if clj?
                     name
                     (str name (when (seq summary)
@@ -734,21 +741,24 @@
           (run-timer started-at)
           (spinner)])
        ;; Right-side status badge: a filled circle with a white icon that
-       ;; captures the outcome — red ✗ on error, purple ✓ when the user
-       ;; confirmed the tool, grey ✗ when it was denied. Stays visible even
+       ;; captures the outcome — grey ✗ when the user denied the call (its
+       ;; result is an error too, but the denial is the story), red ✗ on
+       ;; error, purple ✓ when the user confirmed the tool. Stays visible even
        ;; when the block is collapsed into a viewer group.
        (cond
+         denied?
+         (let [{:keys [label reason]} resolved-permission]
+           [:span {:class ["tool-call-status" "tool-call-status--deny"]
+                   :title (str (or label "Denied") (when reason (str ": " reason)))}
+            (icon/icon {:icon-name :x :size :sm})])
          is-error
          [:span {:class ["tool-call-status" "tool-call-status--error"] :title "Error"}
           (icon/icon {:icon-name :x :size :sm})]
          (some? resolved-permission)
-         (let [{:keys [value label reason]} resolved-permission
-               deny? (not value)]
-           [:span {:class ["tool-call-status"
-                           (if deny? "tool-call-status--deny" "tool-call-status--allow")]
-                   :title (str (or label (if deny? "Denied" "Allowed"))
-                               (when reason (str ": " reason)))}
-            (icon/icon {:icon-name (if deny? :x :check) :size :sm})]))]
+         (let [{:keys [label reason]} resolved-permission]
+           [:span {:class ["tool-call-status" "tool-call-status--allow"]
+                   :title (str (or label "Allowed") (when reason (str ": " reason)))}
+            (icon/icon {:icon-name :check :size :sm})]))]
       (when clj-code
         ;; A pending ask that targets part of this code (the (spit …) /
         ;; (sh …) call it is about) mutes the rest so the eye lands there.
@@ -760,6 +770,8 @@
             (if ranges
               (focused-clj-code shown ranges)
               (or (highlight-clj-code shown) (plain-code shown)))]]))
+      (when preview
+        [:div {:class ["tool-call-content"]} (diff-preview preview)])
       (cond
         ;; When the result carries an image (view_image, screenshots) the text is
         ;; just a "Viewed image: /path" caption — drop it and show only the image.
@@ -784,11 +796,10 @@
              [:pre {:class ["tool-call-code"]}
               (if grammar (highlight-code grammar shown) (plain-code shown))]))])
       ;; A permission gate fired for this (still-running) tool call: render the
-      ;; ask as a zone inside the same grey box, joined to the code above.
+      ;; ask as a zone inside the same grey box, joined to the preview above.
       (when-let [{:keys [dialog answer! deny-reason!]} permission]
         (let [{:keys [message text]} dialog]
           [:div {:class ["tool-call-content"]}
-           (dialog-diff dialog)
            [:div {:class ["tool-call-permission"]}
             [:div {:class ["tool-call-permission-msg"]} (or message text)]
             [:div {:class ["tool-call-permission-actions"]}
@@ -1841,7 +1852,7 @@
       [:div {:class ["post" "post--assistant" "post--dialog"]}
        [:div {:class ["post-body" "dialog-bubble"]}
         [:div {:class ["dialog-message"]} (or message text)]
-        (dialog-diff live-dialog)
+        (diff-preview (:diff live-dialog))
         (case type
           :cwd-select (cwd-select-body dispatch! state options answer!)
           :form       (form-dialog-body dispatch! state live-dialog answer!)

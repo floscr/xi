@@ -76,6 +76,16 @@
           (str/replace attachment-ref-re "")
           str/trimr))
 
+(def ^:private cli-interrupt-marker-re
+  ;; The user message the Claude CLI writes into its own transcript when a
+  ;; turn is interrupted ("[Request interrupted by user]", "… for tool use]").
+  ;; Not something anyone typed — dropped on resume, as the live turn never
+  ;; showed it either (the :aborted history entry marks the interruption).
+  #"^\s*\[Request interrupted by user[^\]]*\]\s*$")
+
+(defn- cli-interrupt-marker? [text]
+  (boolean (re-matches cli-interrupt-marker-re (str text))))
+
 (defn messages->history
   "Convert session blocks (xi.session/read-session-messages) into history
    entries (see xi.agent). Tool results are folded into their tool-call;
@@ -123,12 +133,14 @@
               (let [raw   (:text block)
                     label (util/collapse-label raw)
                     text  (strip-attachment-refs (util/strip-collapse-marker raw))]
-                (recur (next ms)
-                       (conj (flush-imgs out imgs)
-                             (flag (cond-> {:kind :user :text text}
-                                     label (assoc :collapsed-label label))
-                                   block))
-                       []))
+                (if (cli-interrupt-marker? raw)
+                  (recur (next ms) out imgs)
+                  (recur (next ms)
+                         (conj (flush-imgs out imgs)
+                               (flag (cond-> {:kind :user :text text}
+                                       label (assoc :collapsed-label label))
+                                     block))
+                         [])))
               "assistant"
               (recur (next ms)
                      (conj (flush-imgs out imgs)

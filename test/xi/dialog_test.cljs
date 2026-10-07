@@ -1,5 +1,5 @@
 (ns xi.dialog-test
-  (:require [cljs.test :refer [deftest is]]
+  (:require [cljs.test :refer [deftest is testing]]
             [xi.dialog :as dialog]))
 
 (deftest confirm-options-defaults-to-yes-no
@@ -64,10 +64,24 @@
              parallel-history 1))
       "entries before the rendered window are not considered"))
 
-(deftest permission-tool-index-ignores-finished-calls
-  (is (nil? (dialog/permission-tool-index
-             {:call {:name "grep" :arguments {:pattern "log-in"}}}
-             (assoc-in parallel-history [1 :status] :done) 0))))
+(deftest permission-tool-index-settled-call-still-hosts-its-ask
+  ;; The turn was interrupted under the ask: its call is :aborted, nothing is
+  ;; running, but the ask still belongs on that block, not in a standalone
+  ;; bubble.
+  (is (= 1 (dialog/permission-tool-index
+            {:call {:name "grep" :arguments {:pattern "log-in"}}}
+            (assoc-in parallel-history [1 :status] :aborted) 0)))
+  (testing "a running match wins over an older settled one (a retried call)"
+    (is (= 2 (dialog/permission-tool-index
+              {:call {:name "grep" :arguments {:pattern "log-in"}}}
+              (-> parallel-history
+                  (assoc-in [1 :status] :error)
+                  (conj {:kind :tool-call :id "g2" :status :running
+                         :tool "grep" :arguments {:pattern "log-in"}}))
+              0))))
+  (testing "without :call only running calls are considered"
+    (is (nil? (dialog/permission-tool-index
+               {} (mapv #(assoc % :status :done) parallel-history) 0)))))
 
 (deftest resolved-label-from-options
   (let [d {:options [:yes :no :always]}]

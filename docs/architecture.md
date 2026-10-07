@@ -97,10 +97,17 @@ server, and the browser client are all assemblies of the same pure handlers.
   :tool-call | :error | :aborted | :status …}`. A `:user` entry carries
   `:user`, the sender's user id (see [Users](#users)). Streaming deltas fold into
   the trailing open entry; `:agent/turn-end` finalizes it (`:done? true`),
-  clears busy, stores `:last-usage`/`:last-cost`, and records the provider
-  session id (used as `:resume-session-id` next turn).
+  settles a still-running `:tool-call` to `:aborted`, clears busy, stores
+  `:last-usage`/`:last-cost`, and records the provider session id (used as
+  `:resume-session-id` next turn).
 - Per-room `:ui` holds dialogs, buffers, and menus as data — components have
-  no local atoms.
+  no local atoms. A permission ask is a `:confirm` dialog tagged with `:call`
+  (the gated tool call) and, for a guarded write/edit, a `:diff` preview;
+  `:ui/dialog-open` also leaves that `:diff` on the gated `:tool-call` entry,
+  so its block keeps showing the change after the ask is denied or the turn
+  is interrupted under it. `:agent/turn-end` drops the asks of the ended
+  turn (dialogs with `:call`) and resolves them as denied — their call can
+  never run, so none outlives its tool block.
 
 ## Event naming
 

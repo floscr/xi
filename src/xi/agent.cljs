@@ -312,6 +312,12 @@
 (defn- turn-end [st {:keys [room-id usage cost provider-session-id aborted?]}]
   (when-let [room (state/get-room st room-id)]
     (let [queued (get-in room [:agent :queued])
+          ;; Permission asks still open for this turn's tool calls (dialogs
+          ;; tagged :call) are moot once the turn is over: the gated call can
+          ;; never run now (the turn was interrupted under them). Drop them
+          ;; and settle their promises as denied, so no gate waits forever
+          ;; and no ask outlives its tool block as a standalone bubble.
+          stale  (filterv :call (get-in room [:ui :dialogs]))
           st' (-> st
                   (update-in [:rooms room-id :history] finalize-history)
                   (update-in [:rooms room-id :agent]
@@ -321,17 +327,24 @@
                                    usage (assoc :last-usage usage)
                                    cost  (assoc :last-cost cost))))
                   (cond->
+                   (seq stale)
+                    (update-in [:rooms room-id :ui :dialogs]
+                               (fn [ds] (vec (remove :call ds))))
                    provider-session-id
                     (assoc-in [:rooms room-id :session :provider-session-id]
                               provider-session-id)
                    aborted?
-                    (update-in [:rooms room-id :history] conj {:kind :aborted})))]
-      ;; Drain the whole queue as one combined prompt by re-dispatching —
-      ;; keeps a single submission code path.
+                    (update-in [:rooms room-id :history] conj {:kind :aborted})))
+          effects (cond-> (mapv (fn [{:keys [id]}]
+                                  [:dialog/resolve {:dialog-id id :value false}])
+                                stale)
+                    ;; Drain the whole queue as one combined prompt by
+                    ;; re-dispatching — keeps a single submission code path.
+                    (seq queued)
+                    (conj [:app/dispatch (merge {:type :prompt/submit :room-id room-id}
+                                                (join-prompts queued))]))]
       (cond-> {:state st'}
-        (seq queued)
-        (assoc :effects [[:app/dispatch (merge {:type :prompt/submit :room-id room-id}
-                                               (join-prompts queued))]])))))
+        (seq effects) (assoc :effects effects)))))
 
 (defn- retry-fresh
   "The provider could not start (a dead resume session, or a missing working

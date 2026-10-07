@@ -138,21 +138,24 @@
           (walk/stringify-keys (or (:arguments entry) {})))))
 
 (defn permission-tool-index
-  "Index in `entries` (≥ `start`) of the running tool call a pending :confirm
-   `dialog` is gating, or nil. Several tool calls can be running at once while
-   one waits on its permission ask, so the dialog's :call ({:name :arguments}
-   of the gated call) picks the entry; the newest running match wins. A dialog
-   without :call falls back to the newest running tool call. No match → nil,
-   so the caller renders the dialog standalone and its buttons never vanish."
+  "Index in `entries` (≥ `start`) of the tool call a pending :confirm `dialog`
+   is gating, or nil. Several tool calls can be running at once while one
+   waits on its permission ask, so the dialog's :call ({:name :arguments} of
+   the gated call) picks the entry; the newest running match wins. When no
+   match is running any more (the turn was interrupted under the ask), the
+   newest settled match still hosts it — the ask belongs on that block, not
+   in a standalone bubble. A dialog without :call falls back to the newest
+   running tool call. No match → nil, so the caller renders the dialog
+   standalone and its buttons never vanish."
   [dialog entries start]
-  (let [call (:call dialog)]
-    (->> (range (dec (count entries)) (dec start) -1)
-         (filter (fn [i]
-                   (let [e (nth entries i)]
-                     (and (= :tool-call (:kind e))
-                          (= :running (:status e))
-                          (or (nil? call) (same-call? call e))))))
-         first)))
+  (let [call  (:call dialog)
+        idxs  (range (dec (count entries)) (dec start) -1)
+        match (fn [i]
+                (let [e (nth entries i)]
+                  (and (= :tool-call (:kind e))
+                       (or (nil? call) (same-call? call e)))))]
+    (or (first (filter #(and (= :running (:status (nth entries %))) (match %)) idxs))
+        (when call (first (filter match idxs))))))
 
 (defn humanize-name
   "\"commit-message\" → \"Commit message\"."

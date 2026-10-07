@@ -368,3 +368,24 @@
   (testing "standalone, the TUI is this process"
     (is (= (.-pid js/process)
            (agent/room-client-pid (state/initial-state {:mode :standalone}) "main")))))
+
+(deftest turn-end-closes-asks-of-the-ended-turn
+  ;; The turn was interrupted while a permission ask for one of its tool
+  ;; calls was open: the ask is moot (the call can never run), so turn-end
+  ;; drops it and settles its promise as denied. Asks not tied to a tool call
+  ;; (no :call) stay.
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "go"}
+                         {:type :agent/tool-start :room-id "r" :id "t1" :tool "edit"
+                          :arguments {:path "/a"}}
+                         {:type :ui/dialog-open :room-id "r"
+                          :dialog {:id "dlg-1" :type :confirm :message "Edit /a?"
+                                   :call {:name "edit" :arguments {:path "/a"}}}}
+                         {:type :ui/dialog-open :room-id "r"
+                          :dialog {:id "dlg-2" :type :confirm :message "Unrelated?"}})
+        {:keys [state effects]}
+        (events/handle-event all-handlers st
+                             {:type :agent/turn-end :room-id "r" :aborted? true})]
+    (is (= ["dlg-2"] (mapv :id (get-in state [:rooms "r" :ui :dialogs]))))
+    (is (= [[:dialog/resolve {:dialog-id "dlg-1" :value false}]] effects))
+    (is (= :aborted (:status (second (history state)))))))

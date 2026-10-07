@@ -13,7 +13,8 @@
 
    Event naming: :room/*, :client/*, :history/*, :agent/*, :ui/*,
    :prompt/*, :render/*."
-  (:require [xi.core.state :as state]))
+  (:require [xi.core.state :as state]
+            [xi.dialog :as dialog]))
 
 ;; ── Rooms ────────────────────────────────────────────────────────────────────
 
@@ -121,10 +122,19 @@
 
 ;; ── UI (per room) ────────────────────────────────────────────────────────────
 
-(defn- dialog-open [st {:keys [room-id dialog] :as ev}]
+(defn- dialog-open
+  "Add the dialog to the room. A permission ask that previews a change
+   (:diff, raised for the tool call named by :call) also leaves that preview
+   on the gated tool-call entry, so its block still shows what was asked once
+   the ask is answered (denied) or the turn is interrupted under it."
+  [st {:keys [room-id dialog] :as ev}]
   (when (state/get-room st room-id)
-    (let [dialog (update dialog :id #(or % (:event/id ev)))]
-      {:state (update-in st [:rooms room-id :ui :dialogs] conj dialog)})))
+    (let [dialog  (update dialog :id #(or % (:event/id ev)))
+          history (vec (get-in st [:rooms room-id :history]))
+          idx     (when (and (:diff dialog) (:call dialog))
+                    (dialog/permission-tool-index dialog history 0))]
+      {:state (cond-> (update-in st [:rooms room-id :ui :dialogs] conj dialog)
+                idx (assoc-in [:rooms room-id :history idx :diff] (:diff dialog)))})))
 
 (defn- dialog-close [st {:keys [room-id dialog-id]}]
   (when (state/get-room st room-id)

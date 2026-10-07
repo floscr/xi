@@ -170,3 +170,26 @@
         result (events/handle-event events/core-handlers st {:type :ext/whatever})]
     (is (identical? st (:state result)))
     (is (= [] (:effects result)))))
+
+(deftest dialog-open-keeps-the-change-preview-on-the-gated-call
+  ;; A permission ask carrying a :diff for the tool call it gates (:call)
+  ;; leaves that preview on the entry, so the block still shows what was
+  ;; asked once the ask is answered or the turn is interrupted under it.
+  (let [st (apply-events (state/initial-state)
+                         {:type :room/create :room-id "a"}
+                         {:type :history/append :room-id "a"
+                          :entry {:kind :tool-call :id "t1" :tool "mcp__xi-tools__edit"
+                                  :arguments {"path" "/a"} :status :running}}
+                         {:type :ui/dialog-open :room-id "a"
+                          :dialog {:id "d1" :type :confirm :message "Edit?"
+                                   :call {:name "edit" :arguments {:path "/a"}}
+                                   :diff {:path "/a" :text "-x\n+y"}}})]
+    (is (= {:path "/a" :text "-x\n+y"}
+           (:diff (first (get-in st [:rooms "a" :history])))))
+    (is (= ["d1"] (mapv :id (get-in st [:rooms "a" :ui :dialogs]))))
+    (testing "an ask without :call has no call to attach it to"
+      (let [st' (apply-events st {:type :ui/dialog-open :room-id "a"
+                                  :dialog {:id "d2" :type :confirm
+                                           :diff {:path "/b" :text "+z"}}})]
+        (is (= {:path "/a" :text "-x\n+y"}
+               (:diff (first (get-in st' [:rooms "a" :history])))))))))

@@ -529,3 +529,14 @@
   (let [st (with-dialog (with-room) {:id "dlg-1" :type :confirm})
         st (:state (handle st {:type :command/run :room-id "r" :name "a" :args "zzz"}))]
     (is (str/includes? (:text (peek (history st))) "Unknown /allow option"))))
+
+(deftest messages->history-drops-cli-interrupt-markers
+  ;; The Claude CLI writes "[Request interrupted by user …]" into its own
+  ;; transcript as a user message when a turn is cut off; nobody typed it.
+  (is (= [{:kind :user :text "do it"}
+          {:kind :text :text "ok" :done? true}]
+         (commands/messages->history
+          [{:type :text :role "user" :text "do it"}
+           {:type :text :role "assistant" :text "ok"}
+           {:type :text :role "user" :text "[Request interrupted by user for tool use]"}
+           {:type :text :role "user" :text "[Request interrupted by user]"}]))))
