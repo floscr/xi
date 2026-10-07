@@ -59,6 +59,7 @@ The tutorials go through each of these with a working example:
 3. [A web tool](extension-tutorial-http.md): search Hacker News from a tool
 4. [A page in the browser](extension-tutorial-web.md): the notes, with a form
 5. [Your own MCP server](extension-tutorial-mcp.md): a headless browser for one tool
+6. [Users and roles](extension-tutorial-roles.md): roles in `config.edn`, rules per role, and an extension that grants them
 
 ## How an extension runs
 

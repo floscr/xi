@@ -98,6 +98,12 @@ login: anyone who can connect can pick any user, and the config is the only
 list of who exists. Checking who may be whom is left to
 [extensions](extensions.md).
 
+What each user's chats may do is up to your [rules](rules.md#rules-for-some-users):
+a rule can name users by id or by their `:meta`, for example a role. Pin
+each device with `xi clients user` first, or anyone can pick a user with
+more rights. [Tutorial: users and roles](extension-tutorial-roles.md) walks
+through a setup with admins, guests and a role an extension grants.
+
 An id is lowercase letters, digits, `.`, `_` or `-`, up to 64 characters.
 Anything else counts as `root`.
 

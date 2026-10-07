@@ -92,6 +92,7 @@ lines; each page line is `- [Title](file.md) — one-line hook`.
 - [Tutorial: a web tool](extension-tutorial-http.md) — call an HTTP API from a tool
 - [Tutorial: a page in the browser](extension-tutorial-web.md) — give your extension a web page
 - [Tutorial: your own MCP server](extension-tutorial-mcp.md) — an extension that brings a headless browser
+- [Tutorial: users and roles](extension-tutorial-roles.md) — roles per user, enforced by rules and by an extension
 - [Extension reference](extensions-reference.md) — every key, API function and limit
 - [Agent profiles](agents.md) — run Xi as an assistant with a fixed set of tools
 

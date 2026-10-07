@@ -159,6 +159,12 @@ needs it, so an edit to `config.edn` applies on the next call. If `config.edn`
 is invalid, a `:meta` rule that restricts applies to everyone and one that
 allows applies to no one, until you fix it.
 
+A user is whoever their device says it is, unless you pin the device to a
+user with `xi clients user` (see [Users](server.md#users)). Do that for
+every device before you rely on a rule that restricts someone.
+[Tutorial: users and roles](extension-tutorial-roles.md) sets up roles end
+to end, including an extension that grants its own.
+
 ## Rules for one project
 
 A repository can carry its own rules in `.xi/rules.edn` at its root, with the

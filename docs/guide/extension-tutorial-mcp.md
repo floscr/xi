@@ -112,5 +112,5 @@ extension rather than the model.
 
 ## Next
 
-The [extension reference](extensions-reference.md) has every key, API
-function and limit.
+[Tutorial: users and roles](extension-tutorial-roles.md) gives the people
+on a shared server roles, enforced by rules and by an extension.
