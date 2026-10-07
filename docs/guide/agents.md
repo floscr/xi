@@ -56,15 +56,6 @@ xi prompt --agent research --json "find three sources on X"
 xi prompt --agent research --session 0198… --json "summarise the second one"
 ```
 
-## When something is off
-
-**The model says it has no tools.** The profile has no `:tools` key, or the
-config file is invalid (Xi prints why on startup). Both mean no tools, on
-purpose.
-
-**My coding extensions show up in the assistant.** Add `:extensions` to the
-profile; without it, the top-level list loads.
-
 ## Reference
 
 Every profile key: [Configuration](configuration.md#agents). The flags:

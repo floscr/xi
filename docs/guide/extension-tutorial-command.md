@@ -179,20 +179,6 @@ requests: pre-allow them with a rule, pinned to the extension.
   `{:name "ping" :handler (fn [_ {:keys [room-id]}] {:effects [[:app/dispatch {:type :ext.ping/toggle :room-id room-id}]]})}`
   to `:commands`.
 
-## When something is off
-
-**The key does nothing.** Keybindings are read when the terminal client
-starts; a reload is not enough. Restart Xi. In the web client, keys from
-extensions are not available; use a command.
-
-**The badge shows but no notification comes.** Check the rule: the
-`:extension` value is the id as a string, and `:cli` is the program's name
-without a path. `/rules` shows whether it loaded.
-
-**The notification fires twice.** A handler for `:agent/turn-end` runs for
-every chat on a server, so make sure it checks its own `room-id`, as the one
-above does.
-
 ## Next
 
 [Tutorial: a web tool](extension-tutorial-http.md) makes HTTP requests.

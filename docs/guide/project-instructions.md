@@ -117,23 +117,3 @@ All of them are documented on their own pages; this is how they combine.
 
 An [agent profile](agents.md) loads none of this: its `:system-prompt` is the
 whole prompt, and `/cd` in a profile chat does not reload project files.
-
-## When something is off
-
-**The header says nothing about AGENTS.md.** The file is not on the way up
-from the chat's directory. Check the name is exactly `AGENTS.md` (case
-matters), and that it sits in the directory you started in or one above it.
-`/cd` shows the current directory when called without an argument.
-
-**The agent didn't follow a subdirectory's file.** Those files are listed, not
-loaded; the agent reads one when it edits files near it. If it should always
-apply, move the rules into the root file. If the subdirectory file isn't in
-the list in `/prompt`, it is either not named `AGENTS.md` or git ignores it.
-
-**An edit to the file had no effect.** The prompt was built when the chat
-started. Run `/cd .` or start a new chat.
-
-**The instructions appear twice.** Another tool is also loading them. Xi
-already turns off the Claude CLI's project-file loading; if the duplicate
-comes from `:agents-prompt` pointing at the same file, set `:agents-replace
-true` or remove the setting.

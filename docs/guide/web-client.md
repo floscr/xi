@@ -129,18 +129,6 @@ are. The common ones:
 The full list, the layers a key applies in, and how to change any of them in
 `config.edn`: [Keyboard shortcuts](keyboard.md).
 
-## When something is off
-
-**"Connecting…" and nothing happens.** The server is not reachable at the
-address in the URL. Check `xi server` is running, and that the port (7474) is
-open to your network.
-
-**The pairing code never shows up on the terminal.** `xi clients pending`
-reads it from the server's state; run it on the machine the server runs on.
-
-**The page is stale after an update.** Reload once; the client is served by
-the same process as the server, so a restarted server serves the new client.
-
 ## Appearance
 
 The gear in the sidebar footer (or "Appearance" in the chat menu and the

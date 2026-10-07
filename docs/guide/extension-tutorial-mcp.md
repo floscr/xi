@@ -110,19 +110,6 @@ listed under the entry's `:hidden-tools` are reachable this way without
 being offered to the agent, for a server that has tools meant for an
 extension rather than the model.
 
-## When something is off
-
-**The first call fails with "server exited".** Run the command by hand:
-`npx -y chrome-devtools-mcp@1.10.1 --headless`. A missing browser or a
-download failure prints its reason there.
-
-**It asks on every call from an effect.** An effect has no dialog to answer.
-Trust the server before using it from one.
-
-**The file is rejected: "malformed :mcp-servers".** Names are simple keywords
-and every entry is a stdio `:command` with string `:args`, or an `:http`
-`:url`.
-
 ## Next
 
 The [extension reference](extensions-reference.md) has every key, API

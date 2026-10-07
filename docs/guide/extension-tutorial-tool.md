@@ -163,23 +163,6 @@ events under its own prefix.
                     (dispatch! {:type :ui/status :room-id room-id :text text})))))}})
 ```
 
-## When something is off
-
-**`/ext list` does not show it.** The file is not in `:extensions`, or the
-config file is invalid (Xi prints why on startup). File names are exact,
-including `.cljs`.
-
-**`/ext reload` says the file was rejected.** The message carries the
-evaluation error with a line number. A common one is a missing `:require`:
-the sandbox has `clojure.core`, `clojure.string`, `clojure.set`,
-`clojure.walk` and `clojure.edn`, and the `xi.api.*` namespaces. Nothing else.
-
-**The tool is not offered to the agent.** Tools apply from the next turn after
-a reload. Send another message.
-
-**Writing the file asks for permission.** The path is outside the data
-directory. Use `fs/data-dir`, or add a [rule](rules.md) for the path.
-
 ## Next
 
 [Tutorial: a command and a key](extension-tutorial-command.md) reacts to

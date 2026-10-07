@@ -77,17 +77,3 @@ Install a certificate → CA certificate, then pick the file.
    private". If the root is not listed, restart the phone.
 5. Open `https://my-desktop:7443` in Safari. It should load with no warning.
 6. Add it to the home screen from that page, and pair once.
-
-## When something is off
-
-**The name does not resolve at all.** That is DNS, not the certificate. If
-the server loads by IP but not by name, the phone is not using your network's
-DNS. On a Tailscale network, turn on "Use Tailscale DNS settings" in the
-app.
-
-**"Not private" after installing the profile.** The trust toggle in step 4
-is off, or the name you opened is not in the certificate. Reissue the
-certificate with the name added.
-
-**The old home-screen icon still opens `http://`.** Delete it and add the
-page again from the `https://` URL.

@@ -64,14 +64,3 @@ your plan's. Zen's preview ids (`gpt-6-astra`) exist only on Zen; use
 | A chat | The one you picked, else your last `/model` pick (kept per [user](server.md#users), in the web client and the terminal alike), else the default |
 | Naming a chat, `/summary`, `/truncate` | A cheaper Claude model, always |
 | An [agent profile](agents.md) | Its `:model`, unless `--model` says otherwise |
-
-## When something is off
-
-**"codex login" is suggested.** No credentials in `~/.codex`. Sign in with
-the Codex CLI once.
-
-**A Zen model answers with an authentication error.** The paid models need
-a key; set `OPENCODE_API_KEY` or sign in with the OpenCode CLI.
-
-**An Ollama model never calls tools.** The model does not support tool
-calls. Pick one that does, or use it for questions only.

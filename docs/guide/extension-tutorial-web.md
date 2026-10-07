@@ -208,22 +208,6 @@ lands in the new chat:
 This is allowed from events a client sent, from commands and from keys, but
 never from a tool: the agent cannot start chats through your extension.
 
-## When something is off
-
-**The menu entry is missing.** The browser loads web halves once; reload the
-page. The file must be `notes/web.cljs` next to `notes.cljs`, and define
-`web-extension` with the matching `:id`.
-
-**The page shows an error box.** The console has the exception. A common one
-is a `:require` the browser sandbox does not have; it has `clojure.*`,
-`xi.core.state`, the `ui.*` components and the helpers listed above.
-
-**Clicking does nothing.** The event's namespace must be `:ext.notes/…`.
-Anything else is blocked, and the console says so.
-
-**The field does not keep what I type.** `:bind` goes in `:attrs` for a
-`ui.form` input, and the path is a vector of keywords.
-
 ## Next
 
 [Tutorial: your own MCP server](extension-tutorial-mcp.md).

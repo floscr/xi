@@ -116,19 +116,6 @@ the extension's data directory, which it may read without asking (with
 
 Put the file at `~/.local/share/xi/extensions/<id>/key.txt`.
 
-## When something is off
-
-**The dialog never appears and the call fails.** The tool was called from
-somewhere without a dialog, such as an effect or a one-shot `xi prompt`. Add
-the rule.
-
-**`json/parse` returns nothing useful.** Check `:ok?` and `:status` first; an
-error page is not JSON. Print `(subs body 0 200)` into the error text while
-developing.
-
-**The model does not call the tool.** Its description is what the model goes
-on. Say what the tool is for and when to prefer it over a general web search.
-
 ## Next
 
 [Tutorial: a page in the browser](extension-tutorial-web.md) adds a web page.

@@ -36,7 +36,8 @@ explanation does. Internals that help someone change the code go in
    placeholder names (`my-app`), never personal paths, hosts or tools. Show
    config as complete, copy-pasteable snippets.
 4. **Say what happens when it goes wrong** — the error you will see and the
-   fix — not only the happy path.
+   fix — in the text next to the step it belongs to. No separate
+   troubleshooting section ("When something is off") at the end of a page.
 5. **Plain CommonMark + GFM tables.** No generator-specific syntax, no raw
    HTML, no includes. Fenced code blocks always carry a language.
 6. **Relative links only**, to other `.md` files (`projects.md#remembered-projects`).

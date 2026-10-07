@@ -191,16 +191,6 @@ one key press is recorded in the same file and dropped, so the next key
 still works. An error it cannot recover from restores the terminal (cursor,
 mouse, normal screen), prints the error and exits.
 
-## When something is off
-
-**A phone cannot connect.** Check the address: the server prints the ones it
-bound. A firewall on the workstation may block 7474.
-
-**"Pairing required" every time on iPhone.** Serve over HTTPS; see above.
-
-**A chat I closed is still listed as live.** Its agent is still working. Open
-it to see, or wait; it closes when the turn ends.
-
 ## Reference
 
 Every flag: [Command line](command-line.md). How rooms, broadcast and the

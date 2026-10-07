@@ -164,22 +164,6 @@ one in `src/xi/mcp/server.cljs` and a Babashka one in
               :code-paths ["/path/to/xi/packages/mcp-bb-example/src"]}}
 ```
 
-## When something is off
-
-**`/mcp add` hangs or fails.** The server did not answer the first handshake.
-Run its command by hand in a terminal; most servers print why they could not
-start. A missing `npx` or an unpinned package that failed to download are the
-usual causes.
-
-**The tools are listed but every call asks.** The server is not trusted yet.
-Answer `a` once, or `/mcp trust <id>`.
-
-**A trusted server asks again.** Its code changed: the package was updated, or
-a file under `:code-paths` was edited. That is the point of the fingerprint;
-trust it again.
-
-**The tool list is stale after updating the server.** `/mcp refresh <id>`.
-
 ## Rules for MCP tools
 
 A call to a server is a rules request `{:tool :mcp :mcp-server "id"

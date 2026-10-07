@@ -183,23 +183,6 @@ one out to switch it off:
 
 `/rules` shows the full default list with its bundle names.
 
-## When something is off
-
-**Every call is denied with a message naming `rules.edn`.** The file is
-invalid: a missing `:type` or `:version`, an unknown key, or EDN that does not
-read. Xi replaces a broken file with one rule that denies everything, so a
-typo can never silently drop your deny rules. Fix the line the message names.
-
-**A rule does not match.** `:path` regexes match anywhere in the path; a glob
-must match the whole path. Check `/rules` to see the order; an earlier rule
-may be winning.
-
-**The agent asks about something I already allowed with `a`.** In-chat grants
-are below your files. A rule in `rules.edn` that asks for the same thing wins.
-Write an `:allow` there instead.
-
-**Xi refuses to let the agent edit `rules.edn`.** By design. Edit it yourself.
-
 ## Reference
 
 Every match field, action option, and default bundle:
