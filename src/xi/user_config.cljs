@@ -170,6 +170,26 @@
                :trusted-mcp-servers (set (:trusted-mcp-servers data))}
         (contains? data :keys) (assoc :keys (:keys data))))))
 
+(def PROJECTS_FILE_NAME
+  "The optional file next to the config file whose content (a bare map) is the
+   config's `:projects`, so a config.edn that is a symlink into a checkout can
+   still get a generated project list. An explicit `:projects` in the config
+   file wins."
+  "projects-config.edn")
+
+(defn- with-projects-file
+  "`data` (the parsed config file) with `:projects` taken from the sibling
+   PROJECTS_FILE_NAME when the config sets none. An unreadable projects file
+   makes the whole config invalid (nil) rather than silently dropping it."
+  [data file]
+  (let [pfile (.join node-path (.dirname node-path file) PROJECTS_FILE_NAME)]
+    (if (and (map? data) (not (contains? data :projects)) (fs/existsSync pfile))
+      (let [projects (try (edn/read-string (fs/readFileSync pfile "utf8"))
+                          (catch :default _ ::unreadable))]
+        (when-not (= ::unreadable projects)
+          (assoc data :projects projects)))
+      data)))
+
 (defn read-config
   "The validated user config (`parse-config`), all-empty when the file is
    absent, `{:error msg}` when it exists but is invalid."
@@ -177,8 +197,9 @@
   (let [file (config-file)]
     (if (fs/existsSync file)
       (parse-config
-       (try (edn/read-string (fs/readFileSync file "utf8"))
-            (catch :default _ nil)))
+       (-> (try (edn/read-string (fs/readFileSync file "utf8"))
+                (catch :default _ nil))
+           (with-projects-file file)))
       {:extensions #{} :agents {} :projects projects/default-spec
        :users {} :trusted-mcp-servers #{}})))
 

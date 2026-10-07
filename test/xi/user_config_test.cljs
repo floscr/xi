@@ -108,3 +108,23 @@
     (with "{:type :xi/config :version 1 :extensions [\"kb.cljs\" \"web.cljs\"]}"
       #(is (= #{"kb.cljs" "web.cljs"} (cfg/enabled-extensions))))
     (fs/rmSync dir #js {:recursive true :force true})))
+
+(deftest projects-come-from-the-sibling-projects-file
+  (let [dir   (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-config-projects-"))
+        file  (node-path/join dir "config.edn")
+        pfile (node-path/join dir cfg/PROJECTS_FILE_NAME)
+        base  "{:type :xi/config :version 1"
+        with  (fn [config projects f]
+                (fs/writeFileSync file config)
+                (if projects (fs/writeFileSync pfile projects) (fs/rmSync pfile #js {:force true}))
+                (cfg/set-config-file! file)
+                (try (f) (finally (cfg/set-config-file! nil))))]
+    (with (str base "}") "{:repos [\"/a\"]}"
+      #(is (= ["/a"] (:repos (cfg/projects-spec))) "the projects file supplies :projects"))
+    (with (str base " :projects {:repos [\"/b\"]}}") "{:repos [\"/a\"]}"
+      #(is (= ["/b"] (:repos (cfg/projects-spec))) "an explicit :projects in the config wins"))
+    (with (str base "}") "{:repos"
+      #(is (:error (cfg/read-config)) "an unreadable projects file is an error, not silently dropped"))
+    (with (str base "}") nil
+      #(is (= [] (:repos (cfg/projects-spec))) "no projects file, no projects"))
+    (fs/rmSync dir #js {:recursive true :force true})))

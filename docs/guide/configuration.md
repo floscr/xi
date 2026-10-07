@@ -51,6 +51,13 @@ The agent cannot write `~/.config/xi`, and a change to this file anywhere
 else, for example a dotfiles source that `config.edn` is a symlink to, asks
 you every time (see [Rules](rules.md)).
 
+The project list can also live in its own file,
+`~/.config/xi/projects-config.edn`: a bare map with the keys above
+(`{:browse [...] :repos [...] :settings {...}}`). Xi uses it as `:projects`
+when `config.edn` has no `:projects` key, so a `config.edn` that is a symlink
+into a checkout can still get a generated project list. A `:projects` in
+`config.edn` wins; a file that isn't valid EDN makes the whole config invalid.
+
 ### `:users`
 
 A map from user id to a profile. Declaring a user is optional: an id nobody
