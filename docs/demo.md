@@ -60,8 +60,14 @@ server-side namespaces, run `bb demo:restart`.
   `notes` (copied from `scripts/demo-extensions/`). It has a `notes_add` tool,
   a `/notes` command and a browser half at `/notes` (sidebar → Extensions →
   Notes; open a chat first, since Refresh reads through the active room).
-- `.config/xi/config.edn` — enables it (`:extensions ["notes.cljs"]`);
+- `.config/xi/config.edn` — enables it (`:extensions ["notes.cljs"]`) and
+  declares two users, `root` ("Demo") and `alice`, so the sidebar's user
+  switcher appears and multi-user features can be tried from one browser;
   `.config/xi/rules.edn` is an empty, valid rules file.
+- To test one of your own user extensions here, point the seed at it:
+  `XI_DEMO_EXTENSIONS_DIR=~/.config/xi/extensions XI_DEMO_EXTENSIONS=messenger.cljs bb demo`
+  copies the directory into the demo extensions dir and adds the named files
+  to the enabled list (`bb demo:restart` with the same variables re-seeds).
 - `.local/share/xi/extensions/` — extension data dirs (`XDG_DATA_HOME` is
   redirected too, so the notes file never lands in the real one)
 

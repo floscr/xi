@@ -280,10 +280,30 @@ fs.cpSync(
   path.join(DEMO_HOME, ".config", "xi", "extensions"),
   { recursive: true },
 );
-// Only files the user config lists under :extensions are loaded.
+// Extra user extensions to test against the demo: XI_DEMO_EXTENSIONS_DIR is
+// copied into the demo extensions dir (a file or a directory tree), and
+// XI_DEMO_EXTENSIONS (comma-separated file names) joins the enabled list.
+const extraDir = process.env.XI_DEMO_EXTENSIONS_DIR;
+if (extraDir) {
+  fs.cpSync(extraDir, path.join(DEMO_HOME, ".config", "xi", "extensions"), {
+    recursive: true,
+  });
+}
+const extensions = ["notes.cljs"].concat(
+  (process.env.XI_DEMO_EXTENSIONS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
+// Only files the user config lists under :extensions are loaded. Two demo
+// users, so the sidebar's user switcher shows up and multi-user UI (presence,
+// avatars, user extensions that talk between users) can be exercised.
 fs.writeFileSync(
   path.join(DEMO_HOME, ".config", "xi", "config.edn"),
-  '{:type :xi/config\n :version 1\n :extensions ["notes.cljs"]}\n',
+  '{:type :xi/config\n :version 1\n' +
+    ` :extensions [${extensions.map((e) => JSON.stringify(e)).join(" ")}]\n` +
+    ' :users {"root"  {:name "Demo"}\n' +
+    '         "alice" {:name "Alice"}}}\n',
 );
 fs.writeFileSync(
   path.join(DEMO_HOME, ".config", "xi", "rules.edn"),
@@ -295,5 +315,6 @@ fs.writeFileSync(path.join(DEMO_HOME, ".demo-client-key"), DEMO_CLIENT_KEY + "\n
 
 console.log(`Seeded demo HOME at ${DEMO_HOME}`);
 console.log(`  ${seeds.length} sessions across 2 demo projects`);
-console.log(`  user extension: notes (+ web half at /notes)`);
+console.log(`  user extensions: ${extensions.join(", ")} (notes has a web half at /notes)`);
+console.log(`  users: root (Demo), alice`);
 console.log(`  client key: ${DEMO_CLIENT_KEY}`);
