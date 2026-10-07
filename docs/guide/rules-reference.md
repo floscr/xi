@@ -52,6 +52,7 @@ Every field present must hold. An absent field is no constraint.
 | `:mcp-tool` | An MCP tool name | String or glob; `"*"` for any. |
 | `:mcp-trusted` | `true` / `false` | Whether the server is trusted right now. |
 | `:when` | A sub-map of the chat's extension state | `{:plan-mode {:enabled? true}}`, `{:agent {:id "root"}}` for an agent profile's chats, `{:agent {}}` for any profile. |
+| `:user` | The user the call acts for | String (exact or glob), regex or set: the user id. A map: a sub-map of the user's profile in `config.edn` `:users`, `{:id … :name … :meta …}`, e.g. `{:meta {:team "ops"}}`; `{}` is any user. In a map, a set value is one of (`{:meta {:team #{"ops" "infra"}}}`), and a value also matches a collection that holds it (`{:meta {:roles "admin"}}` matches `:roles ["admin" "dev"]`). The user is whoever sent the chat's latest prompt (a sub-agent acts for its parent's), else the server's own user. While `config.edn` is invalid a map matches every user unless the rule is `:allow`, so a restriction keyed on `:meta` keeps applying. |
 | `:outside` | `:cwd` | The target resolves outside the working directory and the temp directory. |
 | `:credential` | `:read` | The target is in a credential directory (`.ssh`, `.gnupg`, `.password-store`, …). |
 | `:xi-rules-file` | `true` | The call would change an Xi rules file (a `rules.edn` carrying `:version`), wherever it lives. |

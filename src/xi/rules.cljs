@@ -15,6 +15,8 @@
                :mcp-server \"context7\"   ; MCP server id (glob/exact)
                :mcp-tool   \"*\"           ; MCP tool name (glob/exact)
                :when {:mode :plan}       ; submap match against room ext state
+               :user \"alice\"             ; user the call acts for: id (glob/exact, regex, set)
+                                         ; or {:meta {…}} submap of their config.edn profile
                :node {:type \"...\" :name #\"...\" :contains #\"...\"} ; tree-sitter (opt-in)
                :within :repo             ; every :sh operand inside the repo (opt-in)
                :tracked :git             ; every :sh operand git-tracked in the repo (opt-in)
@@ -39,7 +41,7 @@
 
    Matching is pure over a *decision request* the store builds from a tool
    call: {:tool :tool-name :path :command :repo :effective-cwd :mcp-server
-          :mcp-tool :state :nodes}. This namespace does no I/O."
+          :mcp-tool :state :nodes :user :user-record}. This namespace does no I/O."
   (:require [clojure.string :as str]))
 
 (defn canonical
@@ -169,6 +171,41 @@
                          (match-when v sv)
                          (= v sv))))
                    spec))))
+
+(def config-invalid
+  "The `:user-record` of a request when xi's config.edn is invalid: who the
+   user is is known, what config says about them is not."
+  ::config-invalid)
+
+(defn- match-user-value
+  "One value of a `:user` map spec against the user's value `v`: a map
+   recurses (submap), a set is one-of, anything else is equal — or, when the
+   user's value is a collection (`:roles [\"admin\" \"dev\"]`), contained in it."
+  [spec v]
+  (cond
+    (map? spec) (and (map? v)
+                     (every? (fn [[k s]] (match-user-value s (get v k))) spec))
+    (set? spec) (if (coll? v)
+                  (boolean (some spec v))
+                  (contains? spec v))
+    (and (coll? v) (not (map? v))) (boolean (some #(= spec %) v))
+    :else (= spec v)))
+
+(defn- match-user
+  "User spec, against the user the call acts for. string / set / regex →
+   the user id (like `:tool-name`). A map → submap match against
+   `:user-record`, {:id :name :meta} from config.edn's `:users`, which the
+   store fills only when such a rule is in play. With config.edn invalid
+   (`config-invalid`) a map spec fails closed: it matches everyone unless the
+   rule allows, so a deny keyed on `:meta` keeps applying."
+  [spec req action-type]
+  (cond
+    (nil? spec)  true
+    (map? spec)  (let [rec (:user-record req)]
+                   (if (= config-invalid rec)
+                     (not= :allow action-type)
+                     (match-user-value spec rec)))
+    :else        (match-tool-name spec (:user req))))
 
 (defn- match-node
   "Tree-sitter node match (opt-in). `nodes` is a seq of {:type :name :text}
@@ -339,6 +376,7 @@
          (match-name       (:mcp-server m) (:mcp-server req))
          (match-name       (:mcp-tool m)   (:mcp-tool req))
          (match-when       (:when m)       (:state req))
+         (match-user       (:user m)       req (get-in rule [:action :type]))
          (match-node       (:node m)       (:nodes req))
          (match-outside    (:outside m)    req)
          (match-credential (:credential m) req)
@@ -484,6 +522,12 @@
    `:xi-config-file?` on the request."
   [rules]
   (boolean (some #(some-> (canonical %) :match :xi-config-file) rules)))
+
+(defn needs-user-record?
+  "True when any rule carries a map `:user` matcher, so the store should read
+   the user's profile from config.edn and populate `:user-record`."
+  [rules]
+  (boolean (some #(map? (some-> (canonical %) :match :user)) rules)))
 
 (defn needs-installed?
   "True when any rule carries an `:installed` matcher, so the store should

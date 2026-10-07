@@ -82,7 +82,9 @@ user id (`root` by default; see [Users](server.md#users)). A command's handler
 is given it too, as `:user` next to `:room-id` and `:args`. In state,
 `[:connection :user]` is the id this process acts as, a room's `:members`
 lists who is attached, and a `:user` history entry carries its sender under
-`:user`. Xi only tells users apart; roles and authentication are yours to add.
+`:user`. Xi only tells users apart; authentication is yours to add. What a
+user's chats may do is a matter of [rules](rules.md#rules-for-some-users)
+(`:user`).
 
 Each user the server has seen has a record at `[:users <id>]`:
 

@@ -23,6 +23,50 @@
   (testing "single keyword"
     (is (rules/matches? {:match {:tool :bash}} {:tool :bash}))))
 
+(deftest match-user
+  (let [alice {:tool :sh :user "alice"
+               :user-record {:id "alice" :name "Alice"
+                             :meta {:team "ops" :roles ["guest" "dev"]}}}
+        deny  (fn [m] {:match m :action {:type :deny}})]
+    (testing "id: exact, glob, regex, set"
+      (is (rules/matches? (deny {:user "alice"}) alice))
+      (is (not (rules/matches? (deny {:user "bob"}) alice)))
+      (is (rules/matches? (deny {:user "al*"}) alice))
+      (is (rules/matches? (deny {:user #"^a"}) alice))
+      (is (rules/matches? (deny {:user #{"bob" "alice"}}) alice))
+      (is (not (rules/matches? (deny {:user #{"bob"}}) alice))))
+    (testing "ANDed with the other keys"
+      (is (rules/matches? (deny {:user "alice" :tool :sh}) alice))
+      (is (not (rules/matches? (deny {:user "alice" :tool :write}) alice))))
+    (testing "map: submap of the user's config profile"
+      (is (rules/matches? (deny {:user {:meta {:team "ops"}}}) alice))
+      (is (not (rules/matches? (deny {:user {:meta {:team "dev"}}}) alice)))
+      (is (rules/matches? (deny {:user {:name "Alice" :meta {:team "ops"}}}) alice))
+      (is (rules/matches? (deny {:user {}}) alice) "empty map: any user")
+      (is (not (rules/matches? (deny {:user {:meta {:missing true}}}) alice))))
+    (testing "a set value is one-of; a scalar is found in a collection"
+      (is (rules/matches? (deny {:user {:meta {:team #{"ops" "infra"}}}}) alice))
+      (is (not (rules/matches? (deny {:user {:meta {:team #{"dev"}}}}) alice)))
+      (is (rules/matches? (deny {:user {:meta {:roles "guest"}}}) alice))
+      (is (not (rules/matches? (deny {:user {:meta {:roles "admin"}}}) alice)))
+      (is (rules/matches? (deny {:user {:meta {:roles #{"admin" "dev"}}}}) alice)))
+    (testing "a request without a record never matches a map spec"
+      (is (not (rules/matches? (deny {:user {:meta {:team "ops"}}})
+                               (dissoc alice :user-record))))
+      (is (not (rules/matches? (deny {:user "alice"}) (dissoc alice :user)))))
+    (testing "invalid config.edn: map specs fail closed"
+      (let [req (assoc alice :user-record rules/config-invalid)]
+        (is (rules/matches? (deny {:user {:meta {:team "nobody"}}}) req)
+            "a restricting rule applies to everyone")
+        (is (not (rules/matches? {:match {:user {:meta {:team "ops"}}}
+                                  :action {:type :allow}} req))
+            "an allowing rule applies to no one")
+        (is (rules/matches? (deny {:user "alice"}) req) "id specs are unaffected")))
+    (testing "needs-user-record? only for map specs"
+      (is (rules/needs-user-record? [(deny {:user {:meta {:team "ops"}}})]))
+      (is (not (rules/needs-user-record? [(deny {:user "alice"})])))
+      (is (not (rules/needs-user-record? [(deny {:tool :sh})]))))))
+
 (deftest match-tool-name
   (let [req {:tool :other :tool-name "spawn_subagent"}]
     (testing "exact string"

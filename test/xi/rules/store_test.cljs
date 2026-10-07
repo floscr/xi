@@ -5,6 +5,7 @@
             [xi.rules.defaults :as defaults]
             [xi.rules.store :as store]
             [xi.paths :as paths]
+            [xi.user-config :as user-config]
             [xi.ext.treesitter.parse :as ts]
             ["node:child_process" :as cp]
             ["node:fs" :as fs]
@@ -21,6 +22,56 @@
   (is (= :clj   (store/tool-kind "clj")))
   (is (= :mcp   (store/tool-kind "mcp__context7__search")))
   (is (= :other (store/tool-kind "some_tool"))))
+
+(deftest request-user-resolution
+  (let [st {:connection {:user "carol"}
+            :rooms {"r1" {:history [{:kind :user :text "a" :user "bob"}
+                                    {:kind :assistant :text "b"}]}}}
+        get-state (constantly st)]
+    (testing "the ctx's :user wins (a tool ctx carries the turn's user)"
+      (is (= "alice" (store/request-user {:user "alice" :get-state get-state :room-id "r1"}))))
+    (testing "else the room's turn user, else the process' own user"
+      (is (= "bob" (store/request-user {:get-state get-state :room-id "r1"})))
+      (is (= "carol" (store/request-user {:get-state get-state}))))
+    (testing "no state at all: root"
+      (is (= "root" (store/request-user {}))))
+    (testing "decision-request and request carry it"
+      (is (= "alice" (:user (store/decision-request {:name "bash" :arguments {:command "ls"}}
+                                                    {:cwd "/tmp" :user "alice"}))))
+      (is (= "bob" (:user (store/request {:tool :net :host "example.com"}
+                                         {:cwd "/tmp" :get-state get-state :room-id "r1"})))))))
+
+(deftest enrich-request-populates-user-record-only-when-needed
+  (let [dir  (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-rules-user-"))
+        file (node-path/join dir "config.edn")
+        prev (user-config/config-file)
+        meta-rule [{:match {:user {:meta {:team "ops"}}} :action {:type :deny}}]
+        req  {:tool :sh :user "alice"}]
+    (fs/writeFileSync file (str "{:type :xi/config :version 1 :users "
+                                "{\"alice\" {:name \"Alice\" :meta {:team \"ops\"}}}}"))
+    (user-config/set-config-file! file)
+    (try
+      (testing "not read for id-only or user-less rules"
+        (is (not (contains? (store/enrich-request req [{:match {:user "alice"}}]) :user-record)))
+        (is (not (contains? (store/enrich-request req []) :user-record))))
+      (testing "read from config.edn's :users for a map spec"
+        (is (= {:id "alice" :name "Alice" :meta {:team "ops"}}
+               (:user-record (store/enrich-request req meta-rule))))
+        (is (= {:id "dave" :meta {}}
+               (:user-record (store/enrich-request (assoc req :user "dave") meta-rule)))
+            "an undeclared user has no meta"))
+      (testing "the decision end to end"
+        (is (rules/first-match meta-rule (store/enrich-request req meta-rule)))
+        (is (nil? (rules/first-match meta-rule
+                                     (store/enrich-request (assoc req :user "dave") meta-rule)))))
+      (testing "an invalid config.edn yields config-invalid (fail closed)"
+        (fs/writeFileSync file "{:type :xi/config}")
+        (is (= rules/config-invalid (:user-record (store/enrich-request req meta-rule))))
+        (is (rules/first-match meta-rule
+                               (store/enrich-request (assoc req :user "dave") meta-rule))))
+      (finally
+        (user-config/set-config-file! prev)
+        (fs/rmSync dir #js {:recursive true :force true})))))
 
 (deftest hard-block-denies-rules-file-writes
   (testing "write/edit to a rules file is blocked"

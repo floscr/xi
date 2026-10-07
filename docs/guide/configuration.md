@@ -69,7 +69,7 @@ declared to give it a name.
 | --- | --- | --- |
 | `:name` | none | A display name, up to 100 characters. Public: every client sees it. |
 | `:avatar` | none | An `http://` or `https://` image URL, up to 2048 characters. Public: every client sees it. Without one, the web client draws a circle with the user's initials on a colour taken from their id. Any other kind of address is rejected. |
-| `:meta` | `{}` | Plain data about the user, such as a team or a role. Read-only: extensions can read it, nothing can change it but you editing this file. Plain data means strings, numbers, booleans, keywords, and vectors, sets and maps of those, under 64 KB. |
+| `:meta` | `{}` | Plain data about the user, such as a team or a role. Read-only: extensions can read it, rules can match on it (`:user {:meta {…}}`, see [Rules for some users](rules.md#rules-for-some-users)), nothing can change it but you editing this file. Plain data means strings, numbers, booleans, keywords, and vectors, sets and maps of those, under 64 KB. |
 
 Ids are lowercase letters, digits, `.`, `_` or `-`, up to 64 characters. The
 profile is read when a user connects, so an edit shows for their next

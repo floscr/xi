@@ -20,11 +20,14 @@
   (:require [clojure.string :as str]
             [cljs.tools.reader :as tr]
             [xi.bb-trust :as bb-trust]
+            [xi.core.state :as core-state]
             [xi.mcp.trust :as mcp-trust]
             [xi.rules :as rules]
             [xi.rules.defaults :as defaults]
             [xi.rules.nodes :as nodes]
             [xi.paths :as paths]
+            [xi.user-config :as user-config]
+            [xi.util :as util]
             ["node:child_process" :as cp]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -247,12 +250,37 @@
         {:mcp-server (subs body 0 idx)
          :mcp-tool   (subs body (+ idx 2))}))))
 
+(defn request-user
+  "The user id a decision acts for (the `:user` match key): the ctx's :user
+   (a tool ctx carries whoever sent the turn's latest prompt; a sub-agent's,
+   its parent's), else the room's turn user, else this process' own user."
+  [{:keys [user get-state room-id]}]
+  (util/user-id
+   (or user
+       (when-let [st (when get-state (get-state))]
+         (if room-id
+           (core-state/turn-user st room-id)
+           (core-state/own-user st))))))
+
+(defn- user-record
+  "{:id :name :meta} of user `id` per config.edn's `:users` (for map `:user`
+   rules; an undeclared user has empty :meta), or `rules/config-invalid` when
+   config.edn is invalid."
+  [id]
+  (let [cfg (user-config/read-config)]
+    (if (:error cfg)
+      rules/config-invalid
+      (let [{:keys [name meta]} (get (:users cfg) id)]
+        (cond-> {:id id :meta (or meta {})}
+          name (assoc :name name))))))
+
 (defn decision-request
   "Normalize a tool call into the pure matcher's decision request.
    Resolves the effective cwd, the repo root (of the target path, else cwd),
    the raw target path/command, the tool-call arguments (for informative ask
-   dialogs), and any MCP server/tool + room ext state."
-  [tool-call {:keys [cwd get-state room-id]}]
+   dialogs), any MCP server/tool + room ext state, and the user the call acts
+   for (`request-user`)."
+  [tool-call {:keys [cwd get-state room-id] :as ctx}]
   (let [{:keys [name arguments]} tool-call
         kind    (tool-kind name)
         p       (or (:path arguments) (:file_path arguments))
@@ -263,7 +291,7 @@
         state   (when (and get-state room-id)
                   (get-in (get-state) [:rooms room-id :ext]))]
     (cond-> {:tool kind :tool-name (some-> name str) :effective-cwd eff-cwd
-             :repo repo :state state}
+             :repo repo :state state :user (request-user ctx)}
       p         (assoc :path p)
       command   (assoc :command command)
       code      (assoc :command code)
@@ -274,14 +302,15 @@
   "A decision request for a call that isn't a tool call — xi.api.* from user
    extensions. `m` carries :tool plus whatever it targets (:path :command :cli
    :argv :host :extension …); this fills :effective-cwd (m's own, else ctx's
-   :cwd), :repo, and the room's ext :state, like decision-request does."
-  [m {:keys [cwd get-state room-id]}]
+   :cwd), :repo, the room's ext :state and :user, like decision-request does."
+  [m {:keys [cwd get-state room-id] :as ctx}]
   (let [eff (or (:effective-cwd m) cwd (.cwd js/process))
         p   (:path m)]
     (merge {:effective-cwd eff
             :repo          (git-root (if p (path/dirname (expand-path eff (str p))) eff))
             :state         (when (and get-state room-id)
-                             (get-in (get-state) [:rooms room-id :ext]))}
+                             (get-in (get-state) [:rooms room-id :ext]))
+            :user          (request-user ctx)}
            m)))
 
 (defn with-path-target
@@ -563,8 +592,10 @@
    `:extension-data` rules (symlink-canonical, so a link out of the data dir
    doesn't count), `:chained?` for `:chained` rules (`:bash` commands), and
    `:bb-trusted?` for `:bb-trusted` rules (`:bb` calls), `:mcp-trusted?`
-   for `:mcp-trusted` rules (`:mcp` calls), and `:installed?` for
-   `:installed` rules (`:sh` calls — whether `:cli` resolves on PATH)."
+   for `:mcp-trusted` rules (`:mcp` calls), `:installed?` for
+   `:installed` rules (`:sh` calls — whether `:cli` resolves on PATH), and
+   `:user-record` for map `:user` rules (the request's `:user` per
+   config.edn)."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (paths/real-resolve (:effective-cwd req) (str (:path req))))]
@@ -589,6 +620,8 @@
       (assoc :xi-config-file? (xi-config-file-change? req))
       (and (= :bash (:tool req)) (rules/needs-chained? ruleset))
       (assoc :chained? (chained-command? (:command req)))
+      (and (:user req) (not (contains? req :user-record)) (rules/needs-user-record? ruleset))
+      (assoc :user-record (user-record (:user req)))
       (and (= :sh (:tool req)) (:cli req) (rules/needs-installed? ruleset))
       (assoc :installed? (program-installed? (:effective-cwd req) (:cli req)))
       (and (= :bb (:tool req)) (rules/needs-bb-trusted? ruleset))

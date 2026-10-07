@@ -127,6 +127,37 @@ beats an "always" clicked in a hurry. The project's file beats the global one.
 Within a file, order matters too. Put the specific rule before the general
 one.
 
+## Rules for some users
+
+On a shared server, `:user` scopes a rule to the people it is for. A call acts
+for whoever sent the chat's latest prompt (see [Users](server.md#users)). Name
+them by id, or by what `config.edn` says about them under `:users`:
+
+```clojure
+;; config.edn
+:users {"alice" {:name "Alice" :meta {:team "guests"}}
+        "bob"   {:meta {:roles ["admin"]}}}
+
+;; rules.edn
+[;; alice may not run commands at all
+ {:match  {:user "alice" :tool #{:bash :sh :clj :bb}}
+  :action {:type :deny :message "Commands are off for this account."}}
+
+ ;; every guest is asked before any write
+ {:match  {:user {:meta {:team "guests"}} :tool #{:write :edit}}
+  :action {:type :ask}}
+
+ ;; admins push without asking
+ {:match  {:user {:meta {:roles "admin"}} :tool :sh :command #"\bgit push\b"}
+  :action {:type :allow}}]
+```
+
+A user with no matching rule falls through to the rest of the list, as usual.
+An id nobody declared has an empty `:meta`. The profile is read when a rule
+needs it, so an edit to `config.edn` applies on the next call. If `config.edn`
+is invalid, a `:meta` rule that restricts applies to everyone and one that
+allows applies to no one, until you fix it.
+
 ## Rules for one project
 
 A repository can carry its own rules in `.xi/rules.edn` at its root, with the

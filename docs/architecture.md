@@ -259,7 +259,11 @@ Every connection belongs to a **user**: a plain string id, `"root"` by
 default (`xi.util/user-id` normalizes claims; anything invalid is root).
 There is no authentication — device pairing stays the only trust check — and
 no roles; the core only tells users apart. Names, roles and real auth are
-extension territory, keyed by the id.
+extension territory, keyed by the id. What a user's turns may do is policy:
+every rules decision request carries `:user` (`xi.rules.store/request-user`:
+the tool ctx's turn user, else the room's, else the process' own), and the
+`:user` match key takes an id spec or a submap of the config profile
+(`:user-record`, read in `enrich-request` only when a rule needs it).
 
 - **Resolution** happens once, in the WS server's `admit!`:
   `clients.edn`'s `:user` for the device key (`xi clients user …`) wins,

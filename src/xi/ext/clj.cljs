@@ -1143,6 +1143,21 @@
 
 (declare path-ask-target)
 
+(defn- outside-path-decision
+  "The rules engine's verdict on an out-of-repo `kind` (:read / :write) access
+   to `path`, modeled as a {:tool kind} request → {:rule :resolved :repo}."
+  [kind path {:keys [get-state room-id] :as ctx} cwd]
+  (let [resolved (paths/real-resolve cwd (str path))
+        repo     (rules-store/git-root (node-path/dirname resolved))
+        st       (when get-state (get-state))
+        ruleset  (rules-store/ordered-rules st room-id cwd)
+        req      (rules-store/enrich-request
+                  {:tool kind :path (str path) :effective-cwd cwd
+                   :repo repo :state (get-in st [:rooms room-id :ext])
+                   :user (rules-store/request-user ctx)}
+                  ruleset)]
+    {:rule (rules/first-match ruleset req) :resolved resolved :repo repo}))
+
 (defn- approve-outside-path
   "Approve one out-of-repo read/write `path` (kind :read or :write) by consulting
    the rules engine as a {:tool :read/:write} request, then falling back to a
@@ -1157,20 +1172,11 @@
    - engine :ask/none → dialog [y]/[n]/[r allow repo]; [r] persists a repo-scoped
      session allow-rule (via :ext.rules/add) so later access under that repo
      skips the dialog. Auto-approves when headless (no confirm!)."
-  [kind path {:keys [confirm! dispatch! get-state room-id code] :as _ctx} cwd & [hit]]
-  (let [resolved (paths/real-resolve cwd (str path))
-        repo     (rules-store/git-root (node-path/dirname resolved))
+  [kind path {:keys [confirm! dispatch! room-id code] :as ctx} cwd & [hit]]
+  (let [{:keys [rule resolved repo]} (outside-path-decision kind path ctx cwd)
         target   (when code
                    (path-ask-target code kind {:op       (:op hit)
                                                :literals [(str path) (:raw hit) resolved]}))
-        st       (when get-state (get-state))
-        ruleset  (rules-store/ordered-rules st room-id cwd)
-        ext-st   (get-in st [:rooms room-id :ext])
-        req      (rules-store/enrich-request
-                  {:tool kind :path (str path) :effective-cwd cwd
-                   :repo repo :state ext-st}
-                  ruleset)
-        rule     (rules/first-match ruleset req)
         action   (:action rule)]
     (case (:type action)
       :allow (js/Promise.resolve (or repo resolved))
@@ -1908,13 +1914,15 @@
    extension can't apply on its own: it only sees the opaque clj `:code`, not
    the individual commands the pre-scan extracts. clj scans the code into
    literal commands and consults the engine per command here. `argv` (only for
-   fully-literal calls) lets `:within` rules check the command's operands."
-  [ruleset ext-state cwd cmd argv]
+   fully-literal calls) lets `:within` rules check the command's operands.
+   `user` is who the eval acts for (`:user` rules)."
+  [ruleset ext-state user cwd cmd argv]
   (rules/first-match
    ruleset
    (rules-store/enrich-request
     (cond-> {:tool :sh :cli (command-cli cmd) :command (str cmd)
-             :effective-cwd cwd :repo (rules-store/git-root cwd) :state ext-state}
+             :effective-cwd cwd :repo (rules-store/git-root cwd) :state ext-state
+             :user user}
       argv (assoc :argv argv))
     ruleset)))
 
@@ -2058,6 +2066,7 @@
 
       :else
       (let [ext-st   (get-in (get-state) [:rooms room-id :ext])
+            user     (rules-store/request-user ctx)
             ;; Each scanned command carries its effective :dir (the sh/process
             ;; :dir opt, resolved against cwd) so dir-scoped rules match at the
             ;; directory the command actually runs in — not the clj cwd.
@@ -2071,7 +2080,7 @@
             cmd-eff-cwd (fn [dir] (if dir (rules-store/expand-path cwd dir) cwd))
             cmd-decision (fn [{:keys [command dir argv]}]
                            (let [eff (cmd-eff-cwd dir)]
-                             (sh-decision (ruleset-for eff) ext-st eff command argv)))
+                             (sh-decision (ruleset-for eff) ext-st user eff command argv)))
             ;; Engine consult per scanned command (sh + background), modeled as
             ;; a {:tool :sh} request; :deny is handled by `denied` below. This
             ;; is how a user config `:allow` rule reaches clj's shell-outs. An
