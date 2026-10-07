@@ -79,7 +79,7 @@ are. The common ones:
 | `Alt+a` / `Alt+d` | Allow / deny the pending permission request |
 | `Alt+x` | Stop the running turn |
 | `Ctrl/Cmd+k` | Command palette |
-| `Tab` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions. The same rows are also found by typing: `xi new` matches `xi · New chat` directly |
+| `Tab` or `Enter` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions |
 | `Alt` (held, in the palette) | Show a key badge on each of the first rows; `Alt` + that key picks the row. Badges follow the filtered list, so type first, then hold Alt |
 | `Ctrl/Cmd+p` | Find a file |
 

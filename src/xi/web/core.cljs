@@ -1336,8 +1336,15 @@
                                    {:state (cond-> (assoc st :web/palette-page
                                                           {:kind :project :cwd cwd :label label})
                                              reopen? (assoc :web/palette-drilling? true))
-                                    :effects (cond-> [[:palette/reset-filter nil]]
-                                               reopen? (conj [:palette/reopen nil]))})
+                                    ;; reopen first: reset-filter only finds the
+                                    ;; input once the dialog is open again; if the
+                                    ;; runtime already force-closed it, the typed
+                                    ;; query lingers and filters every sub-page row
+                                    ;; away ("No results found").
+                                    :effects (if reopen?
+                                               [[:palette/reopen nil]
+                                                [:palette/reset-filter nil]]
+                                               [[:palette/reset-filter nil]])})
           ;; Top-level palette from a button (the sidebar search field) rather
           ;; than mod+k. Sets :web/palette-open? directly for the same iOS
           ;; reason as the open-* handlers below.

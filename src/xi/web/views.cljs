@@ -4381,9 +4381,8 @@
 
 (defn- project-actions
   "A project's palette actions as data ({:icon :label :on-click}) — the rows of
-   its second-level page (Tab on a project row) and, flattened, the search-only
-   `project · action` rows under the top-level Projects group. Mirrors the
-   project three-dots overflow menu — new chat, git status, search — plus any
+   its second-level page (Enter/Tab on a project row). Mirrors the project
+   three-dots overflow menu — new chat, git status, search — plus any
    :project-scoped extension nav items, with open sessions last."
   [state dispatch! cwd]
   (concat
@@ -4838,33 +4837,22 @@
                            (:label item))))))
      (when (seq project-dirs)
        (apply cmd/command-group {:heading "Projects"}
-         (mapcat
+         (map
           (fn [d]
             (let [short (shorten-path d)]
-              (cons
-               (cmd/command-item
-                {:icon :folder
-                 :shortcut "⇥"
-                 :value (str "project " short " " d)
-                 :attrs {:data-palette-drill d
-                         :data-palette-label short}
-                 ;; Mouse click drills into the project action sub-page (same as
-                 ;; keyboard Tab); :reopen? keeps the panel open past the runtime's
-                 ;; force-close. "Open sessions" inside the sub-page navigates.
-                 :on-click (fn [_] (dispatch! {:type :palette/drill :cwd d
-                                               :label short :reopen? true}))}
-                short)
-               ;; A project row has no action of its own (Enter/Tab drill), so
-               ;; its sub-page rows ride along flattened as search-only
-               ;; `project · action` items: hidden at the empty query, and while
-               ;; typing "xi new" lands on "xi · New chat" without drilling.
-               (for [{:keys [icon label on-click]} (project-actions state dispatch! d)]
-                 (cmd/command-item
-                  {:icon icon
-                   :value (str short " " label " " d)
-                   :attrs {:data-command-search-only "true"}
-                   :on-click on-click}
-                  (str short " · " label))))))
+              (cmd/command-item
+               {:icon :folder
+                :shortcut "⇥"
+                :value (str "project " short " " d)
+                :attrs {:data-palette-drill d
+                        :data-palette-label short}
+                ;; Enter / mouse click drills into the project action sub-page
+                ;; (same as keyboard Tab); :reopen? keeps the panel open past
+                ;; the runtime's force-close. "Open sessions" inside the
+                ;; sub-page navigates.
+                :on-click (fn [_] (dispatch! {:type :palette/drill :cwd d
+                                              :label short :reopen? true}))}
+               short)))
           project-dirs)))
      ;; Actions come from the shared xi.palette spec (same labels/icons/order as
      ;; the TUI Ctrl+/ palette); the web maps each :key to its own handler.
