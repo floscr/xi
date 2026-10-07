@@ -4748,7 +4748,8 @@
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
-   Escape / Shift+Tab / Backspace-on-empty backs out of a sub-page. Reads the
+   Shift+Tab / Backspace-on-empty backs out of a sub-page (Escape closes the
+   palette, as at the top level). Reads the
    runtime's `.command-item--active` element and its `data-palette-drill` cwd."
   [dispatch! palette-page]
   (fn [^js e]
@@ -4763,8 +4764,7 @@
                         :label (.. active -dataset -paletteLabel)})))
 
         (and (some? palette-page)
-             (or (= key "Escape")
-                 (and (= key "Tab") (.-shiftKey e))
+             (or (and (= key "Tab") (.-shiftKey e))
                  (and (= key "Backspace")
                       (when-let [input (.querySelector dialog ".command-input")]
                         (= "" (.-value input))))))
@@ -4807,7 +4807,7 @@
    room-scoped actions only appear when a room is active.
 
    Two levels: at the top level, Tab on a project row drills into a project
-   action page (:web/palette-page); Escape/Shift+Tab/Backspace backs out."
+   action page (:web/palette-page); Shift+Tab/Backspace-on-empty backs out."
   [state dispatch!]
   (let [open?        (boolean (:web/palette-open? state))
         palette-page (:web/palette-page state)
