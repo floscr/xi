@@ -3375,6 +3375,37 @@ code a:hover,
   margin-inline: auto;
 }
 
+/* File drop zone: dragging files over the chat view raises this overlay;
+   dropping stages them on the composer (xi.web.views/file-drop-attrs). It is
+   always in the DOM and inert until --active. Its children ignore the pointer
+   so the overlay's own dragleave fires only when the drag leaves the view. */
+.chat-drop-zone { position: relative; }
+.file-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  margin: 8px;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-0) 82%, transparent);
+  backdrop-filter: blur(2px);
+}
+.file-drop-overlay--active { display: flex; }
+.file-drop-overlay * { pointer-events: none; }
+.file-drop-overlay-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-0));
+  font-weight: 500;
+}
+
 /* Quick-reply chips: one-tap answers detected for the last response.
    Additive UI rendered inline at the bottom of the feed, right under the last
    assistant message they regard (xi.quick-replies). Styled as accent-outlined

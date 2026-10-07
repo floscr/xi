@@ -1191,6 +1191,50 @@
             (icon/icon {:icon-name :x :size :sm})]]))
       images)]))
 
+;; ── File drop zone ───────────────────────────────────────────────────────────
+
+(defn- files-drag?
+  "True when a drag event carries files from outside the page — internal drags
+   (selected text, links) keep their default behaviour."
+  [^js e]
+  (when-let [types (some-> e .-dataTransfer .-types)]
+    (boolean (some #{"Files"} (array-seq types)))))
+
+(defn- file-drop-attrs
+  "Event handlers that make the chat view a drop target: dragging files over it
+   raises the overlay (:web/file-drag?), dropping stages them on the composer of
+   `draft-key` like the attach button or a paste."
+  [dispatch! draft-key file-drag?]
+  {:dragenter (fn [^js e]
+                (when (and (files-drag? e) (not file-drag?))
+                  (dispatch! {:type :web/file-drag :on? true})))
+   ;; Without preventDefault on dragover the browser refuses the drop and opens
+   ;; the file in the tab instead.
+   :dragover (fn [^js e]
+               (when (files-drag? e)
+                 (.preventDefault e)
+                 (set! (.. e -dataTransfer -dropEffect) "copy")))
+   :drop (fn [^js e]
+           (when (files-drag? e)
+             (.preventDefault e)
+             (dispatch! {:type :web/file-drag :on? false})
+             (add-files! dispatch! draft-key (array-seq (.. e -dataTransfer -files)))))})
+
+(defn- file-drop-overlay
+  "Covers the chat view while files are dragged over it. Always rendered (shown
+   by a modifier class) so the container's child list never toggles. Once
+   raised it is the only hit target (its children ignore the pointer), so its
+   dragleave means the drag left the view. No mouse events fire during a
+   drag, so a mousemove/click means it ended unseen (cancelled) — lower it
+   then too rather than leave it blocking the view."
+  [dispatch! active?]
+  (let [lower! (fn [_] (dispatch! {:type :web/file-drag :on? false}))]
+    [:div {:class ["file-drop-overlay" (when active? "file-drop-overlay--active")]
+           :on {:dragleave lower! :mousemove lower! :click lower!}}
+     [:div {:class ["file-drop-overlay-label"]}
+      (icon/icon {:icon-name :file-text :size :md})
+      [:span "Drop files to attach"]]]))
+
 ;; ── Command suggestions ───────────────────────────────────────────────────────
 
 (def ^:private web-commands
@@ -3187,8 +3231,20 @@
                   {:user-indices user-indices
                    :count (count user-indices)
                    :total total
-                   :cur-window win})]
-    [:div {:class ["container"] :replicant/key "chat"}
+                   :cur-window win})
+        ;; Files dropped anywhere on the view stage on the composer — only
+        ;; while it shows (the chat buffer, no skill form or deny-reason box
+        ;; in its place), so a drop never lands on an invisible draft.
+        deny-reason (:web/deny-reason state)
+        drop-zone? (and (not (#{:diff :file :prompt} active-buf))
+                        (not (:web/skill-form state))
+                        (not (and room (= (:room-id deny-reason) (:id room))
+                                  (some #(= (:dialog-id deny-reason) (:id %))
+                                        (get-in room [:ui :dialogs])))))
+        file-drag? (and drop-zone? (:web/file-drag? state))]
+    [:div (cond-> {:class ["container" "chat-drop-zone"] :replicant/key "chat"}
+            drop-zone? (assoc :on (file-drop-attrs dispatch! dkey file-drag?)))
+     (file-drop-overlay dispatch! file-drag?)
      [:div {:class ["topbar" "topbar--chat"]}
       (nav-group dispatch! (fn [_] (dispatch! (chat-back-route state))))
       [:div {:class ["topbar-title"]}

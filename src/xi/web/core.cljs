@@ -314,6 +314,14 @@
 (defn- lightbox-close [st _]
   {:state (dissoc st :web/lightbox)})
 
+(defn- file-drag
+  "Raise / lower the chat view's file-drop overlay while files are dragged over
+   it (xi.web.views/file-drop-attrs). A no-op when unchanged — dragenter fires
+   for every child the drag crosses."
+  [st {:keys [on?]}]
+  (when (not= (boolean on?) (boolean (:web/file-drag? st)))
+    {:state (if on? (assoc st :web/file-drag? true) (dissoc st :web/file-drag?))}))
+
 (defn- submit-pending
   "Stash a message submitted before its room exists; pending-submit-tap fires
    it once :room/joined arrives. Two cases:
@@ -882,6 +890,7 @@
           :timeline/set-window   timeline-set-window
           :lightbox/open         lightbox-open
           :lightbox/close        lightbox-close
+          :web/file-drag         file-drag
           :copy/open             (fn [st {:keys [text]}] {:state (assoc st :web/copy-text text)})
           :copy/close            (fn [st _] {:state (dissoc st :web/copy-text)})
           ;; Transient "Copied" toast after a native programmatic copy. Setting

@@ -39,8 +39,9 @@ devices and `xi clients revoke <name>` removes one.
 
 ## What you can do
 
-- **Chat.** Send messages, attach images (paste, or the picker), stop a
-  running turn, and answer permission requests with Allow or Deny.
+- **Chat.** Send messages, attach images and files (paste an image, use the
+  picker, or drag files from your desktop onto the chat), stop a running
+  turn, and answer permission requests with Allow or Deny.
 - **Read what the agent did.** Tool calls and thinking are collapsed blocks.
   Open one in place, or switch the appearance settings (gear in the sidebar
   footer) to keep them open.
