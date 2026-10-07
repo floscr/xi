@@ -27,6 +27,7 @@ target/main.js                  release bundle of the :main build (~5.6 MB)
 resources/public/               web client; js/ is the release :web build
 resources/highlight/            syntax-highlighting grammars
 resources/treesitter/           web-tree-sitter runtime + WASM grammars
+resources/extensions/           demo extensions (config.edn :demo-extensions)
 packages/providers/anthropic/runner.mjs    the Claude SDK runner
 LICENSE, THIRD_PARTY_NOTICES.md, README.md, CHANGELOG.md
 ```

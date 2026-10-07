@@ -4,7 +4,8 @@
 {:type    :xi/config
  :version 1
 
- :extensions ["notes.cljs" "notify.cljs"]
+ :extensions ["notify.cljs"]
+ :demo-extensions ["notes.cljs"]
 
  :projects {:browse ["~/code"]
             :repos  ["~/.config/dotfiles"]}
@@ -28,6 +29,7 @@ an old file wrong.
 | Key | What it does | Details |
 | --- | --- | --- |
 | `:extensions` | The extension files in `~/.config/xi/extensions/` that Xi may load. A file not listed here is never read. | [Extensions](extensions.md) |
+| `:demo-extensions` | Demo extensions that ship with Xi to load: `"notes.cljs"`, `"ping.cljs"`, `"hn.cljs"`. | [Demo extensions](extensions.md#demo-extensions) |
 | `:projects` | Where to look for projects, and per-project prompts and snippets. | [Projects](projects.md), keys below |
 | `:users` | The people who use this server: an id, an optional display `:name` and `:avatar`, and read-only `:meta` that [extensions](extensions-reference.md#users-and-their-state) can read. | [Users](server.md#users), keys below |
 | `:trusted-mcp-servers` | MCP servers whose tools run without asking: `mcp.edn` ids, or an extension's `"<extension>/<name>"`. Trusted as they are, with no code fingerprint. | [MCP servers](mcp-servers.md#trusting-a-server) |
@@ -36,7 +38,7 @@ an old file wrong.
 
 Xi reads the file when it needs it (listing projects, starting a chat,
 loading extensions), so most edits apply without a restart. `/ext reload`
-picks up a changed `:extensions` list.
+picks up a changed `:extensions` or `:demo-extensions` list.
 
 ### `:projects`
 
@@ -82,7 +84,7 @@ and what extensions keep about them are stored apart, in
 | Key | Default | Does |
 | --- | --- | --- |
 | `:tools` | none | Tool names the model gets, or `:all`. Unlisted tools are never offered; no key means no tools. |
-| `:extensions` | the top-level list | Extension files this profile loads instead; `[]` for none. |
+| `:extensions` | the top-level list | Extension files this profile loads instead; `[]` for none. The top-level `:demo-extensions` still load. |
 | `:system-prompt` | a short generic prompt | The instructions; replaces `AGENTS.md`, skills and extension prompts. |
 | `:system-prompt-file` | — | The same from a file; relative to `~/.config/xi/`. `:system-prompt` wins. |
 | `:model` | — | The profile's model; `--model` wins. |

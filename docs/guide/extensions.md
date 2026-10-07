@@ -37,6 +37,29 @@ A file that is not listed is never read. This is deliberate: the agent cannot
 write to `~/.config/xi`, so nothing the agent does, and nothing in a project
 you cloned, can get code loaded. Only you can.
 
+## Demo extensions
+
+Xi ships a few working extensions. Enable one by its file name under
+`:demo-extensions`; no file to copy:
+
+```clojure
+;; ~/.config/xi/config.edn
+{:type            :xi/config
+ :version         1
+ :demo-extensions ["notes.cljs" "hn.cljs"]}
+```
+
+| File | Gives you | Built in |
+| --- | --- | --- |
+| `notes.cljs` | A `notes_add` tool, a `/notes` command and a Notes page in the web client | [Tutorial: a page in the browser](extension-tutorial-web.md) |
+| `ping.cljs` | `Ctrl+Shift+N` or `/ping` toggles a desktop notification when a turn ends | [Tutorial: a command and a key](extension-tutorial-command.md) |
+| `hn.cljs` | An `hn_search` tool for Hacker News | [Tutorial: a web tool](extension-tutorial-http.md) |
+
+They run like your own extensions: sandboxed, through the rules, and
+reloaded by `/ext reload`. Their source is in `resources/extensions/` of the
+Xi package. An extension of yours cannot take the id or a tool name of an
+enabled demo.
+
 ## What an extension can add
 
 | Key | Gives you |

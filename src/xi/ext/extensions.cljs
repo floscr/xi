@@ -93,6 +93,7 @@
 (def ^:private reload-tool-def
   {:name "ext_reload"
    :description (str "Re-evaluate the enabled user extensions in ~/.config/xi/extensions "
+                     "and the bundled demos enabled under :demo-extensions "
                      "(the same as `/ext reload`) and report which loaded or were rejected, "
                      "with the eval error. Call it after editing an extension file to check "
                      "that it still evaluates and to pick up its changes — no restart. "

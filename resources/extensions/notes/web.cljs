@@ -1,4 +1,4 @@
-;; Web half of the demo `notes` user extension (scripts/demo-extensions/notes.cljs).
+;; Web half of the demo `notes` extension (resources/extensions/notes.cljs).
 ;; Evaluated in the browser's sandbox (xi.web.user-ext); pages are sanitized
 ;; and may only dispatch :ext.notes/* (sent to the server) and navigation.
 (ns notes.web

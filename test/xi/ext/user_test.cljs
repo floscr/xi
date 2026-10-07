@@ -5,6 +5,7 @@
             [xi.ext.user :as user]
             [xi.ext.user.guard :as guard]
             [xi.paths :as paths]
+            [xi.user-config :as cfg]
             [xi.web.user-ext.sci :as web-sci]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -427,11 +428,38 @@
                           (js-delete js/process.env "XDG_DATA_HOME"))
                         (done))))))))
 
-(deftest the-demo-extension-loads-on-both-sides
-  ;; scripts/demo-extensions (installed by the demo seed): the server half via
-  ;; load-dir, the web half via web-bundle → the browser evaluator.
-  (let [dir   "scripts/demo-extensions"
-        [e]   (user/load-dir dir)
+(deftest the-bundled-demos-all-load
+  (let [entries (user/load-dir (user/demo-extensions-dir))]
+    (is (every? :id entries) (pr-str (keep :error entries)))
+    (is (= #{:notes :ping :hn} (set (map :id entries))))))
+
+(deftest demos-load-before-user-files-when-the-config-enables-them
+  (let [file (node-path/join (tmp-dir) "config.edn")
+        dir  (tmp-dir)
+        mgr  (doto (manager/create) (manager/seed! []))
+        prev (cfg/config-file)]
+    (fs/writeFileSync file (str "{:type :xi/config :version 1 :demo-extensions [\"notes.cljs\"]"
+                                " :extensions [\"mine.cljs\" \"clash.cljs\"]}"))
+    (write! dir "mine.cljs" "(ns mine) (def extension {:id :mine})")
+    (write! dir "clash.cljs" "(ns clash) (def extension {:id :notes})")
+    (cfg/set-config-file! file)
+    (try
+      (let [{:keys [loaded rejected skipped]} (user/reload! mgr dir)]
+        (is (= [:notes :mine] loaded))
+        (is (re-find #"id :notes already in use" (str (:error (first rejected))))
+            "a user file can't take an enabled demo's id")
+        (is (= [] skipped) "demos that aren't enabled go unreported"))
+      (testing "a demo's web half is served from the demo dir"
+        (is (= ["notes.web"] (map :ns (user/web-bundles)))))
+      (finally
+        (user/stop!)
+        (cfg/set-config-file! prev)))))
+
+(deftest the-notes-demo-loads-on-both-sides
+  ;; the server half via load-dir, the web half via web-bundle → the browser
+  ;; evaluator.
+  (let [dir   (user/demo-extensions-dir)
+        e     (first (filter :id (user/load-dir dir {:enabled #{"notes.cljs"}})))
         b     (user/web-bundle dir e)
         [w]   (web-sci/load! [b] {})
         page  (get-in w [:web-ext :pages :notes/list])

@@ -17,6 +17,7 @@
     (is (re-find #"unknown key\(s\) :agent" (err {:type :xi/config :version 1 :agent {}})))
     (is (re-find #":extensions must be a vector" (err {:type :xi/config :version 1 :extensions [:kb]})))
     (is (re-find #":extensions must be a vector" (err {:type :xi/config :version 1 :extensions "kb.cljs"})))
+    (is (re-find #":demo-extensions must be a vector" (err {:type :xi/config :version 1 :demo-extensions [:notes]})))
     (is (re-find #":agents must be a map" (err {:type :xi/config :version 1 :agents []})))
     (is (re-find #":projects must be a map" (err {:type :xi/config :version 1 :projects []})))
     (is (re-find #"unknown :projects key" (err {:type :xi/config :version 1 :projects {:dirs []}})))
@@ -30,13 +31,15 @@
                                      :keys {:global {"alt+n" nil}
                                             :web {:mode/navigate {"?" :keys/show}}}})))))
   (testing "a valid file parses; keys empty unless set"
-    (is (= {:extensions #{} :agents {} :projects projects/default-spec :users {}
-            :trusted-mcp-servers #{}}
+    (is (= {:extensions #{} :demo-extensions #{} :agents {} :projects projects/default-spec
+            :users {} :trusted-mcp-servers #{}}
            (cfg/parse-config {:type :xi/config :version 1})))
-    (is (= {:extensions #{"kb.cljs"} :agents {"root" {:tools ["fetch"]}}
+    (is (= {:extensions #{"kb.cljs"} :demo-extensions #{"notes.cljs"}
+            :agents {"root" {:tools ["fetch"]}}
             :projects projects/default-spec :users {} :trusted-mcp-servers #{"chrome"}}
            (cfg/parse-config {:type :xi/config :version 1
                               :extensions ["kb.cljs"]
+                              :demo-extensions ["notes.cljs"]
                               :agents {"root" {:tools ["fetch"]}}
                               :trusted-mcp-servers ["chrome"]}))))
   (testing ":projects is validated and normalized"
@@ -107,6 +110,8 @@
         #(is (= #{} (cfg/enabled-extensions)) "missing :type fails closed")))
     (with "{:type :xi/config :version 1 :extensions [\"kb.cljs\" \"web.cljs\"]}"
       #(is (= #{"kb.cljs" "web.cljs"} (cfg/enabled-extensions))))
+    (with "{:type :xi/config :version 1 :demo-extensions [\"notes.cljs\"]}"
+      #(is (= #{"notes.cljs"} (cfg/enabled-demo-extensions))))
     (fs/rmSync dir #js {:recursive true :force true})))
 
 (deftest projects-come-from-the-sibling-projects-file

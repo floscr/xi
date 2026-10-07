@@ -16,6 +16,7 @@
 //     resources/public/       web client incl. the release :web build in js/
 //     resources/highlight/    syntax grammars
 //     resources/treesitter/   web-tree-sitter runtime + WASM grammars
+//     resources/extensions/   demo extensions (config.edn :demo-extensions)
 //     packages/providers/anthropic/runner.mjs   the Claude SDK runner
 //     LICENSE, THIRD_PARTY_NOTICES.md, README.md, CHANGELOG.md (when present)
 //
@@ -64,6 +65,7 @@ run("npx", ["shadow-cljs", "release", "web", "--config-merge",
 copy("bin/xi.js");
 copy("resources/highlight");
 copy("resources/treesitter");
+copy("resources/extensions");
 // public/ minus the dev web build (the release one is already in place) and
 // the local-only mkcert root CA
 copy("resources/public", undefined, (src) => {

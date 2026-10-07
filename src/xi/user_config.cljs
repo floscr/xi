@@ -5,6 +5,7 @@
      {:type       :xi/config
       :version    1
       :extensions [\"kb.cljs\" \"web.cljs\"]      ; user extensions xi may load
+      :demo-extensions [\"notes.cljs\"]           ; demo extensions bundled with xi to load
       :agents     {\"root\" {…}}               ; agent profiles (xi.agent-profile)
       :projects   {:browse […] :repos […]}      ; project dirs (xi.projects)
       :users      {\"alice\" {:name \"Alice\" :avatar \"https://…/a.png\" :meta {:team \"ops\"}}} ; who exists (see below)
@@ -26,6 +27,11 @@
    own `:extensions` replaces this list for that run (xi.ext.user). The file
    lives under ~/.config/xi, a hidden path no agent can write
    (xi.paths/HIDDEN_PATHS), so what loads is the operator's call alone.
+
+   `:demo-extensions` names files of the demo extensions shipped with xi
+   (resources/extensions, xi.ext.user/demo-extensions-dir) to load the same
+   way, sandboxed and reloadable. Unlike `:extensions`, an agent profile
+   doesn't replace it.
 
    An invalid file fails closed: nothing is enabled and every agent profile
    loads without tools, with the problem reported by the readers."
@@ -66,7 +72,8 @@
   1)
 
 (def ^:private config-file-keys
-  #{:type :version :extensions :agents :projects :users :trusted-mcp-servers :keys})
+  #{:type :version :extensions :demo-extensions :agents :projects :users
+    :trusted-mcp-servers :keys})
 
 (defn- users-error
   "→ nil when `users` is a well-formed `:users` map, else why not."
@@ -106,14 +113,15 @@
 
 (defn parse-config
   "Validate parsed config-file `data` (nil = unparseable) →
-   `{:extensions #{…} :agents {…} :projects {…} :keys {…}}` (empty / defaults
-   when absent; `:projects` per `xi.projects/parse-spec`, `:keys` per
-   `xi.keys/config-error` and only present when set) or `{:error msg}`.
+   `{:extensions #{…} :demo-extensions #{…} :agents {…} :projects {…}
+   :keys {…}}` (empty / defaults when absent; `:projects` per
+   `xi.projects/parse-spec`, `:keys` per `xi.keys/config-error` and only
+   present when set) or `{:error msg}`.
    Mirrors xi.rules.store/parse-rules-config: the file must be a map tagged
    `:type :xi/config` with the current `:version` and only known keys."
   [data]
   (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
-                     " :extensions [...] :agents {...} :projects {...}"
+                     " :extensions [...] :demo-extensions [...] :agents {...} :projects {...}"
                      " :users {...} :trusted-mcp-servers [...] :keys {...}}")
         unknown (when (map? data) (remove config-file-keys (keys data)))
         spec    (when (map? data) (projects/parse-spec (:projects data)))]
@@ -146,6 +154,10 @@
                 (every? string? (:extensions data))))
       {:error ":extensions must be a vector of extension file names"}
 
+      (not (and (sequential? (:demo-extensions data []))
+                (every? string? (:demo-extensions data))))
+      {:error ":demo-extensions must be a vector of demo extension file names"}
+
       (not (map? (:agents data {})))
       {:error ":agents must be a map of agent id → profile"}
 
@@ -164,6 +176,7 @@
 
       :else
       (cond-> {:extensions          (set (:extensions data))
+               :demo-extensions     (set (:demo-extensions data))
                :agents              (or (:agents data) {})
                :projects            spec
                :users               (or (:users data) {})
@@ -200,7 +213,7 @@
        (-> (try (edn/read-string (fs/readFileSync file "utf8"))
                 (catch :default _ nil))
            (with-projects-file file)))
-      {:extensions #{} :agents {} :projects projects/default-spec
+      {:extensions #{} :demo-extensions #{} :agents {} :projects projects/default-spec
        :users {} :trusted-mcp-servers #{}})))
 
 (defn projects-spec
@@ -224,6 +237,13 @@
       (js/console.error (str "xi: " (config-file) " is invalid — " e
                              " — no user extensions enabled")))
     (or (:extensions cfg) #{})))
+
+(defn enabled-demo-extensions
+  "The bundled demo-extension file names the config file enables under
+   `:demo-extensions` — #{} when the file is missing, invalid or doesn't set
+   the key."
+  []
+  (or (:demo-extensions (read-config)) #{}))
 
 (defn users
   "The users the config file declares, {id {:name :meta}} — {} when the file

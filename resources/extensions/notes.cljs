@@ -1,5 +1,7 @@
-;; Demo user extension — installed into .demo-home/.config/xi/extensions by
-;; scripts/demo-seed.mjs. See docs/guide/extension-tutorial-web.md.
+;; Demo extension bundled with xi — enable with config.edn
+;; `:demo-extensions ["notes.cljs"]`. A `notes_add` tool, a /notes command and a
+;; Notes page in the web client (notes/web.cljs). Built step by step in
+;; docs/guide/extension-tutorial-web.md.
 (ns notes
   (:require [xi.api.fs :as fs]
             [xi.api.promise :as p]))

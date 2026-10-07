@@ -9,7 +9,11 @@
    This namespace does the eval + validation + registration; the capability
    wrappers (state-slice, dispatch/effect filtering) live in xi.ext.user.guard.
    Web halves (a `web-extension` var) are collected for the browser build to
-   fetch; they are not composed here."
+   fetch; they are not composed here.
+
+   The demo extensions bundled with xi (resources/extensions, enabled by
+   config.edn `:demo-extensions`) load through the same path, before the
+   user's own: built in, but just as sandboxed and reloadable."
   (:require [clojure.string :as str]
             [sci.core :as sci]
             [xi.api.core :as api-core]
@@ -37,6 +41,18 @@
 
 (defn extensions-dir []
   (node-path/join (os/homedir) ".config" "xi" "extensions"))
+
+(defn demo-extensions-dir
+  "The demo extensions bundled with xi: resources/extensions next to the
+   compiled script (falling back to the cwd)."
+  []
+  (let [candidates (cond-> []
+                     (exists? js/__dirname)
+                     (conj (node-path/resolve js/__dirname ".." "resources" "extensions"))
+                     true
+                     (conj (node-path/resolve (.cwd js/process) "resources" "extensions")))]
+    (or (some #(when (fs/existsSync %) %) candidates)
+        (last candidates))))
 
 ;; ── The sandbox context ──────────────────────────────────────────────────────
 
@@ -189,7 +205,7 @@
 (defn load-dir
   "Evaluate every extension file in `dir`, each in its OWN sandbox context (a
    file is one extension; its sibling namespaces load on demand via :load-fn).
-   → a vector of {:file :ns :id :extension :hash :error} in load order;
+   → a vector of {:dir :file :ns :id :extension :hash :error} in load order;
    :error is a string when the file couldn't be turned into a valid extension
    (:extension nil then). Guards are applied to accepted extensions.
    `taken-ids` / `taken-tools`: ids and tool names already in use (built-ins,
@@ -204,9 +220,9 @@
          acc        []]
     (if-let [file (first files)]
       (if (and enabled (not (contains? enabled (node-path/basename file))))
-        (recur (rest files) taken-ids taken-tools (conj acc {:file file :skipped? true}))
+        (recur (rest files) taken-ids taken-tools (conj acc {:dir dir :file file :skipped? true}))
       (let [src   (str (fs/readFileSync file "utf8"))
-            base  {:file file :hash (content-hash src)}
+            base  {:dir dir :file file :hash (content-hash src)}
             entry (try
                     (let [ctx (make-ctx dir)
                           nsn (source-ns src)
@@ -256,6 +272,33 @@
     (set (f))
     (user-config/enabled-extensions)))
 
+(defn- sources
+  "Where extensions load from, in order, each with the file names enabled
+   there: the bundled demos (config.edn `:demo-extensions`), then `user-dir`
+   (`enabled-files`). Demos that aren't enabled go unreported."
+  [user-dir]
+  [{:dir (demo-extensions-dir) :enabled (user-config/enabled-demo-extensions) :quiet? true}
+   {:dir user-dir :enabled (enabled-files)}])
+
+(defn- load-sources
+  "`load-dir` over each of `srcs` ({:dir :enabled :quiet?}) in order → the
+   entries of all. What an earlier source loaded stays taken for the later
+   ones, so a user file can't claim a demo's id or tool name."
+  [srcs {:keys [taken-ids taken-tools] :or {taken-ids #{} taken-tools #{}}}]
+  (:entries
+   (reduce (fn [{:keys [taken-ids taken-tools] :as acc} {:keys [dir enabled quiet?]}]
+             (let [es (cond->> (load-dir dir {:enabled     enabled
+                                              :taken-ids   taken-ids
+                                              :taken-tools taken-tools})
+                        quiet? (remove :skipped?))]
+               {:entries     (into (:entries acc) es)
+                :taken-ids   (into taken-ids (keep :id) es)
+                :taken-tools (into taken-tools
+                                   (mapcat #(map :name (get-in % [:extension :tool-definitions])))
+                                   es)}))
+           {:entries [] :taken-ids taken-ids :taken-tools taken-tools}
+           srcs)))
+
 (defn- path->ns
   "<dir>/my_ext/util.cljs → \"my-ext.util\" (inverse of file-ns->path)."
   [dir file]
@@ -295,7 +338,7 @@
 (defn web-bundles
   "Web halves of every loaded user extension (sent to browsers on request)."
   []
-  (vec (keep #(when (:id %) (web-bundle (extensions-dir) %)) @loaded)))
+  (vec (keep #(when (:id %) (web-bundle (:dir %) %)) @loaded)))
 
 (def server-extension
   "Built-in server extension (xi.config/server) that hands user web halves
@@ -433,28 +476,27 @@
     entries))
 
 (defn- taken
-  "load-dir opts for the live manager: the enabled file names, plus the ids
-   and tool names a user extension may not use — everything registered in
-   `mgr` and every builtin tool, except what this loader registered itself
-   (a reload replaces those). manager/register! replaces by id and the tool
-   registry lets extensions win by name, so without this a user file could
-   swap out :rules or the builtin `write`."
+  "load-dir opts for the live manager: the ids and tool names a user
+   extension may not use — everything registered in `mgr` and every builtin
+   tool, except what this loader registered itself (a reload replaces those).
+   manager/register! replaces by id and the tool registry lets extensions win
+   by name, so without this a user file could swap out :rules or the builtin
+   `write`."
   [mgr]
   (let [own-ids   (set (keep :id @loaded))
         own-tools (set (mapcat #(map :name (get-in % [:extension :tool-definitions])) @loaded))]
-    {:enabled     (enabled-files)
-     :taken-ids   (into #{} (comp (map :id) (remove own-ids)) (manager/ext-list mgr))
+    {:taken-ids   (into #{} (comp (map :id) (remove own-ids)) (manager/ext-list mgr))
      :taken-tools (-> (set (map :name (registry/tool-definitions)))
                       (into (comp (map :name) (remove own-tools))
                             (:tool-definitions (manager/composed mgr))))}))
 
 (defn install!
-  "Load the enabled files of ~/.config/xi/extensions (config.edn `:extensions`,
-   or the agent profile's — see `enabled-files`) and register each valid
-   extension into `mgr` (call AFTER the built-ins + MCP are seeded). Returns
-   the load report."
+  "Load the enabled demos (config.edn `:demo-extensions`) and the enabled
+   files of ~/.config/xi/extensions (config.edn `:extensions`, or the agent
+   profile's — see `enabled-files`) and register each valid extension into
+   `mgr` (call AFTER the built-ins + MCP are seeded). Returns the load report."
   ([mgr] (install! mgr (extensions-dir)))
-  ([mgr dir] (register-all! mgr (load-dir dir (taken mgr)))))
+  ([mgr dir] (register-all! mgr (load-sources (sources dir) (taken mgr)))))
 
 (def ^:private mirror-keys
   "What a TUI client needs of a user extension: the handlers (an event type
@@ -462,33 +504,35 @@
    server's echo replays through it), plus what the TUI presents locally."
   [:id :init :handlers :commands :keybindings :prompt-badge])
 
+(defn- mirror-from [srcs builtins]
+  (let [builtins (remove nil? builtins)]
+    (->> (load-sources srcs {:taken-ids   (set (map :id builtins))
+                             :taken-tools (into (set (map :name (registry/tool-definitions)))
+                                                (comp (mapcat :tool-definitions) (map :name))
+                                                builtins)})
+         (keep :extension)
+         (mapv #(select-keys % mirror-keys)))))
+
 (defn mirror-extensions
-  "The user extensions as a join/create TUI client mirrors them (see
-   mirror-keys). `builtins` are the client's mirrored built-in extension maps;
-   their ids and tools are taken, as on the server. Effects and tools are left
-   out: they run on the server, which loads the directory itself."
-  ([builtins] (mirror-extensions (extensions-dir) (enabled-files) builtins))
-  ([dir enabled builtins]
-   (let [builtins (remove nil? builtins)]
-     (->> (load-dir dir {:enabled     enabled
-                         :taken-ids   (set (map :id builtins))
-                         :taken-tools (into (set (map :name (registry/tool-definitions)))
-                                            (comp (mapcat :tool-definitions) (map :name))
-                                            builtins)})
-          (keep :extension)
-          (mapv #(select-keys % mirror-keys))))))
+  "The user extensions (enabled demos included) as a join/create TUI client
+   mirrors them (see mirror-keys). `builtins` are the client's mirrored
+   built-in extension maps; their ids and tools are taken, as on the server.
+   Effects and tools are left out: they run on the server, which loads the
+   directory itself."
+  ([builtins] (mirror-from (sources (extensions-dir)) builtins))
+  ([dir enabled builtins] (mirror-from [{:dir dir :enabled enabled}] builtins)))
 
 (defn reload!
-  "Re-evaluate the extensions dir (each file in a fresh sandbox, siblings
-   included) and swap it in live: the old extensions unmount, the new ones
-   register and mount, ids whose file is gone are dropped. Handlers, commands
-   and fx follow at once where the assembly reads them through
-   xi.ext.manager/live-view (server, standalone); tool changes apply next turn;
-   keybindings need a restart. Room state is kept.
+  "Re-evaluate the enabled demos and the extensions dir (each file in a fresh
+   sandbox, siblings included) and swap them in live: the old extensions
+   unmount, the new ones register and mount, ids whose file is gone are
+   dropped. Handlers, commands and fx follow at once where the assembly reads
+   them through xi.ext.manager/live-view (server, standalone); tool changes
+   apply next turn; keybindings need a restart. Room state is kept.
    → {:loaded [ids] :rejected [{:file :error}] :skipped [file names]}."
   ([mgr] (reload! mgr (extensions-dir)))
   ([mgr dir]
-   (let [entries (register-all! mgr (load-dir dir (taken mgr)))]
+   (let [entries (register-all! mgr (load-sources (sources dir) (taken mgr)))]
      {:loaded   (vec (keep :id entries))
       :rejected (mapv #(select-keys % [:file :error]) (filter :error entries))
       :skipped  (mapv #(node-path/basename (:file %)) (filter :skipped? entries))})))
