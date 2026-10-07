@@ -33,7 +33,9 @@ Personal coding harness in ClojureScript + Bun.
 
 ## Testing
 
-- `bb test` (once) / `bb test:watch`. Tests are `cljs.test` under `test/`,
+- `bb test` (once) / `bb test:watch`. `bb test` prints one line when all
+  pass, or only the failing tests; `bb test --full` shows the raw output.
+  Tests are `cljs.test` under `test/`,
   mirroring `src/` (`test/xi/commands_test.cljs` ↔ `src/xi/commands.cljs`);
   any `*_test.cljs` is auto-discovered. Prefer pure functions; avoid
   filesystem/network I/O.
