@@ -343,56 +343,74 @@
      (let [resolved (paths/real-resolve cwd (str path))]
        (some #(paths/path-within? resolved %) (paths/hidden-paths))))))
 
-(def ^:private rules-edn-token-re
-  "A path-ish token naming a `rules.edn` inside a shell command / clj code."
-  #"[^\s'\"`()\[\]{}]*rules\.edn")
-
 (def ^:private version-key-re #":version\b")
 
-(defn- rules-edn-name? [p]
-  (= "rules.edn" (path/basename (str p))))
+(def ^:private config-type-re
+  "The `:type :xi/config` tag of xi's user config file, in raw text."
+  #":type\s+:xi/config\b")
 
-(defn- versioned-rules-edn?
-  "True when `file` is an existing xi rules file: it parses to a map carrying
-   `:version` — the version lock every xi rules file must declare, which tells
-   it apart from any other tool's rules.edn. Unparseable content that mentions
-   `:version` counts too (a broken xi file still gets confirmed)."
-  [file]
-  (try
-    (and (fs/existsSync file)
-         (let [text (str (fs/readFileSync file "utf8"))
-               data (read-rule-edn text)]
-           (if (some? data)
-             (and (map? data) (contains? data :version))
-             (boolean (re-find version-key-re text)))))
-    (catch :default _ false)))
+(defn- xi-file-change?
+  "True when decision `req` would change an xi-owned file: one named
+   `file-name` whose content `tagged?` recognizes — called with the parsed
+   data (nil when it doesn't read) and the raw text, so a broken xi file still
+   gets confirmed — wherever it lives (e.g. a dotfiles source a symlink points
+   at). write/edit: the target is named so (raw or symlink-resolved) and
+   either the existing file is tagged or the new text is (creating or
+   migrating one). bash/clj: the command carries a write token and names such
+   a path that is an existing tagged file. I/O."
+  [file-name tagged? {:keys [tool path command arguments effective-cwd]}]
+  (let [named?       (fn [p] (= file-name (path/basename (str p))))
+        tagged-file? (fn [file]
+                       (try
+                         (and (fs/existsSync file)
+                              (let [text (str (fs/readFileSync file "utf8"))]
+                                (boolean (tagged? (read-rule-edn text) text))))
+                         (catch :default _ false)))
+        ;; a path-ish token naming the file inside a shell command / clj code
+        token-re     (re-pattern (str "[^\\s'\"`()\\[\\]{}]*" (str/replace file-name "." "\\.")))]
+    (boolean
+     (case tool
+       (:write :edit)
+       (when path
+         (let [resolved (paths/real-resolve effective-cwd (str path))]
+           (and (or (named? path) (named? resolved))
+                (or (tagged-file? resolved)
+                    (some #(tagged? nil (str %))
+                          (cons (:content arguments)
+                                (map :newText (:edits arguments))))))))
+
+       (:bash :clj)
+       (when (and command (re-find write-token-re (str command)))
+         (some #(tagged-file? (paths/real-resolve effective-cwd %))
+               (re-seq token-re (str command))))
+
+       false))))
 
 (defn xi-rules-file-change?
-  "True when decision `req` would change an xi rules file (any `rules.edn`
-   carrying `:version`, wherever it lives — e.g. a dotfiles source copy).
-   write/edit: the target is named rules.edn (raw or symlink-resolved) and
-   either the existing file is versioned or the new text introduces
-   `:version` (creating or migrating one). bash/clj: the command carries a
-   write token and names a rules.edn path that is an existing versioned file.
-   I/O, computed only when an `:xi-rules-file` rule is in play."
-  [{:keys [tool path command arguments effective-cwd]}]
-  (boolean
-   (case tool
-     (:write :edit)
-     (when path
-       (let [resolved (paths/real-resolve effective-cwd (str path))]
-         (and (or (rules-edn-name? path) (rules-edn-name? resolved))
-              (or (versioned-rules-edn? resolved)
-                  (some #(re-find version-key-re (str %))
-                        (cons (:content arguments)
-                              (map :newText (:edits arguments))))))))
+  "True when decision `req` would change an xi rules file: any `rules.edn`
+   carrying `:version` — the version lock every xi rules file must declare,
+   which tells it apart from any other tool's rules.edn. See `xi-file-change?`;
+   computed only when an `:xi-rules-file` rule is in play."
+  [req]
+  (xi-file-change? "rules.edn"
+                   (fn [data text]
+                     (if (some? data)
+                       (and (map? data) (contains? data :version))
+                       (re-find version-key-re text)))
+                   req))
 
-     (:bash :clj)
-     (when (and command (re-find write-token-re (str command)))
-       (some #(versioned-rules-edn? (paths/real-resolve effective-cwd %))
-             (re-seq rules-edn-token-re (str command))))
-
-     false)))
+(defn xi-config-file-change?
+  "True when decision `req` would change xi's user config file: any
+   `config.edn` tagged `:type :xi/config` (xi.user-config), which tells it
+   apart from any other tool's config.edn. See `xi-file-change?`; computed
+   only when an `:xi-config-file` rule is in play."
+  [req]
+  (xi-file-change? "config.edn"
+                   (fn [data text]
+                     (if (some? data)
+                       (and (map? data) (= :xi/config (:type data)))
+                       (re-find config-type-re text)))
+                   req))
 
 (defn- literal-operands
   "The non-flag args of literal `argv` (a `:sh` command, binary first), or nil
@@ -493,6 +511,31 @@
                  (str/includes? s "`")
                  (re-find #"^\w+=" s)))))
 
+(defn- on-path
+  "The absolute path of `program` on this process's PATH, or nil — the same
+   resolution a spawned child gets (xi.env keeps js/process.env PATH live)."
+  [program]
+  (let [path-env (or (aget js/process.env "PATH") "")]
+    (if (exists? js/Bun)
+      (js/Bun.which program #js {:PATH path-env})
+      (some (fn [dir]
+              (let [p (path/join dir program)]
+                (when (and (seq dir) (fs/existsSync p)) p)))
+            (str/split path-env #":")))))
+
+(defn program-installed?
+  "True when `program` — a `:sh` request's `:cli`, the command's first token —
+   can be executed: a bare name resolves on PATH, a name with a `/` exists
+   relative to `cwd`. nil for a token that is not a program (blank, or a
+   leading `VAR=` binding), so an `:installed` rule never matches it. I/O,
+   computed only when an `:installed` rule is in play."
+  [cwd program]
+  (let [p (str program)]
+    (cond
+      (or (str/blank? p) (re-find #"^\w+=" p)) nil
+      (str/includes? p "/") (fs/existsSync (path/resolve (or cwd ".") (paths/expand-home p)))
+      :else                 (some? (on-path p)))))
+
 (defn- home-collapse
   "Rewrite a leading $HOME in absolute `abs` back to `~`, so a `:path` rule can
    be written home-relative (`~/…`) and still match a resolved absolute target.
@@ -515,11 +558,13 @@
    `:operands-tracked?` for `:tracked` rules (same `:argv`, checked against
    the git index — a delay the matcher forces, so git is only spawned for a
    command a `:tracked` rule otherwise matches), `:xi-rules-file?` for
-   `:xi-rules-file` rules, `:own-data?` for
+   `:xi-rules-file` rules, `:xi-config-file?` for `:xi-config-file` rules,
+   `:own-data?` for
    `:extension-data` rules (symlink-canonical, so a link out of the data dir
    doesn't count), `:chained?` for `:chained` rules (`:bash` commands), and
-   `:bb-trusted?` for `:bb-trusted` rules (`:bb` calls), and `:mcp-trusted?`
-   for `:mcp-trusted` rules (`:mcp` calls)."
+   `:bb-trusted?` for `:bb-trusted` rules (`:bb` calls), `:mcp-trusted?`
+   for `:mcp-trusted` rules (`:mcp` calls), and `:installed?` for
+   `:installed` rules (`:sh` calls — whether `:cli` resolves on PATH)."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (paths/real-resolve (:effective-cwd req) (str (:path req))))]
@@ -540,8 +585,12 @@
                                   (delay (operands-git-tracked? effective-cwd repo argv))))
       (rules/needs-xi-rules-file? ruleset)
       (assoc :xi-rules-file? (xi-rules-file-change? req))
+      (rules/needs-xi-config-file? ruleset)
+      (assoc :xi-config-file? (xi-config-file-change? req))
       (and (= :bash (:tool req)) (rules/needs-chained? ruleset))
       (assoc :chained? (chained-command? (:command req)))
+      (and (= :sh (:tool req)) (:cli req) (rules/needs-installed? ruleset))
+      (assoc :installed? (program-installed? (:effective-cwd req) (:cli req)))
       (and (= :bb (:tool req)) (rules/needs-bb-trusted? ruleset))
       (assoc :bb-trusted? (bb-trust/trusted? (:effective-cwd req)))
       (and (= :mcp (:tool req)) (:mcp-server req) (rules/needs-mcp-trusted? ruleset))

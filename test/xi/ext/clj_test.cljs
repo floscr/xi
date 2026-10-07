@@ -927,11 +927,23 @@
 (deftest gate-script-exec-refused-when-nobody-can-answer
   ;; Headless (`xi prompt`, sub-agents): other command asks pass through, but a
   ;; script run must not execute unseen.
-  (let [res (gate {:name "clj" :arguments {:code "(sh \"python3\" \"/tmp/x.py\")"}}
+  ;; `node` rather than `python3`: the interpreter must exist on the test
+  ;; machine, or the not-installed deny fires first (see the next test).
+  (let [res (gate {:name "clj" :arguments {:code "(sh \"node\" \"/tmp/x.js\")"}}
                   (gate-ctx))]
     (is (:intercepted res))
     (is (str/includes? (intercepted-text res) "no client is attached"))
-    (is (str/includes? (intercepted-text res) "python3 /tmp/x.py"))))
+    (is (str/includes? (intercepted-text res) "node /tmp/x.js"))))
+
+(deftest gate-missing-program-is-an-instant-error
+  ;; A program that is not on PATH is denied by the not-installed default
+  ;; before any approval — headless or not — naming the program.
+  (let [res (gate {:name "clj" :arguments {:code "(sh \"xi-nope-7f3a\" \"/tmp/x.py\")"}}
+                  (gate-ctx))]
+    (is (:intercepted res))
+    (is (str/includes? (intercepted-text res) "`xi-nope-7f3a` is not installed"))
+    (is (not (str/includes? (intercepted-text res) "no client is attached"))
+        "the deny wins over the headless script-exec refusal")))
 
 (deftest clj-tool-appends-hint
   (let [res (clj-ext/reply->result

@@ -21,13 +21,21 @@
                :chained true             ; a :bash command that composes shell commands (opt-in)
                :bb-trusted false         ; a :bb call whose bb.edn is (not) in the trust store (opt-in)
                :mcp-trusted false        ; an :mcp call whose server is (not) trusted (opt-in)
-               :xi-rules-file true}      ; changes an xi rules.edn (opt-in)
-      :action {:type :allow|:deny|:nudge|:ask
+               :xi-rules-file true       ; changes an xi rules.edn (opt-in)
+               :xi-config-file true      ; changes xi's config.edn (opt-in)
+               :installed false}         ; a :sh program (not) found on PATH (opt-in)
+      :action {:type :allow|:deny|:nudge|:ask|:hint
                :message \"...\"
                :options [:yes :no :always]}
       :scope  <keyword>}                 ; provenance, set by the store
 
    `:on-block` / `:do` are accepted as aliases for `:match` / `:action`.
+
+   A `:hint` rule never decides: `first-match` collects the messages of the
+   hint rules that match above the first deciding rule and attaches them to
+   it as `:hints`, so a specific steering text (\"use bb for a static server\")
+   composes with a generic deny/ask instead of competing with it. Messages
+   may carry the placeholders `{cli}` and `{command}` (see `decision-message`).
 
    Matching is pure over a *decision request* the store builds from a tool
    call: {:tool :tool-name :path :command :repo :effective-cwd :mcp-server
@@ -232,6 +240,26 @@
   (or (nil? spec)
       (and (true? spec) (boolean (:xi-rules-file? req)))))
 
+(defn- match-xi-config-file
+  "xi-config-file match (opt-in). `:xi-config-file true` matches when the call
+   would change xi's user config file (a `config.edn` tagged `:type
+   :xi/config`) — the store computes and populates `:xi-config-file?` on the
+   request only when an `:xi-config-file` rule is in play (nil never matches)."
+  [spec req]
+  (or (nil? spec)
+      (and (true? spec) (boolean (:xi-config-file? req)))))
+
+(defn- match-installed
+  "Program-availability match (opt-in). `:installed true|false` matches a
+   `:sh` call by whether its program (`:cli`) resolves on the server's PATH —
+   the store computes `:installed?` only when such a rule is in play (nil,
+   i.e. not a `:sh` call or no program token, never matches)."
+  [spec req]
+  (or (nil? spec)
+      (and (boolean? spec)
+           (some? (:installed? req))
+           (= spec (:installed? req)))))
+
 (defn- match-chained
   "Shell-composition match (opt-in). `:chained true` matches a `:bash` command
    that uses pipes, `;`/`&&`/`&`, command substitution, several lines or a
@@ -319,16 +347,60 @@
          (match-chained    (:chained m)    req)
          (match-bb-trusted (:bb-trusted m) req)
          (match-mcp-trusted (:mcp-trusted m) req)
-         (match-xi-rules-file (:xi-rules-file m) req))))
+         (match-xi-rules-file (:xi-rules-file m) req)
+         (match-xi-config-file (:xi-config-file m) req)
+         (match-installed  (:installed m)  req))))
+
+(defn hint?
+  "True when (canonical) `rule` is a `:hint` — steering text that never decides."
+  [rule]
+  (= :hint (get-in rule [:action :type])))
+
+(defn render-message
+  "Fill the `{cli}` and `{command}` placeholders of a rule message from the
+   decision request. A placeholder with nothing to fill stays as written; nil
+   stays nil."
+  [msg req]
+  (when (some? msg)
+    (-> (str msg)
+        (cond-> (:cli req)     (str/replace "{cli}" (str (:cli req)))
+                (:command req) (str/replace "{command}" (str (:command req)))))))
 
 (defn first-match
-  "First rule in `rules` (already in precedence order) whose match matches
-   `req`, canonicalized; nil when none match."
+  "First deciding rule in `rules` (already in precedence order) whose match
+   matches `req`, canonicalized; nil when none match. Matching `:hint` rules
+   above it never decide: their messages (placeholders rendered) are attached
+   to the returned rule as `:hints`, in order, and its own `:message` is
+   rendered too. Hints with no deciding rule below them are dropped."
   [rules req]
-  (some (fn [r]
-          (let [r (canonical r)]
-            (when (matches? r req) r)))
-        rules))
+  (loop [rules rules hints []]
+    (when-let [r (first rules)]
+      (let [r (canonical r)]
+        (cond
+          (not (matches? r req)) (recur (rest rules) hints)
+          (hint? r)              (recur (rest rules)
+                                        (conj hints (render-message
+                                                     (get-in r [:action :message]) req)))
+          :else (cond-> r
+                  (some? (get-in r [:action :message]))
+                  (update-in [:action :message] render-message req)
+                  (seq hints) (assoc :hints hints)))))))
+
+(defn with-hints
+  "`msg` with the `hints` (strings) appended, each as its own paragraph. A nil
+   `msg` with hints yields just the hints; no hints returns `msg` unchanged."
+  [msg hints]
+  (let [hints (remove str/blank? hints)]
+    (if (seq hints)
+      (str/join "\n\n" (cond->> hints (some? msg) (cons msg)))
+      msg)))
+
+(defn decision-message
+  "The text a decision shows for `rule` (as returned by `first-match`): its
+   action's `:message`, else `fallback`, with the rule's collected `:hints`
+   appended."
+  [rule fallback]
+  (with-hints (or (get-in rule [:action :message]) fallback) (:hints rule)))
 
 (defn needs-nodes?
   "True when any rule carries a `:node` matcher, so the store should parse the
@@ -405,3 +477,17 @@
    `:xi-rules-file?` on the request."
   [rules]
   (boolean (some #(some-> (canonical %) :match :xi-rules-file) rules)))
+
+(defn needs-xi-config-file?
+  "True when any rule carries an `:xi-config-file` matcher, so the store should
+   check whether the call changes xi's user config file and populate
+   `:xi-config-file?` on the request."
+  [rules]
+  (boolean (some #(some-> (canonical %) :match :xi-config-file) rules)))
+
+(defn needs-installed?
+  "True when any rule carries an `:installed` matcher, so the store should
+   resolve a `:sh` call's program on PATH and populate `:installed?` on the
+   request."
+  [rules]
+  (boolean (some #(some? (some-> (canonical %) :match :installed)) rules)))

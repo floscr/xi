@@ -495,6 +495,60 @@
       (finally
         (fs/rmSync dir #js {:recursive true :force true})))))
 
+(deftest xi-config-file-change-detection
+  (let [dir        (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-config-edit-"))
+        xi-file    (node-path/join dir "dotfiles" "config.edn")
+        link       (node-path/join dir "xi" "config.edn")
+        other-file (node-path/join dir "other" "config.edn")
+        not-config (node-path/join dir "settings.edn")
+        _          (doseq [d ["dotfiles" "xi" "other"]]
+                     (fs/mkdirSync (node-path/join dir d)))
+        _          (fs/writeFileSync xi-file "{:type :xi/config :version 1 :extensions [\"kb.cljs\"]}")
+        _          (fs/symlinkSync xi-file link)
+        _          (fs/writeFileSync other-file "{:type :other/config :version 1}")
+        _          (fs/writeFileSync not-config "{:type :xi/config :version 1}")
+        change?    (fn [tool args]
+                     (store/xi-config-file-change?
+                      (store/decision-request {:name tool :arguments args} {:cwd dir})))]
+    (try
+      (testing "write/edit of a config.edn tagged :xi/config is an xi config change"
+        (is (change? "edit" {:path xi-file :edits [{:oldText "kb" :newText "web"}]}))
+        (is (change? "edit" {:path link :edits [{:oldText "kb" :newText "web"}]}) "through the symlink")
+        (is (change? "write" {:path "dotfiles/config.edn" :content "{}"}) "relative path"))
+      (testing "unrelated config.edn / non-config.edn files are left alone"
+        (is (not (change? "edit" {:path other-file :edits [{:oldText "1" :newText "2"}]})))
+        (is (not (change? "write" {:path not-config :content "{:type :xi/config}"}))))
+      (testing "introducing the tag (creating an xi config) counts"
+        (is (change? "write" {:path (node-path/join dir "new" "config.edn")
+                              :content "{:type :xi/config :version 1}"}))
+        (is (change? "edit" {:path other-file :edits [{:oldText ":type :other/config" :newText ":type :xi/config"}]})))
+      (testing "shell / clj writes naming a tagged config.edn count; reads don't"
+        (is (change? "bash" {:command (str "sed -i s/kb/web/ " xi-file)}))
+        (is (change? "clj" {:code (str "(spit \"" link "\" \"{}\")")}))
+        (is (not (change? "bash" {:command (str "cat " xi-file)})))
+        (is (not (change? "bash" {:command (str "sed -i s/a/b/ " other-file)}))))
+      (testing "other tools never count"
+        (is (not (change? "read" {:path xi-file}))))
+      (testing "hardened: always asks, above any user allow-rule"
+        (let [state   {:rooms {"r1" {:ext {:rules {:rules [{:match  {:tool #{:write :edit}}
+                                                               :action {:type :allow}}]}}}}}
+              ruleset (store/ordered-rules state "r1" dir)
+              hit     (fn [tool args]
+                        (rules/first-match
+                         ruleset
+                         (store/enrich-request
+                          (store/decision-request {:name tool :arguments args} {:cwd dir})
+                          ruleset)))
+              h       (hit "edit" {:path xi-file :edits [{:oldText "kb" :newText "web"}]})]
+          (is (= :hardened (:scope h)))
+          (is (= :ask (get-in h [:action :type])))
+          (is (= [:yes :no :repo] (get-in h [:action :options])) "no [a]lways grant")
+          (is (= :session (:scope (hit "edit" {:path other-file
+                                              :edits [{:oldText "1" :newText "2"}]})))
+              "an unrelated config.edn falls through to the user's allow")))
+      (finally
+        (fs/rmSync dir #js {:recursive true :force true})))))
+
 (deftest operands-within-repo
   (let [repo (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-within-"))
         _    (fs/mkdirSync (node-path/join repo ".git"))
@@ -607,3 +661,38 @@
       (is (rules/matches? (first bb) {:tool :bb :bb-trusted? false}))
       (is (not (rules/matches? (first bb) {:tool :bb :bb-trusted? true})))
       (is (not (rules/matches? (first bb) {:tool :bb})) "unknown trust never matches"))))
+
+(deftest program-installed?-resolves-like-a-spawn
+  (let [cwd (.cwd js/process)]
+    (testing "a bare name is looked up on this process's PATH"
+      (is (true? (store/program-installed? cwd "ls")))
+      (is (false? (store/program-installed? cwd "xi-definitely-not-a-program-7f3a"))))
+    (testing "a name with a slash is a path relative to the cwd"
+      (is (true? (store/program-installed? cwd "./bin/xi.js")))
+      (is (false? (store/program-installed? cwd "./bin/nope")))
+      (is (false? (store/program-installed? "/tmp" "bin/xi.js")) "relative to the given cwd"))
+    (testing "not a program token → nil, so an :installed rule never matches it"
+      (is (nil? (store/program-installed? cwd "")))
+      (is (nil? (store/program-installed? cwd "PORT=8080"))))))
+
+(deftest enrich-adds-installed-only-for-sh-when-a-rule-needs-it
+  (let [rs  [{:match {:tool :sh :installed false} :action {:type :deny}}]
+        cwd (.cwd js/process)]
+    (is (true? (:installed? (store/enrich-request {:tool :sh :cli "ls" :command "ls -la"
+                                                   :effective-cwd cwd} rs))))
+    (is (false? (:installed? (store/enrich-request {:tool :sh :cli "xi-nope-7f3a" :command "xi-nope-7f3a"
+                                                    :effective-cwd cwd} rs))))
+    (is (not (contains? (store/enrich-request {:tool :sh :cli "xi-nope-7f3a" :effective-cwd cwd} [])
+                        :installed?))
+        "no :installed rule → not computed")
+    (is (not (contains? (store/enrich-request {:tool :bash :command "xi-nope-7f3a" :effective-cwd cwd} rs)
+                        :installed?))
+        "only :sh requests carry a program")
+    (is (not (contains? (store/enrich-request {:tool :sh :effective-cwd cwd} rs) :installed?))
+        "no :cli → nothing to resolve")
+    (testing "end to end: the missing program is denied, the present one falls through"
+      (let [decide (fn [cli] (rules/first-match
+                              rs (store/enrich-request {:tool :sh :cli cli :command cli
+                                                        :effective-cwd cwd} rs)))]
+        (is (= :deny (get-in (decide "xi-nope-7f3a") [:action :type])))
+        (is (nil? (decide "ls")))))))

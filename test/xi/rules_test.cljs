@@ -188,6 +188,17 @@
   (is (rules/needs-xi-rules-file? [{:match {:tool :edit :xi-rules-file true}}]))
   (is (not (rules/needs-xi-rules-file? [{:match {:tool :edit :path "*.edn"}}]))))
 
+(deftest match-xi-config-file-optin
+  (let [rule {:match {:tool #{:write :edit} :xi-config-file true}}]
+    (is (rules/matches? rule {:tool :edit :path "/x/config.edn" :xi-config-file? true}))
+    (is (not (rules/matches? rule {:tool :edit :path "/x/config.edn" :xi-config-file? false})))
+    (is (not (rules/matches? rule {:tool :edit :path "/x/config.edn"}))
+        "absent flag → an :xi-config-file rule never matches")))
+
+(deftest needs-xi-config-file
+  (is (rules/needs-xi-config-file? [{:match {:tool :edit :xi-config-file true}}]))
+  (is (not (rules/needs-xi-config-file? [{:match {:tool :edit :xi-rules-file true}}]))))
+
 (deftest match-tracked-optin
   (let [rule {:match {:tool :sh :cli "rm" :tracked :git}}]
     (is (rules/matches? rule {:tool :sh :cli "rm" :command "rm src/a.clj"
@@ -209,3 +220,65 @@
   (is (rules/arg-scoped? {:match {:tool :sh :cli "rm" :tracked :git}}))
   (is (rules/arg-scoped? {:match {:tool :sh :cli "mv" :within :repo}}))
   (is (not (rules/arg-scoped? {:match {:tool :sh :cli "rm"}}))))
+
+(deftest match-installed-optin
+  (let [missing {:match {:tool :sh :installed false}}
+        present {:match {:tool :sh :installed true}}]
+    (is (rules/matches? missing {:tool :sh :cli "python3" :installed? false}))
+    (is (not (rules/matches? missing {:tool :sh :cli "ls" :installed? true})))
+    (is (rules/matches? present {:tool :sh :cli "ls" :installed? true}))
+    (is (not (rules/matches? missing {:tool :sh :cli "python3"}))
+        "absent flag (no :installed rule in play, or not a program token) never matches")
+    (is (rules/matches? {:match {:tool :sh}} {:tool :sh :cli "x" :installed? false})
+        "nil spec is unconstrained")))
+
+(deftest needs-installed
+  (is (rules/needs-installed? [{:match {:tool :sh :installed false}}]))
+  (is (rules/needs-installed? [{:match {:tool :sh :installed true}}]))
+  (is (not (rules/needs-installed? [{:match {:tool :sh :cli "git"}}]))))
+
+(deftest first-match-collects-hints
+  (let [hint-http {:match  {:tool :sh :command #"http\.server"}
+                   :action {:type :hint :message "Use bb http-server instead."}}
+        hint-py   {:match  {:tool :sh :cli "python3"}
+                   :action {:type :hint :message "No python3 on this box ({cli})."}}
+        deny      {:match  {:tool :sh :installed false}
+                   :action {:type :deny :message "`{cli}` is not installed."}}
+        ask       {:match  {:tool :sh}
+                   :action {:type :ask}}
+        req       {:tool :sh :cli "python3" :command "python3 -m http.server" :installed? false}]
+    (testing "hints above the deciding rule stack in order; the decision is the first non-hint match"
+      (let [r (rules/first-match [hint-http hint-py deny ask] req)]
+        (is (= :deny (get-in r [:action :type])))
+        (is (= ["Use bb http-server instead." "No python3 on this box (python3)."] (:hints r))
+            "placeholders are rendered in hints")
+        (is (= "`python3` is not installed." (get-in r [:action :message]))
+            "and in the deciding message")
+        (is (= (str "`python3` is not installed.\n\n"
+                    "Use bb http-server instead.\n\n"
+                    "No python3 on this box (python3).")
+               (rules/decision-message r nil)))))
+    (testing "a hint never decides: alone it yields no match"
+      (is (nil? (rules/first-match [hint-http] req))))
+    (testing "hints below the deciding rule are not collected"
+      (is (nil? (:hints (rules/first-match [deny hint-http] req)))))
+    (testing "non-matching hints are skipped"
+      (is (= ["No python3 on this box (python3)."]
+             (:hints (rules/first-match [hint-http hint-py deny]
+                                        (assoc req :command "python3 x.py"))))))
+    (testing "a rule without a message keeps none; decision-message falls back and appends"
+      (let [r (rules/first-match [hint-py ask] (dissoc req :installed?))]
+        (is (= :ask (get-in r [:action :type])))
+        (is (not (contains? (:action r) :message)))
+        (is (= "Run?\n\nNo python3 on this box (python3)." (rules/decision-message r "Run?")))
+        (is (= "No python3 on this box (python3)." (rules/decision-message r nil)))))
+    (testing "with-hints"
+      (is (= "m" (rules/with-hints "m" nil)))
+      (is (= "m" (rules/with-hints "m" ["" nil])))
+      (is (nil? (rules/with-hints nil [])))
+      (is (= "a\n\nb" (rules/with-hints "a" ["b"]))))
+    (testing "render-message leaves unfillable placeholders alone"
+      (is (= "{cli} ran {command}" (rules/render-message "{cli} ran {command}" {:tool :write})))
+      (is (= "git ran git push" (rules/render-message "{cli} ran {command}"
+                                                      {:cli "git" :command "git push"})))
+      (is (nil? (rules/render-message nil {:cli "git"}))))))

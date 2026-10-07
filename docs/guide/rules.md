@@ -2,7 +2,8 @@
 
 Rules decide what the agent may do without asking you. They are a list in a
 file: each rule matches a kind of tool call and says allow, deny, ask, or
-nudge. The first rule that matches wins.
+nudge. The first rule that matches wins. A fifth kind, a hint, decides
+nothing and only adds text to whatever rule wins below it.
 
 ## What happens without any rules
 
@@ -13,15 +14,18 @@ Xi ships with defaults that cover the usual cases. Out of the box:
   `.git/`, `node_modules/` or a mail or key directory, **asks**.
 - Read-only commands (`ls`, `cat`, `git`, `grep`, …) run freely. Every other
   command **asks** the first time; "always" allows it for the rest of the chat.
+- A command whose program is not installed **fails at once** with an error
+  naming it, with no dialog.
 - Destructive commands (`rm -rf`, `git push`, `kill`, …) **ask** every time.
 - Tools from an MCP server **ask** until you trust the server.
 - Starting a sub-agent **asks**.
 
 Some things are never allowed, whatever your rules say: `sudo`, remote
 shells and copies (`ssh`, `scp`, `rsync`), reading SSH private keys, and
-writing to the rules files themselves. This is the **hardened tier**; only
-the person starting Xi can turn it off, with a command-line flag, and the
-agent cannot.
+writing to the rules files themselves. Changing `config.edn` always asks,
+even when it is a symlink into a dotfiles checkout the agent may otherwise
+edit. This is the **hardened tier**; only the person starting Xi can turn it
+off, with a command-line flag, and the agent cannot.
 
 ## The dialog
 
@@ -93,6 +97,19 @@ rule to apply; a key you leave out is no constraint.
 | `:deny` | Blocks it; the agent sees `:message`. |
 | `:ask` | Shows the dialog. `:message` replaces the default text. |
 | `:nudge` | Blocks it, but tells the agent `:message` as a hint rather than an error. |
+| `:hint` | Decides nothing. Its `:message` is added under the message of the rule that wins below it, so a note of yours rides on a built-in deny or ask. |
+
+`:message` can use `{cli}` for the program and `{command}` for the command
+line. Hints are how you teach the agent what to do instead on your machine
+without rewriting the built-in rule. If `python3` is not installed, the
+default rule already denies it with an error; a hint adds the alternative:
+
+```clojure
+{:match  {:tool :sh :command #"-m\s+http\.server"}
+ :action {:type :hint
+          :message "No python3 here. Serve a directory with babashka:
+  (process/start \"bb -m babashka.http-server --port 8000 --dir public\")"}}
+```
 
 ### Order and precedence
 

@@ -54,9 +54,11 @@ Every field present must hold. An absent field is no constraint.
 | `:when` | A sub-map of the chat's extension state | `{:plan-mode {:enabled? true}}`, `{:agent {:id "root"}}` for an agent profile's chats, `{:agent {}}` for any profile. |
 | `:outside` | `:cwd` | The target resolves outside the working directory and the temp directory. |
 | `:credential` | `:read` | The target is in a credential directory (`.ssh`, `.gnupg`, `.password-store`, …). |
-| `:xi-rules-file` | `true` | The call would change an Xi rules file. |
+| `:xi-rules-file` | `true` | The call would change an Xi rules file (a `rules.edn` carrying `:version`), wherever it lives. |
+| `:xi-config-file` | `true` | The call would change Xi's config file (a `config.edn` tagged `:type :xi/config`), wherever it lives. |
 | `:chained` | `true` | A `bash` command with pipes, `;`, `&&`, `$(…)`, backticks, several lines or a leading `VAR=`. |
 | `:bb-trusted` | `true` / `false` | Whether the nearest `bb.edn` is in the trust store. |
+| `:installed` | `true` / `false` | Whether the program of a clj `(sh …)` call resolves on the server's PATH (a name with a `/` must exist relative to the working directory). Only `:sh` calls; a `VAR=…` token never matches. |
 | `:within` | `:repo` | Every operand of a clj `(sh …)` call is a literal path inside the repository (not its root, `.git/` or `.xi/`) or the temp directory. |
 | `:tracked` | `:git` | Every operand is git-tracked content inside the repository, so deleting or moving it is recoverable. |
 | `:node` | `{:type … :name … :contains …}` | Tree-sitter match on the code an `edit` touches or a `write` creates; needs an installed grammar, otherwise never matches. |
@@ -72,6 +74,24 @@ option when it has one, else the chat's directory.
 | `:deny` | Blocks it. The agent sees `:message`. |
 | `:nudge` | Blocks it, but reports `:message` as a hint rather than an error. |
 | `:ask` | Shows a dialog. `:message` replaces the default text. `:options` defaults to `[:yes :no :always]`; `:unanswered :deny` refuses the call when nobody can answer instead of letting it through. |
+| `:hint` | Decides nothing. Matching continues, and `:message` is appended under the message of the first deciding rule below it (a deny, nudge or ask). Several hints stack in order. A hint above an allow, or with no deciding rule below it, is dropped. |
+
+A `:message` may contain `{cli}` (the program of a clj `(sh …)` call) and
+`{command}` (the command line or clj code); they are filled in from the
+call. Multi-line strings are fine in EDN.
+
+Hints let a specific, system-side note ride on a generic policy without the
+two competing for the match:
+
+```clojure
+;; ~/.config/xi/rules.edn — python3 is not installed here; the default
+;; `not-installed` deny fires, and this text is shown under it.
+{:match  {:tool :sh :command #"-m\s+http\.server|npx\s+(serve|http-server)"}
+ :action {:type :hint
+          :message "No python3 on this machine. Serve a directory with babashka instead:
+
+  (process/start \"bb -m babashka.http-server --port 8000 --dir public\")"}}
+```
 
 Dialog answers: `:yes` and `:no` decide this call; `:always` saves a rule for
 the chat matching the same thing (narrowed to the MCP server and tool, or the
@@ -94,6 +114,10 @@ Always on unless Xi is started with `--no-hardened-rules`:
   `authorized_keys` stay readable.
 - Changing an Xi rules file anywhere else (one carrying `:version`): asks
   every time, yes or no only.
+- Changing Xi's config file (a `config.edn` tagged `:type :xi/config`), where
+  it lives or through a symlink to it: asks every time, yes or no only. It
+  decides which extensions load, which MCP servers are trusted and what agent
+  profiles may do.
 
 ## Default bundles
 
@@ -102,6 +126,7 @@ list; inline rule maps may be mixed in.
 
 | Bundle | Does |
 | --- | --- |
+| `not-installed` | Deny: a clj `(sh …)` program that is not on PATH. An instant error naming the program, before any dialog; a `:hint` rule in your file adds the system-specific advice. |
 | `tmp-cleanup` | Nudge: `rm` under `/tmp` is unnecessary. |
 | `no-auto-memory` | Nudge: writes into a Claude auto-memory directory are skipped. |
 | `extension-credentials` | Deny: extensions reading or writing credential paths. |
@@ -131,8 +156,8 @@ Names are written `:xi.rules.defaults/<bundle>` in `:defaults`:
            :xi.rules.defaults/clj-sh]
 ```
 
-Keep `plan-mode` before the write gates and the nudges first, as the
-built-in order does. `:defaults []` turns the tier off.
+Keep `not-installed` and the nudges first and `plan-mode` before the write
+gates, as the built-in order does. `:defaults []` turns the tier off.
 
 ## Managing rules while Xi runs
 

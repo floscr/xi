@@ -267,6 +267,17 @@
     :action {:type    :ask
              :message "Change an xi rules file (a rules.edn with :version — permission policy)?"
              :options [:yes :no :repo]}
+    :scope  :hardened}
+   ;; xi's user config (a config.edn tagged :type :xi/config), wherever it
+   ;; lives: ~/.config/xi/config.edn itself is hidden (xi.paths/HIDDEN_PATHS),
+   ;; but it is commonly a symlink to a dotfiles source, which the agent can
+   ;; reach. The file decides which user extensions load, which MCP servers are
+   ;; trusted and what agent profiles may do, so any change is confirmed, every
+   ;; time, same shape as the rules-file rule above.
+   {:match  {:tool #{:write :edit :bash :clj} :xi-config-file true}
+    :action {:type    :ask
+             :message "Change xi's config.edn (a config.edn with :type :xi/config — extensions, trusted MCP servers, agent profiles)?"
+             :options [:yes :no :repo]}
     :scope  :hardened}])
 
 ;; ── clj (sh …) softeners: "disallow * then soften", scoped to :sh ────────────
@@ -324,7 +335,18 @@
    in order by `expand`. Rules are first-match-wins, so the ORDER bundles are
    listed in (see `default-aliases`) is their precedence. A rules file's
    `:defaults` vector composes these to replace the built-in default tier."
-  {;; Behavioral nudges (listed first so they win over the policy gates on
+  {;; A program that is not installed can't run whatever the gates below would
+   ;; decide — fail at once with a plain error instead of raising a dialog
+   ;; (sh-confirm, script-exec) for a command that is doomed anyway. First in
+   ;; the tier; system-specific steering ("use bb for a static server") is a
+   ;; user `:hint` rule above it, collected and appended to this message.
+   ::not-installed
+   [{:match  {:tool :sh :installed false}
+     :action {:type    :deny
+              :message (str "`{cli}` is not installed on this machine (not on PATH). "
+                            "Do not retry it; use a program that is installed.")}}]
+
+   ;; Behavioral nudges (listed first so they win over the policy gates on
    ;; overlap — a harmless /tmp `rm` is steered, not asked).
    ::tmp-cleanup
    [{:match  {:tool :bash :command tmp-rm-re}
@@ -549,7 +571,8 @@
 (def default-aliases
   "The built-in default tier, as bundle aliases in precedence order. A rules
    file's `:defaults` replaces this vector."
-  [::tmp-cleanup
+  [::not-installed
+   ::tmp-cleanup
    ::no-auto-memory
    ::extension-credentials
    ::extension-data

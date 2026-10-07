@@ -378,7 +378,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 34 (count defaults/default-rules))))
+    (is (= 35 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
@@ -406,3 +406,28 @@
           (defaults/expand [:xi.rules.defaults/nope])))
     (is (thrown-with-msg? js/Error #"invalid :defaults entry"
           (defaults/expand ["plan-mode"])))))
+
+(deftest not-installed-deny
+  (testing "a :sh program that is not on PATH is denied at once, naming it — no dialog"
+    (let [r (rules/first-match defaults/default-rules
+                               {:tool :sh :cli "python3" :command "python3 -m http.server"
+                                :installed? false})]
+      (is (= :deny (get-in r [:action :type])))
+      (is (str/includes? (get-in r [:action :message]) "`python3` is not installed")
+          "the {cli} placeholder is filled")))
+  (testing "an installed, or unresolved, program falls through to the usual sh gate"
+    (is (= :ask (action-type {:tool :sh :cli "python3" :command "python3 x.py" :installed? true})))
+    (is (= :ask (action-type {:tool :sh :cli "python3" :command "python3 x.py"}))))
+  (testing "it precedes every other :sh gate, even a hardened-tier-free default like sh-read-only"
+    (is (= :deny (action-type {:tool :sh :cli "cat" :command "cat x" :installed? false}))))
+  (testing "a user :hint above the defaults rides on the deny"
+    (let [hint {:match  {:tool :sh :command #"-m\s+http\.server"}
+                :action {:type :hint :message "Use bb http-server."}}
+          r    (rules/first-match (into [hint] defaults/default-rules)
+                                  {:tool :sh :cli "python3" :command "python3 -m http.server"
+                                   :installed? false})]
+      (is (= :deny (get-in r [:action :type])))
+      (is (= ["Use bb http-server."] (:hints r)))
+      (is (str/ends-with? (rules/decision-message r nil) "\n\nUse bb http-server."))))
+  (testing "the bundle is first in the default tier"
+    (is (= :xi.rules.defaults/not-installed (first defaults/default-aliases)))))

@@ -19,6 +19,8 @@
      :deny  → an error result instead of running it
      :nudge → a non-error steering result instead of running it
      :ask   → raise a confirm dialog; on :always persist a session allow-rule
+     :hint  → never decides; its message is appended to the deciding rule's
+              (deny / nudge / ask) text — see xi.rules/first-match
 
    There is no other policy hook: extensions can't gate tool calls.
 
@@ -138,7 +140,8 @@
      "- {:type :allow}                    force-allow, skip the remaining gates\n"
      "- {:type :deny  :message \"…\"}       block with an error\n"
      "- {:type :nudge :message \"…\"}       block with a non-error steering message\n"
-     "- {:type :ask   :message \"…\" :options [:yes :no :always]}  raise a confirm\n\n"
+     "- {:type :ask   :message \"…\" :options [:yes :no :always]}  raise a confirm\n"
+     "- {:type :hint  :message \"…\"}       decides nothing; text appended to the deciding rule's message\n\n"
      "## Your task\n"
      "Recommend ONE rule that best fits this call. Prefer the narrowest match that "
      "still generalizes (match a repo or path pattern, not one exact file). Pick the "
@@ -275,23 +278,25 @@
                                     with recommend-a-rule
      {:decision :nudge :message m}  a :nudge rule
      {:decision :pass}              an unknown action type"
-  [{:keys [type message options unanswered]} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
+  [{:keys [type message options unanswered hints]} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
   (let [deny-reason (volatile! nil)]
     (case type
       :allow {:decision :allow}
-      :deny  {:decision :deny :message (or message "Blocked by rule.")}
-      :nudge {:decision :nudge :message (or message "")}
+      :deny  {:decision :deny :message (rules/with-hints (or message "Blocked by rule.") hints)}
+      :nudge {:decision :nudge :message (rules/with-hints (or message "") hints)}
       :ask   (if-let [error (and confirm! (doomed-edit req))]
                {:decision :deny :message error}
                (if confirm!
                  (-> ((dialog/capture-deny-reason confirm! deny-reason)
                       (with-requester
                        req
-                       (cond
-                         (and message (:path req))
-                         (store/with-path-target message (:path req) (:repo req))
-                         message message
-                         :else   (ask-message req)))
+                       (rules/with-hints
+                        (cond
+                          (and message (:path req))
+                          (store/with-path-target message (:path req) (:repo req))
+                          message message
+                          :else   (ask-message req))
+                        hints))
                       (let [diff (ask-diff req)]
                         (cond-> {:options (recommend-options options req recommend-rule?)}
                           diff (assoc :diff diff))))
@@ -354,7 +359,7 @@
           req     (store/enrich-request req ruleset)
           rule    (rules/first-match ruleset req)]
       (if rule
-        (apply-action (:action (rules/canonical rule)) req ctx)
+        (apply-action (assoc (:action rule) :hints (:hints rule)) req ctx)
         {:decision :pass}))))
 
 (defn decide!

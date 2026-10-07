@@ -1170,7 +1170,8 @@
                   {:tool kind :path (str path) :effective-cwd cwd
                    :repo repo :state ext-st}
                   ruleset)
-        action   (:action (rules/canonical (rules/first-match ruleset req)))]
+        rule     (rules/first-match ruleset req)
+        action   (:action rule)]
     (case (:type action)
       :allow (js/Promise.resolve (or repo resolved))
       :deny  (js/Promise.resolve nil)
@@ -1184,9 +1185,9 @@
           (js/Promise.resolve nil)
           (js/Promise.resolve (or repo resolved)))
         (-> (confirm! (rules-store/with-path-target
-                       (or (:message action)
-                           (str (if (= :write kind) "Write" "Read")
-                                " outside the project repo?"))
+                       (rules/decision-message
+                        rule (str (if (= :write kind) "Write" "Read")
+                                  " outside the project repo?"))
                        resolved repo)
                       (cond-> {}
                         repo   (assoc :options [:yes :no :allow-repo])
@@ -2179,7 +2180,9 @@
             denied   (some (fn [c]
                              (let [r (cmd-decision c)]
                                (when (= :deny (get-in r [:action :type]))
-                                 {:cmd (:command c) :message (get-in r [:action :message])})))
+                                 {:cmd (:command c)
+                                  :message (rules/decision-message
+                                            r (str "clj: `" (:command c) "` is denied by policy."))})))
                            cmds)
             ;; A command-scoped :ask rule (it constrains :command, e.g. the
             ;; server-control rule on `bb serve:restart`) confirms that exact
@@ -2191,7 +2194,7 @@
                                      (when (and (= :ask (get-in r [:action :type]))
                                                 (rules/arg-scoped? r))
                                        {:command (:command c)
-                                        :message (get-in r [:action :message])
+                                        :message (rules/decision-message r nil)
                                         :refuse-unanswered? (= :deny (get-in r [:action :unanswered]))})))))
             rule-asks (->> asks
                            (map (fn [{:keys [command message]}]
@@ -2253,8 +2256,7 @@
           ;; remote-copy shells are now rejected (see defaults/hardened-rules),
           ;; no longer via clj-private branches.
           denied
-          (blocked (or (:message denied)
-                       (str "clj: `" (:cmd denied) "` is denied by policy.")))
+          (blocked (:message denied))
 
           (and (not confirm!) (seq unanswerable))
           (blocked (str "clj: these commands need approval but no client is "

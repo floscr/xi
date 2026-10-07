@@ -47,6 +47,10 @@ picks up a changed `:extensions` list.
 | `:remember-limit` | `50` | How many repositories you worked in to list on their own; `0` turns remembering off. Kept in `~/.config/xi/state/projects.edn`, never in the config. |
 | `:settings` | `{}` | Per-directory extras, keyed by the exact project path: `:agents-prompt` (a file or the text, added after the project's `AGENTS.md`), `:agents-replace` (`true` replaces the project root's own `AGENTS.md`), `:snippets` (`[{:label :text}]` for the web client's snippets menu). |
 
+The agent cannot write `~/.config/xi`, and a change to this file anywhere
+else, for example a dotfiles source that `config.edn` is a symlink to, asks
+you every time (see [Rules](rules.md)).
+
 ### `:users`
 
 A map from user id to a profile. Declaring a user is optional: an id nobody
