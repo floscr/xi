@@ -198,6 +198,13 @@
   [session]
   (.join node-path (session-dir session) (str (:id session) ".canvas.edn")))
 
+(defn ext-state-sidecar-path
+  "Path to a session's persisted extension state: the room slices of the
+   extensions that declare `:persist-room` (xi.ext.persist), EDN keyed by
+   extension id. Lets that state outlive the room and server restarts."
+  [session]
+  (.join node-path (session-dir session) (str (:id session) ".ext.edn")))
+
 (defn save-canvas!
   "Persist a room's canvas-review state (diff + nodes + edges + plan) so it
    survives room reaping and server restarts. nil canvas removes the sidecar."

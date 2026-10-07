@@ -391,7 +391,9 @@
 (defn add-rule
   "Add a runtime rule at :session (room-scoped, mirrors to clients) or :server
    (process-local) scope. New rules go to the front so the most recent grant
-   wins among runtime rules."
+   wins among runtime rules. The :session rules are persisted with the chat
+   (`:persist-room`, xi.ext.persist), so an [Always] outlives the room and
+   server restarts."
   [st {:keys [room-id scope rule]}]
   (let [path (if (= scope :server)
                [:ext ext-id :rules]
@@ -525,6 +527,9 @@
   {:id       ext-id
    :init     {:room    {:rules []}
               :process {:rules []}}
+   ;; Always-answers are session rules: they ride along with the chat across
+   ;; server restarts and reaped rooms.
+   :persist-room true
    :handlers {:ext.rules/add     add-rule
               :subagent/turn-end on-subagent-turn-end}
    :commands [{:name        "rules"

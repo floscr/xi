@@ -68,6 +68,7 @@
             [xi.ext.clj-worker :as clj-worker]
             [xi.ext.clj-socket :as clj-socket]
             [xi.ext.manager :as manager]
+            [xi.ext.persist :as ext-persist]
             [xi.ext.mcp :as mcp]
             [xi.ext.user :as user-ext]
             [xi.fx :as fx]
@@ -454,7 +455,8 @@ See docs/guide/command-line.md for the full reference.")
                              :ring          ring
                              :jsonl-writer  jsonl-writer})
         {:keys [dispatch!]} app
-        _ (user-ext/start! app {:ask! (:ask! dialogs)})]
+        _ (user-ext/start! app {:ask! (:ask! dialogs)})
+        _ (ext-persist/install! app mgr)]
     (when jsonl-writer
       (js/process.on "exit" (fn [] ((:flush! jsonl-writer)))))
     ;; this process' own user: their record (profile + stored state) is in
@@ -1041,6 +1043,7 @@ See docs/guide/command-line.md for the full reference.")
                              :on-runaway (fn [msg] (log-crash! "dispatch-livelock" msg))
                              :ring ring})
         _ (user-ext/start! app {:ask! (:ask! dialogs)})
+        _ (ext-persist/install! app mgr)
         ;; the server's own user (--user / XI_USER): rooms it provisions itself
         ;; (the HTTP API, prompts without a client) act for them
         _ ((:dispatch! app) (users/loaded-event (own-user opts)))

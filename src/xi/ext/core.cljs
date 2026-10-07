@@ -18,6 +18,14 @@
                      {:room    <state>   — template merged into each room's
                                            [:ext <id>] (mirrors to clients)
                       :process <state>}  — installed at top-level [:ext <id>]
+     :persist-room true | [key …] — the part of the extension's room state
+                   (`true` = all of [:rooms rid :ext <id>], else just those
+                   keys) that is saved with the chat and put back when the chat
+                   is resumed, so it survives `bb serve:restart` and a reaped
+                   room. Plain data only; empty values are not saved. Saving
+                   and loading is xi.ext.persist (server / standalone); the
+                   pure side (`persisted-room-state`, the hydrate handler) is
+                   here.
      :handlers     {event-type (fn [state event] → {:state :effects}|nil)}
                    chained AFTER the base handler for that event type
      :fx           {fx-type (fn [ctx payload])} — effect handlers
@@ -124,16 +132,68 @@
   [entries ctx]
   (mapv #(if (map? %) % (% ctx)) entries))
 
+(defn- blank? [v]
+  (or (nil? v) (and (coll? v) (empty? v))))
+
+(defn persisted-room-state
+  "The part of `room`'s extension state that `persist-specs` ({ext-id
+   true|[key …]}, see :persist-room) says to keep: {ext-id {key value}}, with
+   blank values and extensions left with nothing dropped."
+  [persist-specs room]
+  (into {}
+        (keep (fn [[id spec]]
+                (let [slice (get-in room [:ext id])
+                      kept  (into {}
+                                  (remove (comp blank? val))
+                                  (if (true? spec) slice (select-keys slice spec)))]
+                  (when (seq kept) [id kept]))))
+        persist-specs))
+
+(defn- merge-persisted
+  "Put a saved slice back into the room's current one. A key the room holds
+   nothing for takes the saved value; two sequences are joined with the
+   current entries first (so a fresher one still wins) and no duplicates; any
+   other current value is kept."
+  [current saved]
+  (reduce (fn [acc [k v]]
+            (let [cur (get acc k)]
+              (cond
+                (blank? cur) (assoc acc k v)
+                (and (sequential? cur) (sequential? v))
+                (assoc acc k (into (vec cur) (remove (set cur)) v))
+                :else acc)))
+          (or current {})
+          saved))
+
+(defn- hydrate-handler
+  "The :ext.persist/hydrate handler: install the slices a chat saved
+   ({ext-id slice}) into its room — only for extensions that declare
+   :persist-room, and only the keys they declare."
+  [persist-specs]
+  (fn [st {:keys [room-id slices]}]
+    (when (get-in st [:rooms room-id])
+      (let [slices (persisted-room-state persist-specs {:ext slices})]
+        (when (seq slices)
+          {:state (reduce (fn [st [id saved]]
+                            (update-in st [:rooms room-id :ext id] merge-persisted saved))
+                          st slices)})))))
+
 (defn compose
   "Compose extensions (in order) into one assembly map."
   [exts]
-  (let [exts (vec (remove nil? exts))]
+  (let [exts          (vec (remove nil? exts))
+        persist-specs (into {} (keep (fn [e] (when-let [s (:persist-room e)]
+                                               [(:id e) s])))
+                            exts)]
     {:extensions       exts
+     :persist-room     persist-specs
      :room-ext-init    (into {} (keep (fn [e] (when-let [s (:room (:init e))]
                                                 [(:id e) s]))) exts)
      :process-ext-init (into {} (keep (fn [e] (when-let [s (:process (:init e))]
                                                 [(:id e) s]))) exts)
-     :handlers         (reduce merge-handler-maps {} (keep :handlers exts))
+     :handlers         (reduce merge-handler-maps
+                               {:ext.persist/hydrate (hydrate-handler persist-specs)}
+                               (keep :handlers exts))
      :fx               (apply merge {} (keep :fx exts))
      :commands         (vec (mapcat :commands exts))
      :tool-definitions (vec (mapcat :tool-definitions exts))

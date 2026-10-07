@@ -75,8 +75,11 @@ option when it has one, else the chat's directory.
 
 Dialog answers: `:yes` and `:no` decide this call; `:always` saves a rule for
 the chat matching the same thing (narrowed to the MCP server and tool, or the
-tool name); `:repo`, offered for writes inside a git repository, saves a rule
-allowing writes and edits anywhere in it. An edit's dialog previews the diff.
+tool name). The rule is stored with the chat (`<session-id>.ext.edn` next to
+its metadata in `~/.config/xi/sessions/`), so it survives a server restart and a
+closed room, and applies again when the chat is resumed. `:repo`, offered for
+writes inside a git repository, saves a rule allowing writes and edits anywhere
+in it. An edit's dialog previews the diff.
 
 ## The hardened tier
 

@@ -25,6 +25,7 @@ provider effects, and TUI.
   {:id               :my-ext           ; keyword (required)
    :init             {:room    {...}    ; template merged into each room's [:ext :my-ext]
                       :process {...}}   ; installed at top-level [:ext :my-ext]
+   :persist-room     true | [key …]    ; room state kept across restarts (see below)
    :handlers         {event-type handler-fn}  ; chained AFTER base handlers
    :fx               {fx-type (fn [ctx payload])}
    :event-hooks      {event-type (fn [event state] → event'|nil)}
@@ -114,6 +115,20 @@ Declare initial state via `:init`:
 {:init {:room    {:enabled? false}   ; per-room, mirrored
         :process {:rules []}}}       ; per-process, local
 ```
+
+### Surviving restarts: `:persist-room`
+
+Room state lives in memory, so a server restart (`bb serve:restart`) or a
+reaped room starts the chat from `:init` again. An extension keeps part of it by
+declaring `:persist-room` — `true` for its whole room slice, or a vector of the
+keys to keep. `xi.ext.persist` (server and standalone only) saves those slices,
+as plain EDN keyed by extension id, to `<session-id>.ext.edn` beside the chat's
+metadata whenever they change, and on `:session/resumed` reads them back with
+`:ext.persist/hydrate` (a handler `xi.ext.core/compose` adds, so a client mirror
+replays it). Blank values aren't saved. On the way back in, a key the room holds
+nothing for takes the saved value; two sequences are joined (current entries
+first, no duplicates); any other value in the room wins. The rules engine uses
+it so an Always answer lasts for the chat, not for the server process.
 
 ## Handler Contract
 

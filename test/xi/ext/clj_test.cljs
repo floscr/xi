@@ -2,6 +2,7 @@
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.ext.clj :as clj-ext]
+            [xi.ext.rules :as rules-ext]
             ["node:child_process" :as cp]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -536,6 +537,26 @@
           (.then (fn [r]
                    (is (not (:intercepted r)))
                    (is (contains? (set (get-in r [:arguments :_allowed])) "npm"))
+                   (done)))))))
+
+(deftest gate-always-answer-stops-further-asks
+  ;; Answering [Always] to a CLI ask writes a session allow-rule; the next call
+  ;; running that CLI must not ask again.
+  (async done
+    (let [state (atom {:rooms {"r" {:cwd "/tmp"}}})
+          asks  (atom 0)
+          code  "(sh \"tmux\" \"capture-pane\" \"-p\" \"-t\" \"xi-serve:watch\" \"-S\" \"-4\")"
+          ctx   {:get-state #(deref state) :room-id "r" :cwd (.cwd js/process)
+                 :dispatch! (fn [ev]
+                              (when (= :ext.rules/add (:type ev))
+                                (swap! state (fn [st] (:state (rules-ext/add-rule st ev))))))
+                 :confirm!  (fn [& _] (swap! asks inc) (js/Promise.resolve :always))}
+          call  {:name "clj" :arguments {:code code}}]
+      (-> (js/Promise.resolve (gate call ctx))
+          (.then (fn [_] (gate call ctx)))
+          (.then (fn [r]
+                   (is (= 1 @asks) "second call is covered by the session rule")
+                   (is (not (:intercepted r)))
                    (done)))))))
 
 (deftest gate-command-scoped-allow-grants-exact-command
