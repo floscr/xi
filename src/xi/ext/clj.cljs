@@ -217,10 +217,15 @@
    opts) are writable from clj scripts. An unapproved out-of-repo path raises
    the approval dialog at runtime via runtime-gate! (the eval blocks until
    answered); the approved root is added to :allowed-writes. `op` (optional)
-   names the helper asking, for the approval dialog's target."
-  [opts p & [op]]
+   names the helper asking, for the approval dialog's target. `{:nofollow?
+   true}` keeps a symlink at the final component as the target (its parent is
+   still canonicalized): for entry-level ops (rm, mv) the returned path is the
+   link itself, so the op can never reach through it to the linked tree."
+  [opts p & [op {:keys [nofollow?]}]]
   (let [cwd      (opts-cwd opts)
-        resolved (paths/real-resolve cwd (str p))
+        resolved (if nofollow?
+                   (paths/real-resolve-nofollow cwd (str p))
+                   (paths/real-resolve cwd (str p)))
         real-cwd (paths/real-resolve cwd ".")
         allowed  (:allowed-writes @opts)]
     (if (or (paths/path-within? resolved real-cwd)
@@ -589,13 +594,17 @@
                           (resolve-write opts to 'cp)
                           #js {:recursive true})
                nil)
+     ;; mv and rm act on the directory ENTRY (rename/unlink): a symlink at the
+     ;; final component is moved or removed as a link, never followed. The
+     ;; canonical resolve once turned (rm link-to-dir) into a recursive
+     ;; delete of the link's target.
      'mv     (fn [from to]
-               (fs/renameSync (resolve-write opts from 'mv)
-                              (resolve-write opts to 'mv))
+               (fs/renameSync (resolve-write opts from 'mv {:nofollow? true})
+                              (resolve-write opts to 'mv {:nofollow? true}))
                nil)
      'rm     (fn [& paths]
                (doseq [p paths]
-                 (fs/rmSync (resolve-write opts p 'rm)
+                 (fs/rmSync (resolve-write opts p 'rm {:nofollow? true})
                             #js {:force true :recursive true}))
                nil)
      'tmpdir (fn [] (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-clj-")))
@@ -1717,6 +1726,27 @@
   [scan]
   (into [] (comp (filter #(= 'rm (:head %))) (map :path) (distinct)) (:writes scan)))
 
+(def ^:private ENTRY_HELPERS
+  "Write helpers that act on the directory entry itself (unlink, rename): a
+   symlink at the final component is their target, not what it points to. The
+   gate judges their paths with paths/real-resolve-nofollow, matching the
+   worker's resolve-write {:nofollow? true} — so (rm in-repo-link) is an
+   in-repo write, not an out-of-repo one on the link's target."
+  '#{rm mv})
+
+(defn- outside-write-paths
+  "Distinct literal write-target paths from a scan-code result that escape the
+   repo (+tmp), in first-seen order. A path counts as outside when any helper
+   writing it resolves outside — through a final-component symlink for most
+   helpers, at the link itself for ENTRY_HELPERS."
+  [cwd scan]
+  (into [] (comp (filter (fn [{:keys [head path]}]
+                           (rules-store/outside-cwd?
+                            cwd path {:nofollow? (contains? ENTRY_HELPERS head)})))
+                 (map :path)
+                 (distinct))
+        (:writes scan)))
+
 (defn scan-sh-calls
   "The (sh …) scan view (see sh-summary), parsing `code` via scan-code. Returns
    {:parse-error msg} on unreadable code. For callers/tests that scan a snippet
@@ -1741,12 +1771,14 @@
 
 (defn- existing-dir?
   "True when p (resolved against cwd) is an existing directory — i.e. an (rm p)
-   would be a recursive directory tree deletion."
+   would be a recursive directory tree deletion. A symlink to a directory is
+   NOT one: the helper unlinks the link (resolve-write {:nofollow? true}), so
+   lstat decides, on the link's own path."
   [cwd p]
   (try
-    (let [resolved (paths/real-resolve cwd (str p))]
+    (let [resolved (paths/real-resolve-nofollow cwd (str p))]
       (and (fs/existsSync resolved)
-           (.isDirectory (fs/statSync resolved))))
+           (.isDirectory (fs/lstatSync resolved))))
     (catch :default _ false)))
 
 (defn- blocked [text]
@@ -2208,8 +2240,7 @@
             ;; Literal write-target paths that escape the repo (+tmp). These get
             ;; the same approval dialog the write/edit tools use, then are
             ;; injected so the worker's resolve-write allows them.
-            outside-writes (->> (write-paths-of scan)
-                                (filter #(rules-store/outside-cwd? cwd %))
+            outside-writes (->> (outside-write-paths cwd scan)
                                 (remove (set rm-dirs)))
             ;; Literal read-target paths that escape the repo (+tmp). Same
             ;; approval dialog as writes, then injected so resolve-read allows

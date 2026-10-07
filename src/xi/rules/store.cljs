@@ -317,12 +317,17 @@
   "True when target `path` resolves outside both the effective `cwd` and the OS
    tmp dir — i.e. a write/edit that escapes the working tree. Tmp is always
    allowed. Symlinks are canonicalized (paths/real-resolve) so the check can't
-   be laundered through a link created inside cwd. This is I/O, computed only
+   be laundered through a link created inside cwd. With `{:nofollow? true}` a
+   symlink at the final component is judged by its OWN location, not its
+   target's (paths/real-resolve-nofollow) — for entry-level ops (rm, mv) that
+   touch the link rather than what it points to. This is I/O, computed only
    when an `:outside` rule is in play."
-  [cwd path]
+  [cwd path & [{:keys [nofollow?]}]]
   (boolean
    (when (and cwd path (not (str/blank? (str path))))
-     (let [resolved (paths/real-resolve cwd (str path))
+     (let [resolved (if nofollow?
+                      (paths/real-resolve-nofollow cwd (str path))
+                      (paths/real-resolve cwd (str path)))
            real-cwd (paths/real-resolve cwd ".")]
        (not (or (paths/path-within? resolved real-cwd)
                 (paths/within-tmp? cwd resolved)))))))

@@ -30,8 +30,8 @@ file under the temp directory and the result names the file.
 | `(realpath p)` `(basename p)` `(dirname p)` | Path helpers |
 | `(which "cmd")` | The program's path, or nil |
 | `(spit f s)` | Write; `{:append true}` appends |
-| `(mkdir d)` `(cp a b)` `(mv a b)` `(touch f)` | Write operations |
-| `(rm f …)` | Delete; recursive; no error when missing |
+| `(mkdir d)` `(cp a b)` `(mv a b)` `(touch f)` | Write operations; `mv` renames a symlink itself |
+| `(rm f …)` | Delete; recursive; no error when missing. A symlink is removed, never followed: `(rm link)` leaves the linked directory intact |
 | `(tmpdir)` | A fresh directory under the temp directory |
 | `(cwd)` `(env "KEY")` `(now)` | Working directory, an allowed environment variable, the time |
 

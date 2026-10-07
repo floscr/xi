@@ -1006,6 +1006,32 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) ":ok"))))
 
+(deftest rm-helper-unlinks-symlink-not-target
+  ;; (rm link) where link → directory removes the LINK only. The canonical
+  ;; resolve used to follow it and recursively delete the target tree (it once
+  ;; wiped a gitlibs checkout through an in-repo lib/ui link).
+  (let [res (eval! "(let [d (tmpdir) target (str d \"/target\") link (str d \"/link\")]
+                      (mkdir target)
+                      (spit (str target \"/keep.txt\") \"x\")
+                      (sh \"ln\" \"-s\" target link)
+                      (rm link)
+                      [(sort (ls d)) (cat (str target \"/keep.txt\"))])"
+                   {:allowed ["ln"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "[(\"target/\") \"x\"]"))))
+
+(deftest mv-helper-renames-symlink-not-target
+  ;; (mv link new) renames the link itself; the target dir stays where it is.
+  (let [res (eval! "(let [d (tmpdir) target (str d \"/target\") link (str d \"/link\")]
+                      (mkdir target)
+                      (spit (str target \"/keep.txt\") \"x\")
+                      (sh \"ln\" \"-s\" target link)
+                      (mv link (str d \"/moved\"))
+                      [(sort (ls d)) (sort (ls target)) (cat (str d \"/moved/keep.txt\"))])"
+                   {:allowed ["ln"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "[(\"moved\" \"target/\") (\"keep.txt\") \"x\"]"))))
+
 (deftest gate-autoruns-stat-with-hint
   (async done
     (-> (js/Promise.resolve
@@ -1160,6 +1186,35 @@
           (.then (fn [res]
                    (is (not (:intercepted res)))
                    (is (empty? @prompts))
+                   (fs/rmSync dir #js {:recursive true :force true})
+                   (done)))))))
+
+(deftest gate-rm-symlink-to-dir-is-not-a-directory-deletion
+  ;; (rm link) where link → dir only unlinks, so it's neither a recursive
+  ;; tree delete (no "Recursively delete directory" prompt) nor — when the
+  ;; link points outside the repo — an out-of-repo write (no outside-write
+  ;; dialog, nothing injected into :_allowed-writes).
+  (async done
+    (let [dir     (mk-tmp-dir)
+          sub     (node-path/join dir "sub")
+          _       (fs/mkdirSync sub)
+          to-sub  (node-path/join dir "link-to-sub")
+          to-usr  (node-path/join dir "link-to-usr")
+          _       (fs/symlinkSync sub to-sub)
+          _       (fs/symlinkSync "/usr" to-usr)
+          prompts (atom [])
+          ctx     (assoc (gate-ctx) :cwd dir
+                         :confirm! (fn [msg & _]
+                                     (swap! prompts conj msg)
+                                     (js/Promise.resolve false)))]
+      (-> (js/Promise.all
+           #js [(gate {:name "clj" :arguments {:code (str "(rm \"" to-sub "\")")}} ctx)
+                (gate {:name "clj" :arguments {:code (str "(rm \"" to-usr "\")")}} ctx)])
+          (.then (fn [[in-tmp outside]]
+                   (is (not (:intercepted in-tmp)))
+                   (is (not (:intercepted outside)))
+                   (is (empty? @prompts))
+                   (is (empty? (get-in outside [:arguments :_allowed-writes])))
                    (fs/rmSync dir #js {:recursive true :force true})
                    (done)))))))
 

@@ -64,6 +64,21 @@
             abs
             (recur parent (node-path/join (node-path/basename probe) rest-part))))))))
 
+(defn real-resolve-nofollow
+  "Like real-resolve, but never follows a symlink at the FINAL component:
+   the parent is canonicalized, the last segment is kept as written. For
+   operations on the directory entry itself (unlink, rename) — deleting or
+   renaming a link must act on the link, never on the tree it points to.
+   Following it here once wiped a gitlibs checkout through an in-repo
+   `lib/ui` link. A trailing slash is dropped by path.resolve, so `link/`
+   can't sneak the target back in."
+  [cwd p]
+  (let [abs    (node-path/resolve cwd (expand-home (str p)))
+        parent (node-path/dirname abs)]
+    (if (= parent abs)
+      abs
+      (node-path/join (real-resolve cwd parent) (node-path/basename abs)))))
+
 (defn extension-data-dir
   "The data directory a user extension may freely read and write:
    $XDG_DATA_HOME (else ~/.local/share) /xi/extensions/<id>."
