@@ -32,7 +32,8 @@ did. Standalone mode is the same thing with nobody to broadcast to.
 ## Tools
 
 The model acts through **tools**: read a file, edit it, search, run a command,
-fetch a page. Xi offers a fixed set of built-in tools, and you add more through
+search earlier chats, start a sub-agent. Xi offers a fixed set of
+[built-in tools](builtin-tools.md), and you add more through
 [extensions](extensions.md) and [MCP servers](mcp-servers.md).
 
 Reading a large source file returns an outline of its syntax tree, not the
