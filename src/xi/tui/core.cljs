@@ -4,6 +4,7 @@
    is pinned at the bottom of the screen. Scroll state is managed internally.
    Mouse text selection is handled in-app with OSC 52 clipboard copy."
   (:require [clojure.string :as str]
+            [xi.crash-log :as crash-log]
             [xi.tui.ansi :as ansi]
             [xi.tui.grid :as grid]
             [xi.tui.terminal :as term]))
@@ -597,6 +598,51 @@
 
 ;; ── Lifecycle ─────────────────────────────────────────────────────────────────
 
+
+(defn stop-tui!
+  "Stop the TUI, restore terminal."
+  []
+  (when-let [t (:render-timer @tui-state)]
+    (js/clearTimeout t))
+  (swap! tui-state assoc :stopped true)
+  (when-let [terminal (:terminal @tui-state)]
+    (term/stop! terminal)))
+
+(defn- emergency-stop!
+  "Hand the terminal back after a crash: un-intercept stdout/stderr (so what
+   follows is printed, not captured into the chat), then leave raw mode, turn
+   off mouse / kitty / bracketed-paste reporting, show the cursor and leave the
+   alternate screen. Never throws; a no-op when the TUI is not running."
+  []
+  (when (:started (some-> (:terminal @tui-state) deref))
+    (try (term/restore-stdout!) (catch :default _ nil))
+    (try (stop-tui!) (catch :default _ nil))))
+
+(defonce ^:private crash-guard-installed? (atom false))
+
+(defn- install-crash-guard!
+  "Make sure an error nothing else caught can never leave the shell unusable.
+   Per-key input and resize errors are already caught in xi.tui.terminal; this
+   covers the rest (render timers, promise chains, anything async): restore the
+   terminal, print the error where it can be read, record it in crash.log, and
+   exit — unless another process-level handler exists (a server hosting this
+   TUI installs one so remote clients survive), in which case only the
+   terminal is handed back. A final `exit` hook restores the terminal on any
+   path out that did not go through shutdown."
+  []
+  (when (compare-and-set! crash-guard-installed? false true)
+    (let [fatal (fn [label]
+                  (fn [err & _]
+                    (emergency-stop!)
+                    (.write js/process.stderr
+                            (str "xi: " label ": " (crash-log/record! label err)
+                                 "\n(recorded in " (crash-log/file) ")\n"))
+                    (when (<= (.listenerCount js/process label) 1)
+                      (js/process.exit 1))))]
+      (.on js/process "uncaughtException" (fatal "uncaughtException"))
+      (.on js/process "unhandledRejection" (fatal "unhandledRejection"))
+      (.on js/process "exit" (fn [] (emergency-stop!))))))
+
 (defn create-tui!
   "Create and start the TUI. Returns the content container (scrollable area).
    Set the bottom panel (editor) via set-bottom-panel!."
@@ -621,6 +667,7 @@
            :sidebar nil
            :selection nil)
     (term/start! terminal handle-input handle-resize)
+    (install-crash-guard!)
     content))
 
 (defn run-external!
@@ -648,14 +695,6 @@
                      (swap! tui-state assoc :suspended false :previous-frame [] :previous-grid nil)
                      (render-now!))))))))
 
-(defn stop-tui!
-  "Stop the TUI, restore terminal."
-  []
-  (when-let [t (:render-timer @tui-state)]
-    (js/clearTimeout t))
-  (swap! tui-state assoc :stopped true)
-  (when-let [terminal (:terminal @tui-state)]
-    (term/stop! terminal)))
 
 (defn get-container
   "Get the content container."

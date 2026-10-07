@@ -3,6 +3,7 @@
    Handles raw mode, cursor visibility, dimensions, input routing.
    Provides stdout/stderr interception to capture stray external writes."
   (:require [clojure.string :as str]
+            [xi.crash-log :as crash-log]
             [xi.tui.ansi :as ansi]))
 
 ;; ── Stdout Interception ───────────────────────────────────────────────────────
@@ -170,7 +171,13 @@
    on-input: (fn [data-string])
    on-resize: (fn [])"
   [terminal on-input on-resize]
-  (let [stdin js/process.stdin
+  (let [;; A throw while handling one key (or one resize) is recorded in
+        ;; crash.log and dropped, so a bug in a key handler never takes the
+        ;; process down with the terminal still in raw mode. Each piece of a
+        ;; batched read is guarded on its own: one bad key loses only itself.
+        on-input  (crash-log/guarded "tui input" on-input)
+        on-resize (crash-log/guarded "tui resize" on-resize)
+        stdin js/process.stdin
         stdout js/process.stdout
         was-raw (boolean (.-isRaw stdin))
         ;; Paste buffering — assemble multi-chunk bracketed pastes

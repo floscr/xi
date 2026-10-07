@@ -369,6 +369,15 @@ extension territory, keyed by the id.
   `unhandledRejection` / `uncaughtException` to stderr and
   `~/.config/xi/crash.log` instead of exiting; typically an `EPIPE` from a
   runner subprocess pipe.
+- **TUI crash safety** (`xi.crash-log`, `xi.tui.terminal`, `xi.tui.core`):
+  `term/start!` wraps the input and resize handlers in `crash-log/guarded`
+  (a throw is recorded in `crash.log` and dropped — each piece of a batched
+  stdin read on its own). `tui/create-tui!` installs a process-level guard
+  that, on an `uncaughtException` / `unhandledRejection`, un-intercepts
+  stdout/stderr, runs `stop-tui!` (raw mode, mouse, kitty, bracketed paste,
+  cursor, alt screen), prints the stack and exits 1 — unless another handler
+  (the server's crash guard) is installed, then it only hands the terminal
+  back. An `exit` hook restores the terminal on any other path out.
 
 ## Prompt mode
 

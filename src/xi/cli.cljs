@@ -52,6 +52,7 @@
             [xi.agent-profile :as profile]
             [xi.auth :as auth]
             [xi.client.tui :as client-tui]
+            [xi.crash-log :as crash-log]
             [xi.client.ws-transport :as ws-transport]
             [xi.commands :as commands]
             [xi.compaction :as compaction]
@@ -932,12 +933,7 @@ See docs/guide/command-line.md for the full reference.")
    copy survives a `bb serve:restart` (which respawns the tmux pane and wipes
    its scrollback), so a crash stays diagnosable after the fact."
   [label err]
-  (let [stack (or (some-> err .-stack) (str err))]
-    (js/console.error (str "[xi] " label ":") stack)
-    (try
-      (let [file (.join node-path (aget js/process.env "HOME") ".config" "xi" "crash.log")]
-        (.appendFileSync fs file (str "\n[" (.toISOString (js/Date.)) "] " label "\n" stack "\n")))
-      (catch :default _ nil))))
+  (js/console.error (str "[xi] " label ":") (crash-log/record! label err)))
 
 (defn- install-crash-guard!
   "Keep the long-lived server alive across stray async errors and record every

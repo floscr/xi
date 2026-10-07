@@ -186,6 +186,11 @@ user service, launchd, or a tmux session. If a stray error escapes, the
 server logs it to `~/.config/xi/crash.log` and keeps running rather than
 dropping every client.
 
+The terminal client never leaves your shell broken. An error while handling
+one key press is recorded in the same file and dropped, so the next key
+still works. An error it cannot recover from restores the terminal (cursor,
+mouse, normal screen), prints the error and exits.
+
 ## When something is off
 
 **A phone cannot connect.** Check the address: the server prints the ones it
