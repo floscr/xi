@@ -75,10 +75,24 @@ When committing changes:
    the same file twice."
   ["AGENTS.md" "CLAUDE.md"])
 
-(defn find-agents-md
-  "Walk up from dir to root, collecting each directory's instruction file
-   (AGENTS.md, else CLAUDE.md — see INSTRUCTION_FILES).
-   Returns vec of paths, innermost (closest to cwd) last."
+(defn- agents-ignored?
+  "True when config.edn `:projects :settings` sets `:agents-ignore true` for
+   exactly this cwd."
+  [cwd]
+  (try
+    (projects/agents-ignore?! (user-config/projects-spec) cwd)
+    (catch :default _e
+      false)))
+
+(defn- inside?
+  "True when path `p` is `base` or lies below it."
+  [base p]
+  (let [p (.resolve node-path p)]
+    (or (= p base)
+        (str/starts-with? p (str base (.-sep node-path))))))
+
+
+(defn- find-agents-md*
   [start-dir]
   (loop [dir (.resolve node-path start-dir)
          found []]
@@ -94,6 +108,21 @@ When committing changes:
         ;; At root — reverse so outermost is first, innermost last
         (vec (reverse found))
         (recur parent found)))))
+
+(defn find-agents-md
+  "Walk up from dir to root, collecting each directory's instruction file
+   (AGENTS.md, else CLAUDE.md — see INSTRUCTION_FILES).
+   Returns vec of paths, innermost (closest to cwd) last. With `:agents-ignore`
+   set for the project, the files inside the repo (git root, or dir when not in
+   a repo) are left out; those in directories above it still load."
+  [start-dir]
+  (let [dir (.resolve node-path start-dir)
+        files (find-agents-md* dir)]
+    (if (agents-ignored? dir)
+      (let [base (or (tools-util/git-root dir) dir)]
+        (vec (remove #(inside? base %) files)))
+      files)))
+
 
 
 (defn- project-agents-prompt
@@ -135,21 +164,23 @@ When committing changes:
   "Build a prompt section listing every AGENTS.md in the repo, instructing
    the agent to read each one when editing related files. When a profile
    replaces the cwd AGENTS.md (:replace), that file is omitted so the list
-   matches the prompt actually inserted. nil when none."
+   matches the prompt actually inserted. nil when none, or when the project
+   sets `:agents-ignore`."
   ([cwd] (agents-md-prompt cwd (project-agents-prompt cwd)))
   ([cwd profile-prompt]
-   (let [replaced (when (:replace profile-prompt)
-                    (when-let [root (tools-util/git-root cwd)]
-                      (str "/" (.relative node-path root
-                                          (.join node-path (.resolve node-path cwd)
-                                                 "AGENTS.md")))))
-         files (cond->> (find-all-agents-md cwd)
-                 replaced (remove #(= % replaced))
-                 true     seq)]
-     (when files
-       (str "These AGENTS.md files have been found, read them automatically "
-            "when editing files related to them:\n"
-            (str/join "\n" (map #(str "[" % "]") files)))))))
+   (when-not (agents-ignored? cwd)
+     (let [replaced (when (:replace profile-prompt)
+                      (when-let [root (tools-util/git-root cwd)]
+                        (str "/" (.relative node-path root
+                                            (.join node-path (.resolve node-path cwd)
+                                                   "AGENTS.md")))))
+           files (cond->> (find-all-agents-md cwd)
+                   replaced (remove #(= % replaced))
+                   true     seq)]
+       (when files
+         (str "These AGENTS.md files have been found, read them automatically "
+              "when editing files related to them:\n"
+              (str/join "\n" (map #(str "[" % "]") files))))))))
 
 (defn load-agents-md
   "Load and concatenate all AGENTS.md files from cwd to root.

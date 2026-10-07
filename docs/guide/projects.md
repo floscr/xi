@@ -110,6 +110,7 @@ when a chat runs in that exact directory. Key the entry by the project's path:
  {"~/code/my-app"
   {:agents-prompt  "docs/agent-notes.md"
    :agents-replace false
+   :agents-ignore  false
    :snippets [{:label "Run checks"
                :text  "Run the tests and report what fails."}]}}}
 ```
@@ -118,6 +119,7 @@ when a chat runs in that exact directory. Key the entry by the project's path:
 | --- | --- |
 | `:agents-prompt` | Added to the system prompt after the project's own `AGENTS.md` files. If a file exists at that path — relative to the project directory first, then as an absolute path — its contents are used; otherwise the string itself is the prompt. |
 | `:agents-replace` | `true`: the prompt takes the place of the project's own `AGENTS.md` (or `CLAUDE.md`) at its root. Files in parent directories still load. Default `false`. |
+| `:agents-ignore` | `true`: the repository's own `AGENTS.md` / `CLAUDE.md` files are not loaded, and the list of `AGENTS.md` files in subdirectories is not sent. Use it for a repo whose instructions you don't want. Files in directories above the repository still load, and `:agents-prompt` still applies, so the two together swap the repo's instructions for your own. Default `false`. |
 | `:snippets` | Prompts offered in the web client's snippets menu in that project only. Each has a `:label` (what you see) and `:text` (what gets inserted into your message). |
 
 The match is on the exact directory. A chat started in `~/code/my-app/api`

@@ -45,7 +45,7 @@ picks up a changed `:extensions` list.
 | `:browse` | `[]` | Directories to scan. An entry is a path, or `{:dir path :depth n :git? bool}`. `:depth` (1 to 6, default 1) is how many levels down to look; `:git?` (default `true`) lists only directories containing `.git` and never descends into one. Hidden directories and `node_modules` are skipped. |
 | `:repos` | `[]` | Directories listed as they are, repository or not. |
 | `:remember-limit` | `50` | How many repositories you worked in to list on their own; `0` turns remembering off. Kept in `~/.config/xi/state/projects.edn`, never in the config. |
-| `:settings` | `{}` | Per-directory extras, keyed by the exact project path: `:agents-prompt` (a file or the text, added after the project's `AGENTS.md`), `:agents-replace` (`true` replaces the project root's own `AGENTS.md`), `:snippets` (`[{:label :text}]` for the web client's snippets menu). |
+| `:settings` | `{}` | Per-directory extras, keyed by the exact project path: `:agents-prompt` (a file or the text, added after the project's `AGENTS.md`), `:agents-replace` (`true` replaces the project root's own `AGENTS.md`), `:agents-ignore` (`true` skips the repo's `AGENTS.md` files and the subdirectory list), `:snippets` (`[{:label :text}]` for the web client's snippets menu). |
 
 The agent cannot write `~/.config/xi`, and a change to this file anywhere
 else, for example a dotfiles source that `config.edn` is a symlink to, asks

@@ -25,6 +25,7 @@
                 :settings {\"~/Code/Projects/xi\"       ; per-project, by exact dir
                            {:agents-prompt \"docs/agents.md\"
                             :agents-replace true
+                            :agents-ignore false
                             :snippets [{:label \"Run checks\" :text \"…\"}]}}}
 
    Scanning and ordering are pure over an injected `ops` map so they test
@@ -49,11 +50,12 @@
 
 (def ^:private spec-keys #{:browse :repos :remember-limit :settings})
 
-(def ^:private setting-keys #{:agents-prompt :agents-replace :snippets})
+(def ^:private setting-keys #{:agents-prompt :agents-replace :agents-ignore :snippets})
 
 (def ^:private spec-shape
   (str "{:browse [dir | {:dir d :depth n :git? bool}] :repos [dir] :remember-limit n"
-       " :settings {dir {:agents-prompt str :agents-replace bool :snippets [{:label :text}]}}}"))
+       " :settings {dir {:agents-prompt str :agents-replace bool :agents-ignore bool"
+       " :snippets [{:label :text}]}}}"))
 
 (defn- non-blank-string? [x]
   (and (string? x) (not (str/blank? x))))
@@ -74,7 +76,8 @@
 
 (defn- valid-settings?
   "`:settings`: a map of non-blank dir string → `{:agents-prompt str
-   :agents-replace bool :snippets [map …]}` (every key optional)."
+   :agents-replace bool :agents-ignore bool :snippets [map …]}` (every key
+   optional)."
   [settings]
   (and (map? settings)
        (every? (fn [[dir s]]
@@ -83,6 +86,7 @@
                       (every? setting-keys (keys s))
                       (string? (get s :agents-prompt ""))
                       (boolean? (get s :agents-replace false))
+                      (boolean? (get s :agents-ignore false))
                       (let [sn (get s :snippets [])]
                         (and (sequential? sn) (every? map? sn)))))
                settings)))
@@ -120,7 +124,7 @@
 
     (not (valid-settings? (get data :settings {})))
     {:error (str ":projects :settings must map a directory to {:agents-prompt str "
-                 ":agents-replace bool :snippets [{:label :text}]}")}
+                 ":agents-replace bool :agents-ignore bool :snippets [{:label :text}]}")}
 
     :else
     {:browse         (mapv parse-browse-entry (:browse data []))
@@ -208,6 +212,12 @@
     (when (non-blank-string? (:agents-prompt s))
       {:prompt  (resolve-prompt ops (expand cwd) (:agents-prompt s))
        :replace (boolean (:agents-replace s))})))
+
+(defn agents-ignore?
+  "True when the project at `cwd` sets `:agents-ignore true`: the repo's own
+   AGENTS.md / CLAUDE.md files are not loaded or listed."
+  [ops spec cwd]
+  (boolean (:agents-ignore (settings-for ops spec cwd))))
 
 (defn snippets
   "The `:snippets` configured for the project at `cwd` (a vec, maybe empty)."
@@ -323,6 +333,11 @@
   "`agents-prompt` on the real filesystem."
   [spec cwd]
   (agents-prompt real-ops spec cwd))
+
+(defn agents-ignore?!
+  "`agents-ignore?` on the real filesystem."
+  [spec cwd]
+  (agents-ignore? real-ops spec cwd))
 
 (defn snippets!
   "`snippets` on the real filesystem."

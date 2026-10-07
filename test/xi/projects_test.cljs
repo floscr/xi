@@ -150,7 +150,8 @@
                "~/abs/"  {:agents-prompt "/etc/abs-prompt.md"}
                "~/inl"   {:agents-prompt "Be terse."}
                "~/blank" {:agents-prompt "  "}
-               "~/snip"  {:snippets [{:label "a" :text "b"}]}}}))
+               "~/snip"  {:snippets [{:label "a" :text "b"}]}
+               "~/ign"   {:agents-ignore true :agents-prompt "Freelancer."}}}))
 
 (deftest settings-are-looked-up-by-exact-dir
   (let [for* #(projects/settings-for settings-ops settings-spec %)]
@@ -172,6 +173,18 @@
       (is (nil? (prompt "/home/u/snip")))
       (is (nil? (prompt "/home/u/blank")))
       (is (nil? (prompt "/home/u/other"))))))
+
+(deftest agents-ignore-is-per-exact-dir
+  (let [ignore? #(projects/agents-ignore? settings-ops settings-spec %)]
+    (is (true? (ignore? "/home/u/ign")))
+    (is (false? (ignore? "/home/u/proj")) "unset defaults to false")
+    (is (false? (ignore? "/home/u/ign/sub")) "sub-directories don't inherit")
+    (is (false? (ignore? "/home/u/other"))))
+  (testing "ignoring files doesn't touch the prompt"
+    (is (= {:prompt "Freelancer." :replace false}
+           (projects/agents-prompt settings-ops settings-spec "/home/u/ign"))))
+  (testing "must be a boolean"
+    (is (:error (projects/parse-spec {:settings {"~/p" {:agents-ignore "yes"}}})))))
 
 (deftest snippets-come-from-settings
   (is (= [{:label "Check" :text "run checks"}]

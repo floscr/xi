@@ -104,13 +104,15 @@ Starting a new chat with `/new` does the same.
 
 ## Adding to or replacing the file
 
-Three settings put more text next to the project's file, or stand in for it.
+Four settings put more text next to the project's file, stand in for it, or
+turn it off.
 All of them are documented on their own pages; this is how they combine.
 
 | Setting | Where | Effect |
 | --- | --- | --- |
 | `:agents-prompt` in a project's `:settings` | `config.edn`, see [Projects](projects.md#per-project-prompt-and-snippets-settings) | Added after the project's own files. For instructions you want in one project without committing them to it. |
 | `:agents-replace true` in the same place | `config.edn` | The project root's own `AGENTS.md` (or `CLAUDE.md`) is left out and the `:agents-prompt` text takes its place. Files in parent directories still load, and the subdirectory list is still sent, without the replaced file. |
+| `:agents-ignore true` in the same place | `config.edn` | None of the repository's `AGENTS.md` / `CLAUDE.md` files load, and the subdirectory list is not sent. Files in directories above the repository still load. Combine with `:agents-prompt` to use your own instructions instead. |
 | `prompt-files.edn` | `~/.config/xi/prompt-files.edn`, see [Configuration](configuration.md#the-other-files) | Markdown files added to every chat on this machine, after the project's files. |
 
 An [agent profile](agents.md) loads none of this: its `:system-prompt` is the
