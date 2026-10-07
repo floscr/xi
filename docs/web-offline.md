@@ -22,6 +22,7 @@ immediately on page load, even when the backend is down.
 | `xi/room/<session-id>` | last `{:history :model :msg-hash :msg-count :history-hash}` per session for chat paint |
 | `xi/room-lru` | `[sid …]` most-recent-first, caps the room snapshots |
 | `xi/watched` | `{session-id response-count-when-last-seen}` (unread overlay on the server's per-user markers; cleared when the browser connects as another user) |
+| `xi/models` | `{:models [id …] :at ms}`, the model picker's last list (see "Model picker list") |
 
 ### Keeping the store under quota
 
@@ -212,6 +213,28 @@ The transfer-skip hash is taken over the **truncated** wire form, so it tracks
 exactly what the client caches and renders: change the cap and the hash shifts,
 busting stale caches into a fresh resend. Observed: a resume dominated by one
 204-line diff dropped from ~19 KB to ~8.9 KB.
+
+## Model picker list (`xi.web.models`)
+
+Listing models asks every provider (Ollama, Zen over the network, the static
+Anthropic list), so the picker used to clear its list and show a spinner on
+every open. It now paints `:web/model-list`, hydrated from `xi/models`, and
+only sends `:models/web-list` when there is no list yet or it is older than
+`models/list-ttl-ms` (1 hour). A stale list still paints at once and is
+replaced when the fresh one lands. Offline, the cached list stays pickable.
+
+- **Failed fetch.** Each provider degrades to `[]` on error, so an empty
+  result means every provider failed: the cached list is kept, not wiped.
+  With nothing cached the page shows "No models available" instead of a
+  spinner that never ends, and the next open retries.
+- **Unavailable model.** A cached list can outlive a model (an Ollama model
+  removed, a provider down). A pick is applied optimistically as before
+  (`/model` to the live room, or the pending room's `:model`), and also
+  stored as `:web/model-check` with a background refetch. If the fresh list
+  lacks the model, the picker re-opens on that list with an error above it
+  (`:web/model-error`, `.command-error`), and a pending new chat drops the
+  model so it isn't created with it. Picking another model clears the error.
+  The refetch also refreshes the cache, so picks keep it current.
 
 ## Reconnect (`xi.client.ws-transport`)
 

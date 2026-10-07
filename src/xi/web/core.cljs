@@ -32,6 +32,7 @@
             [xi.web.demo :as demo]
             [xi.web.key-hints :as key-hints]
             [xi.web.keymap :as keymap]
+            [xi.web.models :as models]
             [xi.web.resubmit :as resubmit]
             [xi.web.router :as router]
             [xi.web.title :as title]
@@ -1057,8 +1058,7 @@
                                               (user-state/set-effect :appearance {})]})
           :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
-          :models/web-list-result (fn [st {:keys [models]}]
-                                    {:state (assoc st :web/model-list models)})
+          :models/web-list-result (fn [st ev] (models/list-result st ev (:event/ts ev)))
           :models/select         (fn [st {:keys [model]}]
                                     ;; Only the *viewed* room may be targeted: a
                                     ;; new chat (route sid with no matching room)
@@ -1075,41 +1075,45 @@
                                           ;; future *new* chats default to it (both
                                           ;; in-memory and persisted to localStorage).
                                           base   (-> st
-                                                     (dissoc :web/model-list :web/palette-page :web/palette-open?)
+                                                     (dissoc :web/palette-page :web/palette-open?)
                                                      (assoc :web/preferred-model model))
                                           persist [:cache/preferred-model {:model model}]
                                           sync    (user-state/set-effect :preferred-model model)]
-                                      (cond
-                                        ;; Live room for the viewed session: apply
-                                        ;; now, and optimistically reflect the pick
-                                        ;; on the client room so the launch header /
-                                        ;; a retry pick it up instantly instead of
-                                        ;; waiting for the /model round-trip to
-                                        ;; mirror back.
-                                        rid
-                                        {:state (assoc-in base [:rooms rid :agent :model] model)
-                                         :effects [persist sync
-                                                   [:palette/close nil]
-                                                   [:ws/send {:type :input/submit
-                                                              :room-id rid :text text}]]}
-                                        ;; New virtual chat: no server room yet.
-                                        ;; Remember the choice on the pending room
-                                        ;; so the launch header reflects it and
-                                        ;; the room is born with this model — the
-                                        ;; first prompt's :room/join "new" carries
-                                        ;; :model (see submit-pending/web-command).
-                                        (:web/pending-room base)
-                                        {:state (assoc-in base [:web/pending-room :model] model)
-                                         :effects [persist sync [:palette/close nil]]}
-                                        ;; Fallback (rare: a cached session whose
-                                        ;; room is still joining) — send to the
-                                        ;; active room if there is one.
-                                        :else
-                                        {:state base
-                                         :effects (cond-> [persist sync [:palette/close nil]]
-                                                    (:id active)
-                                                    (conj [:ws/send {:type :input/submit
-                                                                     :room-id (:id active) :text text}]))})))
+                                      ;; The list may be cached: check the pick
+                                      ;; against a fresh one (xi.web.models).
+                                      (models/with-check
+                                        (cond
+                                          ;; Live room for the viewed session: apply
+                                          ;; now, and optimistically reflect the pick
+                                          ;; on the client room so the launch header /
+                                          ;; a retry pick it up instantly instead of
+                                          ;; waiting for the /model round-trip to
+                                          ;; mirror back.
+                                          rid
+                                          {:state (assoc-in base [:rooms rid :agent :model] model)
+                                           :effects [persist sync
+                                                     [:palette/close nil]
+                                                     [:ws/send {:type :input/submit
+                                                                :room-id rid :text text}]]}
+                                          ;; New virtual chat: no server room yet.
+                                          ;; Remember the choice on the pending room
+                                          ;; so the launch header reflects it and
+                                          ;; the room is born with this model — the
+                                          ;; first prompt's :room/join "new" carries
+                                          ;; :model (see submit-pending/web-command).
+                                          (:web/pending-room base)
+                                          {:state (assoc-in base [:web/pending-room :model] model)
+                                           :effects [persist sync [:palette/close nil]]}
+                                          ;; Fallback (rare: a cached session whose
+                                          ;; room is still joining) — send to the
+                                          ;; active room if there is one.
+                                          :else
+                                          {:state base
+                                           :effects (cond-> [persist sync [:palette/close nil]]
+                                                      (:id active)
+                                                      (conj [:ws/send {:type :input/submit
+                                                                       :room-id (:id active) :text text}]))})
+                                      model)))
           :skill/web-list-result (fn [st {:keys [skills]}]
                                     {:state (assoc st :web/skill-list skills)})
           :skill/select          (fn [st {:keys [name]}]
@@ -1379,8 +1383,8 @@
           ;; runtime force-closes the <dialog> on the item click, so we set a
           ;; one-shot :web/palette-drilling? flag and re-open the dialog (see the
           ;; :palette/reopen effect); :palette/opened keeps the sub-page when the
-          ;; flag is set. Clearing :web/model-list makes the page show a spinner
-          ;; until the fresh model list arrives.
+          ;; flag is set. The page paints the cached :web/model-list and only
+          ;; refetches a missing or stale one (xi.web.models).
           ;; The three open-* handlers below open the palette from a compose
           ;; button (not mod+k), so they set :web/palette-open? true directly
           ;; instead of waiting on the async MutationObserver → :palette/opened
@@ -1388,14 +1392,7 @@
           ;; round-trip can race/fail, leaving the dialog natively open but
           ;; rendering the empty shell — a collapsed 65px palette. Flipping the
           ;; flag here guarantees the items render before the dialog is shown.
-          :palette/open-models   (fn [st _]
-                                   {:state (-> st
-                                               (assoc :web/palette-page {:kind :model}
-                                                      :web/palette-open? true
-                                                      :web/palette-drilling? true)
-                                               (dissoc :web/model-list))
-                                    :effects [[:ws/send {:type :models/web-list}]
-                                              [:palette/reopen nil]]})
+          :palette/open-models   (fn [st ev] (models/open st (:event/ts ev)))
           ;; Skills / project path picker: same drill pattern as models.
           :palette/open-skills   (fn [st _]
                                    {:state (-> st
@@ -1852,6 +1849,7 @@
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
    :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
+   :cache/model-list (fn [_ {:keys [models at]}] (cache/save-model-list! models at))
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/user (fn [_ {:keys [user]}] (cache/save-cached-user! user))

@@ -3078,6 +3078,18 @@ code a:hover,
   display: none;
 }
 
+/* Notice above a sub-page's list, e.g. the model picker re-opened because the
+   picked model is no longer available (xi.web.models). */
+.command-error {
+  margin: var(--size-2) var(--size-2) 0;
+  padding: var(--size-2) var(--size-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
 /* Pinned palette row (e.g. "Search all sessions"): a static entry the runtime's
    filter must not hide. The runtime sets [hidden] on non-matching items (and
    their group) and reorders matching groups by score — override both so the

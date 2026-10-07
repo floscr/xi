@@ -15,7 +15,9 @@
                          per session for chat paint (:history-hash lets a
                          live-room join skip re-sending it, see save-room!)
      xi/room-lru         [sid …] most-recent-first, caps the room snapshots
-     xi/watched          {session-id response-count-when-last-seen}"
+     xi/watched          {session-id response-count-when-last-seen}
+     xi/models           {:models [id …] :at ms} the model picker's last list
+                         (xi.web.models)"
   (:require [clojure.string :as str]
             [cognitect.transit :as transit]
             [xi.core.state :as state]
@@ -294,6 +296,22 @@
     (store-set! preferred-model-key model)
     (store-remove! preferred-model-key)))
 
+;; ── Model picker list ────────────────────────────────────────────────────────
+;; Paints the picker without a server round-trip; xi.web.models decides when
+;; it is stale.
+
+(def ^:private model-list-key "xi/models")
+
+(defn load-model-list
+  "The cached {:models [id …] :at ms}, nil when unset or malformed."
+  []
+  (let [{:keys [models at] :as v} (store-get model-list-key)]
+    (when (and (vector? models) (every? string? models) (number? at))
+      v)))
+
+(defn save-model-list! [models at]
+  (store-set! model-list-key {:models (vec models) :at at}))
+
 ;; ── Whose UI state this is ─────────────────────────────────────────────────────────
 
 (def ^:private cached-user-key "xi/user")
@@ -340,7 +358,8 @@
    the watched map. `route` is the initial route parsed from the URL."
   [base route]
   (let [sid    (:session-id route)
-        cached (load-room sid)]
+        cached (load-room sid)
+        models (load-model-list)]
     (cond-> (assoc base :web/route route
                         :web/watched (load-watched)
                         ;; Frozen for the session: the order the quick-command
@@ -350,6 +369,8 @@
                         :web/command-usage (load-recent-commands)
                         :web/recent-skills (load-recent-skills)
                         :web/preferred-model (load-preferred-model)
+                        :web/model-list (:models models)
+                        :web/model-list-at (:at models)
                         :web/sidebar-collapsed (load-sidebar-collapsed)
                         ;; The appearance overrides (xi.web.appearance).
                         :web/appearance (load-appearance)

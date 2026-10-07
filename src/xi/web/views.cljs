@@ -4674,26 +4674,33 @@
            (or name "(untitled)")))))))
 
 (defn- palette-model-page
-  "Model list as a palette sub-page (drilled from Change model / /model). Shows
-   a spinner while :web/model-list loads, then a command-item per model with
-   the active one checked. Selecting sends /model and closes the palette."
+  "Model list as a palette sub-page (drilled from Change model / /model).
+   Paints the cached :web/model-list (xi.web.models) — a spinner only before
+   any list is known — as a command-item per model with the active one
+   checked, under :web/model-error when a pick turned out unavailable.
+   Selecting sends /model and closes the palette."
   [state dispatch!]
   (let [room    (state/active-room state)
         models  (:web/model-list state)
+        error   (:web/model-error state)
         ;; In a not-yet-created chat the choice lives on the pending room;
         ;; prefer it so the checkmark tracks the pick before the room exists.
         current (or (get-in state [:web/pending-room :model])
                     (get-in room [:agent :model]))]
-    (if (nil? models)
-      [:div {:class ["command-loading"]} (spinner)]
-      (apply cmd/command-group {:heading "Model"}
-        (for [m models]
-          (cmd/command-item
-           {:icon (if (= m current) :check :layers)
-            :value m
-            :on-click (fn [_] (dispatch! {:type :models/select
-                                          :model m :room-id (:id room)}))}
-           m))))))
+    (cond
+      (nil? models)   [:div {:class ["command-loading"]} (spinner)]
+      (empty? models) [:div {:class ["command-empty"]} "No models available"]
+      :else
+      [:div {:replicant/key :model-page}
+       (when error [:div {:class ["command-error"]} error])
+       (apply cmd/command-group {:heading "Model"}
+         (for [m models]
+           (cmd/command-item
+            {:icon (if (= m current) :check :layers)
+             :value m
+             :on-click (fn [_] (dispatch! {:type :models/select
+                                           :model m :room-id (:id room)}))}
+            m)))])))
 
 (defn- palette-skill-item [dispatch! {:keys [name description]}]
   (cmd/command-item
