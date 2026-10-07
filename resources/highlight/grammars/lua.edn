@@ -1,1 +1,24 @@
-[   {:pattern "#!.*" :token :comment}]
+;; Hand-written (chroma's lua lexer is multi-state; flattening its root state
+;; leaves only the shebang rule). The converter leaves this file alone and only
+;; re-adds its registry aliases (scripts/convert-chroma-grammars.mjs).
+[{:pattern "#!.*$" :token :comment}
+ {:pattern "--\\[(=*)\\[[\\s\\S]*?\\]\\1\\]" :token :comment}
+ {:pattern "--.*$" :token :comment}
+ {:pattern "\\[(=*)\\[[\\s\\S]*?\\]\\1\\]" :token :string}
+ {:pattern "\"(?:\\\\.|[^\"\\\\\\n])*\"" :token :string}
+ {:pattern "'(?:\\\\.|[^'\\\\\\n])*'" :token :string}
+ {:pattern "0[xX][0-9a-fA-F]*(?:\\.[0-9a-fA-F]*)?(?:[pP][+-]?\\d+)?" :token :number}
+ {:pattern "(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?" :token :number}
+ {:pattern "::[A-Za-z_]\\w*::" :token :string-symbol}
+ {:pattern "\\b(?:function|local)\\b" :token :keyword-decl}
+ {:pattern "\\b(?:and|break|do|else|elseif|end|for|goto|if|in|not|or|repeat|return|then|until|while)\\b" :token :keyword}
+ {:pattern "\\b(?:true|false|nil)\\b" :token :keyword-special}
+ {:pattern "(?<=\\bfunction\\s+)[A-Za-z_][\\w.:]*" :token :name-fn}
+ {:pattern "\\b(?:self|_G|_ENV|_VERSION)\\b" :token :name-builtin}
+ {:pattern "\\b(?:assert|collectgarbage|dofile|error|getmetatable|ipairs|load|loadfile|loadstring|module|next|pairs|pcall|print|rawequal|rawget|rawlen|rawset|require|select|setfenv|getfenv|setmetatable|tonumber|tostring|type|unpack|xpcall)\\b(?=\\s*[(\"'{\\[])" :token :name-builtin}
+ {:pattern "\\b(?:bit32|coroutine|debug|io|math|os|package|string|table|utf8)\\b(?=\\.)" :token :name-builtin}
+ {:pattern "[A-Za-z_]\\w*(?=\\s*(?:[(\"'{]|\\[=*\\[))" :token :name-fn}
+ {:pattern "[A-Za-z_]\\w*" :token :name-var}
+ {:pattern "\\.\\.\\.?|[=~<>]=|<<|>>|//|[-+*/%^#&~|<>=]" :token :operator}
+ {:pattern "[\\[\\](){}.,;:]" :token :punctuation}
+ {:pattern "\\s+" :token :text}]

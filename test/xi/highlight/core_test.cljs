@@ -49,6 +49,32 @@
       (is (some #(= :name-builtin (:type %)) tokens) "has builtins")
       (is (seq tokens) "produces tokens"))))
 
+(defn- lua-tokens [src]
+  (->> (hl/tokenize (grammars/get-grammar "lua") src)
+       hl/merge-adjacent
+       (remove #(= :text (:type %)))
+       (mapv (juxt :type :value))))
+
+(deftest tokenize-lua
+  (testing "declarations, calls, builtins, strings"
+    (is (= [[:keyword-decl "local"] [:name-var "Device"] [:operator "="]
+            [:name-builtin "require"] [:punctuation "("] [:string "\"device\""]
+            [:punctuation ")"]]
+           (lua-tokens "local Device = require(\"device\")")))
+    (is (= [[:keyword-decl "function"] [:name-fn "NetworkMgr:turnOnWifi"]
+            [:punctuation "("] [:name-var "cb"] [:punctuation ")"]]
+           (lua-tokens "function NetworkMgr:turnOnWifi(cb)"))))
+
+  (testing "keywords, constants, operators, numbers"
+    (is (= [[:keyword "if"] [:name-var "ok"] [:operator "~="] [:number "0"]
+            [:keyword "and"] [:keyword-special "nil"] [:keyword "then"]]
+           (lua-tokens "if ok ~= 0 and nil then"))))
+
+  (testing "line and long-bracket comments/strings span lines"
+    (is (= [[:comment "-- hi"] [:comment "--[==[ a\n]] b ]==]"]
+            [:string "[[x\ny]]"]]
+           (lua-tokens "-- hi\n--[==[ a\n]] b ]==]\n[[x\ny]]")))))
+
 (deftest merge-adjacent-test
   (testing "merges consecutive same-type tokens"
     (let [tokens [{:type :text :value "a"} {:type :text :value "b"} {:type :keyword :value "c"}]

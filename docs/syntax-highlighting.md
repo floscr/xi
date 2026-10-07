@@ -152,7 +152,10 @@ The script:
 
 Custom aliases (e.g. `cljs`, `cljc` → clojure) are added automatically by the converter.
 
-**Hand-written grammars:** `markdown.edn` (aliases `md`, `mkd`, `mdown`, `markdn`, `mdx`) is written by hand because chroma's markdown lexer needs bygroups/delegation. The converter never overwrites it and re-adds only its registry aliases. It highlights headings, fenced code, blockquotes, list markers, inline code, bold/italic, links and bare URLs, and inline HTML tags.
+**Hand-written grammars** are listed in the converter's `HAND_WRITTEN` map (filename → aliases); it never overwrites their `.edn` and re-adds only their registry aliases.
+
+- `markdown.edn` (aliases `md`, `mkd`, `mdown`, `markdn`, `mdx`) — chroma's markdown lexer needs bygroups/delegation. Highlights headings, fenced code, blockquotes, list markers, inline code, bold/italic, links and bare URLs, and inline HTML tags.
+- `lua.edn` (alias `wlua`) — chroma's lua lexer is multi-state; its flattened root state was only the shebang rule. Highlights `--` and `--[==[ … ]==]` comments, quoted and long-bracket strings, numbers, keywords, `local`/`function`, `true`/`false`/`nil`, declared and called function names, standard-library builtins, and `::labels::`.
 
 ## Adding a New Grammar
 

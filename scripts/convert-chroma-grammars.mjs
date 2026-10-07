@@ -17,6 +17,14 @@ const API_URL = "https://api.github.com/repos/alecthomas/chroma/contents/lexers/
 const RAW_BASE = "https://raw.githubusercontent.com/alecthomas/chroma/master/lexers/embedded/";
 const OUT_DIR = join(import.meta.dir, "../resources/highlight/grammars");
 
+// Hand-written grammars (resources/highlight/grammars/<file>.edn) that chroma
+// can't express: filename → registry aliases. The .edn is never overwritten,
+// only its aliases are re-added.
+const HAND_WRITTEN = {
+  markdown: ["markdown", "md", "mkd", "mdown", "markdn", "mdx"],
+  lua: ["lua", "wlua"],
+};
+
 // ── Token type mapping ─────────────────────────────────────────────────────
 
 const TOKEN_MAP = {
@@ -285,9 +293,13 @@ async function main() {
     }
     defNames.add(g.name);
     
+    const fname = toFilename(g.name);
+    if (HAND_WRITTEN[fname]) {
+      console.error(`  Keeping hand-written: ${fname}.edn`);
+      continue;
+    }
     const edn = grammarToEdn(g.rules);
     if (edn) {
-      const fname = toFilename(g.name);
       writeFileSync(join(OUT_DIR, `${fname}.edn`), edn + "\n");
       validGrammars.push({ ...g, fname });
     }
@@ -323,10 +335,13 @@ async function main() {
   // Add manual aliases
   if (!seen.has("cljs")) entries.push(`"cljs" "clojure"`);
   if (!seen.has("cljc")) entries.push(`"cljc" "clojure"`);
-  // Hand-written grammars (resources/highlight/grammars/<file>.edn) that chroma
-  // can't express — the .edn survives regeneration, only its aliases are re-added.
-  for (const alias of ["markdown", "md", "mkd", "mdown", "markdn", "mdx"]) {
-    if (!seen.has(alias)) entries.push(`"${alias}" "markdown"`);
+  for (const [fname, aliases] of Object.entries(HAND_WRITTEN)) {
+    for (const alias of aliases) {
+      if (!seen.has(alias)) {
+        entries.push(`"${alias}" "${fname}"`);
+        seen.add(alias);
+      }
+    }
   }
   
   const registryEdn = `{${entries.join("\n ")}}`;
