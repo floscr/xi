@@ -126,11 +126,14 @@ site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:bui
 | TUI rendering · syntax highlighting | [tui-rendering.md](docs/tui-rendering.md) · [syntax-highlighting.md](docs/syntax-highlighting.md) |
 | npm package layout · `bb package` · `bb package:serve` | [packaging.md](docs/packaging.md) |
 | Concurrent-edit safety (file hashes) · holds + cross-room git lock | [concurrent-edits.md](docs/concurrent-edits.md) · [git-lock.md](docs/git-lock.md) |
-| **User guide** — THE user documentation (CLI, config, rules, clj tool, MCP, extensions, server, web client, models, sessions, prompt mode, bb client). Every user-facing option is documented there, nowhere else. Navigation = the Pages list in its README | [docs/guide/](docs/guide/README.md) |
+| **User guide** — THE user documentation (CLI, config, rules, clj tool, MCP, extensions, server, web client, models, sessions, prompt mode, bb client). Every user-facing option is documented there, nowhere else. Navigation = the Pages list in its README. Style guide for agents: [docs/guide/AGENTS.md](docs/guide/AGENTS.md) | [docs/guide/](docs/guide/README.md) |
 | Home page + docs site (bb, hiccup, markdown-clj; `bb site:dev` on :4322) | [site/](site/) |
 
 ## Conventions
 
+- **Editing the user guide (`docs/guide/`)? Read
+  [docs/guide/AGENTS.md](docs/guide/AGENTS.md) first:** no troubleshooting
+  sections, minimal text, no marketing talk.
 - Env vars: `(aget js/process.env "KEY")`, not property access.
 - Async: JS promises via `(.then p f)` chains.
 - Tool results: `{:content [{:type "text" :text "…"}] :is-error false}`.
