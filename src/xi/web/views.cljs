@@ -425,6 +425,12 @@
    laggy input on long chats."
   (js/Map.))
 
+(def ^:private md-cache-hard-breaks
+  "Same as md-cache, for text rendered with `:hard-breaks?` (user bubbles):
+   the same string renders differently per mode, so each mode keeps its own
+   text → hiccup map."
+  (js/Map.))
+
 (defn- highlight-code
   "Tokenize + class-wrap text against a grammar → hiccup [:code ...].
    Bare URLs inside tokens are linkified so they stay clickable.
@@ -494,15 +500,18 @@
   "Memoized `md/render`: identical text yields the *identical* hiccup object so
    Replicant's `unchanged?` short-circuits via identical? and skips re-diffing
    the post subtree (same trick as highlight-code / plain-code). Keeps typing
-   in the composer from re-parsing every message's markdown on each keystroke."
-  [text]
-  (if (nil? text)
-    (md/render text)
-    (or (.get md-cache text)
-        (let [result (md/render text)]
-          (when (>= (.-size md-cache) md-cache-max) (.clear md-cache))
-          (.set md-cache text result)
-          result))))
+   in the composer from re-parsing every message's markdown on each keystroke.
+   `opts` are `md/render` opts; only `:hard-breaks?` is used (user bubbles)."
+  ([text] (render-md text nil))
+  ([text opts]
+   (if (nil? text)
+     (md/render text opts)
+     (let [cache (if (:hard-breaks? opts) md-cache-hard-breaks md-cache)]
+       (or (.get cache text)
+           (let [result (md/render text opts)]
+             (when (>= (.-size cache) md-cache-max) (.clear cache))
+             (.set cache text result)
+             result))))))
 
 (defn- truncate-lines [text n]
   (let [lines (str/split-lines text)]
@@ -562,7 +571,7 @@
   "Hiccup for one diff unit (xi.markdown.diff): its parsed block rendered as
    markdown; an exploded ordered-list item keeps its number."
   [{:keys [block start]}]
-  (let [node (md/render-block block)]
+  (let [node (md/render-block block nil)]
     (if (and start (= :ol (first node)))
       (into [:ol {:start start}] (rest node))
       node)))
@@ -1045,7 +1054,7 @@
            [:span {:class ["user-collapse-label"]} (:collapsed-label entry)]]
           (when (seq (:text entry))
             [:div {:class ["post-content" "user-collapse-content"]}
-             (render-md (:text entry))])
+             (render-md (:text entry) {:hard-breaks? true})])
           (post-badge entry)]]
 
         :else
@@ -1081,8 +1090,11 @@
             (when-let [n (:image-count entry)]
               (when (pos? n)
                 [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
+          ;; Prompts are typed text, not authored markdown: a newline in the
+          ;; composer is a line break, so render soft breaks as <br>.
           (when (seq (:text entry))
-            [:div {:class ["post-content"]} (render-md (:text entry))])
+            [:div {:class ["post-content"]}
+             (render-md (:text entry) {:hard-breaks? true})])
           (post-badge entry)]]))
 
     :text

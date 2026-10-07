@@ -1,6 +1,7 @@
 (ns xi.markdown.hiccup
   "Renders markdown AST tokens to Replicant-compatible hiccup."
-  (:require [xi.markdown.parse :as parse]
+  (:require [clojure.string :as str]
+            [xi.markdown.parse :as parse]
             [xi.url :as url]
             [xi.highlight.core :as hl]
             [xi.highlight.bundle :as grammars]
@@ -37,27 +38,38 @@
 ;; Inline rendering
 ;; ---------------------------------------------------------------------------
 
+(defn- hard-breaks
+  "Split a plain-text token on newlines, interleaving [:br] nodes, so a
+   CommonMark soft break (a single newline inside a paragraph) renders as a
+   visible line break instead of collapsing to a space."
+  [^String s]
+  (interpose [:br] (str/split s #"\n" -1)))
+
 (defn- render-inline-token
-  "Render a single inline token to hiccup."
-  [token]
-  (cond
-    (string? token) token
-    (vector? token)
-    (let [[tag content] token]
-      (case tag
-        :bold (into [:strong] (map render-inline-token content))
-        :italic (into [:em] (map render-inline-token content))
-        :strike (into [:del] (map render-inline-token content))
-        :code (into [:code] (linkify content))
-        :link [:a {:href (:url content) :target "_blank" :rel "noopener noreferrer"} (:text content)]
-        ;; fallback
-        (str token)))
-    :else (str token)))
+  "Render a single inline token to a seq of hiccup nodes (a string may expand
+   to several under :hard-breaks?). `opts` is the render opts map (see
+   `render`)."
+  [opts token]
+  (let [nodes (fn [content] (mapcat #(render-inline-token opts %) content))]
+    (cond
+      (string? token) (if (:hard-breaks? opts) (hard-breaks token) [token])
+      (vector? token)
+      (let [[tag content] token]
+        [(case tag
+           :bold (into [:strong] (nodes content))
+           :italic (into [:em] (nodes content))
+           :strike (into [:del] (nodes content))
+           :code (into [:code] (linkify content))
+           :link [:a {:href (:url content) :target "_blank" :rel "noopener noreferrer"} (:text content)]
+           ;; fallback
+           (str token))])
+      :else [(str token)])))
 
 (defn render-inline
-  "Render inline tokens to hiccup nodes."
-  [tokens]
-  (mapv render-inline-token tokens))
+  "Render inline tokens to hiccup nodes. `opts` as for `render`."
+  ([tokens] (render-inline tokens nil))
+  ([tokens opts]
+   (into [] (mapcat #(render-inline-token opts %)) tokens)))
 
 (defn- inline-text
   "Flatten inline tokens to their visible plain text (markup dropped)."
@@ -98,15 +110,17 @@
 ;; ---------------------------------------------------------------------------
 
 (defn render-block
-  "Render a single block token to hiccup. Public for the rendered markdown
-   diff (xi.markdown.diff), which renders blocks one by one."
-  [block]
+  "Render a single block token to hiccup. `opts` as for `render`; it only
+   affects paragraph text (and paragraphs nested in blockquotes). Public for
+   the rendered markdown diff (xi.markdown.diff), which renders blocks one by
+   one."
+  [block opts]
   (when (vector? block)
     (let [[tag] block]
       (case tag
         :paragraph
         (let [[_ tokens] block]
-          (into [:p] (render-inline tokens)))
+          (into [:p] (render-inline tokens opts)))
 
         :heading
         (let [[_ {:keys [level]} tokens] block
@@ -134,7 +148,7 @@
                 (map-indexed
                  (fn [i item]
                    (into [:li] (concat (render-inline item)
-                                       (map render-block (nth children i nil)))))
+                                       (map #(render-block % opts) (nth children i nil)))))
                  items)))
 
         :checkbox-list
@@ -148,7 +162,7 @@
 
         :blockquote
         (let [[_ inner-blocks] block]
-          (into [:blockquote] (mapv render-block inner-blocks)))
+          (into [:blockquote] (mapv #(render-block % opts) inner-blocks)))
 
         :table
         (let [[_ {:keys [align]} {:keys [header rows]}] block
@@ -195,10 +209,18 @@
 
 (defn render
   "Render a full markdown string to hiccup nodes.
-   Returns a vector of hiccup block elements."
-  [text]
-  (when text
-    (let [blocks (parse/parse text)]
-      (when (seq blocks)
-        (into [:div {:class "markdown"}]
-              (map-indexed with-block-key (keep render-block blocks)))))))
+   Returns a vector of hiccup block elements.
+
+   `opts`:
+   - `:hard-breaks?` — render a single newline inside a paragraph as a
+     visible line break ([:br]) rather than a CommonMark soft break that
+     collapses to a space. For user-typed text, where a newline in the
+     composer is meant literally."
+  ([text] (render text nil))
+  ([text opts]
+   (when text
+     (let [blocks (parse/parse text)]
+       (when (seq blocks)
+         (into [:div {:class "markdown"}]
+               (map-indexed with-block-key
+                            (keep #(render-block % opts) blocks))))))))

@@ -75,6 +75,22 @@
     (is (= 2 (count items)))
     (is (every? #(fn? (get-in (second %) [:on :click])) items))))
 
+(deftest soft-breaks-collapse-by-default-and-render-as-br-with-hard-breaks
+  (testing "a single newline inside a paragraph stays plain text by default"
+    (let [p (find-tag (md/render "line one\nline two") :p)]
+      (is (= [:p "line one\nline two"] (vec (remove map? p))))
+      (is (nil? (find-tag p :br)))))
+  (testing "with :hard-breaks? each newline becomes a [:br]"
+    (let [p (find-tag (md/render "one\ntwo\nthree" {:hard-breaks? true}) :p)]
+      (is (= [:p "one" [:br] "two" [:br] "three"] (vec (remove map? p))))))
+  (testing "breaks inside emphasis are kept"
+    (let [strong (find-tag (md/render "**a\nb**" {:hard-breaks? true}) :strong)]
+      (is (= [:strong "a" [:br] "b"] strong))))
+  (testing "a blank line still splits paragraphs and adds no extra <br>"
+    (let [out (md/render "a\n\nb" {:hard-breaks? true})]
+      (is (= 2 (count (find-all out :p))))
+      (is (empty? (find-all out :br))))))
+
 (deftest nested-list-renders-inside-li
   (let [[li-a li-b] (filter #(and (vector? %) (= :li (first %)))
                             (find-tag (md/render "- A\n  - a1\n  - a2\n- B") :ul))]
