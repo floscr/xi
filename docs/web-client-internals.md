@@ -111,6 +111,11 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   with the rest of the cached user state (`xi.web.user-state/reset-all`).
 - `visibilitychange` dispatches `:client/update {:visible? …}` so the server
   can suppress notifications while a visible client is attached.
+- The tab title follows the route, most specific first: `Events · Fix the
+  router · Xi` (open buffer · session), `acme-web · Xi` (a project), `All
+  sessions · Xi`, `Git status · xi · Xi`; an extension page shows its page
+  keyword humanized plus its route's session. `xi.web.title/page-title` is
+  pure; `render!` writes `document.title` when it changes.
 
 ## Keyboard
 
@@ -159,6 +164,7 @@ src/xi/web/
   core.cljs        entry: assembly, Replicant render, auto-scroll, listeners
   views.cljs       pure views: home, chat, compose, lightbox, error cards
   router.cljs      route parsing, :route/navigate, History API effect
+  title.cljs       document.title from the route (pure)
   cache.cljs       localStorage offline cache (hydrate + persist tap)
   appearance.cljs  appearance settings layering
   keymap.cljs      view- and mode-scoped shortcuts

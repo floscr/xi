@@ -33,6 +33,7 @@
             [xi.web.keymap :as keymap]
             [xi.web.resubmit :as resubmit]
             [xi.web.router :as router]
+            [xi.web.title :as title]
             [xi.web.user-ext :as user-ext]
             [xi.session.sidebar :as sidebar]
             [xi.web.views :as views]))
@@ -2310,6 +2311,9 @@
             ;; fresh attempt instead of the infinite rAF warning flood.
             (js/console.error "[xi-web] recovery render also failed:" e2)
             (vswap! r/state dissoc root))))))
+  (let [t (title/page-title app-state)]
+    (when (not= t (.-title js/document))
+      (set! (.-title js/document) t)))
   (attach-scroll-listener!)
   (js/requestAnimationFrame scroll-to-bottom!))
 
