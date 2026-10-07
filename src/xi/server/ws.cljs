@@ -53,6 +53,7 @@
             [xi.server.room-manager :as rm]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
+            [xi.user-config :as user-config]
             [xi.user-state :as user-state]
             [xi.user-state.store :as user-store]
             [xi.users :as users]
@@ -840,6 +841,9 @@
                  ;; every device (xi.user-state)
                  (send-event! cid {:type :user-state/state :user user
                                    :state (user-state/client-view (user-store/load-state user))})
+                 ;; the operator's keyboard shortcuts (config.edn :keys): the
+                 ;; browser has no file to read, so they ride on the admit
+                 (send-event! cid {:type :keys/config :keys (user-config/keys-config)})
                  (send! cid (lobby-payload @state agent-id (:model server-opts) user))))
              resolve-pending!
              (fn [code approved?]

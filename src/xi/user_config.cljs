@@ -8,7 +8,8 @@
       :agents     {\"root\" {…}}               ; agent profiles (xi.agent-profile)
       :projects   {:browse […] :repos […]}      ; project dirs (xi.projects)
       :users      {\"alice\" {:name \"Alice\" :avatar \"https://…/a.png\" :meta {:team \"ops\"}}} ; who exists (see below)
-      :trusted-mcp-servers [\"chrome\" \"shop/browser\"]} ; MCP servers that never ask (xi.mcp.trust)
+      :trusted-mcp-servers [\"chrome\" \"shop/browser\"]  ; MCP servers that never ask (xi.mcp.trust)
+      :keys       {:global {\"alt+n\" :chat/new}}}       ; keyboard shortcuts (xi.keys)
 
    `:users` declares users by id (xi.util/user-id slugs), each with an optional
    display `:name`, an `:avatar` (an http(s) image URL; without one the web UI
@@ -31,6 +32,7 @@
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [xi.avatar :as avatar]
+            [xi.keys :as xkeys]
             [xi.projects :as projects]
             [xi.user-state :as user-state]
             [xi.util :as util]
@@ -64,7 +66,7 @@
   1)
 
 (def ^:private config-file-keys
-  #{:type :version :extensions :agents :projects :users :trusted-mcp-servers})
+  #{:type :version :extensions :agents :projects :users :trusted-mcp-servers :keys})
 
 (defn- users-error
   "→ nil when `users` is a well-formed `:users` map, else why not."
@@ -104,14 +106,15 @@
 
 (defn parse-config
   "Validate parsed config-file `data` (nil = unparseable) →
-   `{:extensions #{…} :agents {…} :projects {…}}` (empty / defaults when
-   absent; `:projects` per `xi.projects/parse-spec`) or `{:error msg}`.
+   `{:extensions #{…} :agents {…} :projects {…} :keys {…}}` (empty / defaults
+   when absent; `:projects` per `xi.projects/parse-spec`, `:keys` per
+   `xi.keys/config-error` and only present when set) or `{:error msg}`.
    Mirrors xi.rules.store/parse-rules-config: the file must be a map tagged
    `:type :xi/config` with the current `:version` and only known keys."
   [data]
   (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
                      " :extensions [...] :agents {...} :projects {...}"
-                     " :users {...} :trusted-mcp-servers [...]}")
+                     " :users {...} :trusted-mcp-servers [...] :keys {...}}")
         unknown (when (map? data) (remove config-file-keys (keys data)))
         spec    (when (map? data) (projects/parse-spec (:projects data)))]
     (cond
@@ -153,15 +156,19 @@
       (users-error (:users data {}))
       {:error (users-error (:users data {}))}
 
+      (xkeys/config-error (:keys data))
+      {:error (xkeys/config-error (:keys data))}
+
       (:error spec)
       {:error (:error spec)}
 
       :else
-      {:extensions          (set (:extensions data))
-       :agents              (or (:agents data) {})
-       :projects            spec
-       :users               (or (:users data) {})
-       :trusted-mcp-servers (set (:trusted-mcp-servers data))})))
+      (cond-> {:extensions          (set (:extensions data))
+               :agents              (or (:agents data) {})
+               :projects            spec
+               :users               (or (:users data) {})
+               :trusted-mcp-servers (set (:trusted-mcp-servers data))}
+        (contains? data :keys) (assoc :keys (:keys data))))))
 
 (defn read-config
   "The validated user config (`parse-config`), all-empty when the file is
@@ -214,3 +221,14 @@
    is missing, invalid or doesn't set the key. See xi.mcp.trust."
   []
   (or (:trusted-mcp-servers (read-config)) #{}))
+
+(defn keys-config
+  "The user's keyboard shortcuts (`:keys`, see xi.keys) — nil when the file is
+   missing, invalid (reported on stderr: the built-in keys apply) or doesn't
+   set the key."
+  []
+  (let [cfg (read-config)]
+    (when-let [e (:error cfg)]
+      (js/console.error (str "xi: " (config-file) " is invalid — " e
+                             " — using the default keyboard shortcuts")))
+    (:keys cfg)))

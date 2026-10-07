@@ -26,6 +26,7 @@
             [xi.core.log :as log]
             [xi.core.state :as state]
             [xi.dialog :as dialog]
+            [xi.keys :as xkeys]
             [xi.palette :as palette]
             [xi.session :as session]
             [xi.tui.ansi :as ansi]
@@ -36,11 +37,13 @@
             [xi.tui.diff-buffer :as diff-buffer]
             [xi.tui.editor :as editor]
             [xi.tui.history-selector :as history-selector]
+            [xi.tui.keys :as tui-keys]
             [xi.tui.pager :as pager]
             [xi.tui.path-complete :as path-complete]
             [xi.tui.terminal :as term]
             [xi.tui.theme-mode :as theme-mode]
-            [xi.tui.word-complete :as word-complete]))
+            [xi.tui.word-complete :as word-complete]
+            [xi.user-config :as user-config]))
 
 ;; ── Key detection (for dialogs / ext keybindings) ────────────────────────────
 
@@ -49,60 +52,92 @@
 (defn- enter? [d] (or (= d "\r") (= d "\n")))
 (defn- escape? [d] (or (= d ESC) (= d (str ESC "[27u"))))
 
-(def ^:private key-sequences
-  "Named ext keybindings → the raw input sequences that trigger them
-   (legacy + kitty CSI-u encodings). Extend as extensions need keys."
-  {"alt+n"        #{(str ESC "[110;3u")}
-   "alt+a"        #{(str ESC "a") (str ESC "[97;3u")}
-   "alt+d"        #{(str ESC "d") (str ESC "[100;3u")}
-   "alt+r"        #{(str ESC "r") (str ESC "[114;3u")}
-   "alt+p"        #{(str ESC "p") (str ESC "[112;3u")}
-   "alt+x"        #{(str ESC "x") (str ESC "[120;3u")}
-   "ctrl+p"       #{(str (char 16)) (str ESC "[112;5u")}
-   "ctrl+shift+n" #{(str ESC "[110;6u")}
-   "ctrl+shift+p" #{(str ESC "[112;6u")}
-   "ctrl+o"       #{(str (char 15)) (str ESC "[111;5u")}
-   "ctrl+c"       #{(str (char 3))}})
+;; ── Keymap actions (xi.tui.keys) ──────────────────────────────────────────────────
 
-(def ^:private builtin-keybindings
-  "Core (non-extension) editor keybindings, wired the same way as ext
-   keybindings. ctrl+o toggles full/preview rendering of the system-prompt
-   buffer, gated so the key falls through to the editor elsewhere. alt+n
-   starts a new chat in the current room's cwd (same as typing /new; mirrors
-   the web client's ALT+n). alt+x aborts the running agent turn (like Esc in
-   the chat buffer, but from any buffer); gated on :busy? so the key falls
-   through to the editor when idle."
-  [{:key   "ctrl+o"
-    :event {:type :ui/prompt-toggle}
-    :when  (fn [st] (= :prompt (get-in (state/active-room st)
-                                       [:ui :active-buffer])))}
-   {:key   "alt+n"
-    :event {:type :command/run :name "new"}}
-   {:key   "alt+x"
-    :event {:type :agent/abort}
-    :when  (fn [st] (boolean (get-in (state/active-room st) [:agent :busy?])))}])
+(defn- buffer-layer
+  "The keymap layer of the room's active buffer (:buffer/diff, :buffer/file,
+   :buffer/prompt, …), nil for the chat."
+  [room]
+  (let [active (get-in room [:ui :active-buffer] :chat)]
+    (when (not= active :chat)
+      (keyword "buffer" (name active)))))
 
-(defn- ->editor-keybindings
-  "Translate ext keybindings ({:key :event :when}) into editor bindings
-   ({:key-fn :handler}). :when (if present) gates on full app state and is
-   folded into :key-fn so a guarded binding (e.g. a Ctrl+C only active in
-   some mode) lets the key fall through to the editor's own handler when the
-   guard fails. :event is dispatched with the active
-   room's :room-id added."
-  [keybindings get-state dispatch!]
-  (vec (keep (fn [{:keys [key event] pred :when}]
-               (when-let [seqs (key-sequences key)]
-                 {:key-fn  (fn [data]
-                            (and (contains? seqs data)
-                                 (let [st (get-state)]
-                                   (and (state/active-room st)
-                                        (or (nil? pred) (pred st))))))
-                  :handler (fn []
-                             (let [st (get-state)
-                                   room (state/active-room st)]
-                               (when room
-                                 (dispatch! (assoc event :room-id (:id room))))))}))
-             keybindings)))
+(defn- room-layers
+  "The keymap layers active for `room` while `focus` is :editor (compose
+   mode) or :pager (navigate mode), inner → outer."
+  [room focus]
+  (cond-> []
+    (get-in room [:agent :busy?]) (conj :agent-busy)
+    (buffer-layer room)           (conj (buffer-layer room))
+    (= focus :pager)              (into tui-keys/pager-layers)
+    (= focus :editor)             (conj :mode/compose :global)))
+
+(defn- keys-buffer-event
+  "Open the keyboard-shortcuts buffer (a text pager) listing the keymap for
+   `layers`."
+  [room-id layers]
+  {:type :ui/buffer-open :room-id room-id :buffer-id :keys
+   :buffer {:title "Keyboard shortcuts" :engine :keys
+            :text (tui-keys/listing-text layers)}})
+
+(def ^:private builtin-actions
+  "Core (non-extension) actions the TUI keymap binds (xi.keys/defaults :tui),
+   each `{:id :event|:run :when}`: :event is dispatched with the active
+   room's :room-id, :run is (fn [state room dispatch!]). :prompt/toggle
+   toggles full/preview rendering of the system-prompt buffer (its default
+   key ctrl+o lives in the :buffer/prompt layer, so it falls through to the
+   editor elsewhere). :chat/new starts a new chat in the current room's cwd
+   (same as typing /new; mirrors the web client's alt+n). :agent/abort aborts
+   the running agent turn from any buffer; gated on :busy? so the key falls
+   through when idle. :keys/show opens the shortcuts buffer."
+  [{:id :prompt/toggle :event {:type :ui/prompt-toggle}}
+   {:id :chat/new      :event {:type :command/run :name "new"}}
+   {:id :agent/abort   :event {:type :agent/abort}
+    :when (fn [st] (boolean (get-in (state/active-room st) [:agent :busy?])))}
+   {:id :keys/show
+    :run (fn [_ room dispatch!]
+           (let [buf    (get-in room [:ui :buffers (get-in room [:ui :active-buffer] :chat)])
+                 pager? (or (contains? buf :engine) (contains? buf :path)
+                            (= :subagents (get-in room [:ui :active-buffer])))]
+             (dispatch! (keys-buffer-event (:id room)
+                                           (room-layers room (if pager? :pager :editor))))))}])
+
+(defn- action-runner
+  "The TUI's action table over `actions` (builtin + extension maps, see
+   `builtin-actions`): {:enabled? (fn [id] → bool) :run! (fn [id] → bool)}.
+   :enabled? is the guard xi.keys/lookup takes — an action needs an active
+   room and a passing :when, else the key falls through to the next layer
+   (or the editor's own handling)."
+  [actions get-state dispatch!]
+  (let [by-id (into {} (map (juxt :id identity)) actions)]
+    {:enabled? (fn [id]
+                 (when-let [{pred :when} (get by-id id)]
+                   (let [st (get-state)]
+                     (boolean (and (state/active-room st)
+                                   (or (nil? pred) (pred st)))))))
+     :run!     (fn [id]
+                 (when-let [{:keys [event run]} (get by-id id)]
+                   (let [st   (get-state)
+                         room (state/active-room st)]
+                     (when room
+                       (if run
+                         (run st room dispatch!)
+                         (dispatch! (assoc event :room-id (:id room))))
+                       true))))}))
+
+(defn- editor-key-hook
+  "The editor's :on-key: decode the keypress, resolve it in the compose-mode
+   layers and run the bound action. Keys that type a character are never
+   looked up (the editor owns them); an unbound or guarded-off key returns
+   nil so the editor's own handling runs."
+  [{:keys [enabled? run!]} get-state]
+  (fn [data]
+    (when-let [chord (tui-keys/decode data)]
+      (when-not (xkeys/bare-printable? chord)
+        (let [room (state/active-room (get-state))
+              res  (tui-keys/lookup (room-layers room :editor) [] chord enabled?)]
+          (when (= :action (:status res))
+            (run! (:action res))))))))
 
 (defn- quick-reply-keybindings
   "Native editor bindings alt+1..alt+4: submit the Nth quick-reply chip
@@ -348,6 +383,7 @@
                  :skills       (run "skill")
                  :git-status   (run "diff" "git")
                  :copy-debug   (run "debug")
+                 :keys         (keys-buffer-event room-id [:mode/compose :global])
                  :reload       (run "reload")))))
 
 (defn- full-command-list
@@ -464,12 +500,12 @@
         ;; the paging keys know how far to move.
         !view   (atom {:expanded? false :top 0 :height 10})
         options (dialog/confirm-options dlg)
-        by-key  (-> {}
-                    (into (map #(vector % true)) (key-sequences "alt+a"))
-                    (into (map #(vector % false)) (key-sequences "alt+d"))
-                    (into (mapcat (fn [{:keys [key value]}]
-                                    [[key value] [(str/upper-case key) value]]))
-                          options))
+        by-key  (into {}
+                      (mapcat (fn [{:keys [key value]}]
+                                [[key value] [(str/upper-case key) value]]))
+                      options)
+        ;; alt+a / alt+d by decoded chord (legacy and kitty encodings alike)
+        by-chord {"alt+a" true "alt+d" false}
         option-hints (mapv (fn [{:keys [key label]}]
                              (str (ansi/fg :accent (str "[" key "]")) " " label))
                            options)
@@ -521,6 +557,9 @@
                          (set-view! assoc :expanded? false)
 
                          scroll (set-view! assoc :top scroll)
+
+                         (contains? by-chord (tui-keys/decode data))
+                         (respond! (get by-chord (tui-keys/decode data)))
 
                          (contains? by-key data) (respond! (get by-key data))
                          (enter? data)  (respond! true)
@@ -828,14 +867,23 @@
                           (cond-> line (conj (str "+" line)))
                           (conj file))]
               (tui/run-external! cmd (when cwd {:cwd cwd}))))
+          host (.-pagerHost ctx)
           c (if (:diff? buf)
               (diff-buffer/make-diff-buffer
                {:diff-text (:text buf) :title (:title buf)
+                :host host
                 :on-close on-close :on-command-mode on-command-mode
                 :on-explain on-explain :on-prompt on-prompt
                 :on-edit on-edit})
               (pager/make-text-buffer
                {:text (view/buffer-display-text buf) :title (:title buf)
+                ;; the buffer's own keymap layer: files, the shortcuts list,
+                ;; and difft output (a diff, just not the interactive one)
+                :layer (cond
+                         (:path buf)               :buffer/file
+                         (= :keys (:engine buf))   :buffer/keys
+                         (contains? buf :engine)   :buffer/diff)
+                :host host
                 :on-close on-close :on-command-mode on-command-mode
                 :on-explain on-explain :on-prompt on-prompt}))]
       (set! (.-pagerVal ctx) buf)
@@ -1050,11 +1098,18 @@
         current-room (fn [] (some-> (.-state ctx) state/active-room))
         room-event (fn [event] (when-let [room (current-room)]
                                  (dispatch! (assoc event :room-id (:id room)))))
-        ;; Quick-reply chips are disabled in the TUI for now (kept for the web
-        ;; client). Re-add `(quick-reply-keybindings get-state dispatch!)` to
-        ;; the `into` below to restore the alt+1..4 chip bindings.
-        ext-keybindings (->editor-keybindings (into builtin-keybindings (vec keybindings))
-                                              get-state dispatch!)
+        ;; Keyboard: the extensions' :keybindings become actions with default
+        ;; keys; the effective TUI keymap (defaults ← extensions ← config.edn
+        ;; :keys) is installed once, then the editor hook and the pagers
+        ;; resolve keys through it. Quick-reply chips are disabled in the TUI
+        ;; for now (kept for the web client) — see `quick-reply-keybindings`.
+        ext-actions (vec (keep xkeys/ext-keybinding->action keybindings))
+        _           (tui-keys/set-keymap! (user-config/keys-config) ext-actions)
+        runner      (action-runner (into builtin-actions ext-actions) get-state dispatch!)
+        pager-host  {:layers-fn  (fn [] (when (get-in (current-room) [:agent :busy?]) [:agent-busy]))
+                     :run-action (:run! runner)
+                     :enabled?   (:enabled? runner)}
+        _           (set! (.-pagerHost ctx) pager-host)
 
         editor-comp
         (editor/make-editor
@@ -1091,7 +1146,7 @@
                          (when-let [room (current-room)]
                            (dispatch! {:type :ui/menu-open :room-id (:id room)
                                        :menu (commands-menu (:id room) commands)})))
-          :ext-keybindings ext-keybindings
+          :on-key (editor-key-hook runner get-state)
           :on-git (fn [] (tui/run-external! ["ngit"] {}))
           :on-paste-image
           (fn []

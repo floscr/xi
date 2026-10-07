@@ -66,8 +66,14 @@
                    event is a data map, encoding is the server's job.
                    Only exists in server mode (no-op elsewhere).
      :system-prompt str | (fn [cwd] → str|nil) — appended to room system
-     :keybindings  [{:key \"alt+r\" :event {…} :when (fn [state])}] — TUI
-                   client; :event is dispatched with :room-id added
+     :keybindings  [{:key \"alt+r\" :event {…} :when (fn [state])
+                     :id :my-ext/do :label \"Do it\" :layer :global}] — TUI
+                   client keyboard actions (xi.keys): :key is the default
+                   key the user may rebind in config.edn :keys, :id the
+                   action id (defaults to the event's :type), :label its
+                   name in the shortcuts list, :layer where the default key
+                   applies (:global, :buffer/diff, …); :event is dispatched
+                   with :room-id added
      :prompt-badge (fn [state] → str|nil) — TUI prompt badge
      :on-shutdown  (fn []) — process-exit cleanup (TUI on-exit)
      :on-enable    (fn []) — runtime enable hook (xi.ext.manager): fired

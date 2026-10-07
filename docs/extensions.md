@@ -34,7 +34,8 @@ provider effects, and TUI.
    :remove-tools     #{tool-name}      ; builtin tools to hide from the model
    :commands         [{:name :description :handler}]
    :system-prompt    str | (fn [cwd] → str|nil)
-   :keybindings      [{:key "alt+r" :event {...} :when (fn [state])}]
+   :keybindings      [{:key "alt+r" :event {...} :when (fn [state])
+                       :id :my-ext/do :label "Do it" :layer :global}]
    :prompt-badge     (fn [state] → str|nil)
    :on-shutdown      (fn [])
    :on-enable        (fn [])           ; runtime enable hook (see "Runtime enable/disable")
@@ -266,19 +267,26 @@ Static string or a function of `cwd`:
 
 ## Keybindings
 
-Declarative key → event dispatch:
+Declarative keyboard actions (`xi.keys`):
 
 ```clojure
-:keybindings [{:key   "alt+r"
+:keybindings [{:key   "alt+r"                   ; default key, user-rebindable
                :event {:type :ext.notes/toggle}
-               :when  (fn [state] ...)}]  ; optional guard
+               :id    :notes/toggle             ; optional, default: the event :type
+               :label "Toggle notes"            ; optional, shown in the shortcut list
+               :layer :global                   ; optional: :buffer/diff, :mode/navigate, …
+               :when  (fn [state] ...)}]        ; optional guard
 ```
 
-The TUI folds `:when` into the key detection function — a guarded binding
-falls through to the editor's own handler when the guard fails. Events are
-dispatched with `:room-id` added automatically. Built-in TUI keys (not
-extension-contributed): Ctrl+O toggles the system-prompt buffer's preview,
-Alt+N starts a new chat in the current cwd (`/new`).
+Each entry is an action: the TUI (`xi.client.tui`) merges them with its
+built-in actions, their `:key`s become a defaults layer between Xi's defaults
+and the user's `config.edn` `:keys` (so a user can rebind or unbind them by
+action id), and `xi.tui.keys/decode` turns any terminal key into the
+canonical chord — no per-key table to extend. A guarded binding falls through
+to the next layer / the editor's own handler when the guard fails. Events are
+dispatched with `:room-id` added automatically. The shared model (layers,
+notation, resolver, defaults) is `src/xi/keys.cljc`; the user-facing tables
+are in the guide's [Keyboard shortcuts](guide/keyboard.md).
 
 ## Prompt Badges
 

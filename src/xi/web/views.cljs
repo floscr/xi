@@ -24,6 +24,7 @@
             [xi.tui.snippets :as snippets]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
+            [xi.web.keymap :as keymap]
             [xi.web.tool-views :as tool-views]
             [xi.web.viewer-group :as viewer-group]
             [ui.icon :as icon]
@@ -4855,10 +4856,15 @@
                                                  :method "git" :engine :git}))
                :copy-debug   (fn [_]
                                (copy! dispatch! (commands/debug-text room)))
+               :keys         (fn [_] (dispatch! {:type :keys/show}))
                :reload       (fn [_] (reload-with-feedback!))))]
-       (let [actions (for [{:keys [key label icon]} (palette/actions (boolean room)
-                                                        (boolean (:web/pending-room state)))]
-                       (cmd/command-item {:icon icon :on-click (action-onclick key)} label))
+       (let [actions (for [{:keys [key label icon action]} (palette/actions (boolean room)
+                                                               (boolean (:web/pending-room state)))
+                           ;; the key that runs the same thing (xi.keys), as a badge
+                           :let [shortcut (when action (keymap/shortcut state action))]]
+                       (cmd/command-item (cond-> {:icon icon :on-click (action-onclick key)}
+                                           shortcut (assoc :shortcut shortcut))
+                         label))
              ;; The pushover user extension seeds every room's [:ext :pushover]
              ;; state, so its presence means the server has it loaded — only
              ;; then is the toggle useful (Ctrl+Shift+P on the TUI). The mode
@@ -5224,6 +5230,71 @@
              :on-click (fn [_] (close!))}
             "Done")))))))
 
+(def ^:private fixed-shortcuts
+  "Keys the web client handles outside the keymap (the palette's own hotkey,
+   the composer's editing keys) — listed for completeness, not rebindable."
+  [["Ctrl+K / Cmd+K" "Command palette"]
+   ["Alt (held, in the palette)" "Key badges on the first rows; Alt + that key picks the row"]
+   ["Tab (in the message box)" "Expand the snippet word before the cursor"]
+   ["Shift+Enter (in the message box)" "New line"]
+   ["Ctrl+Enter (on one of your messages)" "Go back to before it and edit it"]])
+
+(defn- keys-dialog
+  "The Keyboard shortcuts dialog (`?`, Alt+/, palette). Lists every key of
+   the effective keymap (xi.web.keymap/listing) grouped by layer, the layers
+   active right now first; keys the user changed in config.edn are marked.
+   Escape closes it (:dialog/close action)."
+  [state dispatch!]
+  (when (:web/keys-open? state)
+    (let [close!   (fn [] (dispatch! {:type :keys/close}))
+          sections (keymap/listing state)
+          custom?  (boolean (some #(some :custom? (:rows %)) sections))]
+      (dialog/dialog-overlay
+       {:on-close close!
+        :class "keys-overlay"
+        :attrs {:replicant/key "keys-dialog"}}
+       (dialog/dialog-panel {:class "keys-dialog"}
+         (dialog/dialog-header {}
+           [:h3 "Keyboard shortcuts"]
+           [:button {:class ["icon-btn" "icon-btn--sm"]
+                     :title "Close"
+                     :on {:click (fn [_] (close!))}}
+            (icon/icon {:icon-name :x :size :md})])
+         (dialog/dialog-body {:class "keys-body"}
+           (into [:div {:class ["keys-sections"]}]
+                 (for [{:keys [layer label active? rows]} sections]
+                   [:section {:class ["keys-section" (when-not active? "keys-section--inactive")]
+                              :replicant/key layer}
+                    [:h4 {:class ["keys-section-title"]}
+                     label
+                     (when-not active?
+                       [:span {:class ["keys-section-note"]} "not active here"])]
+                    (into [:ul {:class ["keys-list"]}]
+                          (for [{ks :keys :keys [display label custom? action]} rows]
+                            [:li {:class ["keys-row"
+                                          (when custom? "keys-row--custom")
+                                          (when-not action "keys-row--unbound")]
+                                  :replicant/key (str/join " " ks)
+                                  :title (when custom? "changed in config.edn")}
+                             [:span {:class ["keys-row-label"]} label]
+                             [:kbd {:class ["keys-kbd"]} display]]))]))
+           [:section {:class ["keys-section" "keys-section--fixed"]}
+            [:h4 {:class ["keys-section-title"]} "Always"]
+            (into [:ul {:class ["keys-list"]}]
+                  (for [[k label] fixed-shortcuts]
+                    [:li {:class ["keys-row"]}
+                     [:span {:class ["keys-row-label"]} label]
+                     [:kbd {:class ["keys-kbd"]} k]]))]
+           [:p {:class ["keys-note"]}
+            "Change them under " [:code ":keys"] " in " [:code "~/.config/xi/config.edn"]
+            " (see the guide's Keyboard page)."
+            (when custom? " Highlighted rows are your changes.")])
+         (dialog/dialog-footer {}
+           (button/button
+            {:variant :primary :size :sm
+             :on-click (fn [_] (close!))}
+            "Done")))))))
+
 (defn root-view
   "Top-level view, route-driven: the session list at /, a room at /chat/:id.
    Wrapped in a floating sidebar layout so every topbar's hamburger reveals
@@ -5247,5 +5318,6 @@
           (home-view state dispatch!))))
      (command-palette state dispatch!)
      (appearance-dialog state dispatch!)
+     (keys-dialog state dispatch!)
      (auth-request-banner state dispatch!)
      (auth-overlay state))))

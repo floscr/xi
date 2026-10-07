@@ -1,0 +1,159 @@
+# Keyboard shortcuts
+
+Every key Xi reacts to runs a named action, and every key can be changed.
+The terminal client and the web client share one model: a set of **actions**
+(`:chat/new`, `:agent/abort`, `:diff/fold`, …), **layers** that say where a
+key applies (everywhere, while navigating, in a diff view, …), and a keymap
+that binds keys to actions per layer. The built-in keymap is below; your own
+bindings go under `:keys` in `~/.config/xi/config.edn`.
+
+Press `?` while not typing (or `Alt+/` anywhere) to see the shortcuts that
+apply right now. In the terminal the same opens a scrollable list; the
+command palette has a "Keyboard shortcuts" entry on both.
+
+## Two modes
+
+- **Compose**: a text field has focus — the message box, a search field, the
+  terminal's editor. Keys type. Only shortcuts with `Ctrl`, `Alt` or `Cmd`
+  (and named keys such as `Esc`) can fire.
+- **Navigate**: nothing is focused, or a viewer (diff, file, the shortcuts
+  list) has focus. Single keys work: `i`, `G`, `j`/`k`, `?`.
+
+In the web client, `Esc` leaves the text field; `i` returns to the message
+box. In the terminal the editor is always in compose mode; opening a diff or
+file (`/diff`, a file name in the chat) switches to a navigating viewer, and
+`q` or `Esc` brings the editor back.
+
+## Layers
+
+A key is looked up from the most specific layer to the most general; the
+first layer that mentions it wins.
+
+| Layer | Applies |
+| --- | --- |
+| `:permission-pending` | While a permission request is waiting for an answer |
+| `:agent-busy` | While the agent is working |
+| `:buffer/diff`, `:buffer/file`, `:buffer/prompt`, `:buffer/keys` | While that view is open (diff, file, system prompt, this shortcut list) |
+| `:buffer/pager` | Any scrollable viewer in the terminal (under the specific `:buffer/…` layer) |
+| `:page/chat`, `:page/home`, `:page/git-status` | The web client's pages |
+| `:mode/compose`, `:mode/navigate` | The two modes above |
+| `:global` | Everywhere |
+
+## Default keys
+
+Both clients:
+
+| Key | Does | Action | Layer |
+| --- | --- | --- | --- |
+| `Alt+n` | New chat in the same directory | `:chat/new` | `:global` |
+| `Alt+/` | Show the keyboard shortcuts | `:keys/show` | `:global` |
+| `Alt+x` | Stop the running turn | `:agent/abort` | `:agent-busy` |
+
+Web client:
+
+| Key | Does | Action | Layer |
+| --- | --- | --- | --- |
+| `Alt+\` | Show / hide the sidebar | `:sidebar/toggle` | `:global` |
+| `Alt+u` | Jump to the chat that needs you most: one waiting on a permission request, then the newest finished chat with unread output, then the newest running one. Press again to move on | `:session/jump-attention` | `:global` |
+| `Alt+j` / `Alt+k` | Next / previous chat | `:session/next` / `:session/prev` | `:global` |
+| `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would | `:sessions/prune` | `:global` |
+| `Ctrl+p` / `Cmd+p` | Find a file | `:files/find` | `:global` |
+| `Esc` | Close the open dialog (Appearance, shortcuts) | `:dialog/close` | `:global` |
+| `Alt+a` / `Alt+d` | Allow / deny the pending permission request | `:permission/allow` / `:permission/deny` | `:permission-pending` |
+| `i` | Focus the message box | `:compose/focus` | `:mode/navigate` |
+| `G` | Scroll to the bottom | `:timeline/bottom` | `:mode/navigate` |
+| `?` | Show the keyboard shortcuts | `:keys/show` | `:mode/navigate` |
+| `Esc` | Leave the text field | `:compose/blur` | `:mode/compose` |
+| `q`, `Esc` | Close the diff or file view, back to the chat | `:buffer/close` | `:buffer/diff`, `:buffer/file` |
+| `] f` / `[ f` | Next / previous file in the diff | `:diff/next-file` / `:diff/prev-file` | `:buffer/diff` |
+
+Terminal client, in any viewer (`:buffer/pager`):
+
+| Key | Does | Action |
+| --- | --- | --- |
+| `j` / `k`, `↓` / `↑` | Move the cursor | `:pager/down` / `:pager/up` |
+| `g g` / `G` | Top / bottom | `:pager/top` / `:pager/bottom` |
+| `Ctrl+d` / `Ctrl+u` | Half a page down / up | `:pager/half-down` / `:pager/half-up` |
+| `PgDn` / `PgUp` | A page down / up | `:pager/page-down` / `:pager/page-up` |
+| `V` | Start or cancel a line selection | `:pager/select` |
+| `y` | Copy the line or selection | `:pager/yank` |
+| `e` | Ask the agent to explain the selection | `:pager/explain` |
+| `Enter` | Put the selection in the editor | `:pager/prompt` |
+| `] c` / `[ c` | Next / previous change | `:pager/next-change` / `:pager/prev-change` |
+| `] f` / `[ f` | Next / previous file | `:diff/next-file` / `:diff/prev-file` |
+| `:` | Command mode: focus the editor | `:pager/command` |
+| `q`, `Esc` | Close (Esc cancels a selection first) | `:pager/close` |
+| `?` | Show the keyboard shortcuts | `:keys/show` |
+
+Terminal client, more:
+
+| Key | Does | Action | Layer |
+| --- | --- | --- | --- |
+| `v` | Open the file under the cursor in `$EDITOR` | `:diff/edit` | `:buffer/diff` |
+| `Tab` | Fold / unfold the file under the cursor | `:diff/fold` | `:buffer/diff` |
+| `Ctrl+o` | System prompt: full / overview | `:prompt/toggle` | `:buffer/prompt` |
+
+Extensions add their own: an extension's `:keybindings` entry is an action
+too (its id is the event type unless the extension names one), with the key
+it asks for as the default. The built-in file finder (`Ctrl+p`,
+`:file-finder/open`) and project picker (`Alt+p`, `:project/open-picker`) are
+such actions.
+
+Some keys are part of a control rather than the keymap and cannot be changed
+here: `Ctrl+k` / `Cmd+k` opens the command palette, `Tab` in the message box
+expands a snippet, `Ctrl+Enter` on one of your messages edits it, and the
+terminal editor's own editing keys (`Ctrl+a`, `Ctrl+k`, `Ctrl+/`, …).
+
+## Changing keys
+
+```clojure title="~/.config/xi/config.edn"
+{:type    :xi/config
+ :version 1
+
+ :keys {:global        {"alt+n"        nil            ; unbind
+                        "ctrl+shift+n" :chat/new}     ; bind
+        :mode/navigate {"?"            nil}
+        :buffer/diff   {"x"            :diff/fold}    ; add a key in one view
+        :web           {:global {"alt+\\" nil}}       ; web client only
+        :tui           {:buffer/pager {"J" :pager/half-down
+                                       "K" :pager/half-up}}}}
+```
+
+| Key | Does |
+| --- | --- |
+| `<layer> {"key" :action}` | Bind a key in that layer, on both clients. `nil` removes the key (yours or a default). |
+| `:web {…}` / `:tui {…}` | The same, for one client only. Applied after the shared entries. |
+| `:defaults? false` | Start from nothing: no built-in keys. At the top level for both clients, or inside `:web` / `:tui` for one. |
+
+Keys are read when a client starts: restart the terminal client, reload the
+web page.
+
+### Writing a key
+
+- Modifiers come first, joined with `+`: `ctrl`, `alt`, `shift`, `meta`
+  (also `cmd`). `mod` means `ctrl` in the terminal and `ctrl` or `cmd` in the
+  browser.
+- Then one character or a named key: `escape` (`esc`), `enter`, `tab`,
+  `backspace`, `delete`, `space`, `up`, `down`, `left`, `right`, `home`,
+  `end`, `pageup`, `pagedown`, `insert`, `f1` to `f12`.
+- A bare uppercase letter means shift: `"G"` is `"shift+g"`. Next to a
+  modifier case does not matter: `"alt+N"` is `"alt+n"`.
+- A sequence of keys is written with spaces: `"g g"`, `"] c"`.
+- With a modifier held, name the unshifted key: `"alt+shift+/"`, not `"alt+?"`.
+
+### When something is off
+
+**The file is rejected on startup** with a message naming the key: `:keys
+:global: "alt+++" is not a key — …`. Fix the spelling; until then the whole
+file is ignored and the default keys apply.
+
+**A key does nothing.** Open the shortcut list (`?` or `Alt+/`): it shows the
+keys that apply where you are, and marks the ones you changed. A key bound to
+an action the client does not have (a terminal-only action in the browser)
+is listed on the other client only. In compose mode a plain letter always
+types.
+
+**A terminal key arrives as something else.** Terminals differ in what they
+send for `Shift+Enter`, `Ctrl+Shift+…` or `Alt+` combinations; the kitty
+keyboard protocol (kitty, WezTerm, foot, Ghostty) reports them all. Without
+it, stay with `Ctrl+letter`, `Alt+letter` and single keys.

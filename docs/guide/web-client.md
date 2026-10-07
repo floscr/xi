@@ -63,6 +63,9 @@ are kept and sent when the connection returns.
 
 ## Keyboard
 
+Press `?` (while not typing) for the list of shortcuts that apply where you
+are. The common ones:
+
 | Key | Does |
 | --- | --- |
 | `i` | Focus the message box |
@@ -79,6 +82,9 @@ are kept and sent when the connection returns.
 | `Tab` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions. The same rows are also found by typing: `xi new` matches `xi · New chat` directly |
 | `Alt` (held, in the palette) | Show a key badge on each of the first rows; `Alt` + that key picks the row. Badges follow the filtered list, so type first, then hold Alt |
 | `Ctrl/Cmd+p` | Find a file |
+
+The full list, the layers a key applies in, and how to change any of them in
+`config.edn`: [Keyboard shortcuts](keyboard.md).
 
 ## When something is off
 

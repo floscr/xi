@@ -46,4 +46,4 @@
   {:id          :file-finder
    :handlers    {:file-finder/open open}
    :fx          {:file-finder/list list-fx}
-   :keybindings [{:key "ctrl+p" :event {:type :file-finder/open}}]})
+   :keybindings [{:key "ctrl+p" :label "Find a file" :event {:type :file-finder/open}}]})

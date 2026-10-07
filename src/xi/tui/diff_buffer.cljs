@@ -177,18 +177,22 @@
    opts:
      :diff-text       — raw unified diff text
      :title           — display title (e.g. \"Session Changes\")
-     :on-close        — (fn []) called when q/Escape is pressed
-     :on-command-mode — (fn []) called when : is pressed
-     :on-explain      — (fn [text]) called with the selected region on e
-     :on-prompt       — (fn [text]) called with the selected region on Enter
-     :on-edit         — (fn [{:keys [file line]}]) called on v with the
-                        file + line number under the cursor; optional (key
-                        is inert when absent)"
+     :on-close        — (fn []) called by :pager/close (q / Escape)
+     :on-command-mode — (fn []) called by :pager/command (:)
+     :on-explain      — (fn [text]) called with the selected region (e)
+     :on-prompt       — (fn [text]) called with the selected region (Enter)
+     :on-edit         — (fn [{:keys [file line]}]) called by :diff/edit (v)
+                        with the file + line number under the cursor;
+                        optional (the action is inert when absent)
+     :host            — pager host callbacks (see xi.tui.pager/make-pager)
+
+   Keys come from the TUI keymap: the :buffer/diff layer (v edit, Tab fold)
+   over the generic :buffer/pager keys, all rebindable in config.edn."
   [{:keys [diff-text title on-close on-command-mode on-explain on-prompt
-           on-edit]}]
+           on-edit host]}]
   (let [parsed (diff/parse-diff-text diff-text)
         line-locs (atom [])
-        ;; Set of filenames whose hunk bodies are folded away (Tab toggles).
+        ;; Set of filenames whose hunk bodies are folded away (:diff/fold).
         collapsed (atom #{})
         file-count (count parsed)
         add-count (reduce + (for [f parsed, h (:hunks f), l (:lines h)
@@ -208,34 +212,42 @@
                   (let [rendered (render-diff-lines parsed width @collapsed)]
                     (reset! line-locs (:line-locs rendered))
                     rendered))
-      :extra-keys
-      (fn [data {:keys [body-cursor cursor set-cursor! invalidate! file-starts]}]
-        (cond
-          ;; v: open the file under the cursor in $EDITOR (host-provided).
-          (and on-edit (= data "v") body-cursor)
-          (when-let [loc (loc-at @line-locs body-cursor)]
-            (on-edit loc)
-            true)
+      :layer :buffer/diff
+      :host host
+      :actions
+      {;; open the file under the cursor in $EDITOR (host-provided)
+       :diff/edit
+       (fn [{:keys [body-cursor]}]
+         (when (and on-edit body-cursor)
+           (when-let [loc (loc-at @line-locs body-cursor)]
+             (on-edit loc))))
 
-          ;; Tab: fold/unfold the file under the cursor. Keep the cursor on the
-          ;; file's header line — its index is unaffected by folding the lines
-          ;; that follow it — so the view stays put.
-          (and (= data "\t") body-cursor)
-          (when-let [filename (:file (loc-at @line-locs body-cursor))]
-            (swap! collapsed (fn [s] (if (contains? s filename)
-                                       (disj s filename)
-                                       (conj s filename))))
-            (when-let [header (last (filter #(<= % cursor) file-starts))]
-              (set-cursor! header))
-            (invalidate!)
-            true)
-
-          :else nil))
-      :help (pager/help-bar [["j/k" "move"] ["v" "edit"] ["Tab" "fold"]
-                             ["V/y" "select/yank"]
-                             ["e" "explain"] ["\u23ce" "prompt"]
-                             ["]c/[c" "changes"] ["]f/[f" "files"]
-                             ["gg/G" "top/bottom"] ["q" "close"] [":" "command"]])
+       ;; fold/unfold the file under the cursor. Keep the cursor on the file's
+       ;; header line — its index is unaffected by folding the lines that
+       ;; follow it — so the view stays put.
+       :diff/fold
+       (fn [{:keys [body-cursor cursor set-cursor! invalidate! file-starts]}]
+         (when body-cursor
+           (when-let [filename (:file (loc-at @line-locs body-cursor))]
+             (swap! collapsed (fn [s] (if (contains? s filename)
+                                        (disj s filename)
+                                        (conj s filename))))
+             (when-let [header (last (filter #(<= % cursor) file-starts))]
+               (set-cursor! header))
+             (invalidate!))))}
+      :help (pager/keymap-help
+             :buffer/diff
+             [[[:pager/down :pager/up] "move"]
+              [[:diff/edit] "edit"]
+              [[:diff/fold] "fold"]
+              [[:pager/select :pager/yank] "select/yank"]
+              [[:pager/explain] "explain"]
+              [[:pager/prompt] "prompt"]
+              [[:pager/next-change :pager/prev-change] "changes"]
+              [[:diff/next-file :diff/prev-file] "files"]
+              [[:pager/top :pager/bottom] "top/bottom"]
+              [[:pager/close] "close"]
+              [[:pager/command] "command"]])
       :on-close on-close
       :on-command-mode on-command-mode
       :on-explain on-explain

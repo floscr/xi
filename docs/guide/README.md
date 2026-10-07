@@ -71,7 +71,8 @@ lines; each page line is `- [Title](file.md) — one-line hook`.
 - [Project instructions](project-instructions.md) — `AGENTS.md`: which files load, and how the agent learns about the ones in subdirectories
 - [How the agent reads code](reading-code.md) — large files arrive as a syntax-tree outline; the agent asks for the code it needs
 - [Sessions](sessions.md) — resume, go back with `/tree`, summarise, trim and roll over
-- [The web client](web-client.md) — the same session on any device, pairing, offline, keyboard
+- [The web client](web-client.md) — the same session on any device, pairing, offline
+- [Keyboard shortcuts](keyboard.md) — every key on both clients, the layers they apply in, and how to change them
 - [Slash commands](commands.md) — the commands you type into the chat
 - [Command line](command-line.md) — every subcommand and flag of `xi`
 

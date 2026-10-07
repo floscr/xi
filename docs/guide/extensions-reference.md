@@ -39,7 +39,7 @@ and `:remove-tools` are not available: whether a tool call runs is the
 | `:commands` | `:args` is the text after the command name. Handlers are pure; return effects for I/O. |
 | `:tool-registry` | `args` has keyword keys. `ctx` holds `:room-id`, `:cwd`, `:dispatch!`, `:get-state`, `:confirm!`. |
 | `:system-prompt` | A function gets the chat's directory and may return nil to add nothing. |
-| `:keybindings` | Terminal client only, read at startup. Keys like `"alt+r"`, `"ctrl+shift+n"`. `:when (fn [state])` makes it conditional. |
+| `:keybindings` | Terminal client only, read at startup. Each entry is a keyboard action: `:key` is its default key (`"alt+r"`, `"ctrl+shift+n"`, any spelling from [Keyboard shortcuts](keyboard.md#writing-a-key)), which the user may change under `:keys` in `config.edn`; `:id` names the action (default: the event's `:type`), `:label` is its name in the shortcut list, `:layer` where the key applies (default `:global`; e.g. `:buffer/diff`). `:when (fn [state])` makes it conditional. |
 | `:mcp-servers` | Private servers; see [the tutorial](extension-tutorial-mcp.md). |
 | `:on-mount` / `:on-unmount` | Load and unload, including every reload. `ctx` has `:dispatch!` and `:get-state`. |
 | `:on-enable` / `:on-disable` | `/ext enable` and `/ext disable`. |

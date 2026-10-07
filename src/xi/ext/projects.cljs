@@ -210,5 +210,5 @@
               :project/visit       visit-fx}
    :server-fx server-fx
    :roomless-events #{:projects/web-list :projects/web-sessions}
-   :keybindings [{:key "alt+p"
+   :keybindings [{:key "alt+p" :label "Pick a project"
                   :event {:type :project/open}}]})

@@ -111,11 +111,20 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
 
 ## Keyboard
 
-`xi.web.keymap` dispatches every keydown to view- and mode-scoped bindings
-registered in `xi.web.core/install-keybindings!`. Mode is `:insert` while a
-**visible** text field has focus, else `:normal`; focus stranded in a hidden
-field counts as normal so shortcuts are never swallowed by an invisible
-input. The user-facing table is in the guide.
+`xi.web.keymap` resolves every keydown through the shared keymap model
+(`xi.keys`, cljc): the event becomes a canonical chord (`event->chord`), the
+active layers are computed from state and the DOM (transient
+`:permission-pending` / `:agent-busy`, the open buffer tab `:buffer/diff`…,
+the router page `:page/chat`…, the mode, `:global`), and `xi.keys/lookup`
+picks an action id, whose code `xi.web.core/install-actions!` registered.
+Mode is `:compose` while a **visible** text field has focus, else
+`:navigate`; focus stranded in a hidden field counts as navigate so shortcuts
+are never swallowed by an invisible input, and chords that type a character
+are never looked up in compose mode. The keymap itself lives in state
+(`:web/keymap`): the defaults until the server's `:keys/config` (the
+operator's `config.edn` `:keys`) arrives on connect. `?` opens the shortcuts
+dialog (`xi.web.keymap/listing`). The user-facing tables are in the guide's
+[Keyboard shortcuts](guide/keyboard.md).
 
 ## Web-only state keys
 

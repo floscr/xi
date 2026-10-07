@@ -20,7 +20,15 @@
     (is (re-find #":agents must be a map" (err {:type :xi/config :version 1 :agents []})))
     (is (re-find #":projects must be a map" (err {:type :xi/config :version 1 :projects []})))
     (is (re-find #"unknown :projects key" (err {:type :xi/config :version 1 :projects {:dirs []}})))
-    (is (re-find #":trusted-mcp-servers must be a vector" (err {:type :xi/config :version 1 :trusted-mcp-servers [:chrome]}))))
+    (is (re-find #":trusted-mcp-servers must be a vector" (err {:type :xi/config :version 1 :trusted-mcp-servers [:chrome]})))
+    (is (re-find #":keys must be a map" (err {:type :xi/config :version 1 :keys []})))
+    (is (re-find #"\"alt\+\+\+\" is not a key" (err {:type :xi/config :version 1 :keys {:global {"alt+++" :chat/new}}}))))
+  (testing ":keys is passed through once valid, absent otherwise"
+    (is (not (contains? (cfg/parse-config {:type :xi/config :version 1}) :keys)))
+    (is (= {:global {"alt+n" nil} :web {:mode/navigate {"?" :keys/show}}}
+           (:keys (cfg/parse-config {:type :xi/config :version 1
+                                     :keys {:global {"alt+n" nil}
+                                            :web {:mode/navigate {"?" :keys/show}}}})))))
   (testing "a valid file parses; keys empty unless set"
     (is (= {:extensions #{} :agents {} :projects projects/default-spec :users {}
             :trusted-mcp-servers #{}}

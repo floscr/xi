@@ -216,7 +216,9 @@
         on-tab-complete (:on-tab-complete opts)
         word-candidates-fn (:word-candidates-fn opts)
         on-word-menu (:on-word-menu opts)
-        ext-keybindings (:ext-keybindings opts)
+        ;; (fn [data] → truthy when handled): the host's keymap hook, tried
+        ;; before every built-in key so bound actions can intercept Ctrl+C etc.
+        on-key (:on-key opts)
 
         get-text (fn []
                    (str/join "\n" (:lines @state)))
@@ -652,10 +654,10 @@
                        (when-not (or (is-tab? data) (is-shift-tab? data))
                          (swap! state dissoc :completion))
                        (cond
-                         ;; Extension keybindings (checked first so they can intercept Ctrl+C etc.)
-                         (some (fn [{:keys [key-fn]}] (key-fn data)) ext-keybindings)
-                         (let [{:keys [handler]} (first (filter #((:key-fn %) data) ext-keybindings))]
-                           (handler))
+                         ;; Keymap actions (xi.client.tui) run first so a
+                         ;; bound key can intercept the editor's own keys.
+                         (and on-key (on-key data))
+                         nil
 
                          ;; Ctrl+C
                          (ctrl? data "C")

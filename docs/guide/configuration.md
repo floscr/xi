@@ -16,7 +16,9 @@
  :trusted-mcp-servers ["browser"]
 
  :agents {"assistant" {:system-prompt "You are a concise assistant."
-                       :tools ["web_search" "fetch"]}}}
+                       :tools ["web_search" "fetch"]}}
+
+ :keys {:global {"ctrl+shift+n" :chat/new}}}
 ```
 
 `:type` and `:version` are required and always these values. They let Xi tell
@@ -30,6 +32,7 @@ an old file wrong.
 | `:users` | The people who use this server: an id, an optional display `:name` and `:avatar`, and read-only `:meta` that [extensions](extensions-reference.md#users-and-their-state) can read. | [Users](server.md#users), keys below |
 | `:trusted-mcp-servers` | MCP servers whose tools run without asking: `mcp.edn` ids, or an extension's `"<extension>/<name>"`. Trusted as they are, with no code fingerprint. | [MCP servers](mcp-servers.md#trusting-a-server) |
 | `:agents` | Profiles for `xi --agent <id>`: a fixed tool set and prompt. | [Agent profiles](agents.md), keys below |
+| `:keys` | Keyboard shortcuts: bind, rebind or remove keys per layer, for both clients or one. | [Keyboard shortcuts](keyboard.md#changing-keys), keys below |
 
 Xi reads the file when it needs it (listing projects, starting a chat,
 loading extensions), so most edits apply without a restart. `/ext reload`
@@ -72,6 +75,19 @@ and what extensions keep about them are stored apart, in
 | `:system-prompt` | a short generic prompt | The instructions; replaces `AGENTS.md`, skills and extension prompts. |
 | `:system-prompt-file` | — | The same from a file; relative to `~/.config/xi/`. `:system-prompt` wins. |
 | `:model` | — | The profile's model; `--model` wins. |
+
+### `:keys`
+
+A map of layer → `{"key" :action}`; `nil` as the action removes the key.
+The layers, actions and key spelling are in [Keyboard shortcuts](keyboard.md).
+
+| Key | Default | Does |
+| --- | --- | --- |
+| `<layer>` | — | Bindings for that layer (`:global`, `:mode/navigate`, `:buffer/diff`, …) on both clients. |
+| `:web`, `:tui` | `{}` | The same shape, for one client; applied after the shared entries. |
+| `:defaults?` | `true` | `false` drops every built-in key. Also allowed inside `:web` / `:tui`. |
+
+Read when a client starts (the server sends it to the web client on connect).
 
 ## When the file is invalid
 

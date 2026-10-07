@@ -87,13 +87,16 @@
 (def action-items
   "Curated palette Actions — shared label/icon/order across surfaces. Each
    surface maps :key to its own event/handler (see the mapping tables in
-   xi.client.tui and xi.web.views). :room? gates the item on an active room."
-  [{:key :new-chat     :label "New chat"        :icon :plus}
-   {:key :change-model :label "Change model"    :icon :layers  :room? true :pending? true}
-   {:key :skills       :label "Skills"          :icon :zap     :room? true}
-   {:key :git-status   :label "Git status"      :icon :code    :room? true}
-   {:key :copy-debug   :label "Copy debug info" :icon :copy    :room? true}
-   {:key :reload       :label "Reload"          :icon :refresh}])
+   xi.client.tui and xi.web.views). :room? gates the item on an active room.
+   :action names the keyboard action (xi.keys) that does the same thing, so a
+   surface can show its key next to the item."
+  [{:key :new-chat     :label "New chat"           :icon :plus    :action :chat/new}
+   {:key :change-model :label "Change model"       :icon :layers  :room? true :pending? true}
+   {:key :skills       :label "Skills"             :icon :zap     :room? true}
+   {:key :git-status   :label "Git status"         :icon :code    :room? true}
+   {:key :copy-debug   :label "Copy debug info"    :icon :copy    :room? true}
+   {:key :keys         :label "Keyboard shortcuts" :icon :terminal :action :keys/show}
+   {:key :reload       :label "Reload"             :icon :refresh}])
 
 (defn actions
   "Action items visible given `room?` (drops the room-scoped ones with no room).

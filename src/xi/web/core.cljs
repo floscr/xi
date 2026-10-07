@@ -766,6 +766,7 @@
 (defn- web-handlers [routes]
   (merge (router/handlers routes)
          user-state/handlers
+         keymap/handlers
          {:room/new              room-new
           ;; Keyboard insert-mode toggle: `i` focuses the composer, Escape
           ;; blurs it (both emit their matching DOM effect).
@@ -1021,6 +1022,9 @@
           ;; this browser's overrides; views merge them over config + defaults.
           :appearance/open       (fn [st _] {:state (assoc st :web/appearance-open? true)})
           :appearance/close      (fn [st _] {:state (dissoc st :web/appearance-open?)})
+          ;; Keyboard shortcuts dialog (xi.web.keymap/listing).
+          :keys/show             (fn [st _] {:state (assoc st :web/keys-open? true)})
+          :keys/close            (fn [st _] {:state (dissoc st :web/keys-open?)})
           :appearance/set        (fn [st {:keys [key value]}]
                                    (let [settings (appearance/normalize
                                                    (assoc (:web/appearance st) key value))]
@@ -2461,78 +2465,111 @@
     (when dialog-id
       {:room-id (:id room) :dialog-id dialog-id :value value})))
 
-(defn- install-keybindings!
-  "Register the built-in web shortcuts into the view/mode-scoped keymap.
-   Global: ALT+n opens a new chat from any view; ALT+u jumps to the session
-   needing you most (pending dialog → newest unread → newest running;
-   repeat presses walk that order); ALT+Shift+P prunes (runs every sidebar cleanup);
-   ALT+j/k step to the
-   next/prev session in sidebar order (no wrap; from a non-chat view they open
-   the first session). Chat pane, any mode: ALT+a / ALT+d allow / deny the
-   pending permission request; ALT+x aborts the running agent turn. Chat pane, normal mode: `i` focuses the composer (enter
-   insert), `G` scrolls the timeline to the bottom.
-   Chat pane, insert mode: Escape blurs the composer (back to normal); in any
-   other text field Escape blurs that field. Insert mode only counts a
-   *visible* field (xi.web.keymap/current-mode), so focus stranded in a hidden
-   input never swallows the normal-mode keys.
-   Physical `:code`s so they fire regardless of the character an Alt-combo
-   emits on the active layout."
+(defn- diff-file-headers
+  "The file header rows of the open diff tab, in document order."
   []
-  (keymap/register! {:id :new-chat :code "KeyN" :alt true :view :any :mode :any
-                     :run (fn [_ dispatch! _] (dispatch! {:type :room/new}))})
-  (keymap/register! {:id :sidebar-toggle :code "Backslash" :alt true :view :any :mode :any
-                     :run (fn [_ dispatch! _] (dispatch! {:type :sidebar/toggle}))})
-  (keymap/register! {:id :jump-attention :code "KeyU" :alt true :view :any :mode :any
-                     :run (fn [st dispatch! _] (jump-to-attention! st dispatch!))})
-  (keymap/register! {:id :prune-all :code "KeyP" :alt true :shift true :view :any :mode :any
-                     :run (fn [st dispatch! _] (prune-all! st dispatch!))})
-  ;; Ctrl/Cmd+P: instant fuzzy file finder (handle-keydown preventDefaults, so
-  ;; the browser's print dialog never opens). :mode :any so it fires while the
-  ;; composer is focused too.
-  (keymap/register! {:id :file-finder :code "KeyP" :ctrl true :view :any :mode :any
-                     :run (fn [_ dispatch! _] (dispatch! {:type :palette/open-file-finder}))})
-  (keymap/register! {:id :file-finder-meta :code "KeyP" :meta true :view :any :mode :any
-                     :run (fn [_ dispatch! _] (dispatch! {:type :palette/open-file-finder}))})
-  (keymap/register! {:id :session-next :code "KeyJ" :alt true :view :any :mode :any
-                     :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
-  (keymap/register! {:id :session-prev :code "KeyK" :alt true :view :any :mode :any
-                     :run (fn [st dispatch! _] (session-step! st dispatch! :prev))})
-  ;; ALT+a / ALT+d: allow / deny the pending permission request — the keyboard
-  ;; twins of /allow and /deny. Only bound while an ask is pending, so ALT+d
-  ;; otherwise keeps its browser meaning.
-  (doseq [[id code option] [[:permission-allow "KeyA" :yes]
-                            [:permission-deny  "KeyD" :no]]]
-    (keymap/register! {:id id :code code :alt true :view :chat :mode :any
-                       :when (fn [st] (some? (permission-answer st option)))
-                       :run (fn [st dispatch! _]
-                              (when-let [answer (permission-answer st option)]
-                                (dispatch! (assoc answer :type :ui/dialog-response))))}))
-  ;; ALT+x: abort the running agent turn (twin of the composer's abort button
-  ;; and the TUI's alt+x). Only bound while the agent is busy.
-  (keymap/register! {:id :agent-abort :code "KeyX" :alt true :view :chat :mode :any
-                     :when (fn [st] (boolean (get-in (state/active-room st) [:agent :busy?])))
-                     :run (fn [st dispatch! _]
-                            (dispatch! {:type :agent/abort :room-id (:id (state/active-room st))}))})
-  (keymap/register! {:id :compose-focus :code "KeyI" :view :chat :mode :normal
-                     :run (fn [_ dispatch! _] (dispatch! {:type :compose/focus}))})
-  (keymap/register! {:id :timeline-bottom :code "KeyG" :shift true :view :chat :mode :normal
-                     :run (fn [_ dispatch! _] (dispatch! {:type :timeline/scroll-to-bottom}))})
-  (keymap/register! {:id :compose-blur :code "Escape" :view :chat :mode :insert
-                     :when (fn [_] (keymap/compose-focused?))
-                     :run (fn [_ dispatch! _] (dispatch! {:type :compose/blur}))})
-  ;; Escape in any other text field (sidebar search, bubble edit, diff
-  ;; modify…) drops its focus so the next key lands in normal mode — `i` then
-  ;; reaches the composer without a mouse. Fields inside an open <dialog> are
-  ;; left to the dialog's own Escape (cancel → close), and a field whose
-  ;; handler preventDefaults Escape (skill form) opts out automatically.
-  (keymap/register! {:id :field-blur :code "Escape" :view :any :mode :insert
-                     :when (fn [_] (and (not (keymap/compose-focused?))
-                                        (not (keymap/in-open-dialog?))))
-                     :run (fn [_ _ _] (keymap/blur-active!))})
-  ;; Escape closes the Appearance dialog (an overlay, not a native <dialog>).
-  (keymap/register! {:id :appearance-close :code "Escape" :view :any :mode :any
-                     :when (fn [st] (boolean (:web/appearance-open? st)))
-                     :run (fn [_ dispatch! _] (dispatch! {:type :appearance/close}))}))
+  (vec (array-seq (.querySelectorAll js/document ".diff-tab .diff-file-header"))))
+
+(defn- jump-diff-file!
+  "`]f` / `[f` in the diff tab: scroll the next / previous file header to the
+   top. The current file is the last header at or above the sticky zone (its
+   header is pinned there while its hunks scroll by)."
+  [dir]
+  (let [headers (diff-file-headers)
+        tops    (mapv #(.-top (.getBoundingClientRect %)) headers)
+        cur     (or (last (keep-indexed (fn [i top] (when (<= top 64) i)) tops)) -1)
+        target  (get headers (if (= dir :next) (inc cur) (dec cur)))]
+    (when target
+      (.scrollIntoView target #js {:block "start" :behavior "auto"}))))
+
+(defn- install-actions!
+  "Register the web client's keyboard actions (xi.web.keymap) — the code
+   behind the action ids the keymap binds (xi.keys/defaults, overridden by
+   config.edn :keys). Guards (`:when`) let a key fall through when the action
+   makes no sense right now, so e.g. ALT+d keeps its browser meaning unless a
+   permission request is pending.
+
+   Transient layers: `:permission-pending` (ALT+a / ALT+d answer the ask — the
+   keyboard twins of /allow and /deny) and `:agent-busy` (ALT+x aborts the
+   turn, twin of the composer's abort button and the TUI's alt+x)."
+  []
+  (keymap/register-layer! {:id :permission-pending
+                           :when (fn [st] (some? (permission-answer st :yes)))})
+  (keymap/register-layer! {:id :agent-busy
+                           :when (fn [st] (boolean (get-in (state/active-room st) [:agent :busy?])))})
+  (keymap/register-action! {:id :chat/new
+                            :run (fn [_ dispatch! _] (dispatch! {:type :room/new}))})
+  (keymap/register-action! {:id :sidebar/toggle
+                            :run (fn [_ dispatch! _] (dispatch! {:type :sidebar/toggle}))})
+  ;; Jump to the session needing you most (pending dialog → newest unread →
+  ;; newest running; repeat presses walk that order).
+  (keymap/register-action! {:id :session/jump-attention
+                            :run (fn [st dispatch! _] (jump-to-attention! st dispatch!))})
+  (keymap/register-action! {:id :sessions/prune
+                            :run (fn [st dispatch! _] (prune-all! st dispatch!))})
+  ;; Instant fuzzy file finder (handle-keydown preventDefaults, so the
+  ;; browser's print dialog never opens on Ctrl/Cmd+P).
+  (keymap/register-action! {:id :files/find
+                            :run (fn [_ dispatch! _] (dispatch! {:type :palette/open-file-finder}))})
+  ;; Next / prev session in sidebar order (no wrap; from a non-chat view they
+  ;; open the first session).
+  (keymap/register-action! {:id :session/next
+                            :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
+  (keymap/register-action! {:id :session/prev
+                            :run (fn [st dispatch! _] (session-step! st dispatch! :prev))})
+  (doseq [[id option] [[:permission/allow :yes]
+                       [:permission/deny  :no]]]
+    (keymap/register-action! {:id id
+                              :when (fn [st] (some? (permission-answer st option)))
+                              :run (fn [st dispatch! _]
+                                     (when-let [answer (permission-answer st option)]
+                                       (dispatch! (assoc answer :type :ui/dialog-response))))}))
+  (keymap/register-action! {:id :agent/abort
+                            :when (fn [st] (boolean (get-in (state/active-room st) [:agent :busy?])))
+                            :run (fn [st dispatch! _]
+                                   (dispatch! {:type :agent/abort :room-id (:id (state/active-room st))}))})
+  (keymap/register-action! {:id :compose/focus
+                            :when (fn [st] (= :chat (get-in st [:web/route :page])))
+                            :run (fn [_ dispatch! _] (dispatch! {:type :compose/focus}))})
+  (keymap/register-action! {:id :timeline/bottom
+                            :when (fn [st] (= :chat (get-in st [:web/route :page])))
+                            :run (fn [_ dispatch! _] (dispatch! {:type :timeline/scroll-to-bottom}))})
+  ;; Escape in the composer blurs it (back to navigate mode); in any other
+  ;; text field (sidebar search, bubble edit, diff modify…) it drops that
+  ;; field's focus so the next key lands in navigate mode — `i` then reaches
+  ;; the composer without a mouse. Fields inside an open <dialog> are left to
+  ;; the dialog's own Escape (cancel → close), and a field whose handler
+  ;; preventDefaults Escape (skill form) opts out automatically.
+  (keymap/register-action! {:id :compose/blur
+                            :when (fn [_] (not (keymap/in-open-dialog?)))
+                            :run (fn [_ dispatch! _]
+                                   (if (keymap/compose-focused?)
+                                     (dispatch! {:type :compose/blur})
+                                     (keymap/blur-active!)))})
+  ;; Escape closes the Appearance / Keyboard shortcuts dialogs (overlays, not
+  ;; native <dialog>s).
+  (keymap/register-action! {:id :dialog/close
+                            :when (fn [st] (boolean (or (:web/appearance-open? st)
+                                                        (:web/keys-open? st))))
+                            :run (fn [st dispatch! _]
+                                   (dispatch! {:type (if (:web/keys-open? st)
+                                                       :keys/close
+                                                       :appearance/close)}))})
+  (keymap/register-action! {:id :keys/show
+                            :run (fn [_ dispatch! _] (dispatch! {:type :keys/show}))})
+  ;; Buffer tabs (diff / file / prompt): close back to the chat; a virtual new
+  ;; chat keeps its buffers on the pending room (see :pending/buffer-switch).
+  (keymap/register-action! {:id :buffer/close
+                            :run (fn [st dispatch! _]
+                                   (let [room-id (when-not (new-chat-view? st)
+                                                   (:id (state/active-room st)))]
+                                     (dispatch! (if room-id
+                                                  {:type :ui/buffer-switch :room-id room-id :buffer-id :chat}
+                                                  {:type :pending/buffer-switch :buffer-id :chat}))))})
+  (keymap/register-action! {:id :diff/next-file
+                            :run (fn [_ _ _] (jump-diff-file! :next))})
+  (keymap/register-action! {:id :diff/prev-file
+                            :run (fn [_ _ _] (jump-diff-file! :prev))}))
 
 (defn- real-init! []
   (let [composed  (ext/compose (web-extensions))
@@ -2807,9 +2844,9 @@
                        (fn [_]
                          (dispatch! {:type :client/update
                                      :visible? (= "visible" (.-visibilityState js/document))})))
-    ;; View/mode-scoped keyboard shortcuts (ALT+n new chat, i/Escape insert
-    ;; toggle, ALT+j/k session nav). Registered once, dispatched per keydown.
-    (install-keybindings!)
+    ;; Keyboard shortcuts (xi.web.keymap): actions registered once, the
+    ;; keymap resolved per keydown from state (defaults + config.edn :keys).
+    (install-actions!)
     (.addEventListener js/document "keydown"
                        (fn [^js e] (keymap/handle-keydown @state dispatch! e)))
     (render! @state dispatch!)))
