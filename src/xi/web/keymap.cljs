@@ -23,6 +23,9 @@
      :when   optional (fn [state]) → boolean guard; a failing guard lets the
              key fall through to the next layer
      :run    (fn [state dispatch! event]) side-effecting action
+     :event  the app event the action dispatches, when it is just that — the
+             :run then defaults to dispatching it, and UI rows dispatching
+             the same event show the action's key (`event-shortcut`)
 
    Transient layers are registered with `register-layer!` ({:id :when})."
   (:require [clojure.string :as str]
@@ -36,8 +39,13 @@
   "Add or replace an action (see ns docstring). Returns its id."
   [{:keys [id] :as action}]
   (assert (keyword? id) "action needs a keyword :id")
-  (assert (ifn? (:run action)) "action needs a :run fn")
-  (swap! actions assoc id (update action :label #(or % (keys/label id))))
+  (assert (or (ifn? (:run action)) (map? (:event action)))
+          "action needs a :run fn or an :event")
+  (swap! actions assoc id
+         (cond-> (update action :label #(or % (keys/label id)))
+           (nil? (:run action))
+           (assoc :run (let [event (:event action)]
+                         (fn [_ dispatch! _] (dispatch! event))))))
   id)
 
 (defn unregister-action! [id]
@@ -253,6 +261,15 @@
    layers), or nil when it has none — for palette badges and menus."
   [state action]
   (keys/shortcut (keymap state) (active-layers state :navigate) action))
+
+(defn event-shortcut
+  "Display string of the key whose action dispatches exactly `event` (its
+   `:event`), or nil — so a palette row or menu item shows the key that does
+   the same thing as clicking it."
+  [state event]
+  (when (map? event)
+    (some (fn [[id a]] (when (= event (:event a)) (shortcut state id)))
+          @actions)))
 
 (defn listing
   "Rows for the shortcuts dialog (xi.keys/listing): every layer with a key

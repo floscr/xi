@@ -9,7 +9,10 @@ bindings go under `:keys` in `~/.config/xi/config.edn`.
 
 Press `?` while not typing (or `Alt+/` anywhere) to see the shortcuts that
 apply right now. In the terminal the same opens a scrollable list; the
-command palette has a "Keyboard shortcuts" entry on both.
+command palette has a "Keyboard shortcuts" entry on both. In the web
+palette (`Ctrl`/`Cmd+K`), a row that does the same as a bound key shows
+that key on its right (`Find file… Ctrl+P`, `Prune all Alt+Shift+P`), and
+follows your `:keys` overrides.
 
 ## Two modes
 

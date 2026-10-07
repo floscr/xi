@@ -4721,6 +4721,28 @@
    bindings (u x a d)."
   "sfghlqweryiotzcvbm")
 
+(defn- keycaps
+  "A key's display string (\"Alt+Shift+P\", \"] f\") as keyboard keycaps: one
+   <kbd> per key, the chords of a sequence spaced apart. Goes inside the
+   framework's `.command-shortcut` <kbd> (nested <kbd>s = a key combination)."
+  [display]
+  (into [:span {:class ["keycaps"]}]
+        (for [chord (str/split display #" ")]
+          (into [:span {:class ["keycap-chord"]}]
+                (for [k (str/split chord #"\+(?=.)")]
+                  [:kbd {:class ["keycap"]} k])))))
+
+(defn- with-shortcut
+  "cmd/command-item `opts` plus a keycap badge of the key that does the same
+   as the row: its keyboard `action` (an xi.keys id), else a keymap action
+   whose `:event` is the row's `event` (xi.web.keymap/event-shortcut).
+   Unchanged when no key is bound."
+  [opts state {:keys [action event]}]
+  (if-let [s (or (some->> action (keymap/shortcut state))
+                 (some->> event (keymap/event-shortcut state)))]
+    (assoc opts :shortcut (keycaps s))
+    opts))
+
 (defn- command-palette
   "Global Cmd/Ctrl+K command palette (ui.command). Mounted once in root-view;
    the ui-runtime.js delegate handles open/filter/keyboard-nav. Items dispatch
@@ -4851,18 +4873,23 @@
        (apply cmd/command-group {:heading "Sessions"}
          (map #(palette-chat-item % dispatch! {:search? true}) all-sessions)))
      (apply cmd/command-group {:heading "Navigate"}
-       (cond-> [(cmd/command-item {:icon :layout-dashboard
-                                   :on-click (fn [_] (dispatch! {:type :route/navigate :page :home}))}
-                  "All projects")]
+       (cond-> [(let [event {:type :route/navigate :page :home}]
+                  (cmd/command-item (with-shortcut {:icon :layout-dashboard
+                                                    :on-click (fn [_] (dispatch! event))}
+                                      state {:event event})
+                    "All projects"))]
          ;; Fuzzy file finder needs a room cwd to scope the listing.
-         room (conj (cmd/command-item
-                     {:icon :file-text
-                      :on-click (fn [_] (dispatch! {:type :palette/open-file-finder}))}
-                     "Find file…"))
+         room (conj (let [event {:type :palette/open-file-finder}]
+                      (cmd/command-item
+                       (with-shortcut {:icon :file-text
+                                       :on-click (fn [_] (dispatch! event))}
+                         state {:event event})
+                       "Find file…")))
          :always (into (for [item (concat (nav-items-for state :palette)
                                           (map with-default-icon (palette-items/items state)))]
-                         (cmd/command-item {:icon (:icon item)
-                                            :on-click (fn [_] (dispatch! (:event item)))}
+                         (cmd/command-item (with-shortcut {:icon (:icon item)
+                                                           :on-click (fn [_] (dispatch! (:event item)))}
+                                             state item)
                            (:label item))))))
      (when (seq project-dirs)
        (apply cmd/command-group {:heading "Projects"}
@@ -4871,7 +4898,7 @@
             (let [short (shorten-path d)]
               (cmd/command-item
                {:icon :folder
-                :shortcut "⇥"
+                :shortcut (keycaps "⇥")
                 :value (str "project " short " " d)
                 :attrs {:data-palette-drill d
                         :data-palette-label short}
@@ -4899,11 +4926,10 @@
                :keys         (fn [_] (dispatch! {:type :keys/show}))
                :reload       (fn [_] (reload-with-feedback!))))]
        (let [actions (for [{:keys [key label icon action]} (palette/actions (boolean room)
-                                                               (boolean (:web/pending-room state)))
-                           ;; the key that runs the same thing (xi.keys), as a badge
-                           :let [shortcut (when action (keymap/shortcut state action))]]
-                       (cmd/command-item (cond-> {:icon icon :on-click (action-onclick key)}
-                                           shortcut (assoc :shortcut shortcut))
+                                                               (boolean (:web/pending-room state)))]
+                       ;; the key that runs the same thing (xi.keys), as a badge
+                       (cmd/command-item (with-shortcut {:icon icon :on-click (action-onclick key)}
+                                           state {:action action})
                          label))
              ;; The pushover user extension seeds every room's [:ext :pushover]
              ;; state, so its presence means the server has it loaded — only
@@ -4977,14 +5003,18 @@
        (apply cmd/command-group {:heading "Cleanup"}
          (cond-> (mapv (fn [{:keys [label icon event]}]
                          (cmd/command-item
-                          {:icon icon :on-click (fn [_] (dispatch! event))}
+                          (with-shortcut {:icon icon :on-click (fn [_] (dispatch! event))}
+                            state {:event event})
                           label))
                        cleanups)
            (> (count cleanups) 1)
+           ;; Same as ALT+Shift+P (xi.web.core/prune-all!).
            (conj (cmd/command-item
-                  {:icon  :zap
-                   :value (str "prune all " (str/join " " (map :label cleanups)))
-                   :on-click (fn [_] (run! (comp dispatch! :event) cleanups))}
+                  (with-shortcut
+                    {:icon  :zap
+                     :value (str "prune all " (str/join " " (map :label cleanups)))
+                     :on-click (fn [_] (run! (comp dispatch! :event) cleanups))}
+                    state {:action :sessions/prune})
                   "Prune all")))))
      (when room
        (apply cmd/command-group {:heading "Commands"}

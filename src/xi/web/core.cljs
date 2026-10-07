@@ -2508,10 +2508,10 @@
                            :when (fn [st] (some? (permission-answer st :yes)))})
   (keymap/register-layer! {:id :agent-busy
                            :when (fn [st] (boolean (get-in (state/active-room st) [:agent :busy?])))})
-  (keymap/register-action! {:id :chat/new
-                            :run (fn [_ dispatch! _] (dispatch! {:type :room/new}))})
-  (keymap/register-action! {:id :sidebar/toggle
-                            :run (fn [_ dispatch! _] (dispatch! {:type :sidebar/toggle}))})
+  ;; Actions that just dispatch an event declare it as :event, so palette rows
+  ;; dispatching the same event show the key (keymap/event-shortcut).
+  (keymap/register-action! {:id :chat/new :event {:type :room/new}})
+  (keymap/register-action! {:id :sidebar/toggle :event {:type :sidebar/toggle}})
   ;; Jump to the session needing you most (pending dialog → newest unread →
   ;; newest running; repeat presses walk that order).
   (keymap/register-action! {:id :session/jump-attention
@@ -2520,8 +2520,7 @@
                             :run (fn [st dispatch! _] (prune-all! st dispatch!))})
   ;; Instant fuzzy file finder (handle-keydown preventDefaults, so the
   ;; browser's print dialog never opens on Ctrl/Cmd+P).
-  (keymap/register-action! {:id :files/find
-                            :run (fn [_ dispatch! _] (dispatch! {:type :palette/open-file-finder}))})
+  (keymap/register-action! {:id :files/find :event {:type :palette/open-file-finder}})
   ;; Next / prev session in sidebar order (no wrap; from a non-chat view they
   ;; open the first session).
   (keymap/register-action! {:id :session/next
@@ -2541,10 +2540,10 @@
                                    (dispatch! {:type :agent/abort :room-id (:id (state/active-room st))}))})
   (keymap/register-action! {:id :compose/focus
                             :when (fn [st] (= :chat (get-in st [:web/route :page])))
-                            :run (fn [_ dispatch! _] (dispatch! {:type :compose/focus}))})
+                            :event {:type :compose/focus}})
   (keymap/register-action! {:id :timeline/bottom
                             :when (fn [st] (= :chat (get-in st [:web/route :page])))
-                            :run (fn [_ dispatch! _] (dispatch! {:type :timeline/scroll-to-bottom}))})
+                            :event {:type :timeline/scroll-to-bottom}})
   ;; Escape in the composer blurs it (back to navigate mode); in any other
   ;; text field (sidebar search, bubble edit, diff modify…) it drops that
   ;; field's focus so the next key lands in navigate mode — `i` then reaches
@@ -2566,8 +2565,7 @@
                                    (dispatch! {:type (if (:web/keys-open? st)
                                                        :keys/close
                                                        :appearance/close)}))})
-  (keymap/register-action! {:id :keys/show
-                            :run (fn [_ dispatch! _] (dispatch! {:type :keys/show}))})
+  (keymap/register-action! {:id :keys/show :event {:type :keys/show}})
   ;; Buffer tabs (diff / file / prompt): close back to the chat; a virtual new
   ;; chat keeps its buffers on the pending room (see :pending/buffer-switch).
   (keymap/register-action! {:id :buffer/close

@@ -2985,6 +2985,40 @@ code a:hover,
   display: none;
 }
 
+/* Command-palette shortcut badges as keyboard keycaps (views/keycaps): the
+   framework's .command-shortcut <kbd> becomes a bare row holding one raised
+   <kbd class="keycap"> per key (Alt + Shift + P), chords of a sequence
+   ("] f") spaced a little wider. */
+.command-item .command-shortcut:has(> .keycaps) {
+  padding: 0;
+  min-width: 0;
+  line-height: 1;
+  background: none;
+  border: none;
+  letter-spacing: normal;
+}
+.keycaps,
+.keycap-chord {
+  display: inline-flex;
+  align-items: center;
+}
+.keycaps { gap: 6px; }
+.keycap-chord { gap: 3px; }
+.keycap {
+  min-width: 20px;
+  padding: 2px 5px 1px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-xs);
+  line-height: 14px;
+  text-align: center;
+  /* outlined, no fill: the letter is the outline's colour, a shade stronger */
+  color: var(--fg-2);
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--fg-2) 60%, transparent);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
 /* Trailing "new chat" button on project-directory cards (replaces the old
    chevron): clicking the card navigates into the project, this button starts
    a fresh chat. stopPropagation keeps the two actions separate. */
