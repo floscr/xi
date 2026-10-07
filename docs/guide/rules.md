@@ -85,9 +85,10 @@ rule to apply; a key you leave out is no constraint.
 | `:repo` | The git repository | The end of its path, like `"code/my-app"` |
 | `:dir` | The working directory | A path prefix |
 | `:extension` | Calls made by an [extension](extensions.md) | Its id as a string |
-| `:host` | The host an extension requests | A string, set or regex |
+| `:host` | The host an extension requests, or every host a read-only `(sh "curl" …)` requests | A string, set or regex |
 | `:mcp-server` / `:mcp-tool` | An MCP server and its tool | Strings or globs |
 | `:tool-name` | One particular tool by name | A string, set or regex |
+| `:user` | Who the call acts for | A user id (string, set or regex), or a map matched against their `config.edn` profile, like `{:meta {:team "ops"}}` |
 
 ### Actions
 

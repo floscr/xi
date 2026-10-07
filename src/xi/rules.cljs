@@ -7,7 +7,8 @@
                :tool-name \"spawn_subagent\" ; raw tool name (glob/exact, regex, set)
                :extension \"notes\"        ; user extension behind an xi.api.* call (true = any)
                :extension-data :own      ; path inside that extension's data dir (opt-in)
-               :host \"api.example.com\"   ; :net request host (glob/exact, regex)
+               :host \"api.example.com\"   ; :net request host, or every host a read-only
+                                         ; :sh curl requests (glob/exact, regex, set)
                :path #\"\\.sh$\"          ; regex OR glob string on the target path
                :command #\"\\brm\\b\"       ; regex OR substring on the bash command
                :repo \"config/dotfiles\"  ; substring of the effective repo root
@@ -42,7 +43,8 @@
    Matching is pure over a *decision request* the store builds from a tool
    call: {:tool :tool-name :path :command :repo :effective-cwd :mcp-server
           :mcp-tool :state :nodes :user :user-record}. This namespace does no I/O."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xi.rules.curl :as curl]))
 
 (defn canonical
   "Normalize a rule's `:on-block`/`:do` aliases to `:match`/`:action`."
@@ -134,6 +136,19 @@
   (if (set? spec)
     (contains? spec tool-name)
     (match-name spec tool-name)))
+
+(defn- match-host
+  "Host spec (like `:tool-name`: string glob/exact, regex, set). Against an
+   extension's `:net` request host, or — for a `:sh` call to `curl` — every
+   host the call requests (`xi.rules.curl`): all must match, and a curl that
+   isn't a plain read-only request (file-touching flags, `-H`, shell syntax in
+   a background command, …) has no hosts and never matches."
+  [spec req]
+  (cond
+    (nil? spec)  true
+    (:host req)  (match-tool-name spec (:host req))
+    :else        (boolean (some->> (curl/request-hosts req)
+                                   (every? #(match-tool-name spec %))))))
 
 (defn- match-extension
   "Extension spec for requests a user extension makes through xi.api.*:
@@ -367,7 +382,7 @@
          (match-tool-name  (:tool-name m)  (:tool-name req))
          (match-extension  (:extension m)  (:extension req))
          (match-extension-data (:extension-data m) req)
-         (match-tool-name  (:host m)       (:host req))
+         (match-host       (:host m)       req)
          (match-cli        (:cli m)        (:cli req))
          (match-path*      (:path m)       req)
          (match-command    (:command m)    (:command req))
@@ -474,10 +489,10 @@
 
 (defn arg-scoped?
   "True when (canonical) `rule` constrains a `:sh` command's arguments — a
-   `:command`, `:within` or `:tracked` matcher — so its allow covers only the
-   exact command it matched, not the CLI at large."
+   `:command`, `:within`, `:tracked` or `:host` matcher — so its allow covers
+   only the exact command it matched, not the CLI at large."
   [rule]
-  (boolean (some #(some? (get-in rule [:match %])) [:command :within :tracked])))
+  (boolean (some #(some? (get-in rule [:match %])) [:command :within :tracked :host])))
 
 (defn needs-extension-data?
   "True when any rule carries an `:extension-data` matcher, so the store should

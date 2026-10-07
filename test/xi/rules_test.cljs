@@ -1,5 +1,6 @@
 (ns xi.rules-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.rules :as rules]))
 
 (deftest canonical-normalizes-aliases
@@ -101,6 +102,27 @@
     (testing ":extension-data :own reads the store-computed flag"
       (is (rules/matches? {:match {:extension-data :own}} (assoc req :own-data? true)))
       (is (not (rules/matches? {:match {:extension-data :own}} req))))))
+
+(deftest match-host-on-sh-curl
+  (let [rule {:match {:tool :sh :cli "curl" :host "100.64.0.2"}}
+        sh   (fn [& argv] {:tool :sh :cli (first argv) :argv (vec argv)
+                           :command (str/join " " argv)})]
+    (testing "every host the curl requests must match"
+      (is (rules/matches? rule (sh "curl" "-s" "http://100.64.0.2:7474/")))
+      (is (rules/matches? rule (sh "curl" "http://100.64.0.2/a" "http://100.64.0.2/b")))
+      (is (not (rules/matches? rule (sh "curl" "http://100.64.0.2/" "http://evil.com/"))))
+      (is (not (rules/matches? rule (sh "curl" "http://100.64.0.20/"))))
+      (is (not (rules/matches? rule (sh "curl" "http://100.64.0.2.evil.com/")))))
+    (testing "a curl that isn't a read-only request never matches"
+      (is (not (rules/matches? rule (sh "curl" "-o" "f" "http://100.64.0.2/")))))
+    (testing "glob / regex / set specs apply per host"
+      (is (rules/matches? {:match {:host "100.64.*"}} (sh "curl" "http://100.64.0.9/")))
+      (is (rules/matches? {:match {:host #"^100\.64\."}} (sh "curl" "http://100.64.0.9/")))
+      (is (rules/matches? {:match {:host #{"a" "b"}}} (sh "curl" "http://a/" "http://b/"))))
+    (testing "other :sh programs have no hosts"
+      (is (not (rules/matches? {:match {:host "h"}} (sh "wget" "http://h/")))))
+    (testing "a :host rule is arg-scoped: its allow covers the exact command"
+      (is (rules/arg-scoped? rule)))))
 
 (deftest match-path-glob-and-regex
   (is (rules/matches? {:match {:tool :write :path "*.sh"}}

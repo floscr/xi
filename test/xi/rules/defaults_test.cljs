@@ -261,14 +261,17 @@
       (is (= :ask (action-type {:tool :sh :cli "sed" :command "sed -n 1p f"}))))))
 
 (deftest localhost-curl
-  (let [curl (fn [cmd] (action-type {:tool :sh :cli "curl" :command cmd}))]
+  (let [curl (fn [cmd] (action-type {:tool :sh :cli "curl" :command cmd}))
+        sh   (fn [& argv] (action-type {:tool :sh :cli "curl" :argv (vec argv)
+                                        :command (str/join " " argv)}))]
     (testing "curl against loopback only is allowed"
       (doseq [cmd ["curl http://localhost:8199/"
                    "curl -sf http://localhost:8199/ -o /dev/null"
                    "curl -s http://127.0.0.1:7474/api/x?a=1"
                    "curl -sS -X POST http://localhost:3000/api"
                    "curl --max-time 5 http://[::1]:8080"
-                   "curl http://localhost/a http://127.0.0.1/b"]]
+                   "curl http://localhost/a http://127.0.0.1/b"
+                   "curl HTTP://LOCALHOST:8199/"]]
         (is (= :allow (curl cmd)) cmd)))
     (testing "anything else falls to the base ask"
       (doseq [cmd ["curl https://example.com"
@@ -281,7 +284,19 @@
                    "curl -T file http://localhost:8199/"
                    "curl --proxy http://evil:1 http://localhost/"
                    "curl -s"]]
-        (is (= :ask (curl cmd)) cmd)))))
+        (is (= :ask (curl cmd)) cmd)))
+    (testing "a background command with shell syntax stays gated (bash runs it)"
+      (doseq [cmd ["curl http://localhost/$(touch x)"
+                   "curl http://localhost/`id`"
+                   "curl http://localhost/;id"
+                   "curl http://localhost/?a=1&b=2"
+                   "curl http://localhost/ > out.txt"]]
+        (is (= :ask (curl cmd)) cmd)))
+    (testing "a literal (sh …) argv is parsed per token, not split on spaces"
+      (is (= :allow (sh "curl" "-s" "http://localhost:8199/a?x=1&y=$z")))
+      (is (= :ask (sh "curl" "-X POST" "http://localhost:8199/"))
+          "a flag fused with its value is no known flag")
+      (is (= :ask (sh "curl" "-H" "X: y" "http://localhost:8199/"))))))
 
 (deftest file-clis-within-repo
   (testing "mv/cp/mkdir/… whose operands stay in the repo are allowed"

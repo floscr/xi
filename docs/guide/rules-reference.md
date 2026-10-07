@@ -47,7 +47,7 @@ Every field present must hold. An absent field is no constraint.
 | `:dir` | The working directory | Absolute prefix; `~` is expanded. |
 | `:extension` | A call made by an extension | `true` for any, or its id as string, glob, regex or set. Agent calls never match. |
 | `:extension-data` | `:own` | The target is inside the calling extension's data directory. |
-| `:host` | The host of an extension's request | String, glob, regex or set. |
+| `:host` | The host of an extension's request, or of a clj `(sh "curl" …)` call | String, glob, regex or set. For curl, every URL's host must match, and only a read-only request matches: each argument is an http(s) URL (no userinfo, no curl globs) or a safe flag (`-sSfLvikIg`, `-m N`, `-X <METHOD>`, `-o /dev/null`). A background command with shell syntax (`$`, quotes, `;`, `&`, `>` …) never matches. Like `:command`, its allow covers only the exact command. |
 | `:mcp-server` | An MCP server id | String or glob. |
 | `:mcp-tool` | An MCP tool name | String or glob; `"*"` for any. |
 | `:mcp-trusted` | `true` / `false` | Whether the server is trusted right now. |
@@ -71,7 +71,7 @@ option when it has one, else the chat's directory.
 
 | `:type` | Does |
 | --- | --- |
-| `:allow` | Runs the call. No later rule is consulted. For a clj `(sh …)` rule: without `:command`, `:within` or `:tracked` it allows the program; with one of them it allows only the exact matched command. |
+| `:allow` | Runs the call. No later rule is consulted. For a clj `(sh …)` rule: without `:command`, `:within`, `:tracked` or `:host` it allows the program; with one of them it allows only the exact matched command. |
 | `:deny` | Blocks it. The agent sees `:message`. |
 | `:nudge` | Blocks it, but reports `:message` as a hint rather than an error. |
 | `:ask` | Shows a dialog. `:message` replaces the default text. `:options` defaults to `[:yes :no :always]`; `:unanswered :deny` refuses the call when nobody can answer instead of letting it through. |
@@ -145,7 +145,7 @@ list; inline rule maps may be mixed in.
 | `extension-sh` | Ask on every program an extension runs. |
 | `net-confirm` | Ask on every host an extension requests. |
 | `script-exec` | Ask before an interpreter runs inline code or a script (`bb -e`, `bb -f`, `node -e`, `python x.py`, `bun x.ts`, `clojure -M`, …); no `a`, refused when nobody can answer. `bb <task>`, `bun test`, `--version` and the like are free. |
-| `clj-sh` | For clj `(sh …)`: allow read-only `sed -n …p`, in-repo `mv` `cp` `mkdir` `touch` `rmdir`, and `rm` of git-tracked content (`repository-scripts`); allow `curl` to loopback with safe flags (`localhost-curl`); allow read-only programs (`sh-read-only`); ask for everything else (`sh-confirm`). |
+| `clj-sh` | For clj `(sh …)`: allow read-only `sed -n …p`, in-repo `mv` `cp` `mkdir` `touch` `rmdir`, and `rm` of git-tracked content (`repository-scripts`); allow `curl` to loopback with safe flags (`localhost-curl`, a `:host` rule); allow read-only programs (`sh-read-only`); ask for everything else (`sh-confirm`). |
 
 Names are written `:xi.rules.defaults/<bundle>` in `:defaults`:
 
