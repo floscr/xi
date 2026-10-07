@@ -30,6 +30,7 @@
             [xi.web.user-state :as user-state]
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
+            [xi.web.key-hints :as key-hints]
             [xi.web.keymap :as keymap]
             [xi.web.resubmit :as resubmit]
             [xi.web.router :as router]
@@ -2869,6 +2870,8 @@
     (install-actions!)
     (.addEventListener js/document "keydown"
                        (fn [^js e] (keymap/handle-keydown @state dispatch! e)))
+    ;; Holding Alt badges every data-key-action button with its key.
+    (key-hints/install! #(deref state))
     (render! @state dispatch!)))
 
 (defn- hide-shadow-hud-when-remote!

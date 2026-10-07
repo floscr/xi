@@ -613,6 +613,12 @@
              (highlight-code g shown)
              (plain-code shown))]])))))
 
+(def ^:private confirm-key-action
+  "Confirm answer value → the keyboard action that gives it. Buttons carry it
+   as `data-key-action`, so holding Alt badges them with the action's key
+   (xi.web.key-hints)."
+  {true "permission/allow" false "permission/deny" :repo "permission/allow-repo"})
+
 (defn- confirm-buttons
   "Answer buttons for a :confirm dialog, driven by its normalized :options
    data (xi.dialog) instead of hardcoded per-option markup. Deny-style
@@ -628,6 +634,7 @@
         :let [btn [:button {:class ["confirm-btn" (cond (false? value) "confirm-btn--deny"
                                                         (true? value)  "confirm-btn--allow"
                                                         :else          "confirm-btn--extra")]
+                            :data-key-action (confirm-key-action value)
                             :on {:click (fn [_] (answer! value))}}
                    label]]]
     (if (and (false? value) deny-reason! (:deny-reason? dialog))
@@ -1662,6 +1669,8 @@
             (when busy?
               [:button {:class ["icon-btn" "compose-spinner-abort"]
                         :aria-label "Abort"
+                        ;; the one abort button tagged: it shows in both branches
+                        :data-key-action "agent/abort"
                         :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
                (spinner)])]
         (if (and busy? (not (command-while-busy? draft)))
@@ -2573,7 +2582,8 @@
    every topbar; toggles the :web/sidebar-open? app state."
   [dispatch!]
   (sidebar/sidebar-mobile-toggle
-   {:on-click (fn [_] (dispatch! {:type :sidebar/toggle}))}))
+   {:on-click (fn [_] (dispatch! {:type :sidebar/toggle}))
+    :attrs    {:data-key-action "sidebar/toggle"}}))
 
 (defn nav-group
   "Burger toggle + back arrow rendered as one segmented button split by a
@@ -2648,6 +2658,7 @@
         [:div {:class ["overflow-menu"]
                :replicant/key "overflow-menu"}
          [:button {:class ["overflow-menu-item"]
+                   :data-key-action "chat/new"
                    :on {:click (fn [e]
                                  (.stopPropagation e)
                                  (dispatch! {:type :overflow/close})
@@ -3776,6 +3787,7 @@
       [:div {:class ["topbar-title"]} "All sessions"]
       (when connected?
         [:button {:class ["icon-btn"]
+                  :data-key-action "chat/new"
                   :on {:click (fn [_] (dispatch! {:type :room/new}))}}
          (icon/icon {:icon-name :plus :size :md})])
       (overflow-menu dispatch! state)]
@@ -3815,6 +3827,7 @@
       (offline-badge state)
       (when connected?
         [:button {:class ["icon-btn"]
+                  :data-key-action "chat/new"
                   :on {:click (fn [_] (dispatch! {:type :room/new}))}}
          (icon/icon {:icon-name :plus :size :md})])
       (overflow-menu dispatch! state)]
@@ -3886,6 +3899,7 @@
                (icon/icon {:icon-name (:icon item) :size :md})]))
           (when connected?
             [:button {:class ["icon-btn"]
+                      :data-key-action "chat/new"
                       :on {:click (fn [_] (dispatch! {:type :room/new}))}}
              (icon/icon {:icon-name :plus :size :md})])
           (overflow-menu dispatch! state)]

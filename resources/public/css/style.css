@@ -3019,6 +3019,33 @@ code a:hover,
   border-radius: 4px;
 }
 
+/* Alt-held key hints (xi.web.key-hints): while Alt is held, a button tagged
+   with data-key-action gets data-key-hint ("Alt+A") and wears it as a keycap
+   badge centred over itself, avy-style, so nothing shifts. */
+[data-key-hints] [data-key-hint] {
+  position: relative;
+}
+[data-key-hints] [data-key-hint]::after {
+  content: attr(data-key-hint);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  padding: 2px 5px 1px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+  color: var(--fg-0);
+  background: var(--bg-2);
+  border: 1px solid color-mix(in srgb, var(--fg-2) 60%, transparent);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
 /* Trailing "new chat" button on project-directory cards (replaces the old
    chevron): clicking the card navigates into the project, this button starts
    a fresh chat. stopPropagation keeps the two actions separate. */
