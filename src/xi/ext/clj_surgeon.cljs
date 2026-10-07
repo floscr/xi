@@ -296,10 +296,10 @@
                    :properties {:file {:type "string" :description "Path to .clj file"}}
                    :required ["file"]}}
    {:name "clj_replace"
-    :description "Structural S-expression replacement in a Clojure file. Matches by code structure (ignoring whitespace/formatting), not text. Use when edit tool fails due to formatting differences."
+    :description "Structural S-expression replacement in a Clojure file. Matches by code structure (ignoring whitespace/formatting), not text. old_str and new_str must each be complete, balanced forms — partial fragments (a few lines from inside a form) fail to parse; use the text edit tool for those. Use when edit tool fails due to formatting differences."
     :input_schema {:type "object"
                    :properties {:file    {:type "string" :description "Path to .clj/.cljs/.cljc file"}
-                                :old_str {:type "string" :description "Clojure expression to find (matched structurally, not by text)"}
+                                :old_str {:type "string" :description "ONE complete, balanced Clojure form to find (matched structurally, not by text). Not a fragment."}
                                 :new_str {:type "string" :description "Clojure expression to replace it with"}}
                    :required ["file" "old_str" "new_str"]}}
    {:name "clj_fix_parens"
@@ -348,8 +348,9 @@
        "instead of clobbering). Use clj_replace to change a form, "
        "clj_mv/clj_extract/clj_fix_declares to move or reorganize forms, and "
        "clj_rename_ns for namespace renames. Fall back to edit only for "
-       "non-structural text (comments, strings, docstrings) or when clj_replace "
-       "cannot match."))
+       "non-structural text (comments, strings, docstrings), partial fragments of "
+       "a form (clj_replace only takes one complete, balanced form), or when "
+       "clj_replace cannot match."))
 
 (def extension
   {:id               :clj-surgeon

@@ -9,7 +9,12 @@
   (try
     {:ok true :result (z/of-string code-str {:track-position? true})}
     (catch Exception e
-      {:ok false :error (str label " parse error: " (.getMessage e))})))
+      {:ok false :error (str label " parse error: " (.getMessage e) "\n"
+                             "clj_replace needs " label " to be ONE complete, balanced"
+                             " form (e.g. a whole defn or binding vector); fragments"
+                             " cut from inside a form cannot be parsed. Pass the"
+                             " enclosing complete form, or use the text `edit` tool"
+                             " for partial / non-structural changes.")})))
 
 (defn sexpr-equal? [a b]
   (try
