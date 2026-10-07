@@ -1957,6 +1957,12 @@ body {
   transform: rotate(90deg);
 }
 
+/* Nothing to expand yet (a running call without output): keep the slot so
+   the label stays aligned with its neighbours, but show no chevron. */
+.tool-call-toggle-icon--empty {
+  visibility: hidden;
+}
+
 .tool-call-toggle-label {
   font-weight: 500;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;

@@ -716,6 +716,10 @@
         preview   (when (not= :done status)
                     (or diff (get-in permission [:dialog :diff])))
         denied?   (and (some? resolved-permission) (not (:value resolved-permission)))
+        ;; Anything to expand? A call that is still running with no output
+        ;; yet (a long `bb check`) has nothing behind the chevron, so the
+        ;; chevron is hidden until the body gets its first piece.
+        has-content? (boolean (or clj-code preview (seq text) ext-view permission imgs))
         label     (if clj?
                     name
                     (str name (when (seq summary)
@@ -728,7 +732,8 @@
                          grouped? (conj "tool-call-block--viewer"))
                 :open (not collapsed?)}
       [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
-       [:span {:class ["tool-call-toggle-icon"]}
+       [:span {:class (cond-> ["tool-call-toggle-icon"]
+                        (not has-content?) (conj "tool-call-toggle-icon--empty"))}
         (icon/icon {:icon-name :chevron-right :size :sm})]
        [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))}
         [:span {:class ["tool-call-action"]} name]
