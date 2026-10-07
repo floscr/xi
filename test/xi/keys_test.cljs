@@ -42,6 +42,16 @@
   (is (nil? (keys/parse-key "")))
   (is (= ["g" "g"] (keys/chords "g g"))))
 
+(deftest space-bar
+  (is (= "space" (keys/chord {:key " "})))
+  (is (= "ctrl+space" (keys/chord {:key " " :ctrl true})))
+  (is (= "space" (keys/parse-chord "space")))
+  (is (keys/bare-printable? "space") "the space bar types")
+  (is (not (keys/bare-printable? "ctrl+space")))
+  (testing "degenerate keys never throw"
+    (is (not (keys/bare-printable? "")))
+    (is (not (keys/bare-printable? " ")))))
+
 (deftest bare-printable
   (is (keys/bare-printable? "i"))
   (is (keys/bare-printable? "shift+g"))

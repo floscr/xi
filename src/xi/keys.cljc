@@ -64,7 +64,9 @@
    character (\"?\") already encodes its shift, so the modifier is dropped.
    nil when the key is unusable."
   [{:keys [key ctrl alt shift meta mod]}]
-  (when (and (string? key)
+  ;; the space character is the named key "space" (a chord is space-separated)
+  (let [key (if (= key " ") "space" key)]
+   (when (and (string? key)
              (or (contains? named-keys key) (= 1 (count key))))
     (let [modded? (or ctrl alt meta mod)
           k       (if (letter? key) (str/lower-case key) key)
@@ -74,7 +76,7 @@
                     (contains? named-keys key) (boolean shift)
                     :else false)]
       (str (when ctrl "ctrl+") (when alt "alt+") (when shift "shift+")
-           (when meta "meta+") (when mod "mod+") k))))
+           (when meta "meta+") (when mod "mod+") k)))))
 
 (defn parse-chord
   "One chord spec (\"alt+shift+p\", \"Esc\", \"G\", \"ctrl++\") → its canonical
@@ -125,11 +127,13 @@
 
 (defn bare-printable?
   "True when the key's first chord types a character (no ctrl/alt/meta, a
-   single-character key) — never looked up while a text field has focus."
+   single-character key or the space bar) — never looked up while a text
+   field has focus."
   [k]
-  (let [{:keys [mods key]} (split-chord (first (chords k)))]
-    (and (not (some mods ["ctrl" "alt" "meta" "mod"]))
-         (not (contains? named-keys key)))))
+  (when-let [c (not-empty (first (chords k)))]
+    (let [{:keys [mods key]} (split-chord c)]
+      (and (not (some mods ["ctrl" "alt" "meta" "mod"]))
+           (or (= key "space") (not (contains? named-keys key)))))))
 
 (defn expand-mod
   "`mod` is ctrl on the TUI and ctrl *or* meta in the browser: → the concrete

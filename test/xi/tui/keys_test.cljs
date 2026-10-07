@@ -8,6 +8,7 @@
 
 (deftest decode-plain-and-control
   (is (= "a" (tui-keys/decode "a")))
+  (is (= "space" (tui-keys/decode " ")) "typing a space must not break the editor hook")
   (is (= "shift+g" (tui-keys/decode "G")))
   (is (= "?" (tui-keys/decode "?")))
   (is (= ":" (tui-keys/decode ":")))
