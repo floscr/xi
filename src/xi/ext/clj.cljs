@@ -131,7 +131,8 @@
   "Ask the main thread to approve an out-of-sandbox `resolved` path hit
    mid-eval (a dynamic path the static gate couldn't pre-approve); blocks
    until the user answers the approval dialog. Returns the approved root
-   string, :denied, or nil when there is no parent thread to ask."
+   string, {:denied reason} (reason = what the user typed when denying, \"\"
+   when none), or nil when there is no parent thread to ask."
   [opts kind resolved {:keys [op raw]}]
   (when-let [[verdict root] (await-main-thread! opts #js {:gateRequest (name kind)
                                                           :path        (str resolved)
@@ -145,7 +146,7 @@
                                                           ;; point at that call
                                                           :op          (some-> op str)
                                                           :raw         (str raw)})]
-    (if (= :allowed verdict) root :denied)))
+    (if (= :allowed verdict) root {:denied root})))
 
 (defn- git-lock-gate!
   "Before an index-mutating git op (argv without \"git\") in `dir`: block
@@ -200,8 +201,11 @@
           (do (swap! opts update :allowed-reads (fnil conj #{}) verdict)
               resolved)
 
-          (= verdict :denied)
-          (throw (ex-info (str "clj: user denied reading outside the repo: " p) {}))
+          (:denied verdict)
+          (throw (ex-info (dialog/with-deny-reason
+                           (str "clj: user denied reading outside the repo: " p)
+                           (:denied verdict))
+                          {}))
 
           :else
           (throw (ex-info (str "clj: reads are limited to the working dir and "
@@ -229,8 +233,11 @@
           (do (swap! opts update :allowed-writes (fnil conj #{}) verdict)
               resolved)
 
-          (= verdict :denied)
-          (throw (ex-info (str "clj: user denied writing outside the repo: " p) {}))
+          (:denied verdict)
+          (throw (ex-info (dialog/with-deny-reason
+                           (str "clj: user denied writing outside the repo: " p)
+                           (:denied verdict))
+                          {}))
 
           :else
           (throw (ex-info (str "clj: writes are limited to the working dir and "
@@ -1191,26 +1198,35 @@
    SharedArrayBuffer. Run the same engine consult + approval dialog the static
    gate uses (auto-approved by a matching allow rule — e.g. an [r] repo grant —
    or headless), then write the verdict into the SAB — status 1 + the UTF-8
-   approved root on allow, status 2 on deny — and notify the waiting worker."
+   approved root on allow, status 2 + the user's deny reason (if any, the
+   ctx's :deny-reason box) on deny — and notify the waiting worker."
   [^js m]
   (let [sab     (.-sab m)
         i32     (js/Int32Array. sab 0 2)
         ctx     (or (some->> (.-gateId m) (get @call-ctxs))
                     (get @gate-ctxs (.-roomKey m)))
         path    (.-path m)
+        reason  (:deny-reason ctx)
         settle! (fn [root]
                   (let [bytes (when root (.encode (js/TextEncoder.) (str root)))]
                     (if (and bytes (<= (.-length bytes) (- (.-byteLength sab) 8)))
                       (do (.set (js/Uint8Array. sab 8 (.-length bytes)) bytes)
                           (js/Atomics.store i32 1 (.-length bytes))
                           (js/Atomics.store i32 0 1))
-                      (js/Atomics.store i32 0 2))
+                      (let [why   (.encode (js/TextEncoder.) (str (some-> reason deref)))
+                            why   (if (> (.-length why) (- (.-byteLength sab) 8))
+                                    (.slice why 0 (- (.-byteLength sab) 8))
+                                    why)]
+                        (.set (js/Uint8Array. sab 8 (.-length why)) why)
+                        (js/Atomics.store i32 1 (.-length why))
+                        (js/Atomics.store i32 0 2)))
                     (js/Atomics.notify i32 0)))]
     (if-not ctx
       (settle! nil)
-      (-> (approve-outside-path (if (= "write" (.-gateRequest m)) :write :read)
-                                path ctx (:cwd ctx)
-                                {:op (.-op m) :raw (.-raw m)})
+      (-> (do (some-> reason (vreset! nil))
+              (approve-outside-path (if (= "write" (.-gateRequest m)) :write :read)
+                                    path ctx (:cwd ctx)
+                                    {:op (.-op m) :raw (.-raw m)}))
           (.then settle!)
           (.catch (fn [_] (settle! nil)))))))
 
@@ -1950,7 +1966,7 @@
         ;; model learns why.
         deny-reason (volatile! nil)
         confirm! (dialog/capture-deny-reason confirm! deny-reason)
-        ctx     (assoc ctx :confirm! confirm!)
+        ctx     (assoc ctx :confirm! confirm! :deny-reason deny-reason)
         blocked (fn [text] (blocked (dialog/with-deny-reason text @deny-reason)))
         code    (str (get-in tool-call [:arguments :code]))
         scan    (scan-code code)
