@@ -183,6 +183,18 @@ keywords from `xi.dialog/confirm-option` (e.g. `:always` resolves
 `:always`, `:allow-repo` resolves `:repo`); the TUI and web render the
 dialog generically from that vector, so no template changes are needed.
 
+**Asks as a block.** Each tool call's ctx is scoped by
+`xi.dialog/scope-confirm-to-call`, which also adds `:expect-asks!`
+`(fn [targets])`. A tool that will ask several times for one call (the clj
+gate) declares up front the `:target` of each ask it may raise. While more
+than one is outstanding, every ask gets the `:allow-block` option (resolves
+`:block`) and a `:block {:count :arg :ranges}` with the union of the
+outstanding asks' ranges, which the web highlights while the button is
+hovered. Answering it resolves that ask to `true`, and the call's later
+*declared* asks (matched by `:target`) to `true` without a dialog. Undeclared
+asks (a runtime path gate) still open a dialog. Tools that ask once need
+nothing.
+
 Tool exec-fns get the same context plus the provider's own keys:
 `{:cwd :client-pid :dispatch! :get-state :room-id :confirm!}` (in a
 sub-agent turn, `:room-id` is the parent room and `:confirm!` auto-denies).

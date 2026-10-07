@@ -1992,6 +1992,24 @@
    (js/Promise.resolve {:ok? true :approved-roots #{}})
    dirs))
 
+(defn- expected-ask-targets
+  "The :target of every approval ask `approve` may raise for one eval: the
+   out-of-repo reads / writes the engine leaves to the user, recursive (rm dir)
+   deletions, guarded / rule-asked commands and unapproved CLIs. Declared
+   through the ctx's :expect-asks! so the asks form one block the user can
+   allow at once (xi.dialog/scope-confirm-to-call). Each target is built
+   exactly as its ask builds it, so an ask finds itself in the list."
+  [ctx cwd code {:keys [reads writes rm-dirs confirms clis]}]
+  (concat
+   (for [[kind paths] [[:read reads] [:write writes]]
+         p paths
+         :let [{:keys [rule resolved]} (outside-path-decision kind p ctx cwd)]
+         :when (not (#{:allow :deny} (get-in rule [:action :type])))]
+     (path-ask-target code kind {:literals [(str p) resolved]}))
+   (map #(rm-ask-target code %) rm-dirs)
+   (map :target confirms)
+   (map #(cli-ask-target code %) clis)))
+
 (defn approve
   "Vet one clj call before it runs: static validation, the rules-engine
    consult per scanned (sh …) / background command, and the approval dialogs
@@ -2258,7 +2276,15 @@
             ;; approval dialog as writes, then injected so resolve-read allows
             ;; them. A write-approved root implies read, so drop those overlaps.
             outside-reads (->> (read-paths-of scan)
-                               (filter #(rules-store/outside-cwd? cwd %)))]
+                               (filter #(rules-store/outside-cwd? cwd %)))
+            ;; Several asks ahead → each offers "Allow block" for all of them.
+            _ (when-let [expect! (and confirm! (:expect-asks! ctx))]
+                (expect! (expected-ask-targets ctx cwd code
+                                               {:reads    outside-reads
+                                                :writes   outside-writes
+                                                :rm-dirs  rm-dirs
+                                                :confirms confirms
+                                                :clis     needed'})))]
         (cond
           ;; A rule (hardened tier or user config) denies one of the scanned
           ;; commands — block with the rule's message. This is where sudo and

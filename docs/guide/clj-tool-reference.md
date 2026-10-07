@@ -83,6 +83,16 @@ no "always". Remote shells (`ssh`, `scp`, `rsync`, `sftp`) never run.
 A computed program name was never approved and fails; use a literal. With
 nobody to answer (`xi prompt`), an ask is a deny.
 
+**Several asks in one script.** Programs, paths outside the repository,
+directory deletions and guarded commands are asked about one at a time.
+While more than one is still to come, each ask also offers **Allow block**
+(`b`, `/allow block`, `Alt+Shift+B` on the web). Its label shows how many
+asks it covers. Hovering it on the web highlights every call it would
+allow. Answering it allows the current ask and the rest of the script's asks
+without further dialogs. Like plain Allow, it applies only to this run;
+nothing is remembered. A computed path that asks while the script runs
+still gets its own dialog.
+
 ## Background processes
 
 | Call | Does |

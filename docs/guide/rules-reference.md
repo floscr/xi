@@ -165,8 +165,8 @@ gates, as the built-in order does. `:defaults []` turns the tier off.
 - `/rules` lists the rules in effect, in order, with their source.
 - `/rules reload` re-reads the files (they are otherwise cached by
   modification time).
-- `/allow`, `/allow always`, `/allow repo`, `/deny` answer the pending
-  dialog.
+- `/allow`, `/allow always`, `/allow repo`, `/allow block`, `/deny` answer
+  the pending dialog.
 - `/clj allow <cli>` and `/clj revoke <cli>` add and remove a chat rule for
   a program.
 

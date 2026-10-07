@@ -2616,6 +2616,7 @@
                             :run (fn [st dispatch! _] (session-step! st dispatch! :prev))})
   (doseq [[id option] [[:permission/allow      :yes]
                        [:permission/allow-repo :allow-repo]
+                       [:permission/allow-block :allow-block]
                        [:permission/deny       :no]]]
     (keymap/register-action! {:id id
                               :when (fn [st] (some? (permission-answer st option)))

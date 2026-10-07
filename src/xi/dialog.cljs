@@ -27,6 +27,8 @@
                 :resolved-label "Always allowed"}
    :allow-repo {:value :repo   :key "r" :label "Allow repo writes"
                 :resolved-label "Repo writes allowed"}
+   :allow-block {:value :block :key "b" :label "Allow block"
+                 :resolved-label "Block allowed"}
    :recommend-rule {:value :recommend :key "?" :label "Recommend a rule"
                     :resolved-label "Recommending a rule…"}})
 
@@ -59,7 +61,9 @@
    "always" :always
    "a"      :always
    "repo"   :allow-repo
-   "r"      :allow-repo})
+   "r"      :allow-repo
+   "block"  :allow-block
+   "b"      :allow-block})
 
 (defn answer-option
   "Confirm option an answer command picks — `verb` is :allow or :deny,
@@ -90,20 +94,78 @@
 
       :else {:dialog-id (:id dialog) :value value})))
 
+(defn- drop-first
+  "`coll` without its first item equal to `x`, as a vector."
+  [x coll]
+  (let [[before after] (split-with #(not= x %) coll)]
+    (into (vec before) (rest after))))
+
+(defn- block-opts
+  "Confirm `opts` for an ask while `left` (its own :target first, then the
+   call's other expected asks) is outstanding: with more than one, the ask
+   also offers :allow-block and carries :block {:count n} plus {:arg :code
+   :ranges […]} — the union of the outstanding asks' code ranges, i.e.
+   everything answering it would allow."
+  [opts left]
+  (if-not (next left)
+    opts
+    (let [ranges (->> left
+                      (filter #(= :code (:arg %)))
+                      (mapcat :ranges)
+                      distinct
+                      sort
+                      vec)]
+      (assoc opts
+             :options (conj (vec (or (seq (:options opts)) default-confirm-options))
+                            :allow-block)
+             :block (cond-> {:count (count left)}
+                      (seq ranges) (assoc :arg :code :ranges ranges))))))
+
 (defn scope-confirm-to-call
   "`ctx` with its :confirm! tagging every dialog with :call — the {:name
    :arguments} of `tool-call`, the call being gated — so a client renders the
    ask on that call's block rather than guessing among parallel running calls
    (`permission-tool-index`). Applied to both halves of a call's gating: the
    policy hook and the tool's own exec ctx (the clj gate asks from inside the
-   tool), so every ask carries it. No :confirm! → ctx unchanged."
+   tool), so every ask carries it. No :confirm! → ctx unchanged.
+
+   It also makes the call's asks one *block*. A tool that will raise several
+   asks for one call declares them up front through the ctx's :expect-asks!
+   (fn [targets]) — the :target of each ask it may raise. While more than one
+   is outstanding, each ask offers :allow-block (see `block-opts`); answering
+   it allows that ask and resolves the call's later *declared* asks (matched
+   by their non-nil :target) to `true` without a dialog — exactly what the
+   block highlighted. Asks it didn't declare (a runtime path gate mid-eval)
+   still open their own dialog. The caller sees a plain `true` for the ask
+   itself."
   [ctx {:keys [name arguments]}]
   (if-let [confirm! (:confirm! ctx)]
-    (let [call {:name name :arguments arguments}]
-      (assoc ctx :confirm!
+    (let [call     {:name name :arguments arguments}
+          expected (volatile! [])
+          allowed? (volatile! false)]
+      (assoc ctx
+             :expect-asks! (fn [targets] (vreset! expected (vec targets)))
+             :confirm!
              (fn scoped
                ([message] (scoped message nil))
-               ([message opts] (confirm! message (assoc opts :call call))))))
+               ([message opts]
+                (let [target    (:target opts)
+                      declared? (and (some? target) (some #{target} @expected))
+                      left      (cons target (vswap! expected #(drop-first target %)))]
+                  (cond
+                    (and @allowed? declared?) (js/Promise.resolve true)
+                    ;; an undeclared ask after the block was allowed: on its own
+                    @allowed? (confirm! message (assoc opts :call call))
+                    :else
+                    (let [opts   (block-opts opts left)
+                          answer (confirm! message (assoc opts :call call))]
+                      (if-not (:block opts)
+                        answer
+                        (.then (js/Promise.resolve answer)
+                               (fn [v]
+                                 (if (= :block v)
+                                   (do (vreset! allowed? true) true)
+                                   v)))))))))))
     ctx))
 
 (defn capture-deny-reason

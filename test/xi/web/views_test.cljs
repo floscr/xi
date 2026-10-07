@@ -71,3 +71,18 @@
       (is (= [[true text]] (views/code-focus-segments text [[500 600]]))))
     (testing "a range covering everything mutes nothing"
       (is (= [[false text]] (views/code-focus-segments text [[0 (count text)]]))))))
+
+(deftest code-block-segments-mark-the-whole-block
+  (let [text "(def a 1)\n(spit p 1)\n(cp a b)"]
+    (testing "the ask's own call is focused; every block call is marked"
+      (is (= [[true false "(def a 1)\n"] [false true "(spit p 1)"]
+              [true false "\n"] [true true "(cp a b)"]]
+             (views/code-block-segments text [[10 20]] [[10 20] [21 29]]))))
+    (testing "a block range splits a muted piece in the middle"
+      (is (= [[true false "(def "] [true true "a"] [true false " 1)\n"]
+              [false false "(spit p 1)"] [true false "\n(cp a b)"]]
+             (views/code-block-segments text [[10 20]] [[5 6]]))))
+    (testing "no ask ranges → nothing muted"
+      (is (= [[false false "(def a 1)\n"] [false true "(spit p 1)"]
+              [false false "\n(cp a b)"]]
+             (views/code-block-segments text nil [[10 20]]))))))

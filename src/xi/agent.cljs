@@ -529,6 +529,9 @@
                        ;; :call {:name :arguments} names the gated tool call.
                        ;; :target {:arg :ranges} locates, inside that call's
                        ;; argument, the part the ask is about.
+                       ;; :block {:count :arg :ranges} — this ask is one of
+                       ;; several for the call; ranges cover all of them
+                       ;; (xi.dialog/scope-confirm-to-call).
                        ;; :on-reason (fn [reason]) offers deny-with-reason
                        ;; (xi.dialog/capture-deny-reason).
                        :confirm!  (when ask!
@@ -542,7 +545,8 @@
                                                          (:options opts) (assoc :options (:options opts))
                                                          (:diff opts)    (assoc :diff (:diff opts))
                                                          (:call opts)    (assoc :call (:call opts))
-                                                         (:target opts)  (assoc :target (:target opts)))}))))}
+                                                         (:target opts)  (assoc :target (:target opts))
+                                                         (:block opts)   (assoc :block (:block opts)))}))))}
              policy1 (when tool-policy
                      (fn [tool-call]
                        (tool-policy tool-call (dialog/scope-confirm-to-call tool-ctx tool-call))))

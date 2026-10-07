@@ -1,5 +1,5 @@
 (ns xi.dialog-test
-  (:require [cljs.test :refer [deftest is testing]]
+  (:require [cljs.test :refer [async deftest is testing]]
             [xi.dialog :as dialog]))
 
 (deftest confirm-options-defaults-to-yes-no
@@ -136,6 +136,69 @@
   (is (= "Blocked." (dialog/with-deny-reason "Blocked." "  ")))
   (is (= "Blocked.\nTo tell you how to proceed, the user said:\nuse rg"
          (dialog/with-deny-reason "Blocked." " use rg "))))
+
+(def ^:private t1 {:arg :code :ranges [[0 5]]})
+(def ^:private t2 {:arg :code :ranges [[10 15]]})
+(def ^:private t3 {:arg :code :ranges [[20 25]]})
+
+(defn- block-ctx
+  "A scoped ctx whose confirm! records each ask's opts and answers from `answers`."
+  [asked answers]
+  (let [answers (atom answers)]
+    (dialog/scope-confirm-to-call
+     {:confirm! (fn [_ opts]
+                  (swap! asked conj opts)
+                  (let [a (first @answers)] (swap! answers rest) (js/Promise.resolve a)))}
+     {:name "clj" :arguments {}})))
+
+(deftest block-asks-offer-allow-block-and-skip-the-rest
+  (async done
+    (let [asked (atom [])
+          {:keys [confirm! expect-asks!]} (block-ctx asked [:block])]
+      (expect-asks! [t1 t2 t3])
+      (-> (js/Promise.resolve (confirm! "one" {:target t1 :options [:yes :no :always]}))
+          (.then (fn [a1]
+                   (is (true? a1) "the block answer reads as a plain allow")
+                   (let [{:keys [options block]} (first @asked)]
+                     (is (= [:yes :no :always :allow-block] options))
+                     (is (= {:count 3 :arg :code :ranges [[0 5] [10 15] [20 25]]} block)
+                         "the union of every outstanding ask"))
+                   (js/Promise.all #js [(confirm! "two" {:target t2})
+                                        (confirm! "three" {:target t3})])))
+          (.then (fn [^js rest-answers]
+                   (is (= [true true] (vec rest-answers)))
+                   (is (= 1 (count @asked)) "declared asks after it open no dialog")
+                   (done)))))))
+
+(deftest block-allow-does-not-cover-undeclared-asks
+  (async done
+    (let [asked (atom [])
+          {:keys [confirm! expect-asks!]} (block-ctx asked [:block false])]
+      (expect-asks! [t1 t2])
+      (-> (js/Promise.resolve (confirm! "one" {:target t1}))
+          (.then (fn [_] (confirm! "runtime gate" {:target t3})))
+          (.then (fn [a]
+                   (is (false? a) "a runtime ask still asks")
+                   (is (= 2 (count @asked)))
+                   (is (nil? (:block (second @asked))))
+                   (done)))))))
+
+(deftest block-option-only-while-several-asks-are-outstanding
+  (async done
+    (let [asked (atom [])
+          {:keys [confirm! expect-asks!]} (block-ctx asked [true true])]
+      (expect-asks! [t1 t2])
+      (-> (js/Promise.resolve (confirm! "one" {:target t1}))
+          (.then (fn [_] (confirm! "two" {:target t2})))
+          (.then (fn [_]
+                   (is (= 2 (:count (:block (first @asked)))))
+                   (is (= {:target t2} (dissoc (second @asked) :call))
+                       "the last ask is a plain one")
+                   (done)))))))
+
+(deftest answer-option-allow-block
+  (is (= :allow-block (dialog/answer-option :allow "block")))
+  (is (= :allow-block (dialog/answer-option :allow "b"))))
 
 (deftest scope-confirm-to-call-without-confirm-is-a-no-op
   (let [ctx {:room-id "r"}]

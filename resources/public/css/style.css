@@ -2471,6 +2471,23 @@ code a:hover,
   }
 }
 
+/* When the ask is one of several for the block (the dialog's :block),
+   hovering / focusing "Allow block" lights up every call those asks target —
+   everything the button would allow — and mutes the rest. */
+.tool-call-code .code-block-target {
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+  border-radius: 3px;
+}
+
+.tool-call-block:has(.confirm-btn--block:is(:hover, :focus-visible)) .tool-call-code .code-block-target {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.tool-call-block:has(.confirm-btn--block:is(:hover, :focus-visible)) .tool-call-code .code-focus:not(.code-block-target) {
+  opacity: 0.4;
+}
+
 /* ---- Thinking blocks ---- */
 .thinking-block { margin: var(--size-1) 0; }
 

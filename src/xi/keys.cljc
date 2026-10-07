@@ -200,6 +200,7 @@
    :agent/abort             {:label "Stop the running turn"}
    :permission/allow        {:label "Allow the pending permission request"}
    :permission/allow-repo   {:label "Allow repo writes for the pending permission request" :surface #{:web}}
+   :permission/allow-block  {:label "Allow every request of the pending permission's block" :surface #{:web}}
    :permission/deny         {:label "Deny the pending permission request"}
    :keys/show               {:label "Keyboard shortcuts"}
    :buffer/close            {:label "Close this view, back to the chat"}
@@ -293,6 +294,7 @@
                               "escape"      :dialog/close}
          :permission-pending {"alt+a"       :permission/allow
                               "alt+shift+a" :permission/allow-repo
+                              "alt+shift+b" :permission/allow-block
                               "alt+d"       :permission/deny}
          :mode/navigate      {"i" :compose/focus
                               "G" :timeline/bottom

@@ -1,6 +1,7 @@
 (ns xi.ext.clj-test
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
+            [xi.dialog :as dialog]
             [xi.ext.clj :as clj-ext]
             [xi.ext.rules :as rules-ext]
             ["node:child_process" :as cp]
@@ -1503,6 +1504,29 @@
                      (is (string? id1))
                      (is (not= id1 id2))
                      (done))))))))
+
+(deftest gate-asks-form-a-block-the-user-can-allow-at-once
+  (async done
+    (let [asked (atom [])
+          code  "(def a 1)\n(sh \"ssh\" \"host\")\n(sh \"gzip\" \"x\")"
+          call  {:name "clj" :arguments {:code code}}
+          ctx   (dialog/scope-confirm-to-call
+                 (assoc (gate-ctx) :confirm! (fn [_ opts]
+                                               (swap! asked conj opts)
+                                               (js/Promise.resolve :block)))
+                 call)]
+      (-> (js/Promise.resolve (gate call ctx))
+          (.then (fn [res]
+                   (is (= 1 (count @asked)) "one answer covers both CLI asks")
+                   (let [{:keys [options block]} (first @asked)]
+                     (is (some #{:allow-block} options))
+                     (is (= 2 (:count block)))
+                     (is (= ["(sh \"ssh\" \"host\")" "(sh \"gzip\" \"x\")"]
+                            (range-texts code (:ranges block)))
+                         "the block highlights every call it allows"))
+                   (is (not (:intercepted res)))
+                   (is (every? (set (get-in res [:arguments :_allowed])) ["ssh" "gzip"]))
+                   (done)))))))
 
 (deftest gate-ask-targets-the-cli-call
   (async done

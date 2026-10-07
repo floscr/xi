@@ -486,16 +486,35 @@
                    (< s e)   (conj [false (subs text s e)]))))
         (cond-> out (< pos n) (conj [true (subs text pos n)]))))))
 
+(defn code-block-segments
+  "`code-focus-segments` with each piece further split around `block-ranges`
+   (every ask of the call — the dialog's :block, xi.dialog) →
+   [muted? in-block? segment] triples. No `ranges` → nothing is muted."
+  [text ranges block-ranges]
+  (loop [pos 0
+         segs (code-focus-segments text (or (seq ranges) [[0 (count text)]]))
+         out []]
+    (if-let [[muted? s] (first segs)]
+      (recur (+ pos (count s)) (rest segs)
+             (into out
+                   (map (fn [[outside? piece]] [muted? (not outside?) piece]))
+                   (code-focus-segments s (map (fn [[a b]] [(- a pos) (- b pos)])
+                                               block-ranges))))
+      out)))
+
 (defn- focused-clj-code
   "Highlighted clj `text` with everything outside the ask's `ranges` muted
-   (.code-muted). Each segment is highlighted on its own — the ranges are
-   whole forms, so every piece tokenizes like it would in context."
-  [text ranges]
+   (.code-muted) and the calls of the whole block (`block-ranges`, may be
+   nil) marked .code-block-target — lit up while \"Allow block\" is hovered.
+   Each segment is highlighted on its own — the ranges are whole forms, so
+   every piece tokenizes like it would in context."
+  [text ranges block-ranges]
   (into [:code]
-        (map (fn [[muted? s]]
-               (into [:span {:class (if muted? "code-muted" "code-focus")}]
+        (map (fn [[muted? in-block? s]]
+               (into [:span {:class (cond-> [(if muted? "code-muted" "code-focus")]
+                                      in-block? (conj "code-block-target"))}]
                      (rest (or (highlight-clj-code s) (plain-code s))))))
-        (code-focus-segments text ranges)))
+        (code-block-segments text ranges block-ranges)))
 
 (defn- render-md
   "Memoized `md/render`: identical text yields the *identical* hiccup object so
@@ -717,7 +736,8 @@
   "Confirm answer value → the keyboard action that gives it. Buttons carry it
    as `data-key-action`, so holding Alt badges them with the action's key
    (xi.web.key-hints)."
-  {true "permission/allow" false "permission/deny" :repo "permission/allow-repo"})
+  {true "permission/allow" false "permission/deny" :repo "permission/allow-repo"
+   :block "permission/allow-block"})
 
 (defn- confirm-buttons
   "Answer buttons for a :confirm dialog, driven by its normalized :options
@@ -731,12 +751,17 @@
                                                (true? value)  2
                                                :else          1))
                                        (dlg/confirm-options dialog))
-        :let [btn [:button {:class ["confirm-btn" (cond (false? value) "confirm-btn--deny"
-                                                        (true? value)  "confirm-btn--allow"
-                                                        :else          "confirm-btn--extra")]
+        :let [block? (= :block value)
+              btn [:button {:class (cond-> ["confirm-btn" (cond (false? value) "confirm-btn--deny"
+                                                                 (true? value)  "confirm-btn--allow"
+                                                                 :else          "confirm-btn--extra")]
+                                     block? (conj "confirm-btn--block"))
                             :data-key-action (confirm-key-action value)
+                            :title (when block? "Allow every request of this block (hover to see them)")
                             :on {:click (fn [_] (answer! value))}}
-                   label]]]
+                   (if-let [n (and block? (get-in dialog [:block :count]))]
+                     (str label " (" n ")")
+                     label)]]]
     (if (and (false? value) deny-reason! (:deny-reason? dialog))
       [:span {:class ["confirm-split"]}
        btn
@@ -875,13 +900,17 @@
       (when clj-code
         ;; A pending ask that targets part of this code (the (spit …) /
         ;; (sh …) call it is about) mutes the rest so the eye lands there.
+        ;; An ask that is one of several (:block) also marks every call the
+        ;; block's asks target, lit up while "Allow block" is hovered.
         (let [shown  (truncate-lines clj-code 100)
               target (get-in permission [:dialog :target])
-              ranges (when (= :code (:arg target)) (seq (:ranges target)))]
+              ranges (when (= :code (:arg target)) (seq (:ranges target)))
+              block  (get-in permission [:dialog :block])
+              block-ranges (when (= :code (:arg block)) (seq (:ranges block)))]
           [:div {:class ["tool-call-content" "tool-call-input"]}
            [:pre {:class ["tool-call-code"]}
-            (if ranges
-              (focused-clj-code shown ranges)
+            (if (or ranges block-ranges)
+              (focused-clj-code shown ranges block-ranges)
               (or (highlight-clj-code shown) (plain-code shown)))]]))
       (when preview
         [:div {:class ["tool-call-content"]} (diff-preview dispatch! preview id md-diff-code?)])
