@@ -3910,13 +3910,22 @@ code a:hover,
   color: var(--fg-0);
 }
 
-/* Markdown files: rendered as formatted HTML instead of source */
+/* Markdown files: rendered as formatted HTML instead of source. The scroll
+   container stays full-width (scrollbar at the viewport edge); the rendered
+   body is capped at the chat column width and centered on wide displays so
+   long paragraphs don't run edge to edge. */
 .file-tab-md {
   flex: 1;
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--size-4) var(--size-5);
+}
+
+.file-tab-md > .post-content {
+  width: 100%;
+  max-width: var(--chat-max-width);
+  margin: 0 auto;
 }
 
 /* System-prompt tab (/prompt): per-part collapsible cards */
