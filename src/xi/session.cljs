@@ -1220,6 +1220,23 @@
               (str/replace #"\s+" " ")
               str/trim))))))
 
+(defn- search-corpus
+  "The session summaries a search runs over (newest first): personal-agent
+   sessions, one project's, or — with a blank `cwd` — every project's."
+  [cwd personal-agent?]
+  (cond
+    personal-agent? (list-personal-agent-sessions)
+    (seq cwd)       (list-sessions cwd)
+    :else           (list-all-sessions)))
+
+(defn recent-sessions
+  "Newest-first session summaries over the same corpus as `search-sessions`,
+   unfiltered — what the palette's search page lists before anything is typed.
+   :snippet is nil (no match to excerpt)."
+  ([cwd] (recent-sessions cwd nil))
+  ([cwd {:keys [personal-agent?]}]
+   (mapv #(assoc % :snippet nil) (search-corpus cwd personal-agent?))))
+
 (defn search-sessions
   "Like `content-search`, but returns full session summaries (newest first)
    instead of bare ids. Each summary is augmented with :snippet — a short
@@ -1231,10 +1248,7 @@
    (let [q (str/lower-case (str/trim (or query "")))]
      (if (str/blank? q)
        []
-       (->> (cond
-              personal-agent? (list-personal-agent-sessions)
-              (seq cwd)       (list-sessions cwd)
-              :else           (list-all-sessions))
+       (->> (search-corpus cwd personal-agent?)
             (keep (fn [s]
                     (let [name-match?    (str/includes?
                                           (str/lower-case (or (:name s) "")) q)

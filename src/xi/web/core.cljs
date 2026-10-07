@@ -1502,26 +1502,33 @@
           ;; query: each keystroke lands here via the dialog's input listener,
           ;; clears stale results (-> spinner) and debounces a server-side
           ;; search over transcripts scoped to the project cwd.
-          :palette/open-search   (fn [st {:keys [cwd]}]
+          ;; Optional :query (text typed in the top-level palette) seeds the
+          ;; search input; the reset-filter effect re-fires `input` with it, so
+          ;; :palette/search-input kicks off the search. Reopen goes first: the
+          ;; runtime clears the input on open, and the :palette/opened that the
+          ;; reopen triggers re-seeds it from :web/palette-search.
+          :palette/open-search   (fn [st {:keys [cwd query]}]
                                    {:state (-> st
                                                (assoc :web/palette-page
                                                       {:kind :search :cwd cwd
                                                        :label (get-in st [:web/palette-page :label])}
                                                       :web/palette-drilling? true)
-                                               (dissoc :web/palette-search))
-                                    :effects [[:palette/reset-filter nil]
-                                              [:palette/reopen nil]]})
+                                               (dissoc :web/palette-search)
+                                               (cond-> (not (str/blank? query))
+                                                 (assoc-in [:web/palette-search :query] query)))
+                                    :effects [[:palette/reopen nil]
+                                              [:palette/reset-filter query]]})
           :palette/search-input  (fn [st {:keys [query]}]
                                    (when (= :search (get-in st [:web/palette-page :kind]))
                                      (let [st' (-> st
                                                    (assoc-in [:web/palette-search :query] query)
                                                    (update :web/palette-search dissoc :results))]
-                                       (if (str/blank? (str/trim (or query "")))
-                                         {:state st'}
-                                         {:state st'
-                                          :effects [[:palette/search-debounce
-                                                     {:query query
-                                                      :cwd (get-in st [:web/palette-page :cwd])}]]}))))
+                                       ;; A blank query searches too: the server
+                                       ;; answers with the newest sessions.
+                                       {:state st'
+                                        :effects [[:palette/search-debounce
+                                                   {:query (or query "")
+                                                    :cwd (get-in st [:web/palette-page :cwd])}]]})))
           :session/web-search    (fn [_st {:keys [query cwd]}]
                                    {:effects [[:ws/send {:type :session/web-search
                                                          :query query :cwd cwd}]]})
@@ -1546,10 +1553,14 @@
                                    (if (:web/palette-drilling? st)
                                      ;; Re-open triggered by a drill (e.g. Change
                                      ;; model): keep the sub-page, consume flag.
+                                     ;; A search page keeps its seed query (typed
+                                     ;; in the top-level palette) in the input.
                                      {:state (-> st
                                                  (assoc :web/palette-open? true)
                                                  (dissoc :web/palette-drilling?))
-                                      :effects [[:palette/reset-filter nil]]}
+                                      :effects [[:palette/reset-filter
+                                                 (when (= :search (get-in st [:web/palette-page :kind]))
+                                                   (get-in st [:web/palette-search :query]))]]}
                                      ;; Fresh mod+k open: always start at the top.
                                      {:state (-> st
                                                  (assoc :web/palette-open? true)
@@ -1688,11 +1699,11 @@
    ;; focus would otherwise stay on the item that was clicked/Tabbed. Deferred a
    ;; frame so the Replicant re-render lands first.
    :palette/reset-filter
-   (fn [_ _]
+   (fn [_ query]
      (js/requestAnimationFrame
       (fn []
         (when-let [^js input (.querySelector js/document ".command-dialog[open] .command-input")]
-          (set! (.-value input) "")
+          (set! (.-value input) (or query ""))
           (.dispatchEvent input (js/Event. "input" #js {:bubbles true}))
           (.focus input #js {:preventScroll true})))))
    ;; Re-open the command palette after the ui-runtime force-closed it on a

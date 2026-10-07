@@ -2856,6 +2856,28 @@ code a:hover,
 .command-loading ~ .command-empty {
   display: none;
 }
+/* Same for pages that render their own empty message ("No matching sessions"):
+   one message, not theirs plus the framework's trailing "No results found." */
+.command-empty ~ .command-empty {
+  display: none;
+}
+
+/* Pinned palette row (e.g. "Search all sessions"): a static entry the runtime's
+   filter must not hide. The runtime sets [hidden] on non-matching items (and
+   their group) and reorders matching groups by score — override both so the
+   row stays visible and sinks to the bottom. This is the visual fallback;
+   keyboard selection comes from pin-palette-items! (views.cljs), which
+   un-hides the row after each filter pass. "No results found" keeps showing
+   above it when nothing matches. */
+.command-group--pinned {
+  order: 9999 !important;
+}
+.command-group--pinned[hidden] {
+  display: block;
+}
+.command-item--pinned[hidden] {
+  display: flex;
+}
 
 /* Trailing status slot on command-palette chat rows — shows the same status
    dot as session cards. The .command-item label has flex:1, pushing this to

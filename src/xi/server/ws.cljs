@@ -701,16 +701,20 @@
                                                      {:personal-agent? agent?})})))
 
       ;; Full-text search with result summaries + match snippets, for the
-      ;; command palette's in-panel session search (scoped to a project cwd).
+      ;; command palette's in-panel session search (scoped to a project cwd;
+      ;; nil = all sessions). A blank query lists the newest sessions instead.
       :session/web-search-reply
       (fn [_ {:keys [client-id query cwd]}]
         (send! client-id
                (wire/encode
                 {:type     :session/web-search-result
                  :query    query
-                 :sessions (->> (session/search-sessions
-                                 cwd query {:personal-agent? agent?})
-                                (take 30)
+                 :sessions (->> (if (str/blank? query)
+                                  (session/recent-sessions
+                                   cwd {:personal-agent? agent?})
+                                  (session/search-sessions
+                                   cwd query {:personal-agent? agent?}))
+                                (take 50)
                                 (mapv #(select-keys % [:session-id :name :cwd
                                                        :last-accessed :timestamp
                                                        :snippet])))})))

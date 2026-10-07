@@ -4292,24 +4292,24 @@
    live query so ui-runtime's filter never hides them (the match lives in the
    transcript text, not the row label)."
   [state dispatch!]
-  (let [{:keys [query results]} (:web/palette-search state)]
+  (let [{:keys [query results]} (:web/palette-search state)
+        blank? (str/blank? (str/trim (or query "")))]
     (cond
-      (str/blank? (str/trim (or query "")))
-      [:div {:class ["command-empty"]} "Type to search session text…"]
-
       (nil? results)
       [:div {:class ["command-loading"]} (spinner)]
 
       (empty? results)
-      [:div {:class ["command-empty"]} "No matching sessions"]
+      [:div {:class ["command-empty"]}
+       (if blank? "No sessions yet" "No matching sessions")]
 
+      ;; Nothing typed: the newest sessions; typing narrows to text matches.
       :else
-      (apply cmd/command-group {:heading "Matching sessions"}
-        (for [{:keys [session-id name snippet]} results]
+      (apply cmd/command-group {:heading (if blank? "Recent sessions" "Matching sessions")}
+        (for [{:keys [session-id name cwd snippet]} results]
           (cmd/command-item
            {:icon :message-circle
             :value query
-            :description snippet
+            :description (or snippet (some-> cwd shorten-path))
             :on-click (fn [_] (dispatch! {:type :route/navigate
                                           :page :chat
                                           :session-id session-id}))}
@@ -4524,6 +4524,24 @@
                 :on-click (fn [_] (dispatch! {:type :files/open :path rel}))}
                rel))))))))
 
+(defn- pin-palette-items!
+  "Keep the `.command-item--pinned` row (\"Search all sessions\") selectable under
+   any filter query. ui-runtime.js hides non-matching items via [hidden] and
+   keyboard nav / Enter only consider non-hidden items, so after each filter
+   pass (its capture-phase input listener runs before the dialog's own) un-hide
+   the row and its group, sink the group last in nav order, and make the row
+   the active item when nothing else matches. The runtime's \"No results found\"
+   state is left alone."
+  [^js dialog]
+  (when-let [item (.querySelector dialog ".command-item--pinned")]
+    (when (.-hidden item)
+      (set! (.-hidden item) false)
+      (when-let [grp (.closest item ".command-group")]
+        (set! (.-hidden grp) false)
+        (set! (.. grp -style -order) "9999"))
+      (when-not (.querySelector dialog ".command-item--active")
+        (.add (.-classList item) "command-item--active")))))
+
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
@@ -4585,7 +4603,15 @@
                                                (dispatch! {:type :palette/opened}))))]
                                   (.observe obs node
                                             #js {:attributes true
-                                                 :attributeFilter #js ["open"]})))
+                                                 :attributeFilter #js ["open"]})
+                                  ;; The runtime re-filters whenever the list
+                                  ;; re-renders (no input event), re-hiding the
+                                  ;; pinned row — re-pin once it has settled.
+                                  (.observe (js/MutationObserver.
+                                             (fn [_ _]
+                                               (js/setTimeout #(pin-palette-items! node) 0)))
+                                            node
+                                            #js {:childList true :subtree true})))
                               :on {:keydown (palette-keydown dispatch! palette-page)
                                    ;; On the search sub-page the palette input
                                    ;; is the query — feed keystrokes into the
@@ -4594,6 +4620,8 @@
                                    :input (fn [^js e]
                                             (let [v (.. e -target -value)]
                                               (cond
+                                                (nil? palette-page)
+                                                (pin-palette-items! (.-currentTarget e))
                                                 search-page?
                                                 (dispatch! {:type :palette/search-input :query v})
                                                 finder-page?
@@ -4795,7 +4823,23 @@
              :on-click (if (= name "model")
                          (fn [_] (dispatch! {:type :palette/open-models}))
                          (fn [_] (dispatch-command! dispatch! (:id room) name)))}
-            name)))))))))
+            name))))
+     ;; Pinned last row: full-text search over every saved session (nil cwd =
+     ;; no project scope), the same sub-page as a project's "Search session
+     ;; text". The --pinned classes keep it visible under any filter query
+     ;; (see style.css).
+     (cmd/command-group {:class ["command-group--pinned"]}
+       (cmd/command-item
+        {:icon :search
+         :class ["command-item--pinned"]
+         ;; Carry the text typed so far over into the search page. Looked up
+         ;; by id, not [open]: the runtime closes the dialog before clicking
+         ;; the selected item (its input keeps the value until reopened).
+         :on-click (fn [_]
+                     (let [^js input (.querySelector js/document "#cmdk .command-input")]
+                       (dispatch! {:type :palette/open-search :cwd nil
+                                   :query (some-> input .-value)})))}
+        "Search all sessions")))))))
 
 (defn- auth-overlay
   "Full-screen block while this browser awaits pairing approval (or was
