@@ -4106,9 +4106,9 @@
   ;; safe to leave out of the key.)
   (atom nil))
 
-(defn- session-cleanups
+(defn session-cleanups
   "Cleanup actions that currently apply, given the sidebar session groups —
-   shared by the sidebar ⋯ menu and the command palette. Each is
+   shared by the sidebar ⋯ menu, the command palette and the ALT+Shift+P shortcut. Each is
    {:label :icon :event} (+ :badge); \"Prune all\" runs every one of them."
   [pa? {:keys [recent hidden earlier]}]
   (let [unread (count (filter :unread? (concat recent hidden earlier)))]

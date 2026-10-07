@@ -2443,6 +2443,14 @@
       (reset! attention-chain {:last sid :visited visited})
       (dispatch! {:type :route/navigate :page :chat :session-id sid}))))
 
+(defn- prune-all!
+  "ALT+Shift+P: run every applicable sidebar cleanup (mark all read, hide all from
+   Recent, close idle rooms) — the keyboard twin of the sidebar's \"Prune all\"."
+  [st dispatch!]
+  (let [pa?      (get-in st [:lobby :agent-id])
+        cleanups (views/session-cleanups pa? (sidebar/sidebar-session-groups st))]
+    (run! (comp dispatch! :event) cleanups)))
+
 (defn- permission-answer
   "{:room-id :dialog-id :value} answering the active chat's pending permission
    request with confirm `option`, or nil when there is none (or it doesn't
@@ -2457,7 +2465,8 @@
   "Register the built-in web shortcuts into the view/mode-scoped keymap.
    Global: ALT+n opens a new chat from any view; ALT+u jumps to the session
    needing you most (pending dialog → newest unread → newest running;
-   repeat presses walk that order); ALT+j/k step to the
+   repeat presses walk that order); ALT+Shift+P prunes (runs every sidebar cleanup);
+   ALT+j/k step to the
    next/prev session in sidebar order (no wrap; from a non-chat view they open
    the first session). Chat pane, any mode: ALT+a / ALT+d allow / deny the
    pending permission request; ALT+x aborts the running agent turn. Chat pane, normal mode: `i` focuses the composer (enter
@@ -2475,6 +2484,8 @@
                      :run (fn [_ dispatch! _] (dispatch! {:type :sidebar/toggle}))})
   (keymap/register! {:id :jump-attention :code "KeyU" :alt true :view :any :mode :any
                      :run (fn [st dispatch! _] (jump-to-attention! st dispatch!))})
+  (keymap/register! {:id :prune-all :code "KeyP" :alt true :shift true :view :any :mode :any
+                     :run (fn [st dispatch! _] (prune-all! st dispatch!))})
   ;; Ctrl/Cmd+P: instant fuzzy file finder (handle-keydown preventDefaults, so
   ;; the browser's print dialog never opens). :mode :any so it fires while the
   ;; composer is focused too.

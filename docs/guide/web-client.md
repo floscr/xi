@@ -72,6 +72,7 @@ are kept and sent when the connection returns.
 | `Alt+j` / `Alt+k` | Next / previous chat |
 | `Alt+n` | New chat |
 | `Alt+u` | Jump to the chat that needs you most: one waiting on a permission request, then the newest finished chat with unread output, then the newest running one. Press again to move on to the next |
+| `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would (mark all as read, hide all from Recent, close idle rooms) |
 | `Alt+a` / `Alt+d` | Allow / deny the pending permission request |
 | `Alt+x` | Stop the running turn |
 | `Ctrl/Cmd+k` | Command palette |
