@@ -494,6 +494,12 @@
                               (disj s filename)
                               (conj s filename)))))})
 
+(defn- diff-show-all
+  "Render a file's whole body in the (size-limited) diff view by adding its
+   filename to the `:web/diff-expanded` set."
+  [st {:keys [filename]}]
+  {:state (update st :web/diff-expanded (fnil conj #{}) filename)})
+
 (defn- diff-toggle-all
   "Collapse or expand every file body in the diff view at once. When all of the
    diff's `filenames` are already in `:web/diff-collapsed`, clear them (expand
@@ -1199,6 +1205,7 @@
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
           :diff/toggle-file      diff-toggle-file
+          :diff/show-all         diff-show-all
           :diff/toggle-all       diff-toggle-all
           :diff/modify-toggle    diff-modify-toggle
           :diff/explain          diff-explain

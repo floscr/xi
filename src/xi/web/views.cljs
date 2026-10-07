@@ -1846,6 +1846,35 @@
     (when-let [ext (file-ext filename)]
       (grammars/get-grammar ext))))
 
+(def ^:private diff-text-cache
+  "diff line map → highlighted [:code …]. Keyed by the (stable, memoized) line
+   object, so a big diff never competes with chat code blocks for hl-cache's
+   400 slots — it used to clear that cache on every render and re-tokenize the
+   whole diff each time."
+  (js/WeakMap.))
+
+(defn- diff-text-code [grammar line]
+  (or (.get diff-text-cache line)
+      (let [result (tokens->code (hl/merge-adjacent (hl/tokenize grammar (or (:text line) ""))))]
+        (.set diff-text-cache line result)
+        result)))
+
+(def ^:private diff-rows-memo
+  "[text rows] of the last diff parsed by diff-rows-for-text."
+  (atom nil))
+
+(defn- diff-rows-for-text
+  "diff/diff-rows of the unified diff `text`, memoized on the last text so
+   re-renders (every keystroke, stream chunk) hand diff-rows-view the
+   *identical* rows and its per-file caches hit."
+  [text]
+  (let [[t rows] @diff-rows-memo]
+    (if (and rows (= t text))
+      rows
+      (let [rows (diff/diff-rows (diff/parse-diff-text text))]
+        (reset! diff-rows-memo [text rows])
+        rows))))
+
 (defn- diff-line-view
   "Render a single selectable diff line with syntax highlighting. Tapping a
    code line dispatches :diff/select-line with its selection index. `highlight?`
@@ -1855,7 +1884,7 @@
    (diff-line-view dispatch! grammar selected? line sel-idx row-key false false))
   ([dispatch! grammar selected? line sel-idx row-key highlight?]
    (diff-line-view dispatch! grammar selected? line sel-idx row-key highlight? false))
-  ([dispatch! grammar selected? {:keys [type text old-line new-line]} sel-idx row-key highlight? reviewed?]
+  ([dispatch! grammar selected? {:keys [type text old-line new-line] :as line} sel-idx row-key highlight? reviewed?]
   (let [cls (cond-> ["diff-line"]
               (= type :add)     (conj "diff-line--add")
               (= type :delete)  (conj "diff-line--del")
@@ -1879,8 +1908,61 @@
      [:span {:class ["diff-sign"] :data-sign sign}]
      [:span {:class ["diff-text"]}
       (if grammar
-        (highlight-code grammar (or text ""))
+        (diff-text-code grammar line)
         (or text ""))]])))
+
+(def ^:private diff-groups-cache
+  "rows vector → its per-file groups (each starting with a :file row)."
+  (js/WeakMap.))
+
+(defn- diff-file-groups [rows]
+  (when (seq rows)
+    (or (.get diff-groups-cache rows)
+        (let [groups (reduce (fn [groups r]
+                               (if (= :file (:row r))
+                                 (conj groups [r])
+                                 (update groups (dec (count groups)) conj r)))
+                             [] rows)]
+          (.set diff-groups-cache rows groups)
+          groups))))
+
+(def ^:private diff-body-cache
+  "file group → [dispatch! range shown body-hiccup]. A file's body only depends on
+   the selection when the range touches it, so unrelated files keep returning
+   the identical hiccup and Replicant skips diffing their thousands of nodes."
+  (js/WeakMap.))
+
+(defn- diff-group-range
+  "`range` if it overlaps the selectable lines of `group`, else nil."
+  [group range]
+  (when range
+    (let [lo (some :sel-idx group)
+          hi (some :sel-idx (rseq group))]
+      (when (and lo (<= (first range) hi) (<= lo (second range)))
+        range))))
+
+(def ^:private diff-row-budget
+  "Body rows (code lines + hunk headers) a limited diff view renders up front,
+   shared across files in order. A 50k-line diff is ~650k DOM nodes, which
+   froze the browser; the rest sits behind each file's \"Show more\" button."
+  1500)
+
+(defn- diff-visible-rows
+  "Per-file cap on rendered body rows: a vector parallel to `groups` holding a
+   row count, or nil for files rendered in full (folded, or in `expanded`).
+   Files draw from `budget` in order, so the first files of a huge diff show
+   their top and the rest start closed."
+  [groups collapsed expanded budget]
+  (loop [gs (seq groups) left budget out []]
+    (if-let [g (first gs)]
+      (let [fname (:filename (first g))
+            n     (dec (count g))]
+        (if (or (contains? collapsed fname) (contains? expanded fname) (<= n left))
+          (recur (next gs)
+                 (if (or (contains? collapsed fname) (contains? expanded fname)) left (- left n))
+                 (conj out nil))
+          (recur (next gs) 0 (conj out left))))
+      out)))
 
 (defn diff-rows-view
   "Render flattened diff rows as a scrollable view with selection highlight.
@@ -1893,25 +1975,29 @@
    (review canvas inline comment threads);
    :collapsed — a set of filenames whose bodies are collapsed. When this opt is
    present (even as an empty set) file headers become clickable and dispatch
-   :diff/toggle-file to fold/unfold their body."
+   :diff/toggle-file to fold/unfold their body;
+   :expanded — a set of filenames shown in full. When this opt is present
+   (even as an empty set) the view is size-limited (diff-row-budget): files
+   past the budget are cut off behind a button dispatching :diff/show-all."
   ([dispatch! rows range toolbar] (diff-rows-view dispatch! rows range toolbar nil))
-  ([dispatch! rows range toolbar {:keys [highlight reviewed line-suffix collapsed]}]
+  ([dispatch! rows range toolbar {:keys [highlight reviewed line-suffix collapsed expanded]}]
   (let [grammar-cache (atom {})
         grammar-for (fn [f] (or (@grammar-cache f)
                                 (let [g (diff-file-grammar f)]
                                   (swap! grammar-cache assoc f g) g)))
-        ;; Partition rows into per-file groups (each starting with a :file row)
-        file-groups (when (seq rows)
-                      (reduce (fn [groups r]
-                                (if (= :file (:row r))
-                                  (conj groups [r])
-                                  (update groups (dec (count groups)) conj r)))
-                              [] rows))]
+        file-groups (diff-file-groups rows)
+        ;; Highlight / reviewed / line-suffix are per-render closures from the
+        ;; review canvas, so only the plain diff viewer caches file bodies.
+        cache-body? (not (or highlight reviewed line-suffix))
+        visible     (if (some? expanded)
+                      (diff-visible-rows file-groups collapsed expanded diff-row-budget)
+                      (vec (repeat (count file-groups) nil)))]
     [:div {:class ["diff-view"]}
      (if (seq file-groups)
        (map-indexed
         (fn [fi group]
           (let [{:keys [filename status]} (first group)
+                shown (nth visible fi)
                 status-label (case status
                                :added "added" :deleted "deleted"
                                :renamed "renamed" :binary "binary" nil)
@@ -1936,6 +2022,12 @@
                                 (str "diff-file-status--" (name status))]}
                  status-label])]
              (when-not folded?
+               (let [file-range (diff-group-range group range)
+                     [c-dispatch c-range c-shown c-body] (when cache-body? (.get diff-body-cache group))]
+                 (if (and c-body (identical? c-dispatch dispatch!) (= c-range file-range)
+                          (= c-shown shown))
+                   c-body
+                   (let [body
                [:div {:class ["diff-file-body"]}
               (map-indexed
                (fn [ri {:keys [row header line sel-idx] :as r}]
@@ -1956,7 +2048,18 @@
                          (diff-line-view dispatch! (grammar-for (:filename r))
                                          selected? line sel-idx (str "l" k) hl? rev?)))
                      nil)))
-               body-rows)])]))
+               (if shown (take shown body-rows) body-rows))
+              (when shown
+                (let [hidden (count (filter #(= :line (:row %)) (drop shown body-rows)))]
+                  (when (pos? hidden)
+                    [:div {:class ["diff-show-more"] :replicant/key (str "more" fi)}
+                     (button/button
+                      {:variant :ghost :size :sm
+                       :on-click (fn [_] (dispatch! {:type :diff/show-all :filename filename}))}
+                      (str "Show " hidden " more line" (when (not= 1 hidden) "s")))])))]]
+                     (when cache-body?
+                       (.set diff-body-cache group #js [dispatch! file-range shown body]))
+                     body))))]))
         file-groups)
        (empty-state/empty-state {} "No changes."))
      toolbar])))
@@ -2235,10 +2338,10 @@
    interactive unified-diff viewer (line selection, Explain / Modify);
    difftastic diffs are read-only structural text colored from their ANSI
    (red = removed, green = added)."
-  [dispatch! room-id diff-buffer sel modify? collapsed]
+  [dispatch! room-id diff-buffer sel modify? collapsed expanded]
   (let [engine (or (:engine diff-buffer) :git)
         git?   (not= engine :difft)
-        rows   (when git? (diff/diff-rows (diff/parse-diff-text (:text diff-buffer))))
+        rows   (when git? (diff-rows-for-text (:text diff-buffer)))
         filenames (when git?
                     (into [] (comp (filter #(= :file (:row %))) (map :filename)) rows))
         collapsed (or collapsed #{})]
@@ -2255,7 +2358,7 @@
          (diff-rows-view dispatch! rows range
                          (when range
                            (diff-action-bar dispatch! room-id rows range modify?))
-                         {:collapsed collapsed})))]))
+                         {:collapsed collapsed :expanded (or expanded #{})})))]))
 
 (def ^:private markdown-exts
   "Extensions rendered as formatted markdown (HTML markup) instead of
@@ -3065,7 +3168,8 @@
        (diff-tab-view dispatch! (:id room) (:diff buffers)
                       (:web/diff-sel state)
                       (:web/diff-modify? state)
-                      (:web/diff-collapsed state))
+                      (:web/diff-collapsed state)
+                      (:web/diff-expanded state))
 
        :file
        (file-tab-view (:file buffers))
@@ -4216,8 +4320,8 @@
 
         :else
         (diff-rows-view dispatch!
-                        (diff/diff-rows (diff/parse-diff-text text))
-                        nil nil))]]))
+                        (diff-rows-for-text text)
+                        nil nil {:expanded (or (:web/diff-expanded state) #{})}))]]))
 
 (defn- palette-chat-item
   "cmd/command-item variant with a trailing status slot, so palette chat rows

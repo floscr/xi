@@ -3599,6 +3599,12 @@ code a:hover,
   white-space: pre;
 }
 
+.diff-show-more {
+  padding: var(--size-2) var(--size-4);
+  border-top: 1px solid var(--border-0);
+  font-family: var(--font-sans, inherit);
+}
+
 .diff-line--selectable {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;

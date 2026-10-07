@@ -2,6 +2,23 @@
   (:require [cljs.test :refer [deftest is testing]]
             [xi.web.views :as views]))
 
+;; ── diff-visible-rows (size limit of the diff view) ─────────────────────────
+
+(defn- group
+  "A file group: the :file row plus `n` body rows."
+  [filename n]
+  (into [{:row :file :filename filename}] (repeat n {:row :line})))
+
+(deftest diff-visible-rows
+  (let [f @#'views/diff-visible-rows]
+    (testing "files that fit the budget render in full"
+      (is (= [nil nil] (f [(group "a" 10) (group "b" 20)] #{} #{} 100))))
+    (testing "files draw from one budget in order; later files start closed"
+      (is (= [nil 20 0] (f [(group "a" 10) (group "b" 50) (group "c" 5)] #{} #{} 30))))
+    (testing "expanded and collapsed files are unlimited and spend nothing"
+      (is (= [nil nil nil]
+             (f [(group "a" 500) (group "b" 500) (group "c" 10)] #{"b"} #{"a"} 10))))))
+
 ;; ── command-while-busy? ──────────────────────────────────────────────────────
 
 (deftest command-while-busy

@@ -68,6 +68,13 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `data-file-path` / `data-diff-path` / `data-diff-text` for the delegated
   listener in `xi.web.core`; `xi.diff/tool-diff->unified` converts the tool
   diff format.
+  The diff viewer (`diff-rows-view`) stays responsive on huge diffs three
+  ways: rows / file groups / per-file body hiccup are memoized on identity
+  (`diff-rows-for-text`, WeakMaps), so re-renders reuse the identical hiccup and
+  Replicant skips it; line highlighting is cached per line object, not in
+  `hl-cache`; and with the `:expanded` opt only `diff-row-budget` rows render
+  up front, the rest behind a per-file "Show more" (`:diff/show-all`,
+  `:web/diff-expanded`).
 - **Permission ask focus**: an ask carrying a `:target {:arg :code :ranges}`
   (clj gate asks) renders the code in segments (`code-focus-segments`), the
   ranges at full contrast and the rest `.code-muted`; hover lifts the muting.
