@@ -2728,24 +2728,13 @@
       (last parts))))
 
 
-(defn- menu-button
+(defn menu-button
   "Framework hamburger toggle that opens the recent-sessions drawer. Lives on
    every topbar; toggles the :web/sidebar-open? app state."
   [dispatch!]
   (sidebar/sidebar-mobile-toggle
    {:on-click (fn [_] (dispatch! {:type :sidebar/toggle}))
     :attrs    {:data-key-action "sidebar/toggle"}}))
-
-(defn nav-group
-  "Burger toggle + back arrow rendered as one segmented button split by a
-   divider. Used on every header bar that has both. `on-back` is the back
-   arrow's click handler."
-  [dispatch! on-back]
-  [:div {:class ["nav-group"]}
-   (menu-button dispatch!)
-   [:button {:class ["icon-btn"]
-             :on {:click on-back}}
-    (icon/icon {:icon-name :arrow-left :size :md})]])
 
 (defn- message-circle-icon
   "Inline Lucide `message-circle` (chat bubble) SVG at the icon component's :sm
@@ -3030,27 +3019,6 @@
            [:span {:class ["pending-command-text"]}
             (str "/" name (when args (str " " args)))]
            (spinner)]]]))))
-
-(defn- chat-back-route
-  "Where the chat-view back arrow should land: the listing the session belongs
-   to, regardless of how the chat was reached (drill-down or a sidebar jump).
-   Personal-agent mode has no projects → the root home. Otherwise the project's
-   session listing (/projects/:cwd) when the cwd is known, falling back to the
-   projects root."
-  [state]
-  (if (get-in state [:lobby :agent-id])
-    {:type :route/navigate :page :home}
-    (let [sid (get-in state [:web/route :session-id])
-          ;; A virtual new chat started from a project listing carries that
-          ;; folder in :web/pending-room — go back to it instead of the root.
-          cwd (or (get-in state [:web/pending-room :cwd])
-                  (:cwd (state/active-room state))
-                  (some (fn [s] (when (= sid (:session-id s)) (:cwd s)))
-                        (get-in state [:lobby :sessions]))
-                  (some (fn [r] (when (= sid (:session-id r)) (:cwd r)))
-                        (get-in state [:lobby :rooms])))]
-      (cond-> {:type :route/navigate :page :home}
-        cwd (assoc :dir cwd)))))
 
 (defn- launch-logo
   "The Xi mark: a blocky X and i sharing one gradient."
@@ -3490,7 +3458,7 @@
             drop-zone? (assoc :on (file-drop-attrs dispatch! dkey file-drag?)))
      (file-drop-overlay dispatch! file-drag?)
      [:div {:class ["topbar" "topbar--chat"]}
-      (nav-group dispatch! (fn [_] (dispatch! (chat-back-route state))))
+      (menu-button dispatch!)
       [:div {:class ["topbar-title"]}
        ;; Cached history is already painted; the server's copy is still in
        ;; flight. Show a quiet inline hint instead of blanking to a spinner.
@@ -4030,7 +3998,7 @@
         loading?  (:web/project-sessions-loading? state)]
     [:div {:class ["container"] :replicant/key "project-sessions"}
      [:div {:class ["topbar"]}
-      (nav-group dispatch! (fn [_] (dispatch! {:type :route/navigate :page :home})))
+      (menu-button dispatch!)
       [:div {:class ["topbar-title"]} (shorten-path cwd)]
       [:button {:class ["icon-btn"]
                 :title "New session"
@@ -4080,7 +4048,7 @@
         orphans    (filter-sessions orphans query content? matches)]
     [:div {:class ["container"] :replicant/key "all-sessions"}
      [:div {:class ["topbar"]}
-      (nav-group dispatch! (fn [_] (dispatch! {:type :route/navigate :page :home})))
+      (menu-button dispatch!)
       [:div {:class ["topbar-title"]} "All sessions"]
       (when connected?
         [:button {:class ["icon-btn"]
@@ -4716,9 +4684,7 @@
         loading? (:web/git-status-loading? state)]
     [:div {:class ["container"] :replicant/key "git-status"}
      [:div {:class ["topbar"]}
-      (nav-group dispatch! (fn [_]
-                             (dispatch! {:type :nav/back
-                                         :fallback {:page :home :dir cwd}})))
+      (menu-button dispatch!)
       [:div {:class ["topbar-title"]} "Git status · " (shorten-path cwd)]
       [:button {:class ["icon-btn"]
                 :title "Refresh"

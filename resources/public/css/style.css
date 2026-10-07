@@ -263,35 +263,6 @@ body {
   }
 }
 
-/* ---- Nav group (burger toggle + back arrow as one segmented button) ----
-   The two controls share a single border/radius and are split by a divider.
-   The floating sidebar keeps the burger visible at every width, so both
-   controls (and the divider between them) are always present. */
-.nav-group {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: stretch;
-  border: var(--border-0);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.nav-group > .icon-btn,
-.nav-group > .sidebar-mobile-toggle {
-  width: var(--size-10);
-  height: var(--size-10);
-  border: none;
-  border-radius: 0;
-}
-
-/* Segment divider between the two controls. A more specific selector than the
-   `border: none` reset above so the divider actually renders (otherwise the
-   reset collapses it to 0 width). Matches the nav group's outer border color. */
-.nav-group > .icon-btn:not(:first-child),
-.nav-group > .sidebar-mobile-toggle:not(:first-child) {
-  border-left: var(--border-0);
-}
-
 /* ---- Selector menu (full-width dropdown below the topbar: models, skills) ---- */
 .selector-menu-backdrop {
   position: fixed;

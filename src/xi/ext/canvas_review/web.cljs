@@ -695,7 +695,6 @@
 (defn- canvas-page [state dispatch!]
   (let [room     (state/active-room state)
         cr       (get-in room [:ext :canvas-review])
-        sid      (get-in room [:session :id])
         nodes    (:nodes cr)
         edges    (vals (:edges cr))
         plan     (:plan cr)
@@ -710,9 +709,7 @@
         {cw :w ch :h} (canvas-size nodes)]
     [:div {:class ["container" "cr-container"] :replicant/key "canvas-review"}
      [:div {:class ["topbar"]}
-      (views/nav-group dispatch! (fn [_]
-                                   (dispatch! {:type :nav/back
-                                               :fallback {:page :chat :session-id sid}})))
+      (views/menu-button dispatch!)
       [:div {:class ["topbar-title"]} "Canvas review"
        (when (:title cr) [:span {:class ["cr-source"]} " · " (:title cr)])]
       (views/overflow-menu dispatch! state)]

@@ -31,7 +31,7 @@
             [xi.web.views :as views]))
 
 (def ^:private exposed-namespaces
-  {'xi.web.views    {'nav-group      views/nav-group
+  {'xi.web.views    {'menu-button    views/menu-button
                      'overflow-menu  views/overflow-menu
                      'spinner        views/spinner
                      'shorten-path   views/shorten-path

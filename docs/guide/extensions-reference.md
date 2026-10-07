@@ -286,7 +286,7 @@ it there by dispatching its own `:ext.<id>/*` event. nil, or a view that
 throws, shows the text result instead.
 
 Pages may use `clojure.*`, `xi.core.state`, `ui.*` components (minus the
-ones that touch `js/window`), `xi.web.views` helpers (`nav-group`,
+ones that touch `js/window`), `xi.web.views` helpers (`menu-button`,
 `overflow-menu`, `spinner`, `shorten-path`, `diff-rows-view`, `user-avatar`,
 `avatar-stack`), `xi.diff` (`parse-diff-text`, `diff-rows`),
 `xi.markdown.hiccup/render` and `xi.api.time/now`.

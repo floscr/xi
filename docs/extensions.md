@@ -367,7 +367,7 @@ build, an extension with a web UI is split in two:
   handlers, state), listed in `xi.config/server`.
 - `src/xi/ext/canvas_review/web.cljs` — the browser half (routes, pages,
   client handlers), listed in `xi.config/web`. It may require
-  `xi.web.views` (shared building blocks: `nav-group`, `overflow-menu`,
+  `xi.web.views` (shared building blocks: `menu-button`, `overflow-menu`,
   `spinner`, `shorten-path`, `diff-rows-view`) and `ui.*` components, but
   core web namespaces never require extension code.
 
