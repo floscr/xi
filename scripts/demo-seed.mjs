@@ -198,6 +198,31 @@ const seeds = [
       ], mins(1442)),
     ],
   },
+  {
+    // A long chat for profiling the web timeline (render cost grows with length).
+    cwd: "/home/demo/acme-web",
+    name: "Long session (perf fixture)",
+    model: "claude-opus-4-6",
+    ageMins: 2880,
+    lines: (cwd, sid) =>
+      Array.from({ length: 150 }, (_, i) => {
+        const t = mins(2880 + (150 - i) * 2);
+        return [
+          userMsg(cwd, sid, `Step ${i + 1}: tighten the settings page and re-run the tests.`, t),
+          asstMsg(cwd, sid, [
+            text(`Reading the page first (pass ${i + 1}).`),
+            toolUse(`tu_r${i}`, "Read", { file_path: "src/components/Settings.tsx" }),
+          ], t),
+          // Distinct text per turn, so render caches see as many entries as a real chat.
+          userBlocks(cwd, sid, [toolResult(`tu_r${i}`, `${readResult}\n// pass ${i + 1}`)], t),
+          asstMsg(cwd, sid, [toolUse(`tu_e${i}`, "Edit", { file_path: "src/components/Settings.tsx" })], t),
+          userBlocks(cwd, sid, [toolResult(`tu_e${i}`, `${editResult}\n// pass ${i + 1}`)], t),
+          asstMsg(cwd, sid, [toolUse(`tu_t${i}`, "Bash", { command: `npm test -- ThemeToggle # ${i + 1}` })], t),
+          userBlocks(cwd, sid, [toolResult(`tu_t${i}`, `${testResult}\npass ${i + 1}`)], t),
+          asstMsg(cwd, sid, [text(`${darkModeFinal}\n\nPass **${i + 1}** done.`)], t),
+        ];
+      }).flat(),
+  },
 ];
 
 // ── filesystem helpers ────────────────────────────────────────────────────────

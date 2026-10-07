@@ -2,6 +2,39 @@
   (:require [cljs.test :refer [deftest is testing]]
             [xi.web.views :as views]))
 
+;; ── timeline post memo (typing lag on long chats) ─────────────────────────────
+
+(defn- posts
+  "Timeline post nodes of a chat-view render, by :replicant/key \"h-N\"."
+  [hiccup]
+  (into {}
+        (keep (fn [x]
+                (when-let [k (and (vector? x) (map? (second x))
+                                  (:replicant/key (second x)))]
+                  (when (and (string? k) (re-find #"^h-\d+$" k)) [k x]))))
+        (tree-seq #(or (vector? %) (seq? %)) seq hiccup)))
+
+(deftest timeline-posts-memoized
+  (let [chat-view @#'views/chat-view
+        history   [{:kind :user :text "hi"}
+                   {:kind :text :text "**hello**"}
+                   {:kind :tool-call :id "t1" :tool "Read" :status :done
+                    :arguments {:file_path "a.txt"} :result "x"}]
+        state     {:web/route {:session-id "s"}
+                   :web/cache {"s" {:history history}}}
+        dispatch! (fn [_])
+        a         (posts (chat-view state dispatch!))
+        b         (posts (chat-view (assoc-in state [:web/drafts "s"] "typing") dispatch!))]
+    (is (= 3 (count a)))
+    (testing "unrelated state (the composer draft) reuses every post as is"
+      (is (every? (fn [[k node]] (identical? node (get b k))) a)))
+    (testing "a changed entry rebuilds only its own post"
+      (let [c (posts (chat-view (assoc-in state [:web/cache "s" :history 1]
+                                          {:kind :text :text "bye"})
+                                dispatch!))]
+        (is (identical? (get a "h-0") (get c "h-0")))
+        (is (not (identical? (get a "h-1") (get c "h-1"))))))))
+
 ;; ── diff-visible-rows (size limit of the diff view) ─────────────────────────
 
 (defn- group

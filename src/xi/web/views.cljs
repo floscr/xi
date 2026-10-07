@@ -3348,6 +3348,28 @@
          (icon/icon {:icon-name :x :size :sm})])]
      [:div {:class ["viewer-group-rows"]} (map :node run)]]))
 
+(def ^:private timeline-item-cache
+  "History entry → [ctx items] of its last timeline render (see
+   memo-timeline-items). Weak, so entries that leave the history are dropped."
+  (js/WeakMap.))
+
+(defn- memo-timeline-items
+  "chat-view's timeline items for history `entry`: `(build)`, reused while
+   `ctx` (everything besides the entry the post reads) is unchanged. Typing
+   re-renders the whole app; the identical post hiccup lets Replicant skip each
+   unchanged post instead of rebuilding and deep-comparing all of them, which
+   on a long chat scrolled far back was most of every keystroke. A nil `ctx`
+   always rebuilds."
+  [entry ctx build]
+  (if (nil? ctx)
+    (build)
+    (let [[c items :as hit] (.get timeline-item-cache entry)]
+      (if (and hit (= c ctx))
+        items
+        (let [items (build)]
+          (.set timeline-item-cache entry [ctx items])
+          items)))))
+
 (defn- group-viewer-items
   "Viewer mode: collapse runs of consecutive collapsible tool and thinking
    posts into a single grouped container that shows just their headers.
@@ -3610,44 +3632,59 @@
                                ;; tool awaiting Allow/Deny always stays open.
                                collapsed? (and (not= p perm-tool-idx)
                                                (appearance/block-collapsed? app (:kind entry)))
-                               post  (entry->post
-                                      dispatch!
-                                      (cond-> (assoc entry :history-index p
-                                                     :cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
-                                                     :room-id (:id room)
-                                                     ;; other users' prompts get their avatar on
-                                                     ;; the last bubble of a run
-                                                     :sender (when (and (= :user (:kind entry))
-                                                                        (last-of-run? entries p))
-                                                               (other-user state (:user entry))))
-                                        groupable?
-                                        (assoc :grouped? true)
-                                        collapsed?
-                                        (assoc :collapsed? true)
-                                        ;; extension tool views read their room slice
-                                        (= :tool-call (:kind entry))
-                                        (assoc :room-ext (:ext room))
-                                        ;; markdown diff toggled to its code view
-                                        (contains? (:web/md-diff-code state) (:id entry))
-                                        (assoc :md-diff-code? true)
-                                        (and (= :user (:kind entry)) (= p (:index editing)))
-                                        (assoc :editing? true :edit-text (:text editing))
-                                        (= p perm-tool-idx)
-                                        (assoc :permission {:dialog pending-dialog
-                                                            :answer! perm-answer!
-                                                            :deny-reason!
-                                                            #(dispatch! {:type :deny-reason/start
-                                                                         :room-id (:id room)
-                                                                         :dialog-id (:id pending-dialog)})})
-                                        (resolved-by-tool (:id entry))
-                                        (assoc :resolved-permission
-                                               (resolved-by-tool (:id entry)))))]
-                           (when post [{:key (str "h-" p)
-                                        :group? groupable?
-                                        :collapsed? collapsed?
-                                        :info (when groupable?
-                                                (block-info entry (or (:cwd room) (get-in state [:web/pending-room :cwd]))))
-                                        :node (with-post-key (str "h-" p) post)}])))))
+                               cwd      (or (:cwd room) (get-in state [:web/pending-room :cwd]))
+                               ;; other users' prompts get their avatar on
+                               ;; the last bubble of a run
+                               sender   (when (and (= :user (:kind entry))
+                                               (last-of-run? entries p))
+                                          (other-user state (:user entry)))
+                               tool?    (= :tool-call (:kind entry))
+                               md-code? (contains? (:web/md-diff-code state) (:id entry))
+                               editing? (and (= :user (:kind entry)) (= p (:index editing)))
+                               resolved (resolved-by-tool (:id entry))]
+                           (memo-timeline-items
+                            entry
+                            ;; Everything below reads besides the entry; nil (the
+                            ;; post with the pending ask carries fresh answer fns)
+                            ;; always rebuilds.
+                            (when-not (= p perm-tool-idx)
+                              [p dispatch! cwd (:id room) sender groupable? collapsed?
+                               (when tool?
+                                 (tool-views/inputs (util/strip-mcp-prefix (:tool entry)) (:ext room)))
+                               md-code? (when editing? [(:text editing)]) resolved])
+                            (fn []
+                              (when-let [post (entry->post
+                                               dispatch!
+                                               (cond-> (assoc entry :history-index p
+                                                              :cwd cwd
+                                                              :room-id (:id room)
+                                                              :sender sender)
+                                                 groupable?
+                                                 (assoc :grouped? true)
+                                                 collapsed?
+                                                 (assoc :collapsed? true)
+                                                 ;; extension tool views read their room slice
+                                                 tool?
+                                                 (assoc :room-ext (:ext room))
+                                                 ;; markdown diff toggled to its code view
+                                                 md-code?
+                                                 (assoc :md-diff-code? true)
+                                                 editing?
+                                                 (assoc :editing? true :edit-text (:text editing))
+                                                 (= p perm-tool-idx)
+                                                 (assoc :permission {:dialog pending-dialog
+                                                                     :answer! perm-answer!
+                                                                     :deny-reason!
+                                                                     #(dispatch! {:type :deny-reason/start
+                                                                                  :room-id (:id room)
+                                                                                  :dialog-id (:id pending-dialog)})})
+                                                 resolved
+                                                 (assoc :resolved-permission resolved)))]
+                                [{:key (str "h-" p)
+                                  :group? groupable?
+                                  :collapsed? collapsed?
+                                  :info (when groupable? (block-info entry cwd))
+                                  :node (with-post-key (str "h-" p) post)}])))))))
                     (range start (inc total))))))
                ;; These tail bubbles appear/disappear as a turn progresses
                ;; (optimistic → real message, pending command clears, dialog

@@ -19,6 +19,14 @@
   [ext-id views]
   (swap! registry merge (update-vals views (fn [view] {:ext-id ext-id :view view}))))
 
+(defn inputs
+  "What `render` reads for `tool` besides the call: its registered view and
+   that extension's slice of `room-ext`, nil when no view is registered. A
+   render cache keys on it (xi.web.views memoizes timeline posts)."
+  [tool room-ext]
+  (when-let [{:keys [ext-id] :as v} (get @registry tool)]
+    [v (get room-ext ext-id)]))
+
 (defn- keywordize [args]
   (if (map? args)
     (update-keys args #(if (string? %) (keyword %) %))
