@@ -524,6 +524,15 @@
 (defn- diff-modify-toggle [st _]
   {:state (update st :web/diff-modify? not)})
 
+(defn- md-diff-toggle
+  "Flip a markdown diff between its rendered and code view: `key` (a tool call
+   id, or [:diff filename] in the diff viewer) is in the `:web/md-diff-code`
+   set while its code view is showing."
+  [st {:keys [key]}]
+  {:state (update st :web/md-diff-code
+                  (fn [s] (let [s (or s #{})]
+                            (if (contains? s key) (disj s key) (conj s key)))))})
+
 (defn- prompt-part-toggle
   "Expand/collapse one system-prompt part in the /prompt tab by toggling its
    index in the `:web/prompt-expanded` set."
@@ -1224,6 +1233,7 @@
           :diff/modify-toggle    diff-modify-toggle
           :diff/explain          diff-explain
           :diff/modify-submit    diff-modify-submit
+          :md-diff/toggle        md-diff-toggle
           :prompt/part-toggle    prompt-part-toggle
           :prompt/toggle-all     prompt-toggle-all
           ;; Git status (roomless working-tree diff page)

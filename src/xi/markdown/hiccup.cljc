@@ -97,8 +97,9 @@
 ;; Block rendering
 ;; ---------------------------------------------------------------------------
 
-(defn- render-block
-  "Render a single block token to hiccup."
+(defn render-block
+  "Render a single block token to hiccup. Public for the rendered markdown
+   diff (xi.markdown.diff), which renders blocks one by one."
   [block]
   (when (vector? block)
     (let [[tag] block]

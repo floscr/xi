@@ -2234,6 +2234,128 @@ code a:hover,
   background: color-mix(in srgb, var(--danger) 7%, transparent);
 }
 
+/* ---- Rendered markdown diff (xi.markdown.diff) ----
+   A markdown file's diff rendered as markdown: changed blocks get a red / green
+   band with a colored left edge, the words that differ inside a changed run
+   are marked, unchanged context is dimmed. A Rendered ⇄ Code toggle sits in
+   the bar above it (chat) or in the file header (diff viewer). */
+.md-diff-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-1) var(--size-2);
+  border-bottom: 1px solid var(--border-0);
+}
+
+.md-diff-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+.md-diff-toggle { flex-shrink: 0; padding: 2px; gap: 2px; user-select: none; }
+.md-diff-toggle .button-group-item {
+  height: 1.5rem; padding: 0 var(--size-2); gap: var(--size-1);
+  font-size: 0.75rem; color: var(--fg-2);
+}
+.md-diff-toggle .button-group-item .icon { width: 0.8rem; height: 0.8rem; }
+.md-diff-toggle .button-group-item.is-active {
+  background: var(--bg-0); color: var(--fg-0); box-shadow: var(--shadow-0);
+}
+.diff-file-header .md-diff-toggle { margin-left: auto; font-weight: 400; }
+
+/* Same body as the markdown file viewer (.file-tab-md): the page font and
+   size, not the monospace of the code boxes / diff view it sits in. */
+.md-diff {
+  padding: var(--size-2) 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: var(--font-base);
+  white-space: normal;
+}
+
+/* inline code without the bordered pill */
+.md-diff code {
+  border: none;
+  background-color: color-mix(in srgb, var(--fg-0) 8%, transparent);
+}
+.md-diff pre code { background: none; }
+
+.tool-call-content .md-diff {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.md-diff-band {
+  padding: var(--size-1) var(--size-3);
+  border-left: 3px solid transparent;
+}
+
+.md-diff-band--ctx { opacity: 0.55; }
+
+.md-diff-band--add {
+  background: color-mix(in srgb, var(--hl-string) 4%, transparent);
+  border-left-color: var(--hl-string);
+}
+
+.md-diff-band--del {
+  background: color-mix(in srgb, var(--danger) 4%, transparent);
+  border-left-color: var(--danger);
+}
+
+.md-diff-band > .markdown > :first-child { margin-top: 0; }
+.md-diff-band > .markdown > :last-child { margin-bottom: 0; }
+/* List items are diffed one by one, so each sits in its own <ul>/<ol>:
+   collapse the list margins so consecutive items still read as one list. */
+.md-diff-band > .markdown > ul,
+.md-diff-band > .markdown > ol { margin-top: 0; margin-bottom: 0; }
+.md-diff-band > .markdown > * + p,
+.md-diff-band > .markdown > p + * { margin-top: var(--size-2); }
+
+/* Changed words: an opaque fill (mixed into the page background, so it
+   doesn't stack with the band tint underneath) at full text contrast. Code
+   pills inside a mark drop their own fill so the mark reads as one band. */
+.md-diff-word--add,
+.md-diff-word--del {
+  color: var(--fg-0);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.md-diff-word--add,
+.md-diff code:has(> .md-diff-word--add) {
+  background: color-mix(in srgb, var(--hl-string) 12%, var(--bg-0));
+}
+
+.md-diff-word--del,
+.md-diff code:has(> .md-diff-word--del) {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-0));
+}
+
+.md-diff-word--del {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--fg-0) 45%, transparent);
+}
+
+/* the mark sits inside a code pill: the pill carries the fill */
+.md-diff code > .md-diff-word--add,
+.md-diff code > .md-diff-word--del { background: transparent; }
+
+/* between hunks: a dashed rule */
+.md-diff-gap {
+  margin: var(--size-2) var(--size-3);
+  border-top: 1px dashed var(--border-0);
+}
+
+/* the diff viewer's rendered file body, laid out like the file viewer */
+.diff-file-md { padding: var(--size-2) var(--size-5); }
+.diff-file-md .md-diff { max-width: var(--chat-max-width); margin: 0 auto; }
+
 /* ---- clj blocks: "Quiet REPL" ----
    The header is just `clj` + a dim one-line preview of the code that hides the
    moment the block is expanded, so the command is never rendered twice. The

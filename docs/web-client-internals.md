@@ -75,6 +75,17 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `hl-cache`; and with the `:expanded` opt only `diff-row-budget` rows render
   up front, the rest behind a per-file "Show more" (`:diff/show-all`,
   `:web/diff-expanded`).
+- **Rendered Markdown diffs**: a `.md` diff (tool result / ask preview via
+  `tool-diff-view`, diff buffer and Git status via `diff-rows-view`'s
+  `:md-code` opt) renders through `xi.markdown.diff`: per hunk, the old side
+  (context + deletes) and new side (context + adds) are parsed with
+  `xi.markdown.parse`, list items split into one-item blocks, and the block
+  sequences LCS-diffed (`diff-segments`); `md/render-block` renders each
+  block, and `mark-words` wraps the changed words of a changed run (token LCS
+  over the rendered text leaves; skipped when the sides share under half the
+  shorter side's words). The Rendered / Code switch toggles the diff's key
+  (tool-call id, dialog id, or `[:diff filename]`) in `:web/md-diff-code`
+  (`:md-diff/toggle`).
 - **Permission ask focus**: an ask carrying a `:target {:arg :code :ranges}`
   (clj gate asks) renders the code in segments (`code-focus-segments`), the
   ranges at full contrast and the rest `.code-muted`; hover lifts the muting.

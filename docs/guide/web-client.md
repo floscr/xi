@@ -48,6 +48,14 @@ devices and `xi clients revoke <name>` removes one.
 - **Review changes.** An edit shows a diff where it happened. Right-click (or
   long-press) a code block to copy it, open the file, or open the diff in the
   Diff tab.
+- **Read Markdown changes as Markdown.** A diff of a Markdown file (an edit,
+  a permission ask, the diff buffer, Git status) is shown rendered: changed
+  paragraphs, list items, and code blocks get a red (removed) or green
+  (added) bar, the words that changed inside them are highlighted, and
+  unchanged context is dimmed. The **Rendered / Code** switch at the top right
+  of the diff (in the file header, in the diff buffer) flips that diff to the
+  line diff and back. A hunk is rendered on its own, so one that starts in the
+  middle of a table or code block shows that part as plain text.
 - **Switch projects.** The projects page lists your [projects](projects.md);
   start a new chat in any of them.
 - **Run commands.** Everything from [Slash commands](commands.md) works here

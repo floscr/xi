@@ -10,6 +10,7 @@
             [xi.error-info :as error-info]
             [xi.core.state :as state]
             [xi.markdown.hiccup :as md]
+            [xi.markdown.diff :as md-diff]
             [xi.highlight.core :as hl]
             [xi.highlight.bundle :as grammars]
             [xi.highlight.embedded :as embedded]
@@ -555,6 +556,95 @@
         (.set inner text [attrs result])
         result))))
 
+;; ── Rendered markdown diffs ──────────────────────────────────────────────────
+
+(defn- md-diff-node
+  "Hiccup for one diff unit (xi.markdown.diff): its parsed block rendered as
+   markdown; an exploded ordered-list item keeps its number."
+  [{:keys [block start]}]
+  (let [node (md/render-block block)]
+    (if (and start (= :ol (first node)))
+      (into [:ol {:start start}] (rest node))
+      node)))
+
+(defn- md-diff-band [status nodes]
+  [:div {:class ["md-diff-band" (str "md-diff-band--" (name status))]}
+   (into [:div {:class ["markdown"]}] nodes)])
+
+(defn- md-diff-body
+  "Rendered markdown diff of `hunks` (xi.markdown.diff hunk shape): unchanged
+   blocks as dimmed context, each changed run as its removed blocks (red band)
+   over its added ones (green band) with the differing words marked, and a
+   dashed rule between hunks. nil when no block changed."
+  [hunks]
+  (when-let [segments (not-empty (md-diff/diff-segments hunks))]
+    (into [:div {:class ["post-content" "md-diff"]}]
+          (mapcat (fn [{:keys [kind items del add]}]
+                    (case kind
+                      :gap [[:div {:class ["md-diff-gap"]}]]
+                      :ctx [(md-diff-band :ctx (map md-diff-node items))]
+                      :change
+                      (let [[d a] (md-diff/mark-words (mapv md-diff-node del)
+                                                      (mapv md-diff-node add))]
+                        (cond-> []
+                          (seq d) (conj (md-diff-band :del d))
+                          (seq a) (conj (md-diff-band :add a)))))))
+          segments)))
+
+(def ^:private md-diff-cache
+  "diff text → md-diff-body of a tool diff (memoized like edit-diff-code, so
+   re-renders hand Replicant the identical hiccup)."
+  (js/Map.))
+
+(defn- tool-md-diff-body
+  "md-diff-body of an edit/write tool's diff text, memoized."
+  [text]
+  (if (.has md-diff-cache text)
+    (.get md-diff-cache text)
+    (let [result (md-diff-body (md-diff/tool-diff-hunks text))]
+      (when (>= (.-size md-diff-cache) code-cache-max) (.clear md-diff-cache))
+      (.set md-diff-cache text result)
+      result)))
+
+(defn- md-diff-toggle
+  "Rendered ⇄ Code segmented control for a markdown diff. `code?` — the code
+   view is showing; clicking the other segment dispatches :md-diff/toggle for
+   `k`."
+  [dispatch! k code?]
+  (let [select (fn [want-code?]
+                 (fn [^js e]
+                   (.stopPropagation e)
+                   (when (not= want-code? code?)
+                     (dispatch! {:type :md-diff/toggle :key k}))))]
+    (button-group/button-group
+     {:variant :boxed :class "md-diff-toggle"}
+     (button-group/button-group-item {:icon :file-text :active (not code?)
+                                      :attrs {:type "button" :title "Rendered markdown diff"}
+                                      :on-click (select false)}
+                                     "Rendered")
+     (button-group/button-group-item {:icon :code :active code?
+                                      :attrs {:type "button" :title "Source diff"}
+                                      :on-click (select true)}
+                                     "Code"))))
+
+(defn- tool-diff-view
+  "An edit/write tool's diff text for `path`: a markdown file gets the
+   rendered markdown diff (with a Rendered ⇄ Code toggle keyed by `k`, the
+   tool call id; `code?` — the code view is toggled on), anything else — or a
+   diff with no rendered change — the line diff. `attrs` go on the outer node."
+  [dispatch! {:keys [path text grammar attrs k code?]}]
+  (let [rendered (when (and (md-diff/markdown-path? path) k)
+                   (tool-md-diff-body text))]
+    (if-not rendered
+      (edit-diff-code grammar (truncate-lines text 100) attrs)
+      [:div (merge {:class ["md-diff-wrap"]} attrs)
+       [:div {:class ["md-diff-bar"]}
+        [:span {:class ["md-diff-path"]} path]
+        (md-diff-toggle dispatch! k code?)]
+       (if code?
+         (edit-diff-code grammar (truncate-lines text 100) nil)
+         rendered)])))
+
 (defn- result-images
   "Extract image blocks from a tool result, tolerating both the MCP shape
    ({:type \"image\" :data .. :mimeType ..}) and the API shape
@@ -650,12 +740,13 @@
 (defn- diff-preview
   "A change preview ({:path :text} — the diff a guarded write/edit asked to
    make; its ask's :diff, kept on the tool-call entry by :ui/dialog-open),
-   rendered like the edit tool's result diff."
-  [{:keys [path text] :as diff}]
+   rendered like the edit tool's result diff. `k` / `code?` as for
+   tool-diff-view."
+  [dispatch! {:keys [path text] :as diff} k code?]
   (when diff
-    (edit-diff-code (grammars/get-grammar (file-ext path))
-                    (truncate-lines text 100)
-                    {:data-diff-path path :data-diff-text text})))
+    (tool-diff-view dispatch! {:path path :text text :k k :code? code?
+                               :grammar (grammars/get-grammar (file-ext path))
+                               :attrs {:data-diff-path path :data-diff-text text}})))
 
 (defn format-elapsed
   "Whole seconds as `12s` / `3m 05s`."
@@ -697,9 +788,9 @@
    group (header row styling); `:collapsed?` — it starts closed (the
    :tool-blocks appearance setting); `:room-ext` — the room's extension
    slices, for extension tool views. All stamped by chat-view."
-  [dispatch! {:keys [tool arguments result is-error status started-at diff
+  [dispatch! {:keys [id tool arguments result is-error status started-at diff
                      permission resolved-permission
-                     grouped? collapsed? cwd room-ext]}]
+                     grouped? collapsed? cwd room-ext md-diff-code?]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments cwd)
         running?  (= :running status)
@@ -783,7 +874,7 @@
               (focused-clj-code shown ranges)
               (or (highlight-clj-code shown) (plain-code shown)))]]))
       (when preview
-        [:div {:class ["tool-call-content"]} (diff-preview preview)])
+        [:div {:class ["tool-call-content"]} (diff-preview dispatch! preview id md-diff-code?)])
       (cond
         ;; When the result carries an image (view_image, screenshots) the text is
         ;; just a "Viewed image: /path" caption — drop it and show only the image.
@@ -802,9 +893,10 @@
                 (and diff-result? (tool-file-path name arguments))
                 (assoc :data-diff-path (tool-file-path name arguments)
                        :data-diff-text text))
-         (let [shown (truncate-lines text 100)]
-           (if diff-result?
-             (edit-diff-code grammar shown nil)
+         (if diff-result?
+           (tool-diff-view dispatch! {:path (tool-file-path name arguments) :text text
+                                      :grammar grammar :k id :code? md-diff-code?})
+           (let [shown (truncate-lines text 100)]
              [:pre {:class ["tool-call-code"]}
               (if grammar (highlight-code grammar shown) (plain-code shown))]))])
       ;; A permission gate fired for this (still-running) tool call: render the
@@ -1910,7 +2002,8 @@
       [:div {:class ["post" "post--assistant" "post--dialog"]}
        [:div {:class ["post-body" "dialog-bubble"]}
         [:div {:class ["dialog-message"]} (or message text)]
-        (diff-preview (:diff live-dialog))
+        (diff-preview dispatch! (:diff live-dialog)
+                      id (contains? (:web/md-diff-code state) id))
         (case type
           :cwd-select (cwd-select-body dispatch! state options answer!)
           :form       (form-dialog-body dispatch! state live-dialog answer!)
@@ -2017,6 +2110,28 @@
           (.set diff-groups-cache rows groups)
           groups))))
 
+(def ^:private diff-md-cache
+  "file group → its rendered markdown diff (diff-group-md-body), or false."
+  (js/WeakMap.))
+
+(defn- diff-group-md-body
+  "md-diff-body of a file group's hunks (rebuilt from its :hunk / :line
+   rows), memoized per group; nil when no rendered block changed."
+  [group]
+  (let [cached (.get diff-md-cache group)]
+    (if (some? cached)
+      (when cached cached)
+      (let [hunks (->> (rest group)
+                       (partition-by #(= :hunk (:row %)))
+                       (remove #(= :hunk (:row (first %))))
+                       (mapv #(into [] (comp (filter (fn [r] (= :line (:row r))))
+                                             (map :line)
+                                             (remove (fn [l] (= :meta (:type l)))))
+                                    %)))
+            body  (md-diff-body hunks)]
+        (.set diff-md-cache group (or body false))
+        body))))
+
 (def ^:private diff-body-cache
   "file group → [dispatch! range shown body-hiccup]. A file's body only depends on
    the selection when the range touches it, so unrelated files keep returning
@@ -2069,9 +2184,12 @@
    :diff/toggle-file to fold/unfold their body;
    :expanded — a set of filenames shown in full. When this opt is present
    (even as an empty set) the view is size-limited (diff-row-budget): files
-   past the budget are cut off behind a button dispatching :diff/show-all."
+   past the budget are cut off behind a button dispatching :diff/show-all;
+   :md-code — the :web/md-diff-code set. When this opt is present (even as an
+   empty set) markdown files render as a rendered markdown diff, with a
+   Rendered ⇄ Code toggle in their header (key [:diff filename])."
   ([dispatch! rows range toolbar] (diff-rows-view dispatch! rows range toolbar nil))
-  ([dispatch! rows range toolbar {:keys [highlight reviewed line-suffix collapsed expanded]}]
+  ([dispatch! rows range toolbar {:keys [highlight reviewed line-suffix collapsed expanded md-code]}]
   (let [grammar-cache (atom {})
         grammar-for (fn [f] (or (@grammar-cache f)
                                 (let [g (diff-file-grammar f)]
@@ -2094,7 +2212,11 @@
                                :renamed "renamed" :binary "binary" nil)
                 body-rows (rest group)
                 collapse?  (some? collapsed)
-                folded?    (boolean (and collapsed (contains? collapsed filename)))]
+                folded?    (boolean (and collapsed (contains? collapsed filename)))
+                md-key     [:diff filename]
+                md-body    (when (and md-code (md-diff/markdown-path? filename))
+                             (diff-group-md-body group))
+                md-code?   (contains? md-code md-key)]
             [:div {:class ["diff-file"
                            (when folded? "diff-file--collapsed")]
                    :replicant/key filename}
@@ -2111,8 +2233,12 @@
               (when status-label
                 [:span {:class ["diff-file-status"
                                 (str "diff-file-status--" (name status))]}
-                 status-label])]
-             (when-not folded?
+                 status-label])
+              (when md-body
+                (md-diff-toggle dispatch! md-key md-code?))]
+             (when (and md-body (not md-code?) (not folded?))
+               [:div {:class ["diff-file-md"]} md-body])
+             (when-not (or folded? (and md-body (not md-code?)))
                (let [file-range (diff-group-range group range)
                      [c-dispatch c-range c-shown c-body] (when cache-body? (.get diff-body-cache group))]
                  (if (and c-body (identical? c-dispatch dispatch!) (= c-range file-range)
@@ -2428,8 +2554,10 @@
   "Full diff buffer view rendered as the active tab. Git diffs use the
    interactive unified-diff viewer (line selection, Explain / Modify);
    difftastic diffs are read-only structural text colored from their ANSI
-   (red = removed, green = added)."
-  [dispatch! room-id diff-buffer sel modify? collapsed expanded]
+   (red = removed, green = added). Markdown files in a git diff render as a
+   rendered markdown diff unless toggled to code (`md-code`, the
+   :web/md-diff-code set)."
+  [dispatch! room-id diff-buffer sel modify? collapsed expanded md-code]
   (let [engine (or (:engine diff-buffer) :git)
         git?   (not= engine :difft)
         rows   (when git? (diff-rows-for-text (:text diff-buffer)))
@@ -2449,12 +2577,8 @@
          (diff-rows-view dispatch! rows range
                          (when range
                            (diff-action-bar dispatch! room-id rows range modify?))
-                         {:collapsed collapsed :expanded (or expanded #{})})))]))
-
-(def ^:private markdown-exts
-  "Extensions rendered as formatted markdown (HTML markup) instead of
-   syntax-highlighted source in the file viewer."
-  #{"md" "markdown" "mdown" "markdn" "mkd" "mdx"})
+                         {:collapsed collapsed :expanded (or expanded #{})
+                          :md-code (or md-code #{})})))]))
 
 (defn- file-tab-view
   "Read-only file viewer rendered as the active tab. Markdown files render as
@@ -2466,7 +2590,7 @@
     [:div {:class ["file-tab"]}
      [:div {:class ["file-tab-header"]}
       [:span {:class ["file-tab-path"]} path]]
-     (if (contains? markdown-exts ext)
+     (if (contains? md-diff/markdown-exts ext)
        [:div {:class ["file-tab-md"]}
         [:div {:class ["post-content"]} (md/render text)]]
        [:pre {:class ["file-tab-code"]}
@@ -3275,7 +3399,8 @@
                       (:web/diff-sel state)
                       (:web/diff-modify? state)
                       (:web/diff-collapsed state)
-                      (:web/diff-expanded state))
+                      (:web/diff-expanded state)
+                      (:web/md-diff-code state))
 
        :file
        (file-tab-view (:file buffers))
@@ -3419,6 +3544,9 @@
                                         ;; extension tool views read their room slice
                                         (= :tool-call (:kind entry))
                                         (assoc :room-ext (:ext room))
+                                        ;; markdown diff toggled to its code view
+                                        (contains? (:web/md-diff-code state) (:id entry))
+                                        (assoc :md-diff-code? true)
                                         (and (= :user (:kind entry)) (= p (:index editing)))
                                         (assoc :editing? true :edit-text (:text editing))
                                         (= p perm-tool-idx)
@@ -4435,7 +4563,8 @@
         :else
         (diff-rows-view dispatch!
                         (diff-rows-for-text text)
-                        nil nil {:expanded (or (:web/diff-expanded state) #{})}))]]))
+                        nil nil {:expanded (or (:web/diff-expanded state) #{})
+                                 :md-code  (or (:web/md-diff-code state) #{})}))]]))
 
 (defn- palette-chat-item
   "cmd/command-item variant with a trailing status slot, so palette chat rows
