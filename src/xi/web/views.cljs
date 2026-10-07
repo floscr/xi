@@ -4672,6 +4672,12 @@
         (do (.preventDefault e)
             (dispatch! {:type :palette/back}))))))
 
+(def ^:private palette-quick-keys
+  "Alt+<key> quick-select keys for the command palette, in row order. Skips the
+   keys Alt already does here: list nav (j k n p) and xi's global/permission
+   bindings (u x a d)."
+  "sfghlqweryiotzcvbm")
+
 (defn- command-palette
   "Global Cmd/Ctrl+K command palette (ui.command). Mounted once in root-view;
    the ui-runtime.js delegate handles open/filter/keyboard-nav. Items dispatch
@@ -4687,6 +4693,8 @@
         search-page? (= :search (:kind palette-page))
         finder-page? (= :file-finder (:kind palette-page))
         dialog-attrs {:id "cmdk" :hotkey "mod+k"
+                      ;; Hold Alt → key badges on the first rows, Alt+key picks one.
+                      :quick-nav palette-quick-keys
                       :placeholder (cond
                                      search-page? "Search session text…"
                                      finder-page? "Find file…"

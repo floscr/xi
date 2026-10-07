@@ -76,6 +76,7 @@ are kept and sent when the connection returns.
 | `Alt+a` / `Alt+d` | Allow / deny the pending permission request |
 | `Alt+x` | Stop the running turn |
 | `Ctrl/Cmd+k` | Command palette |
+| `Alt` (held, in the palette) | Show a key badge on each of the first rows; `Alt` + that key picks the row. Badges follow the filtered list, so type first, then hold Alt |
 | `Ctrl/Cmd+p` | Find a file |
 
 ## When something is off

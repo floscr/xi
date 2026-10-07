@@ -1014,6 +1014,86 @@
     }
     ;
   };
+  var quick_key_sets = { "letters": "asdfghlqweryiotzxcvbum", "numbers": "1234567890" };
+  var quick_keys = function(dialog) {
+    const v1 = dialog.dataset.commandQuickNav;
+    if (truth_((() => {
+      const and__23442__auto__2 = v1;
+      if (truth_(and__23442__auto__2)) {
+        return !_EQ_(v1, "");
+      } else {
+        return and__23442__auto__2;
+      }
+      ;
+    })())) {
+      const or__23426__auto__3 = quick_key_sets[v1];
+      if (truth_(or__23426__auto__3)) {
+        return or__23426__auto__3;
+      } else {
+        return v1;
+      }
+      ;
+    }
+    ;
+  };
+  var event_key = function(e) {
+    const code1 = (() => {
+      const or__23426__auto__2 = e.code;
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return "";
+      }
+      ;
+    })();
+    if (truth_(code1.startsWith("Key"))) {
+      return code1.slice(3).toLowerCase();
+    } else {
+      if (truth_(code1.startsWith("Digit"))) {
+        return code1.slice(5);
+      } else {
+        return null;
+      }
+    }
+    ;
+  };
+  var hide_hints_BANG_ = function(dialog) {
+    if (truth_(dialog.hasAttribute("data-command-hints"))) {
+      dialog.removeAttribute("data-command-hints");
+      return dialog.querySelectorAll("[data-command-hint]").forEach((function(el) {
+        return el.removeAttribute("data-command-hint");
+      }));
+    }
+    ;
+  };
+  var show_hints_BANG_ = function(dialog) {
+    const temp__23062__auto__1 = quick_keys(dialog);
+    if (truth_(temp__23062__auto__1)) {
+      const ks2 = temp__23062__auto__1;
+      hide_hints_BANG_(dialog);
+      visible_items(dialog).forEach((function(el, i) {
+        if (i < ks2.length) {
+          return el.setAttribute("data-command-hint", ks2[i].toUpperCase());
+        }
+        ;
+      }));
+      return dialog.setAttribute("data-command-hints", "");
+    }
+    ;
+  };
+  var quick_item = function(dialog, e) {
+    const temp__23062__auto__1 = quick_keys(dialog);
+    if (truth_(temp__23062__auto__1)) {
+      const ks2 = temp__23062__auto__1;
+      const k3 = event_key(e);
+      const i4 = truth_(k3) ? ks2.indexOf(k3) : -1;
+      if (i4 >= 0) {
+        return visible_items(dialog)[i4];
+      }
+      ;
+    }
+    ;
+  };
   var filter_BANG_ = function(dialog, query) {
     const q1 = (() => {
       const or__23426__auto__2 = query;
@@ -1079,7 +1159,11 @@
       list3.classList.remove("command-list--empty");
     }
     ;
-    return set_active_BANG_(dialog, vis9.length > 0 ? vis9[0] : null);
+    set_active_BANG_(dialog, vis9.length > 0 ? vis9[0] : null);
+    if (truth_(dialog.hasAttribute("data-command-hints"))) {
+      return show_hints_BANG_(dialog);
+    }
+    ;
   };
   var find_dialog = function(id) {
     if (truth_(id)) {
@@ -1287,111 +1371,129 @@
     const dialog1 = open_dialog();
     if (truth_(dialog1)) {
       const key2 = e.key;
-      if (key2 === "ArrowDown") {
-        e.preventDefault();
-        return move_active_BANG_(dialog1, "down");
+      if (truth_(key2 === "Alt" && quick_keys(dialog1))) {
+        return show_hints_BANG_(dialog1);
       } else {
-        if (key2 === "ArrowUp") {
+        if (truth_((() => {
+          const and__23442__auto__3 = e.altKey;
+          if (truth_(and__23442__auto__3)) {
+            return not(e.ctrlKey) && (not(e.metaKey) && (not(e.shiftKey) && quick_item(dialog1, e)));
+          } else {
+            return and__23442__auto__3;
+          }
+          ;
+        })())) {
           e.preventDefault();
-          return move_active_BANG_(dialog1, "up");
+          e.stopPropagation();
+          return select_BANG_(dialog1, quick_item(dialog1, e));
         } else {
-          if (truth_(key2 === "n" && e.ctrlKey)) {
+          if (key2 === "ArrowDown") {
             e.preventDefault();
             return move_active_BANG_(dialog1, "down");
           } else {
-            if (truth_(key2 === "p" && e.ctrlKey)) {
+            if (key2 === "ArrowUp") {
               e.preventDefault();
               return move_active_BANG_(dialog1, "up");
             } else {
-              if (truth_(key2 === "j" && e.ctrlKey)) {
+              if (truth_(key2 === "n" && e.ctrlKey)) {
                 e.preventDefault();
                 return move_active_BANG_(dialog1, "down");
               } else {
-                if (truth_(key2 === "k" && e.ctrlKey)) {
+                if (truth_(key2 === "p" && e.ctrlKey)) {
                   e.preventDefault();
                   return move_active_BANG_(dialog1, "up");
                 } else {
-                  if (truth_((() => {
-                    const and__23442__auto__4 = (() => {
-                      const or__23426__auto__3 = key2 === "J";
-                      if (or__23426__auto__3) {
-                        return or__23426__auto__3;
-                      } else {
-                        return key2 === "j";
-                      }
-                      ;
-                    })();
-                    if (truth_(and__23442__auto__4)) {
-                      const and__23442__auto__5 = e.altKey;
-                      if (truth_(and__23442__auto__5)) {
-                        return e.shiftKey;
-                      } else {
-                        return and__23442__auto__5;
-                      }
-                      ;
-                    } else {
-                      return and__23442__auto__4;
-                    }
-                    ;
-                  })())) {
+                  if (truth_(key2 === "j" && e.ctrlKey)) {
                     e.preventDefault();
-                    return move_group_BANG_(dialog1, "down");
+                    return move_active_BANG_(dialog1, "down");
                   } else {
-                    if (truth_((() => {
-                      const and__23442__auto__7 = (() => {
-                        const or__23426__auto__6 = key2 === "K";
-                        if (or__23426__auto__6) {
-                          return or__23426__auto__6;
-                        } else {
-                          return key2 === "k";
-                        }
-                        ;
-                      })();
-                      if (truth_(and__23442__auto__7)) {
-                        const and__23442__auto__8 = e.altKey;
-                        if (truth_(and__23442__auto__8)) {
-                          return e.shiftKey;
-                        } else {
-                          return and__23442__auto__8;
-                        }
-                        ;
-                      } else {
-                        return and__23442__auto__7;
-                      }
-                      ;
-                    })())) {
+                    if (truth_(key2 === "k" && e.ctrlKey)) {
                       e.preventDefault();
-                      return move_group_BANG_(dialog1, "up");
+                      return move_active_BANG_(dialog1, "up");
                     } else {
-                      if (truth_(key2 === "j" && e.altKey)) {
-                        e.preventDefault();
-                        return move_active_BANG_(dialog1, "down");
-                      } else {
-                        if (truth_(key2 === "k" && e.altKey)) {
-                          e.preventDefault();
-                          return move_active_BANG_(dialog1, "up");
+                      if (truth_((() => {
+                        const and__23442__auto__5 = (() => {
+                          const or__23426__auto__4 = key2 === "J";
+                          if (or__23426__auto__4) {
+                            return or__23426__auto__4;
+                          } else {
+                            return key2 === "j";
+                          }
+                          ;
+                        })();
+                        if (truth_(and__23442__auto__5)) {
+                          const and__23442__auto__6 = e.altKey;
+                          if (truth_(and__23442__auto__6)) {
+                            return e.shiftKey;
+                          } else {
+                            return and__23442__auto__6;
+                          }
+                          ;
                         } else {
-                          if (truth_(key2 === "n" && e.altKey)) {
+                          return and__23442__auto__5;
+                        }
+                        ;
+                      })())) {
+                        e.preventDefault();
+                        return move_group_BANG_(dialog1, "down");
+                      } else {
+                        if (truth_((() => {
+                          const and__23442__auto__8 = (() => {
+                            const or__23426__auto__7 = key2 === "K";
+                            if (or__23426__auto__7) {
+                              return or__23426__auto__7;
+                            } else {
+                              return key2 === "k";
+                            }
+                            ;
+                          })();
+                          if (truth_(and__23442__auto__8)) {
+                            const and__23442__auto__9 = e.altKey;
+                            if (truth_(and__23442__auto__9)) {
+                              return e.shiftKey;
+                            } else {
+                              return and__23442__auto__9;
+                            }
+                            ;
+                          } else {
+                            return and__23442__auto__8;
+                          }
+                          ;
+                        })())) {
+                          e.preventDefault();
+                          return move_group_BANG_(dialog1, "up");
+                        } else {
+                          if (truth_(key2 === "j" && e.altKey)) {
                             e.preventDefault();
                             return move_active_BANG_(dialog1, "down");
                           } else {
-                            if (truth_(key2 === "p" && e.altKey)) {
+                            if (truth_(key2 === "k" && e.altKey)) {
                               e.preventDefault();
                               return move_active_BANG_(dialog1, "up");
                             } else {
-                              if (truth_(key2 === "Home" && e.metaKey)) {
+                              if (truth_(key2 === "n" && e.altKey)) {
                                 e.preventDefault();
-                                return move_active_BANG_(dialog1, "home");
+                                return move_active_BANG_(dialog1, "down");
                               } else {
-                                if (truth_(key2 === "End" && e.metaKey)) {
+                                if (truth_(key2 === "p" && e.altKey)) {
                                   e.preventDefault();
-                                  return move_active_BANG_(dialog1, "end");
+                                  return move_active_BANG_(dialog1, "up");
                                 } else {
-                                  if (key2 === "Enter") {
+                                  if (truth_(key2 === "Home" && e.metaKey)) {
                                     e.preventDefault();
-                                    return select_BANG_(dialog1, active_item(dialog1));
+                                    return move_active_BANG_(dialog1, "home");
                                   } else {
-                                    return null;
+                                    if (truth_(key2 === "End" && e.metaKey)) {
+                                      e.preventDefault();
+                                      return move_active_BANG_(dialog1, "end");
+                                    } else {
+                                      if (key2 === "Enter") {
+                                        e.preventDefault();
+                                        return select_BANG_(dialog1, active_item(dialog1));
+                                      } else {
+                                        return null;
+                                      }
+                                    }
                                   }
                                 }
                               }
@@ -1406,6 +1508,17 @@
             }
           }
         }
+      }
+      ;
+    }
+    ;
+  };
+  var on_keyup = function(e) {
+    if (e.key === "Alt") {
+      const temp__23062__auto__1 = open_dialog();
+      if (truth_(temp__23062__auto__1)) {
+        const dialog2 = temp__23062__auto__1;
+        return hide_hints_BANG_(dialog2);
       }
       ;
     }
@@ -1482,13 +1595,24 @@
       }
       ;
     })())) {
+      hide_hints_BANG_(t1);
       return clear_viewport_BANG_(t1);
+    }
+    ;
+  };
+  var on_blur = function() {
+    const temp__23062__auto__1 = open_dialog();
+    if (truth_(temp__23062__auto__1)) {
+      const dialog2 = temp__23062__auto__1;
+      return hide_hints_BANG_(dialog2);
     }
     ;
   };
   var init_BANG_ = function() {
     document.addEventListener("input", on_input, true);
     document.addEventListener("keydown", on_keydown, true);
+    document.addEventListener("keyup", on_keyup, true);
+    window.addEventListener("blur", on_blur);
     document.addEventListener("keydown", on_global_key);
     document.addEventListener("click", on_click);
     document.addEventListener("pointermove", on_pointermove, true);

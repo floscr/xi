@@ -2591,6 +2591,41 @@ a.btn-link {
   cursor: not-allowed;
 }
 
+/* ── Quick-nav badge (Alt held; see :quick-nav on command-dialog) ─── */
+
+/* The runtime sets data-command-hint on the first visible items while Alt is
+   held. The badge sits over the item's icon slot (so rows don't shift). */
+[data-command-hints] .command-item[data-command-hint] {
+  position: relative;
+}
+
+[data-command-hints] .command-item[data-command-hint] .command-item-icon {
+  visibility: hidden;
+}
+
+[data-command-hints] .command-item[data-command-hint]::before {
+  content: attr(data-command-hint);
+  position: absolute;
+  left: var(--size-3);
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: var(--size-5);
+  padding: 0 var(--size-1);
+  box-sizing: border-box;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: var(--size-5);
+  text-align: center;
+  color: var(--fg-0);
+  background: var(--bg-2);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+}
+
+[data-command-hints] .command-item--active[data-command-hint]::before {
+  background: var(--bg-0);
+}
+
 /* ── Shortcut hint ───────────────────────────────────────────────── */
 
 .command-shortcut {
