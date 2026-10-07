@@ -62,9 +62,39 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   instead of inheriting or seeding the previous user's values.
 - **Timeline virtualization**: last 60 entries render; "Show earlier" adds 40
   (`:web/timeline-window`, reset on navigation).
+- **Buffers** (`xi.buffers`, cljc): the room's `[:ui :buffers id → buffer]`
+  — diffs (`diff:<source>`), files (`file:<path>`), the prompt (`:prompt`)
+  — and `[:ui :active-buffer]`. The list is room state (mirrors, survives the
+  room's close parked per session on the server, see architecture.md); the
+  active one is this client's: `:ui/buffer-switch` is a ws-transport
+  local-ui event, and a switch a server flow dispatches for one client (a
+  `/diff` reply, a file read) carries that client's `:client-id`, which the
+  core reducer compares with `[:connection :client-id]` (from `:auth/ok`).
+  `room-joined` resets the snapshot's active buffer to the chat. The topbar
+  `buffer-menu` (a `.tab-pill` trigger + `ui.popover`) names the view in front
+  and lists the chat, every buffer (× → `:ui/buffer-close`), the canvas and
+  Close all (`:ui/buffers-close-all`); `chat-view` picks the view by the
+  buffer's kind (`diff-tab-view`, `file-tab-view`, `prompt-tab-view`, else
+  `text-tab-view`). Session cards get `:buffers` from the lobby's
+  `:buffers {sid [{:id :kind :title}]}` (`sidebar/session-buffers`) and list
+  them under the card (`session-buffer-rows`; the count toggles
+  `:web/sidebar-buffers-open`); a row navigates with `:buffer-id`, which
+  `router/with-buffer` turns into `:web/pending-buffer`, applied by
+  `pending-buffer-tap` on `:room/joined`. The × of a row sends the roomless
+  `:session/buffer-close`, so it works for parked buffers too. The palette's
+  Buffers group lists the current room's, then other sessions'
+  (`buffer-palette-items`); `Alt+b` (`:buffers/switch` →
+  `:palette/open-buffers`) opens those rows alone as a palette page.
+  **Buffer presence**: `buffer-presence-tap` sends `:client/update {:buffer
+  id}` whenever the active room's active buffer changes; the server keeps it
+  on the client entry, `rm/client-update-presence` refreshes the room's
+  `:members` (now `{:user :platform :buffer}`), and `buffers/viewers` turns
+  members into `{buffer-id [user …]}` — on the room for the buffer menu, as
+  `:viewers` on the lobby room summaries for the sidebar rows. Avatars via
+  `sidebar/room-people`, so a single-user server shows none.
 - **Code-block menu**: right-click / tap → Copy; on Read/Write/Edit blocks
   View file (`:file/open`); on blocks rendering a change View diff
-  (client-local `:ui/diff-open`, no git run). Blocks carry
+  (`:ui/diff-open`, no git run). Blocks carry
   `data-file-path` / `data-diff-path` / `data-diff-text` for the delegated
   listener in `xi.web.core`; `xi.diff/tool-diff->unified` converts the tool
   diff format.
@@ -133,7 +163,7 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
 `xi.web.keymap` resolves every keydown through the shared keymap model
 (`xi.keys`, cljc): the event becomes a canonical chord (`event->chord`), the
 active layers are computed from state and the DOM (transient
-`:permission-pending` / `:agent-busy`, the open buffer tab `:buffer/diff`…,
+`:permission-pending` / `:agent-busy`, the open buffer's kind `:buffer/diff`…,
 the router page `:page/chat`…, the mode, `:global`), and `xi.keys/lookup`
 picks an action id, whose code `xi.web.core/install-actions!` registered.
 Mode is `:compose` while a **visible** text field has focus, else
@@ -160,6 +190,8 @@ Never sent over the wire:
 | `:web/watched`, `:web/response-counts` | unread tracking |
 | `:web/cache` | hydrated per-session history for deep links |
 | `:web/pending-submit` | message stashed until `:room/joined` |
+| `:web/pending-buffer` | `{:session-id :buffer-id}` a sidebar / palette buffer row asked to open, applied on `:room/joined` |
+| `:web/sidebar-buffers-open` | session ids whose buffer rows are unfolded; this browser's own, cached in localStorage (`xi/sidebar-buffers-open`) |
 | `:web/connected?` | transport status |
 | `:web/nav-items` | extension nav entries, stored at init |
 | `:web/sidebar-groups` | extension sidebar groups (`:sidebar-groups`), stored at init; evaluated by `sidebar/extension-groups` |

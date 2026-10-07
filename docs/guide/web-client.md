@@ -46,8 +46,8 @@ devices and `xi clients revoke <name>` removes one.
   Open one in place, or switch the appearance settings (gear in the sidebar
   footer) to keep them open.
 - **Review changes.** An edit shows a diff where it happened. Right-click (or
-  long-press) a code block to copy it, open the file, or open the diff in the
-  Diff tab.
+  long-press) a code block to copy it, open the file, or open the diff as a
+  buffer (below).
 - **Read Markdown changes as Markdown.** A diff of a Markdown file (an edit,
   a permission ask, the diff buffer, Git status) is shown rendered: changed
   paragraphs, list items, and code blocks get a red (removed) or green
@@ -60,6 +60,39 @@ devices and `xi clients revoke <name>` removes one.
   start a new chat in any of them.
 - **Run commands.** Everything from [Slash commands](commands.md) works here
   too. The command palette (Ctrl/Cmd+K) lists them.
+
+## Buffers
+
+A chat can hold views next to its conversation: the diffs you opened
+(`/diff`, the Git status entry, a commit from `/commits`), the files you
+opened from a code block or the file finder, the system prompt (`/prompt`).
+These are its **buffers**. Each file and each diff source is its own buffer,
+so opening a second file keeps the first; opening the same one again
+refreshes it in place.
+
+- **Switching.** Once a chat has a buffer, the pill in the top bar names the
+  view you are looking at. Click it for the list: the chat, every buffer in
+  the order you opened them (the one in front is tinted), and the review
+  canvas when there is one. `Alt+b` opens the same list in the command
+  palette: type to filter, Enter to switch. `q` or `Esc` in a diff or file
+  view goes back to the chat; the buffer stays open.
+- **In the sidebar.** A session with buffers says so under its name ("3
+  buffers"). Click the count to unfold the rows under the card, again to fold
+  them; the browser remembers which you left open. The row of the buffer you
+  are looking at is tinted. A row opens that chat on that buffer, so you can
+  come back to the diff you were reading from anywhere.
+- **In the command palette** (Ctrl/Cmd+K), the Buffers group lists the
+  current chat's buffers first, then every other session's.
+- **Who is where.** On a server with several users, a buffer row shows the
+  avatars of the people looking at it right now, in the pill's list and in
+  the sidebar; the Chat row shows who is on the conversation.
+- **Closing.** The × on a row (in the pill's list or in the sidebar) closes
+  one; "Close all buffers" clears the chat's. Closing is for everyone in the
+  chat: the buffer list is shared, which buffer each person is looking at is
+  their own, so opening a diff on your phone never flips your laptop.
+- **How long they live.** Buffers survive leaving the chat and coming back,
+  on any device, as long as the server runs. They are not saved to disk: a
+  server restart starts with none.
 
 ## Install it on your phone
 
@@ -91,6 +124,7 @@ are. The common ones:
 | `Tab` or `Enter` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions |
 | `Alt` (held, in the palette) | Show a key badge on each of the first rows; `Alt` + that key picks the row. Badges follow the filtered list, so type first, then hold Alt |
 | `Ctrl/Cmd+p` | Find a file |
+| `Alt+b` | Switch buffer |
 
 The full list, the layers a key applies in, and how to change any of them in
 `config.edn`: [Keyboard shortcuts](keyboard.md).

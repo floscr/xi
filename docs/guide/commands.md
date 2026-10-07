@@ -40,7 +40,7 @@ message. `/help` lists everything that is available in the current setup.
 | `/diff` | Show what this chat changed. `/diff staged`, `/diff unstaged`, `/diff <ref>` show git diffs |
 | `/commit` | Stage and commit with the agent's help |
 | `/worktree` | Move the chat into a fresh git worktree; `merge`, `list`, `remove` |
-| `/buffers` | Switch between the chat, the log, the system prompt and the diff view |
+| `/buffers` | Switch between the chat, the log and the chat's open buffers (diffs, files, the system prompt); the last entry closes them all |
 | `/events` | Show the event log of this chat |
 | `/prompt` | Show the system prompt the agent gets |
 | `/holds`, `/release` | Show who holds the repository's git index when two chats share it; force it free |

@@ -18,6 +18,7 @@
    History gets a new entry kind here: {:kind :status :text ...} — command
    output and status lines, rendered dim by the TUI."
   (:require [clojure.string :as str]
+            [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.dialog :as dialog]
             [xi.util :as util]))
@@ -299,24 +300,29 @@
       body)))
 
 (defn- prompt-buffer [st room-id expanded?]
-  {:title     (str "System Prompt — " (if expanded? "full (ctrl+o for overview)"
+  {:kind      :prompt
+   :title     (str "System Prompt — " (if expanded? "full (ctrl+o for overview)"
                                          "overview (ctrl+o for full)"))
    :text      (render-system-prompt st room-id expanded?)
    :expanded? expanded?})
 
-(defn- cmd-prompt [st {:keys [room-id]}]
+(defn- cmd-prompt
+  "Open the system-prompt buffer; only the client that ran /prompt switches to
+   it (the buffer itself is shared, xi.buffers)."
+  [st {:keys [room-id] :as ev}]
   {:state (-> st
-              (assoc-in [:rooms room-id :ui :buffers :prompt]
-                        (prompt-buffer st room-id false))
-              (assoc-in [:rooms room-id :ui :active-buffer] :prompt))})
+              (update-in [:rooms room-id] buffers/install :prompt
+                         (prompt-buffer st room-id false) (:event/ts ev))
+              (cond-> (buffers/switch-here? st ev)
+                (assoc-in [:rooms room-id :ui :active-buffer] :prompt)))})
 
 (defn- prompt-toggle
   "Toggle full/preview rendering of the system-prompt buffer (ctrl+o)."
-  [st {:keys [room-id]}]
+  [st {:keys [room-id] :as ev}]
   (when (get-in st [:rooms room-id :ui :buffers :prompt])
     (let [expanded? (not (get-in st [:rooms room-id :ui :buffers :prompt :expanded?]))]
-      {:state (assoc-in st [:rooms room-id :ui :buffers :prompt]
-                        (prompt-buffer st room-id expanded?))})))
+      {:state (update-in st [:rooms room-id] buffers/install :prompt
+                         (prompt-buffer st room-id expanded?) (:event/ts ev))})))
 
 (defn- cmd-tree [st {:keys [room-id]}]
   (when (state/get-room st room-id)
@@ -325,23 +331,32 @@
 (defn- cmd-events [_st {:keys [room-id]}]
   {:effects [[:events/load {:room-id room-id}]]})
 
-(defn- cmd-buffers [st {:keys [room-id]}]
+(defn- cmd-buffers
+  "The /buffers menu: the chat, the log, every open buffer of the room
+   (xi.buffers — diffs, files, the system prompt, …) in opening order, the live
+   sub-agents view, and — when any buffer is open — a line that closes them
+   all. The switch is per client; the close drops them for everyone."
+  [st {:keys [room-id]}]
   (let [room (state/get-room st room-id)
         active (get-in room [:ui :active-buffer])
+        bufs   (get-in room [:ui :buffers])
         item (fn [label buffer-id]
                {:label label
                 :description (when (= buffer-id active) "• active")
                 :event {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}})
         items (cond-> [(item "Chat" :chat)
                        (item "Logs" :logs)]
-                (get-in room [:ui :buffers :prompt])
-                (conj (item "Prompt" :prompt))
-                (get-in room [:ui :buffers :diff])
-                (conj (item "Diff" :diff))
+                :always
+                (into (map (fn [[id buf]] (item (buffers/label id buf) id)))
+                      (buffers/ordered bufs))
                 ;; Live view over the subagent extension's room state (no
                 ;; [:ui :buffers] entry — rendered from state each pass).
                 (seq (get-in room [:ext :subagents :agents]))
-                (conj (item "Subagents" :subagents)))]
+                (conj (item "Subagents" :subagents))
+                (seq bufs)
+                (conj {:label "Close all buffers"
+                       :description (str (count bufs))
+                       :event {:type :ui/buffers-close-all :room-id room-id}}))]
     {:state (assoc-in st [:rooms room-id :ui :menu]
                       {:id :buffers :prompt "buffer> " :items items})}))
 
@@ -570,12 +585,14 @@
         (assoc :effects [[:editor/insert-text {:text editor-text}]])))))
 
 (defn- buffer-open
-  "Generic buffer open — install a named buffer and switch to it."
-  [st {:keys [room-id buffer-id buffer]}]
+  "Generic buffer open — install a named buffer (xi.buffers) and switch to it
+   on the client it was opened for (the event's :client-id, else everywhere)."
+  [st {:keys [room-id buffer-id buffer] :as ev}]
   (when (state/get-room st room-id)
     {:state (-> st
-                (assoc-in [:rooms room-id :ui :buffers buffer-id] buffer)
-                (assoc-in [:rooms room-id :ui :active-buffer] buffer-id))}))
+                (update-in [:rooms room-id] buffers/install buffer-id buffer (:event/ts ev))
+                (cond-> (buffers/switch-here? st ev)
+                  (assoc-in [:rooms room-id :ui :active-buffer] buffer-id)))}))
 
 (defn- attach-image [st {:keys [room-id image label]}]
   (when (state/get-room st room-id)

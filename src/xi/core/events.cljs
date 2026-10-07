@@ -13,7 +13,8 @@
 
    Event naming: :room/*, :client/*, :history/*, :agent/*, :ui/*,
    :prompt/*, :render/*."
-  (:require [xi.core.state :as state]
+  (:require [xi.buffers :as buffers]
+            [xi.core.state :as state]
             [xi.dialog :as dialog]))
 
 ;; ── Rooms ────────────────────────────────────────────────────────────────────
@@ -45,13 +46,17 @@
   {:state (update-in st [:connection :clients] dissoc client-id)})
 
 (defn- client-update
-  "Per-client metadata update (e.g. visibility). Connection-level: keyed by
-   client-id, no room state, never broadcast."
-  [st {:keys [client-id visible?]}]
+  "Per-client metadata update: visibility, and the buffer the client shows
+   (`:buffer`, :chat or a buffer id — buffer presence, folded into the room's
+   :members by the room manager). Connection-level: keyed by client-id, no
+   room state, never broadcast."
+  [st {:keys [client-id visible?] :as ev}]
   (when (get-in st [:connection :clients client-id])
     {:state (cond-> st
               (some? visible?)
-              (assoc-in [:connection :clients client-id :visible?] visible?))}))
+              (assoc-in [:connection :clients client-id :visible?] visible?)
+              (contains? ev :buffer)
+              (assoc-in [:connection :clients client-id :buffer] (or (:buffer ev) :chat)))}))
 
 ;; ── Users (server-side records) ───────────────────────────────────────────────────────
 
@@ -144,12 +149,30 @@
                            (vec (remove #(= dialog-id (:id %)) ds))
                            (vec (rest ds)))))}))
 
-(defn- buffer-set [st {:keys [room-id buffer-id buffer]}]
+(defn- buffer-set
+  "Install (or refresh) a room buffer — see xi.buffers for the shape and ids.
+   The buffer list is shared room state; this never changes what any client
+   is looking at (:ui/buffer-switch does)."
+  [st {:keys [room-id buffer-id buffer] :as ev}]
   (when (state/get-room st room-id)
-    {:state (assoc-in st [:rooms room-id :ui :buffers buffer-id] buffer)}))
+    {:state (update-in st [:rooms room-id] buffers/install buffer-id buffer (:event/ts ev))}))
 
-(defn- buffer-switch [st {:keys [room-id buffer-id]}]
-  (when (state/get-room st room-id)
+(defn- buffer-close [st {:keys [room-id buffer-id]}]
+  (when (get-in st [:rooms room-id :ui :buffers buffer-id])
+    {:state (update-in st [:rooms room-id] buffers/close buffer-id)}))
+
+(defn- buffers-close-all [st {:keys [room-id]}]
+  (when (seq (get-in st [:rooms room-id :ui :buffers]))
+    {:state (update-in st [:rooms room-id] buffers/close-all)}))
+
+(defn- buffer-switch
+  "Show a buffer (or :chat). The view is per client: a switch a server-side
+   flow dispatched for one client (its :client-id — a /diff reply, a file
+   read) is applied only there (xi.buffers/switch-here?); a client's own
+   switch never reaches the server (xi.client.ws-transport local-ui-events)."
+  [st {:keys [room-id buffer-id] :as ev}]
+  (when (and (state/get-room st room-id)
+             (buffers/switch-here? st ev))
     {:state (assoc-in st [:rooms room-id :ui :active-buffer] buffer-id)}))
 
 ;; ── Theme (per process) ──────────────────────────────────────────────────────
@@ -183,6 +206,8 @@
    :ui/dialog-close   dialog-close
    :ui/buffer-set     buffer-set
    :ui/buffer-switch  buffer-switch
+   :ui/buffer-close   buffer-close
+   :ui/buffers-close-all buffers-close-all
    :theme/set         theme-set})
 
 (defn chain

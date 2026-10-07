@@ -20,7 +20,8 @@
    policy subsumes it): a room is closed when its last client leaves or
    disconnects while the agent is idle, or when a turn ends with no
    clients attached."
-  (:require [xi.core.state :as state]
+  (:require [xi.buffers :as buffers]
+            [xi.core.state :as state]
             [xi.user-state :as user-state]
             [xi.util :as util]))
 
@@ -36,14 +37,17 @@
 
 (defn room-members
   "Presence for room-id from the connection registry: client-id → {:user
-   :platform}. The registry never crosses the wire, so this derived map is
-   stored on the room (:members) and broadcast as :room/presence."
+   :platform :buffer}. :buffer is the view the client shows (:chat or a
+   buffer id, from :client/update — xi.buffers/viewers). The registry never
+   crosses the wire, so this derived map is stored on the room (:members) and
+   broadcast as :room/presence."
   [st room-id]
   (into {}
         (keep (fn [[cid client]]
                 (when (= room-id (:room-id client))
                   [cid (cond-> {:user (or (:user client) util/root-user)}
-                         (:platform client) (assoc :platform (:platform client)))])))
+                         (:platform client) (assoc :platform (:platform client))
+                         (:buffer client)   (assoc :buffer (:buffer client)))])))
         (get-in st [:connection :clients])))
 
 (defn- presence-effect
@@ -112,7 +116,9 @@
                :busy?        (boolean (get-in room [:agent :busy?]))
                :has-dialog?  (boolean (seq (get-in room [:ui :dialogs])))
                :error?       (room-errored? room)
-               :users        (state/room-users room)}))
+               :users        (state/room-users room)
+               ;; buffer presence: buffer id (or :chat) → the users on it
+               :viewers      (buffers/viewers room)}))
        (sort-by :created)
        reverse
        vec))
@@ -505,6 +511,22 @@
   (when (user-state/client-valid? key value)
     {:effects [[:user-state/save {:user (util/user-id user) :key key :value value}]]}))
 
+
+(defn- session-buffer-close
+  "Roomless: close one buffer (or, without a :buffer-id, every buffer) of a
+   session from the sidebar, wherever it lives — a live room gets the room
+   event (so its clients mirror the close), a parked set is edited in place."
+  [st {:keys [session-id buffer-id]}]
+  (if-let [rid (room-for-session st session-id)]
+    {:effects [[:app/dispatch (if buffer-id
+                                {:type :ui/buffer-close :room-id rid :buffer-id buffer-id}
+                                {:type :ui/buffers-close-all :room-id rid})]]}
+    (when (contains? (:parked-buffers st) session-id)
+      (let [left (when buffer-id (dissoc (get-in st [:parked-buffers session-id]) buffer-id))]
+        {:state (if (seq left)
+                  (assoc-in st [:parked-buffers session-id] left)
+                  (update st :parked-buffers dissoc session-id))}))))
+
 (def handlers
   {:chat/start             chat-start
    :user-state/set         user-state-set
@@ -526,6 +548,7 @@
    :dismissed/toggle       dismissed-toggle
    :session/delete         session-delete
    :session/mark-read      session-mark-read
+   :session/buffer-close   session-buffer-close
    :rooms/prune            rooms-prune})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
@@ -550,6 +573,16 @@
                                     room-id)]}))))
 
 
+(defn client-update-presence
+  "Chain AFTER the core :client/update handler: a client told us which buffer
+   it shows (`:buffer`) — refresh its room's presence so everyone in the room
+   sees who is on which buffer (xi.buffers/viewers)."
+  [st {:keys [client-id] :as ev}]
+  (when (contains? ev :buffer)
+    (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
+      (when (state/get-room st room-id)
+        {:effects [(presence-effect st room-id)]}))))
+
 (defn turn-end-room-cleanup
   "Chain onto :agent/turn-end: a turn just finished in a room nobody is
    attached to — close it (the session is already persisted on disk). A room
@@ -559,6 +592,62 @@
              (empty? (clients-in-room st room-id))
              (not (keep-alive? (state/get-room st room-id))))
     {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]}))
+
+;; ── Buffers across the room's life ───────────────────────────────────────────
+;; A room's buffers (xi.buffers: the diffs and files its users opened) are room
+;; state, so closing the room would drop them — and an idle room closes the
+;; moment its last client switches chats. Instead they are parked per session
+;; in server memory and come back with the next room for that session. Nothing
+;; is written to disk: a restart starts with no buffers, by design.
+
+(defn park-buffers
+  "Chain BEFORE the core :room/close handler (it needs the room): keep the
+   closing room's buffers under its session id, `[:parked-buffers sid]`, so
+   the next room resuming that session gets them back (revive-buffers). A room
+   whose session was deleted while it finished its turn parks nothing."
+  [st {:keys [room-id]}]
+  (let [room (state/get-room st room-id)
+        sid  (get-in room [:session :id])
+        bufs (get-in room [:ui :buffers])]
+    (when (and sid (seq bufs) (not (get-in room [:session :deleted?])))
+      {:state (assoc-in st [:parked-buffers sid] bufs)})))
+
+(defn revive-buffers
+  "Chain AFTER the core :room/create handler: a room opening on a session with
+   parked buffers takes them over (anything the new room already holds wins)
+   and the parking slot is cleared. The :room/joined snapshot that follows the
+   create carries them to the joining client."
+  [st {:keys [room-id]}]
+  (let [sid    (get-in st [:rooms room-id :session :id])
+        parked (get-in st [:parked-buffers sid])]
+    (when (seq parked)
+      {:state (-> st
+                  (update-in [:rooms room-id :ui :buffers] #(merge parked %))
+                  (update :parked-buffers dissoc sid))})))
+
+(defn forget-parked-buffers
+  "Chain onto :session/delete: a deleted session's parked buffers go with it."
+  [st {:keys [session-id]}]
+  (when (contains? (:parked-buffers st) session-id)
+    {:state (update st :parked-buffers dissoc session-id)}))
+
+
+(defn session-buffers
+  "Lobby-facing `{session-id [{:id :kind :title} …]}` of every session that
+   has buffers open: in a live room, or parked while no room hosts it. The
+   sidebar lists them under the session's card either way; opening one joins
+   the session (reviving the buffers) and shows it."
+  [st]
+  (-> {}
+      (into (keep (fn [[sid bufs]]
+                    (when (seq bufs) [sid (buffers/summaries bufs)])))
+            (:parked-buffers st))
+      (into (keep (fn [[_ room]]
+                    (let [sid  (get-in room [:session :id])
+                          bufs (get-in room [:ui :buffers])]
+                      (when (and sid (seq bufs) (not (get-in room [:session :deleted?])))
+                        [sid (buffers/summaries bufs)]))))
+            (:rooms st))))
 
 (defn reap-idle-clientless-rooms
   "Close every room whose agent isn't running and which has no client

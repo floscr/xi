@@ -145,16 +145,34 @@
                          {:type :room/create :room-id "a"}
                          {:type :ui/dialog-open :room-id "a" :dialog {:id :confirm :text "ok?"}}
                          {:type :ui/dialog-open :room-id "a" :dialog {:text "no id"} :event/id 99}
-                         {:type :ui/buffer-set :room-id "a" :buffer-id :logs :buffer {:lines ["x"]}}
+                         {:type :ui/buffer-set :room-id "a" :buffer-id :logs :buffer {:lines ["x"]} :event/ts 7}
                          {:type :ui/buffer-switch :room-id "a" :buffer-id :logs})]
     (is (= [:confirm 99] (mapv :id (get-in st [:rooms "a" :ui :dialogs]))))
     (is (= :logs (get-in st [:rooms "a" :ui :active-buffer])))
-    (is (= {:lines ["x"]} (get-in st [:rooms "a" :ui :buffers :logs])))
+    (is (= {:lines ["x"] :opened-at 7} (get-in st [:rooms "a" :ui :buffers :logs])))
     (testing "close by id / close first"
       (let [st' (apply-events st {:type :ui/dialog-close :room-id "a" :dialog-id :confirm})]
         (is (= [99] (mapv :id (get-in st' [:rooms "a" :ui :dialogs])))))
       (let [st' (apply-events st {:type :ui/dialog-close :room-id "a"})]
-        (is (= [99] (mapv :id (get-in st' [:rooms "a" :ui :dialogs]))))))))
+        (is (= [99] (mapv :id (get-in st' [:rooms "a" :ui :dialogs]))))))
+    (testing "a switch meant for another client is ignored"
+      (let [st' (apply-events (assoc-in st [:connection :client-id] "me")
+                              {:type :ui/buffer-switch :room-id "a" :buffer-id :chat :client-id "other"})]
+        (is (= :logs (get-in st' [:rooms "a" :ui :active-buffer]))))
+      (let [st' (apply-events (assoc-in st [:connection :client-id] "me")
+                              {:type :ui/buffer-switch :room-id "a" :buffer-id :chat :client-id "me"})]
+        (is (= :chat (get-in st' [:rooms "a" :ui :active-buffer])))))
+    (testing "closing a buffer"
+      (let [st' (apply-events st {:type :ui/buffer-set :room-id "a" :buffer-id "file:x" :buffer {:kind :file}}
+                              {:type :ui/buffer-close :room-id "a" :buffer-id :logs})]
+        (is (= ["file:x"] (keys (get-in st' [:rooms "a" :ui :buffers]))))
+        (is (= :chat (get-in st' [:rooms "a" :ui :active-buffer])) "the viewed one closed → chat"))
+      (is (= st (apply-events st {:type :ui/buffer-close :room-id "a" :buffer-id "nope"}))
+          "unknown id: no-op"))
+    (testing "closing all"
+      (let [st' (apply-events st {:type :ui/buffers-close-all :room-id "a"})]
+        (is (= {} (get-in st' [:rooms "a" :ui :buffers])))
+        (is (= :chat (get-in st' [:rooms "a" :ui :active-buffer])))))))
 
 (deftest theme-set
   (let [st (apply-events (state/initial-state) {:type :theme/set :mode :light})]

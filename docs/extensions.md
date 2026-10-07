@@ -458,8 +458,8 @@ namespace docstring is the authoritative description.
 | resume | `/trim`, `/rollover`, `/lineage`. See [architecture.md](architecture.md#session-tools) and the guide's [sessions](guide/sessions.md). |
 | worktree | `/worktree` — move the room into a fresh git worktree (`merge`/`list`/`remove`). |
 | canvas-review | Experimental node-based review canvas (`canvas_review_*` tools); has a web half. |
-| diff | `/diff` viewer buffer (`git` \| `staged` \| `unstaged` \| `session-edits` \| `session-git` \| `session-commits` \| `<ref>`; no args = session diff); has a web half. |
-| file-view | Opens files touched by write/edit into a `:file` buffer; has a web half. |
+| diff | `/diff` viewer buffer, one per source (`git` \| `staged` \| `unstaged` \| `session-edits` \| `session-git` \| `session-commits` \| `<ref>`; no args = session diff), id `diff:<source>` (`xi.buffers`); has a web half. |
+| file-view | Opens files touched by write/edit into a `file:<path>` buffer; has a web half. |
 | file-finder | Ctrl+P fuzzy file finder (TUI). |
 | projects | `/project` / Alt+P project path picker; remembers the git repo of every room / `/cd`; list from `xi.projects` ([guide: configuration](guide/configuration.md#projects)). |
 | skills | Project-marker system-prompt injection + `/skill list\|load` (`<input />` placeholders raise a `:form` dialog). |

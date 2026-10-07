@@ -36,11 +36,19 @@
            (mapv (fn [id] (assoc (get profiles id) :id id))))
       [])))
 
+(defn session-buffers
+  "The buffers open for a session — in its live room or parked on the server
+   while no room hosts it — as the lobby lists them: `[{:id :kind :title} …]`
+   (xi.buffers/summaries, `:buffers` on :lobby/state)."
+  [state sid]
+  (vec (get-in state [:lobby :buffers sid])))
+
 (defn session-status
   "Enrich a session map with live indicator flags derived from app state:
    :active? (has a live room), :busy?, :has-dialog? (needs response),
-   :error? (last turn failed), :unread? (more responses than last watched). Centralizes the logic shared
-   by every session listing so indicators aren't computed twice.
+   :error? (last turn failed), :unread? (more responses than last watched),
+   :buffers (its open diffs / files, see session-buffers). Centralizes the
+   logic shared by every session listing so indicators aren't computed twice.
 
    :unread? relies on the web-only :web/response-counts / :web/watched slices;
    on surfaces that don't track them (the TUI) it degrades to false."
@@ -70,6 +78,9 @@
       :has-dialog? (boolean (:has-dialog? room))
       :error?      (boolean (:error? room))
       :people      (room-people state (:users room))
+      :buffers     (session-buffers state sid)
+      ;; buffer presence: buffer id → users on it (xi.buffers/viewers)
+      :viewers     (:viewers room)
       :unread?     (> (get counts sid 0) seen)})))
 
 (defn active-first
@@ -114,7 +125,9 @@
                     :busy?       (boolean (some :busy? rooms))
                     :has-dialog? (boolean (some :has-dialog? rooms))
                     :error?      (boolean (some :error? rooms))
-                    :people      (room-people state (distinct (mapcat :users rooms)))})))))))
+                    :people      (room-people state (distinct (mapcat :users rooms)))
+                    :buffers     (session-buffers state sid)
+                    :viewers     (apply merge-with into (map :viewers rooms))})))))))
 
 (defn extension-group
   "One extension-declared sidebar group (a `:sidebar-groups` entry, see

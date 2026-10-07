@@ -101,7 +101,19 @@ server, and the browser client are all assemblies of the same pure handlers.
   `:last-usage`/`:last-cost`, and records the provider session id (used as
   `:resume-session-id` next turn).
 - Per-room `:ui` holds dialogs, buffers, and menus as data — components have
-  no local atoms. A permission ask is a `:confirm` dialog tagged with `:call`
+  no local atoms. **Buffers** (`xi.buffers`) are the views a room keeps next
+  to its chat — diffs (`diff:<source>`), files (`file:<path>`), the system
+  prompt (`:prompt`) — each `{:kind :title :opened-at …}`; several per kind.
+  The list is shared room state; which one a client shows
+  (`[:ui :active-buffer]`) is that client's own: `:ui/buffer-switch` is
+  client-local in `ws-transport` (never forwarded), and a switch the server
+  dispatches for one client (a `/diff` reply, a file read) carries its
+  `:client-id`, which the reducer checks against `[:connection :client-id]`
+  (sent in `:auth/ok`) — `buffers/switch-here?`. `:ui/buffer-close` /
+  `:ui/buffers-close-all` drop buffers for everyone. A client reports the view
+  it shows with `:client/update {:buffer id}`; the room manager folds it into
+  the room's presence (`:members cid :buffer`, `buffers/viewers`, `:viewers`
+  on the lobby room summaries), so clients can show who is on which buffer. A permission ask is a `:confirm` dialog tagged with `:call`
   (the gated tool call) and, for a guarded write/edit, a `:diff` preview;
   `:ui/dialog-open` also leaves that `:diff` on the gated `:tool-call` entry,
   so its block keeps showing the change after the ask is denied or the turn
@@ -350,6 +362,15 @@ extension territory, keyed by the id.
 - **Auto-destroy**: a room closes when its last client leaves or disconnects
   while the agent is **idle**, or when a turn ends with no clients attached
   (`turn-end-room-cleanup`).
+- **Buffers outlive the room.** A chain before core `:room/close`
+  (`rm/park-buffers`) keeps the closing room's buffers under its session id
+  in `[:parked-buffers sid]` (server memory only — a restart starts with
+  none); a chain after `:room/create` (`rm/revive-buffers`) hands them to the
+  next room on that session, so the `:room/joined` snapshot carries them;
+  `:session/delete` forgets them. The lobby payload's
+  `:buffers {sid [{:id :kind :title}]}` (`rm/session-buffers`, live + parked)
+  lets the sidebar list a closed session's buffers; the roomless
+  `:session/buffer-close` closes one (or all) wherever they live.
 - **Never abort a busy room on disconnect.** A client disconnect is
   indistinguishable from navigating to another chat (iOS Safari drops the
   socket on every navigation), so any abort-on-disconnect, even behind a

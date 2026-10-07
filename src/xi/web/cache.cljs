@@ -335,6 +335,17 @@
 (defn save-sidebar-collapsed! [groups]
   (store-set! sidebar-collapsed-key (vec groups)))
 
+;; ── Unfolded buffer lists in the sidebar ───────────────────────────────────────
+;; This browser's own (not per user): which session cards show their buffer
+;; rows (xi.web.views/session-buffer-rows).
+
+(def ^:private sidebar-buffers-open-key "xi/sidebar-buffers-open")
+
+(defn load-sidebar-buffers-open [] (set (store-get sidebar-buffers-open-key)))
+
+(defn save-sidebar-buffers-open! [session-ids]
+  (store-set! sidebar-buffers-open-key (vec session-ids)))
+
 ;; ── Appearance overrides ─────────────────────────────────────────────────────
 
 (def ^:private appearance-key "xi/appearance")
@@ -372,6 +383,7 @@
                         :web/model-list (:models models)
                         :web/model-list-at (:at models)
                         :web/sidebar-collapsed (load-sidebar-collapsed)
+                        :web/sidebar-buffers-open (load-sidebar-buffers-open)
                         ;; The appearance overrides (xi.web.appearance).
                         :web/appearance (load-appearance)
                         ;; whose UI state the values above are (see load-cached-user)

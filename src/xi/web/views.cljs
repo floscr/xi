@@ -6,6 +6,7 @@
    compose input, abort, permission dialogs). Home view + router land in 7b."
   (:require [clojure.string :as str]
             [xi.avatar :as avatar]
+            [xi.buffers :as buffers]
             [xi.commands :as commands]
             [xi.error-info :as error-info]
             [xi.core.state :as state]
@@ -2468,9 +2469,10 @@
   [dispatch! room-id diff-buffer engine collapse-opts]
   (let [commit  (:commit diff-buffer)
         engine  (or engine :git)
-        method  (if commit
-                  (str "commit:" (:sha commit))
-                  (diff-method-for-title (:title diff-buffer)))
+        method  (cond
+                  commit                 (str "commit:" (:sha commit))
+                  (:source diff-buffer)  (:source diff-buffer)
+                  :else                  (diff-method-for-title (:title diff-buffer)))
         options (cond-> diff-methods
                   commit  (conj {:value (str "commit:" (:sha commit))
                                  :label (str "Commit " (:short commit))})
@@ -2664,40 +2666,24 @@
 
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 
-(defn- tab-bar
-  "Segmented pill for switching between chat and buffer views. Lives inline in
-   the topbar next to the overflow menu; only rendered when a buffer exists.
-   `canvas?` adds a Canvas pill that navigates to the room's canvas-review
-   page (a separate route, not a buffer switch) — shown once a review has
-   been built for this session."
-  [dispatch! room-id active-buffer buffers canvas?]
-  (let [;; A virtual new chat has no room id yet; its buffers live on the
-        ;; pending room (see :pending/buffer-switch).
-        switch! (fn [buffer-id]
-                  (dispatch! (if room-id
-                               {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}
-                               {:type :pending/buffer-switch :buffer-id buffer-id})))]
-  [:div {:class ["tab-pill"]}
-   [:button {:class ["tab-pill-item" (when (= active-buffer :chat) "tab-pill-item--active")]
-             :on {:click (fn [_] (switch! :chat))}}
-    "Chat"]
-   (when (:diff buffers)
-     [:button {:class ["tab-pill-item" (when (= active-buffer :diff) "tab-pill-item--active")]
-               :on {:click (fn [_] (switch! :diff))}}
-      "Diff"])
-   (when (:file buffers)
-     [:button {:class ["tab-pill-item" (when (= active-buffer :file) "tab-pill-item--active")]
-               :on {:click (fn [_] (switch! :file))}}
-      "File"])
-   (when (:prompt buffers)
-     [:button {:class ["tab-pill-item" (when (= active-buffer :prompt) "tab-pill-item--active")]
-               :on {:click (fn [_] (switch! :prompt))}}
-      "Prompt"])
-   (when canvas?
-     [:button {:class ["tab-pill-item"]
-               :on {:click (fn [_] (dispatch! {:type :canvas-review/open-page
-                                               :room-id room-id}))}}
-      "Canvas"])]))
+(defn buffer-icon
+  "The icon of a buffer kind (xi.buffers) wherever buffers are listed: the
+   buffer menu, the sidebar rows, the palette."
+  [kind]
+  (case kind
+    :diff   :code
+    :file   :file-text
+    :prompt :terminal
+    :list))
+
+(defn- text-tab-view
+  "Any other text buffer (the event log, the shortcut list — buffers the TUI
+   opens that mirror into the room) as a plain read-only view."
+  [id {:keys [text] :as buf}]
+  [:div {:class ["file-tab"]}
+   [:div {:class ["file-tab-header"]}
+    [:span {:class ["file-tab-path"]} (buffers/label id buf)]]
+   [:pre {:class ["file-tab-code"]} (or text "")]])
 
 ;; ── Chat view ────────────────────────────────────────────────────────────────
 
@@ -2764,6 +2750,85 @@
    [:circle {:cx "12" :cy "5" :r "1"}]
    [:circle {:cx "12" :cy "12" :r "1"}]
    [:circle {:cx "12" :cy "19" :r "1"}]])
+
+(defn- buffer-menu
+  "The topbar's view switch, shown once the room has a buffer (xi.buffers) or
+   a canvas: one frosted pill naming the view in front (Chat, or the open
+   buffer's title) with a chevron, opening a popover that lists the chat,
+   every buffer in opening order (× closes one — for everyone in the room,
+   the list is shared), the Canvas page once a review exists, and \"Close
+   all buffers\". Switching is this client's own (:ui/buffer-switch stays
+   local); a virtual new chat keeps its buffers on the pending room
+   (:pending/buffer-switch)."
+  [dispatch! room-id active-buffer buffers canvas? people-of]
+  (let [switch! (fn [buffer-id]
+                  (dispatch! {:type :diff/clear-selection})
+                  (dispatch! (if room-id
+                               {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}
+                               {:type :pending/buffer-switch :buffer-id buffer-id})))
+        close!  (fn [buffer-id]
+                  (dispatch! (if room-id
+                               (if buffer-id
+                                 {:type :ui/buffer-close :room-id room-id :buffer-id buffer-id}
+                                 {:type :ui/buffers-close-all :room-id room-id})
+                               {:type :pending/buffer-close :buffer-id buffer-id})))
+        hide!   (fn [^js e]
+                  (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover)))
+        active  (get buffers active-buffer)
+        kind    (when active (buffers/kind active-buffer active))
+        label   (if active (buffers/label active-buffer active) "Chat")
+        menu-id "buffer-menu"
+        item    (fn [{:keys [id icon title active? people on-click on-close key]}]
+                  [:button {:class ["sidebar-more-item" "buffer-menu-item"
+                                    (when active? "buffer-menu-item--active")]
+                            :replicant/key (or key id)
+                            :title title
+                            :on {:click (fn [e] (hide! e) (on-click))}}
+                   (icon/icon {:icon-name icon :size :sm})
+                   [:span {:class ["buffer-menu-title"]} title]
+                   ;; buffer presence: who else is on this view
+                   (when (seq people)
+                     [:span {:class ["buffer-menu-people"]} (avatar-stack people)])
+                   (when on-close
+                     [:span {:class ["buffer-menu-close"]
+                             :role "button" :title "Close buffer"
+                             :on {:click (fn [^js e]
+                                           (.stopPropagation e)
+                                           (on-close))}}
+                      (icon/icon {:icon-name :x :size :sm})])])]
+    (list
+     [:button (merge {:class ["tab-pill" "buffer-menu-trigger"]
+                      :title "Switch view"
+                      :replicant/key "buffer-menu-trigger"}
+                     (popover/trigger-attrs menu-id))
+      (when kind (icon/icon {:icon-name (buffer-icon kind) :size :sm}))
+      [:span {:class ["buffer-menu-label"]} label]
+      (icon/icon {:icon-name :chevron-down :size :sm})]
+     (popover/popover-content
+      {:id    menu-id
+       :side  :bottom
+       :align :center
+       :class "sidebar-more-menu buffer-menu"
+       :attrs {:replicant/key "buffer-menu"}}
+      (item {:id "chat" :icon :terminal :title "Chat"
+             :active? (not active) :people (people-of :chat)
+             :on-click #(switch! :chat)})
+      (for [[id buf] (buffers/ordered buffers)
+            :let [title (buffers/label id buf)]]
+        (item {:id (str id) :icon (buffer-icon (buffers/kind id buf)) :title title
+               :active? (= id active-buffer)
+               :people (people-of id)
+               :on-click #(switch! id)
+               :on-close #(close! id)}))
+      (when canvas?
+        (item {:id "canvas" :icon :layout-dashboard :title "Canvas"
+               :on-click #(dispatch! {:type :canvas-review/open-page :room-id room-id})}))
+      (when (seq buffers)
+        (list
+         [:div {:class ["overflow-menu-divider"] :replicant/key "buffer-menu-divider"}]
+         (item {:id "close-all" :icon :x
+                :title (str "Close all buffers (" (count buffers) ")")
+                :on-click #(close! nil)})))))))
 
 (defn overflow-menu
   "Three-dots overflow menu shown on the right of every topbar. Holds the
@@ -3364,8 +3429,10 @@
         ui         (if room (:ui room) (when new? (get-in state [:web/pending-room :ui])))
         buffers    (:buffers ui)
         active-buf (get ui :active-buffer :chat)
+        active-buffer (get buffers active-buf)
+        buffer-kind (when active-buffer (buffers/kind active-buf active-buffer))
         canvas?    (boolean (seq (get-in room [:ext :canvas-review :diff])))
-        has-tabs?  (boolean (or (:diff buffers) (:file buffers) (:prompt buffers) canvas?))
+        has-tabs?  (boolean (or (seq buffers) canvas?))
         ;; Prompt navigation over the FULL history (not just the rendered
         ;; window): collect every user entry's absolute history index so we can
         ;; jump to prompts scrolled off the top, expanding the window on demand.
@@ -3383,7 +3450,8 @@
         ;; while it shows (the chat buffer, no skill form or deny-reason box
         ;; in its place), so a drop never lands on an invisible draft.
         deny-reason (:web/deny-reason state)
-        drop-zone? (and (not (#{:diff :file :prompt} active-buf))
+        drop-zone? (and (nil? buffer-kind)
+                        (not (string? (:text active-buffer)))
                         (not (:web/skill-form state))
                         (not (and room (= (:room-id deny-reason) (:id room))
                                   (some #(= (:dialog-id deny-reason) (:id %))
@@ -3403,11 +3471,16 @@
        (presence-line state room)]
       (offline-badge state)
       (when has-tabs?
-        (tab-bar dispatch! (:id room) active-buf buffers canvas?))
+        (buffer-menu dispatch! (:id room) active-buf buffers canvas?
+                     ;; buffer presence: the other users on each view
+                     (let [viewers (buffers/viewers room)]
+                       (fn [id] (sb/room-people state (get viewers id))))))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
-     (case active-buf
+     ;; The view follows the open buffer's kind (xi.buffers); no buffer (or an
+     ;; id the room no longer holds) is the chat.
+     (case buffer-kind
        :diff
-       (diff-tab-view dispatch! (:id room) (:diff buffers)
+       (diff-tab-view dispatch! (:id room) active-buffer
                       (:web/diff-sel state)
                       (:web/diff-modify? state)
                       (:web/diff-collapsed state)
@@ -3415,12 +3488,13 @@
                       (:web/md-diff-code state))
 
        :file
-       (file-tab-view (:file buffers))
+       (file-tab-view active-buffer)
 
        :prompt
        (prompt-tab-view dispatch! room (or (:web/prompt-expanded state) #{}))
 
-       ;; default: :chat
+       (if (and active-buffer (string? (:text active-buffer)))
+         (text-tab-view active-buf active-buffer)
        (list
         [:div {:class ["timeline"
                        (when-not pa? "timeline--float-footer")]}
@@ -3646,7 +3720,7 @@
                           (:web/prompt-nav state)
                           nav-ctx
                           (:web/scrolled-up? state)
-                          (false? (:web/connected? state)))))]))]))
+                          (false? (:web/connected? state)))))])))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
@@ -3705,13 +3779,54 @@
       (when-let [trigger (.closest btn ".context-menu-trigger")]
         (open! trigger (.-left r) (.-bottom r))))))
 
+(defn- session-buffer-rows
+  "The buffers open for a session (xi.buffers; `:buffers` on the card, from
+   the lobby — live room or parked), listed under its card: one row per
+   buffer, kind icon and title, × to close it (for everyone; the list is
+   shared). A row navigates to the session and opens that buffer
+   (:route/navigate with :buffer-id). Shown for the session in view, and for
+   when its \"N buffers\" line was clicked (:web/sidebar-buffers-open, kept per
+   browser)."
+  [dispatch! state {:keys [session-id buffers current? viewers]}]
+  (let [room   (state/active-room state)
+        active (when (and current? (= session-id (get-in room [:session :id])))
+                 (get-in room [:ui :active-buffer]))]
+    [:div {:class ["session-buffers"] :replicant/key (str "buffers-" session-id)}
+     (for [{:keys [id kind title]} buffers
+           :let [people (sb/room-people state (get viewers id))]]
+       [:button {:class ["session-buffer-row" (when (= id active) "session-buffer-row--active")]
+                 :replicant/key (str id)
+                 :title title
+                 :on {:click (fn [^js e]
+                               (.stopPropagation e)
+                               (dispatch! {:type :route/navigate :page :chat
+                                           :session-id session-id :buffer-id id}))}}
+        (icon/icon {:icon-name (buffer-icon kind) :size :sm})
+        [:span {:class ["session-buffer-title"]} title]
+        ;; buffer presence: who else is on it
+        (when (seq people)
+          [:span {:class ["session-buffer-people"]} (avatar-stack people)])
+        [:span {:class ["session-buffer-close"]
+                :role "button" :title "Close buffer"
+                :on {:click (fn [^js e]
+                              (.stopPropagation e)
+                              (dispatch! {:type :session/buffer-close
+                                          :session-id session-id :buffer-id id}))}}
+         (icon/icon {:icon-name :x :size :sm})]])]))
+
 (defn- session-card
   "Session row. Secondary actions (the extensions', hide from
    Recent, delete) live in a ui.context-menu on the card: right-click,
-   long-press on touch (the framework's gesture runtime), or the ⋮ button."
-  [dispatch! state {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project? people]
+   long-press on touch (the framework's gesture runtime), or the ⋮ button.
+   A session with open buffers says so in its subline (\"3 buffers\", a
+   click unfolds them) and lists them under the card (session-buffer-rows)."
+  [dispatch! state {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project? people buffers]
               :as card-data}]
-  (let [card
+  (let [n-buffers (count buffers)
+        ;; unfolded while this browser toggled it open (never automatically)
+        buffers-open? (and (pos? n-buffers)
+                           (contains? (:web/sidebar-buffers-open state) session-id))
+        card
   [:div {:class ["project-card"
                  (when has-dialog? "project-card--dialog")
                  (when current? "project-card--current")]
@@ -3746,7 +3861,17 @@
              (when-not (= rel "just now") rel))
            (when has-dialog? "needs response")]
           (remove str/blank?)
-          (str/join " · "))]]
+          (str/join " · "))
+     (when (pos? n-buffers)
+       (list
+        " · "
+        [:span {:class ["project-card-buffers" (when buffers-open? "project-card-buffers--open")]
+                :role "button"
+                :title (if buffers-open? "Hide the buffers" "Show the buffers")
+                :on {:click (fn [^js e]
+                              (.stopPropagation e)
+                              (dispatch! {:type :sidebar/buffers-toggle :session-id session-id}))}}
+         (str n-buffers (if (= 1 n-buffers) " buffer" " buffers"))]))]]
    ;; One slot at the card's edge: who is in the room right now (multi-user
    ;; servers only), swapped for the ⋮ on hover so neither pushes the other.
    [:div {:class ["project-card-trail"]}
@@ -3757,15 +3882,18 @@
                 :title "More actions"
                 :on {:click open-card-menu!}}
        (more-vertical-icon)])]]]
-    (if session-id
-      ;; The trigger wraps the card (rather than being it) so the card keeps
-      ;; its own click handler — the trigger's :attrs would replace it.
-      (context-menu/context-menu-trigger
-       {:items (session-menu-items dispatch! (:web/session-menu-items state) card-data)
-        :class "project-card-trigger"
-        :attrs {:replicant/key session-id}}
+    (list
+     (if session-id
+       ;; The trigger wraps the card (rather than being it) so the card keeps
+       ;; its own click handler — the trigger's :attrs would replace it.
+       (context-menu/context-menu-trigger
+        {:items (session-menu-items dispatch! (:web/session-menu-items state) card-data)
+         :class "project-card-trigger"
+         :attrs {:replicant/key session-id}}
+        card)
        card)
-      card)))
+     (when buffers-open?
+       (session-buffer-rows dispatch! state card-data)))))
 
 (defn- draft-chat-card
   "Sidebar row for a parked draft chat (see router/stash-draft-chat): the first
@@ -4536,7 +4664,11 @@
                 (mapv #(nav-badge state %) (:web/nav-items state))
                 (:web/sidebar-groups state)
                 (:web/session-menu-items state)
-                (state/own-user state)]
+                (state/own-user state)
+                ;; the per-session buffer rows (session-buffer-rows): which
+                ;; cards are unfolded and which buffer the viewed room shows
+                (:web/sidebar-buffers-open state)
+                (get-in (state/active-room state) [:ui :active-buffer])]
         cached @recent-sidebar-cache]
     (if (and cached (= (:sig cached) sig))
       (:html cached)
@@ -4862,6 +4994,70 @@
                              (dispatch! {:type :files/open :path child})))}
               (if dir? (str name "/") name)))))))))
 
+(defn- buffer-palette-items
+  "The palette's buffer rows (the Buffers group and the Alt+B switcher page):
+   the room in view first — the chat, then its buffers in opening order, a
+   pick switches to it — then other sessions' buffers (a pick opens that chat
+   on the buffer), then \"Close all\" for the room in view. The view in front
+   is marked; nothing when no buffer is open anywhere."
+  [state dispatch!]
+  (let [room      (state/active-room state)
+        room-id   (:id room)
+        cur-sid   (get-in state [:web/route :session-id])
+        own       (buffers/ordered (get-in room [:ui :buffers]))
+        active    (get-in room [:ui :active-buffer] :chat)
+        name-of   (fn [sid]
+                    (or (some #(when (= sid (:session-id %)) (or (:name %) (:session-name %)))
+                              (concat (get-in state [:lobby :sessions])
+                                      (get-in state [:lobby :rooms])))
+                        "New session"))
+        others    (for [[sid bufs] (get-in state [:lobby :buffers])
+                        :when (not= sid cur-sid)
+                        b bufs]
+                    (assoc b :session-id sid :session-name (name-of sid)))
+        switch!   (fn [id]
+                    (dispatch! {:type :diff/clear-selection})
+                    (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id id}))
+        mark      (fn [id title] (if (= id active) (str title "  · viewing") title))]
+    (when (or (seq own) (seq others))
+      (concat
+       (when (and room (seq own))
+         [(cmd/command-item
+           {:icon :terminal
+            :value "buffer chat"
+            :class (when (= active :chat) ["command-item--active-buffer"])
+            :on-click (fn [_] (switch! :chat))}
+           (mark :chat "Chat"))])
+       (for [[id buf] own
+             :let [title (buffers/label id buf)]]
+         (cmd/command-item
+          {:icon (buffer-icon (buffers/kind id buf))
+           :value (str "buffer " title)
+           :class (when (= id active) ["command-item--active-buffer"])
+           :on-click (fn [_] (switch! id))}
+          (mark id title)))
+       (for [{:keys [id kind title session-id session-name]} others]
+         (cmd/command-item
+          {:icon (buffer-icon kind)
+           :value (str "buffer " title " " session-name)
+           :on-click (fn [_] (dispatch! {:type :route/navigate :page :chat
+                                         :session-id session-id :buffer-id id}))}
+          (str title " · " session-name)))
+       (when (seq own)
+         [(cmd/command-item
+           {:icon :x
+            :value "close all buffers"
+            :on-click (fn [_] (dispatch! {:type :ui/buffers-close-all :room-id room-id}))}
+           (str "Close all buffers (" (count own) ")"))])))))
+
+(defn- palette-buffers-page
+  "The buffer switcher (Alt+B): the palette on its Buffers rows alone, so
+   typing filters them and Enter switches."
+  [state dispatch!]
+  (if-let [items (seq (buffer-palette-items state dispatch!))]
+    (apply cmd/command-group {:heading "Buffers"} items)
+    [:div {:class ["command-empty"]} "No open buffers"]))
+
 (defn- palette-file-finder-page
   "Instant fuzzy file finder as a palette sub-page (Ctrl/Cmd+P). The palette
    input is the query — the dialog's input listener dispatches
@@ -4975,12 +5171,14 @@
         palette-page (:web/palette-page state)
         search-page? (= :search (:kind palette-page))
         finder-page? (= :file-finder (:kind palette-page))
+        buffers-page? (= :buffers (:kind palette-page))
         dialog-attrs {:id "cmdk" :hotkey "mod+k"
                       ;; Hold Alt → key badges on the first rows, Alt+key picks one.
                       :quick-nav palette-quick-keys
                       :placeholder (cond
                                      search-page? "Search session text…"
                                      finder-page? "Find file…"
+                                     buffers-page? "Switch buffer…"
                                      palette-page "Filter actions…"
                                      :else        "Type a command or search…")
                       :attrs {:replicant/key "cmdk"
@@ -5052,6 +5250,7 @@
          :commits        (palette-commits-page state dispatch!)
          :files          (palette-files-page state dispatch!)
          :file-finder    (palette-file-finder-page state dispatch!)
+         :buffers        (palette-buffers-page state dispatch!)
          :project-insert (palette-project-insert-page state dispatch!)
          :snippets       (palette-snippets-page state dispatch!)
          :commands       (palette-commands-page state dispatch!)
@@ -5087,6 +5286,9 @@
      (cmd/command-dialog dialog-attrs
      (when (seq chat-items)
        (apply cmd/command-group {:heading "Chats"} chat-items))
+     ;; Every open buffer (xi.buffers) — the same rows as the Alt+B switcher.
+     (when-let [items (seq (buffer-palette-items state dispatch!))]
+       (apply cmd/command-group {:heading "Buffers"} items))
      (when (seq all-sessions)
        (apply cmd/command-group {:heading "Sessions"}
          (map #(palette-chat-item % dispatch! {:search? true}) all-sessions)))

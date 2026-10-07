@@ -105,7 +105,7 @@
               #(conj (filterv (fn [r] (not= id (:id r))) %) pending))
       st)))
 
-(defn navigate
+(defn- navigate*
   "Set the route; push/replace history; drive the implied room change.
      roomless    set of pages that imply leaving the active room
      :page       :home | :chat
@@ -235,6 +235,29 @@
   "Pure handler for :nav/back — emits the :nav/back effect."
   [_st {:keys [fallback]}]
   {:effects [[:nav/back {:fallback fallback}]]})
+
+(defn with-buffer
+  "Wrap a navigate result to also open buffer `buffer-id` of the target chat
+   (a sidebar or palette buffer row). Already viewing that session: switch
+   now. Otherwise remember it as `:web/pending-buffer`; the pending-buffer tap
+   (xi.web.core) switches once the room's :room/joined lands with the
+   buffers. The switch is this client's own (xi.buffers)."
+  [st {:keys [page session-id buffer-id]} result]
+  (if-not (and buffer-id (= page :chat) session-id)
+    result
+    (let [active (state/active-room st)]
+      (if (= session-id (get-in active [:session :id]))
+        (update result :effects (fnil conj [])
+                [:app/dispatch {:type :ui/buffer-switch :room-id (:id active)
+                                :buffer-id buffer-id}])
+        (assoc-in result [:state :web/pending-buffer]
+                  {:session-id session-id :buffer-id buffer-id})))))
+
+(defn navigate
+  "navigate* (the route, history and room change) plus `:buffer-id`: open that
+   buffer of the target chat (with-buffer)."
+  [roomless st ev]
+  (with-buffer st ev (navigate* roomless st ev)))
 
 (defn handlers
   "Router handler map over the extension route table (a map or an atom —

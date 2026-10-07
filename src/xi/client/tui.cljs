@@ -19,6 +19,7 @@
 
    Effects owned by the TUI: :app/quit, :app/reload, :clipboard/copy."
   (:require [clojure.string :as str]
+            [xi.buffers :as buffers]
             [xi.client.sidebar :as sidebar]
             [xi.client.subagents-buffer :as subagents-buffer]
             [xi.client.view :as view]
@@ -56,11 +57,13 @@
 
 (defn- buffer-layer
   "The keymap layer of the room's active buffer (:buffer/diff, :buffer/file,
-   :buffer/prompt, …), nil for the chat."
+   :buffer/prompt, …) — from its kind (xi.buffers); nil for the chat."
   [room]
   (let [active (get-in room [:ui :active-buffer] :chat)]
     (when (not= active :chat)
-      (keyword "buffer" (name active)))))
+      (when-let [kind (or (buffers/kind active (get-in room [:ui :buffers active]))
+                          (when (keyword? active) active))]
+        (keyword "buffer" (name kind))))))
 
 (defn- room-layers
   "The keymap layers active for `room` while `focus` is :editor (compose

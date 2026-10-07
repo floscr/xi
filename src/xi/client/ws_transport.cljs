@@ -68,9 +68,14 @@
    mirror in like any other event.
 
    `:theme/set` joins them: the mode belongs to this terminal, so an extension
-   in the client process sets it directly instead of asking the server."
+   in the client process sets it directly instead of asking the server.
+
+   `:ui/buffer-switch` too: the room's buffers are shared, which one this
+   client looks at is not (xi.buffers), so a tab switch stays here. A switch
+   the server dispatches for us (a /diff reply, a file read) still mirrors in,
+   gated on its :client-id by the core reducer."
   #{:ui/menu-open :ui/menu-push :ui/menu-pop :ui/menu-populate :ui/menu-close
-    :theme/set})
+    :theme/set :ui/buffer-switch})
 
 (defn- wrap-local-apply
   "remote? → mirror; else run the base handler locally — no forwarding."
@@ -127,11 +132,16 @@
   "Install the server's room snapshot and make it active. Menu state is
    stripped: menus are per-client UI handled locally (local-ui-events), so a
    menu frame a server-side flow once pushed (and the client since closed
-   locally) must not resurrect from the snapshot. Public so the web client
-   can wrap it (it splices a cache-elided history back in first)."
+   locally) must not resurrect from the snapshot. The active buffer is reset
+   to the chat for the same reason — the snapshot's is the server's own view
+   slot, which nothing renders; the buffers themselves ride along. Public so
+   the web client can wrap it (it splices a cache-elided history back in
+   first)."
   [st {:keys [room-id room]}]
   {:state (-> st
-              (assoc-in [:rooms room-id] (update room :ui dissoc :menu :menu-stack))
+              (assoc-in [:rooms room-id] (-> room
+                                             (update :ui dissoc :menu :menu-stack)
+                                             (assoc-in [:ui :active-buffer] :chat)))
               (assoc :active-room room-id))})
 
 (defn room-left
@@ -157,7 +167,8 @@
    updates when the payload omits it (server restarted, fetch failing): the
    sidebar keeps showing the last reading until it is outdated."
   [st ev]
-  (let [lobby (select-keys ev [:rooms :sessions :read :profiles :user-ids :agent-id :started-at :claude-usage :model])
+  (let [lobby (select-keys ev [:rooms :sessions :read :profiles :user-ids :agent-id :started-at :claude-usage :model
+                               :buffers])
         prev  (get-in st [:lobby :claude-usage])]
     {:state (assoc st :lobby (cond-> lobby
                                (and prev (not (:claude-usage lobby)))
@@ -165,12 +176,16 @@
 
 (defn auth-ok
   "The server admitted us and tells us which user this connection acts as
-   (clients.edn assignment, our :auth/hello claim, or root — xi.server.ws).
-   Record it so the renderers can tell our own prompts from other users'.
-   The TUI and web clients compose this into their :auth/ok handlers."
-  [st {:keys [user]}]
-  (when user
-    {:state (assoc-in st [:connection :user] user)}))
+   (clients.edn assignment, our :auth/hello claim, or root — xi.server.ws)
+   and the client id it knows us by. Record them so the renderers can tell
+   our own prompts from other users', and the reducers a view switch meant
+   for us from one meant for another client (xi.buffers/switch-here?). The
+   TUI and web clients compose this into their :auth/ok handlers."
+  [st {:keys [user client-id]}]
+  (when (or user client-id)
+    {:state (cond-> st
+              user      (assoc-in [:connection :user] user)
+              client-id (assoc-in [:connection :client-id] client-id))}))
 
 (defn make-handlers
   "Client-mode handler map from the server-equivalent pure handlers:

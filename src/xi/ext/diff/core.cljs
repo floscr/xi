@@ -43,8 +43,7 @@
                               client-id (assoc :client-id client-id))]]})
 
 (defn- diff-open-commit
-  "Open one commit's diff (originator-only) via the same :diff/load path as
-   /diff commit:<sha>. Dispatched by the /commits selection menu once the user
+  "Open one commit's diff via the same :diff/load path as /diff commit:<sha>. Dispatched by the /commits selection menu once the user
    picks a commit."
   [_st {:keys [room-id sha client-id]}]
   {:effects [[:diff/load (cond-> {:room-id room-id :args (str "commit:" sha) :engine :git}
@@ -64,10 +63,12 @@
           open! (fn [title text & [extra]]
                   (if (str/blank? text)
                     (dispatch! {:type :ui/status :room-id room-id :text "No changes."})
-                    ;; :client-id rides along so the server delivers the diff
-                    ;; only to the client that ran /diff (originator-only).
-                    ;; `extra` carries commit metadata for single-commit diffs.
+                    ;; :client-id rides along so only the client that ran
+                    ;; /diff switches to the buffer (every client gets it).
+                    ;; :source keys the buffer (xi.buffers/diff-id); `extra`
+                    ;; carries commit metadata for single-commit diffs.
                     (dispatch! (merge {:type :ui/diff-open :room-id room-id :client-id client-id
+                                       :source args
                                        :title title :text text :engine difft/*diff-engine*}
                                       extra))))
           run! (fn [title git-args]
@@ -189,11 +190,11 @@
                :handler cmd-commits}]
    :handlers {:ui/diff-open    handlers/diff-open
               :diff/open-commit diff-open-commit}
-   ;; The diff viewer is a client-local view: the server delivers :ui/diff-open
-   ;; only to the client that ran /diff, so it never flips other connected
-   ;; clients (TUI or web) into the diff tab. :diff/open-commit is an internal
-   ;; server-side relay (menu choice → :diff/load) and never needs the wire.
-   :originator-only #{:ui/diff-open}
+   ;; :ui/diff-open is broadcast like any buffer install: every client in the
+   ;; room gets the diff in its buffer list, and only the one that ran /diff
+   ;; switches to it (the reducer checks the event's :client-id).
+   ;; :diff/open-commit is an internal server-side relay (menu choice →
+   ;; :diff/load) and never needs the wire.
    :no-broadcast    #{:diff/open-commit}
    :fx       {:diff/load    diff-load-fx
               :commits/pick commits-pick-fx}})

@@ -29,6 +29,7 @@
 
    Transient layers are registered with `register-layer!` ({:id :when})."
   (:require [clojure.string :as str]
+            [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.keys :as keys]))
 
@@ -197,16 +198,21 @@
     (state/active-room state)))
 
 (defn active-layers
-  "The ordered layers to look a key up in, inner → outer, for `mode`."
+  "The ordered layers to look a key up in, inner → outer, for `mode`. The open
+   buffer's layer comes from its kind (`:buffer/diff`, `:buffer/file`, …;
+   xi.buffers), whatever its id."
   ([state] (active-layers state (current-mode)))
   ([state mode]
    (let [page   (get-in state [:web/route :page])
-         active (get-in (viewed-room state) [:ui :active-buffer])]
+         room   (viewed-room state)
+         active (get-in room [:ui :active-buffer])
+         kind   (when (and active (not= active :chat))
+                  (buffers/kind active (get-in room [:ui :buffers active])))]
      (-> []
          (into (keep (fn [{:keys [id] pred :when}] (when (pred state) id))) @layers)
          (cond->
-          (and active (not= active :chat) (= page :chat))
-           (conj (keyword "buffer" (name active)))
+          (and kind (= page :chat))
+           (conj (keyword "buffer" (name kind)))
            page (conj (keyword "page" (name page))))
          (conj (if (= mode :compose) :mode/compose :mode/navigate) :global)))))
 

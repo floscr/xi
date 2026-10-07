@@ -61,6 +61,7 @@ Web client:
 | `Alt+j` / `Alt+k` | Next / previous chat | `:session/next` / `:session/prev` | `:global` |
 | `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would | `:sessions/prune` | `:global` |
 | `Ctrl+p` / `Cmd+p` | Find a file | `:files/find` | `:global` |
+| `Alt+b` | Switch buffer: the chat's open diffs and files as a filterable list, Enter opens one | `:buffers/switch` | `:global` |
 | `Esc` | Close the open dialog (Appearance, shortcuts) | `:dialog/close` | `:global` |
 | `Alt+a` / `Alt+d` | Allow / deny the pending permission request | `:permission/allow` / `:permission/deny` | `:permission-pending` |
 | `Alt+Shift+A` | Allow repo writes for the pending request (only when it offers that choice) | `:permission/allow-repo` | `:permission-pending` |
@@ -68,7 +69,7 @@ Web client:
 | `G` | Scroll to the bottom | `:timeline/bottom` | `:mode/navigate` |
 | `?` | Show the keyboard shortcuts | `:keys/show` | `:mode/navigate` |
 | `Esc` | Leave the text field | `:compose/blur` | `:mode/compose` |
-| `q`, `Esc` | Close the diff or file view, back to the chat | `:buffer/close` | `:buffer/diff`, `:buffer/file` |
+| `q`, `Esc` | Leave the diff or file view, back to the chat (the buffer stays open) | `:buffer/close` | `:buffer/diff`, `:buffer/file` |
 | `] f` / `[ f` | Next / previous file in the diff | `:diff/next-file` / `:diff/prev-file` | `:buffer/diff` |
 
 Terminal client, in any viewer (`:buffer/pager`):

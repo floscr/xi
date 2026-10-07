@@ -262,3 +262,22 @@
                    router/stash-draft-chat
                    router/stash-draft-chat)]
         (is (= 1 (count (:web/draft-chats st))))))))
+
+
+;; ── buffer rows (sidebar / palette) ──────────────────────────────────────────
+
+(deftest navigate-with-a-buffer
+  (testing "another session: the buffer waits for the join"
+    (let [{:keys [state effects]} (nav {:page :chat :session-id "s1" :buffer-id "file:a"})]
+      (is (= {:session-id "s1" :buffer-id "file:a"} (:web/pending-buffer state)))
+      (is (not (has-dispatch? effects :ui/buffer-switch)))))
+  (testing "the session in view: switch now"
+    (let [st (-> (state/initial-state)
+                 (assoc-in [:rooms "r1"] (state/make-room "r1" {:session {:id "s1"}}))
+                 (assoc :active-room "r1"))
+          {:keys [state effects]} (nav st {:page :chat :session-id "s1" :buffer-id "file:a"})]
+      (is (nil? (:web/pending-buffer state)))
+      (is (some #(= % [:app/dispatch {:type :ui/buffer-switch :room-id "r1" :buffer-id "file:a"}])
+                effects))))
+  (testing "no buffer: nothing stashed"
+    (is (nil? (:web/pending-buffer (:state (nav {:page :chat :session-id "s1"})))))))

@@ -993,6 +993,15 @@ See docs/guide/command-line.md for the full reference.")
                      ;; catches the room a client just left by switching chats
                      ;; (a re-attach sends no :room/leave).
                      (update :room/attach events/chain rm/reap-idle-clientless-rooms)
+                     ;; Buffers outlive their room: parked per session when it
+                     ;; closes (before the core handler drops the room), revived
+                     ;; into the next room for that session, gone with a delete.
+                     (update :room/close #(events/chain rm/park-buffers %))
+                     (update :room/create events/chain rm/revive-buffers)
+                     (update :session/delete events/chain rm/forget-parked-buffers)
+                     ;; Buffer presence: a client's view switch refreshes its
+                     ;; room's :members.
+                     (update :client/update events/chain rm/client-update-presence)
                      ;; Mark the session interrupted while a turn is in flight so a
                      ;; hard restart (bb serve:restart) mid-turn can auto-resume it.
                      (update :agent/session-init events/chain commands/session-init-mark-interrupted)

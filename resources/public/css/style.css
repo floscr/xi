@@ -173,8 +173,10 @@ body {
 
 /* Frosted-glass chips: translucent fill over a light backdrop blur so every
    header button reads as floating over the scrolling content. The tab pill
-   is frosted as a single unit, so its inner segments are left untouched. */
-.topbar--chat button:not(.tab-pill-item),
+   is frosted as a single unit, so its inner segments are left untouched — as
+   are the rows of the buffer menu's popover (a child of the topbar in the
+   DOM), which keep their own hover / active fills. */
+.topbar--chat button:not(.tab-pill-item):not(.buffer-menu-item),
 .topbar--chat .tab-pill {
   background: color-mix(in srgb, var(--bg-0) 55%, transparent);
   -webkit-backdrop-filter: blur(6px);
@@ -2868,6 +2870,65 @@ code a:hover,
   .sidebar .project-card:not(:hover) .session-more-btn { display: none; }
 }
 .sidebar .project-card-path { font-size: var(--font-xs); }
+
+/* A session's open buffers (xi.buffers): the "N buffers" count in the
+   subline unfolds the rows under the card; the row of the buffer in view is
+   emphasised, the × shows on hover (always on touch). */
+.project-card-buffers { cursor: pointer; color: var(--fg-1); }
+.project-card-buffers--open { color: var(--accent); }
+@media (hover: hover) {
+  .project-card-buffers:hover { color: var(--fg-0); text-decoration: underline; }
+}
+.session-buffers {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--size-1) var(--size-6);
+}
+.session-buffer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  min-width: 0;
+  padding: 3px var(--size-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-1);
+  font: inherit;
+  font-size: var(--font-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.session-buffer-row .icon { flex-shrink: 0; color: var(--fg-2); }
+/* The buffer in view: accent tint, like the current session card. */
+.session-buffer-row--active {
+  color: var(--fg-0);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.session-buffer-row--active .icon { color: var(--accent); }
+.session-buffer-people { display: inline-flex; flex-shrink: 0; }
+.session-buffer-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.session-buffer-close {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 1px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-2);
+}
+@media (hover: hover) {
+  .session-buffer-row:hover { background: var(--bg-1); color: var(--fg-0); }
+  .session-buffer-row--active:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+  .session-buffer-row:not(:hover) .session-buffer-close { visibility: hidden; }
+  .session-buffer-close:hover { color: var(--fg-0); background: var(--bg-2); }
+}
 /* Project rows are single-line: the folder name says enough, the absolute
    path is noise in a narrow column (still on the home listing). */
 .sidebar .project-card--dir .project-card-path { display: none; }
@@ -3814,6 +3875,68 @@ code a:hover,
   color: var(--fg-0);
   background: var(--bg-0);
   box-shadow: var(--shadow-1);
+}
+
+/* ---- Buffer menu (the topbar view switch, xi.buffers) ----
+   One pill naming the view in front; the popover lists the chat and every
+   open buffer. The pill reuses the .tab-pill frame; its label is clipped so a
+   long file path never pushes the topbar buttons around. */
+.buffer-menu-trigger {
+  gap: var(--size-1);
+  padding: var(--size-1) var(--size-2) var(--size-1) var(--size-3);
+  max-width: min(42vw, 24rem);
+  cursor: pointer;
+  color: var(--fg-0);
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.buffer-menu-trigger .icon { flex-shrink: 0; color: var(--fg-1); }
+.buffer-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.buffer-menu {
+  min-width: 16rem;
+  max-width: min(30rem, 92vw);
+}
+.buffer-menu-item { min-width: 0; }
+/* The view in front: the same accent tint as the current session card. */
+.buffer-menu-item--active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--fg-0);
+}
+.buffer-menu-item--active .icon { color: var(--accent); }
+@media (hover: hover) {
+  .buffer-menu-item--active:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+}
+.buffer-menu-people { display: inline-flex; flex-shrink: 0; margin-left: var(--size-1); }
+/* The palette's buffer rows: the view in front gets the same tint. */
+.command-item--active-buffer { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.command-item--active-buffer .command-item-icon { color: var(--accent); }
+.buffer-menu-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.buffer-menu-close {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-2);
+}
+@media (hover: hover) {
+  .buffer-menu-close:hover { color: var(--fg-0); background: var(--bg-2); }
 }
 
 /* ---- Diff view ---- */

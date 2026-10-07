@@ -478,3 +478,123 @@
       (let [{:keys [effects]} (handle (two-user-state) {:type :room/leave :client-id "c1"})]
         (is (empty? (presence-effects effects)))
         (is (some #(= % [:app/dispatch {:type :room/close :room-id "r1"}]) effects))))))
+
+
+;; ── Buffers across the room's life ───────────────────────────────────────────
+
+(def ^:private close-with-park
+  (events/chain rm/park-buffers (:room/close events/core-handlers)))
+
+(def ^:private create-with-revive
+  (events/chain (:room/create events/core-handlers) rm/revive-buffers))
+
+(def ^:private buffer-handlers
+  (assoc handlers
+         :room/close close-with-park
+         :room/create create-with-revive
+         :session/delete (events/chain (:session/delete handlers) rm/forget-parked-buffers)))
+
+(defn- apply-buffer-events [st & evs]
+  (reduce #(:state (events/handle-event buffer-handlers %1 %2)) st evs))
+
+(defn- room-with-buffers []
+  (apply-buffer-events (state/initial-state {:mode :server})
+                       {:type :client/connect :client-id "c1" :client {:kind :remote}}
+                       {:type :room/create :room-id "r1" :room {:created 100 :cwd "/x" :session {:id "s1"}}}
+                       {:type :ui/buffer-set :room-id "r1" :buffer-id "file:a"
+                        :buffer {:kind :file :title "a" :text "…"} :event/ts 1}
+                       {:type :ui/buffer-set :room-id "r1" :buffer-id "diff:git"
+                        :buffer {:kind :diff :title "All Git Changes" :text "…"} :event/ts 2}))
+
+(deftest buffers-are-parked-on-close-and-revived-on-create
+  (let [st     (room-with-buffers)
+        closed (apply-buffer-events st {:type :room/close :room-id "r1"})]
+    (is (nil? (state/get-room closed "r1")))
+    (is (= #{"file:a" "diff:git"} (set (keys (get-in closed [:parked-buffers "s1"]))))
+        "the closing room's buffers wait under its session id")
+    (is (= {"s1" [{:id "file:a" :kind :file :title "a"}
+                  {:id "diff:git" :kind :diff :title "All Git Changes"}]}
+           (rm/session-buffers closed))
+        "the lobby still lists them")
+    (let [revived (apply-buffer-events closed
+                                       {:type :room/create :room-id "r2"
+                                        :room {:created 200 :session {:id "s1"}}})]
+      (is (= #{"file:a" "diff:git"} (set (keys (get-in revived [:rooms "r2" :ui :buffers]))))
+          "the next room on that session gets them back")
+      (is (= :chat (get-in revived [:rooms "r2" :ui :active-buffer])))
+      (is (empty? (:parked-buffers revived)) "and the parking slot is cleared")
+      (is (= {"s1" [{:id "file:a" :kind :file :title "a"}
+                    {:id "diff:git" :kind :diff :title "All Git Changes"}]}
+             (rm/session-buffers revived))
+          "listed from the live room now"))
+    (testing "another session's room is untouched"
+      (let [other (apply-buffer-events closed
+                                       {:type :room/create :room-id "r3"
+                                        :room {:created 300 :session {:id "s2"}}})]
+        (is (empty? (get-in other [:rooms "r3" :ui :buffers])))
+        (is (contains? (:parked-buffers other) "s1"))))))
+
+(deftest parked-buffers-edge-cases
+  (testing "a room without buffers parks nothing"
+    (let [st (apply-buffer-events (state/initial-state {:mode :server})
+                                  {:type :room/create :room-id "r1" :room {:session {:id "s1"}}}
+                                  {:type :room/close :room-id "r1"})]
+      (is (empty? (:parked-buffers st)))
+      (is (= {} (rm/session-buffers st)))))
+  (testing "a deleted session's room parks nothing"
+    (let [st (apply-buffer-events (assoc-in (room-with-buffers) [:rooms "r1" :session :deleted?] true)
+                                  {:type :room/close :room-id "r1"})]
+      (is (empty? (:parked-buffers st)))))
+  (testing "deleting a session drops its parked buffers"
+    (let [st (apply-buffer-events (room-with-buffers)
+                                  {:type :room/close :room-id "r1"}
+                                  {:type :session/delete :session-id "s1"})]
+      (is (empty? (:parked-buffers st))))))
+
+
+(deftest sidebar-closes-buffers-wherever-they-live
+  (testing "a live room: the room event, mirrored to its clients"
+    (let [st (room-with-buffers)
+          {:keys [effects state]} (events/handle-event buffer-handlers st
+                                                       {:type :session/buffer-close :session-id "s1" :buffer-id "file:a"})]
+      (is (= st state) "nothing parked to edit")
+      (is (= [[:app/dispatch {:type :ui/buffer-close :room-id "r1" :buffer-id "file:a"}]] effects)))
+    (is (= [[:app/dispatch {:type :ui/buffers-close-all :room-id "r1"}]]
+           (:effects (events/handle-event buffer-handlers (room-with-buffers)
+                                          {:type :session/buffer-close :session-id "s1"})))))
+  (testing "parked: edited in place"
+    (let [parked (apply-buffer-events (room-with-buffers) {:type :room/close :room-id "r1"})
+          one    (apply-buffer-events parked {:type :session/buffer-close :session-id "s1" :buffer-id "file:a"})
+          none   (apply-buffer-events parked {:type :session/buffer-close :session-id "s1"})]
+      (is (= ["diff:git"] (keys (get-in one [:parked-buffers "s1"]))))
+      (is (empty? (:parked-buffers none)))
+      (is (empty? (:parked-buffers (apply-buffer-events one {:type :session/buffer-close :session-id "s1" :buffer-id "diff:git"})))
+          "the last one closed drops the slot")
+      (is (= parked (apply-buffer-events parked {:type :session/buffer-close :session-id "nope"}))
+          "unknown session: no-op"))))
+
+
+(deftest buffer-presence-rides-on-the-members
+  (let [st (apply-events (server-state-with-room)
+                         {:type :client/connect :client-id "c2" :client {:kind :remote :user "bob"}}
+                         {:type :room/attach :client-id "c1" :room-id "r1"}
+                         {:type :room/attach :client-id "c2" :room-id "r1"})
+        {:keys [state effects]} (handle st {:type :client/update :client-id "c2" :buffer "diff:git"})]
+    (is (= "diff:git" (get-in state [:connection :clients "c2" :buffer])))
+    (is (= [[:app/dispatch {:type :room/presence :room-id "r1"
+                            :members {"c1" {:user "root"}
+                                      "c2" {:user "bob" :buffer "diff:git"}}}]]
+           (:effects (rm/client-update-presence state {:type :client/update :client-id "c2" :buffer "diff:git"})))
+        "the room's presence is refreshed with the view")
+    (is (= {:chat ["root"] "diff:git" ["bob"]}
+           (:viewers (first (rm/room-summaries
+                             (apply-events state {:type :room/presence :room-id "r1"
+                                                  :members (rm/room-members state "r1")})))))
+        "the lobby summary lists who is on which view")
+    (is (nil? (rm/client-update-presence state {:type :client/update :client-id "c2" :visible? false}))
+        "a visibility update alone touches no presence")
+    (is (= [[:app/dispatch {:type :room/presence :room-id "r1"
+                            :members {"c1" {:user "root"} "c2" {:user "bob" :buffer :chat}}}]]
+           (let [back (apply-events state {:type :client/update :client-id "c2" :buffer nil})]
+             (:effects (rm/client-update-presence back {:type :client/update :client-id "c2" :buffer nil}))))
+        "nil means back on the chat")))

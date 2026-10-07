@@ -13,6 +13,7 @@
   (:require [clojure.string :as str]
             [replicant.dom :as r]
             [xi.agent :as agent]
+            [xi.buffers :as buffers]
             [xi.client.ws-transport :as ws-transport]
             [xi.commands :as commands]
             [xi.compaction :as compaction]
@@ -552,11 +553,13 @@
                    (set (range n))))})
 
 (defn- selected-diff-snippet
-  "Pull the diff buffer for room-id, flatten it, and return the snippet text
-   for the current selection range (or nil)."
+  "Pull the diff buffer in view for room-id (the active buffer, xi.buffers),
+   flatten it, and return the snippet text for the current selection range
+   (or nil)."
   [st room-id]
-  (let [text  (get-in st [:rooms room-id :ui :buffers :diff :text])
-        range (diff/selection-range (:web/diff-sel st))]
+  (let [active (get-in st [:rooms room-id :ui :active-buffer])
+        text   (get-in st [:rooms room-id :ui :buffers active :text])
+        range  (diff/selection-range (:web/diff-sel st))]
     (when (and text range)
       (diff/selected-snippet (diff/diff-rows (diff/parse-diff-text text)) range))))
 
@@ -795,6 +798,9 @@
           :room/join             forward
           :room/leave            forward
           :rooms/prune           forward
+          ;; a sidebar buffer row's ×: roomless, the server closes the buffer
+          ;; in the live room or the parked set (xi.server.room-manager)
+          :session/buffer-close  forward
           ;; Sub-agent panel collapse/expand toggles are handled purely
           ;; client-side by the xi.ext.subagent.web handlers — they're an
           ;; ephemeral per-client UI preference, so we do NOT forward them
@@ -1465,28 +1471,53 @@
                                       :effects [[:palette/close nil]
                                                 [:ws/send {:type :file/web-read :cwd cwd :path path}]]}))
           ;; In a virtual new chat there is no room yet, so the buffer lives on
-          ;; the :web/pending-room (chat-view reads it from there).
-          :file/web-read-result  (fn [st {:keys [path text error]}]
-                                   (let [buf    {:title path :path path
+          ;; the :web/pending-room (chat-view reads it from there). The file
+          ;; buffer is this client's alone (the room never sees it); one per
+          ;; path (xi.buffers/file-id), like the server-side file-view.
+          :file/web-read-result  (fn [st {:keys [path text error] :as ev}]
+                                   (let [id     (buffers/file-id path)
+                                         buf    {:kind :file :title path :path path
                                                  :text (or text (str "Could not read file:\n" error))}
+                                         open   (fn [room]
+                                                  (-> room
+                                                      (buffers/install id buf (:event/ts ev))
+                                                      (assoc-in [:ui :active-buffer] id)))
                                          room-id (:id (state/active-room st))]
                                      (cond
                                        (new-chat-view? st)
-                                       {:state (-> st
-                                                   (assoc-in [:web/pending-room :ui :buffers :file] buf)
-                                                   (assoc-in [:web/pending-room :ui :active-buffer] :file))}
+                                       {:state (update st :web/pending-room open)}
 
                                        room-id
-                                       {:state (-> st
-                                                   (assoc-in [:rooms room-id :ui :buffers :file] buf)
-                                                   (assoc-in [:rooms room-id :ui :active-buffer] :file))}
+                                       {:state (update-in st [:rooms room-id] open)}
 
                                        :else {:state st})))
-          ;; Tab switch in a virtual new chat (the core :ui/buffer-switch needs a
+          ;; Tab switch / close in a virtual new chat (the core handlers need a
           ;; real room id).
           :pending/buffer-switch (fn [st {:keys [buffer-id]}]
                                    (when (:web/pending-room st)
                                      {:state (assoc-in st [:web/pending-room :ui :active-buffer] buffer-id)}))
+          :pending/buffer-close  (fn [st {:keys [buffer-id]}]
+                                   (when (:web/pending-room st)
+                                     {:state (update st :web/pending-room
+                                                     #(if buffer-id (buffers/close % buffer-id) (buffers/close-all %)))}))
+          ;; The sidebar's per-session buffer rows: a card's "N buffers" line
+          ;; folds / unfolds them; this browser remembers which (localStorage).
+          :sidebar/buffers-toggle (fn [st {:keys [session-id]}]
+                                    (let [open (let [s (or (:web/sidebar-buffers-open st) #{})]
+                                                 (if (contains? s session-id)
+                                                   (disj s session-id)
+                                                   (conj s session-id)))]
+                                      {:state   (assoc st :web/sidebar-buffers-open open)
+                                       :effects [[:cache/sidebar-buffers-open {:session-ids open}]]}))
+          ;; Alt+B: the buffer switcher as a palette page — type to filter, Enter
+          ;; switches (the same rows as the palette's Buffers group).
+          :palette/open-buffers  (fn [st _]
+                                   {:state (assoc st :web/palette-page {:kind :buffers}
+                                                     :web/palette-open? true
+                                                     :web/palette-drilling? true)
+                                    :effects [[:palette/reset-filter nil]
+                                              [:palette/reopen nil]]})
+          :buffer/pending-clear  (fn [st _] {:state (dissoc st :web/pending-buffer)})
           ;; Instant fuzzy file finder (Ctrl/Cmd+P): open a dedicated palette
           ;; page seeded with the room's flat file list; the page fuzzy-ranks
           ;; it client-side per keystroke. Selecting a row reuses :files/open.
@@ -1851,6 +1882,7 @@
    :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
    :cache/model-list (fn [_ {:keys [models at]}] (cache/save-model-list! models at))
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
+   :cache/sidebar-buffers-open (fn [_ {:keys [session-ids]}] (cache/save-sidebar-buffers-open! session-ids))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/user (fn [_ {:keys [user]}] (cache/save-cached-user! user))
    :cache/clear-watched (fn [_ _] (cache/clear-watched!))
@@ -1948,6 +1980,41 @@
                    (nil? (get-in state [:web/route :session-id])))
           (dispatch! {:type :route/navigate :page :chat
                       :session-id sid :replace? true}))))))
+
+(defonce ^:private buffer-presence-sent
+  ;; [room-id buffer-id] last told to the server (buffer-presence-tap)
+  (atom nil))
+
+(defn- buffer-presence-tap
+  "Buffer presence: tell the server which view this client shows whenever it
+   changes — the active room's active buffer, :chat included — as
+   `:client/update {:buffer id}`. The room manager folds it into the room's
+   presence (`:members cid :buffer`, xi.buffers/viewers), so other clients
+   see who is on which buffer. The switch itself never leaves this client
+   (xi.client.ws-transport local-ui-events); this is the one signal that does."
+  [dispatch!]
+  (fn [_event state]
+    (let [room (state/active-room state)
+          cur  (when room [(:id room) (get-in room [:ui :active-buffer] :chat)])]
+      (when (and cur (not= cur @buffer-presence-sent))
+        (reset! buffer-presence-sent cur)
+        (dispatch! {:type :client/update :buffer (second cur)})))))
+
+(defn- pending-buffer-tap
+  "Open the buffer a sidebar / palette row asked for once its chat has joined
+   (xi.web.router/with-buffer stashes it as :web/pending-buffer): the
+   :room/joined snapshot carries the room's buffers, parked ones included, so
+   the switch finds it. A navigation to another session in between drops the
+   request (it names a session the join didn't deliver)."
+  [dispatch!]
+  (fn [event state]
+    (when (= :room/joined (:type event))
+      (when-let [{:keys [session-id buffer-id]} (:web/pending-buffer state)]
+        (dispatch! {:type :buffer/pending-clear})
+        (when (and (= session-id (get-in event [:room :session :id]))
+                   (get-in event [:room :ui :buffers buffer-id]))
+          (dispatch! {:type :ui/buffer-switch :room-id (:room-id event)
+                      :buffer-id buffer-id}))))))
 
 (defn- pending-submit-tap
   "Fire a stashed message after the room it was aimed at finishes joining.
@@ -2540,6 +2607,7 @@
   ;; Instant fuzzy file finder (handle-keydown preventDefaults, so the
   ;; browser's print dialog never opens on Ctrl/Cmd+P).
   (keymap/register-action! {:id :files/find :event {:type :palette/open-file-finder}})
+  (keymap/register-action! {:id :buffers/switch :event {:type :palette/open-buffers}})
   ;; Next / prev session in sidebar order (no wrap; from a non-chat view they
   ;; open the first session).
   (keymap/register-action! {:id :session/next
@@ -2586,12 +2654,14 @@
                                                        :keys/close
                                                        :appearance/close)}))})
   (keymap/register-action! {:id :keys/show :event {:type :keys/show}})
-  ;; Buffer tabs (diff / file / prompt): close back to the chat; a virtual new
-  ;; chat keeps its buffers on the pending room (see :pending/buffer-switch).
+  ;; Buffer views (diff / file / prompt): back to the chat — the buffer stays
+  ;; open (the buffer menu closes one); a virtual new chat keeps its buffers on
+  ;; the pending room (see :pending/buffer-switch).
   (keymap/register-action! {:id :buffer/close
                             :run (fn [st dispatch! _]
                                    (let [room-id (when-not (new-chat-view? st)
                                                    (:id (state/active-room st)))]
+                                     (dispatch! {:type :diff/clear-selection})
                                      (dispatch! (if room-id
                                                   {:type :ui/buffer-switch :room-id room-id :buffer-id :chat}
                                                   {:type :pending/buffer-switch :buffer-id :chat}))))})
@@ -2678,6 +2748,8 @@
     (add-tap! (request-projects-tap dispatch!))
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
+    (add-tap! (pending-buffer-tap dispatch!))
+    (add-tap! (buffer-presence-tap dispatch!))
     (add-tap! (pending-command-tap dispatch!))
     (add-tap! (optimistic-tap dispatch!))
     (add-tap! (record-command-tap dispatch!))

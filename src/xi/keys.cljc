@@ -212,6 +212,7 @@
    :session/prev            {:label "Previous chat" :surface #{:web}}
    :sessions/prune          {:label "Prune: run every sidebar cleanup" :surface #{:web}}
    :files/find              {:label "Find a file" :surface #{:web}}
+   :buffers/switch          {:label "Switch buffer" :surface #{:web}}
    :compose/focus           {:label "Focus the message box" :surface #{:web}}
    :compose/blur            {:label "Leave the text field" :surface #{:web}}
    :timeline/bottom         {:label "Scroll to the bottom" :surface #{:web}}
@@ -286,6 +287,7 @@
                               "alt+u"       :session/jump-attention
                               "alt+shift+p" :sessions/prune
                               "mod+p"       :files/find
+                              "alt+b"       :buffers/switch
                               "alt+j"       :session/next
                               "alt+k"       :session/prev
                               "escape"      :dialog/close}

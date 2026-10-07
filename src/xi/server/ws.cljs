@@ -106,7 +106,12 @@
     :session/deleted
     :read-state/changed
     :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
-    :ui/dialog-open :ui/dialog-response})
+    :ui/dialog-open :ui/dialog-response
+    ;; the per-session buffer list the sidebar shows (xi.buffers)
+    :ui/buffer-set :ui/buffer-open :ui/diff-open :ui/buffer-close :ui/buffers-close-all
+    :session/buffer-close
+    ;; buffer presence rides on the room summaries (:viewers)
+    :room/presence})
 
 (defn- ext-event?
   "An event of an extension (`:ext.<id>/…`)."
@@ -134,6 +139,7 @@
     :cwd/agents-files :session/content-search :session/web-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
     :dismissed/toggle :session/delete :session/mark-read
+    :session/buffer-close
     :rooms/prune})
 
 (defn- gen-client-id []
@@ -340,6 +346,10 @@
              :rooms      rooms
              :sessions   sessions
              :counts     counts
+             ;; {session-id [{:id :kind :title} …]}: the buffers open in a
+             ;; live room or parked for the session (xi.buffers); the
+             ;; sidebar lists them under the session's card
+             :buffers    (rm/session-buffers st)
              :profiles   (users/public-profiles rooms)
              :user-ids   (users/declared-ids)
              :started-at server-started-at}
@@ -836,7 +846,10 @@
                                        (assoc :pid (.. ws -data -clientPid))
                                        (.. ws -data -clientPlatform)
                                        (assoc :platform (.. ws -data -clientPlatform)))})
-                 (send-event! cid {:type :auth/ok :user user})
+                 ;; :client-id — how the server names this connection on
+                 ;; the events it stamps, so the client can tell a view
+                 ;; switch meant for it (xi.buffers/switch-here?)
+                 (send-event! cid {:type :auth/ok :user user :client-id cid})
                  ;; the user's UI state (theme, layout, …): follows them to
                  ;; every device (xi.user-state)
                  (send-event! cid {:type :user-state/state :user user
