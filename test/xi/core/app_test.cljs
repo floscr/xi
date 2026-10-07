@@ -3,7 +3,8 @@
             [xi.core.app :as app]
             [xi.core.events :as events]
             [xi.core.log :as log]
-            [xi.core.state :as state]))
+            [xi.core.state :as state]
+            [xi.test-util :refer [silenced]]))
 
 (defn- test-app
   "App with synchronous render scheduling for deterministic tests."
@@ -108,7 +109,7 @@
   (let [{:keys [dispatch! state]}
         (test-app {:handlers {:boom (fn [_ _] (throw (js/Error. "kaput")))}})]
     (dispatch! {:type :room/create :room-id "a"})
-    (dispatch! {:type :boom})
+    (silenced #(dispatch! {:type :boom}))
     (dispatch! {:type :room/create :room-id "b"})
     (is (= ["a" "b"] (sort (state/room-ids @state))))))
 

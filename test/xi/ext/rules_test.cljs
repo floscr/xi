@@ -2,6 +2,7 @@
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.ext.rules :as rules-ext]
+            [xi.test-util :refer [silenced]]
             ["node:fs" :as fs]))
 
 (defn- ctx [state]
@@ -71,8 +72,9 @@
 (deftest policy-fails-closed
   (testing "a throw while deciding denies the call instead of letting it run"
     (async done
-      (-> (rules-ext/tool-policy {:name "bash" :arguments {:command "ls"}}
-                                 (assoc (ctx {}) :get-state (fn [] (throw (js/Error. "boom")))))
+      (-> (silenced
+           #(rules-ext/tool-policy {:name "bash" :arguments {:command "ls"}}
+                                   (assoc (ctx {}) :get-state (fn [] (throw (js/Error. "boom"))))))
           (.then (fn [out]
                    (is (:intercepted out))
                    (is (:is-error (:result out)))

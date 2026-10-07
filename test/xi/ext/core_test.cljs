@@ -1,7 +1,8 @@
 (ns xi.ext.core-test
   (:require [cljs.test :refer [deftest is testing async]]
             [xi.core.state :as state]
-            [xi.ext.core :as ext]))
+            [xi.ext.core :as ext]
+            [xi.test-util :refer [silenced]]))
 
 ;; ── compose ──────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@
                    {:id :b :event-hooks {:foo (fn [ev _] (assoc ev :ok true))}}])
         tx (ext/transform-event composed)]
     (testing "a throwing hook is skipped (event passes through to next hook)"
-      (is (= {:type :foo :ok true} (tx {} {:type :foo}))))))
+      (is (= {:type :foo :ok true} (silenced #(tx {} {:type :foo})))))))
 
 (deftest transform-event-nil-when-no-hooks
   (is (nil? (ext/transform-event (ext/compose [{:id :a}])))))
