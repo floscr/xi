@@ -199,6 +199,7 @@
   {:chat/new                {:label "New chat"}
    :agent/abort             {:label "Stop the running turn"}
    :permission/allow        {:label "Allow the pending permission request"}
+   :permission/allow-repo   {:label "Allow repo writes for the pending permission request" :surface #{:web}}
    :permission/deny         {:label "Deny the pending permission request"}
    :keys/show               {:label "Keyboard shortcuts"}
    :buffer/close            {:label "Close this view, back to the chat"}
@@ -288,8 +289,9 @@
                               "alt+j"       :session/next
                               "alt+k"       :session/prev
                               "escape"      :dialog/close}
-         :permission-pending {"alt+a" :permission/allow
-                              "alt+d" :permission/deny}
+         :permission-pending {"alt+a"       :permission/allow
+                              "alt+shift+a" :permission/allow-repo
+                              "alt+d"       :permission/deny}
          :mode/navigate      {"i" :compose/focus
                               "G" :timeline/bottom
                               "?" :keys/show}

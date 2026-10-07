@@ -63,6 +63,7 @@ Web client:
 | `Ctrl+p` / `Cmd+p` | Find a file | `:files/find` | `:global` |
 | `Esc` | Close the open dialog (Appearance, shortcuts) | `:dialog/close` | `:global` |
 | `Alt+a` / `Alt+d` | Allow / deny the pending permission request | `:permission/allow` / `:permission/deny` | `:permission-pending` |
+| `Alt+Shift+A` | Allow repo writes for the pending request (only when it offers that choice) | `:permission/allow-repo` | `:permission-pending` |
 | `i` | Focus the message box | `:compose/focus` | `:mode/navigate` |
 | `G` | Scroll to the bottom | `:timeline/bottom` | `:mode/navigate` |
 | `?` | Show the keyboard shortcuts | `:keys/show` | `:mode/navigate` |

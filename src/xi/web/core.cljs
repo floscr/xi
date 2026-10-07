@@ -2509,9 +2509,10 @@
    makes no sense right now, so e.g. ALT+d keeps its browser meaning unless a
    permission request is pending.
 
-   Transient layers: `:permission-pending` (ALT+a / ALT+d answer the ask — the
-   keyboard twins of /allow and /deny) and `:agent-busy` (ALT+x aborts the
-   turn, twin of the composer's abort button and the TUI's alt+x)."
+   Transient layers: `:permission-pending` (ALT+a / ALT+SHIFT+a / ALT+d answer
+   the ask — the keyboard twins of /allow, /allow repo and /deny) and
+   `:agent-busy` (ALT+x aborts the turn, twin of the composer's abort button
+   and the TUI's alt+x)."
   []
   (keymap/register-layer! {:id :permission-pending
                            :when (fn [st] (some? (permission-answer st :yes)))})
@@ -2536,8 +2537,9 @@
                             :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
   (keymap/register-action! {:id :session/prev
                             :run (fn [st dispatch! _] (session-step! st dispatch! :prev))})
-  (doseq [[id option] [[:permission/allow :yes]
-                       [:permission/deny  :no]]]
+  (doseq [[id option] [[:permission/allow      :yes]
+                       [:permission/allow-repo :allow-repo]
+                       [:permission/deny       :no]]]
     (keymap/register-action! {:id id
                               :when (fn [st] (some? (permission-answer st option)))
                               :run (fn [st dispatch! _]
