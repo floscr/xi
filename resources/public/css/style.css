@@ -1985,10 +1985,23 @@ body {
   transform: rotate(90deg);
 }
 
-/* Nothing to expand yet (a running call without output): keep the slot so
-   the label stays aligned with its neighbours, but show no chevron. */
+/* Nothing to expand (a finished call without output): keep the slot so the
+   label stays aligned with its neighbours, but show no chevron. */
 .tool-call-toggle-icon--empty {
   visibility: hidden;
+}
+
+/* While the call runs the chevron slot holds the spinner — the arrow would
+   be missing anyway for a call without output yet. Greyscale (no accent) and
+   not rotated with the open state, so it reads as a quiet busy marker. */
+.tool-call-block[open] > .tool-call-toggle .tool-call-toggle-icon--running {
+  transform: none;
+}
+.tool-call-toggle-icon--running .agent-status-spinner {
+  width: 12px;
+  height: 12px;
+  border-color: var(--bg-2);
+  border-top-color: var(--fg-3);
 }
 
 .tool-call-toggle-label {

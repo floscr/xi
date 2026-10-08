@@ -868,8 +868,9 @@
                     (or diff (get-in permission [:dialog :diff])))
         denied?   (and (some? resolved-permission) (not (:value resolved-permission)))
         ;; Anything to expand? A call that is still running with no output
-        ;; yet (a long `bb check`) has nothing behind the chevron, so the
-        ;; chevron is hidden until the body gets its first piece.
+        ;; yet (a long `bb check`) has nothing behind the chevron. While it
+        ;; runs the chevron slot shows the spinner instead; once it finishes
+        ;; without content the slot is left blank.
         has-content? (boolean (or clj-code preview (seq text) ext-view permission imgs))
         label     (if clj?
                     name
@@ -884,21 +885,24 @@
                 :open (not collapsed?)}
       [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
        [:span {:class (cond-> ["tool-call-toggle-icon"]
-                        (not has-content?) (conj "tool-call-toggle-icon--empty"))}
-        (icon/icon {:icon-name :chevron-right :size :sm})]
+                        running? (conj "tool-call-toggle-icon--running")
+                        (and (not running?) (not has-content?)) (conj "tool-call-toggle-icon--empty"))}
+        (if running?
+          (spinner)
+          (icon/icon {:icon-name :chevron-right :size :sm}))]
        [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))}
         [:span {:class ["tool-call-action"]} name]
         (subs label (count name))]
        (when clj-preview
          [:span {:class ["clj-head-preview"]} clj-preview])
-       ;; Pinned right (collapsed or open) so a long preview can't push it away.
+       ;; Elapsed time, pinned right (collapsed or open) so a long preview
+       ;; can't push it away. The spinner itself sits in the chevron slot.
        (when running?
          [:span {:class ["tool-call-running"]}
           ;; No clock while the call waits on its permission ask — it isn't
           ;; running yet. The allow restamps :started-at, so the timer
           ;; returns counting only actual run time.
-          (when-not permission (run-timer started-at))
-          (spinner)])
+          (when-not permission (run-timer started-at))])
        ;; Right-side status badge: a filled circle with a white icon that
        ;; captures the outcome — grey ✗ when the user denied the call (its
        ;; result is an error too, but the denial is the story), red ✗ on
