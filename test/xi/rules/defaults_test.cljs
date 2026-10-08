@@ -387,18 +387,114 @@
   (testing "writes are not covered"
     (is (not= :allow (action-type {:tool :write :path "/home/u/.claude/projects/p/x.jsonl"})))))
 
+(defn- leak-rule
+  "The first default rule matching `req`, when it is one of the secret-leak
+   asks (yes/no only, refused unanswered); nil otherwise."
+  [req]
+  (let [r (rules/first-match defaults/default-rules req)]
+    (when (and (= :ask (get-in r [:action :type]))
+               (= [:yes :no] (get-in r [:action :options]))
+               (= :deny (get-in r [:action :unanswered])))
+      r)))
+
+(defn- leak-message [req]
+  (get-in (leak-rule req) [:action :message]))
+
+(deftest env-dump-gate
+  (testing "/proc/<pid>/environ asks on every read surface, naming the provider"
+    (doseq [req [{:tool :read :path "/proc/self/environ"}
+                 {:tool :read :path "/proc/12345/environ"}
+                 {:tool :grep :path "/proc/thread-self/environ"}
+                 {:tool :sh :cli "cat" :command "cat /proc/self/environ"}
+                 {:tool :sh :cli "strings" :command "strings /proc/4242/environ"}
+                 {:tool :bash :command "tr '\\0' '\\n' < /proc/self/environ"}]]
+      (is (str/includes? (str (leak-message req)) "LLM provider") (pr-str req))))
+  (testing "a whole-environment dump asks (sh argv and bash lines alike)"
+    (doseq [cmd ["env" "printenv" "printenv -0" "env --null" "export" "export -p"
+                 "set" "declare -x" "declare -p" "typeset -x"
+                 "cd /tmp && env" "env > /tmp/e" "env; ls"]]
+      (is (leak-rule {:tool :bash :command cmd}) cmd))
+    (is (leak-rule {:tool :sh :cli "env" :command "env"}))
+    (is (leak-rule {:tool :sh :cli "printenv" :command "printenv"})))
+  (testing "one variable, or env as a wrapper, is not a dump"
+    (doseq [cmd ["printenv HOME" "env FOO=1 bb test" "env -i bb test" "set -e"
+                 "export FOO=bar" "declare -x FOO=1" "echo $HOME" "ls environ"
+                 "cat /proc/self/status" "printenv -0 PATH"]]
+      (is (nil? (leak-rule {:tool :bash :command cmd})) cmd))
+    (is (nil? (leak-rule {:tool :sh :cli "printenv" :command "printenv HOME"})))
+    (is (= :allow (action-type {:tool :sh :cli "cat" :command "cat /proc/self/status"}))
+        "an ordinary /proc read still auto-runs")))
+
+(deftest secret-reads-gate
+  (testing "a file in a hidden credential dir asks for the agent's read tools"
+    (doseq [tool [:read :grep]]
+      (is (str/includes? (str (leak-message {:tool tool :path "/home/u/.aws/credentials"
+                                             :credential-path? true}))
+                         "credential file")
+          (str tool))))
+  (testing "listing a credential dir is not a read of its contents"
+    (is (nil? (leak-rule {:tool :ls :path "/home/u/.aws" :credential-path? true}))))
+  (testing "credential files outside the hidden dirs ask, by path"
+    (doseq [path [".env" "/repo/.env" "/repo/.env.local" "/repo/sub/.env.production"
+                  "/home/u/.claude/.credentials.json" "/repo/gcp-credentials.json"
+                  "/home/u/.git-credentials" "/home/u/.docker/config.json"
+                  "/home/u/.pgpass" "/home/u/.pypirc"]]
+      (is (leak-rule {:tool :read :path path}) path)))
+  (testing "templates and look-alikes pass"
+    (doseq [path ["/repo/.env.example" "/repo/.env.sample" "/repo/.env.template"
+                  "/repo/.env.dist" "/repo/.envrc" "/repo/environment.edn"
+                  "/repo/credentials.edn" "/repo/src/env.cljs"]]
+      (is (nil? (leak-rule {:tool :read :path path})) path)))
+  (testing "a command line naming a credential file asks, where cat would auto-run"
+    (doseq [cmd ["cat .env" "cat ./.env.local" "head -c 100 ~/.aws/credentials"
+                 "cat $HOME/.kube/config" "cat ~/.config/gh/hosts.yml"
+                 "cat ~/.netrc" "cat ~/.npmrc" "cat ~/.git-credentials"
+                 "cat ~/.docker/config.json" "grep token ~/.claude/.credentials.json"
+                 "cat ~/.config/xi/config.edn" "ls ~/.password-store/x"]]
+      (is (leak-rule {:tool :sh :cli (first (str/split cmd #" ")) :command cmd}) cmd)
+      (is (leak-rule {:tool :bash :command cmd}) cmd)))
+  (testing "xi's session metadata, templates and plain files still auto-run"
+    (doseq [cmd ["cat ~/.config/xi/sessions/abc.edn" "git diff .env.example"
+                 "cat .envrc" "cat src/env.cljs" "ls -la" "cat README.md"]]
+      (is (= :allow (action-type {:tool :sh :cli (first (str/split cmd #" ")) :command cmd}))
+          cmd)))
+  (testing "writes are not covered here (the write gates are)"
+    (is (nil? (leak-rule {:tool :write :path "/repo/.env"})))))
+
+(deftest secret-clis-gate
+  (testing "commands that print a secret ask"
+    (doseq [cmd ["pass email/work" "pass show email/work" "pass show -c x"
+                 "gopass show x" "op read op://vault/item/field" "op item get x"
+                 "bw get password x" "secret-tool lookup service x" "gh auth token"
+                 "vault kv get secret/x" "agenix -d secrets/x.age" "age --decrypt x.age"
+                 "sops -d secrets.yaml"]]
+      (is (str/includes? (str (leak-message {:tool :sh :cli (first (str/split cmd #" "))
+                                             :command cmd}))
+                         "prints a secret")
+          cmd)
+      (is (leak-rule {:tool :bash :command cmd}) cmd)))
+  (testing "their non-printing subcommands fall through to the usual sh gate"
+    (doseq [cmd ["pass" "pass ls" "pass show" "pass git pull" "pass insert x"
+                 "gopass ls" "op item list" "bw list items" "gh auth status"
+                 "vault status" "agenix -e x.age" "sops updatekeys x"]]
+      (is (nil? (leak-rule {:tool :sh :cli (first (str/split cmd #" ")) :command cmd})) cmd))))
+
 (deftest defaults-tagged-scope
   (is (every? #(= :default (:scope %)) defaults/default-rules)))
 
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 36 (count defaults/default-rules))))
+    (is (= 43 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
                              :xi.rules.defaults/outside-writes])
            (defaults/expand [:xi.rules.defaults/write-gates])))
+    (is (= (defaults/expand [:xi.rules.defaults/env-dump
+                             :xi.rules.defaults/secret-reads
+                             :xi.rules.defaults/secret-clis])
+           (defaults/expand [:xi.rules.defaults/env])))
     (is (= (defaults/expand [:xi.rules.defaults/repository-scripts
                              :xi.rules.defaults/localhost-curl
                              :xi.rules.defaults/sh-read-only

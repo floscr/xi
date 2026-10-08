@@ -1250,7 +1250,8 @@
    - engine :deny     → nil (blocked)
    - engine :ask/none → dialog [y]/[n]/[r allow repo]; [r] persists a repo-scoped
      session allow-rule (via :ext.rules/add) so later access under that repo
-     skips the dialog. Auto-approves when headless (no confirm!)."
+     skips the dialog. Auto-approves when headless (no confirm!), except a
+     credential path or a rule with `:unanswered :deny`."
   [kind path {:keys [confirm! dispatch! room-id code] :as ctx} cwd & [hit]]
   (let [{:keys [rule resolved repo]} (outside-path-decision kind path ctx cwd)
         target   (when code
@@ -1266,7 +1267,11 @@
         ;; :_allowed-reads/:_allowed-writes root that defeats resolve-read's
         ;; credential hard-block (it only fires when `not approved?`). Deny
         ;; (nil) so the hard-block stays effective with no one to confirm.
-        (if (some #(paths/path-within? resolved %) (paths/hidden-paths))
+        ;; An ask rule that says `:unanswered :deny` (the secret-leak
+        ;; defaults on /proc/<pid>/environ, .env, …) is refused too, as the
+        ;; rules extension would for a tool call.
+        (if (or (some #(paths/path-within? resolved %) (paths/hidden-paths))
+                (= :deny (:unanswered action)))
           (js/Promise.resolve nil)
           (js/Promise.resolve (or repo resolved)))
         (-> (confirm! (rules-store/with-path-target

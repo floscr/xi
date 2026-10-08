@@ -17,6 +17,10 @@ Xi ships with defaults that cover the usual cases. Out of the box:
 - A command whose program is not installed **fails at once** with an error
   naming it, with no dialog.
 - Destructive commands (`rm -rf`, `git push`, `kill`, …) **ask** every time.
+- Dumping the environment (`env`, `printenv`, `/proc/<pid>/environ`), reading
+  a credential file (`.env`, `~/.aws/credentials`, …) or printing a secret
+  (`pass`, `gh auth token`, …) **asks** every time, with a warning that the
+  output goes to your LLM provider. Reading one variable is free.
 - Tools from an MCP server **ask** until you trust the server.
 - Starting a sub-agent **asks**.
 

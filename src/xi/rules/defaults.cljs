@@ -133,6 +133,81 @@
    Matched against the resolved absolute path (see `:path` in docs/guide/rules-reference.md)."
   #"/\.claude/projects(?:/|$)")
 
+;; ── Secret leaks: whole-environment dumps, credential files, secret CLIs ─────
+;;
+;; Whatever a tool returns goes into the transcript and to the LLM provider.
+;; These rules ask, with a warning saying so, before a call whose output is
+;; secrets by construction. They never grant [a]lways (every call asks) and
+;; refuse when nobody can answer. Reading ONE variable (`printenv NAME`,
+;; `(env "NAME")`) is not matched — only whole dumps are.
+;;
+;; The clj sandbox itself can't dump the environment: `System` exposes only
+;; currentTimeMillis, `js/process` is not reachable and `(env k)` reads one
+;; allowlisted variable. What CAN leak it is a read of /proc/<pid>/environ (the
+;; server's own, in-process) and a child that inherits the server's environment
+;; — `(sh "env")`, the bash tool — which is what the rules below cover.
+
+(def ^:private environ-path-re
+  "`/proc/<pid>/environ` (also `self` / `thread-self`), the raw environment of a
+   process — read in-process it is the server's own, API keys included."
+  #"/proc/(?:\d+|self|thread-self)/environ$")
+
+(def ^:private environ-command-re
+  "The same file named anywhere in a command line (`cat`, `strings`, `xxd`,
+   `tr` redirects, …)."
+  #"/proc/(?:\d+|self|thread-self)/environ\b")
+
+(def ^:private env-dump-command-re
+  "A command segment that prints the whole environment: `env` / `printenv`
+   with no name (optionally `-0` / `--null`), `export` / `export -p`, a bare
+   `set`, `declare -x` / `-p` and `typeset -x` / `-p` with no name. A name
+   after any of them (`printenv HOME`, `env FOO=1 cmd`, `set -e`) is not a
+   dump and does not match."
+  #"(?:^|[;&|]\s*)(?:(?:env|printenv)(?:\s+(?:-0|--null))?|export(?:\s+-p)?|set|(?:declare|typeset)\s+-[xp])\s*(?:$|[;&|>])")
+
+(def ^:private secret-file-re
+  "Credential files outside the hidden dirs (`:credential :read` covers those),
+   as a resolved or raw path: `.env` and `.env.<x>` (not `.example` /
+   `.sample` / `.template` / `.dist`), `*credentials.json` (Claude's OAuth
+   token, GCP service accounts, …), `.git-credentials`, `.docker/config.json`,
+   `.pgpass`, `.pypirc`."
+  #"(?:^|/)(?:\.env(?:\.(?!(?:example|sample|template|dist)$)[^/]+)?|[^/]*credentials\.json|\.git-credentials|\.docker/config\.json|\.pgpass|\.pypirc)$")
+
+(def ^:private secret-file-command-re
+  "The same files, plus anything under the hidden credential dirs (`.aws`,
+   `.kube`, `.gnupg`, `.password-store`, `.config/gh`, `.config/xi` except its
+   `sessions`), `.netrc` and `.npmrc`, named as an operand of a command line —
+   `cat .env`, `head ~/.aws/credentials` — where read-only programs would
+   otherwise auto-run. SSH keys are the hardened tier's."
+  #"(?:^|[\s\"'=])(?:\S*/)?(?:\.env(?:\.(?!(?:example|sample|template|dist)(?:[\s\"']|$))[^\s\"'/]+)?|[^\s\"'/]*credentials\.json|\.git-credentials|\.docker/config\.json|\.pgpass|\.pypirc|\.netrc|\.npmrc|(?:\.aws|\.kube|\.gnupg|\.password-store|\.config/gh)/[^\s\"']+|\.config/xi/(?!sessions(?:/|[\s\"']|$))[^\s\"']+)(?=[\s\"']|$)")
+
+(def ^:private secret-cli-re
+  "A command segment whose job is to print a secret: `pass <name>` / `pass
+   show <name>` (not `pass ls|find|git|insert|…`), `gopass show|cat`, `op
+   read` / `op item get`, `bw get`, `secret-tool lookup`, `gh auth token`,
+   `vault kv get`, and `agenix` / `age` / `sops` decrypting (`-d` /
+   `--decrypt`)."
+  #"(?:^|[;&|]\s*)(?:pass(?:\s+show)?\s+(?!(?:show|ls|list|find|grep|git|init|insert|generate|edit|rm|mv|cp|help|version|--help|--version)(?:\s|$))\S|gopass\s+(?:show|cat)\b|op\s+(?:read|item\s+get)\b|bw\s+get\b|secret-tool\s+lookup\b|gh\s+auth\s+token\b|vault\s+kv\s+get\b|(?:agenix|age|sops)\s+(?:-d|--decrypt)\b)")
+
+(def ^:private env-dump-msg
+  (str "This dumps the whole environment — every API key and token in it — "
+       "into the transcript and to your LLM provider. Read one variable "
+       "instead (`printenv NAME`, `(env \"NAME\")`). Allow the dump anyway?"))
+
+(def ^:private secret-read-msg
+  (str "This reads a credential file. Its contents would go into the "
+       "transcript and to your LLM provider. Allow the read anyway?"))
+
+(def ^:private secret-cli-msg
+  (str "This prints a secret. The output would go into the transcript and "
+       "to your LLM provider. Run it anyway?"))
+
+(defn- leak-ask
+  "The :ask action of the secret-leak rules: `msg`, yes/no only (no [a]lways —
+   every call asks), refused when no client can answer."
+  [msg]
+  {:type :ask :message msg :options [:yes :no] :unanswered :deny})
+
 ;; ── Plan mode (read-only exploration; toggled by xi.ext.plan-mode /plan) ──────
 
 (def ^:private plan-mode-on
@@ -423,6 +498,38 @@
    [{:match  {:tool #{:read :ls :grep :find} :path claude-sessions-re}
      :action {:type :allow}}]
 
+   ;; Secret leaks (see the regexes above): the output of these calls is
+   ;; secrets, and every tool result reaches the LLM provider. Ask every
+   ;; time, with a warning saying so; yes/no only; refused when nobody can
+   ;; answer. After the session allows (so xi's own session metadata under
+   ;; the hidden ~/.config/xi stays free) and before the :sh softeners (where
+   ;; `cat` / `head` / `strings` would otherwise auto-run). Reads consult the
+   ;; engine as :read/:grep (the read tools, clj's cat/head/tail/grep/slurp
+   ;; through its path gate), command lines as :sh (clj's per-command scan)
+   ;; and :bash.
+   ::env-dump
+   [{:match  {:tool #{:read :grep} :path environ-path-re}
+     :action (leak-ask env-dump-msg)}
+    {:match  {:tool #{:sh :bash} :command environ-command-re}
+     :action (leak-ask env-dump-msg)}
+    {:match  {:tool #{:sh :bash} :command env-dump-command-re}
+     :action (leak-ask env-dump-msg)}]
+
+   ::secret-reads
+   [{:match  {:tool #{:read :grep} :credential :read}
+     :action (leak-ask secret-read-msg)}
+    {:match  {:tool #{:read :grep} :path secret-file-re}
+     :action (leak-ask secret-read-msg)}
+    {:match  {:tool #{:sh :bash} :command secret-file-command-re}
+     :action (leak-ask secret-read-msg)}]
+
+   ::secret-clis
+   [{:match  {:tool #{:sh :bash} :command secret-cli-re}
+     :action (leak-ask secret-cli-msg)}]
+
+   ::env
+   [::env-dump ::secret-reads ::secret-clis]
+
    ;; Plan mode (read-only): allow the plan file, deny other writes/edits and any
    ;; mutating bash. Must precede the write/bash gates so plan-mode denies win
    ;; over the softer ask gates; reads/grep/find/ls and read-only bash fall
@@ -617,6 +724,7 @@
    ::extension-data
    ::xi-sessions
    ::claude-sessions
+   ::env
    ::plan-mode
    ::write-gates
    ::bash-chained

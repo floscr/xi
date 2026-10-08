@@ -142,6 +142,7 @@ list; inline rule maps may be mixed in.
 | `extension-data` | Allow: extensions in their own data directory. |
 | `xi-sessions` | Allow: reads under `~/.config/xi/sessions`. |
 | `claude-sessions` | Allow: reads under `~/.claude/projects`. |
+| `env` | Ask, yes or no only, refused when nobody can answer, with a warning that the output goes to the LLM provider: a dump of the whole environment — `env`, `printenv`, `export -p`, a bare `set`, `declare -x`, or `/proc/<pid>/environ` read with any tool (`env-dump`); a read of a credential file — the hidden credential directories (`.aws`, `.kube`, `.gnupg`, `.password-store`, `.config/gh`, `.config/xi`, `.netrc`, `.npmrc`), `.env` and `.env.*` (not `.example`, `.sample`, `.template`, `.dist`), `*credentials.json`, `.git-credentials`, `.docker/config.json`, `.pgpass`, `.pypirc` — through the read and grep tools or a command line that names one (`secret-reads`); a command that prints a secret — `pass <name>`, `gopass show`, `op read`, `op item get`, `bw get`, `secret-tool lookup`, `gh auth token`, `vault kv get`, `agenix`/`age`/`sops --decrypt` (`secret-clis`). One variable (`printenv NAME`, `(env "NAME")`) is free. |
 | `plan-mode` | While `/plan` is on: allow `tasks/todo.md`, deny other writes and mutating commands. |
 | `write-gates` | Ask: writes into mail or key directories (`sensitive-writes`); into `.env`, `.git/`, `node_modules/` (`protected-writes`); outside the working directory, with the `r` option (`outside-writes`). |
 | `bash-chained` | Deny: composed `bash` commands; use the clj tool. |
