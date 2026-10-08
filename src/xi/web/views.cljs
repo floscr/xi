@@ -99,6 +99,20 @@
    long sessions."
   60)
 
+(defn prompt-nav-ctx
+  "Prompt navigation over the FULL `history` (not just the rendered window):
+   every user entry's absolute history index, so navigation can jump to
+   prompts scrolled off the top and expand the window on demand. Carried by
+   the :prompt-nav/prev / :next events (xi.web.core/prompt-nav-step)."
+  [state history]
+  (let [entries      (vec history)
+        user-indices (vec (keep-indexed (fn [i e] (when (= :user (:kind e)) i))
+                                        entries))]
+    {:user-indices user-indices
+     :count        (count user-indices)
+     :total        (count entries)
+     :cur-window   (or (:web/timeline-window state) initial-window-size)}))
+
 (def ^:private window-step
   "How many more entries \"Show earlier\" reveals per click."
   40)
@@ -3469,16 +3483,7 @@
         ;; Prompt navigation over the FULL history (not just the rendered
         ;; window): collect every user entry's absolute history index so we can
         ;; jump to prompts scrolled off the top, expanding the window on demand.
-        nav-ctx (let [entries (vec history)
-                      total   (count entries)
-                      win     (or (:web/timeline-window state) initial-window-size)
-                      user-indices (vec (keep-indexed
-                                         (fn [i e] (when (= :user (:kind e)) i))
-                                         entries))]
-                  {:user-indices user-indices
-                   :count (count user-indices)
-                   :total total
-                   :cur-window win})
+        nav-ctx (prompt-nav-ctx state history)
         ;; Files dropped anywhere on the view stage on the composer — only
         ;; while it shows (the chat buffer, no skill form or deny-reason box
         ;; in its place), so a drop never lands on an invisible draft.
@@ -4938,6 +4943,25 @@
                                           :path path :draft-key dkey}))}
            (shorten-path path)))))))
 
+(defn- palette-project-list-page
+  "Projects as a palette sub-page (the :projects/pick action). A command-item
+   per project; selecting one drills into its action sub-page, the same as
+   Enter on a project row of the top-level palette. Spinner while
+   :web/project-dirs loads."
+  [state dispatch!]
+  (let [dirs (:web/project-dirs state)]
+    (if (empty? dirs)
+      [:div {:class ["command-loading"]} (spinner)]
+      (apply cmd/command-group {:heading "Projects"}
+        (for [d dirs
+              :let [short (shorten-path d)]]
+          (cmd/command-item
+           {:icon :folder
+            :value (str "project " short " " d)
+            :on-click (fn [_] (dispatch! {:type :palette/drill :cwd d
+                                          :label short :reopen? true}))}
+           short))))))
+
 (defn- snippet-command-item
   [dispatch! dkey {:keys [label text]}]
   (cmd/command-item
@@ -5258,6 +5282,7 @@
         search-page? (= :search (:kind palette-page))
         finder-page? (= :file-finder (:kind palette-page))
         buffers-page? (= :buffers (:kind palette-page))
+        projects-page? (= :projects (:kind palette-page))
         names-only?  (boolean (get-in state [:web/palette-search :names-only?]))
         dialog-attrs {:id "cmdk" :hotkey "mod+k"
                       ;; Hold Alt → key badges on the first rows, Alt+key picks one.
@@ -5268,6 +5293,7 @@
                                                     "Search session text…")
                                      finder-page? "Find file…"
                                      buffers-page? "Switch buffer…"
+                                     projects-page? "Find project…"
                                      palette-page "Filter actions…"
                                      :else        "Type a command or search…")
                       :attrs {:replicant/key "cmdk"
@@ -5346,6 +5372,7 @@
          :file-finder    (palette-file-finder-page state dispatch!)
          :buffers        (palette-buffers-page state dispatch!)
          :project-insert (palette-project-insert-page state dispatch!)
+         :projects       (palette-project-list-page state dispatch!)
          :snippets       (palette-snippets-page state dispatch!)
          :commands       (palette-commands-page state dispatch!)
          :search         (palette-search-page state dispatch!)

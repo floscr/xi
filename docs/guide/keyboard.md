@@ -162,10 +162,25 @@ chat, so a slash command runs as if you had typed it. A string binding does
 nothing outside a chat.
 
 ```clojure title="~/.config/xi/config.edn"
-:keys {:web {:mode/navigate {["space" "space"]  :files/find
+:keys {:web {:mode/navigate {["space" "space"]  :palette/open
+                             ["space" "f" "f"]  :files/find
+                             ["space" "p" "p"]  :projects/pick
                              ["space" "b" "b"]  :buffers/switch
                              ["space" "g" "g"]  :git/status
-                             ["space" "g" "c"]  "/commit"}}}
+                             ["space" "g" "c"]  "/commit"
+                             ["space" "c" "n"]  :chat/new
+                             ["space" "c" "u"]  :session/jump-attention
+                             ["space" "c" "x"]  :chat/delete
+                             ["space" "c" "h"]  :chat/hide}}}
 ```
 
-`:git/status` opens the working-tree diff of the current chat.
+| Action | Does |
+| --- | --- |
+| `:palette/open` | The `Ctrl`/`Cmd+K` palette; its first group lists your chats |
+| `:projects/pick` | The palette's project list; Enter on one opens its actions (sessions, new chat, …) |
+| `:projects/open` | The projects page |
+| `:git/status` | The working-tree diff of the current chat |
+| `:chat/hide` | Hide the current chat from Recent, or show it again |
+| `:chat/delete` | Delete the current chat, no confirmation |
+
+`:chat/hide` and `:chat/delete` only run on a chat page.

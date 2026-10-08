@@ -227,12 +227,23 @@
    :sessions/prune          {:label "Prune: run every sidebar cleanup" :surface #{:web}}
    :files/find              {:label "Find a file" :surface #{:web}}
    :git/status              {:label "Git status" :surface #{:web}}
+   :palette/open            {:label "Command palette" :surface #{:web}}
+   :projects/pick           {:label "Pick a project" :surface #{:web}}
+   :projects/open           {:label "All projects" :surface #{:web}}
+   :chat/hide               {:label "Hide this chat from Recent" :surface #{:web}}
+   :chat/delete             {:label "Delete this chat" :surface #{:web}}
+   :prompt/prev             {:label "Previous message of yours" :surface #{:web}}
+   :prompt/next             {:label "Next message of yours" :surface #{:web}}
+   :diff/next-hunk          {:label "Next hunk" :surface #{:web}}
+   :diff/prev-hunk          {:label "Previous hunk" :surface #{:web}}
    :buffers/switch          {:label "Switch buffer" :surface #{:web}}
    :compose/focus           {:label "Focus the message box" :surface #{:web}}
    :compose/blur            {:label "Leave the text field" :surface #{:web}}
    :timeline/bottom         {:label "Scroll to the bottom" :surface #{:web}}
    :scroll/down             {:label "Scroll down" :surface #{:web}}
    :scroll/up               {:label "Scroll up" :surface #{:web}}
+   :scroll/half-down        {:label "Scroll half a page down" :surface #{:web}}
+   :scroll/half-up          {:label "Scroll half a page up" :surface #{:web}}
    :dialog/close            {:label "Close the open dialog" :surface #{:web}}
    ;; tui
    :prompt/toggle           {:label "System prompt: full / overview" :surface #{:tui}}

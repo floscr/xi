@@ -1571,6 +1571,18 @@
                                     :effects (cond-> [[:palette/reopen nil]]
                                                (empty? (:web/project-dirs st))
                                                (conj [:ws/send {:type :projects/web-list}]))})
+          ;; Project picker (SPC p p): the same page shape as open-projects,
+          ;; but a row drills into the project's action sub-page instead of
+          ;; inserting its path.
+          :palette/open-project-list
+          (fn [st _]
+            {:state (assoc st :web/palette-page {:kind :projects}
+                              :web/palette-open? true
+                              :web/palette-drilling? true)
+             :effects (cond-> [[:palette/reset-filter nil]
+                               [:palette/reopen nil]]
+                        (empty? (:web/project-dirs st))
+                        (conj [:ws/send {:type :projects/web-list}]))})
           ;; Snippets: same drill pattern as projects. Always re-fetch (the
           ;; project snippets depend on the active room's cwd, which differs
           ;; per chat); clearing :web/snippet-list shows a spinner meanwhile.
@@ -2261,13 +2273,16 @@
         scroller-selectors))
 
 (defn- scroll-step!
-  "Scroll the view the user is looking at by `dir` (1 down, -1 up) steps.
-   An upward step counts as a user gesture so the timeline's scroll listener
-   drops follow mode, exactly like an upward wheel tick."
-  [dir]
-  (when-let [el (active-scroller)]
-    (when (neg? dir) (mark-user-scroll-intent!))
-    (set! (.-scrollTop el) (+ (.-scrollTop el) (* dir scroll-step-px)))))
+  "Scroll the view the user is looking at by `dir` (1 down, -1 up) steps, or
+   with `half-page?` by half the view's height. An upward step counts as a
+   user gesture so the timeline's scroll listener drops follow mode, exactly
+   like an upward wheel tick."
+  ([dir] (scroll-step! dir false))
+  ([dir half-page?]
+   (when-let [el (active-scroller)]
+     (when (neg? dir) (mark-user-scroll-intent!))
+     (let [px (if half-page? (/ (.-clientHeight el) 2) scroll-step-px)]
+       (set! (.-scrollTop el) (+ (.-scrollTop el) (* dir px)))))))
 
 (def ^:private load-earlier-threshold-px
   "Scrolling within this distance of the top of the timeline loads the
@@ -2656,6 +2671,42 @@
     (when target
       (.scrollIntoView target #js {:block "start" :behavior "auto"}))))
 
+(defn- jump-diff-hunk!
+  "Scroll the next / previous hunk header of the diff on screen to just below
+   the pinned file header. A hunk counts as passed once its header is at or
+   above that line, so repeated presses walk the hunks in order."
+  [dir]
+  (let [headers (vec (array-seq (.querySelectorAll js/document ".diff-view .diff-hunk-header")))
+        ^js view (some-> (first headers) (.closest ".diff-view"))]
+    (when view
+      (let [view-top (.-top (.getBoundingClientRect view))
+            pinned   (if-let [^js f (.querySelector view ".diff-file-header")]
+                       (.-height (.getBoundingClientRect f))
+                       0)
+            ;; header offsets from the line under the pinned file header
+            offsets  (mapv #(- (.-top (.getBoundingClientRect %)) view-top pinned) headers)
+            target   (if (= dir :next)
+                       (first (filter #(> % 4) offsets))
+                       (last (filter #(< % -4) offsets)))]
+        (when target
+          (.scrollBy view #js {:top target :behavior "auto"}))))))
+
+(defn- chat-room
+  "The room of the chat on screen when its chat tab (not a diff / file
+   buffer) is showing, else nil."
+  [st]
+  (let [room (state/active-room st)]
+    (when (and (= :chat (get-in st [:web/route :page]))
+               (:id room)
+               (= :chat (get-in room [:ui :active-buffer] :chat)))
+      room)))
+
+(defn- chat-session-id
+  "The session id of the chat page on screen, else nil."
+  [st]
+  (when (= :chat (get-in st [:web/route :page]))
+    (get-in st [:web/route :session-id])))
+
 (defn- install-actions!
   "Register the web client's keyboard actions (xi.web.keymap) — the code
    behind the action ids the keymap binds (xi.keys/defaults, overridden by
@@ -2687,6 +2738,37 @@
   ;; browser's print dialog never opens on Ctrl/Cmd+P).
   (keymap/register-action! {:id :files/find :event {:type :palette/open-file-finder}})
   (keymap/register-action! {:id :buffers/switch :event {:type :palette/open-buffers}})
+  ;; The Ctrl/Cmd+K palette, top level (its first group lists the chats).
+  (keymap/register-action! {:id :palette/open :event {:type :palette/open}})
+  (keymap/register-action! {:id :projects/pick :event {:type :palette/open-project-list}})
+  (keymap/register-action! {:id :projects/open
+                            :event {:type :route/navigate :page :home}})
+  ;; Hide from Recent (a toggle, like the palette's "Hide from Recent") and
+  ;; delete the chat on screen; deleting leaves the room and goes home.
+  (keymap/register-action! {:id :chat/hide
+                            :when chat-session-id
+                            :run (fn [st dispatch! _]
+                                   (dispatch! {:type :dismissed/toggle
+                                               :session-id (chat-session-id st)}))})
+  (keymap/register-action! {:id :chat/delete
+                            :when chat-session-id
+                            :run (fn [st dispatch! _]
+                                   (dispatch! {:type :session/delete
+                                               :session-id (chat-session-id st)}))})
+  ;; Jump between your messages (the float-actions arrows): the first `[`
+  ;; lands on the newest one, `]` on the last one goes back to the bottom.
+  (keymap/register-action! {:id :prompt/prev
+                            :when chat-room
+                            :run (fn [st dispatch! _]
+                                   (dispatch! (assoc (views/prompt-nav-ctx st (:history (chat-room st)))
+                                                     :type :prompt-nav/prev)))})
+  (keymap/register-action! {:id :prompt/next
+                            :when (fn [st] (and (chat-room st) (some? (:web/prompt-nav st))))
+                            :run (fn [st dispatch! _]
+                                   (let [ctx (views/prompt-nav-ctx st (:history (chat-room st)))]
+                                     (dispatch! (if (>= (:web/prompt-nav st) (dec (:count ctx)))
+                                                  {:type :timeline/scroll-to-bottom}
+                                                  (assoc ctx :type :prompt-nav/next)))))})
   ;; The working-tree diff in the chat's :diff buffer — the palette's / overflow
   ;; menu's "Git status".
   (keymap/register-action! {:id :git/status
@@ -2727,6 +2809,10 @@
                             :run (fn [_ _ _] (scroll-step! 1))})
   (keymap/register-action! {:id :scroll/up
                             :run (fn [_ _ _] (scroll-step! -1))})
+  (keymap/register-action! {:id :scroll/half-down
+                            :run (fn [_ _ _] (scroll-step! 1 true))})
+  (keymap/register-action! {:id :scroll/half-up
+                            :run (fn [_ _ _] (scroll-step! -1 true))})
   ;; Escape in the composer blurs it (back to navigate mode); in any other
   ;; text field (sidebar search, bubble edit, diff modify…) it drops that
   ;; field's focus so the next key lands in navigate mode — `i` then reaches
@@ -2763,7 +2849,11 @@
   (keymap/register-action! {:id :diff/next-file
                             :run (fn [_ _ _] (jump-diff-file! :next))})
   (keymap/register-action! {:id :diff/prev-file
-                            :run (fn [_ _ _] (jump-diff-file! :prev))}))
+                            :run (fn [_ _ _] (jump-diff-file! :prev))})
+  (keymap/register-action! {:id :diff/next-hunk
+                            :run (fn [_ _ _] (jump-diff-hunk! :next))})
+  (keymap/register-action! {:id :diff/prev-hunk
+                            :run (fn [_ _ _] (jump-diff-hunk! :prev))}))
 
 (defn- real-init! []
   (let [composed  (ext/compose (web-extensions))
