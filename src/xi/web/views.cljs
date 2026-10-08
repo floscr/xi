@@ -3951,7 +3951,10 @@
        (context-menu/context-menu-trigger
         {:items (session-menu-items dispatch! (:web/session-menu-items state) card-data)
          :class "project-card-trigger"
-         :attrs {:replicant/key session-id}}
+         ;; data-session-id: :sidebar/animate-leave finds the row to play
+         ;; its leave transition on when the session is deleted
+         :attrs {:replicant/key session-id
+                 :data-session-id session-id}}
         card)
        card)
      (when buffers-open?
@@ -5549,9 +5552,7 @@
           (if cur-hidden? "Show in Recent" "Hide from Recent"))
          (cmd/command-item
           {:icon :trash
-           :on-click (fn [_]
-                       (dispatch! {:type :session/delete :session-id cur-sid})
-                       (dispatch! {:type :route/navigate :page :home}))}
+           :on-click (fn [_] (dispatch! {:type :session/delete :session-id cur-sid}))}
           "Delete session")))
      (when (seq cleanups)
        (apply cmd/command-group {:heading "Cleanup"}

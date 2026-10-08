@@ -2900,6 +2900,22 @@ code a:hover,
   line-height: 1.3;
 }
 .sidebar .project-card-info { row-gap: 1px; }
+/* Deleted session: :sidebar/animate-leave adds --leaving, the row drifts
+   left + fades while its height collapses so the rows below glide up (300ms,
+   then the row is removed for real). The effect pins an explicit px height
+   and sets it to 0 inline (height can't transition from auto, and
+   interpolate-size is missing in Firefox/Safari). */
+.sidebar .project-card-trigger {
+  overflow: hidden;
+  transition: height 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+              opacity 0.2s,
+              transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.sidebar .project-card-trigger--leaving {
+  opacity: 0;
+  transform: translateX(-16px);
+  pointer-events: none;
+}
 .sidebar .project-card-name {
   font-size: var(--font-sm);
   font-weight: 500;

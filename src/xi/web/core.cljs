@@ -811,9 +811,23 @@
           ;; broadcast instead of a :session/counts round trip per client).
           ;; Install the lobby mirror, then apply the counts — including the
           ;; pending-read logic in counts-result.
+          ;;
+          ;; Sessions deleted here (:web/deleted-session-ids) are filtered out of
+          ;; incoming lobby state: a broadcast sent before the server finished
+          ;; the delete would otherwise bring the optimistically dropped card
+          ;; back for a moment. An id is forgotten once the server stops
+          ;; listing it.
           :lobby/state
           (fn [st ev]
-            (let [{st' :state} (ws-transport/lobby-state st ev)]
+            (let [gone   (:web/deleted-session-ids st)
+                  listed (into #{} (keep :session-id) (concat (:sessions ev) (:rooms ev)))
+                  strip  (fn [ev k]
+                           (cond-> ev
+                             (contains? ev k) (update k #(vec (remove (comp gone :session-id) %)))))
+                  ev'    (if (seq gone) (-> ev (strip :sessions) (strip :rooms)) ev)
+                  {st' :state} (ws-transport/lobby-state st ev')
+                  st'    (cond-> st'
+                           (seq gone) (assoc :web/deleted-session-ids (set (filter listed gone))))]
               (if (contains? ev :counts)
                 (counts-result st' ev)
                 {:state st'})))
@@ -1311,26 +1325,43 @@
           ;; authoritative :lobby/state.
           ;;
           ;; If we're currently VIEWING the session being deleted, leave its
-          ;; room BEFORE the delete and navigate home. Otherwise the server
+          ;; room BEFORE the delete and open a fresh new chat. Otherwise the server
           ;; sees a client still attached and — rather than closing the room —
           ;; swaps it to a fresh blank session (see room_manager/session-delete),
           ;; which resurfaces in the lobby as a phantom "New session" card.
           ;; Leaving first makes the room clientless, so room-leave closes it
           ;; outright and the delete just unlinks the file.
-          :session/delete        (fn [st {:keys [session-id]}]
+          ;;
+          ;; The sidebar row animates out first (:sidebar/animate-leave), then
+          ;; the delete proper (:session/delete-now) runs.
+          :session/delete        (fn [_st {:keys [session-id]}]
+                                   {:effects [[:sidebar/animate-leave
+                                               {:session-id session-id
+                                                :then {:type :session/delete-now
+                                                       :session-id session-id}}]]})
+          :session/delete-now    (fn [st {:keys [session-id]}]
                                    (let [drop (fn [ss] (vec (remove #(= (:session-id %) session-id) ss)))
                                          viewing? (and (= :chat (get-in st [:web/route :page]))
-                                                       (= session-id (get-in st [:web/route :session-id])))]
-                                     {:state (-> st
-                                                 (update-in [:lobby :sessions] drop)
-                                                 (update :web/project-sessions drop)
-                                                 (update :web/all-sessions #(some-> % drop)))
+                                                       (= session-id (get-in st [:web/route :session-id])))
+                                         ;; the live room's lobby card drives the sidebar row
+                                         ;; of an active session, so drop it too
+                                         dropped (-> st
+                                                     (update-in [:lobby :sessions] drop)
+                                                     (update-in [:lobby :rooms] drop)
+                                                     (update :web/deleted-session-ids (fnil conj #{}) session-id)
+                                                     (update :web/project-sessions drop)
+                                                     (update :web/all-sessions #(some-> % drop)))
+                                         ;; viewing it: land in a fresh chat in the same cwd
+                                         {:keys [state effects]}
+                                         (if viewing?
+                                           (open-pending-room dropped (fresh-pending-room st (room-new-cwd st)))
+                                           {:state dropped})]
+                                     {:state state
                                       :effects (cond-> []
                                                  viewing? (conj [:ws/send {:type :room/leave}])
                                                  true     (conj [:ws/send {:type :session/delete
                                                                            :session-id session-id}])
-                                                 viewing? (conj [:app/dispatch {:type :route/navigate
-                                                                                :page :home}]))}))
+                                                 viewing? (into effects))}))
           ;; Projects
           :projects/web-list     (fn [st _ev]
                                     {:state (assoc st :web/projects-loading? true)
@@ -1931,6 +1962,24 @@
                                2))
                    (js/requestAnimationFrame #(snap (dec n))))))]
        (snap 30)))
+  ;; Play the sidebar row's leave transition (style.css), then dispatch :then.
+  ;; No row in the DOM (drawer closed, other view) or reduced motion: at once.
+  :sidebar/animate-leave
+  (fn [{:keys [dispatch!]} {:keys [session-id then]}]
+    ;; a session can sit in several groups at once (Favorites + Recent)
+    (let [els (when session-id
+                (array-seq (.querySelectorAll js/document
+                                              (str ".sidebar [data-session-id=\"" session-id "\"]"))))
+          reduced? (.-matches (js/matchMedia "(prefers-reduced-motion: reduce)"))]
+      (if (and (seq els) (not reduced?))
+        (do (doseq [^js el els]
+              ;; pin the current height first: height can't transition from auto
+              (set! (.. el -style -height) (str (.-offsetHeight el) "px"))
+              (.-offsetHeight el) ; reflow, so the 0 below transitions
+              (.add (.-classList el) "project-card-trigger--leaving")
+              (set! (.. el -style -height) "0px"))
+            (js/setTimeout #(dispatch! then) 300))
+        (dispatch! then))))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
