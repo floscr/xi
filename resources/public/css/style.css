@@ -4013,9 +4013,6 @@ code a:hover,
   .buffer-menu-item--active:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 }
 .buffer-menu-people { display: inline-flex; flex-shrink: 0; margin-left: var(--size-1); }
-/* The palette's buffer rows: the view in front gets the same tint. */
-.command-item--active-buffer { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-.command-item--active-buffer .command-item-icon { color: var(--accent); }
 .buffer-menu-title {
   flex: 1;
   min-width: 0;

@@ -218,6 +218,18 @@
     (is (str/includes? text "[CLAUDE_SYSTEM_PROMPT]"))
     (is (= :prompt (get-in state [:rooms "r" :ui :active-buffer])))))
 
+(deftest buffers-command-omits-the-buffer-in-view
+  (let [labels (fn [st] (->> (get-in st [:rooms "r" :ui :menu :items]) (map :label)))
+        {chat-st :state} (handle (with-room)
+                                 {:type :command/run :room-id "r" :name "buffers"})
+        {prompt-st :state} (-> (with-room)
+                               (apply-events {:type :command/run :room-id "r" :name "prompt"})
+                               (handle {:type :command/run :room-id "r" :name "buffers"}))]
+    (testing "chat in view: no Chat row"
+      (is (= ["Logs"] (labels chat-st))))
+    (testing "a buffer in view: Chat is back, that buffer is gone"
+      (is (= ["Chat" "Logs" "Close all buffers"] (labels prompt-st))))))
+
 (deftest tree-command-sets-flag
   (let [{:keys [state]} (handle (with-room)
                                 {:type :command/run :room-id "r" :name "tree"})]

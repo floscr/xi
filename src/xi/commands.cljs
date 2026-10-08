@@ -336,24 +336,26 @@
   "The /buffers menu: the chat, the log, every open buffer of the room
    (xi.buffers — diffs, files, the system prompt, …) in opening order, the live
    sub-agents view, and — when any buffer is open — a line that closes them
-   all. The switch is per client; the close drops them for everyone."
+   all. The buffer in view is left out (switching to it is a no-op). The
+   switch is per client; the close drops them for everyone."
   [st {:keys [room-id]}]
   (let [room (state/get-room st room-id)
-        active (get-in room [:ui :active-buffer])
+        active (get-in room [:ui :active-buffer] :chat)
         bufs   (get-in room [:ui :buffers])
         item (fn [label buffer-id]
-               {:label label
-                :description (when (= buffer-id active) "• active")
-                :event {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}})
-        items (cond-> [(item "Chat" :chat)
-                       (item "Logs" :logs)]
-                :always
-                (into (map (fn [[id buf]] (item (buffers/label id buf) id)))
-                      (buffers/ordered bufs))
-                ;; Live view over the subagent extension's room state (no
-                ;; [:ui :buffers] entry — rendered from state each pass).
-                (seq (get-in room [:ext :subagents :agents]))
-                (conj (item "Subagents" :subagents))
+               (when (not= buffer-id active)
+                 {:label label
+                  :event {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}}))
+        items (cond-> (filterv some?
+                               (concat [(item "Chat" :chat)
+                                        (item "Logs" :logs)]
+                                       (map (fn [[id buf]] (item (buffers/label id buf) id))
+                                            (buffers/ordered bufs))
+                                       ;; Live view over the subagent extension's room
+                                       ;; state (no [:ui :buffers] entry — rendered from
+                                       ;; state each pass).
+                                       (when (seq (get-in room [:ext :subagents :agents]))
+                                         [(item "Subagents" :subagents)])))
                 (seq bufs)
                 (conj {:label "Close all buffers"
                        :description (str (count bufs))

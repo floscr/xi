@@ -5088,8 +5088,9 @@
    a vector of `{:heading :items}`: \"Buffers\" — the room in view first, the
    chat then its buffers in opening order, a pick switches to it — then
    \"Other sessions\" (a pick opens that chat on the buffer), then \"Buffer
-   actions\" (\"Close all\" for the room in view). The view in front is marked;
-   empty groups are left out, so nothing when no buffer is open anywhere."
+   actions\" (\"Close all\" for the room in view). The view in front is left
+   out (switching to it is a no-op); empty groups are left out, so nothing
+   when no buffer is open anywhere."
   [state dispatch!]
   (let [room      (state/active-room state)
         room-id   (:id room)
@@ -5107,25 +5108,23 @@
                     (assoc b :session-id sid :session-name (name-of sid)))
         switch!   (fn [id]
                     (dispatch! {:type :diff/clear-selection})
-                    (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id id}))
-        mark      (fn [id title] (if (= id active) (str title "  · viewing") title))]
+                    (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id id}))]
     (->> [{:heading "Buffers"
            :items (concat
-                   (when (and room (seq own))
+                   (when (and room (seq own) (not= active :chat))
                      [(cmd/command-item
                        {:icon :terminal
                         :value "buffer chat"
-                        :class (when (= active :chat) ["command-item--active-buffer"])
                         :on-click (fn [_] (switch! :chat))}
-                       (mark :chat "Chat"))])
+                       "Chat")])
                    (for [[id buf] own
+                         :when (not= id active)
                          :let [title (buffers/label id buf)]]
                      (cmd/command-item
                       {:icon (buffer-icon (buffers/kind id buf))
                        :value (str "buffer " title)
-                       :class (when (= id active) ["command-item--active-buffer"])
                        :on-click (fn [_] (switch! id))}
-                      (mark id title))))}
+                      title)))}
           {:heading "Other sessions"
            :items (for [{:keys [id kind title session-id session-name]} others]
                     (cmd/command-item
