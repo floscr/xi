@@ -143,18 +143,46 @@
                   (do (doseq [b blocks] (println (str/join "\n" b)) (println))
                       (println (str "✗ " failures " failures, " errors " errors (" tests " tests, " assertions " assertions)"))
                       (System/exit 1))))))
+          ;; tmux kill-session does NOT reliably kill the watch window's
+          ;; npm → node → java chain: it reparents to systemd --user and the
+          ;; surviving shadow server keeps owning the :main/:web build
+          ;; workers, so the next `shadow-cljs watch main web` dies with
+          ;; "already started {:build-id :main}" and serve:await-build hangs
+          ;; forever. Once BOTH watch sessions are gone, any remaining watch
+          ;; process is such an orphan: ask the shadow server to shut down
+          ;; gracefully (its clients exit with it), then kill survivors.
+          (defn tmux-session? [name]
+            (zero? (:exit (shell {:continue true :out :string :err :string}
+                                 "tmux" "has-session" "-t" name))))
+          (defn reap-stray-shadow! []
+            (when-not (or (tmux-session? (:session config))
+                          (tmux-session? (:session serve-config)))
+              (when (seq (stray-pids "shadow-cljs watch main web"))
+                (println "Stray shadow-cljs watch (orphaned by a dead session) — stopping the shadow server …")
+                (shell {:continue true} "npx" "shadow-cljs" "stop")
+                (loop [n 0]
+                  (when (and (< n 20) (seq (stray-pids "shadow-cljs watch main web")))
+                    (Thread/sleep 500)
+                    (recur (inc n))))
+                (reap! "shadow watch" "shadow-cljs watch main web")
+                (reap! "shadow server" "shadow.cljs.devtools.cli --npm watch"))))
           (defn stop-dev-watch! []
-            (td/stop config))
+            (td/stop config)
+            (reap-stray-shadow!))
           (defn stop-serve-watch! []
             (td/stop serve-config)
-            (reap-stray-serve!)))
+            (reap-stray-serve!)
+            (reap-stray-shadow!)))
 
   dev         {:doc "Start tmux dev session (stops the serve session — both run the shadow watch)"
                :task (do (stop-serve-watch!) (td/start config))}
-  dev:stop    {:doc "Stop tmux dev session"
-               :task (td/stop config)}
-  dev:restart {:doc "Restart tmux dev session (stops the serve session — both run the shadow watch)"
-               :task (do (stop-serve-watch!) (td/restart config))}
+  dev:stop    {:doc "Stop tmux dev session (reaps an orphaned shadow watch)"
+               :task (do (td/stop config) (reap-stray-shadow!))}
+  dev:restart {:doc "Restart tmux dev session (stops the serve session — both run the shadow watch — and reaps orphaned shadow watches before starting)"
+               :task (do (stop-serve-watch!)
+                         (td/stop config)
+                         (reap-stray-shadow!)
+                         (td/start config))}
   dev:attach  {:doc "Attach to tmux dev session"
                :task (td/attach config)}
   dev:logs    {:doc "Show recent output from dev windows"
@@ -242,9 +270,10 @@
              (td/attach serve-config))}
 
   serve:stop
-  {:doc "Stop tmux serve session (also reaps leaked headless :7474 servers)"
+  {:doc "Stop tmux serve session (also reaps leaked headless :7474 servers and orphaned shadow watches)"
    :task (do (td/stop serve-config)
-             (reap-stray-serve!))}
+             (reap-stray-serve!)
+             (reap-stray-shadow!))}
 
   serve:attach
   {:doc "Attach to tmux serve session"
@@ -328,10 +357,12 @@
                              " — applies to new connections (restart the server to drop live ones).")))))}
 
   serve:restart
-  {:doc "Restart tmux serve session (stops the dev session, reaps leaked headless :7474 servers first)"
+  {:doc "Restart tmux serve session (stops the dev session, reaps leaked headless :7474 servers and orphaned shadow watches first)"
    :task (do (stop-dev-watch!)
+             (td/stop serve-config)
              (reap-stray-serve!)
-             (td/restart (assoc serve-config :print [(str "Web: http://" (host-ip) ":7474")])))}
+             (reap-stray-shadow!)
+             (td/start (assoc serve-config :print [(str "Web: http://" (host-ip) ":7474")])))}
 
   serve:await-build
   {:doc "Block until the shadow watch writes a fresh target/main.js (max 180s) — the serve session's server window runs this before starting bun"
