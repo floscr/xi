@@ -4381,7 +4381,7 @@ code a:hover,
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-  padding: var(--size-4) var(--size-5);
+  padding: var(--size-8) var(--size-5) var(--size-4);
 }
 
 .file-tab-md > .post-content {
