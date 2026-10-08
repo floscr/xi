@@ -129,6 +129,7 @@ site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:bui
 | MCP client internals (manager, trust fingerprint, wire protocol) · tree-sitter reads | [mcp-internals.md](docs/mcp-internals.md) · [treesitter.md](docs/treesitter.md) |
 | Providers (map shape, adapters, Zen/Codex internals) · the Claude SDK runner | [providers.md](docs/providers.md) · [mcp-tool-bridge.md](docs/mcp-tool-bridge.md) |
 | Web client internals · offline cache · UI components · demo | [web-client-internals.md](docs/web-client-internals.md) · [web-offline.md](docs/web-offline.md) · [frontend.md](docs/frontend.md) · [demo.md](docs/demo.md) |
+| Web animations: leave/FLIP patterns, Firefox + Replicant pitfalls | [animations.md](docs/animations.md) |
 | TUI rendering · syntax highlighting | [tui-rendering.md](docs/tui-rendering.md) · [syntax-highlighting.md](docs/syntax-highlighting.md) |
 | npm package layout · `bb package` · `bb package:serve` | [packaging.md](docs/packaging.md) |
 | Concurrent-edit safety (file hashes) · holds + cross-room git lock | [concurrent-edits.md](docs/concurrent-edits.md) · [git-lock.md](docs/git-lock.md) |
