@@ -9,6 +9,7 @@
             [xi.buffers :as buffers]
             [xi.commands :as commands]
             [xi.error-info :as error-info]
+            [xi.ext.subagent.handlers :as sa]
             [xi.core.state :as state]
             [xi.markdown.hiccup :as md]
             [xi.markdown.diff :as md-diff]
@@ -787,6 +788,51 @@
         "⋯"]]
       btn)))
 
+(defn- explain-button
+  "Explain, next to a tool block's Allow/Deny: asks a sub-agent what the call
+   does, why the agent wants it and the risk (xi.ext.subagent.handlers/
+   explain-call). `child` is the call's explanation sub-agent, if one was
+   started: the button spins while it runs and stays disabled once it is
+   done; a failed or stopped one can be retried."
+  [dispatch! room-id call-id child]
+  (let [status   (:status child)
+        running? (= :running status)
+        done?    (= :done status)]
+    [:button {:class (cond-> ["confirm-btn" "confirm-btn--explain"]
+                       running? (conj "confirm-btn--explain-running"))
+              :disabled (or running? done?)
+              :title "Ask a sub-agent what this call does and why"
+              :on {:click (fn [_] (dispatch! {:type :subagent/explain-call
+                                              :room-id room-id :call-id call-id}))}}
+     (when running? [:span {:class ["agent-status-spinner--sm"]}])
+     (cond running? "Explaining…"
+           done?    "Explained"
+           :else    "Explain")]))
+
+(defn- explanation-block
+  "The explanation a tool block's Explain button produced, under the block:
+   the explain-<call-id> sub-agent's text (xi.ext.subagent.handlers), streamed
+   while it runs and kept once the ask is answered. Hidden while the
+   sub-agent is still silent and the button's own spinner shows the wait
+   (`pending?` — the ask is still open)."
+  [{:keys [status history result]} pending?]
+  (let [running? (= :running status)
+        text     (or result (sa/final-text history))]
+    (when (or (seq text) (not running?) (not pending?))
+      [:div {:class ["tool-explain" (str "tool-explain--" (name (or status :running)))]}
+       [:div {:class ["tool-explain-head"]}
+        (icon/icon {:icon-name :info :size :sm})
+        [:span "Explanation"]
+        (when running? (spinner))]
+       [:div {:class ["tool-explain-body" "post-content"]}
+        (cond
+          (seq text) (render-md text)
+          running?   [:div {:class ["tool-explain-empty"]} "Explaining…"]
+          :else      [:div {:class ["tool-explain-empty"]}
+                      (case status
+                        :stopped "The explanation was stopped."
+                        "The explanation failed.")])]])))
+
 (defn- diff-preview
   "A change preview ({:path :text} — the diff a guarded write/edit asked to
    make; its ask's :diff, kept on the tool-call entry by :ui/dialog-open),
@@ -842,7 +888,7 @@
    :tool-blocks appearance setting); `:room-ext` — the room's extension
    slices, for extension tool views. All stamped by chat-view."
   [dispatch! {:keys [id tool arguments result is-error status started-at diff
-                     permission resolved-permission
+                     permission resolved-permission explanation room-id
                      grouped? collapsed? cwd room-ext md-diff-code?]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-summary name arguments cwd)
@@ -971,7 +1017,8 @@
            [:div {:class ["tool-call-permission"]}
             [:div {:class ["tool-call-permission-msg"]} (or message text)]
             [:div {:class ["tool-call-permission-actions"]}
-             (confirm-buttons dialog answer! deny-reason!)]]]))
+             (confirm-buttons dialog answer! deny-reason!)
+             (explain-button dispatch! room-id id explanation)]]]))
       (when imgs
         [:div {:class ["tool-call-content" "user-images"]}
          (map-indexed
@@ -984,7 +1031,12 @@
                      :on {:click (fn [^js e]
                                    (.stopPropagation e)
                                    (dispatch! {:type :lightbox/open :src src}))}}]))
-          imgs)])]]))
+          imgs)])]
+     ;; The Explain button's answer, under the block (outside the <details>,
+     ;; so a collapsed block keeps it in view). Sticks after the ask is
+     ;; answered: it lives in the mirrored sub-agent state, not the dialog.
+     (when explanation
+       (explanation-block explanation (some? permission)))]))
 
 ;; ── Error card ───────────────────────────────────────────────────────────────
 
@@ -3292,7 +3344,10 @@
 
 (defn- subagents-panel [dispatch! room]
   (let [room-id (:id room)
-        {:keys [agents collapsed?]} (get-in room [:ext :subagents])]
+        {:keys [agents collapsed?]} (get-in room [:ext :subagents])
+        ;; A tool block's explanation (its Explain button) renders under
+        ;; that block, not here.
+        agents  (remove #(sa/explain-sub? (:id %)) agents)]
     (when (seq agents)
       (let [running (count (filter #(= :running (:status %)) agents))
             open?   (not collapsed?)]
@@ -3630,7 +3685,9 @@
                      ritems    (fn [p] (map (fn [e] {:key (str "rdlg-" (:key e))
                                                      :group? false
                                                      :node (resolved-dialog-post (:key e) e)})
-                                            (remove :tool-id (get by-anchor p))))]
+                                            (remove :tool-id (get by-anchor p))))
+                     ;; the room's sub-agents, for tool blocks' explanations
+                     agents    (get-in room [:ext :subagents :agents])]
                  (group-viewer-items
                   (and viewer? (:super-collapsed? app))
                   (concat
@@ -3665,7 +3722,11 @@
                                tool?    (= :tool-call (:kind entry))
                                md-code? (contains? (:web/md-diff-code state) (:id entry))
                                editing? (and (= :user (:kind entry)) (= p (:index editing)))
-                               resolved (resolved-by-tool (:id entry))]
+                               resolved (resolved-by-tool (:id entry))
+                               ;; the call's explanation sub-agent, if the
+                               ;; user pressed Explain on its ask
+                               explanation (when tool?
+                                             (sa/find-explain agents (:id entry)))]
                            (memo-timeline-items
                             entry
                             ;; Everything below reads besides the entry; nil (the
@@ -3675,7 +3736,8 @@
                               [p dispatch! cwd (:id room) sender groupable? collapsed?
                                (when tool?
                                  (tool-views/inputs (util/strip-mcp-prefix (:tool entry)) (:ext room)))
-                               md-code? (when editing? [(:text editing)]) resolved])
+                               md-code? (when editing? [(:text editing)]) resolved
+                               explanation])
                             (fn []
                               (when-let [post (entry->post
                                                dispatch!
@@ -3703,7 +3765,9 @@
                                                                                   :room-id (:id room)
                                                                                   :dialog-id (:id pending-dialog)})})
                                                  resolved
-                                                 (assoc :resolved-permission resolved)))]
+                                                 (assoc :resolved-permission resolved)
+                                                 explanation
+                                                 (assoc :explanation explanation)))]
                                 [{:key (str "h-" p)
                                   :group? groupable?
                                   :collapsed? collapsed?

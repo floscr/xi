@@ -56,6 +56,14 @@
                         (cond-> res
                           (not (:remote? ev)) (assoc :effects [[:ws/send ev]]))))
                     :subagent/promote promote
-                    :subagent/promoted promoted)
+                    :subagent/promoted promoted
+                    ;; Explain button on a permission-gated tool block: the
+                    ;; spawn needs the parent transcript path and runs
+                    ;; server-side, so forward the click; the :subagent/spawn
+                    ;; it causes comes back as a mirrored broadcast.
+                    :subagent/explain-call
+                    (fn [_st ev]
+                      (when-not (:remote? ev)
+                        {:effects [[:ws/send ev]]})))
    :fx       {:subagent/start    (fn [_ _] nil)
               :subagent/promote! (fn [_ _] nil)}})

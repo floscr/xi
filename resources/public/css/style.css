@@ -1899,11 +1899,20 @@ body {
   border: 2px solid var(--bg-2);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 0.9s infinite;
   flex-shrink: 0;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+/* One revolution per cycle, but not at a constant speed: the first ~55% of
+   the cycle whips through most of the turn with a strong ease-out, then the
+   last 40° crawl linearly before the next snap. Transform-only, so it stays
+   on the compositor — same cost as the old linear spin. The timing function
+   lives in the keyframes so every consumer (`spin <dur> infinite`) gets it. */
+@keyframes spin {
+  0%   { transform: rotate(0deg);   animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1); }
+  55%  { transform: rotate(320deg); animation-timing-function: linear; }
+  100% { transform: rotate(360deg); }
+}
 
 .icon-btn--sm {
   width: 24px;
@@ -1917,7 +1926,7 @@ body {
   border: 1.5px solid var(--bg-2);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 0.9s infinite;
   flex-shrink: 0;
 }
 
@@ -2493,6 +2502,62 @@ code a:hover,
   gap: var(--size-2);
   flex-wrap: wrap;
 }
+
+/* Explain: a quiet ghost pushed to the far end of the Allow/Deny row. While
+   its sub-agent runs it shows a small spinner and reads "Explaining…";
+   once done it stays as a disabled "Explained". */
+.confirm-btn--explain {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-1);
+}
+
+.confirm-btn--explain:hover:not(:disabled) {
+  background: var(--bg-2, rgba(128,128,128,0.2));
+  color: var(--fg-0);
+}
+
+.confirm-btn--explain:disabled {
+  cursor: default;
+  color: var(--fg-2);
+}
+
+/* The explanation under a tool block (the Explain button's answer): its own
+   grey panel below the block, so it stays in view when the block collapses
+   and after the ask is answered. */
+.tool-explain {
+  margin: 0 0 var(--size-1);
+  padding: var(--size-2) var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  font-size: var(--font-sm);
+}
+
+.tool-explain-head {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  margin-bottom: var(--size-1);
+  color: var(--fg-2);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tool-explain-head .agent-status-spinner { margin-left: var(--size-1); }
+
+.tool-explain-body > :first-child { margin-top: 0; }
+.tool-explain-body > :last-child { margin-bottom: 0; }
+
+.tool-explain-empty { color: var(--fg-2); }
+
+.tool-explain--error .tool-explain-empty { color: var(--danger); }
 
 /* While a permission ask targets part of the block's code (the dialog's
    :target ranges — the (spit …) / (sh …) call that raised it), the rest of
@@ -4611,7 +4676,7 @@ code a:hover,
   border: 3px solid var(--bg-2);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 0.9s infinite;
 }
 
 /* ── Client auth (pairing) ──────────────────────────────────────────────── */

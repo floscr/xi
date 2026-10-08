@@ -24,6 +24,7 @@
    tools, the turn-running effect wiring, system prompt. The pure state
    handlers live in xi.ext.subagent.handlers so the web half can reuse them."
   (:require [clojure.string :as str]
+            [xi.core.state :as state]
             [xi.ext.subagent.handlers :as h]
             [xi.session :as session]
             [xi.subagent :as subagent]))
@@ -131,6 +132,17 @@
                         :session (session/load-session summary)
                         :summary summary
                         :messages (session/read-session-messages summary)})))))))
+
+(defn- explain-call
+  "h/explain-call with the parent transcript's path (a node-only lookup), so
+   the explanation sub-agent can read the full conversation when the excerpt
+   in its prompt isn't enough."
+  [st {:keys [room-id] :as ev}]
+  (let [room (state/get-room st room-id)
+        sess (:session room)]
+    (h/explain-call st (assoc ev :transcript
+                              (session/transcript-path (or (:cwd sess) (:cwd room))
+                                                       (:provider-session-id sess))))))
 
 ;; ── Tools (registry fns; dispatch!/get-state/room-id come from the tool ctx) ──
 
@@ -283,6 +295,8 @@
                             :room/close on-room-close
                             :subagent/abort abort-sub
                             :subagent/promote promote-sub
+                            ;; The web Explain button (xi.web.views tool-post).
+                            :subagent/explain-call explain-call
                             ;; Chained after the core resume handler by
                             ;; ext/merge-handlers — reseeds promoted stubs.
                             :session/resumed h/on-session-resumed)

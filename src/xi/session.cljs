@@ -558,6 +558,14 @@
       primary
       (get (claude-transcript-index) fname))))
 
+(defn transcript-path
+  "The Claude CLI transcript (JSONL) of a session on disk, by its cwd and
+   cli session id (a room's [:session :provider-session-id]) — or nil when
+   there is none (no id yet, another provider). See find-claude-transcript."
+  [cwd cli-sid]
+  (when (seq (str cli-sid))
+    (find-claude-transcript cwd cli-sid)))
+
 (defn delete-session!
   "Delete a session by its summary map (must contain :filepath and :source).
    Returns true if the primary file was deleted, false if it was not found.

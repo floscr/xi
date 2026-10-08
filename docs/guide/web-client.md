@@ -41,7 +41,11 @@ devices and `xi clients revoke <name>` removes one.
 
 - **Chat.** Send messages, attach images and files (paste an image, use the
   picker, or drag files from your desktop onto the chat), stop a running
-  turn, and answer permission requests with Allow or Deny.
+  turn, and answer permission requests with Allow or Deny. **Explain** on a
+  permission request starts a [sub-agent](builtin-tools.md#sub-agents) that
+  reads the call, the conversation and the session transcript and says what
+  the call does, why the agent wants it and the risk. The answer appears
+  under the tool block and stays there after you decide.
 - **Read what the agent did.** Tool calls and thinking are collapsed blocks.
   Open one in place, or switch the appearance settings (gear in the sidebar
   footer) to keep them open.

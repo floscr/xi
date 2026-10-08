@@ -15,7 +15,9 @@
    status: :running | :done | :error | :stopped"
   (:require [clojure.string :as str]
             [xi.agent :as agent]
-            [xi.core.state :as state]))
+            [xi.core.state :as state]
+            [xi.dialog :as dialog]
+            [xi.util :as util]))
 
 (def ext-id :subagents)
 
@@ -212,8 +214,167 @@
                                         (and sub-id (not= sub-id (:id a)))))
                                   as)))}))
 
+;; ── Explain a permission-gated tool call ─────────────────────────────────────
+;; The web client's tool block grows an Explain button next to Allow/Deny.
+;; It spawns an ordinary sub-agent whose id is derived from the tool call's
+;; (explain-<call-id>), so the block finds its explanation in the mirrored
+;; :agents list — streaming while it runs, kept after the ask is answered —
+;; with no extra state. The Sub-agents panel hides these (explain-sub?).
+
+(def ^:private explain-prefix "explain-")
+
+(defn explain-sub-id
+  "Sub-agent id of the explanation for tool call `call-id` — one per call."
+  [call-id]
+  (str explain-prefix call-id))
+
+(defn explain-sub?
+  "An explanation sub-agent (the web Explain button's)? Those render under
+   their tool block instead of in the Sub-agents panel."
+  [sub-id]
+  (and (string? sub-id) (str/starts-with? sub-id explain-prefix)))
+
+(defn find-explain
+  "The explanation child of tool call `call-id` in `agents`, or nil."
+  [agents call-id]
+  (let [sub-id (explain-sub-id call-id)]
+    (some #(when (= sub-id (:id %)) %) agents)))
+
+(def ^:private explain-max-arg-chars 6000)
+(def ^:private explain-max-diff-chars 6000)
+(def ^:private explain-max-msg-chars 1500)
+(def ^:private explain-recent-entries 12)
+
+(defn- clip [s n]
+  (let [s (str s)]
+    (if (> (count s) n)
+      (str (subs s 0 n) "\n… (" (- (count s) n) " more characters)")
+      s)))
+
+(defn- format-arguments
+  "`key: value` lines for a tool call's arguments (strings verbatim, so code
+   and prose read naturally; the rest via pr-str), each value clipped."
+  [arguments]
+  (if (empty? arguments)
+    "(no arguments)"
+    (str/join "\n"
+              (map (fn [[k v]]
+                     (str (name k) ": " (clip (if (string? v) v (pr-str v))
+                                              explain-max-arg-chars)))
+                   arguments))))
+
+(defn- recent-context
+  "The parent conversation before the call as a transcript excerpt: the last
+   prompts and replies (clipped), earlier tool calls as one-liners, thinking
+   dropped."
+  [entries]
+  (->> entries
+       (remove #(= :thinking (:kind %)))
+       (take-last explain-recent-entries)
+       (keep (fn [{:keys [kind text tool arguments is-error]}]
+               (case kind
+                 :user      (str "[user]\n" (clip text explain-max-msg-chars))
+                 :text      (str "[assistant]\n" (clip text explain-max-msg-chars))
+                 :tool-call (str "[tool call] " (util/strip-mcp-prefix (str tool)) " "
+                                 (clip (pr-str arguments) 200)
+                                 (when is-error " → error"))
+                 nil)))
+       (str/join "\n\n")))
+
+(defn explain-prompt
+  "The explanation sub-agent's prompt: the gated call, its ask, the parent
+   conversation leading up to it, and where the full transcript lives so the
+   sub-agent can widen its context when the excerpt isn't enough."
+  [{:keys [entry dialog recent cwd transcript]}]
+  (let [diff (or (:diff entry) (:diff dialog))]
+    (str
+     "You are explaining a tool call to the user of a coding agent. The agent "
+     "wants to run it; a permission prompt is holding it, and the user has to "
+     "decide whether to allow or deny. Give them what they need to decide.\n\n"
+     "## The call\n"
+     "- tool: " (util/strip-mcp-prefix (str (:tool entry))) "\n"
+     (when cwd (str "- working directory: " cwd "\n"))
+     "- arguments:\n```\n" (format-arguments (:arguments entry)) "\n```\n"
+     (when-let [m (or (:message dialog) (:text dialog))]
+       (str "\n## The permission prompt\n" m "\n"))
+     (when (seq (:text diff))
+       (str "\n## The change it would make (" (:path diff) ")\n```diff\n"
+            (clip (:text diff) explain-max-diff-chars) "\n```\n"))
+     "\n## The conversation so far (most recent last)\n"
+     (if (seq recent) recent "(no earlier messages)")
+     "\n\n## Wider context\n"
+     (if transcript
+       (str "The full parent transcript is the JSONL file " transcript
+            " — read or grep it when the excerpt above doesn't say why the "
+            "agent is doing this.\n")
+       "There is no transcript on disk; work from the excerpt above.\n")
+     "You may read files in the working directory to see what the call "
+     "touches. Use read-only tools only (read, grep, find, ls); never run the "
+     "call yourself or anything with side effects — nobody is there to "
+     "approve it.\n\n"
+     "## Your answer\n"
+     "Markdown, under 150 words, for a reader who did not watch the "
+     "conversation:\n"
+     "- **What it does** — concretely: which files, commands or services it "
+     "touches and how.\n"
+     "- **Why** — what the agent is trying to achieve, from the conversation.\n"
+     "- **Risk** — reversible or not, anything destructive or surprising, "
+     "anything that doesn't match what the user asked for.\n"
+     "End with one line `**Recommendation:** allow` or "
+     "`**Recommendation:** deny`, with a short reason. Output nothing else.")))
+
+(defn- call-index [history call-id]
+  (first (keep-indexed (fn [i e]
+                         (when (and (= :tool-call (:kind e)) (= call-id (:id e))) i))
+                       history)))
+
+(defn- call-dialog
+  "The pending :confirm dialog gating the tool call at `idx`, or nil."
+  [dialogs history idx]
+  (some (fn [d]
+          (when (and (= :confirm (:type d))
+                     (= idx (dialog/permission-tool-index d history 0)))
+            d))
+        dialogs))
+
+(defn explain-call
+  "Explain button on a tool block: spawn the call's explanation sub-agent.
+   Pure, and a no-op on state — the spawn (and the dismissal of a failed or
+   stopped earlier attempt) go out as :app/dispatch effects so they are
+   broadcast and mirrored like any sub-agent event, and the web half can
+   forward this event without applying it. nil when the call isn't in the
+   history or its explanation is running or done. `:transcript` is the parent
+   transcript path, added by the node ext (xi.ext.subagent)."
+  [st {:keys [room-id call-id transcript]}]
+  (when-let [room (state/get-room st room-id)]
+    (let [history  (vec (:history room))
+          idx      (call-index history call-id)
+          existing (find-explain (agents st room-id) call-id)]
+      (when (and idx (not (#{:running :done} (:status existing))))
+        (let [entry  (nth history idx)
+              dialog (call-dialog (get-in room [:ui :dialogs]) history idx)
+              tool   (util/strip-mcp-prefix (str (:tool entry)))]
+          {:effects (cond-> []
+                      existing (conj [:app/dispatch {:type :subagent/dismiss
+                                                     :room-id room-id
+                                                     :sub-id (:id existing)}])
+                      true     (conj [:app/dispatch
+                                      {:type    :subagent/spawn
+                                       :room-id room-id
+                                       :sub-id  (explain-sub-id call-id)
+                                       :label   (str "Explain " tool)
+                                       :task    (str "Explain the " tool " call awaiting approval")
+                                       :prompt  (explain-prompt
+                                                 {:entry      entry
+                                                  :dialog     dialog
+                                                  :recent     (recent-context (subvec history 0 idx))
+                                                  :cwd        (:cwd room)
+                                                  :transcript transcript})}]))})))))
+
 (def handlers
-  "The pure state-updating handlers, shared by the node + web builds."
+  "The pure state-updating handlers, shared by the node + web builds.
+   :subagent/explain-call is registered by each half on its own: the web
+   forwards it, the node adds the transcript path (see explain-call)."
   {:subagent/spawn           spawn
    :subagent/text-delta      text-delta
    :subagent/thinking-delta  thinking-delta

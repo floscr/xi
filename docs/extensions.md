@@ -459,7 +459,7 @@ namespace docstring is the authoritative description.
 | commit | Hunk-level staging + commit tools; `/commit`. |
 | session-search | Search previous sessions by title and content. |
 | events | Agent tool for inspecting the session event log. |
-| subagent | Background sub-agents (`spawn_subagent` …); `/subagents`. |
+| subagent | Background sub-agents (`spawn_subagent` …); `/subagents`. The web client's Explain button on a permission-gated tool block sends `:subagent/explain-call` (web half forwards it; node half adds the parent transcript path), which spawns an ordinary sub-agent with id `explain-<call-id>` (`xi.ext.subagent.handlers/explain-call`, prompt from the call + ask + recent history). The tool block finds its explanation by that id in the mirrored `:agents`; the Sub-agents panel hides those (`explain-sub?`). |
 | mcp | Wraps external MCP servers (`~/.config/xi/mcp.edn`) as extensions; `/mcp`. See [mcp-internals.md](mcp-internals.md). |
 | extensions | `/ext list\|enable\|disable\|reload` over the live extension manager (`reload` re-reads [user extensions](guide/extensions.md); agents get the same as the `ext_reload` tool). |
 
