@@ -96,11 +96,12 @@
    (declared there like extensions). Insertion order is preserved (array-map),
    so model listing follows the config's picker order.
 
-   With XI_FAKE_LLM set (end-to-end tests), every id maps to the scripted
-   fake (xi.providers.fake) instead, so no turn — side turns included — can
-   reach a real model."
+   With XI_FAKE_LLM set (end-to-end tests), the scripted fake
+   (xi.providers.fake) is the only provider, as :anthropic: side turns ask
+   for :anthropic by id and agent/resolve-provider falls back to it for every
+   other model, so no turn can reach a real model."
   (if (fake/script-path)
-    (fake/providers (map :id config/providers))
+    {:anthropic (fake/provider :anthropic)}
     (into {} (map (juxt :id identity)) config/providers)))
 
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────

@@ -3,8 +3,11 @@
    no endpoint is ever called.
 
    Active when XI_FAKE_LLM names a script file: xi.cli then installs this
-   provider under EVERY provider id, so side turns (titles, summaries,
-   compaction), which ask for :anthropic by id, are scripted too.
+   provider as the only one, under :anthropic. Side turns (titles,
+   summaries, compaction) ask for :anthropic by id, and every other model
+   falls back to it (xi.agent/resolve-provider), so all turns are scripted.
+   A turn's :provider (for `:when` and the log) is the provider the model
+   would have used without the fake.
 
    Script (re-read every turn):
 
@@ -49,6 +52,7 @@
             [xi.session :as session]
             [xi.session.sync :as sync]
             [xi.tools.registry :as tools]
+            [xi.util :as util]
             ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
@@ -167,7 +171,7 @@
 ;; ── Turn ─────────────────────────────────────────────────────────────────────
 
 (defn- start-turn!
-  [id {:keys [prompt model system cwd no-tools? resume-session-id tool-ctx tool-policy
+  [{:keys [prompt model system cwd no-tools? resume-session-id tool-ctx tool-policy
               on-text on-thinking on-tool-start on-tool-args on-tool-result on-error
               on-session]
        :as opts}]
@@ -182,7 +186,8 @@
         flags      #js {:aborted false :wake nil}
         !turn      (atom {:messages [{:role "user" :content prompt}]
                           :blocks [] :calls [] :usage {:input_tokens 0 :output_tokens 0}})
-        req        {:provider id :model model :prompt prompt :system system
+        req        {:provider (or (:provider opts) (util/provider-for-model model))
+                    :model model :prompt prompt :system system
                     :user user :tools tool-names :side? side?}
         base-entry (merge req {:cwd cwd :resume-session-id resume-session-id
                                :session-id sid
@@ -303,9 +308,4 @@
 (defn provider
   "The fake provider, registered under provider id `id`."
   [id]
-  {:id id :start-turn! (fn [opts] (start-turn! id opts))})
-
-(defn providers
-  "Provider id → fake provider for every id in `ids` (order kept)."
-  [ids]
-  (into (array-map) (map (juxt identity provider)) ids))
+  {:id id :start-turn! start-turn!})

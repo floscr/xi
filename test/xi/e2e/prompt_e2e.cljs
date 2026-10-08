@@ -36,6 +36,21 @@
 (deftest a-minimal-config-gets-an-answer
   (async done (plain-turn profiles/minimal done)))
 
+(deftest every-model-is-the-fake
+  (async done
+    (h/with-env! profiles/minimal chat-script done
+      (fn [env]
+        (-> (js/Promise.all #js [(h/prompt! env "hello" "--model" "qwen3:8b")
+                                 (h/prompt! env "hello" "--model" "opencode/some-model")])
+            (.then
+             (fn [results]
+               (doseq [{:keys [code stdout stderr]} results]
+                 (is (= 0 code) stderr)
+                 (is (= "hello from the fake\n" stdout)))
+               (testing "the log names the provider the model would have used"
+                 (is (= #{["ollama" "qwen3:8b"] ["zen" "opencode/some-model"]}
+                        (set (map (juxt :provider :model) (h/llm-log env)))))))))))))
+
 (deftest a-session-resumes-with-its-history
   (async done
     (h/with-env! profiles/minimal chat-script done

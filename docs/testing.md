@@ -13,10 +13,12 @@ shadow watch keeps fresh and compiles it first only when no watch runs.
 
 ## The fake LLM (`xi.providers.fake`)
 
-With `XI_FAKE_LLM=<script.edn>` set, `xi.cli/providers` maps **every**
-provider id (`:anthropic :ollama :openai :zen`) to the fake, so no turn
-reaches a model, side turns included (titles, summaries and compaction ask
-for `:anthropic` by id). xi prints `[fake-llm] …` on stderr at startup.
+With `XI_FAKE_LLM=<script.edn>` set, the fake is the only provider in
+`xi.cli/providers`, under `:anthropic`. Side turns (titles, summaries,
+compaction) ask for `:anthropic` by id, and `xi.agent/resolve-provider`
+falls back to it for every other model (`qwen3:8b`, `opencode/…`), so no
+turn reaches a model. xi prints `[fake-llm] …` on stderr at startup. The
+model picker lists nothing (the fake has no `:list-models!`).
 
 The script is re-read every turn, so a test can swap it between turns:
 
@@ -34,7 +36,8 @@ The script is re-read every turn, so a test can swap it between turns:
 
 `:when` keys, all optional, all must hold, first matching rule wins:
 `:prompt` (substring), `:re` (regex string), `:model` (substring),
-`:provider` (id the turn asked for), `:system` (substring), `:user` (the
+`:provider` (the provider the model would use without the fake, e.g.
+`:ollama` for `qwen3:8b`), `:system` (substring), `:user` (the
 turn's user), `:tool` (a tool advertised this turn), `:side?`. Rules without
 `:side? true` never match side turns (the title turn quotes the user's
 prompt and would match otherwise).
