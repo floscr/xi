@@ -2807,6 +2807,10 @@
   ;; The Ctrl/Cmd+K palette, top level (its first group lists the chats).
   (keymap/register-action! {:id :palette/open :event {:type :palette/open}})
   (keymap/register-action! {:id :projects/pick :event {:type :palette/open-project-list}})
+  ;; Pick a project and insert its path into the draft — the web twin of the
+  ;; projects extension's TUI alt+p (:project/open), so one :keys binding
+  ;; covers both clients.
+  (keymap/register-action! {:id :project/open :event {:type :palette/open-projects}})
   (keymap/register-action! {:id :skills/search :event {:type :palette/open-skills}})
   (keymap/register-action! {:id :projects/open
                             :event {:type :route/navigate :page :home}})
