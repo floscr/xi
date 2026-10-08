@@ -30,7 +30,11 @@
    (\"alt+N\" is \"alt+n\"); a bare uppercase letter means shift (\"G\" is
    \"shift+g\"). Named keys: escape enter tab backspace delete space insert
    up down left right home end pageup pagedown f1…f12. A sequence of chords
-   is written with spaces: \"g g\", \"] c\"."
+   is written with spaces: \"g g\", \"] c\". Sequences make leader keys:
+   \"space g g\" in :mode/navigate is SPC g g.
+
+   A binding's value is an action id, nil (unbind), or a string: the text to
+   send in the current chat, e.g. \"space g c\" → \"/commit\" (web only)."
   (:require [clojure.string :as str]))
 
 ;; ── Chords ───────────────────────────────────────────────────────────────────
@@ -104,11 +108,19 @@
             (chord {:key key* :ctrl (:ctrl ms) :alt (:alt ms) :shift (:shift ms)
                     :meta (:meta ms) :mod (:mod ms)})))))))
 
+(defn key-spec?
+  "True for the two spellings of a binding's key: a string (\"g g\") or a
+   non-empty vector of chord strings ([\"g\" \"g\"])."
+  [k]
+  (or (string? k)
+      (and (sequential? k) (seq k) (every? string? k))))
+
 (defn parse-key
-  "A key spec — one chord or a space-separated sequence (\"g g\", \"] c\") →
-   canonical string, or nil when any chord is invalid."
+  "A key spec — one chord or a sequence, written \"g g\" / \"] c\" or as a
+   vector [\"g\" \"g\"] → canonical string, or nil when any chord is invalid."
   [s]
-  (let [chords (mapv parse-chord (str/split (str/trim (str s)) #"\s+"))]
+  (let [s      (if (sequential? s) (str/join " " s) s)
+        chords (mapv parse-chord (str/split (str/trim (str s)) #"\s+"))]
     (when (and (seq chords) (every? some? chords))
       (str/join " " chords))))
 
@@ -214,6 +226,7 @@
    :session/prev            {:label "Previous chat" :surface #{:web}}
    :sessions/prune          {:label "Prune: run every sidebar cleanup" :surface #{:web}}
    :files/find              {:label "Find a file" :surface #{:web}}
+   :git/status              {:label "Git status" :surface #{:web}}
    :buffers/switch          {:label "Switch buffer" :surface #{:web}}
    :compose/focus           {:label "Focus the message box" :surface #{:web}}
    :compose/blur            {:label "Leave the text field" :surface #{:web}}
@@ -353,14 +366,16 @@
     :else
     (some (fn [[k a]]
             (cond
-              (not (string? k))
-              (str layer ": keys are strings like \"alt+n\", got " (pr-str k))
+              (not (key-spec? k))
+              (str layer ": keys are strings like \"alt+n\" or vectors like [\"space\" \"g\"], got "
+                   (pr-str k))
               (nil? (parse-key k))
               (str layer ": " (pr-str k) " is not a key — write modifiers as "
                    "ctrl/alt/shift/meta/mod, then one character or a named key "
                    "(escape, enter, tab, up, …), chords separated by spaces")
-              (not (or (nil? a) (keyword? a)))
-              (str layer ": " (pr-str k) " must map to an action keyword or nil, got " (pr-str a))))
+              (not (or (nil? a) (keyword? a) (and (string? a) (not (str/blank? a)))))
+              (str layer ": " (pr-str k) " must map to an action keyword, a non-empty "
+                   "string to send, or nil, got " (pr-str a))))
           bindings)))
 
 (defn config-error
@@ -415,7 +430,7 @@
                 (when (and (keyword? l) (map? bindings))
                   [l (into {}
                            (mapcat (fn [[k a]]
-                                     (when-let [ck (and (string? k) (parse-key k))]
+                                     (when-let [ck (and (key-spec? k) (parse-key k))]
                                        (for [k' (expand-mod ck surface)] [k' a]))))
                            bindings)])))
         layers))

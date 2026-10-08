@@ -113,10 +113,38 @@
   (is (re-find #"must be a map of" (keys/config-error {:global ["alt+n"]})))
   (is (re-find #"keys are strings" (keys/config-error {:global {:alt-n :chat/new}})))
   (is (re-find #"\"alt\+\+\+\" is not a key" (keys/config-error {:global {"alt+++" :chat/new}})))
-  (is (re-find #"must map to an action keyword" (keys/config-error {:global {"alt+n" "new"}})))
+  (is (re-find #"must map to an action keyword" (keys/config-error {:global {"alt+n" 5}})))
+  (is (re-find #"non-empty string" (keys/config-error {:global {"alt+n" "  "}})))
+  (is (nil? (keys/config-error {:mode/navigate {"space g c" "/commit"}})) "a string sends text")
+  (is (nil? (keys/config-error {:mode/navigate {["space" "g" "c"] "/commit"}})) "a vector is a sequence")
+  (is (re-find #"is not a key" (keys/config-error {:mode/navigate {["space" "nope+x"] :files/find}})))
+  (is (re-find #"keys are strings" (keys/config-error {:mode/navigate {[] :files/find}})))
+  (is (re-find #"keys are strings" (keys/config-error {:mode/navigate {["space" 1] :files/find}})))
   (is (re-find #":defaults\? must be true or false" (keys/config-error {:defaults? 1})))
   (is (re-find #"cannot nest :tui" (keys/config-error {:web {:tui {}}})))
   (is (re-find #":keys :web :global" (keys/config-error {:web {:global {"nope+x" :a}}}))))
+
+(deftest leader-keys
+  (let [km (keys/effective-keymap
+            {:surface :web
+             :user {:web {:mode/navigate {["space" "space"]  :files/find
+                                          ["space" "g" "c"]  "/commit"
+                                          "space g g"         :git/status
+                                          ["space" "b" "b"]  :buffers/switch}}}})
+        layers [:mode/navigate :global]
+        step   (fn [pending chord] (keys/lookup km layers pending chord))]
+    (testing "space starts a sequence in navigate mode"
+      (is (= {:status :pending :pending ["space"]} (step [] "space")))
+      (is (= {:status :pending :pending ["space" "g"]} (step ["space"] "g"))))
+    (testing "sequences resolve to actions and to text"
+      (is (= :files/find (:action (step ["space"] "space"))))
+      (is (= :buffers/switch (:action (step ["space" "b"] "b"))))
+      (is (= :git/status (:action (step ["space" "g"] "g"))))
+      (is (= "/commit" (:action (step ["space" "g"] "c")))))
+    (testing "a key outside the tree is unbound"
+      (is (= :unbound (:status (step ["space"] "z")))))
+    (testing "the text action shows up as the key for its text"
+      (is (= "Space g c" (keys/shortcut km layers "/commit"))))))
 
 (deftest effective-keymap-merging
   (let [km (keys/effective-keymap {:surface :web})]

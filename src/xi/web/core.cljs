@@ -2687,6 +2687,14 @@
   ;; browser's print dialog never opens on Ctrl/Cmd+P).
   (keymap/register-action! {:id :files/find :event {:type :palette/open-file-finder}})
   (keymap/register-action! {:id :buffers/switch :event {:type :palette/open-buffers}})
+  ;; The working-tree diff in the chat's :diff buffer — the palette's / overflow
+  ;; menu's "Git status".
+  (keymap/register-action! {:id :git/status
+                            :when (fn [st] (some? (:id (state/active-room st))))
+                            :run (fn [st dispatch! _]
+                                   (dispatch! {:type :diff/reopen
+                                               :room-id (:id (state/active-room st))
+                                               :method "git" :engine :git}))})
   ;; Next / prev session in sidebar order (no wrap; from a non-chat view they
   ;; open the first session).
   (keymap/register-action! {:id :session/next

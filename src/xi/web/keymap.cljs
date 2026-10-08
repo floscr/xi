@@ -27,6 +27,9 @@
              :run then defaults to dispatching it, and UI rows dispatching
              the same event show the action's key (`event-shortcut`)
 
+   A binding may also be a string instead of an action id: the text to send
+   in the current chat (`text-action`), e.g. a slash command.
+
    Transient layers are registered with `register-layer!` ({:id :when})."
   (:require [clojure.string :as str]
             [xi.buffers :as buffers]
@@ -216,11 +219,29 @@
            page (conj (keyword "page" (name page))))
          (conj (if (= mode :compose) :mode/compose :mode/navigate) :global)))))
 
+(defn- text-action
+  "The action behind a string binding: send `text` as a message in the chat
+   on screen (a slash command runs, anything else is a prompt). Only on the
+   chat page with a room; elsewhere the key falls through."
+  [text]
+  {:when (fn [st]
+           (and (= :chat (get-in st [:web/route :page]))
+                (some? (:id (state/active-room st)))))
+   :run  (fn [st dispatch! _]
+           (dispatch! {:type :input/submit
+                       :room-id (:id (state/active-room st))
+                       :text text}))})
+
+(defn- resolve-action
+  "The registered action for `id`, or the text action of a string binding."
+  [id]
+  (if (string? id) (text-action id) (get @actions id)))
+
 (defn- enabled?
   "The guard of a registered action, as the `enabled?` xi.keys/lookup takes."
   [state]
   (fn [id]
-    (when-let [a (get @actions id)]
+    (when-let [a (resolve-action id)]
       (let [pred (:when a)]
         (or (nil? pred) (boolean (pred state)))))))
 
@@ -255,7 +276,7 @@
             (case (:status res)
               :action  (do (set-pending! [])
                            (.preventDefault e)
-                           ((:run (get @actions (:action res))) state dispatch! e))
+                           ((:run (resolve-action (:action res))) state dispatch! e))
               :pending (do (set-pending! (:pending res))
                            (.preventDefault e))
               (set-pending! []))))))))
@@ -282,4 +303,9 @@
    bound to an action this client implements, the active layers first, user
    changes flagged `:custom?`."
   [state]
-  (keys/listing (keymap state) default-keymap @actions (active-layers state)))
+  (let [km    (keymap state)
+        texts (into {} (for [bindings (vals km)
+                             a (vals bindings)
+                             :when (string? a)]
+                         [a {:label (str "Send " a)}]))]
+    (keys/listing km default-keymap (merge texts @actions) (active-layers state))))

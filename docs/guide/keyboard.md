@@ -147,5 +147,25 @@ web page.
   `end`, `pageup`, `pagedown`, `insert`, `f1` to `f12`.
 - A bare uppercase letter means shift: `"G"` is `"shift+g"`. Next to a
   modifier case does not matter: `"alt+N"` is `"alt+n"`.
-- A sequence of keys is written with spaces: `"g g"`, `"] c"`.
+- A sequence of keys is written with spaces, `"g g"`, `"] c"`, or as a
+  vector, `["g" "g"]`.
 - With a modifier held, name the unshifted key: `"alt+shift+/"`, not `"alt+?"`.
+
+### Leader keys
+
+A sequence starting with `space` in `:mode/navigate` is a leader key, as in
+Doom Emacs' normal mode. Web client only; each key must follow within 1.5
+seconds.
+
+A binding's value is an action, or a string: the text to send in the current
+chat, so a slash command runs as if you had typed it. A string binding does
+nothing outside a chat.
+
+```clojure title="~/.config/xi/config.edn"
+:keys {:web {:mode/navigate {["space" "space"]  :files/find
+                             ["space" "b" "b"]  :buffers/switch
+                             ["space" "g" "g"]  :git/status
+                             ["space" "g" "c"]  "/commit"}}}
+```
+
+`:git/status` opens the working-tree diff of the current chat.
