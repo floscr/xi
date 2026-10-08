@@ -218,6 +218,8 @@
    :compose/focus           {:label "Focus the message box" :surface #{:web}}
    :compose/blur            {:label "Leave the text field" :surface #{:web}}
    :timeline/bottom         {:label "Scroll to the bottom" :surface #{:web}}
+   :scroll/down             {:label "Scroll down" :surface #{:web}}
+   :scroll/up               {:label "Scroll up" :surface #{:web}}
    :dialog/close            {:label "Close the open dialog" :surface #{:web}}
    ;; tui
    :prompt/toggle           {:label "System prompt: full / overview" :surface #{:tui}}
@@ -299,6 +301,8 @@
                               "alt+shift+b" :permission/allow-block
                               "alt+d"       :permission/deny}
          :mode/navigate      {"i" :compose/focus
+                              "j" :scroll/down
+                              "k" :scroll/up
                               "G" :timeline/bottom
                               "?" :keys/show}
          :mode/compose       {"escape" :compose/blur}

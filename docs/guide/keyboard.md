@@ -68,6 +68,7 @@ Web client:
 | `Alt+Shift+A` | Allow repo writes for the pending request (only when it offers that choice) | `:permission/allow-repo` | `:permission-pending` |
 | `Alt+Shift+B` | Allow the pending request and the rest of its tool call's requests (only when it offers that choice) | `:permission/allow-block` | `:permission-pending` |
 | `i` | Focus the message box | `:compose/focus` | `:mode/navigate` |
+| `j` / `k` | Scroll the visible view (timeline, diff, file, projects page, shortcut list) down / up | `:scroll/down` / `:scroll/up` | `:mode/navigate` |
 | `G` | Scroll to the bottom | `:timeline/bottom` | `:mode/navigate` |
 | `?` | Show the keyboard shortcuts | `:keys/show` | `:mode/navigate` |
 | `Esc` | Leave the text field | `:compose/blur` | `:mode/compose` |

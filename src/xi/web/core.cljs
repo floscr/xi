@@ -2208,6 +2208,33 @@
                                           (.. e -target -tagName))))
                            (mark-user-scroll-intent!))))))
 
+(def ^:private scroll-step-px
+  "How far one :scroll/down / :scroll/up press (j / k) moves."
+  60)
+
+(def ^:private scroller-selectors
+  "The scrollable container of each view, most specific first: overlays
+   (shortcuts dialog), then the open buffer's pane (diff / prompt / file),
+   then the page (chat timeline, projects). At most one view's container is
+   rendered at a time, except overlays sitting above a page."
+  [".keys-body" ".diff-view" ".prompt-tab-body" ".file-tab-md" ".file-tab-code"
+   ".timeline" ".home"])
+
+(defn- active-scroller []
+  (some (fn [sel]
+          (when-let [el (.querySelector js/document sel)]
+            (when (> (.-scrollHeight el) (+ (.-clientHeight el) 2)) el)))
+        scroller-selectors))
+
+(defn- scroll-step!
+  "Scroll the view the user is looking at by `dir` (1 down, -1 up) steps.
+   An upward step counts as a user gesture so the timeline's scroll listener
+   drops follow mode, exactly like an upward wheel tick."
+  [dir]
+  (when-let [el (active-scroller)]
+    (when (neg? dir) (mark-user-scroll-intent!))
+    (set! (.-scrollTop el) (+ (.-scrollTop el) (* dir scroll-step-px)))))
+
 (def ^:private load-earlier-threshold-px
   "Scrolling within this distance of the top of the timeline loads the
    previous batch of messages."
@@ -2644,6 +2671,12 @@
   (keymap/register-action! {:id :timeline/bottom
                             :when (fn [st] (= :chat (get-in st [:web/route :page])))
                             :event {:type :timeline/scroll-to-bottom}})
+  ;; j / k scroll whatever view is on screen (timeline, diff, file, prompt,
+  ;; projects page, shortcuts dialog) — no-ops when nothing scrolls.
+  (keymap/register-action! {:id :scroll/down
+                            :run (fn [_ _ _] (scroll-step! 1))})
+  (keymap/register-action! {:id :scroll/up
+                            :run (fn [_ _ _] (scroll-step! -1))})
   ;; Escape in the composer blurs it (back to navigate mode); in any other
   ;; text field (sidebar search, bubble edit, diff modify…) it drops that
   ;; field's focus so the next key lands in navigate mode — `i` then reaches
