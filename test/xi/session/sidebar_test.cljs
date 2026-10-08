@@ -101,12 +101,14 @@
   (let [now   (js/Date.now)
         state (-> (with-sessions [{:session-id "fresh"   :timestamp now}
                                   {:session-id "old-pin" :pinned? true :timestamp 1}
-                                  {:session-id "old"     :timestamp 2}])
+                                  {:session-id "old"     :timestamp 2}
+                                  {:session-id "busy"    :timestamp now}])
+                  (assoc-in [:lobby :rooms] [{:id "r1" :session-id "busy" :busy? true :users []}])
                   (assoc-in [:lobby :started-at] 0))
         {:keys [recent earlier]} (sb/sidebar-session-groups state)]
     (testing "a pinned session stays in Recent however stale its timestamp"
-      (is (= ["old-pin" "fresh"] (mapv :session-id recent))
-          "and sorts above the unpinned ones")
+      (is (= ["old-pin" "busy" "fresh"] (mapv :session-id recent))
+          "and sorts at the very top, above even a busy agent")
       (is (= ["old"] (mapv :session-id earlier))))
     (testing "the card carries the flag for the menu label and the pin marker"
       (is (true? (:pinned? (first recent)))))))

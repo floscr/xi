@@ -166,8 +166,8 @@
 
 (defn sidebar-session-groups
   "Session cards for the drawer sidebar, split into the display groups
-   Recent / Hidden / Earlier (in render order). Busy agents pin to the top,
-   then pinned sessions, then most-recently-visited. Shared by the rendered
+   Recent / Hidden / Earlier (in render order). Pinned sessions at the very
+   top, then busy agents, then most-recently-visited. Shared by the rendered
    sidebar and ALT+j/k keyboard navigation so both agree on order."
   [state]
   (let [dismissed-ids (->> (get-in state [:lobby :sessions])
@@ -193,11 +193,11 @@
                                :dismissed? (boolean (dismissed-ids (:session-id %)))
                                :pinned?    (boolean (pinned-ids (:session-id %))))
                       cards)
-        ;; busy agents first, then pinned, then the rest (last-visited order
-        ;; within each tier)
-        cards    (let [{busy true idle false} (group-by #(boolean (:busy? %)) cards)
-                       {pinned true rest false} (group-by #(boolean (:pinned? %)) idle)]
-                   (concat busy pinned rest))
+        ;; pinned sessions at the very top, then busy agents, then the rest
+        ;; (last-visited order within each tier)
+        cards    (let [{pinned true unpinned false} (group-by #(boolean (:pinned? %)) cards)
+                       {busy true rest false} (group-by #(boolean (:busy? %)) unpinned)]
+                   (concat pinned busy rest))
         {hidden true visible false} (group-by :dismissed? cards)
         now      (js/Date.now)
         started  (get-in state [:lobby :started-at])
