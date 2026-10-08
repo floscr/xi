@@ -82,9 +82,9 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `router/with-buffer` turns into `:web/pending-buffer`, applied by
   `pending-buffer-tap` on `:room/joined`. The × of a row sends the roomless
   `:session/buffer-close`, so it works for parked buffers too. The palette's
-  Buffers group lists the current room's, then other sessions'
-  (`buffer-palette-items`); `Alt+b` (`:buffers/switch` →
-  `:palette/open-buffers`) opens those rows alone as a palette page.
+  Buffers group lists the current room's, then an Other sessions group, then
+  Buffer actions (`buffer-palette-groups`); `Alt+b` (`:buffers/switch` →
+  `:palette/open-buffers`) opens those groups alone as a palette page.
   **Buffer presence**: `buffer-presence-tap` sends `:client/update {:buffer
   id}` whenever the active room's active buffer changes; the server keeps it
   on the client entry, `rm/client-update-presence` refreshes the room's

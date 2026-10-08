@@ -5075,12 +5075,13 @@
                              (dispatch! {:type :files/open :path child})))}
               (if dir? (str name "/") name)))))))))
 
-(defn- buffer-palette-items
-  "The palette's buffer rows (the Buffers group and the Alt+B switcher page):
-   the room in view first — the chat, then its buffers in opening order, a
-   pick switches to it — then other sessions' buffers (a pick opens that chat
-   on the buffer), then \"Close all\" for the room in view. The view in front
-   is marked; nothing when no buffer is open anywhere."
+(defn- buffer-palette-groups
+  "The palette's buffer rows (the Ctrl+K groups and the Alt+B switcher page) as
+   a vector of `{:heading :items}`: \"Buffers\" — the room in view first, the
+   chat then its buffers in opening order, a pick switches to it — then
+   \"Other sessions\" (a pick opens that chat on the buffer), then \"Buffer
+   actions\" (\"Close all\" for the room in view). The view in front is marked;
+   empty groups are left out, so nothing when no buffer is open anywhere."
   [state dispatch!]
   (let [room      (state/active-room state)
         room-id   (:id room)
@@ -5100,43 +5101,49 @@
                     (dispatch! {:type :diff/clear-selection})
                     (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id id}))
         mark      (fn [id title] (if (= id active) (str title "  · viewing") title))]
-    (when (or (seq own) (seq others))
-      (concat
-       (when (and room (seq own))
-         [(cmd/command-item
-           {:icon :terminal
-            :value "buffer chat"
-            :class (when (= active :chat) ["command-item--active-buffer"])
-            :on-click (fn [_] (switch! :chat))}
-           (mark :chat "Chat"))])
-       (for [[id buf] own
-             :let [title (buffers/label id buf)]]
-         (cmd/command-item
-          {:icon (buffer-icon (buffers/kind id buf))
-           :value (str "buffer " title)
-           :class (when (= id active) ["command-item--active-buffer"])
-           :on-click (fn [_] (switch! id))}
-          (mark id title)))
-       (for [{:keys [id kind title session-id session-name]} others]
-         (cmd/command-item
-          {:icon (buffer-icon kind)
-           :value (str "buffer " title " " session-name)
-           :on-click (fn [_] (dispatch! {:type :route/navigate :page :chat
-                                         :session-id session-id :buffer-id id}))}
-          (str title " · " session-name)))
-       (when (seq own)
-         [(cmd/command-item
-           {:icon :x
-            :value "close all buffers"
-            :on-click (fn [_] (dispatch! {:type :ui/buffers-close-all :room-id room-id}))}
-           (str "Close all buffers (" (count own) ")"))])))))
+    (->> [{:heading "Buffers"
+           :items (concat
+                   (when (and room (seq own))
+                     [(cmd/command-item
+                       {:icon :terminal
+                        :value "buffer chat"
+                        :class (when (= active :chat) ["command-item--active-buffer"])
+                        :on-click (fn [_] (switch! :chat))}
+                       (mark :chat "Chat"))])
+                   (for [[id buf] own
+                         :let [title (buffers/label id buf)]]
+                     (cmd/command-item
+                      {:icon (buffer-icon (buffers/kind id buf))
+                       :value (str "buffer " title)
+                       :class (when (= id active) ["command-item--active-buffer"])
+                       :on-click (fn [_] (switch! id))}
+                      (mark id title))))}
+          {:heading "Other sessions"
+           :items (for [{:keys [id kind title session-id session-name]} others]
+                    (cmd/command-item
+                     {:icon (buffer-icon kind)
+                      :value (str "buffer " title " " session-name)
+                      :on-click (fn [_] (dispatch! {:type :route/navigate :page :chat
+                                                    :session-id session-id :buffer-id id}))}
+                     (str title " · " session-name)))}
+          {:heading "Buffer actions"
+           :items (when (seq own)
+                    [(cmd/command-item
+                      {:icon :x
+                       :value "close all buffers"
+                       :on-click (fn [_] (dispatch! {:type :ui/buffers-close-all :room-id room-id}))}
+                      (str "Close all buffers (" (count own) ")"))])}]
+         (keep (fn [{:keys [items] :as g}]
+                 (when (seq items) (assoc g :items (vec items)))))
+         vec)))
 
 (defn- palette-buffers-page
   "The buffer switcher (Alt+B): the palette on its Buffers rows alone, so
    typing filters them and Enter switches."
   [state dispatch!]
-  (if-let [items (seq (buffer-palette-items state dispatch!))]
-    (apply cmd/command-group {:heading "Buffers"} items)
+  (if-let [groups (seq (buffer-palette-groups state dispatch!))]
+    (for [{:keys [heading items]} groups]
+      (apply cmd/command-group {:heading heading} items))
     [:div {:class ["command-empty"]} "No open buffers"]))
 
 (defn- palette-file-finder-page
@@ -5410,8 +5417,8 @@
      (when (seq chat-items)
        (apply cmd/command-group {:heading "Chats"} chat-items))
      ;; Every open buffer (xi.buffers) — the same rows as the Alt+B switcher.
-     (when-let [items (seq (buffer-palette-items state dispatch!))]
-       (apply cmd/command-group {:heading "Buffers"} items))
+     (for [{:keys [heading items]} (buffer-palette-groups state dispatch!)]
+       (apply cmd/command-group {:heading heading} items))
      (when (seq all-sessions)
        (apply cmd/command-group {:heading "Sessions"}
          (map #(palette-chat-item % dispatch! {:search? true}) all-sessions)))
