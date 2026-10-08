@@ -20,8 +20,7 @@
   (:require [clojure.string :as str]
             [xi.agent :as agent]
             [xi.tools.registry :as tools]
-            [xi.system-prompt :as system-prompt]
-            [xi.util :as util]))
+            [xi.system-prompt :as system-prompt]))
 
 ;; ── History replay → OpenAI messages ─────────────────────────────────────────
 
@@ -71,30 +70,10 @@
 (defn- execute-tool-call
   "Execute a single tool call through Xi's registry + tool policy.
    Returns promise of {:role \"tool\" :tool_call_id ... :content ...}"
-  [{:keys [id name arguments]} registry tool-ctx tool-policy]
-  (let [registry (or registry (tools/tool-registry))]
-    (-> (tool-policy {:name name :arguments arguments})
-        (.then
-         (fn [gated]
-  (cond
-    (nil? gated)
-    {:role "tool" :tool_call_id id
-     :content "Blocked by Xi permission gate"}
-
-    (:intercepted gated)
-    {:role "tool" :tool_call_id id
-     :content (util/extract-text-content (get-in gated [:result :content]))}
-
-    :else
-    (let [exec-fn (get registry name)]
-      (if exec-fn
-        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx
-                            {:name name :arguments arguments})
-            (.then (fn [{:keys [content]}]
-                     {:role "tool" :tool_call_id id
-                      :content (util/extract-text-content content)})))
-        {:role "tool" :tool_call_id id
-         :content (str "Unknown tool: " name)}))))))))
+  [{:keys [id] :as call} registry tool-ctx tool-policy]
+  (-> (tools/execute-call call registry tool-ctx tool-policy)
+      (.then (fn [{:keys [content]}]
+               {:role "tool" :tool_call_id id :content content}))))
 
 ;; ── SSE Stream Parsing ──────────────────────────────────────────────────────
 

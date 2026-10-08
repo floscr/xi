@@ -100,3 +100,35 @@
       (.catch (fn [err]
                 {:content [{:type "text" :text (str "Tool error: " (.-message err))}]
                  :is-error true}))))
+
+(defn execute-call
+  "Run one model-issued tool call `{:name :arguments}` the way every
+   host-side provider loop does: through `tool-policy` (the rules engine, a
+   fn [call] → Promise of the call, nil when blocked, or {:intercepted true
+   :result …} for a deny/nudge), then the `registry` exec-fn via `run-tool`.
+   Resolves to {:content <text> :is-error bool}; each provider wraps it in its
+   own wire shape. A nil `registry` is the builtins, a nil `tool-policy` lets
+   every call through."
+  [{:keys [name arguments]} registry tool-ctx tool-policy]
+  (let [registry (or registry (tool-registry))
+        policy   (or tool-policy (fn [call] (js/Promise.resolve call)))]
+    (-> (policy {:name name :arguments arguments})
+        (.then
+         (fn [gated]
+           (cond
+             (nil? gated)
+             {:content "Blocked by Xi permission gate" :is-error true}
+
+             ;; a deny / nudge: the policy's result stands in for the tool's
+             (:intercepted gated)
+             {:content  (util/extract-text-content (get-in gated [:result :content]))
+              :is-error (boolean (get-in gated [:result :is-error]))}
+
+             :else
+             (if-let [exec-fn (get registry name)]
+               (-> (run-tool exec-fn (or (:arguments gated) arguments) tool-ctx
+                             {:name name :arguments arguments})
+                   (.then (fn [{:keys [content is-error]}]
+                            {:content  (util/extract-text-content content)
+                             :is-error (boolean is-error)})))
+               {:content (str "Unknown tool: " name) :is-error true})))))))

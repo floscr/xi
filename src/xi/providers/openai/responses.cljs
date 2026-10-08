@@ -22,8 +22,7 @@
   (:require [clojure.string :as str]
             [xi.agent :as agent]
             [xi.tools.registry :as tools]
-            [xi.system-prompt :as system-prompt]
-            [xi.util :as util]))
+            [xi.system-prompt :as system-prompt]))
 
 (def ^:private max-iterations 25)
 ;; The Responses reasoning effort. These are reasoning models: some (e.g.
@@ -95,32 +94,11 @@
   "Execute one function_call through Xi's registry + gate. Returns a promise of
    a Responses `function_call_output` item. Errors are surfaced in the output
    text (the Responses API has no error flag on tool output)."
-  [{:keys [call_id name arguments]} registry tool-ctx tool-policy]
-  (let [registry (or registry (tools/tool-registry))]
-    (-> (tool-policy {:name name :arguments arguments})
-        (.then
-         (fn [gated]
-  (cond
-    (nil? gated)
-    {:type "function_call_output" :call_id call_id
-     :output "[error] Blocked by Xi permission gate"}
-
-    (:intercepted gated)
-    {:type "function_call_output" :call_id call_id
-     :output (str (when (get-in gated [:result :is-error]) "[error] ")
-                  (util/extract-text-content (get-in gated [:result :content])))}
-
-    :else
-    (let [exec-fn (get registry name)]
-      (if exec-fn
-        (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx
-                            {:name name :arguments arguments})
-            (.then (fn [{:keys [content is-error]}]
-                     {:type "function_call_output" :call_id call_id
-                      :output (str (when is-error "[error] ")
-                                   (util/extract-text-content content))})))
-        {:type "function_call_output" :call_id call_id
-         :output (str "[error] Unknown tool: " name)}))))))))
+  [{:keys [call_id] :as call} registry tool-ctx tool-policy]
+  (-> (tools/execute-call call registry tool-ctx tool-policy)
+      (.then (fn [{:keys [content is-error]}]
+               {:type "function_call_output" :call_id call_id
+                :output (str (when is-error "[error] ") content)}))))
 
 ;; ── SSE parsing ──────────────────────────────────────────────────────────────
 

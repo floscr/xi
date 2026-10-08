@@ -12,8 +12,7 @@
   (:require [clojure.string :as str]
             [xi.agent :as agent]
             [xi.tools.registry :as tools]
-            [xi.system-prompt :as system-prompt]
-            [xi.util :as util]))
+            [xi.system-prompt :as system-prompt]))
 
 ;; ── History replay → Anthropic messages ───────────────────────────────────
 
@@ -126,33 +125,11 @@
 (defn- execute-tool-call
   "Execute one tool_use through Xi's registry + gate. Returns promise of an
    Anthropic tool_result content block."
-  [{:keys [id name arguments]} registry tool-ctx tool-policy]
-  (let [registry (or registry (tools/tool-registry))]
-    (-> (tool-policy {:name name :arguments arguments})
-        (.then
-         (fn [gated]
-           (cond
-             (nil? gated)
-             {:type "tool_result" :tool_use_id id
-              :content "Blocked by Xi permission gate" :is_error true}
-
-             ;; a deny / nudge: the policy's result stands in for the tool's
-             (:intercepted gated)
-             {:type "tool_result" :tool_use_id id
-              :content (util/extract-text-content (get-in gated [:result :content]))
-              :is_error (boolean (get-in gated [:result :is-error]))}
-
-             :else
-             (let [exec-fn (get registry name)]
-               (if exec-fn
-                 (-> (tools/run-tool exec-fn (or (:arguments gated) arguments) tool-ctx
-                                     {:name name :arguments arguments})
-                     (.then (fn [{:keys [content is-error]}]
-                              {:type "tool_result" :tool_use_id id
-                               :content (util/extract-text-content content)
-                               :is_error (boolean is-error)})))
-                 {:type "tool_result" :tool_use_id id
-                  :content (str "Unknown tool: " name) :is_error true}))))))))
+  [{:keys [id] :as call} registry tool-ctx tool-policy]
+  (-> (tools/execute-call call registry tool-ctx tool-policy)
+      (.then (fn [{:keys [content is-error]}]
+               {:type "tool_result" :tool_use_id id
+                :content content :is_error is-error}))))
 
 ;; ── SSE parsing ──────────────────────────────────────────────────────────────
 
