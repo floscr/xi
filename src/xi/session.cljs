@@ -243,19 +243,21 @@
   (update-session! session {:last-accessed (iso-now)}))
 
 (defn touch-summary!
-  "Bump a saved session's :last-accessed on disk, in place. Resuming a
-   session into a room counts as activity, so the sidebar's Recent group
-   keeps it after the room is reaped instead of dropping it back to Earlier
-   on its stale timestamp. A lossless JSON merge (not a load-session
-   round-trip) so fields the in-memory session doesn't model — :aborted-at,
-   :interrupted-at — survive a pre-turn save. No-op for summaries without a
-   metadata file (:claude transcripts — their first :session/sync writes
-   one)."
+  "Record a saved session's :last-opened on disk, in place. Resuming a
+   session into a room counts toward the sidebar's Recent *grouping* (so it
+   isn't dropped back to Earlier on its stale timestamp once the room is
+   reaped) but deliberately not toward the *sort order* (:last-accessed) —
+   merely opening a chat must not re-sort the Recent list under the click
+   (see xi.session.recent/recent? vs xi.palette/session-time). A lossless
+   JSON merge (not a load-session round-trip) so fields the in-memory
+   session doesn't model — :aborted-at, :interrupted-at — survive a
+   pre-turn save. No-op for summaries without a metadata file (:claude
+   transcripts — their first :session/sync writes one)."
   [summary]
   (when (and (= :xi (:source summary)) (:filepath summary))
     (try
       (let [data (js/JSON.parse (fs/readFileSync (:filepath summary) "utf8"))]
-        (aset data "last-accessed" (iso-now))
+        (aset data "last-opened" (iso-now))
         (fs/writeFileSync (:filepath summary) (js/JSON.stringify data nil 2) "utf8")
         (invalidate-listing-cache!))
       (catch :default e
@@ -487,6 +489,7 @@
        :filepath filepath
        :timestamp timestamp
        :last-accessed (:last-accessed data)
+       :last-opened (:last-opened data)
        :name (util/session-title (:name data))
        :model (:model data)
        :interrupted-at (:interrupted-at data)

@@ -156,7 +156,7 @@
   (->> (if agent-id
          (session/list-personal-agent-sessions agent-id)
          (session/list-all-sessions))
-       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source]))))
+       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :last-opened :timestamp :source]))))
 
 (defn- saved-sessions
   "All saved-session summaries, minus those shadowed by a live room's
@@ -514,9 +514,11 @@
                                        (ext-system-prompt-parts cwd))))
                 system (system-prompt/parts->system system-parts)
                 session (if summary
-                          ;; Resuming counts as access: bump last-accessed on
-                          ;; disk so the session stays in the sidebar's Recent
-                          ;; group after this room is reaped.
+                          ;; Resuming records last-opened on disk so the
+                          ;; session stays in the sidebar's Recent group after
+                          ;; this room is reaped — without touching
+                          ;; last-accessed, so merely opening a chat never
+                          ;; re-sorts the Recent list.
                           (do (session/touch-summary! summary)
                               (session/load-session summary))
                           ;; a fresh session records who opened it (the

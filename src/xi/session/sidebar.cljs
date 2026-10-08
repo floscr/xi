@@ -71,6 +71,8 @@
       :name        (:name s)
       :cwd         (:cwd s)
       :timestamp   (or (:last-accessed s) (:timestamp s))
+      ;; feeds recent?'s grouping only, never the sort (see touch-summary!)
+      :last-opened (:last-opened s)
       :dismissed?  (boolean (:dismissed? s))
       :current?    (and sid (= sid (get-in state [:web/route :session-id])))
       :active?     (boolean room)

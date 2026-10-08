@@ -20,19 +20,23 @@
     :else 0))
 
 (defn recent?
-  "True when a session belongs in the \"Recent\" set: its last response happened
+  "True when a session belongs in the \"Recent\" set: its last activity happened
    during the current server run (at/after `started-at`) AND within
-   `recent-active-window-ms` (a couple of days). A session with a live room
-   right now (:active?) always qualifies — covering the open session and
-   brand-new orphan rooms that carry no timestamp yet.
+   `recent-active-window-ms` (a couple of days). Activity is the later of
+   :timestamp (last response / save) and :last-opened (last resumed into a
+   room — recorded separately from :last-accessed exactly so opening counts
+   for this grouping without re-sorting the list, see session/touch-summary!).
+   A session with a live room right now (:active?) always qualifies —
+   covering the open session and brand-new orphan rooms that carry no
+   timestamp yet.
 
    Callers without a server run (e.g. the one-shot CLI) pass `started-at` 0,
-   reducing the predicate to \"timestamp within the last couple of days\"."
-  [now-ms started-at {:keys [active? timestamp]}]
+   reducing the predicate to \"activity within the last couple of days\"."
+  [now-ms started-at {:keys [active? timestamp last-opened]}]
   (boolean
    (or active?
        (and started-at
-            (let [t (->ms timestamp)]
+            (let [t (max (->ms timestamp) (->ms last-opened))]
               (and (pos? t)
                    (>= t started-at)
                    (<= (- now-ms t) recent-active-window-ms)))))))
@@ -73,7 +77,8 @@
                             :cwd        (:cwd s)
                             :active?    (contains? active-sids (:session-id s))
                             :busy?      false
-                            :timestamp  (or (:last-accessed s) (:timestamp s))})
+                            :timestamp  (or (:last-accessed s) (:timestamp s))
+                            :last-opened (:last-opened s)})
                          sessions)
         cards       (->> (concat orphans enriched)
                          (filter :session-id)
