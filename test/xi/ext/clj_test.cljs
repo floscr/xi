@@ -1437,6 +1437,19 @@
       (is (str/includes? text ":met? false"))
       (is (str/includes? text ":note")))))
 
+(deftest poll-url-times-out-when-nothing-listens
+  (let [res (eval! "(process/poll-url \"http://127.0.0.1:1/\" {:interval-ms 20 :timeout-ms 100})")]
+    (is (not (:is-error res)) (result-text res))
+    (let [text (result-text res)]
+      (is (str/includes? text ":met? false"))
+      (is (str/includes? text ":status nil"))
+      (is (str/includes? text "process/poll-url")))))
+
+(deftest poll-url-rejects-non-http
+  (let [res (eval! "(process/poll-url \"file:///etc/passwd\")")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "only http(s)"))))
+
 ;; ── Ask targets: which call in the code a confirm dialog is about ───────────
 
 (defn- range-texts

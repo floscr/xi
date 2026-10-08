@@ -103,6 +103,7 @@ still gets its own dialog.
 | `(process/list)` | This chat's processes |
 | `(process/stop pid)` | Terminate one |
 | `(process/poll-until "cmd" {:until :exit-zero :interval-ms 5000 :timeout-ms 120000})` | Rerun a command until it succeeds, or until its output matches `:pattern` (`:stdout-matches`, `:stdout-not-matches`) |
+| `(process/poll-url "http://localhost:7476" {:status 200 :interval-ms 5000 :timeout-ms 120000})` | Probe an http(s) URL until it answers with `:status` (a number or a set; default any 2xx). `{:met? :attempts :status}`; `:status` is `nil` while nothing is listening. No shell, so no approval |
 
 The command is a literal shell line, approved like a `bash` command. A
 trailing `&` is ignored; the process is detached anyway. `wait` and

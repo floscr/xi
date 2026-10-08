@@ -293,30 +293,72 @@
     :stdout-not-matches (not (re-find (re-pattern pattern) output))
     (zero? exit)))
 
-(defn- poll-until
-  "Rerun `cmd` every :interval-ms until the :until condition holds
-   (:exit-zero default | :stdout-matches | :stdout-not-matches + :pattern) or
-   :timeout-ms elapses → {:met? bool :attempts N :exit N :output str}."
-  [opts cmd dir env & [{:keys [until pattern interval-ms timeout-ms]}]]
-  (require-approved! opts cmd)
-  (when (and (contains? #{:stdout-matches :stdout-not-matches} until)
-             (not (string? pattern)))
-    (throw (ex-info "process/poll-until: :pattern (string regex) is required for stdout conditions" {})))
+(defn- poll-loop
+  "Call `attempt!` every `interval-ms` until `(met? res)` or `timeout-ms`
+   elapses → the last result with :met? and :attempts. `again` names the call
+   to repeat, for the timeout note."
+  [opts attempt! met? again {:keys [interval-ms timeout-ms]}]
   (let [deadline (+ (.now js/Date) (or timeout-ms default-poll-timeout-ms))]
     (loop [attempts 1]
-      (let [res  (run-once! opts cmd dir env)
-            met? (poll-met? (or until :exit-zero) pattern res)]
+      (let [res (attempt!)]
         (cond
-          met?
+          (met? res)
           (assoc res :met? true :attempts attempts)
 
           (>= (.now js/Date) deadline)
           (assoc res :met? false :attempts attempts
-                 :note "timed out — call process/poll-until again to keep polling")
+                 :note (str "timed out — call " again " again to keep polling"))
 
           :else
           (do (sleep-abortable opts (or interval-ms default-poll-interval-ms))
               (recur (inc attempts))))))))
+
+(defn- poll-until
+  "Rerun `cmd` every :interval-ms until the :until condition holds
+   (:exit-zero default | :stdout-matches | :stdout-not-matches + :pattern) or
+   :timeout-ms elapses → {:met? bool :attempts N :exit N :output str}."
+  [opts cmd dir env & [{:keys [until pattern] :as poll-opts}]]
+  (require-approved! opts cmd)
+  (when (and (contains? #{:stdout-matches :stdout-not-matches} until)
+             (not (string? pattern)))
+    (throw (ex-info "process/poll-until: :pattern (string regex) is required for stdout conditions" {})))
+  (poll-loop opts
+             #(run-once! opts cmd dir env)
+             #(poll-met? (or until :exit-zero) pattern %)
+             "process/poll-until"
+             poll-opts))
+
+(defn- fetch-status!
+  "One HTTP probe of `url` (fixed curl argv, no shell) → {:status N|nil}.
+   nil while the connection fails (nothing listening yet)."
+  [url]
+  (let [^js res (cp/spawnSync "curl" #js ["-s" "-o" "/dev/null" "-w" "%{http_code}"
+                                          "--max-time" "5" (str url)]
+                              #js {:encoding "utf8" :timeout 10000})
+        code    (js/parseInt (str/trim (str (.-stdout res))) 10)]
+    {:status (when (and (zero? (.-status res)) (pos? code)) code)}))
+
+(defn- status-met?
+  "`want` is a status number, a set of them, or nil for any 2xx."
+  [want status]
+  (cond
+    (nil? status) false
+    (nil? want)   (<= 200 status 299)
+    (set? want)   (contains? want status)
+    :else         (= want status)))
+
+(defn- poll-url
+  "Probe http(s) `url` every :interval-ms until its status matches :status
+   (number | set of numbers, default any 2xx) or :timeout-ms elapses →
+   {:met? bool :attempts N :status N|nil}. No shell, so no approval needed."
+  [opts url & [{:keys [status] :as poll-opts}]]
+  (when-not (re-matches #"(?i)https?://.*" (str url))
+    (throw (ex-info "process/poll-url: only http(s) URLs are supported" {})))
+  (poll-loop opts
+             #(fetch-status! url)
+             #(status-met? status (:status %))
+             "process/poll-url"
+             poll-opts))
 
 (defn sci-namespace
   "The `process` namespace injected into the SCI ctx (see make-ctx). `opts` is
@@ -339,4 +381,5 @@
      'output     (fn [pid & [n]] (output opts pid n))
      'poll-until (fn [& args]
                    (let [[dir env [cmd opt-map]] (split args)]
-                     (poll-until opts cmd dir env opt-map)))}))
+                     (poll-until opts cmd dir env opt-map)))
+     'poll-url   (fn [url & [opt-map]] (poll-url opts url opt-map))}))
