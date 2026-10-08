@@ -2637,15 +2637,6 @@
                          {:collapsed collapsed :expanded (or expanded #{})
                           :md-code (or md-code #{})})))]))
 
-(defn- ltr-label
-  "Wrap a label in U+200E left-to-right marks. The left-truncating labels
-   (`direction: rtl` + ellipsis) give the line an RTL base direction, which
-   visually reorders a path's leading `/` (a bidi-neutral char) to the end —
-   `/a/b.md` renders as `a/b.md/`. Strong LTR marks on both ends pin the
-   neutrals in place while the rtl trick keeps truncating on the left."
-  [s]
-  (str "‎" s "‎"))
-
 (defn- file-tab-view
   "Read-only file viewer rendered as the active tab. Markdown files render as
    formatted HTML; other files are syntax-highlighted from their extension when
@@ -2655,7 +2646,7 @@
         grammar (grammars/get-grammar ext)]
     [:div {:class ["file-tab"]}
      [:div {:class ["file-tab-header"]}
-      [:span {:class ["file-tab-path"]} (ltr-label path)]]
+      [:span {:class ["file-tab-path"]} path]]
      (if (contains? md-diff/markdown-exts ext)
        [:div {:class ["file-tab-md"]}
         [:div {:class ["post-content"]} (md/render text)]]
@@ -2734,7 +2725,7 @@
   [id {:keys [text] :as buf}]
   [:div {:class ["file-tab"]}
    [:div {:class ["file-tab-header"]}
-    [:span {:class ["file-tab-path"]} (ltr-label (buffers/label id buf))]]
+    [:span {:class ["file-tab-path"]} (buffers/label id buf)]]
    [:pre {:class ["file-tab-code"]} (or text "")]])
 
 ;; ── Chat view ────────────────────────────────────────────────────────────────
@@ -2826,7 +2817,7 @@
                             :title title
                             :on {:click (fn [e] (hide! e) (on-click))}}
                    (icon/icon {:icon-name icon :size :sm})
-                   [:span {:class ["buffer-menu-title"]} (ltr-label title)]
+                   [:span {:class ["buffer-menu-title"]} title]
                    ;; buffer presence: who else is on this view
                    (when (seq people)
                      [:span {:class ["buffer-menu-people"]} (avatar-stack people)])
@@ -2843,7 +2834,7 @@
                       :replicant/key "buffer-menu-trigger"}
                      (popover/trigger-attrs menu-id))
       (when kind (icon/icon {:icon-name (buffer-icon kind) :size :sm}))
-      [:span {:class ["buffer-menu-label"]} (ltr-label label)]
+      [:span {:class ["buffer-menu-label"]} label]
       (icon/icon {:icon-name :chevron-down :size :sm})]
      (popover/popover-content
       {:id    menu-id
@@ -3859,7 +3850,7 @@
                                (dispatch! {:type :route/navigate :page :chat
                                            :session-id session-id :buffer-id id}))}}
         (icon/icon {:icon-name (buffer-icon kind) :size :sm})
-        [:span {:class ["session-buffer-title"]} (ltr-label title)]
+        [:span {:class ["session-buffer-title"]} title]
         ;; buffer presence: who else is on it
         (when (seq people)
           [:span {:class ["session-buffer-people"]} (avatar-stack people)])

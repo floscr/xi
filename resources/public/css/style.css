@@ -4241,6 +4241,19 @@ code a:hover,
   text-align: left;
 }
 
+/* The rtl-ellipsis trick above gives these labels an RTL base direction,
+   which visually reorders a path's leading `/` (a bidi-neutral char) to the
+   far end — `/a/b.md` renders as `a/b.md/`. Strong LTR marks on both ends
+   pin the neutrals in place; as generated content they take part in the
+   line's bidi resolution but are not selectable, so copied text stays
+   clean of invisible characters. */
+.session-buffer-title::before, .session-buffer-title::after,
+.buffer-menu-label::before, .buffer-menu-label::after,
+.buffer-menu-title::before, .buffer-menu-title::after,
+.file-tab-path::before, .file-tab-path::after {
+  content: "\200E";
+}
+
 .file-tab-code {
   flex: 1;
   min-height: 0;
