@@ -7,6 +7,8 @@
    invocations render structural output via GIT_EXTERNAL_DIFF instead of
    git's native unified diff."
   (:require [clojure.string :as str]
+            ["node:fs" :as fs]
+            ["node:path" :as node-path]
             [xi.ext.diff.difft :as difft]))
 
 (defn- git-out
@@ -87,6 +89,33 @@
         untracked-diff (when (seq untracked)
                          (str/join "\n" (map (partial no-index-diff cwd) untracked)))]
     (->> [tracked-diff untracked-diff]
+         (remove str/blank?)
+         (str/join "\n"))))
+
+(defn- file-git-root
+  "Absolute toplevel of the work tree containing `file` (an absolute path),
+   or nil when the file lies outside any git repo."
+  [file]
+  (some-> (:ok (git-out (.dirname node-path file) ["rev-parse" "--show-toplevel"]))
+          str/trim not-empty))
+
+(defn session-diff-text-by-repo
+  "Like session-diff-text, but for absolute `paths` that may span several
+   repos (a parent repo, a sibling checkout): groups the files by the work
+   tree containing each, diffs every group inside its own repo against
+   (base-of root), and concatenates the results. Files outside any repo are
+   synthesized via --no-index. Paths are realpath'd first so symlinked
+   prefixes relativize correctly against git's physical toplevel."
+  [paths base-of]
+  (let [paths   (mapv (fn [p] (try (fs/realpathSync p) (catch :default _ p))) paths)
+        root-of (into {} (map (juxt identity file-git-root)) (distinct paths))]
+    (->> (distinct (map root-of paths))
+         (map (fn [root]
+                (let [files (filterv #(= root (root-of %)) paths)]
+                  (if root
+                    (session-diff-text root (base-of root)
+                                       (mapv #(.relative node-path root %) files))
+                    (str/join "\n" (mapv #(no-index-diff (.dirname node-path %) %) files))))))
          (remove str/blank?)
          (str/join "\n"))))
 

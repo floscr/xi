@@ -64,18 +64,28 @@
   (and (= :tool-call kind)
        (boolean (edit-tool-names (some-> tool util/strip-mcp-prefix str/lower-case)))))
 
-(defn session-edited-files
-  "Paths (relative to cwd) of files touched via edit/write tool calls in the
-   room's history. Used to scope the session diff to files the agent changed,
-   rather than every dirty file in the working tree."
+(defn session-edited-paths
+  "Absolute paths of files touched via edit/write tool calls in the room's
+   history. Unlike session-edited-files this is not limited to files under
+   cwd, so edits in another repo (a parent repo, a sibling checkout) still
+   count — the session diff groups them by their own git root."
   [room cwd]
   (->> (:history room)
        (filter edit-tool-call?)
        (keep (fn [{:keys [arguments]}]
                (or (:path arguments) (:file_path arguments) (:file arguments))))
-       (map #(.relative node-path cwd (.resolve node-path cwd %)))
-       (remove #(or (str/starts-with? % "..") (.isAbsolute node-path %)))
+       (map #(.resolve node-path cwd %))
        distinct
+       vec))
+
+(defn session-edited-files
+  "Paths (relative to cwd) of session-edited files under cwd. Used where only
+   the cwd repo matters — the commit flow and the git-lock conflict checks —
+   as opposed to the session diff, which spans repos via session-edited-paths."
+  [room cwd]
+  (->> (session-edited-paths room cwd)
+       (map #(.relative node-path cwd %))
+       (remove #(or (str/starts-with? % "..") (.isAbsolute node-path %)))
        vec))
 
 (def ^:private commit-summary-re

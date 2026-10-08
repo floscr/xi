@@ -51,9 +51,10 @@
       {:title (str "PR #" number) :text (gh-pr-diff cwd number)}
       (case arg
         (nil "session-git")
-        (let [files (fx/session-edited-files room cwd)]
+        (let [paths (fx/session-edited-paths room cwd)]
           {:title "Session Changes (uncommitted)"
-           :text  (when (seq files) (git/session-diff-text cwd "HEAD" files))})
+           :text  (when (seq paths)
+                    (git/session-diff-text-by-repo paths (constantly "HEAD")))})
 
         "staged"   {:title "Staged Changes"   :text (:ok (git/git-diff-out cwd ["diff" "--staged"]))}
         "unstaged" {:title "Unstaged Changes" :text (:ok (git/git-diff-out cwd ["diff"]))}

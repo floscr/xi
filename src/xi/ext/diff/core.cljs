@@ -102,24 +102,26 @@
             (open! "Session Commits" (git/session-commits-text cwd base))))
 
         ("session-edits" nil)
-        (let [base  (git/session-base-commit cwd (get-in room [:session :created]))
-              files (fx/session-edited-files room cwd)]
-          (if (empty? files)
+        (let [created (get-in room [:session :created])
+              paths   (fx/session-edited-paths room cwd)]
+          (if (empty? paths)
             (dispatch! {:type :ui/status :room-id room-id
                         :text "No files edited this session."})
-            (open! "Session Edits" (git/session-diff-text cwd base files))))
+            (open! "Session Edits"
+                   (git/session-diff-text-by-repo
+                    paths #(git/session-base-commit % created)))))
 
         ;; Like session-edits, but diffed against HEAD (the last commit)
         ;; instead of the session base — so in a long session with in-between
         ;; commits it shows only the still-uncommitted work, scoped to the
         ;; files the agent edited this session.
         "session-git"
-        (let [files (fx/session-edited-files room cwd)]
-          (if (empty? files)
+        (let [paths (fx/session-edited-paths room cwd)]
+          (if (empty? paths)
             (dispatch! {:type :ui/status :room-id room-id
                         :text "No files edited this session."})
             (open! "Session Changes (since last commit)"
-                   (git/session-diff-text cwd "HEAD" files))))
+                   (git/session-diff-text-by-repo paths (constantly "HEAD")))))
 
         ;; commit:<sha> → the diff of that single commit (git show). Used by the
         ;; web "session commits" bar to open one commit's changes.
