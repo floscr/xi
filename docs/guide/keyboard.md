@@ -109,7 +109,8 @@ such actions.
 
 Some keys are part of a control rather than the keymap and cannot be changed
 here: `Ctrl+k` / `Cmd+k` opens the command palette, `Tab` in the message box
-expands a snippet, `Ctrl+Enter` on one of your messages edits it, and the
+expands a snippet, the `/` command list moves with `↑`/`↓`, `Alt+k`/`Alt+j`
+or `Ctrl+p`/`Ctrl+n`, `Ctrl+Enter` on one of your messages edits it, and the
 terminal editor's own editing keys (`Ctrl+a`, `Ctrl+k`, `Ctrl+/`, …).
 
 ## Changing keys

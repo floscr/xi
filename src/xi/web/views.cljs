@@ -1506,17 +1506,25 @@
     [:div {:class ["slash-dropdown"]}
      (map-indexed
       (fn [i {:keys [name description]}]
-        [:button {:class ["slash-item"
-                          (when (= i selected-index) "slash-item--selected")]
-                  :on {:click (fn [_]
-                                (dispatch-command! dispatch! room-id name)
-                                (when-let [^js el (compose-textarea-el)]
-                                  (set! (.-value el) ""))
-                                (dispatch! {:type :compose/clear-draft :draft-key draft-key}))
-                       :mouseenter (fn [_]
-                                     (dispatch! {:type :cmd/select :index i}))}}
-         [:span {:class ["slash-item-name"]} (str "/" name)]
-         [:span {:class ["slash-item-desc"]} description]])
+        (let [selected? (= i selected-index)]
+          [:button {:class ["slash-item"
+                            (when selected? "slash-item--selected")]
+                    ;; Keep the keyboard-selected row visible when the list
+                    ;; overflows the dropdown's max-height. "nearest" is a
+                    ;; no-op when it is already in view (mouse hovers).
+                    :replicant/on-render
+                    (fn [{:replicant/keys [^js node]}]
+                      (when selected?
+                        (.scrollIntoView node #js {:block "nearest"})))
+                    :on {:click (fn [_]
+                                  (dispatch-command! dispatch! room-id name)
+                                  (when-let [^js el (compose-textarea-el)]
+                                    (set! (.-value el) ""))
+                                  (dispatch! {:type :compose/clear-draft :draft-key draft-key}))
+                         :mouseenter (fn [_]
+                                       (dispatch! {:type :cmd/select :index i}))}}
+           [:span {:class ["slash-item-name"]} (str "/" name)]
+           [:span {:class ["slash-item-desc"]} description]]))
       commands)]))
 
 (defn- submit-compose! [dispatch! room-id session-id images draft-key draft]
@@ -1737,16 +1745,16 @@
                       (fn [^js e]
                         (if cmd-open?
                           (let [sel (min (or cmd-selected 0) (dec (count cmd-matches)))]
-                            (case (.-key e)
-                              "ArrowUp"
+                            (case (keymap/event->chord e)
+                              ("up" "alt+k" "ctrl+p")
                               (do (.preventDefault e)
                                   (dispatch! {:type :cmd/select
                                               :index (mod (dec sel) (count cmd-matches))}))
-                              "ArrowDown"
+                              ("down" "alt+j" "ctrl+n")
                               (do (.preventDefault e)
                                   (dispatch! {:type :cmd/select
                                               :index (mod (inc sel) (count cmd-matches))}))
-                              ("Enter" "Tab")
+                              ("enter" "tab")
                               (do (.preventDefault e)
                                   (let [cmd-name (:name (nth cmd-matches sel))]
                                     (dispatch-command! dispatch! room-id cmd-name)
@@ -1754,7 +1762,7 @@
                                       (set! (.-value el) ""))
                                     (dispatch! {:type :compose/clear-draft
                                                 :draft-key draft-key})))
-                              "Escape"
+                              "escape"
                               (do (.preventDefault e)
                                   (when-let [^js el (compose-textarea-el)]
                                     (set! (.-value el) ""))

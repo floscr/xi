@@ -113,6 +113,7 @@ are. The common ones:
 | `i` | Focus the message box |
 | `Esc` | Leave the message box |
 | `Tab` (in the message box) | Expand the snippet word before the cursor: `c` becomes `continue`, `rec` becomes `in a recent change`. Anywhere else Tab moves focus as usual. |
+| `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
 | `G` | Scroll to the bottom |
 | `Alt+j` / `Alt+k` | Next / previous chat |
 | `Alt+n` | New chat |
