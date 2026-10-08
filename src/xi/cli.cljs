@@ -74,6 +74,7 @@
             [xi.ext.user :as user-ext]
             [xi.fx :as fx]
             [xi.naming :as naming]
+            [xi.providers.fake :as fake]
             [xi.quick-replies :as quick-replies]
             [xi.rules.store :as rules-store]
             [xi.summary :as summary]
@@ -93,8 +94,14 @@
 (def providers
   "Provider id → provider map, derived from the xi.config/providers vector
    (declared there like extensions). Insertion order is preserved (array-map),
-   so model listing follows the config's picker order."
-  (into {} (map (juxt :id identity)) config/providers))
+   so model listing follows the config's picker order.
+
+   With XI_FAKE_LLM set (end-to-end tests), every id maps to the scripted
+   fake (xi.providers.fake) instead, so no turn — side turns included — can
+   reach a real model."
+  (if (fake/script-path)
+    (fake/providers (map :id config/providers))
+    (into {} (map (juxt :id identity)) config/providers)))
 
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────
 ;;
@@ -1310,6 +1317,9 @@ See docs/guide/command-line.md for the full reference.")
           (clj-worker/install!)))
     (let [{:keys [command] :as opts} (resolve-port (parse-args args))]
       (rules-store/set-hardened-disabled! (:no-hardened-rules? opts))
+      (when-let [script (fake/script-path)]
+        (.write js/process.stderr (str "[fake-llm] XI_FAKE_LLM=" script
+                                       " — every model is the scripted fake\n")))
       (case command
         :help       (do (.write js/process.stdout (str HELP_TEXT "\n"))
                         (js/process.exit 0))
