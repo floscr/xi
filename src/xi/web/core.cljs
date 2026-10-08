@@ -984,12 +984,21 @@
           ;; Also drop the live dialog optimistically so the interactive
           ;; bubble swaps to its static record in a single render, instead of
           ;; lingering until the server echoes the removal back.
-          :web/dialog-resolved   (fn [st {:keys [room-id dialog-id entry]}]
-                                   {:state (-> st
-                                               (update-in [:web/resolved-dialogs room-id]
-                                                          (fnil conj []) entry)
-                                               (update-in [:rooms room-id :ui :dialogs]
-                                                          (fn [ds] (vec (remove #(= dialog-id (:id %)) ds)))))})
+          :web/dialog-resolved   (fn [st {:keys [room-id dialog-id entry] :as ev}]
+                                   ;; The answering client drops the dialog before the
+                                   ;; server echo, so it must also restart the gated
+                                   ;; call's run clock itself on an allow — the echo's
+                                   ;; restamp (ws-transport) finds no dialog here.
+                                   (let [answered (some #(when (= dialog-id (:id %)) %)
+                                                        (get-in st [:rooms room-id :ui :dialogs]))]
+                                     {:state (-> st
+                                                 (update-in [:web/resolved-dialogs room-id]
+                                                            (fnil conj []) entry)
+                                                 (update-in [:rooms room-id :ui :dialogs]
+                                                            (fn [ds] (vec (remove #(= dialog-id (:id %)) ds))))
+                                                 (update-in [:rooms room-id :history]
+                                                            dlg/restamp-gated-call answered
+                                                            (:value entry) (:event/ts ev)))}))
           :ui/dialog-response    dialog-response
           ;; Deny with reason: the Deny button's ⋯ turns the composer into a
           ;; reason field (views/deny-reason-compose); sending answers the ask

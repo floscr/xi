@@ -219,6 +219,21 @@
     (or (first (filter #(and (= :running (:status (nth entries %))) (match %)) idxs))
         (when call (first (filter match idxs))))))
 
+(defn restamp-gated-call
+  "History with the :started-at of the tool call an allowed :confirm `dialog`
+   was gating moved to `ts` (the answer's :event/ts). The gate holds the call
+   while its ask is open, so without this the wait for the user would count
+   as run time (the web client's live timer — it pauses while the ask is
+   pending and resumes from the approval). A deny, a dialog without :call, a
+   non-confirm, or a call no longer running leaves `history` unchanged."
+  [history dialog value ts]
+  (let [entries (vec history)
+        idx     (when (and ts value (= :confirm (:type dialog)) (:call dialog))
+                  (permission-tool-index dialog entries 0))]
+    (if (and idx (= :running (:status (nth entries idx))))
+      (assoc-in entries [idx :started-at] ts)
+      entries)))
+
 (defn humanize-name
   "\"commit-message\" → \"Commit message\"."
   [s]

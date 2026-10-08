@@ -20,6 +20,7 @@
    - :room/joined installs the server's room snapshot; afterwards the
      incremental event stream keeps the mirror in sync."
   (:require [xi.commands :as commands]
+            [xi.dialog :as dialog]
             [xi.wire :as wire]))
 
 ;; ── Handler wrapping (pure) ──────────────────────────────────────────────────
@@ -154,12 +155,17 @@
 (defn dialog-response
   "The user's own dialog answer is forwarded to the server (the resolver
    lives there); the server's :remote? echo removes the answered dialog from
-   the local room mirror."
-  [st {:keys [room-id dialog-id remote?] :as ev}]
+   the local room mirror and, like the server, restarts the gated call's run
+   clock on an allow (xi.dialog/restamp-gated-call)."
+  [st {:keys [room-id dialog-id value remote?] :as ev}]
   (if remote?
-    (when (some #(= dialog-id (:id %)) (get-in st [:rooms room-id :ui :dialogs]))
-      {:state (update-in st [:rooms room-id :ui :dialogs]
-                         (fn [ds] (vec (remove #(= dialog-id (:id %)) ds))))})
+    (when-let [answered (some #(when (= dialog-id (:id %)) %)
+                              (get-in st [:rooms room-id :ui :dialogs]))]
+      {:state (-> st
+                  (update-in [:rooms room-id :ui :dialogs]
+                             (fn [ds] (vec (remove #(= dialog-id (:id %)) ds))))
+                  (update-in [:rooms room-id :history]
+                             dialog/restamp-gated-call answered value (:event/ts ev)))})
     {:effects [[:ws/send ev]]}))
 
 (defn lobby-state

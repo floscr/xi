@@ -804,10 +804,13 @@
   "Live elapsed-time label for a still-running tool call (poll-until, long
    builds, stalled commands). The text is repainted straight into the DOM node
    once a second — the tool block itself only re-renders on events, which
-   stop arriving exactly when a call stalls."
+   stop arriving exactly when a call stalls. Keyed by `started-at`: a
+   permission allow restamps it (xi.dialog/restamp-gated-call), and the key
+   change remounts the span so a fresh interval picks up the new start."
   [started-at]
   (when started-at
     [:span {:class ["tool-call-timer"]
+            :replicant/key [::run-timer started-at]
             :replicant/on-mount
             (fn [{:replicant/keys [^js node]}]
               (aset node "__xiTimer"
@@ -876,7 +879,10 @@
        ;; Pinned right (collapsed or open) so a long preview can't push it away.
        (when running?
          [:span {:class ["tool-call-running"]}
-          (run-timer started-at)
+          ;; No clock while the call waits on its permission ask — it isn't
+          ;; running yet. The allow restamps :started-at, so the timer
+          ;; returns counting only actual run time.
+          (when-not permission (run-timer started-at))
           (spinner)])
        ;; Right-side status badge: a filled circle with a white icon that
        ;; captures the outcome — grey ✗ when the user denied the call (its

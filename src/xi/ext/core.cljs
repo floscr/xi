@@ -118,7 +118,8 @@
    `compose` merges a list of extensions into the pieces the per-mode
    assembly (xi.cli) wires into the app, the provider effects and the TUI."
   (:require [clojure.string :as str]
-            [xi.core.events :as events]))
+            [xi.core.events :as events]
+            [xi.dialog :as dialog]))
 
 ;; ── Composition (pure) ───────────────────────────────────────────────────────
 
@@ -344,11 +345,16 @@
 
      :handlers
      {:ui/dialog-response
-      (fn [st {:keys [room-id dialog-id value reason]}]
-        (when (some #(= dialog-id (:id %))
-                    (get-in st [:rooms room-id :ui :dialogs]))
-          {:state   (update-in st [:rooms room-id :ui :dialogs]
-                               (fn [ds] (vec (remove #(= dialog-id (:id %)) ds))))
+      (fn [st {:keys [room-id dialog-id value reason] :as ev}]
+        (when-let [answered (some #(when (= dialog-id (:id %)) %)
+                                  (get-in st [:rooms room-id :ui :dialogs]))]
+          {:state   (-> st
+                        (update-in [:rooms room-id :ui :dialogs]
+                                   (fn [ds] (vec (remove #(= dialog-id (:id %)) ds))))
+                        ;; an allowed permission ask: the gated call's run
+                        ;; clock starts now, not when it hit the gate
+                        (update-in [:rooms room-id :history]
+                                   dialog/restamp-gated-call answered value (:event/ts ev)))
            :effects [[:dialog/resolve (cond-> {:dialog-id dialog-id :value value}
                                         ;; a reason only ever rides a deny
                                         (and (not value) (string? reason)

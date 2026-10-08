@@ -83,6 +83,33 @@
     (is (nil? (dialog/permission-tool-index
                {} (mapv #(assoc % :status :done) parallel-history) 0)))))
 
+(def ^:private gating-dialog
+  {:type :confirm
+   :call {:name "write" :arguments {:path "/a.clj" :content "x"}}})
+
+(deftest restamp-gated-call-restarts-the-run-clock-on-allow
+  (let [h (dialog/restamp-gated-call parallel-history gating-dialog true 42)]
+    (is (= 42 (:started-at (nth h 0)))
+        "the gated call's clock restarts at the answer, not at the gate")
+    (is (nil? (:started-at (nth h 1))) "parallel calls keep their own start"))
+  (is (= 42 (:started-at (nth (dialog/restamp-gated-call
+                               parallel-history gating-dialog :block 42) 0)))
+      "every allow flavor (:block, :repo, :always) restamps"))
+
+(deftest restamp-gated-call-leaves-history-alone-otherwise
+  (is (= parallel-history
+         (dialog/restamp-gated-call parallel-history gating-dialog false 42))
+      "a deny settles the call; no clock to restart")
+  (is (= parallel-history
+         (dialog/restamp-gated-call parallel-history (dissoc gating-dialog :call) true 42))
+      "a dialog without :call gates nothing")
+  (is (= parallel-history
+         (dialog/restamp-gated-call parallel-history (assoc gating-dialog :type :select) true 42))
+      "only confirm asks gate calls")
+  (let [settled (assoc-in parallel-history [0 :status] :aborted)]
+    (is (= settled (dialog/restamp-gated-call settled gating-dialog true 42))
+        "a call no longer running (interrupted turn) keeps its original start")))
+
 (deftest resolved-label-from-options
   (let [d {:options [:yes :no :always]}]
     (is (= "Allowed" (dialog/resolved-label d true)))
