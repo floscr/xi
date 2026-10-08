@@ -21,6 +21,7 @@
             [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.dialog :as dialog]
+            [xi.naming :as naming]
             [xi.util :as util]))
 
 ;; ── Helpers ──────────────────────────────────────────────────────────────────
@@ -569,18 +570,24 @@
    provider session with the truncated conversation injected as context
    (see xi.agent/history->context). The dropped provider session id is
    recorded as superseded so its transcript stays claimed by this session
-   instead of resurfacing as a duplicate card (state/drop-provider-session)."
+   instead of resurfacing as a duplicate card (state/drop-provider-session).
+   A truncation that drops every user message (retry / edit / delete of the
+   first message) restarts the conversation, so auto-titling is re-armed —
+   the resubmitted first message generates a fresh title (naming/rearm-titling)."
   [st {:keys [room-id index mode editor-text]}]
   (when-let [room (state/get-room st room-id)]
     (let [history (:history room)
-          new-history (subvec (vec history) 0 index)]
+          new-history (subvec (vec history) 0 index)
+          fresh-convo? (not-any? #(= :user (:kind %)) new-history)]
       (cond-> {:state (-> st
                           (assoc-in [:rooms room-id :history] new-history)
                           (update-in [:rooms room-id :session]
                                      #(-> (state/drop-provider-session %)
                                           (assoc :inject-history? true)))
                           (update-in [:rooms room-id :ui] dissoc :tree-open?)
-                          (update-in [:rooms room-id :agent] assoc :busy? false :queued []))}
+                          (update-in [:rooms room-id :agent] assoc :busy? false :queued [])
+                          (cond-> fresh-convo?
+                            (update-in [:rooms room-id] naming/rearm-titling)))}
         editor-text
         (assoc :effects [[:editor/insert-text {:text editor-text}]])))))
 

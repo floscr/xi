@@ -51,9 +51,12 @@
 ;; ── Handlers (pure) ──────────────────────────────────────────────────────────
 
 (defn maybe-generate-title
-  "Chained onto :prompt/submit. On the first user message of an unnamed
-   session, kick off out-of-band title generation. :title-pending? guards
-   against a queued second message firing a second turn.
+  "Chained onto :prompt/submit. On the first user message of an unnamed (or
+   only provisionally named) session, kick off out-of-band title generation.
+   :title-pending? guards against a queued second message firing a second
+   turn. A provisional name counts as unnamed, so after a failed title turn
+   (which clears :title-pending?, see `title-generated`) or a first-message
+   retry (see `rearm-titling`) the next prompt regenerates.
 
    Immediately sets a *provisional* name derived from the first prompt (via
    `util/session-title`) so the UI shows a snippet of the request instead of
@@ -64,7 +67,8 @@
   (when-let [room (state/get-room st room-id)]
     (when (and (string? text)
                (seq (str/trim text))
-               (nil? (get-in room [:session :name]))
+               (or (nil? (get-in room [:session :name]))
+                   (get-in room [:agent :title-provisional?]))
                (not (get-in room [:agent :title-pending?]))
                ;; prompt-submit ran first (chain), so the message is in
                ;; history — confirms this wasn't merely queued while busy.
@@ -94,13 +98,30 @@
    still safely persisted by the following turn-end."
   [st {:keys [room-id title]}]
   (when-let [room (state/get-room st room-id)]
-    (when (and title
-               (or (nil? (get-in room [:session :name]))
-                   (get-in room [:agent :title-provisional?])))
+    (if (and title
+             (or (nil? (get-in room [:session :name]))
+                 (get-in room [:agent :title-provisional?])))
       {:state   (-> st
                     (assoc-in [:rooms room-id :session :name] title)
-                    (update-in [:rooms room-id :agent] dissoc :title-provisional?))
-       :effects [[:session/sync {:room-id room-id}]]})))
+                    (update-in [:rooms room-id :agent] dissoc
+                               :title-provisional? :title-pending?))
+       :effects [[:session/sync {:room-id room-id}]]}
+      ;; Failed/empty title turn (title nil) or a real name landed meanwhile:
+      ;; drop the pending guard so a later prompt may regenerate while the
+      ;; name is still provisional (see maybe-generate-title).
+      {:state (update-in st [:rooms room-id :agent] dissoc :title-pending?)})))
+
+(defn rearm-titling
+  "Make a room's session title regenerable again: clear the :title-pending?
+   guard and mark any existing name provisional, so the next submitted first
+   message kicks off a fresh title turn whose result overwrites it. Used when
+   history is truncated to before the first user message (bubble retry / edit
+   / delete of the first message) — the conversation restarts, so the title
+   should too."
+  [room]
+  (cond-> (update room :agent dissoc :title-pending?)
+    (get-in room [:session :name])
+    (assoc-in [:agent :title-provisional?] true)))
 
 (def handlers
   {:session/title-generated title-generated})
@@ -141,12 +162,17 @@
               (fn [result]
                 (cleanup!)
                 (when-not (:aborted result)
-                  (let [raw   (or (not-empty (:result-text result))
-                                  (not-empty (str/join @chunks)))
+                  ;; An errored turn's result text is the failure notice
+                  ;; (auth expired, billing, …), not a title — never let it
+                  ;; name the session. Dispatching a nil title clears the
+                  ;; pending guard so a retry can regenerate.
+                  (let [raw   (when-not (or (:is-error result)
+                                            (:fatal-error result))
+                                (or (not-empty (:result-text result))
+                                    (not-empty (str/join @chunks))))
                         title (clean-title raw)]
-                    (when title
-                      (dispatch! {:type :session/title-generated
-                                  :room-id room-id :title title}))))))
+                    (dispatch! {:type :session/title-generated
+                                :room-id room-id :title title})))))
              (.catch (fn [_err]
                        (cleanup!)
                        (dispatch! {:type :session/title-generated

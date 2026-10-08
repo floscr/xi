@@ -240,6 +240,28 @@
         "flags the session so the next turn injects the truncated history")
     (is (nil? (get-in state [:rooms "r" :ui :tree-open?])))))
 
+(deftest tree-navigate-to-first-message-rearms-titling
+  (let [st (-> (apply-events (with-room)
+                             {:type :prompt/submit :room-id "r" :text "hello"}
+                             {:type :agent/turn-end :room-id "r" :provider-session-id "cli-1"})
+               (assoc-in [:rooms "r" :session :name] "Some Generated Title")
+               (assoc-in [:rooms "r" :agent :title-pending?] true))
+        {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 0})]
+    (testing "a fork dropping every user message re-arms auto-titling"
+      (is (nil? (get-in state [:rooms "r" :agent :title-pending?])))
+      (is (true? (get-in state [:rooms "r" :agent :title-provisional?]))
+          "the old name is provisional: the resubmitted first message's title turn overwrites it"))))
+
+(deftest tree-navigate-mid-conversation-keeps-title
+  (let [st (-> (apply-events (with-room)
+                             {:type :prompt/submit :room-id "r" :text "hello"}
+                             {:type :agent/text-delta :room-id "r" :text "world"}
+                             {:type :agent/turn-end :room-id "r" :provider-session-id "cli-1"})
+               (assoc-in [:rooms "r" :session :name] "Some Generated Title"))
+        ;; keep the first user message + reply → the conversation continues
+        {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 2})]
+    (is (nil? (get-in state [:rooms "r" :agent :title-provisional?])))))
+
 (deftest tree-navigate-accumulates-superseded-sessions
   (let [st (-> (apply-events (with-room)
                              {:type :prompt/submit :room-id "r" :text "hello"}
