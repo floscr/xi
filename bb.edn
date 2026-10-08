@@ -108,6 +108,41 @@
           ;; project and a build can only be watched once, so whichever starts
           ;; second dies with "already started {:build-id :main}". Starting or
           ;; restarting either one stops the other first.
+          ;; Compile + run a :node-test build (autorun). Prints one line when
+          ;; every test passes, else only the FAIL/ERROR blocks + summary
+          ;; (exit 1); compile errors print the full output. `--full` streams
+          ;; the raw shadow-cljs/cljs.test output instead.
+          (defn run-cljs-tests [build]
+            (if (some #{"--full"} *command-line-args*)
+              (shell (str "npx shadow-cljs compile " build))
+              (let [{:keys [out err]} (shell {:out :string :err :string :continue true}
+                                             (str "npx shadow-cljs compile " build))
+                    text    (str out "\n" err)
+                    summary (re-find (re-pattern "Ran (\\d+) tests containing (\\d+) assertions\\.\\n(\\d+) failures, (\\d+) errors\\.") text)
+                    [_ tests assertions failures errors] summary
+                    ;; A FAIL/ERROR block runs from its header to the next blank line.
+                    blocks  (->> (str/split-lines text)
+                                 (reduce (fn [[blocks cur] line]
+                                           (cond
+                                             (re-find (re-pattern "^(FAIL|ERROR) in ") line) [(cond-> blocks cur (conj cur)) [line]]
+                                             (and cur (str/blank? line))          [(conj blocks cur) nil]
+                                             cur                                  [blocks (conj cur line)]
+                                             :else                                [blocks nil]))
+                                         [[] nil])
+                                 ((fn [[blocks cur]] (cond-> blocks cur (conj cur)))))]
+                (cond
+                  (nil? summary)
+                  (do (println text)
+                      (println "✗ tests did not run (compile error or crash)")
+                      (System/exit 1))
+
+                  (= "0" failures errors)
+                  (println (str "✓ " tests " tests passed (" assertions " assertions)"))
+
+                  :else
+                  (do (doseq [b blocks] (println (str/join "\n" b)) (println))
+                      (println (str "✗ " failures " failures, " errors " errors (" tests " tests, " assertions " assertions)"))
+                      (System/exit 1))))))
           (defn stop-dev-watch! []
             (td/stop config))
           (defn stop-serve-watch! []
@@ -155,36 +190,13 @@
 
   test
   {:doc "Compile and run unit tests once. Prints a single line when they all pass, or only the FAIL/ERROR blocks + summary (exit 1); compile errors print the full output. `bb test --full` streams the raw shadow-cljs/cljs.test output instead."
-   :task (if (some #{"--full"} *command-line-args*)
-           (shell "npx shadow-cljs compile test")
-           (let [{:keys [out err]} (shell {:out :string :err :string :continue true}
-                                          "npx shadow-cljs compile test")
-               text    (str out "\n" err)
-               summary (re-find (re-pattern "Ran (\\d+) tests containing (\\d+) assertions\\.\\n(\\d+) failures, (\\d+) errors\\.") text)
-               [_ tests assertions failures errors] summary
-               ;; A FAIL/ERROR block runs from its header to the next blank line.
-               blocks  (->> (str/split-lines text)
-                            (reduce (fn [[blocks cur] line]
-                                      (cond
-                                        (re-find (re-pattern "^(FAIL|ERROR) in ") line) [(cond-> blocks cur (conj cur)) [line]]
-                                        (and cur (str/blank? line))          [(conj blocks cur) nil]
-                                        cur                                  [blocks (conj cur line)]
-                                        :else                                [blocks nil]))
-                                    [[] nil])
-                            ((fn [[blocks cur]] (cond-> blocks cur (conj cur)))))]
-           (cond
-             (nil? summary)
-             (do (println text)
-                 (println "✗ tests did not run (compile error or crash)")
-                 (System/exit 1))
+   :task (run-cljs-tests "test")}
 
-             (= "0" failures errors)
-             (println (str "✓ " tests " tests passed (" assertions " assertions)"))
-
-             :else
-             (do (doseq [b blocks] (println (str/join "\n" b)) (println))
-                 (println (str "✗ " failures " failures, " errors " errors (" tests " tests, " assertions " assertions)"))
-                 (System/exit 1)))))}
+  test:e2e
+  {:doc "Run the end-to-end scenarios (test/xi/e2e/*_e2e.cljs): real `bun target/main.js` runs in throwaway HOMEs against the scripted fake LLM — never a real model. Uses the target/main.js the shadow watch keeps fresh, and compiles it first when no watch runs. Output like `bb test` (`--full` for raw). See docs/testing.md."
+   :task (do (when-not (seq (stray-pids "shadow-cljs watch .*main"))
+               (shell "npx shadow-cljs compile main"))
+             (run-cljs-tests "e2e"))}
 
   test:watch
   {:doc "Watch-compile and rerun tests on changes"

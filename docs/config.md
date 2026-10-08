@@ -84,6 +84,7 @@ Plain `def`s read by their consuming namespace.
 | `xi.system-prompt` | `~/.config/xi/prompt-files.edn` |
 | `xi.auth` | `~/.config/xi/client-key`, `clients.edn`, `pending-clients.edn` |
 | `xi.server.ws` (`resolve-tls`) | `XI_TLS_CERT`/`XI_TLS_KEY`, else `~/.config/xi/tls/xi.{crt,key}` |
+| `xi.providers.fake` (via `xi.cli/providers`) | `XI_FAKE_LLM` (script file; when set, every provider id is the scripted fake), `XI_FAKE_LLM_LOG` (JSONL of what each turn saw). Dev/test only, not user settings; see [testing.md](testing.md). |
 
 `CLAUDE_CONFIG_DIR` is set internally (`xi.session/make-throwaway-config-dir!`)
 to point the Claude CLI at a throwaway mirror for side turns and

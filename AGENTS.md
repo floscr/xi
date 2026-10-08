@@ -39,6 +39,11 @@ Personal coding harness in ClojureScript + Bun.
   mirroring `src/` (`test/xi/commands_test.cljs` ↔ `src/xi/commands.cljs`);
   any `*_test.cljs` is auto-discovered. Prefer pure functions; avoid
   filesystem/network I/O.
+- `bb test:e2e` runs the end-to-end scenarios (`test/xi/e2e/*_e2e.cljs`):
+  the real `target/main.js` (prompt mode, headless server, WS, HTTP) in
+  throwaway HOMEs per user profile, against a scripted fake LLM
+  (`XI_FAKE_LLM`) — never a real model. Use it for behaviour across
+  processes, config and rules; see [docs/testing.md](docs/testing.md).
 - **Never run `xi` / `bun target/main.js` from the agent** — the TUI needs an
   interactive terminal. Compile and let the user test. `xi prompt "…"`
   (one-shot, no TUI) is safe.
@@ -118,6 +123,7 @@ site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:bui
 | Topic | Doc |
 |---|---|
 | Core loop, state, events, connection layer | [architecture.md](docs/architecture.md) |
+| Unit tests · e2e scenarios, the fake LLM, user profiles | [testing.md](docs/testing.md) |
 | Compile-time config (`config.cljc`: extension/provider vectors, TUI opts, appearance, flags) | [config.md](docs/config.md) |
 | Built-in extensions: every key, dialogs, hooks, web halves · recipe for a new one | [extensions.md](docs/extensions.md) · [writing-extensions.md](docs/writing-extensions.md) |
 | MCP client internals (manager, trust fingerprint, wire protocol) · tree-sitter reads | [mcp-internals.md](docs/mcp-internals.md) · [treesitter.md](docs/treesitter.md) |

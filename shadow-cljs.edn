@@ -15,6 +15,15 @@
    :autorun   true
    :compiler-options {:reader-features #{:node}}}
 
+  ;; End-to-end scenarios (`bb test:e2e`): *-e2e namespaces drive the built
+  ;; target/main.js against the scripted fake LLM (test/xi/e2e/).
+  :e2e
+  {:target    :node-test
+   :output-to "target/e2e.js"
+   :ns-regexp "-e2e$"
+   :autorun   true
+   :compiler-options {:reader-features #{:node}}}
+
   :web
   {:target     :browser
    :output-dir "resources/public/js"

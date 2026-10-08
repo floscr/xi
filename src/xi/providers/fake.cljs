@@ -261,7 +261,13 @@
                          (let [continue #(step (rest steps) (inc n))]
                            (cond
                              text     (let [t (expand text (vars))]
-                                        (swap! !turn update :blocks conj {:type "text" :text t})
+                                        ;; consecutive text steps are one
+                                        ;; streamed block, as in a real reply
+                                        (swap! !turn update :blocks
+                                               (fn [bs]
+                                                 (if (= "text" (:type (peek bs)))
+                                                   (conj (pop bs) (update (peek bs) :text str t))
+                                                   (conj bs {:type "text" :text t}))))
                                         (when on-text (on-text t))
                                         (continue))
                              thinking (do (when on-thinking (on-thinking (expand thinking (vars))))
