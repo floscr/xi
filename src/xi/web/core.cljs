@@ -1586,13 +1586,17 @@
           ;; page seeded with the room's flat file list; the page fuzzy-ranks
           ;; it client-side per keystroke. Selecting a row reuses :files/open.
           :palette/open-file-finder
-          (fn [st {:keys [cwd]}]
+          (fn [st {:keys [cwd in-dialog?]}]
             (let [cwd (or cwd (view-cwd st))]
               {:state (-> st
                           (assoc :web/palette-page {:kind :file-finder}
                                  :web/palette-open? true
-                                 :web/palette-drilling? true
                                  :web/file-finder-query "")
+                          ;; Keyboard Tab from the project picker keeps the
+                          ;; <dialog> open, so no :palette/opened will consume
+                          ;; the one-shot drilling flag — don't set it, or the
+                          ;; next fresh mod+k open would keep this sub-page.
+                          (cond-> (not in-dialog?) (assoc :web/palette-drilling? true))
                           (dissoc :web/file-tree))
                :effects [[:ws/send {:type :files/web-tree :cwd cwd}]
                          [:palette/reset-filter nil]

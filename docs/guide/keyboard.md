@@ -211,7 +211,7 @@ nothing outside a chat.
 | Action | Does |
 | --- | --- |
 | `:palette/open` | The `Ctrl`/`Cmd+K` palette; its first group lists your chats |
-| `:projects/pick` | The palette's project list; Enter on one opens its actions (sessions, new chat, …) |
+| `:projects/pick` | The palette's project list; Enter on one opens its actions (sessions, new chat, …), Tab finds a file in it |
 | `:skills/search` | The palette's skills page: filter on-demand skills, Enter loads one |
 | `:projects/open` | The projects page |
 | `:git/status` | The working-tree diff of the current chat |

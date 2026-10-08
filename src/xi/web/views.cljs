@@ -4952,11 +4952,23 @@
                                           :path path :draft-key dkey}))}
            (shorten-path path)))))))
 
+(defn- keycaps
+  "A key's display string (\"Alt+Shift+P\", \"] f\") as keyboard keycaps: one
+   <kbd> per key, the chords of a sequence spaced apart. Goes inside the
+   framework's `.command-shortcut` <kbd> (nested <kbd>s = a key combination)."
+  [display]
+  (into [:span {:class ["keycaps"]}]
+        (for [chord (str/split display #" ")]
+          (into [:span {:class ["keycap-chord"]}]
+                (for [k (str/split chord #"\+(?=.)")]
+                  [:kbd {:class ["keycap"]} k])))))
+
 (defn- palette-project-list-page
   "Projects as a palette sub-page (the :projects/pick action). A command-item
    per project; selecting one drills into its action sub-page, the same as
-   Enter on a project row of the top-level palette. Spinner while
-   :web/project-dirs loads."
+   Enter on a project row of the top-level palette. Tab on a row skips the
+   actions and opens the file finder for that project (palette-keydown reads
+   the row's `data-palette-drill` cwd). Spinner while :web/project-dirs loads."
   [state dispatch!]
   (let [dirs (:web/project-dirs state)]
     (if (empty? dirs)
@@ -4966,7 +4978,10 @@
               :let [short (shorten-path d)]]
           (cmd/command-item
            {:icon :folder
+            :shortcut (keycaps "⇥")
             :value (str "project " short " " d)
+            :attrs {:data-palette-drill d
+                    :data-palette-label short}
             :on-click (fn [_] (dispatch! {:type :palette/drill :cwd d
                                           :label short :reopen? true}))}
            short))))))
@@ -5202,24 +5217,32 @@
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
-   on the search page Tab flips its names-only/full-text toggle instead
-   (Ctrl/Cmd+F belongs to the browser's find);
+   on the project picker page Tab opens the active project's file finder
+   instead (Enter there already drills); on the search page Tab flips its
+   names-only/full-text toggle (Ctrl/Cmd+F belongs to the browser's find);
    Shift+Tab / Backspace-on-empty backs out of a sub-page (Escape closes the
    palette, as at the top level). Reads the
    runtime's `.command-item--active` element and its `data-palette-drill` cwd."
   [dispatch! palette-page]
   (fn [^js e]
     (let [dialog (.-currentTarget e)
-          key    (.-key e)]
+          key    (.-key e)
+          tab?   (and (= key "Tab") (not (.-shiftKey e)))
+          active (fn [] (.querySelector dialog ".command-item--active"))]
       (cond
-        (and (nil? palette-page) (= key "Tab") (not (.-shiftKey e)))
-        (when-let [active (.querySelector dialog ".command-item--active")]
-          (when-let [cwd (.. active -dataset -paletteDrill)]
+        (and (nil? palette-page) tab?)
+        (when-let [^js row (active)]
+          (when-let [cwd (.. row -dataset -paletteDrill)]
             (.preventDefault e)
             (dispatch! {:type :palette/drill :cwd cwd
-                        :label (.. active -dataset -paletteLabel)})))
+                        :label (.. row -dataset -paletteLabel)})))
 
-        (and (= :search (:kind palette-page)) (= key "Tab") (not (.-shiftKey e)))
+        (and (= :projects (:kind palette-page)) tab?)
+        (when-let [cwd (some-> ^js (active) (.. -dataset -paletteDrill))]
+          (.preventDefault e)
+          (dispatch! {:type :palette/open-file-finder :cwd cwd :in-dialog? true}))
+
+        (and (= :search (:kind palette-page)) tab?)
         (do (.preventDefault e)
             (dispatch! {:type :palette/toggle-content-search}))
 
@@ -5236,17 +5259,6 @@
    keys Alt already does here: list nav (j k n p) and xi's global/permission
    bindings (u x a d)."
   "sfghlqweryiotzcvbm")
-
-(defn- keycaps
-  "A key's display string (\"Alt+Shift+P\", \"] f\") as keyboard keycaps: one
-   <kbd> per key, the chords of a sequence spaced apart. Goes inside the
-   framework's `.command-shortcut` <kbd> (nested <kbd>s = a key combination)."
-  [display]
-  (into [:span {:class ["keycaps"]}]
-        (for [chord (str/split display #" ")]
-          (into [:span {:class ["keycap-chord"]}]
-                (for [k (str/split chord #"\+(?=.)")]
-                  [:kbd {:class ["keycap"]} k])))))
 
 (defn- with-shortcut
   "cmd/command-item `opts` plus a keycap badge of the key that does the same
