@@ -135,6 +135,25 @@
       (is (not (contains? hidden "s0")))
       (is (contains? hidden (str "s" user-state/max-dismissed))))))
 
+(deftest store-never-keeps-a-chat-pinned-and-hidden-at-once
+  (testing "pinning a hidden chat shows it again"
+    (is (true? (store/toggle-dismissed! "dave" "s1")))
+    (is (true? (store/toggle-pinned! "dave" "s1")))
+    (is (= #{"s1"} (store/pinned "dave")))
+    (is (= #{} (store/dismissed "dave"))))
+  (testing "hiding a pinned chat unpins it"
+    (is (true? (store/toggle-dismissed! "dave" "s1")))
+    (is (= #{} (store/pinned "dave")))
+    (is (= #{"s1"} (store/dismissed "dave"))))
+  (testing "unpinning / un-hiding leaves the other flag alone"
+    (store/toggle-pinned! "dave" "s2")
+    (store/toggle-dismissed! "dave" "s3")
+    (is (false? (store/toggle-pinned! "dave" "s2")))
+    (is (= #{"s1" "s3"} (store/dismissed "dave")))
+    (is (false? (store/toggle-dismissed! "dave" "s3")))
+    (is (= #{} (store/pinned "dave")))
+    (is (= #{"s1"} (store/dismissed "dave")))))
+
 (def ^:private flags-state
   {:ext {:favorites {:session-flags {:favorite? ["s1" "s2"]}}
          :tags      {:session-flags {:favorite? ["s3"] :work? ["s1"]}}

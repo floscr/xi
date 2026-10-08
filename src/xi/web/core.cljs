@@ -1296,7 +1296,10 @@
           :dismissed/toggle      (fn [st {:keys [session-id]}]
                                    (let [flip (fn [ss]
                                                 (mapv #(if (= (:session-id %) session-id)
-                                                         (update % :dismissed? not)
+                                                         (let [hidden? (not (:dismissed? %))]
+                                                           ;; hiding unpins (the server does the same)
+                                                           (cond-> (assoc % :dismissed? hidden?)
+                                                             hidden? (assoc :pinned? false)))
                                                          %)
                                                       ss))]
                                      {:state (-> st
@@ -1311,7 +1314,10 @@
           :pinned/toggle         (fn [st {:keys [session-id]}]
                                    (let [flip (fn [ss]
                                                 (mapv #(if (= (:session-id %) session-id)
-                                                         (update % :pinned? not)
+                                                         (let [pinned? (not (:pinned? %))]
+                                                           ;; pinning un-hides (the server does the same)
+                                                           (cond-> (assoc % :pinned? pinned?)
+                                                             pinned? (assoc :dismissed? false)))
                                                          %)
                                                       ss))]
                                      {:state (-> st

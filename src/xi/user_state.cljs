@@ -153,7 +153,8 @@
                                                (and (string? k) (<= 1 (count k) 200)
                                                     (integer? n) (not (neg? n))))
                                              m)))}
-   ;; session ids hidden from the user's Recent group, oldest first
+   ;; session ids hidden from the user's Recent group, oldest first. Disjoint
+   ;; from :pinned: hiding unpins, pinning un-hides (xi.user-state.store)
    :dismissed        {:client-writable? false
                       :valid? (fn [v] (bounded-strings? v max-dismissed 200))}
    ;; session ids pinned to the user's Recent group: never aged out of it,

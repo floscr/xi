@@ -64,7 +64,8 @@ devices and `xi clients revoke <name>` removes one.
   last couple of days. "Pin session" (right-click a card, long-press, or its
   ⋮ menu) keeps a chat there for good: it never ages into Earlier, and "Hide
   all from Recent" / Prune skip it. "Unpin session" in the same menu undoes
-  it.
+  it. A chat is never pinned and hidden at once: pinning a hidden chat shows
+  it again, hiding a pinned chat unpins it.
 
 ## Buffers
 

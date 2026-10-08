@@ -95,16 +95,30 @@
   [user]
   (set (:dismissed (load-state user))))
 
+(defn- set-keys!
+  "Store every `k v` of `kvs` for `user` in one write. True when written;
+   nil (nothing touched) when any key is unknown or any value invalid."
+  [user kvs]
+  (when (every? (fn [[k v]] (user-state/valid? k v)) kvs)
+    (write! user (merge (load-state user) kvs))))
+
+(defn- without [session-id v]
+  (filterv #(not= session-id %) v))
+
 (defn toggle-dismissed!
-  "Hide `session-id` from `user`'s Recent, or show it again. Returns the new
+  "Hide `session-id` from `user`'s Recent, or show it again. Hiding also
+   unpins it: a chat is never pinned and hidden at once. Returns the new
    dismissed? state, nil when nothing could be written."
   [user session-id]
-  (let [v       (vec (:dismissed (load-state user)))
+  (let [{:keys [dismissed pinned]} (load-state user)
+        v       (vec dismissed)
         hidden? (boolean (some #{session-id} v))
         v'      (if hidden?
-                  (filterv #(not= session-id %) v)
-                  (vec (take-last user-state/max-dismissed (conj v session-id))))]
-    (when (set-key! user :dismissed v')
+                  (without session-id v)
+                  (vec (take-last user-state/max-dismissed (conj v session-id))))
+        kvs     (cond-> {:dismissed v'}
+                  (not hidden?) (assoc :pinned (without session-id (vec pinned))))]
+    (when (set-keys! user kvs)
       (not hidden?))))
 
 (defn undismiss!
@@ -113,7 +127,7 @@
   [user session-id]
   (let [v (vec (:dismissed (load-state user)))]
     (when (some #{session-id} v)
-      (set-key! user :dismissed (filterv #(not= session-id %) v)))))
+      (set-key! user :dismissed (without session-id v)))))
 
 (defn pinned
   "The set of session ids `user` pinned to Recent."
@@ -121,15 +135,19 @@
   (set (:pinned (load-state user))))
 
 (defn toggle-pinned!
-  "Pin `session-id` to `user`'s Recent, or unpin it. Returns the new pinned?
-   state, nil when nothing could be written."
+  "Pin `session-id` to `user`'s Recent, or unpin it. Pinning also shows a
+   hidden chat again: a chat is never pinned and hidden at once. Returns the
+   new pinned? state, nil when nothing could be written."
   [user session-id]
-  (let [v       (vec (:pinned (load-state user)))
+  (let [{:keys [dismissed pinned]} (load-state user)
+        v       (vec pinned)
         pinned? (boolean (some #{session-id} v))
         v'      (if pinned?
-                  (filterv #(not= session-id %) v)
-                  (vec (take-last user-state/max-pinned (conj v session-id))))]
-    (when (set-key! user :pinned v')
+                  (without session-id v)
+                  (vec (take-last user-state/max-pinned (conj v session-id))))
+        kvs     (cond-> {:pinned v'}
+                  (not pinned?) (assoc :dismissed (without session-id (vec dismissed))))]
+    (when (set-keys! user kvs)
       (not pinned?))))
 
 (defn known-users
