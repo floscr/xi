@@ -154,7 +154,9 @@
       (is (= :files/find (get-in km [:global "ctrl+p"])))
       (is (= :files/find (get-in km [:global "meta+p"])))
       (is (nil? (get-in km [:buffer/pager "j"])) "TUI-only layer absent on the web")
-      (is (= :timeline/bottom (get-in km [:mode/navigate "shift+g"])) "keys stored canonical")))
+      (is (= :keys/show (get-in km [:mode/navigate "?"])) "keys stored canonical")
+      (is (empty? (select-keys (:mode/navigate km) ["i" "j" "k" "shift+g"]))
+          "vim-style navigation is the user's to bind")))
   (testing "user overrides, unbinds and additions win over defaults"
     (let [km (keys/effective-keymap {:surface :web
                                      :user {:global {"alt+n" :sessions/prune
@@ -226,7 +228,7 @@
         km      (keys/effective-keymap {:surface :web
                                         :user {:global {"alt+n" nil "alt+q" :chat/new}}})
         actions {:chat/new {:label "New chat"} :sidebar/toggle {:label "Toggle the sidebar"}
-                 :compose/focus {:label "Focus the message box"}}
+                 :keys/show {:label "Keyboard shortcuts"}}
         rows    (keys/listing km base actions [:mode/navigate :global])
         global  (some #(when (= :global (:layer %)) %) rows)]
     (is (= [:mode/navigate :global] (map :layer (take 2 rows))) "active layers first")

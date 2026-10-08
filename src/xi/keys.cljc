@@ -324,11 +324,7 @@
                               "alt+shift+a" :permission/allow-repo
                               "alt+shift+b" :permission/allow-block
                               "alt+d"       :permission/deny}
-         :mode/navigate      {"i" :compose/focus
-                              "j" :scroll/down
-                              "k" :scroll/up
-                              "G" :timeline/bottom
-                              "?" :keys/show}
+         :mode/navigate      {"?" :keys/show}
          :mode/compose       {"escape" :compose/blur}
          :buffer/diff        {"q"      :buffer/close
                               "escape" :buffer/close

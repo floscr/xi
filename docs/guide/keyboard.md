@@ -20,10 +20,11 @@ follows your `:keys` overrides.
   terminal's editor. Keys type. Only shortcuts with `Ctrl`, `Alt` or `Cmd`
   (and named keys such as `Esc`) can fire.
 - **Navigate**: nothing is focused, or a viewer (diff, file, the shortcuts
-  list) has focus. Single keys work: `i`, `G`, `j`/`k`, `?`.
+  list) has focus. Single keys work, such as `?`.
 
-In the web client, `Esc` leaves the text field; `i` returns to the message
-box. In the terminal the editor is always in compose mode; opening a diff or
+In the web client, `Esc` leaves the text field. There is no built-in key back
+into it; bind `:compose/focus` in `:mode/navigate` (`i` in the example under
+[Vim-style keys](#vim-style-keys)), or click the box. In the terminal the editor is always in compose mode; opening a diff or
 file (`/diff`, a file name in the chat) switches to a navigating viewer, and
 `q` or `Esc` brings the editor back.
 
@@ -67,9 +68,6 @@ Web client:
 | `Alt+s` | Always allow requests like the pending one (only when it offers that choice) | `:permission/always` | `:permission-pending` |
 | `Alt+Shift+A` | Allow repo writes for the pending request (only when it offers that choice) | `:permission/allow-repo` | `:permission-pending` |
 | `Alt+Shift+B` | Allow the pending request and the rest of its tool call's requests (only when it offers that choice) | `:permission/allow-block` | `:permission-pending` |
-| `i` | Focus the message box | `:compose/focus` | `:mode/navigate` |
-| `j` / `k` | Scroll the visible view (timeline, diff, file, projects page, shortcut list) down / up | `:scroll/down` / `:scroll/up` | `:mode/navigate` |
-| `G` | Scroll to the bottom | `:timeline/bottom` | `:mode/navigate` |
 | `?` | Show the keyboard shortcuts | `:keys/show` | `:mode/navigate` |
 | `Esc` | Leave the text field | `:compose/blur` | `:mode/compose` |
 | `q`, `Esc` | Leave the diff or file view, back to the chat (the buffer stays open) | `:buffer/close` | `:buffer/diff`, `:buffer/file` |
@@ -150,6 +148,41 @@ web page.
 - A sequence of keys is written with spaces, `"g g"`, `"] c"`, or as a
   vector, `["g" "g"]`.
 - With a modifier held, name the unshifted key: `"alt+shift+/"`, not `"alt+?"`.
+
+### Vim-style keys
+
+The web client binds no single-letter navigation by default. These actions
+are available for `:mode/navigate`:
+
+| Action | Does |
+| --- | --- |
+| `:compose/focus` | Focus the message box |
+| `:scroll/down` / `:scroll/up` | Scroll the visible view (timeline, diff, file, projects page, shortcut list) |
+| `:scroll/half-down` / `:scroll/half-up` | The same, half the view's height at a time |
+| `:timeline/bottom` | Scroll to the bottom |
+| `:prompt/prev` / `:prompt/next` | Jump between your messages in the chat. The first `:prompt/prev` lands on the newest; `:prompt/next` on the last goes back to the bottom |
+| `:diff/next-hunk` / `:diff/prev-hunk` | Next / previous hunk in a diff |
+
+```clojure title="~/.config/xi/config.edn"
+:keys {:web {:mode/navigate  {"i" :compose/focus
+                              "j" :scroll/down
+                              "k" :scroll/up
+                              "d" :scroll/half-down
+                              "u" :scroll/half-up
+                              "G" :timeline/bottom
+                              "[" :prompt/prev
+                              "]" :prompt/next}
+             :buffer/diff     {"[" :diff/prev-hunk
+                               "]" :diff/next-hunk
+                               "] f" nil          ; "]" alone would shadow these
+                               "[ f" nil}
+             :page/git-status {"[" :diff/prev-hunk
+                               "]" :diff/next-hunk}}}
+```
+
+A diff tab in a chat is `:buffer/diff`, the git status page is
+`:page/git-status`; both sit above `:mode/navigate`, so `[` and `]` jump
+hunks there and messages in the chat.
 
 ### Leader keys
 
