@@ -4801,7 +4801,7 @@
 (defn- project-actions
   "A project's palette actions as data ({:icon :label :on-click}) — the rows of
    its second-level page (Enter/Tab on a project row). Mirrors the project
-   three-dots overflow menu — new chat, git status, search — plus any
+   three-dots overflow menu — new chat, git status, search, find file — plus any
    :project-scoped extension nav items, with open sessions last."
   [state dispatch! cwd]
   (concat
@@ -4810,7 +4810,9 @@
     {:icon :code :label "Git status"
      :on-click (fn [_] (dispatch! {:type :git-status/open :cwd cwd}))}
     {:icon :search :label "Search session text"
-     :on-click (fn [_] (dispatch! {:type :palette/open-search :cwd cwd}))}]
+     :on-click (fn [_] (dispatch! {:type :palette/open-search :cwd cwd}))}
+    {:icon :file-text :label "Find file"
+     :on-click (fn [_] (dispatch! {:type :palette/open-file-finder :cwd cwd}))}]
    (for [item (nav-items-for state :overflow)
          :when (contains? #{nil :project} (:mode item))]
      {:icon (:icon item) :label (:label item)
@@ -5120,9 +5122,10 @@
    client-side (no per-keystroke server round-trip). Rows carry :value = the
    live query so ui-runtime's own substring filter never re-hides a fuzzy
    match; selecting opens the file in the :file tab (relative path, resolved
-   server-side against the room cwd)."
+   server-side against the listed tree's cwd — the project's when drilled
+   from a project row, else the room's)."
   [state dispatch!]
-  (let [{:keys [files error]} (:web/file-tree state)
+  (let [{:keys [cwd files error]} (:web/file-tree state)
         query (or (:web/file-finder-query state) "")]
     (cond
       (nil? (:web/file-tree state)) [:div {:class ["command-loading"]} (spinner)]
@@ -5137,7 +5140,7 @@
               (cmd/command-item
                {:icon :file-text
                 :value query
-                :on-click (fn [_] (dispatch! {:type :files/open :path rel}))}
+                :on-click (fn [_] (dispatch! {:type :files/open :path rel :cwd cwd}))}
                rel))))))))
 
 (defn- pin-palette-items!

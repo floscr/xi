@@ -1474,8 +1474,8 @@
                                                    :entries (or entries []) :error error})})
           ;; Selecting a file closes the browser and asks the server to read it;
           ;; the reply installs the :file tab (client-local, like the diff tab).
-          :files/open            (fn [st {:keys [path]}]
-                                   (let [cwd (view-cwd st)]
+          :files/open            (fn [st {:keys [path cwd]}]
+                                   (let [cwd (or cwd (view-cwd st))]
                                      {:state (dissoc st :web/palette-page :web/palette-open?)
                                       :effects [[:palette/close nil]
                                                 [:ws/send {:type :file/web-read :cwd cwd :path path}]]}))
@@ -1531,8 +1531,8 @@
           ;; page seeded with the room's flat file list; the page fuzzy-ranks
           ;; it client-side per keystroke. Selecting a row reuses :files/open.
           :palette/open-file-finder
-          (fn [st _]
-            (let [cwd (view-cwd st)]
+          (fn [st {:keys [cwd]}]
+            (let [cwd (or cwd (view-cwd st))]
               {:state (-> st
                           (assoc :web/palette-page {:kind :file-finder}
                                  :web/palette-open? true
