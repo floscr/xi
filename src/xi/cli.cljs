@@ -610,7 +610,7 @@ See docs/guide/command-line.md for the full reference.")
                        (assoc :agent/turn-end (:agent/turn-end agent/handlers)))
                      (ext/merge-handlers composed)
                      (merge (:handlers dialogs)))
-        {:keys [dispatch! add-tap!]}
+        {:keys [dispatch! add-tap!] :as app}
         (app/create-app {:initial-state (state/initial-state
                                          ;; no client ever attaches → create-
                                          ;; dialogs' ask! resolves at once to
@@ -638,6 +638,9 @@ See docs/guide/command-line.md for the full reference.")
                                                (:fx composed)
                                                (:fx dialogs))
                          :ring          ring})]
+    ;; mount the user extensions: their :on-mount runs, and xi.api.user /
+    ;; xi.api.dialog work in their tools, as in the other modes
+    (user-ext/start! app {:ask! (:ask! dialogs)})
     (add-tap!
      (fn [event _state]
        (case (:type event)
