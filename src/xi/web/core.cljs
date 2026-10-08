@@ -1584,12 +1584,15 @@
           :buffer/pending-clear  (fn [st _] {:state (dissoc st :web/pending-buffer)})
           ;; Instant fuzzy file finder (Ctrl/Cmd+P): open a dedicated palette
           ;; page seeded with the room's flat file list; the page fuzzy-ranks
-          ;; it client-side per keystroke. Selecting a row reuses :files/open.
+          ;; it client-side per keystroke.
           :palette/open-file-finder
-          (fn [st {:keys [cwd in-dialog?]}]
+          (fn [st {:keys [cwd action in-dialog?]}]
             (let [cwd (or cwd (view-cwd st))]
               {:state (-> st
-                          (assoc :web/palette-page {:kind :file-finder}
+                          ;; :action is what picking a file does — :open (the
+                          ;; default) views it, :insert puts its path into the
+                          ;; compose draft (Tab from the insert project picker).
+                          (assoc :web/palette-page {:kind :file-finder :action (or action :open)}
                                  :web/palette-open? true
                                  :web/file-finder-query "")
                           ;; Keyboard Tab from the project picker keeps the
@@ -1606,25 +1609,20 @@
                                                   {:cwd cwd :files (or files []) :error error})})
           :file-finder/input     (fn [st {:keys [query]}]
                                    {:state (assoc st :web/file-finder-query query)})
-          :palette/open-projects (fn [st _]
-                                   {:state (assoc st :web/palette-page {:kind :project-insert}
+          ;; The project list as a palette sub-page. :action is what a row
+          ;; does: :drill (the :projects/pick key) opens the project's action
+          ;; sub-page, :insert (the compose Projects button) puts its path into
+          ;; the draft. Tab on a row opens the project's file finder with the
+          ;; same action (view a file / insert its path).
+          :palette/open-projects (fn [st {:keys [action]}]
+                                   {:state (assoc st :web/palette-page {:kind :projects
+                                                                       :action (or action :drill)}
                                                      :web/palette-open? true
                                                      :web/palette-drilling? true)
-                                    :effects (cond-> [[:palette/reopen nil]]
+                                    :effects (cond-> [[:palette/reset-filter nil]
+                                                      [:palette/reopen nil]]
                                                (empty? (:web/project-dirs st))
                                                (conj [:ws/send {:type :projects/web-list}]))})
-          ;; Project picker (SPC p p): the same page shape as open-projects,
-          ;; but a row drills into the project's action sub-page instead of
-          ;; inserting its path.
-          :palette/open-project-list
-          (fn [st _]
-            {:state (assoc st :web/palette-page {:kind :projects}
-                              :web/palette-open? true
-                              :web/palette-drilling? true)
-             :effects (cond-> [[:palette/reset-filter nil]
-                               [:palette/reopen nil]]
-                        (empty? (:web/project-dirs st))
-                        (conj [:ws/send {:type :projects/web-list}]))})
           ;; Snippets: same drill pattern as projects. Always re-fetch (the
           ;; project snippets depend on the active room's cwd, which differs
           ;; per chat); clearing :web/snippet-list shows a spinner meanwhile.
@@ -2873,11 +2871,11 @@
   (keymap/register-action! {:id :buffers/switch :event {:type :palette/open-buffers}})
   ;; The Ctrl/Cmd+K palette, top level (its first group lists the chats).
   (keymap/register-action! {:id :palette/open :event {:type :palette/open}})
-  (keymap/register-action! {:id :projects/pick :event {:type :palette/open-project-list}})
+  (keymap/register-action! {:id :projects/pick :event {:type :palette/open-projects :action :drill}})
   ;; Pick a project and insert its path into the draft — the web twin of the
   ;; projects extension's TUI alt+p (:project/open), so one :keys binding
   ;; covers both clients.
-  (keymap/register-action! {:id :project/open :event {:type :palette/open-projects}})
+  (keymap/register-action! {:id :project/open :event {:type :palette/open-projects :action :insert}})
   (keymap/register-action! {:id :skills/search :event {:type :palette/open-skills}})
   (keymap/register-action! {:id :projects/open
                             :event {:type :route/navigate :page :home}})

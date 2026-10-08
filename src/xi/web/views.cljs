@@ -1640,7 +1640,7 @@
         (when (pos? (or (:count nav-ctx) 0))
           (prompt-nav-controls dispatch! prompt-nav nav-ctx scrolled-up?))
         [:button {:class ["quick-cmd"] :title "Projects" :aria-label "Projects"
-                  :on {:click (fn [_] (dispatch! {:type :palette/open-projects}))}}
+                  :on {:click (fn [_] (dispatch! {:type :palette/open-projects :action :insert}))}}
          (icon/icon {:icon-name :folder :size :sm})
          [:span {:class ["qc-label"]} "Projects"]]
         [:button {:class ["quick-cmd"] :title "Snippets" :aria-label "Snippets"
@@ -4934,24 +4934,6 @@
          (apply cmd/command-group {:heading (if (seq recent) "All skills" "Skills")}
            (map #(palette-skill-item dispatch! %) the-rest))]))))
 
-(defn- palette-project-insert-page
-  "Project paths as a palette sub-page (drilled from the Projects compose
-   button). Spinner while :web/project-dirs loads, then a command-item per
-   project. Selecting inserts the path into the current compose draft."
-  [state dispatch!]
-  (let [dirs (:web/project-dirs state)
-        dkey (draft-key state)]
-    (if (empty? dirs)
-      [:div {:class ["command-loading"]} (spinner)]
-      (apply cmd/command-group {:heading "Insert project path"}
-        (for [path dirs]
-          (cmd/command-item
-           {:icon :folder
-            :value (str (shorten-path path) " " path)
-            :on-click (fn [_] (dispatch! {:type :projects/picker-insert
-                                          :path path :draft-key dkey}))}
-           (shorten-path path)))))))
-
 (defn- keycaps
   "A key's display string (\"Alt+Shift+P\", \"] f\") as keyboard keycaps: one
    <kbd> per key, the chords of a sequence spaced apart. Goes inside the
@@ -4963,17 +4945,24 @@
                 (for [k (str/split chord #"\+(?=.)")]
                   [:kbd {:class ["keycap"]} k])))))
 
-(defn- palette-project-list-page
-  "Projects as a palette sub-page (the :projects/pick action). A command-item
-   per project; selecting one drills into its action sub-page, the same as
-   Enter on a project row of the top-level palette. Tab on a row skips the
-   actions and opens the file finder for that project (palette-keydown reads
-   the row's `data-palette-drill` cwd). Spinner while :web/project-dirs loads."
-  [state dispatch!]
-  (let [dirs (:web/project-dirs state)]
+(defn- palette-projects-page
+  "Projects as a palette sub-page. One component for both pickers; the page's
+   :action says what a row does — :drill (the :projects/pick key) opens the
+   project's action sub-page like Enter on a top-level project row, :insert
+   (the compose Projects button) puts its path into the draft. Tab on a row
+   opens the project's file finder with the same action (palette-keydown
+   reads the row's `data-palette-drill` cwd). Spinner while :web/project-dirs
+   loads."
+  [state dispatch! {:keys [action]}]
+  (let [dirs   (:web/project-dirs state)
+        dkey   (draft-key state)
+        select (fn [d short]
+                 (case action
+                   :insert {:type :projects/picker-insert :path d :draft-key dkey}
+                   {:type :palette/drill :cwd d :label short :reopen? true}))]
     (if (empty? dirs)
       [:div {:class ["command-loading"]} (spinner)]
-      (apply cmd/command-group {:heading "Projects"}
+      (apply cmd/command-group {:heading (if (= action :insert) "Insert project path" "Projects")}
         (for [d dirs
               :let [short (shorten-path d)]]
           (cmd/command-item
@@ -4982,8 +4971,7 @@
             :value (str "project " short " " d)
             :attrs {:data-palette-drill d
                     :data-palette-label short}
-            :on-click (fn [_] (dispatch! {:type :palette/drill :cwd d
-                                          :label short :reopen? true}))}
+            :on-click (fn [_] (dispatch! (select d short)))}
            short))))))
 
 (defn- snippet-command-item
@@ -5174,12 +5162,19 @@
    :file-finder/input, which fuzzy-ranks the preloaded flat file list
    client-side (no per-keystroke server round-trip). Rows carry :value = the
    live query so ui-runtime's own substring filter never re-hides a fuzzy
-   match; selecting opens the file in the :file tab (relative path, resolved
-   server-side against the listed tree's cwd — the project's when drilled
-   from a project row, else the room's)."
-  [state dispatch!]
+   match. The page's :action says what picking a row does — :open views the
+   file in the :file tab (relative path, resolved server-side against the
+   listed tree's cwd — the project's when drilled from a project row, else
+   the room's); :insert (Tab from the insert project picker) puts the file's
+   absolute path into the draft."
+  [state dispatch! {:keys [action]}]
   (let [{:keys [cwd files error]} (:web/file-tree state)
-        query (or (:web/file-finder-query state) "")]
+        query (or (:web/file-finder-query state) "")
+        dkey  (draft-key state)
+        select (fn [rel]
+                 (case action
+                   :insert {:type :projects/picker-insert :path (str cwd "/" rel) :draft-key dkey}
+                   {:type :files/open :path rel :cwd cwd}))]
     (cond
       (nil? (:web/file-tree state)) [:div {:class ["command-loading"]} (spinner)]
       error [:div {:class ["command-empty"]} error]
@@ -5188,12 +5183,12 @@
       (let [ranked (fuzzy/rank query files {:limit 50})]
         (if (empty? ranked)
           [:div {:class ["command-empty"]} "No matching files"]
-          (apply cmd/command-group {:heading "Files"}
+          (apply cmd/command-group {:heading (if (= action :insert) "Insert file path" "Files")}
             (for [rel ranked]
               (cmd/command-item
                {:icon :file-text
                 :value query
-                :on-click (fn [_] (dispatch! {:type :files/open :path rel :cwd cwd}))}
+                :on-click (fn [_] (dispatch! (select rel)))}
                rel))))))))
 
 (defn- pin-palette-items!
@@ -5240,7 +5235,8 @@
         (and (= :projects (:kind palette-page)) tab?)
         (when-let [cwd (some-> ^js (active) (.. -dataset -paletteDrill))]
           (.preventDefault e)
-          (dispatch! {:type :palette/open-file-finder :cwd cwd :in-dialog? true}))
+          (dispatch! {:type :palette/open-file-finder :cwd cwd :in-dialog? true
+                      :action (:action palette-page)}))
 
         (and (= :search (:kind palette-page)) tab?)
         (do (.preventDefault e)
@@ -5396,10 +5392,9 @@
          :skill          (palette-skill-page state dispatch!)
          :commits        (palette-commits-page state dispatch!)
          :files          (palette-files-page state dispatch!)
-         :file-finder    (palette-file-finder-page state dispatch!)
+         :file-finder    (palette-file-finder-page state dispatch! palette-page)
          :buffers        (palette-buffers-page state dispatch!)
-         :project-insert (palette-project-insert-page state dispatch!)
-         :projects       (palette-project-list-page state dispatch!)
+         :projects       (palette-projects-page state dispatch! palette-page)
          :snippets       (palette-snippets-page state dispatch!)
          :commands       (palette-commands-page state dispatch!)
          :search         (palette-search-page state dispatch!)

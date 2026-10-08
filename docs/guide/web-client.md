@@ -129,7 +129,7 @@ are. The common ones:
 | `Alt+x` | Stop the running turn |
 | `Ctrl/Cmd+k` | Command palette |
 | `Tab` or `Enter` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions |
-| `Tab` (in the project picker, on a project) | Find a file in that project |
+| `Tab` (in a project picker, on a project) | Find a file in that project instead: the picker's own action applies to the file, so from the compose box's Projects button it inserts the file's path |
 | `Alt` (held, in the palette) | Show a key badge on each of the first rows; `Alt` + that key picks the row. Badges follow the filtered list, so type first, then hold Alt |
 | `Ctrl/Cmd+p` | Find a file |
 | `Alt+b` | Switch buffer |
