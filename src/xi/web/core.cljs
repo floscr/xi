@@ -2328,17 +2328,75 @@
             (when (> (.-scrollHeight el) (+ (.-clientHeight el) 2)) el)))
         scroller-selectors))
 
+;; Key scrolls (j / k, half pages, hunk / file jumps) ease toward their target
+;; with a rAF loop instead of teleporting. Our own loop rather than a native
+;; scrollTo({behavior:"smooth"}): a held key re-issues the scroll every repeat,
+;; and a native smooth scroll restarts from the current position each time, so
+;; it never finishes and crawls. Here each press adds to the pending target, so
+;; a held j keeps a steady pace. {:el :target :raf}, nil when idle.
+(defonce ^:private key-scroll (atom nil))
+;; Fraction of the remaining distance closed per frame (~150ms to settle).
+(def ^:private key-scroll-ease 0.3)
+
+(defn- cancel-key-scroll! []
+  (when-let [{:keys [raf]} @key-scroll]
+    (js/cancelAnimationFrame raf))
+  (reset! key-scroll nil))
+
+(defn- max-scroll-top [^js el]
+  (max 0 (- (.-scrollHeight el) (.-clientHeight el))))
+
+(defn- key-scroll-frame! []
+  (when-let [{:keys [^js el target]} @key-scroll]
+    (let [target (min target (max-scroll-top el))
+          cur    (.-scrollTop el)
+          delta  (- target cur)]
+      (if (or (<= (js/Math.abs delta) 1) (not (.-isConnected el)))
+        (do (set! (.-scrollTop el) target)
+            (reset! key-scroll nil))
+        (let [step (* delta key-scroll-ease)
+              step (if (< (js/Math.abs step) 1) (js/Math.sign delta) step)]
+          ;; Each upward frame is a user gesture for the timeline's scroll
+          ;; listener (it drops follow mode on a decrease during one).
+          (when (neg? delta) (mark-user-scroll-intent!))
+          (set! (.-scrollTop el) (+ cur step))
+          (swap! key-scroll assoc :raf (js/requestAnimationFrame key-scroll-frame!)))))))
+
+(defn- key-scroll-base
+  "Where the next key step starts from: the pending target when `el` is
+   already easing, else its current scrollTop."
+  [^js el]
+  (let [{pending-el :el target :target} @key-scroll]
+    (if (identical? pending-el el) target (.-scrollTop el))))
+
+(defn- animate-scroll-to!
+  "Ease `el`'s scrollTop to `top` (clamped to its range); instant under
+   prefers-reduced-motion. An upward move counts as a user gesture so the
+   timeline's scroll listener drops follow mode, exactly like an upward
+   wheel tick."
+  [^js el top]
+  (let [top (-> top (max 0) (min (max-scroll-top el)))]
+    (when (< top (.-scrollTop el)) (mark-user-scroll-intent!))
+    (if (.-matches (js/matchMedia "(prefers-reduced-motion: reduce)"))
+      (do (cancel-key-scroll!)
+          (set! (.-scrollTop el) top))
+      (let [{:keys [raf] pending-el :el} @key-scroll]
+        (when (and raf (not (identical? pending-el el)))
+          (js/cancelAnimationFrame raf))
+        (reset! key-scroll {:el el :target top
+                            :raf (if (and raf (identical? pending-el el))
+                                   raf
+                                   (js/requestAnimationFrame key-scroll-frame!))})))))
+
 (defn- scroll-step!
   "Scroll the view the user is looking at by `dir` (1 down, -1 up) steps, or
-   with `half-page?` by half the view's height. An upward step counts as a
-   user gesture so the timeline's scroll listener drops follow mode, exactly
-   like an upward wheel tick."
+   with `half-page?` by half the view's height. Repeated presses accumulate
+   on the pending target (see key-scroll)."
   ([dir] (scroll-step! dir false))
   ([dir half-page?]
    (when-let [el (active-scroller)]
-     (when (neg? dir) (mark-user-scroll-intent!))
      (let [px (if half-page? (/ (.-clientHeight el) 2) scroll-step-px)]
-       (set! (.-scrollTop el) (+ (.-scrollTop el) (* dir px)))))))
+       (animate-scroll-to! el (+ (key-scroll-base el) (* dir px)))))))
 
 (def ^:private load-earlier-threshold-px
   "Scrolling within this distance of the top of the timeline loads the
@@ -2726,22 +2784,21 @@
     (when dialog-id
       {:room-id (:id room) :dialog-id dialog-id :value value})))
 
-(defn- diff-file-headers
-  "The file header rows of the open diff tab, in document order."
-  []
-  (vec (array-seq (.querySelectorAll js/document ".diff-tab .diff-file-header"))))
-
 (defn- jump-diff-file!
-  "`]f` / `[f` in the diff tab: scroll the next / previous file header to the
-   top. The current file is the last header at or above the sticky zone (its
-   header is pinned there while its hunks scroll by)."
+  "`]f` / `[f` in the diff tab: scroll the next / previous file to the top.
+   Measured on the .diff-file containers, not their sticky headers (a passed
+   file's header sits pinned at the END of its file). The current file is the
+   last one whose top is at or above the sticky zone."
   [dir]
-  (let [headers (diff-file-headers)
-        tops    (mapv #(.-top (.getBoundingClientRect %)) headers)
-        cur     (or (last (keep-indexed (fn [i top] (when (<= top 64) i)) tops)) -1)
-        target  (get headers (if (= dir :next) (inc cur) (dec cur)))]
-    (when target
-      (.scrollIntoView target #js {:block "start" :behavior "auto"}))))
+  (let [files    (vec (array-seq (.querySelectorAll js/document ".diff-tab .diff-file")))
+        ^js view (some-> (first files) (.closest ".diff-view"))]
+    (when view
+      (let [view-top (.-top (.getBoundingClientRect view))
+            tops     (mapv #(- (.-top (.getBoundingClientRect %)) view-top) files)
+            cur      (or (last (keep-indexed (fn [i top] (when (<= top 4) i)) tops)) -1)
+            target   (get tops (if (= dir :next) (inc cur) (dec cur)))]
+        (when target
+          (animate-scroll-to! view (+ (.-scrollTop view) target)))))))
 
 (defn- jump-diff-hunk!
   "Scroll the next / previous hunk header of the diff on screen to just below
@@ -2761,7 +2818,7 @@
                        (first (filter #(> % 4) offsets))
                        (last (filter #(< % -4) offsets)))]
         (when target
-          (.scrollBy view #js {:top target :behavior "auto"}))))))
+          (animate-scroll-to! view (+ (.-scrollTop view) target)))))))
 
 (defn- chat-room
   "The room of the chat on screen when its chat tab (not a diff / file
