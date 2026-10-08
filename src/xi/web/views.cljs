@@ -736,8 +736,8 @@
   "Confirm answer value → the keyboard action that gives it. Buttons carry it
    as `data-key-action`, so holding Alt badges them with the action's key
    (xi.web.key-hints)."
-  {true "permission/allow" false "permission/deny" :repo "permission/allow-repo"
-   :block "permission/allow-block"})
+  {true "permission/allow" false "permission/deny" :always "permission/always"
+   :repo "permission/allow-repo" :block "permission/allow-block"})
 
 (defn- confirm-buttons
   "Answer buttons for a :confirm dialog, driven by its normalized :options

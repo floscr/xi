@@ -199,6 +199,7 @@
   {:chat/new                {:label "New chat"}
    :agent/abort             {:label "Stop the running turn"}
    :permission/allow        {:label "Allow the pending permission request"}
+   :permission/always       {:label "Always allow requests like the pending one" :surface #{:web}}
    :permission/allow-repo   {:label "Allow repo writes for the pending permission request" :surface #{:web}}
    :permission/allow-block  {:label "Allow every request of the pending permission's block" :surface #{:web}}
    :permission/deny         {:label "Deny the pending permission request"}
@@ -293,6 +294,7 @@
                               "alt+k"       :session/prev
                               "escape"      :dialog/close}
          :permission-pending {"alt+a"       :permission/allow
+                              "alt+s"       :permission/always
                               "alt+shift+a" :permission/allow-repo
                               "alt+shift+b" :permission/allow-block
                               "alt+d"       :permission/deny}

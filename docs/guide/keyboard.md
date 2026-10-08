@@ -64,6 +64,7 @@ Web client:
 | `Alt+b` | Switch buffer: the chat's open diffs and files as a filterable list, Enter opens one | `:buffers/switch` | `:global` |
 | `Esc` | Close the open dialog (Appearance, shortcuts) | `:dialog/close` | `:global` |
 | `Alt+a` / `Alt+d` | Allow / deny the pending permission request | `:permission/allow` / `:permission/deny` | `:permission-pending` |
+| `Alt+s` | Always allow requests like the pending one (only when it offers that choice) | `:permission/always` | `:permission-pending` |
 | `Alt+Shift+A` | Allow repo writes for the pending request (only when it offers that choice) | `:permission/allow-repo` | `:permission-pending` |
 | `Alt+Shift+B` | Allow the pending request and the rest of its tool call's requests (only when it offers that choice) | `:permission/allow-block` | `:permission-pending` |
 | `i` | Focus the message box | `:compose/focus` | `:mode/navigate` |
