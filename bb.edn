@@ -246,6 +246,10 @@
    :task (do (td/stop serve-config)
              (reap-stray-serve!))}
 
+  serve:attach
+  {:doc "Attach to tmux serve session"
+   :task (td/attach serve-config)}
+
   serve:pending
   {:doc "List clients waiting for pairing approval"
    :task (let [pending (read-xi-edn "pending-clients.edn")]
