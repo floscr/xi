@@ -281,13 +281,15 @@
    (e.g. auto-titling): pointing the SDK here makes the CLI persist that turn's
    session JSONL under the temp dir instead of polluting ~/.claude/projects,
    so it never reaches the session list. Auth/settings keep working because
-   every entry except `projects` is symlinked to the live config.
+   every entry except `projects` is symlinked to the live config. With no live
+   config yet (an API-key or first-run user) there is nothing to mirror, and
+   the dir is just the empty `projects/`.
    Returns the temp dir path, or nil on failure."
   []
   (try
     (let [src  (claude-config-dir)
           base (fs/mkdtempSync (.join node-path (os/tmpdir) "xi-title-"))]
-      (doseq [entry (fs/readdirSync src)]
+      (doseq [entry (when (fs/existsSync src) (fs/readdirSync src))]
         (when-not (= entry "projects")
           (fs/symlinkSync (.join node-path src entry)
                           (.join node-path base entry))))

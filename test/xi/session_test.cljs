@@ -247,3 +247,14 @@
         (session/sync-credentials-back! dir)
         (session/remove-config-dir! dir)
         (is (= "old" (live-credentials live)))))))
+
+(deftest throwaway-without-a-live-config
+  ;; an API-key / first-run user has no ~/.claude yet: --no-store must still
+  ;; get a throwaway dir, or the turn's transcript lands in the real one
+  (with-live-config-dir "old"
+    (fn [live]
+      (aset js/process.env "CLAUDE_CONFIG_DIR" (.join path live "missing"))
+      (let [dir (session/make-throwaway-config-dir!)]
+        (is (string? dir))
+        (is (= ["projects"] (vec (fs/readdirSync dir))))
+        (session/remove-config-dir! dir)))))
