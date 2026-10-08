@@ -33,5 +33,8 @@
    :modules    {:main     {:init-fn xi.web.core/init!}
                 :user-ext {:entries [xi.web.user-ext.sci] :depends-on #{:main}}}
    :module-loader true
-   :devtools   {:after-load xi.web.core/reload!}
+   ;; No :warnings in the HUD: its fixed overlay covers the bottom of the page
+   ;; for as long as a warning stands. Warnings still print in the watch output.
+   :devtools   {:after-load xi.web.core/reload!
+                :hud #{:errors :progress}}
    :compiler-options {:reader-features #{:browser}}}}}
