@@ -440,43 +440,72 @@ body {
   font-weight: 500;
 }
 
-/* ---- Keyboard shortcuts dialog ---- */
+/* ---- Keyboard shortcuts dialog ----
+   Laid out like the calendar's agenda list (theme.css .cal-agenda-*): one
+   group per keymap layer under an uppercase header, hairline between groups,
+   full-width rows with a hover tint, filled keycaps for the keys. A row you
+   changed in config.edn gets a bar on its left edge like the agenda's. No
+   accent or hue anywhere. */
 .keys-overlay { z-index: 1100; }
 
-.keys-dialog { max-width: 42rem; }
+.keys-dialog {
+  max-width: 64rem;
+}
 
 .keys-dialog h3 {
-  font-size: var(--font-md);
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-3);
+  font-size: var(--font-lg, var(--font-md));
   font-weight: 600;
+}
+
+.keys-count {
+  font-size: var(--font-xs);
+  font-weight: 400;
+  color: var(--fg-2);
 }
 
 .keys-body {
   display: flex;
   flex-direction: column;
   gap: var(--size-4);
-  max-height: min(70vh, 40rem);
+  max-height: min(72vh, 46rem);
   overflow-y: auto;
+  padding-block: var(--size-2);
 }
 
 .keys-sections {
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-4);
+  columns: 2 24rem;
+  column-gap: 3rem;
+}
+
+.keys-section {
+  break-inside: avoid;
+  padding-bottom: var(--size-3);
+  margin-bottom: var(--size-3);
+  border-bottom: var(--border-0);
 }
 
 .keys-section-title {
   display: flex;
   align-items: baseline;
   gap: var(--size-2);
-  margin: 0 0 var(--size-2);
+  margin: 0;
+  padding: var(--size-2) var(--size-3) var(--size-1);
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg-0);
 }
 
 .keys-section-note {
   font-size: var(--font-xs);
   font-weight: 400;
-  color: var(--text-muted, var(--fg-2));
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--fg-2);
 }
 
 .keys-section--inactive .keys-row { opacity: 0.7; }
@@ -485,45 +514,67 @@ body {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-1);
 }
 
 .keys-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--size-4);
-  padding: 2px var(--size-2);
+  gap: var(--size-3);
+  padding: var(--size-2) var(--size-3);
   border-radius: var(--radius-sm, 4px);
   font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--fg-0);
+  transition: background 0.12s;
 }
 
-.keys-row--custom { background: color-mix(in srgb, var(--accent, #7c6cf0) 12%, transparent); }
+@media (hover: hover) {
+  .keys-row:hover { background: var(--bg-2); }
+}
+
+.keys-row--custom {
+  box-shadow: inset 3px 0 0 var(--fg-2);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
 
 .keys-row--unbound .keys-row-label {
-  color: var(--text-muted, var(--fg-2));
+  color: var(--fg-2);
   text-decoration: line-through;
 }
 
 .keys-row-label { min-width: 0; }
 
-.keys-kbd {
+/* spacer between label and keys */
+.keys-row-dots {
+  flex: 1;
+  min-width: var(--size-3);
+}
+
+.keys-row-keys {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: var(--font-xs);
-  padding: 1px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--border-color, var(--bg-2));
-  background: var(--bg-1);
+  gap: var(--size-2);
   white-space: nowrap;
 }
 
-.keys-note {
-  margin: 0;
+.keys-alt {
   font-size: var(--font-xs);
-  color: var(--text-muted, var(--fg-2));
+  color: var(--fg-2);
+}
+
+/* keycaps here read as the content, not a badge: a touch larger and stronger */
+.keys-dialog .keycap {
+  min-width: 28px;
+  padding: 4px 8px 3px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--fg-0);
+  background: var(--bg-2);
+  border-color: var(--fg-2);
 }
 
 /* ---- Project picker ---- */

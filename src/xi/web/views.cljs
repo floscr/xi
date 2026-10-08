@@ -19,6 +19,7 @@
             [xi.dialog :as dlg]
             [xi.diff :as diff]
             [xi.fuzzy :as fuzzy]
+            [xi.keys :as xkeys]
             [xi.palette :as palette]
             [xi.session.sidebar :as sb :refer [format-relative-time session-status
                                                active-first orphan-rooms
@@ -5848,63 +5849,83 @@
 
 (def ^:private fixed-shortcuts
   "Keys the web client handles outside the keymap (the palette's own hotkey,
-   the composer's editing keys) — listed for completeness, not rebindable."
+   the composer's editing keys) — listed for completeness, not rebindable.
+   `[keys label]`, alternatives in `keys` separated by \" / \"."
   [["Ctrl+K / Cmd+K" "Command palette"]
-   ["Alt (held, in the palette)" "Key badges on the first rows; Alt + that key picks the row"]
-   ["Tab (in the message box)" "Expand the snippet word before the cursor"]
-   ["Shift+Enter (in the message box)" "New line"]
-   ["Ctrl+Enter (on one of your messages)" "Go back to before it and edit it"]])
+   ["Alt" "Palette: hold for key badges, Alt + badge key picks the row"]
+   ["Tab" "Message box: expand the snippet word before the cursor"]
+   ["Shift+Enter" "Message box: new line"]
+   ["Ctrl+Enter" "On one of your messages: go back to before it and edit it"]])
+
+(defn- keys-row
+  "One dialog row: label, a dotted leader, the keys as keycaps. `kbds` is a
+   seq of `{:display}`, alternatives joined by a `/`."
+  [{:keys [label kbds class title key]}]
+  [:li {:class (into ["keys-row"] class)
+        :replicant/key key
+        :title title}
+   [:span {:class ["keys-row-label"]} label]
+   [:span {:class ["keys-row-dots"]}]
+   (into [:span {:class ["keys-row-keys"]}]
+         (interpose [:span {:class ["keys-alt"]} "/"]
+                    (for [{:keys [display]} kbds]
+                      (keycaps display))))])
 
 (defn- keys-dialog
-  "The Keyboard shortcuts dialog (`?`, Alt+/, palette). Lists every key of
-   the effective keymap (xi.web.keymap/listing) grouped by layer, the layers
-   active right now first; keys the user changed in config.edn are marked.
-   Escape closes it (:dialog/close action)."
+  "The Keyboard shortcuts dialog (`?`, Alt+/, palette): an index of every key
+   of the effective keymap (xi.web.keymap/listing) as keycaps, one section per
+   layer, the layers active right now first. Rows the user changed in config.edn
+   carry a bar on the left. Laid out like the calendar's agenda list
+   (cal-agenda-*): uppercase group headers, hairline dividers, full-width hover
+   rows. Escape closes it (:dialog/close action)."
   [state dispatch!]
   (when (:web/keys-open? state)
     (let [close!   (fn [] (dispatch! {:type :keys/close}))
           sections (keymap/listing state)
-          custom?  (boolean (some #(some :custom? (:rows %)) sections))]
+          custom?  (boolean (some #(some :custom? (:rows %)) sections))
+          n-keys   (reduce + (for [{:keys [rows]} sections
+                                   {ks :keys :keys [action]} rows
+                                   :when action]
+                               (count ks)))]
       (dialog/dialog-overlay
        {:on-close close!
         :class "keys-overlay"
         :attrs {:replicant/key "keys-dialog"}}
        (dialog/dialog-panel {:class "keys-dialog"}
          (dialog/dialog-header {}
-           [:h3 "Keyboard shortcuts"]
+           [:h3 "Keyboard shortcuts"
+            [:span {:class ["keys-count"]} (str n-keys " bindings")]]
            [:button {:class ["icon-btn" "icon-btn--sm"]
                      :title "Close"
                      :on {:click (fn [_] (close!))}}
             (icon/icon {:icon-name :x :size :md})])
          (dialog/dialog-body {:class "keys-body"}
            (into [:div {:class ["keys-sections"]}]
-                 (for [{:keys [layer label active? rows]} sections]
-                   [:section {:class ["keys-section" (when-not active? "keys-section--inactive")]
-                              :replicant/key layer}
-                    [:h4 {:class ["keys-section-title"]}
-                     label
-                     (when-not active?
-                       [:span {:class ["keys-section-note"]} "not active here"])]
+                 (concat
+                  (for [{:keys [layer label active? rows]} sections]
+                    [:section {:class ["keys-section" (when-not active? "keys-section--inactive")]
+                               :replicant/key layer}
+                     [:h4 {:class ["keys-section-title"]}
+                      label
+                      (when-not active?
+                        [:span {:class ["keys-section-note"]} "not active here"])]
+                     (into [:ul {:class ["keys-list"]}]
+                           (for [{ks :keys :keys [label custom? action]} rows]
+                             (keys-row {:label label
+                                        :key (str/join " " ks)
+                                        :title (when custom? "changed in config.edn")
+                                        :class [(when custom? "keys-row--custom")
+                                                (when-not action "keys-row--unbound")]
+                                        :kbds (for [k ks]
+                                                {:display (xkeys/format-key k)})})))])
+                  [[:section {:class ["keys-section" "keys-section--fixed"]}
+                    [:h4 {:class ["keys-section-title"]} "Always"]
                     (into [:ul {:class ["keys-list"]}]
-                          (for [{ks :keys :keys [display label custom? action]} rows]
-                            [:li {:class ["keys-row"
-                                          (when custom? "keys-row--custom")
-                                          (when-not action "keys-row--unbound")]
-                                  :replicant/key (str/join " " ks)
-                                  :title (when custom? "changed in config.edn")}
-                             [:span {:class ["keys-row-label"]} label]
-                             [:kbd {:class ["keys-kbd"]} display]]))]))
-           [:section {:class ["keys-section" "keys-section--fixed"]}
-            [:h4 {:class ["keys-section-title"]} "Always"]
-            (into [:ul {:class ["keys-list"]}]
-                  (for [[k label] fixed-shortcuts]
-                    [:li {:class ["keys-row"]}
-                     [:span {:class ["keys-row-label"]} label]
-                     [:kbd {:class ["keys-kbd"]} k]]))]
-           [:p {:class ["keys-note"]}
-            "Change them under " [:code ":keys"] " in " [:code "~/.config/xi/config.edn"]
-            " (see the guide's Keyboard page)."
-            (when custom? " Highlighted rows are your changes.")])
+                          (for [[k label] fixed-shortcuts]
+                            (keys-row {:label label
+                                       :key k
+                                       :kbds (for [d (str/split k #" / ")]
+                                               {:display d})})))]])))
          (dialog/dialog-footer {}
            (button/button
             {:variant :primary :size :sm
