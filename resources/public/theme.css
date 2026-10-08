@@ -506,6 +506,8 @@ body {
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: inherit;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .btn-primary {
@@ -1100,6 +1102,40 @@ a.btn-link {
   text-overflow: ellipsis;
 }
 
+/* Stacked layout (:layout :stacked): a filled block with the small muted
+   time range above a bold title, each on its own full-width line, no side
+   stripe. Suits roomy desktop month grids. Task pills stay a flat inline
+   checkbox row. */
+.cal-event-pill-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: var(--size-1) var(--size-2);
+  border-left: none;
+  border-radius: var(--radius-sm);
+  line-height: 1.35;
+}
+
+.cal-event-pill-stacked .cal-event-time {
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.cal-event-pill-stacked .cal-event-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.cal-event-pill-stacked.cal-event-task {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--size-1);
+}
+
+.cal-event-pill-stacked.cal-event-task .cal-event-title {
+  min-width: 0;
+}
+
 /* Task (to-do / repeating) items render as a flat checkbox row instead of a
    solid color pill. */
 .cal-event-pill.cal-event-task,
@@ -1530,6 +1566,78 @@ a.btn-link {
   display: flex;
   flex-direction: column;
 }
+
+/* Today's group — accent bar down the left edge + accent day label. */
+.cal-agenda-day-today {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.cal-agenda-day-today .cal-agenda-day-label,
+.cal-agenda-day-today .cal-agenda-day-date {
+  color: var(--accent);
+}
+
+/* Placeholder card for a day that is always shown but has no events. */
+.cal-agenda-day-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  margin: var(--size-1) var(--size-4) var(--size-3);
+  padding: var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+}
+
+.cal-agenda-day-empty-icon {
+  display: grid;
+  place-items: center;
+  width: var(--size-8);
+  height: var(--size-8);
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--bg-2);
+  color: var(--fg-1);
+}
+
+.cal-agenda-day-empty-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cal-agenda-day-empty-title {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--fg-0);
+}
+
+.cal-agenda-day-empty-hint {
+  font-size: var(--font-xs);
+  font-style: italic;
+  color: var(--fg-2);
+}
+
+.cal-agenda-day-empty-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  margin-left: auto;
+  padding: var(--size-1) var(--size-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (hover: hover){.cal-agenda-day-empty-add:hover{
+  background: var(--bg-2);
+}}
 
 .cal-agenda-event {
   display: flex;

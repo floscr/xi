@@ -2443,7 +2443,7 @@ code a:hover,
 }
 
 /* When the ask is one of several for the block (the dialog's :block),
-   hovering / focusing "Allow block" lights up every call those asks target —
+   hovering / focusing "Allow all" lights up every call those asks target —
    everything the button would allow — and mutes the rest. */
 .tool-call-code .code-block-target {
   transition: opacity 0.15s ease, background-color 0.15s ease;
@@ -3512,6 +3512,8 @@ code a:hover,
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.15s;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Clear hierarchy: Allow is the one solid button, extras (Always, …) are
