@@ -2352,28 +2352,35 @@
 
 (defn- attach-code-copy-listener!
   "Delegated document listeners: right-clicking (mouse) or tapping (touch) a
-   rendered code block (`pre`) or inline `code` surfaces a floating Copy button
-   near the pointer (:web/code-menu, rendered by chat-view); a plain mouse
-   left-click does nothing. Skipped inside user bubbles (which already have
-   their own tap menu with Copy) and inline editors. Mirrors the
-   right-click/tap contract of user bubbles via views/tap-opens-context-menu?."
+   rendered code block (`pre`), inline `code`, or a rendered markdown diff
+   (`.md-diff`) surfaces a floating Copy button near the pointer
+   (:web/code-menu, rendered by chat-view); a plain mouse left-click does
+   nothing. Skipped inside user bubbles (which already have their own tap menu
+   with Copy) and inline editors. Mirrors the right-click/tap contract of user
+   bubbles via views/tap-opens-context-menu?. Returns true from open! when a
+   menu was opened, so contextmenu only swallows the native menu then."
   []
   (when-not @code-copy-attached?
     (reset! code-copy-attached? true)
     (let [code-node (fn [^js e]
-                      (when-let [node (some-> (.-target e) (.closest "pre, code"))]
+                      (when-let [node (some-> (.-target e) (.closest "pre, code, .md-diff"))]
                         (when (and (not (.closest node ".post--user"))
                                    (not (.closest node ".bubble-edit-textarea")))
                           node)))
           open!     (fn [^js e ^js node]
                       (when-let [d @dispatch-ref]
-                        (let [text (.-textContent node)
-                              attr (fn [a] (some-> node
+                        (let [attr (fn [a] (some-> node
                                                    (.closest (str "[" a "]"))
                                                    (.getAttribute a)))
                               path (attr "data-file-path")
                               diff-path (attr "data-diff-path")
-                              diff-text (attr "data-diff-text")]
+                              diff-text (attr "data-diff-text")
+                              ;; A rendered markdown diff body is prose whose
+                              ;; textContent interleaves old and new text —
+                              ;; Copy gets the raw diff instead.
+                              text (if (.matches node ".md-diff")
+                                     diff-text
+                                     (.-textContent node))]
                           (when (seq (str/trim (or text "")))
                             (d (cond-> {:type :code/menu-open
                                         :text text
@@ -2381,7 +2388,8 @@
                                         :y (.-clientY e)}
                                  path (assoc :path path)
                                  diff-text (assoc :diff-path diff-path
-                                                  :diff-text diff-text)))))))]
+                                                  :diff-text diff-text)))
+                            true))))]
       (.addEventListener
        js/document "click"
        (fn [^js e]
@@ -2392,8 +2400,8 @@
        js/document "contextmenu"
        (fn [^js e]
          (when-let [node (code-node e)]
-           (.preventDefault e)
-           (open! e node)))))))
+           (when (open! e node)
+             (.preventDefault e))))))))
 
 ;; ── Render ───────────────────────────────────────────────────────────────────
 
