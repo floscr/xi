@@ -122,7 +122,7 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   An ask that is one of several for its call also carries `:block {:ranges}`
   (xi.dialog): `code-block-segments` marks those pieces `.code-block-target`,
   and a CSS `:has(.confirm-btn--block:hover)` lights up all of them while
-  "Allow block" is hovered or focused.
+  "Allow all" is hovered or focused.
 - **Run timer**: a running tool block shows elapsed time after 2s; the
   tool-start event's `:at` becomes the entry's `:started-at` and the label
   repaints its own DOM text every second (`run-timer`, `replicant/on-mount`)

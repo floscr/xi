@@ -85,7 +85,7 @@ nobody to answer (`xi prompt`), an ask is a deny.
 
 **Several asks in one script.** Programs, paths outside the repository,
 directory deletions and guarded commands are asked about one at a time.
-While more than one is still to come, each ask also offers **Allow block**
+While more than one is still to come, each ask also offers **Allow all**
 (`b`, `/allow block`, `Alt+Shift+B` on the web). Its label shows how many
 asks it covers. Hovering it on the web highlights every call it would
 allow. Answering it allows the current ask and the rest of the script's asks

@@ -2277,7 +2277,7 @@
             ;; them. A write-approved root implies read, so drop those overlaps.
             outside-reads (->> (read-paths-of scan)
                                (filter #(rules-store/outside-cwd? cwd %)))
-            ;; Several asks ahead → each offers "Allow block" for all of them.
+            ;; Several asks ahead → each offers "Allow all" for all of them.
             _ (when-let [expect! (and confirm! (:expect-asks! ctx))]
                 (expect! (expected-ask-targets ctx cwd code
                                                {:reads    outside-reads

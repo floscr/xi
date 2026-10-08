@@ -505,7 +505,7 @@
 (defn- focused-clj-code
   "Highlighted clj `text` with everything outside the ask's `ranges` muted
    (.code-muted) and the calls of the whole block (`block-ranges`, may be
-   nil) marked .code-block-target — lit up while \"Allow block\" is hovered.
+   nil) marked .code-block-target — lit up while \"Allow all\" is hovered.
    Each segment is highlighted on its own — the ranges are whole forms, so
    every piece tokenizes like it would in context."
   [text ranges block-ranges]
@@ -901,7 +901,7 @@
         ;; A pending ask that targets part of this code (the (spit …) /
         ;; (sh …) call it is about) mutes the rest so the eye lands there.
         ;; An ask that is one of several (:block) also marks every call the
-        ;; block's asks target, lit up while "Allow block" is hovered.
+        ;; block's asks target, lit up while "Allow all" is hovered.
         (let [shown  (truncate-lines clj-code 100)
               target (get-in permission [:dialog :target])
               ranges (when (= :code (:arg target)) (seq (:ranges target)))

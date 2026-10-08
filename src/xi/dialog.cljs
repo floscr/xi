@@ -27,8 +27,8 @@
                 :resolved-label "Always allowed"}
    :allow-repo {:value :repo   :key "r" :label "Allow repo writes"
                 :resolved-label "Repo writes allowed"}
-   :allow-block {:value :block :key "b" :label "Allow block"
-                 :resolved-label "Block allowed"}
+   :allow-block {:value :block :key "b" :label "Allow all"
+                 :resolved-label "All allowed"}
    :recommend-rule {:value :recommend :key "?" :label "Recommend a rule"
                     :resolved-label "Recommending a rule…"}})
 
