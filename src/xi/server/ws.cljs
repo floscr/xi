@@ -514,7 +514,11 @@
                                        (ext-system-prompt-parts cwd))))
                 system (system-prompt/parts->system system-parts)
                 session (if summary
-                          (session/load-session summary)
+                          ;; Resuming counts as access: bump last-accessed on
+                          ;; disk so the session stays in the sidebar's Recent
+                          ;; group after this room is reaped.
+                          (do (session/touch-summary! summary)
+                              (session/load-session summary))
                           ;; a fresh session records who opened it (the
                           ;; joining client's user, or the server's own for
                           ;; rooms it provisions itself)
