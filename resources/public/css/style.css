@@ -913,24 +913,24 @@ body {
   text-decoration-color: var(--accent);
 }
 
+/* Inline code and code blocks: the same borderless --bg-2 panel as the chat's
+   .md-code-block (theme.css), so markdown rendered in a .post-content wrapper
+   (file viewer, md diff, prompt tab, user bubbles) matches the chat blocks. */
 .post-content code {
-  background-color: var(--bg-1);
+  background-color: var(--bg-2);
   padding: 0.15em 0.4em;
   border-radius: 0.4rem;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Fira Code', monospace;
   font-size: 0.9em;
-  border: 1px solid var(--gray-200);
 }
 
 .post--user .post-content code {
   background-color: rgba(255, 255, 255, 0.2);
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .post--user .post-content pre {
   background-color: rgba(0, 0, 0, 0.25);
-  border-color: rgba(255, 255, 255, 0.15);
   color: #fff;
 }
 
@@ -951,17 +951,16 @@ body {
 }
 
 .post-content pre {
-  background-color: var(--bg-1);
+  background-color: var(--bg-2);
   padding: var(--size-3);
   border-radius: var(--radius-md);
   overflow-x: auto;
   margin: var(--size-2) 0;
   white-space: pre-wrap;
   word-break: break-all;
-  border: 1px solid var(--gray-200);
 }
 
-.post-content pre code { background: none; padding: 0; border: none; }
+.post-content pre code { background: none; padding: 0; }
 
 .post-content img, .markdown img {
   max-width: 100%;
