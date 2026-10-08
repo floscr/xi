@@ -3992,7 +3992,6 @@
   [dispatch! path dirty?]
   [:div {:class ["project-card" "project-card--dir"]
          :replicant/key (str "dir-" path)
-         :data-flip (str "dir:" path)
          :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}}
    [:div {:class ["project-card-icon" (when dirty? "project-card-icon--dirty")]}
     (icon/icon {:icon-name :folder :size :sm})
