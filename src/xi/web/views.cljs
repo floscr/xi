@@ -5704,9 +5704,9 @@
    compose dock while :web/skill-form is set). One separated section per
    dynamic <input /> placeholder: text placeholders get an auto-growing
    textarea, image-upload an image picker. The first text field is autofocused.
-   Esc pressed twice cancels (the first press arms and shows a hint); Cmd/Ctrl+
-   Enter or the send button submits — values are substituted into the skill
-   body and posted like a normal prompt."
+   Esc pressed twice cancels (the first press arms and shows a hint); Enter
+   (Shift+Enter for a newline) or the send button submits — values are
+   substituted into the skill body and posted like a normal prompt."
   [dispatch! form]
   (let [{:keys [name description inputs values images body armed?]} form
         first-text (some (fn [{n :name t :type}] (when (not= t :image) n))
@@ -5721,8 +5721,11 @@
                      (do (.preventDefault e)
                          (dispatch! {:type :skill-form/escape}))
 
+                     ;; Enter submits, Shift+Enter inserts a newline (the
+                     ;; textarea default). Not during IME composition.
                      (and (= "Enter" (.-key e))
-                          (or (.-metaKey e) (.-ctrlKey e)))
+                          (not (.-shiftKey e))
+                          (not (.-isComposing e)))
                      (do (.preventDefault e)
                          (when body (dispatch! {:type :skill-form/submit})))))}}
       [:div {:class ["skill-compose-head"]}
@@ -5762,7 +5765,7 @@
        [:span {:class ["skill-compose-hint" (when armed? "skill-compose-hint--armed")]}
         (if armed?
           "Press Esc again to cancel"
-          "Esc Esc to cancel")]
+          "Enter to start · Shift+Enter for newline · Esc Esc to cancel")]
        [:button {:class ["icon-btn" "skill-compose-send"] :type "button"
                  :disabled (nil? body)
                  :title "Start skill"
