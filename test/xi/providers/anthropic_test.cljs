@@ -1,8 +1,46 @@
 (ns xi.providers.anthropic-test
   (:require [cljs.test :refer [deftest is testing]]
-            [xi.providers.anthropic :as anthropic]))
+            [xi.providers.anthropic :as anthropic]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
 
 (def ^:private base-query-opts #'anthropic/base-query-opts)
+(def ^:private access-token-stale? #'anthropic/access-token-stale?)
+
+(defn- stale-with
+  "access-token-stale? against a CLAUDE_CONFIG_DIR whose .credentials.json is
+   `credentials` (nil: no file)."
+  [credentials]
+  (let [dir  (.mkdtempSync fs (.join path (os/tmpdir) "xi-test-fresh-"))
+        prev (aget js/process.env "CLAUDE_CONFIG_DIR")]
+    (when credentials
+      (fs/writeFileSync (.join path dir ".credentials.json") credentials "utf8"))
+    (aset js/process.env "CLAUDE_CONFIG_DIR" dir)
+    (try (access-token-stale?)
+         (finally
+           (if prev
+             (aset js/process.env "CLAUDE_CONFIG_DIR" prev)
+             (js-delete js/process.env "CLAUDE_CONFIG_DIR"))
+           (fs/rmSync dir #js {:recursive true :force true})))))
+
+(defn- login-expiring [ms-from-now]
+  (js/JSON.stringify
+   #js {:claudeAiOauth #js {:accessToken "a" :refreshToken "r"
+                            :expiresAt (+ (js/Date.now) ms-from-now)}}))
+
+(deftest stale-access-token
+  (testing "a token valid for hours is fresh"
+    (is (false? (stale-with (login-expiring (* 3 60 60 1000))))))
+  (testing "an expired or nearly expired token is stale"
+    (is (true? (stale-with (login-expiring (- 1000)))))
+    (is (true? (stale-with (login-expiring 60000)))))
+  (testing "a blanked login (expiresAt 0) is stale"
+    (is (true? (stale-with "{\"claudeAiOauth\":{\"accessToken\":\"\",\"expiresAt\":0}}"))))
+  (testing "no readable login means nothing to refresh"
+    (is (not (stale-with nil)))
+    (is (not (stale-with "not json")))
+    (is (not (stale-with "{}")))))
 
 (deftest setting-sources
   (testing "main turns let the CLI load only user-level instructions — project

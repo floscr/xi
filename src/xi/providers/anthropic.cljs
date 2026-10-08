@@ -13,6 +13,7 @@
             [clojure.string :as str]
             [xi.error-info :as error-info]
             [xi.providers.runner :as runner]
+            [xi.session :as session]
             [xi.tools.registry :as tools]
             [xi.util :as util]))
 
@@ -438,7 +439,7 @@
                      inline)}
       (:prompt opts))))
 
-(defn stream-messages-runner
+(defn- start-runner-turn!
   "Run one Claude turn through the SDK runner (xi.providers.runner): forward
    its SDK messages through process-sdk-message and service proxied tool calls
    on the host. Returns {:promise :abort!}."
@@ -497,6 +498,88 @@
      :abort! (fn []
                (swap! state assoc :aborted true)
                (abort!))}))
+
+;; -- Login freshness gate ----------------------------------------------------
+;; Claude refresh tokens rotate: using one invalidates it. After a reboot the
+;; access token has expired and every session xi resumes starts its own CLI at
+;; once. They all refresh with the same refresh token, one wins, the rest get
+;; invalid_grant, and the CLI answers by blanking ~/.claude's login - so every
+;; reboot ends logged out. Before any turn runs on a stale access token, one
+;; tiny turn runs alone to refresh it; the others wait for it.
+
+(def ^:private STALE_MS
+  "An access token expiring within this long counts as stale (a turn can take
+   minutes, and the CLI refreshes mid-turn once it lapses)."
+  (* 5 60 1000))
+
+(def ^:private WARMUP_TIMEOUT_MS 60000)
+
+(def ^:private WARMUP_MODEL "claude-haiku-4-5-20251001")
+
+(defn- access-token-stale?
+  "True when the live login's access token has expired or is about to (a
+   blanked login counts: expiresAt 0). False when there is no readable login:
+   nothing to refresh, and the turn should surface its own error."
+  []
+  (try
+    (let [path (str (session/claude-config-dir) "/.credentials.json")]
+      (when (.existsSync fs path)
+        (let [expires (some-> (.readFileSync fs path "utf8")
+                              (js/JSON.parse)
+                              (aget "claudeAiOauth")
+                              (aget "expiresAt"))]
+          (and (number? expires)
+               (< (- expires (js/Date.now)) STALE_MS)))))
+    (catch :default _ false)))
+
+(defonce ^:private warmup (atom nil))
+
+(defn- warm-up-login!
+  "Promise that settles once one minimal text-only turn has run against the
+   live config dir, which makes the CLI refresh (and persist) the login. Never
+   rejects; capped by WARMUP_TIMEOUT_MS so a hung CLI can't block every turn."
+  []
+  (let [{:keys [promise abort!]}
+        (start-runner-turn! {:model WARMUP_MODEL
+                             :prompt "Reply with: ok"
+                             :no-tools? true})
+        timeout (js/Promise.
+                 (fn [resolve _]
+                   (.unref (js/setTimeout (fn [] (abort!) (resolve nil))
+                                          WARMUP_TIMEOUT_MS))))]
+    (-> (js/Promise.race #js [promise timeout])
+        (.catch (fn [_] nil)))))
+
+(defn- fresh-login!
+  "Promise resolving once the login's access token is fresh. Concurrent turns
+   share one warm-up. A failed warm-up isn't retried here: the turn that
+   follows reports the auth error itself."
+  []
+  (cond
+    @warmup @warmup
+    (not (access-token-stale?)) (js/Promise.resolve nil)
+    :else (reset! warmup
+                  (-> (warm-up-login!)
+                      (.finally #(reset! warmup nil))))))
+
+(defn stream-messages-runner
+  "Run one Claude turn (see start-runner-turn!), after making sure the login's
+   access token is fresh. Returns {:promise :abort!}; aborting while the turn
+   still waits on the login resolves it aborted without ever starting it."
+  [opts]
+  (let [started  (volatile! nil)
+        aborted? (volatile! false)
+        promise  (-> (fresh-login!)
+                     (.then (fn [_]
+                              (if @aborted?
+                                (assoc @(initial-turn-state opts) :aborted true)
+                                (let [turn (start-runner-turn! opts)]
+                                  (vreset! started turn)
+                                  (:promise turn))))))]
+    {:promise promise
+     :abort!  (fn []
+                (vreset! aborted? true)
+                (when-let [turn @started] ((:abort! turn))))}))
 
 (def model-ids
   "Anthropic model ids offered in the model picker (static — the subscription
