@@ -4861,41 +4861,6 @@
                                           :session-id session-id}))}
            (or name "(untitled)")))))))
 
-(defn- palette-text-match-group
-  "Inline full-text hits for the top-level palette: the same debounced server
-   search as the \"Search all sessions\" sub-page runs on every keystroke
-   (:palette/top-search-input), and transcript matches surface here without
-   drilling in. Rows carry :value = the live query so ui-runtime's substring
-   filter (which only sees names) never hides them; sessions the filter
-   already shows by name/project are skipped (same lowercase-substring match
-   as the runtime, on the same name + shortened-path text the Sessions tier
-   rows carry) so nothing appears twice."
-  [state dispatch!]
-  (let [{:keys [query results]} (:web/palette-search state)
-        q (str/lower-case (str/trim (or query "")))]
-    (when (and (seq q) (seq results))
-      (let [cur-sid     (get-in state [:web/route :session-id])
-            name-match? (fn [{:keys [name cwd]}]
-                          (str/includes?
-                           (str/lower-case (str (or name "New session") " "
-                                                (some-> cwd shorten-path)))
-                           q))
-            hits        (->> results
-                             (remove #(= cur-sid (:session-id %)))
-                             (remove name-match?)
-                             (take 8))]
-        (when (seq hits)
-          (apply cmd/command-group {:heading "Session text"}
-            (for [{:keys [session-id name cwd snippet]} hits]
-              (cmd/command-item
-               {:icon :message-circle
-                :value query
-                :description (or snippet (some-> cwd shorten-path))
-                :on-click (fn [_] (dispatch! {:type :route/navigate
-                                              :page :chat
-                                              :session-id session-id}))}
-               (or name "(untitled)")))))))))
-
 (defn- palette-model-page
   "Model list as a palette sub-page (drilled from Change model / /model).
    Paints the cached :web/model-list (xi.web.models) — a spinner only before
@@ -5198,6 +5163,8 @@
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js (which owns arrow-nav, live filter
    and Enter): Tab drills the active project row into its action sub-page;
+   on the search page Tab flips its names-only/full-text toggle instead
+   (Ctrl/Cmd+F belongs to the browser's find);
    Shift+Tab / Backspace-on-empty backs out of a sub-page (Escape closes the
    palette, as at the top level). Reads the
    runtime's `.command-item--active` element and its `data-palette-drill` cwd."
@@ -5212,6 +5179,10 @@
             (.preventDefault e)
             (dispatch! {:type :palette/drill :cwd cwd
                         :label (.. active -dataset -paletteLabel)})))
+
+        (and (= :search (:kind palette-page)) (= key "Tab") (not (.-shiftKey e)))
+        (do (.preventDefault e)
+            (dispatch! {:type :palette/toggle-content-search}))
 
         (and (some? palette-page)
              (or (and (= key "Tab") (.-shiftKey e))
@@ -5249,6 +5220,29 @@
     (assoc opts :shortcut (keycaps s))
     opts))
 
+(defn- palette-search-toggle
+  "Search-mode toggle at the right edge of the \"Search all sessions\" page's
+   input: full-text over names + transcripts (the default) vs. names only,
+   with its Tab shortcut as a keycap (Tab is free on this page — drilling is
+   top-level only — and no browser reserves it). Passed through the dialog's
+   :leading slot together with the back button (the only insertion point
+   inside .command-search); the row is a flex container, so style.css floats
+   the toggle right via `order`. Mousedown is swallowed so the input keeps
+   focus."
+  [state dispatch!]
+  (let [names-only? (boolean (get-in state [:web/palette-search :names-only?]))]
+    [:button {:class ["command-search-toggle"]
+              :type "button" :tabindex "-1"
+              :title (if names-only?
+                       "Searching names only — click or Tab to search session text too"
+                       "Searching names + session text — click or Tab for names only")
+              :on {:mousedown (fn [^js e] (.preventDefault e))
+                   :click (fn [_] (dispatch! {:type :palette/toggle-content-search}))}}
+     (icon/icon {:icon-name :file-text :size :sm})
+     [:span {:class ["command-search-toggle-label"]}
+      (if names-only? "Names" "Full-text")]
+     (keycaps "⇥")]))
+
 (defn- command-palette
   "Global Cmd/Ctrl+K command palette (ui.command). Mounted once in root-view;
    the ui-runtime.js delegate handles open/filter/keyboard-nav. Items dispatch
@@ -5264,11 +5258,14 @@
         search-page? (= :search (:kind palette-page))
         finder-page? (= :file-finder (:kind palette-page))
         buffers-page? (= :buffers (:kind palette-page))
+        names-only?  (boolean (get-in state [:web/palette-search :names-only?]))
         dialog-attrs {:id "cmdk" :hotkey "mod+k"
                       ;; Hold Alt → key badges on the first rows, Alt+key picks one.
                       :quick-nav palette-quick-keys
                       :placeholder (cond
-                                     search-page? "Search session text…"
+                                     search-page? (if names-only?
+                                                    "Search session names…"
+                                                    "Search session text…")
                                      finder-page? "Find file…"
                                      buffers-page? "Switch buffer…"
                                      palette-page "Filter actions…"
@@ -5306,11 +5303,7 @@
                                             (let [v (.. e -target -value)]
                                               (cond
                                                 (nil? palette-page)
-                                                (do (pin-palette-items! (.-currentTarget e))
-                                                    ;; also feed the inline
-                                                    ;; full-text session search
-                                                    (dispatch! {:type :palette/top-search-input
-                                                                :query v}))
+                                                (pin-palette-items! (.-currentTarget e))
                                                 search-page?
                                                 (dispatch! {:type :palette/search-input :query v})
                                                 finder-page?
@@ -5332,14 +5325,19 @@
 
       palette-page
       ;; On a sub-page the leading search icon becomes a clickable back arrow
-      ;; (via the framework's :leading slot) instead of a separate back row.
+      ;; (via the framework's :leading slot) instead of a separate back row;
+      ;; the search page also carries its names-only/full-text toggle there
+      ;; (floated to the input's right edge, see .command-search-toggle).
        (cmd/command-dialog
        (assoc dialog-attrs
               :leading
-              [:button {:class ["command-search-back"] :type "button"
-                        :aria-label "Back"
-                        :on {:click (fn [_] (dispatch! {:type :palette/back}))}}
-               (icon/icon {:icon-name :arrow-left :size :sm})])
+              (list
+               [:button {:class ["command-search-back"] :type "button"
+                         :aria-label "Back"
+                         :on {:click (fn [_] (dispatch! {:type :palette/back}))}}
+                (icon/icon {:icon-name :arrow-left :size :sm})]
+               (when search-page?
+                 (palette-search-toggle state dispatch!))))
        (case (:kind palette-page)
          :model          (palette-model-page state dispatch!)
          :skill          (palette-skill-page state dispatch!)
@@ -5549,9 +5547,6 @@
                          (fn [_] (dispatch! {:type :palette/open-models}))
                          (fn [_] (dispatch-command! dispatch! (:id room) name)))}
             name))))
-     ;; Transcript matches for the text typed so far — the inline half of the
-     ;; full-text search; the pinned row below opens the full sub-page.
-     (palette-text-match-group state dispatch!)
      ;; Pinned last row: full-text search over every saved session (nil cwd =
      ;; no project scope), the same sub-page as a project's "Search session
      ;; text". The --pinned classes keep it visible under any filter query

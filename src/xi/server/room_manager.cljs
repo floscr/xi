@@ -320,10 +320,12 @@
 (defn- session-web-search
   "Roomless: full-text search over saved sessions for the command palette's
    in-panel search — like session-content-search, but the reply carries full
-   summaries with match snippets instead of bare ids."
-  [_st {:keys [client-id query cwd]}]
+   summaries with match snippets instead of bare ids. `names-only?` skips the
+   transcript text (the search page's toggle)."
+  [_st {:keys [client-id query cwd names-only?]}]
   {:effects [[:session/web-search-reply
-              {:client-id client-id :query query :cwd cwd}]]})
+              {:client-id client-id :query query :cwd cwd
+               :names-only? names-only?}]]})
 
 (defn- diff-web-load
   "Roomless: return the combined working-tree diff for a CWD (the git-status

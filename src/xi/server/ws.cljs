@@ -721,9 +721,10 @@
 
       ;; Full-text search with result summaries + match snippets, for the
       ;; command palette's in-panel session search (scoped to a project cwd;
-      ;; nil = all sessions). A blank query lists the newest sessions instead.
+      ;; nil = all sessions). A blank query lists the newest sessions instead;
+      ;; `names-only?` skips transcript text (the search page's toggle).
       :session/web-search-reply
-      (fn [_ {:keys [client-id query cwd]}]
+      (fn [_ {:keys [client-id query cwd names-only?]}]
         (send! client-id
                (wire/encode
                 {:type     :session/web-search-result
@@ -732,7 +733,8 @@
                                   (session/recent-sessions
                                    cwd {:personal-agent? agent?})
                                   (session/search-sessions
-                                   cwd query {:personal-agent? agent?}))
+                                   cwd query {:personal-agent? agent?
+                                              :names-only? names-only?}))
                                 (take 50)
                                 (mapv #(select-keys % [:session-id :name :cwd
                                                        :last-accessed :timestamp

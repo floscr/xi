@@ -1274,9 +1274,10 @@
    instead of bare ids. Each summary is augmented with :snippet — a short
    excerpt around the first content match, or nil when only the title matched.
    `cwd` nil/blank -> search across all projects; otherwise scope to that
-   project directory."
+   project directory. `:names-only?` skips the transcript text and matches
+   session names alone."
   ([cwd query] (search-sessions cwd query nil))
-  ([cwd query {:keys [personal-agent?]}]
+  ([cwd query {:keys [personal-agent? names-only?]}]
    (let [q (str/lower-case (str/trim (or query "")))]
      (if (str/blank? q)
        []
@@ -1284,7 +1285,8 @@
             (keep (fn [s]
                     (let [name-match?    (str/includes?
                                           (str/lower-case (or (:name s) "")) q)
-                          content-match? (str/includes? (cached-search-text s) q)]
+                          content-match? (and (not names-only?)
+                                              (str/includes? (cached-search-text s) q))]
                       (when (or name-match? content-match?)
                         (assoc s :snippet
                                (when content-match?

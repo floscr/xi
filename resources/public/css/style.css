@@ -14,6 +14,11 @@
    timeline itself stays full width so its scrollbar sits at the window edge. */
 :root { --chat-max-width: 64rem; }
 
+/* Faintest text tier. The framework theme (theme.css) only ships --fg-0/1/2;
+   several rules below want one step fainter, so derive it from the theme's
+   own tokens (fg-2 pulled toward the background) to track light/dark. */
+:root { --fg-3: color-mix(in srgb, var(--fg-2) 72%, var(--bg-0)); }
+
 html, body {
   margin: 0; padding: 0;
   overflow: hidden; position: fixed;
@@ -3154,6 +3159,32 @@ code a:hover,
 }
 .command-item--pinned[hidden] {
   display: flex;
+}
+
+/* Search-mode toggle (names-only / full-text) at the right edge of the
+   "Search all sessions" page's input. Rendered through the dialog's :leading
+   slot (the only insertion point inside the flex .command-search row);
+   `order` floats it after the input. */
+.command-search-toggle {
+  order: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 0;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.command-search-toggle-label {
+  line-height: 1;
+}
+@media (hover: hover) {
+  .command-search-toggle:hover {
+    color: var(--fg-1);
+  }
 }
 
 /* Trailing status slot on command-palette chat rows — shows the same status

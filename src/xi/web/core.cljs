@@ -1620,24 +1620,27 @@
                                        {:state st'
                                         :effects [[:palette/search-debounce
                                                    {:query (or query "")
-                                                    :cwd (get-in st [:web/palette-page :cwd])}]]})))
-          ;; Inline full-text search at the palette's top level: every
-          ;; keystroke in the top-level input also runs the "Search all
-          ;; sessions" search (debounced, unscoped), and transcript hits
-          ;; render as a "Session text" group without drilling into the
-          ;; sub-page. Stale results are kept while typing (no inline
-          ;; spinner); the stale-reply guard on :session/web-search-result
-          ;; keeps a slow early reply from clobbering a newer search.
-          :palette/top-search-input
-          (fn [st {:keys [query]}]
-            (when (nil? (:web/palette-page st))
-              (if (str/blank? (str/trim (or query "")))
-                {:state (dissoc st :web/palette-search)}
-                {:state (assoc-in st [:web/palette-search :query] query)
-                 :effects [[:palette/search-debounce {:query query :cwd nil}]]})))
-          :session/web-search    (fn [_st {:keys [query cwd]}]
+                                                    :cwd (get-in st [:web/palette-page :cwd])
+                                                    :names-only? (get-in st' [:web/palette-search :names-only?])}]]})))
+          ;; Toggle on the search page's input (the button at its right edge,
+          ;; or Tab): full-text over names + transcripts (the default) vs.
+          ;; names only. Re-runs the current query under the new mode;
+          ;; :palette/open-search resets to full-text on the next visit.
+          :palette/toggle-content-search
+          (fn [st _]
+            (when (= :search (get-in st [:web/palette-page :kind]))
+              (let [names-only? (not (get-in st [:web/palette-search :names-only?]))]
+                {:state (-> st
+                            (assoc-in [:web/palette-search :names-only?] names-only?)
+                            (update :web/palette-search dissoc :results))
+                 :effects [[:palette/search-debounce
+                            {:query (or (get-in st [:web/palette-search :query]) "")
+                             :cwd (get-in st [:web/palette-page :cwd])
+                             :names-only? names-only?}]]})))
+          :session/web-search    (fn [_st {:keys [query cwd names-only?]}]
                                    {:effects [[:ws/send {:type :session/web-search
-                                                         :query query :cwd cwd}]]})
+                                                         :query query :cwd cwd
+                                                         :names-only? names-only?}]]})
           ;; Stale replies (query no longer matches the live input) are
           ;; dropped so a slow early reply can't clobber a newer search.
           :session/web-search-result
@@ -1667,13 +1670,10 @@
                                       :effects [[:palette/reset-filter
                                                  (when (= :search (get-in st [:web/palette-page :kind]))
                                                    (get-in st [:web/palette-search :query]))]]}
-                                     ;; Fresh mod+k open: always start at the top,
-                                     ;; with no leftover inline full-text results
-                                     ;; (the runtime cleared the input, so they'd
-                                     ;; all show at the blank query).
+                                     ;; Fresh mod+k open: always start at the top.
                                      {:state (-> st
                                                  (assoc :web/palette-open? true)
-                                                 (dissoc :web/palette-page :web/palette-search))
+                                                 (dissoc :web/palette-page))
                                       :effects [[:palette/reset-filter nil]]}))
           ;; Keep :web/palette-page here so a drill's close+reopen doesn't lose
           ;; the sub-page; a fresh mod+k open (:palette/opened) resets it.
