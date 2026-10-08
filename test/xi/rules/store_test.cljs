@@ -747,3 +747,56 @@
                                                         :effective-cwd cwd} rs)))]
         (is (= :deny (get-in (decide "xi-nope-7f3a") [:action :type])))
         (is (nil? (decide "ls")))))))
+
+(deftest hardened-shell-by-path-or-wrapper-denied
+  (let [ruleset (store/ordered-rules {} "r1" (os/tmpdir))
+        hit     (fn [command]
+                  (rules/first-match ruleset {:tool :sh :cli (first (str/split command #"\s+"))
+                                              :command command}))
+        denied? (fn [command]
+                  (let [h (hit command)]
+                    (and h (= :deny (:type (:action h))) (= :hardened (:scope h)))))]
+    (testing "a shell by full path, or through a wrapper that execs its argument"
+      (doseq [c ["/bin/bash -c id" "/usr/bin/zsh" "./sh -c x"
+                 "env bash -c id" "env -i FOO=1 bash" "/usr/bin/env sh -c id"
+                 "timeout 5 bash -c id" "timeout -k 5 10s /bin/sh -c id"
+                 "xargs -0 -n1 bash -c id" "xargs -I {} sh -c {}"
+                 "nohup setsid bash -lc id" "nice -n 5 dash" "busybox sh"]]
+        (is (denied? c) c)))
+    (testing "not a shell: wrappers around other programs, shell-like names elsewhere"
+      (doseq [c ["env FOO=bar myprog" "timeout 5 bb test" "xargs -n1 echo"
+                 "cat bash.md" "ls /bin/bash" "git log --sh" "fish-shell --version"]]
+        (let [h (hit c)]
+          (is (not (and h (= :hardened (:scope h)) (= :deny (:type (:action h))))) c))))
+    (testing "the bash tool itself is untouched"
+      (let [h (rules/first-match ruleset {:tool :bash :command "timeout 5 bash -c id"})]
+        (is (not (and h (= :hardened (:scope h)) (= :deny (:type (:action h))))))))))
+
+(deftest hardened-git-internals-ask
+  (let [state   {:rooms {"r1" {:ext {:rules {:rules [{:match  {:tool #{:write :edit :sh :bash}}
+                                                        :action {:type :allow}}]}}}}}
+        ruleset (store/ordered-rules state "r1" (os/tmpdir))
+        hit     (fn [req] (rules/first-match ruleset req))
+        asks?   (fn [req]
+                  (let [h (hit req)]
+                    (and h (= :ask (:type (:action h))) (= :hardened (:scope h))
+                         (= [:yes :no] (:options (:action h))))))]
+    (testing "writes into .git/hooks and .git/config ask above any user allow, no [a]lways"
+      (doseq [p [".git/hooks/pre-commit" "/repo/.git/hooks/post-checkout" ".git/config"
+                 ".git/config.worktree" ".git/modules/sub/hooks/post-checkout"
+                 ".git/worktrees/w/config" ".git/hooks"]]
+        (is (asks? {:tool :write :path p}) p)
+        (is (asks? {:tool :edit :path p}) p)))
+    (testing "other .git files and look-alikes fall through to the user's allow"
+      (doseq [p [".git/HEAD" ".git/index" ".git/info/exclude" "src/config" "hooks/x"
+                 "foo.git/hooks/x" "docs/.github/config.yml"]]
+        (is (= :session (:scope (hit {:tool :write :path p}))) p)))
+    (testing "command lines naming them, or the .git directory as an operand, ask"
+      (doseq [c ["cp hook .git/hooks/pre-commit" "tee .git/config" "cp -r hooks .git/"
+                 "cp -r hooks .git" "install -m755 h ./.git/hooks/pre-push"
+                 "ln -s /tmp/x /repo/.git/hooks/pre-commit" "sed -i s/a/b/ .git/modules/s/config"]]
+        (is (asks? {:tool :sh :cli (first (str/split c #"\s+")) :command c}) c)
+        (is (asks? {:tool :bash :command c}) c)))
+    (testing "reading .git internals is not caught"
+      (doseq [c ["cat .git/HEAD" "git log .gitignore" "ls .github" "cat .git/info/exclude"]]
+        (is (= :session (:scope (hit {:tool :sh :cli (first (str/split c #"\s+")) :command c}))) c)))))

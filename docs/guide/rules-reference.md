@@ -43,6 +43,7 @@ Every field present must hold. An absent field is no constraint.
 | `:path` | The file a call targets | Regex (partial match) or glob string (full match: `*` one segment, `**` any, `?` one char). Tested against the argument as given, the resolved absolute path, and that path with `$HOME` as `~`. Symlinks are resolved. |
 | `:command` | The command line, or the clj code | Regex (partial) or substring. |
 | `:cli` | The program of a clj `(sh …)` call | String (exact), set, or regex. |
+| `:read-only` | `true` / `false` | Whether the arguments of a clj `(sh …)` call are read-only for its program: `find` without `-exec`/`-delete`/`-fprint`, `fd` without `-x`/`-X`/`-l`, `rg` without `--pre`/`-z`, `sort` without `-o`/`--compress-program`, `ss` without `-K`/`-D`, and `git` limited to ordinary repository subcommands without `-c`, `-C`, `--git-dir`, `-p`, `rebase -x`, `merge -s`, `--ext-diff`, `--output`, `--no-index`, `--upload-pack`, `--template`, `config` writes, `bisect run`, `submodule foreach` (no `push`, `clean`, `difftool`, `hook`, aliases). `cat`, `ls`, `wc` and the other plain read-only programs always count as read-only. An unknown flag counts as not read-only. Any other program, a computed argument or a background command with shell syntax matches neither value, so pair it with `:cli`. Like `:command`, its allow covers only the exact command. |
 | `:repo` | The git repository of the target or working directory | The end of its path, e.g. `"code/my-app"`. |
 | `:dir` | The working directory | Absolute prefix; `~` is expanded. |
 | `:extension` | A call made by an extension | `true` for any, or its id as string, glob, regex or set. Agent calls never match. |
@@ -71,7 +72,7 @@ option when it has one, else the chat's directory.
 
 | `:type` | Does |
 | --- | --- |
-| `:allow` | Runs the call. No later rule is consulted. For a clj `(sh …)` rule: without `:command`, `:within`, `:tracked` or `:host` it allows the program; with one of them it allows only the exact matched command. |
+| `:allow` | Runs the call. No later rule is consulted. For a clj `(sh …)` rule: without `:command`, `:within`, `:tracked`, `:host` or `:read-only` it allows the program; with one of them it allows only the exact matched command. |
 | `:deny` | Blocks it. The agent sees `:message`. |
 | `:nudge` | Blocks it, but reports `:message` as a hint rather than an error. |
 | `:ask` | Shows a dialog. `:message` replaces the default text. `:options` defaults to `[:yes :no :always]`; `:unanswered :deny` refuses the call when nobody can answer instead of letting it through. |
@@ -109,7 +110,14 @@ Always on unless Xi is started with `--no-hardened-rules`:
 - `sudo`: denied.
 - `scp`, `rsync`, `sftp`: denied, as programs and inside `bash` lines.
 - A shell as the program of a clj `(sh …)` call (`bash`, `sh`, `zsh`, …):
-  denied; commands go argv-style, one per call.
+  denied; commands go argv-style, one per call. Also by path (`/bin/bash`)
+  or through a wrapper that runs its argument (`env`, `timeout`, `xargs`,
+  `nohup`, `setsid`, `nice`, `busybox`, …).
+- Writing `.git/hooks/*`, `.git/config` or into the `.git` directory, with
+  the write and edit tools or a command line (`cp`, `tee`, …) that names
+  them: asks every time, yes or no only. Git runs what they name on its next
+  call. The clj helpers (`spit`, `cp`, …) refuse these paths outright, and
+  `cp` never copies a `.git` directory along.
 - Reading a private key under `~/.ssh/`: denied, through the read tools and
   through command lines that name one. `*.pub`, `config`, `known_hosts`,
   `authorized_keys` stay readable.
@@ -145,7 +153,7 @@ list; inline rule maps may be mixed in.
 | `extension-sh` | Ask on every program an extension runs. |
 | `net-confirm` | Ask on every host an extension requests. |
 | `script-exec` | Ask before an interpreter runs inline code or a script (`bb -e`, `bb -f`, `node -e`, `python x.py`, `bun x.ts`, `clojure -M`, …); no `a`, refused when nobody can answer. `bb <task>`, `bun test`, `--version` and the like are free. |
-| `clj-sh` | For clj `(sh …)`: allow read-only `sed -n …p`, in-repo `mv` `cp` `mkdir` `touch` `rmdir`, and `rm` of git-tracked content (`repository-scripts`); allow `curl` to loopback with safe flags (`localhost-curl`, a `:host` rule); allow read-only programs (`sh-read-only`); ask for everything else (`sh-confirm`). |
+| `clj-sh` | For clj `(sh …)`: allow read-only `sed -n …p`, in-repo `mv` `cp` `mkdir` `touch` `rmdir`, and `rm` of git-tracked content (`repository-scripts`); allow `curl` to loopback with safe flags (`localhost-curl`, a `:host` rule); allow read-only programs with read-only arguments (a `:read-only` rule) and `rm` (`sh-read-only`); ask for everything else (`sh-confirm`). |
 
 Names are written `:xi.rules.defaults/<bundle>` in `:defaults`:
 

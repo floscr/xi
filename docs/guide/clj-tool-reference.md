@@ -30,7 +30,7 @@ file under the temp directory and the result names the file.
 | `(realpath p)` `(basename p)` `(dirname p)` | Path helpers |
 | `(which "cmd")` | The program's path, or nil |
 | `(spit f s)` | Write; `{:append true}` appends |
-| `(mkdir d)` `(cp a b)` `(mv a b)` `(touch f)` | Write operations; `mv` renames a symlink itself |
+| `(mkdir d)` `(cp a b)` `(mv a b)` `(touch f)` | Write operations; `mv` renames a symlink itself; `cp` skips any `.git` directory in the tree |
 | `(rm f …)` | Delete; recursive; no error when missing. A symlink is removed, never followed: `(rm link)` leaves the linked directory intact |
 | `(tmpdir)` | A fresh directory under the temp directory |
 | `(cwd)` `(env "KEY")` `(now)` | Working directory, an allowed environment variable, the time |
@@ -40,38 +40,50 @@ Paths expand a leading `~` and `$VAR` for allowed variables.
 **Where they may go.** The working directory and the temp directory are
 free. A literal path elsewhere asks before the script runs, with `r` to
 allow the whole repository it is in. A computed path elsewhere asks at the
-moment it is used. Credential directories are always refused. Deleting a
-directory with `rm` asks, unless a rule such as the default `rm` of
-git-tracked content allows that exact command.
+moment it is used. Credential directories are always refused, and so is
+anything inside a `.git` directory (git runs what `.git/hooks` and
+`.git/config` name; the write tool and `(sh "git" "config" …)` ask
+instead). Deleting a directory with `rm` asks, unless a rule such as the
+default `rm` of git-tracked content allows that exact command.
 
 ## Programs and the network
 
 | Helper | Does |
 | --- | --- |
 | `(sh "cmd" "arg" …)` | Run a program; stdout on success, an error with `{:exit :out :err}` otherwise. Options first: `(sh {:dir "sub" :env {"PORT" 8080}} "bb" "test")`. |
-| `(git "log" "-5")` | Git without a dialog; `push` and `clean` are refused here and go through `sh`. |
+| `(git "log" "-5")` | Git without a dialog, for ordinary repository subcommands. Refused here, with the reason, and left to `sh` (which asks): `push`, `clean`, `-c`, `-C`, `--git-dir`, `-p`, `config` writes, `rebase -x`, `merge -s`, `--ext-diff`, `--output`, `--no-index`, `--upload-pack`, `--template`, `bisect run`, `submodule foreach`, aliases and tools (`difftool`, `hook`, …). Another directory of the same repository: `(sh {:dir "sub"} "git" …)`. |
 | `(curl url opts)` | `{:status :body}`; `http(s)` only; opts `{:method :headers :body :max-time}` |
-| `(jq filter input)` | jq over a JSON string or Clojure data; returns data, `{:raw true}` returns text |
+| `(jq filter input)` | jq over a JSON string or Clojure data; returns data, `{:raw true}` returns text. `{:args […]}` adds output flags (`-S`, `--arg n v`, `--indent 2`, …), not file-reading ones (`-f`, `--rawfile`, `--slurpfile`, `-L`). jq sees only the allowed environment variables. |
 | `(ports)` `(ports 7474)` | Listening sockets as `{:proto :addr :port :process :pid}` |
 
 `sh` takes one program and its arguments. There are no shell strings, and
-`(sh "bash" "-c" …)` is refused. `:dir` must exist and is treated as a read.
-`:env` may not change what an approved program loads (`PATH`, `LD_*`,
-`NODE_OPTIONS`, …).
+`(sh "bash" "-c" …)` is refused, also by path or through `env`, `timeout`,
+`xargs` and the like. `:dir` must exist and is treated as a read; for `git`
+it must be inside the chat's repository, or the call asks. `:env` may not
+change what an approved program loads or runs (`PATH`, `HOME`, `LD_*`,
+`NODE_OPTIONS`, `GIT_*`, `EDITOR`, `VISUAL`, `PAGER`, `XDG_CONFIG_HOME`,
+`RIPGREP_CONFIG_PATH`, …).
 
 ### How a program gets approved
 
 Before the script runs, Xi reads every literal `sh` call out of it and
 decides each one:
 
-1. A read-only program runs: `ls` `cat` `head` `tail` `grep` `rg` `find` `fd`
-   `pwd` `echo` `mktemp` `git` `stat` `du` `readlink` `realpath` `which`
-   `basename` `dirname` `date` `ss` `netstat` `lsof` `wc` `sort` `uniq` `cut`
-   `tr`, and `rm`. The result carries a hint to use the helper instead; turn
-   hints off with `:helper-hints false` in `~/.config/xi/ext/clj.edn`.
+1. A read-only program with read-only arguments runs: `ls` `cat` `head`
+   `tail` `grep` `rg` `find` `fd` `pwd` `echo` `mktemp` `git` `stat` `du`
+   `readlink` `realpath` `which` `basename` `dirname` `date` `ss` `netstat`
+   `lsof` `wc` `sort` `uniq` `cut` `tr`, and `rm`. The arguments of `find`,
+   `fd`, `rg`, `sort`, `ss` and `git` are parsed (the `:read-only`
+   [rule field](rules-reference.md#match) lists what is refused: `find
+   -exec`, `fd -x`, `rg --pre`, `sort -o`, `ss -K`, `git -c …`, `git push`,
+   `git config k v`, …); a refused call asks instead, the dialog naming the
+   reason, and a computed argument that turns out not to be read-only fails
+   when the script runs. The result carries a hint to use the helper instead;
+   turn hints off with `:helper-hints false` in `~/.config/xi/ext/clj.edn`.
 2. A program in `:allow-clis` of `~/.config/xi/ext/clj.edn`, or allowed by a
-   [rule](rules-reference.md), runs. A rule with `:command`, `:within` or
-   `:tracked` allows only that exact, fully literal command.
+   [rule](rules-reference.md), runs with any arguments. A rule with
+   `:command`, `:within`, `:tracked`, `:host` or `:read-only` allows only that
+   exact, fully literal command.
 3. Anything else asks: once, always (for the chat), or deny.
 
 Whatever the program, these still ask: destructive patterns (`rm -rf`,

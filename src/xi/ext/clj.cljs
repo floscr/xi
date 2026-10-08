@@ -42,6 +42,7 @@
             [xi.holds :as holds]
             [xi.rules :as rules]
             [xi.rules.defaults :as rules-defaults]
+            [xi.rules.readonly :as readonly]
             [xi.rules.store :as rules-store]
             [xi.paths :as paths]
             [xi.sandbox.sci :as sandbox]
@@ -220,7 +221,11 @@
    names the helper asking, for the approval dialog's target. `{:nofollow?
    true}` keeps a symlink at the final component as the target (its parent is
    still canonicalized): for entry-level ops (rm, mv) the returned path is the
-   link itself, so the op can never reach through it to the linked tree."
+   link itself, so the op can never reach through it to the linked tree.
+   A `.git` directory (any, in or out of the repo) is never writable from
+   the helpers: git runs what `.git/hooks` and `.git/config` name on its
+   next ordinary call, which the gate auto-runs. The write tool and
+   `(sh \"git\" \"config\" …)` ask instead (hardened rules)."
   [opts p & [op {:keys [nofollow?]}]]
   (let [cwd      (opts-cwd opts)
         resolved (if nofollow?
@@ -228,6 +233,11 @@
                    (paths/real-resolve cwd (str p)))
         real-cwd (paths/real-resolve cwd ".")
         allowed  (:allowed-writes @opts)]
+    (when (re-find #"(?:^|/)\.git(?:/|$)" resolved)
+      (throw (ex-info (str "clj: writing inside a .git directory is blocked (" p "): "
+                           "git runs what .git/hooks and .git/config name. Use the "
+                           "write tool or (sh \"git\" \"config\" …), which ask.")
+                      {})))
     (if (or (paths/path-within? resolved real-cwd)
             (paths/within-tmp? cwd resolved)
             (some #(paths/path-within? resolved %) allowed))
@@ -286,24 +296,36 @@
 
 (defn- spawn-sync!
   "Run argv synchronously (under setsid, like the bash tool — no tty).
-   Optional `input` string is written to the child's stdin; optional `env` (a
-   validated :env overlay) is merged onto the inherited environment.
-   Returns {:exit n :out s :err s}, output truncated."
-  ([argv cwd] (spawn-sync! argv cwd nil nil))
-  ([argv cwd input] (spawn-sync! argv cwd input nil))
-  ([argv cwd input env]
-   (let [opts #js {:cwd cwd
-                   :encoding "utf8"
-                   :timeout SH_TIMEOUT
-                   :stdio (if input #js ["pipe" "pipe" "pipe"] #js ["ignore" "pipe" "pipe"])}
-         _    (when input (set! (.-input opts) input))
-         _    (when (seq env) (set! (.-env opts) (proc/child-env env)))
-         r    (cp/spawnSync "setsid" (clj->js argv) opts)]
-     {:exit (or (.-status r) (if (.-signal r) -1 0))
-      :out  (truncate (or (.-stdout r) "") MAX_SH_OUTPUT)
-      :err  (truncate (str (or (.-stderr r) "")
-                           (when-let [e (.-error r)] (.-message e)))
-                      MAX_SH_OUTPUT)})))
+   Opts: `:input` — a string written to the child's stdin; `:env` — a
+   validated :env overlay merged onto the inherited environment;
+   `:scrubbed?` — the child gets only the allowlisted environment
+   (xi.paths/scrub-env: no API keys or tokens). Returns {:exit n :out s
+   :err s}, output truncated."
+  [argv cwd & [{:keys [input env scrubbed?]}]]
+  (let [opts #js {:cwd cwd
+                  :encoding "utf8"
+                  :timeout SH_TIMEOUT
+                  :stdio (if input #js ["pipe" "pipe" "pipe"] #js ["ignore" "pipe" "pipe"])}
+        _    (when input (set! (.-input opts) input))
+        _    (cond
+               scrubbed? (set! (.-env opts) (paths/scrub-env))
+               (seq env) (set! (.-env opts) (proc/child-env env)))
+        r    (cp/spawnSync "setsid" (clj->js argv) opts)]
+    {:exit (or (.-status r) (if (.-signal r) -1 0))
+     :out  (truncate (or (.-stdout r) "") MAX_SH_OUTPUT)
+     :err  (truncate (str (or (.-stderr r) "")
+                          (when-let [e (.-error r)] (.-message e)))
+                     MAX_SH_OUTPUT)}))
+
+(defn- foreign-git-dir?
+  "True when `dir` lies in a git repository other than the one `cwd` is in
+   (or one is in a repository and the other isn't): git run there runs that
+   repository's hooks and config, which the gate can't vouch for — a
+   directory the agent wrote (under /tmp, or moved into the repo) can be a
+   repository of its own."
+  [cwd dir]
+  (not= (rules-store/git-root (paths/real-resolve cwd "."))
+        (rules-store/git-root (paths/real-resolve cwd (str dir)))))
 
 (defn- sh-fn
   "(sh \"cmd\" \"arg\" …) → stdout string on exit 0 (falls back to stderr when
@@ -311,14 +333,28 @@
    {:exit :out :err} on non-zero exit. Mirrors the git helper.
    An optional bb-style leading opts map takes :dir — the directory (relative
    to the room cwd, or absolute) to run in: (sh {:dir \"sub\"} \"bb\" \"build\") —
-   and :env, extra environment variables: (sh {:env {\"PORT\" 8080}} \"bb\" \"x\")."
+   and :env, extra environment variables: (sh {:env {\"PORT\" 8080}} \"bb\" \"x\").
+
+   Runtime checks against the grants the gate injected: the program must be
+   allowed (CLI-wide) or the exact argv granted. A read-only program
+   (xi.rules.readonly: find, fd, rg, sort, ss, git) that the gate auto-ran
+   is re-parsed on the argv that actually runs — the gate saw only literal
+   arguments — and refused when it isn't read-only (`find -exec`, `git -c
+   …`); git with a :dir in another repository is refused too (its hooks
+   would run). Both are skipped when the user approved the program itself
+   (`:approved`) or this exact argv."
   [opts]
   (fn [& argv]
     (let [[m argv] (if (map? (first argv))
                      [(first argv) (rest argv)]
                      [nil argv])
-          {:keys [allowed allowed-commands]} @opts
-          bin (first argv)]
+          {:keys [allowed allowed-commands approved]} @opts
+          bin     (first argv)
+          argv    (vec argv)
+          exact?  (contains? allowed-commands argv)
+          exempt? (or exact? (contains? approved bin))
+          why     (when (and (string? bin) (not exempt?) (contains? readonly/clis bin))
+                    (readonly/violation argv))]
       (cond
         (not (string? bin))
         (throw (ex-info "clj: (sh \"cmd\" \"arg\" …) — the command must be a string" {}))
@@ -328,12 +364,17 @@
 
         ;; A CLI-wide grant, or an exact-command grant (a :command-scoped
         ;; rule allowed this literal argv at the gate).
-        (not (or (contains? (set allowed) bin)
-                 (contains? (set allowed-commands) (str/join " " argv))))
+        (not (or (contains? allowed bin) exact?))
         (throw (ex-info (str "clj: `" bin "` is not approved. Literal (sh \"" bin
                              "\" …) calls raise an approval dialog; dynamic command "
                              "names can't be pre-approved — use a literal, or the "
                              "user can run /clj allow " bin) {}))
+
+        why
+        (throw (ex-info (str "clj: `" (str/join " " argv) "` is not auto-run: " why
+                             ". A literal (sh \"" bin "\" …) call with these arguments "
+                             "asks the user for approval; a computed one can't be.")
+                        {}))
 
         ;; bb serve:restart / serve:stop would kill the server hosting this
         ;; agent mid-eval — run it detached and return the explanation. (The
@@ -346,9 +387,16 @@
         :else
         (let [dir (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts))
               git? (= "git" bin)
+              _    (when (and git? (:dir m) (not exempt?)
+                              (foreign-git-dir? (opts-cwd opts) dir))
+                     (throw (ex-info (str "clj: git is auto-run only inside this room's "
+                                          "repository — :dir " (:dir m) " is another one, "
+                                          "whose hooks and config would run. A literal "
+                                          "(sh {:dir …} \"git\" …) call there asks the user "
+                                          "for approval.")
+                                     {})))
               _    (when git? (git-lock-gate! opts dir (rest argv)))
-              {:keys [exit out err]} (spawn-sync! (vec argv) dir nil
-                                                  (proc/env-overlay (:env m)))
+              {:keys [exit out err]} (spawn-sync! argv dir {:env (proc/env-overlay (:env m))})
               _    (when git? (git-lock-settle! opts dir (rest argv)))]
           (if (zero? exit)
             (let [out' (str/trimr out)]
@@ -426,26 +474,6 @@
          {:status status :body (or body' "")}
          (throw (ex-info (str "clj: curl failed: " (:err res)) {})))))))
 
-(defn ss-escalated-command?
-  "True when an `ss` command uses a flag that isn't read-only: -K/--kill
-   destroys matching sockets (SOCK_DESTROY), -D/--diag writes raw socket
-   dumps to an arbitrary file, bypassing the sandbox's write guards. These
-   escalate to the normal approval flow instead of auto-running. Handles
-   bundled short flags (-tK)."
-  [cmd]
-  (let [[bin & args] (str/split cmd #"\s+")]
-    (and (= bin "ss")
-         (boolean (some #(or (re-matches #"-[^-]*[KD].*" %)
-                             (str/starts-with? % "--kill")
-                             (str/starts-with? % "--diag"))
-                        args)))))
-
-(def GIT_DENY
-  "Git subcommands the `git` helper refuses — route through (sh \"git\" …)
-   and its approval/guard flow instead. push mutates the remote (guarded),
-   clean deletes untracked files."
-  #{"push" "clean"})
-
 (defn git-subcommand
   "First non-flag argv entry, skipping option-with-value globals (-C, -c, …)."
   [args]
@@ -467,16 +495,25 @@
 
 (defn- git-fn
   "Pre-approved git runner: (git \"status\" \"--short\") → stdout string.
-   Throws on non-zero exit and on deny-listed subcommands (GIT_DENY)."
+   Throws on non-zero exit. Pre-approved means the allowlisted forms only
+   (xi.rules.readonly: ordinary repository subcommands without the flags
+   that run a program or set config — no push / clean, `-c`, `-C`,
+   `rebase -x`, `config k v`, …); anything else is refused with the reason,
+   unless the user approved `git` itself or that exact argv — run it as
+   (sh \"git\" …), which asks."
   [opts]
   (fn [& args]
     (let [args (mapv str args)
-          sub  (git-subcommand args)]
-      (when (contains? GIT_DENY (or sub ""))
-        (throw (ex-info (str "clj: (git \"" sub "\" …) is not allowed via the "
-                             "git helper — use (sh \"git\" \"" sub "\" …), "
-                             "which asks the user for approval.")
-                        {})))
+          sub  (git-subcommand args)
+          argv (into ["git"] args)
+          {:keys [approved allowed-commands]} @opts]
+      (when-not (or (contains? approved "git") (contains? allowed-commands argv))
+        (when-let [why (readonly/violation argv)]
+          (throw (ex-info (str "clj: (git " (str/join " " (map pr-str args)) ") is not "
+                               "pre-approved: " why ". Use (sh \"git\" "
+                               (if sub (str "\"" sub "\" …") "…") "), which asks the "
+                               "user for approval.")
+                          {}))))
       (git-lock-gate! opts (opts-cwd opts) args)
       (let [{:keys [exit out err]} (spawn-sync! (into ["git"] args) (opts-cwd opts))]
         (git-lock-settle! opts (opts-cwd opts) args)
@@ -491,22 +528,55 @@
                                (str/trim (str err "\n" out)))
                           {:exit exit})))))))
 
+(def ^:private JQ_ARGS
+  "jq flags the `:args` opt of (jq …) may add → how many values follow.
+   Absent on purpose: `-f`/`--from-file`, `--rawfile`, `--slurpfile`,
+   `-L`/`--library-path` (read files the path gates never see) and
+   `--args`/`--jsonargs` (rebind the positionals)."
+  {"-r" 0 "--raw-output" 0 "-j" 0 "--join-output" 0 "-a" 0 "--ascii-output" 0
+   "-S" 0 "--sort-keys" 0 "-C" 0 "--color-output" 0 "-M" 0 "--monochrome-output" 0
+   "-c" 0 "--compact-output" 0 "-n" 0 "--null-input" 0 "-e" 0 "--exit-status" 0
+   "-s" 0 "--slurp" 0 "-R" 0 "--raw-input" 0 "--tab" 0 "--indent" 1 "--stream" 0
+   "--stream-errors" 0 "--seq" 0 "--raw-output0" 0 "--unbuffered" 0
+   "--arg" 2 "--argjson" 2})
+
+(defn- jq-args
+  "Validate the `:args` of (jq …) against JQ_ARGS → the vector of strings,
+   or throw naming the first flag that isn't allowed (or lacks its values)."
+  [args]
+  (let [args (mapv str args)]
+    (loop [[t & more] args]
+      (when t
+        (let [n (get JQ_ARGS t)]
+          (cond
+            (nil? n)
+            (throw (ex-info (str "clj: (jq … {:args …}) — `" t "` is not an allowed jq "
+                                 "flag; allowed: " (str/join " " (sort (keys JQ_ARGS))))
+                            {}))
+            (< (count (take n more)) n)
+            (throw (ex-info (str "clj: (jq … {:args …}) — `" t "` needs " n " value(s)") {}))
+            :else (recur (drop n more))))))
+    args))
+
 (defn- jq-fn
   "Pre-approved jq runner — pipes JSON to jq on stdin, no tmp file needed.
    (jq filter input) → parsed Clojure data. `input` is a JSON string, or any
    Clojure value (encoded to JSON). By default jq's output (newline-delimited
    JSON) is parsed with keywordized keys: one value → the value, many → a
    vector, none → nil. Opts map: {:raw true} returns jq -r raw text as a
-   trimmed string instead of parsing; {:args [...]} adds extra jq flags."
+   trimmed string instead of parsing; {:args [...]} adds extra jq flags
+   from the JQ_ARGS allowlist (no file-reading flags). jq sees only the
+   scrubbed environment, so `env` / `$ENV` in a filter can't read secrets."
   [opts]
   (fn jq*
     ([filt input] (jq* filt input nil))
     ([filt input {:keys [raw args]}]
      (let [json (if (string? input) input (js/JSON.stringify (clj->js input)))
            argv (cond-> ["jq" (if raw "-r" "-c")]
-                  (seq args) (into args)
+                  (seq args) (into (jq-args args))
                   :always    (conj (str filt)))
-           {:keys [exit out err]} (spawn-sync! argv (opts-cwd opts) json)]
+           {:keys [exit out err]} (spawn-sync! argv (opts-cwd opts)
+                                               {:input json :scrubbed? true})]
        (if (zero? exit)
          (if raw
            (str/trimr out)
@@ -592,7 +662,12 @@
      'cp     (fn [from to]
                (fs/cpSync (resolve-read opts from 'cp)
                           (resolve-write opts to 'cp)
-                          #js {:recursive true})
+                          ;; A .git directory is never copied along: its hooks
+                          ;; and config would run on the next git call in the
+                          ;; copy's repository (a copy INTO the repo would
+                          ;; merge them into the room's own .git/).
+                          #js {:recursive true
+                               :filter (fn [src _] (not= ".git" (node-path/basename src)))})
                nil)
      ;; mv and rm act on the directory ENTRY (rename/unlink): a symlink at the
      ;; final component is moved or removed as a link, never followed. The
@@ -977,13 +1052,14 @@
            "for .startsWith, (str/lower-case s) for .toLowerCase, "
            "(str/split s #\",\") for .split."))))
 
-(defn- eval-code! [{:keys [code room-id gate-id cwd allowed allowed-commands allowed-writes
-                           allowed-reads allowed-bg abort-arr]}]
+(defn- eval-code! [{:keys [code room-id gate-id cwd allowed allowed-commands approved
+                           allowed-writes allowed-reads allowed-bg abort-arr]}]
   (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default))
         prints (atom "")
         commit-outs (atom [])]
     (swap! opts assoc :cwd cwd :allowed (set allowed)
-           :allowed-commands (set allowed-commands)
+           :allowed-commands (set (map vec allowed-commands))
+           :approved (set approved)
            :allowed-writes (set allowed-writes)
            :allowed-reads (set allowed-reads)
            :allowed-bg (set allowed-bg)
@@ -1030,8 +1106,10 @@
         "(curl url) → {:status :body} "
         "(ports) / (ports 7474) → listening sockets as {:proto :addr :port :process :pid} "
         "(jq \".foo[]\" json-or-data) → parsed result, no tmp file (opts {:raw true}) "
-        "(git \"status\" \"--short\") → stdout string (pre-approved; push/clean "
-        "excluded) (sh \"cmd\" \"arg\" …) → stdout string, throws on "
+        "(git \"status\" \"--short\") → stdout string (pre-approved for ordinary "
+        "repository subcommands; push, clean, -c/-C, config writes, rebase -x "
+        "are refused there — run those as (sh \"git\" …), which asks) "
+        "(sh \"cmd\" \"arg\" …) → stdout string, throws on "
         "non-zero exit ({:exit :out :err} in ex-data); sh, process/start and "
         "process/poll-until take an optional bb-style leading opts map with "
         ":dir to run in another directory — (sh {:dir \"sub\"} \"bb\" "
@@ -1349,6 +1427,7 @@
                           :gateId  (some-> (:_gate-id args) str)
                           :allowed (clj->js (vec (:_allowed args)))
                           :allowedCommands (clj->js (vec (:_allowed-commands args)))
+                          :approved (clj->js (vec (:_approved args)))
                           :allowedWrites (clj->js (vec (:_allowed-writes args)))
                           :allowedReads  (clj->js (vec (:_allowed-reads args)))
                           :allowedBg     (clj->js (vec (:_allowed-bg args)))
@@ -1422,6 +1501,7 @@
                              :gate-id (.-gateId m)
                              :allowed (js->clj (.-allowed m))
                              :allowed-commands (js->clj (.-allowedCommands m))
+                             :approved (js->clj (.-approved m))
                              :allowed-writes (js->clj (.-allowedWrites m))
                              :allowed-reads (js->clj (.-allowedReads m))
                              :allowed-bg (js->clj (.-allowedBg m))
@@ -1805,15 +1885,18 @@
   "Confirm each cli in turn. Resolves to {:approved #{…}} or {:denied cli}.
    :always answers persist as a session allow-rule (via :ext.rules/add) — except
    `bb`, whose :always records the project's bb.edn sha in the persistent trust
-   store. Each ask targets the call(s) running that cli in `code`."
-  [confirm! dispatch! room-id cwd code clis]
+   store. Each ask targets the call(s) running that cli in `code`. `reasons`
+   (cli → text) explains why a read-only CLI wasn't auto-run this time."
+  [confirm! dispatch! room-id cwd code clis & [reasons]]
   (reduce
    (fn [chain cli]
      (.then chain
             (fn [acc]
               (if (:denied acc)
                 acc
-                (-> (confirm! (str "clj: allow running `" cli "`?")
+                (-> (confirm! (str "clj: allow running `" cli "`?"
+                                   (when-let [why (get reasons cli)]
+                                     (str " Not auto-run: " why ".")))
                               (cond-> {:options [:yes :no :always]}
                                 (cli-ask-target code cli)
                                 (assoc :target (cli-ask-target code cli))))
@@ -1881,24 +1964,26 @@
    "env"      "(sh {:env {\"KEY\" \"value\"}} \"cmd\" …) — the :env opt"})
 
 (def ^:private SAFE_AUTORUN
-  "Read-only HELPER_EQUIV CLIs that are auto-allowed instead of bounced:
-   the (sh …) call runs and the result gets a helper hint appended, so the
-   model doesn't lose a turn. Other write CLIs (mkdir cp mv touch sed awk) and
+  "The read-only CLIs (xi.rules.defaults/sh-autorun-clis = xi.rules.readonly/clis):
+   a (sh …) to one of them runs without a prompt — the result gets a helper
+   hint appended, so the model doesn't lose a turn — as long as the engine
+   allows every literal call (the default `sh-read-only` rule parses the
+   argv: `find -exec`, `git -c …`, `git push` are refused and go through
+   approval instead) and the worker re-parses the argv that actually runs
+   (dynamic arguments). Other write CLIs (mkdir cp mv touch sed awk) and
    network CLIs (curl wget) aren't auto-run — raw sh would bypass the helpers'
-   write-path / http-only guards — but they're no longer hard-blocked either:
-   they fall through to the normal per-CLI approval flow (with the helper hint
-   attached), the same as any non-allowlisted CLI. So the helper nudge is a
-   warning, not a dead-end error.
+   write-path / http-only guards — but they're not hard-blocked either: they
+   fall through to the normal per-CLI approval flow (with the helper hint
+   attached), the same as any non-allowlisted CLI.
 
-   `rm` is the one write exception: deleting scratch files (typically under
-   /tmp) is common enough that requiring approval each time is friction, so
+   `rm` is the one write exception, as a CLI-wide default allow (the second
+   `sh-read-only` rule): deleting scratch files (typically under /tmp) is
+   common enough that requiring approval each time is friction, so
    (sh \"rm\" …) is auto-allowed — including `rm -rf`, which is exempted from
    the guarded-pattern confirm in `approve` (bash's rm -rf stays guarded). The
    attached hint points at the confined (rm f) helper and, for /tmp targets,
    notes the deletion is usually unnecessary."
-  #{"ls" "cat" "head" "tail" "grep" "rg" "find" "fd" "pwd" "echo" "mktemp"
-    "stat" "du" "readlink" "realpath" "which" "basename" "dirname" "date"
-    "wc" "sort" "uniq" "cut" "tr" "git" "rm" "ss" "netstat" "lsof"})
+  rules-defaults/sh-autorun-clis)
 
 (defn- command-cli
   "The binary (first whitespace token) of a shell command string."
@@ -2057,12 +2142,18 @@
         ;; reach clj through the engine consult (`engine-allowed`) below.
         base    (cond-> (global-allow-clis)
                   (bb-trust/trusted? cwd) (conj "bb"))
-        inject  (fn [allowed allowed-commands hint]
+        ;; :_allowed — CLIs the worker runs with any argv; :_allowed-commands
+        ;; — exact argvs (vectors) it runs; :_approved — the CLIs the user (or
+        ;; their config / rules) approved as such, exempt from the worker's
+        ;; read-only re-check; the auto-run read-only CLIs are in :_allowed
+        ;; only.
+        inject  (fn [allowed allowed-commands approved hint]
                   (cond-> (update tool-call :arguments assoc
                                   :_room-id room-id
                                   :_gate-id gate-id
                                   :_allowed (vec allowed)
-                                  :_allowed-commands (vec allowed-commands))
+                                  :_allowed-commands (vec allowed-commands)
+                                  :_approved (vec approved))
                     (seq bg) (update :arguments assoc :_allowed-bg bg)
                     hint (update :arguments assoc :_hint hint)))]
     (cond
@@ -2106,39 +2197,46 @@
             ;; :allow grants at the rule's granularity:
             ;; - :cli     — no argument constraint (/clj allow, `:cli` rules):
             ;;              the binary is pre-approved for the whole eval.
-            ;; - :command — an arg-scoped rule (:command / :within): only that
-            ;;              exact literal command runs (injected as
-            ;;              :_allowed-commands), so an args-specific allow can't
-            ;;              leak to other (sh "<cli>" …) calls — dynamic args,
-            ;;              `apply sh` — in the same eval.
+            ;; - :command — an arg-scoped rule (:command / :within /
+            ;;              :read-only): only that exact literal argv runs
+            ;;              (injected as :_allowed-commands), so an
+            ;;              args-specific allow can't leak to other
+            ;;              (sh "<cli>" …) calls — dynamic args, `apply sh` —
+            ;;              in the same eval.
+            ;; git run with a :dir in another repository is never granted:
+            ;; that repository's hooks and config would run (the worker
+            ;; refuses it too, for a computed :dir).
             grants   (mapv (fn [c]
-                             (let [r (cmd-decision c)]
-                               (assoc c :grant
-                                      (when (= :allow (get-in r [:action :type]))
+                             (let [r        (cmd-decision c)
+                                   cli      (command-cli (:command c))
+                                   foreign? (and (= "git" cli) (:dir c)
+                                                 (foreign-git-dir? cwd (cmd-eff-cwd (:dir c))))]
+                               (assoc c :decision r :cli cli :foreign-git? foreign?
+                                      :grant
+                                      (when (and (= :allow (get-in r [:action :type]))
+                                                 (not foreign?))
                                         (cond
                                           (not (rules/arg-scoped? r))         :cli
                                           (or (:bg? c) (:literal? c))         :command)))))
                            cmds)
-            ;; SAFE_AUTORUN CLIs are excluded: they already run through clj's
-            ;; autorun path (helper hints + git/ss escalation), which the
-            ;; engine-allow must not short-circuit.
+            ;; CLI-wide allows — a user rule, `/clj allow`, the default `rm`
+            ;; allow: the binary runs with any argv, and is exempt from the
+            ;; worker's read-only re-check (:_approved).
             engine-allowed (into #{}
                                  (comp (filter #(= :cli (:grant %)))
-                                       (map (comp command-cli :command))
-                                       (remove #(contains? SAFE_AUTORUN %)))
+                                       (map :cli))
                                  grants)
             engine-commands (into #{}
                                   (comp (filter #(and (= :command (:grant %)) (not (:bg? %))))
-                                        (map :command))
+                                        (map :argv))
                                   grants)
             ;; CLIs whose every scanned (sh / bg) command is engine-granted —
             ;; they skip per-CLI approval without the CLI itself being allowed.
             covered  (fn [bg?]
                        (->> grants
                             (filter #(= bg? (boolean (:bg? %))))
-                            (group-by (comp command-cli :command))
+                            (group-by :cli)
                             (keep (fn [[cli cs]] (when (every? :grant cs) cli)))
-                            (remove #(contains? SAFE_AUTORUN %))
                             set))
             covered-sh (covered false)
             covered-bg (covered true)
@@ -2146,36 +2244,41 @@
             ;; :_allowed (runtime-vetted) and skipped from per-CLI approval.
             allowed-base (into base engine-allowed)
             needed   (remove base (sort (:literals sh)))
-            ;; (sh "git" …) bounces to the pre-approved (git …) helper —
-            ;; unless a deny-listed subcommand (push, clean) is involved,
-            ;; which the helper refuses; those go through approval instead.
-            git-escalated? (some (fn [cmd]
-                                   (and (str/starts-with? cmd "git")
-                                        (contains? GIT_DENY
-                                                   (git-subcommand
-                                                    (rest (str/split cmd #"\s+"))))))
-                                 (:commands sh))
-            ;; ss is auto-run for its read-only uses, but -K/--kill and
-            ;; -D/--diag mutate (kill sockets / write files) — escalate.
-            ss-escalated? (some ss-escalated-command? (:commands sh))
-            shadowed (filter (fn [bin]
-                               (and (contains? HELPER_EQUIV bin)
-                                    (or (not= "git" bin) (not git-escalated?))
-                                    (or (not= "ss" bin) (not ss-escalated?))))
-                             needed)
-            ;; Safe read-only CLIs run anyway — result + helper hint — so
-            ;; the model doesn't lose a turn. The rest of shadowed (write /
-            ;; network helper-equivalent CLIs) aren't hard-blocked; they fall
-            ;; through to the normal per-CLI approval flow below (like any other
-            ;; CLI), carrying the helper hint — a nudge, not a dead-end error.
-            autorun  (filter #(contains? SAFE_AUTORUN %) shadowed)
+            ;; A read-only CLI (SAFE_AUTORUN) is NOT auto-run when one of its
+            ;; literal calls was refused by the engine — an argument the
+            ;; parser doesn't accept (`find -exec`, `git -c …`, `git push`), or
+            ;; git in another repository — without an arg-scoped :ask of its
+            ;; own (those confirm the exact command below). It goes through
+            ;; per-CLI approval instead, the reason on the prompt.
+            refused  (into {}
+                           (keep (fn [{:keys [cli argv literal? bg? grant decision foreign-git?]}]
+                                   (when (and literal? (not bg?) (not grant)
+                                              (contains? SAFE_AUTORUN cli))
+                                     (cond
+                                       foreign-git?
+                                       [cli "runs git in another repository, whose hooks would run"]
+
+                                       (not (and (= :ask (get-in decision [:action :type]))
+                                                 (rules/arg-scoped? decision)))
+                                       [cli (or (readonly/violation argv) "a rule refused it")]))))
+                           grants)
+            shadowed (filter #(contains? HELPER_EQUIV %) needed)
+            ;; Read-only CLIs run anyway — result + helper hint — so the model
+            ;; doesn't lose a turn; the worker re-parses every argv they run
+            ;; with. The rest of shadowed (write / network helper-equivalent
+            ;; CLIs) aren't hard-blocked; they fall through to the normal
+            ;; per-CLI approval flow below (like any other CLI), carrying the
+            ;; helper hint — a nudge, not a dead-end error.
+            autorun  (->> needed
+                          (filter #(contains? SAFE_AUTORUN %))
+                          (remove #(contains? refused %)))
             ;; bg CLIs skip the helper bounce (a background `npm run dev` has
-            ;; no helper equivalent) but still need per-CLI user approval.
+            ;; no helper equivalent) but still need per-CLI user approval —
+            ;; a read-only one only when the engine granted the command line.
             bg-needed (->> bg-clis
                            (remove base)
                            (remove engine-allowed)
                            (remove covered-bg)
-                           (remove #(contains? SAFE_AUTORUN %))
                            sort)
             needed'  (->> (concat (->> needed
                                        (remove (set autorun))
@@ -2183,6 +2286,13 @@
                                   bg-needed)
                           (remove engine-allowed)
                           distinct)
+            ;; The literal argv behind a scanned sh command line (nil for a
+            ;; background command or a call with computed arguments).
+            literal-argv (fn [command]
+                           (some #(when (and (:literal? %) (not (:bg? %))
+                                             (= command (:command %)))
+                                    (:argv %))
+                                 cmds))
             tmp-rm?  (some (fn [cmd]
                              (and (str/starts-with? cmd "rm ")
                                   (or (str/includes? cmd "/tmp/")
@@ -2229,7 +2339,8 @@
                                   {:prompt (if message
                                              (str message "\n\n" command)
                                              (str "Run `" command "`?"))
-                                   :target (command-ask-target code command)}))
+                                   :target (command-ask-target code command)
+                                   :argv   (literal-argv command)}))
                            distinct)
             ;; Asks whose rule says `:unanswered :deny` (script-exec) must not
             ;; pass when nobody can answer — unlike the other command asks,
@@ -2250,7 +2361,8 @@
                               bg))
             confirms (concat rule-asks
                              (map (fn [cmd] {:prompt (str "Guarded command: " cmd)
-                                             :target (command-ask-target code cmd)})
+                                             :target (command-ask-target code cmd)
+                                             :argv   (literal-argv cmd)})
                                   guarded))
             ;; Builtin (rm dir) targets that are existing directories — a
             ;; recursive tree deletion. Gate each with its own confirm (handled
@@ -2320,8 +2432,19 @@
                           (if-not rm-ok?
                             (blocked "clj: user denied a directory deletion")
                             (let [writes   (into (set writes) rm-roots)
-                                  inject-w (fn [allowed hint]
-                                             (cond-> (inject allowed engine-commands hint)
+                                  ;; A confirmed command ask / guarded command is an
+                                  ;; exact-argv grant: the user said yes to that
+                                  ;; argv, so the worker's read-only re-check
+                                  ;; (`git push`, `git -c …` under a command-scoped
+                                  ;; ask rule) must not refuse it. Headless
+                                  ;; (no confirm!) grants nothing.
+                                  commands (into engine-commands
+                                                 (when confirm! (keep :argv confirms)))
+                                  inject-w (fn [approved hint]
+                                             (cond-> (inject (into (into allowed-base autorun) approved)
+                                                             commands
+                                                             (into allowed-base approved)
+                                                             hint)
                                                (seq writes) (update :arguments assoc
                                                                     :_allowed-writes (vec writes))
                                                (seq reads) (update :arguments assoc
@@ -2340,19 +2463,19 @@
                                        (not ok?)
                                        (blocked "clj: user denied a guarded command")
 
-                                       (empty? needed') (inject-w (into allowed-base autorun) hint)
+                                       (empty? needed') (inject-w #{} hint)
 
                                        (not confirm!)
                                        (blocked (str "clj: these CLIs need approval but no client is "
                                                      "attached to confirm: " (str/join ", " needed')))
 
                                        :else
-                                       (-> (approve-clis! confirm! dispatch! room-id cwd code needed')
+                                       (-> (approve-clis! confirm! dispatch! room-id cwd code needed'
+                                                          refused)
                                            (.then (fn [{:keys [approved denied]}]
                                                     (if denied
                                                       (blocked (str "clj: user denied running `" denied "`"))
-                                                      (inject-w (into (into allowed-base autorun) approved)
-                                                                hint)))))))))))))))))))))))))))
+                                                      (inject-w approved hint)))))))))))))))))))))))))))
 
 (defn- public-args
   "Tool-call arguments minus the `_`-prefixed grant keys — those come from
@@ -2503,7 +2626,10 @@
        "clojure.data.json (as `json`) / cheshire.core namespaces; git via the "
        "pre-approved (git …) "
        "helper — (git \"log\" \"--oneline\" \"-15\") → stdout string, no "
-       "approval needed (push/clean excluded); other real "
+       "approval needed for ordinary repository subcommands (push, clean, "
+       "-c/-C, config writes, rebase -x and the like are refused there — run "
+       "those as (sh \"git\" …), which asks; another directory of this repo "
+       "via (sh {:dir …} \"git\" …)); other real "
        "CLIs run via (sh \"cmd\" \"arg\" …) → stdout string, throws on "
        "non-zero exit — argv-style, one command, no "
        "pipes or shell strings (compose results in Clojure instead); to run "

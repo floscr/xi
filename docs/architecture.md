@@ -437,6 +437,10 @@ holds) use a `gateRequest` message and block on `Atomics.wait` on a
 sockets spawn a nested bridge worker owning the async `net.Socket` and
 stream bytes through a ring buffer. Pre-scan + approval runs before eval
 (`xi.ext.clj/approve`) and injects the approved set into the call's
-arguments (`:_allowed`, `:_allowed-commands`, `:_allowed-bg`), which `sh`
-re-checks at runtime. Tests: `test/xi/ext/clj_test.cljs`,
+arguments (`:_allowed`, `:_allowed-commands` as argv vectors, `:_approved`,
+`:_allowed-bg`), which `sh` re-checks at runtime. The read-only CLIs the
+default `sh-read-only` rule auto-runs are allowed CLI-wide but parsed again
+on the argv that actually runs (`xi.rules.readonly`: `find -exec`, `git -c`,
+`git push`, … are refused) unless the CLI or that exact argv is in the
+explicitly approved set. Tests: `test/xi/ext/clj_test.cljs`,
 `clj_sandbox_test.cljs` (the interop escape corpus).

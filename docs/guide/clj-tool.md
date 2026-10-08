@@ -47,7 +47,7 @@ one program, and you see exactly which.
 | --- | --- |
 | `cat` `head` `tail` `ls` `glob` `grep` `find` `stat` | Read files and directories |
 | `spit` `mkdir` `cp` `mv` `rm` `touch` | Write files and directories |
-| `git` | Run git; `push` and `clean` are refused here and go through `sh` |
+| `git` | Run git; `push`, `clean`, `-c`, config writes and the like are refused here and go through `sh` |
 | `curl` | HTTP requests |
 | `jq` | Query JSON, returns Clojure data |
 | `ports` | Which processes listen on which ports |
@@ -62,7 +62,8 @@ outside them asks once; `r` allows the whole repository it lives in.
 Every `sh` call is checked **before** the script runs:
 
 1. Read-only programs (`ls`, `cat`, `grep`, `git`, `wc`, `sort`, …) run
-   without asking.
+   without asking, as long as their arguments are read-only too: `find
+   -exec`, `git push` or `git -c …` ask like any other program.
 2. A program you have allowed runs without asking.
 3. Anything else shows a dialog naming the program: allow once, always for
    this chat, or deny.

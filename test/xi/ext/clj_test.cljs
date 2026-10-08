@@ -16,7 +16,7 @@
   "Evaluate synchronously via the worker-side entry (xi.ext.clj/eval-message).
    The real clj tool goes through a worker thread (spawned off process.argv[1]
    by xi.cli's isMainThread guard), which doesn't exist in the test bundle."
-  [code & [{:keys [allowed allowed-commands allowed-writes allowed-reads allowed-bg
+  [code & [{:keys [allowed allowed-commands approved allowed-writes allowed-reads allowed-bg
                    cwd room-id]}]]
   (clj-ext/reply->result
    (clj-ext/eval-message #js {:id      0
@@ -25,6 +25,7 @@
                               :roomId  (str (or room-id :test))
                               :allowed (clj->js (or allowed []))
                               :allowedCommands (clj->js (or allowed-commands []))
+                              :approved (clj->js (or approved []))
                               :allowedWrites (clj->js (or allowed-writes []))
                               :allowedReads  (clj->js (or allowed-reads []))
                               :allowedBg     (clj->js (or allowed-bg []))
@@ -399,12 +400,91 @@
 
 (deftest sh-runs-exact-allowed-command
   (testing "an exact-command grant runs that literal argv only"
-    (let [res (eval! "(sh \"echo\" \"hi\")" {:allowed-commands ["echo hi"]})]
+    (let [res (eval! "(sh \"echo\" \"hi\")" {:allowed-commands [["echo" "hi"]]})]
       (is (not (:is-error res)) (result-text res))
       (is (str/includes? (result-text res) "hi")))
-    (let [res (eval! "(sh \"echo\" \"bye\")" {:allowed-commands ["echo hi"]})]
+    (let [res (eval! "(sh \"echo\" \"bye\")" {:allowed-commands [["echo" "hi"]]})]
       (is (:is-error res))
-      (is (str/includes? (result-text res) "not approved")))))
+      (is (str/includes? (result-text res) "not approved")))
+    (testing "the grant is the argv, not its space-joined text"
+      (let [res (eval! "(sh \"echo\" \"a b\")" {:allowed-commands [["echo" "a" "b"]]})]
+        (is (:is-error res))
+        (is (str/includes? (result-text res) "not approved"))))))
+
+;; ── read-only re-check on the argv that actually runs ───────────────────────
+
+(deftest sh-readonly-recheck-refuses-exec-arguments
+  ;; The gate auto-runs a read-only CLI on its literal arguments; the worker
+  ;; re-parses the argv it is actually called with, so computed arguments
+  ;; can't smuggle `find -exec` / `git -c` through the CLI-wide grant.
+  (let [code "(apply sh \"find\" [\".\" \"-maxdepth\" \"0\" \"-exec\" \"echo\" \"{}\" \";\"])"]
+    (let [res (eval! code {:allowed ["find"]})]
+      (is (:is-error res))
+      (is (str/includes? (result-text res) "not auto-run"))
+      (is (str/includes? (result-text res) "runs a program")))
+    (testing "read-only arguments run"
+      (let [res (eval! "(sh \"find\" \".\" \"-maxdepth\" \"0\" \"-name\" \"*\")" {:allowed ["find"]})]
+        (is (not (:is-error res)) (result-text res))))
+    (testing "a CLI the user approved as such is exempt"
+      (let [res (eval! code {:allowed ["find"] :approved ["find"]})]
+        (is (not (:is-error res)) (result-text res))))
+    (testing "so is an exact argv grant (a confirmed command)"
+      (let [res (eval! code {:allowed-commands [["find" "." "-maxdepth" "0" "-exec" "echo" "{}" ";"]]})]
+        (is (not (:is-error res)) (result-text res))))))
+
+(deftest sh-git-dir-must-be-this-repository
+  (let [other (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-foreign-repo-"))
+        _     (fs/mkdirSync (node-path/join other ".git"))
+        code  (str "(sh {:dir \"" other "\"} \"git\" \"status\")")]
+    (let [res (eval! code {:allowed ["git"]})]
+      (is (:is-error res))
+      (is (str/includes? (result-text res) "another one")))
+    (testing "approved git is exempt (git itself then fails on the fake repo)"
+      (let [res (eval! code {:allowed ["git"] :approved ["git"]})]
+        (is (not (str/includes? (result-text res) "another one")))))
+    (testing "a directory in no repository, like the cwd, is fine"
+      (let [d   (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-plain-dir-"))
+            res (eval! (str "(sh {:dir \"" d "\"} \"git\" \"--version\")") {:allowed ["git"]})]
+        (is (not (:is-error res)) (result-text res))))))
+
+(deftest write-helpers-refuse-git-directories
+  (let [repo (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-dotgit-"))
+        _    (fs/mkdirSync (node-path/join repo ".git" "hooks") #js {:recursive true})
+        _    (fs/mkdirSync (node-path/join repo "evil" ".git" "hooks") #js {:recursive true})
+        _    (fs/writeFileSync (node-path/join repo "evil" ".git" "hooks" "pre-commit") "x")
+        _    (fs/writeFileSync (node-path/join repo "evil" "keep.txt") "k")]
+    (doseq [code ["(spit \".git/hooks/pre-commit\" \"x\")"
+                  "(spit \".git/config\" \"x\")"
+                  "(touch \".git/hooks/post-checkout\")"
+                  "(mkdir \".git/hooks/sub\")"
+                  "(mv \"evil/keep.txt\" \".git/hooks/pre-push\")"
+                  "(cp \"evil/keep.txt\" \".git/hooks/pre-push\")"
+                  "(mv \".git\" \"old-git\")"
+                  "(rm \".git/hooks\")"]]
+      (let [res (eval! code {:cwd repo})]
+        (is (:is-error res) code)
+        (is (str/includes? (result-text res) ".git") code)))
+    (testing "cp never copies a .git directory along (it would merge hooks into the repo)"
+      (let [res (eval! "(cp \"evil\" \".\") (cp \"evil\" \"copy\") [(ls \"copy\") (ls \".git/hooks\")]" {:cwd repo})]
+        (is (not (:is-error res)) (result-text res))
+        (is (str/includes? (result-text res) "[[\"keep.txt\"] []]"))))))
+
+(deftest jq-args-are-allowlisted-and-env-is-scrubbed
+  (aset js/process.env "XI_T_SECRET" "s3cret")
+  (testing "file-reading flags are refused"
+    (doseq [args ["[\"--rawfile\" \"x\" \"/etc/passwd\"]" "[\"--slurpfile\" \"x\" \"/etc/passwd\"]"
+                  "[\"-f\" \"/tmp/x.jq\"]" "[\"-L\" \"/tmp\"]"]]
+      (let [res (eval! (str "(jq \".\" \"{}\" {:args " args "})"))]
+        (is (:is-error res) args)
+        (is (str/includes? (result-text res) "not an allowed jq flag") args))))
+  (testing "allowed flags run"
+    (let [res (eval! "(jq \".\" \"{\\\"b\\\":1,\\\"a\\\":2}\" {:args [\"-S\" \"--arg\" \"n\" \"v\"]})")]
+      (is (not (:is-error res)) (result-text res))
+      (is (str/includes? (result-text res) "{:a 2, :b 1}"))))
+  (testing "jq sees only the scrubbed environment"
+    (let [res (eval! "(jq \"env.XI_T_SECRET\" \"{}\")")]
+      (is (not (:is-error res)) (result-text res))
+      (is (str/includes? (result-text res) "=> nil")))))
 
 (deftest sh-returns-stdout-string
   (let [res (eval! "(str/trim (sh \"echo\" \"  hi  \"))" {:allowed ["echo"]})]
@@ -443,7 +523,8 @@
     (is (str/includes? (result-text res) "8080"))))
 
 (deftest sh-env-opt-rejects-code-loading-keys
-  (doseq [k ["PATH" "LD_PRELOAD" "NODE_OPTIONS" "BASH_ENV"]]
+  (doseq [k ["PATH" "LD_PRELOAD" "NODE_OPTIONS" "BASH_ENV" "HOME" "GIT_SSH_COMMAND"
+             "GIT_EXEC_PATH" "EDITOR" "VISUAL" "PAGER" "XDG_CONFIG_HOME" "RIPGREP_CONFIG_PATH"]]
     (let [res (eval! (str "(sh {:env {\"" k "\" \"x\"}} \"printenv\" \"HOME\")")
                      {:allowed ["printenv"]})]
       (is (:is-error res) k)
@@ -574,7 +655,7 @@
           (.then (fn [r]
                    (is (not (:intercepted r)))
                    (is (not (contains? (set (get-in r [:arguments :_allowed])) "npm")))
-                   (is (= ["npm --version"] (get-in r [:arguments :_allowed-commands])))
+                   (is (= [["npm" "--version"]] (get-in r [:arguments :_allowed-commands])))
                    (done)))))))
 
 (deftest gate-command-scoped-allow-does-not-cover-other-calls
@@ -605,7 +686,7 @@
                 (gate {:name "clj" :arguments {:code "(sh \"sed\" \"-i\" \"s/a/b/\" \"bb.edn\")"}} ctx)])
           (.then (fn [[ok gated]]
                    (is (not (:intercepted ok)))
-                   (is (= ["sed -n 1,5p bb.edn"] (get-in ok [:arguments :_allowed-commands])))
+                   (is (= [["sed" "-n" "1,5p" "bb.edn"]] (get-in ok [:arguments :_allowed-commands])))
                    (is (:intercepted gated))
                    (is (str/includes? (intercepted-text gated) "need approval"))
                    (done)))))))
@@ -620,7 +701,7 @@
                 (gate {:name "clj" :arguments {:code "(sh \"mv\" \"src/a.txt\" \"/etc/b.txt\")"}} ctx)])
           (.then (fn [[ok gated]]
                    (is (not (:intercepted ok)))
-                   (is (= ["mv src/a.txt src/b.txt"] (get-in ok [:arguments :_allowed-commands])))
+                   (is (= [["mv" "src/a.txt" "src/b.txt"]] (get-in ok [:arguments :_allowed-commands])))
                    (is (not (contains? (set (get-in ok [:arguments :_allowed])) "mv")))
                    (is (:intercepted gated))
                    (is (str/includes? (intercepted-text gated) "need approval"))
@@ -833,19 +914,6 @@
                  (is (str/includes? (str (get-in res [:arguments :_hint])) "(ls dir)"))
                  (done))))))
 
-(deftest ss-escalated-command-detection
-  (is (clj-ext/ss-escalated-command? "ss -K dport = :443"))
-  (is (clj-ext/ss-escalated-command? "ss --kill state established"))
-  (is (clj-ext/ss-escalated-command? "ss -tK"))
-  (is (clj-ext/ss-escalated-command? "ss -D /tmp/dump"))
-  (is (clj-ext/ss-escalated-command? "ss --diag=/tmp/dump"))
-  (is (not (clj-ext/ss-escalated-command? "ss -lntup")))
-  (is (not (clj-ext/ss-escalated-command? "ss -ltnpH")))
-  ;; long flags with K/D letters don't false-positive the short-flag match
-  (is (not (clj-ext/ss-escalated-command? "ss --tcp")))
-  ;; other CLIs are not ss
-  (is (not (clj-ext/ss-escalated-command? "lsof -K"))))
-
 (deftest gate-autoruns-readonly-ss-with-hint
   (async done
     (-> (js/Promise.resolve
@@ -858,15 +926,96 @@
                  (done))))))
 
 (deftest gate-escalates-ss-kill-to-approval
-  ;; ss -K destroys sockets — not auto-run; goes through the approval flow.
+  ;; ss -K destroys sockets — not auto-run; goes through the approval flow,
+  ;; the prompt saying why.
   (async done
-    (let [ctx (assoc (gate-ctx) :confirm! (fn [_ & _] (js/Promise.resolve false)))
+    (let [prompts (atom [])
+          ctx (assoc (gate-ctx) :confirm! (fn [p & _] (swap! prompts conj p) (js/Promise.resolve false)))
           res (gate {:name "clj" :arguments {:code "(sh \"ss\" \"-K\" \"dport\" \"=\" \":443\")"}}
                     ctx)]
       (-> (js/Promise.resolve res)
           (.then (fn [r]
                    (is (:intercepted r))
                    (is (str/includes? (intercepted-text r) "user denied"))
+                   (is (str/includes? (str (first @prompts)) "destroys sockets"))
+                   (done)))))))
+
+(deftest gate-autoruns-readonly-find-but-not-find-exec
+  ;; The default sh-read-only rule parses the argv (xi.rules.readonly): a
+  ;; read-only find auto-runs CLI-wide (the worker re-checks computed args),
+  ;; `find -exec` goes to the per-CLI approval prompt with the reason.
+  (async done
+    (let [prompts (atom [])
+          ctx     (assoc (gate-ctx) :confirm! (fn [p & _] (swap! prompts conj p) (js/Promise.resolve false)))]
+      (-> (js/Promise.all
+           #js [(gate {:name "clj" :arguments {:code "(sh \"find\" \".\" \"-name\" \"*.clj\")"}} ctx)
+                (gate {:name "clj" :arguments {:code "(sh \"find\" \".\" \"-exec\" \"rm\" \"{}\" \";\")"}} ctx)
+                (gate {:name "clj" :arguments {:code "(sh \"find\" \".\" pat)"}} ctx)])
+          (.then (fn [[ok exec dynamic]]
+                   (is (not (:intercepted ok)))
+                   (is (some #{"find"} (get-in ok [:arguments :_allowed])))
+                   (is (not (some #{"find"} (get-in ok [:arguments :_approved])))
+                       "auto-run, not approved: the worker re-checks its argv")
+                   (is (:intercepted exec))
+                   (is (str/includes? (intercepted-text exec) "user denied"))
+                   (is (str/includes? (str (first @prompts)) "runs a program"))
+                   (is (not (:intercepted dynamic)) "computed args: auto-run, checked by the worker")
+                   (done)))))))
+
+(deftest gate-escalates-git-config-and-foreign-dir
+  ;; `git -c …` / a config write / `-C` are refused by the parser; git run
+  ;; with a :dir in another repository too (its hooks would run). Headless,
+  ;; that is a block; a background command line is judged the same way.
+  (async done
+    (let [other (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-gate-foreign-"))
+          _     (fs/mkdirSync (node-path/join other ".git"))
+          ctx   (assoc (gate-ctx) :cwd (.cwd js/process))
+          calls ["(sh \"git\" \"-c\" \"core.hooksPath=/tmp/h\" \"commit\" \"-m\" \"x\")"
+                 "(sh \"git\" \"config\" \"core.hooksPath\" \"/tmp/h\")"
+                 "(sh \"git\" \"-C\" \"/tmp\" \"status\")"
+                 (str "(sh {:dir \"" other "\"} \"git\" \"status\")")
+                 "(process/start \"git -c core.hooksPath=/tmp/h commit -m x\")"]]
+      (-> (js/Promise.all (clj->js (mapv #(gate {:name "clj" :arguments {:code %}} ctx) calls)))
+          (.then (fn [rs]
+                   (doseq [[code r] (map vector calls rs)]
+                     (is (:intercepted r) code)
+                     (is (str/includes? (intercepted-text r) "need approval") code))
+                   (done)))))))
+
+(deftest gate-confirmed-git-push-is-an-exact-grant
+  ;; Approving `git` for a push: the guarded confirm grants that exact argv
+  ;; and the per-CLI approval marks git as approved, so the worker's
+  ;; read-only re-check doesn't refuse what the user just said yes to.
+  (async done
+    (let [ctx (assoc (gate-ctx) :confirm! (fn [_ & _] (js/Promise.resolve true)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code "(sh \"git\" \"push\" \"origin\")"}} ctx))
+          (.then (fn [r]
+                   (is (not (:intercepted r)))
+                   (is (some #{"git"} (get-in r [:arguments :_approved])))
+                   (is (some #{["git" "push" "origin"]} (get-in r [:arguments :_allowed-commands])))
+                   (done)))))))
+
+(deftest gate-blocks-wrapped-shells-hardened
+  (doseq [code ["(sh \"env\" \"bash\" \"-c\" \"id\")"
+                "(sh \"/bin/bash\" \"-c\" \"id\")"
+                "(sh \"timeout\" \"5\" \"sh\" \"-c\" \"id\")"]]
+    (let [res (gate {:name "clj" :arguments {:code code}} (gate-ctx))]
+      (is (:intercepted res) code)
+      (is (str/includes? (intercepted-text res) "hardened") code))))
+
+(deftest gate-asks-for-sh-writes-into-git-internals
+  ;; `cp` into .git/hooks is in the repo, so the in-repo mv/cp allow would
+  ;; otherwise cover it; the hardened rule confirms that exact command.
+  (async done
+    (let [prompts (atom [])
+          ctx     (assoc (gate-ctx) :cwd (.cwd js/process)
+                         :confirm! (fn [p & _] (swap! prompts conj p) (js/Promise.resolve false)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code "(sh \"cp\" \"bin/xi.js\" \".git/hooks/pre-commit\")"}} ctx))
+          (.then (fn [r]
+                   (is (:intercepted r))
+                   (is (some #(str/includes? (str %) ".git/hooks") @prompts))
                    (done)))))))
 
 (deftest gate-write-clis-route-through-approval
@@ -1263,6 +1412,23 @@
                  (is (some #{"git"} (get-in res [:arguments :_allowed])))
                  (is (str/includes? (str (get-in res [:arguments :_hint])) "(git \"status\""))
                  (done))))))
+
+(deftest git-helper-refuses-config-writes-and-relocation
+  (doseq [[code reason] [["(git \"-c\" \"core.hooksPath=/tmp/h\" \"status\")" "sets configuration"]
+                         ["(git \"config\" \"user.name\" \"x\")" "sets a value"]
+                         ["(git \"-C\" \"/tmp\" \"status\")" "another directory"]
+                         ["(git \"rebase\" \"-x\" \"id\" \"main\")" "runs a command"]]]
+    (let [res (eval! code)]
+      (is (:is-error res) code)
+      (is (str/includes? (result-text res) "not pre-approved") code)
+      (is (str/includes? (result-text res) reason) code)))
+  (testing "a config read is pre-approved (git itself may still fail)"
+    (let [res (eval! "(git \"config\" \"--get\" \"user.name\")")]
+      (is (not (str/includes? (result-text res) "not pre-approved")))))
+  (testing "approved git, or the exact argv, is exempt"
+    (let [code "(git \"-c\" \"core.pager=cat\" \"--version\")"]
+      (is (not (:is-error (eval! code {:approved ["git"]}))))
+      (is (not (:is-error (eval! code {:allowed-commands [["git" "-c" "core.pager=cat" "--version"]]})))))))
 
 (deftest gate-lets-sh-git-push-through-to-approval
   ;; headless ctx (no confirm!) → push is not bounced to the helper hint but

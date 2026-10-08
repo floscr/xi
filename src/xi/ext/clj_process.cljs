@@ -56,8 +56,13 @@
 
 (def ^:private ENV_DENY
   "Env keys an `:env` opt may not set: they change which code an approved
-   binary loads or runs, so allowing them would defeat the CLI gate."
-  #"^(PATH|BASH_ENV|ENV|NODE_OPTIONS|BUN_OPTIONS|LD_.*|DYLD_.*)$")
+   binary loads or runs, so allowing them would defeat the CLI gate. `HOME`
+   and `XDG_CONFIG_HOME` move git's global config (core.hooksPath, aliases)
+   to a directory the agent can write; `GIT_*` (GIT_SSH_COMMAND,
+   GIT_EXTERNAL_DIFF, GIT_EXEC_PATH, GIT_CONFIG_*, GIT_TEMPLATE_DIR, …),
+   `EDITOR` / `VISUAL` / `PAGER` / `SSH_ASKPASS` and `RIPGREP_CONFIG_PATH`
+   name a program for an auto-run CLI to run."
+  #"^(PATH|HOME|BASH_ENV|ENV|NODE_OPTIONS|BUN_OPTIONS|LD_.*|DYLD_.*|GIT_.*|EDITOR|VISUAL|PAGER|SSH_ASKPASS|XDG_CONFIG_HOME|RIPGREP_CONFIG_PATH)$")
 
 (defn env-overlay
   "Validate the :env of a leading opts map ((sh {:env {\"PORT\" 8080}} …)) →

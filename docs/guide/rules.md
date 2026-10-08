@@ -81,6 +81,7 @@ rule to apply; a key you leave out is no constraint.
 | `:tool` | The kind of call | `:read` `:write` `:edit` `:grep` `:find` `:ls` `:sh` `:bb` `:clj` `:net` `:mcp` `:other`, or a set of them |
 | `:path` | The file a call targets | A regex (`#"…"`, partial match) or a glob string (`"src/**/*.cljs"`, full match). Tested against the path as given, resolved, and with `$HOME` shown as `~` |
 | `:cli` | The program a command runs | A string, a set, or a regex |
+| `:read-only` | Whether a `(sh …)` call's arguments are read-only for its program (`find` without `-exec`, `git` without `push` or `-c`, …) | `true` or `false`; see the [reference](rules-reference.md#match) |
 | `:command` | The command line | A regex or a substring |
 | `:repo` | The git repository | The end of its path, like `"code/my-app"` |
 | `:dir` | The working directory | A path prefix |

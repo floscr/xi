@@ -9,6 +9,8 @@
                :extension-data :own      ; path inside that extension's data dir (opt-in)
                :host \"api.example.com\"   ; :net request host, or every host a read-only
                                          ; :sh curl requests (glob/exact, regex, set)
+               :read-only true           ; a :sh call whose argv parses as read-only for
+                                         ; its program (xi.rules.readonly; false = doesn't)
                :path #\"\\.sh$\"          ; regex OR glob string on the target path
                :command #\"\\brm\\b\"       ; regex OR substring on the bash command
                :repo \"config/dotfiles\"  ; substring of the effective repo root
@@ -44,7 +46,8 @@
    call: {:tool :tool-name :path :command :repo :effective-cwd :mcp-server
           :mcp-tool :state :nodes :user :user-record}. This namespace does no I/O."
   (:require [clojure.string :as str]
-            [xi.rules.curl :as curl]))
+            [xi.rules.curl :as curl]
+            [xi.rules.readonly :as readonly]))
 
 (defn canonical
   "Normalize a rule's `:on-block`/`:do` aliases to `:match`/`:action`."
@@ -149,6 +152,17 @@
     (:host req)  (match-tool-name spec (:host req))
     :else        (boolean (some->> (curl/request-hosts req)
                                    (every? #(match-tool-name spec %))))))
+
+(defn- match-read-only
+  "`:read-only true` / `false`: whether a `:sh` call's argv — the literal
+   `:argv` of a clj `(sh …)` call, or a background `:command` without shell
+   syntax — parses as read-only for its program (xi.rules.readonly: `find`
+   without `-exec`, `git` without `-c` / a writing subcommand, …). A program
+   the parsers don't know, a command with shell syntax or no argv at all
+   matches neither value, so the key only grants next to `:cli`."
+  [spec req]
+  (or (nil? spec)
+      (= (boolean spec) (readonly/request-read-only? req))))
 
 (defn- match-extension
   "Extension spec for requests a user extension makes through xi.api.*:
@@ -384,6 +398,7 @@
          (match-extension-data (:extension-data m) req)
          (match-host       (:host m)       req)
          (match-cli        (:cli m)        (:cli req))
+         (match-read-only  (:read-only m)  req)
          (match-path*      (:path m)       req)
          (match-command    (:command m)    (:command req))
          (match-substring  (:repo m)       (:repo req))
@@ -489,10 +504,11 @@
 
 (defn arg-scoped?
   "True when (canonical) `rule` constrains a `:sh` command's arguments — a
-   `:command`, `:within`, `:tracked` or `:host` matcher — so its allow covers
-   only the exact command it matched, not the CLI at large."
+   `:command`, `:within`, `:tracked`, `:host` or `:read-only` matcher — so
+   its allow covers only the exact command it matched, not the CLI at large."
   [rule]
-  (boolean (some #(some? (get-in rule [:match %])) [:command :within :tracked :host])))
+  (boolean (some #(some? (get-in rule [:match %]))
+                 [:command :within :tracked :host :read-only])))
 
 (defn needs-extension-data?
   "True when any rule carries an `:extension-data` matcher, so the store should

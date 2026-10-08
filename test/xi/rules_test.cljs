@@ -124,6 +124,32 @@
     (testing "a :host rule is arg-scoped: its allow covers the exact command"
       (is (rules/arg-scoped? rule)))))
 
+(deftest match-read-only-on-sh
+  (let [rule {:match {:tool :sh :cli #{"git" "find" "cat"} :read-only true}}
+        sh   (fn [& argv] {:tool :sh :cli (first argv) :argv (vec argv)
+                           :command (str/join " " argv)})]
+    (testing "the argv must parse as read-only for its program"
+      (is (rules/matches? rule (sh "git" "status")))
+      (is (rules/matches? rule (sh "find" "." "-name" "x")))
+      (is (rules/matches? rule (sh "cat" "/etc/hosts")) "a program without a parser")
+      (is (not (rules/matches? rule (sh "git" "push"))))
+      (is (not (rules/matches? rule (sh "git" "-c" "core.hooksPath=/x" "status"))))
+      (is (not (rules/matches? rule (sh "find" "." "-exec" "id" ";")))))
+    (testing "a background command line is judged only without shell syntax"
+      (is (rules/matches? rule {:tool :sh :cli "git" :command "git status --short"}))
+      (is (not (rules/matches? rule {:tool :sh :cli "git" :command "git status; id"}))))
+    (testing ":read-only false matches the non-read-only call of a known program"
+      (is (rules/matches? {:match {:read-only false}} (sh "git" "push")))
+      (is (not (rules/matches? {:match {:read-only false}} (sh "git" "status"))))
+      (is (not (rules/matches? {:match {:read-only false}} (sh "npm" "publish")))
+          "an unknown program matches neither value"))
+    (testing "the key never grants on its own: unknown programs, no argv, other tools"
+      (is (not (rules/matches? {:match {:read-only true}} (sh "npm" "test"))))
+      (is (not (rules/matches? {:match {:read-only true}} {:tool :sh :cli "git"})))
+      (is (not (rules/matches? {:match {:read-only true}} {:tool :bash :command "git status"}))))
+    (testing "a :read-only rule is arg-scoped: its allow covers the exact command"
+      (is (rules/arg-scoped? rule)))))
+
 (deftest match-path-glob-and-regex
   (is (rules/matches? {:match {:tool :write :path "*.sh"}}
                       {:tool :write :path "deploy.sh"}))

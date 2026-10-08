@@ -3,7 +3,8 @@
    tier (below repo/global config and runtime rules), so a user rule always
    overrides a default. They express the behavioral nudges and policy gates that
    used to live in dedicated intercept/gate extensions."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xi.rules.readonly :as readonly]))
 
 (defn- alt-re
   "A regex matching any of `substrings` as a literal substring (re-find
@@ -180,6 +181,29 @@
 (def ^:private hardened-sudo-re
   #"\bsudo\b")
 
+(def ^:private hardened-shell-command-re
+  "A clj `(sh …)` command whose program is a shell by any path (`/bin/bash`,
+   `/usr/bin/env`'s target) or a shell reached through a wrapper that execs its
+   argument (`env`, `setsid`, `timeout`, `xargs`, `nice`, `nohup`, `busybox`,
+   …, nested any depth with any options). The `:cli` rule above sees only the
+   raw first token, which would downgrade these to an approval prompt."
+  (let [wrapper "(?:env|setsid|timeout|xargs|nice|nohup|ionice|chrt|taskset|stdbuf|unbuffer|script|flock|chronic|watch|time|strace|ltrace|busybox|toybox)"
+        shell   "(?:bash|sh|zsh|fish|dash|ksh|csh|tcsh|ash|mksh)"]
+    (re-pattern (str "^(?:(?:\\S*/)?" wrapper "(?:\\s+\\S+)*?\\s+)?(?:\\S*/)?" shell "(?:\\s|$)"))))
+
+(def ^:private hardened-git-internals-path-re
+  "A path inside a `.git` directory that git runs or reads as policy: the
+   hooks dir (any file in it, also under `modules/<sub>/` and `worktrees/<w>/`)
+   and `config` / `config.worktree` (core.hooksPath, core.pager, core.editor,
+   aliases, filters — every one a program git runs)."
+  #"(?:^|/)\.git/(?:[^/]+/)*(?:hooks(?:/[^/]*)?|config(?:\.[^/]*)?)$")
+
+(def ^:private hardened-git-internals-command-re
+  "The same targets named inside a command line (`cp hook .git/hooks/x`,
+   `tee .git/config`), plus a bare `.git` / `.git/` operand (a copy into the
+   directory itself lands hooks there)."
+  #"(?:^|[\s\"'=])(?:\S*/)?\.git(?:/+(?:\S*/)?(?:hooks|config)\b|/*(?=[\s\"']|$))")
+
 (def ^:private hardened-ssh-key-re
   "Private SSH key files under ~/.ssh: any file there that is not a `.pub`
    public key or the non-secret config/known_hosts/authorized_keys/environment.
@@ -278,20 +302,46 @@
     :action {:type    :ask
              :message "Change xi's config.edn (a config.edn with :type :xi/config — extensions, trusted MCP servers, agent profiles)?"
              :options [:yes :no :repo]}
+    :scope  :hardened}
+   ;; Shell interpreters again, by command line: a full path (`/bin/bash`) or
+   ;; a wrapper that execs its argument (`env bash`, `timeout 5 sh -c`,
+   ;; `xargs bash`) has another :cli, so the rule above would let the
+   ;; per-CLI approval flow (and a user allow for `env`/`xargs`) decide.
+   {:match  {:tool :sh :command hardened-shell-command-re}
+    :action {:type :deny
+             :message (str "Blocked (hardened): running a shell interpreter "
+                           "(bash, sh, zsh, …) via clj (sh …) is not allowed, "
+                           "also by path or through a wrapper (env, timeout, "
+                           "xargs, …). Run commands argv-style, one per "
+                           "(sh \"cmd\" \"arg\" …) call.")}
+    :scope  :hardened}
+   ;; .git/hooks and .git/config: git runs what they name (hooks, core.hooksPath,
+   ;; core.pager, core.editor, aliases, filters) on its next ordinary call, which
+   ;; the clj gate auto-runs. Every write asks, every time — no [a]lways, no
+   ;; session or config allow lifts it. clj's builtin helpers refuse these
+   ;; paths outright (xi.ext.clj/resolve-write); this covers the write/edit
+   ;; tools and command lines (sh, bash) that name them.
+   {:match  {:tool #{:write :edit} :path hardened-git-internals-path-re}
+    :action {:type    :ask
+             :message "Write into .git/hooks or .git/config (git runs what they name)?"
+             :options [:yes :no]}
+    :scope  :hardened}
+   {:match  {:tool #{:sh :bash} :command hardened-git-internals-command-re}
+    :action {:type    :ask
+             :message "This command names .git/hooks, .git/config or the .git directory (git runs what they hold) — run it?"
+             :options [:yes :no]}
     :scope  :hardened}])
 
 ;; ── clj (sh …) softeners: "disallow * then soften", scoped to :sh ────────────
 
 (def sh-autorun-clis
-  "Read-only CLIs (plus `rm`) that clj `(sh …)` may run without approval — the
-   engine home for clj's SAFE_AUTORUN set (which stays the source of truth in
-   xi.ext.clj and must be kept in sync). `git`/`ss` are included for their
-   read-only uses; their escalations (git push/clean, ss -K/-D) are detected by
-   precise argv parsing in the clj gate and routed to approval there — not
-   expressible as a safe command regex."
-  #{"ls" "cat" "head" "tail" "grep" "rg" "find" "fd" "pwd" "echo" "mktemp"
-    "stat" "du" "readlink" "realpath" "which" "basename" "dirname" "date"
-    "wc" "sort" "uniq" "cut" "tr" "git" "rm" "ss" "netstat" "lsof"})
+  "Read-only CLIs that clj `(sh …)` may run without approval — for
+   read-only arguments: the `sh-read-only` rule pairs them with `:read-only
+   true`, so `find -exec`, `fd -x`, `rg --pre`, `sort -o`, `ss -K`, `git -c
+   …` / `git push` / `git config k v` fall through to approval
+   (xi.rules.readonly parses each argv; the clj worker re-checks the real
+   argv at runtime). xi.ext.clj reads this set for its auto-run class."
+  readonly/clis)
 
 (def sed-print-re
   "The read-only `sed -n '<addr>p' file…` idiom (a line-range / pattern print,
@@ -500,7 +550,12 @@
    ;; flow, and its allowlist/config/session softeners sit ABOVE this default
    ;; tier). sudo/remote-copy are denied earlier by the hardened tier.
    ::sh-read-only
-   [{:match  {:tool :sh :cli sh-autorun-clis}
+   [{:match  {:tool :sh :cli sh-autorun-clis :read-only true}
+     :action {:type :allow}}
+    ;; `rm` is the one write exception: deleting scratch files (typically
+    ;; under /tmp) is common enough that asking each time is friction. The
+    ;; clj gate attaches a hint pointing at the confined (rm f) helper.
+    {:match  {:tool :sh :cli "rm"}
      :action {:type :allow}}]
 
    ;; Repo-local shell-outs, each arg-scoped (clj grants only the exact literal
