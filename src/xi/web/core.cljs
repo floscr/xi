@@ -32,6 +32,7 @@
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
             [xi.web.key-hints :as key-hints]
+            [xi.web.flip :as flip]
             [xi.web.keymap :as keymap]
             [xi.web.models :as models]
             [xi.web.resubmit :as resubmit]
@@ -2513,9 +2514,24 @@
 ;; routes after startup (xi.web.user-ext), and the router reads it per call.
 (defonce ^:private routes-ref (atom nil))
 
+;; What the previous render's sidebar layout depended on (see render!).
+(defonce ^:private sidebar-layout-sig (atom nil))
+
+(defn- sidebar-layout-sig-of
+  "The state slices that move sidebar rows. A render where they are all
+   unchanged (streamed tokens, typing) skips the row measuring FLIP needs."
+  [st]
+  [(:lobby st) (:web/sidebar-collapsed st) (:web/draft-chats st)
+   (:web/sidebar-buffers-open st) (:web/sidebar-open? st)
+   (get-in st [:web/route :session-id]) (get-in st [:web/route :page])])
+
 (defn- render! [app-state dispatch!]
   (let [root (el "app")
-        hiccup (views/root-view app-state dispatch! @pages-ref)]
+        hiccup (views/root-view app-state dispatch! @pages-ref)
+        sig    (sidebar-layout-sig-of app-state)
+        ;; rows glide to their new spot when this render moves them
+        snap   (when (not= sig @sidebar-layout-sig) (flip/snapshot))]
+    (reset! sidebar-layout-sig sig)
     (try
       (r/render root hiccup)
       (catch :default e
@@ -2537,7 +2553,8 @@
             ;; hiccup). Leave the flag cleared so the NEXT state change gets a
             ;; fresh attempt instead of the infinite rAF warning flood.
             (js/console.error "[xi-web] recovery render also failed:" e2)
-            (vswap! r/state dissoc root))))))
+            (vswap! r/state dissoc root)))))
+    (flip/play! snap))
   (let [t (title/page-title app-state)]
     (when (not= t (.-title js/document))
       (set! (.-title js/document) t)))

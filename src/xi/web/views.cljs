@@ -3954,7 +3954,8 @@
          ;; data-session-id: :sidebar/animate-leave finds the row to play
          ;; its leave transition on when the session is deleted
          :attrs {:replicant/key session-id
-                 :data-session-id session-id}}
+                 :data-session-id session-id
+                 :data-flip (str "s:" session-id)}}
         card)
        card)
      (when buffers-open?
@@ -3969,6 +3970,7 @@
                       (some #(when-not (str/blank? %) (str/trim %))))]
     [:div {:class ["project-card"]
            :replicant/key (str "draft-" id)
+           :data-flip (str "draft:" id)
            :title text
            :on {:click (fn [_] (dispatch! {:type :draft-chat/open :id id}))}}
      [:div {:class ["project-card-icon" "project-card-icon--idle"]}
@@ -3990,6 +3992,7 @@
   [dispatch! path dirty?]
   [:div {:class ["project-card" "project-card--dir"]
          :replicant/key (str "dir-" path)
+         :data-flip (str "dir:" path)
          :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}}
    [:div {:class ["project-card-icon" (when dirty? "project-card-icon--dirty")]}
     (icon/icon {:icon-name :folder :size :sm})
@@ -4513,6 +4516,7 @@
       :attrs {:replicant/key  (str "section-" (subs (str id) 1))
               :data-collapsed (when-not open? "true")}
       :label [:button {:class ["sidebar-section-toggle"]
+                       :data-flip (str "g:" id)
                        :aria-expanded (str open?)
                        :on {:click (fn [_] (dispatch! {:type :sidebar/toggle-group :group id}))}}
               [:span {:class ["sidebar-section-label"]} label]
@@ -4623,7 +4627,7 @@
               {:icon-name :layout-dashboard
                :class     "sidebar-row"
                :active    (= :home (get-in state [:web/route :page]))
-               :attrs     {:replicant/key "all-projects"}
+               :attrs     {:replicant/key "all-projects" :data-flip "all-projects"}
                :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home}))}
               "All projects")))
          ;; New chats left with a prompt typed into them (client-local, not a
@@ -4642,7 +4646,8 @@
                (sidebar/sidebar-menu-item
                 {:icon-name (:icon more)
                  :class     "sidebar-row"
-                 :attrs     {:replicant/key (str "more-" (subs (str id) 1))}
+                 :attrs     {:replicant/key (str "more-" (subs (str id) 1))
+                             :data-flip (str "more-" (subs (str id) 1))}
                  :on-click  (fn [_] (dispatch! (:event more)))}
                 (:label more)))))
          (when (seq recent)
@@ -4671,7 +4676,8 @@
                    ;; :badge-path — a state path whose positive number shows as
                    ;; a badge (an unread count); see nav-badge
                    :badge     (nav-badge state item)
-                   :attrs     {:replicant/key (str "nav-" (:label item))}
+                   :attrs     {:replicant/key (str "nav-" (:label item))
+                               :data-flip (str "nav-" (:label item))}
                    :on-click  (fn [_] (dispatch! (:event item)))}
                   (:label item)))))))))
      ;; NOTE: keep this footer's state reads reflected in `recent-sidebar`'s
