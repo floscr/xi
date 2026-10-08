@@ -3039,22 +3039,6 @@
           (icon/icon {:icon-name :refresh :size :sm})
           [:span "Reload"]]]))])))
 
-(defn- presence-line
-  "Who else is in this room: the other users attached right now (room
-   :members, kept current by :room/presence). Nothing when we are alone — the
-   common single-user case stays as quiet as before."
-  [state room]
-  (let [me       (state/own-user state)
-        profiles (get-in state [:lobby :profiles])
-        others   (->> (state/room-users room)
-                      (remove #{me})
-                      (mapv (fn [id] (assoc (get profiles id) :id id))))]
-    (when (seq others)
-      [:span {:class ["topbar-presence"]
-              :title (str "Also here: " (str/join ", " (map #(or (:name %) (:id %)) others)))}
-       (avatar-stack others)
-       [:span (str/join ", " (map #(or (:name %) (:id %)) others))]])))
-
 (defn- optimistic-post
   "An optimistic user bubble rendered at the tail of the timeline the instant a
    prompt is sent, before the server echoes the real :user entry back (instant
@@ -3565,8 +3549,7 @@
        ;; flight. Show a quiet inline hint instead of blanking to a spinner.
        (when (and resuming? (seq history))
          [:span {:class ["topbar-updating"]}
-          (spinner) [:span "Updating…"]])
-       (presence-line state room)]
+          (spinner) [:span "Updating…"]])]
       (offline-badge state)
       (when has-tabs?
         (buffer-menu dispatch! (:id room) active-buf buffers canvas?

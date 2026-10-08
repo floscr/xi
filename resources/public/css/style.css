@@ -148,16 +148,6 @@ body {
   .project-card:hover .project-card-trail .avatar-stack { opacity: 0; }
 }
 
-/* Other users attached to this chat (multi-user server). Hidden when alone. */
-.topbar-presence {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-1);
-  font-weight: 500;
-  font-size: var(--font-xs);
-  color: var(--fg-2);
-}
-
 /* ---- Chat transparent header (all widths) ----
    In the chat view the header floats over the timeline: its buttons stay put
    as bordered chips (matching the burger toggle) while the conversation
