@@ -32,7 +32,7 @@
 (def reserved-flags
   "Session flags an extension may not set: the lobby and the sidebar compute
    these themselves."
-  #{:dismissed? :active? :busy? :unread? :current? :has-dialog? :error?})
+  #{:dismissed? :pinned? :active? :busy? :unread? :current? :has-dialog? :error?})
 
 (defn session-flags
   "The flags the extensions keep for a user, {flag-key #{session-id}}, from the
@@ -116,6 +116,10 @@
   "Most chats one user keeps hidden from Recent."
   1000)
 
+(def max-pinned
+  "Most chats one user keeps pinned to Recent."
+  200)
+
 (def registry
   "Known keys → {:valid? (fn [value] → bool)}."
   {;; \"auto\" | \"light\" | \"dark\"
@@ -152,6 +156,10 @@
    ;; session ids hidden from the user's Recent group, oldest first
    :dismissed        {:client-writable? false
                       :valid? (fn [v] (bounded-strings? v max-dismissed 200))}
+   ;; session ids pinned to the user's Recent group: never aged out of it,
+   ;; skipped by "Hide all from Recent", oldest first
+   :pinned           {:client-writable? false
+                      :valid? (fn [v] (bounded-strings? v max-pinned 200))}
    ;; {ext-id data}: what each extension keeps about the user. Written only
    ;; by the server (xi.users), never by a client.
    :ext              {:client-writable? false

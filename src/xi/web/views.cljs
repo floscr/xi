@@ -3791,14 +3791,19 @@
 
 (defn- session-menu-items
   "ui.context-menu entries for a session card: the extensions' items
-   (see `:session-menu-items`), hide/show in Recent (only
+   (see `:session-menu-items`), pin/unpin (a pinned session never ages out of
+   Recent and survives bulk cleanups), hide/show in Recent (only
    where the caller opts in via :dismissable?), copy session ID, and Delete.
    Hiding is gated on idle — a busy card or one awaiting a dialog response
    can't be dismissed. Delete is always offered: the server keeps a busy room
    alive and just suppresses its card (see room_manager/session-delete)."
-  [dispatch! ext-items {:keys [session-id dismissed? dismissable? busy? has-dialog?] :as card}]
+  [dispatch! ext-items {:keys [session-id dismissed? pinned? dismissable? busy? has-dialog?] :as card}]
   (let [idle? (not (or busy? has-dialog?))]
     (cond-> (mapv #(ext-session-menu-item dispatch! card %) ext-items)
+      true
+      (conj {:label    (if pinned? "Unpin session" "Pin session")
+             :icon     :bookmark
+             :on-click #(dispatch! {:type :pinned/toggle :session-id session-id})})
       (and dismissable? idle?)
       (conj {:label    (if dismissed? "Show in recent" "Hide from recent")
              :icon     (if dismissed? :eye :eye-off)
@@ -3868,7 +3873,7 @@
    long-press on touch (the framework's gesture runtime), or the ⋮ button.
    A session with open buffers says so in its subline (\"3 buffers\", a
    click unfolds them) and lists them under the card (session-buffer-rows)."
-  [dispatch! state {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project? people buffers]
+  [dispatch! state {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project? people buffers pinned?]
               :as card-data}]
   (let [n-buffers (count buffers)
         ;; unfolded while this browser toggled it open (never automatically)
@@ -3901,7 +3906,10 @@
       :else       (message-circle-icon))
     (card-status-indicator {:busy? busy? :error? error? :unread? unread? :active? active?})]
    [:div {:class ["project-card-info"]}
-    [:span {:class ["project-card-name"]} (or name "New session")]
+    [:span {:class ["project-card-name"]}
+     (when pinned?
+       (icon/icon {:icon-name :bookmark :class "project-card-pin" :attrs {:title "Pinned"}}))
+     (or name "New session")]
     [:span {:class ["project-card-path"]}
      (->> [(when (and show-project? cwd) (shorten-path cwd))
            ;; "just now" is noise; only a real age (3m ago) is useful.
@@ -4853,6 +4861,41 @@
                                           :session-id session-id}))}
            (or name "(untitled)")))))))
 
+(defn- palette-text-match-group
+  "Inline full-text hits for the top-level palette: the same debounced server
+   search as the \"Search all sessions\" sub-page runs on every keystroke
+   (:palette/top-search-input), and transcript matches surface here without
+   drilling in. Rows carry :value = the live query so ui-runtime's substring
+   filter (which only sees names) never hides them; sessions the filter
+   already shows by name/project are skipped (same lowercase-substring match
+   as the runtime, on the same name + shortened-path text the Sessions tier
+   rows carry) so nothing appears twice."
+  [state dispatch!]
+  (let [{:keys [query results]} (:web/palette-search state)
+        q (str/lower-case (str/trim (or query "")))]
+    (when (and (seq q) (seq results))
+      (let [cur-sid     (get-in state [:web/route :session-id])
+            name-match? (fn [{:keys [name cwd]}]
+                          (str/includes?
+                           (str/lower-case (str (or name "New session") " "
+                                                (some-> cwd shorten-path)))
+                           q))
+            hits        (->> results
+                             (remove #(= cur-sid (:session-id %)))
+                             (remove name-match?)
+                             (take 8))]
+        (when (seq hits)
+          (apply cmd/command-group {:heading "Session text"}
+            (for [{:keys [session-id name cwd snippet]} hits]
+              (cmd/command-item
+               {:icon :message-circle
+                :value query
+                :description (or snippet (some-> cwd shorten-path))
+                :on-click (fn [_] (dispatch! {:type :route/navigate
+                                              :page :chat
+                                              :session-id session-id}))}
+               (or name "(untitled)")))))))))
+
 (defn- palette-model-page
   "Model list as a palette sub-page (drilled from Change model / /model).
    Paints the cached :web/model-list (xi.web.models) — a spinner only before
@@ -5263,7 +5306,11 @@
                                             (let [v (.. e -target -value)]
                                               (cond
                                                 (nil? palette-page)
-                                                (pin-palette-items! (.-currentTarget e))
+                                                (do (pin-palette-items! (.-currentTarget e))
+                                                    ;; also feed the inline
+                                                    ;; full-text session search
+                                                    (dispatch! {:type :palette/top-search-input
+                                                                :query v}))
                                                 search-page?
                                                 (dispatch! {:type :palette/search-input :query v})
                                                 finder-page?
@@ -5326,6 +5373,7 @@
                            (some #(when (= cur-sid (:session-id %)) %)
                                  (get-in state [:lobby :sessions])))
             cur-hidden?  (boolean (:dismissed? cur-session))
+            cur-pinned?  (boolean (:pinned? cur-session))
             ;; Search-only tier: every session (Recent + Hidden + Earlier),
             ;; invisible at the empty query (data-command-search-only) and
             ;; matched by name/project while typing — so older sessions are
@@ -5459,6 +5507,10 @@
                      (ext-session-menu-item dispatch! (assoc cur-session :session-id cur-sid) item)]]
            (cmd/command-item {:icon icon :on-click (fn [_] (on-click))} label))
          (cmd/command-item
+          {:icon :bookmark
+           :on-click (fn [_] (dispatch! {:type :pinned/toggle :session-id cur-sid}))}
+          (if cur-pinned? "Unpin session" "Pin session"))
+         (cmd/command-item
           {:icon (if cur-hidden? :eye :eye-off)
            :on-click (fn [_] (dispatch! {:type :dismissed/toggle :session-id cur-sid}))}
           (if cur-hidden? "Show in Recent" "Hide from Recent"))
@@ -5497,6 +5549,9 @@
                          (fn [_] (dispatch! {:type :palette/open-models}))
                          (fn [_] (dispatch-command! dispatch! (:id room) name)))}
             name))))
+     ;; Transcript matches for the text typed so far — the inline half of the
+     ;; full-text search; the pinned row below opens the full sub-page.
+     (palette-text-match-group state dispatch!)
      ;; Pinned last row: full-text search over every saved session (nil cwd =
      ;; no project scope), the same sub-page as a project's "Search session
      ;; text". The --pinned classes keep it visible under any filter query

@@ -115,6 +115,23 @@
     (when (some #{session-id} v)
       (set-key! user :dismissed (filterv #(not= session-id %) v)))))
 
+(defn pinned
+  "The set of session ids `user` pinned to Recent."
+  [user]
+  (set (:pinned (load-state user))))
+
+(defn toggle-pinned!
+  "Pin `session-id` to `user`'s Recent, or unpin it. Returns the new pinned?
+   state, nil when nothing could be written."
+  [user session-id]
+  (let [v       (vec (:pinned (load-state user)))
+        pinned? (boolean (some #{session-id} v))
+        v'      (if pinned?
+                  (filterv #(not= session-id %) v)
+                  (vec (take-last user-state/max-pinned (conj v session-id))))]
+    (when (set-key! user :pinned v')
+      (not pinned?))))
+
 (defn known-users
   "The ids that have a state file, sorted."
   []
@@ -131,12 +148,14 @@
 ;; flags of their own entries on every session (xi.user-state/session-flags).
 
 (defn all-flagged-session-ids
-  "Every session id any user's extensions flagged: what the shared lobby list
-   must keep however old they are, since each user's own flags are only
-   applied when it is sent to them."
+  "Every session id any user's extensions flagged or pinned: what the shared
+   lobby list must keep however old they are, since each user's own flags are
+   only applied when it is sent to them."
   []
   (into #{}
         (comp (map load-state)
-              (mapcat #(vals (user-state/session-flags %)))
-              cat)
+              (mapcat (fn [stored]
+                        (into (vec (filter string? (:pinned stored)))
+                              cat
+                              (vals (user-state/session-flags stored))))))
         (known-users)))

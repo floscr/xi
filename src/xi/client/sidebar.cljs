@@ -5,8 +5,9 @@
    session switching + per-session actions from the keyboard.
 
    Toggled with Alt+\\. While open it is modal: keys drive the drawer instead
-   of the editor (Alt+j/k or j/k switch sessions live, x/s/m act on the
-   highlighted one, Esc/Alt+\\ close). Wired into xi.tui.core via set-sidebar!."
+   of the editor (Alt+j/k or j/k switch sessions live, x/p/m act on the
+   highlighted one — hide, pin, mark read — Esc/Alt+\\ close). Wired into
+   xi.tui.core via set-sidebar!."
   (:require [clojure.string :as str]
             [xi.core.state :as state]
             [xi.session.sidebar :as sb]
@@ -71,11 +72,12 @@
 (defn- session-lines
   "Two colored, fixed-width lines for one session card (name over time·status),
    mirroring the web sidebar. Selected → reverse video on both lines."
-  [{:keys [busy? has-dialog? active? current?] :as card} selected? w]
+  [{:keys [busy? has-dialog? active? current? pinned?] :as card} selected? w]
   (let [marker (cond has-dialog? "!"
                      busy?       "\u2022"
                      active?     "\u2022"
                      current?    "\u203a"
+                     pinned?     "*"
                      :else       " ")
         l1     (name-text marker (:name card) w)
         l2     (meta-text card w)]
@@ -184,6 +186,7 @@
          (or (alt-j data) (= data "j") (= data arrow-down)) (do (move! :next) true)
          (or (alt-k data) (= data "k") (= data arrow-up))   (do (move! :prev) true)
          (= data "x")                                   (do (act! :dismissed/toggle) true)
+         (= data "p")                                   (do (act! :pinned/toggle) true)
          (= data "m")                                   (do (act! :session/mark-read) true)
          (= data ctrl-c)                                false      ;; let quit through
          :else                                          true))}))

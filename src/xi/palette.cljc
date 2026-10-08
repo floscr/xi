@@ -20,14 +20,15 @@
 
 (defn recent-sessions
   "Sessions from the lobby mirror: rooms with a running agent pinned to the
-   top, then by most-recently visited."
+   top, then the user's pinned sessions (which must survive the cut however
+   old, see xi.session.recent), then by most-recently visited."
   [state]
   (let [rooms (get-in state [:lobby :rooms])
         busy? (fn [s] (boolean (some (fn [r] (and (= (:session-id r) (:session-id s))
                                                   (:busy? r)))
                                      rooms)))]
     (->> (get-in state [:lobby :sessions])
-         (sort-by (juxt busy? session-time) #(compare %2 %1))
+         (sort-by (juxt busy? (comp boolean :pinned?) session-time) #(compare %2 %1))
          (take 25))))
 
 ;; ── Commands ─────────────────────────────────────────────────────────────────

@@ -28,13 +28,15 @@
    for this grouping without re-sorting the list, see session/touch-summary!).
    A session with a live room right now (:active?) always qualifies —
    covering the open session and brand-new orphan rooms that carry no
-   timestamp yet.
+   timestamp yet — and so does a pinned one (:pinned?), however old: pinning
+   opts a session out of ever aging into \"Earlier\".
 
    Callers without a server run (e.g. the one-shot CLI) pass `started-at` 0,
    reducing the predicate to \"activity within the last couple of days\"."
-  [now-ms started-at {:keys [active? timestamp last-opened]}]
+  [now-ms started-at {:keys [active? pinned? timestamp last-opened]}]
   (boolean
    (or active?
+       pinned?
        (and started-at
             (let [t (max (->ms timestamp) (->ms last-opened))]
               (and (pos? t)
@@ -76,6 +78,7 @@
                             :name       (:name s)
                             :cwd        (:cwd s)
                             :active?    (contains? active-sids (:session-id s))
+                            :pinned?    (boolean (:pinned? s))
                             :busy?      false
                             :timestamp  (or (:last-accessed s) (:timestamp s))
                             :last-opened (:last-opened s)})

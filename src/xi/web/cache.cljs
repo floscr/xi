@@ -72,15 +72,17 @@
   (or (:last-accessed s) (:timestamp s) ""))
 
 (defn- trim-lobby
-  "Shrink the cached lobby's :sessions to the ones an extension flagged (e.g.
-   favorites) + the most-recently-accessed
+  "Shrink the cached lobby's :sessions to the pinned ones + the ones an
+   extension flagged (e.g. favorites) + the most-recently-accessed
    N, so the cache stays small. :rooms (live rooms only) is left as-is."
   [lobby]
   (update lobby :sessions
           (fn [sessions]
             (if (<= (count sessions) max-cached-sessions)
               sessions
-              (let [favs   (filter #(some true? (vals (user-state/extension-flags %))) sessions)
+              (let [favs   (filter #(or (:pinned? %)
+                                        (some true? (vals (user-state/extension-flags %))))
+                                   sessions)
                     recent (->> sessions
                                 (sort-by session-recency)
                                 reverse

@@ -74,6 +74,7 @@
       ;; feeds recent?'s grouping only, never the sort (see touch-summary!)
       :last-opened (:last-opened s)
       :dismissed?  (boolean (:dismissed? s))
+      :pinned?     (boolean (:pinned? s))
       :current?    (and sid (= sid (get-in state [:web/route :session-id])))
       :active?     (boolean room)
       :busy?       (boolean (:busy? room))
@@ -166,13 +167,17 @@
 (defn sidebar-session-groups
   "Session cards for the drawer sidebar, split into the display groups
    Recent / Hidden / Earlier (in render order). Busy agents pin to the top,
-   then most-recently-visited. Shared by the rendered sidebar and ALT+j/k
-   keyboard navigation so both agree on order."
+   then pinned sessions, then most-recently-visited. Shared by the rendered
+   sidebar and ALT+j/k keyboard navigation so both agree on order."
   [state]
   (let [dismissed-ids (->> (get-in state [:lobby :sessions])
                            (filter :dismissed?)
                            (map :session-id)
                            set)
+        pinned-ids (->> (get-in state [:lobby :sessions])
+                        (filter :pinned?)
+                        (map :session-id)
+                        set)
         sessions (palette/recent-sessions state)
         orphans  (orphan-rooms state sessions)
         cards    (->> (concat orphans (map #(session-status state %) sessions))
@@ -184,9 +189,15 @@
                                    :acc  (conj acc c)}))
                               {:seen #{} :acc []})
                       :acc)
-        cards    (let [{busy true idle false} (group-by #(boolean (:busy? %)) cards)]
-                   (concat busy idle))
-        cards    (map #(assoc % :dismissed? (boolean (dismissed-ids (:session-id %)))) cards)
+        cards    (map #(assoc %
+                               :dismissed? (boolean (dismissed-ids (:session-id %)))
+                               :pinned?    (boolean (pinned-ids (:session-id %))))
+                      cards)
+        ;; busy agents first, then pinned, then the rest (last-visited order
+        ;; within each tier)
+        cards    (let [{busy true idle false} (group-by #(boolean (:busy? %)) cards)
+                       {pinned true rest false} (group-by #(boolean (:pinned? %)) idle)]
+                   (concat busy pinned rest))
         {hidden true visible false} (group-by :dismissed? cards)
         now      (js/Date.now)
         started  (get-in state [:lobby :started-at])

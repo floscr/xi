@@ -60,6 +60,11 @@ devices and `xi clients revoke <name>` removes one.
   start a new chat in any of them.
 - **Run commands.** Everything from [Slash commands](commands.md) works here
   too. The command palette (Ctrl/Cmd+K) lists them.
+- **Pin a chat.** The sidebar's Recent group shows the chats active in the
+  last couple of days. "Pin session" (right-click a card, long-press, or its
+  ⋮ menu) keeps a chat there for good: it never ages into Earlier, and "Hide
+  all from Recent" / Prune skip it. "Unpin session" in the same menu undoes
+  it.
 
 ## Buffers
 
@@ -118,7 +123,7 @@ are. The common ones:
 | `Alt+j` / `Alt+k` | Next / previous chat |
 | `Alt+n` | New chat |
 | `Alt+u` | Jump to the chat that needs you most: one waiting on a permission request, then the newest finished chat with unread output, then the newest running one. Press again to move on to the next |
-| `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would (mark all as read, hide all from Recent, close idle rooms) |
+| `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would (mark all as read, hide all from Recent — pinned chats are skipped — close idle rooms) |
 | `Alt+a` / `Alt+d` | Allow / deny the pending permission request |
 | `Alt+x` | Stop the running turn |
 | `Ctrl/Cmd+k` | Command palette |
@@ -144,12 +149,13 @@ them.
 These choices belong to your [user](server.md#users), not to the browser:
 the theme, the appearance settings, which sidebar groups are collapsed, the
 model new chats start with, and your recently used commands and skills. So do
-the chats you have read (the unread dots) and the chats you hid from Recent:
-the same chat can be unread for you and read for a colleague, and hidden for
-one of you only. What an [extension](extensions.md) keeps about you, such as
-a list of favorite chats, is yours too. Change
-them on your phone and your laptop follows; a colleague on the same server has
-their own. The server keeps them per user in `~/.config/xi/state/users/`. The
+the chats you have read (the unread dots), the chats you hid from Recent and
+the ones you pinned to it: the same chat can be unread for you and read for a
+colleague, and hidden or pinned for one of you only. What an
+[extension](extensions.md) keeps about you, such as a list of favorite chats,
+is yours too. Change them on your phone and your laptop follows; a colleague
+on the same server has their own. The server keeps them per user in
+`~/.config/xi/state/users/`. The
 browser also keeps a copy so the page paints with the right theme before it
 connects, and works offline.
 

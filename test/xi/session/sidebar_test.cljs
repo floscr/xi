@@ -97,6 +97,29 @@
     (is (= 2 (count (sb/sidebar-session-order state)))
         "a favorite is listed once: its time group already has it")))
 
+(deftest pinned-sessions-never-age-out-of-recent
+  (let [now   (js/Date.now)
+        state (-> (with-sessions [{:session-id "fresh"   :timestamp now}
+                                  {:session-id "old-pin" :pinned? true :timestamp 1}
+                                  {:session-id "old"     :timestamp 2}])
+                  (assoc-in [:lobby :started-at] 0))
+        {:keys [recent earlier]} (sb/sidebar-session-groups state)]
+    (testing "a pinned session stays in Recent however stale its timestamp"
+      (is (= ["old-pin" "fresh"] (mapv :session-id recent))
+          "and sorts above the unpinned ones")
+      (is (= ["old"] (mapv :session-id earlier))))
+    (testing "the card carries the flag for the menu label and the pin marker"
+      (is (true? (:pinned? (first recent)))))))
+
+(deftest pinned-sessions-skip-the-hide-all-cleanup-flag
+  (testing "pinning rides on the card even when the session is also dismissed"
+    (let [state (-> (with-sessions [{:session-id "a" :pinned? true :dismissed? true :timestamp 1}])
+                    (assoc-in [:lobby :started-at] 0))
+          {:keys [hidden recent]} (sb/sidebar-session-groups state)]
+      (is (= ["a"] (mapv :session-id hidden))
+          "an explicit per-card hide still wins over the pin")
+      (is (= [] (mapv :session-id recent))))))
+
 (deftest attention-order-ranks-dialog-then-unread-then-running
   (let [cards [{:session-id "idle"    :timestamp 9}
                {:session-id "run-old" :timestamp 1 :busy? true}

@@ -100,7 +100,7 @@
   "Events after which lobby (roomless) clients get a fresh :lobby/state.
    Extensions add theirs via :lobby-relevant."
   #{:room/create :room/close :room/attach :room/leave
-    :dismissed/changed
+    :dismissed/changed :pinned/changed
     ;; an extension's per-user state may carry session flags (for-user)
     :user/ext-set
     :session/deleted
@@ -138,7 +138,7 @@
   #{:client/update :user-state/set :session/counts :sessions/all :models/web-list
     :cwd/agents-files :session/content-search :session/web-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
-    :dismissed/toggle :session/delete :session/mark-read
+    :dismissed/toggle :pinned/toggle :session/delete :session/mark-read
     :session/buffer-close
     :rooms/prune})
 
@@ -299,12 +299,14 @@
 
 (defn- for-user
   "The lobby/session-list `payload` as `user` sees it: the chats they hid
-   from Recent tagged :dismissed?, the flags their extensions keep tagged on
-   every session (xi.user-state/session-flags, e.g. :favorite?), and (for a
-   lobby) their own read markers and the model their next chat starts with."
+   from Recent tagged :dismissed?, the ones they pinned tagged :pinned?, the
+   flags their extensions keep tagged on every session
+   (xi.user-state/session-flags, e.g. :favorite?), and (for a lobby) their own
+   read markers and the model their next chat starts with."
   [payload user]
   (let [stored (user-store/load-state user)
-        flags  (user-state/session-flags stored)
+        flags  (assoc (user-state/session-flags stored)
+                      :pinned? (set (filter string? (:pinned stored))))
         lobby? (= :lobby/state (:type payload))]
     (cond-> (-> payload
                 (update :sessions session/annotate-dismissed
@@ -743,6 +745,14 @@
       (fn [{:keys [dispatch!]} {:keys [session-id user]}]
         (user-store/toggle-dismissed! user session-id)
         (dispatch! {:type :dismissed/changed}))
+
+      ;; Toggle a session's pinned (always-in-Recent) flag for `user`, then
+      ;; fan a fresh lobby out (:pinned/changed is lobby-relevant, so the tap
+      ;; rebroadcasts; each user's lobby carries their own flags).
+      :pinned/toggle-reply
+      (fn [{:keys [dispatch!]} {:keys [session-id user]}]
+        (user-store/toggle-pinned! user session-id)
+        (dispatch! {:type :pinned/changed}))
 
       ;; Permanently delete a saved session's on-disk file, then fan a fresh
       ;; lobby out so every device drops the card (:session/deleted is

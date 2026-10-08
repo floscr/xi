@@ -210,7 +210,8 @@
    un-hides one — and (b) in progress: any session with a live room that is
    busy (agent working) or awaiting a dialog response is left visible, matching
    the per-card toggle which hides itself while `busy?`/`has-dialog?`. Hiding a
-   running turn would bury it and lose the user's place in active work."
+   running turn would bury it and lose the user's place in active work. Pinned
+   sessions are skipped too — pinning opts a chat out of every bulk cleanup."
   [st _]
   (let [;; session-ids with a live room that is busy or needs a dialog response
         in-progress (->> (get-in st [:lobby :rooms])
@@ -220,6 +221,7 @@
                          set)
         target-ids  (->> (get-in st [:lobby :sessions])
                          (remove :dismissed?)
+                         (remove :pinned?)
                          (map :session-id)
                          (filter some?)
                          (remove in-progress)
@@ -1288,6 +1290,21 @@
                                                  (update :web/all-sessions #(some-> % flip)))
                                       :effects [[:ws/send {:type :dismissed/toggle
                                                            :session-id session-id}]]}))
+          ;; Pin/unpin a session in the recent list. Flip locally so the card
+          ;; moves instantly, then forward: the server persists and
+          ;; rebroadcasts an authoritative :lobby/state.
+          :pinned/toggle         (fn [st {:keys [session-id]}]
+                                   (let [flip (fn [ss]
+                                                (mapv #(if (= (:session-id %) session-id)
+                                                         (update % :pinned? not)
+                                                         %)
+                                                      ss))]
+                                     {:state (-> st
+                                                 (update-in [:lobby :sessions] flip)
+                                                 (update :web/project-sessions flip)
+                                                 (update :web/all-sessions #(some-> % flip)))
+                                      :effects [[:ws/send {:type :pinned/toggle
+                                                           :session-id session-id}]]}))
           ;; Permanently delete a saved session. Drop the card locally for an
           ;; instant response, then forward: the server unlinks the on-disk
           ;; file, closes any lingering idle room, and rebroadcasts an
@@ -1604,6 +1621,20 @@
                                         :effects [[:palette/search-debounce
                                                    {:query (or query "")
                                                     :cwd (get-in st [:web/palette-page :cwd])}]]})))
+          ;; Inline full-text search at the palette's top level: every
+          ;; keystroke in the top-level input also runs the "Search all
+          ;; sessions" search (debounced, unscoped), and transcript hits
+          ;; render as a "Session text" group without drilling into the
+          ;; sub-page. Stale results are kept while typing (no inline
+          ;; spinner); the stale-reply guard on :session/web-search-result
+          ;; keeps a slow early reply from clobbering a newer search.
+          :palette/top-search-input
+          (fn [st {:keys [query]}]
+            (when (nil? (:web/palette-page st))
+              (if (str/blank? (str/trim (or query "")))
+                {:state (dissoc st :web/palette-search)}
+                {:state (assoc-in st [:web/palette-search :query] query)
+                 :effects [[:palette/search-debounce {:query query :cwd nil}]]})))
           :session/web-search    (fn [_st {:keys [query cwd]}]
                                    {:effects [[:ws/send {:type :session/web-search
                                                          :query query :cwd cwd}]]})
@@ -1636,10 +1667,13 @@
                                       :effects [[:palette/reset-filter
                                                  (when (= :search (get-in st [:web/palette-page :kind]))
                                                    (get-in st [:web/palette-search :query]))]]}
-                                     ;; Fresh mod+k open: always start at the top.
+                                     ;; Fresh mod+k open: always start at the top,
+                                     ;; with no leftover inline full-text results
+                                     ;; (the runtime cleared the input, so they'd
+                                     ;; all show at the blank query).
                                      {:state (-> st
                                                  (assoc :web/palette-open? true)
-                                                 (dissoc :web/palette-page))
+                                                 (dissoc :web/palette-page :web/palette-search))
                                       :effects [[:palette/reset-filter nil]]}))
           ;; Keep :web/palette-page here so a drill's close+reopen doesn't lose
           ;; the sub-page; a fresh mod+k open (:palette/opened) resets it.

@@ -378,6 +378,14 @@
                     (map (fn [rid] [:app/dispatch {:type :room/close :room-id rid}]))
                     close-rids)}))
 
+(defn- pinned-toggle
+  "Roomless: pin/unpin a session in the sender's recent list by id. The
+   persist + lobby rebroadcast happen in the :pinned/toggle-reply effect
+   (needs disk access)."
+  [st {:keys [session-id] :as ev}]
+  {:effects [[:pinned/toggle-reply {:session-id session-id
+                                    :user       (state/event-user st ev)}]]})
+
 (defn- blank-room?
   "A live room nobody has prompted: no history and a session that never got a
    provider/CLI id, i.e. nothing on disk and nothing to lose."
@@ -546,6 +554,7 @@
    :files/web-tree         files-web-tree
    :file/web-read          file-web-read
    :dismissed/toggle       dismissed-toggle
+   :pinned/toggle          pinned-toggle
    :session/delete         session-delete
    :session/mark-read      session-mark-read
    :session/buffer-close   session-buffer-close

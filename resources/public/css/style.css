@@ -3252,6 +3252,16 @@ code a:hover,
 
 .project-card-name { font-weight: 600; }
 
+/* Pinned-to-Recent marker in front of the session name */
+.project-card-pin {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  margin-right: var(--size-1);
+  vertical-align: -1px;
+  color: var(--fg-2);
+}
+
 /* ⋮ opens the session card's context menu (bookmark / hide / delete).
    Revealed on hover (desktop); touch devices hide it — long-press on the card
    opens the same menu (ui.context-menu + the framework gesture runtime). */
