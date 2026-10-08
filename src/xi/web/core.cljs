@@ -2741,6 +2741,7 @@
   ;; The Ctrl/Cmd+K palette, top level (its first group lists the chats).
   (keymap/register-action! {:id :palette/open :event {:type :palette/open}})
   (keymap/register-action! {:id :projects/pick :event {:type :palette/open-project-list}})
+  (keymap/register-action! {:id :skills/search :event {:type :palette/open-skills}})
   (keymap/register-action! {:id :projects/open
                             :event {:type :route/navigate :page :home}})
   ;; Hide from Recent (a toggle, like the palette's "Hide from Recent") and
