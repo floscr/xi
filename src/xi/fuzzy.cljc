@@ -1,7 +1,8 @@
 (ns xi.fuzzy
   "Shared fuzzy subsequence matcher for filter UIs (e.g. the web file finder).
 
-   Case-insensitive: every char of the query must appear in order in the text.
+   Case-insensitive: the query splits on whitespace into independent terms
+   (fzf-style), and every char of each term must appear in order in the text.
    Scoring is lower-is-better and greedy (left-to-right), favouring matches that
    start early, sit at word boundaries (after / - _ . space), run contiguously,
    and live in shorter strings — so typing \"core\" ranks .../web/core.cljs
@@ -16,50 +17,73 @@
   [t i]
   (or (zero? i) (contains? boundary-chars (.charAt t (dec i)))))
 
+(defn- tokens
+  "Lower-cased whitespace-separated terms of `query` (none when blank)."
+  [query]
+  (->> (str/split (str/lower-case (str query)) #"\s+")
+       (remove str/blank?)))
+
+(defn- match-token?
+  "True when every char of lower-cased `q` appears in order in lower-cased `t`."
+  [q t]
+  (let [qlen (count q) tlen (count t)]
+    (loop [qi 0 ti 0]
+      (cond
+        (>= qi qlen) true
+        (>= ti tlen) false
+        (= (.charAt q qi) (.charAt t ti)) (recur (inc qi) (inc ti))
+        :else (recur qi (inc ti))))))
+
 (defn match?
-  "True when every char of `query` appears in order (case-insensitive) in
-   `text`. A blank query matches everything."
+  "True when every whitespace-separated term of `query` appears as an in-order
+   subsequence (case-insensitive) in `text` — spaces split independent terms
+   (fzf-style), so \"plan md\" matches plans/notes.md. A blank query matches
+   everything."
   [query text]
-  (let [q (str/lower-case (str query))]
-    (if (str/blank? q)
-      true
-      (let [t (str/lower-case (str text))
-            qlen (count q) tlen (count t)]
-        (loop [qi 0 ti 0]
-          (cond
-            (>= qi qlen) true
-            (>= ti tlen) false
-            (= (.charAt q qi) (.charAt t ti)) (recur (inc qi) (inc ti))
-            :else (recur qi (inc ti))))))))
+  (let [qs (tokens query)]
+    (or (empty? qs)
+        (let [t (str/lower-case (str text))]
+          (every? #(match-token? % t) qs)))))
+
+(defn- score-token
+  "Greedy lower-is-better score of one lower-cased term `q` against
+   lower-cased `t`, or nil when it is not a subsequence."
+  [q t]
+  (let [qlen (count q) tlen (count t)]
+    (loop [qi 0 ti 0 score 0 last-match -1]
+      (cond
+        (>= qi qlen)
+        ;; Prefer shorter strings once the query is consumed.
+        (+ score (quot tlen 8))
+
+        (>= ti tlen)
+        nil
+
+        (= (.charAt q qi) (.charAt t ti))
+        (let [gap   (if (neg? last-match) ti (- ti last-match 1))
+              bonus (cond
+                      (boundary? t ti) -6   ;; matched at a word boundary
+                      (zero? gap)      -2   ;; contiguous with previous
+                      :else            0)]
+          (recur (inc qi) (inc ti) (+ score gap bonus) ti))
+
+        :else
+        (recur qi (inc ti) score last-match)))))
 
 (defn score
-  "Greedy lower-is-better score, or nil when `query` is not a subsequence of
-   `text`. Blank query scores 0."
+  "Greedy lower-is-better score — the sum over `query`'s whitespace-separated
+   terms, each matched independently against `text` — or nil when any term is
+   not a subsequence. Blank query scores 0."
   [query text]
-  (let [q (str/lower-case (str query))]
-    (if (str/blank? q)
+  (let [qs (tokens query)]
+    (if (empty? qs)
       0
-      (let [t (str/lower-case (str text))
-            qlen (count q) tlen (count t)]
-        (loop [qi 0 ti 0 score 0 last-match -1]
-          (cond
-            (>= qi qlen)
-            ;; Prefer shorter strings once the query is consumed.
-            (+ score (quot tlen 8))
-
-            (>= ti tlen)
-            nil
-
-            (= (.charAt q qi) (.charAt t ti))
-            (let [gap   (if (neg? last-match) ti (- ti last-match 1))
-                  bonus (cond
-                          (boundary? t ti) -6   ;; matched at a word boundary
-                          (zero? gap)      -2   ;; contiguous with previous
-                          :else            0)]
-              (recur (inc qi) (inc ti) (+ score gap bonus) ti))
-
-            :else
-            (recur qi (inc ti) score last-match)))))))
+      (let [t (str/lower-case (str text))]
+        (reduce (fn [acc q]
+                  (if-let [sc (score-token q t)]
+                    (+ acc sc)
+                    (reduced nil)))
+                0 qs)))))
 
 (defn rank
   "Return the items of `coll` whose string (via `key-fn`, default identity)
