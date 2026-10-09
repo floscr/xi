@@ -3298,6 +3298,9 @@ code a:hover,
 /* Project rows are single-line: the folder name says enough, the absolute
    path is noise in a narrow column (still on the home listing). */
 .sidebar .project-card--dir .project-card-path { display: none; }
+/* The + keeps its hit area but not its height: the row is as tall as its
+   label, like "All projects" below. */
+.sidebar .project-card--dir .project-card-action { margin-block: calc(-1 * var(--size-1)); }
 .sidebar .active-dot { width: 8px; height: 8px; }
 
 /* Plain nav rows inside a group ("All projects", extension entries): same
