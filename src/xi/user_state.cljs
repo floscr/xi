@@ -144,7 +144,7 @@
                                                 (<= (count t) 20)
                                                 (every? (fn [[n p]]
                                                           (and (string? n) (<= 1 (count n) 40)
-                                                               (map? p) (<= (count p) 16)
+                                                               (map? p) (<= (count p) 24)
                                                                (every? (fn [[k x]]
                                                                          (and (keyword? k)
                                                                               (or (number? x)

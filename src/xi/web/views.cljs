@@ -5383,6 +5383,11 @@
        ;; page + sidebar of each mode
        (let [{:keys [light dark]} (ctheme/backgrounds params)]
          (swatch-row (concat light dark))))
+     ;; --success / --warning / --danger: status dots, usage meters, errors
+     (theme-section "Status"
+       (theme-color dispatch! draft :success-color "Success")
+       (theme-color dispatch! draft :warning-color "Warning")
+       (theme-color dispatch! draft :danger-color "Danger"))
      (theme-section "Spacing"
        (theme-slider dispatch! draft :size-base "Base" {:min 10 :max 50 :step 1 :scale 100 :fmt decimal}))
      (theme-section "Font"

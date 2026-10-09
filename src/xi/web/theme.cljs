@@ -26,7 +26,10 @@
    :size-base     0.25
    :font-base     1
    :font-ratio    1.25
-   :radius-scale  1})
+   :radius-scale  1
+   :success-color "oklch(0.705 0.185 152)"
+   :warning-color "oklch(0.79 0.159 76)"
+   :danger-color  "oklch(0.61 0.226 25)"})
 
 (def ranges
   "[min max] per numeric parameter: what `normalize-params` accepts and the
@@ -43,7 +46,7 @@
 
 (def color-keys
   "The parameters that hold a `color?` string (a color picker value)."
-  #{:bg-light :bg-dark})
+  #{:bg-light :bg-dark :success-color :warning-color :danger-color})
 
 (defn hex-color? [s]
   (boolean (and (string? s) (re-matches #"#[0-9a-fA-F]{6}" s))))
@@ -86,6 +89,30 @@
   [[50 0.965 0.020] [100 0.925 0.040] [200 0.860 0.075] [300 0.770 0.125]
    [400 0.690 0.170] [500 0.595 0.230] [600 0.505 0.255] [700 0.450 0.245]
    [800 0.395 0.210] [900 0.350 0.175] [950 0.260 0.130]])
+
+;; Status scales: theme.css's --success / --warning / --danger (status dots,
+;; usage meters, errors) map onto their 500 (light) and 400 (dark) steps.
+
+(def ^:private success-steps
+  [[50 0.980 0.016] [100 0.960 0.038] [200 0.930 0.065] [300 0.885 0.112]
+   [400 0.815 0.178] [500 0.705 0.185] [600 0.595 0.150] [700 0.510 0.119]
+   [800 0.425 0.090] [900 0.370 0.071] [950 0.270 0.051]])
+
+(def ^:private warning-steps
+  [[50 0.985 0.012] [100 0.965 0.032] [200 0.935 0.058] [300 0.890 0.095]
+   [400 0.845 0.129] [500 0.790 0.159] [600 0.725 0.153] [700 0.625 0.130]
+   [800 0.540 0.107] [900 0.465 0.088] [950 0.355 0.065]])
+
+(def ^:private danger-steps
+  [[50 0.970 0.014] [100 0.935 0.032] [200 0.860 0.073] [300 0.765 0.127]
+   [400 0.675 0.184] [500 0.610 0.226] [600 0.560 0.220] [700 0.490 0.184]
+   [800 0.425 0.153] [900 0.365 0.124] [950 0.255 0.086]])
+
+(def ^:private status-scales
+  "[scale-name color-key steps] per themable status scale."
+  [["success" :success-color success-steps]
+   ["warning" :warning-color warning-steps]
+   ["danger"  :danger-color  danger-steps]])
 
 (def ^:private size-steps 16)
 
@@ -138,6 +165,18 @@
 
 (defn color->oklch [s]
   (if (hex-color? s) (hex->oklch s) (parse-oklch s)))
+
+(defn- status-scale-vars
+  "The scale anchored on `color`: its 500 step is the color, every other step
+   keeps its lightness distance and chroma ratio to the 500 step."
+  [scale-name color steps]
+  (let [[l c h] (color->oklch color)
+        [_ l500 c500] (nth steps 5)]
+    (into {}
+          (map (fn [[label sl sc]]
+                 [(str "--" scale-name "-" label)
+                  (oklch (clamp01 (+ sl (- l l500))) (min 0.4 (* sc (/ c c500))) h)]))
+          steps)))
 
 (defn backgrounds
   "{:light [page sidebar] :dark [page sidebar]} — the two surfaces per mode
@@ -210,6 +249,9 @@
     (let [p (merge defaults params)]
       (merge (scale-vars "gray" (:gray-hue p) (:gray-chroma p) gray-steps)
              (scale-vars "accent" (:accent-hue p) (:accent-chroma p) accent-steps)
+             (into {} (mapcat (fn [[scale-name color-key steps]]
+                                (status-scale-vars scale-name (get p color-key) steps)))
+                   status-scales)
              (background-vars p)
              (into {} (map (fn [n] [(str "--size-" n) (rem-value (* (:size-base p) n))]))
                    (range 1 (inc size-steps)))
@@ -238,6 +280,7 @@
   "The 500 accent stop of `params`, for a chip dot."
   [params]
   (nth (accent-swatches params) 5))
+
 
 (defn hue-gradient []
   (str "linear-gradient(to right, "

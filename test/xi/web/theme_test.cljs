@@ -19,8 +19,8 @@
       (is (= "oklch(0.122 0.0107 285.0)" (get vars "--theme-sidebar-dark"))))
     (testing "every managed property has a value"
       (is (= (set theme/var-names) (set (keys vars))))
-      (is (= 72 (count theme/var-names))
-          "11 gray + 11 accent + 4 backgrounds + 18 surfaces + 16 sizes + 8 fonts + 4 radii"))))
+      (is (= 105 (count theme/var-names))
+          "11 gray + 11 accent + 33 status + 4 backgrounds + 18 surfaces + 16 sizes + 8 fonts + 4 radii"))))
 
 (deftest hex-to-oklch
   (let [[l c h] (theme/hex->oklch "#ff0000")]
@@ -68,6 +68,21 @@
     (is (= "3px" (get vars "--radius-sm")))
     (is (= "2px" (get vars "--radius-xs"))))
   (is (nil? (theme/css-vars nil)) "the default theme sets nothing"))
+
+(deftest status-scales-follow-their-colors
+  (testing "the defaults reproduce theme.css"
+    (let [vars (theme/css-vars {})]
+      (is (= "oklch(0.705 0.1850 152.0)" (get vars "--success-500")))
+      (is (= "oklch(0.845 0.1290 76.0)" (get vars "--warning-400")))
+      (is (= "oklch(0.610 0.2260 25.0)" (get vars "--danger-500")))))
+  (testing "the picked color is the 500 step; the others keep their distance"
+    (let [vars (theme/css-vars {:success-color "oklch(0.6 0.0925 200)"})]
+      (is (= "oklch(0.600 0.0925 200.0)" (get vars "--success-500")))
+      (is (= "oklch(0.710 0.0890 200.0)" (get vars "--success-400"))
+          "0.11 lighter, the chroma at half the token's like the 500 step")
+      (is (= "oklch(0.610 0.2260 25.0)" (get vars "--danger-500")) "other scales untouched")))
+  (is (= {:danger-color "#22aa55"}
+         (theme/normalize-params {:danger-color "#22aa55" :warning-color "green"}))))
 
 (deftest swatches-and-presets
   (is (= 11 (count (theme/gray-swatches {}))))
