@@ -84,6 +84,17 @@
   (and (some? (:web/pending-room st))
        (nil? (get-in st [:web/route :session-id]))))
 
+(defn- viewed-history
+  "The history the chat view paints (xi.web.views/chat-history): the active
+   room's once it is the routed session, else the cached one. Mid-switch the
+   client is still attached to the previous room."
+  [st]
+  (let [sid  (get-in st [:web/route :session-id])
+        room (state/active-room st)]
+    (if (and (seq (:history room)) (= sid (get-in room [:session :id])))
+      (:history room)
+      (or (get-in st [:web/cache sid :history]) (:history room)))))
+
 (defn- view-cwd
   [st]
   (if (new-chat-view? st)
@@ -1031,7 +1042,7 @@
           (fn [st _] {:state (-> st
                                  (dissoc :web/prompt-nav)
                                  (assoc :web/timeline-window
-                                        (count (:history (state/active-room st)))))
+                                        (count (viewed-history st))))
                       :effects [[:timeline/scroll-top {}]]})
           ;; Reflect the timeline's scroll position into state so the
           ;; scroll-to-bottom down-arrow can appear only while scrolled up.
@@ -1047,8 +1058,7 @@
             (let [su (boolean scrolled-up?)]
               (when (not= su (boolean (:web/scrolled-up? st)))
                 (if su
-                  (let [room  (state/active-room st)
-                        total (count (:history room))
+                  (let [total (count (viewed-history st))
                         win   (or (:web/timeline-window st) views/initial-window-size)]
                     {:state (assoc st :web/scrolled-up? true
                                       :web/frozen-window-start (max 0 (- total win)))})
@@ -2110,7 +2120,12 @@
                                  prev    @prev-scroll-top
                                  bottom? (at-bottom? timeline)]
                              (reset! prev-scroll-top top)
-                             (when (< top prev) (maybe-load-earlier! timeline))
+                             ;; Layout lowers scrollTop too (a switch swaps in
+                             ;; a short first paint, xi.web.router/
+                             ;; first-paint-window): that must not load more.
+                             (when (and (< top prev)
+                                        (or (user-scrolling?) (not @auto-scroll?)))
+                               (maybe-load-earlier! timeline))
                              (cond
                                bottom?
                                (reset! auto-scroll? true)
