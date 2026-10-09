@@ -232,24 +232,33 @@
      :effects effects}))
 
 (defn nav-back
-  "Pure handler for :nav/back — emits the :nav/back effect."
   [_st {:keys [fallback]}]
   {:effects [[:nav/back {:fallback fallback}]]})
 
+(defn buffer-open-event
+  "The client-local event that shows row `buffer-id` of `room`:
+   :ui/buffer-switch for a buffer, :subagent/reveal for a background sub-agent
+   (they list with the buffers), nil when the room holds neither."
+  [room-id room buffer-id]
+  (cond
+    (get-in room [:ui :buffers buffer-id])
+    {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}
+
+    (some #(= buffer-id (:id %)) (get-in room [:ext :subagents :agents]))
+    {:type :subagent/reveal :room-id room-id :sub-id buffer-id}))
+
 (defn with-buffer
-  "Wrap a navigate result to also open buffer `buffer-id` of the target chat
-   (a sidebar or palette buffer row). Already viewing that session: switch
-   now. Otherwise remember it as `:web/pending-buffer`; the pending-buffer tap
-   (xi.web.core) switches once the room's :room/joined lands with the
-   buffers. The switch is this client's own (xi.buffers)."
+  "Wrap a navigate result to also open buffer `buffer-id` of the target chat:
+   switch now when already viewing it, else remember it as :web/pending-buffer
+   for the pending-buffer tap (xi.web.core)."
   [st {:keys [page session-id buffer-id]} result]
   (if-not (and buffer-id (= page :chat) session-id)
     result
     (let [active (state/active-room st)]
       (if (= session-id (get-in active [:session :id]))
-        (update result :effects (fnil conj [])
-                [:app/dispatch {:type :ui/buffer-switch :room-id (:id active)
-                                :buffer-id buffer-id}])
+        (if-let [ev (buffer-open-event (:id active) active buffer-id)]
+          (update result :effects (fnil conj []) [:app/dispatch ev])
+          result)
         (assoc-in result [:state :web/pending-buffer]
                   {:session-id session-id :buffer-id buffer-id})))))
 

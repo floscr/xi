@@ -200,6 +200,20 @@
   (when (find-child st room-id sub-id)
     {:state (update-child st room-id sub-id #(update % :expanded? not))}))
 
+(defn reveal
+  "Show one child in the web panel: unfold the panel and expand that child
+   (toggle-child's opt-in flag, set rather than flipped). A sidebar or
+   palette row of a sub-agent dispatches it — they list with the chat's
+   buffers (xi.server.room-manager/session-buffers) and a row opens the chat
+   on the one it names (xi.web.router/buffer-open-event). This client's own,
+   so NOT in the shared `handlers` map: the web half registers it (and
+   scrolls the card into view); nil when the room has no such child."
+  [st {:keys [room-id sub-id]}]
+  (when (find-child st room-id sub-id)
+    {:state (-> st
+                (assoc-in [:rooms room-id :ext ext-id :collapsed?] false)
+                (update-child room-id sub-id #(assoc % :expanded? true)))}))
+
 (defn dismiss
   "Remove finished sub-agents from the panel: the one named by :sub-id, or
    every non-running one when absent. Running children are never dropped (they

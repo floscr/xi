@@ -3046,6 +3046,13 @@ code a:hover,
   cursor: pointer;
 }
 .session-buffer-row .icon { flex-shrink: 0; color: var(--fg-2); }
+/* A background sub-agent among the rows (xi.server.room-manager/
+   session-buffers): a spinner stands in for the icon while it runs; a
+   finished one colours its icon by outcome, like the panel's status label. */
+.session-buffer-row .agent-status-spinner--sm { margin: 0 2px; }
+.session-buffer-row--sub-error .icon   { color: var(--danger, #dc2626); }
+.session-buffer-row--sub-done .icon    { color: #16a34a; }
+.session-buffer-row--sub-stopped .icon { color: var(--fg-3); }
 /* The buffer in view: accent tint, like the current session card. */
 .session-buffer-row--active {
   color: var(--fg-0);

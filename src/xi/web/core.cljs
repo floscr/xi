@@ -2114,30 +2114,22 @@
         (dispatch! {:type :client/update :buffer (second cur)})))))
 
 (defn- pending-buffer-tap
-  "Open the buffer a sidebar / palette row asked for once its chat has joined
-   (xi.web.router/with-buffer stashes it as :web/pending-buffer): the
-   :room/joined snapshot carries the room's buffers, parked ones included, so
-   the switch finds it. A navigation to another session in between drops the
-   request (it names a session the join didn't deliver)."
+  "Open the buffer a sidebar / palette row asked for (:web/pending-buffer,
+   xi.web.router/with-buffer) once its chat has joined. A join of another
+   session drops the request."
   [dispatch!]
   (fn [event state]
     (when (= :room/joined (:type event))
       (when-let [{:keys [session-id buffer-id]} (:web/pending-buffer state)]
         (dispatch! {:type :buffer/pending-clear})
-        (when (and (= session-id (get-in event [:room :session :id]))
-                   (get-in event [:room :ui :buffers buffer-id]))
-          (dispatch! {:type :ui/buffer-switch :room-id (:room-id event)
-                      :buffer-id buffer-id}))))))
+        (when (= session-id (get-in event [:room :session :id]))
+          (when-let [ev (router/buffer-open-event (:room-id event) (:room event) buffer-id)]
+            (dispatch! ev)))))))
 
 (defn- pending-submit-tap
-  "Fire a stashed message after the room it was aimed at finishes joining.
-   Correlate the reply with our own request so a navigation race (or a mobile
-   reconnect) can't send the message into the wrong room:
-   - virtual new chat: match the :join-token the server echoes back — a
-     bare session-id check would match ANY room, since a fresh room and an
-     existing session both carry a non-nil session id.
-   - cached session view: match the joined session id.
-   Target the room that actually joined (:room-id event), not :active-room."
+  "Fire a stashed message once the room it was aimed at joins, matched by the
+   echoed :join-token (virtual new chat) or the joined session id, so a
+   navigation race or reconnect can't send it into the wrong room."
   [dispatch!]
   (fn [event state]
     (when (and (= :room/joined (:type event))

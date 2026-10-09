@@ -2863,18 +2863,17 @@
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 
 (defn buffer-icon
-  "The icon of a buffer kind (xi.buffers) wherever buffers are listed: the
-   buffer menu, the sidebar rows, the palette."
+  "The icon of a buffer kind (xi.buffers); `:subagent` is a background
+   sub-agent listed with the buffers (xi.server.room-manager/session-buffers)."
   [kind]
   (case kind
-    :diff   :code
-    :file   :file-text
-    :prompt :terminal
+    :diff     :code
+    :file     :file-text
+    :prompt   :terminal
+    :subagent :users
     :list))
 
 (defn- text-tab-view
-  "Any other text buffer (the event log, the shortcut list — buffers the TUI
-   opens that mirror into the room) as a plain read-only view."
   [id {:keys [text] :as buf}]
   [:div {:class ["file-tab"]}
    [:div {:class ["file-tab-header"]}
@@ -3350,15 +3349,15 @@
 (def ^:private subagent-status-label
   {:running "running" :done "done" :error "error" :stopped "stopped"})
 
-;; Children default COLLAPSED (opt-in :expanded?): the panel renders one head
-;; per agent (status · label · duration) during the run, and only streams a
-;; child's full history once the user expands it. Expanding-by-default made the
-;; panel re-render every entry of every sub-agent on every streaming delta,
-;; which stalled the web client with several concurrent agents (PR reviews).
-(defn- subagent-child [dispatch! room-id {:keys [id label task status history result expanded? session-id] :as child}]
+(defn- subagent-child
+  "One sub-agent card. Children start collapsed (opt-in `:expanded?`): only
+   an expanded child renders its streaming history, or several concurrent
+   agents re-render the panel on every delta."
+  [dispatch! room-id {:keys [id label task status history result expanded? session-id] :as child}]
   (let [open? (boolean expanded?)]
     [:div {:class ["subagent-card" (str "subagent-card--" (name (or status :running)))]
-           :replicant/key id}
+           :replicant/key id
+           :data-sub-id id}
      [:div {:class ["subagent-card-head"]
             :on {:click (fn [_] (dispatch! {:type :subagent/toggle-child
                                             :room-id room-id :sub-id id}))}}
@@ -3972,67 +3971,79 @@
         (open! trigger (.-left r) (.-bottom r))))))
 
 (defn- session-buffer-rows
-  "The buffers open for a session (xi.buffers; `:buffers` on the card, from
-   the lobby — live room or parked), listed under its card: one row per
-   buffer, kind icon and title, × to close it (for everyone; the list is
-   shared). A row navigates to the session and opens that buffer
-   (:route/navigate with :buffer-id). Shown for the session in view, and for
-   when its \"N buffers\" line was clicked (:web/sidebar-buffers-open, kept per
-   browser)."
+  "The buffers open for a session (`:buffers` on the card), listed under it: a
+   row navigates to the session on that buffer, × closes it for everyone. A
+   live room's sub-agents list here too (`:kind :subagent`,
+   xi.server.room-manager/session-buffers) with stop / dismiss."
   [dispatch! state {:keys [session-id buffers current? viewers]}]
   (let [room   (state/active-room state)
         active (when (and current? (= session-id (get-in room [:session :id])))
                  (get-in room [:ui :active-buffer]))]
     [:div {:class ["session-buffers"] :replicant/key (str "buffers-" session-id)}
-     (for [{:keys [id kind title]} buffers
-           :let [people (sb/room-people state (get viewers id))]]
-       [:button {:class ["session-buffer-row" (when (= id active) "session-buffer-row--active")]
+     (for [{:keys [id kind title status]} buffers
+           :let [sub?     (= :subagent kind)
+                 running? (and sub? (= :running status))
+                 people   (when-not sub? (sb/room-people state (get viewers id)))]]
+       [:button {:class ["session-buffer-row"
+                         (when (= id active) "session-buffer-row--active")
+                         (when sub? (str "session-buffer-row--sub-" (name (or status :running))))]
                  :replicant/key (str id)
-                 :title title
+                 :title (if sub?
+                          (str title " · " (get subagent-status-label status (name (or status :running))))
+                          title)
                  :on {:click (fn [^js e]
                                (.stopPropagation e)
                                (dispatch! {:type :route/navigate :page :chat
                                            :session-id session-id :buffer-id id}))}}
-        (icon/icon {:icon-name (buffer-icon kind) :size :sm})
+        (if running?
+          [:span {:class ["agent-status-spinner--sm"]}]
+          (icon/icon {:icon-name (buffer-icon kind) :size :sm}))
         [:span {:class ["session-buffer-title"]} title]
         ;; buffer presence: who else is on it
         (when (seq people)
           [:span {:class ["session-buffer-people"]} (avatar-stack people)])
         [:span {:class ["session-buffer-close"]
-                :role "button" :title "Close buffer"
+                :role "button"
+                :title (cond running? "Stop sub-agent"
+                             sub?     "Dismiss sub-agent"
+                             :else    "Close buffer")
                 :on {:click (fn [^js e]
                               (.stopPropagation e)
-                              (dispatch! {:type :session/buffer-close
-                                          :session-id session-id :buffer-id id}))}}
-         (icon/icon {:icon-name :x :size :sm})]])]))
+                              (dispatch! (cond running? {:type :session/subagent-stop
+                                                         :session-id session-id :sub-id id}
+                                               sub?     {:type :session/subagent-dismiss
+                                                         :session-id session-id :sub-id id}
+                                               :else    {:type :session/buffer-close
+                                                         :session-id session-id :buffer-id id})))}}
+         (icon/icon {:icon-name (if running? :circle-x :x) :size :sm})]])]))
 
 (defn- session-card
-  "Session row. Secondary actions (the extensions', hide from
-   Recent, delete) live in a ui.context-menu on the card: right-click,
-   long-press on touch (the framework's gesture runtime), or the ⋮ button.
-   A session with open buffers says so in its subline (\"3 buffers\", a
-   click unfolds them) and lists them under the card (session-buffer-rows)."
+  "Session row with a ui.context-menu of secondary actions (right-click,
+   long-press, or the ⋮ button); open buffers unfold under it
+   (session-buffer-rows)."
   [dispatch! state {:keys [session-id name cwd timestamp current? active? busy? has-dialog? error? unread? show-project? people buffers pinned?]
               :as card-data}]
-  (let [n-buffers (count buffers)
-        ;; unfolded while this browser toggled it open (never automatically)
-        buffers-open? (and (pos? n-buffers)
+  (let [n-rows    (count buffers)
+        n-subs    (count (filter #(= :subagent (:kind %)) buffers))
+        n-buffers (- n-rows n-subs)
+        rows-label (str/join " · "
+                             (remove nil?
+                                     [(when (pos? n-buffers)
+                                        (str n-buffers (if (= 1 n-buffers) " buffer" " buffers")))
+                                      (when (pos? n-subs)
+                                        (str n-subs (if (= 1 n-subs) " sub-agent" " sub-agents")))]))
+        buffers-open? (and (pos? n-rows)
                            (contains? (:web/sidebar-buffers-open state) session-id))
         card
   [:div {:class ["project-card"
                  (when has-dialog? "project-card--dialog")
                  (when current? "project-card--current")]
          :replicant/key (or session-id (str "card-" name))
-         ;; Decode the cached history on pointerdown so the click that
-         ;; follows (≈100ms later on touch) finds it ready.
          :on {:pointerdown (fn [_] (when session-id
                                      (dispatch! {:type :cache/prefetch
                                                  :session-id session-id})))
               :click (fn [_] (dispatch! {:type :route/navigate
                                          :page :chat :session-id session-id}))}}
-   ;; The chat icon is faded unless the session has a live room; its badge is
-   ;; the session's status dot (working > unread > live, see
-   ;; card-status-indicator).
    [:div {:class ["project-card-icon" "project-card-icon--badged"
                   (when-not (or active? has-dialog?) "project-card-icon--idle")]
           :title (cond busy?   "Working…"

@@ -107,7 +107,9 @@ back, so the research or review it does never fills the main chat.
 | `subagent_result` | The final output of a sub-agent, or a notice that it is still running. | Never |
 | `stop_subagent` | Stop one by id. | Never |
 
-`/subagents` shows them in the chat; the web client has a panel for them.
+`/subagents` shows them in the chat; the web client has a panel for them
+below the conversation and lists them in the sidebar with the chat's
+[buffers](web-client.md#buffers).
 The `subagent-confirm` default rule is what asks; see
 [Rules reference](rules-reference.md#default-bundles). When no client is
 attached to answer, the spawn is refused.

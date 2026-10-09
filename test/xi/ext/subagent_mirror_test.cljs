@@ -6,6 +6,7 @@
             [xi.core.state :as state]
             [xi.subagent :as subagent]
             [xi.ext.core :as ext]
+            [xi.ext.subagent :as sa-ext]
             [xi.ext.subagent.handlers :as h]
             [xi.client.subagents-buffer :as sab]
             [xi.tui.ansi :as ansi]
@@ -34,6 +35,32 @@
         te  ((:subagent/turn-end h/handlers) st1
              {:room-id "r1" :sub-id "sa-1" :aborted? false})]
     (is (= :done (child-status (:state te) "sa-1")))))
+
+(deftest reveal-expands-the-child-and-unfolds-the-panel
+  (let [st0 (-> (base-state)
+                (assoc-in [:rooms "r1" :ext :subagents :collapsed?] true))
+        st1 (:state ((:subagent/spawn h/handlers) st0
+                     {:room-id "r1" :sub-id "sa-1" :task "t" :prompt "t"}))
+        st2 (:state (h/reveal st1 {:room-id "r1" :sub-id "sa-1"}))]
+    (is (false? (get-in st2 [:rooms "r1" :ext :subagents :collapsed?])))
+    (is (true? (:expanded? (first (room-agents st2)))))
+    (is (= st2 (:state (h/reveal st2 {:room-id "r1" :sub-id "sa-1"})))
+        "idempotent: a second reveal keeps it expanded (no toggle)")
+    (is (nil? (h/reveal st1 {:room-id "r1" :sub-id "nope"})))))
+
+(deftest sidebar-rows-act-on-sub-agents-by-session
+  ;; roomless: the row names the session, the server finds the live room
+  (let [st   (-> (base-state)
+                 (assoc-in [:rooms "r1" :session :id] "s1")
+                 (assoc-in [:rooms "r1" :ext :subagents :agents] [{:id "sa-1" :status :running}]))
+        stop (get-in sa-ext/extension [:handlers :session/subagent-stop])
+        drop (get-in sa-ext/extension [:handlers :session/subagent-dismiss])]
+    (is (= [[:app/dispatch {:type :subagent/abort :room-id "r1" :sub-id "sa-1"}]]
+           (:effects (stop st {:session-id "s1" :sub-id "sa-1"}))))
+    (is (= [[:app/dispatch {:type :subagent/dismiss :room-id "r1" :sub-id "sa-1"}]]
+           (:effects (drop st {:session-id "s1" :sub-id "sa-1"}))))
+    (is (nil? (stop st {:session-id "nope" :sub-id "sa-1"})) "no live room: nothing to act on")
+    (is (= #{:session/subagent-stop :session/subagent-dismiss} (:roomless-events sa-ext/extension)))))
 
 ;; ── Client mirror path ───────────────────────────────────────────────────────
 

@@ -68,6 +68,26 @@
   (when (find-child st room-id sub-id)
     {:effects [[:subagent/abort {:sub-id sub-id}]]}))
 
+(defn- room-for-session
+  "The id of the live room on session `session-id`, or nil."
+  [st session-id]
+  (some (fn [[rid room]] (when (= session-id (get-in room [:session :id])) rid))
+        (:rooms st)))
+
+(defn- session-sub-handler
+  "A roomless handler re-dispatching the room-scoped `event-type`
+   (:subagent/abort or :subagent/dismiss) into the live room of the event's
+   :session-id. The web sidebar lists a room's sub-agents with its buffers
+   (xi.server.room-manager/session-buffers) and a row's button acts on one
+   from anywhere — but the server pins a client's room events to the room
+   it is in, so, like :session/buffer-close, the row names the session and
+   the server finds the room (its clients mirror the re-dispatch). No live
+   room: nothing to act on (sub-agents are room state)."
+  [event-type]
+  (fn [st {:keys [session-id sub-id]}]
+    (when-let [rid (room-for-session st session-id)]
+      {:effects [[:app/dispatch {:type event-type :room-id rid :sub-id sub-id}]]})))
+
 (defn- promote-sub
   "Open a sub-agent as a full chat. First open promotes it — the
    :subagent/promote! effect moves its transcript into a real session —
@@ -294,6 +314,9 @@
    :handlers         (assoc h/handlers
                             :room/close on-room-close
                             :subagent/abort abort-sub
+                            ;; the web sidebar's rows (roomless, by session)
+                            :session/subagent-stop    (session-sub-handler :subagent/abort)
+                            :session/subagent-dismiss (session-sub-handler :subagent/dismiss)
                             :subagent/promote promote-sub
                             ;; The web Explain button (xi.web.views tool-post).
                             :subagent/explain-call explain-call
@@ -301,6 +324,12 @@
                             ;; ext/merge-handlers — reseeds promoted stubs.
                             :session/resumed h/on-session-resumed)
    :fx               {:subagent/promote! promote-fx}
+   ;; The sidebar lists a room's sub-agents with its buffers
+   ;; (xi.server.room-manager/session-buffers on :lobby/state): refresh the
+   ;; lobby when one appears, finishes or goes.
+   :lobby-relevant   #{:subagent/spawn :subagent/turn-end :subagent/dismiss
+                       :subagent/promoted}
+   :roomless-events  #{:session/subagent-stop :session/subagent-dismiss}
    :commands         [{:name "subagents"
                        :description "View this room's background sub-agents"
                        :handler cmd-subagents}]})

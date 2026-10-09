@@ -274,6 +274,7 @@
   (testing "the session in view: switch now"
     (let [st (-> (state/initial-state)
                  (assoc-in [:rooms "r1"] (state/make-room "r1" {:session {:id "s1"}}))
+                 (assoc-in [:rooms "r1" :ui :buffers "file:a"] {:kind :file :title "a"})
                  (assoc :active-room "r1"))
           {:keys [state effects]} (nav st {:page :chat :session-id "s1" :buffer-id "file:a"})]
       (is (nil? (:web/pending-buffer state)))
@@ -281,3 +282,23 @@
                 effects))))
   (testing "no buffer: nothing stashed"
     (is (nil? (:web/pending-buffer (:state (nav {:page :chat :session-id "s1"})))))))
+
+(deftest buffer-open-event-routes-buffers-and-sub-agents
+  (let [room (-> (state/make-room "r1" {:session {:id "s1"}})
+                 (assoc-in [:ui :buffers "file:a"] {:kind :file :title "a"})
+                 (assoc-in [:ext :subagents :agents] [{:id "sa-1" :status :done}]))]
+    (is (= {:type :ui/buffer-switch :room-id "r1" :buffer-id "file:a"}
+           (router/buffer-open-event "r1" room "file:a")))
+    (is (= {:type :subagent/reveal :room-id "r1" :sub-id "sa-1"}
+           (router/buffer-open-event "r1" room "sa-1"))
+        "a sub-agent's id (a sidebar row) reveals it in the panel")
+    (is (nil? (router/buffer-open-event "r1" room "file:gone"))
+        "a stale row opens nothing")
+    (testing "with-buffer on the session in view uses it"
+      (let [st (-> (state/initial-state)
+                   (assoc-in [:rooms "r1"] room)
+                   (assoc :active-room "r1"))]
+        (is (has-dispatch? (:effects (nav st {:page :chat :session-id "s1" :buffer-id "sa-1"}))
+                           :subagent/reveal))
+        (is (not (has-dispatch? (:effects (nav st {:page :chat :session-id "s1" :buffer-id "file:gone"}))
+                                :ui/buffer-switch)))))))

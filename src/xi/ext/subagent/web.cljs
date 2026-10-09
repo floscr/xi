@@ -34,6 +34,31 @@
                                  :session-id session-id}]]}
       res)))
 
+(defn- forward
+  "Send a user-initiated event to the server, applying nothing here."
+  [_st ev]
+  (when-not (:remote? ev)
+    {:effects [[:ws/send ev]]}))
+
+(defn- reveal
+  "A sidebar / palette row of a sub-agent (xi.web.router/buffer-open-event):
+   expand it in the panel (h/reveal) and scroll its card into view once the
+   expanded card has rendered."
+  [st {:keys [sub-id] :as ev}]
+  (some-> (h/reveal st ev)
+          (assoc :effects [[:subagent/scroll-into-view {:sub-id sub-id}]])))
+
+(defn- scroll-into-view!
+  "Bring the card of sub-agent `sub-id` (`data-sub-id` on .subagent-card,
+   xi.web.views) into the timeline's view. Deferred a frame so the re-render
+   that expands it has happened."
+  [_ {:keys [sub-id]}]
+  (js/requestAnimationFrame
+   (fn []
+     (when-let [el (.querySelector js/document
+                                   (str ".subagent-card[data-sub-id=\"" sub-id "\"]"))]
+       (.scrollIntoView el #js {:block "nearest" :behavior "smooth"})))))
+
 (def extension
   {:id       ext-id
    :init     {:room {:agents [] :collapsed? false}}
@@ -55,8 +80,16 @@
                       (when-let [res (h/dismiss st ev)]
                         (cond-> res
                           (not (:remote? ev)) (assoc :effects [[:ws/send ev]]))))
+                    ;; A sidebar row's button (xi.web.views/session-buffer-rows):
+                    ;; roomless, by session — the server finds the live room
+                    ;; and re-dispatches the room event (xi.ext.subagent), which
+                    ;; mirrors back if this client is in that room.
+                    :session/subagent-stop    forward
+                    :session/subagent-dismiss forward
                     :subagent/promote promote
                     :subagent/promoted promoted
+                    ;; This client's own view of the panel (like toggle-child).
+                    :subagent/reveal reveal
                     ;; Explain button on a permission-gated tool block: the
                     ;; spawn needs the parent transcript path and runs
                     ;; server-side, so forward the click; the :subagent/spawn
@@ -65,5 +98,6 @@
                     (fn [_st ev]
                       (when-not (:remote? ev)
                         {:effects [[:ws/send ev]]})))
-   :fx       {:subagent/start    (fn [_ _] nil)
-              :subagent/promote! (fn [_ _] nil)}})
+   :fx       {:subagent/start            (fn [_ _] nil)
+              :subagent/promote!         (fn [_ _] nil)
+              :subagent/scroll-into-view scroll-into-view!}})

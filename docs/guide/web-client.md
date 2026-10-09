@@ -94,6 +94,13 @@ refreshes it in place.
   them; the browser remembers which you left open. The row of the buffer you
   are looking at is tinted. A row opens that chat on that buffer, so you can
   come back to the diff you were reading from anywhere.
+- **Sub-agents.** A chat's running or finished
+  [sub-agents](builtin-tools.md#sub-agents) list under its card with the
+  buffers ("2 buffers · 1 sub-agent"), a spinner on the ones still running.
+  A row opens the chat and unfolds that sub-agent in the Sub-agents panel.
+  The trailing button stops a running one or dismisses a finished one.
+  Sub-agents live with the chat's room: once the room closes they are gone
+  from the list.
 - **In the command palette** (Ctrl/Cmd+K), the Buffers group lists the
   current chat's buffers first, then every other session's.
 - **Who is where.** On a server with several users, a buffer row shows the

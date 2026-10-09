@@ -22,13 +22,13 @@
    clients attached."
   (:require [xi.buffers :as buffers]
             [xi.core.state :as state]
+            [xi.ext.subagent.handlers :as sa]
             [xi.user-state :as user-state]
             [xi.util :as util]))
 
 ;; ── Queries (pure) ───────────────────────────────────────────────────────────
 
 (defn clients-in-room
-  "Client-ids attached to room-id."
   [st room-id]
   (into []
         (keep (fn [[cid client]]
@@ -643,11 +643,22 @@
     {:state (update st :parked-buffers dissoc session-id)}))
 
 
+(defn subagent-summaries
+  "The lobby-sized rows of a room's background sub-agents in spawn order,
+   `[{:id :kind :subagent :title :status} …]`, Explain sub-agents excluded."
+  [room]
+  (into []
+        (keep (fn [{:keys [id label task status]}]
+                (when-not (sa/explain-sub? id)
+                  {:id     id
+                   :kind   :subagent
+                   :title  (or label task "sub-agent")
+                   :status status})))
+        (get-in room [:ext :subagents :agents])))
+
 (defn session-buffers
-  "Lobby-facing `{session-id [{:id :kind :title} …]}` of every session that
-   has buffers open: in a live room, or parked while no room hosts it. The
-   sidebar lists them under the session's card either way; opening one joins
-   the session (reviving the buffers) and shows it."
+  "Lobby-facing `{session-id [{:id :kind :title} …]}` of every session with
+   buffers open (live or parked); a live room's sub-agents follow its buffers."
   [st]
   (-> {}
       (into (keep (fn [[sid bufs]]
@@ -655,20 +666,16 @@
             (:parked-buffers st))
       (into (keep (fn [[_ room]]
                     (let [sid  (get-in room [:session :id])
-                          bufs (get-in room [:ui :buffers])]
-                      (when (and sid (seq bufs) (not (get-in room [:session :deleted?])))
-                        [sid (buffers/summaries bufs)]))))
+                          rows (into (buffers/summaries (get-in room [:ui :buffers]))
+                                     (subagent-summaries room))]
+                      (when (and sid (seq rows) (not (get-in room [:session :deleted?])))
+                        [sid rows]))))
             (:rooms st))))
 
 (defn reap-idle-clientless-rooms
-  "Close every room whose agent isn't running and which has no client
-   attached. The per-event cleanups (room-leave, client-disconnect-cleanup,
-   turn-end-room-cleanup) miss one case: a client switching directly between
-   rooms only re-attaches (:room/attach), so the room it left is never sent a
-   :room/leave and lingers idle + clientless. Chained onto :room/attach this
-   sweeps those orphans. Busy rooms and rooms with a pending dialog are
-   always spared — turn-end-room-cleanup reaps them once the turn ends (see
-   the pitfall note above)."
+  "Close every idle room with no client attached. Chained onto :room/attach: a
+   client switching rooms only re-attaches, so the room it left never gets a
+   :room/leave. Busy rooms and pending dialogs are spared."
   [st _ev]
   (let [closes (for [[room-id room] (:rooms st)
                      :when (and (empty? (clients-in-room st room-id))

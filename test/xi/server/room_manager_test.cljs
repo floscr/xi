@@ -534,6 +534,29 @@
         (is (empty? (get-in other [:rooms "r3" :ui :buffers])))
         (is (contains? (:parked-buffers other) "s1"))))))
 
+(deftest session-buffers-list-sub-agents
+  (let [sub   (fn [id status] {:id id :label (str "L " id) :task "t" :status status :history []})
+        st    (-> (state/initial-state {:mode :server})
+                  (apply-buffer-events
+                   {:type :room/create :room-id "r1" :room {:created 100 :cwd "/x" :session {:id "s1"}}}
+                   {:type :ui/buffer-set :room-id "r1" :buffer-id "file:a"
+                    :buffer {:kind :file :title "a" :text "…"} :event/ts 1})
+                  (assoc-in [:rooms "r1" :ext :subagents :agents]
+                            [(sub "sa-1" :running)
+                             (sub "explain-c1" :running)
+                             (assoc (sub "sa-2" :done) :label nil)]))]
+    (is (= {"s1" [{:id "file:a" :kind :file :title "a"}
+                  {:id "sa-1" :kind :subagent :title "L sa-1" :status :running}
+                  {:id "sa-2" :kind :subagent :title "t" :status :done}]}
+           (rm/session-buffers st))
+        "the room's sub-agents follow its buffers; the Explain button's stay out; no label falls back to the task")
+    (testing "a room with sub-agents and no buffers still lists"
+      (is (= ["sa-1" "sa-2"]
+             (map :id (get (rm/session-buffers (assoc-in st [:rooms "r1" :ui :buffers] {})) "s1")))))
+    (testing "closing the room parks the buffers only"
+      (is (= {"s1" [{:id "file:a" :kind :file :title "a"}]}
+             (rm/session-buffers (apply-buffer-events st {:type :room/close :room-id "r1"})))))))
+
 (deftest parked-buffers-edge-cases
   (testing "a room without buffers parks nothing"
     (let [st (apply-buffer-events (state/initial-state {:mode :server})
