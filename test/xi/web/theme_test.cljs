@@ -19,8 +19,8 @@
       (is (= "oklch(0.122 0.0107 285.0)" (get vars "--theme-sidebar-dark"))))
     (testing "every managed property has a value"
       (is (= (set theme/var-names) (set (keys vars))))
-      (is (= 54 (count theme/var-names))
-          "11 gray + 11 accent + 4 backgrounds + 16 sizes + 8 fonts + 4 radii"))))
+      (is (= 72 (count theme/var-names))
+          "11 gray + 11 accent + 4 backgrounds + 18 surfaces + 16 sizes + 8 fonts + 4 radii"))))
 
 (deftest hex-to-oklch
   (let [[l c h] (theme/hex->oklch "#ff0000")]
@@ -29,6 +29,20 @@
     (is (< 29.2 h 29.3)))
   (is (= [1 0 0] (mapv #(js/Math.round %) (theme/hex->oklch "#ffffff"))) "white: no hue noise")
   (is (= [0 0 0] (theme/hex->oklch "#000000"))))
+
+(deftest surfaces-follow-the-page-color
+  (let [{:keys [light dark]} (theme/surfaces {:bg-light "#ffffff" :bg-dark "oklch(0.3 0.1 25)"})]
+    (is (= "oklch(0.345 0.1000 25.0)" (get dark "bg-1")) "a dark page: lighter, in its hue and chroma")
+    (is (= "oklch(0.685 0.1000 25.0)" (get dark "border-2")))
+    (is (= "oklch(0.955 0.0000 0.0)" (get light "bg-1")) "a light page: darker")
+    (is (= "oklch(0.850 0.0350 25.0)" (get dark "fg-1"))
+        "text: a fixed lightness for contrast, a share of the page's chroma")
+    (is (= "oklch(0.145 0.0000 0.0)" (get light "fg-0")) "dark text on a light page"))
+  (is (= "oklch(0.900 0.0000 0.0)"
+         (get-in (theme/surfaces {:bg-dark "#ffffff"}) [:dark "bg-2"]))
+      "a light color in dark mode still steps toward the middle")
+  (is (= "oklch(0.345 0.1000 25.0)"
+         (get (theme/css-vars {:bg-dark "oklch(0.3 0.1 25)"}) "--theme-bg-1-dark"))))
 
 (deftest backgrounds-follow-the-color-and-the-shift
   (let [{:keys [light dark]} (theme/backgrounds {:bg-light "#fff4e6" :bg-dark "#000000"

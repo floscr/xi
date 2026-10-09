@@ -778,7 +778,7 @@ body {
 }
 
 .post--user .post-body {
-  background-color: #7c3aed;
+  background-color: var(--accent-600);
   color: #fff;
   border-radius: var(--radius-lg);
   padding: var(--size-3) var(--size-4);
@@ -803,7 +803,7 @@ body {
 
 /* Collapsed skill/command-generated prompt: a one-line user bubble (chevron +
    label) that expands on press to reveal the full generated text. Reuses the
-   purple .post-body bubble so it still reads as a user message. */
+   accent .post-body bubble so it still reads as a user message. */
 .user-collapse {
   cursor: pointer;
 }
@@ -921,7 +921,7 @@ body {
 }
 
 .post--editing .post-body {
-  background-color: #7c3aed;
+  background-color: var(--accent-600);
   color: #fff;
   border-radius: var(--radius-lg);
   padding: var(--size-2) var(--size-2);
@@ -2901,22 +2901,51 @@ code a:hover,
 /* Light mode: a cool off-white sidebar panel (white cards on it) beside a
    white chat surface. Dark mode keeps the regular dark surfaces. A custom
    theme (xi.web.theme) replaces both per mode through its --theme-bg-* /
-   --theme-sidebar-* properties on <html>. */
+   --theme-sidebar-* properties on <html>, and the framework's surface,
+   border and text tokens through --theme-bg-N-* / --theme-border-N-* /
+   --theme-fg-N-* (the fallbacks are theme.css's own mapping). */
 :root {
   --sidebar-bg: var(--theme-sidebar-light, #f6f6f9);
   --sidebar-card-bg: var(--theme-bg-light, #fff);
   --chat-bg: var(--theme-bg-light, #fff);
+  --bg-0: var(--theme-bg-0-light, var(--gray-50));
+  --bg-1: var(--theme-bg-1-light, var(--gray-100));
+  --bg-2: var(--theme-bg-2-light, var(--gray-200));
+  --border-0: 1px solid var(--theme-border-0-light, var(--gray-200));
+  --border-1: 1px solid var(--theme-border-1-light, var(--gray-300));
+  --border-2: 1px solid var(--theme-border-2-light, var(--gray-500));
+  --fg-0: var(--theme-fg-0-light, var(--gray-950));
+  --fg-1: var(--theme-fg-1-light, var(--gray-600));
+  --fg-2: var(--theme-fg-2-light, var(--gray-400));
 }
 [data-theme="dark"] {
   --sidebar-bg: var(--theme-sidebar-dark, var(--bg-0));
   --sidebar-card-bg: var(--bg-1);
   --chat-bg: var(--theme-bg-dark, var(--bg-0));
+  --bg-0: var(--theme-bg-0-dark, var(--gray-950));
+  --bg-1: var(--theme-bg-1-dark, var(--gray-900));
+  --bg-2: var(--theme-bg-2-dark, var(--gray-800));
+  --border-0: 1px solid var(--theme-border-0-dark, var(--gray-800));
+  --border-1: 1px solid var(--theme-border-1-dark, var(--gray-700));
+  --border-2: 1px solid var(--theme-border-2-dark, var(--gray-500));
+  --fg-0: var(--theme-fg-0-dark, var(--gray-50));
+  --fg-1: var(--theme-fg-1-dark, var(--gray-300));
+  --fg-2: var(--theme-fg-2-dark, var(--gray-500));
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --sidebar-bg: var(--theme-sidebar-dark, var(--bg-0));
     --sidebar-card-bg: var(--bg-1);
     --chat-bg: var(--theme-bg-dark, var(--bg-0));
+    --bg-0: var(--theme-bg-0-dark, var(--gray-950));
+    --bg-1: var(--theme-bg-1-dark, var(--gray-900));
+    --bg-2: var(--theme-bg-2-dark, var(--gray-800));
+    --border-0: 1px solid var(--theme-border-0-dark, var(--gray-800));
+    --border-1: 1px solid var(--theme-border-1-dark, var(--gray-700));
+    --border-2: 1px solid var(--theme-border-2-dark, var(--gray-500));
+    --fg-0: var(--theme-fg-0-dark, var(--gray-50));
+    --fg-1: var(--theme-fg-1-dark, var(--gray-300));
+    --fg-2: var(--theme-fg-2-dark, var(--gray-500));
   }
 }
 /* Re-point --bg-0 inside the main column so everything painted with it

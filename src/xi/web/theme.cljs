@@ -151,15 +151,56 @@
     {:light (pair bg-light)
      :dark  (pair bg-dark)}))
 
+(def ^:private surface-steps
+  "OKLCH lightness distance of each semantic surface token (theme.css's
+   --bg-* / --border-*) from the page color, per mode: lighter on a dark
+   page, darker on a light one. With the default backgrounds they land on
+   the gray steps theme.css maps those tokens to."
+  {:light {"bg-0" 0.025 "bg-1" 0.045 "bg-2" 0.085
+           "border-0" 0.085 "border-1" 0.15 "border-2" 0.47}
+   :dark  {"bg-0" 0 "bg-1" 0.045 "bg-2" 0.1
+           "border-0" 0.1 "border-1" 0.205 "border-2" 0.385}})
+
+(def ^:private text-steps
+  "[lightness chroma-share] of each text token (theme.css's --fg-*) on a
+   dark or a light page: theme.css's gray step lightness, so text keeps its
+   contrast, and a share of the page color's chroma."
+  {:on-dark  {"fg-0" [0.975 0.15] "fg-1" [0.85 0.35] "fg-2" [0.53 0.5]}
+   :on-light {"fg-0" [0.145 0.15] "fg-1" [0.425 0.35] "fg-2" [0.69 0.5]}})
+
+(defn surfaces
+  "{:light {token oklch()} :dark {…}} — every surface, border and text token
+   of each mode in the page color's hue: surfaces and borders in its chroma,
+   `surface-steps` away in lightness; text per `text-steps`."
+  [params]
+  (let [p (merge defaults params)]
+    (into {}
+          (map (fn [[mode color-key]]
+                 (let [[l c h] (color->oklch (get p color-key))
+                       dark? (< l 0.5)
+                       dir   (if dark? 1 -1)]
+                   [mode (into (into {}
+                                     (map (fn [[token step]]
+                                            [token (oklch (clamp01 (+ l (* dir step))) c h)]))
+                                     (surface-steps mode))
+                               (map (fn [[token [tl share]]]
+                                      [token (oklch tl (* c share) h)]))
+                               (text-steps (if dark? :on-dark :on-light)))])))
+          {:light :bg-light :dark :bg-dark})))
+
 (defn- background-vars
-  "Per-mode properties; style.css picks the pair of the current mode for
-   --chat-bg / --sidebar-bg (inline properties cannot differ by mode)."
+  "Per-mode properties (inline properties cannot differ by mode); style.css
+   picks the current mode's for --chat-bg / --sidebar-bg and the --bg-* /
+   --border-* tokens: --theme-bg-1-dark, --theme-border-0-light, …."
   [params]
   (let [{[light-bg light-sb] :light [dark-bg dark-sb] :dark} (backgrounds params)]
-    {"--theme-bg-light"      light-bg
-     "--theme-sidebar-light" light-sb
-     "--theme-bg-dark"       dark-bg
-     "--theme-sidebar-dark"  dark-sb}))
+    (into {"--theme-bg-light"      light-bg
+           "--theme-sidebar-light" light-sb
+           "--theme-bg-dark"       dark-bg
+           "--theme-sidebar-dark"  dark-sb}
+          (for [[mode tokens] (surfaces params)
+                [token color] tokens]
+            [(str "--theme-" token "-" (name mode)) color]))))
 
 (defn css-vars
   "The CSS custom properties `params` set on <html>, name → value; nil for
