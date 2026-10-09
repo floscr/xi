@@ -965,11 +965,33 @@
    :overloaded :zap
    :network    :circle-x})
 
+(def ^:private model-switchable-errors
+  "Error kinds another model can get around: their card offers Switch model."
+  #{:rate-limit :billing :overloaded})
+
+(defn- error-retry-target
+  "The user message an :error entry at `p` failed to answer: the nearest
+   earlier entry, skipping other errors, when it is a :user one → the
+   :bubble/retry payload {:index :text :images}; nil otherwise."
+  [entries p]
+  (when (= :error (:kind (nth entries p nil)))
+    (when-let [i (->> (range (dec p) -1 -1)
+                      (remove #(= :error (:kind (nth entries %))))
+                      first)]
+      (let [e (nth entries i)]
+        (when (= :user (:kind e))
+          {:index i :text (or (:text e) "") :images (:images e)})))))
+
 (defn- error-card
   "Plain-language card for a recognised agent error (xi.error-info), raw
-   error behind a details toggle. A rate-limit card carries a Continue button."
-  [dispatch! {:keys [kind title subtitle resets-at windows raw edn? room-id]}]
-  (let [mins (error-info/minutes-until resets-at (.now js/Date))]
+   error behind a details toggle. Answering a user message (`retry`, see
+   error-retry-target) it offers Retry; otherwise a rate-limit card offers
+   Continue. Rate-limit, billing and overload cards add Switch model."
+  [dispatch! {:keys [kind title subtitle resets-at windows raw edn? room-id retry]}]
+  (let [mins      (error-info/minutes-until resets-at (.now js/Date))
+        continue? (and (nil? retry) (= :rate-limit kind))
+        lead?     (or (some? retry) continue?)
+        switch?   (contains? model-switchable-errors kind)]
     [:div {:class ["post" "post--assistant"]}
      [:div {:class ["error-card" (str "error-card--" (name kind))]}
       [:div {:class ["error-card-head"]}
@@ -990,14 +1012,26 @@
          [:div {:class ["error-card-meter-labels"]}
           (for [{:keys [label pct]} windows]
             [:span {:replicant/key label} label " " [:b (str pct "%")]])]])
-      (when (and room-id (= :rate-limit kind))
+      (when (and room-id (or lead? switch?))
         [:div {:class ["error-card-actions"]}
-         (button/button
-          {:variant :primary :size :sm :class "error-card-continue"
-           :on-click (fn [_] (dispatch! {:type :input/submit
-                                         :room-id room-id
-                                         :text "continue"}))}
-          "Continue")])
+         (when retry
+           (button/button
+            {:variant :primary :size :sm :class "error-card-primary"
+             :on-click (fn [_] (dispatch! (assoc retry :type :bubble/retry)))}
+            "Retry"))
+         (when continue?
+           (button/button
+            {:variant :primary :size :sm :class "error-card-primary"
+             :on-click (fn [_] (dispatch! {:type :input/submit
+                                           :room-id room-id
+                                           :text "continue"}))}
+            "Continue"))
+         (when switch?
+           (button/button
+            {:variant (if lead? :ghost :primary) :size :sm
+             :class (if lead? "error-card-secondary" "error-card-primary")
+             :on-click (fn [_] (dispatch! {:type :palette/open-models}))}
+            "Switch model"))])
       [:details {:class ["error-card-details"]}
        [:summary {:class ["error-card-details-toggle"]}
         [:span {:class ["tool-call-toggle-icon"]}
@@ -1132,7 +1166,8 @@
     (let [msg (or (:message (:error entry)) (pr-str (:error entry)))]
       (when-not (str/includes? (str msg) "null is not an object")
         (if-let [info (error-info/describe (:error entry))]
-          (error-card dispatch! (assoc info :room-id (:room-id entry)))
+          (error-card dispatch! (assoc info :room-id (:room-id entry)
+                                            :retry (:retry entry)))
           [:div {:class ["post" "post--assistant"]}
            [:div {:class ["post-content" "error-text"]} (str "[Error] " msg)]])))
 
@@ -3349,7 +3384,8 @@
                                editing? (and (= :user (:kind entry)) (= p (:index editing)))
                                resolved (resolved-by-tool (:id entry))
                                explanation (when tool?
-                                             (sa/find-explain agents (:id entry)))]
+                                             (sa/find-explain agents (:id entry)))
+                               retry    (error-retry-target entries p)]
                            (memo-timeline-items
                             entry
                             ;; The memo ctx; nil for the post with the pending ask
@@ -3359,7 +3395,7 @@
                                (when tool?
                                  (tool-views/inputs (util/strip-mcp-prefix (:tool entry)) (:ext room)))
                                md-code? (when editing? [(:text editing)]) resolved
-                               explanation])
+                               explanation retry])
                             (fn []
                               (when-let [post (entry->post
                                                dispatch!
@@ -3387,7 +3423,9 @@
                                                  resolved
                                                  (assoc :resolved-permission resolved)
                                                  explanation
-                                                 (assoc :explanation explanation)))]
+                                                 (assoc :explanation explanation)
+                                                 retry
+                                                 (assoc :retry retry)))]
                                 [{:key (str "h-" p)
                                   :group? groupable?
                                   :collapsed? collapsed?

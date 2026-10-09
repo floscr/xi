@@ -1232,15 +1232,22 @@ body {
   color: var(--error-fg-2);
 }
 .error-card-meter-labels b { color: var(--error-fg-0); font-weight: 600; }
-.error-card-actions { margin-top: var(--size-3); }
-/* Continue: solid danger-hue button instead of the purple primary */
-.error-card .error-card-continue {
+.error-card-actions { margin-top: var(--size-3); display: flex; gap: var(--size-2); flex-wrap: wrap; }
+/* Solid danger-hue button instead of the purple primary */
+.error-card .error-card-primary {
   background: var(--danger);
   border-color: transparent;
   color: oklch(from var(--danger) 0.98 0.01 h);
 }
-.error-card .error-card-continue:hover {
+.error-card .error-card-primary:hover {
   background: oklch(from var(--danger) calc(l - 0.06) c h);
+}
+.error-card .error-card-secondary {
+  border: 1px solid oklch(from var(--danger) l c h / 0.4);
+  color: var(--error-fg-0);
+}
+.error-card .error-card-secondary:hover {
+  background: oklch(from var(--danger) l c h / 0.08);
 }
 .error-card-details-toggle {
   display: flex; align-items: center; gap: var(--size-1);

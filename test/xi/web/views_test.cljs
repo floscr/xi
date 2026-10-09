@@ -119,3 +119,18 @@
       (is (= [[false false "(def a 1)\n"] [false true "(spit p 1)"]
               [false false "\n(cp a b)"]]
              (views/code-block-segments text nil [[10 20]]))))))
+
+;; ── error-retry-target (Retry on an error card) ─────────────────────────────
+
+(deftest error-retry-target-finds-the-unanswered-user-message
+  (let [target @#'views/error-retry-target
+        err    {:kind :error :error {:message "requires usage credits"}}]
+    (testing "an error right after a user message retries it"
+      (is (= {:index 1 :text "/commit" :images nil}
+             (target [{:kind :text :text "a"} {:kind :user :text "/commit"} err] 2))))
+    (testing "earlier errors in a row are skipped"
+      (is (= 0 (:index (target [{:kind :user :text "hi"} err err] 2)))))
+    (testing "no retry after assistant output, or for non-error entries"
+      (is (nil? (target [{:kind :user :text "hi"} {:kind :text :text "ok"} err] 2)))
+      (is (nil? (target [{:kind :user :text "hi"} {:kind :text :text "ok"}] 1)))
+      (is (nil? (target [err] 0))))))
