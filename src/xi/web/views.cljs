@@ -4900,15 +4900,37 @@
       (apply cmd/command-group {:heading heading} items))
     [:div {:class ["command-empty"]} "No open buffers"]))
 
+(defn- session-edited-files
+  "{:cwd :files} — the active chat's cwd and the cwd-relative paths its edit
+   tools touched under it, newest first (xi.util/history-edit-paths). Reads
+   the room's history, else the :web/cache snapshot, like chat-history."
+  [state]
+  (let [room   (state/active-room state)
+        cached (get-in state [:web/cache (get-in state [:web/route :session-id])])
+        cwd    (or (:cwd room) (:cwd cached))
+        hist   (or (seq (:history room)) (:history cached))]
+    {:cwd   cwd
+     :files (if cwd
+              (->> (util/history-edit-paths hist)
+                   reverse
+                   (keep #(util/relative-under cwd %))
+                   distinct
+                   vec)
+              [])}))
+
 (defn- palette-file-finder-page
   "Fuzzy file finder as a palette sub-page: the palette input is the query
    (:file-finder/input), ranked client-side over the preloaded file list. Rows
    carry :value = the live query so ui-runtime's substring filter never
    re-hides a match. :action is :open (view in the :file tab, path resolved
    server-side against the tree's cwd) or :insert (absolute path into the
-   draft)."
-  [state dispatch! {:keys [action]}]
-  (let [{:keys [cwd files error]} (:web/file-tree state)
+   draft). :scope :edited lists the chat's session-edited files instead of
+   the project tree."
+  [state dispatch! {:keys [action scope]}]
+  (let [edited? (= :edited scope)
+        {:keys [cwd files error]} (if edited?
+                                    (session-edited-files state)
+                                    (:web/file-tree state))
         query (or (:web/file-finder-query state) "")
         dkey  (draft-key state)
         select (fn [rel]
@@ -4916,14 +4938,19 @@
                    :insert {:type :projects/picker-insert :path (str cwd "/" rel) :draft-key dkey}
                    {:type :files/open :path rel :cwd cwd}))]
     (cond
-      (nil? (:web/file-tree state)) [:div {:class ["command-loading"]} (spinner)]
+      (and (not edited?) (nil? (:web/file-tree state)))
+      [:div {:class ["command-loading"]} (spinner)]
       error [:div {:class ["command-empty"]} error]
-      (empty? files) [:div {:class ["command-empty"]} "No files"]
+      (empty? files) [:div {:class ["command-empty"]}
+                      (if edited? "No files edited in this chat" "No files")]
       :else
       (let [ranked (fuzzy/rank query files {:limit 50})]
         (if (empty? ranked)
           [:div {:class ["command-empty"]} "No matching files"]
-          (apply cmd/command-group {:heading (if (= action :insert) "Insert file path" "Files")}
+          (apply cmd/command-group {:heading (cond
+                                               (= action :insert) "Insert file path"
+                                               edited?            "Edited in this chat"
+                                               :else              "Files")}
             (for [rel ranked]
               (cmd/command-item
                {:icon :file-text
@@ -5030,7 +5057,9 @@
                                      search-page? (if names-only?
                                                     "Search session names…"
                                                     "Search session text…")
-                                     finder-page? "Find file…"
+                                     finder-page? (if (= :edited (:scope palette-page))
+                                                    "Find edited file…"
+                                                    "Find file…")
                                      buffers-page? "Switch buffer…"
                                      projects-page? "Find project…"
                                      (= :theme (:kind palette-page)) "Switch color theme…"
@@ -5145,6 +5174,13 @@
                                        :on-click (fn [_] (dispatch! event))}
                          state {:event event})
                        "Find file…")))
+         (and room (seq (:files (session-edited-files state))))
+         (conj (let [event {:type :palette/open-file-finder :scope :edited}]
+                 (cmd/command-item
+                  (with-shortcut {:icon :edit
+                                  :on-click (fn [_] (dispatch! event))}
+                    state {:event event})
+                  "Find edited file…")))
          :always (into (for [item (concat (nav-items-for state :palette)
                                           (map with-default-icon (palette-items/items state)))]
                          (cmd/command-item (with-shortcut {:icon (:icon item)

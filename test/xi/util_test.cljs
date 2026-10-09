@@ -177,6 +177,34 @@
   (testing "other MCP server prefixes are also stripped"
     (is (= "list_files" (util/strip-mcp-prefix "mcp__other-server__list_files")))))
 
+;; ── history-edit-paths / relative-under ──
+
+(deftest history-edit-paths-collects-edit-tools
+  (testing "edit/write calls contribute their path argument once, in order; reads and prefixes don't matter"
+    (is (= ["/p/a.clj" "b.clj" "c.md"]
+           (util/history-edit-paths
+            [{:kind :tool-call :tool "Read" :arguments {:file_path "/p/x.clj"}}
+             {:kind :tool-call :tool "mcp__xi-tools__edit" :arguments {:path "/p/a.clj"}}
+             {:kind :text :text "…"}
+             {:kind :tool-call :tool "Write" :arguments {:file_path "b.clj"}}
+             {:kind :tool-call :tool "clj_replace" :arguments {:file "c.md"}}
+             {:kind :tool-call :tool "edit" :arguments {:path "/p/a.clj"}}]))))
+  (testing "empty and nil histories"
+    (is (= [] (util/history-edit-paths nil)))
+    (is (= [] (util/history-edit-paths [])))))
+
+(deftest relative-under-strips-dir-prefix
+  (is (= "src/a.clj" (util/relative-under "/p" "/p/src/a.clj")))
+  (is (= "src/a.clj" (util/relative-under "/p/" "/p/src/a.clj")))
+  (is (= "src/a.clj" (util/relative-under "/p" "./src/a.clj")))
+  (is (= "src/a.clj" (util/relative-under "/p" "src/a.clj"))))
+
+(deftest relative-under-rejects-outside-paths
+  (is (nil? (util/relative-under "/p" "/q/a.clj")))
+  (is (nil? (util/relative-under "/p" "/pq/a.clj")))
+  (is (nil? (util/relative-under "/p" "../a.clj")))
+  (is (nil? (util/relative-under "/p" ".."))))
+
 ;; ── session-title ──
 
 (deftest session-title-plain

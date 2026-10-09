@@ -185,6 +185,49 @@
       n)
     n))
 
+;; ── Session edits ──
+;; Pure history reads shared by xi.fx (commit flow, git lock) and the web
+;; client's edited-files finder.
+
+(def edit-tool-names
+  "Stripped, lower-cased names of the tools that mutate files, clj-surgeon's included."
+  #{"edit" "write" "multiedit" "notebookedit"
+    "clj_replace" "clj_extract" "clj_fix_declares"
+    "clj_mv" "clj_fix_parens" "clj_rename_ns"})
+
+(defn edit-tool-call?
+  "True when a history entry is a file-mutating tool call, tolerant of the
+   mcp__ prefix and casing."
+  [{:keys [kind tool]}]
+  (and (= :tool-call kind)
+       (boolean (edit-tool-names (some-> tool strip-mcp-prefix str/lower-case)))))
+
+(defn history-edit-paths
+  "Path arguments of the file-mutating tool calls in a room's history, as the
+   tools received them (absolute or cwd-relative), distinct, in history order."
+  [history]
+  (->> history
+       (filter edit-tool-call?)
+       (keep (fn [{:keys [arguments]}]
+               (or (:path arguments) (:file_path arguments) (:file arguments))))
+       distinct
+       vec))
+
+(defn relative-under
+  "`path` relative to `dir` by string prefix alone (no filesystem, so it runs
+   in the browser): strips a leading `dir/` or `./`. nil for a path outside
+   `dir` — absolute elsewhere or climbing out with `..`."
+  [dir path]
+  (let [dir (str/replace dir #"/+$" "")
+        rel (cond
+              (str/starts-with? path (str dir "/")) (subs path (inc (count dir)))
+              (str/starts-with? path "./")          (subs path 2)
+              :else                                 path)]
+    (when-not (or (str/starts-with? rel "/")
+                  (= rel "..")
+                  (str/starts-with? rel "../"))
+      rel)))
+
 (def ^:private collapse-marker-re #"^<!--xi:collapse=(.*?)-->\n?")
 
 (defn with-collapse-marker

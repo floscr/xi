@@ -1444,17 +1444,20 @@
           ;; draft). :in-dialog? (Tab from the project picker) keeps the dialog
           ;; open, so the one-shot drilling flag must not be set.
           :palette/open-file-finder
-          (fn [st {:keys [cwd action in-dialog?]}]
+          (fn [st {:keys [cwd action scope in-dialog?]}]
             (let [cwd (or cwd (view-cwd st))]
               {:state (-> st
-                          (assoc :web/palette-page {:kind :file-finder :action (or action :open)}
+                          (assoc :web/palette-page {:kind :file-finder :action (or action :open)
+                                                    :scope scope}
                                  :web/palette-open? true
                                  :web/file-finder-query "")
                           (cond-> (not in-dialog?) (assoc :web/palette-drilling? true))
                           (dissoc :web/file-tree))
-               :effects [[:ws/send {:type :files/web-tree :cwd cwd}]
-                         [:palette/reset-filter nil]
-                         [:palette/reopen nil]]}))
+               ;; :scope :edited lists the room's own edits from its history;
+               ;; no tree to fetch.
+               :effects (into (if (= scope :edited) [] [[:ws/send {:type :files/web-tree :cwd cwd}]])
+                              [[:palette/reset-filter nil]
+                               [:palette/reopen nil]])}))
           :files/web-tree-result (fn [st {:keys [cwd files error]}]
                                    {:state (assoc st :web/file-tree
                                                   {:cwd cwd :files (or files []) :error error})})
@@ -2487,6 +2490,9 @@
   (keymap/register-action! {:id :sessions/prune
                             :run (fn [st dispatch! _] (prune-all! st dispatch!))})
   (keymap/register-action! {:id :files/find :event {:type :palette/open-file-finder}})
+  (keymap/register-action! {:id :files/find-edited
+                            :when (fn [st] (some? (:id (state/active-room st))))
+                            :event {:type :palette/open-file-finder :scope :edited}})
   (keymap/register-action! {:id :buffers/switch :event {:type :palette/open-buffers}})
   (keymap/register-action! {:id :palette/open :event {:type :palette/open}})
   (keymap/register-action! {:id :projects/pick :event {:type :palette/open-projects :action :drill}})
