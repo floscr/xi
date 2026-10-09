@@ -211,7 +211,7 @@
 (defn- connection-status [st {:keys [connected?]}]
   {:state (assoc st :web/connected? connected?)})
 
-(defn room-joined-from-cache
+(defn- room-joined*
   ":room/joined, splicing a cache-elided history back in. With a matching
    fingerprint the server sends :history-base {:hash :count} plus only the
    newer :history-tail (xi.server.room-manager/joined-payload); the base is
@@ -231,6 +231,12 @@
                                                    base))))
         (-> (ws-transport/room-joined st (assoc ev :room (assoc room :history (or base []))))
             (assoc :effects [[:ws/send {:type :room/join :target room-id}]]))))))
+
+(defn room-joined-from-cache
+  "room-joined*, shown on the view this client last had the session on
+   (router/restore-view) instead of the transport's chat."
+  [st {:keys [room-id] :as ev}]
+  (update (room-joined* st ev) :state #(router/restore-view st % room-id)))
 
 (defn- room-left-web
   "The transport's :room/left, plus navigating home when the viewed room was

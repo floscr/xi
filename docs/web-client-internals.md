@@ -225,6 +225,7 @@ Never sent over the wire:
 | `:web/join-seq`, `:web/join-burst`, `:web/pending-join` | join pacing during a sidebar walk (`xi.web.router`): the open burst's seq and the join it deferred |
 | `:web/pending-submit` | message stashed until `:room/joined` |
 | `:web/pending-buffer` | `{:session-id :buffer-id}` a sidebar / palette buffer row asked to open, applied on `:room/joined` |
+| `:web/session-views` | session id → the buffer (or `:chat`) this client left it on, set on navigating away and restored on `:room/joined` (`xi.web.router/restore-view`) |
 | `:web/sidebar-buffers-open` | session ids whose buffer rows are unfolded; this browser's own, cached in localStorage (`xi/sidebar-buffers-open`) |
 | `:web/connected?` | transport status |
 | `:web/nav-items` | extension nav entries, stored at init |

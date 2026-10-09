@@ -352,6 +352,36 @@
   (testing "no buffer: nothing stashed"
     (is (nil? (:web/pending-buffer (:state (nav {:page :chat :session-id "s1"})))))))
 
+(deftest session-view-survives-a-switch
+  (let [room (-> (state/make-room "r1" {:session {:id "s1"}})
+                 (assoc-in [:ui :buffers "diff:session-edits"] {:kind :diff :title "d"}))
+        on   (fn [view] (-> (state/initial-state)
+                            (assoc-in [:rooms "r1"] (assoc-in room [:ui :active-buffer] view))
+                            (assoc :active-room "r1")))
+        ;; Leave s1 for s2, then s1 joins again as room r9 on the chat.
+        back (fn [view]
+               (let [left (:state (nav (on view) {:page :chat :session-id "s2"}))
+                     st   (assoc-in left [:rooms "r9"]
+                                    (-> (assoc room :id "r9")
+                                        (assoc-in [:ui :active-buffer] :chat)))]
+                 (get-in (router/restore-view left st "r9") [:rooms "r9" :ui :active-buffer])))]
+    (is (= "diff:session-edits" (back "diff:session-edits")))
+    (is (= :chat (back :chat)) "escaped back to the chat: stays on the chat")
+    (testing "a buffer closed since: the chat"
+      (let [left (:state (nav (on "file:gone") {:page :chat :session-id "s2"}))
+            st   (assoc-in left [:rooms "r9"] (assoc room :id "r9"))]
+        (is (= :chat (get-in (router/restore-view left st "r9")
+                             [:rooms "r9" :ui :active-buffer])))))
+    (testing "a re-join of the room in view keeps its view"
+      (let [prev (on "diff:session-edits")
+            st   (assoc-in prev [:rooms "r1" :ui :active-buffer] :chat)]
+        (is (= "diff:session-edits"
+               (get-in (router/restore-view prev st "r1") [:rooms "r1" :ui :active-buffer])))))
+    (testing ":buffer-id :chat on the session in view shows the chat"
+      (is (some #(= % [:app/dispatch {:type :ui/buffer-switch :room-id "r1" :buffer-id :chat}])
+                (:effects (nav (on "diff:session-edits")
+                               {:page :chat :session-id "s1" :buffer-id :chat})))))))
+
 (deftest buffer-open-event-routes-buffers-and-sub-agents
   (let [room (-> (state/make-room "r1" {:session {:id "s1"}})
                  (assoc-in [:ui :buffers "file:a"] {:kind :file :title "a"})

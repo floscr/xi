@@ -3618,8 +3618,11 @@
          :on {:pointerdown (fn [_] (when session-id
                                      (dispatch! {:type :cache/prefetch
                                                  :session-id session-id})))
-              :click (fn [_] (dispatch! {:type :route/navigate
-                                         :page :chat :session-id session-id}))}}
+              ;; The chat in view: back from a buffer to its chat. Another
+              ;; chat opens on its last view (router/restore-view).
+              :click (fn [_] (dispatch! (cond-> {:type :route/navigate
+                                                 :page :chat :session-id session-id}
+                                          current? (assoc :buffer-id :chat))))}}
    [:div {:class ["project-card-icon" "project-card-icon--badged"
                   (when-not (or active? has-dialog?) "project-card-icon--idle")]
           :title (cond busy?   "Working…"

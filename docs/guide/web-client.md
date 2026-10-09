@@ -113,7 +113,10 @@ refreshes it in place.
   buffers"). Click the count to unfold the rows under the card, again to fold
   them; the browser remembers which you left open. The row of the buffer you
   are looking at is tinted. A row opens that chat on that buffer, so you can
-  come back to the diff you were reading from anywhere.
+  come back to the diff you were reading from anywhere. The chat's own card
+  opens it on the view you left it on (the chat after `Esc`, else the
+  buffer); on the chat you are in, it goes back to the chat. `Alt+j` /
+  `Alt+k` enter a chat on its card, then step through its buffer rows.
 - **Sub-agents.** A chat's running or finished
   [sub-agents](builtin-tools.md#sub-agents) list under its card with the
   buffers ("2 buffers · 1 sub-agent"), a spinner on the ones still running.

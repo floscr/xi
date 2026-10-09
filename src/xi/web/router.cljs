@@ -241,6 +241,10 @@
                  ;; the user left open shut from under them.
                  (not already?)
                  (assoc :web/sidebar-open? false)
+                 ;; The view we leave the chat on, for restore-view on return.
+                 (and active-sid (not already?))
+                 (assoc-in [:web/session-views active-sid]
+                           (get-in active-room [:ui :active-buffer] :chat))
                  ;; Leaving a chat we were viewing: remember the session so the
                  ;; next fresh count marks it read (the user saw responses that
                  ;; landed while attached, before counts refreshed). See
@@ -289,15 +293,30 @@
 
 (defn buffer-open-event
   "The client-local event that shows row `buffer-id` of `room`:
-   :ui/buffer-switch for a buffer, :subagent/reveal for a background sub-agent
-   (they list with the buffers), nil when the room holds neither."
+   :ui/buffer-switch for a buffer or :chat, :subagent/reveal for a background
+   sub-agent (they list with the buffers), nil when the room holds neither."
   [room-id room buffer-id]
   (cond
-    (get-in room [:ui :buffers buffer-id])
+    (or (= :chat buffer-id) (get-in room [:ui :buffers buffer-id]))
     {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}
 
     (some #(= buffer-id (:id %)) (get-in room [:ext :subagents :agents]))
     {:type :subagent/reveal :room-id room-id :sub-id buffer-id}))
+
+(defn restore-view
+  "Show joined room `room-id` on the view this client left its session on
+   (:web/session-views, set by navigate*), while that buffer is still open. A
+   re-join of the room in view (reconnect, stale cache) keeps its view."
+  [prev-st st room-id]
+  (let [room (get-in st [:rooms room-id])
+        sid  (get-in room [:session :id])
+        prev (get-in prev-st [:rooms room-id])
+        view (if (= sid (get-in prev [:session :id]))
+               (get-in prev [:ui :active-buffer])
+               (get-in st [:web/session-views sid]))]
+    (cond-> st
+      (and sid (get-in room [:ui :buffers view]))
+      (assoc-in [:rooms room-id :ui :active-buffer] view))))
 
 (defn with-buffer
   "Wrap a navigate result to also open buffer `buffer-id` of the target chat:
