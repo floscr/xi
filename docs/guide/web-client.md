@@ -166,8 +166,8 @@ count instead of its header rows). "Reset to defaults" drops them.
 one. A theme changes the hue and chroma of the gray and accent scales and
 the status colors (success, warning, danger: status dots, usage meters,
 errors), the page background of light and dark mode (each its own
-color) with the sidebar a chosen step brighter or darker than it, the spacing base, the type
-scale and the corner radius; light and dark mode stay separate and both use
+color) with the sidebar a chosen step brighter or darker than it, the spacing base, the gap
+between paragraphs, the type scale and the corner radius; light and dark mode stay separate and both use
 it. "New" opens the editor with the defaults and a set
 of presets to start from; the sliders change the page as you move them, and
 "Save" (or the dialog's "Done") keeps the result under the name you typed;

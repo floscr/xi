@@ -15,7 +15,8 @@
 (def defaults
   "`:bg-light` / `:bg-dark` are each mode's page background, a `color?`
    string (white, gray-950); `:sidebar-shift` the OKLCH lightness the sidebar
-   sits away from it (negative = darker), the same in both modes."
+   sits away from it (negative = darker), the same in both modes;
+   `:paragraph-space` the gap between markdown paragraphs, in em."
   {:gray-hue      285
    :gray-chroma   1
    :accent-hue    286
@@ -24,6 +25,7 @@
    :bg-dark       "#0a0a0f"
    :sidebar-shift -0.025
    :size-base     0.25
+   :paragraph-space 0.75
    :font-base     1
    :font-ratio    1.25
    :radius-scale  1
@@ -40,6 +42,7 @@
    :accent-chroma [0 2]
    :sidebar-shift [-0.2 0.2]
    :size-base     [0.1 0.5]
+   :paragraph-space [0 2]
    :font-base     [0.75 1.25]
    :font-ratio    [1.05 1.5]
    :radius-scale  [0 2]})
@@ -320,6 +323,7 @@
              (background-vars p)
              (into {} (map (fn [n] [(str "--size-" n) (rem-value (* (:size-base p) n))]))
                    (range 1 (inc size-steps)))
+             {"--paragraph-space" (str (trim-zeros (fixed (:paragraph-space p) 3)) "em")}
              (into {} (map (fn [[power label]]
                              [(str "--font-" label)
                               (rem-value (* (:font-base p) (js/Math.pow (:font-ratio p) power)))]))

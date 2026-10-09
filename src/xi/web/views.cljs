@@ -5421,7 +5421,9 @@
        (theme-color dispatch! draft :warning-color "Warning")
        (theme-color dispatch! draft :danger-color "Danger"))
      (theme-section "Spacing"
-       (theme-slider dispatch! draft :size-base "Base" {:min 10 :max 50 :step 1 :scale 100 :fmt decimal}))
+       (theme-slider dispatch! draft :size-base "Base" {:min 10 :max 50 :step 1 :scale 100 :fmt decimal})
+       (theme-slider dispatch! draft :paragraph-space "Paragraphs"
+                     {:min 0 :max 200 :step 5 :scale 100 :fmt (fn [v] (str (decimal v) "em"))}))
      (theme-section "Font"
        (theme-slider dispatch! draft :font-base "Base" {:min 75 :max 125 :step 1 :scale 100 :fmt decimal})
        (theme-slider dispatch! draft :font-ratio "Ratio" {:min 105 :max 150 :step 1 :scale 100 :fmt decimal}))

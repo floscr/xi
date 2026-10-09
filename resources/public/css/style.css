@@ -19,6 +19,10 @@
    own tokens (fg-2 pulled toward the background) to track light/dark. */
 :root { --fg-3: color-mix(in srgb, var(--fg-2) 72%, var(--bg-0)); }
 
+/* Gap between rendered markdown paragraphs; a color theme overrides it
+   (xi.web.theme :paragraph-space). */
+:root { --paragraph-space: 0.75em; }
+
 html, body {
   margin: 0; padding: 0;
   overflow: hidden; position: fixed;
@@ -980,10 +984,14 @@ body {
   line-height: 1.7;
 }
 
+/* The reset above zeroes every margin, and assistant posts render as
+   .post-body > .markdown with no .post-content wrapper, so both need it. */
+.markdown p,
 .post-content p {
-  margin: 0 0 var(--size-2) 0;
+  margin: 0 0 var(--paragraph-space) 0;
 }
 
+.markdown p:last-child,
 .post-content p:last-child { margin-bottom: 0; }
 
 /* Key link styling to `.markdown` (the root of every md/render output), not

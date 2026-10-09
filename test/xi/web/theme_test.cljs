@@ -12,7 +12,8 @@
       (is (= "1rem" (get vars "--font-base")))
       (is (= "4rem" (get vars "--size-16")))
       (is (= "0.25rem" (get vars "--size-1")))
-      (is (= "10px" (get vars "--radius-md"))))
+      (is (= "10px" (get vars "--radius-md")))
+      (is (= "0.75em" (get vars "--paragraph-space")) "style.css's :root fallback"))
     (testing "backgrounds: white / gray-950 pages, the sidebar 2.5% darker"
       (is (= "oklch(1.000 0.0000 0.0)" (get vars "--theme-bg-light")))
       (is (= "oklch(0.975 0.0000 0.0)" (get vars "--theme-sidebar-light")))
@@ -20,8 +21,8 @@
       (is (= "oklch(0.122 0.0107 285.0)" (get vars "--theme-sidebar-dark"))))
     (testing "every managed property has a value"
       (is (= (set theme/var-names) (set (keys vars))))
-      (is (= 133 (count theme/var-names))
-          "11 gray + 11 accent + 33 status + 4 backgrounds + 46 surfaces + 16 sizes + 8 fonts + 4 radii"))))
+      (is (= 134 (count theme/var-names))
+          "11 gray + 11 accent + 33 status + 4 backgrounds + 46 surfaces + 16 sizes + paragraph + 8 fonts + 4 radii"))))
 
 (deftest hex-to-oklch
   (let [[l c h] (theme/hex->oklch "#ff0000")]
@@ -60,14 +61,15 @@
 
 (deftest params-change-the-scales
   (let [vars (theme/css-vars {:gray-hue 60 :accent-chroma 2 :size-base 0.3
-                              :font-ratio 1.5 :radius-scale 0.5})]
+                              :font-ratio 1.5 :radius-scale 0.5 :paragraph-space 1.2})]
     (is (= "oklch(0.530 0.0350 60.0)" (get vars "--gray-500")) "hue")
     (is (= "oklch(0.595 0.4000 286.0)" (get vars "--accent-500")) "chroma clamps at 0.4")
     (is (= "0.3rem" (get vars "--size-1")))
     (is (= "4.8rem" (get vars "--size-16")))
     (is (= "1.5rem" (get vars "--font-md")))
     (is (= "3px" (get vars "--radius-sm")))
-    (is (= "2px" (get vars "--radius-xs"))))
+    (is (= "2px" (get vars "--radius-xs")))
+    (is (= "1.2em" (get vars "--paragraph-space"))))
   (is (nil? (theme/css-vars nil)) "the default theme sets nothing"))
 
 (defn- lch [s] (mapv js/parseFloat (rest (re-find #"oklch\((\S+) (\S+) (\S+)\)" s))))
