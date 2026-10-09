@@ -304,10 +304,12 @@
   {:effects [[:diff/web-load-reply {:client-id client-id :cwd cwd}]]})
 
 (defn- commits-web-load
-  "Roomless: the commits made during a session (base..HEAD); cwd and created
-   timestamp travel from the client."
-  [_st {:keys [client-id cwd created]}]
-  {:effects [[:commits/web-load-reply {:client-id client-id :cwd cwd :created created}]]})
+  "Roomless: a commit list for the web palette. :scope :session (default) —
+   the commits made during a session (base..HEAD; cwd and created timestamp
+   travel from the client); :log — the repo's recent history."
+  [_st {:keys [client-id cwd created scope]}]
+  {:effects [[:commits/web-load-reply {:client-id client-id :cwd cwd :created created
+                                       :scope (or scope :session)}]]})
 
 (defn- files-web-list
   "Roomless: a directory's children for the web file browser; cwd is the

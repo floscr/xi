@@ -1312,24 +1312,29 @@
                                                (dissoc :web/skill-list))
                                     :effects [[:ws/send {:type :skill/web-list}]
                                               [:palette/reopen nil]]})
-          ;; Commits made this session: the server computes base..HEAD from the
-          ;; room's cwd and created timestamp.
-          :palette/open-commits  (fn [st _]
-                                   (let [room    (state/active-room st)
+          ;; Commits of the chat's repo. :scope :session (default) — the ones
+          ;; made this session: the server computes base..HEAD from the room's
+          ;; cwd and created timestamp; :log — the recent git log.
+          :palette/open-commits  (fn [st {:keys [scope]}]
+                                   (let [scope   (or scope :session)
+                                         room    (state/active-room st)
                                          cwd     (:cwd room)
                                          created (or (get-in room [:session :created])
                                                      (when-let [ms (:created room)]
                                                        (.toISOString (js/Date. ms))))]
                                      {:state (-> st
-                                                 (assoc :web/palette-page {:kind :commits}
+                                                 (assoc :web/palette-page {:kind :commits :scope scope}
                                                         :web/palette-open? true
                                                         :web/palette-drilling? true)
                                                  (dissoc :web/commit-list))
-                                      :effects [[:ws/send {:type :commits/web-load
+                                      :effects [[:ws/send {:type :commits/web-load :scope scope
                                                            :cwd cwd :created created}]
                                                 [:palette/reopen nil]]}))
-          :commits/web-load-result (fn [st {:keys [commits]}]
-                                     {:state (assoc st :web/commit-list commits)})
+          ;; A reply for the other scope (switched pages mid-load) is stale.
+          :commits/web-load-result (fn [st {:keys [commits scope]}]
+                                     (when (= (or scope :session)
+                                              (get-in st [:web/palette-page :scope]))
+                                       {:state (assoc st :web/commit-list commits)}))
           :commits/open-diff     (fn [st {:keys [sha room-id]}]
                                    {:state (dissoc st :web/palette-page :web/palette-open?)
                                     :effects [[:palette/close nil]
@@ -2481,6 +2486,9 @@
                                      (dispatch! (if (>= (:web/prompt-nav st) (dec (:count ctx)))
                                                   {:type :timeline/scroll-to-bottom}
                                                   (assoc ctx :type :prompt-nav/next)))))})
+  (keymap/register-action! {:id :git/log
+                            :when (fn [st] (some? (:id (state/active-room st))))
+                            :event {:type :palette/open-commits :scope :log}})
   (keymap/register-action! {:id :git/status
                             :when (fn [st] (some? (:id (state/active-room st))))
                             :run (fn [st dispatch! _]

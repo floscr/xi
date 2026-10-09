@@ -203,6 +203,7 @@ nothing outside a chat.
                              ["space" "p" "p"]  :projects/pick
                              ["space" "b" "b"]  :buffers/switch
                              ["space" "g" "g"]  :git/status
+                             ["space" "g" "l"]  :git/log
                              ["space" "g" "c"]  "/commit"
                              ["space" "c" "n"]  :chat/new
                              ["space" "c" "u"]  :session/jump-attention
@@ -218,6 +219,7 @@ nothing outside a chat.
 | `:themes/pick` | The palette's color themes: Default and yours, Enter switches |
 | `:projects/open` | The projects page |
 | `:git/status` | The working-tree diff of the current chat |
+| `:git/log` | The palette's git log: the last 500 commits of the chat's repo, Enter opens one's diff |
 | `:chat/hide` | Hide the current chat from Recent, or show it again |
 | `:chat/delete` | Delete the current chat, no confirmation |
 

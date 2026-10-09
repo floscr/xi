@@ -1376,6 +1376,9 @@
         {:name "commits"
          :description "List commits made this session"
          :while-busy? true}
+        {:name "log"
+         :description "Browse the git log"
+         :while-busy? true}
         {:name "files"
          :description "Browse project files"
          :while-busy? true}
@@ -1440,11 +1443,12 @@
   [dispatch! room-id slash]
   (let [{:keys [name args]}
         (commands/parse-input (if (str/starts-with? slash "/") slash (str "/" slash)))]
-    (when (or (#{"commits" "files" "skills"} name)
+    (when (or (#{"commits" "log" "files" "skills"} name)
               (and (= name "model") (not args)))
       (dispatch! {:type :web/record-command :name name}))
     (case name
       "commits" (dispatch! {:type :palette/open-commits})
+      "log"     (dispatch! {:type :palette/open-commits :scope :log})
       "files"   (dispatch! {:type :palette/open-files})
       "skills"  (dispatch! {:type :palette/open-skills})
       "model"   (if args
@@ -4641,21 +4645,24 @@
            (map #(snippet-command-item dispatch! dkey %) global)))])))
 
 (defn- palette-commits-page
-  "Commits made this session (git base..HEAD) as a palette sub-page; a pick
-   opens the commit's diff."
-  [state dispatch!]
+  "A commit list as a palette sub-page; a pick opens the commit's diff.
+   :scope :session — the commits made this session (git base..HEAD); :log —
+   the repo's recent git log."
+  [state dispatch! {:keys [scope]}]
   (let [room    (state/active-room state)
-        commits (:web/commit-list state)]
+        commits (:web/commit-list state)
+        log?    (= scope :log)]
     (cond
       (nil? commits)   [:div {:class ["command-loading"]} (spinner)]
-      (empty? commits) [:div {:class ["command-empty"]} "No commits this session"]
+      (empty? commits) [:div {:class ["command-empty"]}
+                        (if log? "No commits" "No commits this session")]
       :else
-      (apply cmd/command-group {:heading "Session commits"}
-        (for [{:keys [sha short subject rel-time]} commits]
+      (apply cmd/command-group {:heading (if log? "Git log" "Session commits")}
+        (for [{:keys [sha short subject rel-time author]} commits]
           (cmd/command-item
            {:icon :code
-            :value (str short " " subject)
-            :description (str short " · " rel-time)
+            :value (str short " " subject " " author)
+            :description (str/join " · " (remove str/blank? [short author rel-time]))
             :on-click (fn [_] (dispatch! {:type :commits/open-diff
                                           :sha sha :room-id (:id room)}))}
            subject))))))
@@ -4948,7 +4955,7 @@
          :model          (palette-model-page state dispatch!)
          :theme          (palette-theme-page state dispatch!)
          :skill          (palette-skill-page state dispatch!)
-         :commits        (palette-commits-page state dispatch!)
+         :commits        (palette-commits-page state dispatch! palette-page)
          :files          (palette-files-page state dispatch!)
          :file-finder    (palette-file-finder-page state dispatch! palette-page)
          :buffers        (palette-buffers-page state dispatch!)

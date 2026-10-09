@@ -134,6 +134,10 @@
     :session/buffer-close
     :rooms/prune})
 
+(def ^:private git-log-limit
+  "Commits the web's git log page lists (newest first)."
+  500)
+
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
        (.toString (js/Math.floor (* (js/Math.random) 1e6)) 36)))
@@ -659,10 +663,14 @@
                                        :text (diff-git/all-git-changes-text cwd)})))
 
       :commits/web-load-reply
-      (fn [_ {:keys [client-id cwd created]}]
-        (let [base (diff-git/session-base-commit cwd created)]
+      (fn [_ {:keys [client-id cwd created scope]}]
+        (let [commits (if (= scope :log)
+                        (diff-git/log-list cwd git-log-limit)
+                        (diff-git/session-commits-list
+                         cwd (diff-git/session-base-commit cwd created)))]
           (send! client-id (wire/encode {:type    :commits/web-load-result
-                                         :commits (or (diff-git/session-commits-list cwd base) [])}))))
+                                         :scope   scope
+                                         :commits (or commits [])}))))
 
       :files/web-list-reply
       (fn [_ {:keys [client-id cwd path]}]

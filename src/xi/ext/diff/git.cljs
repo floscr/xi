@@ -125,20 +125,35 @@
   (when base
     (some-> (:ok (git-diff-out cwd ["diff" base "HEAD"])) str/trim not-empty)))
 
+(def ^:private commit-line-format "--format=%H%x1f%h%x1f%s%x1f%cr%x1f%an")
+
+(defn- commit-lines
+  "Parse `git log` output in commit-line-format to [{:sha :short :subject
+   :rel-time :author}]."
+  [out]
+  (some->> out
+           str/split-lines
+           (remove str/blank?)
+           (mapv (fn [line]
+                   (let [[sha short subject rel-time author] (str/split line #"\x1f")]
+                     {:sha sha :short short :subject subject :rel-time rel-time
+                      :author author})))))
+
 (defn session-commits-list
   "Metadata for every commit made during the session (base..HEAD), newest
    first — official git_commit-tool commits and plain shell `git commit`s
    alike, since both are ordinary commits in the range. Each entry:
-   {:sha :short :subject :rel-time}. Empty when there is no base or no commits."
+   {:sha :short :subject :rel-time :author}. Empty when there is no base or no
+   commits."
   [cwd base]
   (when base
-    (some->> (:ok (git-out cwd ["log" "--format=%H%x1f%h%x1f%s%x1f%cr"
-                                (str base "..HEAD")]))
-             str/split-lines
-             (remove str/blank?)
-             (mapv (fn [line]
-                     (let [[sha short subject rel-time] (str/split line #"\x1f")]
-                       {:sha sha :short short :subject subject :rel-time rel-time}))))))
+    (commit-lines (:ok (git-out cwd ["log" commit-line-format (str base "..HEAD")])))))
+
+(defn log-list
+  "The last `n` commits of HEAD's history, newest first, shaped like
+   session-commits-list. nil outside a repo or before the first commit."
+  [cwd n]
+  (commit-lines (:ok (git-out cwd ["log" (str "--max-count=" n) commit-line-format]))))
 
 (defn resolve-commit
   "Full sha for a ref (commit) in cwd, or nil when it either doesn't resolve or
@@ -162,14 +177,8 @@
   [cwd refs]
   (let [shas (->> refs (keep #(resolve-commit cwd %)) distinct vec)]
     (when (seq shas)
-      (some->> (:ok (git-out cwd (into ["log" "--no-walk=sorted"
-                                        "--format=%H%x1f%h%x1f%s%x1f%cr"]
-                                       shas)))
-               str/split-lines
-               (remove str/blank?)
-               (mapv (fn [line]
-                       (let [[sha short subject rel-time] (str/split line #"\x1f")]
-                         {:sha sha :short short :subject subject :rel-time rel-time})))))))
+      (commit-lines (:ok (git-out cwd (into ["log" "--no-walk=sorted" commit-line-format]
+                                            shas)))))))
 
 (defn commit-show-text
   "Unified diff for a single commit (git show). Honors *diff-engine*. The

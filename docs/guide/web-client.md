@@ -78,7 +78,7 @@ devices and `xi clients revoke <name>` removes one.
 ## Buffers
 
 A chat can hold views next to its conversation: the diffs you opened
-(`/diff`, the Git status entry, a commit from `/commits`), the files you
+(`/diff`, the Git status entry, a commit from `/commits` or `/log`), the files you
 opened from a code block or the file finder, the system prompt (`/prompt`).
 These are its **buffers**. Each file and each diff source is its own buffer,
 so opening a second file keeps the first; opening the same one again

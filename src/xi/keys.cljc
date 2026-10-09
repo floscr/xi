@@ -227,6 +227,7 @@
    :sessions/prune          {:label "Prune: run every sidebar cleanup" :surface #{:web}}
    :files/find              {:label "Find a file" :surface #{:web}}
    :git/status              {:label "Git status" :surface #{:web}}
+   :git/log                 {:label "Git log" :surface #{:web}}
    :palette/open            {:label "Command palette" :surface #{:web}}
    :projects/pick           {:label "Pick a project" :surface #{:web}}
    :skills/search           {:label "Search skills" :surface #{:web}}
