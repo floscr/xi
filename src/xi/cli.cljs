@@ -848,8 +848,10 @@ See docs/guide/command-line.md for the full reference.")
                      (update :room/create events/chain rm/revive-buffers)
                      (update :session/delete events/chain rm/forget-parked-buffers)
                      (update :client/update events/chain rm/client-update-presence)
-                     ;; Interrupted-while-busy sessions auto-resume after a hard restart.
-                     (update :agent/session-init events/chain commands/session-init-mark-interrupted)
+                     ;; Sessions busy at a hard restart auto-resume, queue included.
+                     (update :agent/session-init events/chain commands/in-flight-session-sync)
+                     (update :prompt/submit events/chain commands/in-flight-session-sync)
+                     (update :prompt/queue-remove events/chain commands/in-flight-session-sync)
                      (update :agent/turn-end events/chain rm/turn-end-room-cleanup)
                      (assoc :client/disconnect
                             (events/chain rm/client-disconnect-cleanup

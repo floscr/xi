@@ -45,6 +45,30 @@
   [filepath]
   {:source :claude :filepath filepath})
 
+;; ── Resume markers (the in-flight state a hard kill leaves on disk) ──────────
+
+(deftest boot-resumable-within-the-window
+  (let [now (js/Date.parse "2026-10-09T10:00:00Z")]
+    (is (session/boot-resumable? {:interrupted-at "2026-10-09T09:59:00Z"} now))
+    (is (session/boot-resumable? {:interrupted-at "2026-10-08T10:00:01Z"} now))
+    (is (not (session/boot-resumable? {:interrupted-at "2026-10-07T10:00:00Z"} now))
+        "older than the window: waits for someone to open the chat")
+    (is (not (session/boot-resumable? {} now)))
+    (is (not (session/boot-resumable? {:interrupted-at "garbage"} now)))))
+
+(deftest clear-resume-markers-drops-only-the-in-flight-state
+  (let [dir (.mkdtempSync fs (.join path (os/tmpdir) "xi-test-"))
+        fp  (.join path dir "s.json")
+        _   (fs/writeFileSync fp (js/JSON.stringify
+                                  #js {:id "s" :name "Chat" :cwd "/x"
+                                       :interrupted-at "2026-10-09T09:59:00Z"
+                                       :queued #js [#js {:text "later" :user "root"}]}))
+        _   (session/clear-resume-markers! fp)
+        data (js->clj (js/JSON.parse (fs/readFileSync fp "utf8")) :keywordize-keys true)]
+    (is (= {:id "s" :name "Chat" :cwd "/x"} data))
+    (is (nil? (session/clear-resume-markers! (.join path dir "missing.json")))
+        "a missing file is left alone")))
+
 (defn- make-user-line [text]
   (js/JSON.stringify
    #js {:type "user"

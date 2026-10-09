@@ -1,7 +1,8 @@
 (ns xi.e2e.server-e2e
   "`xi server --headless` end to end over its WebSocket and HTTP API: pairing,
    a streamed turn with its title side turn, abort, the prompt queue,
-   reconnecting, and the saved chat after a restart."
+   reconnecting, the saved chat after a restart, and a restart continuing a
+   turn it cut off (queue included) with nobody watching."
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.e2e.harness :as h :refer [of-type]]
@@ -40,6 +41,14 @@
        (filter (of-type :agent/text-delta room-id))
        (map :text)
        (apply str)))
+
+(defn- session-files
+  "Contents of every saved session's metadata file in the env's HOME."
+  [env]
+  (let [dir (h/home-path env ".config" "xi" "sessions")]
+    (->> (h/files-under dir)
+         (filter #(str/ends-with? % ".json"))
+         (map #(h/slurp (h/home-path env ".config" "xi" "sessions" %))))))
 
 (deftest pairing-and-the-http-api
   (async done
@@ -175,3 +184,62 @@
                  (-> (h/run-xi! env ["sessions" "--all" "--json"])
                      (.then (fn [{:keys [json stderr]}]
                               (is (= ["E2E Title"] (map :name json)) stderr))))))))))))
+
+(deftest a-restart-continues-the-cut-off-turn-and-its-queue
+  ;; A hard kill mid-turn with a prompt queued behind it. The next server
+  ;; continues the chat on its own — no client joins it — and the queued
+  ;; prompt follows.
+  (async done
+    (h/with-env! profiles/minimal script done
+      (fn [env]
+        (-> (h/start-server! env)
+            (.then
+             (fn [server]
+               (-> (h/connect! server)
+                   (.then
+                    (fn [client]
+                      (-> (join! env client)
+                          (.then
+                           (fn [room-id]
+                             ;; a finished turn first: the session then has a
+                             ;; transcript and a provider id to resume
+                             (let [from (count @(:events client))]
+                               ((:send! client) {:type :prompt/submit :text "hello"})
+                               (-> (h/await-event client (of-type :agent/turn-end room-id) {:from from})
+                                   (.then (fn [_]
+                                            ((:send! client) {:type :prompt/submit :text "stuck"})
+                                            ((:send! client) {:type :prompt/submit :text "hello again"})
+                                            (h/await-event client #(and ((of-type :agent/text-delta room-id) %)
+                                                                        (= "waiting" (:text %)))
+                                                           {:from from})))
+                                   (.then (fn [_]
+                                            (h/wait-until #(some (fn [s] (str/includes? (str s) "hello again"))
+                                                                 (session-files env))
+                                                          5000 "the queued prompt on disk")))))))
+                          (.then (fn [_]
+                                   (h/close-all!)
+                                   (.kill (:proc server) "SIGKILL")
+                                   ((:stop! server))))))))))
+            (.then (fn [_] (h/start-server! env)))
+            (.then
+             (fn [server2]
+               (-> (h/wait-until #(= ["hello" "continue" "hello again"]
+                                     (map :prompt (h/main-turns env)))
+                                 15000 (str "the restarted server to continue the chat and send the queue; turns: "
+                                            (pr-str (map :prompt (h/main-turns env)))))
+                   (.then (fn [_]
+                            (let [[_ continued queued] (h/main-turns env)]
+                              (is (some? (:resume-session-id continued))
+                                  "continues the saved session rather than starting over")
+                              (is (= "stuck" (:text (last (:transcript continued))))
+                                  "the cut-off prompt is in the transcript the model sees")
+                              (is (= (:session-id continued) (:resume-session-id queued))
+                                  "the queued prompt runs in the same session"))
+                            ;; the turn-end sync (after the fake's log line) drops the markers
+                            (-> (h/wait-until #(not (some (fn [s] (str/includes? (str s) "interrupted-at"))
+                                                          (session-files env)))
+                                              5000 "the resume markers to clear")
+                                (.catch (fn [e]
+                                          (throw (js/Error. (str (.-message e) "; files: "
+                                                                 (pr-str (session-files env))))))))))
+                   (.finally (:stop! server2))))))))))

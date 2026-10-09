@@ -237,23 +237,31 @@
         (js/console.error (str "[session] failed to touch " (:filepath summary)
                                ": " (.-message e)))))))
 
-(defn mark-interrupted!
-  "Persist the session with an :interrupted-at marker while a turn is in
-   flight; any later normal save drops it, so it only survives a hard kill
-   mid-turn (the auto-resume signal)."
-  [session]
-  (save-session! (assoc session :interrupted-at (iso-now))))
+(def boot-resume-window-ms
+  "How long after its :interrupted-at a cut-off chat is still continued by a
+   booting server (xi.server.ws :sessions/resume-interrupted); an older marker
+   waits for someone to open the chat."
+  (* 24 60 60 1000))
 
-(defn clear-interrupted!
-  "Remove the :interrupted-at marker from a session's on-disk file after auto-resuming it."
+(defn boot-resumable?
+  "True when `summary` carries an :interrupted-at marker no older than
+   boot-resume-window-ms at `now-ms`."
+  [summary now-ms]
+  (let [at (some-> (:interrupted-at summary) js/Date.parse)]
+    (boolean (and at (not (js/isNaN at))
+                  (<= (- now-ms at) boot-resume-window-ms)))))
+
+(defn clear-resume-markers!
+  "Drop the in-flight state (:interrupted-at, :queued — written by xi.fx
+   with-in-flight) from a session's on-disk file once a resume has acted on it."
   [filepath]
   (try
     (when (and filepath (fs/existsSync filepath))
       (let [data (js->clj (js/JSON.parse (fs/readFileSync filepath "utf8"))
                           :keywordize-keys true)]
-        (when (:interrupted-at data)
+        (when (or (:interrupted-at data) (:queued data))
           (fs/writeFileSync filepath
-                            (js/JSON.stringify (clj->js (dissoc data :interrupted-at)) nil 2)
+                            (js/JSON.stringify (clj->js (dissoc data :interrupted-at :queued)) nil 2)
                             "utf8")
           (invalidate-listing-cache!))))
     (catch :default _e nil)))
@@ -443,6 +451,7 @@
        :name (util/session-title (:name data))
        :model (:model data)
        :interrupted-at (:interrupted-at data)
+       :queued (:queued data)
        :aborted-at (:aborted-at data)
        :truncated-from (:truncated-from data)
        :subagent-origin (:subagent-origin data)
@@ -688,6 +697,16 @@
   [session-id & [agent-id]]
   (first (filter (partial summary-matches-id? session-id)
                  (list-personal-agent-sessions agent-id))))
+
+(defn interrupted-sessions
+  "Summaries of the Xi sessions whose metadata still carries an
+   :interrupted-at marker (a turn was in flight when the process died):
+   across all sources, or a named agent's own with `agent-id`."
+  [& [agent-id]]
+  (into [] (filter :interrupted-at)
+        (if agent-id
+          (list-personal-agent-sessions agent-id)
+          (all-sessions-raw))))
 
 ;; ── Response counting (for unread indicators) ────────────────────────────────
 

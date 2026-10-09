@@ -56,8 +56,11 @@ What the fake does like a real provider:
 - **Sessions**: main turns are written as a Claude-format transcript under
   `$CLAUDE_CONFIG_DIR|~/.claude/projects/<cwd>/<sid>.jsonl` and the id is
   reported via `:on-session`, so `--session` and a server's session resume
-  see earlier turns. A resume id with no transcript
-  answers `:resume-failed`, which re-runs the turn fresh.
+  see earlier turns. The prompt is written as the turn starts and the reply
+  when it ends, as the CLI does, so a killed turn leaves a cut-off
+  transcript (`session/turn-completed?` is false and a restarted server
+  continues it). A resume id with no transcript answers `:resume-failed`,
+  which re-runs the turn fresh.
 - **Abort** wakes a `{:sleep}` and ends the turn as aborted.
 
 `XI_FAKE_LLM_LOG=<file>` appends one JSON line per turn: `provider`,

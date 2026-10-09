@@ -117,7 +117,7 @@
    the socket (they would let it install a user's record, rewrite presence, or
    register as another identity)."
   #{:user/loaded :user/ui-set :user/ext-set :room/presence
-    :client/connect :client/disconnect})
+    :client/connect :client/disconnect :server/started})
 
 (def ^:private pre-join-types
   "Event types a client may send before joining a room."
@@ -137,6 +137,12 @@
 (def ^:private git-log-limit
   "Commits the web's git log page lists (newest first)."
   500)
+
+(defn- fresh-room-id
+  "A room id for a room the server provisions on its own (no client event to
+   derive one from, cf. xi.server.room-manager/gen-room-id)."
+  []
+  (str "r-" (.toString (js/Date.now) 36) "-" (.toString (rand-int 1000000) 36)))
 
 (defn- gen-client-id []
   (str "c-" (.toString (js/Date.now) 36) "-"
@@ -466,7 +472,51 @@
                                        prof (merge (profile/room-ext prof)))
                        :agent-id     agent-id
                        :only-tools   (:tools prof)
-                       :created      (js/Date.now)}}))]
+                       :created      (js/Date.now)}}))
+        ;; Pick up where a hard restart cut a saved session off: continue the
+        ;; turn that was in flight (unless its transcript shows it finished
+        ;; anyway), then re-send the prompts queued behind it, in order. The
+        ;; on-disk markers go first so a second resume of the same session
+        ;; stays quiet.
+        continue-interrupted!
+        (fn [dispatch! room-id summary]
+          (when (or (:interrupted-at summary) (seq (:queued summary)))
+            (session/clear-resume-markers! (:filepath summary))
+            (when (and (:interrupted-at summary)
+                       (not (session/turn-completed? summary)))
+              (dispatch! {:type :prompt/submit :room-id room-id :text "continue"}))
+            (doseq [prompt (:queued summary)]
+              (dispatch! (merge {:type :prompt/submit :room-id room-id} prompt)))))
+        ;; Load a saved session's conversation into a freshly created room,
+        ;; then continue-interrupted!. The client's cache is compared by the
+        ;; hash of the wire form (same cljs on both sides): an identical hash
+        ;; gets a tiny :session/current, a clean prefix (sessions are
+        ;; append-only on disk; /compact breaks it) gets only the new tail,
+        ;; else the full resume. The server mirror always gets the full
+        ;; history.
+        resume-session!
+        (fn [dispatch! {:keys [room-id session summary session-id cached-msg-hash cached-msg-count]}]
+          (let [{:keys [messages msg-count msg-hash]} (session/resume-messages summary)
+                current? (= cached-msg-hash msg-hash)
+                prefix?  (and (not current?)
+                              (integer? cached-msg-count)
+                              (< 0 cached-msg-count msg-count)
+                              (= cached-msg-hash (hash (subvec messages 0 cached-msg-count))))]
+            (dispatch! {:type :session/resumed :room-id room-id
+                        :session session :summary summary
+                        :messages messages :msg-hash msg-hash :msg-count msg-count
+                        :no-broadcast? (or current? prefix?)})
+            (cond
+              current?
+              (dispatch! {:type :session/current :room-id room-id
+                          :session-id session-id :msg-hash msg-hash :msg-count msg-count})
+              prefix?
+              (dispatch! {:type :session/resumed-tail :room-id room-id
+                          :session-id session-id
+                          :base-hash cached-msg-hash :base-count cached-msg-count
+                          :messages (subvec messages cached-msg-count)
+                          :msg-hash msg-hash :msg-count msg-count}))
+            (continue-interrupted! dispatch! room-id summary)))]
     {:fx
      (merge
      {:ws/send-to
@@ -498,44 +548,40 @@
           (dispatch! (cond-> {:type :room/attach :client-id client-id :room-id room-id}
                        join-token (assoc :join-token join-token)))
           (when summary
-            ;; The client's cache is compared by the hash of the wire form
-            ;; (same cljs on both sides): an identical hash gets a tiny
-            ;; :session/current, a clean prefix (sessions are append-only on
-            ;; disk; /compact breaks it) gets only the new tail, else the full
-            ;; resume. The server mirror always gets the full history.
-            (let [{:keys [messages msg-count msg-hash]} (session/resume-messages summary)
-                  current? (= cached-msg-hash msg-hash)
-                  prefix?  (and (not current?)
-                                (integer? cached-msg-count)
-                                (< 0 cached-msg-count msg-count)
-                                (= cached-msg-hash (hash (subvec messages 0 cached-msg-count))))]
-              (dispatch! {:type :session/resumed :room-id room-id
-                          :session session :summary summary
-                          :messages messages :msg-hash msg-hash :msg-count msg-count
-                          :no-broadcast? (or current? prefix?)})
-              (cond
-                current?
-                (dispatch! {:type :session/current :room-id room-id
-                            :session-id session-id :msg-hash msg-hash :msg-count msg-count})
-                prefix?
-                (dispatch! {:type :session/resumed-tail :room-id room-id
-                            :session-id session-id
-                            :base-hash cached-msg-hash :base-count cached-msg-count
-                            :messages (subvec messages cached-msg-count)
-                            :msg-hash msg-hash :msg-count msg-count}))
-              ;; Auto-resume a turn cut off by a hard restart, unless the
-              ;; transcript shows it finished anyway.
-              (when (:interrupted-at summary)
-                (session/clear-interrupted! (:filepath summary))
-                (when-not (session/turn-completed? summary)
-                  (dispatch! {:type :prompt/submit :room-id room-id :text "continue"})))))))
+            (resume-session! dispatch! {:room-id room-id :session session :summary summary
+                                        :session-id session-id
+                                        :cached-msg-hash cached-msg-hash
+                                        :cached-msg-count cached-msg-count}))))
+
+      ;; After boot (:server/started, xi.server.room-manager): continue every
+      ;; chat a hard restart cut off mid-turn in a room of its own, so nobody
+      ;; has to open it first; a client opening it later attaches to the live
+      ;; room (room-manager/room-for-session). Markers older than
+      ;; session/boot-resume-window-ms wait for that opening instead.
+      :sessions/resume-interrupted
+      (fn [{:keys [dispatch! get-state]} _]
+        (let [st  (get-state)
+              now (js/Date.now)]
+          (doseq [summary (session/interrupted-sessions agent-id)
+                  :when (and (session/boot-resumable? summary now)
+                             (nil? (rm/room-for-session st (:session-id summary))))]
+            (try
+              (let [room-id (fresh-room-id)
+                    {:keys [session room]} (build-room {:summary summary
+                                                        :user (get-in st [:connection :user])})]
+                (js/console.error (str "[ws] continuing the chat cut off by the restart: "
+                                       (or (:name summary) (:session-id summary))))
+                (dispatch! {:type :room/create :room-id room-id :room room})
+                (resume-session! dispatch! {:room-id room-id :session session :summary summary
+                                            :session-id (:session-id summary)}))
+              (catch :default e
+                (js/console.error (str "[ws] could not continue " (:session-id summary) ":") e))))))
 
       ;; Open a background chat seeded with a user message (:chat/start,
       ;; xi.server.room-manager); the requesting client, if any, is sent to it.
       :chat/start
       (fn [{:keys [dispatch!]} {:keys [client-id cwd text]}]
-        (let [room-id (str "r-" (.toString (js/Date.now) 36)
-                           "-" (.toString (rand-int 1000000) 36))
+        (let [room-id (fresh-room-id)
               {:keys [session room]} (build-room {:cwd cwd})]
           (dispatch! {:type :room/create :room-id room-id :room room})
           (dispatch! {:type :prompt/submit :room-id room-id :text text})
@@ -896,8 +942,7 @@
                             (let [prompt (some-> (aget body "prompt") str)
                                   cwd    (some-> (aget body "cwd") str)
                                   model  (some-> (aget body "model") str)
-                                  room-id (str "r-" (.toString (js/Date.now) 36)
-                                               "-" (.toString (rand-int 1000000) 36))
+                                  room-id (fresh-room-id)
                                   {:keys [session room]} (build-room {:cwd cwd :model model
                                                                       :user (get-in @state [:connection :user])})
                                   session-id (:id session)
@@ -1094,6 +1139,8 @@
                                   (str " + wss://" (str/join "," hosts) ":" tls-port))
                                 (when-not (every? #{"127.0.0.1" "::1"} hosts)
                                   " (reachable from the network)")))
+         ;; Listening: continue what the previous run left mid-turn.
+         (dispatch! {:type :server/started})
          {:port  port
           :stop! (fn []
                    (js/clearInterval auth-poll)

@@ -140,6 +140,11 @@ A chat whose agent is working stays open with nobody watching. Close the
 laptop, and the task finishes; the result waits in the chat list. A chat only
 closes when it is idle and empty.
 
+A restart does not lose a working chat either. When the server is back it
+continues every chat it cut off mid-turn, whether or not anyone has it open,
+and sends the messages that were queued behind that turn. A chat cut off
+more than a day earlier waits until you open it.
+
 ## Starting a chat over HTTP
 
 Another program can start a chat without a client attached:

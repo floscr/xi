@@ -1,5 +1,6 @@
 (ns xi.server.room-manager-test
   (:require [cljs.test :refer [deftest is testing]]
+            [xi.agent :as agent]
             [xi.core.events :as events]
             [xi.core.state :as state]
             [xi.server.room-manager :as rm]
@@ -41,6 +42,10 @@
            (:effects (handle st {:type :chat/start :cwd "/y" :text "do it"}))))
     (is (empty? (:effects (handle st {:type :chat/start :room-id "r1" :text ""})))
         "no message, no chat")))
+
+(deftest server-started-continues-cut-off-chats
+  (is (= [[:sessions/resume-interrupted {}]]
+         (:effects (handle (state/initial-state {:mode :server}) {:type :server/started})))))
 
 (deftest cwd-agents-files-replies-to-the-asking-client
   (let [st (server-state-with-room)]
@@ -250,12 +255,27 @@
     (is (nil? (rm/client-disconnect-cleanup (server-state-with-room) {:client-id "c1"})))))
 
 (deftest turn-end-cleanup
-  (testing "no clients attached → close"
-    (is (= [[:app/dispatch {:type :room/close :room-id "r1"}]]
+  (testing "no clients attached → reap once idle"
+    (is (= [[:app/dispatch {:type :rooms/reap-idle}]]
            (:effects (rm/turn-end-room-cleanup (server-state-with-room)
                                                {:room-id "r1"})))))
   (testing "client attached → keep"
-    (is (nil? (rm/turn-end-room-cleanup (joined-state) {:room-id "r1"})))))
+    (is (nil? (rm/turn-end-room-cleanup (joined-state) {:room-id "r1"}))))
+  (testing "the reap closes an idle clientless room"
+    (is (= [[:app/dispatch {:type :room/close :room-id "r1"}]]
+           (:effects (handle (server-state-with-room) {:type :rooms/reap-idle})))))
+  (testing "a queued prompt drains ahead of the reap, so the room lives on"
+    (let [turn-end (events/chain (:agent/turn-end agent/handlers) rm/turn-end-room-cleanup)
+          st       (-> (server-state-with-room)
+                       (assoc-in [:rooms "r1" :agent :busy?] true)
+                       (assoc-in [:rooms "r1" :agent :queued] [{:text "next"}]))
+          {:keys [state effects]} (turn-end st {:type :agent/turn-end :room-id "r1"})
+          dispatched (keep #(when (= :app/dispatch (first %)) (second %)) effects)]
+      (is (= [:prompt/submit :rooms/reap-idle] (map :type dispatched))
+          "FIFO: the drain is queued first")
+      ;; the drain's submit has started the next turn by the time the reap runs
+      (let [busy-again (apply-events state {:type :agent/busy :room-id "r1" :busy? true})]
+        (is (empty? (:effects (handle busy-again {:type :rooms/reap-idle}))))))))
 
 ;; ── Summaries ────────────────────────────────────────────────────────────────
 

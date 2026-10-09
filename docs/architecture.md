@@ -365,7 +365,18 @@ the tool ctx's turn user, else the room's, else the process' own), and the
   ([web-offline.md](web-offline.md)).
 - **Auto-destroy**: a room closes when its last client leaves or disconnects
   while the agent is **idle**, or when a turn ends with no clients attached
-  (`turn-end-room-cleanup`).
+  (`turn-end-room-cleanup`). The latter enqueues `:rooms/reap-idle` rather
+  than closing at once: the turn-end's own re-dispatch of the queued prompts
+  is ahead of it in the event queue, so the reap sees the room busy again.
+- **Restart recovery**: while a turn runs, every session write carries the
+  room's in-flight state (`xi.fx` `with-in-flight`: an `:interrupted-at`
+  marker and the prompt queue); a completed turn's sync drops it, so it only
+  survives a hard kill. `start!` dispatches `:server/started` →
+  `:sessions/resume-interrupted`, which opens a clientless room per marked
+  session (within `session/boot-resume-window-ms`), sends `continue` unless
+  the transcript ends in `end_turn`, and re-submits the queue. A client joining
+  later attaches to that live room; `:room/setup` does the same for older
+  markers when the chat is opened.
 - **Buffers outlive the room.** A chain before core `:room/close`
   (`rm/park-buffers`) keeps the closing room's buffers under its session id
   in `[:parked-buffers sid]` (server memory only — a restart starts with

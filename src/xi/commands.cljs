@@ -712,12 +712,15 @@
   (when (get-in st [:rooms room-id :session :provider-session-id])
     {:effects [[:session/sync {:room-id room-id}]]}))
 
-(defn session-init-mark-interrupted
-  "Chained onto :agent/session-init: mark the on-disk session interrupted as
-   soon as a turn is in flight, so a hard restart mid-turn auto-resumes it; a
-   normal turn-end clears it."
+(defn in-flight-session-sync
+  "Chained onto :agent/session-init, :prompt/submit and :prompt/queue-remove:
+   while a turn is in flight, persist the session's in-flight snapshot (the
+   interrupted marker and the prompt queue, xi.fx :session/mark-interrupted)
+   so a hard restart mid-turn resumes the turn and keeps the queue; a normal
+   turn-end clears it."
   [st {:keys [room-id]}]
-  (when (get-in st [:rooms room-id :session :provider-session-id])
+  (when (and (get-in st [:rooms room-id :agent :busy?])
+             (get-in st [:rooms room-id :session :provider-session-id]))
     {:effects [[:session/mark-interrupted {:room-id room-id}]]}))
 
 (defn all-commands

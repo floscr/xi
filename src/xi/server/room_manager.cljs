@@ -113,7 +113,7 @@
 
 ;; ── Handlers (pure) ──────────────────────────────────────────────────────────
 
-(defn- room-for-session
+(defn room-for-session
   "An existing room hosting this session id, matched on the Xi uuid and the
    Claude CLI id (a client may resume by either)."
   [st session-id]
@@ -438,6 +438,12 @@
                                      :cwd  (or cwd (get-in st [:rooms room-id :cwd]))}
                               client-id (assoc :client-id client-id))]]}))
 
+(defn- server-started
+  "The server is listening: continue the chats a hard restart cut off mid-turn
+   (xi.server.ws :sessions/resume-interrupted) before any client asks for them."
+  [_st _ev]
+  {:effects [[:sessions/resume-interrupted {}]]})
+
 (defn- user-state-set
   "A client changed one piece of its own user's UI state (the server stamps
    :user); the :user-state/save effect persists it. Unknown keys and invalid
@@ -461,8 +467,22 @@
                   (assoc-in st [:parked-buffers session-id] left)
                   (update st :parked-buffers dissoc session-id))}))))
 
+(defn reap-idle-clientless-rooms
+  "Close every idle room with no client attached. Chained onto :room/attach (a
+   client switching rooms only re-attaches, so the room it left never gets a
+   :room/leave) and the :rooms/reap-idle follow-up of turn-end-room-cleanup.
+   Busy rooms and pending dialogs are spared."
+  [st _ev]
+  (let [closes (for [[room-id room] (:rooms st)
+                     :when (and (empty? (clients-in-room st room-id))
+                                (not (keep-alive? room)))]
+                 [:app/dispatch {:type :room/close :room-id room-id}])]
+    (when (seq closes)
+      {:effects (vec closes)})))
+
 (def handlers
   {:chat/start             chat-start
+   :server/started         server-started
    :user-state/set         user-state-set
    :room/join              room-join
    :room/attach            room-attach
@@ -485,7 +505,8 @@
    :session/delete         session-delete
    :session/mark-read      session-mark-read
    :session/buffer-close   session-buffer-close
-   :rooms/prune            rooms-prune})
+   :rooms/prune            rooms-prune
+   :rooms/reap-idle        reap-idle-clientless-rooms})
 
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
 
@@ -515,13 +536,15 @@
         {:effects [(presence-effect st room-id)]}))))
 
 (defn turn-end-room-cleanup
-  "Chained onto :agent/turn-end: close a room nobody is attached to, unless a
-   dialog is still pending."
+  "Chained onto :agent/turn-end: a room nobody is attached to is reaped once
+   idle. The reap is a follow-up event (:rooms/reap-idle), not an immediate
+   close: the turn-end re-dispatches the prompts queued behind the turn, and
+   that submit is ahead of it in the event queue, so the reap sees the room
+   busy again and spares it."
   [st {:keys [room-id]}]
   (when (and (state/get-room st room-id)
-             (empty? (clients-in-room st room-id))
-             (not (keep-alive? (state/get-room st room-id))))
-    {:effects [[:app/dispatch {:type :room/close :room-id room-id}]]}))
+             (empty? (clients-in-room st room-id)))
+    {:effects [[:app/dispatch {:type :rooms/reap-idle}]]}))
 
 ;; ── Buffers across the room's life ───────────────────────────────────────────
 ;; A room's buffers (xi.buffers: the diffs and files its users opened) are room
@@ -587,15 +610,3 @@
                       (when (and sid (seq rows) (not (get-in room [:session :deleted?])))
                         [sid rows]))))
             (:rooms st))))
-
-(defn reap-idle-clientless-rooms
-  "Close every idle room with no client attached. Chained onto :room/attach: a
-   client switching rooms only re-attaches, so the room it left never gets a
-   :room/leave. Busy rooms and pending dialogs are spared."
-  [st _ev]
-  (let [closes (for [[room-id room] (:rooms st)
-                     :when (and (empty? (clients-in-room st room-id))
-                                (not (keep-alive? room)))]
-                 [:app/dispatch {:type :room/close :room-id room-id}])]
-    (when (seq closes)
-      {:effects (vec closes)})))

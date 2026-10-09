@@ -184,7 +184,7 @@
         transcript (when prior-file (read-transcript prior-file))
         sid        (if side? nil (or resume-session-id (str (random-uuid))))
         flags      #js {:aborted false :wake nil}
-        !turn      (atom {:messages [{:role "user" :content prompt}]
+        !turn      (atom {:messages []
                           :blocks [] :calls [] :usage {:input_tokens 0 :output_tokens 0}})
         req        {:provider (or (:provider opts) (util/provider-for-model model))
                     :model model :prompt prompt :system system
@@ -298,6 +298,13 @@
                    (fail (str "[fake-llm] " (script-path) ": " (.-message script)))
                    (let [{:keys [rule steps]} (select-reply script req)]
                      (when (and sid on-session) (on-session sid))
+                     ;; The prompt lands in the transcript as the turn starts
+                     ;; (as the CLI writes it), the reply when it ends: a
+                     ;; killed turn leaves a cut-off transcript for
+                     ;; session/turn-completed?.
+                     (when sid
+                       (append-transcript! (transcript-file cwd sid) sid cwd
+                                           [{:role "user" :content prompt}]))
                      (swap! !turn assoc :rule rule)
                      (step steps 0))))))))]
     {:promise promise

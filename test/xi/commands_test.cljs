@@ -535,6 +535,37 @@
         {:keys [effects]} (chained st {:type :agent/turn-end :room-id "r"})]
     (is (not (some #(= :session/sync (first %)) effects)))))
 
+;; ── in-flight session sync (chained) ─────────────────────────────────────────
+
+(deftest in-flight-chain-persists-the-queue-while-busy
+  (let [submit  (events/chain (get agent/handlers :prompt/submit)
+                              commands/in-flight-session-sync)
+        remove  (events/chain (get agent/handlers :prompt/queue-remove)
+                              commands/in-flight-session-sync)
+        busy    (apply-events (with-room)
+                              {:type :prompt/submit :room-id "r" :text "hi"}
+                              {:type :agent/session-init :room-id "r" :provider-session-id "cli-9"})
+        queued  (submit busy {:type :prompt/submit :room-id "r" :text "later"})]
+    (is (= ["later"] (map :text (get-in (:state queued) [:rooms "r" :agent :queued]))))
+    (is (= [[:session/mark-interrupted {:room-id "r"}]] (:effects queued))
+        "a queued prompt re-persists the in-flight snapshot")
+    (let [removed (remove (:state queued) {:type :prompt/queue-remove :room-id "r" :index 0})]
+      (is (= [] (get-in (:state removed) [:rooms "r" :agent :queued])))
+      (is (= [[:session/mark-interrupted {:room-id "r"}]] (:effects removed))
+          "so does un-queueing one"))))
+
+(deftest in-flight-chain-needs-a-busy-room-with-a-session-id
+  (let [submit (events/chain (get agent/handlers :prompt/submit)
+                             commands/in-flight-session-sync)
+        marks? (fn [effects] (some #{[:session/mark-interrupted {:room-id "r"}]} effects))]
+    (is (not (marks? (:effects (submit (with-room) {:type :prompt/submit :room-id "r" :text "hi"}))))
+        "no provider session id yet: nothing on disk to resume into")
+    (let [idle (apply-events (with-room)
+                             {:type :prompt/submit :room-id "r" :text "hi"}
+                             {:type :agent/turn-end :room-id "r" :provider-session-id "cli-9"})]
+      (is (marks? (:effects (submit idle {:type :prompt/submit :room-id "r" :text "again"})))
+          "a turn starting on a resumable session is marked at once"))))
+
 ;; ── /allow /deny ─────────────────────────────────────────────────────────────
 
 (defn- with-dialog [st dialog]

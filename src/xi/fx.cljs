@@ -40,35 +40,31 @@
       (assoc :cli-session-id (or (:provider-session-id sess)
                                  (:cli-session-id sess)))
       (dissoc :provider-session-id
-              ;; Never carry the in-flight marker into a normal save/touch —
-              ;; a completed sync is precisely what clears it (only a hard
-              ;; process kill mid-turn leaves it behind).
-              :interrupted-at)))
+              ;; In-flight state is derived from the room at write time
+              ;; (with-in-flight), never carried in the session map.
+              :interrupted-at :queued)))
+
+(defn- with-in-flight
+  "A disk session plus the room's in-flight state while a turn runs: an
+   :interrupted-at marker (the auto-resume signal, xi.server.ws) and the
+   prompts queued behind the turn, so a hard kill mid-turn continues the turn
+   and still sends the queue. An idle room writes neither, which is what
+   clears them after a completed turn."
+  [disk-sess room]
+  (let [queued (get-in room [:agent :queued])]
+    (cond-> disk-sess
+      (get-in room [:agent :busy?]) (assoc :interrupted-at (.toISOString (js/Date.)))
+      (seq queued)                  (assoc :queued queued))))
 
 (defn- source-suffix [s]
   (case (:source s) :claude " [claude]" ""))
 
-(def ^:private edit-tool-names
-  "Stripped, lower-cased names of the tools that mutate files, clj-surgeon's included."
-  #{"edit" "write" "multiedit" "notebookedit"
-    "clj_replace" "clj_extract" "clj_fix_declares"
-    "clj_mv" "clj_fix_parens" "clj_rename_ns"})
-
-(defn- edit-tool-call?
-  "True when a history entry is a file-mutating tool call, tolerant of the
-   mcp__ prefix and casing."
-  [{:keys [kind tool]}]
-  (and (= :tool-call kind)
-       (boolean (edit-tool-names (some-> tool util/strip-mcp-prefix str/lower-case)))))
-
 (defn session-edited-paths
-  "Absolute paths of files touched by edit/write tool calls in the history, in
-   any repo (the session diff groups them by git root)."
+  "Absolute paths of files touched by edit/write tool calls in the history
+   (xi.util/history-edit-paths), in any repo (the session diff groups them by
+   git root)."
   [room cwd]
-  (->> (:history room)
-       (filter edit-tool-call?)
-       (keep (fn [{:keys [arguments]}]
-               (or (:path arguments) (:file_path arguments) (:file arguments))))
+  (->> (util/history-edit-paths (:history room))
        (map #(.resolve node-path cwd %))
        distinct
        vec))
@@ -228,15 +224,16 @@
                        model (assoc :model model)
                        aborted? (assoc :aborted-at (.toISOString (js/Date.)))
                        (not aborted?) (dissoc :aborted-at))
-               touched (session/touch-session! (->disk-session named))]
+               touched (session/touch-session! (with-in-flight (->disk-session named) room))]
            (dispatch! {:type :session/updated :room-id room-id
                        :session (-> touched
+                                    (dissoc :interrupted-at :queued)
                                     (assoc :provider-session-id (:cli-session-id touched)))})))))
 
-   ;; Persist an :interrupted-at marker as soon as a resumable session id
-   ;; exists (turn in flight / spinner shown). A completed turn's :session/sync
-   ;; rewrites the file without the marker, so it only survives a hard process
-   ;; kill mid-turn — the signal used to auto-resume the agent on reconnect.
+   ;; Persist the in-flight snapshot (with-in-flight) as soon as a resumable
+   ;; session id exists and whenever the queue changes. A completed turn's
+   ;; :session/sync rewrites the file without it, so it only survives a hard
+   ;; process kill mid-turn — what xi.server.ws auto-resumes on.
    :session/mark-interrupted
    (fn [{:keys [state]} {:keys [room-id]}]
      (let [room (room-of state room-id)
@@ -247,7 +244,7 @@
                named (cond-> sess
                        (and (nil? (:name sess)) title) (assoc :name title)
                        model (assoc :model model))]
-           (try (session/mark-interrupted! (->disk-session named))
+           (try (session/save-session! (with-in-flight (->disk-session named) room))
                 (catch :default e
                   (js/console.error "[fx] session mark-interrupted failed:" e)))))))
 
