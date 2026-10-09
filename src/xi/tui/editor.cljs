@@ -659,42 +659,35 @@
                          (and on-key (on-key data))
                          nil
 
-                         ;; Ctrl+C
                          (ctrl? data "C")
                          (if (seq (str/trim (get-text)))
                            (set-text "")
                            (when on-interrupt (on-interrupt)))
 
-                         ;; Ctrl+D on empty — exit
+                         ;; Ctrl+D on an empty editor exits.
                          (and (ctrl? data "D") (empty? (str/trim (get-text))))
                          (when on-interrupt (on-interrupt))
 
-                         ;; Ctrl+D with content — delete char forward
                          (ctrl? data "D")
                          (delete-forward)
 
-                         ;; Escape — notify parent
                          (is-escape? data)
                          (when on-escape (on-escape))
 
-                         ;; Shift+Enter / Alt+Enter — insert newline
                          (or (is-shift-enter? data) (is-alt-enter? data))
                          (insert-newline)
 
-                         ;; Enter — submit
                          (is-enter? data)
                          (handle-submit)
 
-                         ;; Backspace — the parent may claim it first
+                         ;; The parent may claim a backspace first.
                          (is-backspace? data)
                          (when-not (and on-backspace (on-backspace (get-text)))
                            (delete-back))
 
-                         ;; Delete
                          (is-delete? data)
                          (delete-forward)
 
-                         ;; Arrow keys
                          (is-arrow-up? data)
                          (if (zero? (:cursor-line @state))
                            (browse-history :up)
@@ -711,21 +704,19 @@
                          (is-arrow-right? data)
                          (move-cursor 0 1)
 
-                         ;; Home / Ctrl+A
                          (is-home? data)
                          (swap! state (fn [s]
                                         (-> s
                                             (assoc :cursor-col 0)
                                             (assoc :cached-width nil :cached-lines nil :last-action nil))))
 
-                         ;; End / Ctrl+E
                          (is-end? data)
                          (swap! state (fn [{:keys [lines cursor-line] :as s}]
                                         (-> s
                                             (assoc :cursor-col (count (nth lines cursor-line)))
                                             (assoc :cached-width nil :cached-lines nil :last-action nil))))
 
-                         ;; Ctrl+U — kill line
+                         ;; kill to line start
                          (ctrl? data "U")
                          (do (push-undo! :kill)
                              (swap! state (fn [{:keys [lines cursor-line] :as s}]
@@ -736,7 +727,7 @@
                                                   (assoc :cursor-col 0)
                                                   (assoc :cached-width nil :cached-lines nil))))))
 
-                         ;; Ctrl+K — kill to end of line
+                         ;; kill to line end
                          (ctrl? data "K")
                          (do (push-undo! :kill)
                              (swap! state (fn [{:keys [lines cursor-line cursor-col] :as s}]
@@ -746,82 +737,62 @@
                                                   (assoc-in [:lines cursor-line] before)
                                                   (assoc :cached-width nil :cached-lines nil))))))
 
-                         ;; Ctrl+B — backward char
                          (ctrl? data "B")
                          (move-cursor 0 -1)
 
-                         ;; Ctrl+F — forward char
                          (ctrl? data "F")
                          (move-cursor 0 1)
 
-                         ;; Ctrl+P — command palette (Chats/Actions/Commands)
                          (ctrl? data "P")
                          (when on-palette (on-palette))
 
-                         ;; Ctrl+/ — slash commands menu (works with text in editor)
                          (is-ctrl-slash? data)
                          (when on-commands (on-commands))
 
-                         ;; Ctrl+N — next line / history down
                          (ctrl? data "N")
                          (if (= (:cursor-line @state) (dec (count (:lines @state))))
                            (browse-history :down)
                            (move-cursor 1 0))
 
-                         ;; Ctrl+W — delete word backward
                          (ctrl? data "W")
                          (delete-word-back)
 
-                         ;; Ctrl+T — transpose characters
                          (ctrl? data "T")
                          (transpose-chars)
 
-                         ;; Ctrl+Z — undo
                          (ctrl? data "Z")
                          (do-undo)
 
-                         ;; Ctrl+Shift+Z / Ctrl+Y — redo
                          (or (is-ctrl-shift-z? data) (ctrl? data "Y"))
                          (do-redo)
 
-                         ;; Ctrl+Shift+G — open git status
                          (is-ctrl-shift-g? data)
                          (when on-git (on-git))
 
-                         ;; Ctrl+Shift+N — toggle notification
                          (is-ctrl-shift-n? data)
                          (when on-notify-toggle (on-notify-toggle))
 
-                         ;; Alt+B — backward word
                          (is-alt-b? data)
                          (move-word-back)
 
-                         ;; Alt+F — forward word
                          (is-alt-f? data)
                          (move-word-forward)
 
-                         ;; Alt+D — delete word forward
                          (is-alt-d? data)
                          (delete-word-forward)
 
-                         ;; Alt+Backspace — delete word backward
                          (is-alt-backspace? data)
                          (delete-word-back)
 
-                         ;; Alt+V — paste clipboard image
                          (is-alt-v? data)
                          (when on-paste-image (on-paste-image))
 
-                         ;; Bracketed paste
                          (is-paste-start? data)
                          (let [paste-start-seq (str ESC "[200~")
                                paste-end-seq (str ESC "[201~")
                                content (-> data
                                            (str/replace paste-start-seq "")
                                            (str/replace paste-end-seq ""))]
-                           ;; Long / code-like pastes get wrapped in a bare ```
-                           ;; fence, with newlines so the fences sit on their own
-                           ;; lines relative to the cursor position.
                            (if (util/paste-should-fence? content)
                              (let [{:keys [lines cursor-line cursor-col]} @state
                                    line (nth lines cursor-line)]
@@ -832,22 +803,17 @@
                                   :at-line-end? (empty? (subs line cursor-col))})))
                              (insert-text-bulk content)))
 
-                         ;; Shift+Tab — cycle the active word completion backward
                          (and (is-shift-tab? data) (word-completion-active?))
                          (cycle-word! -1)
 
-                         ;; Ctrl+I — open the word completion menu for the word
-                         ;; before the cursor (kitty protocol only; falls through
-                         ;; to Tab on terminals that can't disambiguate it).
+                         ;; Ctrl+I is only distinct from Tab under the kitty protocol.
                          (and (is-ctrl-i? data) on-word-menu)
                          (on-word-menu (word-before-cursor))
 
-                         ;; Tab — cycle word completion, else snippet expansion,
-                         ;; else path completion. Order: cycle an active session,
-                         ;; then snippet, then start a word cycle, then path.
+                         ;; Tab: an active word cycle, else a snippet, else a new
+                         ;; word cycle, else path completion.
                          (is-tab? data)
                          (cond
-                           ;; Continue an in-progress inline word cycle.
                            (word-completion-active?)
                            (cycle-word! 1)
 
@@ -869,24 +835,19 @@
                                                       (assoc :cached-width nil :cached-lines nil)))))
                                  (tui/request-panel-render!))
 
-                               ;; Start an inline word cycle from the buffer's
-                               ;; vocabulary; falls back to path completion when
-                               ;; there are no word candidates (e.g. a '/' token).
                                (start-word-completion! trigger word-start)
                                nil
 
                                on-tab-complete
                                (on-tab-complete {:token trigger :insert! insert-char}))))
 
-                         ;; "/" on empty editor — open slash commands menu
                          (and (= data "/") on-commands (empty? (str/trim (get-text))))
                          (on-commands)
 
-                         ;; Printable character
                          (is-printable? data)
                          (insert-char data)
 
-                         ;; Multi-byte printable (emoji, unicode)
+                         ;; multi-byte printable (emoji)
                          (and (> (count data) 1)
                               (not (str/starts-with? data ESC)))
                          (insert-char data)

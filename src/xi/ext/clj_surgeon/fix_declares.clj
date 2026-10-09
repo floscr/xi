@@ -83,7 +83,6 @@
         deps-list (analyze/intra-ns-deps zloc)
         topo (analyze/topological-sort zloc)
         truly-cyclic (set (:cycles topo))
-        ;; Find all declares
         all-declares (->> forms
                           (filter #(= 'declare (:type %))))
         removable (->> all-declares
@@ -94,7 +93,6 @@
       {:file file
        :actions []
        :summary {:removable 0 :needed (count needed) :message "No removable declares."}}
-      ;; For each removable declare, compute what to do
       (let [actions
             (->> removable
                  (map (fn [decl]
@@ -103,16 +101,13 @@
                               end-line (form-end-line forms name-str)
                               decl-line (:line decl)
                               usage-line (first-usage-line forward-refs name-str)
-                              ;; Find the form to move before
                               target-form (when usage-line
                                             (form-at-or-before forms usage-line))
-                              ;; Check dependencies of the form being moved
                               form-deps (some (fn [d]
                                                 (when (and (= name-str (:name d))
                                                            (not= "declare" (:type d)))
                                                   (:depends-on d)))
                                               deps-list)
-                              ;; Which deps are defined BELOW the target?
                               unresolved (when target-form
                                            (->> (or form-deps #{})
                                                 (filter (fn [dep]
@@ -121,14 +116,12 @@
                                                                  (> dep-line (:line target-form))))))
                                                 set
                                                 not-empty))
-                              ;; Check if ALL unresolved deps are leaves (zero intra-ns deps)
                               all-leaves? (when unresolved
                                             (every? (fn [dep]
                                                       (let [dep-entry (first (filter #(= dep (:name %)) deps-list))]
                                                         (or (nil? dep-entry)
                                                             (empty? (:depends-on dep-entry)))))
                                                     unresolved))
-                              ;; If all unresolved are leaves, we can pull them along
                               pull-deps (when (and unresolved all-leaves?)
                                           unresolved)]
                           (cond-> {:type :fix-declare
@@ -173,16 +166,12 @@
       p
       (let [source (slurp file)
             lines (vec (str/split-lines source))
-            ;; Collect actions: safe (no deps issue) + pull-deps (leaf deps to pull along)
             safe-actions (->> (:actions p)
                               (filter #(and (not (:unresolved-deps %))
                                             (not (:error %))
                                             (:defn-line %))))
-            ;; For stale declares (no forward ref), just delete the declare
             stale-actions (filter :stale? safe-actions)
-            ;; For actual moves, we need to cut-paste + delete declare
             move-actions (remove :stale? safe-actions)
-            ;; Also include pull-deps actions (safe because all deps are leaves)
             pull-actions (->> (:actions p)
                               (filter :pull-deps))
             all-move-actions (concat move-actions pull-actions)
@@ -214,11 +203,9 @@
                     form-text (subvec current-lines form-start form-end)
                     without-form (into (subvec current-lines 0 form-start)
                                        (subvec current-lines form-end))
-                    ;; Re-find target line (may have shifted)
                     cur-outline (outline/outline file)
                     cur-target (form-at-or-before (:forms cur-outline) target-line)
                     adj-target (if cur-target (:line cur-target) target-line)
-                    ;; Adjust if we removed above
                     adj-target (if (< form-start (dec adj-target))
                                  (- adj-target (- form-end form-start))
                                  adj-target)
@@ -238,29 +225,23 @@
         (doseq [action sorted-moves]
           (let [current-source (slurp file)
                 current-lines (vec (str/split-lines current-source))
-                ;; Re-find the form locations in current file
                 current-outline (outline/outline file)
                 current-forms (:forms current-outline)
                 name-str (:name action)
-                ;; Find current defn location
                 defn-form (first (filter #(and (= (str (:name %)) name-str)
                                                (not= 'declare (:type %)))
                                          current-forms))
-                ;; Find current declare location
                 decl-form (first (filter #(and (= (str (:name %)) name-str)
                                                (= 'declare (:type %)))
                                          current-forms))
-                ;; Find current first-usage
                 ns-name (:ns current-outline)
                 current-fwd (when ns-name
                               (fwd/detect-forward-refs file ns-name))
                 usage (first (filter #(= (str (:name %)) name-str) current-fwd))
-                ;; Find form to move before
                 target (when usage
                          (form-at-or-before current-forms (:used-at usage)))]
             (when (and defn-form target
                        (> (:line defn-form) (:line target)))
-              ;; Get comment header
               (let [form-start (let [idx (dec (dec (:line defn-form)))]
                                  (loop [i idx]
                                    (if (neg? i) 0
@@ -269,16 +250,13 @@
                                          (inc i)))))
                     form-end (:end-line defn-form)
                     form-text (subvec current-lines form-start form-end)
-                    ;; Remove form from source
                     without-form (into (subvec current-lines 0 form-start)
                                        (subvec current-lines form-end))
-                    ;; Adjust target line
                     target-line (:line target)
                     adj-target (if (< form-start (dec target-line))
                                  (- target-line (- form-end form-start))
                                  target-line)
                     insert-at (dec adj-target)
-                    ;; Insert
                     with-move (str/join "\n"
                                         (concat (subvec without-form 0 insert-at)
                                                 [""]
@@ -294,7 +272,6 @@
           (when (seq names-to-delete)
             (let [current-source (slurp file)
                   current-lines (str/split-lines current-source)
-                  ;; Remove lines that are (declare name) for our targets
                   filtered (remove (fn [line]
                                      (let [trimmed (str/trim line)]
                                        (some (fn [n]

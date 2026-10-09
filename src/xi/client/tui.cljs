@@ -84,15 +84,9 @@
             :text (tui-keys/listing-text layers)}})
 
 (def ^:private builtin-actions
-  "Core (non-extension) actions the TUI keymap binds (xi.keys/defaults :tui),
-   each `{:id :event|:run :when}`: :event is dispatched with the active
-   room's :room-id, :run is (fn [state room dispatch!]). :prompt/toggle
-   toggles full/preview rendering of the system-prompt buffer (its default
-   key ctrl+o lives in the :buffer/prompt layer, so it falls through to the
-   editor elsewhere). :chat/new starts a new chat in the current room's cwd
-   (same as typing /new; mirrors the web client's alt+n). :agent/abort aborts
-   the running agent turn from any buffer; gated on :busy? so the key falls
-   through when idle. :keys/show opens the shortcuts buffer."
+  "Core actions the TUI keymap binds (xi.keys/defaults :tui), each `{:id
+   :event|:run :when}`: :event is dispatched with the active room's :room-id,
+   :run is (fn [state room dispatch!])."
   [{:id :prompt/toggle :event {:type :ui/prompt-toggle}}
    {:id :chat/new      :event {:type :command/run :name "new"}}
    {:id :agent/abort   :event {:type :agent/abort}
@@ -106,11 +100,9 @@
                                            (room-layers room (if pager? :pager :editor))))))}])
 
 (defn- action-runner
-  "The TUI's action table over `actions` (builtin + extension maps, see
-   `builtin-actions`): {:enabled? (fn [id] → bool) :run! (fn [id] → bool)}.
-   :enabled? is the guard xi.keys/lookup takes — an action needs an active
-   room and a passing :when, else the key falls through to the next layer
-   (or the editor's own handling)."
+  "The TUI's action table over `actions`: {:enabled? (fn [id]) :run! (fn
+   [id])}; :enabled? is the guard xi.keys/lookup takes (an action needs an
+   active room and a passing :when)."
   [actions get-state dispatch!]
   (let [by-id (into {} (map (juxt :id identity)) actions)]
     {:enabled? (fn [id]
@@ -129,10 +121,9 @@
                        true))))}))
 
 (defn- editor-key-hook
-  "The editor's :on-key: decode the keypress, resolve it in the compose-mode
-   layers and run the bound action. Keys that type a character are never
-   looked up (the editor owns them); an unbound or guarded-off key returns
-   nil so the editor's own handling runs."
+  "The editor's :on-key: resolve the keypress in the compose-mode layers and
+   run the bound action. Typing keys are never looked up; an unbound key
+   returns nil for the editor's own handling."
   [{:keys [enabled? run!]} get-state]
   (fn [data]
     (when-let [chord (tui-keys/decode data)]
@@ -143,11 +134,9 @@
             (run! (:action res))))))))
 
 (defn- quick-reply-keybindings
-  "Native editor bindings alt+1..alt+4: submit the Nth quick-reply chip
-   (xi.quick-replies) of the active room. The chip is looked up at press time
-   and sent via :input/submit — the universal submit path — so it works in
-   standalone and client alike with no core handler. Guarded so the key falls
-   through to the editor when there is no chip at that index."
+  "Native editor bindings alt+1..alt+4 submitting the Nth quick-reply chip
+   (xi.quick-replies) via :input/submit; guarded so the key falls through
+   without a chip."
   [get-state dispatch!]
   (mapv (fn [i]
           (let [seqs #{(str ESC (inc i)) (str ESC "[" (+ 49 i) ";3u")}
@@ -194,9 +183,8 @@
         (recur (next in) (conj out (first in)))))))
 
 (defn- reload!
-  "Restart the process with the same argv, picking up recompiled code.
-   Passes the current session id as `--session <sid>` so the new process
-   resumes it (replacing any stale --session already on the command line)."
+  "Restart the process with the same argv, passing the current session id as
+   `--session` so the new process resumes it."
   [session-id on-exit]
   (let [child-process (js/require "child_process")
         argv (-> (vec (js->clj js/process.argv))
@@ -210,7 +198,6 @@
     (js/process.exit 0)))
 
 (defn- copy-to-clipboard!
-  "Copy text to the system clipboard via OSC 52."
   [text]
   (when (seq text)
     (let [b64 (.toString (js/Buffer.from text "utf-8") "base64")]
@@ -222,9 +209,8 @@
   ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
 
 (defn- build-loading-menu
-  "Spinner panel shown while an async menu frame fetches its items (e.g. the
-   model list). Self-animates via its own timer (:start/:stop are driven by
-   sync-bottom-panel!, since focus-panel! has no lifecycle). Esc pops back."
+  "Spinner panel shown while an async menu frame fetches its items;
+   :start/:stop are driven by sync-bottom-panel!."
   [{:keys [prompt]} room-id dispatch!]
   (let [st    (atom {:frame 0 :timer nil})
         label (or prompt "> ")]
@@ -253,10 +239,8 @@
                        (ansi/fg :dim "loading…"))]))}))
 
 (defn- session-status-fn
-  "Live status lookup for menu items that carry a :session-id (e.g. the palette
-   Chats section, /resume). Reads the lobby mirror fresh on every call so a menu
-   item animates a spinner while that session's agent is running — mirroring the
-   web session cards. Returns nil for items without a :session-id."
+  "Live status lookup for menu items carrying a :session-id, read from the
+   lobby mirror on every call so a running session's item animates."
   [get-state]
   (fn [item]
     (when-let [sid (:session-id item)]
@@ -267,16 +251,10 @@
          :has-dialog? (match? :has-dialog?)}))))
 
 (defn- build-completion-menu
-  "Completion menu component from a menu description:
-     {:id kw :prompt str :items [...] :alt-items [...] :tab-labels [...]}
-   Items carry {:label :description :event | :drill} — an :event item is
-   terminal (closes the menu then dispatches), a :drill item pushes a
-   sub-view frame and keeps the palette open. :alt-items adds a Tab-switched
-   second item set (e.g. /resume current-folder vs all).
-   :key-bindings — vec of {:key str :event map :selected? bool}. When :key
-   matches, closes the menu and dispatches the event (with :room-id merged).
-   When :selected? is true, the currently selected item is merged into the
-   event under :selected."
+  "Completion menu from {:id :prompt :items :alt-items :tab-labels}. Items
+   carry {:label :description :event | :drill} (:event closes then dispatches,
+   :drill pushes a sub-view); :alt-items is a Tab-switched set; :key-bindings
+   are {:key :event :selected?} (the selected item merged under :selected)."
   [{:keys [prompt items alt-items tab-labels key-bindings search-field freeform]} room-id dispatch! get-state]
   (let [;; Tab state is interaction-local (like the menu's filter query) —
         ;; it lives in the component, not in app state.
@@ -369,10 +347,8 @@
     (build-completion-menu menu room-id dispatch! get-state)))
 
 (defn- palette-action-event
-  "Map a shared xi.palette action to the TUI event that runs it. Every action
-   resolves to a :command/run — the same command a user could type — so the
-   Ctrl+/ palette and the web Cmd/K palette stay in sync (see xi.web.views for
-   the web mapping of the same actions)."
+  "Map a shared xi.palette action to the :command/run that runs it, so the TUI
+   and web palettes stay in sync."
   [room-id action]
   (let [run (fn [name & [args]]
               (cond-> {:type :command/run :room-id room-id :name name}
@@ -390,10 +366,8 @@
                  :reload       (run "reload")))))
 
 (defn- full-command-list
-  "The curated palette commands (ordering, descriptions, subcommand
-   expansions) followed by every other assembly command not in the curated
-   set — the TUI shows ALL commands (built-ins + extensions, e.g. /reload,
-   /skill), while the web palette sticks to the curated subset."
+  "The curated palette commands followed by every other assembly command (the
+   TUI shows all; the web sticks to the curated set)."
   [cmd-list]
   (let [curated-names (into #{} (map :name) palette/palette-commands)]
     (into (vec palette/palette-commands)
@@ -402,9 +376,7 @@
           cmd-list)))
 
 (defn- commands-menu
-  "Slash-commands menu (Ctrl+/ and '/' on an empty editor): the full command
-   list — the curated shared entries first (matching the web '/' suggestions),
-   then every remaining assembly command — as a flat menu, no sections."
+  "Slash-commands menu (Ctrl+/ and '/' on an empty editor): full-command-list as a flat menu."
   [room-id cmd-list]
   {:id :commands
    :prompt "/"
@@ -421,11 +393,8 @@
 (def ^:private palette-drill-actions  #{:change-model :skills})
 
 (defn- palette-menu
-  "Command palette (Ctrl+P): shared sections — Chats, Actions, Commands — from
-   xi.palette, each item mapped to a TUI :command/run event. Section headings
-   show only at an empty query (xi.tui.completion drops them once you type).
-   Picker-opening entries become :drill items so they open a sub-view within
-   the palette (with Esc back-nav) rather than closing it."
+  "Command palette (Ctrl+P): the shared xi.palette sections mapped to
+   :command/run events; picker-opening entries become :drill items."
   [state room-id cmd-list]
   (let [room?   (boolean room-id)
         cur-sid (get-in state [:rooms room-id :session :id])
@@ -466,8 +435,7 @@
 
 (defn- confirm-diff-scroll
   "New top line of a confirm dialog's expanded diff after key `data`, or nil
-   when it isn't a scroll key. `h` is the visible window height; the render
-   clamps the result to the diff's length."
+   when it isn't a scroll key."
   [data top h]
   (case data
     ("j" "\u001b[B")  (inc top)
@@ -481,15 +449,9 @@
     nil))
 
 (defn- build-confirm-dialog
-  "A y/n confirm dialog rendered as a bordered box that sits above the prompt
-   line. Enter = yes, Esc = no. The message word-wraps to the terminal width so
-   long guarded commands no longer overflow and corrupt the layout, and the
-   editor stays visible below the dialog for context.
-
-   A dialog carrying a :diff shows a capped preview; d expands it in place
-   into a scrollable view of the whole change (j/k, space/b, ^d/^u, g/G) and
-   d/q/Esc collapse it again. y/n and Enter still answer while expanded.
-   Alt+a / Alt+d allow / deny too, mirroring the web client's shortcuts."
+  "A y/n confirm dialog above the prompt line (Enter = yes, Esc = no, Alt+a /
+   Alt+d like the web). A :diff shows a capped preview; d expands it into a
+   scrollable view."
   [{:keys [message prompt diff] :as dlg} respond! editor]
   (let [text    (or message prompt "Confirm?")
         ;; A guarded write/edit's change, shown above the question so the
@@ -570,10 +532,8 @@
                          :else nil)))}))
 
 (defn- build-cwd-select-dialog
-  "Missing-working-directory recovery dialog. Renders the concrete (string)
-   options as a numbered list; a digit key answers with that path, Esc
-   cancels (answers nil). The :custom sentinel option is omitted — typing a
-   path isn't supported from the TUI; the web client handles that case."
+  "Missing-working-directory recovery dialog: a numbered list, a digit answers,
+   Esc cancels. The :custom option is omitted (the web client handles it)."
   [{:keys [message options]} respond!]
   (let [choices (filterv #(string? (:value %)) options)]
     {:type :dialog
@@ -596,9 +556,8 @@
                        :else nil))}))
 
 (defn- build-select-dialog
-  "A generic single-choice dialog. Renders `options` (each {:label :value})
-   as a numbered list; a digit key answers with that option's value, Esc
-   cancels (answers nil). Values may be any type."
+  "A single-choice dialog: numbered `options` ({:label :value}), a digit
+   answers, Esc cancels."
   [{:keys [message options]} respond!]
   {:type :dialog
    :render (fn [width]
@@ -630,11 +589,9 @@
        (>= (.charCodeAt d 0) 32)))
 
 (defn- build-form-dialog
-  "A multi-field text form dialog (:type :form). The fields come from the
-   dialog's :fields data (normalized by xi.dialog/form-fields) — typing edits
-   the active field, Enter advances (submitting on the last field), Tab/arrows
-   switch fields, Esc cancels (answers nil). Resolves to a map of field name
-   → entered text."
+  "A multi-field text form (:type :form, fields from xi.dialog/form-fields):
+   Enter advances and submits on the last field, Tab/arrows switch, Esc
+   cancels. Resolves to {name text}."
   [{:keys [message] :as dlg} respond!]
   (let [fields (dialog/form-fields dlg)
         n      (count fields)
@@ -689,10 +646,7 @@
            :else nil)))}))
 
 (defn- build-dialog
-  "A focused component for the active dialog. Dispatches the answer via
-   :ui/dialog-response, which the dialog owner (xi.ext.core/create-dialogs)
-   resolves. :cwd-select and :select offer a numbered list; :form is a
-   multi-field text form; everything else is a y/n confirm."
+  "A focused component for the active dialog, answering via :ui/dialog-response."
   [{:keys [id type] :as dialog} room-id dispatch! editor]
   (let [respond! (fn [value]
                    (dispatch! {:type :ui/dialog-response
@@ -713,11 +667,9 @@
 ;; ── Render sync helpers ──────────────────────────────────────────────────────
 
 (defn sync-history!
-  "Reconcile the block cache (ctx.blocks, a JS array of
-   #js {:entry e :block {:nodes :update!}}) against the room history.
-   `viewer` is this client's user id: blocks label other users' prompts by
-   sender, so a changed viewer (the server settled on another user at
-   :auth/ok) rebuilds the cache. Returns true when anything changed."
+  "Reconcile the block cache (ctx.blocks) against the room history; a changed
+   `viewer` (this client's user) rebuilds it, since blocks label other users'
+   prompts. True when anything changed."
   [^js ctx history viewer]
   (when (not= viewer (.-viewer ctx))
     (set! (.-viewer ctx) viewer)
@@ -756,11 +708,8 @@
                        (= :running (:status last-entry))))))))
 
 (defn- terminal-title
-  "Terminal title for a room: \"Xi: <label>\", prefixed with ⧗ (U+29D7) while a
-   dialog awaits an answer, else ⟳ (U+27F3) while the agent is busy. xmonad's
-   ewwLogHook greps those markers to highlight the workspace indicator in eww.
-   Set client-side so it reaches the real terminal window (a server extension
-   would write to the headless server's detached stdout)."
+  "Terminal title for a room, prefixed ⧗ while a dialog waits and ⟳ while busy
+   (xmonad greps these). Set client-side so it reaches the real terminal."
   [room]
   (when-let [label (or (get-in room [:session :name])
                        (some-> (:cwd room) (str/split #"/") last))]
@@ -790,14 +739,12 @@
 ;; ── Prompt navigation (Alt+j / Alt+k) ────────────────────────────────────────
 
 (defn- measure-nodes
-  "Total rendered line count of a seq of TUI nodes at `width`."
   [nodes width]
   (reduce (fn [acc n] (+ acc (count ((:render n) width)))) 0 nodes))
 
 (defn- prompt-anchor-lines
-  "Content line indices (0 = top) where each :user prompt block begins, oldest
-   first. Mirrors sync-chat!'s child order: header nodes ++ (mapcat :nodes
-   blocks), so the indices line up with the rendered content lines."
+  "Content line indices where each :user prompt block begins, oldest first
+   (mirrors sync-chat!'s child order)."
   [^js ctx width]
   (let [blocks (.-blocks ctx)]
     (loop [i 0
@@ -811,9 +758,8 @@
           (recur (inc i) (+ line h) acc'))))))
 
 (defn- jump-to-prompt!
-  "Scroll to the nearest :user prompt above (:prev) / below (:next) the current
-   viewport top. Stateless — like the web client's cross-history prompt nav.
-   Only acts in the chat buffer (logs/pager have their own scroll handling)."
+  "Scroll to the nearest :user prompt above (:prev) / below (:next) the
+   viewport top. Chat buffer only."
   [^js ctx dir]
   (let [room (some-> (.-state ctx) state/active-room)]
     (when (= :chat (get-in room [:ui :active-buffer] :chat))
@@ -827,12 +773,9 @@
               (tui/scroll-line-to-top! target))))))))
 
 (defn- pager-view!
-  "Focused pager component for a buffer, cached on the buffer value's identity
-   (a /diff with new output replaces it; reopening via /buffers reuses it).
-   Git diffs (:diff?) get the interactive unified-diff viewer; other buffers
-   (difft output, plain text) get the generic text pager, with the buffer's
-   :engine renderer applied. Building a fresh component grabs focus and
-   scrolls to the top."
+  "Focused pager component for a buffer, cached on the buffer value's identity:
+   the interactive diff viewer for git diffs, the text pager (with the buffer's
+   :engine renderer) otherwise."
   [^js ctx buf room-id dispatch!]
   (when-not (identical? buf (.-pagerVal ctx))
     (let [on-close (fn [] (dispatch! {:type :ui/buffer-switch
@@ -896,11 +839,9 @@
   (.-pagerComp ctx))
 
 (defn- subagents-pager-view!
-  "Focused live pager over the room's sub-agents (xi.client.subagents-buffer).
-   Cached per room in the same pagerComp/pagerVal slots as the other pagers
-   (so the bottom-panel help bar works unchanged); unlike them its content is
-   read from app state, so it is invalidated whenever the agents vector
-   changes identity — streaming deltas repaint live while the buffer is open."
+  "Focused live pager over the room's sub-agents (xi.client.subagents-buffer),
+   cached per room in the pager slots and invalidated whenever the agents
+   vector changes."
   [^js ctx room dispatch!]
   (let [room-id (:id room)
         agents  (get-in room [:ext :subagents :agents])
@@ -934,27 +875,22 @@
     (.-pagerComp ctx)))
 
 (defn- pager-buffer?
-  "A buffer that should be shown in a focused pager (scroll keybindings +
-   help toolbar): the diff/difft buffers (identified by their :engine key)
-   and file buffers (identified by their :path), so viewing a file gets the
-   same vim navigation as the diff buffer. The system-prompt buffer stays on
-   the static view so ctrl+o (an editor keybinding) keeps working; :chat and
-   :logs have their own views."
+  "A buffer shown in a focused pager: diff/difft buffers (:engine) and file
+   buffers (:path). The system-prompt buffer stays static so ctrl+o keeps
+   working."
   [buf]
   (or (contains? buf :engine)
       (contains? buf :path)))
 
 (defn- pager-active?
-  "True when the active buffer renders as a focused pager: a pager buffer
-   value, or the live :subagents view (which has no [:ui :buffers] entry)."
+  "True when the active buffer renders as a focused pager, including the live
+   :subagents view."
   [room active]
   (or (= active :subagents)
       (pager-buffer? (get-in room [:ui :buffers active]))))
 
 (defn- sync-view!
-  "Point the view wrapper at the active buffer (:chat is the persistent
-   chat container; logs/other buffers are rebuilt from state each pass).
-   Pager buffers get the focused viewer, which takes focus while open."
+  "Point the view wrapper at the active buffer; pager buffers get the focused viewer."
   [^js ctx room ring dispatch!]
   (let [active (get-in room [:ui :active-buffer] :chat)
         switched? (not= active (.-activeBuffer ctx))]
@@ -990,7 +926,6 @@
     (tui/set-focus! comp)))
 
 (defn- build-history-selector
-  "Instantiate the interactive history selector for /tree."
   [room dispatch!]
   (history-selector/make-history-selector
    {:history (:history room)
@@ -1020,8 +955,7 @@
 
 (defn- sync-bottom-panel!
   "Bottom-panel priority: dialog > menu > tree > pager help-bar > editor.
-   The pager help-bar is the active pager component's own :help toolbar.
-   Rebuilds only when the selected target identity changes."
+   Rebuilds only when the target identity changes."
   [^js ctx room dispatch!]
   (let [dialog (first (get-in room [:ui :dialogs]))
         menu   (get-in room [:ui :menu])
@@ -1055,10 +989,7 @@
       path)))
 
 (defn- render-status-banner!
-  "Render a connection/pairing status banner when a client has no room to show
-   yet — still connecting, awaiting pairing approval, or denied. Keyed on the
-   auth state so it only rebuilds on change, and clears :roomId so the normal
-   room view rebuilds cleanly once a room finally joins."
+  "Connection/pairing status banner while a client has no room yet, keyed on the auth state."
   [^js ctx auth]
   (let [k [(:status auth) (:code auth)]]
     (when (not= k (.-authKey ctx))

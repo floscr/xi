@@ -14,13 +14,10 @@
       (when zloc
         (let [first-child (some-> zloc z/down z/string)]
           (if (and (z/list? zloc)
-                   ;; Skip declare forms — we want the actual defn
                    (not= "declare" first-child)
                    (let [second-child (some-> zloc z/down z/right z/string)]
-                     ;; Match defn name, stripping metadata prefix
                      (and second-child
                           (or (= second-child target)
-                              ;; Handle ^:private etc
                               (let [third (some-> zloc z/down z/right z/right z/string)]
                                 (= third target))))))
             zloc
@@ -47,9 +44,7 @@
   [{:keys [file form before dry-run]}]
   (let [source (slurp file)
         zloc (z/of-string source {:track-position? true})
-        ;; Find source form
         src-zloc (find-form zloc (str form))
-        ;; Find destination form
         dst-zloc (find-form zloc (str before))]
     (cond
       (nil? src-zloc)
@@ -70,31 +65,20 @@
                   :to-before (str before)
                   :to-line dst-line
                   :direction (if (< src-line dst-line) :down :up)}}
-          ;; Actually perform the move:
-          ;; 1. Capture the source form as a string (with preceding comments)
-          ;; 2. Remove it from the source location
-          ;; 3. Insert it before the destination
-          ;; For now, do this as text surgery on lines (safe because we know exact boundaries)
           (let [lines (vec (str/split-lines source))
-                ;; Find comment header for source form
                 src-start (loop [i (dec (dec src-line))] ;; 0-indexed, line above
                             (if (neg? i) 0
                                 (if (str/starts-with? (str/trim (nth lines i "")) ";")
                                   (recur (dec i))
                                   (inc i))))
                 src-end (:end-row src-meta)
-                ;; Extract form lines (0-indexed: src-start to src-end-1)
                 form-lines (subvec lines src-start src-end)
-                ;; Remove from source
                 remaining (into (subvec lines 0 src-start)
                                 (subvec lines src-end))
-                ;; Adjust destination line if source was above it
                 adj-dst (if (< src-start (dec dst-line))
                           (- dst-line (- src-end src-start))
                           dst-line)
-                ;; Find comment header for destination too
                 insert-at (dec adj-dst) ;; 0-indexed, insert before this line
-                ;; Insert with blank line separator
                 result (str/join "\n"
                                  (concat (subvec remaining 0 insert-at)
                                          [""]

@@ -30,7 +30,6 @@
 (def ^:private separator-fg "\033[38;2;70;80;100m")
 
 (defn- file-ext
-  "Extract file extension from a path."
   [filename]
   (when filename
     (when-let [dot (str/last-index-of filename ".")]

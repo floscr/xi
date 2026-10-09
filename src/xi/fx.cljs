@@ -33,9 +33,8 @@
       path)))
 
 (defn ->disk-session
-  "Normalize a room's in-memory session map for an on-disk write: fold the
-   in-memory :provider-session-id mirror back into :cli-session-id and drop the
-   keys that must never hit disk (the mirror itself and the in-flight marker)."
+  "A room's in-memory session for an on-disk write: :provider-session-id folded
+   back into :cli-session-id, in-memory-only keys dropped."
   [sess]
   (-> sess
       (assoc :cli-session-id (or (:provider-session-id sess)
@@ -50,25 +49,21 @@
   (case (:source s) :claude " [claude]" ""))
 
 (def ^:private edit-tool-names
-  "Stripped, lower-cased tool names that mutate files on disk. Includes the
-   structural-edit (clj-surgeon) tools so MCP-driven edits still register."
+  "Stripped, lower-cased names of the tools that mutate files, clj-surgeon's included."
   #{"edit" "write" "multiedit" "notebookedit"
     "clj_replace" "clj_extract" "clj_fix_declares"
     "clj_mv" "clj_fix_parens" "clj_rename_ns"})
 
 (defn- edit-tool-call?
-  "True when a history entry is a file-mutating tool call. Tolerant of an
-   un-stripped mcp__ prefix and of casing so edits register regardless of how
-   the provider recorded the tool name."
+  "True when a history entry is a file-mutating tool call, tolerant of the
+   mcp__ prefix and casing."
   [{:keys [kind tool]}]
   (and (= :tool-call kind)
        (boolean (edit-tool-names (some-> tool util/strip-mcp-prefix str/lower-case)))))
 
 (defn session-edited-paths
-  "Absolute paths of files touched via edit/write tool calls in the room's
-   history. Unlike session-edited-files this is not limited to files under
-   cwd, so edits in another repo (a parent repo, a sibling checkout) still
-   count — the session diff groups them by their own git root."
+  "Absolute paths of files touched by edit/write tool calls in the history, in
+   any repo (the session diff groups them by git root)."
   [room cwd]
   (->> (:history room)
        (filter edit-tool-call?)
@@ -79,9 +74,8 @@
        vec))
 
 (defn session-edited-files
-  "Paths (relative to cwd) of session-edited files under cwd. Used where only
-   the cwd repo matters — the commit flow and the git-lock conflict checks —
-   as opposed to the session diff, which spans repos via session-edited-paths."
+  "cwd-relative paths of session-edited files under cwd (the commit flow and
+   git-lock checks)."
   [room cwd]
   (->> (session-edited-paths room cwd)
        (map #(.relative node-path cwd %))
@@ -89,21 +83,17 @@
        vec))
 
 (def ^:private commit-summary-re
-  "Matches git's commit-summary line `[<branch> <sha>] subject` and captures
-   the abbreviated sha. Covers the root-commit and detached-HEAD variants
-   (`[master (root-commit) abc1234]`, `[detached HEAD abc1234]`)."
+  "git's `[<branch> <sha>] subject` summary line, capturing the sha;
+   root-commit and detached-HEAD variants included."
   #"\[[^\]]*?([0-9a-f]{7,40})\]")
 
 (def ^:private clj-commit-re
-  "Matches a commit made from the clj sandbox: `(git \"commit\" …)` via the
-   pre-approved git helper, or the escalated `(sh \"git\" \"commit\" …)` form."
+  "A commit made from the clj sandbox: `(git \"commit\" …)` or `(sh \"git\" \"commit\" …)`."
   #"\(\s*(?:git\s+\"commit\"|sh\s+\"git\"\s+\"commit\")")
 
 (defn- commit-block?
   "True when a history entry is a commit action: the git_commit tool, a bash
-   command that ran `git commit` (amend/fixup included), or a clj sandbox call
-   whose code ran `(git \"commit\" …)` / `(sh \"git\" \"commit\" …)`. Tolerant
-   of the mcp__ prefix and casing."
+   `git commit`, or a clj call running one."
   [{:keys [kind tool arguments]}]
   (and (= :tool-call kind)
        (let [t (some-> tool util/strip-mcp-prefix str/lower-case)]
@@ -125,12 +115,9 @@
     :else nil))
 
 (defn session-commit-refs
-  "Abbreviated shas of the commits created during the session, in the order
-   they were made. Scans the room history for commit blocks (the git_commit
-   tool, shell `git commit`s, and clj-sandbox `(git \"commit\" …)` calls
-   alike) and pulls each result's `[branch <sha>]`
-   summary line. Stays pure: dedup and dead-commit (amended/rebased-away)
-   pruning happen in the git layer against the live repo."
+  "Abbreviated shas of the commits created during the session, in order, from
+   each commit block's summary line. Pure; dedup and dead-commit pruning happen
+   in the git layer."
   [room]
   (->> (:history room)
        (filter commit-block?)
@@ -159,9 +146,8 @@
 
 
 (defn fetch-model-ids
-  "Fetch model ids from every provider exposing :list-models! (in provider
-   order) and call cb with the combined vector. Each source degrades to empty
-   independently, so one failing provider never blocks the others."
+  "Combined model ids from every provider exposing :list-models!, each source
+   degrading to empty independently."
   [providers cb]
   (let [fetches (keep :list-models! (vals providers))]
     (-> (js/Promise.all
@@ -178,11 +164,9 @@
    (fn [models] (send-fn {:type :models/web-list-result :models models}))))
 
 (defn create-fx
-  "Build effect handlers. providers is the provider-id → provider map
-   (:models/fetch gathers model ids from each provider's :list-models!).
-   opts:
-     :system-prompt-fn  (fn [cwd] → {:system str :system-parts [{:source :text}]})
-                        — called on /cd to rebuild the system prompt."
+  "Effect handlers. `providers` is the provider map (:models/fetch); opts
+   :system-prompt-fn (fn [cwd] → {:system :system-parts}) rebuilds the system
+   prompt on /cd."
   [ring providers & [{:keys [system-prompt-fn]}]]
   {:session/new
    (fn [{:keys [dispatch! state]} {:keys [room-id save-current? after-prompt truncated-from keep-history?]}]

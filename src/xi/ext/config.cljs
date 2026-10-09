@@ -37,7 +37,6 @@
     v))
 
 (defn parse-dotenv
-  "Parse dotenv text into a string->string map."
   [text]
   (into {}
         (keep (fn [line]

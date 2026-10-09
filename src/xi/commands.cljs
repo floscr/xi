@@ -30,7 +30,8 @@
   {:kind :status :text text})
 
 (def truncation-divider-text
-  "── conversation truncated here — messages above are shown for reference only and are not sent to the model ──")
+  "── conversation truncated here — messages above are shown for reference only
+   and are not sent to the model ──")
 
 (defn- append-history [st room-id entry]
   (update-in st [:rooms room-id :history] conj entry))
@@ -89,11 +90,9 @@
   (boolean (re-matches cli-interrupt-marker-re (str text))))
 
 (defn messages->history
-  "Convert session blocks (xi.session/read-session-messages) into history
-   entries (see xi.agent). Tool results are folded into their tool-call;
-   attached images (base64) are reattached to the user message they belong to
-   (they follow that message's text block in the transcript) so a resumed
-   conversation still shows the pictures."
+  "Session blocks (xi.session/read-session-messages) → history entries
+   (xi.agent): tool results fold into their call, attached images reattach to
+   their user message."
   [messages]
   (let [results-by-id (into {}
                             (comp (filter #(= :tool-result (:type %)))
@@ -170,9 +169,7 @@
 ;; ── Command handlers ─────────────────────────────────────────────────────────
 
 (defn- cmd-help
-  "Lists every command available in this assembly. The merged command
-   vector (built-ins + extension commands) is threaded in via ctx :commands
-   so /help reflects whatever extensions were composed at startup."
+  "/help: every command of this assembly (ctx :commands, built-ins + extensions)."
   [st {:keys [room-id commands]}]
   (status st room-id
           (str "Commands:\n"
@@ -189,11 +186,9 @@
                                  commands)))))
 
 (defn- cmd-answer
-  "/allow [always|repo] and /deny [reason] — answer the room's pending
-   permission confirm from the prompt, like its buttons/keys. A /deny reason
-   is told to the model (xi.dialog/with-deny-reason). Dispatches the canonical
-   :ui/dialog-response so the dialog owner resolves it and every client
-   clears it (xi.client.ws-transport drops the dialog on the echo)."
+  "/allow [always|repo] and /deny [reason]: answer the room's pending
+   permission confirm from the prompt via the canonical :ui/dialog-response. A
+   /deny reason is told to the model (xi.dialog/with-deny-reason)."
   [verb]
   (fn [st {:keys [room-id args]}]
     (let [option (dialog/answer-option verb args)
@@ -270,11 +265,9 @@
        "visible here; the parts that follow are appended after it."))
 
 (defn- render-system-prompt
-  "Render a room's system prompt for the buffer. Expanded? true shows the
-   verbatim string that is actually inserted (the room's :agent :system);
-   false shows a per-part overview clipped to a 200-char preview each.
-   For Claude rooms a [CLAUDE_SYSTEM_PROMPT] header is prepended to surface
-   the SDK-injected preset that precedes the appended parts."
+  "A room's system prompt for the buffer: expanded, the verbatim string; else a
+   per-part overview with 200-char previews. Claude rooms get a
+   [CLAUDE_SYSTEM_PROMPT] header for the SDK-injected preset."
   [st room-id expanded?]
   (let [parts   (get-in st [:rooms room-id :agent :system-parts])
         system  (get-in st [:rooms room-id :agent :system])
@@ -333,11 +326,9 @@
   {:effects [[:events/load {:room-id room-id}]]})
 
 (defn- cmd-buffers
-  "The /buffers menu: the chat, the log, every open buffer of the room
-   (xi.buffers — diffs, files, the system prompt, …) in opening order, the live
-   sub-agents view, and — when any buffer is open — a line that closes them
-   all. The buffer in view is left out (switching to it is a no-op). The
-   switch is per client; the close drops them for everyone."
+  "The /buffers menu: chat, log, every open buffer (xi.buffers) in opening
+   order, the sub-agents view, and a close-all line. The buffer in view is left
+   out."
   [st {:keys [room-id]}]
   (let [room (state/get-room st room-id)
         active (get-in room [:ui :active-buffer] :chat)
@@ -370,7 +361,6 @@
       {:effects [[:cwd/change {:room-id room-id :path args}]]})))
 
 (defn debug-text
-  "Build the debug info string from a room map."
   [room]
   (let [{:keys [model effort busy?]} (:agent room)
         sess (:session room)]
@@ -430,14 +420,9 @@
 ;; ── Event handlers ───────────────────────────────────────────────────────────
 
 (defn- input-submit
-  "Raw editor submission — route to a command or a prompt. Pending images
-   (room :ui :pending-images) ride along on prompts via :image/process.
-   Event-level :images (from clipboard-image hook) merge with pending.
-
-   An optional :model rides along on resubmissions (retry / edit-save from
-   the web bubble menu): the user may have picked a new model after the
-   original turn, so apply it to the room before the fork's turn starts —
-   otherwise the fork would reuse the room's prior model."
+  "Raw editor submission, routed to a command or a prompt. Pending images ride
+   along via :image/process; an optional :model (web resubmissions) is applied
+   to the room first so the fork runs on it."
   [st {:keys [room-id text images client-id model user]}]
   (when-let [room (state/get-room st room-id)]
     (let [model-change? (and model (not= model (get-in room [:agent :model])))
@@ -473,9 +458,8 @@
         :else nil))))
 
 (defn- make-command-run
-  "Build a :command/run handler closed over the merged command vector
-   (built-ins + extension commands). Each command handler is invoked with
-   the full :commands list in its ctx so e.g. /help can enumerate them."
+  "A :command/run handler closed over the merged command vector; each handler
+   gets the full :commands list in its ctx."
   [commands]
   (let [by-name (into {} (mapcat (fn [cmd]
                                    (map #(vector % cmd) (cons (:name cmd) (:aliases cmd)))))
@@ -517,11 +501,8 @@
                        :menu menu :menu-stack [])}))
 
 (defn- menu-push
-  "Push a menu frame. If a menu is already active, it is pushed onto the
-   stack and the new frame is marked :back? so the renderer shows a back
-   affordance; Esc/cancel pops back to it. If no menu is active this behaves
-   like menu-open (so typed commands that open a select-menu still work
-   standalone). A frame's optional :load effect is fired to fetch async data."
+  "Push a menu frame onto the drill stack (marked :back? when a menu is already
+   active), or open it like menu-open. Fires the frame's optional :load effect."
   [st {:keys [room-id menu]}]
   (when (state/get-room st room-id)
     (let [active (get-in st [:rooms room-id :ui :menu])
@@ -535,8 +516,7 @@
         load (assoc :effects [load])))))
 
 (defn- menu-pop
-  "Pop one frame off the drill stack, restoring the parent as active. If the
-   stack is empty, close the menu entirely. Universal back-navigation."
+  "Pop one frame off the drill stack; close the menu when it is empty."
   [st {:keys [room-id]}]
   (when (get-in st [:rooms room-id :ui :menu])
     (let [stack (get-in st [:rooms room-id :ui :menu-stack])]
@@ -547,10 +527,8 @@
         {:state (update-in st [:rooms room-id :ui] dissoc :menu :menu-stack)}))))
 
 (defn- menu-populate
-  "Fill the active menu frame with fetched data (async result). Only applies
-   when the active menu is still the one that requested the load — matched by
-   :id — so a late-arriving fetch can't clobber a menu the user drilled away
-   from. Clears :loading?."
+  "Fill the active menu frame with fetched data, only when it is still the
+   frame that requested the load (matched by :id)."
   [st {:keys [room-id id menu]}]
   (let [active (get-in st [:rooms room-id :ui :menu])]
     (when (and active (or (nil? id) (= id (:id active))))
@@ -567,15 +545,10 @@
 
 (defn- tree-navigate
   "Truncate history to `index` (exclusive for :edit, inclusive + 1 for
-   :navigate on user messages to include the response). Clears the provider
-   session and flags :inject-history? so the next turn starts a fresh
-   provider session with the truncated conversation injected as context
-   (see xi.agent/history->context). The dropped provider session id is
-   recorded as superseded so its transcript stays claimed by this session
-   instead of resurfacing as a duplicate card (state/drop-provider-session).
-   A truncation that drops every user message (retry / edit / delete of the
-   first message) restarts the conversation, so auto-titling is re-armed —
-   the resubmitted first message generates a fresh title (naming/rearm-titling)."
+   :navigate), clear the provider session (recorded as superseded,
+   state/drop-provider-session) and flag :inject-history? so the next turn
+   injects the truncated conversation as context. Dropping every user message
+   re-arms auto-titling."
   [st {:keys [room-id index mode editor-text]}]
   (when-let [room (state/get-room st room-id)]
     (let [history (:history room)
@@ -594,8 +567,8 @@
         (assoc :effects [[:editor/insert-text {:text editor-text}]])))))
 
 (defn- buffer-open
-  "Generic buffer open — install a named buffer (xi.buffers) and switch to it
-   on the client it was opened for (the event's :client-id, else everywhere)."
+  "Install a named buffer (xi.buffers) and switch to it on the client it was
+   opened for (the event's :client-id, else everywhere)."
   [st {:keys [room-id buffer-id buffer] :as ev}]
   (when (state/get-room st room-id)
     {:state (-> st
@@ -625,11 +598,10 @@
 ;; ── Session lifecycle handlers ───────────────────────────────────────────────
 
 (defn- session-created
-  "Fresh session installed (from /new, /clear or compaction): reset the
-   room. :after-prompt (compaction summary) is re-submitted into the new
-   session through the normal prompt path. With :keep-history? (/truncate),
-   the old conversation stays visible above a divider, flagged :no-llm? so
-   it is never replayed to the model."
+  "Fresh session installed (/new, /clear, compaction): reset the room.
+   :after-prompt is re-submitted through the normal prompt path; :keep-history?
+   (/truncate) keeps the old conversation visible above a divider, flagged
+   :no-llm?."
   [st {:keys [room-id session after-prompt keep-history?]}]
   (when-let [room (state/get-room st room-id)]
     (let [busy? (get-in room [:agent :busy?])
@@ -654,11 +626,8 @@
         (seq effects) (assoc :effects effects)))))
 
 (defn- session-forked
-  "Split the conversation into a new session (from /fork): install a fresh
-   session id but KEEP the current history. The new session has no provider
-   session, so the next turn starts a fresh provider session with the existing
-   conversation injected as context (see xi.agent/history->context). The
-   original session is left untouched on disk, so the two branches diverge."
+  "/fork: a fresh session id with the current history kept; the next turn
+   starts a fresh provider session with the conversation injected as context."
   [st {:keys [room-id session]}]
   (when (state/get-room st room-id)
     (let [session' (assoc session :provider-session-id nil :inject-history? true)]
@@ -669,9 +638,8 @@
                   (update-in [:rooms room-id :agent] assoc :busy? false :queued []))})))
 
 (defn- session-resume
-  "Load a saved session by id into a room. What an extension's command
-   dispatches (xi.ext.user.guard, `:session/resume`) to open a session it
-   lists; /resume id:<id> does the same."
+  "Load a saved session by id into a room (what an extension's
+   `:session/resume` and /resume id:<id> dispatch)."
   [st {:keys [room-id session-id]}]
   (when (and (state/get-room st room-id) (string? session-id))
     {:effects [[:session/load {:room-id room-id :scope :all :session-id session-id}]]}))
@@ -737,26 +705,21 @@
     {:effects [[:session/sync {:room-id room-id}]]}))
 
 (defn session-init-mark-interrupted
-  "Chained onto :agent/session-init — as soon as the provider reports a
-   resumable session id (spinner shown / turn in flight), mark the on-disk
-   session interrupted. A hard server restart mid-turn then leaves a signal
-   that auto-resumes this agent when a client reconnects; a normal turn-end
-   clears it via :session/sync."
+  "Chained onto :agent/session-init: mark the on-disk session interrupted as
+   soon as a turn is in flight, so a hard restart mid-turn auto-resumes it; a
+   normal turn-end clears it."
   [st {:keys [room-id]}]
   (when (get-in st [:rooms room-id :session :provider-session-id])
     {:effects [[:session/mark-interrupted {:room-id room-id}]]}))
 
 (defn all-commands
-  "Merge built-in commands with the extension-provided ones. Extension
-   commands are appended so built-ins take precedence on name clashes
-   (first match wins in make-command-run's by-name map)."
+  "Built-in commands followed by the extension-provided ones (built-ins win on name clashes)."
   ([] (all-commands nil))
   ([extra-commands] (into built-in-commands (or extra-commands []))))
 
 (defn command-handlers
-  "Build the command/event handler map for an assembly. extra-commands are
-   extension-provided commands that join the built-ins for dispatch, /help
-   and TUI completion."
+  "The command/event handler map for an assembly; extra-commands are extension
+   commands joining the built-ins."
   ([] (command-handlers nil))
   ([extra-commands]
    {:input/submit    input-submit

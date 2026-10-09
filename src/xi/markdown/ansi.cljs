@@ -12,7 +12,6 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- render-inline-token
-  "Render a single inline token to an ANSI string."
   [token]
   (cond
     (string? token) token

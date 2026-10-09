@@ -41,9 +41,8 @@
 (defonce ^:private global-file-override (atom nil))
 
 (defn set-global-file!
-  "Point the global rules file at `file` (nil restores the default). Used by
-   the test runner so the user's real ~/.config/xi/rules.edn never leaks into
-   test runs."
+  "Point the global rules file at `file` (nil restores the default); the test
+   runner uses it to keep the real rules.edn out of test runs."
   [file]
   (reset! global-file-override file))
 
@@ -77,10 +76,8 @@
 (defn clear-cache! [] (reset! cache {}))
 
 (defn read-rule-edn
-  "Parse a rule/rules EDN string with the full Clojure reader (so regex
-   literals `#\"…\"` in `:path`/`:command` round-trip — they are not valid EDN
-   for the plain edn reader). Unknown tagged literals fall through to their
-   value. Returns the parsed data, or nil on parse failure."
+  "Parse rule EDN with the full Clojure reader so regex literals round-trip;
+   unknown tagged literals fall through to their value. nil on failure."
   [s]
   (try
     (binding [tr/*default-data-reader-fn* (fn [_tag v] v)]
@@ -88,23 +85,19 @@
     (catch :default _ nil)))
 
 (def rules-file-version
-  "The rules-file format version this xi reads. Every rules file must declare
-   it as `:version`; a missing or different version is an error, so a format
-   change (e.g. renamed default aliases) can never be misread silently."
+  "The rules-file format version this xi reads; a missing or different
+   `:version` is an error, never a silent misread."
   1)
 
 (def rules-file-type
-  "The `:type` tag every xi rules file must carry, so the file identifies
-   itself (and can't be confused with another tool's rules.edn or with xi's
-   own config.edn, `:xi/config`)."
+  "The `:type` tag every xi rules file must carry."
   :xi/rules)
 
 (def ^:private rules-file-keys #{:type :version :rules :defaults})
 
 (defn parse-rules-config
-  "Validate parsed rules-file `data` (nil = unparseable). Returns
-   `{:rules [...] :defaults [...]}` — `:defaults` expanded via
-   `defaults/expand`, nil when the file doesn't set it — or `{:error msg}`."
+  "Validate parsed rules-file `data` → {:rules :defaults} (defaults expanded
+   via defaults/expand) or {:error msg}."
   [data]
   (let [v       rules-file-version
         shape   (str "{:type " rules-file-type " :version " v
@@ -158,14 +151,11 @@
           {:error (ex-message e)})))))
 
 (defn- read-rules-data
-  "The raw parsed EDN of rules `file` (nil when unparseable)."
   [file]
   (read-rule-edn (str (fs/readFileSync file "utf8"))))
 
 (defn- load-rules-file
-  "Read + validate rules `file`, cached by mtime. nil when there is no file;
-   otherwise the `parse-rules-config` result (`{:rules :defaults}` or
-   `{:error}`)."
+  "Read + validate rules `file`, cached by mtime; nil without a file."
   [file]
   (when (and file (fs/existsSync file))
     (try
@@ -180,10 +170,8 @@
         {:error (str "unreadable: " (.-message e))}))))
 
 (defn- invalid-file-rule
-  "The fail-closed stand-in for an invalid rules `file`: a catch-all deny that
-   takes the file's place in the config tier, so every rule below it (runtime
-   grants, defaults) is shadowed until the file is fixed — a broken file must
-   never silently drop the user's own denies."
+  "The fail-closed stand-in for an invalid rules file: a catch-all deny in the
+   config tier, shadowing every rule below it until the file is fixed."
   [file error]
   {:match  {}
    :action {:type    :deny
@@ -196,7 +184,6 @@
 ;; ── Hard-coded immutable rules ──────────────────────────────────────────────
 
 (def ^:private rules-file-re
-  "Matches a resolved path that IS a rules file."
   #"(?:\.config/xi/rules\.edn|[/\\]\.xi/rules\.edn)$")
 
 (def ^:private rules-file-loose-re
@@ -217,7 +204,6 @@
    :result {:content [{:type "text" :text msg}] :is-error true}})
 
 (defn tool-kind
-  "Classify a tool name into a rule tool kind."
   [name]
   (let [n (str name)]
     (case (str/lower-case n)
@@ -233,9 +219,8 @@
       (if (str/starts-with? n "mcp__") :mcp :other))))
 
 (defn- bb-command
-  "The command line a bb tool call runs — `bb <task> <args…>`, or `bb tasks`
-   without a task (mirrors xi.ext.clj's bb-argv) — so `:command` rules match
-   bb calls like any other command."
+  "The command line a bb tool call runs (`bb <task> <args…>`, or `bb tasks`),
+   so `:command` rules match bb calls."
   [{:keys [task args]}]
   (let [task (not-empty (str/trim (str task)))]
     (str/join " " (into ["bb"] (if task (into [task] (map str args)) ["tasks"])))))
@@ -251,9 +236,8 @@
          :mcp-tool   (subs body (+ idx 2))}))))
 
 (defn request-user
-  "The user id a decision acts for (the `:user` match key): the ctx's :user
-   (a tool ctx carries whoever sent the turn's latest prompt; a sub-agent's,
-   its parent's), else the room's turn user, else this process' own user."
+  "The user a decision acts for: the ctx's :user, else the room's turn user,
+   else this process' own user."
   [{:keys [user get-state room-id]}]
   (util/user-id
    (or user
@@ -263,9 +247,8 @@
            (core-state/own-user st))))))
 
 (defn- user-record
-  "{:id :name :meta} of user `id` per config.edn's `:users` (for map `:user`
-   rules; an undeclared user has empty :meta), or `rules/config-invalid` when
-   config.edn is invalid."
+  "{:id :name :meta} of user `id` per config.edn's `:users`, or
+   `rules/config-invalid` when config.edn is invalid."
   [id]
   (let [cfg (user-config/read-config)]
     (if (:error cfg)
@@ -275,11 +258,9 @@
           name (assoc :name name))))))
 
 (defn decision-request
-  "Normalize a tool call into the pure matcher's decision request.
-   Resolves the effective cwd, the repo root (of the target path, else cwd),
-   the raw target path/command, the tool-call arguments (for informative ask
-   dialogs), any MCP server/tool + room ext state, and the user the call acts
-   for (`request-user`)."
+  "Normalize a tool call into the matcher's decision request: effective cwd,
+   repo root, target path/command, arguments, MCP server/tool, room ext state
+   and user."
   [tool-call {:keys [cwd get-state room-id] :as ctx}]
   (let [{:keys [name arguments]} tool-call
         kind    (tool-kind name)
@@ -299,10 +280,9 @@
       (= kind :mcp) (merge (parse-mcp name)))))
 
 (defn request
-  "A decision request for a call that isn't a tool call — xi.api.* from user
-   extensions. `m` carries :tool plus whatever it targets (:path :command :cli
-   :argv :host :extension …); this fills :effective-cwd (m's own, else ctx's
-   :cwd), :repo, the room's ext :state and :user, like decision-request does."
+  "A decision request for a non-tool call (xi.api.* from user extensions): `m`
+   carries :tool plus its target keys; this fills :effective-cwd, :repo, :state
+   and :user like decision-request."
   [m {:keys [cwd get-state room-id] :as ctx}]
   (let [eff (or (:effective-cwd m) cwd (.cwd js/process))
         p   (:path m)]
@@ -314,20 +294,16 @@
            m)))
 
 (defn with-path-target
-  "Append the target of a path ask to its confirm `text`: the path and the git
-   repo it sits in (or that it is in none), so a rule's generic :message —
-   \"Write outside the project repo?\" — still says what is being approved."
+  "Append the target path and its git repo (or none) to a path ask's confirm `text`."
   [text path repo]
   (str text "\n\n"
        "Path: " path "\n"
        "Repo: " (or repo "none (not inside a git repo)")))
 
 (defn hard-block-request
-  "Immutable, non-overridable check: a deny message when decision request
-   `req` would write a rules file — a write/edit targeting one, or a shell-ish
-   command (bash, clj code, (sh …)) naming one next to a write token — else
-   nil. Deliberately imperative (not a data rule): it is security-critical and
-   must never be shadowed or disabled."
+  "The non-overridable check: a deny message when `req` would write a rules
+   file (a write/edit targeting one, or a shell-ish command naming one next to
+   a write token), else nil. Imperative on purpose: it must never be shadowed."
   [{:keys [tool path command effective-cwd]}]
   (when (case tool
           (:write :edit)   (and path (re-find rules-file-re (expand-path effective-cwd (str path))))
@@ -343,14 +319,9 @@
     (deny-result msg)))
 
 (defn outside-cwd?
-  "True when target `path` resolves outside both the effective `cwd` and the OS
-   tmp dir — i.e. a write/edit that escapes the working tree. Tmp is always
-   allowed. Symlinks are canonicalized (paths/real-resolve) so the check can't
-   be laundered through a link created inside cwd. With `{:nofollow? true}` a
-   symlink at the final component is judged by its OWN location, not its
-   target's (paths/real-resolve-nofollow) — for entry-level ops (rm, mv) that
-   touch the link rather than what it points to. This is I/O, computed only
-   when an `:outside` rule is in play."
+  "True when `path` resolves outside both the effective `cwd` and the OS tmp
+   dir, symlinks canonicalized; `{:nofollow? true}` judges a final-component
+   symlink by its own location (entry-level ops). I/O."
   [cwd path & [{:keys [nofollow?]}]]
   (boolean
    (when (and cwd path (not (str/blank? (str path))))
@@ -362,10 +333,7 @@
                 (paths/within-tmp? cwd resolved)))))))
 
 (defn credential-path?
-  "True when target `path` resolves inside one of the hidden credential dirs
-   (.ssh, .gnupg, .password-store, …). Symlinks are canonicalized
-   (paths/real-resolve) so the check can't be laundered through a link. I/O,
-   computed only when a `:credential` rule is in play."
+  "True when `path` resolves inside a hidden credential dir, symlinks canonicalized. I/O."
   [cwd path]
   (boolean
    (when (and cwd path (not (str/blank? (str path))))
@@ -379,14 +347,10 @@
   #":type\s+:xi/config\b")
 
 (defn- xi-file-change?
-  "True when decision `req` would change an xi-owned file: one named
-   `file-name` whose content `tagged?` recognizes — called with the parsed
-   data (nil when it doesn't read) and the raw text, so a broken xi file still
-   gets confirmed — wherever it lives (e.g. a dotfiles source a symlink points
-   at). write/edit: the target is named so (raw or symlink-resolved) and
-   either the existing file is tagged or the new text is (creating or
-   migrating one). bash/clj: the command carries a write token and names such
-   a path that is an existing tagged file. I/O."
+  "True when `req` would change an xi-owned file named `file-name` whose
+   content `tagged?` recognizes (parsed data, or raw text for a broken file),
+   wherever it lives: a write/edit targeting one, or a bash/clj command naming
+   an existing tagged one next to a write token. I/O."
   [file-name tagged? {:keys [tool path command arguments effective-cwd]}]
   (let [named?       (fn [p] (= file-name (path/basename (str p))))
         tagged-file? (fn [file]
@@ -416,10 +380,8 @@
        false))))
 
 (defn xi-rules-file-change?
-  "True when decision `req` would change an xi rules file: any `rules.edn`
-   carrying `:version` — the version lock every xi rules file must declare,
-   which tells it apart from any other tool's rules.edn. See `xi-file-change?`;
-   computed only when an `:xi-rules-file` rule is in play."
+  "xi-file-change? for any `rules.edn` carrying `:version`; computed only for
+   `:xi-rules-file` rules."
   [req]
   (xi-file-change? "rules.edn"
                    (fn [data text]
@@ -429,10 +391,8 @@
                    req))
 
 (defn xi-config-file-change?
-  "True when decision `req` would change xi's user config file: any
-   `config.edn` tagged `:type :xi/config` (xi.user-config), which tells it
-   apart from any other tool's config.edn. See `xi-file-change?`; computed
-   only when an `:xi-config-file` rule is in play."
+  "xi-file-change? for any `config.edn` tagged `:type :xi/config`; computed
+   only for `:xi-config-file` rules."
   [req]
   (xi-file-change? "config.edn"
                    (fn [data text]
@@ -442,12 +402,9 @@
                    req))
 
 (defn- literal-operands
-  "The non-flag args of literal `argv` (a `:sh` command, binary first), or nil
-   when there are none or a flag isn't a bare short-flag cluster (`-f`, `-rv`):
-   a `--long[=value]` flag, `--`, or a value glued to a non-letter (`-t/etc`)
-   could smuggle an unchecked path, so such a command never matches an
-   operand predicate. Every other arg is treated as a path (a flag's separate
-   value, e.g. `-m 755`, is checked too — stricter, never looser)."
+  "The non-flag args of literal `argv`, or nil when there are none or a flag
+   isn't a bare short-flag cluster (a `--long` flag or glued value could
+   smuggle a path). A flag's separate value counts as an operand."
   [argv]
   (let [args     (map str (rest argv))
         flags    (filter #(str/starts-with? % "-") args)
@@ -456,12 +413,8 @@
       operands)))
 
 (defn operands-within-repo?
-  "True when literal `argv` (a `:sh` command, binary first) only touches paths
-   strictly inside `repo` (not the root itself — `mv <repo> /tmp/x`) or tmp —
-   never the repo's `.git/` (hooks = code execution) or `.xi/` (moving it away
-   would drop the repo's rules file). Operands/flags as in `literal-operands`;
-   each operand is resolved against `cwd` with symlinks canonicalized. I/O,
-   computed only when a `:within` rule is in play."
+  "True when literal `argv` only touches paths strictly inside `repo` (never
+   the root, `.git/` or `.xi/`) or tmp, symlinks canonicalized. I/O."
   [cwd repo argv]
   (boolean
    (when-let [operands (and repo (literal-operands argv))]
@@ -478,9 +431,8 @@
                operands)))))
 
 (defn- git-ls-files
-  "`git ls-files -z <flags> -- rel` entries for `rel` under repo `root`, or nil
-   when git fails (not a repo, no git). `--literal-pathspecs` keeps an operand
-   with `*`/`?`/`[` from widening into a glob."
+  "`git ls-files -z <flags> -- rel` entries under repo `root`, or nil when git
+   fails. `--literal-pathspecs` keeps globs literal."
   [root rel flags]
   (let [r (cp/spawnSync "git"
                         (clj->js (concat ["--literal-pathspecs" "-C" root "ls-files" "-z"]
@@ -490,12 +442,9 @@
       (remove str/blank? (str/split (str (.-stdout r)) #"\u0000")))))
 
 (defn git-tracked?
-  "True when canonical absolute path `abs` is git-tracked content inside repo
-   `root`: a file in the index, or a directory holding at least one indexed
-   file and nothing untracked (ignored files count as untracked — deleting
-   them would be unrecoverable too). The root itself never counts. Uncommitted
-   modifications to a tracked file don't matter: tracked means in the index.
-   I/O (two `git ls-files` runs)."
+  "True when canonical path `abs` is git-tracked content in `root`: an indexed
+   file, or a directory of indexed files with nothing untracked (ignored counts
+   as untracked). The root never counts. I/O."
   [root abs]
   (boolean
    (when (and root abs (not= abs root) (paths/path-within? abs root))
@@ -504,13 +453,8 @@
             (empty? (git-ls-files root rel ["--others"])))))))
 
 (defn operands-git-tracked?
-  "True when literal `argv` (a `:sh` command, binary first) only names
-   git-tracked content inside `repo` — every operand resolves (symlinks
-   canonicalized) to a tracked file or an all-tracked directory (see
-   `git-tracked?`), so removing or moving it is recoverable from git.
-   Operands/flags as in `literal-operands`; tmp paths, the repo root, `.git/`
-   and anything outside the repo are never tracked, so they never match. I/O,
-   computed only when a `:tracked` rule is in play."
+  "True when literal `argv` only names git-tracked content inside `repo` (see
+   git-tracked?), so removing or moving it is recoverable. I/O."
   [cwd repo argv]
   (boolean
    (when-let [operands (and repo (literal-operands argv))]
@@ -518,8 +462,7 @@
        (every? #(git-tracked? root (paths/real-resolve cwd %)) operands)))))
 
 (defn strip-quoted
-  "Remove single- and double-quoted spans so quoted `;`/`|` don't count,
-   and redirection operators (`2>&1`, `>&2`, `&>`) so their `&`/`|` don't
+  "Remove quoted spans and redirection operators so their `;` `|` `&` don't
    read as command separators."
   [s]
   (-> s
@@ -529,10 +472,8 @@
       (str/replace #"&>>?" " ")))
 
 (defn chained-command?
-  "True when a bash command uses shell composition — pipes, `;`/`&&`/`&`,
-   command substitution, backticks, multiple lines, or a leading VAR= binding.
-   These are the unreadable one-liners the clj tool exists to replace
-   (`:chained` rules)."
+  "True when a bash command uses shell composition (pipes, `;`/`&&`/`&`,
+   substitution, backticks, multiple lines, a leading VAR= binding)."
   [cmd]
   (let [s (strip-quoted (str/trim (str cmd)))]
     (boolean (or (re-find #"[;|&\n]" s)
@@ -541,8 +482,7 @@
                  (re-find #"^\w+=" s)))))
 
 (defn- on-path
-  "The absolute path of `program` on this process's PATH, or nil — the same
-   resolution a spawned child gets (xi.env keeps js/process.env PATH live)."
+  "The absolute path of `program` on this process's PATH, or nil."
   [program]
   (let [path-env (or (aget js/process.env "PATH") "")]
     (if (exists? js/Bun)
@@ -553,11 +493,8 @@
             (str/split path-env #":")))))
 
 (defn program-installed?
-  "True when `program` — a `:sh` request's `:cli`, the command's first token —
-   can be executed: a bare name resolves on PATH, a name with a `/` exists
-   relative to `cwd`. nil for a token that is not a program (blank, or a
-   leading `VAR=` binding), so an `:installed` rule never matches it. I/O,
-   computed only when an `:installed` rule is in play."
+  "True when `program` can be executed (on PATH, or relative to `cwd` with a
+   `/`); nil for a token that isn't a program. I/O."
   [cwd program]
   (let [p (str program)]
     (cond
@@ -566,9 +503,8 @@
       :else                 (some? (on-path p)))))
 
 (defn- home-collapse
-  "Rewrite a leading $HOME in absolute `abs` back to `~`, so a `:path` rule can
-   be written home-relative (`~/…`) and still match a resolved absolute target.
-   Returns nil when `abs` is nil or not under $HOME (nothing to collapse)."
+  "Absolute `abs` with a leading $HOME rewritten to `~`, so home-relative
+   `:path` rules match; nil when not under $HOME."
   [abs]
   (when abs
     (let [home (os/homedir)]
@@ -578,24 +514,12 @@
         :else                                      nil))))
 
 (defn enrich-request
-  "Add the opt-in, I/O-derived match fields to a decision `req` that the given
-   `ruleset` actually needs — `:resolved-path` (canonical absolute path) plus
-   `:resolved-home-path` (that path with a leading $HOME collapsed to `~`) for
-   `:path` rules, `:outside-cwd?` for `:outside` rules, `:credential-path?` for
-   `:credential` rules, `:nodes` (tree-sitter) for `:node` rules,
-   `:operands-within-repo?` for `:within` rules (from a literal `:sh` `:argv`),
-   `:operands-tracked?` for `:tracked` rules (same `:argv`, checked against
-   the git index — a delay the matcher forces, so git is only spawned for a
-   command a `:tracked` rule otherwise matches), `:xi-rules-file?` for
-   `:xi-rules-file` rules, `:xi-config-file?` for `:xi-config-file` rules,
-   `:own-data?` for
-   `:extension-data` rules (symlink-canonical, so a link out of the data dir
-   doesn't count), `:chained?` for `:chained` rules (`:bash` commands), and
-   `:bb-trusted?` for `:bb-trusted` rules (`:bb` calls), `:mcp-trusted?`
-   for `:mcp-trusted` rules (`:mcp` calls), `:installed?` for
-   `:installed` rules (`:sh` calls — whether `:cli` resolves on PATH), and
-   `:user-record` for map `:user` rules (the request's `:user` per
-   config.edn)."
+  "Add the I/O-derived match fields the given `ruleset` actually needs to
+   `req`: :resolved-path / :resolved-home-path (`:path`), :outside-cwd?,
+   :credential-path?, :nodes (`:node`), :operands-within-repo? (`:within`),
+   :operands-tracked? (`:tracked`, a delay), :xi-rules-file?, :xi-config-file?,
+   :own-data? (`:extension-data`), :chained?, :bb-trusted?, :mcp-trusted?,
+   :installed?, :user-record (map `:user` rules)."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (paths/real-resolve (:effective-cwd req) (str (:path req))))]
@@ -645,8 +569,8 @@
       true (conj [(global-file) :global]))))
 
 (defn config-rules
-  "Repo rules then global rules, each tagged with its scope. An invalid file
-   contributes a single catch-all deny instead (see `invalid-file-rule`)."
+  "Repo rules then global rules, tagged with their scope; an invalid file
+   contributes `invalid-file-rule` instead."
   [cwd]
   (vec (mapcat (fn [[file scope]]
                  (let [{:keys [rules error]} (load-rules-file file)]
@@ -655,9 +579,8 @@
                (config-files cwd))))
 
 (defn default-rules
-  "The lowest-precedence default tier: the first config file (repo, then
-   global) that sets `:defaults`, expanded; else the built-in defaults. An
-   invalid file is skipped here — its fail-closed deny already sits above."
+  "The lowest-precedence tier: the first config file setting `:defaults` (repo,
+   then global), expanded; else the built-in defaults."
   [cwd]
   (or (some (fn [[file _]] (:defaults (load-rules-file file)))
             (config-files cwd))
@@ -687,11 +610,9 @@
   (if @hardened-disabled [] defaults/hardened-rules))
 
 (defn ordered-rules
-  "The full ruleset in precedence order for `cwd`/`room-id`, excluding the
-   imperative hard-block (that runs first, separately): the hardened tier
-   (prepended, always wins) then config (repo, global) then runtime (server,
-   session) then the default tier last, so any user rule overrides a default
-   but nothing overrides the hardened tier."
+  "The full ruleset in precedence order for `cwd`/`room-id`: hardened, config
+   (repo, global), runtime (server, session), default. The imperative
+   hard-block runs first, separately."
   [state room-id cwd]
   (vec (concat (hardened-rules)
                (config-rules cwd)
@@ -701,9 +622,8 @@
 ;; ── Config file writing (repo / global scopes) ───────────────────────────────
 
 (defn- write-rules-file!
-  "Persist raw rules-file `data` ({:type :version :rules :defaults}) to `file`
-   as pretty EDN (one rule per line), creating parent dirs. Regex literals
-   round-trip via pr-str/read-string."
+  "Persist rules-file `data` to `file` as pretty EDN (one rule per line); regex
+   literals round-trip via pr-str/read-string."
   [file {:keys [version rules] :as data}]
   (fs/mkdirSync (path/dirname file) #js {:recursive true})
   (fs/writeFileSync
@@ -725,12 +645,9 @@
     nil))
 
 (defn append-rule-file!
-  "Prepend `rule` (with any :scope stripped) to the config file for `scope`
-   (:repo | :global), so the newest rule wins among file rules; a missing file
-   is created at the current `:type` + `:version`. The file's `:defaults` are kept as
-   written (aliases, unexpanded). Returns `{:file path}` on success,
-   `{:error msg}` when the existing file is invalid (left untouched), nil when
-   the scope has no file. Clears the mtime cache so the next check reloads."
+  "Prepend `rule` to the config file for `scope` (:repo | :global), creating a
+   missing file at the current type + version. → {:file} or {:error msg}
+   (invalid file left untouched), nil when the scope has no file."
   [scope cwd rule]
   (when-let [file (scope-file scope cwd)]
     (let [data  (if (fs/existsSync file)

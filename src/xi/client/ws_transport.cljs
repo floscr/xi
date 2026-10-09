@@ -26,9 +26,8 @@
 ;; ── Handler wrapping (pure) ──────────────────────────────────────────────────
 
 (def ^:private default-client-side-fx
-  "Effects from mirrored events that should still run on the client.
-   Extensions extend this (e.g. :terminal/set-title for done-notify) via
-   make-handlers :client-fx."
+  "Effects from mirrored events that still run on the client; extensions extend
+   it via make-handlers :client-fx."
   #{:clipboard/copy})
 
 (def ^:private local-commands
@@ -37,10 +36,8 @@
    "reload" [:app/reload {}]})
 
 (defn- local-command-effect
-  "Resolve a client-local command name to its process-level effect. For
-   /reload, inject the active room's session-id so the restarted client
-   resumes that exact session (via a {:session-id sid} join target) instead
-   of joining \"latest\" — otherwise a server restart drops the session."
+  "A client-local command's process-level effect; /reload carries the active
+   session id so the restarted client resumes it."
   [st name]
   (if (= name "reload")
     [:app/reload {:session-id (get-in st [:rooms (:active-room st) :session :id])}]
@@ -60,21 +57,10 @@
   {:effects [[:ws/send ev]]})
 
 (def ^:private local-ui-events
-  "Menu events apply locally instead of forwarding. Their content is built
-   client-side (the Ctrl+P palette, the '/' commands menu), so a server
-   round-trip only adds latency — enough that characters typed right after
-   '/' landed in the still-focused editor and were lost when the menu
-   finally echoed back. Server-originated menu frames (e.g. /resume pushing
-   its session list, model-fetch populate) still arrive tagged :remote? and
-   mirror in like any other event.
-
-   `:theme/set` joins them: the mode belongs to this terminal, so an extension
-   in the client process sets it directly instead of asking the server.
-
-   `:ui/buffer-switch` too: the room's buffers are shared, which one this
-   client looks at is not (xi.buffers), so a tab switch stays here. A switch
-   the server dispatches for us (a /diff reply, a file read) still mirrors in,
-   gated on its :client-id by the core reducer."
+  "Events applied locally instead of forwarded: menus (built client-side; a
+   round-trip lost keystrokes typed right after '/'), `:theme/set` (this
+   terminal's) and `:ui/buffer-switch` (which buffer this client views is its
+   own, xi.buffers). Server-originated frames still mirror in as :remote?."
   #{:ui/menu-open :ui/menu-push :ui/menu-pop :ui/menu-populate :ui/menu-close
     :theme/set :ui/buffer-switch})
 
@@ -86,9 +72,8 @@
       (if (:remote? ev) (m st ev) (handler st ev)))))
 
 (defn- wrap
-  "remote? → mirror; local-room target → run the base handler locally with
-   full effects (client-local virtual rooms, e.g. the TUI's deferred
-   :pending room — its effects are all client-side); else forward."
+  "remote? → mirror; a local-room target → run the base handler locally with
+   full effects; else forward."
   [client-side-fx handler {:keys [local-room?]}]
   (let [m (mirror client-side-fx handler)]
     (fn [st ev]
@@ -98,8 +83,8 @@
         :else                              (forward st ev)))))
 
 (defn- wrap-input-submit
-  "Like wrap, but intercept client-local commands before forwarding, and
-   route local-room submissions to :local-submit (the deferred-room stash)."
+  "wrap, intercepting client-local commands first and routing local-room
+   submissions to :local-submit."
   [client-side-fx handler {:keys [local-room? local-submit]}]
   (let [m (mirror client-side-fx handler)]
     (fn [st ev]
@@ -131,13 +116,9 @@
 
 (defn room-joined
   "Install the server's room snapshot and make it active. Menu state is
-   stripped: menus are per-client UI handled locally (local-ui-events), so a
-   menu frame a server-side flow once pushed (and the client since closed
-   locally) must not resurrect from the snapshot. The active buffer is reset
-   to the chat for the same reason — the snapshot's is the server's own view
-   slot, which nothing renders; the buffers themselves ride along. Public so
-   the web client can wrap it (it splices a cache-elided history back in
-   first)."
+   stripped (menus are client-local) and the active buffer reset to the chat
+   (the snapshot's is the server's own slot). Public so the web client can wrap
+   it."
   [st {:keys [room-id room]}]
   {:state (-> st
               (assoc-in [:rooms room-id] (-> room
@@ -153,10 +134,9 @@
             (= room-id (:active-room st)) (assoc :active-room nil))})
 
 (defn dialog-response
-  "The user's own dialog answer is forwarded to the server (the resolver
-   lives there); the server's :remote? echo removes the answered dialog from
-   the local room mirror and, like the server, restarts the gated call's run
-   clock on an allow (xi.dialog/restamp-gated-call)."
+  "Forward the user's own dialog answer to the server; the :remote? echo
+   removes the dialog locally and restarts the gated call's run clock on an
+   allow (xi.dialog/restamp-gated-call)."
   [st {:keys [room-id dialog-id value remote?] :as ev}]
   (if remote?
     (when-let [answered (some #(when (= dialog-id (:id %)) %)
@@ -169,9 +149,7 @@
     {:effects [[:ws/send ev]]}))
 
 (defn lobby-state
-  "Replace the lobby slice. The Claude usage reading is the one key kept across
-   updates when the payload omits it (server restarted, fetch failing): the
-   sidebar keeps showing the last reading until it is outdated."
+  "Replace the lobby slice, keeping the last Claude usage reading when the payload omits it."
   [st ev]
   (let [lobby (select-keys ev [:rooms :sessions :read :profiles :user-ids :agent-id :started-at :claude-usage :model
                                :buffers])
@@ -181,12 +159,9 @@
                                (assoc :claude-usage prev)))}))
 
 (defn auth-ok
-  "The server admitted us and tells us which user this connection acts as
-   (clients.edn assignment, our :auth/hello claim, or root — xi.server.ws)
-   and the client id it knows us by. Record them so the renderers can tell
-   our own prompts from other users', and the reducers a view switch meant
-   for us from one meant for another client (xi.buffers/switch-here?). The
-   TUI and web clients compose this into their :auth/ok handlers."
+  "Record the user this connection acts as and our client id (xi.server.ws), so
+   renderers can tell our prompts from others' and reducers a view switch meant
+   for us (xi.buffers/switch-here?)."
   [st {:keys [user client-id]}]
   (when (or user client-id)
     {:state (cond-> st
@@ -194,25 +169,12 @@
               client-id (assoc-in [:connection :client-id] client-id))}))
 
 (defn make-handlers
-  "Client-mode handler map from the server-equivalent pure handlers:
-   every base type forwards locally / mirrors remotely, plus the
-   connection-level handlers only a client has.
-
-   Second arity threads extension seams:
-     :client-fx       extra mirrored-effect types allowed to run locally
-                      (joined to the clipboard default whitelist)
-     :local-handlers  process-local extension handlers (xi.config/client)
-                      installed UNWRAPPED — they act on the client process
-                      and never forward/mirror. Dialog answers still
-                      forward to the server, which owns the resolver.
-     :local-room?     (fn [ev] → bool) — non-remote events matching this
-                      predicate target a client-local virtual room and run
-                      the base reducer locally instead of forwarding
-                      (the TUI's deferred :pending room).
-     :local-submit    (fn [st ev] → result) — :input/submit / :command/run
-                      handler for local-room events (after the
-                      local-commands intercept): stashes the submission and
-                      creates the real server room."
+  "Client-mode handler map: every base type forwards locally / mirrors
+   remotely, plus the connection-level handlers. Seams: :client-fx (extra
+   mirrored effects allowed locally), :local-handlers (process-local extension
+   handlers installed unwrapped), :local-room? (fn [ev]) for client-local
+   virtual rooms that run the base reducer locally, :local-submit (fn [st ev])
+   handling their :input/submit / :command/run."
   ([base-handlers] (make-handlers base-handlers nil))
   ([base-handlers {:keys [client-fx local-handlers local-room? local-submit]}]
    (let [client-side-fx (into default-client-side-fx client-fx)
@@ -240,28 +202,13 @@
 ;; ── Transport (contained impure edge) ────────────────────────────────────────
 
 (defn create!
-  "Connect to a Xi server. The socket lives here; the app is wired in via
-   :set-dispatch! after creation (the app needs :effects first).
-
-   opts:
-     :url        ws:// URL
-     :hello      {:client-key … :client-name … :platform …} — sent as
-                 :auth/hello on every (re)connect; joins/sends are held back
-                 until the server answers :auth/ok. On :auth/pending the
-                 connection parks until another client (or `bb serve:approve
-                 <code>`) approves this key; :auth/denied stops reconnecting.
-                 All auth events are also dispatched into the app for UI.
-     :target     \"latest\" | \"new\" | room-id | {:session-id sid} — joined on
-                 open, and replayed on every reconnect
-     :cwd        working directory sent with the join request
-     :reconnect? auto-reconnect with backoff (1s → 30s) on drop, queuing
-                 sends until the socket reopens (web client; the TUI opts out
-                 and exits via :on-close instead)
-     :on-status  (fn [connected?]) — socket opened / dropped (offline badge)
-     :on-close   (fn []) — only without :reconnect?: connection ended and we
-                 are giving up; not called after an intentional close!
-
-   Returns {:effects {:ws/send …} :set-dispatch! :close!}."
+  "Connect to a Xi server; the app is wired in via :set-dispatch!. opts: :url,
+   :hello (sent as :auth/hello on every connect; sends are held until :auth/ok,
+   :auth/pending parks until approved, :auth/denied stops reconnecting),
+   :target (\"latest\" | \"new\" | room-id | {:session-id sid}, joined on open
+   and replayed on reconnect), :cwd, :reconnect? (backoff 1s → 30s, queued
+   sends), :on-status (fn [connected?]), :on-close (fn [], only without
+   :reconnect?). Returns {:effects :set-dispatch! :close!}."
   [{:keys [url hello target cwd reconnect? on-status on-close]}]
   (let [ctx #js {:dispatch nil :ws nil :closed false :pending #js [] :backoff 1000
                  :authed (nil? hello)

@@ -35,7 +35,6 @@
 (declare parse-inline)
 
 (defn- parse-code-span
-  "Parse `code` span. No nesting."
   [^String s idx]
   (let [len (count s)]
     (when (and (< idx len) (= (.charAt s idx) \`))

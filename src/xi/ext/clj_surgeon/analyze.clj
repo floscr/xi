@@ -104,8 +104,6 @@
    IMPORTANT: operates on the form's node (not the zipper context)
    so we don't walk into sibling forms."
   [form-zloc]
-  ;; Create a fresh zipper rooted at just this form's node
-  ;; so z/next + z/end? correctly bound the traversal
   (let [sub-zloc (z/of-string (z/string form-zloc))]
     (loop [loc sub-zloc
            results []]
@@ -209,11 +207,9 @@
       (let [require-children (->> (z/down require-form)
                                   (iterate z/right)
                                   (take-while some?))
-            ;; Direct vector children (shared requires)
             direct-aliases (->> require-children
                                 (filter z/vector?)
                                 (keep extract-alias-from-vector))
-            ;; Reader-conditional children (platform-specific requires)
             rcond-aliases (->> require-children
                                (filter reader-cond?)
                                (mapcat aliases-from-rcond-in-require))]
@@ -257,7 +253,6 @@
     (->> deps
          (filter (fn [d]
                    (and (not (contains? all-referenced (:name d)))
-                        ;; Only flag private forms — public might be used externally
                         (forms/private-form? (:type d)))))
          (mapv #(select-keys % [:name :type :line])))))
 
@@ -274,7 +269,6 @@
   [zloc target-name]
   (let [deps (intra-ns-deps zloc)
         deps-by-name (into {} (map (juxt :name identity) deps))
-        ;; Build reverse deps: who depends on each form?
         rev-deps (reduce (fn [acc {:keys [name depends-on]}]
                            (reduce (fn [a dep]
                                      (update a dep (fnil conj #{}) name))
@@ -363,15 +357,12 @@
    Returns {:sorted [...] :cycles [...]}. Cycles need (declare)."
   [zloc]
   (let [deps (intra-ns-deps zloc)
-        ;; dep-count: how many intra-ns deps does each form have?
         dep-count (into {} (map (fn [d] [(:name d) (count (:depends-on d))]) deps))
-        ;; reverse-adj: form -> list of forms that depend on it
         reverse-adj (reduce (fn [acc {:keys [name depends-on]}]
                               (reduce (fn [a dep]
                                         (update a dep (fnil conj []) name))
                                       acc depends-on))
                             {} deps)
-        ;; Start with forms that have ZERO dependencies (they go first)
         start (->> dep-count (filter #(zero? (val %))) (map key) sort vec)]
     (loop [queue start
            sorted []
@@ -383,7 +374,6 @@
          :has-cycles? (boolean (seq remaining))}
         (let [node (first queue)
               rest-q (vec (rest queue))
-              ;; Emit node. Decrement dep-count for forms that depend on node.
               dependents (get reverse-adj node [])
               dcnt' (reduce (fn [d n] (update d n dec)) dcnt dependents)
               remaining' (disj remaining node)

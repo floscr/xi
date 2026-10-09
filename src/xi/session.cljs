@@ -30,16 +30,14 @@
   (profile/agent-dir agent-id))
 
 (defn claude-config-dir
-  "The Claude CLI config dir — CLAUDE_CONFIG_DIR or ~/.claude. Read per call:
-   Xi points it at a throwaway mirror for ephemeral runs (`--no-store`), and
-   every Claude path (transcripts, credentials) must follow the same dir the
-   CLI writes to. Not a user-facing setting."
+  "The Claude CLI config dir (CLAUDE_CONFIG_DIR or ~/.claude), read per call:
+   ephemeral runs point it at a throwaway mirror and every Claude path must
+   follow."
   []
   (or (not-empty (aget js/process.env "CLAUDE_CONFIG_DIR"))
       (.join node-path HOME ".claude")))
 
 (defn claude-projects-dir
-  "Where the Claude CLI keeps its session transcripts."
   []
   (.join node-path (claude-config-dir) "projects"))
 
@@ -52,7 +50,6 @@
 ;; ── Helpers ───────────────────────────────────────────────────────────────────
 
 (defn- gen-uuid-v7
-  "Generate a UUIDv7 (time-ordered)."
   []
   (let [now (js/Date.now)
         ts-hex (.padStart (.toString now 16) 12 "0")
@@ -84,12 +81,8 @@
   (.join node-path (claude-projects-dir) (encode-cwd-claude cwd)))
 
 (defn git-project-cwds
-  "All working-tree paths that belong to the same git repository as `cwd`
-   (the main tree plus every linked worktree), main tree first. Falls back to
-   just `[cwd]` when `cwd` isn't a git repo — or when the spawn itself throws
-   (git not on PATH, cwd doesn't exist; e.g. the sanitized demo env). Used so
-   /resume from the main tree also surfaces sessions recorded inside its
-   worktrees (and vice versa)."
+  "Every working-tree path of `cwd`'s git repository (main tree first, then
+   linked worktrees); just `[cwd]` when it isn't a repo or git fails."
   [cwd]
   (let [paths (try
                 (let [proc (js/Bun.spawnSync
@@ -126,20 +119,15 @@
 ;; own.
 
 (defn stored-agent
-  "The agent id of a session's on-disk metadata. Sessions written before agent
-   profiles carry only `:personal-agent? true` (no :agent); they live in the
-   default agent's dir, so they read back as that agent."
+  "The agent id of a session's on-disk metadata; pre-profile sessions
+   (`:personal-agent? true`, no :agent) read back as the default agent."
   [data]
   (or (:agent data)
       (when (:personal-agent? data) profile/DEFAULT_ID)))
 
 (defn create-session
-  "Create a new Xi session. Returns session state map.
-   opts:
-     :agent - named agent id: the session is stored in that agent's dir
-              (~/.config/xi/personal-agent/<id>/) instead of the cwd's
-              project dir, and carries :agent on disk so later saves land
-              there too."
+  "Create a new Xi session. opts :agent stores it in that agent's dir
+   (~/.config/xi/personal-agent/<id>/) and tags it on disk."
   [cwd & [opts]]
   (let [dir (if (:agent opts)
               (personal-agent-dir (:agent opts))
@@ -158,18 +146,14 @@
     (assoc meta :_dir dir)))
 
 (defonce ^:private all-sessions-cache
-  ;; {:at <ms> :sessions [...]} — short-TTL cache of the raw (un-annotated)
-  ;; list-all-sessions scan. The scan stats every session file on disk
-  ;; (thousands of sync fs calls) and used to run multiple times per lobby
-  ;; broadcast AND per unread-counts query, per client. Invalidated on any
-  ;; session write so a just-synced session lists fresh.
+  ;; {:at <ms> :sessions [...]}: short-TTL cache of the raw list-all-sessions
+  ;; scan (thousands of sync fs calls), invalidated on any session write.
   (atom nil))
 
 (defn- invalidate-listing-cache! []
   (reset! all-sessions-cache nil))
 
 (defn save-session!
-  "Persist session metadata to disk."
   [session]
   (let [dir (or (:_dir session)
                 (if (:agent session)
@@ -192,22 +176,19 @@
         (xi-session-dir (:cwd session)))))
 
 (defn canvas-sidecar-path
-  "Path to a session's canvas-review sidecar (the node-based review canvas).
-   Stored as EDN so keyword values (node :kind) and string node-id map keys
-   survive the round-trip — a JSON round-trip would mangle both."
+  "Path to a session's canvas-review sidecar (EDN, so keyword values and string
+   map keys survive)."
   [session]
   (.join node-path (session-dir session) (str (:id session) ".canvas.edn")))
 
 (defn ext-state-sidecar-path
-  "Path to a session's persisted extension state: the room slices of the
-   extensions that declare `:persist-room` (xi.ext.persist), EDN keyed by
-   extension id. Lets that state outlive the room and server restarts."
+  "Path to a session's persisted extension state (the `:persist-room` slices,
+   xi.ext.persist), EDN keyed by extension id."
   [session]
   (.join node-path (session-dir session) (str (:id session) ".ext.edn")))
 
 (defn save-canvas!
-  "Persist a room's canvas-review state (diff + nodes + edges + plan) so it
-   survives room reaping and server restarts. nil canvas removes the sidecar."
+  "Persist a room's canvas-review state; nil removes the sidecar."
   [session canvas]
   (let [fp  (canvas-sidecar-path session)
         dir (session-dir session)]
@@ -218,9 +199,8 @@
       (when (fs/existsSync fp) (fs/unlinkSync fp)))))
 
 (defn load-canvas
-  "Read a session's persisted canvas-review state, or nil if none. A parse
-   failure is logged (not swallowed silently) so a corrupt sidecar surfaces
-   instead of masquerading as \"no canvas\" and resuming to an empty page."
+  "A session's persisted canvas-review state, or nil. A parse failure is logged
+   so a corrupt sidecar doesn't masquerade as no canvas."
   [session]
   (let [fp (canvas-sidecar-path session)]
     (when (and (:id session) (fs/existsSync fp))
@@ -231,7 +211,6 @@
              nil)))))
 
 (defn update-session!
-  "Update session fields and persist."
   [session updates]
   (let [updated (merge session updates)]
     (save-session! updated)
@@ -243,16 +222,10 @@
   (update-session! session {:last-accessed (iso-now)}))
 
 (defn touch-summary!
-  "Record a saved session's :last-opened on disk, in place. Resuming a
-   session into a room counts toward the sidebar's Recent *grouping* (so it
-   isn't dropped back to Earlier on its stale timestamp once the room is
-   reaped) but deliberately not toward the *sort order* (:last-accessed) —
-   merely opening a chat must not re-sort the Recent list under the click
-   (see xi.session.recent/recent? vs xi.palette/session-time). A lossless
-   JSON merge (not a load-session round-trip) so fields the in-memory
-   session doesn't model — :aborted-at, :interrupted-at — survive a
-   pre-turn save. No-op for summaries without a metadata file (:claude
-   transcripts — their first :session/sync writes one)."
+  "Record a saved session's :last-opened on disk: it counts toward the
+   sidebar's Recent grouping but not the sort order (:last-accessed), so
+   opening a chat never re-sorts the list. A lossless JSON merge, so fields the
+   in-memory session doesn't model survive. No-op without a metadata file."
   [summary]
   (when (and (= :xi (:source summary)) (:filepath summary))
     (try
@@ -265,17 +238,14 @@
                                ": " (.-message e)))))))
 
 (defn mark-interrupted!
-  "Persist the session with an :interrupted-at marker (a turn is in flight /
-   spinner shown). Any subsequent normal save/touch drops the marker, so it
-   only survives a hard process kill mid-turn — the signal used to auto-resume
-   an interrupted agent when a client reconnects."
+  "Persist the session with an :interrupted-at marker while a turn is in
+   flight; any later normal save drops it, so it only survives a hard kill
+   mid-turn (the auto-resume signal)."
   [session]
   (save-session! (assoc session :interrupted-at (iso-now))))
 
 (defn clear-interrupted!
-  "Remove the :interrupted-at marker from a session's on-disk file (located by
-   its summary :filepath), if present. Called after auto-resuming so a later
-   restart with no in-flight turn doesn't resume the same session again."
+  "Remove the :interrupted-at marker from a session's on-disk file after auto-resuming it."
   [filepath]
   (try
     (when (and filepath (fs/existsSync filepath))
@@ -298,15 +268,9 @@
        (catch :default _e nil)))
 
 (defn make-throwaway-config-dir!
-  "Create a temp CLAUDE_CONFIG_DIR mirroring the real Claude config via
-   symlinks but with a fresh, empty `projects/` dir. Used for throwaway turns
-   (e.g. auto-titling): pointing the SDK here makes the CLI persist that turn's
-   session JSONL under the temp dir instead of polluting ~/.claude/projects,
-   so it never reaches the session list. Auth/settings keep working because
-   every entry except `projects` is symlinked to the live config. With no live
-   config yet (an API-key or first-run user) there is nothing to mirror, and
-   the dir is just the empty `projects/`.
-   Returns the temp dir path, or nil on failure."
+  "Create a temp CLAUDE_CONFIG_DIR mirroring the real config via symlinks but
+   with an empty `projects/`, so a throwaway turn's transcript never reaches
+   ~/.claude/projects. Returns the path, or nil on failure."
   []
   (try
     (let [src  (claude-config-dir)
@@ -321,13 +285,10 @@
     (catch :default _e nil)))
 
 (defn sync-credentials-back!
-  "Save OAuth tokens a throwaway run refreshed into the live config. The
-   Claude CLI writes a refreshed login by renaming a temp file over
-   <config-dir>/.credentials.json, which replaces the throwaway dir's symlink
-   instead of writing through it. The refresh also rotated the live refresh
-   token, so dropping the copy leaves ~/.claude logged out on the next start.
-   Copied only while the live file is unchanged since the dir was made, so a
-   newer login (another refresh, `claude /login`, an account switch) wins."
+  "Copy OAuth tokens a throwaway run refreshed back into the live config (the
+   CLI renames over the symlink instead of writing through it, and the refresh
+   rotated the live token). Only while the live file is unchanged since the dir
+   was made."
   [dir]
   (when-let [{:keys [src credentials]} (get @throwaway-dirs dir)]
     (try
@@ -344,9 +305,8 @@
         (js/console.error (str "[session] credentials sync-back failed: " (.-message e)))))))
 
 (defn remove-config-dir!
-  "Recursively remove a throwaway dir from make-throwaway-config-dir!.
-   Symlinks are unlinked; their targets (the live config) are untouched.
-   Tokens refreshed inside it are saved back first."
+  "Recursively remove a throwaway config dir (symlinks unlinked, targets
+   untouched), saving refreshed tokens back first."
   [dir]
   (when dir
     (sync-credentials-back! dir)
@@ -356,14 +316,10 @@
          (catch :default _e nil))))
 
 (defn promote-subagent-session!
-  "Promote a sub-agent's throwaway session into a real, resumable one: move
-   its Claude CLI transcript out of the throwaway CLAUDE_CONFIG_DIR into the
-   real ~/.claude/projects, then create + save Xi session metadata pointing
-   at it. The :subagent-origin marker keeps the promoted session out of the
-   normal session listings (see list-all-sessions) — it is only reachable
-   through its origin session's sub-agents UI.
-   Returns the saved session map, or nil when the transcript is missing
-   (e.g. a non-Claude provider, which keeps no server-side transcript)."
+  "Promote a sub-agent's throwaway session into a resumable one: move its
+   transcript into ~/.claude/projects and save Xi metadata tagged
+   :subagent-origin (hidden from listings, reachable through its origin
+   session). nil when the transcript is missing."
   [{:keys [config-dir cwd cli-session-id label origin]}]
   (try
     (let [src (.join node-path config-dir "projects" (encode-cwd-claude cwd)
@@ -404,9 +360,8 @@
       lines)))
 
 (defn- claude-message-text
-  "Pull the first text out of a raw Claude message JS object's `.content`,
-   which is either a plain string or an array of content blocks. Kept on the
-   raw JS side (no js->clj) since it runs once per session in the listing."
+  "First text of a raw Claude message JS object's `.content` (string or block
+   array), kept on the JS side."
   [^js message]
   (let [content (some-> message .-content)]
     (cond
@@ -434,10 +389,8 @@
           ;; Whole file fits in the head window — so a missing assistant reply
           ;; below means the transcript really has none (not just unread tail).
           full? (<= (.-size (fs/statSync filepath)) 16384)
-          ;; Read fields off the raw JS objects rather than js->clj-converting
-          ;; every line: we only need the first user message and whether any
-          ;; assistant line exists, and deep keywordized conversion of ~8k
-          ;; head lines dominated /resume's open latency.
+          ;; Fields are read off the raw JS objects: deep conversion of the head
+          ;; lines dominated /resume's open latency.
           [first-user assistant?]
           (reduce (fn [[fu asst?] line]
                     (if (seq line)
@@ -457,9 +410,7 @@
        :name name
        :user-messages nil
        ;; A complete transcript with a first user prompt but no assistant reply
-       ;; is an aborted stub — the user interrupted before any response, and Xi
-       ;; often spun up a NEW cli session for the retry, leaving this one as an
-       ;; orphaned duplicate in listings. Flag it so callers can drop it.
+       ;; is an aborted stub (Xi retried in a new cli session); flag it.
        :empty? (boolean (and full? first-user (not assistant?)))})
     (catch :default _e nil)))
 
@@ -476,7 +427,6 @@
     (catch :default _e nil)))
 
 (defn- read-xi-session-meta
-  "Read an Xi session metadata JSON file."
   [filepath]
   (try
     (let [content (fs/readFileSync filepath "utf8")
@@ -510,7 +460,6 @@
          (mapv #(.join node-path dir %)))))
 
 (defn- list-dir-subdirs
-  "List subdirectory names in a directory."
   [dir]
   (if-not (fs/existsSync dir)
     []
@@ -521,11 +470,9 @@
                           (catch :default _ false))))))))
 
 (defonce ^:private transcript-index-cache
-  ;; {:at <ms> :index {"<sid>.jsonl" "/full/path"}} — short-TTL index of every
-  ;; transcript under ~/.claude/projects. The find-claude-transcript fallback
-  ;; used to probe every project dir with existsSync PER session; for listings
-  ;; with many Xi metas whose transcript is gone that was O(sessions × dirs)
-  ;; syscalls per unread-counts query. One readdir sweep replaces them all.
+  ;; {:at <ms> :index {"<sid>.jsonl" "/full/path"}}: short-TTL index of every
+  ;; transcript under ~/.claude/projects (one readdir sweep instead of a
+  ;; probe per session).
   (atom nil))
 
 (defn- claude-transcript-index
@@ -544,13 +491,9 @@
         index))))
 
 (defn- find-claude-transcript
-  "Resolve the Claude CLI transcript JSONL for a session's cli-session-id.
-   Primary lookup derives ~/.claude/projects/<encoded-cwd>/<cli-sid>.jsonl
-   from the session's cwd. If that file is missing — e.g. the session's
-   stored cwd no longer exists so the agent ran from a fallback dir and the
-   SDK wrote the transcript under a different project folder — fall back to
-   the (cached) index of every project dir's transcripts (the id is globally
-   unique). Returns the filepath, or nil when no transcript exists."
+  "The Claude CLI transcript JSONL for a session's cli-session-id: derived from
+   its cwd, else looked up in the cached index of every project dir (the id is
+   globally unique). nil when none exists."
   [cwd cli-sid]
   (let [fname (str cli-sid ".jsonl")
         primary (when cwd (.join node-path (claude-project-dir cwd) fname))]
@@ -559,25 +502,16 @@
       (get (claude-transcript-index) fname))))
 
 (defn transcript-path
-  "The Claude CLI transcript (JSONL) of a session on disk, by its cwd and
-   cli session id (a room's [:session :provider-session-id]) — or nil when
-   there is none (no id yet, another provider). See find-claude-transcript."
+  "The Claude CLI transcript of a session by cwd and cli session id, or nil
+   (see find-claude-transcript)."
   [cwd cli-sid]
   (when (seq (str cli-sid))
     (find-claude-transcript cwd cli-sid)))
 
 (defn delete-session!
-  "Delete a session by its summary map (must contain :filepath and :source).
-   Returns true if the primary file was deleted, false if it was not found.
-
-   For :xi sessions the :filepath is only the metadata file — the actual
-   conversation lives in a Claude CLI transcript under ~/.claude/projects,
-   referenced by :cli-session-id. That transcript MUST be removed too: the
-   session listing dedups a Claude transcript out only while an Xi meta
-   references it (see scan-all-sessions), so unlinking the meta alone leaves
-   the orphaned transcript to resurface as a standalone Claude card — the
-   deleted session appears to come back. The canvas sidecar is removed as
-   well so no stray review canvas is left behind."
+  "Delete a session by its summary. For :xi sessions the referenced Claude
+   transcript is removed too (else it resurfaces as a standalone Claude card),
+   and the canvas sidecar with it. True when the primary file was deleted."
   [summary]
   (let [filepath   (:filepath summary)
         transcript (when (= :xi (:source summary))
@@ -591,22 +525,17 @@
     (when deleted? (invalidate-listing-cache!))
     deleted?))
 
-;; ── Dismissed (hidden from Recent) ────────────────────────────────────────────
-;; Reversible "archive from the recent list". The session stays fully on disk
-;; and resumable (it still shows in All sessions / search); the sidebar moves
-;; its card into the "Hidden" group. Which chats are hidden is per user
-;; (xi.user-state.store), so listings carry no :dismissed? — the server tags
-;; them for the client it is sending to.
+;; Reversible: the session stays on disk and resumable; the sidebar moves
+;; its card to "Hidden". Per user (xi.user-state.store), so the server
+;; tags :dismissed? per client.
 
 (defn annotate-dismissed
   "Tag each summary with :dismissed? using a set of dismissed session-ids."
   [summaries dismissed]
   (mapv #(assoc % :dismissed? (contains? dismissed (:session-id %))) summaries))
 
-;; ── Read state (legacy, pre-per-user) ─────────────────────────────────────────
-;; Unread markers are per user now (xi.user-state.store). This file is what
-;; every user shared before; it is only read, as the starting point of a user
-;; who has not marked anything yet — otherwise every chat would show unread.
+;; Per-user now (xi.user-state.store); this shared file is only the
+;; starting point of a user who has not marked anything yet.
 
 (defn load-legacy-read-state
   "The old global {session-id → seen-response-count} from
@@ -619,11 +548,8 @@
     (catch :default _e {})))
 
 (defonce ^:private summary-cache
-  ;; filepath -> {:mtime <ms> :summary <map|nil>}. Memoizes the per-file
-  ;; summary reads that /resume does across every session on disk: the stat is
-  ;; cheap, but the head read + JSON parse per file dominated open latency and
-  ;; was repeated on every open (no caching). Keyed by mtime so an edited
-  ;; session file is re-read; bounded by the number of session files on disk.
+  ;; filepath -> {:mtime <ms> :summary <map|nil>}: per-file summary reads
+  ;; memoized by mtime.
   (atom {}))
 
 (defn- cached-summary
@@ -641,11 +567,8 @@
             summary))))))
 
 (defn- claimed-cli-ids
-  "Every Claude CLI id the given Xi sessions own — each one's current
-   transcript plus the ones a fork or dead-session retry superseded (see the
-   metadata format above). Raw Claude transcripts matching any of these are
-   hidden from listings: they belong to an Xi session, not to a conversation
-   of their own."
+  "Every Claude CLI id the given Xi sessions own (current transcript plus
+   superseded ones); matching raw transcripts are hidden from listings."
   [xi-sessions]
   (into #{}
         (comp (mapcat (fn [s] (cons (:cli-session-id s)
@@ -654,9 +577,8 @@
         xi-sessions))
 
 (defn- sessions-for-cwd
-  "Session summaries recorded under a single CWD, from all sources, with
-   Claude sessions that already have Xi metadata filtered out. Unsorted,
-   not favorite-annotated — callers merge/sort/annotate across CWDs."
+  "Session summaries under one CWD from all sources, Claude sessions with Xi
+   metadata filtered out. Unsorted."
   [cwd]
   (let [;; Xi metadata sessions
         xi-sessions (->> (list-dir-files (xi-session-dir cwd) ".json")
@@ -674,11 +596,8 @@
          (concat xi-sessions claude-filtered))))
 
 (defn list-sessions
-  "List all sessions for a CWD from all sources. Returns vec of session
-   summaries, newest first. Sources: Xi metadata, Claude CLI.
-   Scans the whole git project — the main working tree plus every linked
-   worktree — so /resume from the main repo also surfaces sessions started
-   inside its worktrees."
+  "Session summaries for a CWD from all sources, newest first, scanning the
+   whole git project (main tree + worktrees)."
   [cwd]
   (->> (git-project-cwds cwd)
        (mapcat sessions-for-cwd)
@@ -692,7 +611,6 @@
 (def ^:private all-sessions-cache-ttl-ms 2000)
 
 (defn- scan-all-sessions
-  "The all-CWDs session scan behind list-all-sessions."
   []
   (let [;; Xi: each subdir under XI_SESSIONS_DIR is an encoded CWD
         xi-sessions (->> (list-dir-subdirs XI_SESSIONS_DIR)
@@ -718,9 +636,8 @@
          vec)))
 
 (defn- all-sessions-raw
-  "The briefly-cached raw scan behind list-all-sessions — INCLUDES hidden
-   (:subagent-origin) sessions, so id lookups (find-session-by-id) can still
-   resolve them."
+  "The briefly-cached raw scan behind list-all-sessions, including hidden
+   (:subagent-origin) sessions so id lookups resolve them."
   []
   (let [now (js/Date.now)
         cached @all-sessions-cache]
@@ -731,11 +648,8 @@
         sessions))))
 
 (defn list-all-sessions
-  "List sessions across ALL CWDs from all sources. Returns vec of session
-   summaries, newest first. Each summary includes :cwd. The underlying disk
-   scan is cached briefly (see all-sessions-cache). Promoted sub-agent
-   sessions (:subagent-origin) are filtered out — they are reachable only
-   through their origin session's sub-agents UI (or a direct id/URL)."
+  "Session summaries across all CWDs, newest first, each with :cwd; promoted
+   sub-agent sessions (:subagent-origin) filtered out. Cached briefly."
   []
   (into [] (remove :subagent-origin) (all-sessions-raw)))
 
@@ -748,9 +662,7 @@
        vec))
 
 (defn list-personal-agent-sessions
-  "List sessions from the personal-agent sessions dir only. With an agent-id,
-   lists that named agent's dir; without, the default (root) agent.
-   Returns vec of session summaries, newest first."
+  "Session summaries of a named agent's dir (the default agent without an id), newest first."
   [& [agent-id]]
   (let [xi-sessions (->> (list-dir-files (personal-agent-dir agent-id) ".json")
                          (keep #(cached-summary read-xi-session-meta %)))]
@@ -764,11 +676,9 @@
       (= session-id (:cli-session-id summary))))
 
 (defn find-session-by-id
-  "Find a session summary by its ID across all sources. Matches the summary
-   id or, for Xi metadata summaries, the underlying CLI session id (Claude
-   sessions are deduped out of the listing once Xi metadata references them,
-   so a CLI id must resolve through the Xi summary). Uses the raw scan, so
-   hidden promoted sub-agent sessions resolve too."
+  "Session summary by id across all sources, matching the summary id or the
+   underlying CLI id of Xi metadata. Hidden promoted sub-agent sessions resolve
+   too."
   [session-id]
   (first (filter (partial summary-matches-id? session-id) (all-sessions-raw))))
 
@@ -793,7 +703,6 @@
           0 (str/split text #"\n")))
 
 (defn- count-assistant-turns-in-jsonl
-  "Count assistant message lines in a JSONL file (full read)."
   [filepath]
   (try
     (count-assistant-lines (fs/readFileSync filepath "utf8"))
@@ -810,12 +719,8 @@
       (finally (fs/closeSync fd)))))
 
 (defonce ^:private response-count-cache
-  ;; filepath → {:mtime <ms> :size <bytes> :n <count>}, nil until loaded from
-  ;; COUNT_CACHE_FILE. Unread-dot counts used to re-read EVERY transcript in
-  ;; full, synchronously, on every counts query from every client — hundreds
-  ;; of MB of sync reads blocking the WS event loop (the "web stalls +
-  ;; dropped sessions"). Cached by (mtime,size); persisted so restarts don't
-  ;; pay the full-scan warmup either.
+  ;; filepath → {:mtime <ms> :size <bytes> :n <count>}, persisted in
+  ;; COUNT_CACHE_FILE so restarts skip the full-scan warmup.
   (atom nil))
 
 (defonce ^:private count-cache-save-timer (atom nil))
@@ -856,10 +761,8 @@
              1000))))
 
 (defn- transcript-response-count
-  "Assistant-turn count for a transcript, via the mtime/size cache. When a
-   cached file has only grown (transcripts are append-only JSONL, so the old
-   EOF is a line boundary), count just the appended tail instead of
-   re-reading the whole file."
+  "Assistant-turn count of a transcript via the mtime/size cache; a file that
+   only grew (append-only JSONL) has just its tail counted."
   [filepath]
   (ensure-count-cache!)
   (let [stat (try (fs/statSync filepath) (catch :default _ nil))]
@@ -886,10 +789,8 @@
         n))))
 
 (defn- summary->transcript
-  "Resolve a session summary to the JSONL transcript whose assistant turns
-   should be counted. Xi metadata only points at the transcript (the real
-   conversation lives in the Claude CLI file); Claude and Pi summaries already
-   carry their JSONL filepath."
+  "The JSONL transcript whose assistant turns a summary counts (Xi metadata
+   points at the Claude file)."
   [summary]
   (case (:source summary)
     :xi     (when-let [cli-sid (:cli-session-id summary)]
@@ -899,17 +800,9 @@
     nil))
 
 (defn count-session-responses
-  "Given a seq of session-ids (as they appear in a lobby listing), return
-   {session-id response-count} where the count is the number of assistant
-   turns in each session's transcript. Resolves ids across ALL sources — Xi
-   coding sessions, raw Claude sessions, Pi, and the personal-agent dir — so
-   the unread marker works for every session, not just personal-agent ones.
-
-   The listing is read once and indexed by both the summary id and (for Xi
-   metadata) the underlying CLI id, so a lobby id resolves whichever form it
-   takes. With {:personal-agent? true} only the personal-agent dirs are
-   scanned — a PA server's lobby never lists coding sessions, so the
-   all-CWDs scan would be pure waste (and painfully slow on a Pi)."
+  "{session-id assistant-turn-count} for lobby session ids across all sources,
+   resolving either the summary id or the underlying CLI id. {:personal-agent?
+   true} scans only the personal-agent dirs."
   [session-ids & [{:keys [personal-agent?]}]]
   (let [pa-summaries (->> (list-all-personal-agent-session-files)
                           (keep #(cached-summary read-xi-session-meta %)))
@@ -931,10 +824,8 @@
 ;; ── Resume Support ────────────────────────────────────────────────────────────
 
 (defn- transcript-first-timestamp
-  "First message timestamp in a session's Claude transcript, used to backfill
-   a missing :created. Sessions imported from the Claude CLI (and the Xi
-   metadata later saved from them) have no :created, which left
-   /diff session-edits unable to resolve the session base commit."
+  "First message timestamp of a session's Claude transcript, backfilling a
+   missing :created on sessions imported from the CLI."
   [cwd cli-sid]
   (when-let [filepath (and cli-sid (find-claude-transcript cwd cli-sid))]
     (try
@@ -968,9 +859,8 @@
         (stored-agent data) (assoc :agent (stored-agent data))
         ;; Keep the /truncate lineage link so it survives future saves
         (:truncated-from data) (assoc :truncated-from (:truncated-from data))
-        ;; Keep the sub-agent links so they survive future saves — the origin
-        ;; marker hides a promoted session from listings; the promoted list
-        ;; reseeds the sub-agents panel on resume (xi.ext.subagent.handlers).
+        ;; Keep the sub-agent links: the origin marker hides a promoted session,
+        ;; the promoted list reseeds the panel on resume.
         (:subagent-origin data) (assoc :subagent-origin (:subagent-origin data))
         (:promoted-subagents data) (assoc :promoted-subagents (:promoted-subagents data))
         ;; Keep the superseded Claude ids so their transcripts stay claimed
@@ -989,12 +879,9 @@
      :source :claude}))
 
 (defn- read-claude-session-messages
-  "Read conversation messages from a Claude CLI session file.
-   Returns vec of block maps:
-     {:type :text :role \"user\" :text \"...\"}
-     {:type :text :role \"assistant\" :text \"...\"}
-     {:type :tool-use :name \"tool\" :tool-use-id \"...\" :arguments {...}}
-     {:type :tool-result :tool-use-id \"...\" :content \"...\" :is-error bool}"
+  "Conversation messages of a Claude CLI session file as block maps: {:type
+   :text :role :text}, {:type :tool-use :name :tool-use-id :arguments}, {:type
+   :tool-result :tool-use-id :content :is-error}."
   [filepath]
   (try
     (let [content (fs/readFileSync filepath "utf8")
@@ -1051,13 +938,8 @@
                                                                     :else nil)))
                                                           (str/join "\n"))
                                                      :else nil)
-                                              ;; Keep any image blocks so a
-                                              ;; resumed view_image / screenshot
-                                              ;; result still shows its picture —
-                                              ;; flattening to text alone dropped
-                                              ;; them. result-images (web) reads
-                                              ;; the API {:source {:media_type …}}
-                                              ;; shape stored here.
+                                              ;; Image blocks are kept so a resumed view_image result shows
+                                              ;; its picture (the API {:source {:media_type …}} shape).
                                               images (when (sequential? c)
                                                        (filterv #(and (map? %)
                                                                       (= "image" (:type %)))
@@ -1096,10 +978,9 @@
     []))
 
 (defn transcript-turn-complete?
-  "True when parsed Claude transcript entries end in a finished turn: the last
-   user/assistant entry is an assistant message that stopped with end_turn
-   (metadata entries like last-prompt / cost-state are ignored). A turn cut off
-   mid-flight ends in a tool_use, a tool result or a user prompt instead."
+  "True when parsed Claude transcript entries end in a finished turn (an
+   assistant message that stopped with end_turn); a cut-off turn ends in a
+   tool_use, tool result or user prompt."
   [entries]
   (let [last-msg (->> entries
                       (filter #(contains? #{"user" "assistant"} (:type %)))
@@ -1108,8 +989,8 @@
          (= "end_turn" (get-in last-msg [:message :stop_reason])))))
 
 (defn turn-completed?
-  "True when an Xi session's Claude transcript ends in a finished turn — see
-   transcript-turn-complete?. False when there is no transcript to read."
+  "True when an Xi session's Claude transcript ends in a finished turn; false
+   without a transcript."
   [summary]
   (boolean
    (when-let [filepath (and (:cli-session-id summary)
@@ -1123,15 +1004,9 @@
        (catch :default _e false)))))
 
 (defn read-session-messages
-  "Read conversation messages from a session for display.
-
-   When the session was created by /truncate it carries a :truncated-from
-   lineage link; the ancestor chain's messages are prepended for display,
-   each ancestor block tagged :pre-truncation? true (→ :no-llm? history
-   entries — shown but never replayed to the model) with a
-   {:type :truncation-divider} block between ancestor and descendant.
-
-   Returns vec of block maps — see read-claude-session-messages for format."
+  "Conversation messages of a session for display (read-claude-session-messages
+   format). A /truncate lineage (:truncated-from) prepends the ancestors'
+   messages tagged :pre-truncation? with a {:type :truncation-divider} between."
   [summary]
   (loop [msgs (read-own-session-messages summary)
          parent-id (:truncated-from summary)
@@ -1149,18 +1024,12 @@
                (conj seen parent-id))))))
 
 (def resume-result-line-cap
-  "Max lines of any tool-result kept when shipping a resumed transcript over
-   the wire. Both the web client (hard 100 in xi.web.views) and the TUI
-   (truncate-output-block-after-n-lines, default 100) clip tool output at
-   render, so sending more is pure wire waste on a long session."
+  "Max lines of a tool result shipped on resume; both clients clip at render anyway."
   100)
 
 (defn truncate-message-results
-  "Clip every :tool-result block's text content to `resume-result-line-cap`
-   lines before it crosses the wire on resume. :content is a string for plain
-   results, or a vec of blocks when the result carries an image (see
-   read-claude-session-messages) — in that case only the text block(s) are
-   clipped and image blocks pass through. Every other block is untouched."
+  "Clip every :tool-result block's text to resume-result-line-cap lines; image
+   blocks pass through."
   [messages]
   (mapv (fn [block]
           (if (= :tool-result (:type block))
@@ -1177,18 +1046,13 @@
         messages))
 
 (def ^:private search-text-byte-cap
-  "Max bytes of a transcript read when building content-search text. The
-   search corpus is capped at 16KB of extracted text anyway; fully reading
-   every transcript (hundreds of MB across a big install) synchronously
-   froze the event loop on the first search."
+  "Max bytes of a transcript read for content search; reading whole transcripts
+   froze the event loop."
   (* 512 1024))
 
 (defn build-search-text
-  "Extract concatenated user+assistant text from a session for content search.
-   Returns a single string, capped to 16KB. Reads at most
-   `search-text-byte-cap` bytes of the transcript and pulls text straight off
-   the raw JS lines (no js->clj of the whole conversation), so per-file work
-   stays bounded no matter how large the transcript is."
+  "Concatenated user + assistant text of a session for content search, capped
+   at 16KB and read straight off the raw JS lines."
   [summary]
   (try
     (if-let [filepath (summary->transcript summary)]
@@ -1208,9 +1072,8 @@
     (catch :default _ "")))
 
 (defonce ^:private search-text-cache
-  ;; session-id -> {:stamp <mtime> :text <lowercased search text>}. Reading a
-  ;; session's messages off disk is expensive, so memoize it; the stamp
-  ;; (last-accessed / timestamp) busts the entry when the session grows.
+  ;; session-id -> {:stamp <mtime> :text <lowercased search text>}, busted
+  ;; when the session grows.
   (atom {}))
 
 (defn- cached-search-text
@@ -1225,11 +1088,8 @@
         text))))
 
 (defn content-search
-  "Session-ids whose name or conversation text contains `query`
-   (case-insensitive). `cwd` nil/blank -> search across all sessions;
-   otherwise scope to that project directory. In personal-agent mode the
-   corpus is the personal-agent sessions dir (which has no project cwds).
-   Returns a vec of session-ids."
+  "Session ids whose name or conversation text contains `query`
+   (case-insensitive), scoped to `cwd` when given."
   ([cwd query] (content-search cwd query nil))
   ([cwd query {:keys [personal-agent?]}]
   (let [q (str/lower-case (str/trim (or query "")))]
@@ -1270,20 +1130,16 @@
     :else           (list-all-sessions)))
 
 (defn recent-sessions
-  "Newest-first session summaries over the same corpus as `search-sessions`,
-   unfiltered — what the palette's search page lists before anything is typed.
-   :snippet is nil (no match to excerpt)."
+  "Newest-first summaries over the same corpus as `search-sessions`, unfiltered
+   (:snippet nil)."
   ([cwd] (recent-sessions cwd nil))
   ([cwd {:keys [personal-agent?]}]
    (mapv #(assoc % :snippet nil) (search-corpus cwd personal-agent?))))
 
 (defn search-sessions
-  "Like `content-search`, but returns full session summaries (newest first)
-   instead of bare ids. Each summary is augmented with :snippet — a short
-   excerpt around the first content match, or nil when only the title matched.
-   `cwd` nil/blank -> search across all projects; otherwise scope to that
-   project directory. `:names-only?` skips the transcript text and matches
-   session names alone."
+  "Like `content-search` but returns full summaries, newest first, each with a
+   :snippet around the first content match. `:names-only?` skips transcript
+   text."
   ([cwd query] (search-sessions cwd query nil))
   ([cwd query {:keys [personal-agent? names-only?]}]
    (let [q (str/lower-case (str/trim (or query "")))]

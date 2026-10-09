@@ -106,19 +106,16 @@
 (declare request-render! request-panel-render!)
 
 (defn scroll-up!
-  "Scroll content up by n lines."
   [n]
   (swap! tui-state update :scroll-offset + n)
   (request-panel-render!))
 
 (defn scroll-down!
-  "Scroll content down by n lines (towards bottom)."
   [n]
   (swap! tui-state update :scroll-offset #(max 0 (- % n)))
   (request-panel-render!))
 
 (defn scroll-to-bottom!
-  "Snap viewport to the bottom (latest content)."
   []
   (swap! tui-state assoc :scroll-offset 0)
   (request-panel-render!))
@@ -187,7 +184,6 @@
     (str/join "\n" lines)))
 
 (defn copy-to-clipboard!
-  "Copy text to system clipboard via OSC 52."
   [text]
   (when (seq text)
     (let [b64 (.toString (js/Buffer.from text "utf-8") "base64")]
@@ -319,7 +315,6 @@
                :render-requested false)))))
 
 (defn- schedule-render!
-  "Schedule a debounced render pass."
   []
   (when-not (:render-requested @tui-state)
     (swap! tui-state assoc :render-requested true)
@@ -342,7 +337,6 @@
   (schedule-render!))
 
 (defn render-now!
-  "Force an immediate render (bypass debounce)."
   []
   (when-let [t (:render-timer @tui-state)]
     (js/clearTimeout t))
@@ -365,7 +359,6 @@
   (request-panel-render!))
 
 (defn get-scroll-offset
-  "Get the current scroll offset."
   []
   (:scroll-offset @tui-state))
 
@@ -526,43 +519,33 @@
     nil
   (let [{:keys [focused]} @tui-state]
     (if (:capture-all-input focused)
-      ;; Modal component (diff viewer, etc.) captures all input.
-      ;; No auto-snap to bottom, no selection clear. Scroll wheel → :handle-scroll.
+      ;; A modal component (diff viewer, …) owns all input: no snap to
+      ;; bottom, no selection clear; the wheel goes to its :handle-scroll.
       (if-let [mouse (parse-mouse-event data)]
         (cond
-          ;; Scroll wheel up → component scroll handler
           (= 64 (:button mouse))
           (when-let [hs (:handle-scroll focused)] (hs -3))
-          ;; Scroll wheel down → component scroll handler
           (= 65 (:button mouse))
           (when-let [hs (:handle-scroll focused)] (hs 3))
-          ;; Other mouse events — normal handling (text selection)
           :else
           (handle-mouse-event mouse))
-        ;; Keyboard → directly to component
         (when (:handle-input focused)
           ((:handle-input focused) data)))
-      ;; Normal mode — existing behavior
       (cond
-        ;; Page Up — scroll up one page
         (is-page-up? data)
         (scroll-up! (max 1 (- (term/rows) 5)))
 
-        ;; Page Down — scroll down one page
         (is-page-down? data)
         (scroll-down! (max 1 (- (term/rows) 5)))
 
-        ;; Shift+Up — scroll up a few lines
         (is-shift-up? data)
         (scroll-up! 3)
 
-        ;; Shift+Down — scroll down a few lines
         (is-shift-down? data)
         (scroll-down! 3)
 
-        ;; Alt+k / Alt+j — jump to the previous/next navigation anchor (prompt).
-        ;; Handled here (not forwarded to the editor) so it doesn't snap to the
-        ;; bottom, mirroring the page-scroll keys above.
+        ;; Prompt navigation is handled here, not in the editor, so it
+        ;; doesn't snap to the bottom.
         (is-alt-k? data)
         (when-let [f (:jump-fn @tui-state)] (f :prev))
 
@@ -572,35 +555,28 @@
         :else
         (if-let [mouse (parse-mouse-event data)]
           (handle-mouse-event mouse)
-          ;; Regular input — clear selection, snap to bottom, pass to focused component
           (let [was-scrolled (pos? (:scroll-offset @tui-state))]
             (clear-selection!)
             (when was-scrolled
               (scroll-to-bottom!))
-            ;; Escape while scrolled is consumed — scroll-to-bottom is the action.
-            ;; Don't forward to the editor, which would misinterpret it as "abort" or "tree view".
+            ;; Escape while scrolled is consumed: scrolling to the bottom is the action.
             (when-not (and was-scrolled (is-escape? data))
               (when (and focused (:handle-input focused))
                 ((:handle-input focused) data))))))))))
 
 (defn- handle-resize []
-  ;; Invalidate all components
   (when-let [content (:content @tui-state)]
     ((:invalidate content)))
   (when-let [bp (:bottom-panel @tui-state)]
     (when-let [inv (:invalidate bp)]
       (inv)))
-  ;; Clear selection
-  (swap! tui-state assoc :selection nil)
-  ;; Force full re-render (clear previous frame/grid)
-  (swap! tui-state assoc :previous-frame [] :previous-grid nil)
+  (swap! tui-state assoc :selection nil :previous-frame [] :previous-grid nil)
   (request-render!))
 
 ;; ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 
 (defn stop-tui!
-  "Stop the TUI, restore terminal."
   []
   (when-let [t (:render-timer @tui-state)]
     (js/clearTimeout t))
@@ -621,14 +597,10 @@
 (defonce ^:private crash-guard-installed? (atom false))
 
 (defn- install-crash-guard!
-  "Make sure an error nothing else caught can never leave the shell unusable.
-   Per-key input and resize errors are already caught in xi.tui.terminal; this
-   covers the rest (render timers, promise chains, anything async): restore the
-   terminal, print the error where it can be read, record it in crash.log, and
-   exit — unless another process-level handler exists (a server hosting this
-   TUI installs one so remote clients survive), in which case only the
-   terminal is handed back. A final `exit` hook restores the terminal on any
-   path out that did not go through shutdown."
+  "Restore the terminal, print and record (crash.log) any error nothing else
+   caught, then exit, unless another process-level handler exists (a server
+   hosting this TUI), in which case only the terminal is handed back. A final
+   `exit` hook restores the terminal on every path out."
   []
   (when (compare-and-set! crash-guard-installed? false true)
     (let [fatal (fn [label]
@@ -697,6 +669,5 @@
 
 
 (defn get-container
-  "Get the content container."
   []
   (:content @tui-state))

@@ -92,74 +92,49 @@
             ["node:worker_threads" :as wt]))
 
 (def providers
-  "Provider id → provider map, derived from the xi.config/providers vector
-   (declared there like extensions). Insertion order is preserved (array-map),
-   so model listing follows the config's picker order.
-
-   With XI_FAKE_LLM set (end-to-end tests), the scripted fake
-   (xi.providers.fake) is the only provider, as :anthropic: side turns ask
-   for :anthropic by id and agent/resolve-provider falls back to it for every
-   other model, so no turn can reach a real model."
+  "Provider id → provider map from the xi.config/providers vector, in picker
+   order. With XI_FAKE_LLM (e2e tests) the scripted fake is the only provider,
+   registered as :anthropic so no turn reaches a real model."
   (if (fake/script-path)
     {:anthropic (fake/provider :anthropic)}
     (into {} (map (juxt :id identity)) config/providers)))
 
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────
-;;
-;; Which extensions load is declared in xi.config (one .cljc for all builds,
-;; split by reader features). Here they are only instantiated (factory fns
-;; get a ctx map) and composed into the seams the core, the provider effects
-;; and the TUI consume. Every seam degrades to a no-op when no extensions
-;; are present.
-;;
-;; Two groups, because state lives in two places:
-;;   server-extensions — state + provider/tool hooks that run server-side.
-;;                       In client mode their room-state handlers are
-;;                       mirrored and their badges/keybindings/commands
-;;                       are presented locally.
-;;   client-extensions — process-local, run in the TUI client process:
-;;                       handlers installed unwrapped, fx local.
+;; Declared in xi.config, instantiated and composed here into the seams the
+;; core, the provider effects and the TUI consume. Two groups: server
+;; extensions (state + provider/tool hooks server-side; mirrored in client
+;; mode) and client extensions (process-local to the TUI client).
 
 (defn- server-extensions
   "Extensions whose state + provider hooks live server-side (xi.config/server).
-   nils (factories that opt out) are dropped by ext/compose. `ask!`
-   (the dialog ask! from ext/create-dialogs) is threaded into extensions that
-   raise their own confirm dialogs from effects (worktree removal); nil in
-   the client mirror, where those effects never run. `manager` (xi.ext.manager)
-   is threaded to control extensions (/ext, /mcp) that toggle the live set."
+   `ask!` is threaded into extensions that raise their own confirm dialogs (nil
+   in the client mirror); `manager` (xi.ext.manager) into the control
+   extensions (/ext, /mcp)."
   [ring & [ask! manager]]
   (ext/instantiate config/server {:ring ring :ask! ask! :manager manager
                                   :providers providers}))
 
 (defn- mirror-extensions
-  "Server extensions instantiated for the *client mirror* (a join/create TUI
-   client). A throwaway manager is supplied so the manager-gated control
-   commands (/ext, /mcp) are presented in the local palette;
-   `:mirror? true` makes their factories skip create-time side effects (e.g.
-   seeding mcp.edn). The client never runs these commands' fx — it forwards
-   them to the server, which owns the live manager — so a stub manager is fine.
-
-   User extensions (~/.config/xi/extensions) follow the built-ins, reduced to
-   what a client mirrors (xi.ext.user/mirror-extensions)."
+  "Server extensions instantiated for the client mirror: a throwaway manager so
+   /ext and /mcp are presented locally (their fx are forwarded to the server),
+   `:mirror? true` so factories skip create-time side effects. User extensions
+   follow, reduced to what a client mirrors (xi.ext.user/mirror-extensions)."
   []
   (let [builtins (ext/instantiate config/server
                                   {:ring nil :ask! nil :manager (manager/create) :mirror? true})]
     (into builtins (user-ext/mirror-extensions builtins))))
 
 (defn- client-extensions
-  "Process-local extensions that run in the TUI client process
-   (xi.config/client)."
   []
   (ext/instantiate config/client {}))
 
 (defn- tooling-opts
-  "Provider-effect tooling threaded into agent/create-fx. Reads the extension
-   manager *live* so runtime enable/disable is reflected on the next turn:
-   the tool defs/registry are fn-valued and re-evaluated per turn by
-   xi.tools.registry/resolve-tooling (see xi.ext.manager)."
+  "Provider-effect tooling for agent/create-fx. Reads the extension manager
+   live, so runtime enable/disable applies on the next turn
+   (xi.tools.registry/resolve-tooling)."
   [manager ask!]
-  {;; Policy is core, not an extension surface: every tool call is decided by
-   ;; the rules engine before it runs. Extensions can't add to or skip it.
+  {;; Policy is core, not an extension surface: the rules engine decides
+   ;; every tool call before it runs.
    :tool-policy            (fn [tool-call ctx]
                              (rules-ext/tool-policy
                               tool-call (assoc ctx :recommend-rule? config/recommend-rule?)))
@@ -167,15 +142,13 @@
    :extra-tool-registry    (fn [] (:tool-registry (manager/composed manager)))
    :remove-tools           (fn [] (:remove-tools (manager/composed manager)))
    :ask!                   ask!
-   ;; Holds (xi.holds) settle at every turn end; /holds + /release effects.
-   ;; Wired here, not in xi.agent: that ns is shared with the browser build.
+   ;; Wired here, not in xi.agent, which the browser build shares.
    :turn-finished!         holds/settle-room!
    :fx                     holds/fx})
 
 (defn- subagent-opts
-  "Like tooling-opts, plus the throwaway CLAUDE_CONFIG_DIR fns so a sub-agent's
-   Claude CLI session lands in a temp dir instead of ~/.claude/projects (where
-   it would leak into the recent-sessions list as a top-level chat)."
+  "tooling-opts plus the throwaway CLAUDE_CONFIG_DIR fns, so a sub-agent's
+   Claude CLI session doesn't land in ~/.claude/projects as a top-level chat."
   [manager ask!]
   (merge (tooling-opts manager ask!)
          {:make-config-dir!   session/make-throwaway-config-dir!
@@ -292,21 +265,17 @@ See docs/guide/command-line.md for the full reference.")
           "--host"         (recur (nnext args) (assoc opts :host (second args)))
           (recur (next args)
                  (cond
-                   ;; Positional URL for join/create
                    (and (#{:join :create} (:command opts))
                         (not (.startsWith arg "--")))
                    (assoc opts :url (if (.startsWith arg "ws") arg (str "ws://" arg)))
-                   ;; Positional prompt text for prompt mode
                    (and (= :prompt (:command opts))
                         (not (.startsWith arg "--")))
                    (update opts :prompt-parts (fnil conj []) arg)
-                   ;; Positional action + argument for the clients subcommand
                    (and (= :clients (:command opts))
                         (not (.startsWith arg "--")))
                    (update opts :clients-args (fnil conj []) arg)
-                   ;; An unknown flag fails loudly: a caller relying on a
-                   ;; removed restriction flag must not silently get a full
-                   ;; coding agent.
+                   ;; An unknown flag fails loudly: a removed restriction flag must not
+                   ;; silently yield a full coding agent.
                    (.startsWith arg "--")
                    (do (.write js/process.stderr (str "xi: unknown flag " arg "\n"))
                        (js/process.exit 2))
@@ -317,25 +286,22 @@ See docs/guide/command-line.md for the full reference.")
     (when (and (js/Number.isInteger n) (< 0 n 65536)) n)))
 
 (defn- own-user
-  "The user this process acts as: --user, else XI_USER, else root
-   (xi.util/user-id). A standalone TUI and a server own their prompts under
-   it; a joining client claims it in :auth/hello (the server may override
-   it from clients.edn)."
+  "The user this process acts as: --user, else XI_USER, else root. A joining
+   client claims it in :auth/hello; the server may override it from
+   clients.edn."
   [opts]
   (util/user-id (or (:user opts) (aget js/process.env "XI_USER"))))
 
 (defn resolve-port
-  "Settle :port once for every mode: --port, else XI_PORT, else the default.
-   Server bind, client connect, the auto-join probe and state all read this."
+  "The port for every mode: --port, else XI_PORT, else the default."
   [opts]
   (assoc opts :port (or (valid-port (:port opts))
                         (valid-port (aget js/process.env "XI_PORT"))
                         ws/DEFAULT_PORT)))
 
 (defn- resolve-model-opts
-  "The model and effort this process starts with: --model, else the model its
-   own user last picked (xi.user-state :preferred-model), else the default. A
-   server hands every other user their own preference over this (xi.server.ws)."
+  "Model and effort this process starts with: --model, else its user's last
+   pick (xi.user-state :preferred-model), else the default."
   [{:keys [model] :as opts}]
   {:model  (or model
                (:preferred-model (user-store/load-state (own-user opts)))
@@ -343,18 +309,17 @@ See docs/guide/command-line.md for the full reference.")
    :effort "high"})
 
 (defn- install-agent-extensions!
-  "Make an agent profile's :extensions the process's enabled user-extension
-   list (xi.ext.user/enabled-files) — before `user-ext/install!` runs. A
-   profile without :extensions keeps the rules.edn list. Re-reads the
-   profile on `/ext reload`."
+  "Make an agent profile's :extensions the enabled user-extension list
+   (xi.ext.user/enabled-files); a profile without them keeps the rules.edn
+   list. Re-read on `/ext reload`."
   [prof]
   (when (:extensions prof)
     (user-ext/set-enabled-override!
      (fn [] (or (:extensions (profile/load (:id prof))) #{})))))
 
 (defn- make-handlers
-  "Base pure handler map shared by every mode. extra-commands are extension
-   commands that join the built-ins for dispatch + /help."
+  "Base pure handler map shared by every mode; `extra-commands` are extension
+   commands joining the built-ins."
   ([] (make-handlers nil))
   ([extra-commands]
    (-> (merge events/core-handlers
@@ -364,32 +329,24 @@ See docs/guide/command-line.md for the full reference.")
               naming/handlers
               summary/handlers
               quick-replies/handlers)
-       ;; Persist the session once the provider reports a session id, then
-       ;; maybe suggest quick-reply chips for the finished turn
        (assoc :agent/turn-end (events/chain (:agent/turn-end agent/handlers)
                                             commands/turn-end-session-sync
                                             quick-replies/maybe-suggest)
-              ;; Escape also stops an in-flight compaction
               :agent/abort (events/chain (:agent/abort agent/handlers)
                                          compaction/abort-handler)
-              ;; First message of an unnamed session → kick off auto-titling;
-              ;; sending anything clears stale quick-reply chips
               :prompt/submit (events/chain (:prompt/submit agent/handlers)
                                            naming/maybe-generate-title
                                            quick-replies/clear-on-submit)))))
 
-;; ── Standalone (phase 4, unchanged) ──────────────────────────────────────────
+;; ── Standalone ───────────────────────────────────────────────────────────────
 
 (defn- start-standalone! [{:keys [debug-events? initial-prompt session-id agent] :as opts}]
-  (let [;; --agent: a local TUI room as the named agent — the profile's
-        ;; prompt, tools, extensions and session dir, like prompt mode.
-        prof (when agent (profile/load agent))
+  (let [prof (when agent (profile/load agent))
         _    (install-agent-extensions! prof)
         {:keys [model effort]} (resolve-model-opts
                                 (update opts :model #(or % (:model prof))))
         cwd (or (aget js/process.env "XI_CWD") (:dir prof) (.cwd js/process))
         ring (log/create-ring)
-        ;; Standalone runs everything locally — server + client extensions.
         dialogs  (ext/create-dialogs)
         mgr      (manager/create)
         _        (manager/seed! mgr (into (server-extensions ring (:ask! dialogs) mgr)
@@ -417,9 +374,7 @@ See docs/guide/command-line.md for the full reference.")
                  :commands (commands/all-commands (:commands composed))
                  :prompt-badge (fn [st] (ext/prompt-badges composed st))
                  :keybindings (:keybindings composed)})
-        ;; Late-bound (xi.core.app): a live extension reload recomposes, and the
-        ;; handlers (commands included) and fx are rebuilt from the new set. The
-        ;; TUI's command completion list (above) is fixed at startup.
+        ;; Late-bound: a live extension reload rebuilds handlers and fx.
         handlers (manager/live-view
                   mgr
                   (fn [composed]
@@ -468,8 +423,6 @@ See docs/guide/command-line.md for the full reference.")
         _ (ext-persist/install! app mgr)]
     (when jsonl-writer
       (js/process.on "exit" (fn [] ((:flush! jsonl-writer)))))
-    ;; this process' own user: their record (profile + stored state) is in
-    ;; state for extensions, as it is for a client's user on a server
     (dispatch! (users/loaded-event (own-user opts)))
     (dispatch! {:type :room/create
                 :room-id "main"
@@ -484,7 +437,6 @@ See docs/guide/command-line.md for the full reference.")
                        :agent-id agent
                        :only-tools (:tools prof)
                        :session sess}})
-    ;; Resume a saved session on launch (--session, e.g. after /reload).
     (when-let [summary (and session-id
                             (if agent
                               (session/find-personal-agent-session-by-id session-id agent)
@@ -494,15 +446,12 @@ See docs/guide/command-line.md for the full reference.")
                   :session (session/load-session summary)
                   :summary summary
                   :messages (session/read-session-messages summary)}))
-    ;; Auto-submit an initial prompt (e.g. launched from an external launcher with an error)
     (when (seq initial-prompt)
       (dispatch! {:type :prompt/submit :room-id "main" :text initial-prompt}))))
 
 ;; ── Prompt (one-shot, headless) ──────────────────────────────────────────────
 
 (defn- read-stdin
-  "Resolve to the trimmed contents of stdin. Only call when stdin is piped
-   (not a TTY) — a TTY would block forever."
   []
   (js/Promise.
    (fn [resolve _reject]
@@ -513,29 +462,17 @@ See docs/guide/command-line.md for the full reference.")
        (.resume js/process.stdin)))))
 
 (defn- start-prompt!
-  "Run a single prompt with no TUI and exit. The assistant's text response is
-   streamed to stdout as it arrives (--stream) or buffered and printed once the
-   turn ends. Dialogs (permission confirms, cwd recovery) resolve to their safe
-   defaults since no client is attached. Exits 0 on success, 1 on error.
-
-   The run persists an Xi session file (like any other mode), so a one-shot
-   conversation can be continued later via --session; --json emits
-   {\"session-id\", \"text\"} for scripting that loop.
-
-   With :no-store? the turn leaves no trace: it runs against a throwaway
-   CLAUDE_CONFIG_DIR (a temp mirror of the real config) so the Claude CLI
-   writes its session transcript into a temp dir that is torn down on exit,
-   never landing in ~/.claude/projects, and the Xi session save is skipped."
+  "Run one prompt with no TUI and exit 0/1; the response streams (--stream) or
+   prints at turn end. Dialogs resolve to their safe defaults. The run persists
+   an Xi session (continue it via --session; --json emits {\"session-id\"
+   \"text\"}), unless :no-store?, which runs against a throwaway
+   CLAUDE_CONFIG_DIR torn down on exit and skips the session save."
   [{:keys [prompt-text stream? no-store? agent session-id json?] :as opts}]
-  (let [;; --agent: the named agent's profile (tools, system prompt, model)
-        ;; from ~/.config/xi/config.edn.
-        agent?  (some? agent)
+  (let [agent?  (some? agent)
         prof    (when agent? (profile/load agent))
         _       (install-agent-extensions! prof)
         {:keys [model effort]} (resolve-model-opts
                                 (update opts :model #(or % (:model prof))))
-        ;; --session: resume an existing conversation — load its metadata and
-        ;; seed :provider-session-id so the provider continues the transcript.
         resumed (when session-id
                   (if agent?
                     (session/find-personal-agent-session-by-id session-id agent)
@@ -544,23 +481,17 @@ See docs/guide/command-line.md for the full reference.")
             (.write js/process.stderr (str "xi: session not found: " session-id "\n"))
             (js/process.exit 1))
         loaded (when resumed (session/load-session resumed))
-        ;; Agent one-shots run in the agent's own dir, and resumes follow the
-        ;; session's recorded cwd: the provider resolves a resume id within the
-        ;; *current* cwd's transcript dir, so the cwd must be stable across
-        ;; turns — callers (bb services) typically spawn from throwaway temp
-        ;; dirs, which would strand each turn in its own project dir.
+        ;; Resumes follow the session's recorded cwd: the provider resolves the
+        ;; resume id within the current cwd's transcript dir.
         cwd (or (aget js/process.env "XI_CWD")
                 (when-let [c (:cwd loaded)] (when (fs/existsSync c) c))
                 (:dir prof)
                 (.cwd js/process))
-        ;; --no-store: point the Claude CLI at a throwaway config dir so its
-        ;; transcript lands in a temp dir we delete on exit (see finish!).
         config-dir (when no-store? (session/make-throwaway-config-dir!))
         _ (when config-dir
             (aset js/process.env "CLAUDE_CONFIG_DIR" config-dir))
         ring (log/create-ring)
-        ;; Drop terminal-title: it writes raw ANSI escapes to stdout, which
-        ;; would corrupt the one-shot response.
+        ;; terminal-title would write ANSI escapes into the one-shot response.
         dialogs  (ext/create-dialogs)
         mgr      (manager/create)
         _        (manager/seed! mgr (remove #(= :terminal-title (:id %))
@@ -568,9 +499,6 @@ See docs/guide/command-line.md for the full reference.")
         _        (mcp/install! mgr)
         _        (user-ext/install! mgr)
         composed (manager/composed mgr)
-        ;; --agent: the profile's system prompt only (no AGENTS.md, no
-        ;; profile/skills, no extension prompt parts) and its :tools allowlist
-        ;; as the room's :only-tools — mirrors the server's build-room.
         agents-files (when-not agent? (system-prompt/find-agents-md cwd))
         system-parts (if prof
                        (profile/system-parts prof)
@@ -591,9 +519,7 @@ See docs/guide/command-line.md for the full reference.")
             (when (.-error acc)
               (.write js/process.stderr (str (.-error acc) "\n")))
             (let [tail (cond
-                         ;; --json: machine-readable one-shot result. The
-                         ;; session id is the Xi session id — pass it back via
-                         ;; --session to continue the conversation.
+                         ;; The session id is the Xi session id (continue via --session).
                          json?   (str (js/JSON.stringify
                                        #js {:session-id (:id sess)
                                             :text (.-out acc)})
@@ -603,19 +529,13 @@ See docs/guide/command-line.md for the full reference.")
               (.write js/process.stdout tail
                       (fn [] (js/process.exit code))))))
         handlers (-> (make-handlers (:commands composed))
-                     ;; One-shot: skip auto-titling (naming chain) on submit.
                      (assoc :prompt/submit (:prompt/submit agent/handlers))
-                     ;; --no-store: drop the turn-end session sync so no Xi
-                     ;; session file is left behind.
                      (cond-> no-store?
                        (assoc :agent/turn-end (:agent/turn-end agent/handlers)))
                      (ext/merge-handlers composed)
                      (merge (:handlers dialogs)))
         {:keys [dispatch! add-tap!] :as app}
         (app/create-app {:initial-state (state/initial-state
-                                         ;; no client ever attaches → create-
-                                         ;; dialogs' ask! resolves at once to
-                                         ;; the safe default
                                          {:mode        :server
                                           :clientless? true
                                           :user        (own-user opts)
@@ -639,8 +559,6 @@ See docs/guide/command-line.md for the full reference.")
                                                (:fx composed)
                                                (:fx dialogs))
                          :ring          ring})]
-    ;; mount the user extensions: their :on-mount runs, and xi.api.user /
-    ;; xi.api.dialog work in their tools, as in the other modes
     (user-ext/start! app {:ask! (:ask! dialogs)})
     (add-tap!
      (fn [event _state]
@@ -654,9 +572,7 @@ See docs/guide/command-line.md for the full reference.")
          (set! (.-error acc) (or (get-in event [:error :message])
                                  (str (:error event))))
 
-         ;; Deferred a tick: taps run before the effect interpreter, and the
-         ;; :agent/turn-end effects include :session/sync (the session save).
-         ;; Exiting synchronously here would race — and lose — that write.
+         ;; Deferred a tick: the :agent/turn-end effects include the session save.
          :agent/turn-end (js/setTimeout finish! 0)
          nil)))
     (dispatch! (users/loaded-event (own-user opts)))
@@ -681,8 +597,6 @@ See docs/guide/command-line.md for the full reference.")
   (or url (str "ws://localhost:" port)))
 
 (defn- server-running?
-  "Probe whether a server is already listening on the given port. Resolves a
-   boolean; used to auto-join a running server instead of starting standalone."
   [port]
   (js/Promise.
    (fn [resolve _reject]
@@ -700,18 +614,11 @@ See docs/guide/command-line.md for the full reference.")
        (.once socket "error"   (fn [_] (finish false)))))))
 
 (defn- start-client!
-  "Connect a TUI to a running server: forward input, mirror broadcasts.
-
-   Two composed sets:
-     mirror — server-side extensions; their room-state handlers are chained
-              onto the mirrored base so replayed broadcasts stay in sync,
-              and their commands/badges/keybindings are presented locally.
-     local  — process-local client extensions; handlers installed unwrapped
-              (never forwarded), fx + process state run on this client."
+  "Connect a TUI to a running server: forward input, mirror broadcasts. The
+   mirror extensions' room-state handlers chain onto the mirrored base; the
+   local client extensions run unwrapped on this process."
   [{:keys [target initial-prompt defer-room? session-id] :as opts}]
-  (let [;; --session resumes an exact session (e.g. after /reload): rejoin that
-        ;; session instead of "latest", so a server restart doesn't drop it,
-        ;; and skip the deferred empty room.
+  (let [;; --session rejoins that exact session instead of "latest".
         target (if session-id {:session-id session-id} target)
         defer-room? (if session-id false defer-room?)
         url (client-url opts)
@@ -724,13 +631,10 @@ See docs/guide/command-line.md for the full reference.")
         prompt-badge (fn [st] (str (ext/prompt-badges mirror st)
                                    (ext/prompt-badges local st)))
         keybindings (into (:keybindings mirror) (:keybindings local))
-        ;; Deferred room: a client-local :pending room in :rooms renders the
-        ;; same empty chat as a real room — editor callbacks, palette, image
-        ;; attach, statuses and badges all run through the normal room paths,
-        ;; applied locally via the transport's :local-room? seam (their effects
-        ;; are all client-side). The server room is only created on the first
-        ;; submit: :local-submit stashes text + pending images and joins "new";
-        ;; the stash replays once :room/joined arrives (tap below).
+        ;; Deferred room: a client-local :pending room renders the empty chat
+        ;; through the normal room paths (the transport's :local-room? seam). The
+        ;; server room is created on the first submit: :local-submit stashes the
+        ;; text + images and joins "new"; the stash replays on :room/joined.
         pending-room?
         (when defer-room?
           (fn [ev] (= :pending (:room-id ev))))
@@ -753,36 +657,24 @@ See docs/guide/command-line.md for the full reference.")
            (fn [st _] {:state (-> st
                                   (dissoc :client/pending-submit)
                                   (update :rooms dissoc :pending))})
-           ;; The server's default model rides on :lobby/state — mirror it
-           ;; onto the pending room so the launch header matches the real
-           ;; room's (no text change on the pending → joined transition).
+           ;; Mirror the server's default model onto the pending room.
            :lobby/state
            (fn [st ev]
              (cond-> (ws-transport/lobby-state st ev)
                (and (:model ev) (get-in st [:rooms :pending]))
                (update :state assoc-in [:rooms :pending :agent :model] (:model ev))))})
-        ;; dispatch! isn't available until the app is built; on-status fires
-        ;; through this ref so early connect/drop events are simply ignored.
         dispatch-ref (atom nil)
         transport (ws-transport/create!
                    {:url url
-                    ;; Identify with the persistent local key — the server
-                    ;; trusts ~/.config/xi/client-key implicitly (same user),
-                    ;; so the TUI never waits for pairing approval locally.
+                    ;; The local client-key is trusted implicitly: no pairing wait.
                     :hello {:client-key  (auth/ensure-client-key!)
                             :client-name (str "tui@" (.hostname (js/require "node:os")))
                             :platform    "tui"
-                            ;; who we act as (--user / XI_USER); the server
-                            ;; answers :auth/ok with the user it settled on
                             :user        (own-user opts)
-                            ;; This process' pid — passed on to MCP servers
-                            ;; as _meta "xi/clientPid" (xi.ext.mcp/call-meta),
-                            ;; e.g. so a browser server acts near this terminal.
+                            ;; Passed to MCP servers as _meta (xi.ext.mcp/call-meta).
                             :pid         (.-pid js/process)}
                     :target target
                     :cwd cwd
-                    ;; Retry with backoff like the web client instead of
-                    ;; exiting, so a server restart doesn't crash the TUI.
                     :reconnect? true
                     :on-status (fn [connected?]
                                  (when-let [d @dispatch-ref]
@@ -805,46 +697,26 @@ See docs/guide/command-line.md for the full reference.")
                                                         (state/make-room
                                                          :pending
                                                          {:cwd cwd
-                                                          ;; Same machine as the server (defer
-                                                          ;; mode is localhost-only), so compute
-                                                          ;; the header's AGENTS.md list locally.
                                                           :agents-files (system-prompt/find-agents-md cwd)}))
                                               (assoc :active-room :pending)))
                          :handlers      (ws-transport/make-handlers
                                          base
                                          {:local-room?  pending-room?
                                           :local-submit pending-submit
-                                          ;; Editor inserts are client-side, but
-                                          ;; the emitting handlers (project/path
-                                          ;; completion menus, history-edit) live
-                                          ;; server-side; in a real room the event
-                                          ;; forwards + echoes back as :remote?, so
-                                          ;; allow its effect through the mirror
-                                          ;; strip (else nothing inserts once the
-                                          ;; room is no longer the local :pending).
+                                          ;; Editor inserts are client-side but emitted by server-side
+                                          ;; handlers, so their effect passes the mirror strip.
                                           :client-fx #{:editor/insert-text}
                                           :local-handlers
                                           (merge (:handlers local)
                                                  deferred-handlers
-                                                 ;; Client-local: track socket
-                                                 ;; up/down for the reconnecting
-                                                 ;; indicator. Never forwarded.
-                                                 {;; Palette "Chats" pick: forward a
-                                                  ;; :room/join so the server attaches
-                                                  ;; us to the session's LIVE room
-                                                  ;; (room-for-session) and it streams,
-                                                  ;; instead of a disk resume into the
-                                                  ;; current room. Never mirrored back.
+                                                 ;; Client-local handlers, never forwarded.
+                                                 {;; Forwarded so the server attaches us to
+                                                  ;; the session's live room (room-for-session).
                                                   :room/join
                                                   (fn [_st ev] {:effects [[:ws/send ev]]})
                                                   :connection/status
                                                   (fn [st {:keys [connected?]}]
                                                     {:state (assoc st :client/connected? connected?)})
-                                                  ;; Client-local: surface the
-                                                  ;; pairing handshake in the TUI
-                                                  ;; (the transport only logs it,
-                                                  ;; which the full-screen render
-                                                  ;; erases). Never forwarded.
                                                   :auth/pending
                                                   (fn [st {:keys [code]}]
                                                     {:state (assoc st :client/auth {:status :pending :code code})})
@@ -854,14 +726,6 @@ See docs/guide/command-line.md for the full reference.")
                                                       {:state (or (:state (ws-transport/auth-ok st ev)) st)}))
                                                   :auth/denied
                                                   (fn [st _] {:state (assoc st :client/auth {:status :denied})})
-                                                  ;; Client-local optimistic
-                                                  ;; prompt echo: show the user's
-                                                  ;; message + thinking loader the
-                                                  ;; instant they submit, before the
-                                                  ;; server round-trips the real
-                                                  ;; :prompt/submit back (see the
-                                                  ;; optimistic tap below). Never
-                                                  ;; forwarded.
                                                   :client/optimistic-set
                                                   (fn [st {:keys [text images]}]
                                                     {:state (assoc st :client/optimistic
@@ -869,34 +733,22 @@ See docs/guide/command-line.md for the full reference.")
                                                                      (seq images) (assoc :images (vec images))))})
                                                   :client/optimistic-clear
                                                   (fn [st _] {:state (dissoc st :client/optimistic)})})})
-                         ;; Only client-local hooks run here; server hooks
-                         ;; ran server-side and mirrored events bypass them.
                          :transform-event (ext/transform-event local)
-                         ;; Mirror fx run only from pending-room local handler
-                         ;; runs (real rooms forward; mirrored events strip to
-                         ;; the whitelist) — e.g. alt+p's :project/open-picker.
-                         ;; Defer mode is localhost-only, so running these
-                         ;; server-extension effects in-process is equivalent.
-                         ;; First in the merge: transport/local/client override.
+                         ;; Mirror fx run only for the pending room (defer mode is
+                         ;; localhost-only, so running them in-process is equivalent).
                          :effects       (merge (when defer-room? (:fx mirror))
                                                (:effects transport)
                                                (:fx local)
                                                (:effects client))
                          :on-render     (:render client)
                          :ring          ring})]
-    ;; Optimistic prompt echo (mirrors the web client): on a non-remote prompt
-    ;; submit, show the user's message + thinking loader immediately, before the
-    ;; server round-trips the real :user history entry back. Cleared when the
-    ;; server broadcasts the real :prompt/submit. Covers both a joined room and
-    ;; the deferred :pending room (whose :input/submit also flows through here,
-    ;; even though it stashes + joins "new" instead of forwarding).
+    ;; Optimistic prompt echo, like the web client; cleared when the server
+    ;; broadcasts the real :prompt/submit. Queued submissions get none.
     (add-tap!
      (fn [event state]
        (cond
          (and (= :input/submit (:type event))
               (not (:remote? event))
-              ;; While busy the submission is queued, not sent — the queue count
-              ;; is the feedback, so skip the optimistic bubble.
               (not (get-in state [:rooms (:room-id event) :agent :busy?]))
               (let [parsed (commands/parse-input (:text event))]
                 (or (= :prompt (:type parsed))
@@ -908,9 +760,8 @@ See docs/guide/command-line.md for the full reference.")
          (and (:remote? event)
               (= :prompt/submit (:type event)))
          (dispatch! {:type :client/optimistic-clear}))))
-    ;; Deferred room: replay the stashed first submission once the fresh room
-    ;; joins — images re-attach first (recreating their 📎 history entries in
-    ;; the real room, exactly as if attached there), then the text submits.
+    ;; Deferred room: replay the stashed first submission once the room joins,
+    ;; images first.
     (when defer-room?
       (add-tap!
        (fn [event state]
@@ -923,8 +774,7 @@ See docs/guide/command-line.md for the full reference.")
                (dispatch! {:type :ui/attach-image :room-id room-id
                            :image img :label "image"}))
              (dispatch! {:type :input/submit :room-id room-id :text text}))))))
-    ;; Auto-submit an initial prompt once the server room is joined
-    ;; (e.g. launched from an external launcher with --join and an error). Fires once.
+    ;; Auto-submit the initial prompt once the room is joined. Fires once.
     (when (seq initial-prompt)
       (let [sent? (atom false)]
         (add-tap!
@@ -940,19 +790,15 @@ See docs/guide/command-line.md for the full reference.")
 ;; ── Server ───────────────────────────────────────────────────────────────────
 
 (defn- log-crash!
-  "Record a stray async error to stderr AND ~/.config/xi/crash.log. The file
-   copy survives a `bb serve:restart` (which respawns the tmux pane and wipes
-   its scrollback), so a crash stays diagnosable after the fact."
+  "Record a stray async error to stderr and ~/.config/xi/crash.log (which
+   survives a `bb serve:restart`)."
   [label err]
   (js/console.error (str "[xi] " label ":") (crash-log/record! label err)))
 
 (defn- install-crash-guard!
-  "Keep the long-lived server alive across stray async errors and record every
-   one. Without this a single unhandled rejection — notably EPIPE from a Claude
-   SDK / sub-agent subprocess pipe on teardown — kills the whole process and
-   drops every connected client. We log loudly (with stack) rather than swallow
-   silently, so root causes stay findable; we just refuse to let one background
-   leak take down the server for everyone."
+  "Keep the server alive across stray async errors (notably EPIPE from a
+   subprocess pipe on teardown), logging each loudly so root causes stay
+   findable."
   []
   (.on js/process "unhandledRejection"
        (fn [reason _promise] (log-crash! "unhandledRejection" reason)))
@@ -960,18 +806,14 @@ See docs/guide/command-line.md for the full reference.")
        (fn [err] (log-crash! "uncaughtException" err))))
 
 (defn- start-server!
-  "Host rooms over WS. The server app runs providers + sessions and has no
-   renderer; unless --headless, a local TUI joins through the same WS path
-   as any remote client."
+  "Host rooms over WS. Unless --headless, a local TUI joins through the same WS
+   path as any remote client."
   [{:keys [port host headless? agent] :as opts}]
   (install-crash-guard!)
-  ;; A long-lived server can outlive the nix generation it was launched under;
-  ;; drop stale /nix/store env vars (e.g. DEPS_CLJ_TOOLS_DIR) so spawned tools
-  ;; use the current toolchain. See xi.env.
+  ;; Drop stale /nix/store env vars so spawned tools use the current toolchain.
   (env/sanitize-inherited-env!)
-  (let [;; --agent: the profile's :model is the default when no --model is
-        ;; given (the server re-reads the profile per room for prompt + tools)
-        ;; and its :extensions replace the rules.edn list for this process.
+  (let [;; --agent: the profile's :model is the default; its :extensions
+        ;; replace the rules.edn list.
         prof        (when agent (profile/load agent))
         _           (install-agent-extensions! prof)
         server-opts (resolve-model-opts
@@ -990,8 +832,7 @@ See docs/guide/command-line.md for the full reference.")
                  :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts (manager/composed mgr) cwd))
                  :room-ext-init (manager/live-view mgr :room-ext-init)
                  :ext composed})
-        ;; Late-bound (xi.core.app): a live extension reload recomposes, and the
-        ;; handlers (commands included) and fx are rebuilt from the new set.
+        ;; Late-bound: a live extension reload rebuilds handlers and fx.
         handlers (manager/live-view
                   mgr
                   (fn [composed]
@@ -999,22 +840,15 @@ See docs/guide/command-line.md for the full reference.")
                      (ext/merge-handlers composed)
                      (merge (:handlers dialogs))
                      (merge rm/handlers)
-                     ;; Auto-destroy: turn finished with nobody attached /
-                     ;; last client dropped while idle. Reaping on :room/attach
-                     ;; catches the room a client just left by switching chats
-                     ;; (a re-attach sends no :room/leave).
+                     ;; Reaping on :room/attach catches the room a client left by switching
+                     ;; chats (a re-attach sends no :room/leave).
                      (update :room/attach events/chain rm/reap-idle-clientless-rooms)
-                     ;; Buffers outlive their room: parked per session when it
-                     ;; closes (before the core handler drops the room), revived
-                     ;; into the next room for that session, gone with a delete.
+                     ;; Buffers outlive their room: parked per session, revived into its next room.
                      (update :room/close #(events/chain rm/park-buffers %))
                      (update :room/create events/chain rm/revive-buffers)
                      (update :session/delete events/chain rm/forget-parked-buffers)
-                     ;; Buffer presence: a client's view switch refreshes its
-                     ;; room's :members.
                      (update :client/update events/chain rm/client-update-presence)
-                     ;; Mark the session interrupted while a turn is in flight so a
-                     ;; hard restart (bb serve:restart) mid-turn can auto-resume it.
+                     ;; Interrupted-while-busy sessions auto-resume after a hard restart.
                      (update :agent/session-init events/chain commands/session-init-mark-interrupted)
                      (update :agent/turn-end events/chain rm/turn-end-room-cleanup)
                      (assoc :client/disconnect
@@ -1051,7 +885,6 @@ See docs/guide/command-line.md for the full reference.")
                                                     (summary/create-fx providers
                                                      {:make-config-dir!   session/make-throwaway-config-dir!
                                                       :remove-config-dir! session/remove-config-dir!}))]
-                                         ;; the extensions' fx follow the live composition
                                          (manager/live-view
                                           mgr
                                           (fn [composed]
@@ -1060,8 +893,7 @@ See docs/guide/command-line.md for the full reference.")
                              :ring ring})
         _ (user-ext/start! app {:ask! (:ask! dialogs)})
         _ (ext-persist/install! app mgr)
-        ;; the server's own user (--user / XI_USER): rooms it provisions itself
-        ;; (the HTTP API, prompts without a client) act for them
+        ;; Rooms the server provisions itself act for its own user.
         _ ((:dispatch! app) (users/loaded-event (own-user opts)))
         {actual-port :port} ((:start! server) app {:port port :host host})]
     (if headless?
@@ -1072,7 +904,6 @@ See docs/guide/command-line.md for the full reference.")
 ;; ── Entry ────────────────────────────────────────────────────────────────────
 
 (defn- run-prompt!
-  "Resolve the prompt text (positional args, else piped stdin) and run it."
   [{:keys [prompt-parts] :as opts}]
   (let [inline (some->> (seq prompt-parts) (str/join " "))]
     (cond
@@ -1088,43 +919,29 @@ See docs/guide/command-line.md for the full reference.")
                 (js/process.exit 1)))))
 
 (defn- start-standalone-or-join!
-  "Launch standalone, but transparently connect to a running server when one is
-   listening on the port and auto-join isn't disabled. Always opens a fresh
-   room (like the empty chat page on the web UI) rather than resuming the latest
-   one — /resume still re-attaches to a live room via a {:session-id} target."
+  "Launch standalone, but connect to a running server when one listens on the
+   port and auto-join isn't disabled. Always opens a fresh room; /resume
+   re-attaches via a {:session-id} target."
   [{:keys [auto-join? port initial-prompt session-id agent] :as opts}]
-  ;; --agent always stays local: a running server is some other agent (or a
-  ;; coding server) and provisions its rooms from its own profile.
+  ;; --agent always stays local: a running server provisions rooms from its
+  ;; own profile.
   (if (or (not auto-join?) agent)
     (start-standalone! opts)
     (-> (server-running? port)
         (.then (fn [running?]
                  (cond
-                   ;; No server — plain local standalone room (resumes
-                   ;; --session locally, if given).
                    (not running?) (start-standalone! opts)
-                   ;; --session resumes that exact session on the server
-                   ;; (start-client! turns it into a {:session-id} target).
                    session-id (start-client! opts)
-                   ;; An initial prompt wants a room + message right away.
                    (seq initial-prompt) (start-client! (assoc opts :target "new"))
-                   ;; Otherwise stay in a virtual room — the server room is
-                   ;; created on the first prompt, like the web empty chat.
+                   ;; Otherwise a virtual room: the server room is created on the first prompt.
                    :else (start-client! (assoc opts :target nil :defer-room? true))))))))
 
 ;; ── Sessions (headless listing) ──────────────────────────────────────────────
 
 (defn- fetch-recent-sessions
-  "Connect to the running server's lobby — the SAME websocket the web sidebar
-   uses — and derive its \"Recent\" set from the :lobby/state payload via the
-   shared xi.session.recent filter, so the CLI and the web agree exactly (only
-   the server knows which sessions have a live room). Authenticates with the
-   local client-key (implicitly trusted by the server), stays in the lobby (no
-   room join), reads the first :lobby/state, then closes.
-
-   Resolves a vector of {:session-id :name :cwd} maps, or nil when no server
-   answers (connection refused / no lobby state in time). A present-but-empty
-   recent set resolves to []."
+  "The running server's \"Recent\" set, read from its lobby websocket through
+   the shared xi.session.recent filter so the CLI and the web agree. Resolves a
+   vector of {:session-id :name :cwd}, or nil when no server answers."
   [opts]
   (js/Promise.
    (fn [resolve _reject]
@@ -1156,7 +973,6 @@ See docs/guide/command-line.md for the full reference.")
                           :started-at (:started-at ev)
                           :now        (js/Date.now)})]
               (finish (mapv #(select-keys % [:session-id :name :cwd]) cards))))))
-       ;; No lobby state within the window → treat as unreachable.
        (reset! timer (js/setTimeout #(finish nil) 3000))))))
 
 (defn- print-sessions! [{:keys [json? limit]} sessions]
@@ -1170,12 +986,9 @@ See docs/guide/command-line.md for the full reference.")
     (js/process.exit 0)))
 
 (defn- run-sessions!
-  "List saved chats and exit — the machine-facing counterpart to the web
-   sidebar's \"Recent\" section. The recent set is read live from the running
-   server's lobby websocket so the CLI and the web agree exactly (active live
-   rooms + the recency window). --all skips the server and lists every saved
-   chat from disk; --limit N caps the count; --json emits a JSON array
-   (default is one tab-separated session-id⇥name⇥cwd line per chat)."
+  "List saved chats and exit: the recent set from the running server's lobby
+   (--all lists every saved chat from disk), --limit N caps, --json emits an
+   array instead of TSV lines."
   [{:keys [all? port] :as opts}]
   (if all?
     (print-sessions! opts (->> (session/list-all-sessions)
@@ -1198,10 +1011,8 @@ See docs/guide/command-line.md for the full reference.")
     "?"))
 
 (defn- run-clients!
-  "Manage the client-key auth store (~/.config/xi/clients.edn) from the shell —
-   the CLI counterpart to the web pairing banner, for approving devices over
-   ssh on a headless server. The running server polls clients.edn, so an
-   approval is admitted within ~2s with no restart."
+  "Manage the client-key auth store (~/.config/xi/clients.edn) from the shell;
+   the running server polls it, so an approval is admitted within ~2s."
   [{:keys [clients-args]}]
   (let [[action arg] clients-args
         die! (fn [& lines]
@@ -1277,8 +1088,7 @@ See docs/guide/command-line.md for the full reference.")
             (auth/revoke! k)
             (println (str "Revoked " (or name "unknown") " (" (short k) ").")))
 
-          ;; `-` clears the assignment: the device is back to the user it
-          ;; claims itself (or root).
+          ;; `-` clears the assignment.
           (= user-id "-")
           (let [[k {:keys [name]}] (first hits)]
             (auth/set-user! k nil)
@@ -1300,21 +1110,17 @@ See docs/guide/command-line.md for the full reference.")
     (js/process.exit 0)))
 
 (defn- silence-worker-console!
-  "A worker has its own `console`, so the TUI's stdout interception
-   (xi.tui.terminal/intercept-stdout!) never sees it: anything a worker logs
-   is painted straight over the alternate screen. Workers talk to the main
-   thread only via parentPort, so their console is dropped. In dev builds this
-   is the shadow-cljs devtools client each worker carries (same bundle), which
-   reports a lost / restarted watch on every `bb serve:restart`."
+  "Drop a worker's console: the TUI's stdout interception never sees it, so
+   anything it logs (the shadow-cljs devtools client in dev builds) paints over
+   the alternate screen."
   []
   (doseq [k ["log" "info" "debug" "warn" "error"]]
     (aset js/console k (fn [& _] nil))))
 
 (defn main [& args]
   (if-not wt/isMainThread
-    ;; Loaded as a node:worker_threads Worker (same bundle) — become whatever
-    ;; the workerData role names, defaulting to the clj/bb eval worker. See
-    ;; xi.ext.clj-worker and xi.ext.clj-socket (nested socket-bridge workers).
+    ;; A worker_threads Worker of the same bundle: become the role workerData
+    ;; names (xi.ext.clj-worker, xi.ext.clj-socket).
     (do (silence-worker-console!)
         (if (= "xi-socket-bridge" (some-> wt/workerData (aget "role")))
           (clj-socket/bridge-install!)

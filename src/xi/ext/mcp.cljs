@@ -297,7 +297,6 @@
        (fn [] (doseq [[_ {:keys [stop!]}] @ext-servers] (stop!)))))
 
 (defn extension-server-id
-  "The id of server `server-name` declared by extension `ext`."
   [ext server-name]
   (str (name ext) "/" (name server-name)))
 

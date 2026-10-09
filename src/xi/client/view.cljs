@@ -43,7 +43,6 @@
       (get-arg arguments :path)))
 
 (def ^:private display-tool-name
-  "Map internal tool names to nicer display names."
   {"git_overview"                  "git diff --stat"
    "git_file_diff"                 "git diff"
    "git_hunk"                      "git diff"

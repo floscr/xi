@@ -39,9 +39,8 @@
     (catch :default _ nil)))
 
 (defn- store-set-raw!
-  "Write an already-encoded string under k. Returns true on success, false on
-   failure (e.g. quota) so callers can evict and retry. Quiet: a quota miss
-   is expected while evicting."
+  "Write an already-encoded string under k; false on failure (quota) so callers
+   can evict and retry."
   [k raw]
   (try
     (.setItem js/localStorage k raw)
@@ -72,9 +71,8 @@
   (or (:last-accessed s) (:timestamp s) ""))
 
 (defn- trim-lobby
-  "Shrink the cached lobby's :sessions to the pinned ones + the ones an
-   extension flagged (e.g. favorites) + the most-recently-accessed
-   N, so the cache stays small. :rooms (live rooms only) is left as-is."
+  "Shrink the cached lobby's :sessions to the pinned, extension-flagged and
+   most-recently-accessed N."
   [lobby]
   (update lobby :sessions
           (fn [sessions]
@@ -136,8 +134,8 @@
       (when-not (keep sid) (store-remove! (room-key sid))))))
 
 (defn- room-slice
-  "The persisted slice of a room map. Always carries all four keys (nil when
-   absent) so a slice built on save equals the one decoded from storage."
+  "The persisted slice of a room map, always carrying all four keys so a slice
+   built on save equals one decoded from storage."
   [room]
   {:history   (:history room)
    :model     (:model room)
@@ -172,9 +170,8 @@
 
 (defn- store-evicting!
   "Write the encoded snapshot `raw` for session-id, evicting the other cached
-   rooms least-recently-saved first, one at a time, until it fits. `lru` is
-   most-recent-first with session-id at its head. Returns the surviving LRU,
-   or nil when it doesn't fit even alone."
+   rooms least-recently-saved first until it fits. Returns the surviving LRU,
+   or nil when it doesn't fit alone."
   [session-id raw lru]
   (loop [kept (vec lru)]
     (cond
@@ -184,15 +181,10 @@
                 (recur (pop kept))))))
 
 (defn save-room!
-  "Cache a room's renderable slice (history + model) under its session id, then
-   prune to the most-recently-saved rooms so the store can't overflow. On a
-   quota failure, evict the oldest other rooms until it fits; a room too big
-   for the quota on its own is remembered and skipped. A no-op when the slice
-   is the one already stored.
-
-   The stored payload also carries :history-hash (cljs `hash` of the history),
-   which a live-room join echoes so the server can elide the history it would
-   otherwise re-send (xi.server.room-manager/joined-payload)."
+  "Cache a room's renderable slice under its session id, evicting older rooms
+   on quota failure (a room too big on its own is remembered and skipped). The
+   payload carries :history-hash, which a live-room join echoes so the server
+   can elide the history (xi.server.room-manager/joined-payload)."
   [session-id room]
   (when (and session-id (seq (:history room)))
     (let [payload (room-slice room)
@@ -255,7 +247,6 @@
 (defn load-watched [] (or (store-get watched-key) {}))
 
 (defn watch!
-  "Mark a session read at the given response count."
   [session-id response-count]
   (when session-id
     (store-set! watched-key (assoc (load-watched) session-id (or response-count 0)))))
@@ -319,9 +310,8 @@
 (def ^:private cached-user-key "xi/user")
 
 (defn load-cached-user
-  "The user id whose UI state (theme, appearance, …) this browser cached last,
-   nil for a cache from before per-user state. The server's copy replaces it;
-   a different user on a shared browser must not inherit it (xi.web.user-state)."
+  "The user id whose UI state this browser cached last, nil before per-user
+   state; a different user must not inherit it."
   []
   (store-get cached-user-key))
 
@@ -366,9 +356,8 @@
 ;; ── Hydrate + persist ────────────────────────────────────────────────────────
 
 (defn hydrate
-  "Seed initial app state from the cache before the WS connects: cached
-   lobby, the deep-linked session's cached history (under :web/cache), and
-   the watched map. `route` is the initial route parsed from the URL."
+  "Seed initial app state from the cache before the WS connects: the lobby, the
+   deep-linked session's history (:web/cache) and the watched map."
   [base route]
   (let [sid    (:session-id route)
         cached (load-room sid)
@@ -394,29 +383,23 @@
       cached       (assoc-in [:web/cache sid] cached))))
 
 (def ^:private persist-on
-  "Event types after which the cache is worth refreshing.
-   :history/append is intentionally excluded — it fires on every streaming
-   delta and would thrash localStorage during long turns. :agent/tool-result
-   gives a mid-turn checkpoint; :agent/turn-end persists the final state.
-   :session/resumed-tail matters: on a cache-echoing join the server marks the
-   full :session/resumed :no-broadcast? and ships only the tail, so without it
-   the merged history never lands back in localStorage and every switch
-   repaints the same stale snapshot."
+  "Event types after which the cache is refreshed. :history/append is excluded
+   (every streaming delta); :agent/tool-result is a mid-turn checkpoint;
+   :session/resumed-tail matters because a cache-echoing join never broadcasts
+   the full :session/resumed."
   #{:lobby/state :room/joined :session/resumed :session/resumed-tail
     :agent/turn-end :agent/tool-result :agent/abort})
 
 (def ^:private tool-result-persist-interval-ms
-  "Min gap between :agent/tool-result checkpoints. save-room! serializes the
-   full history (can be hundreds of KB) synchronously on the main thread, so
-   tool-heavy turns would otherwise jank the UI on every result."
+  "Min gap between :agent/tool-result checkpoints (save-room! serializes the
+   whole history synchronously)."
   5000)
 
 (defonce ^:private last-tool-persist (atom 0))
 
 (defn persist-tap
-  "App tap that mirrors lobby + the active room into the cache. Gated to a
-   few event types so we don't write localStorage on every delta; mid-turn
-   :agent/tool-result checkpoints are additionally rate-limited."
+  "App tap mirroring the lobby + active room into the cache on `persist-on`
+   events, tool-result checkpoints rate-limited."
   [event state]
   (when (persist-on (:type event))
     (when (or (not= :agent/tool-result (:type event))

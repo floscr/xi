@@ -37,7 +37,6 @@
       (conj history {:kind kind :text text}))))
 
 (defn update-tool-call
-  "Update the most recent tool-call entry with matching id."
   [history id f]
   (if-let [idx (->> (range (dec (count history)) -1 -1)
                     (filter #(and (= :tool-call (:kind (history %)))
@@ -47,9 +46,8 @@
     history))
 
 (defn finalize-history
-  "Mark all open streaming entries as done. A tool call still :running when the
-   turn ends (interrupted before its result arrived) is settled to :aborted so
-   its spinner stops instead of spinning forever."
+  "Mark all open streaming entries done; a tool call still :running at turn end
+   is settled to :aborted."
   [history]
   (mapv (fn [entry]
           (cond
@@ -65,10 +63,9 @@
 ;; ── Turn construction (pure) ─────────────────────────────────────────────────
 
 (defn history->context
-  "Render history's user/assistant text exchanges as a <conversation_history>
-   block for system-prompt injection, or nil when there is nothing to carry.
-   Used after /tree navigation: the provider session is fresh, so the
-   truncated conversation rides along as context."
+  "History's user/assistant text as a <conversation_history> block for
+   system-prompt injection (after /tree navigation the provider session is
+   fresh), or nil."
   [history]
   (let [msgs (keep (fn [{:keys [kind text no-llm?]}]
                      (when (and (seq text) (not no-llm?))
@@ -85,22 +82,11 @@
            "\n</conversation_history>"))))
 
 (defn history->messages
-  "Convert a room's flat :history into a neutral, provider-agnostic message
-   list so sessionless providers (Zen/Ollama) can replay the full conversation
-   each turn — they keep no server-side transcript like Claude does.
-
-   Output is a vector of maps in one of these shapes, in order:
-     {:role :user      :text ...}
-     {:role :assistant :text ... :tool-calls [{:id :name :arguments}]}
-     {:role :tool      :results    [{:id :content :is-error}]}
-
-   Adjacent assistant output (streamed text + the tool calls it made in the
-   same turn) is merged into ONE assistant entry, and the matching tool
-   results into ONE following tool entry, so providers that require strict
-   user/assistant alternation (Anthropic) don't get two same-role messages in
-   a row. Thinking, error, and aborted entries are dropped. Tool calls without
-   a result yet (interrupted mid-turn) are skipped so we never send a dangling
-   tool_use the API would reject."
+  "A room's :history as a provider-agnostic message list for sessionless
+   providers (Zen/Ollama replay the whole conversation): {:role :user :text},
+   {:role :assistant :text :tool-calls}, {:role :tool :results}. Adjacent
+   assistant output merges into one entry (strict alternation); thinking, error
+   and aborted entries drop; tool calls without a result are skipped."
   [history]
   (letfn [(assistant-entry [acc]
             ;; Ensure the trailing acc entry is an open assistant message we can
@@ -152,10 +138,8 @@
      (remove :no-llm? history))))
 
 (defn- prompt-with-attachment-paths
-  "Append the on-disk paths of attached files to the provider prompt so the
-   agent's file tools and subagents can reach them. Kept out of the history
-   entry text so the user's message bubble stays clean. Images are labelled as
-   images; every other type (PDF, zip, text, …) as a generic file."
+  "Append the on-disk paths of attached files to the provider prompt (not the
+   history entry) so file tools and sub-agents can reach them."
   [prompt images]
   (let [refs (keep (fn [{:keys [path media-type]}]
                      (when path
@@ -168,14 +152,10 @@
       prompt)))
 
 (defn- build-turn-effect
-  "Build the :provider/start-turn effect payload. When :resume-id is nil and
-   :context-history is supplied, the prior conversation is rendered into the
-   system prompt so the fresh provider session keeps the context.
-
-   :prior-history (the room's history *before* this prompt) is threaded through
-   so sessionless providers (Zen/Ollama, which keep no server-side transcript)
-   can rebuild the full multi-turn message array. Claude ignores it — it
-   resumes its own server-side session via :resume-session-id instead."
+  "The :provider/start-turn effect payload. Without :resume-id,
+   :context-history is rendered into the system prompt; :prior-history lets
+   sessionless providers rebuild the message array (Claude resumes server-side
+   instead)."
   [{:keys [room resume-id prompt images context-history prior-history]}]
   (let [agent   (:agent room)
         context (when (and (nil? resume-id) context-history)
@@ -199,10 +179,9 @@
        resume-id      (assoc :resume-session-id resume-id))]))
 
 (defn- start-turn-effect
-  "Build the :provider/start-turn effect payload from room state + prompt.
-   When the session is flagged :inject-history? and has no provider session
-   to resume (i.e. after /tree navigation), the truncated history is rendered
-   into the system prompt so the fresh provider session keeps the context."
+  "build-turn-effect from room state + prompt; a session flagged
+   :inject-history? with no provider session to resume gets the history as
+   context."
   [room {:keys [text images]}]
   (let [resume-id (get-in room [:session :provider-session-id])]
     (build-turn-effect
@@ -210,27 +189,20 @@
       :resume-id resume-id
       :prompt text
       :images images
-      ;; The room's history at this point is the *prior* conversation — the
-      ;; current prompt has not yet been appended (begin-turn appends it in
-      ;; the same handler, but passes the pre-append `room` here). Sessionless
-      ;; providers replay it as prior turns.
+      ;; `room` is the pre-append room: its history is the prior conversation,
+      ;; which sessionless providers replay as earlier turns.
       :prior-history (:history room)
       :context-history (when (and (nil? resume-id)
                                   (get-in room [:session :inject-history?]))
                          (:history room))})))
 
 (defn- begin-turn [st room prompt]
-  ;; A live turn diverges the room's history from its resumed on-disk snapshot,
-  ;; so the cached :msg-hash/:msg-count (set at resume time) no longer describe
-  ;; the current history. Clear them so the web cache doesn't pair grown history
-  ;; with a stale hash — which would make the incremental-resume prefix check
-  ;; double-append the tail. The next resume event re-establishes them.
+  ;; A live turn diverges the history from the resumed snapshot, so the
+  ;; cached :msg-hash/:msg-count are cleared (else the web cache's prefix
+  ;; check would double-append the tail).
   (let [label (:collapsed-label prompt)
-        ;; The in-memory entry keeps clean text (collapse is driven by
-        ;; :collapsed-label). But that key never reaches the provider transcript,
-        ;; so a resume from disk would lose it. Embed a hidden marker only in the
-        ;; text sent to the provider; messages->history rebuilds the label from
-        ;; it and strips it back out on resume.
+        ;; The provider text carries a hidden marker for :collapsed-label, which
+        ;; never reaches the transcript otherwise; messages->history rebuilds it.
         provider-prompt (cond-> prompt
                           label (update :text util/with-collapse-marker label))]
     {:state   (-> st
@@ -278,10 +250,8 @@
     {:state (update-in st [:rooms room-id :history] fold-delta :text text)}))
 
 (defn- thinking-delta [st {:keys [room-id text]}]
-  ;; Some models (e.g. Opus 4.6-family via the Claude SDK) stream thinking
-  ;; blocks whose deltas are empty strings — the reasoning is withheld and only
-  ;; an encrypted signature is returned. Ignore blank deltas so they don't
-  ;; post empty "Thinking" blocks.
+  ;; Some models stream thinking deltas as empty strings (reasoning
+  ;; withheld); ignore them.
   (when (and (state/get-room st room-id) (seq text))
     {:state (update-in st [:rooms room-id :history] fold-delta :thinking text)}))
 
@@ -312,11 +282,8 @@
 (defn- turn-end [st {:keys [room-id usage cost provider-session-id aborted?]}]
   (when-let [room (state/get-room st room-id)]
     (let [queued (get-in room [:agent :queued])
-          ;; Permission asks still open for this turn's tool calls (dialogs
-          ;; tagged :call) are moot once the turn is over: the gated call can
-          ;; never run now (the turn was interrupted under them). Drop them
-          ;; and settle their promises as denied, so no gate waits forever
-          ;; and no ask outlives its tool block as a standalone bubble.
+          ;; Asks still open for this turn's tool calls are moot once the turn is
+          ;; over: drop them and settle their promises as denied.
           stale  (filterv :call (get-in room [:ui :dialogs]))
           st' (-> st
                   (update-in [:rooms room-id :history] finalize-history)
@@ -347,15 +314,10 @@
         (seq effects) (assoc :effects effects)))))
 
 (defn- retry-fresh
-  "The provider could not start (a dead resume session, or a missing working
-   directory that has since been fixed). Drop the dead id and re-run the
-   pending turn as a fresh session, carrying the in-memory history as context
-   so nothing is lost. The pending prompt is the last :user history entry (no
-   assistant output was produced before the failure); we replay it as the
-   fresh prompt and inject everything before it as context. Scanning for the
-   last :user entry — rather than assuming it's the trailing one — tolerates a
-   transient entry appended after it (e.g. the 'CWD changed' status line the
-   cwd-recovery flow emits)."
+  "The provider could not start (dead resume id, missing cwd since fixed): drop
+   the id and re-run the pending turn fresh with the in-memory history as
+   context. The pending prompt is the last :user entry (a later status line may
+   follow it)."
   [st {:keys [room-id]}]
   (when-let [room (state/get-room st room-id)]
     (let [history (:history room)
@@ -439,7 +401,6 @@
          vec)))
 
 (defn- event-callbacks
-  "Provider streaming callbacks → :agent/* event dispatches."
   [dispatch! room-id]
   {:on-text        (fn [text]
                      (dispatch! {:type :agent/text-delta :room-id room-id :text text}))
@@ -463,10 +424,9 @@
 
 
 (defn room-client-pid
-  "Pid of the client driving `room-id` (preferring a TUI client), or nil, from
-   the connection registry. In standalone mode there is no registry: the TUI
-   is this process, so it's this process' pid. Threaded into the tool ctx; MCP
-   servers get it as _meta `xi/clientPid` (xi.ext.mcp/call-meta)."
+  "Pid of the client driving `room-id` (TUI preferred), from the connection
+   registry; this process' pid in standalone. MCP servers get it as _meta
+   (xi.ext.mcp/call-meta)."
   [st room-id]
   (or (->> (vals (get-in st [:connection :clients]))
            (filter (fn [c] (and (= room-id (:room-id c)) (:pid c))))
@@ -477,26 +437,12 @@
         (.-pid js/process))))
 
 (defn create-fx
-  "Provider effects. `providers` is a map of provider-id → provider.
-   In-flight turn handles live here — runtime resources, not app state.
-
-   Second arity threads extension tooling into every turn:
-     :tool-policy            the policy step (fn [tool-call ctx] → Promise) every
-                             tool call passes before it runs — the rules
-                             engine (xi.ext.rules/tool-policy). Wrapped here
-                             into the provider's single-arg fn, closing over
-                             the per-turn ctx (state, dispatch, dialogs).
-     :extra-tool-definitions extra tool defs exposed to the provider
-     :extra-tool-registry    name → exec-fn for those extra tools
-     :remove-tools           0-arg fn → #{tool-name} of builtin tools to
-                             hide from the model (extension :remove-tools)
-     :ask!                   dialog ask! — partially applied into the tool
-                             ctx as :confirm! (fn [message] → Promise<bool>)
-     :turn-finished!         (fn [room-id cwd]) — called when every turn
-                             finishes, fails or is discarded (holds settle)
-     :fx                     extra effect handlers merged in (the /holds
-                             effects). Both come from node-only xi.cli — this
-                             ns is shared with the browser build."
+  "Provider effects over `providers` (id → provider); in-flight turn handles
+   live here. The second arity threads extension tooling into every turn:
+   :tool-policy (the rules engine, wrapped with the per-turn ctx),
+   :extra-tool-definitions, :extra-tool-registry, :remove-tools, :ask! (as the
+   tool ctx's :confirm!), :turn-finished! (holds settle) and :fx. All from
+   node-only xi.cli; this ns is shared with the browser build."
   ([providers] (create-fx providers nil))
   ([providers {:keys [tool-policy extra-tool-definitions extra-tool-registry remove-tools ask!
                       turn-finished! fx]}]
@@ -506,10 +452,8 @@
     {:provider/start-turn
      (fn [{:keys [dispatch! get-state]} {:keys [room-id cwd] :as payload}]
        (let [provider (resolve-provider providers payload)
-             ;; Per-turn context handed to the tool policy AND tool
-             ;; exec-fns (as :tool-ctx, merged under the provider's own
-             ;; {:cwd :client-pid}): lets them read live state, dispatch
-             ;; events, and raise confirm dialogs.
+             ;; Per-turn context for the tool policy and tool exec-fns (as :tool-ctx):
+             ;; live state, dispatch, and confirm dialogs.
              tool-ctx {:dispatch! dispatch!
                        :get-state get-state
                        :room-id   room-id
@@ -517,23 +461,10 @@
                        ;; who the turn acts for: the sender of the latest
                        ;; prompt. xi.api.user reads it as "the current user".
                        :user      (state/turn-user (get-state) room-id)
-                       ;; Raise a confirm dialog and resolve to the answer.
-                       ;; The dialog waits in the room for an answer, also
-                       ;; while no client is connected; only prompt mode
-                       ;; resolves it to a safe default (false) at once
-                       ;; (see xi.ext.core/create-dialogs).
-                       ;; opts may carry {:options [:yes :no :always …]} —
-                       ;; option keywords from xi.dialog/confirm-option; the
-                       ;; renderers build their buttons/keys from that data.
-                       ;; :diff {:path :text} previews a write/edit's change.
-                       ;; :call {:name :arguments} names the gated tool call.
-                       ;; :target {:arg :ranges} locates, inside that call's
-                       ;; argument, the part the ask is about.
-                       ;; :block {:count :arg :ranges} — this ask is one of
-                       ;; several for the call; ranges cover all of them
-                       ;; (xi.dialog/scope-confirm-to-call).
-                       ;; :on-reason (fn [reason]) offers deny-with-reason
-                       ;; (xi.dialog/capture-deny-reason).
+                       ;; Raise a confirm dialog and resolve to the answer; it waits in the room
+                       ;; even with no client connected (prompt mode resolves the safe default,
+                       ;; xi.ext.core/create-dialogs). opts: :options, :diff, :call, :target,
+                       ;; :block, :on-reason (see xi.dialog).
                        :confirm!  (when ask!
                                     (fn confirm!
                                       ([message] (confirm! message nil))
@@ -550,9 +481,8 @@
              policy1 (when tool-policy
                      (fn [tool-call]
                        (tool-policy tool-call (dialog/scope-confirm-to-call tool-ctx tool-call))))
-             ;; The turn's cwd doesn't exist on this host (e.g. a Pi session
-             ;; with cwd=/var/lib/xi opened elsewhere). Ask the user where to
-             ;; run, persist it on the room, then replay the turn fresh.
+             ;; The turn's cwd doesn't exist on this host: ask where to run, persist
+             ;; it, replay the turn.
              recover-cwd!
              (fn [missing-cwd]
                (if ask!
@@ -590,11 +520,8 @@
                 extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
                 remove-tools           (assoc :remove-tools remove-tools)
                 client-pid             (assoc :client-pid client-pid)))]
-         ;; `handle` identifies this turn in `inflight`. A turn that was
-         ;; discarded (see :provider/discard, fired when /new or /clear
-         ;; replaces the session mid-turn) has its entry removed, so the
-         ;; identity guard below drops its late promise resolution instead of
-         ;; dispatching turn-end into the fresh session and clobbering it.
+         ;; `handle` identifies this turn in `inflight`; a discarded turn
+         ;; (:provider/discard) loses its entry so its late resolution is dropped.
          (let [handle {:abort! abort!}
                current? (fn [] (identical? handle (.get inflight room-id)))]
            (.set inflight room-id handle)
@@ -627,9 +554,7 @@
                     (dispatch! {:type :agent/error :room-id room-id
                                 :error {:type "error" :message (str (.-message err))}})
                     (dispatch! {:type :agent/turn-end :room-id room-id}))))
-               ;; Every turn — finished, failed or discarded — reports back
-               ;; (xi.cli wires it to xi.holds/settle-room!, which drops holds
-               ;; whose resource is releasable again).
+               ;; Every turn reports back (xi.holds/settle-room! via xi.cli).
                (.finally #(when turn-finished! (turn-finished! room-id cwd)))))))
 
      :provider/abort
@@ -637,11 +562,8 @@
        (when-let [handle (.get inflight room-id)]
          ((:abort! handle))))
 
-     ;; Abort the in-flight turn AND drop its entry so its late promise
-     ;; resolution is ignored (the guard in start-turn's .then/.catch). Used
-     ;; when the session is being replaced out from under the turn (/new,
-     ;; /clear) — the killed turn must not dispatch turn-end into the fresh
-     ;; session.
+     ;; Abort the in-flight turn and drop its entry so its late resolution
+     ;; can't dispatch turn-end into the replaced session (/new, /clear).
      :provider/discard
      (fn [_ {:keys [room-id]}]
        (when-let [handle (.get inflight room-id)]

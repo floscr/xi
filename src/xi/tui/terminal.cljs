@@ -26,12 +26,10 @@
          :on-resize nil}))
 
 (defn columns
-  "Get terminal width in columns."
   []
   (or (aget js/process.stdout "columns") 80))
 
 (defn rows
-  "Get terminal height in rows."
   []
   (or (aget js/process.stdout "rows") 24))
 
@@ -43,7 +41,6 @@
   (reset! tui-writing? false))
 
 (defn writeln!
-  "Write a string + newline to stdout."
   [s]
   (write! (str s "\n")))
 
@@ -75,7 +72,6 @@
   (write! (str "\033[" row ";" col "H")))
 
 (defn enter-alt-screen!
-  "Enter alternate screen buffer."
   []
   (write! "\033[?1049h"))
 
@@ -93,7 +89,6 @@
   (write! "\033[?1006h"))
 
 (defn disable-mouse-tracking!
-  "Disable button-event mouse tracking."
   []
   (write! "\033[?1006l")
   (write! "\033[?1002l"))
@@ -162,7 +157,6 @@
 ;; ── Raw Mode ──────────────────────────────────────────────────────────────────
 
 (defn tty?
-  "Check if stdin is a TTY."
   []
   (boolean (.-isTTY js/process.stdin)))
 
@@ -310,7 +304,6 @@
     (.on stdout "resize" on-resize)))
 
 (defn stop!
-  "Leave raw mode, restore terminal state."
   [terminal]
   (let [{:keys [on-input on-resize was-raw esc-cleanup]} @terminal
         stdin js/process.stdin
@@ -368,7 +361,6 @@
     (.pause stdin)))
 
 (defn resume!
-  "Resume terminal after fullscreen subprocess."
   [terminal]
   (let [{:keys [on-input on-resize]} @terminal
         stdin js/process.stdin

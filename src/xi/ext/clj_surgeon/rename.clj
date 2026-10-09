@@ -44,7 +44,6 @@
 ;; ============================================================
 
 (defn- find-ns-form
-  "Find the (ns ...) form in a zipper. Returns the zloc or nil."
   [zloc]
   (loop [z zloc]
     (when z
@@ -54,7 +53,6 @@
         (recur (z/right z))))))
 
 (defn- ns-name-str
-  "Get the namespace name string from an (ns ...) form."
   [ns-zloc]
   (some-> ns-zloc z/down z/right z/string))
 
@@ -67,13 +65,11 @@
         zloc (z/of-string source {:track-position? true})
         ns-zloc (find-ns-form zloc)
         ns-name (when ns-zloc (ns-name-str ns-zloc))
-        ;; Check if ns declaration needs renaming
         ns-rename (when (and ns-name
                              (or (= ns-name from-prefix)
                                  (str/starts-with? ns-name (str from-prefix "."))))
                     {:old ns-name
                      :new (rename-symbol-str ns-name from-prefix to-prefix)})
-        ;; Find all require entries that reference the old prefix
         require-renames (when ns-zloc
                           (let [children (loop [z (z/down ns-zloc), acc []]
                                            (if (nil? z)
@@ -84,7 +80,6 @@
                                  (filter #(and (z/list? %)
                                                (= ":require" (some-> % z/down z/string))))
                                  (mapcat (fn [req-form]
-                                           ;; Walk require vectors
                                            (loop [z (some-> req-form z/down z/right), acc []]
                                              (if (nil? z)
                                                acc
@@ -119,11 +114,9 @@
         src-dirs (filter #(.isDirectory (io/file %))
                          [(str root "/src") (str root "/test")])
         clj-files (mapcat find-clj-files src-dirs)
-        ;; Analyze each file
         file-analyses (->> clj-files
                            (keep #(analyze-file % from-str to-str))
                            vec)
-        ;; Compute file moves (directory renames based on ns prefix)
         from-dir (ns-prefix->dir from-str)
         to-dir (ns-prefix->dir to-str)
         file-moves (->> clj-files
@@ -133,7 +126,6 @@
                                  :to (str/replace f
                                                   (str "/" from-dir "/")
                                                   (str "/" to-dir "/"))})))
-        ;; Find non-clj files that might reference the old name
         all-files (->> (file-seq (io/file root))
                        (filter #(.isFile %))
                        (remove #(str/includes? (.getPath %) "/.git/"))
@@ -167,7 +159,6 @@
         ns-zloc (find-ns-form zloc)]
     (if (nil? ns-zloc)
       source
-      ;; Walk the entire ns form and rename matching symbols
       (let [renamed (loop [z ns-zloc]
                       (let [z' (z/next z)]
                         (if (z/end? z')
@@ -200,19 +191,16 @@
         from-dir (ns-prefix->dir from-str)
         to-dir (ns-prefix->dir to-str)
         log (atom [])]
-    ;; 1. Create target directories
     (doseq [{:keys [to]} (:file-moves rename-plan)]
       (let [parent (.getParentFile (io/file to))]
         (when-not (.exists parent)
           (.mkdirs parent)
           (swap! log conj {:action :mkdir :path (.getPath parent)}))))
-    ;; 2. Rename source in each file and write to new location (or same location)
     (doseq [{:keys [from to]} (:file-moves rename-plan)]
       (let [source (slurp from)
             new-source (rename-source source from-str to-str)]
         (spit to new-source)
         (swap! log conj {:action :write :from from :to to})))
-    ;; 3. Update non-moved files that have require changes
     (let [moved-files (set (map :from (:file-moves rename-plan)))]
       (doseq [{:keys [file]} (:file-analyses rename-plan)
               :when (not (contains? moved-files file))]
@@ -221,7 +209,6 @@
           (when (not= source new-source)
             (spit file new-source)
             (swap! log conj {:action :update :file file})))))
-    ;; 4. Delete old directories if empty
     (doseq [src-dir ["src" "test"]]
       (let [old-dir (io/file root src-dir from-dir)]
         (when (.isDirectory old-dir)

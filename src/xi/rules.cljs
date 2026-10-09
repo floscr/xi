@@ -141,11 +141,9 @@
     (match-name spec tool-name)))
 
 (defn- match-host
-  "Host spec (like `:tool-name`: string glob/exact, regex, set). Against an
-   extension's `:net` request host, or — for a `:sh` call to `curl` — every
-   host the call requests (`xi.rules.curl`): all must match, and a curl that
-   isn't a plain read-only request (file-touching flags, `-H`, shell syntax in
-   a background command, …) has no hosts and never matches."
+  "Host spec (string glob/exact, regex, set) against an extension's `:net`
+   host, or every host a `:sh` curl call requests (xi.rules.curl); a curl that
+   isn't a plain read-only request has no hosts and never matches."
   [spec req]
   (cond
     (nil? spec)  true
@@ -154,21 +152,16 @@
                                    (every? #(match-tool-name spec %))))))
 
 (defn- match-read-only
-  "`:read-only true` / `false`: whether a `:sh` call's argv — the literal
-   `:argv` of a clj `(sh …)` call, or a background `:command` without shell
-   syntax — parses as read-only for its program (xi.rules.readonly: `find`
-   without `-exec`, `git` without `-c` / a writing subcommand, …). A program
-   the parsers don't know, a command with shell syntax or no argv at all
-   matches neither value, so the key only grants next to `:cli`."
+  "`:read-only true|false`: whether a `:sh` call's argv parses as read-only for
+   its program (xi.rules.readonly). An unknown program, shell syntax or no argv
+   matches neither value."
   [spec req]
   (or (nil? spec)
       (= (boolean spec) (readonly/request-read-only? req))))
 
 (defn- match-extension
-  "Extension spec for requests a user extension makes through xi.api.*:
-   `true` → any extension, else like `:tool-name` (string glob/exact, regex,
-   set). Tool calls carry no :extension, so an `:extension` rule never
-   matches them."
+  "Extension spec for xi.api.* requests: `true` → any extension, else like
+   `:tool-name`. Tool calls carry no :extension."
   [spec ext]
   (cond
     (nil? spec)  true
@@ -177,9 +170,9 @@
     :else        (match-tool-name spec ext)))
 
 (defn- match-extension-data
-  "Own-data-dir match (opt-in). `:extension-data :own` matches when the target
-   path resolves inside the requesting extension's data dir — the store
-   computes `:own-data?` only when such a rule is in play."
+  "`:extension-data :own` matches when the target path resolves inside the
+   requesting extension's data dir (`:own-data?`, computed only when such a
+   rule is in play)."
   [spec req]
   (or (nil? spec)
       (case spec
@@ -187,10 +180,8 @@
         false)))
 
 (defn- match-when
-  "Submap match against room ext `state`: every k/v in `spec` must match the
-   value in `state`. A map value matches recursively (nested submap), so a rule
-   can target one ext's flag (e.g. `{:plan-mode {:enabled? true}}`) without
-   pinning that ext's whole state map."
+  "Submap match against room ext `state`; map values recurse, so a rule can
+   target one ext's flag without pinning its whole state."
   [spec state]
   (or (nil? spec)
       (and (map? state)
@@ -207,9 +198,9 @@
   ::config-invalid)
 
 (defn- match-user-value
-  "One value of a `:user` map spec against the user's value `v`: a map
-   recurses (submap), a set is one-of, anything else is equal — or, when the
-   user's value is a collection (`:roles [\"admin\" \"dev\"]`), contained in it."
+  "One value of a `:user` map spec against the user's `v`: a map recurses, a
+   set is one-of, else equal, or contained when the user's value is a
+   collection."
   [spec v]
   (cond
     (map? spec) (and (map? v)
@@ -221,12 +212,9 @@
     :else (= spec v)))
 
 (defn- match-user
-  "User spec, against the user the call acts for. string / set / regex →
-   the user id (like `:tool-name`). A map → submap match against
-   `:user-record`, {:id :name :meta} from config.edn's `:users`, which the
-   store fills only when such a rule is in play. With config.edn invalid
-   (`config-invalid`) a map spec fails closed: it matches everyone unless the
-   rule allows, so a deny keyed on `:meta` keeps applying."
+  "User spec against the user the call acts for: string / set / regex → the id;
+   a map → submap match against `:user-record` (config.edn `:users`). With
+   config.edn invalid a map spec fails closed."
   [spec req action-type]
   (cond
     (nil? spec)  true
@@ -237,9 +225,8 @@
     :else        (match-tool-name spec (:user req))))
 
 (defn- match-node
-  "Tree-sitter node match (opt-in). `nodes` is a seq of {:type :name :text}
-   the store computes only when a `:node` rule is in play; nil `nodes` never
-   matches a `:node` rule."
+  "Tree-sitter node match against `nodes` ({:type :name :text}, computed only
+   when a `:node` rule is in play)."
   [spec nodes]
   (or (nil? spec)
       (boolean (some (fn [n]
@@ -249,10 +236,8 @@
                      nodes))))
 
 (defn- match-outside
-  "Location match (opt-in). `:outside :cwd` matches when the target path
-   resolves outside the effective cwd (and tmp) — the store computes and
-   populates `:outside-cwd?` on the request only when an `:outside` rule is in
-   play (nil never matches)."
+  "`:outside :cwd` matches when the target resolves outside the effective cwd
+   and tmp (`:outside-cwd?`, computed only when such a rule is in play)."
   [spec req]
   (or (nil? spec)
       (case spec
@@ -260,10 +245,9 @@
         false)))
 
 (defn- match-credential
-  "Credential-path match (opt-in). `:credential :read` matches when the target
-   path resolves inside a hidden credential dir (.ssh, .gnupg, …) — the store
-   computes and populates `:credential-path?` on the request only when a
-   `:credential` rule is in play (nil never matches)."
+  "`:credential :read` matches when the target resolves inside a hidden
+   credential dir (`:credential-path?`, computed only when such a rule is in
+   play)."
   [spec req]
   (or (nil? spec)
       (case spec
@@ -271,10 +255,9 @@
         false)))
 
 (defn- match-within
-  "Operand-location match (opt-in). `:within :repo` matches when every operand
-   of a literal `:sh` command resolves inside the effective git repo (not its
-   `.git/`) or tmp — the store computes and populates `:operands-within-repo?`
-   on the request only when a `:within` rule is in play (nil never matches)."
+  "`:within :repo` matches when every operand of a literal `:sh` command
+   resolves inside the effective repo or tmp (`:operands-within-repo?`,
+   computed only when such a rule is in play)."
   [spec req]
   (or (nil? spec)
       (case spec
@@ -282,14 +265,9 @@
         false)))
 
 (defn- match-tracked
-  "Git-tracked match (opt-in). `:tracked :git` matches when every operand of a
-   literal `:sh` command is git-tracked content inside the effective repo — a
-   file in the index, or a directory whose files are all in the index — so
-   deleting or moving it is recoverable from git. The store populates
-   `:operands-tracked?` on the request only when a `:tracked` rule is in play
-   (nil never matches) — as a delay, since the check spawns git: it is forced
-   here, i.e. only once a `:tracked` rule's other fields (tool, cli, …) have
-   matched, never for unrelated commands."
+  "`:tracked :git` matches when every operand of a literal `:sh` command is
+   git-tracked content (recoverable). `:operands-tracked?` is a delay forced
+   here, so git is spawned only once the rule's other fields matched."
   [spec req]
   (or (nil? spec)
       (case spec
@@ -298,28 +276,22 @@
         false)))
 
 (defn- match-xi-rules-file
-  "xi-rules-file match (opt-in). `:xi-rules-file true` matches when the call
-   would change an xi rules file (a `rules.edn` carrying `:version`) — the store
-   computes and populates `:xi-rules-file?` on the request only when an
-   `:xi-rules-file` rule is in play (nil never matches)."
+  "`:xi-rules-file true` matches when the call would change an xi rules file
+   (`:xi-rules-file?`, computed only when such a rule is in play)."
   [spec req]
   (or (nil? spec)
       (and (true? spec) (boolean (:xi-rules-file? req)))))
 
 (defn- match-xi-config-file
-  "xi-config-file match (opt-in). `:xi-config-file true` matches when the call
-   would change xi's user config file (a `config.edn` tagged `:type
-   :xi/config`) — the store computes and populates `:xi-config-file?` on the
-   request only when an `:xi-config-file` rule is in play (nil never matches)."
+  "`:xi-config-file true` matches when the call would change xi's user config
+   file (`:xi-config-file?`, computed only when such a rule is in play)."
   [spec req]
   (or (nil? spec)
       (and (true? spec) (boolean (:xi-config-file? req)))))
 
 (defn- match-installed
-  "Program-availability match (opt-in). `:installed true|false` matches a
-   `:sh` call by whether its program (`:cli`) resolves on the server's PATH —
-   the store computes `:installed?` only when such a rule is in play (nil,
-   i.e. not a `:sh` call or no program token, never matches)."
+  "`:installed true|false` matches a `:sh` call by whether its program resolves
+   on PATH (`:installed?`, computed only when such a rule is in play)."
   [spec req]
   (or (nil? spec)
       (and (boolean? spec)
@@ -327,19 +299,15 @@
            (= spec (:installed? req)))))
 
 (defn- match-chained
-  "Shell-composition match (opt-in). `:chained true` matches a `:bash` command
-   that uses pipes, `;`/`&&`/`&`, command substitution, several lines or a
-   leading VAR= binding — the store computes `:chained?` only when such a rule
-   is in play (nil never matches)."
+  "`:chained true` matches a `:bash` command using shell composition
+   (`:chained?`, computed only when such a rule is in play)."
   [spec req]
   (or (nil? spec)
       (and (true? spec) (boolean (:chained? req)))))
 
 (defn- match-bb-trusted
-  "bb.edn trust match (opt-in). `:bb-trusted true|false` matches a `:bb` call
-   by whether the project's bb.edn sha is in the trust store (xi.bb-trust) —
-   the store computes `:bb-trusted?` only when such a rule is in play (nil,
-   i.e. not a bb call, never matches)."
+  "`:bb-trusted true|false` matches a `:bb` call by whether the project's
+   bb.edn is in the trust store (xi.bb-trust)."
   [spec req]
   (or (nil? spec)
       (and (boolean? spec)
@@ -347,10 +315,8 @@
            (= spec (:bb-trusted? req)))))
 
 (defn- match-mcp-trusted
-  "MCP server trust match (opt-in). `:mcp-trusted true|false` matches an
-   `:mcp` call by whether its server is trusted as it is now (xi.mcp.trust) —
-   the store computes `:mcp-trusted?` only when such a rule is in play (nil,
-   i.e. not an MCP call, never matches)."
+  "`:mcp-trusted true|false` matches an `:mcp` call by whether its server is
+   trusted (xi.mcp.trust)."
   [spec req]
   (or (nil? spec)
       (and (boolean? spec)
@@ -358,10 +324,8 @@
            (= spec (:mcp-trusted? req)))))
 
 (defn- match-cli
-  "CLI (binary) spec for `:tool :sh` shell-outs: string → exact binary match,
-   set → membership, regex → re-find, against `(:cli req)` (the command's first
-   token). nil → match. clj builds sh reqs carrying `:cli`; other tools never
-   set it, so a `:cli` rule never matches a non-sh call."
+  "CLI spec for `:tool :sh` shell-outs against `(:cli req)`: string exact, set
+   membership, regex re-find. Only clj's sh requests carry `:cli`."
   [spec cli]
   (cond
     (nil? spec)    true
@@ -372,14 +336,9 @@
     :else          false))
 
 (defn- match-path*
-  "Path spec matches the request's raw `:path`, its resolved absolute
-   `:resolved-path`, OR the home-collapsed `:resolved-home-path` (the resolved
-   path with a leading $HOME rewritten back to `~`). Absent spec is unconstrained
-   (the nil-spec branch of `match-path` returns true). Raw matching is preserved
-   unchanged; the resolved forms only ADD matches, so relative/`~`/absolute paths
-   that name the same file all match one rule — a rule may be written with either
-   an absolute (`/home/you/…`) or a `~/…` path — and deny rules can't be dodged
-   with a relative path."
+  "Path spec against the raw `:path`, the resolved `:resolved-path` or the
+   home-collapsed `:resolved-home-path`, so relative, `~` and absolute forms of
+   one file all match, and denies can't be dodged with a relative path."
   [spec req]
   (or (match-path spec (:path req))
       (and (some? (:resolved-path req))
@@ -426,8 +385,7 @@
 
 (defn render-message
   "Fill the `{cli}` and `{command}` placeholders of a rule message from the
-   decision request. A placeholder with nothing to fill stays as written; nil
-   stays nil."
+   request; unfillable ones stay as written."
   [msg req]
   (when (some? msg)
     (-> (str msg)
@@ -435,11 +393,9 @@
                 (:command req) (str/replace "{command}" (str (:command req)))))))
 
 (defn first-match
-  "First deciding rule in `rules` (already in precedence order) whose match
-   matches `req`, canonicalized; nil when none match. Matching `:hint` rules
-   above it never decide: their messages (placeholders rendered) are attached
-   to the returned rule as `:hints`, in order, and its own `:message` is
-   rendered too. Hints with no deciding rule below them are dropped."
+  "First deciding rule in `rules` (precedence order) matching `req`,
+   canonicalized, with the messages of matching `:hint` rules above it attached
+   as `:hints`. nil when none match."
   [rules req]
   (loop [rules rules hints []]
     (when-let [r (first rules)]
@@ -455,8 +411,7 @@
                   (seq hints) (assoc :hints hints)))))))
 
 (defn with-hints
-  "`msg` with the `hints` (strings) appended, each as its own paragraph. A nil
-   `msg` with hints yields just the hints; no hints returns `msg` unchanged."
+  "`msg` with `hints` appended as paragraphs; a nil `msg` yields just the hints."
   [msg hints]
   (let [hints (remove str/blank? hints)]
     (if (seq hints)
@@ -464,9 +419,8 @@
       msg)))
 
 (defn decision-message
-  "The text a decision shows for `rule` (as returned by `first-match`): its
-   action's `:message`, else `fallback`, with the rule's collected `:hints`
-   appended."
+  "The text a decision shows for `rule`: its action's `:message`, else
+   `fallback`, with the collected `:hints` appended."
   [rule fallback]
   (with-hints (or (get-in rule [:action :message]) fallback) (:hints rule)))
 
@@ -477,9 +431,7 @@
   (boolean (some #(some-> (canonical %) :match :node) rules)))
 
 (defn needs-resolved-path?
-  "True when any rule carries a `:path` matcher, so the store should resolve the
-   target path and populate `:resolved-path` on the request (lets `:path` rules
-   match relative/`~` forms that name an absolute-rule's file)."
+  "True when any rule carries a `:path` matcher, so the store resolves the target path."
   [rules]
   (boolean (some #(some-> (canonical %) :match :path) rules)))
 
@@ -496,23 +448,20 @@
   (boolean (some #(some-> (canonical %) :match :within) rules)))
 
 (defn needs-tracked?
-  "True when any rule carries a `:tracked` matcher, so the store should check a
-   `:sh` request's operands against the git index and populate
-   `:operands-tracked?`."
+  "True when any rule carries a `:tracked` matcher."
   [rules]
   (boolean (some #(some-> (canonical %) :match :tracked) rules)))
 
 (defn arg-scoped?
-  "True when (canonical) `rule` constrains a `:sh` command's arguments — a
-   `:command`, `:within`, `:tracked`, `:host` or `:read-only` matcher — so
-   its allow covers only the exact command it matched, not the CLI at large."
+  "True when `rule` constrains a `:sh` command's arguments (`:command`,
+   `:within`, `:tracked`, `:host` or `:read-only`), so its allow covers only
+   the exact command."
   [rule]
   (boolean (some #(some? (get-in rule [:match %]))
                  [:command :within :tracked :host :read-only])))
 
 (defn needs-extension-data?
-  "True when any rule carries an `:extension-data` matcher, so the store should
-   resolve the target path and populate `:own-data?` on the request."
+  "True when any rule carries an `:extension-data` matcher."
   [rules]
   (boolean (some #(some-> (canonical %) :match :extension-data) rules)))
 
@@ -523,34 +472,27 @@
   (boolean (some #(some-> (canonical %) :match :chained) rules)))
 
 (defn needs-mcp-trusted?
-  "True when any rule carries an `:mcp-trusted` matcher (true or false), so
-   the store should read the MCP trust store and populate `:mcp-trusted?`."
+  "True when any rule carries an `:mcp-trusted` matcher."
   [rules]
   (boolean (some #(some? (some-> (canonical %) :match :mcp-trusted)) rules)))
 
 (defn needs-bb-trusted?
-  "True when any rule carries a `:bb-trusted` matcher (true or false), so the
-   store should read the bb.edn trust store and populate `:bb-trusted?`."
+  "True when any rule carries a `:bb-trusted` matcher."
   [rules]
   (boolean (some #(some? (some-> (canonical %) :match :bb-trusted)) rules)))
 
 (defn needs-credential?
-  "True when any rule carries a `:credential` matcher, so the store should
-   resolve the target path and populate `:credential-path?` on the request."
+  "True when any rule carries a `:credential` matcher."
   [rules]
   (boolean (some #(some-> (canonical %) :match :credential) rules)))
 
 (defn needs-xi-rules-file?
-  "True when any rule carries an `:xi-rules-file` matcher, so the store should
-   check whether the call changes an xi rules file and populate
-   `:xi-rules-file?` on the request."
+  "True when any rule carries an `:xi-rules-file` matcher."
   [rules]
   (boolean (some #(some-> (canonical %) :match :xi-rules-file) rules)))
 
 (defn needs-xi-config-file?
-  "True when any rule carries an `:xi-config-file` matcher, so the store should
-   check whether the call changes xi's user config file and populate
-   `:xi-config-file?` on the request."
+  "True when any rule carries an `:xi-config-file` matcher."
   [rules]
   (boolean (some #(some-> (canonical %) :match :xi-config-file) rules)))
 
@@ -561,8 +503,6 @@
   (boolean (some #(map? (some-> (canonical %) :match :user)) rules)))
 
 (defn needs-installed?
-  "True when any rule carries an `:installed` matcher, so the store should
-   resolve a `:sh` call's program on PATH and populate `:installed?` on the
-   request."
+  "True when any rule carries an `:installed` matcher."
   [rules]
   (boolean (some #(some? (some-> (canonical %) :match :installed)) rules)))
