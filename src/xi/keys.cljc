@@ -230,6 +230,7 @@
    :palette/open            {:label "Command palette" :surface #{:web}}
    :projects/pick           {:label "Pick a project" :surface #{:web}}
    :skills/search           {:label "Search skills" :surface #{:web}}
+   :themes/pick             {:label "Change color theme" :surface #{:web}}
    :projects/open           {:label "All projects" :surface #{:web}}
    :chat/hide               {:label "Hide this chat from Recent" :surface #{:web}}
    :chat/delete             {:label "Delete this chat" :surface #{:web}}

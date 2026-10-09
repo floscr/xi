@@ -1297,6 +1297,13 @@
                                     :effects [[:palette/reopen nil]
                                               [:palette/reset-filter nil]]})
           :palette/open-models   (fn [st ev] (models/open st (:event/ts ev)))
+          ;; color themes (xi.web.theme): Default + the user's, picked like a model
+          :palette/open-themes   (fn [st _]
+                                   {:state   (assoc st :web/palette-page {:kind :theme}
+                                                   :web/palette-open? true
+                                                   :web/palette-drilling? true)
+                                    :effects [[:palette/reopen nil]
+                                              [:palette/reset-filter nil]]})
           :palette/open-skills   (fn [st _]
                                    {:state (-> st
                                                (assoc :web/palette-page {:kind :skill}
@@ -2449,6 +2456,7 @@
   ;; Web twin of the projects extension's TUI :project/open.
   (keymap/register-action! {:id :project/open :event {:type :palette/open-projects :action :insert}})
   (keymap/register-action! {:id :skills/search :event {:type :palette/open-skills}})
+  (keymap/register-action! {:id :themes/pick :event {:type :palette/open-themes}})
   (keymap/register-action! {:id :projects/open
                             :event {:type :route/navigate :page :home}})
   (keymap/register-action! {:id :chat/hide

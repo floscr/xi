@@ -4500,6 +4500,30 @@
                                            :model m :room-id (:id room)}))}
             m)))])))
 
+(defn- palette-theme-page
+  "Color themes (xi.web.theme) as a palette sub-page: Default and the user's
+   themes, the active one checked; picking one applies it like a chip in the
+   Appearance dialog."
+  [state dispatch!]
+  (let [themes (:web/themes state)
+        active (:active themes)
+        item   (fn [name label]
+                 (cmd/command-item
+                  {:icon (if (= name active) :check :star)
+                   :value (str "theme " label)
+                   :on-click (fn [_] (dispatch! {:type :themes/select :name name}))}
+                  label))]
+    [:div {:replicant/key :theme-page}
+     (apply cmd/command-group {:heading "Color theme"}
+       (item nil "Default")
+       (for [[n _] (ctheme/custom-themes themes)] (item n n)))
+     (cmd/command-group {}
+       (cmd/command-item
+        {:icon :settings
+         :value "edit themes appearance"
+         :on-click (fn [_] (dispatch! {:type :appearance/open}))}
+        "Edit themes…"))]))
+
 (defn- palette-skill-item [dispatch! {:keys [name description]}]
   (cmd/command-item
    {:icon :zap
@@ -4863,6 +4887,7 @@
                                      finder-page? "Find file…"
                                      buffers-page? "Switch buffer…"
                                      projects-page? "Find project…"
+                                     (= :theme (:kind palette-page)) "Switch color theme…"
                                      palette-page "Filter actions…"
                                      :else        "Type a command or search…")
                       :attrs {:replicant/key "cmdk"
@@ -4921,6 +4946,7 @@
                  (palette-search-toggle state dispatch!))))
        (case (:kind palette-page)
          :model          (palette-model-page state dispatch!)
+         :theme          (palette-theme-page state dispatch!)
          :skill          (palette-skill-page state dispatch!)
          :commits        (palette-commits-page state dispatch!)
          :files          (palette-files-page state dispatch!)
@@ -5053,6 +5079,12 @@
                                            (dispatch! {:type :theme/set-mode
                                                        :mode "auto"}))}
                               "Use system theme"))
+                       :always
+                       (conj (cmd/command-item
+                              {:icon :star
+                               :value "change color theme palette colors"
+                               :on-click (fn [_] (dispatch! {:type :palette/open-themes}))}
+                              "Change color theme…"))
                        :always
                        (conj (cmd/command-item
                               {:icon :settings

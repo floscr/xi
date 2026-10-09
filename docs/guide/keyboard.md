@@ -215,6 +215,7 @@ nothing outside a chat.
 | `:palette/open` | The `Ctrl`/`Cmd+K` palette; its first group lists your chats |
 | `:projects/pick` | The palette's project list; Enter on one opens its actions (sessions, new chat, …), Tab finds a file in it |
 | `:skills/search` | The palette's skills page: filter on-demand skills, Enter loads one |
+| `:themes/pick` | The palette's color themes: Default and yours, Enter switches |
 | `:projects/open` | The projects page |
 | `:git/status` | The working-tree diff of the current chat |
 | `:chat/hide` | Hide the current chat from Recent, or show it again |
