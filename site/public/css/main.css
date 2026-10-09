@@ -530,3 +530,17 @@ a.btn:hover { text-decoration: none; }
   .phone:last-child { margin-top: 0; }
   .hero h1 { max-width: none; }
 }
+
+/* ---- Theming section (xisite.pages/theme-controls, js/theme-demo.js) ----
+   The controls theme the tour stage that follows the section. */
+.theming { padding-bottom: 48px; }
+.theme-controls { display: flex; flex-direction: column; gap: 20px; align-self: center; }
+.theme-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.theme-hue { display: flex; align-items: center; gap: 14px; color: var(--fg-1); font-size: 0.95rem; }
+.theme-hue .form-range {
+  flex: 1;
+  border-radius: 999px;
+  background: linear-gradient(to right, oklch(0.65 0.15 0), oklch(0.65 0.15 60), oklch(0.65 0.15 120),
+    oklch(0.65 0.15 180), oklch(0.65 0.15 240), oklch(0.65 0.15 300), oklch(0.65 0.15 360));
+}
+.theme-modes { align-self: flex-start; }

@@ -3,7 +3,10 @@
   (:require [hiccup2.core :as h]
             [ui.badge :as badge]
             [ui.button :as button]
+            [ui.button-group :as button-group]
             [ui.card :as card]
+            [ui.chip :as chip]
+            [ui.form :as form]
             [xisite.core :as core]
             [xisite.markdown :as md]
             [xisite.theme :as theme]
@@ -204,6 +207,29 @@ xi clients user iPhone bob      # pin a paired phone to bob")
                              phone-variant (assoc :data-phone-src (str "/tour/?tape=" tour "&variant=" phone-variant)))]]]
     [:figcaption caption]]])
 
+;; --- Theming section (live on a tour stage, site/public/js/theme-demo.js) ---
+
+(def ^:private theme-presets
+  "[label hue] per preset chip; theme-demo.js builds the theme from the hue,
+   nil is the default theme."
+  [["Default" nil] ["Ember" 28] ["Ocean" 235] ["Forest" 150] ["Rose" 350] ["Violet" 290]])
+
+(defn- theme-controls []
+  [:div.theme-controls {:data-theme-demo ""}
+   [:div.theme-presets
+    (for [[label hue] theme-presets]
+      (chip/chip {:active (nil? hue)
+                  :dot-color (when hue (str "oklch(0.62 0.16 " (mod (+ hue 20) 360) ")"))
+                  :attrs {:type "button" :data-hue (str hue)}}
+        label))]
+   [:label.theme-hue
+    [:span "Hue"]
+    (form/form-range {:min 0 :max 359 :step 1 :value 28
+                      :attrs {:aria-label "Hue" :data-theme-hue ""}})]
+   (button-group/button-group {:variant :boxed :class "theme-modes"}
+     (button-group/button-group-item {:attrs {:type "button" :data-mode "dark"}} "Dark")
+     (button-group/button-group-item {:attrs {:type "button" :data-mode "light"}} "Light"))])
+
 (defn tour-page
   "/tour/: the web client alone, for the stage iframe. Shares the site's
    framework CSS, runtime and stored light/dark choice."
@@ -311,6 +337,17 @@ xi clients user iPhone bob      # pin a paired phone to bob")
       [:div.phones
        (phone "desk" "list" "The web client's session list on a phone, following a running session")
        (phone "desk" "phone" "A chat in the web client on a phone, replaying a recorded session")]]]
+
+    [:section.feature.theming {:id "theming"}
+     [:div.wrap.split
+      [:div.feature-text
+       [:p.eyebrow "Themes"]
+       [:h2 "Make it yours."]
+       [:p "Pick a background and an accent in the Appearance dialog. Xi derives the rest in OKLCH: surfaces, borders, text, status colors, diff bands and code all follow your color. Try a few on the session below."]
+       [:p [:a {:href "/docs/web-client/#color-themes"} "Color themes →"]]]
+      (theme-controls)]]
+    (stage "desk" "The same session in your colors, live." {:phone-variant "phone"})
+    [:script {:src "/js/theme-demo.js" :defer true}]
 
     [:section.feature.alt {:id "outlines"}
      [:div.wrap.split.reverse

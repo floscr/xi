@@ -38,6 +38,7 @@
             [xi.web.router :as router]
             [xi.web.title :as title]
             [xi.web.tour :as tour]
+            [xi.web.embed :as embed]
             [xi.web.user-ext :as user-ext]
             [xi.session.sidebar :as sidebar]
             [xi.web.sidebar-nav :as sidebar-nav]
@@ -1768,14 +1769,11 @@
    :cache/sidebar-buffers-open (fn [_ {:keys [session-ids]}] (cache/save-sidebar-buffers-open! session-ids))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/themes (fn [_ {:keys [themes]}] (cache/save-themes! themes))
-   ;; Set / remove every theme-managed property on <html>; a committed theme
+   ;; Set / remove every theme-managed property on <html> (the embedding
+   ;; page's theme wins in a tour, xi.web.embed); a committed theme
    ;; (:persist?) also refreshes the early-paint cache, a draft preview does not.
    :theme/apply-vars (fn [_ {:keys [vars persist?]}]
-                       (let [style (.-style js/document.documentElement)]
-                         (doseq [n theme/var-names]
-                           (if-let [v (get vars n)]
-                             (.setProperty style n v)
-                             (.removeProperty style n))))
+                       (embed/set-vars! vars)
                        (when persist? (cache/save-theme-vars! vars)))
    :cache/user (fn [_ {:keys [user]}] (cache/save-cached-user! user))
    :cache/clear-watched (fn [_ _] (cache/clear-watched!))
@@ -1804,21 +1802,23 @@
                     history-hash (assoc :cached-history-hash history-hash
                                         :cached-history-count (count history))))))
    :theme/apply  (fn [_ mode]
-                   (let [el js/document.documentElement]
-                     (.setAttribute el "data-no-transitions" "")
-                     (.-offsetHeight el)
-                     (js/requestAnimationFrame
-                      (fn [] (js/requestAnimationFrame
-                              (fn [] (.removeAttribute el "data-no-transitions")))))
-                     (case mode
-                       "light" (.setAttribute el "data-theme" "light")
-                       "dark"  (.setAttribute el "data-theme" "dark")
-                       (.removeAttribute el "data-theme"))
-                     (try
-                       (if (= mode "auto")
-                         (.removeItem js/localStorage "ui-theme")
-                         (.setItem js/localStorage "ui-theme" mode))
-                       (catch :default _))))})
+                   ;; a tour's embedding page set its own (xi.web.embed)
+                   (when-not (embed/mode)
+                     (let [el js/document.documentElement]
+                       (.setAttribute el "data-no-transitions" "")
+                       (.-offsetHeight el)
+                       (js/requestAnimationFrame
+                        (fn [] (js/requestAnimationFrame
+                                (fn [] (.removeAttribute el "data-no-transitions")))))
+                       (case mode
+                         "light" (.setAttribute el "data-theme" "light")
+                         "dark"  (.setAttribute el "data-theme" "dark")
+                         (.removeAttribute el "data-theme"))
+                       (try
+                         (if (= mode "auto")
+                           (.removeItem js/localStorage "ui-theme")
+                           (.setItem js/localStorage "ui-theme" mode))
+                         (catch :default _)))))})
 
 ;; ── Taps (cache persistence + unread polling + post-join URL) ─────────────────
 
@@ -2874,6 +2874,7 @@
    {xiTourSent: type} from the page."
   [tape variant-name]
   (tour/contain-focus!)
+  (embed/listen!)
   (-> (js/fetch (tape-url tape))
       (.then #(.json %))
       (.then (fn [json]
