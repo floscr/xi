@@ -2596,6 +2596,17 @@
   (when (false? (:web/connected? state))
     [:span {:class ["offline-label"]} "Offline"]))
 
+(defn- yolo-chip
+  "Chat header chip while the room's yolo mode is on (xi.ext.yolo); a click
+   runs /yolo to turn it off."
+  [dispatch! room]
+  (when (get-in room [:ext :yolo :enabled?])
+    (chip/chip {:active   true
+                :attrs    {:class ["yolo-chip"]
+                           :title "Yolo mode: tool calls run without asking. Click to turn it off."}
+                :on-click (fn [_] (dispatch-command! dispatch! (:id room) "yolo"))}
+      "🔥 Yolo")))
+
 (defn shorten-path
   [path]
   (when path
@@ -3285,6 +3296,7 @@
          [:span {:class ["topbar-updating"]}
           (spinner) [:span "Updating…"]])]
       (offline-badge state)
+      (yolo-chip dispatch! room)
       (when has-tabs?
         (buffer-menu dispatch! (:id room) active-buf buffers canvas?
                      (let [viewers (buffers/viewers room)]

@@ -323,7 +323,9 @@
    sleep): it shows up when one (re)joins, and extensions can notify on its
    :ui/dialog-open. Only a process no client can ever attach to (prompt
    mode, `:clientless?` in its connection state) resolves to a safe default
-   immediately (false/nil).
+   immediately (false/nil). While the room's yolo mode is on, a :confirm
+   resolves to true at once instead of opening (xi.dialog/auto-confirm?);
+   a dialog tagged :hardened? by the rules engine still opens.
 
    The request may carry `:on-reason` (fn [reason]) — a runtime callback,
    never part of the mirrored dialog data. It marks the dialog
@@ -337,8 +339,15 @@
                        (case (:type dialog) :confirm false nil))]
     {:ask!
      (fn [{:keys [dispatch! state]} {:keys [room-id dialog on-reason]}]
-       (if (clientless? state)
+       (cond
+         (clientless? state)
          (js/Promise.resolve (safe-default dialog))
+
+         ;; yolo mode (xi.ext.yolo): a confirm is a yes, no dialog
+         (dialog/auto-confirm? state room-id dialog)
+         (js/Promise.resolve true)
+
+         :else
          (js/Promise.
           (fn [resolve _reject]
             (set! (.-n counter) (inc (.-n counter)))

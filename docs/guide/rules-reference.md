@@ -181,6 +181,8 @@ gates, as the built-in order does. `:defaults []` turns the tier off.
   the pending dialog.
 - `/clj allow <cli>` and `/clj revoke <cli>` add and remove a chat rule for
   a program.
+- `/yolo` toggles [yolo mode](rules.md#yolo-mode) for the chat: asks run
+  without a dialog; denies, nudges and the hardened tier still apply.
 
 ## Extensions and rules
 

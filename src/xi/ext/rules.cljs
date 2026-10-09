@@ -19,6 +19,9 @@
      :deny  → an error result instead of running it
      :nudge → a non-error steering result instead of running it
      :ask   → raise a confirm dialog; on :always persist a session allow-rule
+              (while the room's yolo mode is on the dialog resolves yes by
+              itself — xi.ext.core/create-dialogs; a hardened-tier ask is
+              tagged :hardened? so it still opens)
      :hint  → never decides; its message is appended to the deciding rule's
               (deny / nudge / ask) text — see xi.rules/first-match
 
@@ -278,7 +281,7 @@
                                     with recommend-a-rule
      {:decision :nudge :message m}  a :nudge rule
      {:decision :pass}              an unknown action type"
-  [{:keys [type message options unanswered hints]} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
+  [{:keys [type message options unanswered hints scope]} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
   (let [deny-reason (volatile! nil)]
     (case type
       :allow {:decision :allow}
@@ -299,7 +302,9 @@
                         hints))
                       (let [diff (ask-diff req)]
                         (cond-> {:options (recommend-options options req recommend-rule?)}
-                          diff (assoc :diff diff))))
+                          diff                 (assoc :diff diff)
+                          ;; never auto-answered by yolo mode
+                          (= :hardened scope) (assoc :hardened? true))))
                      (.then (fn [ans]
                               (cond
                                 (= ans :recommend)
@@ -349,6 +354,8 @@
                    {:decision :unanswered})))
       {:decision :pass})))
 
+
+
 (defn- decide*
   "`decide!`, but synchronous unless it has to ask (value or Promise)."
   [req {:keys [get-state room-id] :as ctx}]
@@ -359,7 +366,8 @@
           req     (store/enrich-request req ruleset)
           rule    (rules/first-match ruleset req)]
       (if rule
-        (apply-action (assoc (:action rule) :hints (:hints rule)) req ctx)
+        (apply-action (assoc (:action rule) :hints (:hints rule) :scope (:scope rule))
+                      req ctx)
         {:decision :pass}))))
 
 (defn decide!

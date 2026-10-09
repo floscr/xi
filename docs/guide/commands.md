@@ -33,6 +33,7 @@ message. `/help` lists everything that is available in the current setup.
 | `/deny` (`/d`) | Deny it (also `Alt+d`). `/deny <reason>` tells the agent why |
 | `/rules` | Show the rules in effect, in order; `/rules reload` re-reads the files; `/rules save` moves this chat's rules into `<repo>/.xi/rules.edn` |
 | `/plan` | Toggle plan mode: the agent may read and write a plan, nothing else |
+| `/yolo` | Toggle yolo mode: every call that would ask runs instead, for this chat; see [Yolo mode](rules.md#yolo-mode) |
 
 ## Reviewing work
 

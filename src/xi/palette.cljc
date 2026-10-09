@@ -67,6 +67,9 @@
    {:name "rules"    :description "List, reload or save policy rules"
     :subcommands [{:name "save"   :description "Save this chat's session rules to the project (.xi/rules.edn)"}
                   {:name "reload" :description "Clear the rules-file cache"}]}
+   {:name "plan"     :description "Toggle plan mode (read-only exploration)"}
+   ;; Flipping the flag mid-turn is the point: the next ask runs instead.
+   {:name "yolo"     :description "Toggle yolo mode (run tool calls without asking)" :while-busy? true}
    ;; Answer the pending permission ask — only ever useful mid-turn.
    {:name "allow"    :aliases ["a"] :description "Allow the pending permission request" :while-busy? true
     :subcommands [{:name "always" :description "Allow and don't ask again"}

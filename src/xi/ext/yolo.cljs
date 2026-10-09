@@ -1,0 +1,57 @@
+(ns xi.ext.yolo
+  "Yolo mode — run every tool call that would otherwise ask, toggled with /yolo.
+
+   This extension owns the room-scoped flag ([:rooms rid :ext :yolo]
+   {:enabled? bool}), its toggle and the prompt badge. /yolo dispatches
+   :ext.yolo/set, whose reducer `set-enabled` flips the flag and appends the
+   status line; the server echoes that event, so the TUI mirror and the web
+   half (xi.ext.yolo.web) apply the same reducer and every client shows the
+   same state. The flag is not persisted: a resumed chat starts with it off.
+
+   The skipping itself is not here: xi.ext.core/create-dialogs resolves a
+   :confirm dialog to yes without opening it while the flag is on
+   (xi.dialog/auto-confirm?), so the rules engine's asks, the clj gate's own
+   prompts and sub-agent spawns all run. Hardened-tier asks are exempt."
+  (:require [xi.core.state :as state]))
+
+(def ^:private ext-id :yolo)
+
+(defn enabled? [state room-id]
+  (boolean (:enabled? (state/room-ext state room-id ext-id))))
+
+(defn set-enabled
+  "Reducer for :ext.yolo/set {:room-id :enabled?}; shared with the web half."
+  [st {:keys [room-id enabled?]}]
+  (when (state/get-room st room-id)
+    {:state (-> st
+                (assoc-in [:rooms room-id :ext ext-id :enabled?] (boolean enabled?))
+                (update-in [:rooms room-id :history] conj
+                           {:kind :status
+                            :text (str "Yolo mode: "
+                                       (if enabled?
+                                         "ON (tool calls run without asking)"
+                                         "OFF"))}))}))
+
+(defn- toggle
+  "/yolo — flip the flag through :ext.yolo/set so the change is an event
+   every client mirrors. The state is returned unchanged so a client mirror
+   of the command (effects stripped) is a no-op."
+  [st {:keys [room-id]}]
+  (when (state/get-room st room-id)
+    {:state   st
+     :effects [[:app/dispatch {:type     :ext.yolo/set
+                               :room-id  room-id
+                               :enabled? (not (enabled? st room-id))}]]}))
+
+(defn- prompt-badge [state]
+  (when-let [room (state/active-room state)]
+    (when (enabled? state (:id room)) " 🔥")))
+
+(def extension
+  {:id           ext-id
+   :init         {:room {:enabled? false}}
+   :handlers     {:ext.yolo/set set-enabled}
+   :commands     [{:name "yolo"
+                   :description "Toggle yolo mode (run tool calls without asking)"
+                   :handler toggle}]
+   :prompt-badge prompt-badge})

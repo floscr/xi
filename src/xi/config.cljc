@@ -41,6 +41,7 @@
         [xi.ext.user :as user-ext]
         [xi.ext.treesitter.core :as treesitter]
         [xi.ext.worktree.core :as worktree]
+        [xi.ext.yolo :as yolo]
         [xi.providers.anthropic :as anthropic]
         [xi.providers.ollama :as ollama]
         [xi.providers.openai.codex :as openai-codex]
@@ -51,7 +52,8 @@
         [xi.ext.file-view.web :as file-view-web]
         [xi.ext.home.web :as home-web]
         [xi.ext.subagent.web :as subagent-web]
-        [xi.ext.usage.web :as usage-web]])))
+        [xi.ext.usage.web :as usage-web]
+        [xi.ext.yolo.web :as yolo-web]])))
 
 (def tui
   "TUI display config overrides. Only keys the user wants to change from
@@ -128,6 +130,7 @@
       ;; xi.ext.rules/tool-policy in front of every tool call.
       rules/create
       plan-mode/extension
+      yolo/extension
       diff/extension
       file-view/extension
       file-finder/extension
@@ -181,6 +184,8 @@
       file-view-web/extension
       canvas-review-web/extension
       subagent-web/extension
+      ;; mirrors the /yolo flag and its status line (xi.ext.yolo)
+      yolo-web/extension
       ;; the dashboard's Active / Recent chats / Projects cards
       home-web/extension
       ;; the /usage page (readings polled by xi.server.usage), plus its

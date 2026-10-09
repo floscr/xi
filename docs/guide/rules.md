@@ -53,6 +53,21 @@ Enter denies the call (Esc goes back without answering). In either client,
 `/deny <reason>` does the same. The agent gets your reason in the tool result,
 so it can change course instead of retrying.
 
+## Yolo mode
+
+`/yolo` stops the dialog for the current chat: every call that would ask
+runs instead, until you run `/yolo` again. It works while the agent is busy;
+a dialog that is already open still waits for your answer. The terminal
+prompt shows 🔥 and the web chat header a `Yolo` chip while it is on (click
+the chip to turn it off). The mode is not saved with the chat; a resumed
+chat starts with it off.
+
+It skips confirmations only: rule asks, the [clj tool](clj-tool.md)'s own
+prompts (programs, paths outside the project, directory deletions) and
+sub-agent starts. A rule that denies or nudges still does, plan mode still
+blocks writes, and the hardened tier still asks for its own dialogs (writes
+into `.git/hooks` or `.git/config`).
+
 ## Writing your own rules
 
 Put rules in `~/.config/xi/rules.edn`. They apply to every project.

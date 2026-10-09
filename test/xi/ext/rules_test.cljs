@@ -199,6 +199,26 @@
                    (is (= :allow (get-in @dispatched [:rule :action :type])))
                    (done)))))))
 
+;; Yolo mode auto-answers confirms in create-dialogs (xi.ext.core); the
+;; engine's part is tagging a hardened-tier ask so it is exempt.
+
+(deftest hardened-asks-are-tagged-for-yolo-mode
+  (async done
+    (let [seen  (atom [])
+          c     (assoc (ctx (state-with [:ext :rules :rules]
+                                        {:match {:tool :bash} :action {:type :ask}}))
+                       :confirm! (fn [_ opts] (swap! seen conj opts) (js/Promise.resolve true)))]
+      (-> (js/Promise.all
+           #js [(rules-ext/tool-policy {:name "write"
+                                        :arguments {:path ".git/hooks/pre-commit" :content "x"}}
+                                       c)
+                (rules-ext/tool-policy {:name "bash" :arguments {:command "ls"}} c)])
+          (.then (fn [_]
+                   (let [[hardened plain] @seen]
+                     (is (true? (:hardened? hardened)) "the .git/hooks ask carries :hardened?")
+                     (is (not (contains? plain :hardened?)) "a session-rule ask does not"))
+                   (done)))))))
+
 (deftest ask-rule-recommend-spawns-subagent-and-blocks
   (async done
     (let [rule       {:match {:tool :bash} :action {:type :ask}}

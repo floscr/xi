@@ -110,7 +110,7 @@ xi.web.core ── web-extensions (xi.config/web) → ext/instantiate → ext/co
 Extension state lives in two places:
 
 - **Room-scoped** `[:rooms rid :ext <id>]` — rides in the `:room/joined`
-  snapshot, mirrors to clients. Used for: plan-mode `:enabled?`.
+  snapshot, mirrors to clients. Used for: plan-mode and yolo `:enabled?`.
 - **Process-local** `[:ext <id>]` — never crosses the wire. Used for:
   the rules engine's server-session rules.
 
@@ -476,6 +476,7 @@ namespace docstring is the authoritative description.
 |-----------|--------------|
 | rules | Declarative rules engine — every allow/deny/confirm policy; `/rules`. Loaded first. User docs: [rules](guide/rules.md), [reference](guide/rules-reference.md); the engine's request shape and `decide!` live in `xi.ext.rules` / `xi.rules.store`. |
 | plan-mode | Read-only exploration mode (`/plan`, 📋 badge). The read-only policy itself is a default rule. |
+| yolo | Skip confirmations for a room (`/yolo`, 🔥 badge; has a web half that mirrors the flag and shows a header chip). `/yolo` dispatches `:ext.yolo/set`, the echoed event every client reduces. The skipping is in `xi.ext.core/create-dialogs`: while the flag is on a `:confirm` resolves yes without opening (`xi.dialog/auto-confirm?`), so rule asks, the clj gate's prompts and sub-agent spawns all run. The rules engine tags hardened-tier asks `:hardened?` so they still open; denies and nudges are untouched. |
 
 **Agent tools**
 

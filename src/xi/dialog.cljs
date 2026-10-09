@@ -14,6 +14,16 @@
             [clojure.walk :as walk]
             [xi.util :as util]))
 
+(defn auto-confirm?
+  "True when `dialog` resolves to yes without opening: the room has yolo mode
+   on (xi.ext.yolo's flag at [:rooms rid :ext :yolo :enabled?]), it is a
+   :confirm, and the rules engine did not tag it :hardened? — the hardened
+   tier's asks open regardless."
+  [state room-id dialog]
+  (boolean (and (= :confirm (:type dialog))
+                (not (:hardened? dialog))
+                (get-in state [:rooms room-id :ext :yolo :enabled?]))))
+
 (def confirm-option
   "Canonical confirm options, keyed by the keyword that appears in a dialog's
    :options vector. :value is what the dialog resolves to (callers branch on

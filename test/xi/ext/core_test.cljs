@@ -198,6 +198,42 @@
       (is (nil? @opened) "without opening a dialog")
       (done))))
 
+;; yolo mode (xi.ext.yolo): the room flag answers a :confirm without a dialog
+
+(defn- yolo-room [yolo?]
+  (-> (state/initial-state {:mode :server})
+      (assoc-in [:connection :clients "c"] {:room-id "r"})
+      (assoc-in [:rooms "r"] (state/make-room "r" {:ext {:yolo {:enabled? yolo?}}}))))
+
+(deftest dialog-ask-yolo-confirms-without-opening
+  (async done
+    (let [{:keys [ask!]} (ext/create-dialogs)
+          opened (atom nil)
+          v (ask! {:dispatch! #(reset! opened %) :state (yolo-room true)}
+                  {:room-id "r" :dialog {:type :confirm :message "ok?"}})]
+      (is (true? v) "yolo on: a confirm is a yes")
+      (is (nil? @opened) "without opening a dialog")
+      (done))))
+
+(deftest dialog-ask-yolo-still-opens-what-it-may-not-answer
+  ;; these dialogs wait for an answer, so they are not awaited: ask!'s
+  ;; executor dispatches :ui/dialog-open synchronously
+  (let [{:keys [ask!]} (ext/create-dialogs)
+        opened (atom nil)
+        open!  (fn [st dialog]
+                 (reset! opened nil)
+                 (ask! {:dispatch! #(when (= :ui/dialog-open (:type %)) (reset! opened %))
+                        :state st}
+                       {:room-id "r" :dialog dialog})
+                 (:dialog @opened))]
+    (is (true? (:hardened? (open! (yolo-room true)
+                                  {:type :confirm :message "hooks?" :hardened? true})))
+        "a hardened-tier ask opens")
+    (is (= :cwd-select (:type (open! (yolo-room true) {:type :cwd-select :message "where?"})))
+        "only :confirm dialogs are auto-answered")
+    (is (= :confirm (:type (open! (yolo-room false) {:type :confirm :message "ok?"})))
+        "yolo off: the dialog opens")))
+
 (deftest dialog-ask-server-no-clients-stays-open
   ;; a phone that went to sleep leaves the server with no clients; the ask
   ;; must still open so it shows when one reconnects
