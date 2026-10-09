@@ -22,7 +22,8 @@
 
    Pure: every function returns {:state :effects}; the :cache/* and :theme/*
    effects live in xi.web.core."
-  (:require [xi.web.appearance :as appearance]))
+  (:require [xi.web.appearance :as appearance]
+            [xi.web.theme :as theme]))
 
 (def ^:private bindings
   "key → {:path   state path the value lives at
@@ -34,6 +35,10 @@
    :appearance        {:path :web/appearance :default {}
                        :coerce appearance/normalize
                        :fx   (fn [v] [[:cache/appearance {:settings v}]])}
+   :themes            {:path :web/themes :default {}
+                       :coerce theme/normalize
+                       :fx   (fn [v] [[:cache/themes {:themes v}]
+                                      [:theme/apply-vars {:vars (theme/active-vars v) :persist? true}]])}
    :sidebar-collapsed {:path :web/sidebar-collapsed :default #{}
                        :coerce set
                        :fx   (fn [v] [[:cache/sidebar-collapsed {:groups v}]])}

@@ -12,7 +12,9 @@
   (is (user-state/valid? :sidebar-collapsed [:projects :recent]))
   (is (user-state/valid? :preferred-model "claude-opus-4-6"))
   (is (user-state/valid? :recent-commands ["model" "clear"]))
-  (is (user-state/valid? :recent-skills [])))
+  (is (user-state/valid? :recent-skills []))
+  (is (user-state/valid? :themes {}))
+  (is (user-state/valid? :themes {:active "Ocean" :themes {"Ocean" {:accent-hue 200 :gray-chroma 0.5}}})))
 
 (deftest valid-rejects-unknown-keys-and-bad-values
   (testing "unknown key"
@@ -26,9 +28,15 @@
     (is (not (user-state/valid? :appearance {:tool-blocks {:nested true}})))
     (is (not (user-state/valid? :sidebar-collapsed ["projects"])))
     (is (not (user-state/valid? :preferred-model "")))
-    (is (not (user-state/valid? :recent-commands [1 2]))))
+    (is (not (user-state/valid? :recent-commands [1 2])))
+    (is (not (user-state/valid? :themes {:bogus 1})))
+    (is (not (user-state/valid? :themes {:active :ocean})))
+    (is (not (user-state/valid? :themes {:themes {"" {}}})))
+    (is (not (user-state/valid? :themes {:themes {"a" {:accent-hue "200"}}})))
+    (is (not (user-state/valid? :themes {:themes {"a" {"accent-hue" 200}}}))))
   (testing "size bounds keep a client from growing the store"
     (is (not (user-state/valid? :recent-commands (vec (repeat 21 "x")))))
+    (is (not (user-state/valid? :themes {:themes (into {} (map (fn [i] [(str "t" i) {}]) (range 21)))})))
     (is (not (user-state/valid? :recent-skills [(apply str (repeat 101 "x"))])))
     (is (not (user-state/valid? :preferred-model (apply str (repeat 201 "x")))))))
 

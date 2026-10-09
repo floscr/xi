@@ -160,10 +160,24 @@ thinking blocks start open or collapsed, and **super collapsed** (a run of
 collapsed tool and thinking rows shows as one summary line with a step
 count instead of its header rows). "Reset to defaults" drops them.
 
+### Color themes
+
+"Color theme" in the same dialog holds your own themes next to the default
+one. A theme changes the hue and chroma of the gray and accent scales, the
+page background of light and dark mode (each its own brightness, tinted
+like the grays) with the sidebar a chosen step brighter or darker than it,
+the spacing base, the type scale and the corner radius; light and dark mode
+stay separate and both use it. "New" opens the editor with the defaults and a set
+of presets to start from; the sliders change the page as you move them, and
+"Save" keeps the result under the name you typed. Pick a saved theme to use it
+and click it again to edit or delete it. Themes are per
+[user](#what-follows-you), up to twenty.
+
 ### What follows you
 
 These choices belong to your [user](server.md#users), not to the browser:
-the theme, the appearance settings, which sidebar groups are collapsed, the
+the theme and your color themes, the appearance settings, which sidebar
+groups are collapsed, the
 model new chats start with, and your recently used commands and skills. So do
 the chats you have read (the unread dots), the chats you hid from Recent and
 the ones you pinned to it: the same chat can be unread for you and read for a

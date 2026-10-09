@@ -132,6 +132,21 @@
                                                (and (keyword? k)
                                                     (or (boolean? x) (keyword? x))))
                                              v)))}
+   ;; xi.web.theme custom color themes: {:active name :themes {name {param n}}}
+   :themes           {:valid? (fn [v]
+                                (and (map? v)
+                                     (every? #{:active :themes} (keys v))
+                                     (let [a (:active v)]
+                                       (or (nil? a) (and (string? a) (<= 1 (count a) 40))))
+                                     (let [t (:themes v)]
+                                       (or (nil? t)
+                                           (and (map? t)
+                                                (<= (count t) 20)
+                                                (every? (fn [[n p]]
+                                                          (and (string? n) (<= 1 (count n) 40)
+                                                               (map? p) (<= (count p) 16)
+                                                               (every? (fn [[k x]] (and (keyword? k) (number? x))) p)))
+                                                        t))))))}
    ;; collapsed drawer groups, e.g. [:projects :recent]
    :sidebar-collapsed {:valid? (fn [v]
                                  (and (sequential? v)

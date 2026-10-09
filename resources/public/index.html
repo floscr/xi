@@ -18,8 +18,11 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <title>Xi</title>
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=5">
+  <link rel="stylesheet" href="/css/style.css?v=6">
   <script>try{var t=localStorage.getItem('ui-theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+  <!-- The active custom theme's CSS properties (xi.web.cache save-theme-vars!),
+       set before main.js so the page never paints the default theme first. -->
+  <script>try{var v=JSON.parse(localStorage.getItem('xi/theme-vars')||'null');if(v)for(var k in v)document.documentElement.style.setProperty(k,v[k])}catch(e){}</script>
 </head>
 <body>
   <div id="app">

@@ -32,7 +32,7 @@ body {
   font-size: var(--font-base);
   line-height: 1.5;
   color: var(--fg-0);
-  background-color: var(--bg-0);
+  background-color: var(--chat-bg, var(--bg-0));
 }
 
 #app {
@@ -428,6 +428,75 @@ body {
 .appearance-row-label {
   font-size: var(--font-sm);
   font-weight: 500;
+}
+
+/* Color theme picker + editor (xi.web.theme). Chips, swatches and the
+   range input are framework classes; this only lays them out. */
+.appearance-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+.theme-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-1);
+}
+
+.theme-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-3);
+  padding: var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+}
+
+.theme-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+/* the 900 / 50 stops match the panel background in dark / light mode */
+.theme-editor .swatch {
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.25);
+}
+
+.theme-slider {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+}
+
+.theme-slider-label {
+  width: 48px;
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+.theme-slider .form-range {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-slider-value {
+  width: 40px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
 }
 
 /* ---- Keyboard shortcuts dialog ----
@@ -2760,22 +2829,24 @@ code a:hover,
 }
 
 /* Light mode: a cool off-white sidebar panel (white cards on it) beside a
-   white chat surface. Dark mode keeps the regular dark surfaces. */
+   white chat surface. Dark mode keeps the regular dark surfaces. A custom
+   theme (xi.web.theme) replaces both per mode through its --theme-bg-* /
+   --theme-sidebar-* properties on <html>. */
 :root {
-  --sidebar-bg: #f6f6f9;
-  --sidebar-card-bg: #fff;
-  --chat-bg: #fff;
+  --sidebar-bg: var(--theme-sidebar-light, #f6f6f9);
+  --sidebar-card-bg: var(--theme-bg-light, #fff);
+  --chat-bg: var(--theme-bg-light, #fff);
 }
 [data-theme="dark"] {
-  --sidebar-bg: var(--bg-0);
+  --sidebar-bg: var(--theme-sidebar-dark, var(--bg-0));
   --sidebar-card-bg: var(--bg-1);
-  --chat-bg: var(--bg-0);
+  --chat-bg: var(--theme-bg-dark, var(--bg-0));
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --sidebar-bg: var(--bg-0);
+    --sidebar-bg: var(--theme-sidebar-dark, var(--bg-0));
     --sidebar-card-bg: var(--bg-1);
-    --chat-bg: var(--bg-0);
+    --chat-bg: var(--theme-bg-dark, var(--bg-0));
   }
 }
 /* Re-point --bg-0 inside the main column so everything painted with it

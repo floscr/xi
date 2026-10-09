@@ -25,6 +25,7 @@
             [xi.tui.snippets :as snippets]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
+            [xi.web.theme :as ctheme]
             [xi.web.keymap :as keymap]
             [xi.web.palette-items :as palette-items]
             [xi.web.tool-views :as tool-views]
@@ -42,6 +43,7 @@
             [ui.command :as cmd]
             [ui.context-menu :as context-menu]
             [ui.popover :as popover]
+            [ui.chip :as chip]
             [xi.clj-result :as clj-result]
             [ui.theme-toggle :as theme-toggle]))
 
@@ -5249,6 +5251,123 @@
       :on-click (fn [_] (dispatch! {:type :appearance/set :key key :value :collapsed}))}
      "Collapsed")))
 
+;; ── Color themes (xi.web.theme) ─────────────────────────────────────────────
+
+(defn- theme-slider
+  "One parameter of the draft. The input works in integer units (`scale` ×
+   the stored value) so hues read as degrees and ratios as percentages."
+  [dispatch! draft key label {:keys [min max step scale fmt gradient]}]
+  (let [v (get-in draft [:params key])]
+    [:div {:class ["theme-slider"]}
+     [:span {:class ["theme-slider-label"]} label]
+     (form/form-range
+      {:min min :max max :step step
+       :value (js/Math.round (* v scale))
+       :attrs (cond-> {:aria-label label
+                       :on {:input (fn [^js e]
+                                     (dispatch! {:type :themes/draft-set :key key
+                                                 :value (/ (js/parseInt (.. e -target -value) 10) scale)}))}}
+                gradient (assoc :style {:background gradient}))})
+     [:span {:class ["theme-slider-value"]} (fmt v)]]))
+
+(defn- theme-section [label & children]
+  (into [:div {:class ["theme-section"]}
+         [:div {:class ["text-xs" "text-faint" "uppercase" "tracking-wide" "font-semibold"]} label]]
+        children))
+
+(defn- swatch-row [colors]
+  [:div {:class ["swatch-row"]}
+   (for [c colors] [:div {:class ["swatch"] :style {:background c}}])])
+
+(defn- theme-editor
+  "The draft (:web/theme-draft): name, color presets, one slider per
+   parameter, previewed live on the page until Save or Cancel."
+  [state dispatch!]
+  (let [{:keys [original name params] :as draft} (:web/theme-draft state)
+        themes   (:web/themes state)
+        degrees  (fn [v] (str v "°"))
+        percent  (fn [v] (str (js/Math.round (* v 100)) "%"))
+        signed   (fn [v] (let [n (js/Math.round (* v 100))] (str (if (pos? n) "+" "") n "%")))
+        decimal  (fn [v] (.toFixed v 2))
+        hue-opts {:min 0 :max 360 :step 1 :scale 1 :fmt degrees :gradient (ctheme/hue-gradient)}
+        chroma   (fn [hue] {:min 0 :max 200 :step 1 :scale 100 :fmt percent
+                            :gradient (ctheme/chroma-gradient hue)})]
+    [:div {:class ["theme-editor"]}
+     (form/form-input
+      {:value name :placeholder "Theme name"
+       :attrs {:maxlength ctheme/max-name-length
+               :aria-label "Theme name"
+               :on {:input (fn [^js e] (dispatch! {:type :themes/draft-name
+                                                   :name (.. e -target -value)}))}}})
+     [:div {:class ["theme-chips"]}
+      (for [p ctheme/presets]
+        (chip/chip {:active (ctheme/preset-active? p params)
+                    :dot-color (ctheme/accent-color p)
+                    :attrs {:replicant/key (:name p)}
+                    :on-click (fn [_] (dispatch! {:type :themes/draft-preset :preset p}))}
+          (:name p)))]
+     (theme-section "Gray"
+       (theme-slider dispatch! draft :gray-hue "Hue" hue-opts)
+       (theme-slider dispatch! draft :gray-chroma "Chroma" (chroma (:gray-hue params)))
+       (swatch-row (ctheme/gray-swatches params)))
+     (theme-section "Accent"
+       (theme-slider dispatch! draft :accent-hue "Hue" hue-opts)
+       (theme-slider dispatch! draft :accent-chroma "Chroma" (chroma (:accent-hue params)))
+       (swatch-row (ctheme/accent-swatches params)))
+     (theme-section "Background"
+       (theme-slider dispatch! draft :bg-light "Light" {:min 85 :max 100 :step 1 :scale 100 :fmt percent})
+       (theme-slider dispatch! draft :bg-dark "Dark" {:min 0 :max 25 :step 1 :scale 100 :fmt percent})
+       (theme-slider dispatch! draft :sidebar-shift "Sidebar" {:min -20 :max 20 :step 1 :scale 100 :fmt signed})
+       ;; page + sidebar of each mode
+       (let [{:keys [light dark]} (ctheme/backgrounds params)]
+         (swatch-row (concat light dark))))
+     (theme-section "Spacing"
+       (theme-slider dispatch! draft :size-base "Base" {:min 10 :max 50 :step 1 :scale 100 :fmt decimal}))
+     (theme-section "Font"
+       (theme-slider dispatch! draft :font-base "Base" {:min 75 :max 125 :step 1 :scale 100 :fmt decimal})
+       (theme-slider dispatch! draft :font-ratio "Ratio" {:min 105 :max 150 :step 1 :scale 100 :fmt decimal}))
+     (theme-section "Radius"
+       (theme-slider dispatch! draft :radius-scale "Scale" {:min 0 :max 200 :step 5 :scale 100 :fmt percent}))
+     [:div {:class ["theme-editor-actions"]}
+      (when original
+        (button/button {:variant :ghost :size :sm
+                        :on-click (fn [_] (dispatch! {:type :themes/delete :name original}))}
+          "Delete"))
+      [:span {:class ["flex-1"]}]
+      (button/button {:variant :ghost :size :sm
+                      :on-click (fn [_] (dispatch! {:type :themes/draft-cancel}))}
+        "Cancel")
+      (button/button {:variant :primary :size :sm
+                      :disabled (not (ctheme/draft-savable? themes draft))
+                      :on-click (fn [_] (dispatch! {:type :themes/save}))}
+        "Save")]]))
+
+(defn- theme-picker
+  "Default + the user's themes as chips; the active one again opens the
+   editor, \"New\" starts a draft from the defaults."
+  [state dispatch!]
+  (let [themes (:web/themes state)
+        active (:active themes)
+        draft  (:web/theme-draft state)]
+    [:div {:class ["theme-chips"]}
+     (chip/chip {:active (and (nil? active) (nil? draft))
+                 :attrs {:replicant/key "default"}
+                 :on-click (fn [_] (dispatch! {:type :themes/select :name nil}))}
+       "Default")
+     (for [[n p] (ctheme/custom-themes themes)]
+       (chip/chip {:active (if draft (= n (:original draft)) (= n active))
+                   :dot-color (ctheme/accent-color p)
+                   :attrs {:replicant/key n
+                           :title (if (= n active) "Edit this theme" "Use this theme")}
+                   :on-click (fn [_] (dispatch! (if (= n active)
+                                                  {:type :themes/edit :name n}
+                                                  {:type :themes/select :name n})))}
+         n))
+     (chip/chip {:active (boolean (and draft (nil? (:original draft))))
+                 :attrs {:replicant/key "new"}
+                 :on-click (fn [_] (dispatch! {:type :themes/edit :name nil}))}
+       (icon/icon {:icon-name :plus :size :sm}) "New")]))
+
 (defn- appearance-dialog
   "The Appearance settings dialog: edits this browser's overrides
    (:web/appearance, xi.web.appearance) over xi.config/appearance and the
@@ -5276,6 +5395,13 @@
              {:mode (or (:web/theme-mode state) "auto")
               :size :sm
               :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))}))
+           [:div {:class ["appearance-block"]}
+            [:div {:class ["appearance-row-label"]} "Color theme"]
+            [:div {:class ["form-hint"]}
+             "Your own hues, spacing, type scale and radii over the light and dark themes. Click the active theme again to edit it."]
+            (theme-picker state dispatch!)
+            (when (:web/theme-draft state)
+              (theme-editor state dispatch!))]
            (appearance-row
             "Super collapsed"
             "Fold a run of collapsed tool and thinking rows into one summary row"

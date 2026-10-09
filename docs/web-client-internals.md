@@ -194,6 +194,7 @@ Never sent over the wire:
 | `:web/compose-images` | staged attachments |
 | `:web/timeline-window` | virtualization window |
 | `:web/appearance`, `:web/appearance-config`, `:web/appearance-open?` | appearance overrides, the seeded config map, dialog open |
+| `:web/themes`, `:web/theme-draft` | the user's custom color themes (`xi.web.theme`, per-user state `:themes`, cached in `xi/themes`) and the editor's unsaved copy, previewed live. The active theme's CSS properties are also cached as JSON in `xi/theme-vars` for index.html's inline script to paint before main.js loads |
 | `:web/lightbox` | open image src |
 | `:web/watched`, `:web/response-counts` | unread tracking |
 | `:web/cache` | hydrated per-session history for deep links |
@@ -218,6 +219,7 @@ src/xi/web/
   title.cljs       document.title from the route (pure)
   cache.cljs       localStorage offline cache (hydrate + persist tap)
   appearance.cljs  appearance settings layering
+  theme.cljs       custom color themes: OKLCH scales → CSS properties, the user's value (pure)
   keymap.cljs      view- and mode-scoped shortcuts
   viewer_group.cljs super-collapsed summaries (pure)
   user_ext.cljs, user_ext/  browser halves of user extensions (lazy :user-ext module)

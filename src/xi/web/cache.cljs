@@ -353,6 +353,34 @@
     (store-set! appearance-key settings)
     (store-remove! appearance-key)))
 
+;; ── Custom color themes ──────────────────────────────────────────────────────
+
+(def ^:private themes-key "xi/themes")
+
+(defn load-themes
+  "The user's custom themes (xi.web.theme), {} when unset. Validated by the
+   consumer (`theme/normalize`), not here."
+  []
+  (or (store-get themes-key) {}))
+
+(defn save-themes! [themes]
+  (if (seq themes)
+    (store-set! themes-key themes)
+    (store-remove! themes-key)))
+
+(def ^:private theme-vars-key "xi/theme-vars")
+
+(defn save-theme-vars!
+  "The active theme's CSS properties as plain JSON ({\"--gray-50\" \"oklch(…)\"}):
+   index.html's inline script sets them on <html> before main.js loads, so
+   a custom theme paints without a flash of the default one."
+  [vars]
+  (try
+    (if (seq vars)
+      (.setItem js/localStorage theme-vars-key (js/JSON.stringify (clj->js vars)))
+      (.removeItem js/localStorage theme-vars-key))
+    (catch :default _ nil)))
+
 ;; ── Hydrate + persist ────────────────────────────────────────────────────────
 
 (defn hydrate
@@ -377,6 +405,8 @@
                         :web/sidebar-buffers-open (load-sidebar-buffers-open)
                         ;; The appearance overrides (xi.web.appearance).
                         :web/appearance (load-appearance)
+                        ;; The custom color themes (xi.web.theme).
+                        :web/themes (load-themes)
                         ;; whose UI state the values above are (see load-cached-user)
                         :web/cached-user (load-cached-user))
       (load-lobby) (assoc :lobby (load-lobby))

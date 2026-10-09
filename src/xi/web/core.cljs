@@ -24,6 +24,7 @@
             [xi.quick-replies :as quick-replies]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
+            [xi.web.theme :as theme]
             [xi.web.user-state :as user-state]
             [xi.web.cache :as cache]
             [xi.web.demo :as demo]
@@ -381,6 +382,59 @@
     {:state   (assoc st :web/command-usage usage)
      :effects [[:cache/recent-commands {:commands usage}]
                (user-state/set-effect :recent-commands usage)]}))
+
+;; ── Custom color themes (xi.web.theme) ───────────────────────────────────────
+;; :web/themes is the user's value; :web/theme-draft the editor's copy while
+;; the Appearance dialog edits one, previewed live and dropped on cancel.
+
+(defn- themes-commit
+  "Store `themes` as the user's value: cache, server, and the page."
+  [st themes]
+  {:state   (-> st (assoc :web/themes themes) (dissoc :web/theme-draft))
+   :effects [[:cache/themes {:themes themes}]
+             (user-state/set-effect :themes themes)
+             [:theme/apply-vars {:vars (theme/active-vars themes) :persist? true}]]})
+
+(defn- preview-draft
+  [st draft]
+  {:state   (assoc st :web/theme-draft draft)
+   :effects [[:theme/apply-vars {:vars (theme/css-vars (:params draft))}]]})
+
+(defn- themes-draft-cancel
+  "Drop the draft and put the active theme back on the page."
+  [st _]
+  (when (:web/theme-draft st)
+    {:state   (dissoc st :web/theme-draft)
+     :effects [[:theme/apply-vars {:vars (theme/active-vars (:web/themes st))}]]}))
+
+(defn- themes-save [st _]
+  (let [draft (:web/theme-draft st)]
+    (when (and draft (theme/draft-savable? (:web/themes st) draft))
+      (themes-commit st (theme/save (:web/themes st) draft)))))
+
+(def ^:private themes-handlers
+  {:themes/select       (fn [st {:keys [name]}]
+                          (themes-commit st (theme/select (:web/themes st) name)))
+   :themes/edit         (fn [st {:keys [name]}]
+                          (preview-draft st (theme/draft-for (:web/themes st) name)))
+   :themes/draft-set    (fn [st {:keys [key value]}]
+                          (when-let [draft (:web/theme-draft st)]
+                            (preview-draft st (assoc-in draft [:params key] value))))
+   :themes/draft-preset (fn [st {:keys [preset]}]
+                          (when-let [draft (:web/theme-draft st)]
+                            (preview-draft st (update draft :params merge (dissoc preset :name)))))
+   :themes/draft-name   (fn [st {:keys [name]}]
+                          (when (:web/theme-draft st)
+                            {:state (assoc-in st [:web/theme-draft :name] name)}))
+   :themes/draft-cancel themes-draft-cancel
+   :themes/save         themes-save
+   :themes/delete       (fn [st {:keys [name]}]
+                          (themes-commit st (theme/remove-theme (:web/themes st) name)))
+   ;; startup: the cached value onto the page (index.html's inline script
+   ;; already did, from the var cache; this covers a browser without it)
+   :themes/apply        (fn [st _]
+                          {:effects [[:theme/apply-vars {:vars (theme/active-vars (:web/themes st))
+                                                         :persist? true}]]})})
 
 (defn- theme-set-mode
   "Switch the theme and persist it as per-user UI state (xi.user-state),
@@ -871,6 +925,7 @@
   (merge (router/handlers routes)
          user-state/handlers
          keymap/handlers
+         themes-handlers
          {:room/new              room-new
           :compose/focus         (fn [_ _] {:effects [[:compose/focus]]})
           :compose/blur          (fn [_ _] {:effects [[:compose/blur]]})
@@ -1063,7 +1118,10 @@
           ;; Appearance dialog (xi.web.appearance): :web/appearance holds only
           ;; this browser's overrides.
           :appearance/open       (fn [st _] {:state (assoc st :web/appearance-open? true)})
-          :appearance/close      (fn [st _] {:state (dissoc st :web/appearance-open?)})
+          ;; closing abandons an unsaved theme draft
+          :appearance/close      (fn [st ev]
+                                   (-> (or (themes-draft-cancel st ev) {:state st})
+                                       (update :state dissoc :web/appearance-open?)))
           :keys/show             (fn [st _] {:state (assoc st :web/keys-open? true)})
           :keys/close            (fn [st _] {:state (dissoc st :web/keys-open?)})
           :appearance/set        (fn [st {:keys [key value]}]
@@ -1618,6 +1676,16 @@
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
    :cache/sidebar-buffers-open (fn [_ {:keys [session-ids]}] (cache/save-sidebar-buffers-open! session-ids))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
+   :cache/themes (fn [_ {:keys [themes]}] (cache/save-themes! themes))
+   ;; Set / remove every theme-managed property on <html>; a committed theme
+   ;; (:persist?) also refreshes the early-paint cache, a draft preview does not.
+   :theme/apply-vars (fn [_ {:keys [vars persist?]}]
+                       (let [style (.-style js/document.documentElement)]
+                         (doseq [n theme/var-names]
+                           (if-let [v (get vars n)]
+                             (.setProperty style n v)
+                             (.removeProperty style n))))
+                       (when persist? (cache/save-theme-vars! vars)))
    :cache/user (fn [_ {:keys [user]}] (cache/save-cached-user! user))
    :cache/clear-watched (fn [_ _] (cache/clear-watched!))
    :cache/seed-room
@@ -2613,6 +2681,7 @@
       (add-tap! (make-tap dispatch!)))
     (router/init! routes dispatch!)
     (dispatch! {:type :theme/set-mode :mode stored-theme :init? true})
+    (dispatch! {:type :themes/apply})
     (install-viewport-tracking! state)
     (views/install-pointer-type-tracker!)
     (attach-code-copy-listener!)

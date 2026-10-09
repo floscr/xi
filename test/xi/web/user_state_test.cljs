@@ -86,7 +86,21 @@
       (is (= ["clear"] (:web/command-usage state)))
       (is (= ["model"] (:web/recent-commands state)))))
   (testing "unknown keys are ignored"
-    (is (nil? (run browser {:type :user-state/changed :key :favorites :value ["a"]})))))
+    (is (nil? (run browser {:type :user-state/changed :key :favorites :value ["a"]}))))
+  (testing "a custom theme from another device lands on the page and in the cache"
+    (let [themes {:active "Ocean" :themes {"Ocean" {:accent-hue 200}}}
+          {:keys [state effects]} (run browser {:type :user-state/changed :key :themes :value themes})]
+      (is (= themes (:web/themes state)))
+      (is (some #{[:cache/themes {:themes themes}]} effects))
+      (is (= "oklch(0.595 0.2300 200.0)"
+             (get-in (some (fn [[fx ev]] (when (= :theme/apply-vars fx) ev)) effects)
+                     [:vars "--accent-500"])))
+      (is (true? (:persist? (some (fn [[fx ev]] (when (= :theme/apply-vars fx) ev)) effects))))))
+  (testing "garbage in a stored themes value is dropped, not applied"
+    (let [{:keys [state effects]} (run browser {:type :user-state/changed :key :themes
+                                                :value {:active "nope" :themes {"a" {:gray-hue 999}}}})]
+      (is (= {:themes {"a" {}}} (:web/themes state)))
+      (is (some #{[:theme/apply-vars {:vars nil :persist? true}]} effects) "no active theme: the page shows the default"))))
 
 (deftest set-effect-sends-sets-as-vectors
   (is (= [:ws/send {:type :user-state/set :key :sidebar-collapsed :value [:projects :recent]}]
