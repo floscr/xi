@@ -881,7 +881,7 @@
 (defn- read-claude-session-messages
   "Conversation messages of a Claude CLI session file as block maps: {:type
    :text :role :text}, {:type :tool-use :name :tool-use-id :arguments}, {:type
-   :tool-result :tool-use-id :content :is-error}."
+   :tool-result :tool-use-id :content :is-error}, {:type :api-error :message}."
   [filepath]
   (try
     (let [content (fs/readFileSync filepath "utf8")
@@ -902,6 +902,17 @@
                          (and (= "user" role) (string? content)
                               (not (str/starts-with? content "The conversation history")))
                          [{:type :text :role "user" :text content}]
+
+                         ;; A failure the CLI stored as a synthetic assistant
+                         ;; message (usage limit, credits, …): its text is the
+                         ;; notice, rendered as an error card (xi.error-info).
+                         (and (= "assistant" role) (:isApiErrorMessage line)
+                              (sequential? content))
+                         [{:type :api-error
+                           :message (->> content
+                                         (filter #(= "text" (:type %)))
+                                         (map :text)
+                                         (apply str))}]
 
                          ;; Sequential content — extract all block types
                          (and (sequential? content))

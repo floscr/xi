@@ -163,6 +163,14 @@
                                      block))
                      []))
 
+            :api-error
+            (recur (next ms)
+                   (conj (flush-imgs out imgs)
+                         (flag {:kind :error
+                                :error {:type "error" :message (:message block)}}
+                               block))
+                   [])
+
             ;; :tool-result rendered inline with :tool-use; unknown → skip
             (recur (next ms) out imgs)))))))
 

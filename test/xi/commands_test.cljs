@@ -574,3 +574,13 @@
            {:type :text :role "assistant" :text "ok"}
            {:type :text :role "user" :text "[Request interrupted by user for tool use]"}
            {:type :text :role "user" :text "[Request interrupted by user]"}]))))
+
+(deftest messages->history-api-error-becomes-error-entry
+  ;; The CLI stores a usage-limit / credits failure as a synthetic assistant
+  ;; message; reloaded, it renders as an error card, not as assistant prose.
+  (is (= [{:kind :user :text "/commit"}
+          {:kind :error :error {:type "error"
+                                :message "Fable 5.1 requires usage credits."}}]
+         (commands/messages->history
+          [{:type :text :role "user" :text "/commit"}
+           {:type :api-error :message "Fable 5.1 requires usage credits."}]))))
