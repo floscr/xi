@@ -2852,9 +2852,16 @@
             (str "/" name (when args (str " " args)))]
            (spinner)]]]))))
 
+(def ^:private launch-logo-width
+  "Rendered width (px) of the logo glyphs; the tagline is stretched to it."
+  84)
+
 (defn- launch-logo
   []
-  [:svg {:class ["launch-logo"] :viewBox "0 0 64 40" :aria-hidden "true"}
+  ;; The viewBox hugs the glyphs (X spans 0–36, i 46–55) so the box edges
+  ;; are the shape edges the tagline lines up with.
+  [:svg {:class ["launch-logo"] :viewBox "0 0 55 40" :width launch-logo-width
+         :aria-hidden "true"}
    [:defs
     [:linearGradient {:id "launch-logo-gradient" :gradientUnits "userSpaceOnUse"
                       :x1 "0" :y1 "0" :x2 "64" :y2 "40"}
@@ -2867,6 +2874,14 @@
     [:rect {:x "46" :y "0" :width "9" :height "9"}]
     [:rect {:x "46" :y "15" :width "9" :height "25"}]]])
 
+(defn- launch-tagline
+  "SVG text whose letter spacing is stretched (`textLength`) so the line is
+   exactly as wide as the logo glyphs above it."
+  [text]
+  [:svg {:class ["launch-tagline"] :width launch-logo-width}
+   [:text {:x "0" :y "100%" :textLength launch-logo-width :lengthAdjust "spacing"}
+    text]])
+
 (defn- launch-header
   "Welcome card at the top of every chat's timeline (logo, model, cwd,
    AGENTS.md files). Ordinary timeline content. For a virtual room the caller
@@ -2875,8 +2890,7 @@
   [:div {:class ["launch-header"]}
    [:div {:class ["launch-hero"]}
     (launch-logo)
-    [:div {:class ["launch-tagline"]}
-     (if pa? "personal agent" "coding agent")]]
+    (launch-tagline (if pa? "PERSONAL AGENT" "CODING AGENT"))]
    (when (or model cwd (seq agents-files))
      [:div {:class ["launch-section"]}
       [:div {:class ["launch-section-title"]} "Session"]

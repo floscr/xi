@@ -3980,7 +3980,6 @@ code a:hover,
 }
 
 .launch-logo {
-  width: 96px;
   height: auto;
 }
 
@@ -3993,10 +3992,12 @@ code a:hover,
   .launch-logo-stop-end   { stop-color: oklch(from var(--accent-500) 0.632 calc(c * 0.58) calc(h - 38)); }
 }
 
+/* Width and textLength come from the markup (the logo's width); the box is
+   cap height so the baseline (y=100%) sits on its bottom edge. */
 .launch-tagline {
-  color: var(--fg-2);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  height: 0.72em;
+  overflow: visible;
+  fill: var(--fg-2);
   font-size: var(--font-xs);
 }
 
