@@ -12,25 +12,36 @@
       (is (= "4rem" (get vars "--size-16")))
       (is (= "0.25rem" (get vars "--size-1")))
       (is (= "10px" (get vars "--radius-md"))))
-    (testing "backgrounds: white / gray-950 pages, the sidebar 2.5% darker, gray-tinted"
-      (is (= "oklch(1.000 0.0050 285.0)" (get vars "--theme-bg-light")))
-      (is (= "oklch(0.975 0.0050 285.0)" (get vars "--theme-sidebar-light")))
-      (is (= "oklch(0.145 0.0110 285.0)" (get vars "--theme-bg-dark")))
-      (is (= "oklch(0.120 0.0110 285.0)" (get vars "--theme-sidebar-dark"))))
+    (testing "backgrounds: white / gray-950 pages, the sidebar 2.5% darker"
+      (is (= "oklch(1.000 0.0000 0.0)" (get vars "--theme-bg-light")))
+      (is (= "oklch(0.975 0.0000 0.0)" (get vars "--theme-sidebar-light")))
+      (is (= "oklch(0.147 0.0107 285.0)" (get vars "--theme-bg-dark")))
+      (is (= "oklch(0.122 0.0107 285.0)" (get vars "--theme-sidebar-dark"))))
     (testing "every managed property has a value"
       (is (= (set theme/var-names) (set (keys vars))))
       (is (= 54 (count theme/var-names))
           "11 gray + 11 accent + 4 backgrounds + 16 sizes + 8 fonts + 4 radii"))))
 
-(deftest backgrounds-follow-the-gray-and-the-shift
-  (let [{:keys [light dark]} (theme/backgrounds {:gray-hue 60 :gray-chroma 2
-                                                 :bg-light 0.9 :bg-dark 0 :sidebar-shift 0.1})]
-    (is (= ["oklch(0.900 0.0100 60.0)" "oklch(1.000 0.0100 60.0)"] light)
-        "a positive shift lightens the sidebar, clamped at white")
-    (is (= ["oklch(0.000 0.0220 60.0)" "oklch(0.100 0.0220 60.0)"] dark)))
-  (is (= "oklch(0.000 0.0110 285.0)"
-         (second (:dark (theme/backgrounds {:bg-dark 0.02 :sidebar-shift -0.2}))))
-      "clamped at black"))
+(deftest hex-to-oklch
+  (let [[l c h] (theme/hex->oklch "#ff0000")]
+    (is (< 0.627 l 0.629))
+    (is (< 0.257 c 0.258))
+    (is (< 29.2 h 29.3)))
+  (is (= [1 0 0] (mapv #(js/Math.round %) (theme/hex->oklch "#ffffff"))) "white: no hue noise")
+  (is (= [0 0 0] (theme/hex->oklch "#000000"))))
+
+(deftest backgrounds-follow-the-color-and-the-shift
+  (let [{:keys [light dark]} (theme/backgrounds {:bg-light "#fff4e6" :bg-dark "#000000"
+                                                 :sidebar-shift 0.1})]
+    (is (= ["oklch(0.972 0.0220 74.1)" "oklch(1.000 0.0220 74.1)"] light)
+        "the sidebar keeps the page's chroma and hue; a positive shift lightens it, clamped at white")
+    (is (= ["oklch(0.000 0.0000 0.0)" "oklch(0.100 0.0000 0.0)"] dark)))
+  (is (= "oklch(0.000 0.0107 285.0)"
+         (second (:dark (theme/backgrounds {:sidebar-shift -0.2}))))
+      "clamped at black")
+  (is (= ["oklch(0.623 0.1880 259.8)" "oklch(0.598 0.1880 259.8)"]
+         (:light (theme/backgrounds {:bg-light "oklch(0.623 0.188 259.8)"})))
+      "an oklch() color is taken as is"))
 
 (deftest params-change-the-scales
   (let [vars (theme/css-vars {:gray-hue 60 :accent-chroma 2 :size-base 0.3
@@ -57,6 +68,14 @@
     (is (= {:gray-hue 10}
            (theme/normalize-params {:gray-hue 10 :accent-hue 400 :font-ratio 0.5
                                     :bogus 1 :size-base "x"}))))
+  (testing "backgrounds must be #rrggbb or oklch(L C H)"
+    (is (= {:bg-light "oklch(0.6 0 0)"}
+           (theme/normalize-params {:bg-light "oklch(0.6 0 0)" :bg-dark "oklch(1.2 0.1 30)"}))
+        "lightness above 1 is out of range")
+    (is (= {} (theme/normalize-params {:bg-dark "oklch(0.6 0.1 30 / 0.5)"})) "no alpha")
+    (is (= {:bg-dark "#0A0a0f"}
+           (theme/normalize-params {:bg-dark "#0A0a0f" :bg-light "white" :sidebar-shift "#fff"})))
+    (is (= {} (theme/normalize-params {:bg-light 1 :bg-dark "#fff" :sidebar-shift "#ffffff"}))))
   (testing "nothing set compares equal to the empty default"
     (is (= {} (theme/normalize nil)))
     (is (= {} (theme/normalize {:active "x"})))

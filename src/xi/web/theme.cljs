@@ -13,15 +13,15 @@
   (:require [clojure.string :as str]))
 
 (def defaults
-  "`:bg-light` / `:bg-dark` are the OKLCH lightness of each mode's page
-   background (white, gray-950); `:sidebar-shift` the lightness the sidebar
+  "`:bg-light` / `:bg-dark` are each mode's page background, a `color?`
+   string (white, gray-950); `:sidebar-shift` the OKLCH lightness the sidebar
    sits away from it (negative = darker), the same in both modes."
   {:gray-hue      285
    :gray-chroma   1
    :accent-hue    286
    :accent-chroma 1
-   :bg-light      1
-   :bg-dark       0.145
+   :bg-light      "#ffffff"
+   :bg-dark       "#0a0a0f"
    :sidebar-shift -0.025
    :size-base     0.25
    :font-base     1
@@ -29,30 +29,47 @@
    :radius-scale  1})
 
 (def ranges
-  "[min max] per parameter: what `normalize-params` accepts and the slider
-   bounds. Chroma and radius are multipliers of the token values. The
-   background ranges stop where the surfaces (bg-1 = gray-100 / gray-900)
-   would end up on the wrong side of the page."
+  "[min max] per numeric parameter: what `normalize-params` accepts and the
+   slider bounds. Chroma and radius are multipliers of the token values."
   {:gray-hue      [0 360]
    :gray-chroma   [0 2]
    :accent-hue    [0 360]
    :accent-chroma [0 2]
-   :bg-light      [0.85 1]
-   :bg-dark       [0 0.25]
    :sidebar-shift [-0.2 0.2]
    :size-base     [0.1 0.5]
    :font-base     [0.75 1.25]
    :font-ratio    [1.05 1.5]
    :radius-scale  [0 2]})
 
+(def color-keys
+  "The parameters that hold a `color?` string (a color picker value)."
+  #{:bg-light :bg-dark})
+
+(defn hex-color? [s]
+  (boolean (and (string? s) (re-matches #"#[0-9a-fA-F]{6}" s))))
+
+(defn- parse-oklch
+  "`oklch(L C H)` as the color picker writes it (L 0–1) → [l c h]."
+  [s]
+  (when-let [[_ & parts] (and (string? s)
+                              (re-matches #"oklch\((\d+(?:\.\d+)?) (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)\)" s))]
+    (let [[l c h :as lch] (mapv js/parseFloat parts)]
+      (when (and (<= l 1) (<= c 0.5) (<= h 360)) lch))))
+
+(defn color?
+  "A background color: #rrggbb or oklch(L C H), the picker's two formats."
+  [s]
+  (or (hex-color? s) (some? (parse-oklch s))))
+
 (def presets
-  "Color starting points for the editor; each sets only the color keys."
-  [{:name "Purple"  :gray-hue 285 :gray-chroma 1   :accent-hue 286 :accent-chroma 1}
-   {:name "Blue"    :gray-hue 255 :gray-chroma 0.5 :accent-hue 255 :accent-chroma 0.87}
-   {:name "Neutral" :gray-hue 0   :gray-chroma 0   :accent-hue 255 :accent-chroma 0.87}
-   {:name "Warm"    :gray-hue 60  :gray-chroma 0.7 :accent-hue 50  :accent-chroma 0.85}
-   {:name "Rose"    :gray-hue 0   :gray-chroma 0.5 :accent-hue 350 :accent-chroma 0.85}
-   {:name "Emerald" :gray-hue 165 :gray-chroma 0.5 :accent-hue 165 :accent-chroma 0.75}])
+  "Color starting points for the editor; each sets only the color keys. The
+   dark background is the preset's own gray-950."
+  [{:name "Purple"  :gray-hue 285 :gray-chroma 1   :accent-hue 286 :accent-chroma 1    :bg-light "#ffffff" :bg-dark "#0a0a0f"}
+   {:name "Blue"    :gray-hue 255 :gray-chroma 0.5 :accent-hue 255 :accent-chroma 0.87 :bg-light "#ffffff" :bg-dark "#090a0c"}
+   {:name "Neutral" :gray-hue 0   :gray-chroma 0   :accent-hue 255 :accent-chroma 0.87 :bg-light "#ffffff" :bg-dark "#0a0a0a"}
+   {:name "Warm"    :gray-hue 60  :gray-chroma 0.7 :accent-hue 50  :accent-chroma 0.85 :bg-light "#ffffff" :bg-dark "#0d0907"}
+   {:name "Rose"    :gray-hue 0   :gray-chroma 0.5 :accent-hue 350 :accent-chroma 0.85 :bg-light "#ffffff" :bg-dark "#0c090a"}
+   {:name "Emerald" :gray-hue 165 :gray-chroma 0.5 :accent-hue 165 :accent-chroma 0.75 :bg-light "#ffffff" :bg-dark "#080b09"}])
 
 (def max-themes 20)
 (def max-name-length 40)
@@ -78,10 +95,6 @@
 (def ^:private radius-px
   [["xs" 4] ["sm" 6] ["md" 10] ["lg" 16]])
 
-;; Tint of the backgrounds: the gray scale's end-step chroma (50 / 950),
-;; scaled by the theme's gray chroma like every other gray.
-(def ^:private bg-chroma {:light 0.005 :dark 0.011})
-
 (defn- fixed [n places] (.toFixed (double n) places))
 
 (defn- trim-zeros [s]
@@ -105,14 +118,38 @@
 
 (defn- clamp01 [x] (max 0 (min 1 x)))
 
+(defn hex->oklch
+  "#rrggbb → [l c h] (sRGB → linear → OKLab → polar, the Björn Ottosson
+   matrices). A gray gets hue 0 instead of the noise of a zero chroma."
+  [hex]
+  (let [byte  (fn [i] (/ (js/parseInt (subs hex i (+ i 2)) 16) 255))
+        lin   (fn [c] (if (<= c 0.04045) (/ c 12.92) (js/Math.pow (/ (+ c 0.055) 1.055) 2.4)))
+        [r g b] (map (comp lin byte) [1 3 5])
+        l (js/Math.cbrt (+ (* 0.4122214708 r) (* 0.5363325363 g) (* 0.0514459929 b)))
+        m (js/Math.cbrt (+ (* 0.2119034982 r) (* 0.6806995451 g) (* 0.1073969566 b)))
+        s (js/Math.cbrt (+ (* 0.0883024619 r) (* 0.2817188376 g) (* 0.6299787005 b)))
+        L (+ (* 0.2104542553 l) (* 0.7936177850 m) (* -0.0040720468 s))
+        a (+ (* 1.9779984951 l) (* -2.4285922050 m) (* 0.4505937099 s))
+        b (+ (* 0.0259040371 l) (* 0.7827717662 m) (* -0.8086757660 s))
+        c (js/Math.sqrt (+ (* a a) (* b b)))]
+    (if (< c 1e-4)
+      [L 0 0]
+      [L c (mod (* (js/Math.atan2 b a) (/ 180 js/Math.PI)) 360)])))
+
+(defn color->oklch [s]
+  (if (hex-color? s) (hex->oklch s) (parse-oklch s)))
+
 (defn backgrounds
-  "{:light [page sidebar] :dark [page sidebar]} — the two surfaces per mode,
-   the sidebar `:sidebar-shift` away from the page in lightness."
+  "{:light [page sidebar] :dark [page sidebar]} — the two surfaces per mode
+   as oklch(): the page is the chosen color, the sidebar the same color
+   `:sidebar-shift` away in lightness."
   [params]
-  (let [{:keys [gray-hue gray-chroma bg-light bg-dark sidebar-shift]} (merge defaults params)
-        surface (fn [mode l] (oklch (clamp01 l) (min 0.4 (* (bg-chroma mode) gray-chroma)) gray-hue))]
-    {:light [(surface :light bg-light) (surface :light (+ bg-light sidebar-shift))]
-     :dark  [(surface :dark bg-dark) (surface :dark (+ bg-dark sidebar-shift))]}))
+  (let [{:keys [bg-light bg-dark sidebar-shift]} (merge defaults params)
+        pair (fn [color]
+               (let [[l c h] (color->oklch color)]
+                 [(oklch l c h) (oklch (clamp01 (+ l sidebar-shift)) c h)]))]
+    {:light (pair bg-light)
+     :dark  (pair bg-dark)}))
 
 (defn- background-vars
   "Per-mode properties; style.css picks the pair of the current mode for
@@ -173,7 +210,7 @@
   "Do `params` carry exactly the preset's colors?"
   [preset params]
   (let [p (merge defaults params)]
-    (every? (fn [[k v]] (== v (get p k))) (dissoc preset :name))))
+    (every? (fn [[k v]] (= v (get p k))) (dissoc preset :name))))
 
 ;; ── The user's value ─────────────────────────────────────────────────────────
 
@@ -182,9 +219,11 @@
     (boolean (and lo (number? v) (js/isFinite v) (<= lo v hi)))))
 
 (defn normalize-params
-  "Keep the known parameters of `m` whose values are in range."
+  "Keep the known parameters of `m` whose values are in range (numbers) or
+   a `color?` (`color-keys`)."
   [m]
-  (into {} (filter (fn [[k v]] (in-range? k v))) (when (map? m) m)))
+  (into {} (filter (fn [[k v]] (if (color-keys k) (color? v) (in-range? k v))))
+        (when (map? m) m)))
 
 (defn valid-name? [s]
   (and (string? s)

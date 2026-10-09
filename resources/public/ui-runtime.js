@@ -794,6 +794,726 @@
     return clj__GT_js_(x, /* @__PURE__ */ new Set());
   }
 
+  // .compiled/color_picker.mjs
+  var clamp = function(v, lo, hi) {
+    return Math.max(lo, Math.min(v, hi));
+  };
+  var fmt_num = function(n) {
+    if (truth_(isFinite(n))) {
+      return `${Math.round(n * 1e3) / 1e3}`;
+    } else {
+      return "0";
+    }
+    ;
+  };
+  var hsv__GT_rgb = function(h, s, v) {
+    const c1 = v * s;
+    const h_SINGLEQUOTE_2 = mod(h, 360) / 60;
+    const x3 = c1 * (1 - Math.abs(mod(h_SINGLEQUOTE_2, 2) - 1));
+    const m4 = v - c1;
+    const rgb5 = h_SINGLEQUOTE_2 < 1 ? [c1, x3, 0] : h_SINGLEQUOTE_2 < 2 ? [x3, c1, 0] : h_SINGLEQUOTE_2 < 3 ? [0, c1, x3] : h_SINGLEQUOTE_2 < 4 ? [0, x3, c1] : h_SINGLEQUOTE_2 < 5 ? [x3, 0, c1] : "else" ? [c1, 0, x3] : null;
+    return [Math.round(255 * (rgb5[0] + m4)), Math.round(255 * (rgb5[1] + m4)), Math.round(255 * (rgb5[2] + m4))];
+  };
+  var hue_of = function(r, g, b, mx, d) {
+    const h1 = d === 0 ? 0 : _EQ_(mx, r) ? 60 * mod((g - b) / d, 6) : _EQ_(mx, g) ? 60 * ((b - r) / d + 2) : "else" ? 60 * ((r - g) / d + 4) : null;
+    if (h1 < 0) {
+      return h1 + 360;
+    } else {
+      return h1;
+    }
+    ;
+  };
+  var rgb__GT_hsv = function(r, g, b) {
+    const r1 = r / 255;
+    const g2 = g / 255;
+    const b3 = b / 255;
+    const mx4 = Math.max(r1, g2, b3);
+    const mn5 = Math.min(r1, g2, b3);
+    const d6 = mx4 - mn5;
+    return [hue_of(r1, g2, b3, mx4, d6), mx4 === 0 ? 0 : d6 / mx4, mx4];
+  };
+  var linear = function(c) {
+    const c1 = c / 255;
+    if (c1 <= 0.04045) {
+      return c1 / 12.92;
+    } else {
+      return Math.pow((c1 + 0.055) / 1.055, 2.4);
+    }
+    ;
+  };
+  var rgb__GT_oklch = function(r, g, b) {
+    const r1 = linear(r);
+    const g2 = linear(g);
+    const b3 = linear(b);
+    const l4 = Math.cbrt(0.4122214708 * r1 + 0.5363325363 * g2 + 0.0514459929 * b3);
+    const m5 = Math.cbrt(0.2119034982 * r1 + 0.6806995451 * g2 + 0.1073969566 * b3);
+    const s6 = Math.cbrt(0.0883024619 * r1 + 0.2817188376 * g2 + 0.6299787005 * b3);
+    const L7 = 0.2104542553 * l4 + 0.793617785 * m5 + -0.0040720468 * s6;
+    const oa8 = 1.9779984951 * l4 + -2.428592205 * m5 + 0.4505937099 * s6;
+    const ob9 = 0.0259040371 * l4 + 0.7827717662 * m5 + -0.808675766 * s6;
+    const h10 = 180 / Math.PI * Math.atan2(ob9, oa8);
+    return [L7, Math.sqrt(oa8 * oa8 + ob9 * ob9), h10 < 0 ? h10 + 360 : h10];
+  };
+  var rgb__GT_hsl = function(r, g, b) {
+    const r1 = r / 255;
+    const g2 = g / 255;
+    const b3 = b / 255;
+    const mx4 = Math.max(r1, g2, b3);
+    const mn5 = Math.min(r1, g2, b3);
+    const d6 = mx4 - mn5;
+    const l7 = (mx4 + mn5) / 2;
+    return [hue_of(r1, g2, b3, mx4, d6), d6 === 0 ? 0 : d6 / (1 - Math.abs(2 * l7 - 1)), l7];
+  };
+  var probe = atom(null);
+  var probe_ctx = function() {
+    const or__23426__auto__1 = deref(probe);
+    if (truth_(or__23426__auto__1)) {
+      return or__23426__auto__1;
+    } else {
+      const c2 = document.createElement("canvas");
+      c2.width = 1;
+      c2.height = 1;
+      const ctx3 = c2.getContext("2d", { "willReadFrequently": true });
+      reset_BANG_(probe, ctx3);
+      return ctx3;
+    }
+    ;
+  };
+  var parse_rgba = function(s) {
+    const s1 = `${(() => {
+      const or__23426__auto__2 = s;
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return "";
+      }
+      ;
+    })() ?? ""}`.trim();
+    if (truth_(!_EQ_("", s1) && CSS.supports("color", s1))) {
+      const ctx3 = probe_ctx();
+      ctx3.clearRect(0, 0, 1, 1);
+      ctx3.fillStyle = s1;
+      ctx3.fillRect(0, 0, 1, 1);
+      const d4 = ctx3.getImageData(0, 0, 1, 1).data;
+      return [d4[0], d4[1], d4[2], d4[3] / 255];
+    }
+    ;
+  };
+  var hex2 = function(n) {
+    return clamp(Math.round(n), 0, 255).toString(16).padStart(2, "0");
+  };
+  var compose = function(h, s, v, a, fmt) {
+    const rgb1 = hsv__GT_rgb(h, s, v);
+    const r2 = rgb1[0];
+    const g3 = rgb1[1];
+    const b4 = rgb1[2];
+    const translucent_QMARK_5 = a < 0.999;
+    const G__16 = fmt;
+    switch (G__16) {
+      case "oklch":
+        const lch8 = rgb__GT_oklch(r2, g3, b4);
+        const c9 = lch8[1];
+        const h10 = c9 < 5e-4 ? 0 : Math.round(10 * lch8[2]) / 10;
+        return `${"oklch("}${fmt_num(lch8[0]) ?? ""}${" "}${fmt_num(c9) ?? ""}${" "}${h10 ?? ""}${(translucent_QMARK_5 ? `${" / "}${fmt_num(a) ?? ""}` : "") ?? ""}${")"}`;
+        break;
+      case "rgb":
+        if (translucent_QMARK_5) {
+          return `${"rgba("}${r2 ?? ""}${", "}${g3 ?? ""}${", "}${b4 ?? ""}${", "}${fmt_num(a) ?? ""}${")"}`;
+        } else {
+          return `${"rgb("}${r2 ?? ""}${", "}${g3 ?? ""}${", "}${b4 ?? ""}${")"}`;
+        }
+        ;
+        break;
+      case "hsl":
+        const hsl11 = rgb__GT_hsl(r2, g3, b4);
+        const hh12 = Math.round(hsl11[0]);
+        const ss13 = Math.round(100 * hsl11[1]);
+        const ll14 = Math.round(100 * hsl11[2]);
+        if (translucent_QMARK_5) {
+          return `${"hsla("}${hh12 ?? ""}${", "}${ss13 ?? ""}${"%, "}${ll14 ?? ""}${"%, "}${fmt_num(a) ?? ""}${")"}`;
+        } else {
+          return `${"hsl("}${hh12 ?? ""}${", "}${ss13 ?? ""}${"%, "}${ll14 ?? ""}${"%)"}`;
+        }
+        ;
+        break;
+      default:
+        return `${"#"}${hex2(r2) ?? ""}${hex2(g3) ?? ""}${hex2(b4) ?? ""}${(translucent_QMARK_5 ? hex2(a * 255) : "") ?? ""}`;
+    }
+    ;
+  };
+  var detect_fmt = function(s) {
+    const s1 = `${(() => {
+      const or__23426__auto__2 = s;
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return "";
+      }
+      ;
+    })() ?? ""}`.trim().toLowerCase();
+    if (truth_(s1.startsWith("#"))) {
+      return "hex";
+    } else {
+      if (truth_(s1.startsWith("rgb"))) {
+        return "rgb";
+      } else {
+        if (truth_(s1.startsWith("hsl"))) {
+          return "hsl";
+        } else {
+          if (truth_(s1.startsWith("oklch"))) {
+            return "oklch";
+          } else {
+            return null;
+          }
+        }
+      }
+    }
+    ;
+  };
+  var q = function(el, sel) {
+    return el.querySelector(sel);
+  };
+  var state = function(el) {
+    return el["__uiColor"];
+  };
+  var formats = function(el) {
+    return (() => {
+      const or__23426__auto__1 = el.getAttribute("data-formats");
+      if (truth_(or__23426__auto__1)) {
+        return or__23426__auto__1;
+      } else {
+        return "oklch hex rgb hsl";
+      }
+      ;
+    })().split(" ");
+  };
+  var adopt_BANG_ = function(el, value) {
+    const st1 = (() => {
+      const or__23426__auto__2 = state(el);
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        const o3 = { "h": 0, "s": 0, "v": 0, "a": 1, "fmt": null, "value": null };
+        el["__uiColor"] = o3;
+        return o3;
+      }
+      ;
+    })();
+    const fs4 = formats(el);
+    const f5 = detect_fmt(value);
+    const cur6 = st1["fmt"];
+    const temp__23062__auto__7 = parse_rgba(value);
+    if (truth_(temp__23062__auto__7)) {
+      const rgba8 = temp__23062__auto__7;
+      const hsv9 = rgb__GT_hsv(rgba8[0], rgba8[1], rgba8[2]);
+      if (hsv9[1] > 1e-4) {
+        st1["h"] = hsv9[0];
+      }
+      ;
+      if (hsv9[2] > 1e-4) {
+        st1["s"] = hsv9[1];
+      }
+      ;
+      st1["v"] = hsv9[2];
+      st1["a"] = rgba8[3];
+    }
+    ;
+    st1["fmt"] = truth_((() => {
+      const and__23442__auto__10 = f5;
+      if (truth_(and__23442__auto__10)) {
+        return fs4.includes(f5);
+      } else {
+        return and__23442__auto__10;
+      }
+      ;
+    })()) ? f5 : truth_((() => {
+      const and__23442__auto__11 = cur6;
+      if (truth_(and__23442__auto__11)) {
+        return fs4.includes(cur6);
+      } else {
+        return and__23442__auto__11;
+      }
+      ;
+    })()) ? cur6 : "else" ? fs4[0] : null;
+    return st1;
+  };
+  var paint_BANG_ = function(el) {
+    const st1 = state(el);
+    const h2 = st1["h"];
+    const s3 = st1["s"];
+    const v4 = st1["v"];
+    const rgb5 = hsv__GT_rgb(h2, s3, v4);
+    const solid6 = `${"rgb("}${rgb5[0] ?? ""}${", "}${rgb5[1] ?? ""}${", "}${rgb5[2] ?? ""}${")"}`;
+    const temp__23062__auto__7 = q(el, ".color-picker-plane");
+    if (truth_(temp__23062__auto__7)) {
+      const plane8 = temp__23062__auto__7;
+      plane8.style.background = `${"linear-gradient(to top, #000, rgba(0,0,0,0)),"}${"linear-gradient(to right, #fff, hsl("}${Math.round(h2) ?? ""}${", 100%, 50%))"}`;
+      plane8.setAttribute("aria-valuetext", (() => {
+        const or__23426__auto__9 = st1["value"];
+        if (truth_(or__23426__auto__9)) {
+          return or__23426__auto__9;
+        } else {
+          return "";
+        }
+        ;
+      })());
+    }
+    ;
+    const temp__23062__auto__10 = q(el, ".color-picker-marker");
+    if (truth_(temp__23062__auto__10)) {
+      const marker11 = temp__23062__auto__10;
+      marker11.style.left = `${100 * s3}${"%"}`;
+      marker11.style.top = `${100 * (1 - v4)}${"%"}`;
+      marker11.style.background = solid6;
+    }
+    ;
+    const temp__23062__auto__12 = q(el, "[data-ui-color-hue]");
+    if (truth_(temp__23062__auto__12)) {
+      const hue13 = temp__23062__auto__12;
+      hue13.value = `${h2 ?? ""}`;
+    }
+    ;
+    const temp__23062__auto__14 = q(el, "[data-ui-color-alpha]");
+    if (truth_(temp__23062__auto__14)) {
+      const op15 = temp__23062__auto__14;
+      op15.value = `${st1["a"] ?? ""}`;
+      op15.style.setProperty("--color-picker-solid", solid6);
+    }
+    ;
+    return el.querySelectorAll("[data-ui-color-format]").forEach((function(b) {
+      return b.setAttribute("data-active", _EQ_(b.getAttribute("data-ui-color-format"), st1["fmt"]) ? "true" : "false");
+    }));
+  };
+  var show_value_BANG_ = function(el, value) {
+    state(el)["value"] = value;
+    const temp__23062__auto__1 = q(el, "[data-ui-color-text]");
+    if (truth_(temp__23062__auto__1)) {
+      const t2 = temp__23062__auto__1;
+      return t2.value = value;
+    }
+    ;
+  };
+  var sync_BANG_ = function(el) {
+    const v1 = (() => {
+      const or__23426__auto__2 = el.getAttribute("data-value");
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return "";
+      }
+      ;
+    })();
+    const st3 = state(el);
+    if (truth_((() => {
+      const or__23426__auto__4 = st3 == null;
+      if (or__23426__auto__4) {
+        return or__23426__auto__4;
+      } else {
+        return !_EQ_(v1, st3["value"]);
+      }
+      ;
+    })())) {
+      adopt_BANG_(el, v1);
+      show_value_BANG_(el, v1);
+      return paint_BANG_(el);
+    }
+    ;
+  };
+  var fire_BANG_ = function(input, type) {
+    return input.dispatchEvent(new Event(type, { "bubbles": true }));
+  };
+  var emit_BANG_ = function(el, commit_QMARK_) {
+    const st1 = state(el);
+    const v2 = compose(st1["h"], st1["s"], st1["v"], st1["a"], st1["fmt"]);
+    show_value_BANG_(el, v2);
+    el.setAttribute("data-value", v2);
+    paint_BANG_(el);
+    const temp__23062__auto__3 = q(el, "[data-ui-color-value]");
+    if (truth_(temp__23062__auto__3)) {
+      const input4 = temp__23062__auto__3;
+      input4.value = v2;
+      fire_BANG_(input4, "input");
+      if (truth_(commit_QMARK_)) {
+        return fire_BANG_(input4, "change");
+      }
+      ;
+    }
+    ;
+  };
+  var commit_BANG_ = function(el) {
+    const temp__23062__auto__1 = q(el, "[data-ui-color-value]");
+    if (truth_(temp__23062__auto__1)) {
+      const input2 = temp__23062__auto__1;
+      return fire_BANG_(input2, "change");
+    }
+    ;
+  };
+  var closest = function(target, sel) {
+    if (truth_((() => {
+      const and__23442__auto__1 = target;
+      if (truth_(and__23442__auto__1)) {
+        return target.closest;
+      } else {
+        return and__23442__auto__1;
+      }
+      ;
+    })())) {
+      return target.closest(sel);
+    }
+    ;
+  };
+  var live_picker = function(node) {
+    const temp__23062__auto__1 = closest(node, "[data-ui-color-picker]");
+    if (truth_(temp__23062__auto__1)) {
+      const el2 = temp__23062__auto__1;
+      if (truth_(el2.hasAttribute("data-ui-color-disabled"))) {
+        return null;
+      } else {
+        sync_BANG_(el2);
+        return el2;
+      }
+      ;
+    }
+    ;
+  };
+  var drag = atom(null);
+  var plane_at_BANG_ = function(el, plane, e) {
+    const rect1 = plane.getBoundingClientRect();
+    const st2 = state(el);
+    st2["s"] = clamp((e.clientX - rect1.left) / rect1.width, 0, 1);
+    st2["v"] = 1 - clamp((e.clientY - rect1.top) / rect1.height, 0, 1);
+    return emit_BANG_(el, false);
+  };
+  var on_pointerdown = function(e) {
+    const temp__23062__auto__1 = closest(e.target, ".color-picker-plane");
+    if (truth_(temp__23062__auto__1)) {
+      const plane2 = temp__23062__auto__1;
+      const temp__23062__auto__3 = live_picker(plane2);
+      if (truth_(temp__23062__auto__3)) {
+        const el4 = temp__23062__auto__3;
+        e.preventDefault();
+        plane2.focus();
+        plane2.setPointerCapture(e.pointerId);
+        reset_BANG_(drag, [el4, plane2]);
+        return plane_at_BANG_(el4, plane2, e);
+      }
+      ;
+    }
+    ;
+  };
+  var on_pointermove = function(e) {
+    const temp__23062__auto__1 = deref(drag);
+    if (truth_(temp__23062__auto__1)) {
+      const d2 = temp__23062__auto__1;
+      return plane_at_BANG_(d2[0], d2[1], e);
+    }
+    ;
+  };
+  var on_pointerup = function(_) {
+    const temp__23062__auto__1 = deref(drag);
+    if (truth_(temp__23062__auto__1)) {
+      const d2 = temp__23062__auto__1;
+      reset_BANG_(drag, null);
+      return commit_BANG_(d2[0]);
+    }
+    ;
+  };
+  var on_input = function(e) {
+    const t1 = e.target;
+    const hue_QMARK_2 = (() => {
+      const and__23442__auto__3 = t1.hasAttribute;
+      if (truth_(and__23442__auto__3)) {
+        return t1.hasAttribute("data-ui-color-hue");
+      } else {
+        return and__23442__auto__3;
+      }
+      ;
+    })();
+    const alpha_QMARK_4 = (() => {
+      const and__23442__auto__5 = t1.hasAttribute;
+      if (truth_(and__23442__auto__5)) {
+        return t1.hasAttribute("data-ui-color-alpha");
+      } else {
+        return and__23442__auto__5;
+      }
+      ;
+    })();
+    if (truth_((() => {
+      const or__23426__auto__6 = hue_QMARK_2;
+      if (truth_(or__23426__auto__6)) {
+        return or__23426__auto__6;
+      } else {
+        return alpha_QMARK_4;
+      }
+      ;
+    })())) {
+      const temp__23062__auto__7 = live_picker(t1);
+      if (truth_(temp__23062__auto__7)) {
+        const el8 = temp__23062__auto__7;
+        state(el8)[truth_(hue_QMARK_2) ? "h" : "a"] = parseFloat(t1.value);
+        return emit_BANG_(el8, false);
+      }
+      ;
+    }
+    ;
+  };
+  var commit_text_BANG_ = function(el, t) {
+    if (truth_(parse_rgba(t.value))) {
+      adopt_BANG_(el, t.value.trim());
+      return emit_BANG_(el, true);
+    } else {
+      return t.value = state(el)["value"];
+    }
+    ;
+  };
+  var on_change = function(e) {
+    const t1 = e.target;
+    if (truth_(t1.hasAttribute)) {
+      if (truth_((() => {
+        const or__23426__auto__2 = t1.hasAttribute("data-ui-color-hue");
+        if (truth_(or__23426__auto__2)) {
+          return or__23426__auto__2;
+        } else {
+          return t1.hasAttribute("data-ui-color-alpha");
+        }
+        ;
+      })())) {
+        const temp__23062__auto__3 = live_picker(t1);
+        if (truth_(temp__23062__auto__3)) {
+          const el4 = temp__23062__auto__3;
+          return commit_BANG_(el4);
+        }
+        ;
+      } else {
+        if (truth_(t1.hasAttribute("data-ui-color-text"))) {
+          const temp__23062__auto__5 = live_picker(t1);
+          if (truth_(temp__23062__auto__5)) {
+            const el6 = temp__23062__auto__5;
+            return commit_text_BANG_(el6, t1);
+          }
+          ;
+        } else {
+          return null;
+        }
+      }
+      ;
+    }
+    ;
+  };
+  var on_click = function(e) {
+    const temp__23062__auto__1 = closest(e.target, "[data-ui-color-format]");
+    if (truth_(temp__23062__auto__1)) {
+      const b2 = temp__23062__auto__1;
+      const temp__23062__auto__3 = live_picker(b2);
+      if (truth_(temp__23062__auto__3)) {
+        const el4 = temp__23062__auto__3;
+        state(el4)["fmt"] = b2.getAttribute("data-ui-color-format");
+        return emit_BANG_(el4, true);
+      }
+      ;
+    }
+    ;
+  };
+  var arrow_deltas = { "ArrowLeft": ["s", -1], "ArrowRight": ["s", 1], "ArrowDown": ["v", -1], "ArrowUp": ["v", 1] };
+  var on_keydown = function(e) {
+    const temp__23062__auto__1 = arrow_deltas[e.key];
+    if (truth_(temp__23062__auto__1)) {
+      const delta2 = temp__23062__auto__1;
+      const temp__23062__auto__3 = closest(e.target, ".color-picker-plane");
+      if (truth_(temp__23062__auto__3)) {
+        const plane4 = temp__23062__auto__3;
+        const temp__23062__auto__5 = live_picker(plane4);
+        if (truth_(temp__23062__auto__5)) {
+          const el6 = temp__23062__auto__5;
+          e.preventDefault();
+          const st7 = state(el6);
+          const k8 = delta2[0];
+          const step9 = truth_(e.shiftKey) ? 0.1 : 0.01;
+          st7[k8] = clamp(st7[k8] + step9 * delta2[1], 0, 1);
+          return emit_BANG_(el6, true);
+        }
+        ;
+      }
+      ;
+    }
+    ;
+  };
+  var mk = function(tag, cls) {
+    const e1 = document.createElement(tag);
+    if (truth_(cls)) {
+      e1.className = cls;
+    }
+    ;
+    return e1;
+  };
+  var track_row = function(label, cls, data_attr, mx, step) {
+    const row1 = mk("label", "color-picker-track-row");
+    const span2 = mk("span", null);
+    const input3 = mk("input", `${"color-picker-track "}${cls ?? ""}`);
+    span2.textContent = label;
+    input3.type = "range";
+    input3.min = "0";
+    input3.max = `${mx ?? ""}`;
+    input3.step = `${step ?? ""}`;
+    input3.setAttribute(data_attr, "true");
+    row1.append(span2, input3);
+    return row1;
+  };
+  var all_formats = ["oklch", "hex", "rgb", "hsl"];
+  var format_labels = { "oklch": "OKLCH", "hex": "Hex", "rgb": "RGB", "hsl": "HSL" };
+  var create = function(opts) {
+    const opts1 = (() => {
+      const or__23426__auto__2 = opts;
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return {};
+      }
+      ;
+    })();
+    const fs3 = (() => {
+      const or__23426__auto__4 = opts1["formats"];
+      if (truth_(or__23426__auto__4)) {
+        return or__23426__auto__4;
+      } else {
+        return all_formats;
+      }
+      ;
+    })().filter((function(f) {
+      return format_labels[f];
+    }));
+    const fs5 = fs3.length > 0 ? fs3 : all_formats;
+    const el6 = mk("div", "color-picker");
+    const plane7 = mk("div", "color-picker-plane");
+    const tracks8 = mk("div", "color-picker-tracks");
+    const text9 = mk("input", "color-picker-text");
+    const value10 = mk("input", null);
+    el6.setAttribute("data-ui-color-picker", "true");
+    el6.setAttribute("data-value", (() => {
+      const or__23426__auto__11 = opts1["value"];
+      if (truth_(or__23426__auto__11)) {
+        return or__23426__auto__11;
+      } else {
+        return "";
+      }
+      ;
+    })());
+    el6.setAttribute("data-formats", fs5.join(" "));
+    if (truth_(opts1["alpha"])) {
+      el6.setAttribute("data-alpha", "true");
+    }
+    ;
+    if (fs5.length > 1) {
+      const group12 = mk("div", "color-picker-formats");
+      group12.setAttribute("role", "group");
+      group12.setAttribute("aria-label", "Color format");
+      fs5.forEach((function(f) {
+        const b13 = mk("button", "color-picker-format");
+        b13.type = "button";
+        b13.textContent = format_labels[f];
+        b13.setAttribute("data-ui-color-format", f);
+        return group12.append(b13);
+      }));
+      el6.append(group12);
+    }
+    ;
+    plane7.setAttribute("tabindex", "0");
+    plane7.setAttribute("role", "slider");
+    plane7.setAttribute("aria-label", "Saturation and brightness");
+    plane7.append(mk("span", "color-picker-marker"));
+    tracks8.append(track_row("Hue", "color-picker-hue", "data-ui-color-hue", 360, 1));
+    if (truth_(opts1["alpha"])) {
+      tracks8.append(track_row("Opacity", "color-picker-opacity", "data-ui-color-alpha", 1, 0.01));
+    }
+    ;
+    text9.type = "text";
+    text9.setAttribute("spellcheck", "false");
+    text9.setAttribute("autocomplete", "off");
+    text9.setAttribute("aria-label", "Color value");
+    text9.setAttribute("data-ui-color-text", "true");
+    value10.type = "hidden";
+    value10.setAttribute("data-ui-color-value", "true");
+    value10.value = (() => {
+      const or__23426__auto__14 = opts1["value"];
+      if (truth_(or__23426__auto__14)) {
+        return or__23426__auto__14;
+      } else {
+        return "";
+      }
+      ;
+    })();
+    el6.append(plane7, tracks8, text9, value10);
+    sync_BANG_(el6);
+    return el6;
+  };
+  var set_value_BANG_ = function(el, value) {
+    el.setAttribute("data-value", (() => {
+      const or__23426__auto__1 = value;
+      if (truth_(or__23426__auto__1)) {
+        return or__23426__auto__1;
+      } else {
+        return "";
+      }
+      ;
+    })());
+    const temp__23062__auto__2 = q(el, "[data-ui-color-value]");
+    if (truth_(temp__23062__auto__2)) {
+      const input3 = temp__23062__auto__2;
+      input3.value = (() => {
+        const or__23426__auto__4 = value;
+        if (truth_(or__23426__auto__4)) {
+          return or__23426__auto__4;
+        } else {
+          return "";
+        }
+        ;
+      })();
+    }
+    ;
+    return sync_BANG_(el);
+  };
+  var scan_BANG_ = function() {
+    return document.querySelectorAll("[data-ui-color-picker]").forEach((function(el) {
+      return sync_BANG_(el);
+    }));
+  };
+  var on_mutations = function(records) {
+    const added_QMARK_1 = atom(false);
+    records.forEach((function(r) {
+      if ("attributes" === r.type) {
+        if (truth_(r.target.hasAttribute("data-ui-color-picker"))) {
+          return sync_BANG_(r.target);
+        }
+      } else {
+        if (r.addedNodes.length > 0) {
+          return reset_BANG_(added_QMARK_1, true);
+        }
+      }
+      ;
+    }));
+    if (truth_(deref(added_QMARK_1))) {
+      return scan_BANG_();
+    }
+    ;
+  };
+  var init_BANG_ = function() {
+    for (let G__1 of iterable([["pointerdown", on_pointerdown], ["pointermove", on_pointermove], ["pointerup", on_pointerup], ["pointercancel", on_pointerup], ["input", on_input], ["change", on_change], ["click", on_click], ["keydown", on_keydown]])) {
+      const vec__25 = G__1;
+      const type6 = nth(vec__25, 0, null);
+      const f7 = nth(vec__25, 1, null);
+      document.addEventListener(type6, f7, true);
+    }
+    ;
+    scan_BANG_();
+    return new MutationObserver(on_mutations).observe(document.documentElement, { "childList": true, "subtree": true, "attributes": true, "attributeFilter": ["data-value"] });
+  };
+  window["__uiColorPicker"] = { "create": create, "setValue": set_value_BANG_ };
+  if ("loading" === document.readyState) {
+    document.addEventListener("DOMContentLoaded", init_BANG_);
+  } else {
+    init_BANG_();
+  }
+
   // .compiled/command.mjs
   var items = function(dialog) {
     return Array.from(dialog.querySelectorAll(".command-item"));
@@ -881,20 +1601,20 @@
       ;
     })().toLowerCase();
   };
-  var match_score = function(el, q) {
+  var match_score = function(el, q2) {
     const label1 = item_label(el);
-    if (_EQ_(label1, q)) {
+    if (_EQ_(label1, q2)) {
       return 0;
     } else {
-      if (truth_(label1.startsWith(q))) {
+      if (truth_(label1.startsWith(q2))) {
         return 1;
       } else {
         if (truth_(label1.split(/[^a-z0-9]+/).some((function(w) {
-          return w.startsWith(q);
+          return w.startsWith(q2);
         })))) {
           return 2;
         } else {
-          if (truth_(label1.includes(q))) {
+          if (truth_(label1.includes(q2))) {
             return 3;
           } else {
             if ("else") {
@@ -912,24 +1632,24 @@
     return dialog.querySelector(".command-item--active");
   };
   var set_active_BANG_ = (() => {
-    const f1 = (function(...args2) {
-      const G__31 = args2.length;
-      switch (G__31) {
+    const f2 = (function(...args3) {
+      const G__41 = args3.length;
+      switch (G__41) {
         case 2:
-          return f1.cljs$core$IFn$_invoke$arity$2(args2[0], args2[1]);
+          return f2.cljs$core$IFn$_invoke$arity$2(args3[0], args3[1]);
           break;
         case 3:
-          return f1.cljs$core$IFn$_invoke$arity$3(args2[0], args2[1], args2[2]);
+          return f2.cljs$core$IFn$_invoke$arity$3(args3[0], args3[1], args3[2]);
           break;
         default:
-          throw new Error(`${"Invalid arity: "}${args2.length ?? ""}`);
+          throw new Error(`${"Invalid arity: "}${args3.length ?? ""}`);
       }
       ;
     });
-    f1.cljs$core$IFn$_invoke$arity$2 = (function(dialog, el) {
+    f2.cljs$core$IFn$_invoke$arity$2 = (function(dialog, el) {
       return set_active_BANG_(dialog, el, true);
     });
-    f1.cljs$core$IFn$_invoke$arity$3 = (function(dialog, el, scroll_QMARK_) {
+    f2.cljs$core$IFn$_invoke$arity$3 = (function(dialog, el, scroll_QMARK_) {
       const prev3 = active_item(dialog);
       if (truth_(prev3)) {
         prev3.classList.remove("command-item--active");
@@ -952,8 +1672,8 @@
       }
       ;
     });
-    f1.cljs$lang$maxFixedArity = 3;
-    return f1;
+    f2.cljs$lang$maxFixedArity = 3;
+    return f2;
   })();
   var move_active_BANG_ = function(dialog, dir) {
     const vis1 = visible_items(dialog);
@@ -1170,7 +1890,7 @@
         const input6 = dialog.querySelector(".command-input");
         return filter_BANG_(dialog, truth_(input6) ? input6.value : "");
       }));
-      obs4.observe(list3, { "childList": true, "subtree": true });
+      obs4.observe(list3, { "childList": true, "subtree": true, "characterData": true, "attributes": true, "attributeFilter": ["data-command-value", "data-command-search-only"] });
       return dialog["__cmdListObs"] = obs4;
     }
     ;
@@ -1334,7 +2054,7 @@
   var open_dialog = function() {
     return document.querySelector(".command-dialog[open]");
   };
-  var on_input = function(e) {
+  var on_input2 = function(e) {
     const t1 = e.target;
     if (truth_((() => {
       const and__23442__auto__2 = t1.classList;
@@ -1353,7 +2073,7 @@
     }
     ;
   };
-  var on_keydown = function(e) {
+  var on_keydown2 = function(e) {
     const dialog1 = open_dialog();
     if (truth_(dialog1)) {
       const key2 = e.key;
@@ -1510,7 +2230,7 @@
     }
     ;
   };
-  var on_click = function(e) {
+  var on_click2 = function(e) {
     const t1 = e.target;
     const dialog2 = truth_(t1.closest) ? t1.closest(".command-dialog") : null;
     if (truth_(dialog2)) {
@@ -1530,7 +2250,7 @@
     }
     ;
   };
-  var on_pointermove = function(e) {
+  var on_pointermove2 = function(e) {
     if (!(e.pointerType === "touch")) {
       const t1 = e.target;
       if (truth_(t1.closest)) {
@@ -1594,14 +2314,14 @@
     }
     ;
   };
-  var init_BANG_ = function() {
-    document.addEventListener("input", on_input, true);
-    document.addEventListener("keydown", on_keydown, true);
+  var init_BANG_2 = function() {
+    document.addEventListener("input", on_input2, true);
+    document.addEventListener("keydown", on_keydown2, true);
     document.addEventListener("keyup", on_keyup, true);
     window.addEventListener("blur", on_blur);
     document.addEventListener("keydown", on_global_key);
-    document.addEventListener("click", on_click);
-    document.addEventListener("pointermove", on_pointermove, true);
+    document.addEventListener("click", on_click2);
+    document.addEventListener("pointermove", on_pointermove2, true);
     document.addEventListener("close", on_dialog_close, true);
     const temp__23062__auto__1 = viewport();
     if (truth_(temp__23062__auto__1)) {
@@ -1611,7 +2331,7 @@
     }
     ;
   };
-  init_BANG_();
+  init_BANG_2();
   window["__uiCommand"] = { "open": open, "close": close, "toggle": toggle };
 
   // .compiled/context_menu.mjs
@@ -1829,25 +2549,25 @@
     ;
   };
   var open_context_menu = (() => {
-    const f4 = (function(var_args) {
-      const args51 = [];
+    const f5 = (function(var_args) {
+      const args61 = [];
       const len__23321__auto__2 = arguments.length;
-      let i63 = 0;
+      let i73 = 0;
       while (true) {
-        if (i63 < len__23321__auto__2) {
-          args51.push(arguments[i63]);
-          let G__4 = i63 + 1;
-          i63 = G__4;
+        if (i73 < len__23321__auto__2) {
+          args61.push(arguments[i73]);
+          let G__4 = i73 + 1;
+          i73 = G__4;
           continue;
         }
         ;
         break;
       }
       ;
-      const argseq__23513__auto__5 = 1 < args51.length ? args51.slice(1) : null;
-      return f4.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
+      const argseq__23513__auto__5 = 1 < args61.length ? args61.slice(1) : null;
+      return f5.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
     });
-    f4.cljs$core$IFn$_invoke$arity$variadic = (function(event, args) {
+    f5.cljs$core$IFn$_invoke$arity$variadic = (function(event, args) {
       dismiss_BANG_();
       const items6 = (() => {
         const passed7 = first(args);
@@ -1914,8 +2634,8 @@
       window.addEventListener("resize", on_resize16);
       return state11.cleanup = cleanup17;
     });
-    f4.cljs$lang$maxFixedArity = 1;
-    return f4;
+    f5.cljs$lang$maxFixedArity = 1;
+    return f5;
   })();
   window["__uiContextMenu"] = open_context_menu;
 
@@ -1942,7 +2662,7 @@
   var tof = function(v) {
     return typeof v;
   };
-  var mk = function(tag, class$) {
+  var mk2 = function(tag, class$) {
     const e1 = document.createElement(tag);
     if (truth_(class$)) {
       e1.className = class$;
@@ -1951,25 +2671,25 @@
     return e1;
   };
   var add_BANG_ = (() => {
-    const f8 = (function(var_args) {
-      const args91 = [];
+    const f9 = (function(var_args) {
+      const args101 = [];
       const len__23321__auto__2 = arguments.length;
-      let i103 = 0;
+      let i113 = 0;
       while (true) {
-        if (i103 < len__23321__auto__2) {
-          args91.push(arguments[i103]);
-          let G__4 = i103 + 1;
-          i103 = G__4;
+        if (i113 < len__23321__auto__2) {
+          args101.push(arguments[i113]);
+          let G__4 = i113 + 1;
+          i113 = G__4;
           continue;
         }
         ;
         break;
       }
       ;
-      const argseq__23513__auto__5 = 1 < args91.length ? args91.slice(1) : null;
-      return f8.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
+      const argseq__23513__auto__5 = 1 < args101.length ? args101.slice(1) : null;
+      return f9.cljs$core$IFn$_invoke$arity$variadic(arguments[0], argseq__23513__auto__5);
     });
-    f8.cljs$core$IFn$_invoke$arity$variadic = (function(parent, children) {
+    f9.cljs$core$IFn$_invoke$arity$variadic = (function(parent, children) {
       for (let G__6 of iterable(children)) {
         const c7 = G__6;
         if (truth_(c7)) {
@@ -1979,8 +2699,8 @@
       ;
       return parent;
     });
-    f8.cljs$lang$maxFixedArity = 1;
-    return f8;
+    f9.cljs$lang$maxFixedArity = 1;
+    return f9;
   })();
   var txt_BANG_ = function(e, s) {
     e.textContent = `${s ?? ""}`;
@@ -1994,13 +2714,13 @@
     e.setAttribute(k, v);
     return e;
   };
-  var clamp = function(v, lo, hi) {
+  var clamp2 = function(v, lo, hi) {
     return Math.max(lo, Math.min(v, hi));
   };
   var path_str = function(path) {
     return path.join(".");
   };
-  var fmt_num = function(n) {
+  var fmt_num2 = function(n) {
     if (not(isFinite(n))) {
       return "0";
     } else {
@@ -2071,103 +2791,6 @@
   var color_re = new RegExp("^\\s*(#([0-9a-fA-F]{3,8})|(rgb|rgba|hsl|hsla|oklch|oklab|color)\\()");
   var color_str_QMARK_ = function(s) {
     return tof(s) === "string" && color_re.test(s);
-  };
-  var hsv__GT_rgb = function(h, s, v) {
-    const c1 = v * s;
-    const h_SINGLEQUOTE_2 = mod(h, 360) / 60;
-    const x3 = c1 * (1 - Math.abs(mod(h_SINGLEQUOTE_2, 2) - 1));
-    const m4 = v - c1;
-    const rgb5 = h_SINGLEQUOTE_2 < 1 ? [c1, x3, 0] : h_SINGLEQUOTE_2 < 2 ? [x3, c1, 0] : h_SINGLEQUOTE_2 < 3 ? [0, c1, x3] : h_SINGLEQUOTE_2 < 4 ? [0, x3, c1] : h_SINGLEQUOTE_2 < 5 ? [x3, 0, c1] : "else" ? [c1, 0, x3] : null;
-    return [Math.round(255 * (rgb5[0] + m4)), Math.round(255 * (rgb5[1] + m4)), Math.round(255 * (rgb5[2] + m4))];
-  };
-  var rgb__GT_hsv = function(r, g, b) {
-    const r1 = r / 255;
-    const g2 = g / 255;
-    const b3 = b / 255;
-    const mx4 = Math.max(r1, g2, b3);
-    const mn5 = Math.min(r1, g2, b3);
-    const d6 = mx4 - mn5;
-    const h7 = d6 === 0 ? 0 : _EQ_(mx4, r1) ? 60 * mod((g2 - b3) / d6, 6) : _EQ_(mx4, g2) ? 60 * ((b3 - r1) / d6 + 2) : "else" ? 60 * ((r1 - g2) / d6 + 4) : null;
-    const h8 = h7 < 0 ? h7 + 360 : h7;
-    const s9 = mx4 === 0 ? 0 : d6 / mx4;
-    return [h8, s9, mx4];
-  };
-  var rgb__GT_hsl = function(r, g, b) {
-    const r1 = r / 255;
-    const g2 = g / 255;
-    const b3 = b / 255;
-    const mx4 = Math.max(r1, g2, b3);
-    const mn5 = Math.min(r1, g2, b3);
-    const d6 = mx4 - mn5;
-    const l7 = (mx4 + mn5) / 2;
-    const h8 = d6 === 0 ? 0 : _EQ_(mx4, r1) ? 60 * mod((g2 - b3) / d6, 6) : _EQ_(mx4, g2) ? 60 * ((b3 - r1) / d6 + 2) : "else" ? 60 * ((r1 - g2) / d6 + 4) : null;
-    const h9 = h8 < 0 ? h8 + 360 : h8;
-    const s10 = d6 === 0 ? 0 : d6 / (1 - Math.abs(2 * l7 - 1));
-    return [h9, s10, l7];
-  };
-  var color_probe = null;
-  var parse_rgba = function(s) {
-    const el1 = (() => {
-      const or__23426__auto__2 = color_probe;
-      if (truth_(or__23426__auto__2)) {
-        return or__23426__auto__2;
-      } else {
-        const e3 = mk("div", null);
-        e3.style.display = "none";
-        document.body.appendChild(e3);
-        color_probe = e3;
-        return e3;
-      }
-      ;
-    })();
-    el1.style.color = "";
-    el1.style.color = `${s ?? ""}`;
-    if (!_EQ_("", el1.style.color)) {
-      const cs4 = getComputedStyle(el1).color;
-      const m5 = cs4.match(new RegExp("rgba?\\(([^)]+)\\)"));
-      if (truth_(m5)) {
-        const parts6 = m5[1].split(new RegExp("[ ,/]+"));
-        const a7 = parts6.length > 3 ? parseFloat(parts6[3]) : 1;
-        return [parseFloat(parts6[0]), parseFloat(parts6[1]), parseFloat(parts6[2]), truth_(isFinite(a7)) ? a7 : 1];
-      }
-      ;
-    }
-    ;
-  };
-  var to_hex2 = function(n) {
-    return clamp(Math.round(n), 0, 255).toString(16).padStart(2, "0");
-  };
-  var compose_color = function(h, s, v, a, fmt) {
-    const rgb1 = hsv__GT_rgb(h, s, v);
-    const r2 = rgb1[0];
-    const g3 = rgb1[1];
-    const b4 = rgb1[2];
-    const G__125 = fmt;
-    switch (G__125) {
-      case "rgb":
-        if (a < 0.999) {
-          return `${"rgba("}${r2 ?? ""}${", "}${g3 ?? ""}${", "}${b4 ?? ""}${", "}${fmt_num(a) ?? ""}${")"}`;
-        } else {
-          return `${"rgb("}${r2 ?? ""}${", "}${g3 ?? ""}${", "}${b4 ?? ""}${")"}`;
-        }
-        ;
-        break;
-      case "hsl":
-        const hsl7 = rgb__GT_hsl(r2, g3, b4);
-        const hh8 = Math.round(hsl7[0]);
-        const ss9 = Math.round(hsl7[1] * 100);
-        const ll10 = Math.round(hsl7[2] * 100);
-        if (a < 0.999) {
-          return `${"hsla("}${hh8 ?? ""}${", "}${ss9 ?? ""}${"%, "}${ll10 ?? ""}${"%, "}${fmt_num(a) ?? ""}${")"}`;
-        } else {
-          return `${"hsl("}${hh8 ?? ""}${", "}${ss9 ?? ""}${"%, "}${ll10 ?? ""}${"%)"}`;
-        }
-        ;
-        break;
-      default:
-        return `${"#"}${to_hex2(r2) ?? ""}${to_hex2(g3) ?? ""}${to_hex2(b4) ?? ""}${(a < 0.999 ? to_hex2(a * 255) : "") ?? ""}`;
-    }
-    ;
   };
   var humanize = function(k) {
     const s1 = `${k ?? ""}`.replace(new RegExp("([a-z0-9])([A-Z])", "g"), "$1 $2").replace(new RegExp("[_\\-]", "g"), " ").trim();
@@ -2484,7 +3107,7 @@
     }
     return null;
   };
-  var commit_BANG_ = function(panel, path, v) {
+  var commit_BANG_2 = function(panel, path, v) {
     swap_BANG_(get(panel, "store"), assoc_in, path, v);
     notify_BANG_(panel);
     return persist_save_BANG_(panel);
@@ -2498,7 +3121,7 @@
     }
     return null;
   };
-  var set_value_BANG_ = function(panel, path, v) {
+  var set_value_BANG_2 = function(panel, path, v) {
     swap_BANG_(get(panel, "store"), assoc_in, path, v);
     const temp__23062__auto__1 = get(panel, "updaters")[path_str(path)];
     if (truth_(temp__23062__auto__1)) {
@@ -2513,9 +3136,9 @@
     return get(panel, "updaters")[path_str(path)] = f;
   };
   var row = function(label) {
-    const r1 = mk("div", "dial-row");
+    const r1 = mk2("div", "dial-row");
     if (truth_(label)) {
-      add_BANG_(r1, txt_BANG_(mk("label", "dial-label"), label));
+      add_BANG_(r1, txt_BANG_(mk2("label", "dial-label"), label));
     }
     ;
     return r1;
@@ -2527,25 +3150,25 @@
     const min5 = get(map__12, "min");
     const max6 = get(map__12, "max");
     const step7 = get(map__12, "step");
-    const r8 = mk("div", "dial-row dial-row--slider");
-    const field9 = mk("div", "dial-slider");
-    const fill10 = mk("div", "dial-slider-fill");
-    const lab11 = mk("span", "dial-slider-label");
-    const num12 = mk("input", "dial-num");
+    const r8 = mk2("div", "dial-row dial-row--slider");
+    const field9 = mk2("div", "dial-slider");
+    const fill10 = mk2("div", "dial-slider-fill");
+    const lab11 = mk2("span", "dial-slider-label");
+    const num12 = mk2("input", "dial-num");
     const cur13 = (function() {
       return get_in(deref(get(panel, "store")), path3);
     });
     const paint14 = (function(v) {
-      const pct15 = 100 * clamp((v - min5) / (max6 - min5), 0, 1);
+      const pct15 = 100 * clamp2((v - min5) / (max6 - min5), 0, 1);
       fill10.style.width = `${pct15 ?? ""}${"%"}`;
-      return num12.value = fmt_num(v);
+      return num12.value = fmt_num2(v);
     });
     const set_at16 = (function(clientx) {
       const rect17 = field9.getBoundingClientRect();
-      const t18 = clamp((clientx - rect17.left) / rect17.width, 0, 1);
+      const t18 = clamp2((clientx - rect17.left) / rect17.width, 0, 1);
       const raw19 = min5 + t18 * (max6 - min5);
-      const v20 = clamp(round_step(raw19, step7), min5, max6);
-      commit_BANG_(panel, path3, v20);
+      const v20 = clamp2(round_step(raw19, step7), min5, max6);
+      commit_BANG_2(panel, path3, v20);
       return paint14(v20);
     });
     txt_BANG_(lab11, label4);
@@ -2592,8 +3215,8 @@
     on_BANG_(num12, "change", (function(_) {
       const v22 = parseFloat(num12.value);
       if (truth_(isFinite(v22))) {
-        const v223 = clamp(round_step(v22, step7), min5, max6);
-        commit_BANG_(panel, path3, v223);
+        const v223 = clamp2(round_step(v22, step7), min5, max6);
+        commit_BANG_2(panel, path3, v223);
         return paint14(v223);
       } else {
         return paint14(cur13());
@@ -2648,8 +3271,8 @@
             ;
           })())) {
             e.preventDefault();
-            const v32 = clamp(cur13() + d28, min5, max6);
-            commit_BANG_(panel, path3, v32);
+            const v32 = clamp2(cur13() + d28, min5, max6);
+            commit_BANG_2(panel, path3, v32);
             return paint14(v32);
           } else {
             if (truth_((() => {
@@ -2668,18 +3291,18 @@
               ;
             })())) {
               e.preventDefault();
-              const v35 = clamp(cur13() - d28, min5, max6);
-              commit_BANG_(panel, path3, v35);
+              const v35 = clamp2(cur13() - d28, min5, max6);
+              commit_BANG_2(panel, path3, v35);
               return paint14(v35);
             } else {
               if (k24 === "Home") {
                 e.preventDefault();
-                commit_BANG_(panel, path3, min5);
+                commit_BANG_2(panel, path3, min5);
                 return paint14(min5);
               } else {
                 if (k24 === "End") {
                   e.preventDefault();
-                  commit_BANG_(panel, path3, max6);
+                  commit_BANG_2(panel, path3, max6);
                   return paint14(max6);
                 } else {
                   return null;
@@ -2701,10 +3324,10 @@
     const path3 = get(map__12, "path");
     const label4 = get(map__12, "label");
     const r5 = row(label4);
-    const wrap6 = mk("label", "switch dial-switch");
-    const input7 = mk("input", "switch-input");
-    const track8 = mk("span", "switch-track");
-    const thumb9 = mk("span", "switch-thumb");
+    const wrap6 = mk2("label", "switch dial-switch");
+    const input7 = mk2("input", "switch-input");
+    const track8 = mk2("span", "switch-track");
+    const thumb9 = mk2("span", "switch-thumb");
     const paint10 = (function(v) {
       input7.checked = boolean$(v);
       if (truth_(v)) {
@@ -2719,7 +3342,7 @@
     add_BANG_(wrap6, input7, track8);
     on_BANG_(input7, "change", (function(_) {
       const v11 = input7.checked;
-      commit_BANG_(panel, path3, v11);
+      commit_BANG_2(panel, path3, v11);
       return paint10(v11);
     }));
     add_BANG_(r5, wrap6);
@@ -2733,7 +3356,7 @@
     const label4 = get(map__12, "label");
     const placeholder5 = get(map__12, "placeholder");
     const r6 = row(label4);
-    const ta7 = mk("textarea", "dial-text");
+    const ta7 = mk2("textarea", "dial-text");
     attr_BANG_(ta7, "rows", "1");
     if (truth_(seq(placeholder5))) {
       attr_BANG_(ta7, "placeholder", placeholder5);
@@ -2742,7 +3365,7 @@
     on_BANG_(ta7, "input", (function(_) {
       ta7.style.height = "auto";
       ta7.style.height = `${Math.min(120, ta7.scrollHeight) ?? ""}px`;
-      return commit_BANG_(panel, path3, ta7.value);
+      return commit_BANG_2(panel, path3, ta7.value);
     }));
     add_BANG_(r6, ta7);
     ta7.value = (() => {
@@ -2773,9 +3396,9 @@
     const label4 = get(map__12, "label");
     const options5 = get(map__12, "options");
     const r6 = row(label4);
-    const wrap7 = mk("div", "select dial-select");
-    const trigger8 = mk("button", "select-trigger");
-    const valspan9 = mk("span", "select-value");
+    const wrap7 = mk2("div", "select dial-select");
+    const trigger8 = mk2("button", "select-trigger");
+    const valspan9 = mk2("span", "select-value");
     const opt_for10 = (function(v) {
       return options5.find((function(o) {
         return _EQ_(o["value"], v);
@@ -2822,7 +3445,7 @@
         return f17(trigger8, options5, (function(v) {
           attr_BANG_(trigger8, "data-select-value", v);
           set_lbl11(v);
-          return commit_BANG_(panel, path3, v);
+          return commit_BANG_2(panel, path3, v);
         }));
       }
       ;
@@ -2845,193 +3468,20 @@
     const map__12 = c;
     const path3 = get(map__12, "path");
     const label4 = get(map__12, "label");
-    const r5 = mk("div", "dial-row dial-row--color");
-    const wrap6 = mk("div", "dial-color");
-    const formats7 = mk("div", "dial-color-formats");
-    const plane8 = mk("div", "dial-color-plane");
-    const marker9 = mk("span", "dial-color-marker");
-    const tracks10 = mk("div", "dial-color-tracks");
-    const huerow11 = mk("label", "dial-color-track-row");
-    const hue12 = mk("input", "dial-color-track dial-color-hue");
-    const oprow13 = mk("label", "dial-color-track-row");
-    const op14 = mk("input", "dial-color-track dial-color-opacity");
-    const txtf15 = mk("input", "dial-color-input");
-    const st16 = { "h": 265, "s": 0.6, "v": 0.9, "a": 1, "fmt": "hex" };
-    const fmt_btns17 = {};
-    const cur18 = (function() {
-      return get_in(deref(get(panel, "store")), path3);
-    });
-    const emit19 = (function() {
-      return compose_color(st16["h"], st16["s"], st16["v"], st16["a"], st16["fmt"]);
-    });
-    const detect_fmt20 = (function(s) {
-      const s21 = `${s ?? ""}`.trim().toLowerCase();
-      if (truth_(s21.startsWith("hsl"))) {
-        return "hsl";
-      } else {
-        if (truth_(s21.startsWith("rgb"))) {
-          return "rgb";
-        } else {
-          if (truth_(s21.startsWith("#"))) {
-            return "hex";
-          } else {
-            if ("else") {
-              return st16["fmt"];
-            } else {
-              return null;
-            }
-          }
-        }
-      }
-      ;
-    });
-    const adopt22 = (function(s) {
-      const rgba23 = parse_rgba(s);
-      if (truth_(rgba23)) {
-        const hsv24 = rgb__GT_hsv(rgba23[0], rgba23[1], rgba23[2]);
-        if (hsv24[1] > 1e-4) {
-          st16["h"] = hsv24[0];
-        }
-        ;
-        st16["s"] = hsv24[1];
-        st16["v"] = hsv24[2];
-        return st16["a"] = rgba23[3];
-      }
-      ;
-    });
-    const paint_ui25 = (function() {
-      const h26 = st16["h"];
-      const s27 = st16["s"];
-      const v28 = st16["v"];
-      const a29 = st16["a"];
-      const rgb30 = hsv__GT_rgb(h26, s27, v28);
-      const hue_col31 = `${"hsl("}${Math.round(h26) ?? ""}${", 100%, 50%)"}`;
-      const solid32 = `${"rgb("}${rgb30[0] ?? ""}${", "}${rgb30[1] ?? ""}${", "}${rgb30[2] ?? ""}${")"}`;
-      plane8.style.background = `${"linear-gradient(to top, #000, rgba(0,0,0,0)),"}${"linear-gradient(to right, #fff, "}${hue_col31}${")"}`;
-      marker9.style.left = `${100 * s27}${"%"}`;
-      marker9.style.top = `${100 * (1 - v28)}${"%"}`;
-      marker9.style.background = solid32;
-      hue12.value = `${h26 ?? ""}`;
-      op14.value = `${a29 ?? ""}`;
-      op14.style.setProperty("--dial-color-solid", solid32);
-      for (let G__33 of iterable(["hex", "rgb", "hsl"])) {
-        const f34 = G__33;
-        const b35 = fmt_btns17[f34];
-        if (truth_(b35)) {
-          attr_BANG_(b35, "data-active", _EQ_(f34, st16["fmt"]) ? "true" : "false");
-        }
-      }
-      return null;
-    });
-    const set_fmt36 = (function(f) {
-      st16["fmt"] = f;
-      const v37 = emit19();
-      commit_BANG_(panel, path3, v37);
-      txtf15.value = v37;
-      return paint_ui25();
-    });
-    const push38 = (function() {
-      const v39 = emit19();
-      commit_BANG_(panel, path3, v39);
-      txtf15.value = v39;
-      return paint_ui25();
-    });
-    const plane_at40 = (function(e) {
-      const rect41 = plane8.getBoundingClientRect();
-      const sx42 = clamp((e.clientX - rect41.left) / rect41.width, 0, 1);
-      const sy43 = clamp((e.clientY - rect41.top) / rect41.height, 0, 1);
-      st16["s"] = sx42;
-      st16["v"] = 1 - sy43;
-      return push38();
-    });
-    const paint44 = (function(v) {
-      const v45 = (() => {
-        const or__23426__auto__46 = v;
-        if (truth_(or__23426__auto__46)) {
-          return or__23426__auto__46;
-        } else {
-          return "#000000";
-        }
-        ;
-      })();
-      adopt22(v45);
-      st16["fmt"] = detect_fmt20(v45);
-      txtf15.value = v45;
-      return paint_ui25();
-    });
-    for (let G__47 of iterable([["hex", "Hex"], ["rgb", "RGB"], ["hsl", "HSL"]])) {
-      const pair48 = G__47;
-      const f49 = pair48[0];
-      const b50 = mk("button", "dial-color-format");
-      b50.type = "button";
-      txt_BANG_(b50, pair48[1]);
-      fmt_btns17[f49] = b50;
-      on_BANG_(b50, "click", (function(_) {
-        return set_fmt36(f49);
-      }));
-      add_BANG_(formats7, b50);
-    }
-    ;
-    attr_BANG_(plane8, "tabindex", "0");
-    add_BANG_(plane8, marker9);
-    const dragging51 = { "on": false };
-    on_BANG_(plane8, "pointerdown", (function(e) {
-      e.preventDefault();
-      plane8.setPointerCapture(e.pointerId);
-      dragging51["on"] = true;
-      return plane_at40(e);
+    const r5 = mk2("div", "dial-row dial-row--color");
+    const picker6 = create({ "value": get_in(deref(get(panel, "store")), path3), "alpha": true });
+    const value7 = picker6.querySelector("[data-ui-color-value]");
+    on_BANG_(value7, "input", (function(_) {
+      return commit_BANG_2(panel, path3, value7.value);
     }));
-    on_BANG_(plane8, "pointermove", (function(e) {
-      if (truth_(dragging51["on"])) {
-        return plane_at40(e);
-      }
-      ;
-    }));
-    on_BANG_(plane8, "pointerup", (function(_) {
-      return dragging51["on"] = false;
-    }));
-    on_BANG_(plane8, "pointercancel", (function(_) {
-      return dragging51["on"] = false;
-    }));
-    hue12.type = "range";
-    hue12.min = "0";
-    hue12.max = "360";
-    hue12.step = "1";
-    op14.type = "range";
-    op14.min = "0";
-    op14.max = "1";
-    op14.step = "0.01";
-    add_BANG_(huerow11, txt_BANG_(mk("span", null), "Hue"), hue12);
-    add_BANG_(oprow13, txt_BANG_(mk("span", null), "Opacity"), op14);
-    on_BANG_(hue12, "input", (function(_) {
-      st16["h"] = parseFloat(hue12.value);
-      return push38();
-    }));
-    on_BANG_(op14, "input", (function(_) {
-      st16["a"] = parseFloat(op14.value);
-      return push38();
-    }));
-    txtf15.type = "text";
-    attr_BANG_(txtf15, "spellcheck", "false");
-    on_BANG_(txtf15, "change", (function(_) {
-      const v52 = txtf15.value;
-      if (truth_(color_str_QMARK_(v52))) {
-        adopt22(v52);
-        st16["fmt"] = detect_fmt20(v52);
-      }
-      ;
-      commit_BANG_(panel, path3, v52);
-      return paint_ui25();
-    }));
-    add_BANG_(tracks10, huerow11, oprow13);
-    add_BANG_(wrap6, formats7, plane8, tracks10, txtf15);
     if (truth_(label4)) {
-      add_BANG_(r5, txt_BANG_(mk("label", "dial-label"), label4));
+      add_BANG_(r5, txt_BANG_(mk2("label", "dial-label"), label4));
     }
     ;
-    add_BANG_(r5, wrap6);
-    paint44(cur18());
-    reg_updater_BANG_(panel, path3, paint44);
+    add_BANG_(r5, picker6);
+    reg_updater_BANG_(panel, path3, (function(v) {
+      return set_value_BANG_(picker6, v);
+    }));
     return r5;
   };
   var render_image = function(panel, c) {
@@ -3040,10 +3490,10 @@
     const label4 = get(map__12, "label");
     const options5 = get(map__12, "options");
     const r6 = row(label4);
-    const wrap7 = mk("div", "dial-image");
-    const grid8 = mk("div", "dial-image-grid");
-    const drop9 = mk("label", "dial-image-drop");
-    const file10 = mk("input", null);
+    const wrap7 = mk2("div", "dial-image");
+    const grid8 = mk2("div", "dial-image-grid");
+    const drop9 = mk2("label", "dial-image-drop");
+    const file10 = mk2("input", null);
     const cur11 = (function() {
       return get_in(deref(get(panel, "store")), path3);
     });
@@ -3063,7 +3513,7 @@
         const rd16 = new FileReader();
         rd16.onload = (function(_) {
           const v17 = rd16.result;
-          commit_BANG_(panel, path3, v17);
+          commit_BANG_2(panel, path3, v17);
           return mark12(v17);
         });
         return rd16.readAsDataURL(f);
@@ -3076,14 +3526,14 @@
     if (truth_(seq(options5))) {
       for (let G__18 of iterable(options5)) {
         const o19 = G__18;
-        const b20 = mk("button", "dial-image-opt");
+        const b20 = mk2("button", "dial-image-opt");
         attr_BANG_(b20, "type", "button");
         attr_BANG_(b20, "data-value", o19["value"]);
         attr_BANG_(b20, "title", o19["label"]);
         b20.style.backgroundImage = `${"url("}${JSON.stringify(o19["value"]) ?? ""}${")"}`;
         on_BANG_(b20, "click", (function(_) {
           const v21 = o19["value"];
-          commit_BANG_(panel, path3, v21);
+          commit_BANG_2(panel, path3, v21);
           return mark12(v21);
         }));
         add_BANG_(grid8, b20);
@@ -3123,30 +3573,30 @@
     const x_label6 = get(map__12, "x-label");
     const y_label7 = get(map__12, "y-label");
     const r8 = row(get(c, "label"));
-    const area9 = mk("div", "dial-pad");
-    const dot10 = mk("div", "dial-pad-dot");
-    const meta11 = mk("div", "dial-pad-meta");
+    const area9 = mk2("div", "dial-pad");
+    const dot10 = mk2("div", "dial-pad-dot");
+    const meta11 = mk2("div", "dial-pad-meta");
     const cur12 = (function() {
       return get_in(deref(get(panel, "store")), path3);
     });
     const to_pct13 = (function(v, ax) {
-      return clamp((v - ax["min"]) / (ax["max"] - ax["min"]), 0, 1);
+      return clamp2((v - ax["min"]) / (ax["max"] - ax["min"]), 0, 1);
     });
     const paint14 = (function(val) {
       const px15 = 100 * to_pct13(val["x"], x4);
       const py16 = 100 * (1 - to_pct13(val["y"], y5));
       dot10.style.left = `${px15 ?? ""}${"%"}`;
       dot10.style.top = `${py16 ?? ""}${"%"}`;
-      return txt_BANG_(meta11, `${x_label6 ?? ""}${" "}${fmt_num(val["x"]) ?? ""}${"   "}${y_label7 ?? ""}${" "}${fmt_num(val["y"]) ?? ""}`);
+      return txt_BANG_(meta11, `${x_label6 ?? ""}${" "}${fmt_num2(val["x"]) ?? ""}${"   "}${y_label7 ?? ""}${" "}${fmt_num2(val["y"]) ?? ""}`);
     });
     const set_at17 = (function(cx, cy) {
       const rect18 = area9.getBoundingClientRect();
-      const tx19 = clamp((cx - rect18.left) / rect18.width, 0, 1);
-      const ty20 = clamp((cy - rect18.top) / rect18.height, 0, 1);
-      const vx21 = clamp(round_step(x4["min"] + tx19 * (x4["max"] - x4["min"]), x4["step"]), x4["min"], x4["max"]);
-      const vy22 = clamp(round_step(y5["min"] + (1 - ty20) * (y5["max"] - y5["min"]), y5["step"]), y5["min"], y5["max"]);
+      const tx19 = clamp2((cx - rect18.left) / rect18.width, 0, 1);
+      const ty20 = clamp2((cy - rect18.top) / rect18.height, 0, 1);
+      const vx21 = clamp2(round_step(x4["min"] + tx19 * (x4["max"] - x4["min"]), x4["step"]), x4["min"], x4["max"]);
+      const vy22 = clamp2(round_step(y5["min"] + (1 - ty20) * (y5["max"] - y5["min"]), y5["step"]), y5["min"], y5["max"]);
       const v23 = { "x": vx21, "y": vy22 };
-      commit_BANG_(panel, path3, v23);
+      commit_BANG_2(panel, path3, v23);
       return paint14(v23);
     });
     add_BANG_(area9, dot10);
@@ -3168,7 +3618,7 @@
       return dragging24["on"] = false;
     }));
     on_BANG_(area9, "dblclick", (function(_) {
-      commit_BANG_(panel, path3, get(c, "default"));
+      commit_BANG_2(panel, path3, get(c, "default"));
       return paint14(get(c, "default"));
     }));
     paint14(cur12());
@@ -3181,7 +3631,7 @@
     return { "x": t, "y": y2 };
   };
   var sample_spring = function(visual_dur, bounce, t) {
-    const zeta1 = clamp(1 - bounce, 0.05, 1);
+    const zeta1 = clamp2(1 - bounce, 0.05, 1);
     const omega2 = 2 * Math.PI / Math.max(0.05, visual_dur);
     if (zeta1 < 1) {
       const wd3 = omega2 * Math.sqrt(1 - zeta1 * zeta1);
@@ -3195,10 +3645,10 @@
     const map__12 = c;
     const path3 = get(map__12, "path");
     const r4 = row(get(c, "label"));
-    const wrap5 = mk("div", "dial-transition");
-    const modes6 = mk("div", "dial-seg");
-    const canvas7 = mk("canvas", "dial-curve");
-    const fields8 = mk("div", "dial-fields");
+    const wrap5 = mk2("div", "dial-transition");
+    const modes6 = mk2("div", "dial-seg");
+    const canvas7 = mk2("canvas", "dial-curve");
+    const fields8 = mk2("div", "dial-fields");
     const cur9 = (function() {
       return get_in(deref(get(panel, "store")), path3);
     });
@@ -3269,7 +3719,7 @@
             })(), t21 * (vd25 * 2));
           })() : null;
           const px28 = t21 * w14;
-          const py29 = h15 - clamp(y22, -0.2, 1.4) * (h15 * 0.7) - h15 * 0.1;
+          const py29 = h15 - clamp2(y22, -0.2, 1.4) * (h15 * 0.7) - h15 * 0.1;
           if (i20 === 0) {
             return ctx13.moveTo(px28, py29);
           } else {
@@ -3282,8 +3732,8 @@
       return ctx13.stroke();
     });
     const num_field30 = (function(key_, lbl, mn, mx, st) {
-      const fw31 = mk("label", "dial-field");
-      const inp32 = mk("input", null);
+      const fw31 = mk2("label", "dial-field");
+      const inp32 = mk2("input", null);
       inp32.type = "number";
       inp32.min = `${mn ?? ""}`;
       inp32.max = `${mx ?? ""}`;
@@ -3297,11 +3747,11 @@
         }
         ;
       })() ?? ""}`;
-      add_BANG_(fw31, txt_BANG_(mk("span", null), lbl), inp32);
+      add_BANG_(fw31, txt_BANG_(mk2("span", null), lbl), inp32);
       on_BANG_(inp32, "input", (function(_) {
         const v34 = JSON.parse(JSON.stringify(cur9()));
         v34[key_] = parseFloat(inp32.value);
-        commit_BANG_(panel, path3, v34);
+        commit_BANG_2(panel, path3, v34);
         return draw12();
       }));
       return { "el": fw31, "inp": inp32 };
@@ -3403,12 +3853,12 @@
         }
       }
       ;
-      commit_BANG_(panel, path3, v43);
+      commit_BANG_2(panel, path3, v43);
       return rebuild35();
     });
     for (let G__49 of iterable([["easing", "Easing"], ["time", "Time"], ["physics", "Physics"]])) {
       const pair50 = G__49;
-      const b51 = mk("button", "dial-seg-btn");
+      const b51 = mk2("button", "dial-seg-btn");
       attr_BANG_(b51, "type", "button");
       txt_BANG_(b51, pair50[1]);
       on_BANG_(b51, "click", (function(_) {
@@ -3429,8 +3879,8 @@
     const map__12 = c;
     const path3 = get(map__12, "path");
     const label4 = get(map__12, "label");
-    const r5 = mk("div", "dial-row dial-row--action");
-    const btn6 = mk("button", "dial-action");
+    const r5 = mk2("div", "dial-row dial-row--action");
+    const btn6 = mk2("button", "dial-action");
     attr_BANG_(btn6, "type", "button");
     txt_BANG_(btn6, label4);
     on_BANG_(btn6, "click", (function(_) {
@@ -3445,10 +3895,10 @@
     return r5;
   };
   var render_folder = function(panel, c) {
-    const wrap1 = mk("div", "dial-folder");
-    const head2 = mk("button", "dial-folder-head");
-    const body3 = mk("div", "dial-folder-body");
-    const chev4 = mk("span", "dial-chevron");
+    const wrap1 = mk2("div", "dial-folder");
+    const head2 = mk2("button", "dial-folder-head");
+    const body3 = mk2("div", "dial-folder-body");
+    const chev4 = mk2("span", "dial-chevron");
     const open5 = atom(not(get(c, "collapsed")));
     const sync6 = (function() {
       if (truth_(deref(open5))) {
@@ -3459,7 +3909,7 @@
       ;
     });
     attr_BANG_(head2, "type", "button");
-    add_BANG_(head2, chev4, txt_BANG_(mk("span", null), get(c, "label")));
+    add_BANG_(head2, chev4, txt_BANG_(mk2("span", null), get(c, "label")));
     on_BANG_(head2, "click", (function(_) {
       swap_BANG_(open5, not);
       return sync6();
@@ -3506,7 +3956,7 @@
                         return render_folder(panel, c);
                       } else {
                         if ("else") {
-                          return mk("div", null);
+                          return mk2("div", null);
                         } else {
                           return null;
                         }
@@ -3643,7 +4093,7 @@
     if (truth_(or__23426__auto__1)) {
       return or__23426__auto__1;
     } else {
-      const el2 = mk("div", "dialkit-root");
+      const el2 = mk2("div", "dialkit-root");
       attr_BANG_(el2, "data-theme", "system");
       apply_root_position_BANG_(el2, "top-right");
       document.body.appendChild(el2);
@@ -3713,13 +4163,13 @@
   var render_versions_BANG_ = function(panel) {
     const sel1 = get(panel, "versionSel");
     sel1.innerHTML = "";
-    const o02 = mk("option", null);
+    const o02 = mk2("option", null);
     o02.value = "";
     txt_BANG_(o02, "Version 1");
     add_BANG_(sel1, o02);
     for (let G__3 of iterable(get(panel, "presets"))) {
       const p4 = G__3;
-      const o5 = mk("option", null);
+      const o5 = mk2("option", null);
       o5.value = p4["id"];
       txt_BANG_(o5, p4["name"]);
       add_BANG_(sel1, o5);
@@ -3811,17 +4261,17 @@
       }
       ;
     })()) ? "pos-left" : "pos-right";
-    const card5 = mk("div", `${"dial-panel "}${side3 ?? ""}`);
-    const head6 = mk("div", "dial-panel-head");
-    const title7 = mk("div", "dial-panel-title");
-    const tools8 = mk("div", "dial-panel-tools");
-    const vsel9 = mk("select", "dial-version");
-    const addb10 = mk("button", "dial-tool");
-    const copyb11 = mk("button", "dial-tool");
-    const resetb12 = mk("button", "dial-tool");
-    const collb13 = mk("button", "dial-tool");
-    const iconb14 = mk("button", "dial-panel-icon");
-    const body15 = mk("div", "dial-panel-body");
+    const card5 = mk2("div", `${"dial-panel "}${side3 ?? ""}`);
+    const head6 = mk2("div", "dial-panel-head");
+    const title7 = mk2("div", "dial-panel-title");
+    const tools8 = mk2("div", "dial-panel-tools");
+    const vsel9 = mk2("select", "dial-version");
+    const addb10 = mk2("button", "dial-tool");
+    const copyb11 = mk2("button", "dial-tool");
+    const resetb12 = mk2("button", "dial-tool");
+    const collb13 = mk2("button", "dial-tool");
+    const iconb14 = mk2("button", "dial-panel-icon");
+    const body15 = mk2("div", "dial-panel-body");
     apply_root_position_BANG_(root1, pos2);
     txt_BANG_(title7, get(panel, "name"));
     panel["bodyEl"] = body15;
@@ -3899,7 +4349,7 @@
       if (truth_(tof(v3) === "object" && (not(Array.isArray(v3)) && not(get(panel, "updaters")[path_str(path4)])))) {
         setvals_walk_BANG_(panel, path4, v3);
       } else {
-        set_value_BANG_(panel, path4, v3);
+        set_value_BANG_2(panel, path4, v3);
       }
     }
     return null;
@@ -3928,7 +4378,7 @@
       delete deref(panels)[get(panel, "id")];
       return void 0;
     }), "setValue": (function(p, v) {
-      set_value_BANG_(panel, p.split("."), v);
+      set_value_BANG_2(panel, p.split("."), v);
       return void 0;
     }), "getOpen": (function() {
       return get(panel, "open");
@@ -4106,7 +4556,7 @@
     }
     ;
   };
-  var on_change = function(e) {
+  var on_change2 = function(e) {
     const input1 = e.target;
     if (truth_((() => {
       const and__23442__auto__2 = input1;
@@ -4132,13 +4582,13 @@
     }
     ;
   };
-  var init_BANG_2 = function() {
+  var init_BANG_3 = function() {
     document.addEventListener("dragover", on_dragover);
     document.addEventListener("dragleave", on_dragleave);
     document.addEventListener("drop", on_drop);
-    return document.addEventListener("change", on_change);
+    return document.addEventListener("change", on_change2);
   };
-  init_BANG_2();
+  init_BANG_3();
 
   // .compiled/flip.mjs
   var default_duration = 250;
@@ -4379,7 +4829,7 @@
   var dispatch_contextmenu_BANG_ = function(el, x, y) {
     return el.dispatchEvent(new MouseEvent("contextmenu", { "bubbles": true, "cancelable": true, "view": window, "clientX": x, "clientY": y }));
   };
-  var on_pointerdown = function(e) {
+  var on_pointerdown2 = function(e) {
     reset_BANG_(suppress_click_QMARK_, false);
     clear_held_BANG_();
     if (e.pointerType === "touch") {
@@ -4412,7 +4862,7 @@
     }
     ;
   };
-  var on_pointermove2 = function(e) {
+  var on_pointermove3 = function(e) {
     const temp__23062__auto__1 = deref(press);
     if (truth_(temp__23062__auto__1)) {
       const p2 = temp__23062__auto__1;
@@ -4457,8 +4907,8 @@
     }
     ;
   };
-  document.addEventListener("pointerdown", on_pointerdown, true);
-  document.addEventListener("pointermove", on_pointermove2, true);
+  document.addEventListener("pointerdown", on_pointerdown2, true);
+  document.addEventListener("pointermove", on_pointermove3, true);
   document.addEventListener("pointerup", on_pointer_end, true);
   document.addEventListener("pointercancel", on_pointer_end, true);
   document.addEventListener("contextmenu", on_native_contextmenu, true);
@@ -4483,7 +4933,7 @@
   var gesture = atom(null);
   var suppress_click_QMARK_2 = atom(false);
   var last_tap = atom(null);
-  var clamp2 = function(lo, hi, v) {
+  var clamp3 = function(lo, hi, v) {
     return Math.min(hi, Math.max(lo, v));
   };
   var rel = function(x, y) {
@@ -4503,10 +4953,10 @@
     return assoc(z, "s", s, "tx", px - k1 * (px - get(z, "tx")), "ty", py - k1 * (py - get(z, "ty")));
   };
   var settle = function(img, z) {
-    const s1 = clamp2(1, max_scale, get(z, "s"));
+    const s1 = clamp3(1, max_scale, get(z, "s"));
     const mx2 = Math.max(0, (s1 * img.offsetWidth - window.innerWidth) / 2);
     const my3 = Math.max(0, (s1 * img.offsetHeight - window.innerHeight) / 2);
-    return assoc(z, "s", s1, "tx", clamp2(-mx2, mx2, get(z, "tx")), "ty", clamp2(-my3, my3, get(z, "ty")));
+    return assoc(z, "s", s1, "tx", clamp3(-mx2, mx2, get(z, "tx")), "ty", clamp3(-my3, my3, get(z, "ty")));
   };
   var apply_zoom_BANG_ = function(img, z, animate_QMARK_) {
     img["__uiZoom"] = z;
@@ -4560,7 +5010,7 @@
       const vec__1020 = midpoint(a15, b16);
       const mx21 = nth(vec__1020, 0, null);
       const my22 = nth(vec__1020, 1, null);
-      const s23 = clamp2(pinch_min, pinch_max, get(z04, "s") * (distance(a15, b16) / Math.max(1, distance(a013, b014))));
+      const s23 = clamp3(pinch_min, pinch_max, get(z04, "s") * (distance(a15, b16) / Math.max(1, distance(a013, b014))));
       const z24 = zoom_at(z04, s23, mx018, my019);
       return apply_zoom_BANG_(img3, assoc(z24, "tx", get(z24, "tx") + (mx21 - mx018), "ty", get(z24, "ty") + (my22 - my019)), false);
     } else {
@@ -4595,7 +5045,7 @@
     }
     ;
   };
-  var on_pointerdown2 = function(e) {
+  var on_pointerdown3 = function(e) {
     const t1 = e.target;
     const overlay2 = (() => {
       const G__213 = t1;
@@ -4653,7 +5103,7 @@
     }
     ;
   };
-  var on_pointermove3 = function(e) {
+  var on_pointermove4 = function(e) {
     const id1 = e.pointerId;
     if (truth_(pointers.has(id1))) {
       const p2 = pointers.get(id1);
@@ -4726,7 +5176,7 @@
         const vec__612 = rel(e.clientX, e.clientY);
         const px13 = nth(vec__612, 0, null);
         const py14 = nth(vec__612, 1, null);
-        return apply_zoom_BANG_(img5, settle(img5, zoom_at(z9, clamp2(1, max_scale, get(z9, "s") * k11), px13, py14)), false);
+        return apply_zoom_BANG_(img5, settle(img5, zoom_at(z9, clamp3(1, max_scale, get(z9, "s") * k11), px13, py14)), false);
       }
       ;
     }
@@ -4779,8 +5229,8 @@
   if (truth_(window["__uiLightboxZoom"])) {
   } else {
     window["__uiLightboxZoom"] = true;
-    document.addEventListener("pointerdown", on_pointerdown2, true);
-    document.addEventListener("pointermove", on_pointermove3, true);
+    document.addEventListener("pointerdown", on_pointerdown3, true);
+    document.addEventListener("pointermove", on_pointermove4, true);
     document.addEventListener("pointerup", on_pointer_end2, true);
     document.addEventListener("pointercancel", on_pointer_end2, true);
     document.addEventListener("click", on_click_capture2, true);
@@ -4874,7 +5324,7 @@
       return run_BANG_();
     })));
   };
-  var init_BANG_3 = function() {
+  var init_BANG_4 = function() {
     schedule_BANG_();
     const obs1 = new MutationObserver((function(_, _2) {
       return schedule_BANG_();
@@ -4890,9 +5340,9 @@
   };
   window["__uiMasonry"] = schedule_BANG_;
   if ("loading" === document.readyState) {
-    document.addEventListener("DOMContentLoaded", init_BANG_3);
+    document.addEventListener("DOMContentLoaded", init_BANG_4);
   } else {
-    init_BANG_3();
+    init_BANG_4();
   }
 
   // .compiled/number_field.mjs
@@ -4979,7 +5429,7 @@
     }
     ;
   };
-  var on_click2 = function(e) {
+  var on_click3 = function(e) {
     const temp__23062__auto__1 = (() => {
       const and__23442__auto__2 = e.target;
       if (truth_(and__23442__auto__2)) {
@@ -5011,11 +5461,11 @@
     }
     ;
   };
-  var init_BANG_4 = function() {
+  var init_BANG_5 = function() {
     document.addEventListener("wheel", on_wheel2, { "passive": false });
-    return document.addEventListener("click", on_click2);
+    return document.addEventListener("click", on_click3);
   };
-  init_BANG_4();
+  init_BANG_5();
 
   // .compiled/panels.mjs
   var easing = "cubic-bezier(0.32, 0.72, 0, 1)";
@@ -5024,7 +5474,7 @@
   var key_step_fast = 50;
   var pan_threshold = 3;
   var axes_config = { "horizontal": { "client": "clientWidth", "extent": "width", "cursor": "col-resize", "grow": "ArrowRight", "shrink": "ArrowLeft", "sepOrient": "vertical" }, "vertical": { "client": "clientHeight", "extent": "height", "cursor": "row-resize", "grow": "ArrowDown", "shrink": "ArrowUp", "sepOrient": "horizontal" } };
-  var clamp3 = function(v, lo, hi) {
+  var clamp4 = function(v, lo, hi) {
     return Math.min(Math.max(v, lo), hi);
   };
   var round2 = function(v) {
@@ -5170,11 +5620,11 @@
       }
     })();
   };
-  var emit_BANG_ = function(panel, type, detail) {
+  var emit_BANG_2 = function(panel, type, detail) {
     return panel.el.dispatchEvent(new CustomEvent(type, { "bubbles": true, "detail": detail }));
   };
   var emit_resize_BANG_ = function(panel) {
-    return emit_BANG_(panel, "ui-panels-resize", { "size": size_report(panel), "pixels": measure(panel) });
+    return emit_BANG_2(panel, "ui-panels-resize", { "size": size_report(panel), "pixels": measure(panel) });
   };
   var reflect_collapsed_BANG_ = function(panel) {
     if (truth_(panel.collapsed)) {
@@ -5381,14 +5831,14 @@
       panel["collapsed"] = collapsed;
       reflect_collapsed_BANG_(panel);
       retarget_BANG_(panel);
-      emit_BANG_(panel, "ui-panels-collapse", { "collapsed": truth_(collapsed) ? true : false });
+      emit_BANG_2(panel, "ui-panels-collapse", { "collapsed": truth_(collapsed) ? true : false });
       return persist_BANG_(panel);
     }
     ;
   };
   var apply_size_BANG_ = function(panel, px) {
     const b1 = bounds(panel);
-    const v2 = clamp3(px, b1.min, b1.max);
+    const v2 = clamp4(px, b1.min, b1.max);
     const total3 = group_extent(panel.group);
     if (truth_((() => {
       const and__23442__auto__4 = panel.collapsed;
@@ -5401,7 +5851,7 @@
     })())) {
       panel["collapsed"] = false;
       reflect_collapsed_BANG_(panel);
-      emit_BANG_(panel, "ui-panels-collapse", { "collapsed": false });
+      emit_BANG_2(panel, "ui-panels-collapse", { "collapsed": false });
     }
     ;
     if (truth_(panel.pct)) {
@@ -5444,7 +5894,7 @@
     panel["collapsed"] = collapsed;
     reflect_collapsed_BANG_(panel);
     panel["target"] = truth_(collapsed) ? 0 : measure(panel);
-    return emit_BANG_(panel, "ui-panels-collapse", { "collapsed": truth_(collapsed) ? true : false });
+    return emit_BANG_2(panel, "ui-panels-collapse", { "collapsed": truth_(collapsed) ? true : false });
   };
   var drag_cancel_BANG_ = function(panel) {
     if (truth_(panel.dragging)) {
@@ -5500,7 +5950,7 @@
         }
         ;
       })();
-      const next7 = truth_(collapse5) ? 0 : Math.round(clamp3(pixels4, s1.min, s1.max));
+      const next7 = truth_(collapse5) ? 0 : Math.round(clamp4(pixels4, s1.min, s1.max));
       if (!_EQ_(truth_(collapse5) ? true : false, truth_(s1.sessionCollapsed) ? true : false)) {
         drag_collapse_BANG_(panel, collapse5);
       }
@@ -5574,7 +6024,7 @@
       const next9 = key1 === "End" ? b3.max : key1 === "Home" ? b3.min : key1 === "PageDown" ? t8 + step7 : key1 === "PageUp" ? t8 - step7 : _EQ_(key1, axes2["grow"]) ? t8 + step7 : _EQ_(key1, axes2["shrink"]) ? t8 - step7 : "else" ? null : null;
       if (!(next9 == null)) {
         e.preventDefault();
-        return apply_size_BANG_(panel, clamp3(next9, b3.min, b3.max));
+        return apply_size_BANG_(panel, clamp4(next9, b3.min, b3.max));
       }
       ;
     }
@@ -5906,7 +6356,7 @@
     }
     ;
   };
-  var scan_BANG_ = function() {
+  var scan_BANG_2 = function() {
     return Array.from(document.querySelectorAll("[data-ui-panels-group]")).forEach((function(gel) {
       return init_group_BANG_(gel);
     }));
@@ -5916,14 +6366,14 @@
     if (deref(scan_scheduled) == null) {
       return reset_BANG_(scan_scheduled, requestAnimationFrame((function() {
         reset_BANG_(scan_scheduled, null);
-        return scan_BANG_();
+        return scan_BANG_2();
       })));
     }
     ;
   };
-  window["__uiPanels"] = scan_BANG_;
+  window["__uiPanels"] = scan_BANG_2;
   var start_BANG_ = function() {
-    scan_BANG_();
+    scan_BANG_2();
     const mo1 = new MutationObserver((function(_) {
       return schedule_scan_BANG_();
     }));
@@ -5940,7 +6390,7 @@
   // .compiled/popover.mjs
   var gap = 8;
   var edge = 8;
-  var clamp4 = function(v, lo, hi) {
+  var clamp5 = function(v, lo, hi) {
     return Math.max(lo, Math.min(v, hi));
   };
   var align_h = function(tr, cw, align) {
@@ -6002,8 +6452,8 @@
     const vh10 = window.innerHeight;
     const left11 = side1 === "left" ? tr5.left - cw7 - gap : side1 === "right" ? tr5.right + gap : "else" ? align_h(tr5, cw7, align3) : null;
     const top12 = side1 === "top" ? tr5.top - ch8 - gap : side1 === "bottom" ? tr5.bottom + gap : "else" ? align_v(tr5, ch8, align3) : null;
-    content.style.left = `${clamp4(left11, edge, vw9 - cw7 - edge) ?? ""}px`;
-    return content.style.top = `${clamp4(top12, edge, vh10 - ch8 - edge) ?? ""}px`;
+    content.style.left = `${clamp5(left11, edge, vw9 - cw7 - edge) ?? ""}px`;
+    return content.style.top = `${clamp5(top12, edge, vh10 - ch8 - edge) ?? ""}px`;
   };
   var current = { "content": null, "trigger": null };
   var reposition_BANG_ = function() {
@@ -6048,12 +6498,12 @@
     }
     ;
   };
-  var init_BANG_5 = function() {
+  var init_BANG_6 = function() {
     document.addEventListener("toggle", on_toggle, true);
     window.addEventListener("scroll", reposition_BANG_, true);
     return window.addEventListener("resize", reposition_BANG_);
   };
-  init_BANG_5();
+  init_BANG_6();
   window["__uiPopover"] = { "reposition": reposition_BANG_ };
 
   // .compiled/select.mjs
@@ -6102,7 +6552,7 @@
     }
     ;
   };
-  var create_menu2 = function(options, current_value, on_change2, trigger) {
+  var create_menu2 = function(options, current_value, on_change3, trigger) {
     const menu1 = document.createElement("div");
     menu1.className = "select-menu";
     menu1.setAttribute("role", "listbox");
@@ -6120,9 +6570,9 @@
       el5.addEventListener("click", (function(e) {
         e.preventDefault();
         e.stopPropagation();
-        if (truth_(on_change2)) {
+        if (truth_(on_change3)) {
           dismiss_BANG_2();
-          return on_change2(value2);
+          return on_change3(value2);
         } else {
           update_trigger_BANG_(trigger, value2, label3);
           return dismiss_BANG_2();
@@ -6429,7 +6879,7 @@
       }));
     };
   };
-  var init_BANG_6 = function() {
+  var init_BANG_7 = function() {
     const mode1 = get_mode();
     apply_theme_BANG_(mode1);
     const mql2 = window.matchMedia("(prefers-color-scheme: dark)");
@@ -6441,7 +6891,7 @@
       ;
     }));
   };
-  window["__uiTheme"] = { "init": init_BANG_6, "set": set_mode_BANG_, "get": get_mode, "effective": get_effective, "toggle": toggle_BANG_, "subscribe": subscribe_BANG_ };
+  window["__uiTheme"] = { "init": init_BANG_7, "set": set_mode_BANG_, "get": get_mode, "effective": get_effective, "toggle": toggle_BANG_, "subscribe": subscribe_BANG_ };
 
   // .compiled/toast.mjs
   var container_id = "ui-toast-container";
@@ -6522,25 +6972,25 @@
       ;
     })(), "duration": truth_(dur2) ? parseInt(dur2, 10) : null });
   };
-  var scan_BANG_2 = function() {
+  var scan_BANG_3 = function() {
     for (let G__1 of iterable(Array.from(document.querySelectorAll("[data-ui-toast]")))) {
       const el2 = G__1;
       consume_BANG_(el2);
     }
     return null;
   };
-  var init_BANG_7 = function() {
-    scan_BANG_2();
+  var init_BANG_8 = function() {
+    scan_BANG_3();
     const obs1 = new MutationObserver((function(_, _2) {
-      return scan_BANG_2();
+      return scan_BANG_3();
     }));
     return obs1.observe(document.body, { "childList": true, "subtree": true });
   };
   window["__uiToast"] = show_BANG_;
   if ("loading" === document.readyState) {
-    document.addEventListener("DOMContentLoaded", init_BANG_7);
+    document.addEventListener("DOMContentLoaded", init_BANG_8);
   } else {
-    init_BANG_7();
+    init_BANG_8();
   }
 
   // .compiled/touch.mjs
@@ -6600,7 +7050,7 @@
     }
     ;
   };
-  var sync_BANG_ = function() {
+  var sync_BANG_2 = function() {
     const touch_QMARK_1 = mq.matches;
     const cl2 = document.documentElement.classList;
     if (truth_(touch_QMARK_1)) {
@@ -6611,12 +7061,12 @@
     ;
     return touch_QMARK_1;
   };
-  window["__uiTouch"] = sync_BANG_;
-  if (truth_(sync_BANG_())) {
+  window["__uiTouch"] = sync_BANG_2;
+  if (truth_(sync_BANG_2())) {
     harden_viewport_BANG_();
     document.addEventListener("gesturestart", (function(e) {
       return e.preventDefault();
     }));
   }
-  mq.addEventListener("change", sync_BANG_);
+  mq.addEventListener("change", sync_BANG_2);
 })();

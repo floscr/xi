@@ -14,7 +14,8 @@
   (is (user-state/valid? :recent-commands ["model" "clear"]))
   (is (user-state/valid? :recent-skills []))
   (is (user-state/valid? :themes {}))
-  (is (user-state/valid? :themes {:active "Ocean" :themes {"Ocean" {:accent-hue 200 :gray-chroma 0.5}}})))
+  (is (user-state/valid? :themes {:active "Ocean" :themes {"Ocean" {:accent-hue 200 :gray-chroma 0.5 :bg-dark "#0a0a0f"}}}))
+  (is (user-state/valid? :themes {:themes {"Ocean" {:bg-light "oklch(0.972 0.022 74.1)"}}})))
 
 (deftest valid-rejects-unknown-keys-and-bad-values
   (testing "unknown key"
@@ -32,7 +33,8 @@
     (is (not (user-state/valid? :themes {:bogus 1})))
     (is (not (user-state/valid? :themes {:active :ocean})))
     (is (not (user-state/valid? :themes {:themes {"" {}}})))
-    (is (not (user-state/valid? :themes {:themes {"a" {:accent-hue "200"}}})))
+    (is (not (user-state/valid? :themes {:themes {"a" {:accent-hue :big}}})))
+    (is (not (user-state/valid? :themes {:themes {"a" {:bg-dark "not a color"}}})))
     (is (not (user-state/valid? :themes {:themes {"a" {"accent-hue" 200}}}))))
   (testing "size bounds keep a client from growing the store"
     (is (not (user-state/valid? :recent-commands (vec (repeat 21 "x")))))

@@ -1407,6 +1407,12 @@ a.btn-link {
 /* ── Event More Indicator ────────────────────────────────────────── */
 
 .cal-event-more {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
   font-size: var(--font-xs);
   color: var(--fg-2);
   padding: 0 var(--size-1);
@@ -1417,6 +1423,189 @@ a.btn-link {
 @media (hover: hover){.cal-event-more:hover{
   color: var(--fg-1);
 }}
+
+/* ── Month Grid ──────────────────────────────────────────────────── */
+/* month-grid: one cell markup for every density. The cell head is
+   display:contents unless a variant lays it out, so the plain event grid and
+   the compact variant keep the number as a direct flex item of the cell. */
+
+.cal-day-head,
+.cal-day-label {
+  display: contents;
+}
+
+/* Full variant (.cal-month-full): roomy desktop month — a hairline table of
+   rows stretching to fill the root, right-aligned day numbers, stacked pills. */
+
+.cal-month-full {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Weekday heads: centred, quiet; today's lit with an accent dot. */
+.cal-month-full .cal-weekdays {
+  margin: 0;
+  padding: var(--size-1) 0 var(--size-3);
+}
+
+.cal-month-full .cal-weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-2);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--fg-2);
+}
+
+.cal-month-full .cal-weekday.is-today {
+  color: var(--fg-0);
+  font-weight: 600;
+}
+
+.cal-weekday-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-400);
+}
+
+.cal-month-full .cal-grid {
+  flex: 1;
+  grid-auto-rows: minmax(7rem, 1fr);
+  border-top: var(--border-0);
+}
+
+.cal-month-full .cal-event-day {
+  aspect-ratio: auto;
+  min-height: 0;
+  padding: var(--size-1) var(--size-1) var(--size-2);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--size-1);
+  overflow: hidden;
+  transition: background 0.12s ease;
+}
+
+@media (hover: hover){.cal-month-full .cal-event-day:hover{
+  background: color-mix(in srgb, var(--bg-1) 70%, transparent);
+}}
+
+.cal-month-full .cal-event-day.cal-day-outside {
+  background: color-mix(in srgb, var(--bg-1) 35%, transparent);
+}
+
+.cal-month-full .cal-event-day.cal-day-selected {
+  background: color-mix(in srgb, var(--bg-1) 80%, transparent);
+}
+
+.cal-month-full .cal-event-day.cal-day-today {
+  background: color-mix(in srgb, var(--accent-500) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-400) 45%, transparent);
+}
+
+/* Head: optional week number at the start, month label + number at the end. */
+.cal-month-full .cal-day-head {
+  display: flex;
+  align-items: center;
+  min-height: 1.5rem;
+  padding: 0 var(--size-1);
+}
+
+.cal-month-full .cal-day-week {
+  font-size: var(--font-xs);
+  font-weight: 500;
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-month-full .cal-day-label {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-month-full .cal-day-month {
+  color: var(--fg-1);
+  font-weight: 600;
+}
+
+/* Number pill, replacing the plain event grid's fixed circle. */
+.cal-month-full .cal-event-day .cal-day-number {
+  position: static;
+  z-index: auto;
+  width: auto;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  margin: 0;
+  padding: 0 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-size: inherit;
+  line-height: inherit;
+  color: var(--fg-1);
+  font-weight: 500;
+}
+
+.cal-month-full .cal-event-day.cal-day-outside .cal-day-number {
+  color: var(--fg-2);
+  opacity: 0.7;
+}
+
+.cal-month-full .cal-event-day.cal-day-today .cal-day-number {
+  background: var(--accent-500);
+  color: #fff;
+  font-weight: 700;
+}
+
+.cal-month-full .cal-day-events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cal-month-full .cal-event-more {
+  align-self: flex-start;
+  margin: 1px 0 0 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-2);
+  font: inherit;
+  font-size: var(--font-xs);
+  cursor: pointer;
+}
+
+@media (hover: hover){.cal-month-full .cal-event-more:hover{
+  color: var(--fg-0);
+}}
+
+/* Compact variant (.cal-month-compact): the dots grid above. The
+   :highlight-week row is a rounded band behind its seven cells. */
+
+.cal-month-compact .cal-event-day.cal-week-active {
+  background: var(--bg-2);
+  /* bleed 1px right so fractional column widths leave no seams */
+  box-shadow: 1px 0 0 var(--bg-2);
+}
+
+.cal-month-compact .cal-event-day.cal-week-active:nth-child(7n + 1) {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.cal-month-compact .cal-event-day.cal-week-active:nth-child(7n) {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  box-shadow: none;
+}
 
 /* ── Ticker Strip ────────────────────────────────────────────────── */
 
@@ -2468,6 +2657,161 @@ a.btn-link {
 }
 
 
+/* ── Color picker (ui.color-picker + ui.js.color-picker runtime) ───── */
+
+.color-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  width: 100%;
+}
+
+.color-picker--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* format segmented control */
+.color-picker-formats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+}
+
+.color-picker-format {
+  height: 24px;
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+@media (hover: hover){.color-picker-format:hover{ color: var(--fg-0); }}
+
+.color-picker-format[data-active="true"] {
+  color: var(--fg-0);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-0);
+}
+
+/* 2D saturation / brightness plane */
+.color-picker-plane {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  border-radius: var(--radius-sm);
+  border: var(--border-0);
+  cursor: crosshair;
+  outline: none;
+  touch-action: none;
+  overflow: hidden;
+}
+
+.color-picker-plane:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+
+.color-picker-marker {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* hue + opacity tracks */
+.color-picker-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+}
+
+.color-picker-track-row {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: var(--size-2);
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+}
+
+.color-picker-track {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  border-radius: 999px;
+  border: var(--border-0);
+  cursor: pointer;
+  outline: none;
+}
+
+.color-picker-track:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+
+.color-picker-hue {
+  background: linear-gradient(to right,
+    hsl(0, 100%, 50%), hsl(60, 100%, 50%), hsl(120, 100%, 50%),
+    hsl(180, 100%, 50%), hsl(240, 100%, 50%), hsl(300, 100%, 50%), hsl(360, 100%, 50%));
+}
+
+.color-picker-opacity {
+  --color-picker-solid: #000;
+  background-color: #fff;
+  background-image:
+    linear-gradient(to right, transparent, var(--color-picker-solid)),
+    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%),
+    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%);
+  background-size: 100% 100%, 8px 8px, 8px 8px;
+  background-position: 0 0, 0 0, 4px 4px;
+}
+
+.color-picker-track::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-0);
+  cursor: pointer;
+}
+
+.color-picker-track::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-0);
+  cursor: pointer;
+}
+
+/* css value input */
+.color-picker-text {
+  width: 100%;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono, monospace);
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-radius: var(--radius-sm);
+  padding: var(--size-1) var(--size-2);
+  outline: none;
+}
+
+.color-picker-text:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+
+
 /* ── Command Palette ─────────────────────────────────────────────── */
 /* cmdk-style searchable command menu in a native <dialog>.           */
 
@@ -3221,153 +3565,8 @@ a.btn-link {
 
 /* ── Color ─────────────────────────────────────────────────────────── */
 
+/* the picker is ui.color-picker (color_picker.css) */
 .dial-row--color { grid-template-columns: 1fr; }
-
-.dial-color {
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-2);
-  width: 100%;
-}
-
-/* format segmented control */
-.dial-color-formats {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 2px;
-  padding: 2px;
-  background: var(--bg-1);
-  border: var(--border-0);
-  border-radius: var(--radius-sm);
-}
-
-.dial-color-format {
-  height: 24px;
-  font-size: var(--font-xs);
-  color: var(--fg-1);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-}
-
-@media (hover: hover){.dial-color-format:hover{ color: var(--fg-0); }}
-
-.dial-color-format[data-active="true"] {
-  color: var(--fg-0);
-  background: var(--bg-2);
-  box-shadow: var(--shadow-0);
-}
-
-/* 2D saturation / value plane */
-.dial-color-plane {
-  position: relative;
-  width: 100%;
-  height: 140px;
-  border-radius: var(--radius-sm);
-  border: var(--border-0);
-  cursor: crosshair;
-  outline: none;
-  touch-action: none;
-  overflow: hidden;
-}
-
-.dial-color-plane:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
-
-.dial-color-marker {
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-/* hue + opacity tracks */
-.dial-color-tracks {
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-1);
-}
-
-.dial-color-track-row {
-  display: grid;
-  grid-template-columns: 56px 1fr;
-  align-items: center;
-  gap: var(--size-2);
-  font-size: var(--font-xs);
-  color: var(--fg-1);
-}
-
-.dial-color-track {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 12px;
-  border-radius: 999px;
-  border: var(--border-0);
-  cursor: pointer;
-  outline: none;
-}
-
-.dial-color-track:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-
-.dial-color-hue {
-  background: linear-gradient(to right,
-    hsl(0, 100%, 50%), hsl(60, 100%, 50%), hsl(120, 100%, 50%),
-    hsl(180, 100%, 50%), hsl(240, 100%, 50%), hsl(300, 100%, 50%), hsl(360, 100%, 50%));
-}
-
-.dial-color-opacity {
-  --dial-color-solid: #000;
-  background-color: #fff;
-  background-image:
-    linear-gradient(to right, transparent, var(--dial-color-solid)),
-    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%),
-    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%);
-  background-size: 100% 100%, 8px 8px, 8px 8px;
-  background-position: 0 0, 0 0, 4px 4px;
-}
-
-.dial-color-track::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.35);
-  box-shadow: var(--shadow-0);
-  cursor: pointer;
-}
-
-.dial-color-track::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.35);
-  box-shadow: var(--shadow-0);
-  cursor: pointer;
-}
-
-/* css value input */
-.dial-color-input {
-  width: 100%;
-  font-size: var(--font-xs);
-  font-family: var(--font-mono, monospace);
-  color: var(--fg-0);
-  background: var(--bg-1);
-  border: var(--border-0);
-  border-radius: var(--radius-sm);
-  padding: var(--size-1) var(--size-2);
-  outline: none;
-}
-
-.dial-color-input:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
 
 /* ── Image ─────────────────────────────────────────────────────────── */
 

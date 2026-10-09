@@ -43,6 +43,7 @@
             [ui.command :as cmd]
             [ui.context-menu :as context-menu]
             [ui.popover :as popover]
+            [ui.color-picker :as color-picker]
             [ui.chip :as chip]
             [xi.clj-result :as clj-result]
             [ui.theme-toggle :as theme-toggle]))
@@ -5308,6 +5309,29 @@
                 gradient (assoc :style {:background gradient}))})
      [:span {:class ["theme-slider-value"]} (fmt v)]]))
 
+(defn- theme-color
+  "One color parameter of the draft: a swatch opening ui.color-picker in a
+   popover, limited to the formats xi.web.theme/color? accepts."
+  [dispatch! draft key label]
+  (let [v  (get-in draft [:params key])
+        id (str "theme-color-" (name key))]
+    [:div {:class ["theme-slider"]}
+     [:span {:class ["theme-slider-label"]} label]
+     [:button (merge {:type "button" :class ["theme-color-swatch"]
+                      :style {:background v}
+                      :aria-label label :title v
+                      :replicant/key (str id "-trigger")}
+                     (popover/trigger-attrs id))]
+     (popover/popover-content
+      {:id id :side :bottom :align :start :class "theme-color-popover"
+       :attrs {:replicant/key id}}
+      (color-picker/color-picker
+       {:value v
+        :formats [:oklch :hex]
+        :on-change (fn [^js e]
+                     (dispatch! {:type :themes/draft-set :key key
+                                 :value (.. e -target -value)}))}))]))
+
 (defn- theme-section [label & children]
   (into [:div {:class ["theme-section"]}
          [:div {:class ["text-xs" "text-faint" "uppercase" "tracking-wide" "font-semibold"]} label]]
@@ -5318,8 +5342,8 @@
    (for [c colors] [:div {:class ["swatch"] :style {:background c}}])])
 
 (defn- theme-editor
-  "The draft (:web/theme-draft): name, color presets, one slider per
-   parameter, previewed live on the page until Save or Cancel."
+  "The draft (:web/theme-draft): name, color presets, a slider or color
+   input per parameter, previewed live on the page until Save or Cancel."
   [state dispatch!]
   (let [{:keys [original name params] :as draft} (:web/theme-draft state)
         themes   (:web/themes state)
@@ -5353,8 +5377,8 @@
        (theme-slider dispatch! draft :accent-chroma "Chroma" (chroma (:accent-hue params)))
        (swatch-row (ctheme/accent-swatches params)))
      (theme-section "Background"
-       (theme-slider dispatch! draft :bg-light "Light" {:min 85 :max 100 :step 1 :scale 100 :fmt percent})
-       (theme-slider dispatch! draft :bg-dark "Dark" {:min 0 :max 25 :step 1 :scale 100 :fmt percent})
+       (theme-color dispatch! draft :bg-light "Light")
+       (theme-color dispatch! draft :bg-dark "Dark")
        (theme-slider dispatch! draft :sidebar-shift "Sidebar" {:min -20 :max 20 :step 1 :scale 100 :fmt signed})
        ;; page + sidebar of each mode
        (let [{:keys [light dark]} (ctheme/backgrounds params)]

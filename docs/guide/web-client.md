@@ -164,10 +164,10 @@ count instead of its header rows). "Reset to defaults" drops them.
 
 "Color theme" in the same dialog holds your own themes next to the default
 one. A theme changes the hue and chroma of the gray and accent scales, the
-page background of light and dark mode (each its own brightness, tinted
-like the grays) with the sidebar a chosen step brighter or darker than it,
-the spacing base, the type scale and the corner radius; light and dark mode
-stay separate and both use it. "New" opens the editor with the defaults and a set
+page background of light and dark mode (each its own color) with the
+sidebar a chosen step brighter or darker than it, the spacing base, the type
+scale and the corner radius; light and dark mode stay separate and both use
+it. "New" opens the editor with the defaults and a set
 of presets to start from; the sliders change the page as you move them, and
 "Save" keeps the result under the name you typed. Pick a saved theme to use it
 and click it again to edit or delete it. Themes are per
