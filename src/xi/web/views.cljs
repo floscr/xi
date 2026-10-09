@@ -5486,9 +5486,10 @@
              :disabled (not (appearance/overridden? overrides))
              :on-click (fn [_] (dispatch! {:type :appearance/reset}))}
             "Reset to defaults")
+           ;; saves an open theme draft (xi.web.core :appearance/done)
            (button/button
             {:variant :primary :size :sm
-             :on-click (fn [_] (close!))}
+             :on-click (fn [_] (dispatch! {:type :appearance/done}))}
             "Done")))))))
 
 (def ^:private fixed-shortcuts

@@ -169,7 +169,8 @@ sidebar a chosen step brighter or darker than it, the spacing base, the type
 scale and the corner radius; light and dark mode stay separate and both use
 it. "New" opens the editor with the defaults and a set
 of presets to start from; the sliders change the page as you move them, and
-"Save" keeps the result under the name you typed. Pick a saved theme to use it
+"Save" (or the dialog's "Done") keeps the result under the name you typed;
+closing the dialog any other way drops the changes. Pick a saved theme to use it
 and click it again to edit or delete it. Themes are per
 [user](#what-follows-you), up to twenty.
 
