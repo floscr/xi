@@ -35,6 +35,14 @@ body {
   background-color: var(--chat-bg, var(--bg-0));
 }
 
+/* Every link is themed, not the browser's blue/purple (extension pages and
+   titles render bare <a>). :where() keeps the specificity at zero so any
+   component's own link rule wins. */
+:where(a, a:visited) {
+  color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 #app {
   height: var(--app-height);
   overflow: hidden;
