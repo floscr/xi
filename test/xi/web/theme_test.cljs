@@ -1,5 +1,6 @@
 (ns xi.web.theme-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.web.theme :as theme]))
 
 (deftest default-params-reproduce-the-generated-theme
@@ -19,8 +20,8 @@
       (is (= "oklch(0.122 0.0107 285.0)" (get vars "--theme-sidebar-dark"))))
     (testing "every managed property has a value"
       (is (= (set theme/var-names) (set (keys vars))))
-      (is (= 105 (count theme/var-names))
-          "11 gray + 11 accent + 33 status + 4 backgrounds + 18 surfaces + 16 sizes + 8 fonts + 4 radii"))))
+      (is (= 133 (count theme/var-names))
+          "11 gray + 11 accent + 33 status + 4 backgrounds + 46 surfaces + 16 sizes + 8 fonts + 4 radii"))))
 
 (deftest hex-to-oklch
   (let [[l c h] (theme/hex->oklch "#ff0000")]
@@ -68,6 +69,35 @@
     (is (= "3px" (get vars "--radius-sm")))
     (is (= "2px" (get vars "--radius-xs"))))
   (is (nil? (theme/css-vars nil)) "the default theme sets nothing"))
+
+(defn- lch [s] (mapv js/parseFloat (rest (re-find #"oklch\((\S+) (\S+) (\S+)\)" s))))
+
+(deftest syntax-colors-follow-the-page
+  (testing "the default page keeps the stock palette"
+    (let [{:keys [dark light]} (theme/surfaces {})
+          [sl] (theme/hex->oklch "#a3be8c")]
+      (is (< (js/Math.abs (- (first (lch (get dark "hl-string"))) sl)) 0.002))
+      (is (< (js/Math.abs (- (first (lch (get light "hl-var")))
+                             (first (theme/hex->oklch "#24292e"))))
+             0.002))))
+  (let [{:keys [dark]} (theme/surfaces {:bg-dark "oklch(0.3 0.1 25)"})
+        [string-l string-c string-h] (lch (get dark "hl-string"))]
+    (is (every? #(> (first (lch (val %))) 0.55) (filter #(str/starts-with? (key %) "hl-") dark))
+        "every token stays well above a lighter page")
+    (is (< string-l 1))
+    (testing "a vivid page gets hues around its own, no stock blue left"
+      (is (= [105 0.1] [string-h string-c]) "strings: page hue + 80")
+      (is (= 65 (nth (lch (get dark "hl-keyword")) 2)) "keywords: + 40")
+      (is (= 345 (nth (lch (get dark "hl-fn")) 2)) "functions: − 40")
+      (is (= 25 (nth (lch (get dark "hl-var")) 2)) "plain code: the page hue"))))
+
+(deftest status-tints-keep-their-hue-on-a-colorful-page
+  (let [{:keys [dark light]} (theme/surfaces {:bg-dark "oklch(0.3 0.1 25)"})]
+    (is (= "oklch(0.360 0.0700 152.0)" (get dark "add-bg"))
+        "a block's lightness, in the success hue rather than a wash over the page")
+    (is (= "oklch(0.360 0.0700 25.0)" (get dark "del-bg")))
+    (is (= "oklch(0.850 0.1200 25.0)" (get dark "danger-fg")) "light error text on a dark page")
+    (is (= "oklch(0.450 0.1200 25.0)" (get light "danger-fg")))))
 
 (deftest status-scales-follow-their-colors
   (testing "the defaults reproduce theme.css"

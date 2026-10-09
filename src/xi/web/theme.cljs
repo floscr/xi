@@ -207,10 +207,73 @@
   {:on-dark  {"fg-0" [0.975 0.15] "fg-1" [0.85 0.35] "fg-2" [0.53 0.5]}
    :on-light {"fg-0" [0.145 0.15] "fg-1" [0.425 0.35] "fg-2" [0.69 0.5]}})
 
+(defn- status-tints
+  "Tokens that carry a status hue on a themed page, where a translucent status
+   wash over a colorful surface turns muddy: diff bands (add-bg / del-bg) at
+   a block's lightness in the status hue, and danger-fg, error text that
+   contrasts by lightness when the danger hue is the page's own."
+  [p l dark?]
+  (let [dir  (if dark? 1 -1)
+        band (fn [color-key]
+               (let [[_ c h] (color->oklch (get p color-key))]
+                 (oklch (clamp01 (+ l (* dir 0.06))) (min 0.07 c) h)))
+        [_ dc dh] (color->oklch (:danger-color p))]
+    {"add-bg"    (band :success-color)
+     "del-bg"    (band :danger-color)
+     "danger-fg" (oklch (if dark? 0.85 0.45) (min 0.12 dc) dh)}))
+
+;; style.css's stock syntax palettes (--hl-*): GitHub-like on a light page,
+;; Nord-like on a dark one.
+(def ^:private syntax-palettes
+  {:on-light {"comment" "#6a737d" "string" "#22863a" "symbol" "#6f42c1" "number" "#6f42c1"
+              "keyword" "#d73a49" "builtin" "#005cc5" "fn" "#005cc5" "var" "#24292e"
+              "operator" "#d73a49" "reader" "#6f42c1" "punct" "#586069"}
+   :on-dark  {"comment" "#6a738d" "string" "#a3be8c" "symbol" "#b48ead" "number" "#b48ead"
+              "keyword" "#81a1c1" "builtin" "#88c0d0" "fn" "#88c0d0" "var" "#d8dee9"
+              "operator" "#81a1c1" "reader" "#b48ead" "punct" "#d8dee9"}})
+
+(defn- hue-toward
+  "Hue `h` moved `share` of the shorter way toward `target`."
+  [h target share]
+  (let [d (- (mod (+ (- target h) 540) 360) 180)]
+    (mod (+ h (* d share)) 360)))
+
+(def ^:private syntax-offsets
+  "Hue offset from the page per colored token: the palette of a colorful page,
+   analogous hues around it. Tokens without one (comment, var, punct) read as
+   text: the page hue at their stock chroma."
+  {"keyword" 40 "operator" 40 "string" 80
+   "builtin" -40 "fn" -40 "symbol" -80 "number" -80 "reader" -80})
+
+(defn- syntax-colors
+  "The --hl-* tokens on a page of lightness `l`, chroma `c` and hue `h`. Each
+   stock token's lightness is rescaled into the range between the page and
+   white (dark page) or black (light page) the way the stock palette sits
+   against the default page. Its hue blends from the stock one to the page's
+   `syntax-offsets` palette as the page gets colorful (chroma 0.02 → 0.08), the
+   colored tokens' chroma rising to at least 0.1 with it: a gray page keeps
+   the stock palette, a vivid one gets colors that belong to it."
+  [l c h dark?]
+  (let [ref   (first (color->oklch (get defaults (if dark? :bg-dark :bg-light))))
+        w     (clamp01 (/ (- c 0.02) 0.06))
+        place (if dark?
+                (fn [tl] (+ l (* (- tl ref) (/ (- 1 l) (- 1 ref)))))
+                (fn [tl] (- l (* (- ref tl) (/ l ref)))))]
+    (into {}
+          (map (fn [[token hex]]
+                 (let [[tl tc th] (hex->oklch hex)
+                       offset (syntax-offsets token)
+                       target (mod (+ h (or offset 0)) 360)
+                       tc'    (if offset (+ tc (* w (- (max tc 0.1) tc))) tc)]
+                   [(str "hl-" token)
+                    (oklch (clamp01 (place tl)) tc' (hue-toward th target w))])))
+          (syntax-palettes (if dark? :on-dark :on-light)))))
+
 (defn surfaces
   "{:light {token oklch()} :dark {…}} — every surface, border and text token
    of each mode in the page color's hue: surfaces and borders in its chroma,
-   `surface-steps` away in lightness; text per `text-steps`."
+   `surface-steps` away in lightness; text per `text-steps`; `status-tints`;
+   `syntax-colors`."
   [params]
   (let [p (merge defaults params)]
     (into {}
@@ -218,13 +281,15 @@
                  (let [[l c h] (color->oklch (get p color-key))
                        dark? (< l 0.5)
                        dir   (if dark? 1 -1)]
-                   [mode (into (into {}
-                                     (map (fn [[token step]]
-                                            [token (oklch (clamp01 (+ l (* dir step))) c h)]))
-                                     (surface-steps mode))
-                               (map (fn [[token [tl share]]]
-                                      [token (oklch tl (* c share) h)]))
-                               (text-steps (if dark? :on-dark :on-light)))])))
+                   [mode (-> {}
+                             (into (map (fn [[token step]]
+                                          [token (oklch (clamp01 (+ l (* dir step))) c h)]))
+                                   (surface-steps mode))
+                             (into (map (fn [[token [tl share]]]
+                                          [token (oklch tl (* c share) h)]))
+                                   (text-steps (if dark? :on-dark :on-light)))
+                             (merge (status-tints p l dark?)
+                                    (syntax-colors l c h dark?)))])))
           {:light :bg-light :dark :bg-dark})))
 
 (defn- background-vars

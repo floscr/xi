@@ -1305,48 +1305,50 @@ body {
 /* highlighted EDN brings its own token colours */
 .error-card-raw code { color: var(--hl-var); }
 
-/* ---- Syntax highlighting ---- */
+/* ---- Syntax highlighting ----
+   A custom theme (xi.web.theme syntax-colors) re-tunes each token to its page
+   through --theme-hl-<token>-<mode>; the fallbacks are the stock palettes. */
 :root {
-  --hl-comment:  #6a737d;
-  --hl-string:   #22863a;
-  --hl-symbol:   #6f42c1;
-  --hl-number:   #6f42c1;
-  --hl-keyword:  #d73a49;
-  --hl-builtin:  #005cc5;
-  --hl-fn:       #005cc5;
-  --hl-var:      #24292e;
-  --hl-operator: #d73a49;
-  --hl-reader:   #6f42c1;
-  --hl-punct:    #586069;
+  --hl-comment:  var(--theme-hl-comment-light, #6a737d);
+  --hl-string:   var(--theme-hl-string-light, #22863a);
+  --hl-symbol:   var(--theme-hl-symbol-light, #6f42c1);
+  --hl-number:   var(--theme-hl-number-light, #6f42c1);
+  --hl-keyword:  var(--theme-hl-keyword-light, #d73a49);
+  --hl-builtin:  var(--theme-hl-builtin-light, #005cc5);
+  --hl-fn:       var(--theme-hl-fn-light, #005cc5);
+  --hl-var:      var(--theme-hl-var-light, #24292e);
+  --hl-operator: var(--theme-hl-operator-light, #d73a49);
+  --hl-reader:   var(--theme-hl-reader-light, #6f42c1);
+  --hl-punct:    var(--theme-hl-punct-light, #586069);
 }
 
 [data-theme="dark"] {
-  --hl-comment:  rgb(106, 115, 141);
-  --hl-string:   rgb(163, 190, 140);
-  --hl-symbol:   rgb(180, 142, 173);
-  --hl-number:   rgb(180, 142, 173);
-  --hl-keyword:  rgb(129, 161, 193);
-  --hl-builtin:  rgb(136, 192, 208);
-  --hl-fn:       rgb(136, 192, 208);
-  --hl-var:      rgb(216, 222, 233);
-  --hl-operator: rgb(129, 161, 193);
-  --hl-reader:   rgb(180, 142, 173);
-  --hl-punct:    rgb(216, 222, 233);
+  --hl-comment:  var(--theme-hl-comment-dark, rgb(106, 115, 141));
+  --hl-string:   var(--theme-hl-string-dark, rgb(163, 190, 140));
+  --hl-symbol:   var(--theme-hl-symbol-dark, rgb(180, 142, 173));
+  --hl-number:   var(--theme-hl-number-dark, rgb(180, 142, 173));
+  --hl-keyword:  var(--theme-hl-keyword-dark, rgb(129, 161, 193));
+  --hl-builtin:  var(--theme-hl-builtin-dark, rgb(136, 192, 208));
+  --hl-fn:       var(--theme-hl-fn-dark, rgb(136, 192, 208));
+  --hl-var:      var(--theme-hl-var-dark, rgb(216, 222, 233));
+  --hl-operator: var(--theme-hl-operator-dark, rgb(129, 161, 193));
+  --hl-reader:   var(--theme-hl-reader-dark, rgb(180, 142, 173));
+  --hl-punct:    var(--theme-hl-punct-dark, rgb(216, 222, 233));
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --hl-comment:  rgb(106, 115, 141);
-    --hl-string:   rgb(163, 190, 140);
-    --hl-symbol:   rgb(180, 142, 173);
-    --hl-number:   rgb(180, 142, 173);
-    --hl-keyword:  rgb(129, 161, 193);
-    --hl-builtin:  rgb(136, 192, 208);
-    --hl-fn:       rgb(136, 192, 208);
-    --hl-var:      rgb(216, 222, 233);
-    --hl-operator: rgb(129, 161, 193);
-    --hl-reader:   rgb(180, 142, 173);
-    --hl-punct:    rgb(216, 222, 233);
+    --hl-comment:  var(--theme-hl-comment-dark, rgb(106, 115, 141));
+    --hl-string:   var(--theme-hl-string-dark, rgb(163, 190, 140));
+    --hl-symbol:   var(--theme-hl-symbol-dark, rgb(180, 142, 173));
+    --hl-number:   var(--theme-hl-number-dark, rgb(180, 142, 173));
+    --hl-keyword:  var(--theme-hl-keyword-dark, rgb(129, 161, 193));
+    --hl-builtin:  var(--theme-hl-builtin-dark, rgb(136, 192, 208));
+    --hl-fn:       var(--theme-hl-fn-dark, rgb(136, 192, 208));
+    --hl-var:      var(--theme-hl-var-dark, rgb(216, 222, 233));
+    --hl-operator: var(--theme-hl-operator-dark, rgb(129, 161, 193));
+    --hl-reader:   var(--theme-hl-reader-dark, rgb(180, 142, 173));
+    --hl-punct:    var(--theme-hl-punct-dark, rgb(216, 222, 233));
   }
 }
 
@@ -2406,11 +2408,11 @@ code a:hover,
 }
 
 .tool-call-diff .tool-diff-line--add {
-  background: color-mix(in srgb, var(--hl-string) 7%, transparent);
+  background: var(--diff-add-bg, color-mix(in srgb, var(--hl-string) 7%, transparent));
 }
 
 .tool-call-diff .tool-diff-line--del {
-  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  background: var(--diff-del-bg, color-mix(in srgb, var(--danger) 7%, transparent));
 }
 
 /* ---- Rendered markdown diff (xi.markdown.diff) ----
@@ -2477,12 +2479,12 @@ code a:hover,
 .md-diff-band--ctx { opacity: 0.55; }
 
 .md-diff-band--add {
-  background: color-mix(in srgb, var(--hl-string) 4%, transparent);
+  background: var(--diff-add-bg, color-mix(in srgb, var(--hl-string) 4%, transparent));
   border-left-color: var(--hl-string);
 }
 
 .md-diff-band--del {
-  background: color-mix(in srgb, var(--danger) 4%, transparent);
+  background: var(--diff-del-bg, color-mix(in srgb, var(--danger) 4%, transparent));
   border-left-color: var(--danger);
 }
 
@@ -2589,8 +2591,8 @@ code a:hover,
 
 /* Error zone: red wash over the code panel + a line:col chip. */
 .clj-result-error pre {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 7%, var(--bg-1));
+  color: var(--danger-fg, var(--danger));
+  background: var(--diff-del-bg, color-mix(in srgb, var(--danger) 7%, var(--bg-1)));
   border-color: color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
@@ -2599,7 +2601,7 @@ code a:hover,
 
 .clj-result-loc {
   font-size: var(--font-xs);
-  color: var(--danger);
+  color: var(--danger-fg, var(--danger));
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
   border-radius: var(--radius-xs);
@@ -2903,7 +2905,9 @@ code a:hover,
    theme (xi.web.theme) replaces both per mode through its --theme-bg-* /
    --theme-sidebar-* properties on <html>, and the framework's surface,
    border and text tokens through --theme-bg-N-* / --theme-border-N-* /
-   --theme-fg-N-* (the fallbacks are theme.css's own mapping). */
+   --theme-fg-N-* (the fallbacks are theme.css's own mapping).
+   --diff-add-bg / --diff-del-bg / --danger-fg exist only under a custom
+   theme (unset otherwise), so their users write the default as fallback. */
 :root {
   --sidebar-bg: var(--theme-sidebar-light, #f6f6f9);
   --sidebar-card-bg: var(--theme-bg-light, #fff);
@@ -2917,6 +2921,9 @@ code a:hover,
   --fg-0: var(--theme-fg-0-light, var(--gray-950));
   --fg-1: var(--theme-fg-1-light, var(--gray-600));
   --fg-2: var(--theme-fg-2-light, var(--gray-400));
+  --diff-add-bg: var(--theme-add-bg-light);
+  --diff-del-bg: var(--theme-del-bg-light);
+  --danger-fg: var(--theme-danger-fg-light);
 }
 [data-theme="dark"] {
   --sidebar-bg: var(--theme-sidebar-dark, var(--bg-0));
@@ -2931,6 +2938,9 @@ code a:hover,
   --fg-0: var(--theme-fg-0-dark, var(--gray-50));
   --fg-1: var(--theme-fg-1-dark, var(--gray-300));
   --fg-2: var(--theme-fg-2-dark, var(--gray-500));
+  --diff-add-bg: var(--theme-add-bg-dark);
+  --diff-del-bg: var(--theme-del-bg-dark);
+  --danger-fg: var(--theme-danger-fg-dark);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -2946,6 +2956,9 @@ code a:hover,
     --fg-0: var(--theme-fg-0-dark, var(--gray-50));
     --fg-1: var(--theme-fg-1-dark, var(--gray-300));
     --fg-2: var(--theme-fg-2-dark, var(--gray-500));
+    --diff-add-bg: var(--theme-add-bg-dark);
+    --diff-del-bg: var(--theme-del-bg-dark);
+    --danger-fg: var(--theme-danger-fg-dark);
   }
 }
 /* Re-point --bg-0 inside the main column so everything painted with it
@@ -4487,11 +4500,11 @@ code a:hover,
 .diff-line--selected .diff-ln { color: var(--fg-0); opacity: 0.9; }
 
 .diff-line--add {
-  background: color-mix(in srgb, var(--hl-string) 12%, transparent);
+  background: var(--diff-add-bg, color-mix(in srgb, var(--hl-string) 12%, transparent));
 }
 
 .diff-line--del {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  background: var(--diff-del-bg, color-mix(in srgb, var(--danger) 12%, transparent));
 }
 
 .diff-line--meta {
