@@ -20,28 +20,28 @@
     :else 0))
 
 (defn recent?
-  "True when a session belongs in the \"Recent\" set: its last activity happened
-   during the current server run (at/after `started-at`) AND within
-   `recent-active-window-ms` (a couple of days). Activity is the later of
-   :timestamp (last response / save) and :last-opened (last resumed into a
-   room — recorded separately from :last-accessed exactly so opening counts
-   for this grouping without re-sorting the list, see session/touch-summary!).
-   A session with a live room right now (:active?) always qualifies —
-   covering the open session and brand-new orphan rooms that carry no
-   timestamp yet — and so does a pinned one (:pinned?), however old: pinning
-   opts a session out of ever aging into \"Earlier\".
+  "True when a session belongs in the \"Recent\" set: its last activity
+   (:timestamp — the last turn / save, never a mere open) happened during the
+   current server run (at/after `started-at`) AND within
+   `recent-active-window-ms` (a couple of days). Opening an Earlier session
+   leaves it there; it moves up once new content arrives — a running turn
+   (:busy?) qualifies straight away. A live room with no timestamp yet (a
+   brand-new, never-persisted chat) qualifies, and so does a pinned session
+   (:pinned?), however old: pinning opts a session out of ever aging into
+   \"Earlier\".
 
    Callers without a server run (e.g. the one-shot CLI) pass `started-at` 0,
    reducing the predicate to \"activity within the last couple of days\"."
-  [now-ms started-at {:keys [active? pinned? timestamp last-opened]}]
-  (boolean
-   (or active?
-       pinned?
-       (and started-at
-            (let [t (max (->ms timestamp) (->ms last-opened))]
-              (and (pos? t)
-                   (>= t started-at)
-                   (<= (- now-ms t) recent-active-window-ms)))))))
+  [now-ms started-at {:keys [active? busy? pinned? timestamp]}]
+  (let [t (->ms timestamp)]
+    (boolean
+     (or pinned?
+         busy?
+         (and active? (not (pos? t)))
+         (and started-at
+              (pos? t)
+              (>= t started-at)
+              (<= (- now-ms t) recent-active-window-ms))))))
 
 (defn recent-cards
   "Build the \"Recent\" session set the web sidebar shows, from raw server
@@ -49,8 +49,8 @@
    recent. Mirrors xi.web.views/recent-sidebar:
 
      - `rooms`      live rooms (room-manager/room-summaries: maps with
-                    :session-id :session-name :cwd :busy?). A session with a
-                    live room counts as :active? and always qualifies.
+                    :session-id :session-name :cwd :busy?). A live room
+                    without a saved session always qualifies.
      - `sessions`   saved sessions from disk (summaries with :session-id :name
                     :cwd :last-accessed :timestamp).
      - `started-at` the server's boot time (epoch ms); recency is relative to
@@ -62,6 +62,7 @@
    deduped by id, agents-running pinned to the top, filtered by `recent?`."
   [{:keys [rooms sessions started-at now]}]
   (let [active-sids (into #{} (keep :session-id) rooms)
+        busy-sids   (into #{} (comp (filter :busy?) (keep :session-id)) rooms)
         known       (into #{} (keep :session-id) sessions)
         orphans     (->> rooms
                          (filter (fn [r] (and (:session-id r)
@@ -79,9 +80,8 @@
                             :cwd        (:cwd s)
                             :active?    (contains? active-sids (:session-id s))
                             :pinned?    (boolean (:pinned? s))
-                            :busy?      false
-                            :timestamp  (or (:last-accessed s) (:timestamp s))
-                            :last-opened (:last-opened s)})
+                            :busy?      (contains? busy-sids (:session-id s))
+                            :timestamp  (or (:last-accessed s) (:timestamp s))})
                          sessions)
         cards       (->> (concat orphans enriched)
                          (filter :session-id)

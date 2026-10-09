@@ -221,22 +221,6 @@
   [session]
   (update-session! session {:last-accessed (iso-now)}))
 
-(defn touch-summary!
-  "Record a saved session's :last-opened on disk: it counts toward the
-   sidebar's Recent grouping but not the sort order (:last-accessed), so
-   opening a chat never re-sorts the list. A lossless JSON merge, so fields the
-   in-memory session doesn't model survive. No-op without a metadata file."
-  [summary]
-  (when (and (= :xi (:source summary)) (:filepath summary))
-    (try
-      (let [data (js/JSON.parse (fs/readFileSync (:filepath summary) "utf8"))]
-        (aset data "last-opened" (iso-now))
-        (fs/writeFileSync (:filepath summary) (js/JSON.stringify data nil 2) "utf8")
-        (invalidate-listing-cache!))
-      (catch :default e
-        (js/console.error (str "[session] failed to touch " (:filepath summary)
-                               ": " (.-message e)))))))
-
 (def boot-resume-window-ms
   "How long after its :interrupted-at a cut-off chat is still continued by a
    booting server (xi.server.ws :sessions/resume-interrupted); an older marker
@@ -447,7 +431,6 @@
        :filepath filepath
        :timestamp timestamp
        :last-accessed (:last-accessed data)
-       :last-opened (:last-opened data)
        :name (util/session-title (:name data))
        :model (:model data)
        :interrupted-at (:interrupted-at data)

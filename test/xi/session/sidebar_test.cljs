@@ -113,6 +113,21 @@
     (testing "the card carries the flag for the menu label and the pin marker"
       (is (true? (:pinned? (first recent)))))))
 
+(deftest opening-an-earlier-session-keeps-it-there
+  (let [now   (js/Date.now)
+        state (-> (with-sessions [{:session-id "opened" :timestamp 2}
+                                  {:session-id "working" :timestamp 3}])
+                  (assoc-in [:lobby :rooms]
+                            [{:id "r1" :session-id "opened" :users []}
+                             {:id "r2" :session-id "working" :busy? true :users []}
+                             {:id "r3" :session-id "blank" :users []}])
+                  (assoc-in [:lobby :started-at] (- now 1000)))
+        {:keys [recent earlier]} (sb/sidebar-session-groups state)]
+    (testing "a live room alone doesn't lift an old session into Recent"
+      (is (= ["opened"] (mapv :session-id earlier))))
+    (testing "a running turn does, and so does a never-saved new chat"
+      (is (= #{"working" "blank"} (set (map :session-id recent)))))))
+
 (deftest pinned-sessions-skip-the-hide-all-cleanup-flag
   (testing "pinning rides on the card even when the session is also dismissed"
     (let [state (-> (with-sessions [{:session-id "a" :pinned? true :dismissed? true :timestamp 1}])

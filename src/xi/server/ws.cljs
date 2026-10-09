@@ -157,7 +157,7 @@
   (->> (if agent-id
          (session/list-personal-agent-sessions agent-id)
          (session/list-all-sessions))
-       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :last-opened :timestamp :source]))))
+       (mapv #(select-keys % [:session-id :name :cwd :last-accessed :timestamp :source]))))
 
 (defn- saved-sessions
   "All saved-session summaries, minus those shadowed by a live room's
@@ -445,8 +445,7 @@
                                        (ext-system-prompt-parts cwd))))
                 system (system-prompt/parts->system system-parts)
                 session (if summary
-                          (do (session/touch-summary! summary)
-                              (session/load-session summary))
+                          (session/load-session summary)
                           (cond-> (session/create-session
                                    cwd (cond-> {:user (util/user-id user)}
                                          agent? (assoc :agent agent-id)))
