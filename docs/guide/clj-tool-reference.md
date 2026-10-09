@@ -84,8 +84,10 @@ decides each one:
    turn hints off with `:helper-hints false` in `~/.config/xi/ext/clj.edn`.
 2. A program in `:allow-clis` of `~/.config/xi/ext/clj.edn`, or allowed by a
    [rule](rules-reference.md), runs with any arguments. A rule with
-   `:command`, `:within`, `:tracked`, `:host` or `:read-only` allows only that
-   exact, fully literal command.
+   `:command`, `:path`, `:within`, `:tracked`, `:host` or `:read-only` allows
+   only that exact, fully literal command (`:path` tests its glob or regex
+   against every path the command names, so `{:cli "rm" :path "/tmp/**"}`
+   covers deletions under `/tmp` and nothing else).
 3. Anything else asks: once, always (for the chat), or deny.
 
 Whatever the program, these still ask: destructive patterns (`rm -rf`,

@@ -14,7 +14,17 @@
 (deftest glob->re-basics
   (is (= "[^/]*\\.sh" (rules/glob->re "*.sh")))
   (is (= ".*\\.sh" (rules/glob->re "**.sh")))
-  (is (= "src/[^/]*/x" (rules/glob->re "src/*/x"))))
+  (is (= "src/[^/]*/x" (rules/glob->re "src/*/x")))
+  (testing "**/ is zero or more directories"
+    (is (= "src/(?:.*/)?x" (rules/glob->re "src/**/x")))
+    (let [m? (fn [glob s] (rules/matches? {:match {:tool :write :path glob}}
+                                          {:tool :write :path s}))]
+      (is (m? "~/Documents/**/*" "~/Documents/a.txt"))
+      (is (m? "~/Documents/**/*" "~/Documents/x/y/a.txt"))
+      (is (not (m? "~/Documents/**/*" "~/Downloads/a.txt")))
+      (is (m? "/tmp/**" "/tmp/x"))
+      (is (m? "/tmp/**" "/tmp/x/y"))
+      (is (not (m? "/tmp/**" "/tmp")) "the dir itself is not under it"))))
 
 (deftest match-tool
   (let [rule {:match {:tool #{:write :edit}}}]
@@ -160,6 +170,35 @@
                       {:tool :write :path "dir/deploy.sh"}))
   (is (rules/matches? {:match {:tool :write :path #"\.sh$"}}
                       {:tool :write :path "any/deep/deploy.sh"})))
+
+(deftest match-path-on-sh-operands
+  (let [rule {:match {:tool :sh :cli "rm" :path "/tmp/**"}}]
+    (testing "every literal operand must match in one of its forms"
+      (is (rules/matches? rule {:tool :sh :cli "rm" :command "rm -r /tmp/x"
+                                :operand-paths [["/tmp/x" "/tmp/x"]]}))
+      (is (rules/matches? rule {:tool :sh :cli "rm" :command "rm x y"
+                                :operand-paths [["x" "/tmp/x"] ["y" "/tmp/y"]]})
+          "a relative operand matches through its resolved form")
+      (is (not (rules/matches? rule {:tool :sh :cli "rm" :command "rm /tmp/x ~/a"
+                                     :operand-paths [["/tmp/x" "/tmp/x"]
+                                                     ["~/a" "/home/u/a" "~/a"]]}))
+          "one operand elsewhere → no match"))
+    (testing "a ~-glob matches the home-collapsed form"
+      (is (rules/matches? {:match {:tool :sh :path "~/Documents/**/*"}}
+                          {:tool :sh :cli "mv" :command "mv /home/u/Documents/a b"
+                           :operand-paths [["/home/u/Documents/a" "/home/u/Documents/a" "~/Documents/a"]
+                                           ["b" "/home/u/Documents/b" "~/Documents/b"]]})))
+    (testing "no operands (absent or empty) → never matches"
+      (is (not (rules/matches? rule {:tool :sh :cli "rm" :command "rm --no-preserve-root /tmp/x"})))
+      (is (not (rules/matches? rule {:tool :sh :cli "rm" :command "rm" :operand-paths []})))
+      (is (not (rules/matches? rule {:tool :sh :cli "rm" :command "rm" :operand-paths nil}))))
+    (testing "a :path on a :sh rule never consults :path"
+      (is (not (rules/matches? rule {:tool :sh :cli "rm" :path "/tmp/x"}))))
+    (testing "regex specs work per operand too"
+      (is (rules/matches? {:match {:tool :sh :path #"^/tmp/"}}
+                          {:tool :sh :cli "rm" :operand-paths [["/tmp/a" "/tmp/a"]]})))
+    (testing "a :path rule is arg-scoped: its allow covers the exact command"
+      (is (rules/arg-scoped? rule)))))
 
 (deftest match-command-regex-and-substring
   (is (rules/matches? {:match {:tool :bash :command #"\brm\b.*/tmp"}}

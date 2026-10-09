@@ -1234,6 +1234,29 @@
                  (is (str/includes? (str (get-in res [:arguments :_hint])) "temporary"))
                  (done))))))
 
+(deftest gate-builtin-rm-under-tmp-carries-the-note
+  ;; The builtin (rm …) helper on a tmp path gets the same "unnecessary" note
+  ;; as (sh "rm" …) — an allow rule can't carry a message, so this is how the
+  ;; agent learns /tmp needs no cleanup.
+  (async done
+    (-> (js/Promise.resolve
+         (gate {:name "clj" :arguments {:code (str "(rm \"" (node-path/join (os/tmpdir) "clj-gate-note-nope") "\")")}}
+               (gate-ctx)))
+        (.then (fn [res]
+                 (is (not (:intercepted res)))
+                 (is (str/includes? (str (get-in res [:arguments :_hint])) "temporary"))
+                 (done))))))
+
+(deftest gate-builtin-rm-in-repo-has-no-tmp-note
+  (async done
+    (-> (js/Promise.resolve
+         (gate {:name "clj" :arguments {:code "(rm \"clj-gate-note-nope.txt\")"}}
+               (gate-ctx)))
+        (.then (fn [res]
+                 (is (not (:intercepted res)))
+                 (is (not (str/includes? (str (get-in res [:arguments :_hint])) "temporary")))
+                 (done))))))
+
 (deftest gate-autoruns-rm-rf-without-approval
   ;; rm -rf is exempted from the guarded confirm in clj — even with no
   ;; confirm! attached it passes straight through (autorun), not blocked.

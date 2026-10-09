@@ -18,6 +18,7 @@
    catch-all deny in its tier). They are cached by mtime and reloaded on change (or via
    `/rules reload`)."
   (:require [clojure.string :as str]
+            [clojure.walk :as walk]
             [cljs.tools.reader :as tr]
             [xi.bb-trust :as bb-trust]
             [xi.core.state :as core-state]
@@ -513,19 +514,36 @@
         (str/starts-with? abs (str home path/sep)) (str "~" (subs abs (count home)))
         :else                                      nil))))
 
+(defn operand-paths
+  "The forms a `:path` rule is tested against for each literal operand of a
+   `:sh` `argv` — [as given, resolved absolute, ~-collapsed when under $HOME] —
+   so `(sh \"rm\" \"-r\" \"/tmp/x\")` matches `\"/tmp/**\"` and a `~/…` glob
+   matches every spelling. nil when the operands aren't literal (see
+   `literal-operands`). I/O (symlinks are canonicalized)."
+  [cwd argv]
+  (when-let [operands (literal-operands argv)]
+    (mapv (fn [op]
+            (let [resolved (paths/real-resolve (or cwd (.cwd js/process)) op)]
+              (cond-> [op resolved]
+                (home-collapse resolved) (conj (home-collapse resolved)))))
+          operands)))
+
 (defn enrich-request
   "Add the I/O-derived match fields the given `ruleset` actually needs to
-   `req`: :resolved-path / :resolved-home-path (`:path`), :outside-cwd?,
-   :credential-path?, :nodes (`:node`), :operands-within-repo? (`:within`),
-   :operands-tracked? (`:tracked`, a delay), :xi-rules-file?, :xi-config-file?,
-   :own-data? (`:extension-data`), :chained?, :bb-trusted?, :mcp-trusted?,
-   :installed?, :user-record (map `:user` rules)."
+   `req`: :resolved-path / :resolved-home-path (`:path`), :operand-paths
+   (`:path` on a `:sh` request), :outside-cwd?, :credential-path?, :nodes
+   (`:node`), :operands-within-repo? (`:within`), :operands-tracked?
+   (`:tracked`, a delay), :xi-rules-file?, :xi-config-file?, :own-data?
+   (`:extension-data`), :chained?, :bb-trusted?, :mcp-trusted?, :installed?,
+   :user-record (map `:user` rules)."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (paths/real-resolve (:effective-cwd req) (str (:path req))))]
     (cond-> req
       resolved (assoc :resolved-path resolved)
       (home-collapse resolved) (assoc :resolved-home-path (home-collapse resolved))
+      (and (= :sh (:tool req)) (:argv req) (rules/needs-resolved-path? ruleset))
+      (assoc :operand-paths (operand-paths (:effective-cwd req) (:argv req)))
       (and (:path req) (rules/needs-outside? ruleset))
       (assoc :outside-cwd? (outside-cwd? (:effective-cwd req) (:path req)))
       (and (:path req) (rules/needs-credential? ruleset))

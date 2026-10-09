@@ -11,7 +11,8 @@
                                          ; :sh curl requests (glob/exact, regex, set)
                :read-only true           ; a :sh call whose argv parses as read-only for
                                          ; its program (xi.rules.readonly; false = doesn't)
-               :path #\"\\.sh$\"          ; regex OR glob string on the target path
+               :path #\"\\.sh$\"          ; regex OR glob string on the target path, or on
+                                         ; every literal operand of a :sh command
                :command #\"\\brm\\b\"       ; regex OR substring on the bash command
                :repo \"config/dotfiles\"  ; substring of the effective repo root
                :dir  \"~/code/projects\"   ; prefix of the effective cwd (store expands ~)
@@ -60,11 +61,13 @@
 ;; ── Value matchers ─────────────────────────────────────────────────────────
 
 (defn glob->re
-  "Translate a simple glob to a regex source string. `**` → `.*`, `*` →
-   `[^/]*`, `?` → `[^/]`; every other regex metacharacter is escaped."
+  "Translate a simple glob to a regex source string. `**/` → zero or more
+   directories (`(?:.*/)?`, so `a/**/x` matches `a/x` too), `**` → `.*`, `*`
+   → `[^/]*`, `?` → `[^/]`; every other regex metacharacter is escaped."
   [glob]
   (-> (str glob)
       (str/replace #"[.*+?^${}()|\[\]\\]" "\\$&")
+      (str/replace "\\*\\*/" "(?:.*/)?")
       (str/replace "\\*\\*" ".*")
       (str/replace "\\*" "[^/]*")
       (str/replace "\\?" "[^/]")))
@@ -335,16 +338,33 @@
     (string? spec) (= spec (str cli))
     :else          false))
 
+(defn- match-operand-paths
+  "Path spec against a `:sh` command's literal operands. `:operand-paths`
+   (store-computed, only when a `:path` rule is in play) holds each operand's
+   forms [as given, resolved, ~-collapsed]; every operand must match in one
+   form. Absent or empty — no operands, a `--long` or glued-value flag, dynamic
+   args — never matches, so a path allow can't be smuggled past."
+  [spec operand-paths]
+  (boolean (and (seq operand-paths)
+                (every? (fn [forms] (some #(match-path spec %) forms))
+                        operand-paths))))
+
 (defn- match-path*
   "Path spec against the raw `:path`, the resolved `:resolved-path` or the
    home-collapsed `:resolved-home-path`, so relative, `~` and absolute forms of
-   one file all match, and denies can't be dodged with a relative path."
+   one file all match, and denies can't be dodged with a relative path. A
+   `:sh` request carries no `:path`; there the spec is tested against every
+   literal operand of the command (`match-operand-paths`)."
   [spec req]
-  (or (match-path spec (:path req))
-      (and (some? (:resolved-path req))
-           (match-path spec (:resolved-path req)))
-      (and (some? (:resolved-home-path req))
-           (match-path spec (:resolved-home-path req)))))
+  (cond
+    (nil? spec)         true
+    (= :sh (:tool req)) (match-operand-paths spec (:operand-paths req))
+    :else
+    (or (match-path spec (:path req))
+        (and (some? (:resolved-path req))
+             (match-path spec (:resolved-path req)))
+        (and (some? (:resolved-home-path req))
+             (match-path spec (:resolved-home-path req))))))
 
 (defn matches?
   "True when canonical `rule`'s `:match` matches decision request `req`.
@@ -454,11 +474,11 @@
 
 (defn arg-scoped?
   "True when `rule` constrains a `:sh` command's arguments (`:command`,
-   `:within`, `:tracked`, `:host` or `:read-only`), so its allow covers only
-   the exact command."
+   `:path`, `:within`, `:tracked`, `:host` or `:read-only`), so its allow
+   covers only the exact command."
   [rule]
   (boolean (some #(some? (get-in rule [:match %]))
-                 [:command :within :tracked :host :read-only])))
+                 [:command :path :within :tracked :host :read-only])))
 
 (defn needs-extension-data?
   "True when any rule carries an `:extension-data` matcher."

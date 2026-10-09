@@ -40,7 +40,7 @@ Every field present must hold. An absent field is no constraint.
 | --- | --- | --- |
 | `:tool` | The kind of call | `:write` `:edit` `:read` `:grep` `:find` `:ls` `:bash` `:clj` `:sh` `:bb` `:net` `:mcp` `:other`, or a set. `:sh` is one program run from the clj tool; `:bb` is the bb tool; `:net` is an extension's request. |
 | `:tool-name` | One tool by name | String (exact or glob), regex, or set. For extension tools, which are otherwise only `:other`. |
-| `:path` | The file a call targets | Regex (partial match) or glob string (full match: `*` one segment, `**` any, `?` one char). Tested against the argument as given, the resolved absolute path, and that path with `$HOME` as `~`. Symlinks are resolved. |
+| `:path` | The file a call targets, or every file a clj `(sh …)` call names | Regex (partial match) or glob string (full match: `*` one segment, `**` any, `**/` zero or more directories, `?` one char). Tested against the argument as given, the resolved absolute path, and that path with `$HOME` as `~`. Symlinks are resolved. For a `(sh …)` call every literal operand (a non-flag argument) must match in one of those forms; a call with no operand, a `--long` flag, a glued value (`-t/etc`) or a computed argument never matches. Like `:command`, its allow covers only the exact command. |
 | `:command` | The command line, or the clj code | Regex (partial) or substring. |
 | `:cli` | The program of a clj `(sh …)` call | String (exact), set, or regex. |
 | `:read-only` | `true` / `false` | Whether the arguments of a clj `(sh …)` call are read-only for its program: `find` without `-exec`/`-delete`/`-fprint`, `fd` without `-x`/`-X`/`-l`, `rg` without `--pre`/`-z`, `sort` without `-o`/`--compress-program`, `ss` without `-K`/`-D`, and `git` limited to ordinary repository subcommands without `-c`, `-C`, `--git-dir`, `-p`, `rebase -x`, `merge -s`, `--ext-diff`, `--output`, `--no-index`, `--upload-pack`, `--template`, `config` writes, `bisect run`, `submodule foreach` (no `push`, `clean`, `difftool`, `hook`, aliases). `cat`, `ls`, `wc` and the other plain read-only programs always count as read-only. An unknown flag counts as not read-only. Any other program, a computed argument or a background command with shell syntax matches neither value, so pair it with `:cli`. Like `:command`, its allow covers only the exact command. |
@@ -72,7 +72,7 @@ option when it has one, else the chat's directory.
 
 | `:type` | Does |
 | --- | --- |
-| `:allow` | Runs the call. No later rule is consulted. For a clj `(sh …)` rule: without `:command`, `:within`, `:tracked`, `:host` or `:read-only` it allows the program; with one of them it allows only the exact matched command. |
+| `:allow` | Runs the call. No later rule is consulted. For a clj `(sh …)` rule: without `:command`, `:path`, `:within`, `:tracked`, `:host` or `:read-only` it allows the program; with one of them it allows only the exact matched command. |
 | `:deny` | Blocks it. The agent sees `:message`. |
 | `:nudge` | Blocks it, but reports `:message` as a hint rather than an error. |
 | `:ask` | Shows a dialog. `:message` replaces the default text. `:options` defaults to `[:yes :no :always]`; `:unanswered :deny` refuses the call when nobody can answer instead of letting it through. |

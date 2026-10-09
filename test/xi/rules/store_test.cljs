@@ -629,6 +629,43 @@
       (finally
         (fs/rmSync repo #js {:recursive true :force true})))))
 
+(deftest enrich-request-populates-operand-paths-only-when-needed
+  (let [tmp  (fs/realpathSync (os/tmpdir))
+        dir  (fs/mkdtempSync (node-path/join tmp "xi-operand-paths-"))
+        req  (fn [argv] {:tool :sh :cli (first argv) :command (str/join " " argv)
+                         :argv argv :effective-cwd dir})
+        rule [{:match {:tool :sh :cli "rm" :path (str tmp "/**")} :action {:type :allow}}]]
+    (try
+      (testing "no :path rule → request is untouched"
+        (is (not (contains? (store/enrich-request (req ["rm" "-r" dir]) [{:match {:tool :sh}}])
+                            :operand-paths))))
+      (testing "a :path rule → every literal operand in its [raw resolved ~] forms"
+        (let [sub (node-path/join dir "sub")
+              ops (:operand-paths (store/enrich-request (req ["rm" "-r" "sub" sub]) rule))]
+          (is (= [["sub" sub] [sub sub]] ops))))
+      (testing "a relative operand resolves against the effective cwd and matches a glob"
+        (is (= :allow (get-in (rules/first-match rule (store/enrich-request (req ["rm" "-r" "sub"]) rule))
+                              [:action :type]))))
+      (testing "an operand outside the glob → no match"
+        (is (nil? (rules/first-match rule (store/enrich-request (req ["rm" "-r" "sub" "/etc/x"]) rule)))))
+      (testing "long flags make the operands non-literal → nil, no match"
+        (let [r (store/enrich-request (req ["rm" "--force" "sub"]) rule)]
+          (is (contains? r :operand-paths))
+          (is (nil? (:operand-paths r)))
+          (is (nil? (rules/first-match rule r)))))
+      (testing "a $HOME operand also carries its ~ form"
+        (let [home (os/homedir)
+              ops  (:operand-paths (store/enrich-request
+                                    (req ["cat" (node-path/join home "xi-op-nope")])
+                                    [{:match {:tool :sh :path "~/**"}}]))]
+          (is (= "~/xi-op-nope" (last (first ops))))))
+      (testing "a non-:sh request never gets :operand-paths"
+        (is (not (contains? (store/enrich-request {:tool :bash :command "rm -r x" :argv ["rm" "-r" "x"]}
+                                                  rule)
+                            :operand-paths))))
+      (finally
+        (fs/rmSync dir #js {:recursive true :force true})))))
+
 (deftest operands-git-tracked
   ;; A real (index-only, no commit needed) git repo: tracked = in the index.
   (let [repo (fs/realpathSync (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-tracked-")))

@@ -70,6 +70,11 @@ Put rules in `~/.config/xi/rules.edn`. They apply to every project.
   {:match  {:tool #{:write :edit} :path #"\.sh$"}
    :action {:type :nudge :message "Write Babashka scripts, not shell scripts."}}
 
+  ;; deleting under /tmp never asks (every path the command names must
+  ;; be under /tmp — the glob is tested against each one)
+  {:match  {:tool :sh :cli "rm" :path "/tmp/**"}
+   :action {:type :allow}}
+
   ;; always confirm a push
   {:match  {:tool :sh :cli "git" :command #"\bgit push\b"}
    :action {:type :ask :message "Push to the remote?"}}]}
@@ -83,7 +88,7 @@ rule to apply; a key you leave out is no constraint.
 | Key | Matches | Value |
 | --- | --- | --- |
 | `:tool` | The kind of call | `:read` `:write` `:edit` `:grep` `:find` `:ls` `:sh` `:bb` `:clj` `:net` `:mcp` `:other`, or a set of them |
-| `:path` | The file a call targets | A regex (`#"…"`, partial match) or a glob string (`"src/**/*.cljs"`, full match). Tested against the path as given, resolved, and with `$HOME` shown as `~` |
+| `:path` | The file a call targets, or every file a `(sh …)` command names | A regex (`#"…"`, partial match) or a glob string (`"src/**/*.cljs"`, full match; `**/` is zero or more directories). Tested against the path as given, resolved, and with `$HOME` shown as `~`. For a command, each non-flag argument must match |
 | `:cli` | The program a command runs | A string, a set, or a regex |
 | `:read-only` | Whether a `(sh …)` call's arguments are read-only for its program (`find` without `-exec`, `git` without `push` or `-c`, …) | `true` or `false`; see the [reference](rules-reference.md#match) |
 | `:command` | The command line | A regex or a substring |

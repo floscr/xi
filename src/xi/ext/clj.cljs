@@ -2037,11 +2037,16 @@
                                              (= command (:command %)))
                                     (:argv %))
                                  cmds))
-            tmp-rm?  (some (fn [cmd]
-                             (and (str/starts-with? cmd "rm ")
-                                  (or (str/includes? cmd "/tmp/")
-                                      (str/includes? cmd (str (os/tmpdir))))))
-                           (:commands sh))
+            ;; A deletion under tmp — `(sh "rm" …)` or the builtin `(rm …)` —
+            ;; gets the "unnecessary" note whether or not a rule allowed it.
+            tmp-rm?  (or (some (fn [cmd]
+                                 (and (str/starts-with? cmd "rm ")
+                                      (or (str/includes? cmd "/tmp/")
+                                          (str/includes? cmd (str (os/tmpdir))))))
+                               (:commands sh))
+                         (let [c (or cwd (.cwd js/process))]
+                           (some #(paths/within-tmp? c (paths/real-resolve c %))
+                                 (rm-targets-of scan))))
             hint     (when (helper-hints?)
                        (not-empty
                         (str/join
@@ -2098,9 +2103,9 @@
                                              :target (command-ask-target code cmd)
                                              :argv   (literal-argv cmd)})
                                   guarded))
-            ;; Recursive (rm dir) deletions get their own confirm; an in-repo dir
-            ;; skips it only on an arg-scoped engine :allow (the CLI-wide `rm` allow
-            ;; never lifts it).
+            ;; Recursive (rm dir) deletions get their own confirm; an in-repo (or
+            ;; tmp) dir skips it only on an arg-scoped engine :allow — a `:path`
+            ;; / `:command` rule naming it (the CLI-wide `rm` allow never lifts it).
             rm-dirs  (->> (rm-targets-of scan)
                           (filter #(existing-dir? cwd %))
                           (remove (fn [p]
