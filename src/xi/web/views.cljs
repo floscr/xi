@@ -2858,9 +2858,9 @@
    [:defs
     [:linearGradient {:id "launch-logo-gradient" :gradientUnits "userSpaceOnUse"
                       :x1 "0" :y1 "0" :x2 "64" :y2 "40"}
-     [:stop {:offset "0" :stop-color "#e83fb4"}]
-     [:stop {:offset "0.55" :stop-color "#8b4cf0"}]
-     [:stop {:offset "1" :stop-color "#3b8fd6"}]]]
+     [:stop {:class ["launch-logo-stop-start"] :offset "0" :stop-color "#e83fb4"}]
+     [:stop {:class ["launch-logo-stop-mid"] :offset "0.55" :stop-color "#8b4cf0"}]
+     [:stop {:class ["launch-logo-stop-end"] :offset "1" :stop-color "#3b8fd6"}]]]
    [:g {:fill "url(#launch-logo-gradient)"}
     [:polygon {:points "0,0 9,0 36,40 27,40"}]
     [:polygon {:points "27,0 36,0 9,40 0,40"}]

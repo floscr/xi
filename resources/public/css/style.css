@@ -3984,6 +3984,15 @@ code a:hover,
   height: auto;
 }
 
+/* The logo gradient follows the theme's accent: the stop colors (the
+   attributes are the default theme's) sit at accent hue +57°, +10° and -38°.
+   Guarded, since an unsupported relative color would compute to black. */
+@supports (color: oklch(from red l c h)) {
+  .launch-logo-stop-start { stop-color: oklch(from var(--accent-500) 0.652 c calc(h + 57)); }
+  .launch-logo-stop-mid   { stop-color: oklch(from var(--accent-500) 0.580 c calc(h + 10)); }
+  .launch-logo-stop-end   { stop-color: oklch(from var(--accent-500) 0.632 calc(c * 0.58) calc(h - 38)); }
+}
+
 .launch-tagline {
   color: var(--fg-2);
   letter-spacing: 0.08em;
