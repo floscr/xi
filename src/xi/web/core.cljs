@@ -4,12 +4,8 @@
    Same pure core as every other mode (xi.core.app), wired in :client mode
    through xi.client.ws-transport: local events forward to the server,
    :remote? broadcasts mirror into the local room cache with effects
-   stripped. The browser only renders and collects input.
-
-   Phase 7b: home/session list + deep-link routing + offline cache. The
-   router lives in the single atom (:web/route); the cache hydrates state
-   before the WS connects and persists via an app tap. Saved sessions, live
-   rooms, unread dots and reconnect come from the lobby mirror + transport."
+   stripped. The router lives in the state atom (:web/route); xi.web.cache
+   hydrates state before the WS connects and persists via an app tap."
   (:require [clojure.string :as str]
             [replicant.dom :as r]
             [xi.agent :as agent]
@@ -46,16 +42,8 @@
 
 (defn- base-handlers
   "The pure handler map shared with the server, sans node-coupled chains.
-   Effects are stripped on mirror, so a simple merge suffices for most
-   read-and-forward handlers.
-
-   Quick-reply chips are the exception: the server broadcasts its exact event
-   stream, and the :quick-replies/suggested handler only accepts a result whose
-   :gen matches the room's current :gen — which maybe-suggest sets on turn-end
-   and clear-on-submit bumps on submit. So the client must run those same
-   gen-tracking reducers (mirroring the node make-handlers) or every suggestion
-   is rejected as stale and no chips ever render. The server-only
-   :quick-replies/generate effect is dropped on mirror."
+   The quick-reply gen-tracking chains are kept so mirrored suggestions
+   pass the :gen check (see xi.quick-replies)."
   []
   (-> (merge events/core-handlers
              agent/handlers
@@ -71,15 +59,12 @@
 ;; ── Web-local handlers (installed unwrapped; never mirrored) ──────────────────
 
 (defn- forward
-  "Forward an originating client event to the server."
   [_st ev]
   {:effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
 
 (defn- room-new-cwd
-  "cwd for a fresh chat opened from the overflow menu: inherit the current
-   chat's cwd, else the project dir currently being viewed, else nil (server
-   default). Mirrors the user's expectation that a new chat opens in the same
-   place they were already working."
+  "cwd for a fresh chat: the current chat's, else the viewed project's, else
+   nil (server default)."
   [st]
   (let [sid (get-in st [:web/route :session-id])
         dir (get-in st [:web/route :dir])]
@@ -91,26 +76,22 @@
         (when (string? dir) dir))))
 
 (defn- new-chat-view?
-  "True while the chat view shows a virtual new chat (a :web/pending-room, no
-   session id). The active room is then the *previous* room the client is
-   still attached to (or nil), so anything scoped to \"the room being viewed\"
-   — cwd, file buffers — must read the pending room instead."
+  "True while the chat view shows a virtual new chat (:web/pending-room, no
+   session id). The active room is then the previous room, so anything scoped
+   to the viewed room must read the pending room instead."
   [st]
   (and (some? (:web/pending-room st))
        (nil? (get-in st [:web/route :session-id]))))
 
 (defn- view-cwd
-  "cwd of the chat being viewed: the pending room's for a virtual new chat,
-   else the active room's."
   [st]
   (if (new-chat-view? st)
     (get-in st [:web/pending-room :cwd])
     (:cwd (state/active-room st))))
 
 (defn- open-pending-room
-  "Show `pending` as the virtual new chat (see room-new). A typed-in chat being
-   replaced is parked as a sidebar draft first, so opening another new chat
-   never costs the prompt."
+  "Show `pending` as the virtual new chat, parking a typed-in chat as a
+   sidebar draft first."
   [st pending]
   (let [cwd (:cwd pending)]
     {:state   (-> (router/stash-draft-chat st)
@@ -126,10 +107,8 @@
     (:web/preferred-model st) (assoc :model (:web/preferred-model st))))
 
 (defn- room-new
-  "Open a fresh *virtual* chat: switch to the chat view but create no server
-   room yet. The room stays client-only (launch header, no spinner, nothing to
-   clean up) until the first prompt, which fires :room/join + submits via
-   submit-pending / pending-submit-tap."
+  "Open a fresh virtual chat: no server room until the first prompt, which
+   joins and submits via submit-pending / pending-submit-tap."
   [st _]
   (open-pending-room st (fresh-pending-room st (room-new-cwd st))))
 
@@ -142,7 +121,6 @@
         (assoc-in [:state :web/sidebar-open?] false))))
 
 (defn- draft-chat-discard
-  "Drop a parked draft chat and its text."
   [st {:keys [id]}]
   {:state (-> st
               (update :web/draft-chats #(filterv (fn [r] (not= id (:id r))) %))
@@ -150,12 +128,8 @@
               (update :web/compose-images dissoc id))})
 
 (defn- counts-result
-  "Store per-session response counts (ride along on :lobby/state).
-
-   If a session was just left (`:web/pending-read`), mark it read at this
-   fresh count: the user saw whatever landed while they were attached, but
-   the count couldn't refresh until they returned to the lobby. Without this
-   the dot reappears for a room the user already visited."
+  "Store per-session response counts (ride along on :lobby/state). A session
+   just left (:web/pending-read) is marked read at this fresh count."
   [st {:keys [counts]}]
   (let [counts (or counts {})
         sid    (:web/pending-read st)
@@ -170,10 +144,6 @@
       {:state (assoc st :web/response-counts counts)})))
 
 (defn- mark-read
-  "Mark a session read at its current response count (clears the unread dot).
-   Updates the local overlay for an instant clear, caches it for offline
-   paint, and forwards to the server so the marker persists and syncs to
-   every other device (the server rebroadcasts an authoritative :read)."
   [st {:keys [session-id]}]
   (let [cnt (get-in st [:web/response-counts session-id] 0)]
     {:state   (assoc-in st [:web/watched session-id] cnt)
@@ -181,11 +151,6 @@
                [:ws/send {:type :session/mark-read :session-id session-id}]]}))
 
 (defn- mark-all-read
-  "Mark every unread session read at its current response count (clears all
-   unread dots at once). Per session it mirrors `mark-read`: bumps the local
-   overlay, caches it for offline paint, and forwards a marker to the server.
-   A session is unread when its response count exceeds the seen-count (the
-   later of the server-authoritative read state and the local overlay)."
   [st _]
   (let [reads  (get-in st [:lobby :read])
         unread (for [[sid cnt] (:web/response-counts st)
@@ -201,21 +166,11 @@
                     unread)}))
 
 (defn- dismiss-all
-  "Hide every currently-visible, idle session from Recent at once — the bulk
-   version of the per-card eye-off toggle. Flips the local :dismissed? overlay
-   for an instant move into the Hidden group, then forwards a :dismissed/toggle
-   per session so the server persists it and rebroadcasts an authoritative
-   lobby.
-
-   Skips sessions that are (a) already dismissed — so it never accidentally
-   un-hides one — and (b) in progress: any session with a live room that is
-   busy (agent working) or awaiting a dialog response is left visible, matching
-   the per-card toggle which hides itself while `busy?`/`has-dialog?`. Hiding a
-   running turn would bury it and lose the user's place in active work. Pinned
-   sessions are skipped too — pinning opts a chat out of every bulk cleanup."
+  "Hide every visible idle session from Recent: flip the local :dismissed?
+   overlay, then forward a :dismissed/toggle per session. Pinned, dismissed
+   and in-progress (busy or awaiting a dialog) sessions are left alone."
   [st _]
-  (let [;; session-ids with a live room that is busy or needs a dialog response
-        in-progress (->> (get-in st [:lobby :rooms])
+  (let [in-progress (->> (get-in st [:lobby :rooms])
                          (filter #(or (:busy? %) (:has-dialog? %)))
                          (map :session-id)
                          (filter some?)
@@ -243,15 +198,11 @@
   {:state (assoc st :web/connected? connected?)})
 
 (defn room-joined-from-cache
-  ":room/joined, splicing a cache-elided history back in. When our join
-   echoed the cached history's fingerprint and it matched the live room, the
-   server sent the snapshot WITHOUT :history plus :history-base {:hash
-   :count} and only the newer :history-tail
-   (xi.server.room-manager/joined-payload); the base is the :web/cache
-   snapshot seeded on navigate. An empty tail keeps that vector itself, so
-   the persist tap sees an identical history and skips the rewrite. If our
-   cache no longer matches the base (evicted / replaced since the join), paint
-   what we have and re-join without the fingerprint for a full snapshot."
+  ":room/joined, splicing a cache-elided history back in. With a matching
+   fingerprint the server sends :history-base {:hash :count} plus only the
+   newer :history-tail (xi.server.room-manager/joined-payload); the base is
+   the :web/cache snapshot. A stale cache paints what it has and re-joins
+   without the fingerprint for a full snapshot."
   [st {:keys [room-id room history-base history-tail] :as ev}]
   (if-not history-base
     (ws-transport/room-joined st ev)
@@ -268,11 +219,8 @@
             (assoc :effects [[:ws/send {:type :room/join :target room-id}]]))))))
 
 (defn- room-left-web
-  "The transport's :room/left, plus: when the room we were viewing is closed
-   under us (its blank session deleted from another client, a prune), leave
-   its now-dead /chat/<session-id> for home. Without a room the chat view
-   would wait on \"Connecting…\" forever. Our own leave already navigated
-   away, so the route no longer matches and this stays a no-op."
+  "The transport's :room/left, plus navigating home when the viewed room was
+   closed under us (deleted elsewhere, pruned)."
   [st {:keys [room-id] :as ev}]
   (let [sid      (get-in st [:rooms room-id :session :id])
         viewing? (and sid
@@ -283,10 +231,6 @@
                        [:app/dispatch {:type :route/navigate :page :home}]))))
 
 (defn- compose-add-images
-  "Stage client-resized images ({:data b64 :media-type mime}) for the next
-   prompt of the chat `draft-key`; they ride along on :input/submit and clear
-   on send. Scoped per chat like the text draft so they don't follow the user
-   into another session."
   [st {:keys [draft-key images]}]
   {:state (update-in st [:web/compose-images draft-key] (fnil into []) images)})
 
@@ -298,19 +242,16 @@
   {:state (update st :web/compose-images dissoc draft-key)})
 
 (defn- compose-set-draft
-  "Track the compose text per session so drafts survive navigation."
   [st {:keys [draft-key text]}]
   {:state (-> (if (seq text)
                 (assoc-in st [:web/drafts draft-key] text)
                 (update st :web/drafts dissoc draft-key))
-              ;; Reset command suggestion selection when the input changes
               (assoc :web/cmd-selected 0))})
 
 (defn- compose-clear-draft [st {:keys [draft-key]}]
   {:state (update st :web/drafts dissoc draft-key)})
 
 (defn- timeline-set-window
-  "Widen the virtualized timeline window (\"Show earlier messages\")."
   [st {:keys [window]}]
   {:state (assoc st :web/timeline-window window)})
 
@@ -321,36 +262,21 @@
   {:state (dissoc st :web/lightbox)})
 
 (defn- file-drag
-  "Raise / lower the chat view's file-drop overlay while files are dragged over
-   it (xi.web.views/file-drop-attrs). A no-op when unchanged — dragenter fires
-   for every child the drag crosses."
   [st {:keys [on?]}]
   (when (not= (boolean on?) (boolean (:web/file-drag? st)))
     {:state (if on? (assoc st :web/file-drag? true) (dissoc st :web/file-drag?))}))
 
 (defn- submit-pending
   "Stash a message submitted before its room exists; pending-submit-tap fires
-   it once :room/joined arrives. Two cases:
-   - virtual new room (a :web/pending-room is set): create the server room now
-     via :room/join \"new\" (carrying the stashed cwd). We detect this by the
-     pending-room, not by a missing active-room — a new chat is opened while
-     still attached to the previous room, so active-room is usually non-nil;
-     keying off it would fire the prompt into that previous room.
-   - cached session view (session-id set): the join is already in flight from
-     navigation, so just stash and wait.
-
-   The virtual join carries a :join-token (the pending-room id) which the
-   server echoes back on :room/joined, so pending-submit-tap can fire the
-   prompt into *this* new room only — never into some other room that happens
-   to join first (a navigation back to a session, a reconnect). Both a fresh
-   room and an existing session carry a non-nil session id, so the token is
-   the only reliable way to correlate the reply with our own request."
+   it once :room/joined arrives. A virtual new room (:web/pending-room) is
+   created now via :room/join \"new\" with a :join-token the server echoes
+   back, so the prompt lands in this room only. A cached session view just
+   waits for the join already in flight. The optimistic bubble is keyed on
+   the nil room and re-keyed by optimistic-tap after the join."
   [st {:keys [session-id text images model]}]
   (let [pending    (:web/pending-room st)
         virtual?   (and (nil? session-id) (some? pending))
         cwd        (:cwd pending)
-        ;; Model to run the eventual turn on: an explicit resubmit model
-        ;; (retry / edit) wins over the pending room's launch model.
         join-model (or model (:model pending))
         token      (str (:id pending))]
     (cond-> {:state (-> st
@@ -359,11 +285,6 @@
                                  virtual?     (assoc :join-token token)
                                  model        (assoc :model model)
                                  (seq images) (assoc :images images)))
-                        ;; Show the user's bubble instantly, before the
-                        ;; :room/join round-trips. room-id is nil (no room
-                        ;; yet); optimistic-post matches the virtual window by
-                        ;; the nil session/room, and optimistic-tap re-keys it
-                        ;; to the real room once :input/submit fires post-join.
                         (assoc :web/optimistic
                                (cond-> {:room-id nil :session-id session-id :text text}
                                  (seq images) (assoc :images (vec images))))
@@ -374,11 +295,9 @@
                                    join-model (assoc :model join-model))]]))))
 
 (defn- dialog-response
-  "Web :ui/dialog-response: the transport's forward/clear, plus — when the
-   echo clears a dialog still live here (answered by /allow, a keybinding or
-   another client; a button answer already dropped it optimistically via
-   :web/dialog-resolved) — the same decision-pill record the buttons log, so
-   the answer stays visible in the timeline."
+  "Web :ui/dialog-response: the transport's forward/clear, plus logging the
+   decision pill when the echo clears a dialog still live here (answered
+   elsewhere; button answers already dropped it via :web/dialog-resolved)."
   [st {:keys [room-id dialog-id value reason remote?] :as ev}]
   (let [room   (get-in st [:rooms room-id])
         dialog (when remote? (some #(when (= dialog-id (:id %)) %) (get-in room [:ui :dialogs])))
@@ -399,9 +318,6 @@
                   tool-idx (assoc :tool-id (:id (nth history tool-idx)))))))))
 
 (defn- deny-reason-submit
-  "Send the reason typed into the deny-reason composer: deny the ask with it
-   (the echo logs the decision pill, see `dialog-response`). A blank reason
-   is a plain deny."
   [st _]
   (when-let [{:keys [room-id dialog-id text]} (:web/deny-reason st)]
     {:state   (dissoc st :web/deny-reason)
@@ -413,8 +329,6 @@
   {:state (dissoc st :web/pending-submit)})
 
 (defn- optimistic-set
-  "Stash the just-submitted prompt so the timeline can show it instantly,
-   before the server round-trips a :user history entry back."
   [st {:keys [room-id session-id text images]}]
   {:state (assoc st :web/optimistic
                  (cond-> {:room-id room-id :session-id session-id :text text}
@@ -424,12 +338,9 @@
   {:state (dissoc st :web/optimistic)})
 
 (defn- web-command
-  "Route a backend slash command. Deliver it immediately when the socket is up
-   AND a room is joined; otherwise stash it as a pending command (a spinner
-   bubble, see views/pending-command-post) and let pending-command-tap fire it
-   once :room/joined (re)arrives — so an offline / mid-join command is never
-   forwarded blind into the wrong room. Mirrors the prompt pending-submit path,
-   including the virtual new-chat join-token correlation."
+  "Route a backend slash command: run it now when connected and in a room,
+   else stash it as :web/pending-command for pending-command-tap (the command
+   analogue of submit-pending, join-token included)."
   [st {:keys [room-id name args]}]
   (if (and (:web/connected? st) room-id)
     {:effects [[:app/dispatch (cond-> {:type :command/run :room-id room-id :name name}
@@ -461,10 +372,8 @@
 
 (defn- record-command
   "Push a just-executed command name to the front of the usage list (deduped,
-   capped) and persist it. This feeds the *next* reload's quick-command bar —
-   the displayed order (`:web/recent-commands`) is deliberately frozen for the
-   session so tapping a button never reorders the bar mid-tap (a moved DOM node
-   cancels the pending click on touch devices)."
+   capped) and persist it. Feeds the next reload's quick-command bar; the
+   displayed order (:web/recent-commands) stays frozen for the session."
   [st {:keys [name]}]
   (let [usage (->> (cons name (remove #(= % name) (:web/command-usage st)))
                    (take max-recent-commands)
@@ -474,9 +383,8 @@
                (user-state/set-effect :recent-commands usage)]}))
 
 (defn- theme-set-mode
-  "Switch the theme. The user's choice is also sent to the server (per-user
-   UI state, xi.user-state); the startup dispatch that applies the cached
-   theme is marked :init? and must not, or it would overwrite the server's."
+  "Switch the theme and persist it as per-user UI state (xi.user-state),
+   except for the :init? startup dispatch that applies the cached theme."
   [st {:keys [mode init?]}]
   (let [m (if (#{"auto" "light" "dark"} mode) mode "auto")]
     {:state   (assoc st :web/theme-mode m)
@@ -499,8 +407,6 @@
   {:state (dissoc st :web/diff-sel :web/diff-modify?)})
 
 (defn- diff-toggle-file
-  "Fold/unfold a file's body in the diff view by toggling its filename in the
-   `:web/diff-collapsed` set."
   [st {:keys [filename]}]
   {:state (update st :web/diff-collapsed
                   (fn [s] (let [s (or s #{})]
@@ -509,15 +415,10 @@
                               (conj s filename)))))})
 
 (defn- diff-show-all
-  "Render a file's whole body in the (size-limited) diff view by adding its
-   filename to the `:web/diff-expanded` set."
   [st {:keys [filename]}]
   {:state (update st :web/diff-expanded (fnil conj #{}) filename)})
 
 (defn- diff-toggle-all
-  "Collapse or expand every file body in the diff view at once. When all of the
-   diff's `filenames` are already in `:web/diff-collapsed`, clear them (expand
-   all); otherwise add them all (collapse all)."
   [st {:keys [filenames]}]
   {:state (update st :web/diff-collapsed
                   (fn [s]
@@ -530,25 +431,20 @@
   {:state (update st :web/diff-modify? not)})
 
 (defn- md-diff-toggle
-  "Flip a markdown diff between its rendered and code view: `key` (a tool call
-   id, or [:diff filename] in the diff viewer) is in the `:web/md-diff-code`
-   set while its code view is showing."
+  "Flip a markdown diff between its rendered and code view. `key` is a tool
+   call id, or [:diff filename] in the diff viewer."
   [st {:keys [key]}]
   {:state (update st :web/md-diff-code
                   (fn [s] (let [s (or s #{})]
                             (if (contains? s key) (disj s key) (conj s key)))))})
 
 (defn- prompt-part-toggle
-  "Expand/collapse one system-prompt part in the /prompt tab by toggling its
-   index in the `:web/prompt-expanded` set."
   [st {:keys [idx]}]
   {:state (update st :web/prompt-expanded
                   (fn [s] (let [s (or s #{})]
                             (if (contains? s idx) (disj s idx) (conj s idx)))))})
 
 (defn- prompt-toggle-all
-  "Expand or collapse every system-prompt part at once. When all `n` indices are
-   already expanded, collapse them all; otherwise expand them all."
   [st {:keys [n]}]
   {:state (assoc st :web/prompt-expanded
                  (if (= (:web/prompt-expanded st) (set (range n)))
@@ -556,9 +452,6 @@
                    (set (range n))))})
 
 (defn- selected-diff-snippet
-  "Pull the diff buffer in view for room-id (the active buffer, xi.buffers),
-   flatten it, and return the snippet text for the current selection range
-   (or nil)."
   [st room-id]
   (let [active (get-in st [:rooms room-id :ui :active-buffer])
         text   (get-in st [:rooms room-id :ui :buffers active :text])
@@ -592,14 +485,13 @@
 
 ;; ── difftastic column width (measured from the viewport) ─────────────────────
 
-(defonce ^:private mono-probe
-  ;; Offscreen <pre.diff-difft> kept around so we can read the difft pane's
-  ;; resolved monospace font even before a difft buffer has ever mounted.
+(defonce ^{:private true
+           :doc "Offscreen <pre.diff-difft> for reading the difft pane's resolved font
+                 before any difft buffer has mounted."}
+  mono-probe
   (atom nil))
 
 (defn- mono-font-string
-  "Canvas-format font shorthand ('12px \"SF Mono\", monospace') for the difft
-   <pre>, read from an offscreen probe carrying the same class."
   []
   (let [^js p (or @mono-probe
                   (let [el (.createElement js/document "pre")
@@ -616,15 +508,9 @@
     (str (.-fontSize cs) " " (.-fontFamily cs))))
 
 (def ^:private diff-scrollbar-px
-  "Width reserved for the difft pane's vertical scrollbar, so a full-width
-   diff doesn't also spill into a horizontal scrollbar."
   16)
 
 (defn- diff-content-px
-  "Pixel width available to the difft <pre>: the diff tab's inner width minus
-   the pre's horizontal padding (which equals the method bar's, both var(--size-4))
-   and the vertical scrollbar. Falls back to the window width before the diff
-   view has mounted."
   []
   (let [^js tab (.querySelector js/document ".diff-tab")
         ^js bar (.querySelector js/document ".diff-method-bar")]
@@ -634,9 +520,6 @@
       (.-innerWidth js/window))))
 
 (defn- measure-diff-cols
-  "How many monospace columns fit the diff pane right now. Measures the
-   character width on a canvas (no DOM reflow) against the live content
-   width. Clamped so a too-narrow or unmeasurable pane still works."
   []
   (let [ctx      (.getContext (js/document.createElement "canvas") "2d")
         _        (set! (.-font ctx) (mono-font-string))
@@ -647,10 +530,9 @@
       120)))
 
 (defn- diff-reopen
-  "Re-run /diff for the chosen source + renderer. difftastic is routed through
-   the :diff/measure-cols effect, which reads the viewport width and re-issues
-   the command as `difft:<cols>` so the output fills the browser width instead
-   of difftastic's headless 80-col default."
+  "Re-run /diff for the chosen source + renderer. difftastic goes through
+   :diff/measure-cols, which re-issues the command as `difft:<cols>` for the
+   viewport width."
   [_st {:keys [room-id method engine]}]
   (if (= engine :difft)
     {:effects [[:diff/measure-cols {:room-id room-id :method method}]]}
@@ -669,9 +551,8 @@
                     :web/project-sessions-loading? false)})
 
 (defn- sessions-all-result
-  "Full (uncapped) saved-session list for the all-sessions view, with its
-   counts merged over the lobby's (the lobby broadcast only counts the capped
-   recent subset)."
+  "Full saved-session list for the all-sessions view, counts merged over the
+   lobby's capped subset."
   [st {:keys [sessions counts]}]
   {:state (-> st
               (assoc :web/all-sessions sessions
@@ -679,11 +560,10 @@
               (update :web/response-counts merge counts))})
 
 ;; ── Session content search ────────────────────────────────────────────────────
-;; Names are searchable client-side, but message *content* lives only on the
-;; server, so content mode round-trips a query and caches the matching ids.
+;; Names are searched client-side; message content lives on the server, so
+;; content mode round-trips a query and caches the matching ids.
 
 (defn- content-search-cwd
-  "The project scope for a search key — only project-session lists are scoped."
   [st key]
   (when (= key :project-sessions) (:web/selected-project-dir st)))
 
@@ -699,8 +579,6 @@
       {:state st'})))
 
 (defn- toggle-content-search
-  "Flip a search box between name-only and message-content search. Turning it
-   on with a live query kicks off a search immediately."
   [st {:keys [key]}]
   (let [on?   (not (get-in st [:web/content-search key]))
         query (get-in st [:web/search key])
@@ -714,8 +592,6 @@
       {:state st'})))
 
 (defn- content-search-result
-  "Apply a content-search reply, ignoring stale ones whose query no longer
-   matches the live input."
   [st {:keys [key query session-ids]}]
   (if (= (str/trim (or query ""))
          (str/trim (or (get-in st [:web/search key]) "")))
@@ -723,21 +599,17 @@
     {:state st}))
 
 (defn- viewed-room-model
-  "The model currently shown for the viewed chat — mirrors chat-view's
-   resolution. A resubmit (retry / edit) carries this so the fork runs on the
-   latest picked model, even if the earlier /model pick's server round-trip
-   hasn't settled or landed on this room yet."
+  "The model shown for the viewed chat (same resolution as chat-view), so a
+   resubmit forks on the latest pick even before the /model round-trip lands."
   [st active sid]
   (or (get-in active [:agent :model])
       (get-in st [:web/cache sid :model])
       (get-in st [:web/pending-room :model])))
 
 (defn- bubble-edit-save
-  "Commit an inline bubble edit: fork the conversation at the edited message
-   (truncate history to before it, like /tree edit) and resubmit the edited
-   text — with the message's original image attachments — as a fresh prompt
-   (see xi.web.resubmit/fork-effects). Only invoked on Save, so tapping
-   Edit + Cancel is a no-op. Empty text just closes the editor without forking."
+  "Commit an inline bubble edit: fork at the edited message and resubmit the
+   text with its original images (xi.web.resubmit/fork-effects). Empty text
+   just closes the editor."
   [st _]
   (let [{:keys [index text images]} (:web/editing-bubble st)
         active  (state/active-room st)
@@ -751,11 +623,8 @@
                                               :text t :images images :model model})))))
 
 (defn- bubble-retry
-  "Resend a user message unchanged at its node point: fork the conversation at
-   that message (truncate history to before it, like Delete) and resubmit the
-   original text and image attachments as a fresh prompt. Same flow as
-   bubble-edit-save minus the editor. An images-only prompt (blank text) is
-   still retried — the images are the message."
+  "Resend a user message unchanged: fork at that message and resubmit its text
+   and images. Like bubble-edit-save minus the editor."
   [st {:keys [index text images]}]
   (let [active  (state/active-room st)
         sid     (get-in st [:web/route :session-id])
@@ -769,9 +638,8 @@
 
 (defn- prompt-nav-step
   "Move the prompt-nav cursor one step (:prompt-nav/prev = older, :next = newer)
-   over the full-history user-prompt indices. Opening jumps to the newest
-   prompt. Grows :web/timeline-window when the target prompt sits above the top
-   of the rendered window so its node exists for the scroll effect to reach."
+   over the full-history user-prompt indices; opening jumps to the newest.
+   Grows :web/timeline-window so the target prompt's node exists to scroll to."
   [st {:keys [type user-indices total cur-window]}]
   (let [c (count user-indices)]
     (if (pos? c)
@@ -780,7 +648,6 @@
                   (min (dec c) (inc (or cur 0)))
                   (if (nil? cur) (dec c) (max 0 (dec cur))))
             hidx (nth user-indices idx)
-            ;; +4 entries of context above the target prompt.
             needed (+ (- total hidx) 4)
             win (max (or cur-window 0) needed)]
         {:state (-> st
@@ -789,103 +656,247 @@
          :effects [[:prompt-nav/scroll {:history-index hidx}]]})
       {:state st})))
 
+(defn- lobby-state
+  "Install the lobby mirror, then apply the counts riding along. Sessions
+   deleted here (:web/deleted-session-ids) are filtered out until the server
+   stops listing them, so a stale broadcast can't resurrect the card."
+  [st ev]
+  (let [gone   (:web/deleted-session-ids st)
+        listed (into #{} (keep :session-id) (concat (:sessions ev) (:rooms ev)))
+        strip  (fn [ev k]
+                 (cond-> ev
+                   (contains? ev k) (update k #(vec (remove (comp gone :session-id) %)))))
+        ev'    (if (seq gone) (-> ev (strip :sessions) (strip :rooms)) ev)
+        {st' :state} (ws-transport/lobby-state st ev')
+        st'    (cond-> st'
+                 (seq gone) (assoc :web/deleted-session-ids (set (filter listed gone))))]
+    (if (contains? ev :counts)
+      (counts-result st' ev)
+      {:state st'})))
+
+(defn- cached-room-state
+  [st room-id cached history msg-hash msg-count]
+  (cond-> (-> st
+              (assoc-in [:rooms room-id :history] history)
+              (assoc-in [:rooms room-id :msg-hash] msg-hash)
+              (assoc-in [:rooms room-id :msg-count] msg-count))
+    (:model cached)
+    (assoc-in [:rooms room-id :agent :model] (:model cached))))
+
+(defn- session-current
+  "The server confirmed our cached snapshot matches the on-disk session and
+   skipped the resume payload: promote the cache into the room mirror."
+  [st {:keys [room-id session-id msg-hash msg-count]}]
+  (let [cached (get-in st [:web/cache session-id])]
+    (when (seq (:history cached))
+      {:state (cached-room-state st room-id cached (:history cached) msg-hash msg-count)})))
+
+(defn- session-resumed-tail
+  "Incremental resume: our cache is a prefix of the on-disk session, so append
+   only the new tail. Guarded on :base-hash; a non-matching client got a full
+   :session/resumed instead."
+  [st {:keys [room-id session-id base-hash messages msg-hash msg-count]}]
+  (let [cached (get-in st [:web/cache session-id])]
+    (when (and (seq (:history cached))
+               (= base-hash (:msg-hash cached)))
+      (let [history (into (vec (:history cached))
+                          (commands/messages->history messages))]
+        {:state (cached-room-state st room-id cached history msg-hash msg-count)}))))
+
+(defn- viewed-room
+  "The active room only when it is the one being viewed; nil for a new chat
+   still attached to the previous room."
+  [st]
+  (let [sid    (get-in st [:web/route :session-id])
+        active (state/active-room st)]
+    (when (= (get-in active [:session :id]) sid) active)))
+
+(defn- models-select
+  "Pick a model from the palette: /model on the viewed room (reflected on the
+   client room at once), or remembered on the pending room for a virtual new
+   chat. The pick becomes the sticky default for future new chats."
+  [st {:keys [model]}]
+  (let [text    (str "/model " model)
+        active  (state/active-room st)
+        rid     (:id (viewed-room st))
+        base    (-> st
+                    (dissoc :web/palette-page :web/palette-open?)
+                    (assoc :web/preferred-model model))
+        persist [:cache/preferred-model {:model model}]
+        sync    (user-state/set-effect :preferred-model model)]
+    (models/with-check
+      (cond
+        rid
+        {:state (assoc-in base [:rooms rid :agent :model] model)
+         :effects [persist sync
+                   [:palette/close nil]
+                   [:ws/send {:type :input/submit :room-id rid :text text}]]}
+
+        (:web/pending-room base)
+        {:state (assoc-in base [:web/pending-room :model] model)
+         :effects [persist sync [:palette/close nil]]}
+
+        :else
+        {:state base
+         :effects (cond-> [persist sync [:palette/close nil]]
+                    (:id active)
+                    (conj [:ws/send {:type :input/submit
+                                     :room-id (:id active) :text text}]))})
+      model)))
+
+(defn- submit-to-viewed-room
+  "Effect submitting `text` (+ `images`) to the viewed room, or via
+   :submit/pending when there is no server room for it yet."
+  [st text images]
+  (let [rid (:id (viewed-room st))
+        sid (get-in st [:web/route :session-id])]
+    (if rid
+      [:ws/send (cond-> {:type :input/submit :room-id rid :text text}
+                  (seq images) (assoc :images (vec images)))]
+      [:app/dispatch (cond-> {:type :submit/pending :session-id sid :text text}
+                       (seq images) (assoc :images (vec images)))])))
+
+(defn- skill-select
+  "Pick a skill from the palette. Skills with <input /> placeholders open the
+   skill form in the compose dock (navigating to a chat page first); plain
+   skills load directly. Recently used skills sort first next time."
+  [st {:keys [name]}]
+  (let [skill   (some #(when (= (:name %) name) %) (:web/skill-list st))
+        recents (->> (cons name (remove #(= % name) (:web/recent-skills st)))
+                     (take 8)
+                     vec)
+        st      (assoc st :web/recent-skills recents)
+        record  [:cache/recent-skills {:skills recents}]
+        sync    (user-state/set-effect :recent-skills recents)]
+    (if (seq (:inputs skill))
+      {:state (-> st
+                  (dissoc :web/palette-page :web/palette-open?)
+                  (assoc :web/skill-form
+                         {:name name
+                          :description (:description skill)
+                          :inputs (vec (:inputs skill))
+                          :values {}
+                          :images []}))
+       :effects (cond-> [[:palette/close nil]
+                         [:ws/send {:type :skill/web-get :name name}]
+                         record sync]
+                  (not= :chat (get-in st [:web/route :page]))
+                  (conj [:app/dispatch {:type :route/navigate
+                                        :page :chat :session-id nil}]))}
+      {:state (dissoc st :web/skill-list :web/palette-page :web/palette-open?)
+       :effects [[:palette/close nil]
+                 (submit-to-viewed-room st (str "/skill load " name) nil)
+                 record sync]})))
+
+(defn- skill-form-escape
+  "Esc twice cancels the skill form: the first press arms, the second
+   dismisses. Typing disarms (:skill-form/set-value)."
+  [st _]
+  (if (get-in st [:web/skill-form :armed?])
+    {:state (dissoc st :web/skill-form)}
+    {:state (assoc-in st [:web/skill-form :armed?] true)}))
+
+(defn- skill-form-submit
+  "Substitute each <name /> placeholder with its value (image placeholders
+   are blanked; the images ride along as attachments) and submit."
+  [st _]
+  (let [{:keys [inputs values images body]} (:web/skill-form st)]
+    (when body
+      (let [text (reduce (fn [t {:keys [name type]}]
+                           (let [re (js/RegExp. (str "<" name "\\s*/>") "g")
+                                 v  (if (= type :image)
+                                      ""
+                                      (str/trim (or (get values name) "")))]
+                             (.replace t re v)))
+                         body inputs)]
+        {:state   (dissoc st :web/skill-form)
+         :effects [(submit-to-viewed-room st text images)]}))))
+
+(defn- flip-session-lists
+  [st session-id f]
+  (let [flip (fn [ss] (mapv #(if (= (:session-id %) session-id) (f %) %) ss))]
+    (-> st
+        (update-in [:lobby :sessions] flip)
+        (update :web/project-sessions flip)
+        (update :web/all-sessions #(some-> % flip)))))
+
+(defn- dismissed-toggle
+  "Hide/show a session in Recent: flip locally, then forward so the server
+   persists and rebroadcasts. Hiding unpins, as on the server."
+  [st {:keys [session-id]}]
+  {:state   (flip-session-lists st session-id
+                                (fn [s]
+                                  (let [hidden? (not (:dismissed? s))]
+                                    (cond-> (assoc s :dismissed? hidden?)
+                                      hidden? (assoc :pinned? false)))))
+   :effects [[:ws/send {:type :dismissed/toggle :session-id session-id}]]})
+
+(defn- pinned-toggle
+  "Pin/unpin a session in Recent: flip locally, then forward. Pinning
+   un-hides, as on the server."
+  [st {:keys [session-id]}]
+  {:state   (flip-session-lists st session-id
+                                (fn [s]
+                                  (let [pinned? (not (:pinned? s))]
+                                    (cond-> (assoc s :pinned? pinned?)
+                                      pinned? (assoc :dismissed? false)))))
+   :effects [[:ws/send {:type :pinned/toggle :session-id session-id}]]})
+
+(defn- session-delete-now
+  "Delete a saved session: drop its cards locally, then forward. When the
+   deleted session is the one being viewed, leave its room first (so the
+   server closes it instead of swapping in a blank session) and open a fresh
+   chat in the same cwd."
+  [st {:keys [session-id]}]
+  (let [drop     (fn [ss] (vec (remove #(= (:session-id %) session-id) ss)))
+        viewing? (and (= :chat (get-in st [:web/route :page]))
+                      (= session-id (get-in st [:web/route :session-id])))
+        dropped  (-> st
+                     (update-in [:lobby :sessions] drop)
+                     (update-in [:lobby :rooms] drop)
+                     (update :web/deleted-session-ids (fnil conj #{}) session-id)
+                     (update :web/project-sessions drop)
+                     (update :web/all-sessions #(some-> % drop)))
+        {:keys [state effects]}
+        (if viewing?
+          (open-pending-room dropped (fresh-pending-room st (room-new-cwd st)))
+          {:state dropped})]
+    {:state state
+     :effects (cond-> []
+                viewing? (conj [:ws/send {:type :room/leave}])
+                true     (conj [:ws/send {:type :session/delete :session-id session-id}])
+                viewing? (into effects))}))
+
 (defn- web-handlers [routes]
   (merge (router/handlers routes)
          user-state/handlers
          keymap/handlers
          {:room/new              room-new
-          ;; Keyboard insert-mode toggle: `i` focuses the composer, Escape
-          ;; blurs it (both emit their matching DOM effect).
           :compose/focus         (fn [_ _] {:effects [[:compose/focus]]})
           :compose/blur          (fn [_ _] {:effects [[:compose/blur]]})
           :room/join             forward
           :room/leave            forward
           :rooms/prune           forward
-          ;; a sidebar buffer row's ×: roomless, the server closes the buffer
-          ;; in the live room or the parked set (xi.server.room-manager)
           :session/buffer-close  forward
-          ;; Sub-agent panel collapse/expand toggles are handled purely
-          ;; client-side by the xi.ext.subagent.web handlers — they're an
-          ;; ephemeral per-client UI preference, so we do NOT forward them
-          ;; (forwarding double-toggled: local apply + server broadcast back).
-          ;; Counts ride along on :lobby/state (one count pass per server
-          ;; broadcast instead of a :session/counts round trip per client).
-          ;; Install the lobby mirror, then apply the counts — including the
-          ;; pending-read logic in counts-result.
-          ;;
-          ;; Sessions deleted here (:web/deleted-session-ids) are filtered out of
-          ;; incoming lobby state: a broadcast sent before the server finished
-          ;; the delete would otherwise bring the optimistically dropped card
-          ;; back for a moment. An id is forgotten once the server stops
-          ;; listing it.
-          :lobby/state
-          (fn [st ev]
-            (let [gone   (:web/deleted-session-ids st)
-                  listed (into #{} (keep :session-id) (concat (:sessions ev) (:rooms ev)))
-                  strip  (fn [ev k]
-                           (cond-> ev
-                             (contains? ev k) (update k #(vec (remove (comp gone :session-id) %)))))
-                  ev'    (if (seq gone) (-> ev (strip :sessions) (strip :rooms)) ev)
-                  {st' :state} (ws-transport/lobby-state st ev')
-                  st'    (cond-> st'
-                           (seq gone) (assoc :web/deleted-session-ids (set (filter listed gone))))]
-              (if (contains? ev :counts)
-                (counts-result st' ev)
-                {:state st'})))
+          ;; Sub-agent panel toggles are client-local (xi.ext.subagent.web);
+          ;; forwarding them would double-toggle via the broadcast echo.
+          :lobby/state           lobby-state
           :session/mark-read     mark-read
           :session/mark-all-read mark-all-read
-          ;; Full saved-session list on demand (all-sessions view) — the
-          ;; lobby broadcast only carries a capped recent subset.
           :sessions/all          (fn [st _ev]
                                    {:state (assoc st :web/all-sessions-loading? true)
                                     :effects [[:ws/send {:type :sessions/all}]]})
           :sessions/all-result   sessions-all-result
           :session/dismiss-all   dismiss-all
-          ;; Seed a chat's cached history into :web/cache so it paints
-          ;; instantly on SPA navigation while the WS :room/joined is in
-          ;; flight (esp. on slow mobile links). :room/joined overwrites it.
+          ;; Seed cached history so a chat paints while :room/joined is in flight.
           :web/cache-seed        (fn [st {:keys [session-id room]}]
                                    (when (and session-id room)
                                      {:state (assoc-in st [:web/cache session-id] room)}))
-          ;; Pointerdown on a session card: decode its cached snapshot while
-          ;; the finger is still down. No state change → no render.
           :cache/prefetch        (fn [_ {:keys [session-id]}]
                                    (when session-id
                                      {:effects [[:cache/prefetch-room {:session-id session-id}]]}))
-          ;; The server compared our :cached-msg-hash against the on-disk
-          ;; session and confirmed we're current, so it SKIPPED re-sending the
-          ;; (potentially large) resume payload. Promote our cached snapshot
-          ;; into the room mirror so the chat flips from the "Updating…" hint
-          ;; to authoritative with no transfer.
-          :session/current
-          (fn [st {:keys [room-id session-id msg-hash msg-count]}]
-            (let [cached (get-in st [:web/cache session-id])]
-              (when (seq (:history cached))
-                {:state (cond-> (-> st
-                                    (assoc-in [:rooms room-id :history] (:history cached))
-                                    (assoc-in [:rooms room-id :msg-hash] msg-hash)
-                                    (assoc-in [:rooms room-id :msg-count] msg-count))
-                          (:model cached)
-                          (assoc-in [:rooms room-id :agent :model] (:model cached)))})))
-          ;; Incremental resume: the server confirmed our cache is a clean
-          ;; PREFIX of the on-disk session and sent only the new tail messages.
-          ;; Append their rendered history onto our cached base instead of
-          ;; re-downloading the whole transcript. Guarded on :base-hash so a
-          ;; client whose cache doesn't match the prefix ignores the tail (it
-          ;; will have gotten a full :session/resumed instead).
-          :session/resumed-tail
-          (fn [st {:keys [room-id session-id base-hash messages msg-hash msg-count]}]
-            (let [cached (get-in st [:web/cache session-id])]
-              (when (and (seq (:history cached))
-                         (= base-hash (:msg-hash cached)))
-                (let [history (into (vec (:history cached))
-                                    (commands/messages->history messages))]
-                  {:state (cond-> (-> st
-                                      (assoc-in [:rooms room-id :history] history)
-                                      (assoc-in [:rooms room-id :msg-hash] msg-hash)
-                                      (assoc-in [:rooms room-id :msg-count] msg-count))
-                            (:model cached)
-                            (assoc-in [:rooms room-id :agent :model] (:model cached)))}))))
+          :session/current       session-current
+          :session/resumed-tail  session-resumed-tail
           :connection/status     connection-status
           :room/joined           room-joined-from-cache
           :room/left             room-left-web
@@ -893,8 +904,6 @@
           :auth/pending          (fn [st {:keys [code]}]
                                    {:state (assoc st :web/auth {:status :pending :code code})})
           :auth/ok               (fn [st ev]
-                                   ;; admitted: clear the pairing banner and
-                                   ;; record which user we act as
                                    (let [st (dissoc st :web/auth)]
                                      {:state (or (:state (ws-transport/auth-ok st ev)) st)}))
           :auth/denied           (fn [st _] {:state (assoc st :web/auth {:status :denied})})
@@ -905,9 +914,8 @@
                                                       :platform platform})})
           :auth/resolved         (fn [st {:keys [code]}]
                                    {:state (update st :web/auth-requests dissoc code)})
-          ;; Approve/deny a pairing request from this (already-authed) client;
-          ;; the server answers with :auth/resolved for everyone else, so
-          ;; clear the local banner optimistically.
+          ;; Approve/deny clear the local banner optimistically; the server
+          ;; answers everyone else with :auth/resolved.
           :auth/approve          (fn [st {:keys [code] :as ev}]
                                    (when-not (:remote? ev)
                                      {:state (update st :web/auth-requests dissoc code)
@@ -927,19 +935,14 @@
           :web/file-drag         file-drag
           :copy/open             (fn [st {:keys [text]}] {:state (assoc st :web/copy-text text)})
           :copy/close            (fn [st _] {:state (dissoc st :web/copy-text)})
-          ;; Transient "Copied" toast after a native programmatic copy. Setting
-          ;; the flag paints the toast; the effect schedules its removal.
           :copy/flash            (fn [st _] {:state   (assoc st :web/copy-flash true)
                                             :effects [[:copy/flash-clear {}]]})
           :copy/flash-off        (fn [st _] {:state (dissoc st :web/copy-flash)})
-          ;; :images is the tapped entry's attachments — Edit / Retry resend
-          ;; them with the text (see xi.web.resubmit/fork-effects).
           :bubble/menu-open      (fn [st {:keys [index text images x y]}]
                                    {:state (assoc st :web/bubble-menu {:index index :text text :images images
                                                                         :x x :y y})})
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
-          ;; Floating Copy button surfaced when a rendered code block (`pre`)
-          ;; or inline `code` is tapped (see attach-code-copy-listener!).
+          ;; Floating Copy button for a tapped code block (attach-code-copy-listener!).
           :code/menu-open        (fn [st {:keys [text path diff-path diff-text x y]}]
                                    {:state (assoc st :web/code-menu {:text text :path path
                                                                      :diff-path diff-path
@@ -954,11 +957,8 @@
           :bubble/edit-change    (fn [st {:keys [text]}]
                                    {:state (assoc-in st [:web/editing-bubble :text] text)})
           :bubble/edit-cancel    (fn [st _] {:state (dissoc st :web/editing-bubble)})
-          ;; Prompt navigation: jump between the user's own prompts across the
-          ;; FULL history. :web/prompt-nav is nil (collapsed) or a 0-based index
-          ;; into :user-indices (0 = oldest). Prompts scrolled off the top of the
-          ;; render window are reached by growing :web/timeline-window on demand;
-          ;; the scroll effect then targets the node by its history index.
+          ;; Prompt navigation: :web/prompt-nav is nil (collapsed) or a 0-based
+          ;; index into :user-indices (0 = oldest). See prompt-nav-step.
           :prompt-nav/prev       prompt-nav-step
           :prompt-nav/next       prompt-nav-step
           :prompt-nav/close      (fn [st _] {:state (dissoc st :web/prompt-nav)
@@ -996,16 +996,10 @@
           :bubble/retry          bubble-retry
           :web/dialog-form-set   (fn [st {:keys [patch]}] {:state (update st :web/dialog-form merge patch)})
           :web/dialog-form-reset (fn [st _] {:state (dissoc st :web/dialog-form)})
-          ;; Answered-dialog log (web-only): keep resolved confirm/select
-          ;; bubbles in the timeline, anchored to their history position.
-          ;; Also drop the live dialog optimistically so the interactive
-          ;; bubble swaps to its static record in a single render, instead of
-          ;; lingering until the server echoes the removal back.
+          ;; Answered-dialog log: keep resolved dialog bubbles in the timeline and
+          ;; drop the live dialog optimistically. The answering client also
+          ;; restamps the gated call itself, since the echo finds no dialog here.
           :web/dialog-resolved   (fn [st {:keys [room-id dialog-id entry] :as ev}]
-                                   ;; The answering client drops the dialog before the
-                                   ;; server echo, so it must also restart the gated
-                                   ;; call's run clock itself on an allow — the echo's
-                                   ;; restamp (ws-transport) finds no dialog here.
                                    (let [answered (some #(when (= dialog-id (:id %)) %)
                                                         (get-in st [:rooms room-id :ui :dialogs]))]
                                      {:state (-> st
@@ -1017,9 +1011,8 @@
                                                             dlg/restamp-gated-call answered
                                                             (:value entry) (:event/ts ev)))}))
           :ui/dialog-response    dialog-response
-          ;; Deny with reason: the Deny button's ⋯ turns the composer into a
-          ;; reason field (views/deny-reason-compose); sending answers the ask
-          ;; `false` + :reason, which the gate hands the model.
+          ;; Deny with reason: the composer becomes a reason field
+          ;; (views/deny-reason-compose).
           :deny-reason/start     (fn [st {:keys [room-id dialog-id]}]
                                    {:state (assoc st :web/deny-reason
                                                   {:room-id room-id :dialog-id dialog-id :text ""})})
@@ -1043,23 +1036,19 @@
                                     {:effects [[:ws/send {:type :session/content-search
                                                           :key key :query query :cwd cwd}]]})
           :session/content-search-result content-search-result
-          ;; Opening the drawer pings the server to refetch Claude usage
-          ;; (throttled server-side); a changed reading rides the lobby
-          ;; broadcast back into the footer bar.
+          ;; Opening the drawer refetches Claude usage and the project list
+          ;; (git-dirty dots); both ride back on the lobby broadcast.
           :sidebar/toggle        (fn [st _]
                                    (let [open? (not (:web/sidebar-open? st))]
                                      (cond-> {:state (assoc st :web/sidebar-open? open?)}
                                        open? (assoc :effects [[:ws/send {:type :usage/refresh}]
                                                               [:ws/send {:type :projects/web-list}]]))))
-          ;; Opening the drawer also re-fetches the project list so the
-          ;; git-dirty dots reflect the tree now, not at page load.
           :sidebar/open          (fn [st _] {:state (assoc st :web/sidebar-open? true)
                                              :effects [[:ws/send {:type :usage/refresh}]
                                                        [:ws/send {:type :projects/web-list}]]})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
-          ;; Collapse/expand a drawer group (:projects, :recent, …). Kept in
-          ;; state (not a native <details>) because the drawer remounts its
-          ;; content on every open; persisted so it survives reloads too.
+          ;; Drawer groups collapse in state (the drawer remounts on open) and
+          ;; persist across reloads.
           :sidebar/toggle-group  (fn [st {:keys [group]}]
                                    (let [collapsed (or (:web/sidebar-collapsed st) #{})
                                          collapsed (if (contains? collapsed group)
@@ -1071,11 +1060,10 @@
           :web/set-wide          (fn [st {:keys [wide?]}] {:state (assoc st :web/wide? wide?)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
-          ;; Appearance dialog (xi.web.appearance). :web/appearance holds only
-          ;; this browser's overrides; views merge them over config + defaults.
+          ;; Appearance dialog (xi.web.appearance): :web/appearance holds only
+          ;; this browser's overrides.
           :appearance/open       (fn [st _] {:state (assoc st :web/appearance-open? true)})
           :appearance/close      (fn [st _] {:state (dissoc st :web/appearance-open?)})
-          ;; Keyboard shortcuts dialog (xi.web.keymap/listing).
           :keys/show             (fn [st _] {:state (assoc st :web/keys-open? true)})
           :keys/close            (fn [st _] {:state (dissoc st :web/keys-open?)})
           :appearance/set        (fn [st {:keys [key value]}]
@@ -1091,121 +1079,10 @@
           :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
           :models/web-list-result (fn [st ev] (models/list-result st ev (:event/ts ev)))
-          :models/select         (fn [st {:keys [model]}]
-                                    ;; Only the *viewed* room may be targeted: a
-                                    ;; new chat (route sid with no matching room)
-                                    ;; must NOT adopt the previous room we're
-                                    ;; still attached to (that was the original
-                                    ;; bug — /model landed on the old chat).
-                                    (let [text   (str "/model " model)
-                                          sid    (get-in st [:web/route :session-id])
-                                          active (state/active-room st)
-                                          room   (when (= (get-in active [:session :id]) sid)
-                                                   active)
-                                          rid    (:id room)
-                                          ;; Sticky preference: remember the pick so
-                                          ;; future *new* chats default to it (both
-                                          ;; in-memory and persisted to localStorage).
-                                          base   (-> st
-                                                     (dissoc :web/palette-page :web/palette-open?)
-                                                     (assoc :web/preferred-model model))
-                                          persist [:cache/preferred-model {:model model}]
-                                          sync    (user-state/set-effect :preferred-model model)]
-                                      ;; The list may be cached: check the pick
-                                      ;; against a fresh one (xi.web.models).
-                                      (models/with-check
-                                        (cond
-                                          ;; Live room for the viewed session: apply
-                                          ;; now, and optimistically reflect the pick
-                                          ;; on the client room so the launch header /
-                                          ;; a retry pick it up instantly instead of
-                                          ;; waiting for the /model round-trip to
-                                          ;; mirror back.
-                                          rid
-                                          {:state (assoc-in base [:rooms rid :agent :model] model)
-                                           :effects [persist sync
-                                                     [:palette/close nil]
-                                                     [:ws/send {:type :input/submit
-                                                                :room-id rid :text text}]]}
-                                          ;; New virtual chat: no server room yet.
-                                          ;; Remember the choice on the pending room
-                                          ;; so the launch header reflects it and
-                                          ;; the room is born with this model — the
-                                          ;; first prompt's :room/join "new" carries
-                                          ;; :model (see submit-pending/web-command).
-                                          (:web/pending-room base)
-                                          {:state (assoc-in base [:web/pending-room :model] model)
-                                           :effects [persist sync [:palette/close nil]]}
-                                          ;; Fallback (rare: a cached session whose
-                                          ;; room is still joining) — send to the
-                                          ;; active room if there is one.
-                                          :else
-                                          {:state base
-                                           :effects (cond-> [persist sync [:palette/close nil]]
-                                                      (:id active)
-                                                      (conj [:ws/send {:type :input/submit
-                                                                       :room-id (:id active) :text text}]))})
-                                      model)))
+          :models/select         models-select
           :skill/web-list-result (fn [st {:keys [skills]}]
                                     {:state (assoc st :web/skill-list skills)})
-          :skill/select          (fn [st {:keys [name]}]
-                                    ;; Skills with dynamic <input /> placeholders
-                                    ;; open a form dialog first; the values are
-                                    ;; substituted into the body on submit (see
-                                    ;; :skill-form/submit). Plain skills load
-                                    ;; directly. Resolve the target like
-                                    ;; chat-view does: a new chat (route sid nil)
-                                    ;; must NOT adopt the previous room we're
-                                    ;; still attached to. With no matching room,
-                                    ;; route through :submit/pending so the
-                                    ;; virtual room is created first (else the
-                                    ;; skill loads into the old chat, or nowhere).
-                                    (let [skill   (some #(when (= (:name %) name) %)
-                                                        (:web/skill-list st))
-                                          ;; Recency (persisted): recently-used
-                                          ;; skills sort first on the next open.
-                                          recents (->> (cons name (remove #(= % name)
-                                                                          (:web/recent-skills st)))
-                                                       (take 8)
-                                                       vec)
-                                          st      (assoc st :web/recent-skills recents)
-                                          record  [:cache/recent-skills {:skills recents}]
-                                          sync    (user-state/set-effect :recent-skills recents)]
-                                      (if (seq (:inputs skill))
-                                        ;; The form renders in the chat view's
-                                        ;; compose dock (the composer reshapes
-                                        ;; into it), so make sure we're on a
-                                        ;; chat page — selecting a skill from
-                                        ;; home/git-status navigates to a new
-                                        ;; chat first.
-                                        {:state (-> st
-                                                    (dissoc :web/palette-page :web/palette-open?)
-                                                    (assoc :web/skill-form
-                                                           {:name name
-                                                            :description (:description skill)
-                                                            :inputs (vec (:inputs skill))
-                                                            :values {}
-                                                            :images []}))
-                                         :effects (cond-> [[:palette/close nil]
-                                                           [:ws/send {:type :skill/web-get :name name}]
-                                                           record sync]
-                                                    (not= :chat (get-in st [:web/route :page]))
-                                                    (conj [:app/dispatch {:type :route/navigate
-                                                                          :page :chat :session-id nil}]))}
-                                        (let [text   (str "/skill load " name)
-                                              sid    (get-in st [:web/route :session-id])
-                                              active (state/active-room st)
-                                              room   (when (= (get-in active [:session :id]) sid)
-                                                       active)
-                                              rid    (:id room)]
-                                          {:state (dissoc st :web/skill-list :web/palette-page :web/palette-open?)
-                                           :effects [[:palette/close nil]
-                                                     (if rid
-                                                       [:ws/send {:type :input/submit
-                                                                  :room-id rid :text text}]
-                                                       [:app/dispatch {:type :submit/pending
-                                                                       :session-id sid :text text}])
-                                                     record sync]}))))
+          :skill/select          skill-select
           :skill/web-get-result  (fn [st {:keys [name body]}]
                                     (when (= name (get-in st [:web/skill-form :name]))
                                       {:state (assoc-in st [:web/skill-form :body] body)}))
@@ -1224,42 +1101,8 @@
                                                                 imgs))))})
           :skill-form/cancel     (fn [st _]
                                     {:state (dissoc st :web/skill-form)})
-          :skill-form/escape     (fn [st _]
-                                    ;; Esc twice cancels: the first press arms
-                                    ;; (the form shows "Press Esc again to
-                                    ;; cancel"), the second dismisses. Typing
-                                    ;; disarms (see :skill-form/set-value).
-                                    (if (get-in st [:web/skill-form :armed?])
-                                      {:state (dissoc st :web/skill-form)}
-                                      {:state (assoc-in st [:web/skill-form :armed?] true)}))
-          :skill-form/submit     (fn [st _]
-                                    ;; Substitute each <name /> placeholder with
-                                    ;; its value (image placeholders are blanked —
-                                    ;; the images ride along as attachments), then
-                                    ;; submit like a normal prompt with the same
-                                    ;; room resolution as :skill/select.
-                                    (let [{:keys [inputs values images body]} (:web/skill-form st)]
-                                      (when body
-                                        (let [text   (reduce (fn [t {:keys [name type]}]
-                                                               (let [re (js/RegExp. (str "<" name "\\s*/>") "g")
-                                                                     v  (if (= type :image)
-                                                                          ""
-                                                                          (str/trim (or (get values name) "")))]
-                                                                 (.replace t re v)))
-                                                             body inputs)
-                                              sid    (get-in st [:web/route :session-id])
-                                              active (state/active-room st)
-                                              room   (when (= (get-in active [:session :id]) sid)
-                                                       active)
-                                              rid    (:id room)]
-                                          {:state (dissoc st :web/skill-form)
-                                           :effects [(if rid
-                                                       [:ws/send (cond-> {:type :input/submit
-                                                                          :room-id rid :text text}
-                                                                   (seq images) (assoc :images (vec images)))]
-                                                       [:app/dispatch (cond-> {:type :submit/pending
-                                                                               :session-id sid :text text}
-                                                                        (seq images) (assoc :images (vec images)))])]}))))
+          :skill-form/escape     skill-form-escape
+          :skill-form/submit     skill-form-submit
           :diff/reopen           diff-reopen
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
@@ -1289,91 +1132,19 @@
                                    {:state (assoc st :web/git-status-text text
                                                      :web/git-status-cwd cwd
                                                      :web/git-status-loading? false)})
-          ;; Hide/show a session in the recent list. Flip locally so the card
-          ;; drops out of (or returns to) Recent instantly, then forward: the
-          ;; server persists, closes any lingering idle room, and rebroadcasts
-          ;; an authoritative :lobby/state.
-          :dismissed/toggle      (fn [st {:keys [session-id]}]
-                                   (let [flip (fn [ss]
-                                                (mapv #(if (= (:session-id %) session-id)
-                                                         (let [hidden? (not (:dismissed? %))]
-                                                           ;; hiding unpins (the server does the same)
-                                                           (cond-> (assoc % :dismissed? hidden?)
-                                                             hidden? (assoc :pinned? false)))
-                                                         %)
-                                                      ss))]
-                                     {:state (-> st
-                                                 (update-in [:lobby :sessions] flip)
-                                                 (update :web/project-sessions flip)
-                                                 (update :web/all-sessions #(some-> % flip)))
-                                      :effects [[:ws/send {:type :dismissed/toggle
-                                                           :session-id session-id}]]}))
-          ;; Pin/unpin a session in the recent list. Flip locally so the card
-          ;; moves instantly, then forward: the server persists and
-          ;; rebroadcasts an authoritative :lobby/state.
-          :pinned/toggle         (fn [st {:keys [session-id]}]
-                                   (let [flip (fn [ss]
-                                                (mapv #(if (= (:session-id %) session-id)
-                                                         (let [pinned? (not (:pinned? %))]
-                                                           ;; pinning un-hides (the server does the same)
-                                                           (cond-> (assoc % :pinned? pinned?)
-                                                             pinned? (assoc :dismissed? false)))
-                                                         %)
-                                                      ss))]
-                                     {:state (-> st
-                                                 (update-in [:lobby :sessions] flip)
-                                                 (update :web/project-sessions flip)
-                                                 (update :web/all-sessions #(some-> % flip)))
-                                      :effects [[:ws/send {:type :pinned/toggle
-                                                           :session-id session-id}]]}))
-          ;; Permanently delete a saved session. Drop the card locally for an
-          ;; instant response, then forward: the server unlinks the on-disk
-          ;; file, closes any lingering idle room, and rebroadcasts an
-          ;; authoritative :lobby/state.
-          ;;
-          ;; If we're currently VIEWING the session being deleted, leave its
-          ;; room BEFORE the delete and open a fresh new chat. Otherwise the server
-          ;; sees a client still attached and — rather than closing the room —
-          ;; swaps it to a fresh blank session (see room_manager/session-delete),
-          ;; which resurfaces in the lobby as a phantom "New session" card.
-          ;; Leaving first makes the room clientless, so room-leave closes it
-          ;; outright and the delete just unlinks the file.
-          ;;
-          ;; The sidebar row animates out first (:sidebar/animate-leave), then
-          ;; the delete proper (:session/delete-now) runs.
+          :dismissed/toggle      dismissed-toggle
+          :pinned/toggle         pinned-toggle
+          ;; The sidebar row animates out first, then :session/delete-now runs.
           :session/delete        (fn [_st {:keys [session-id]}]
                                    {:effects [[:sidebar/animate-leave
                                                {:session-id session-id
                                                 :then {:type :session/delete-now
                                                        :session-id session-id}}]]})
-          :session/delete-now    (fn [st {:keys [session-id]}]
-                                   (let [drop (fn [ss] (vec (remove #(= (:session-id %) session-id) ss)))
-                                         viewing? (and (= :chat (get-in st [:web/route :page]))
-                                                       (= session-id (get-in st [:web/route :session-id])))
-                                         ;; the live room's lobby card drives the sidebar row
-                                         ;; of an active session, so drop it too
-                                         dropped (-> st
-                                                     (update-in [:lobby :sessions] drop)
-                                                     (update-in [:lobby :rooms] drop)
-                                                     (update :web/deleted-session-ids (fnil conj #{}) session-id)
-                                                     (update :web/project-sessions drop)
-                                                     (update :web/all-sessions #(some-> % drop)))
-                                         ;; viewing it: land in a fresh chat in the same cwd
-                                         {:keys [state effects]}
-                                         (if viewing?
-                                           (open-pending-room dropped (fresh-pending-room st (room-new-cwd st)))
-                                           {:state dropped})]
-                                     {:state state
-                                      :effects (cond-> []
-                                                 viewing? (conj [:ws/send {:type :room/leave}])
-                                                 true     (conj [:ws/send {:type :session/delete
-                                                                           :session-id session-id}])
-                                                 viewing? (into effects))}))
-          ;; Projects
+          :session/delete-now    session-delete-now
           :projects/web-list     (fn [st _ev]
                                     {:state (assoc st :web/projects-loading? true)
                                      :effects [[:ws/send {:type :projects/web-list}]]})
-          ;; Silent re-fetch (no loading flag) to refresh the git-dirty dots.
+          ;; Silent re-fetch (no loading flag).
           :projects/web-refresh  (fn [_ _] {:effects [[:ws/send {:type :projects/web-list}]]})
           :projects/web-list-result projects-web-list-result
           :projects/web-sessions (fn [st {:keys [cwd]}]
@@ -1386,7 +1157,6 @@
                                     {:state (dissoc st :web/selected-project-dir
                                                       :web/project-sessions
                                                       :web/project-sessions-cwd)})
-          ;; Project path picker (insert into compose) — an in-palette sub-page.
           :projects/picker-insert (fn [st {:keys [path draft-key]}]
                                      (let [cur (get-in st [:web/drafts draft-key] "")
                                            sep (if (and (seq cur) (not (str/ends-with? cur " "))) " " "")
@@ -1396,7 +1166,6 @@
                                                    (dissoc :web/palette-page :web/palette-open?))
                                         :effects [[:palette/close nil]
                                                   [:projects/sync-textarea {:text new-text}]]}))
-          ;; Snippets picker (insert into compose) — an in-palette sub-page.
           :snippets/web-list-result (fn [st {:keys [global project]}]
                                       {:state (assoc st :web/snippet-list
                                                      {:global (vec global) :project (vec project)})})
@@ -1414,56 +1183,32 @@
                                         (assoc-in [:state :web/sidebar-open?] false)))
           :draft-chat/open        draft-chat-open
           :draft-chat/discard     draft-chat-discard
-          ;; AGENTS.md files for the virtual new chat's cwd (launch header).
-          ;; Dropped when the pending room moved on to another cwd meanwhile.
+          ;; AGENTS.md files for the virtual new chat's launch header.
           :cwd/agents-files-result (fn [st {:keys [cwd agents-files]}]
                                      (when (= cwd (get-in st [:web/pending-room :cwd]))
                                        {:state (assoc-in st [:web/pending-room :agents-files] agents-files)}))
-          ;; Command palette second level: Tab on a project row opens its
-          ;; action page; back/close return to the top level. The reset-filter
-          ;; effect re-syncs ui-runtime.js (clears the query, re-highlights).
-          ;; Drill a project row into its action sub-page. Keyboard Tab keeps
-          ;; the <dialog> open (preventDefault), so it needs no reopen. A mouse
-          ;; click is a `.command-item` click, which the runtime force-closes —
-          ;; :reopen? re-opens it (same one-shot :web/palette-drilling? cycle as
-          ;; :palette/open-models) so the panel stays open on the sub-page.
+          ;; Palette sub-pages (project actions, models, skills, commits, files)
+          ;; share one drill pattern: the ui-runtime force-closes the <dialog> on
+          ;; an item click, so the handler sets :web/palette-open? plus a one-shot
+          ;; :web/palette-drilling? and re-opens it via :palette/reopen;
+          ;; :palette/opened keeps the sub-page while the flag is set. Keyboard
+          ;; Tab keeps the dialog open and needs no reopen. :palette/reset-filter
+          ;; must run after the reopen so it finds the input.
           :palette/drill         (fn [st {:keys [cwd label reopen?]}]
                                    {:state (cond-> (assoc st :web/palette-page
                                                           {:kind :project :cwd cwd :label label})
                                              reopen? (assoc :web/palette-drilling? true))
-                                    ;; reopen first: reset-filter only finds the
-                                    ;; input once the dialog is open again; if the
-                                    ;; runtime already force-closed it, the typed
-                                    ;; query lingers and filters every sub-page row
-                                    ;; away ("No results found").
                                     :effects (if reopen?
                                                [[:palette/reopen nil]
                                                 [:palette/reset-filter nil]]
                                                [[:palette/reset-filter nil]])})
-          ;; Top-level palette from a button (the sidebar search field) rather
-          ;; than mod+k. Sets :web/palette-open? directly for the same iOS
-          ;; reason as the open-* handlers below.
           :palette/open          (fn [st _]
                                    {:state (-> st
                                                (assoc :web/palette-open? true)
                                                (dissoc :web/palette-page))
                                     :effects [[:palette/reopen nil]
                                               [:palette/reset-filter nil]]})
-          ;; Change model / /model: drill into an in-palette model picker. The
-          ;; runtime force-closes the <dialog> on the item click, so we set a
-          ;; one-shot :web/palette-drilling? flag and re-open the dialog (see the
-          ;; :palette/reopen effect); :palette/opened keeps the sub-page when the
-          ;; flag is set. The page paints the cached :web/model-list and only
-          ;; refetches a missing or stale one (xi.web.models).
-          ;; The three open-* handlers below open the palette from a compose
-          ;; button (not mod+k), so they set :web/palette-open? true directly
-          ;; instead of waiting on the async MutationObserver → :palette/opened
-          ;; round-trip that the :palette/reopen showModal triggers. On iOS that
-          ;; round-trip can race/fail, leaving the dialog natively open but
-          ;; rendering the empty shell — a collapsed 65px palette. Flipping the
-          ;; flag here guarantees the items render before the dialog is shown.
           :palette/open-models   (fn [st ev] (models/open st (:event/ts ev)))
-          ;; Skills / project path picker: same drill pattern as models.
           :palette/open-skills   (fn [st _]
                                    {:state (-> st
                                                (assoc :web/palette-page {:kind :skill}
@@ -1472,9 +1217,8 @@
                                                (dissoc :web/skill-list))
                                     :effects [[:ws/send {:type :skill/web-list}]
                                               [:palette/reopen nil]]})
-          ;; Session commits: list the commits made this session in a palette
-          ;; sub-page. cwd + the session's created timestamp come from the
-          ;; mirrored room; the server computes base..HEAD and replies.
+          ;; Commits made this session: the server computes base..HEAD from the
+          ;; room's cwd and created timestamp.
           :palette/open-commits  (fn [st _]
                                    (let [room    (state/active-room st)
                                          cwd     (:cwd room)
@@ -1491,17 +1235,12 @@
                                                 [:palette/reopen nil]]}))
           :commits/web-load-result (fn [st {:keys [commits]}]
                                      {:state (assoc st :web/commit-list commits)})
-          ;; Selecting a commit opens its diff in the room's diff viewer via
-          ;; /diff commit:<sha> (originator-only, so only this client flips).
           :commits/open-diff     (fn [st {:keys [sha room-id]}]
                                    {:state (dissoc st :web/palette-page :web/palette-open?)
                                     :effects [[:palette/close nil]
                                               [:ws/send {:type :input/submit
                                                          :room-id room-id
                                                          :text (str "/diff commit:" sha)}]]})
-          ;; File browser: open the drill-down browser palette page seeded at
-          ;; the active room's cwd. Same drill pattern as commits/models — the
-          ;; server lists the directory and replies with :files/web-list-result.
           :palette/open-files    (fn [st _]
                                    (let [cwd (view-cwd st)]
                                      {:state (-> st
@@ -1511,11 +1250,7 @@
                                                  (dissoc :web/file-list))
                                       :effects [[:ws/send {:type :files/web-list :cwd cwd :path cwd}]
                                                 [:palette/reopen nil]]}))
-          ;; Drill into a directory (or step up via ".."): clearing
-          ;; :web/file-list shows a spinner while the new listing loads. The
-          ;; ui-runtime force-closes the dialog on the item click, so re-open it
-          ;; (same one-shot :web/palette-drilling? cycle as the model/commits
-          ;; pages). Paths are absolute, so cwd is only a fallback.
+          ;; Clearing :web/file-list shows a spinner while the listing loads.
           :files/cd              (fn [st {:keys [path]}]
                                    (let [cwd (view-cwd st)]
                                      {:state (-> st
@@ -1527,17 +1262,13 @@
                                    {:state (assoc st :web/file-list
                                                   {:path path :parent parent
                                                    :entries (or entries []) :error error})})
-          ;; Selecting a file closes the browser and asks the server to read it;
-          ;; the reply installs the :file tab (client-local, like the diff tab).
           :files/open            (fn [st {:keys [path cwd]}]
                                    (let [cwd (or cwd (view-cwd st))]
                                      {:state (dissoc st :web/palette-page :web/palette-open?)
                                       :effects [[:palette/close nil]
                                                 [:ws/send {:type :file/web-read :cwd cwd :path path}]]}))
-          ;; In a virtual new chat there is no room yet, so the buffer lives on
-          ;; the :web/pending-room (chat-view reads it from there). The file
-          ;; buffer is this client's alone (the room never sees it); one per
-          ;; path (xi.buffers/file-id), like the server-side file-view.
+          ;; The file buffer is client-local, one per path (xi.buffers/file-id);
+          ;; in a virtual new chat it lives on the :web/pending-room.
           :file/web-read-result  (fn [st {:keys [path text error] :as ev}]
                                    (let [id     (buffers/file-id path)
                                          buf    {:kind :file :title path :path path
@@ -1555,8 +1286,7 @@
                                        {:state (update-in st [:rooms room-id] open)}
 
                                        :else {:state st})))
-          ;; Tab switch / close in a virtual new chat (the core handlers need a
-          ;; real room id).
+          ;; Buffer switch / close for a virtual new chat (no room id yet).
           :pending/buffer-switch (fn [st {:keys [buffer-id]}]
                                    (when (:web/pending-room st)
                                      {:state (assoc-in st [:web/pending-room :ui :active-buffer] buffer-id)}))
@@ -1564,8 +1294,6 @@
                                    (when (:web/pending-room st)
                                      {:state (update st :web/pending-room
                                                      #(if buffer-id (buffers/close % buffer-id) (buffers/close-all %)))}))
-          ;; The sidebar's per-session buffer rows: a card's "N buffers" line
-          ;; folds / unfolds them; this browser remembers which (localStorage).
           :sidebar/buffers-toggle (fn [st {:keys [session-id]}]
                                     (let [open (let [s (or (:web/sidebar-buffers-open st) #{})]
                                                  (if (contains? s session-id)
@@ -1573,8 +1301,6 @@
                                                    (conj s session-id)))]
                                       {:state   (assoc st :web/sidebar-buffers-open open)
                                        :effects [[:cache/sidebar-buffers-open {:session-ids open}]]}))
-          ;; Alt+B: the buffer switcher as a palette page — type to filter, Enter
-          ;; switches (the same rows as the palette's Buffers group).
           :palette/open-buffers  (fn [st _]
                                    {:state (assoc st :web/palette-page {:kind :buffers}
                                                      :web/palette-open? true
@@ -1582,23 +1308,17 @@
                                     :effects [[:palette/reset-filter nil]
                                               [:palette/reopen nil]]})
           :buffer/pending-clear  (fn [st _] {:state (dissoc st :web/pending-buffer)})
-          ;; Instant fuzzy file finder (Ctrl/Cmd+P): open a dedicated palette
-          ;; page seeded with the room's flat file list; the page fuzzy-ranks
-          ;; it client-side per keystroke.
+          ;; Fuzzy file finder: the page ranks the room's flat file list
+          ;; client-side. :action is :open (view) or :insert (path into the
+          ;; draft). :in-dialog? (Tab from the project picker) keeps the dialog
+          ;; open, so the one-shot drilling flag must not be set.
           :palette/open-file-finder
           (fn [st {:keys [cwd action in-dialog?]}]
             (let [cwd (or cwd (view-cwd st))]
               {:state (-> st
-                          ;; :action is what picking a file does — :open (the
-                          ;; default) views it, :insert puts its path into the
-                          ;; compose draft (Tab from the insert project picker).
                           (assoc :web/palette-page {:kind :file-finder :action (or action :open)}
                                  :web/palette-open? true
                                  :web/file-finder-query "")
-                          ;; Keyboard Tab from the project picker keeps the
-                          ;; <dialog> open, so no :palette/opened will consume
-                          ;; the one-shot drilling flag — don't set it, or the
-                          ;; next fresh mod+k open would keep this sub-page.
                           (cond-> (not in-dialog?) (assoc :web/palette-drilling? true))
                           (dissoc :web/file-tree))
                :effects [[:ws/send {:type :files/web-tree :cwd cwd}]
@@ -1609,11 +1329,8 @@
                                                   {:cwd cwd :files (or files []) :error error})})
           :file-finder/input     (fn [st {:keys [query]}]
                                    {:state (assoc st :web/file-finder-query query)})
-          ;; The project list as a palette sub-page. :action is what a row
-          ;; does: :drill (the :projects/pick key) opens the project's action
-          ;; sub-page, :insert (the compose Projects button) puts its path into
-          ;; the draft. Tab on a row opens the project's file finder with the
-          ;; same action (view a file / insert its path).
+          ;; :action is :drill (open the project's action page) or :insert
+          ;; (path into the draft); Tab opens the file finder with the same action.
           :palette/open-projects (fn [st {:keys [action]}]
                                    {:state (assoc st :web/palette-page {:kind :projects
                                                                        :action (or action :drill)}
@@ -1623,9 +1340,7 @@
                                                       [:palette/reopen nil]]
                                                (empty? (:web/project-dirs st))
                                                (conj [:ws/send {:type :projects/web-list}]))})
-          ;; Snippets: same drill pattern as projects. Always re-fetch (the
-          ;; project snippets depend on the active room's cwd, which differs
-          ;; per chat); clearing :web/snippet-list shows a spinner meanwhile.
+          ;; Always re-fetched: project snippets depend on the room's cwd.
           :palette/open-snippets (fn [st _]
                                    (let [cwd (or (:cwd (state/active-room st))
                                                  (get-in st [:web/pending-room :cwd]))]
@@ -1635,22 +1350,13 @@
                                                  (dissoc :web/snippet-list))
                                       :effects [[:ws/send {:type :snippets/web-list :cwd cwd}]
                                                 [:palette/reopen nil]]}))
-          ;; Commands: the slash-command list as a palette sub-page (opened
-          ;; from the floating Commands button). Pure client data, no fetch.
           :palette/open-commands (fn [st _]
                                    {:state (assoc st :web/palette-page {:kind :commands}
                                                      :web/palette-drilling? true)
                                     :effects [[:palette/reopen nil]]})
-          ;; Full-text session search as a palette sub-page (drilled from a
-          ;; project's "Search session text"). The palette input becomes the
-          ;; query: each keystroke lands here via the dialog's input listener,
-          ;; clears stale results (-> spinner) and debounces a server-side
-          ;; search over transcripts scoped to the project cwd.
-          ;; Optional :query (text typed in the top-level palette) seeds the
-          ;; search input; the reset-filter effect re-fires `input` with it, so
-          ;; :palette/search-input kicks off the search. Reopen goes first: the
-          ;; runtime clears the input on open, and the :palette/opened that the
-          ;; reopen triggers re-seeds it from :web/palette-search.
+          ;; Full-text session search: the palette input is the query, each
+          ;; keystroke lands in :palette/search-input and debounces a server
+          ;; search. An optional :query seeds the input via reset-filter.
           :palette/open-search   (fn [st {:keys [cwd query]}]
                                    {:state (-> st
                                                (assoc :web/palette-page
@@ -1667,17 +1373,12 @@
                                      (let [st' (-> st
                                                    (assoc-in [:web/palette-search :query] query)
                                                    (update :web/palette-search dissoc :results))]
-                                       ;; A blank query searches too: the server
-                                       ;; answers with the newest sessions.
                                        {:state st'
                                         :effects [[:palette/search-debounce
                                                    {:query (or query "")
                                                     :cwd (get-in st [:web/palette-page :cwd])
                                                     :names-only? (get-in st' [:web/palette-search :names-only?])}]]})))
-          ;; Toggle on the search page's input (the button at its right edge,
-          ;; or Tab): full-text over names + transcripts (the default) vs.
-          ;; names only. Re-runs the current query under the new mode;
-          ;; :palette/open-search resets to full-text on the next visit.
+          ;; Full-text (default) vs. names-only; re-runs the current query.
           :palette/toggle-content-search
           (fn [st _]
             (when (= :search (get-in st [:web/palette-page :kind]))
@@ -1693,8 +1394,7 @@
                                    {:effects [[:ws/send {:type :session/web-search
                                                          :query query :cwd cwd
                                                          :names-only? names-only?}]]})
-          ;; Stale replies (query no longer matches the live input) are
-          ;; dropped so a slow early reply can't clobber a newer search.
+          ;; Stale replies (query no longer matches the input) are dropped.
           :session/web-search-result
           (fn [st {:keys [query sessions]}]
             (when (= (str/trim (or query ""))
@@ -1703,109 +1403,68 @@
           :palette/back          (fn [st _]
                                    {:state (dissoc st :web/palette-page)
                                     :effects [[:palette/reset-filter nil]]})
-          ;; The palette dialog is always in the DOM but its (heavy) contents
-          ;; are gated on :web/palette-open? so keystrokes elsewhere don't
-          ;; rebuild ~120 hidden command items every render. An on-mount
-          ;; MutationObserver on the <dialog> flips the flag when the `open`
-          ;; attribute appears; reset-filter re-runs ui-runtime's highlight now
-          ;; that the items exist. Microtasks run before paint, so the content
-          ;; fills before the dialog is visibly shown.
+          ;; The palette's contents are gated on :web/palette-open? so hidden
+          ;; items aren't rebuilt every render; a MutationObserver on the <dialog>
+          ;; flips the flag when it opens. A drill's reopen keeps the sub-page
+          ;; (and a search page's seed query); a fresh open starts at the top.
           :palette/opened        (fn [st _]
                                    (if (:web/palette-drilling? st)
-                                     ;; Re-open triggered by a drill (e.g. Change
-                                     ;; model): keep the sub-page, consume flag.
-                                     ;; A search page keeps its seed query (typed
-                                     ;; in the top-level palette) in the input.
                                      {:state (-> st
                                                  (assoc :web/palette-open? true)
                                                  (dissoc :web/palette-drilling?))
                                       :effects [[:palette/reset-filter
                                                  (when (= :search (get-in st [:web/palette-page :kind]))
                                                    (get-in st [:web/palette-search :query]))]]}
-                                     ;; Fresh mod+k open: always start at the top.
                                      {:state (-> st
                                                  (assoc :web/palette-open? true)
                                                  (dissoc :web/palette-page))
                                       :effects [[:palette/reset-filter nil]]}))
-          ;; Keep :web/palette-page here so a drill's close+reopen doesn't lose
-          ;; the sub-page; a fresh mod+k open (:palette/opened) resets it.
+          ;; :web/palette-page survives a drill's close+reopen.
           :palette/closed        (fn [st _]
                                    {:state (dissoc st :web/palette-open?)})}))
 
 
-;; Auto-scroll gate (see the Auto-scroll section below). Declared here so the
-;; prompt-nav scroll effect can suspend it — jumping to an earlier prompt must
-;; not be yanked back to the bottom by the post-render scroll-to-bottom.
+;; ── Timeline auto-scroll state ───────────────────────────────────────────────
+;; Auto-scroll follows the bottom until the user scrolls up. Only a user
+;; gesture may turn it off: layout alone lowers scrollTop (the render window
+;; drops its top node, scroll anchoring compensates), so a scrollTop decrease
+;; counts as "scrolled up" only while a gesture is in flight. See
+;; attach-scroll-listener!.
 (defonce ^:private auto-scroll? (atom true))
 (defonce ^:private tracked-timeline (atom nil))
-;; Last observed timeline scrollTop, so the scroll listener can tell an actual
-;; upward USER scroll apart from content growth / our own snap-to-bottom (both
-;; of which keep or increase scrollTop). See attach-scroll-listener!.
 (defonce ^:private prev-scroll-top (atom 0))
-;; Only the user may turn auto-scroll off: a scrollTop decrease counts as
-;; "scrolled up" solely while a user gesture is in flight. Layout alone moves
-;; scrollTop down all the time — the render window slides on every appended
-;; entry, dropping the top node in the same render that grows the bottom, and
-;; Chrome's scroll anchoring then lowers scrollTop by the dropped height while
-;; the new content leaves us > 40px from the bottom. Treating that as the user
-;; (as a former "outside the programmatic-snap window" heuristic did whenever
-;; the stream had paused) silently dropped follow mode mid-answer.
-;;
-;; Timestamp (ms) until which scrollTop changes are treated as a USER gesture,
+;; Timestamp (ms) until which scrollTop changes count as a user gesture;
 ;; refreshed on touchmove, upward wheel, and scroll-up keys.
 (defonce ^:private user-scroll-intent-until (atom 0))
 (defn- mark-user-scroll-intent! []
   (reset! user-scroll-intent-until (+ (js/Date.now) 400)))
-;; True while a pointer is held down on the timeline — a scrollbar drag or a
-;; drag-select past the edge, which fire no wheel/touch events.
+;; Pointer held on the timeline (scrollbar drag, drag-select) fires no wheel/touch.
 (defonce ^:private timeline-pointer-down? (atom false))
 (defn- user-scrolling? []
   (or @timeline-pointer-down?
       (<= (js/Date.now) @user-scroll-intent-until)))
-;; Set at init (see below); referenced by the scroll listener to push the
-;; scrolled-up flag into state. Declared here so attach-scroll-listener! can
-;; reach it without a forward reference.
+;; Set at init; the scroll listener and scroll-to-bottom! need them early.
 (defonce ^:private dispatch-ref (atom nil))
-;; The app map ({:state :dispatch! …}), set at init. Declared here (not down in
-;; the init section) so scroll-to-bottom! can read the viewed session id to
-;; disarm smooth-follow across chat switches.
 (defonce ^:private app-ref (atom nil))
 
-;; Smooth-scroll follow. When the user is parked at the bottom and content grows
-;; (blocks streaming in), ease the scroll toward the growing bottom with a
-;; per-frame rAF loop instead of teleporting, so new content slides up. A native
-;; scrollTo({behavior:"smooth"}) can't do this: re-issued on every render as
-;; content streams, it just restarts and never visibly moves. Our loop reads the
-;; fresh scrollHeight each frame and closes a fraction of the remaining distance,
-;; so it naturally follows continuous growth. One guard keeps jumps instant:
-;;   - too-far snaps (chat switch, first paint, a block taller than ~1.25
-;;     screens) exceed smooth-scroll-max-vh → instant.
-;; Disarmed on a session switch / fresh timeline so a new chat lands instantly.
+;; Smooth-scroll follow: while parked at the bottom with content streaming in,
+;; a rAF loop eases toward the growing bottom (native smooth scrollTo restarts
+;; on every render and never moves). Jumps beyond smooth-scroll-max-vh screens
+;; and everything within smooth-scroll-settle-ms of a chat switch stay instant.
 (defonce ^:private smooth-scroll-armed? (atom false))
 (defonce ^:private smooth-scroll-session (atom nil))
-;; Pending requestAnimationFrame id for the follow loop (nil when idle).
 (defonce ^:private smooth-follow-raf (atom nil))
 (def ^:private smooth-scroll-max-vh 1.25)
-;; After a chat switch, snaps stay instant (and never arm the follow) until this
-;; timestamp — the history is still loading in several steps. Easing is also only
-;; armed while the agent is busy, i.e. blocks are actually streaming in.
 (defonce ^:private smooth-scroll-settle-until (atom 0))
 (def ^:private smooth-scroll-settle-ms 1500)
-;; Fraction of the remaining distance the follow loop closes each frame (ease-out).
 (def ^:private smooth-follow-ease 0.28)
 
-;; Debounce timer for the offline transition — a pending js/setTimeout id (or
-;; nil). Set on WS drop, cleared on reconnect, so transient blips never flip the
-;; offline badge (prevents flicker).
+;; Debounces the offline badge so transient WS blips don't flicker it.
 (defonce ^:private offline-timer (atom nil))
 
 (defn- repaint-closed-drawer!
-  "iOS WebKit can leave the recent-sessions drawer showing a STALE composited
-   frame — stuck at translateX(0) as if open — even though its state is closed
-   (e.g. after a session switch, or when a standalone PWA resumes). Drop the
-   drawer's layer for one frame so WebKit re-rasterizes it at its true closed
-   (off-screen) position. No-op when the drawer is docked (wide screens) or
-   genuinely open, so we never flash a visible drawer."
+  "iOS WebKit can leave the closed drawer painted at its open position; drop
+   its layer for one frame so it re-rasterizes. No-op when docked or open."
   [wide? sidebar-open?]
   (when (and (not wide?) (not sidebar-open?))
     (when-let [^js el (.querySelector js/document ".sidebar-layout--floating > .sidebar")]
@@ -1815,10 +1474,6 @@
 
 (defn- web-effects [routes]
   {:history/push (router/history-effect routes)
-   ;; A session switch closes the drawer via state, but on iOS WebKit the
-   ;; drawer's composited layer can stay stuck open (translateX(0)) because
-   ;; the heavy timeline re-render on the same frame starves its transition.
-   ;; Force a re-raster after the render commits. No-op on desktop/docked.
    :sidebar/repaint
    (fn [{:keys [get-state]} _]
      (js/requestAnimationFrame
@@ -1831,34 +1486,23 @@
      (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
        (set! (.-value el) text)
        (.focus el)))
-   ;; Focus the compose input when entering a fresh chat. Deferred a frame so
-   ;; it runs after the Replicant re-render (the textarea may be freshly
-   ;; mounted) and after the command palette's <dialog>.close() restores focus
-   ;; to the pre-dialog element — otherwise that restoration clobbers the
-   ;; focus. preventScroll avoids a layout jump (matches the on-mount focus).
+   ;; Deferred a frame so it runs after the re-render and after a closing
+   ;; <dialog> restores focus. A stray open modal dialog would make the page
+   ;; inert and the focus a no-op, so close those first.
    :compose/focus
    (fn [_ _]
      (js/requestAnimationFrame
       (fn []
         (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
-          ;; A modal <dialog> left `open` elsewhere (e.g. the palette shell
-          ;; whose content was unrendered — invisible, but still modal) makes
-          ;; the rest of the page inert, so .focus() would silently no-op and
-          ;; the keyboard would be stuck. Close any such stray first.
           (doseq [^js d (array-seq (.querySelectorAll js/document "dialog[open]"))]
             (when-not (.contains d el) (.close d)))
           (.focus el #js {:preventScroll true})))))
-   ;; Escape from the composer: drop focus back to the page (normal mode).
    :compose/blur
    (fn [_ _]
      (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
        (.blur el)))
-   ;; After a palette page switch, clear the search box and re-fire `input` so
-   ;; ui-runtime.js re-filters the freshly-rendered items and re-highlights the
-   ;; first one, then re-focus it. Focus matters on drill-in: the dialog is
-   ;; already open so :palette/reopen's showModal is a no-op (no autofocus), and
-   ;; focus would otherwise stay on the item that was clicked/Tabbed. Deferred a
-   ;; frame so the Replicant re-render lands first.
+   ;; After a palette page switch: reset the search box, re-fire `input` so
+   ;; ui-runtime.js re-filters and re-highlights, and re-focus it.
    :palette/reset-filter
    (fn [_ query]
      (js/requestAnimationFrame
@@ -1867,20 +1511,16 @@
           (set! (.-value input) (or query ""))
           (.dispatchEvent input (js/Event. "input" #js {:bubbles true}))
           (.focus input #js {:preventScroll true})))))
-   ;; Re-open the command palette after the ui-runtime force-closed it on a
-   ;; command-item click (used when drilling into a sub-page). Idempotent:
-   ;; __uiCommand.open only calls showModal when the dialog isn't already open.
+   ;; Idempotent re-open after the ui-runtime force-closed the palette on an
+   ;; item click.
    :palette/reopen
    (fn [_ _]
      (js/requestAnimationFrame
       (fn []
         (when-let [^js cmd (aget js/window "__uiCommand")]
           (.open cmd "cmdk")))))
-   ;; Explicitly close the palette after a leaf action (insert path, select
-   ;; model/skill). We can't rely on ui-runtime's document click handler here:
-   ;; the on-click dispatch re-renders and detaches the clicked node before the
-   ;; runtime runs, so its `target.closest('.command-dialog')` is null and it
-   ;; never closes. Closing by id is robust to the detached node.
+   ;; Close by id: the ui-runtime's click handler misses a node the dispatch
+   ;; already detached.
    :palette/close
    (fn [_ _]
      (when-let [^js cmd (aget js/window "__uiCommand")]
@@ -1897,8 +1537,6 @@
               (js/setTimeout
                (fn [] (dispatch! (assoc payload :type :session/content-search)))
                180))))
-   ;; Same debounce shape for the palette's full-text search (separate timer
-   ;; so it can't cancel a list-view content search, and vice versa).
    :palette/search-debounce
   (let [timer (atom nil)]
     (fn [{:keys [dispatch!]} payload]
@@ -1907,8 +1545,6 @@
               (js/setTimeout
                (fn [] (dispatch! (assoc payload :type :session/web-search)))
                180))))
-   ;; Auto-dismiss the "Copied" toast. A fresh copy restarts the timer so the
-   ;; toast doesn't blink out mid-flash when the user copies twice in a row.
    :copy/flash-clear
   (let [timer (atom nil)]
     (fn [{:keys [dispatch!]} _]
@@ -1919,17 +1555,13 @@
                1500))))
   :prompt-nav/scroll
    (fn [_ {:keys [history-index]}]
-     ;; Suspend auto-scroll so the post-render scroll-to-bottom doesn't fight us.
      (reset! auto-scroll? false)
-     ;; The target prompt may live outside the current render window; growing
-     ;; :web/timeline-window re-renders it, so poll a few frames for the node.
+     ;; The node may only exist after :web/timeline-window grows: poll a few frames.
      (let [sel (str ".timeline .post--user[data-history-index=\"" history-index "\"]")]
        (letfn [(try-scroll [n]
                  (if-let [node (.querySelector js/document sel)]
                    (do
                      (.scrollIntoView node #js {:behavior "smooth" :block "start"})
-                     ;; Outline only the current target: clear the mark from any
-                     ;; previously-navigated prompt, then flag this one.
                      (doseq [el (array-seq
                                  (.querySelectorAll js/document ".post--nav-target"))]
                        (.remove (.-classList el) "post--nav-target"))
@@ -1939,25 +1571,16 @@
          (try-scroll 30))))
   :prompt-nav/resume
    (fn [_ _]
-     ;; Re-enable auto-scroll and snap to the newest content.
      (reset! auto-scroll? true)
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
      (when-let [timeline (.querySelector js/document ".timeline")]
        (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
+  ;; Unfreezing the render window re-tightens it on the next render, which
+  ;; shifts scrollHeight after this fires, so the snap is re-asserted over a
+  ;; few frames until it lands.
   :timeline/scroll-bottom
    (fn [_ _]
-     ;; Re-enable auto-scroll and snap to the newest content (mirrors
-     ;; :prompt-nav/resume, but for the standalone scroll-to-bottom arrow).
-     ;; The state handler clears :web/scrolled-up? / :web/frozen-window-start,
-     ;; so this snap runs against the unfrozen window. That unfreeze re-tightens
-     ;; the render window and drops the top DOM nodes on the next render — a
-     ;; reflow that shifts scrollHeight after this effect fires. A single
-     ;; synchronous snap therefore lands at a stale position (content "flickers"
-     ;; but never reaches bottom). So, like :prompt-nav/scroll, re-assert the
-     ;; snap across a few animation frames until it actually lands at the
-     ;; bottom. (The re-tighten reflow can't be misread as the user scrolling
-     ;; back up: only user gestures disable auto-scroll, see user-scrolling?.)
      (reset! auto-scroll? true)
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
@@ -1971,20 +1594,18 @@
                                2))
                    (js/requestAnimationFrame #(snap (dec n))))))]
        (snap 30)))
-  ;; Play the sidebar row's leave transition (style.css), then dispatch :then.
-  ;; No row in the DOM (drawer closed, other view) or reduced motion: at once.
+  ;; Play the sidebar row's leave transition (style.css), then dispatch :then;
+  ;; at once when no row is in the DOM or motion is reduced.
   :sidebar/animate-leave
   (fn [{:keys [dispatch!]} {:keys [session-id then]}]
-    ;; a session can sit in several groups at once (Favorites + Recent)
     (let [els (when session-id
                 (array-seq (.querySelectorAll js/document
                                               (str ".sidebar [data-session-id=\"" session-id "\"]"))))
           reduced? (.-matches (js/matchMedia "(prefers-reduced-motion: reduce)"))]
       (if (and (seq els) (not reduced?))
         (do (doseq [^js el els]
-              ;; pin the current height first: height can't transition from auto
               (set! (.. el -style -height) (str (.-offsetHeight el) "px"))
-              (.-offsetHeight el) ; reflow, so the 0 below transitions
+              (.-offsetHeight el) ; reflow: height can't transition from auto
               (.add (.-classList el) "project-card-trigger--leaving")
               (set! (.. el -style -height) "0px"))
             (js/setTimeout #(dispatch! then) 300))
@@ -1999,22 +1620,16 @@
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/user (fn [_ {:keys [user]}] (cache/save-cached-user! user))
    :cache/clear-watched (fn [_ _] (cache/clear-watched!))
-   ;; Read a session's cached snapshot and feed it into :web/cache so the chat
-   ;; view paints from it while the WS join lands.
    :cache/seed-room
    (fn [{:keys [dispatch!]} {:keys [session-id]}]
      (when-let [room (cache/load-room session-id)]
        (dispatch! {:type :web/cache-seed :session-id session-id :room room})))
-   ;; Warm the decode memo on pointerdown so the click that follows is cheap.
    :cache/prefetch-room
    (fn [_ {:keys [session-id]}]
      (cache/prefetch-room! session-id))
-   ;; Dispatch a :room/join carrying our cached message-hash + count (if any)
-   ;; so the server can skip re-sending an unchanged session's history over the
-   ;; wire (answers :session/current), or ship only the new tail when our cache
-   ;; is a clean prefix (answers :session/resumed-tail). For a live room the
-   ;; history fingerprint does the same job (see room-joined-from-cache).
-   ;; Reads localStorage, hence an effect.
+   ;; :room/join carrying the cache fingerprints, so the server can answer
+   ;; :session/current, :session/resumed-tail, or a history-base join
+   ;; (room-joined-from-cache) instead of the full history.
    :room/join-with-cache
    (fn [{:keys [dispatch!]} {:keys [target session-id]}]
      (let [{:keys [msg-hash msg-count history history-hash]} (cache/load-room session-id)]
@@ -2026,18 +1641,15 @@
                                         :cached-history-count (count history))))))
    :theme/apply  (fn [_ mode]
                    (let [el js/document.documentElement]
-                     ;; Suppress transitions during switch
                      (.setAttribute el "data-no-transitions" "")
                      (.-offsetHeight el)
                      (js/requestAnimationFrame
                       (fn [] (js/requestAnimationFrame
                               (fn [] (.removeAttribute el "data-no-transitions")))))
-                     ;; Apply data-theme
                      (case mode
                        "light" (.setAttribute el "data-theme" "light")
                        "dark"  (.setAttribute el "data-theme" "dark")
                        (.removeAttribute el "data-theme"))
-                     ;; Persist
                      (try
                        (if (= mode "auto")
                          (.removeItem js/localStorage "ui-theme")
@@ -2047,7 +1659,6 @@
 ;; ── Taps (cache persistence + unread polling + post-join URL) ─────────────────
 
 (defn- request-projects-tap
-  "On a fresh lobby, fetch the project directory list if not already loaded."
   [dispatch!]
   (fn [event state]
     (when (and (= :lobby/state (:type event))
@@ -2056,16 +1667,11 @@
       (dispatch! {:type :projects/web-list}))))
 
 (defn- mark-read-on-turn-tap
-  "When a turn ends in the room the user is currently viewing, mark that
-   session read. Closes the auto-exit gap: previously a room could finish a
-   turn and then auto-exit (tab closed, no navigation) before the seen-count
-   was ever bumped, so the dot wrongly reappeared. Marking read on every
-   turn-end while attached records \"I watched it live\" and — since mark-read
-   forwards to the server — syncs that across devices."
+  "On turn-end: refresh the project dirty dots, and mark the session read when
+   it is the one being viewed (the user watched it live)."
   [dispatch!]
   (fn [event state]
     (when (= :agent/turn-end (:type event))
-      ;; The turn may have edited files; refresh the project dirty dots.
       (dispatch! {:type :projects/web-refresh})
       (let [room-id (:room-id event)
             ended   (get-in state [:rooms room-id :session :id])
@@ -2074,15 +1680,9 @@
           (dispatch! {:type :session/mark-read :session-id ended}))))))
 
 (defn- fill-url-tap
-  "After joining a fresh room (URL has no session id yet), replace the URL
-   with the real session id so reload resumes the same session.
-
-   Gated on the :join-token: only the user's OWN new-chat join carries one
-   (submit-pending sets it, the server echoes it back). A background reattach
-   — a reconnect re-joining the room we were still attached to (the virtual
-   new-chat view never leaves the previous room), or any other room joining —
-   arrives WITHOUT a token, so it can no longer hijack the URL and yank the
-   user off the new-chat view onto that session."
+  "After the user's own new-chat join (the one carrying a :join-token),
+   replace the session-less URL with the real session id so a reload resumes
+   it. Token-less joins (reconnects, other rooms) must not touch the URL."
   [dispatch!]
   (fn [event state]
     (when (= :room/joined (:type event))
@@ -2094,17 +1694,13 @@
           (dispatch! {:type :route/navigate :page :chat
                       :session-id sid :replace? true}))))))
 
-(defonce ^:private buffer-presence-sent
-  ;; [room-id buffer-id] last told to the server (buffer-presence-tap)
-  (atom nil))
+;; [room-id buffer-id] last told to the server (buffer-presence-tap).
+(defonce ^:private buffer-presence-sent (atom nil))
 
 (defn- buffer-presence-tap
-  "Buffer presence: tell the server which view this client shows whenever it
-   changes — the active room's active buffer, :chat included — as
-   `:client/update {:buffer id}`. The room manager folds it into the room's
-   presence (`:members cid :buffer`, xi.buffers/viewers), so other clients
-   see who is on which buffer. The switch itself never leaves this client
-   (xi.client.ws-transport local-ui-events); this is the one signal that does."
+  "Tell the server which buffer this client shows (`:client/update {:buffer
+   id}`) whenever it changes; the room manager folds it into room presence
+   (xi.buffers/viewers). The switch itself stays client-local."
   [dispatch!]
   (fn [_event state]
     (let [room (state/active-room state)
@@ -2147,11 +1743,7 @@
                        (seq images) (assoc :images (vec images)))))))))
 
 (defn- pending-command-tap
-  "Fire a stashed backend slash command once the room it was aimed at joins —
-   the command analogue of pending-submit-tap. Correlated by :join-token (a
-   virtual new chat) or the joined session id so a reconnect / navigation race
-   can't run it in the wrong room. Targets the room that actually joined
-   (:room-id event), never a stale/captured id."
+  "The command analogue of pending-submit-tap."
   [dispatch!]
   (fn [event state]
     (when (and (= :room/joined (:type event))
@@ -2168,9 +1760,6 @@
                        args (assoc :args args))))))))
 
 (defn- record-command-tap
-  "Record originating slash-command invocations into the recently-executed list
-   that feeds the quick-command bar. All web slash commands funnel through the
-   local :web/command event (see views/dispatch-command!), so match that."
   [dispatch!]
   (fn [event _state]
     (when (and (= :web/command (:type event))
@@ -2178,8 +1767,6 @@
       (dispatch! {:type :web/record-command :name (:name event)}))))
 
 (defn- prompt-nav-close-tap
-  "Collapse the prompt-navigation group when the user sends a message or
-   switches sessions, so a stale index/count never lingers."
   [dispatch!]
   (fn [event state]
     (when (and (:web/prompt-nav state)
@@ -2188,31 +1775,21 @@
       (dispatch! {:type :prompt-nav/close}))))
 
 (defn- optimistic-tap
-  "Show the user's prompt in the timeline the instant they submit it,
-   before the server round-trips a :user history entry back. Cleared when
-   the real entry mirrors back (remote :prompt/submit)."
+  "Show the user's prompt the instant they submit it, before the :user history
+   entry mirrors back (which clears it). Queued submissions (room busy) get no
+   bubble; the queue count is the feedback. A send re-enables auto-scroll and
+   arms smooth-follow so the bubble eases in like a streaming block."
   [dispatch!]
   (fn [event state]
     (cond
       (and (= :input/submit (:type event))
            (not (:remote? event))
-           ;; While busy the submission is queued, not sent — the queue count
-           ;; is the feedback, so skip the optimistic timeline bubble.
            (not (get-in state [:rooms (:room-id event) :agent :busy?]))
            (let [parsed (commands/parse-input (:text event))]
              (or (= :prompt (:type parsed))
                  (seq (:images event)))))
       (do
-        ;; A newly-sent (non-queued) message always jumps to the bottom, even
-        ;; if the user had scrolled up into history — re-enable the auto-scroll
-        ;; gate so the post-render scroll-to-bottom snaps to the new bubble.
         (reset! auto-scroll? true)
-        ;; Arm smooth-follow so the user's own bubble eases up like a streaming
-        ;; block, rather than teleporting. Without this, a message sent as the
-        ;; first action in a freshly-opened chat (still disarmed from the load
-        ;; snap) would pop in instantly while the assistant's reply animated.
-        ;; Submits from scrolled-up history still snap instantly — that jump
-        ;; exceeds the smooth-scroll-max-vh guard in scroll-to-bottom!.
         (reset! smooth-scroll-armed? true)
         (dispatch! {:type :web/optimistic-set
                   :room-id (:room-id event)
@@ -2235,14 +1812,11 @@
     (reset! smooth-follow-raf nil)))
 
 (defn- smooth-follow-step!
-  "One frame of the follow loop: ease scrollTop toward the (possibly still
-   growing) bottom, then reschedule until we're within a pixel or the user has
-   scrolled away (auto-scroll? off)."
+  "One frame of the follow loop: ease scrollTop toward the growing bottom and
+   reschedule until within a pixel. Yields to an in-flight user gesture, which
+   it would otherwise out-run."
   [^js timeline]
   (reset! smooth-follow-raf nil)
-  ;; Yield to an in-flight user gesture: the loop closes ~28% of the gap per
-  ;; frame, far faster than a wheel/touch scroll moves, so it would otherwise
-  ;; out-run the scroll-up and the listener would never see scrollTop drop.
   (when (and @auto-scroll? (not (user-scrolling?)))
     (let [target (- (.-scrollHeight timeline) (.-clientHeight timeline))
           cur    (.-scrollTop timeline)
@@ -2256,9 +1830,8 @@
 (defn- scroll-to-bottom! []
   (when (and @auto-scroll? (not (user-scrolling?)))
     (when-let [timeline (.querySelector js/document ".timeline")]
-      ;; A session switch must land at the bottom instantly, not ease down from
-      ;; the top — disarm the follow and open a settle window while the chat's
-      ;; history (cache hydrate, snapshot, tail) is still arriving.
+      ;; A session switch lands instantly: disarm the follow and open a settle
+      ;; window while the history is still arriving.
       (let [st  (some-> @app-ref :state deref)
             sid (get-in st [:web/route :session-id])]
         (when (not= sid @smooth-scroll-session)
@@ -2270,16 +1843,12 @@
             delta  (- target (.-scrollTop timeline))]
         (if (and @smooth-scroll-armed?
                  (< delta (* smooth-scroll-max-vh (.-clientHeight timeline))))
-          ;; Ease toward the bottom. If the loop is already running it keeps
-          ;; following the growing content; otherwise kick it off.
           (when-not @smooth-follow-raf
             (reset! smooth-follow-raf
                     (js/requestAnimationFrame #(smooth-follow-step! timeline))))
           (do (cancel-smooth-follow!)
               (set! (.-scrollTop timeline) target)
-              ;; Only live streaming earns the easing: a chat that is merely
-              ;; loading (or idle and re-laying-out images) always snaps.
-              ;; Arm once the settle window is over and the agent is busy.
+              ;; Only live streaming earns the easing: arm once settled and busy.
               (when (and (> (js/Date.now) @smooth-scroll-settle-until)
                          (some-> @app-ref :state deref state/active-room
                                  :agent :busy?))
@@ -2288,9 +1857,6 @@
 (defonce ^:private global-scroll-intent-attached? (atom false))
 
 (defn- attach-global-scroll-intent!
-  "Window/document halves of the user-scroll-intent tracking (pointer release,
-   scroll-up keys). Attached once — unlike the per-timeline listeners, these
-   would otherwise pile up on every fresh .timeline."
   []
   (when-not @global-scroll-intent-attached?
     (reset! global-scroll-intent-attached? true)
@@ -2305,14 +1871,11 @@
                            (mark-user-scroll-intent!))))))
 
 (def ^:private scroll-step-px
-  "How far one :scroll/down / :scroll/up press (j / k) moves."
   60)
 
 (def ^:private scroller-selectors
-  "The scrollable container of each view, most specific first: overlays
-   (shortcuts dialog), then the open buffer's pane (diff / prompt / file),
-   then the page (chat timeline, projects). At most one view's container is
-   rendered at a time, except overlays sitting above a page."
+  "The scrollable container of each view, most specific first: overlays, then
+   the open buffer's pane, then the page."
   [".keys-body" ".diff-view" ".prompt-tab-body" ".file-tab-md" ".file-tab-code"
    ".timeline" ".home"])
 
@@ -2323,13 +1886,10 @@
         scroller-selectors))
 
 ;; Key scrolls (j / k, half pages, hunk / file jumps) ease toward their target
-;; with a rAF loop instead of teleporting. Our own loop rather than a native
-;; scrollTo({behavior:"smooth"}): a held key re-issues the scroll every repeat,
-;; and a native smooth scroll restarts from the current position each time, so
-;; it never finishes and crawls. Here each press adds to the pending target, so
-;; a held j keeps a steady pace. {:el :target :raf}, nil when idle.
+;; with a rAF loop; each press adds to the pending target so a held key keeps
+;; a steady pace (native smooth scrollTo would restart on every repeat).
+;; {:el :target :raf}, nil when idle.
 (defonce ^:private key-scroll (atom nil))
-;; Fraction of the remaining distance closed per frame (~150ms to settle).
 (def ^:private key-scroll-ease 0.3)
 
 (defn- cancel-key-scroll! []
@@ -2350,24 +1910,18 @@
             (reset! key-scroll nil))
         (let [step (* delta key-scroll-ease)
               step (if (< (js/Math.abs step) 1) (js/Math.sign delta) step)]
-          ;; Each upward frame is a user gesture for the timeline's scroll
-          ;; listener (it drops follow mode on a decrease during one).
           (when (neg? delta) (mark-user-scroll-intent!))
           (set! (.-scrollTop el) (+ cur step))
           (swap! key-scroll assoc :raf (js/requestAnimationFrame key-scroll-frame!)))))))
 
 (defn- key-scroll-base
-  "Where the next key step starts from: the pending target when `el` is
-   already easing, else its current scrollTop."
   [^js el]
   (let [{pending-el :el target :target} @key-scroll]
     (if (identical? pending-el el) target (.-scrollTop el))))
 
 (defn- animate-scroll-to!
-  "Ease `el`'s scrollTop to `top` (clamped to its range); instant under
-   prefers-reduced-motion. An upward move counts as a user gesture so the
-   timeline's scroll listener drops follow mode, exactly like an upward
-   wheel tick."
+  "Ease `el`'s scrollTop to `top` (clamped); instant under
+   prefers-reduced-motion. An upward move counts as a user gesture."
   [^js el top]
   (let [top (-> top (max 0) (min (max-scroll-top el)))]
     (when (< top (.-scrollTop el)) (mark-user-scroll-intent!))
@@ -2383,9 +1937,6 @@
                                    (js/requestAnimationFrame key-scroll-frame!))})))))
 
 (defn- scroll-step!
-  "Scroll the view the user is looking at by `dir` (1 down, -1 up) steps, or
-   with `half-page?` by half the view's height. Repeated presses accumulate
-   on the pending target (see key-scroll)."
   ([dir] (scroll-step! dir false))
   ([dir half-page?]
    (when-let [el (active-scroller)]
@@ -2393,18 +1944,14 @@
        (animate-scroll-to! el (+ (key-scroll-base el) (* dir px)))))))
 
 (def ^:private load-earlier-threshold-px
-  "Scrolling within this distance of the top of the timeline loads the
-   previous batch of messages."
   600)
 
 (defonce ^:private load-earlier-pending? (atom false))
 
 (defn- maybe-load-earlier!
-  "Near the top of the timeline with older entries hidden: press the
-   \"Show earlier messages\" button for the user. Widening the window prepends
-   nodes above the viewport; Chrome's scroll anchoring keeps the content in
-   place, but Safari has none, so if scrollTop is still where it was after the
-   render, shift it down by the added height ourselves."
+  "Near the top of the timeline: press \"Show earlier messages\" for the user.
+   Safari has no scroll anchoring, so the added height is compensated by hand
+   when scrollTop did not move."
   [^js timeline]
   (when (and (not @load-earlier-pending?)
              (< (.-scrollTop timeline) load-earlier-threshold-px))
@@ -2413,8 +1960,7 @@
             height-before (.-scrollHeight timeline)]
         (reset! load-earlier-pending? true)
         (.click btn)
-        ;; Two frames: the dispatch re-renders on the next one, anchoring
-        ;; (if any) settles after it.
+        ;; Two frames: re-render, then scroll anchoring (if any) settles.
         (js/requestAnimationFrame
          (fn []
            (js/requestAnimationFrame
@@ -2425,7 +1971,6 @@
                   (set! (.-scrollTop timeline) (+ top-before delta))
                   (reset! prev-scroll-top (.-scrollTop timeline))))
               (reset! load-earlier-pending? false)
-              ;; Still near the top (short batch): keep loading.
               (maybe-load-earlier! timeline)))))))))
 
 (defn- attach-scroll-listener! []
@@ -2433,13 +1978,9 @@
     (when-not (identical? timeline @tracked-timeline)
       (reset! tracked-timeline timeline)
       (reset! auto-scroll? true)
-      ;; Fresh timeline (first mount / hot reload): first snap must be instant.
       (reset! smooth-scroll-armed? false)
       (reset! prev-scroll-top (.-scrollTop timeline))
-      ;; Unambiguous user gestures — only real input devices fire these, never
-      ;; our snaps or layout shifts — so they mark user intent for the scroll
-      ;; listener below. Wheel counts only upward, so a wheel-down onto the
-      ;; bottom can't lend intent to a reflow landing right after it.
+      ;; Only real input events mark user intent; wheel counts upward only.
       (.addEventListener timeline "touchmove"
                          (fn [] (mark-user-scroll-intent!)) #js {:passive true})
       (.addEventListener timeline "wheel"
@@ -2449,8 +1990,7 @@
                              ;; At scrollTop 0 no scroll event follows the wheel.
                              (maybe-load-earlier! timeline)))
                          #js {:passive true})
-      ;; Primary button only: a right-click's native context menu can swallow
-      ;; the pointerup, which would leave the flag stuck.
+      ;; Primary button only: a context menu can swallow the pointerup.
       (.addEventListener timeline "pointerdown"
                          (fn [^js e]
                            (when (zero? (.-button e))
@@ -2463,59 +2003,30 @@
                                  bottom? (at-bottom? timeline)]
                              (reset! prev-scroll-top top)
                              (when (< top prev) (maybe-load-earlier! timeline))
-                             ;; ONLY an actual upward user scroll disables
-                             ;; auto-scroll. Content growing mid-stream (or our
-                             ;; own snap-to-bottom) keeps/increases scrollTop;
-                             ;; reading at-bottom? there races the growth and
-                             ;; used to mistake it for the user leaving the
-                             ;; bottom — freezing the scroll at a random spot.
-                             ;; A decrease without a gesture in flight is layout
-                             ;; (render-window slide + scroll anchoring, a snap's
-                             ;; reflow), never the user. Snapping back to the
-                             ;; bottom always re-enables it.
                              (cond
                                bottom?
                                (reset! auto-scroll? true)
                                (and (< top (- prev 2)) (user-scrolling?))
                                (reset! auto-scroll? false))
-                             ;; Surface "scrolled up" into state so the
-                             ;; scroll-to-bottom down-arrow can toggle (shown
-                             ;; exactly while auto-scroll is off). The handler
-                             ;; no-ops when the flag is unchanged, so this only
-                             ;; re-renders on the two transitions.
                              (when-let [d @dispatch-ref]
                                (d {:type :web/set-scrolled-up
                                    :scrolled-up? (not @auto-scroll?)})))))
-      ;; Content that lays out AFTER a render — images loading, code blocks
-      ;; getting syntax-highlighted, a stream that paused on a big block — grows
-      ;; the timeline without firing a render or a scroll event, so the RAF
-      ;; snap-to-bottom never runs again and the view stops just short of the
-      ;; bottom. Re-snap on any content-size growth while auto-scroll is on.
-      ;; Quick-reply chips now render inline at the bottom of .timeline-content
-      ;; (not the footer), so their (possibly wrapped) height grows the observed
-      ;; content and re-snaps like any other late-laid-out node. Still observe
-      ;; the footer (.compose-dock) so a growing composer (textarea auto-grow)
-      ;; re-snaps too.
+      ;; Content laid out after a render (images, highlighting, a growing
+      ;; composer) fires no render or scroll event, so re-snap on size growth.
       (let [obs (js/ResizeObserver. (fn [] (scroll-to-bottom!)))]
         (when-let [content (.querySelector timeline ".timeline-content")]
           (.observe obs content))
         (when-let [dock (.querySelector js/document ".compose-dock")]
           (.observe obs dock)))
-      ;; Sync the flag once on (re)attach so a fresh timeline starts consistent.
       (when-let [d @dispatch-ref]
         (d {:type :web/set-scrolled-up :scrolled-up? (not (at-bottom? timeline))})))))
 
 (defonce ^:private code-copy-attached? (atom false))
 
 (defn- attach-code-copy-listener!
-  "Delegated document listeners: right-clicking (mouse) or tapping (touch) a
-   rendered code block (`pre`), inline `code`, or a rendered markdown diff
-   (`.md-diff`) surfaces a floating Copy button near the pointer
-   (:web/code-menu, rendered by chat-view); a plain mouse left-click does
-   nothing. Skipped inside user bubbles (which already have their own tap menu
-   with Copy) and inline editors. Mirrors the right-click/tap contract of user
-   bubbles via views/tap-opens-context-menu?. Returns true from open! when a
-   menu was opened, so contextmenu only swallows the native menu then."
+  "Delegated document listeners: right-click or tap on a code block, inline
+   code, or a rendered markdown diff opens the floating Copy button
+   (:web/code-menu). Skipped inside user bubbles and inline editors."
   []
   (when-not @code-copy-attached?
     (reset! code-copy-attached? true)
@@ -2532,9 +2043,6 @@
                               path (attr "data-file-path")
                               diff-path (attr "data-diff-path")
                               diff-text (attr "data-diff-text")
-                              ;; A rendered markdown diff body is prose whose
-                              ;; textContent interleaves old and new text —
-                              ;; Copy gets the raw diff instead.
                               text (if (.matches node ".md-diff")
                                      diff-text
                                      (.-textContent node))]
@@ -2564,15 +2072,10 @@
 
 (defn- el [id] (.getElementById js/document id))
 
-;; The composed extension page table (set at init, read by render! so
-;; reload! keeps working across hot reloads).
+;; Composed extension page table and route table, set at init. Routes stay
+;; an atom because user extensions' web halves add routes after startup.
 (defonce ^:private pages-ref (atom nil))
-
-;; The composed route table, as an atom: user extensions' web halves add
-;; routes after startup (xi.web.user-ext), and the router reads it per call.
 (defonce ^:private routes-ref (atom nil))
-
-;; What the previous render's sidebar layout depended on (see render!).
 (defonce ^:private sidebar-layout-sig (atom nil))
 
 (defn- sidebar-layout-sig-of
@@ -2587,29 +2090,19 @@
   (let [root (el "app")
         hiccup (views/root-view app-state dispatch! @pages-ref)
         sig    (sidebar-layout-sig-of app-state)
-        ;; rows glide to their new spot when this render moves them
         snap   (when (not= sig @sidebar-layout-sig) (flip/snapshot))]
     (reset! sidebar-layout-sig sig)
     (try
       (r/render root hiccup)
       (catch :default e
-        ;; A reconcile that throws leaves Replicant's internal rendering? flag
-        ;; stuck true for this element: it's set before reconcile and only
-        ;; cleared on success (replicant.dom/render). Every later render then
-        ;; trips the "Triggered a render while rendering" guard, re-queues via
-        ;; rAF, and loops forever — the URL keeps updating but the DOM freezes
-        ;; until a manual reload. Forget Replicant's cached vdom + stuck flag
-        ;; for the root and rebuild from a clean baseline so one bad render
-        ;; can't wedge the whole client. The logged error is the real culprit
-        ;; (a keying/reconcile bug) — fix that at its source when it recurs.
+        ;; A throwing reconcile leaves Replicant's rendering? flag stuck and
+        ;; every later render loops in rAF. Drop its cached vdom for the root
+        ;; and rebuild from a clean baseline; the logged error is the real bug.
         (js/console.error "[xi-web] render failed — recovering:" e)
         (vswap! r/state dissoc root)
         (try
           (r/render root hiccup)
           (catch :default e2
-            ;; Even the clean rebuild failed (a persistent bug in the current
-            ;; hiccup). Leave the flag cleared so the NEXT state change gets a
-            ;; fresh attempt instead of the infinite rAF warning flood.
             (js/console.error "[xi-web] recovery render also failed:" e2)
             (vswap! r/state dissoc root)))))
     (flip/play! snap))
@@ -2622,11 +2115,8 @@
 ;; ── Init ─────────────────────────────────────────────────────────────────────
 
 (defn- ws-url
-  "WS server URL. Served by the Bun server itself → same origin as the page,
-   including behind a reverse proxy on 80/443 (empty location.port → omit the
-   port so the WS goes through the proxy, e.g. wss://xi.home). Exception:
-   shadow dev-http (8100) isn't the WS server → force 7474. ?host/?port query
-   params override."
+  "WS server URL: same origin as the page (port omitted behind a reverse
+   proxy), except shadow dev-http (8100) maps to 7474. ?host/?port override."
   []
   (let [params (js/URLSearchParams. (.-search js/window.location))
         proto  (if (= "https:" js/location.protocol) "wss://" "ws://")
@@ -2642,15 +2132,12 @@
       (str proto host))))
 
 (defn- web-extensions
-  "Browser-safe extension web halves (xi.config/web), composed at init —
-   symmetric to server-extensions/client-extensions in xi.cli."
   []
   (ext/instantiate config/web {}))
 
 (defn- ensure-client-key!
   "Persistent random key identifying this browser to the server (the web
-   analog of ~/.config/xi/client-key). Unknown keys must be approved once
-   via the pairing flow (see xi.server.ws handshake)."
+   analog of ~/.config/xi/client-key); unknown keys go through pairing."
   []
   (or (try (.getItem js/localStorage "xi-client-key") (catch :default _ nil))
       (let [arr (js/Uint8Array. 32)
@@ -2660,18 +2147,14 @@
         k)))
 
 (defn- claimed-user
-  "The user id this browser claims in :auth/hello: `localStorage xi-user`
-   when set (nil otherwise — the server then uses the device's clients.edn
-   assignment, else root). Client-claimed and unauthenticated by design;
-   see xi.server.ws."
+  "The user id this browser claims in :auth/hello (`localStorage xi-user`),
+   or nil for the server's device assignment. Unauthenticated by design."
   []
   (some-> (try (.getItem js/localStorage "xi-user") (catch :default _ nil))
           not-empty
           util/user-id))
 
 (defn- device-name
-  "Human label shown in pairing approvals. Client-claimed — the pairing code
-   comparison is the actual security, not this label."
   []
   (let [ua (.-userAgent js/navigator)]
     (cond
@@ -2683,11 +2166,8 @@
       :else                   "Browser")))
 
 (defn- demo-init!
-  "Static one-shot render for README screenshots (?demo=<view>). Seeds
-   fabricated data, skips the WS transport entirely, and renders once with a
-   no-op dispatch so the page shows a fully-populated view backed by no real
-   data. Color scheme is left on `auto` so a devtools emulation can drive
-   light/dark."
+  "Static one-shot render of fabricated data for README screenshots
+   (?demo=<view>); no WS transport, no-op dispatch."
   [view]
   (js/console.log "[xi-web] demo mode:" view)
   (let [composed (ext/compose (web-extensions))]
@@ -2703,13 +2183,9 @@
                                (:pages composed)))))
 
 (defn- reset-zoom!
-  "Force iOS WebKit back to scale=1. In a standalone PWA, resuming from the
-   background can restore the page at a stuck visual-viewport scale > 1 — the
-   whole app looks zoomed until the keyboard is first opened, which focuses an
-   input and snaps the scale back. Momentarily tightening maximum-scale below
-   the current scale makes WebKit clamp the zoom down; restoring the original
-   viewport meta on the next frame settles it at 1. No-op unless the viewport
-   is actually zoomed, so it stays inert on desktop."
+  "Force iOS WebKit back to scale=1 after a standalone PWA resumes zoomed:
+   momentarily tighten maximum-scale, then restore the viewport meta. No-op
+   unless actually zoomed."
   []
   (let [vv    js/window.visualViewport
         scale (some-> vv .-scale)]
@@ -2721,9 +2197,6 @@
            (fn [] (.setAttribute meta "content" content))))))))
 
 (defn- session-step!
-  "ALT+j/k: navigate to the next/prev session in sidebar order (no wrap).
-   When no chat is open (home, projects, … or a session not in the sidebar),
-   both directions land on the first session."
   [st dispatch! dir]
   (let [order (sidebar/sidebar-session-order st)
         n     (count order)]
@@ -2739,17 +2212,13 @@
         (when (not= sid cur)
           (dispatch! {:type :route/navigate :page :chat :session-id sid}))))))
 
-(defonce ^:private attention-chain
-  ;; {:last sid :visited #{sid}} — the sessions the current run of ALT+u
-  ;; presses already landed on. Any other navigation breaks the chain.
-  (atom nil))
+;; {:last sid :visited #{sid}}: the sessions the current run of attention
+;; jumps already landed on. Any other navigation breaks the chain.
+(defonce ^:private attention-chain (atom nil))
 
 (defn- jump-to-attention!
-  "ALT+u: jump to the session that most needs you — one waiting on a dialog,
-   then the newest finished one with unread output (the purple dot), then the
-   newest running one (see `sidebar/attention-order`). Pressing again moves to
-   the next candidate: sessions this chain of presses already visited are
-   skipped, and the order wraps once exhausted. No-op when nothing qualifies."
+  "Jump to the session that most needs attention (sidebar/attention-order);
+   repeated presses walk that order, skipping sessions already visited."
   [st dispatch!]
   (let [{:keys [recent hidden earlier]} (sidebar/sidebar-session-groups st)
         cur     (get-in st [:web/route :session-id])
@@ -2761,17 +2230,12 @@
       (dispatch! {:type :route/navigate :page :chat :session-id sid}))))
 
 (defn- prune-all!
-  "ALT+Shift+P: run every applicable sidebar cleanup (mark all read, hide all from
-   Recent, close idle rooms) — the keyboard twin of the sidebar's \"Prune all\"."
   [st dispatch!]
   (let [pa?      (get-in st [:lobby :agent-id])
         cleanups (views/session-cleanups pa? (sidebar/sidebar-session-groups st))]
     (run! (comp dispatch! :event) cleanups)))
 
 (defn- permission-answer
-  "{:room-id :dialog-id :value} answering the active chat's pending permission
-   request with confirm `option`, or nil when there is none (or it doesn't
-   offer that choice)."
   [st option]
   (let [room (state/active-room st)
         {:keys [dialog-id value]} (dlg/answer room option)]
@@ -2779,10 +2243,6 @@
       {:room-id (:id room) :dialog-id dialog-id :value value})))
 
 (defn- jump-diff-file!
-  "`]f` / `[f` in the diff tab: scroll the next / previous file to the top.
-   Measured on the .diff-file containers, not their sticky headers (a passed
-   file's header sits pinned at the END of its file). The current file is the
-   last one whose top is at or above the sticky zone."
   [dir]
   (let [files    (vec (array-seq (.querySelectorAll js/document ".diff-tab .diff-file")))
         ^js view (some-> (first files) (.closest ".diff-view"))]
@@ -2795,9 +2255,6 @@
           (animate-scroll-to! view (+ (.-scrollTop view) target)))))))
 
 (defn- jump-diff-hunk!
-  "Scroll the next / previous hunk header of the diff on screen to just below
-   the pinned file header. A hunk counts as passed once its header is at or
-   above that line, so repeated presses walk the hunks in order."
   [dir]
   (let [headers (vec (array-seq (.querySelectorAll js/document ".diff-view .diff-hunk-header")))
         ^js view (some-> (first headers) (.closest ".diff-view"))]
@@ -2806,7 +2263,6 @@
             pinned   (if-let [^js f (.querySelector view ".diff-file-header")]
                        (.-height (.getBoundingClientRect f))
                        0)
-            ;; header offsets from the line under the pinned file header
             offsets  (mapv #(- (.-top (.getBoundingClientRect %)) view-top pinned) headers)
             target   (if (= dir :next)
                        (first (filter #(> % 4) offsets))
@@ -2825,54 +2281,36 @@
       room)))
 
 (defn- chat-session-id
-  "The session id of the chat page on screen, else nil."
   [st]
   (when (= :chat (get-in st [:web/route :page]))
     (get-in st [:web/route :session-id])))
 
 (defn- install-actions!
-  "Register the web client's keyboard actions (xi.web.keymap) — the code
-   behind the action ids the keymap binds (xi.keys/defaults, overridden by
-   config.edn :keys). Guards (`:when`) let a key fall through when the action
-   makes no sense right now, so e.g. ALT+d keeps its browser meaning unless a
-   permission request is pending.
-
-   Transient layers: `:permission-pending` (ALT+a / ALT+s / ALT+SHIFT+a /
-   ALT+d answer the ask — the keyboard twins of /allow, /allow always,
-   /allow repo and /deny) and
-   `:agent-busy` (ALT+x aborts the turn, twin of the composer's abort button
-   and the TUI's alt+x)."
+  "Register the web client's keyboard actions (xi.web.keymap) behind the
+   action ids the keymap binds (xi.keys/defaults, config.edn :keys). `:when`
+   guards let a key fall through when the action makes no sense; actions
+   that just dispatch declare the :event so palette rows can show the key.
+   Transient layers: :permission-pending and :agent-busy."
   []
   (keymap/register-layer! {:id :permission-pending
                            :when (fn [st] (some? (permission-answer st :yes)))})
   (keymap/register-layer! {:id :agent-busy
                            :when (fn [st] (boolean (get-in (state/active-room st) [:agent :busy?])))})
-  ;; Actions that just dispatch an event declare it as :event, so palette rows
-  ;; dispatching the same event show the key (keymap/event-shortcut).
   (keymap/register-action! {:id :chat/new :event {:type :room/new}})
   (keymap/register-action! {:id :sidebar/toggle :event {:type :sidebar/toggle}})
-  ;; Jump to the session needing you most (pending dialog → newest unread →
-  ;; newest running; repeat presses walk that order).
   (keymap/register-action! {:id :session/jump-attention
                             :run (fn [st dispatch! _] (jump-to-attention! st dispatch!))})
   (keymap/register-action! {:id :sessions/prune
                             :run (fn [st dispatch! _] (prune-all! st dispatch!))})
-  ;; Instant fuzzy file finder (handle-keydown preventDefaults, so the
-  ;; browser's print dialog never opens on Ctrl/Cmd+P).
   (keymap/register-action! {:id :files/find :event {:type :palette/open-file-finder}})
   (keymap/register-action! {:id :buffers/switch :event {:type :palette/open-buffers}})
-  ;; The Ctrl/Cmd+K palette, top level (its first group lists the chats).
   (keymap/register-action! {:id :palette/open :event {:type :palette/open}})
   (keymap/register-action! {:id :projects/pick :event {:type :palette/open-projects :action :drill}})
-  ;; Pick a project and insert its path into the draft — the web twin of the
-  ;; projects extension's TUI alt+p (:project/open), so one :keys binding
-  ;; covers both clients.
+  ;; Web twin of the projects extension's TUI :project/open.
   (keymap/register-action! {:id :project/open :event {:type :palette/open-projects :action :insert}})
   (keymap/register-action! {:id :skills/search :event {:type :palette/open-skills}})
   (keymap/register-action! {:id :projects/open
                             :event {:type :route/navigate :page :home}})
-  ;; Hide from Recent (a toggle, like the palette's "Hide from Recent") and
-  ;; delete the chat on screen; deleting leaves the room and goes home.
   (keymap/register-action! {:id :chat/hide
                             :when chat-session-id
                             :run (fn [st dispatch! _]
@@ -2883,8 +2321,6 @@
                             :run (fn [st dispatch! _]
                                    (dispatch! {:type :session/delete
                                                :session-id (chat-session-id st)}))})
-  ;; Jump between your messages (the float-actions arrows): the first `[`
-  ;; lands on the newest one, `]` on the last one goes back to the bottom.
   (keymap/register-action! {:id :prompt/prev
                             :when chat-room
                             :run (fn [st dispatch! _]
@@ -2897,16 +2333,12 @@
                                      (dispatch! (if (>= (:web/prompt-nav st) (dec (:count ctx)))
                                                   {:type :timeline/scroll-to-bottom}
                                                   (assoc ctx :type :prompt-nav/next)))))})
-  ;; The working-tree diff in the chat's :diff buffer — the palette's / overflow
-  ;; menu's "Git status".
   (keymap/register-action! {:id :git/status
                             :when (fn [st] (some? (:id (state/active-room st))))
                             :run (fn [st dispatch! _]
                                    (dispatch! {:type :diff/reopen
                                                :room-id (:id (state/active-room st))
                                                :method "git" :engine :git}))})
-  ;; Next / prev session in sidebar order (no wrap; from a non-chat view they
-  ;; open the first session).
   (keymap/register-action! {:id :session/next
                             :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
   (keymap/register-action! {:id :session/prev
@@ -2931,8 +2363,6 @@
   (keymap/register-action! {:id :timeline/bottom
                             :when (fn [st] (= :chat (get-in st [:web/route :page])))
                             :event {:type :timeline/scroll-to-bottom}})
-  ;; j / k scroll whatever view is on screen (timeline, diff, file, prompt,
-  ;; projects page, shortcuts dialog) — no-ops when nothing scrolls.
   (keymap/register-action! {:id :scroll/down
                             :run (fn [_ _ _] (scroll-step! 1))})
   (keymap/register-action! {:id :scroll/up
@@ -2941,20 +2371,14 @@
                             :run (fn [_ _ _] (scroll-step! 1 true))})
   (keymap/register-action! {:id :scroll/half-up
                             :run (fn [_ _ _] (scroll-step! -1 true))})
-  ;; Escape in the composer blurs it (back to navigate mode); in any other
-  ;; text field (sidebar search, bubble edit, diff modify…) it drops that
-  ;; field's focus so the next key lands in navigate mode — `i` then reaches
-  ;; the composer without a mouse. Fields inside an open <dialog> are left to
-  ;; the dialog's own Escape (cancel → close), and a field whose handler
-  ;; preventDefaults Escape (skill form) opts out automatically.
+  ;; Escape drops focus from the composer or any other text field, back to
+  ;; navigate mode; fields inside an open <dialog> are left to the dialog.
   (keymap/register-action! {:id :compose/blur
                             :when (fn [_] (not (keymap/in-open-dialog?)))
                             :run (fn [_ dispatch! _]
                                    (if (keymap/compose-focused?)
                                      (dispatch! {:type :compose/blur})
                                      (keymap/blur-active!)))})
-  ;; Escape closes the Appearance / Keyboard shortcuts dialogs (overlays, not
-  ;; native <dialog>s).
   (keymap/register-action! {:id :dialog/close
                             :when (fn [st] (boolean (or (:web/appearance-open? st)
                                                         (:web/keys-open? st))))
@@ -2963,9 +2387,7 @@
                                                        :keys/close
                                                        :appearance/close)}))})
   (keymap/register-action! {:id :keys/show :event {:type :keys/show}})
-  ;; Buffer views (diff / file / prompt): back to the chat — the buffer stays
-  ;; open (the buffer menu closes one); a virtual new chat keeps its buffers on
-  ;; the pending room (see :pending/buffer-switch).
+  ;; Back to the chat; the buffer stays open.
   (keymap/register-action! {:id :buffer/close
                             :run (fn [st dispatch! _]
                                    (let [room-id (when-not (new-chat-view? st)
@@ -2983,14 +2405,158 @@
   (keymap/register-action! {:id :diff/prev-hunk
                             :run (fn [_ _ _] (jump-diff-hunk! :prev))}))
 
+(defn- on-connection-status
+  "Transport status callback: a reconnect clears the offline badge at once; a
+   drop only shows it after a debounce, since mobile WS drops are frequent."
+  [connected?]
+  (when-let [d @dispatch-ref]
+    (if connected?
+      (do (when-let [t @offline-timer]
+            (js/clearTimeout t)
+            (reset! offline-timer nil))
+          (d {:type :connection/status :connected? true}))
+      (when-not @offline-timer
+        (reset! offline-timer
+                (js/setTimeout
+                 (fn []
+                   (reset! offline-timer nil)
+                   (d {:type :connection/status :connected? false}))
+                 2500))))))
+
+(defn- sync-viewport-height!
+  "Keep --app-height in step with the visual viewport so the mobile keyboard
+   doesn't push the compose box off-screen. iOS overlays the keyboard without
+   shrinking the layout viewport, so the gap between the two tells whether it
+   is open (exposed to CSS as .keyboard-open). The timeline's scrollTop is
+   shifted by the height delta so the same line stays above the composer."
+  []
+  (let [vv       js/window.visualViewport
+        layout-h (.-clientHeight js/document.documentElement)
+        visual-h (if vv (.-height vv) js/window.innerHeight)
+        root     js/document.documentElement
+        style    (.-style root)
+        kb-open? (> (- layout-h visual-h) 100)
+        timeline (.querySelector js/document ".timeline")
+        prev-h   (some-> timeline .-clientHeight)
+        prev-top (some-> timeline .-scrollTop)]
+    (.toggle (.-classList root) "keyboard-open" kb-open?)
+    (if kb-open?
+      (do (.setProperty style "--app-height" (str visual-h "px"))
+          (.scrollTo js/window 0 0))
+      ;; 100dvh is the real standalone window height; 100vh would include
+      ;; the status bar iOS reserves.
+      (.setProperty style "--app-height" "100dvh"))
+    (when (and timeline prev-h)
+      (let [delta (- prev-h (.-clientHeight timeline))]
+        (when-not (zero? delta)
+          (set! (.-scrollTop timeline) (+ prev-top delta)))))))
+
+(defn- install-viewport-tracking!
+  "Run sync-viewport-height! on viewport changes, and re-sync zoom, height
+   and the drawer paint whenever a standalone PWA resumes from the
+   background (iOS restores a stale scale and height until then)."
+  [state]
+  (sync-viewport-height!)
+  (if js/window.visualViewport
+    (do (.addEventListener js/window.visualViewport "resize" (fn [_] (sync-viewport-height!)))
+        (.addEventListener js/window.visualViewport "scroll" (fn [_] (sync-viewport-height!))))
+    (.addEventListener js/window "resize" (fn [_] (sync-viewport-height!))))
+  (let [on-resume (fn []
+                    (reset-zoom!)
+                    (sync-viewport-height!)
+                    (let [s @state]
+                      (repaint-closed-drawer! (:web/wide? s) (:web/sidebar-open? s)))
+                    (js/requestAnimationFrame
+                     (fn [] (reset-zoom!) (sync-viewport-height!))))]
+    (.addEventListener js/document "visibilitychange"
+                       (fn [_] (when (= "visible" (.-visibilityState js/document))
+                                 (on-resume))))
+    (.addEventListener js/window "pageshow" (fn [_] (on-resume)))))
+
+(defn- scrollable-x?
+  [node]
+  (loop [n node]
+    (cond
+      (or (nil? n) (not (instance? js/Element n))) false
+      (and (> (.-scrollWidth n) (+ (.-clientWidth n) 1))
+           (let [ox (.-overflowX (js/getComputedStyle n))]
+             (or (= ox "auto") (= ox "scroll"))))
+      true
+      :else (recur (.-parentElement n)))))
+
+(defn- selecting-text?
+  []
+  (when-let [sel (.getSelection js/window)]
+    (and (not (.-isCollapsed sel))
+         (pos? (.-length (.toString sel))))))
+
+(defn- install-sidebar-swipe!
+  "Left-edge swipe opens the sidebar, a swipe left closes it. The open zone
+   is the left ~20% of the viewport, not the very edge iOS reserves for its
+   back gesture; that edge's native swipe is suppressed best-effort with a
+   non-passive touchstart. Gated on horizontal dominance and a distance
+   threshold, ignored inside horizontally scrollable elements and while
+   selecting text."
+  [state dispatch!]
+  (let [thresh-px 60
+        start     (atom nil)]
+    (.addEventListener
+     js/document "touchstart"
+     (fn [e]
+       (let [t (aget (.-touches e) 0)]
+         (reset! start (when (and t (= 1 (.-length (.-touches e))))
+                         {:x       (.-clientX t)
+                          :y       (.-clientY t)
+                          :dx      0
+                          :dy      0
+                          :scroll? (scrollable-x? (.-target e))}))))
+     #js {:passive true})
+    (.addEventListener
+     js/document "touchmove"
+     (fn [e]
+       (when-let [{:keys [x y] :as s} @start]
+         (when-let [t (aget (.-touches e) 0)]
+           (reset! start (assoc s
+                                :dx (- (.-clientX t) x)
+                                :dy (- (.-clientY t) y))))))
+     #js {:passive true})
+    (.addEventListener
+     js/document "touchcancel"
+     (fn [_] (reset! start nil))
+     #js {:passive true})
+    (.addEventListener
+     js/document "touchend"
+     (fn [_]
+       (when-let [{:keys [x dx dy scroll?]} @start]
+         (reset! start nil)
+         (let [open-zone (min 100 (* 0.2 (or (.-innerWidth js/window) 0)))]
+           (when (and (not scroll?)
+                      (not (selecting-text?))
+                      (> (js/Math.abs dx) (js/Math.abs dy)))
+             (cond
+               (and (not (:web/sidebar-open? @state))
+                    (<= x open-zone) (>= dx thresh-px))
+               (dispatch! {:type :sidebar/open})
+
+               (and (:web/sidebar-open? @state) (<= dx (- thresh-px)))
+               (dispatch! {:type :sidebar/close}))))))
+     #js {:passive true})
+    (.addEventListener
+     js/document "touchstart"
+     (fn [e]
+       (when-let [t (aget (.-touches e) 0)]
+         (when (and (not (:web/sidebar-open? @state))
+                    (<= (.-pageX t) 20))
+           (.preventDefault e))))
+     #js {:passive false})))
+
 (defn- real-init! []
   (let [composed  (ext/compose (web-extensions))
         _         (reset! routes-ref (:routes composed))
         routes    routes-ref
         stored-theme (or (try (.getItem js/localStorage "ui-theme") (catch :default _ nil))
                         "auto")
-        ;; Pre-appearance-settings builds kept the viewer toggle under this
-        ;; key; the overrides now live in xi/appearance (cache/hydrate).
+        ;; Legacy key from before the appearance settings.
         _         (try (.removeItem js/localStorage "xi-viewer-mode") (catch :default _ nil))
         route     (router/parse-path routes (.-pathname js/window.location))
         initial   (-> (state/initial-state {:mode :client})
@@ -2998,9 +2564,7 @@
                              :web/nav-items (:nav-items composed)
                              :web/sidebar-groups (:sidebar-groups composed)
                              :web/session-menu-items (:session-menu-items composed)
-                             ;; The config layer of the appearance settings
-                             ;; (xi.web.appearance/effective-in). Seeded here
-                             ;; because views must not require xi.config.
+                             ;; Seeded here because views must not require xi.config.
                              :web/appearance-config config/appearance)
                       (cache/hydrate route))
         transport (ws-transport/create!
@@ -3009,33 +2573,10 @@
                                          :client-name (device-name)
                                          :platform    "web"}
                                   (claimed-user) (assoc :user (claimed-user)))
-                    ;; nil → the router drives joins; reconnect replays them.
+                    ;; nil: the router drives joins; reconnect replays them.
                     :target     nil
                     :reconnect? true
-                    :on-status  (fn [connected?]
-                                  (when-let [d @dispatch-ref]
-                                    (if connected?
-                                      ;; Reconnected: cancel any pending
-                                      ;; offline flip and clear immediately so a
-                                      ;; brief blip never surfaces the badge.
-                                      (do (when-let [t @offline-timer]
-                                            (js/clearTimeout t)
-                                            (reset! offline-timer nil))
-                                          (d {:type :connection/status
-                                              :connected? true}))
-                                      ;; Dropped: debounce — only show offline if
-                                      ;; the socket stays down for a beat. WS
-                                      ;; drops are frequent on mobile and would
-                                      ;; otherwise flicker the badge on every
-                                      ;; reconnect.
-                                      (when-not @offline-timer
-                                        (reset! offline-timer
-                                                (js/setTimeout
-                                                 (fn []
-                                                   (reset! offline-timer nil)
-                                                   (d {:type :connection/status
-                                                       :connected? false}))
-                                                 2500))))))})
+                    :on-status  on-connection-status})
         {:keys [dispatch! state add-tap!] :as app}
         (app/create-app {:initial-state initial
                          :handlers      (ws-transport/make-handlers
@@ -3067,190 +2608,21 @@
     (add-tap! (optimistic-tap dispatch!))
     (add-tap! (record-command-tap dispatch!))
     (add-tap! (prompt-nav-close-tap dispatch!))
-    ;; first connect → fetch user extensions' web halves (xi.web.user-ext)
     (add-tap! (user-ext/request-tap dispatch!))
     (doseq [make-tap (:taps composed)]
       (add-tap! (make-tap dispatch!)))
     (router/init! routes dispatch!)
-    ;; Apply stored theme immediately (before first render)
     (dispatch! {:type :theme/set-mode :mode stored-theme :init? true})
-    ;; Track visual viewport height so the mobile keyboard doesn't push
-    ;; the compose box off-screen.  Falls back to window.innerHeight.
-    (let [set-vh! (fn []
-                    (let [vv       js/window.visualViewport
-                          ;; Layout viewport — on iOS this does NOT shrink
-                          ;; when the soft keyboard overlays the page, so the
-                          ;; gap between it and the visual viewport tells us
-                          ;; whether the keyboard is open.
-                          layout-h (.-clientHeight js/document.documentElement)
-                          visual-h (if vv (.-height vv) js/window.innerHeight)
-                          root     js/document.documentElement
-                          style    (.-style root)
-                          kb-open? (> (- layout-h visual-h) 100)
-                          ;; Capture the timeline's scroll geometry before the
-                          ;; --app-height change resizes it, so we can keep the
-                          ;; same line pinned just above the compose box.
-                          timeline (.querySelector js/document ".timeline")
-                          prev-h   (some-> timeline .-clientHeight)
-                          prev-top (some-> timeline .-scrollTop)]
-                      ;; Expose keyboard state to CSS so layout that assumes the
-                      ;; home-indicator safe area (e.g. the compose row's bottom
-                      ;; inset) can drop it while the keyboard covers that area.
-                      (.toggle (.-classList root) "keyboard-open" kb-open?)
-                      (if kb-open?
-                        ;; Keyboard is open: iOS overlays it without resizing
-                        ;; the layout viewport, so pin the layout to the
-                        ;; (smaller) visual viewport and scroll back to origin
-                        ;; to keep the compose box pinned above the keyboard.
-                        (do (.setProperty style "--app-height" (str visual-h "px"))
-                            (.scrollTo js/window 0 0))
-                        ;; At rest: use 100dvh, which reports the real
-                        ;; standalone window height (screen minus the status
-                        ;; bar iOS reserves at the top). 100vh reports the full
-                        ;; physical screen, making the app taller than the
-                        ;; window and pushing the footer/compose box off the
-                        ;; bottom.
-                        (.setProperty style "--app-height" "100dvh"))
-                      ;; Reading clientHeight forces the reflow the height
-                      ;; change queued; the timeline shrank (keyboard opening)
-                      ;; or grew (closing) from its bottom edge, so shift
-                      ;; scrollTop by the delta to keep the content that was
-                      ;; just above the prompt bar in view.
-                      (when (and timeline prev-h)
-                        (let [delta (- prev-h (.-clientHeight timeline))]
-                          (when-not (zero? delta)
-                            (set! (.-scrollTop timeline) (+ prev-top delta)))))))]
-      (set-vh!)
-      (if js/window.visualViewport
-        (do (.addEventListener js/window.visualViewport "resize" (fn [_] (set-vh!)))
-            (.addEventListener js/window.visualViewport "scroll" (fn [_] (set-vh!))))
-        (.addEventListener js/window "resize" (fn [_] (set-vh!))))
-      ;; Resuming a standalone PWA from the background can restore the page
-      ;; zoomed (visual-viewport scale stuck > 1) and with a stale height,
-      ;; until the keyboard is first opened. Re-sync the viewport height and
-      ;; force the scale back to 1 whenever the app becomes visible again. The
-      ;; rAF pass re-runs it after WebKit has settled the restored scale.
-      (let [repaint-drawer!
-            (fn []
-              ;; See repaint-closed-drawer!: a resumed standalone PWA can show a
-              ;; stale open frame of the drawer (stuck at translateX(0)) even
-              ;; though its state is closed, until a later interaction — focusing
-              ;; the compose box, which opens the keyboard and resizes the
-              ;; viewport — forces a repaint.
-              (let [s @state]
-                (repaint-closed-drawer! (:web/wide? s) (:web/sidebar-open? s))))
-            on-resume (fn []
-                        (reset-zoom!)
-                        (set-vh!)
-                        (repaint-drawer!)
-                        (js/requestAnimationFrame
-                         (fn [] (reset-zoom!) (set-vh!))))]
-        (.addEventListener js/document "visibilitychange"
-                           (fn [_] (when (= "visible" (.-visibilityState js/document))
-                                     (on-resume))))
-        (.addEventListener js/window "pageshow" (fn [_] (on-resume)))))
+    (install-viewport-tracking! state)
     (views/install-pointer-type-tracker!)
     (attach-code-copy-listener!)
-    ;; Track wide viewports so the sidebar can dock (always-visible, no overlay)
-    ;; at >=1024px. The matching CSS lives in style.css; this only keeps the
-    ;; :web/wide? flag in sync so the docked drawer actually renders content.
+    ;; :web/wide? mirrors the >=1024px breakpoint at which style.css docks the sidebar.
     (let [mql (.matchMedia js/window "(min-width: 1024px)")]
       (dispatch! {:type :web/set-wide :wide? (.-matches mql)})
       (.addEventListener mql "change"
                          (fn [e] (dispatch! {:type :web/set-wide :wide? (.-matches e)}))))
-    ;; iOS back/forward swipe navigation in the home-screen PWA is defused in
-    ;; xi.web.router: standalone never pushes history entries, so the gesture
-    ;; has nothing to go back to.
-    ;; Left-edge swipe to open the sidebar; swipe left again to close it.
-    ;;
-    ;; iOS/WebKit reserves the extreme left edge (~first 20px) for its own
-    ;; interactive back gesture and web content can't intercept it, so we do
-    ;; NOT anchor on the very edge — the open zone is the left ~20% of the
-    ;; viewport (capped), which catches the natural swipe most people start a
-    ;; little inward. Gated on horizontal dominance and a distance threshold
-    ;; (tracked across touchmove, since touchend alone can miss the peak), and
-    ;; ignored when the drag begins inside a horizontally-scrollable element
-    ;; (code blocks, wide tables) so it doesn't hijack their scroll.
-    (let [thresh-px 60
-          scrollable-x?
-          (fn [node]
-            (loop [n node]
-              (cond
-                (or (nil? n) (not (instance? js/Element n))) false
-                (and (> (.-scrollWidth n) (+ (.-clientWidth n) 1))
-                     (let [ox (.-overflowX (js/getComputedStyle n))]
-                       (or (= ox "auto") (= ox "scroll"))))
-                true
-                :else (recur (.-parentElement n)))))
-          ;; True while the user has an active (non-collapsed) text selection.
-          ;; iOS text selection is a touch-drag on the selection handles, which
-          ;; looks just like a horizontal swipe — so a drag that produced/extends
-          ;; a selection must never open or close the sidebar.
-          selecting?
-          (fn []
-            (when-let [sel (.getSelection js/window)]
-              (and (not (.-isCollapsed sel))
-                   (pos? (.-length (.toString sel))))))
-          start (atom nil)]
-      (.addEventListener
-       js/document "touchstart"
-       (fn [e]
-         (let [t (aget (.-touches e) 0)]
-           (reset! start (when (and t (= 1 (.-length (.-touches e))))
-                           {:x       (.-clientX t)
-                            :y       (.-clientY t)
-                            :dx      0
-                            :dy      0
-                            :scroll? (scrollable-x? (.-target e))}))))
-       #js {:passive true})
-      (.addEventListener
-       js/document "touchmove"
-       (fn [e]
-         (when-let [{:keys [x y] :as s} @start]
-           (when-let [t (aget (.-touches e) 0)]
-             (reset! start (assoc s
-                                  :dx (- (.-clientX t) x)
-                                  :dy (- (.-clientY t) y))))))
-       #js {:passive true})
-      (.addEventListener
-       js/document "touchcancel"
-       (fn [_] (reset! start nil))
-       #js {:passive true})
-      (.addEventListener
-       js/document "touchend"
-       (fn [_]
-         (when-let [{:keys [x dx dy scroll?]} @start]
-           (reset! start nil)
-           (let [open-zone (min 100 (* 0.2 (or (.-innerWidth js/window) 0)))]
-             (when (and (not scroll?)
-                        (not (selecting?))
-                        (> (js/Math.abs dx) (js/Math.abs dy)))
-               (cond
-                 (and (not (:web/sidebar-open? @state))
-                      (<= x open-zone) (>= dx thresh-px))
-                 (dispatch! {:type :sidebar/open})
-
-                 (and (:web/sidebar-open? @state) (<= dx (- thresh-px)))
-                 (dispatch! {:type :sidebar/close}))))))
-       #js {:passive true})
-      ;; Suppress iOS' native left-edge back-swipe (iOS 13.4+) so a swipe that
-      ;; starts right at the edge falls through to the open gesture above
-      ;; instead of navigating history. A non-passive touchstart that
-      ;; preventDefaults only within ~20px of the LEFT edge is the documented
-      ;; way to do this; scoped to the left edge (back-nav) so the right-edge
-      ;; forward gesture is untouched, and the strip is thin enough that normal
-      ;; taps/scrolls are effectively unaffected. (Best-effort: some standalone
-      ;; PWA builds still ignore it — the inward open-zone above is the
-      ;; fallback for those.)
-      (.addEventListener
-       js/document "touchstart"
-       (fn [e]
-         (when-let [t (aget (.-touches e) 0)]
-           (when (and (not (:web/sidebar-open? @state))
-                      (<= (.-pageX t) 20))
-             (.preventDefault e))))
-       #js {:passive false}))
-    ;; Prevent iOS Safari smart-zoom (double-tap & pinch)
+    (install-sidebar-swipe! state dispatch!)
+    ;; Prevent iOS Safari smart-zoom (double-tap & pinch).
     (.addEventListener js/document "gesturestart" (fn [e] (.preventDefault e)))
     (.addEventListener js/document "gesturechange" (fn [e] (.preventDefault e)))
     (.addEventListener js/document "gestureend" (fn [e] (.preventDefault e)))
@@ -3258,21 +2630,15 @@
                        (fn [_]
                          (dispatch! {:type :client/update
                                      :visible? (= "visible" (.-visibilityState js/document))})))
-    ;; Keyboard shortcuts (xi.web.keymap): actions registered once, the
-    ;; keymap resolved per keydown from state (defaults + config.edn :keys).
     (install-actions!)
     (.addEventListener js/document "keydown"
                        (fn [^js e] (keymap/handle-keydown @state dispatch! e)))
-    ;; Holding Alt badges every data-key-action button with its key.
     (key-hints/install! #(deref state))
     (render! @state dispatch!)))
 
 (defn- hide-shadow-hud-when-remote!
-  "Dev builds ship the shadow-cljs devtools client, which shows a red
-  'Reconnecting ...' HUD banner when its websocket (port 9630) is
-  unreachable — always the case when the page is accessed remotely
-  (e.g. via Tailscale) where only 7474 is exposed. Hide the banner on
-  non-localhost hosts; release builds drop this via goog.DEBUG DCE."
+  "Hide the shadow-cljs devtools 'Reconnecting' HUD on non-localhost hosts,
+   where its websocket (9630) is never reachable. DCE'd in release builds."
   []
   (when ^boolean js/goog.DEBUG
     (let [host (.-hostname js/window.location)]

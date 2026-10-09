@@ -25,9 +25,8 @@
   (if (satisfies? IDeref routes) @routes routes))
 
 (defn parse-path
-  "URL path → route map. Extension route entries (keyed by first URL
-   segment, from ext/compose :routes) take precedence over the built-ins;
-   their :parse fn receives the remaining segments."
+  "URL path → route map. Extension routes (keyed by first segment) take
+   precedence; their :parse fn receives the remaining segments."
   [routes path]
   (let [routes   (routes-of routes)
         segments (filterv seq (str/split (or path "/") #"/"))]
@@ -69,14 +68,13 @@
   (into #{:home} (mapcat :roomless-pages) (vals (routes-of routes))))
 
 (def builtin-segments
-  "First URL segments parse-path routes itself."
   #{"chat" "projects" "git-status"})
 
 (defn pending-extension-path?
   "A path whose first segment is neither built in nor in `routes`: most likely
-   a user extension's page, whose route only exists once the web half has
-   loaded (xi.web.user-ext re-dispatches the navigation then). Its URL must
-   survive the home fallback until that happens."
+   a user extension's page whose route only exists once the web half has loaded
+   (xi.web.user-ext re-dispatches the navigation). Its URL must survive the
+   home fallback until then."
   [routes path]
   (let [seg (first (filter seq (str/split (or path "/") #"/")))]
     (boolean (and seg
@@ -93,11 +91,9 @@
         (get-in st [:lobby :rooms])))
 
 (defn stash-draft-chat
-  "Park the virtual new chat (:web/pending-room) in :web/draft-chats when the
-   user typed something into it, so leaving it doesn't lose the prompt: the
-   sidebar lists it under Drafts and `:draft-chat/open` brings it back. The
-   text itself stays in :web/drafts, keyed by the pending room's id. An empty
-   new chat is dropped as before. In-memory only — nothing is sent anywhere."
+  "Park a typed-into virtual new chat (:web/pending-room) in :web/draft-chats
+   so leaving it doesn't lose the prompt (the text stays in :web/drafts under
+   the pending room's id). An empty one is dropped."
   [st]
   (let [{:keys [id] :as pending} (:web/pending-room st)]
     (if (and pending (not (str/blank? (get-in st [:web/drafts id]))))
@@ -106,15 +102,10 @@
       st)))
 
 (defn- navigate*
-  "Set the route; push/replace history; drive the implied room change.
-     roomless    set of pages that imply leaving the active room
-     :page       :home | :chat
-     :session-id (chat only)
-     :params     a map an extension route keeps on the route as is (its
-                 :parse fn returns it, its :path fn and page read it)
-     :replace?   true for popstate / initial load (no new history entry)
-     :keep-url?  leave the address bar alone (a deep link into a page whose
-                 route is still loading, see pending-extension-path?)"
+  "Set the route, push/replace history, and drive the implied room change.
+   :page :home | :chat, :session-id (chat only), :params (an extension route's
+   own), :replace? (popstate / initial load), :keep-url? (a deep link into a
+   page whose route is still loading, see pending-extension-path?)."
   [roomless st {:keys [page session-id file task-id dir cwd number params replace? keep-url?]}]
   (let [route      (cond-> {:page page :session-id session-id}
                      file         (assoc :file file)
@@ -295,9 +286,8 @@
             (.-matches (.matchMedia js/window "(display-mode: standalone)"))))))
 
 (defn history-effect
-  "The `:history/push` effect — pushState/replaceState the route's path.
-   Closed over the composed extension route table. Always replaces in a
-   standalone PWA (see `no-history?`)."
+  "The :history/push effect: pushState/replaceState the route's path; always
+   replaces in a standalone PWA (no-history?)."
   [routes]
   (fn [_ctx {:keys [route replace? keep-url?]}]
     (when-not keep-url?

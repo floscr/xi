@@ -37,10 +37,8 @@
 
 (defn room-members
   "Presence for room-id from the connection registry: client-id → {:user
-   :platform :buffer}. :buffer is the view the client shows (:chat or a
-   buffer id, from :client/update — xi.buffers/viewers). The registry never
-   crosses the wire, so this derived map is stored on the room (:members) and
-   broadcast as :room/presence."
+   :platform :buffer}. Stored on the room (:members) and broadcast as
+   :room/presence, since the registry never crosses the wire."
   [st room-id]
   (into {}
         (keep (fn [[cid client]]
@@ -58,22 +56,9 @@
                   :members (room-members st room-id)}])
 
 (defn keep-alive?
-  "A room must survive client departure / idle reaping while its agent is
-   running OR a dialog is awaiting a response. Closing a room discards its
-   :ui :dialogs, which would strand the pending question and the turn
-   suspended on it (a dialog stays open even with no client viewing — see
-   ext/create-dialogs).
-
-   It must also survive while the process-manager extension is tracking
-   live background processes: closing the room fires :room/close, which
-   kills them (ext/process-manager on-room-close). We only auto-close a
-   room the user has walked away from — not one running their dev server.
-
-   Likewise it must survive while a background SUB-AGENT is still running
-   (e.g. the /canvas-review builder): the sub-agent runs as a background
-   process while the room's own agent is idle, so without this check the
-   room reaps out from under it the moment its last client navigates away
-   — aborting the turn mid-build (the canvas gets the diff but no nodes)."
+  "A room must survive client departure and idle reaping while its agent is
+   running, a dialog awaits a response, the process-manager extension tracks
+   live background processes, or a background sub-agent is still running."
   [room]
   (or (boolean (get-in room [:agent :busy?]))
       (boolean (seq (get-in room [:ui :dialogs])))
@@ -82,27 +67,22 @@
                      (get-in room [:ext :subagents :agents])))))
 
 (defn prunable?
-  "A room is prunable (\"inactive\") when its agent isn't mid-turn and it holds
-   no pending dialog — nobody is actively working in or waiting on it. Unlike
-   keep-alive? this deliberately IGNORES live background processes: a manual
-   prune is meant to tear those down (and detach any lingering client) to clear
-   rooms left behind by open terminals."
+  "A room is prunable when its agent isn't mid-turn and no dialog is pending.
+   Unlike keep-alive? this ignores background processes: a manual prune tears
+   those down."
   [room]
   (and (not (get-in room [:agent :busy?]))
        (empty? (get-in room [:ui :dialogs]))))
 
 (defn- room-errored?
-  "True when the room's last turn ended in an error: the newest history entry
-   is an :error and nothing is running. A new prompt (or an interrupt) pushes a
-   later entry, which clears it."
+  "True when the room's last turn ended in an error and nothing is running."
   [room]
   (and (not (get-in room [:agent :busy?]))
        (= :error (:kind (last (:history room))))))
 
 (defn room-summaries
-  "Lobby-facing room list, newest first. Rooms whose session was deleted
-   while still keep-alive (see session-delete) are dropped so the deleted
-   card doesn't reappear in the lobby while the turn finishes."
+  "Lobby-facing room list, newest first; rooms whose session was deleted while
+   keep-alive are dropped."
   [st]
   (->> (vals (:rooms st))
        (remove #(get-in % [:session :deleted?]))
@@ -134,12 +114,8 @@
 ;; ── Handlers (pure) ──────────────────────────────────────────────────────────
 
 (defn- room-for-session
-  "Find an existing room hosting this session-id, if any. Matches on the Xi
-   session uuid AND the Claude CLI id (:provider-session-id / :cli-session-id):
-   a client may resume by either — a stale /chat/<cli-id> URL, a cached route,
-   or the transient Claude-CLI card that surfaces mid-turn. Matching only the
-   Xi uuid would miss the live room and fork a fresh disk resume, leaving the
-   originating client (e.g. an open TUI) stuck on the now-orphaned room."
+  "An existing room hosting this session id, matched on the Xi uuid and the
+   Claude CLI id (a client may resume by either)."
   [st session-id]
   (some (fn [[_ room]]
           (let [sess (:session room)]
@@ -150,11 +126,8 @@
         (:rooms st)))
 
 (defn- room-join
-  "Resolve a join target to an existing room (→ attach) or a new one
-   (→ :room/setup effect, which creates then attaches).
-
-   Targets: \"new\" | \"latest\" | room-id | {:session-id sid} (resume a
-   saved session into a fresh room)."
+  "Resolve a join target to an existing room (→ attach) or a new one (→
+   :room/setup). Targets: \"new\" | \"latest\" | room-id | {:session-id sid}."
   [st {:keys [client-id target cwd model cached-msg-hash cached-msg-count
               cached-history-hash cached-history-count join-token] :as ev}]
   (let [target     (or target "latest")
@@ -208,17 +181,11 @@
                                     join-token       (assoc :join-token join-token))]]})))))
 
 (defn joined-payload
-  "The room part of a :room/joined event: {:room snapshot}, or — when the
-   client says it already caches this room's history (or a clean prefix of
-   it) as `cached-hash` over its first `cached-count` entries — the snapshot
-   without :history plus {:history-base {:hash :count} :history-tail […]}, so
-   re-opening a live chat ships only what's new instead of the whole
-   transcript (megabytes for a long session). The client splices its cached
-   history back in front of the tail. A history rewritten or still streaming
-   into the cached last entry fails the hash → full snapshot. Hashes are cljs
-   `hash` on both ends (same code, equal values ↔ equal hashes, as for the
-   disk resume's :msg-hash); vectors and their maps cache them, so only
-   entries new since the last attach cost anything."
+  "The room part of a :room/joined event: {:room snapshot}, or, when the client
+   already caches this history (or a clean prefix) as `cached-hash` over its
+   first `cached-count` entries, the snapshot without :history plus
+   {:history-base {:hash :count} :history-tail […]}. Hashes are cljs `hash` on
+   both ends."
   [room cached-hash cached-count]
   (let [history (:history room)
         n       (count history)]
@@ -286,9 +253,7 @@
   {:effects [[:lobby/send {:client-id client-id}]]})
 
 (defn- session-counts
-  "Unread-count query: assistant-turn counts per saved session. Reading
-   sessions hits disk, so the pure handler just emits an effect the WS
-   layer fulfils."
+  "Unread-count query; reading sessions hits disk, so the handler just emits an effect."
   [_st {:keys [client-id session-ids]}]
   {:effects [[:session/counts-reply {:client-id client-id
                                      :session-ids session-ids}]]})
@@ -318,10 +283,8 @@
               {:client-id client-id :key key :query query :cwd cwd}]]})
 
 (defn- session-web-search
-  "Roomless: full-text search over saved sessions for the command palette's
-   in-panel search — like session-content-search, but the reply carries full
-   summaries with match snippets instead of bare ids. `names-only?` skips the
-   transcript text (the search page's toggle)."
+  "Roomless: full-text session search for the palette, replying with full
+   summaries and snippets. `names-only?` skips transcript text."
   [_st {:keys [client-id query cwd names-only?]}]
   {:effects [[:session/web-search-reply
               {:client-id client-id :query query :cwd cwd
@@ -334,16 +297,14 @@
   {:effects [[:diff/web-load-reply {:client-id client-id :cwd cwd}]]})
 
 (defn- commits-web-load
-  "Roomless: list the commits made during a session (base..HEAD) for the web
-   commit bar. The cwd + the session's created timestamp travel from the
-   client's mirrored room, since the request carries no room-id."
+  "Roomless: the commits made during a session (base..HEAD); cwd and created
+   timestamp travel from the client."
   [_st {:keys [client-id cwd created]}]
   {:effects [[:commits/web-load-reply {:client-id client-id :cwd cwd :created created}]]})
 
 (defn- files-web-list
-  "Roomless: list a directory's children for the web file browser. The browse
-   path is absolute (seeded from the client's mirrored room cwd, then advanced
-   by drill-down); cwd is the fallback when no path is sent yet."
+  "Roomless: a directory's children for the web file browser; cwd is the
+   fallback when no path is sent."
   [_st {:keys [client-id cwd path]}]
   {:effects [[:files/web-list-reply {:client-id client-id :cwd cwd :path path}]]})
 
@@ -359,16 +320,9 @@
   {:effects [[:files/web-tree-reply {:client-id client-id :cwd cwd}]]})
 
 (defn- dismissed-toggle
-  "Roomless: hide/show a session in the sender's recent list by id. The persist
-   + lobby rebroadcast happen in the :dismissed/toggle-reply effect (needs disk
-   access).
-
-   As a courtesy we also tear down the session's live room when it is safe to
-   do so — i.e. it holds no client, its agent isn't mid-turn, no dialog is
-   pending, and it isn't tracking background processes (keep-alive?). This
-   frees a lingering, finished job the user is dismissing without ever killing
-   a running turn, a room someone is still viewing, or a dev server. A room
-   that fails these checks is simply left running (it auto-closes later)."
+  "Roomless: hide/show a session in the sender's recent list (persisted in the
+   reply effect). Also closes the session's live room when it is clientless and
+   not keep-alive."
   [st {:keys [session-id] :as ev}]
   (let [close-rids (for [[rid room] (:rooms st)
                          :when (and (= session-id (get-in room [:session :id]))
@@ -381,9 +335,7 @@
                     close-rids)}))
 
 (defn- pinned-toggle
-  "Roomless: pin/unpin a session in the sender's recent list by id. The
-   persist + lobby rebroadcast happen in the :pinned/toggle-reply effect
-   (needs disk access)."
+  "Roomless: pin/unpin a session in the sender's recent list (persisted in the reply effect)."
   [st {:keys [session-id] :as ev}]
   {:effects [[:pinned/toggle-reply {:session-id session-id
                                     :user       (state/event-user st ev)}]]})
@@ -397,34 +349,11 @@
        (not (get-in room [:session :provider-session-id]))))
 
 (defn- session-delete
-  "Roomless: permanently delete a saved session by id. The unlink + lobby
-   rebroadcast happen in the :session/delete-reply effect (needs disk access).
-
-   We must also tear down the session's live room, if any — otherwise it
-   lingers in the lobby (room-summaries keeps emitting its card) and would
-   re-persist itself on the next turn sync, so the delete visibly does
-   nothing when the session is open in a room.
-   Unlike dismissed-toggle we do NOT skip rooms with a client attached: a
-   delete is an explicit, destructive intent, so a session being viewed must
-   go too. To avoid stranding that client we swap its room to a fresh blank
-   session (:session/new, no save) rather than closing the room out from
-   under it; a clientless room is simply closed.
-
-   A blank room (see blank-room?) is the exception: swapping it to a fresh
-   blank session just recreates the same \"New session\" card, so the delete
-   never takes while any client has it open. Its clients are detached with
-   :room/left (as rooms-prune does) and the room is closed.
-
-   keep-alive? rooms can't be torn down — a running turn, a pending dialog,
-   live background processes, or a running sub-agent must not be killed by a
-   lobby delete. But leaving them fully untouched made the delete silently
-   fail on an active room: the live room keeps emitting its lobby card
-   (room-summaries) and re-persists the file on the next :session/sync, so
-   the card flashes away (optimistic local drop) and immediately reappears
-   from the authoritative rebroadcast. Instead we flag the room's session
-   :deleted?, which suppresses its lobby card and skips its sync-persist while
-   the turn finishes on its own; the room is reaped normally once it's no
-   longer keep-alive."
+  "Roomless: permanently delete a saved session (unlinked in the reply effect)
+   and tear down its live room: a viewing client's room is swapped to a fresh
+   blank session, a clientless one closed, a blank room's clients detached with
+   :room/left. A keep-alive room is instead flagged :deleted? (card suppressed,
+   sync-persist skipped) and reaped once idle."
   [st {:keys [session-id]}]
   (let [all-rids (for [[rid room] (:rooms st)
                        :when (= session-id (get-in room [:session :id]))]
@@ -457,26 +386,16 @@
                         swap))}))
 
 (defn- session-mark-read
-  "Roomless: record a session as seen by the sender up to its current response
-   count. The authoritative count is recomputed server-side (in the reply
-   effect), so the client only needs to name the session. The persist + lobby
-   rebroadcast happen in the :session/mark-read-reply effect (needs disk
-   access)."
+  "Roomless: record a session as seen by the sender; the authoritative count is
+   recomputed in the reply effect."
   [st {:keys [session-id] :as ev}]
   {:effects [[:session/mark-read-reply {:session-id session-id
                                         :user       (state/event-user st ev)}]]})
 
 (defn- rooms-prune
-  "Roomless: force-close every inactive room (see prunable?). For each target
-   we detach its clients (a direct :room/left drops each back to the lobby),
-   then :room/close it — which kills the room's tracked processes
-   (ext/process-manager on-room-close) and discards its in-memory history. The
-   caller's own room is spared, so pruning from a chat can't close the chat
-   you're looking at.
-
-   Saved sessions are untouched: :room/close only tears down the live room; the
-   on-disk session stays resumable. Issued from the web sidebar to clear rooms
-   left hanging around by open terminals."
+  "Roomless: force-close every prunable room except the caller's: detach its
+   clients (:room/left), then :room/close (which kills tracked processes).
+   Saved sessions stay resumable."
   [st {:keys [client-id]}]
   (let [own-room (get-in st [:connection :clients client-id :room-id])
         targets  (into #{}
@@ -502,10 +421,8 @@
 
 
 (defn- chat-start
-  "Open a new chat seeded with `text` as its first user message. cwd defaults
-   to the dispatching room's. :client-id, when given, is sent to the new chat.
-   Extensions get this event from commands, keybindings and client clicks only
-   (xi.ext.user.guard)."
+  "Open a new chat seeded with `text` as its first user message; cwd defaults
+   to the dispatching room's, :client-id is sent to the new chat."
   [st {:keys [room-id client-id cwd text]}]
   (when (and (string? text) (seq text))
     {:effects [[:chat/start (cond-> {:text text
@@ -513,19 +430,17 @@
                               client-id (assoc :client-id client-id))]]}))
 
 (defn- user-state-set
-  "A client changed one piece of its user's UI state (xi.user-state). The
-   server stamps :user on the event, so a client can only write its own
-   user's state; the :user-state/save effect persists it and tells the
-   user's other devices. Unknown keys and invalid values are dropped."
+  "A client changed one piece of its own user's UI state (the server stamps
+   :user); the :user-state/save effect persists it. Unknown keys and invalid
+   values are dropped."
   [_st {:keys [user key value]}]
   (when (user-state/client-valid? key value)
     {:effects [[:user-state/save {:user (util/user-id user) :key key :value value}]]}))
 
 
 (defn- session-buffer-close
-  "Roomless: close one buffer (or, without a :buffer-id, every buffer) of a
-   session from the sidebar, wherever it lives — a live room gets the room
-   event (so its clients mirror the close), a parked set is edited in place."
+  "Roomless: close one buffer (or all without :buffer-id) of a session, in its
+   live room or its parked set."
   [st {:keys [session-id buffer-id]}]
   (if-let [rid (room-for-session st session-id)]
     {:effects [[:app/dispatch (if buffer-id
@@ -565,13 +480,9 @@
 ;; ── Auto-destroy chains (pure) ───────────────────────────────────────────────
 
 (defn client-disconnect-cleanup
-  "Chain BEFORE the core :client/disconnect handler (needs the client's
-   room while it's still recorded): close the room when this was its last
-   client AND it's idle. Busy rooms (and rooms with a pending dialog) keep
-   running with no client attached — a disconnect (including iOS/Safari
-   dropping the socket on navigation) must never abort a running agent or
-   strand a pending question; turn-end-room-cleanup reaps the room when the
-   turn ends."
+  "Chained before the core :client/disconnect handler: close the room when this
+   was its last client and it is idle. Busy rooms keep running clientless;
+   turn-end-room-cleanup reaps them."
   [st {:keys [client-id]}]
   (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
     (let [others (remove #{client-id} (clients-in-room st room-id))]
@@ -585,9 +496,8 @@
 
 
 (defn client-update-presence
-  "Chain AFTER the core :client/update handler: a client told us which buffer
-   it shows (`:buffer`) — refresh its room's presence so everyone in the room
-   sees who is on which buffer (xi.buffers/viewers)."
+  "Chained after the core :client/update handler: refresh the room's presence
+   with the client's :buffer."
   [st {:keys [client-id] :as ev}]
   (when (contains? ev :buffer)
     (when-let [room-id (get-in st [:connection :clients client-id :room-id])]
@@ -595,9 +505,8 @@
         {:effects [(presence-effect st room-id)]}))))
 
 (defn turn-end-room-cleanup
-  "Chain onto :agent/turn-end: a turn just finished in a room nobody is
-   attached to — close it (the session is already persisted on disk). A room
-   still holding a pending dialog is spared (its question outlives the turn)."
+  "Chained onto :agent/turn-end: close a room nobody is attached to, unless a
+   dialog is still pending."
   [st {:keys [room-id]}]
   (when (and (state/get-room st room-id)
              (empty? (clients-in-room st room-id))
@@ -612,10 +521,9 @@
 ;; is written to disk: a restart starts with no buffers, by design.
 
 (defn park-buffers
-  "Chain BEFORE the core :room/close handler (it needs the room): keep the
-   closing room's buffers under its session id, `[:parked-buffers sid]`, so
-   the next room resuming that session gets them back (revive-buffers). A room
-   whose session was deleted while it finished its turn parks nothing."
+  "Chained before the core :room/close handler: keep the room's buffers under
+   `[:parked-buffers sid]` for the next room resuming the session. A deleted
+   session parks nothing."
   [st {:keys [room-id]}]
   (let [room (state/get-room st room-id)
         sid  (get-in room [:session :id])
@@ -624,10 +532,8 @@
       {:state (assoc-in st [:parked-buffers sid] bufs)})))
 
 (defn revive-buffers
-  "Chain AFTER the core :room/create handler: a room opening on a session with
-   parked buffers takes them over (anything the new room already holds wins)
-   and the parking slot is cleared. The :room/joined snapshot that follows the
-   create carries them to the joining client."
+  "Chained after the core :room/create handler: a room opening on a session
+   with parked buffers takes them over (its own win) and clears the slot."
   [st {:keys [room-id]}]
   (let [sid    (get-in st [:rooms room-id :session :id])
         parked (get-in st [:parked-buffers sid])]
