@@ -2924,6 +2924,10 @@ code a:hover,
   --diff-add-bg: var(--theme-add-bg-light);
   --diff-del-bg: var(--theme-del-bg-light);
   --danger-fg: var(--theme-danger-fg-light);
+  --menu-danger-fg: var(--theme-danger-fg-light, var(--danger-600));
+  --menu-danger-hover-bg: var(--theme-del-bg-light, var(--danger-50));
+  --menu-danger-hover-fg: var(--theme-danger-fg-light, var(--danger-700));
+  --menu-separator: var(--theme-border-0-light, var(--gray-200));
 }
 [data-theme="dark"] {
   --sidebar-bg: var(--theme-sidebar-dark, var(--bg-0));
@@ -2941,6 +2945,10 @@ code a:hover,
   --diff-add-bg: var(--theme-add-bg-dark);
   --diff-del-bg: var(--theme-del-bg-dark);
   --danger-fg: var(--theme-danger-fg-dark);
+  --menu-danger-fg: var(--theme-danger-fg-dark, var(--danger-400));
+  --menu-danger-hover-bg: var(--theme-del-bg-dark, var(--danger-950));
+  --menu-danger-hover-fg: var(--theme-danger-fg-dark, var(--danger-300));
+  --menu-separator: var(--theme-border-0-dark, var(--gray-800));
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -2959,8 +2967,30 @@ code a:hover,
     --diff-add-bg: var(--theme-add-bg-dark);
     --diff-del-bg: var(--theme-del-bg-dark);
     --danger-fg: var(--theme-danger-fg-dark);
+    --menu-danger-fg: var(--theme-danger-fg-dark, var(--danger-400));
+    --menu-danger-hover-bg: var(--theme-del-bg-dark, var(--danger-950));
+    --menu-danger-hover-fg: var(--theme-danger-fg-dark, var(--danger-300));
+    --menu-separator: var(--theme-border-0-dark, var(--gray-800));
   }
 }
+/* The framework's context menu paints its danger item and separator from
+   the danger and gray scales directly (red on a red theme, a dark bar on the
+   menu): route them through the --menu-* properties above, whose fallbacks
+   are its own values. :root + .context-menu matches the specificity of its
+   per-mode selectors; this file loads after theme.css. */
+:root .context-menu .context-menu-item--danger { color: var(--menu-danger-fg); }
+:root .context-menu .context-menu-item--danger:focus-visible {
+  background: var(--menu-danger-hover-bg);
+  color: var(--menu-danger-hover-fg);
+}
+@media (hover: hover) {
+  :root .context-menu .context-menu-item--danger:hover {
+    background: var(--menu-danger-hover-bg);
+    color: var(--menu-danger-hover-fg);
+  }
+}
+:root .context-menu .context-menu-separator { background: var(--menu-separator); }
+
 /* Re-point --bg-0 inside the main column so everything painted with it
    (topbar, composer, timeline) matches the chat surface. */
 .sidebar-layout--floating > .sidebar-layout-main {
