@@ -2601,11 +2601,11 @@
    runs /yolo to turn it off."
   [dispatch! room]
   (when (get-in room [:ext :yolo :enabled?])
-    (chip/chip {:active   true
-                :attrs    {:class ["yolo-chip"]
+    (chip/chip {:attrs    {:class ["yolo-chip"]
                            :title "Yolo mode: tool calls run without asking. Click to turn it off."}
                 :on-click (fn [_] (dispatch-command! dispatch! (:id room) "yolo"))}
-      "🔥 Yolo")))
+      [:span {:class ["yolo-chip-flame"]} "🔥"]
+      "Yolo")))
 
 (defn shorten-path
   [path]

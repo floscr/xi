@@ -200,6 +200,25 @@ body {
   color: var(--fg-1);
 }
 
+/* The yolo chip (xi.web.views/yolo-chip) is one more bordered header chip:
+   the icon-btn's height, border and radius. Theme colours only — an accent
+   tint disappears on a tinted theme; the flame is the colour cue. */
+.topbar--chat .yolo-chip {
+  height: var(--size-10);
+  padding: 0 var(--size-3) 0 var(--size-2);
+  gap: var(--size-1);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-1);
+}
+
+.yolo-chip-flame {
+  font-size: var(--font-base);
+  line-height: 1;
+}
+
 /* The active tab segment stays a touch more opaque so it reads as selected. */
 .topbar--chat .tab-pill-item--active {
   background: color-mix(in srgb, var(--bg-0) 80%, transparent);
