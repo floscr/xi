@@ -253,12 +253,12 @@
    stock token's lightness is rescaled into the range between the page and
    white (dark page) or black (light page) the way the stock palette sits
    against the default page. Its hue blends from the stock one to the page's
-   `syntax-offsets` palette as the page gets colorful (chroma 0.02 → 0.08), the
+   `syntax-offsets` palette as the page gets colorful (chroma 0.02 → 0.05), the
    colored tokens' chroma rising to at least 0.1 with it: a gray page keeps
    the stock palette, a vivid one gets colors that belong to it."
   [l c h dark?]
   (let [ref   (first (color->oklch (get defaults (if dark? :bg-dark :bg-light))))
-        w     (clamp01 (/ (- c 0.02) 0.06))
+        w     (clamp01 (/ (- c 0.02) 0.03))
         place (if dark?
                 (fn [tl] (+ l (* (- tl ref) (/ (- 1 l) (- 1 ref)))))
                 (fn [tl] (- l (* (- ref tl) (/ l ref)))))]
