@@ -2497,8 +2497,10 @@
                                                        :keys/close
                                                        :appearance/close)}))})
   (keymap/register-action! {:id :keys/show :event {:type :keys/show}})
-  ;; Back to the chat; the buffer stays open.
+  ;; Back to the chat; the buffer stays open. Not while an open <dialog> (the
+  ;; Ctrl+K palette…) has focus: its Escape closes just the dialog.
   (keymap/register-action! {:id :buffer/close
+                            :when (fn [_] (not (keymap/in-open-dialog?)))
                             :run (fn [st dispatch! _]
                                    (let [room-id (when-not (new-chat-view? st)
                                                    (:id (state/active-room st)))]
