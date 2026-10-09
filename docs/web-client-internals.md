@@ -40,7 +40,7 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   (`launch-header`), not an empty state.
 - Tool and thinking blocks are `<details>`; Replicant only writes changed
   attrs, so manual toggles survive re-renders. **Viewer mode**
-  (`group-viewer-items`) folds runs of tool/thinking posts into
+  (`group-viewer-items`, always on) folds runs of tool/thinking posts into
   `.viewer-tool-group`; a run breaks on text or on a pending permission ask
   (always expanded). **Super collapsed** (`xi.web.viewer-group`, pure) folds a
   fully collapsed group into one summary row. Appearance layering:

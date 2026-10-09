@@ -8,7 +8,7 @@
 
 (deftest valid-accepts-known-keys-with-allowed-values
   (is (user-state/valid? :theme "dark"))
-  (is (user-state/valid? :appearance {:viewer-mode? false :tool-blocks :open}))
+  (is (user-state/valid? :appearance {:super-collapsed? false :tool-blocks :open}))
   (is (user-state/valid? :sidebar-collapsed [:projects :recent]))
   (is (user-state/valid? :preferred-model "claude-opus-4-6"))
   (is (user-state/valid? :recent-commands ["model" "clear"]))
@@ -22,7 +22,7 @@
     (is (not (user-state/valid? :theme "sepia")))
     (is (not (user-state/valid? :theme :dark)))
     (is (not (user-state/valid? :appearance [:a])))
-    (is (not (user-state/valid? :appearance {"viewer-mode?" true})))
+    (is (not (user-state/valid? :appearance {"super-collapsed?" true})))
     (is (not (user-state/valid? :appearance {:tool-blocks {:nested true}})))
     (is (not (user-state/valid? :sidebar-collapsed ["projects"])))
     (is (not (user-state/valid? :preferred-model "")))
@@ -78,9 +78,9 @@
 (deftest store-round-trips-per-user
   (is (= {} (store/load-state "alice")) "no file → no state")
   (is (true? (store/set-key! "alice" :theme "dark")))
-  (is (true? (store/set-key! "alice" :appearance {:viewer-mode? false})))
+  (is (true? (store/set-key! "alice" :appearance {:super-collapsed? false})))
   (is (true? (store/set-key! "bob" :theme "light")))
-  (is (= {:theme "dark" :appearance {:viewer-mode? false}} (store/load-state "alice")))
+  (is (= {:theme "dark" :appearance {:super-collapsed? false}} (store/load-state "alice")))
   (is (= {:theme "light"} (store/load-state "bob")) "users never see each other's state")
   (is (= {} (store/load-state "root")) "root is a user like any other"))
 

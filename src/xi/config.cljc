@@ -80,19 +80,16 @@
    collapsible blocks. Same shape as `tui`: only keys you want to change from
    their default belong here; the defaults live in xi.web.appearance and a
    browser's own settings (Appearance dialog, persisted per device) override
-   both. Available options (all optional):
-
-     :viewer-mode?
-       Fold each run of consecutive tool / thinking posts into one grouped
-       box of header rows.
-       Default true.
+   both. Runs of consecutive tool / thinking posts always fold into one
+   grouped box of header rows (viewer mode). Available options (all
+   optional):
 
      :super-collapsed?
-       Fold every viewer group whose blocks are all collapsed into a single
-       summary row (step count + the latest block); click it to reveal the
-       header rows. Has no effect without :viewer-mode?, and a group holding an
-       open block (:tool-blocks / :thinking-blocks :open) stays unfolded.
-       Default false.
+       Fold every group whose blocks are all collapsed into a single summary
+       row (step count + the latest block); click it to reveal the header
+       rows. A group holding an open block (:tool-blocks / :thinking-blocks
+       :open) stays unfolded.
+       Default true.
 
      :tool-blocks
        :open | :collapsed — whether a tool call's details (arguments, result)

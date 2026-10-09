@@ -148,10 +148,9 @@ The full list, the layers a key applies in, and how to change any of them in
 
 The gear in the sidebar footer (or "Appearance" in the chat menu and the
 command palette) opens the appearance dialog: theme, whether tool and
-thinking blocks start open or collapsed, **viewer mode** (runs of tool calls
-fold into one box of header rows) and **super collapsed** (a fully collapsed
-run shows as one summary line with a step count). "Reset to defaults" drops
-them.
+thinking blocks start open or collapsed, and **super collapsed** (a run of
+collapsed tool and thinking rows shows as one summary line with a step
+count instead of its header rows). "Reset to defaults" drops them.
 
 ### What follows you
 

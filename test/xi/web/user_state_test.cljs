@@ -9,7 +9,7 @@
 (def ^:private browser
   "A browser that predates per-user state: values cached, no recorded user."
   {:web/theme-mode "dark"
-   :web/appearance {:viewer-mode? false}
+   :web/appearance {:super-collapsed? false}
    :web/sidebar-collapsed #{:recent}
    :web/preferred-model "opus"
    :web/command-usage ["model"]
@@ -36,7 +36,7 @@
         (run browser {:type :user-state/state :user "root" :state {:theme "light"}})
         sent (into {} (keep (fn [[fx ev]] (when (= :ws/send fx) [(:key ev) (:value ev)]))) effects)]
     (is (= "light" (:web/theme-mode state)) "what the server has is not overwritten")
-    (is (= {:appearance {:viewer-mode? false}
+    (is (= {:appearance {:super-collapsed? false}
             :sidebar-collapsed [:recent]
             :preferred-model "opus"
             :recent-commands ["model"]

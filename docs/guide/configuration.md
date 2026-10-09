@@ -164,8 +164,8 @@ Settings that belong to the machine rather than to you:
 ## Built-in defaults
 
 A few display defaults are compiled into Xi rather than read from a file:
-the web client's appearance defaults (viewer mode, whether tool and thinking
-blocks start open) and the terminal's output truncation. Each user overrides
+the web client's appearance defaults (super collapsed, whether tool and
+thinking blocks start open) and the terminal's output truncation. Each user overrides
 the appearance from the web client's Appearance dialog; those choices are
 user state, not configuration. Changing the
 compiled defaults means editing `src/xi/config.cljc` and rebuilding; see

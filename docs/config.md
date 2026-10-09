@@ -51,12 +51,13 @@ Defaults for the web client's collapsible blocks; the Appearance dialog
 overrides them per user (the `:appearance` key of the user's state,
 `xi.user-state`, mirrored to `localStorage "xi/appearance"`). Precedence:
 built-in defaults (`xi.web.appearance`) ← this map ← the user's overrides.
-Unknown keys and bad values are ignored at every layer.
+Unknown keys and bad values are ignored at every layer. Runs of tool /
+thinking posts always fold into one grouped box of header rows (viewer
+mode); there is no switch for that.
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `:viewer-mode?` | `true` | Fold runs of tool / thinking posts into one grouped box of header rows. |
-| `:super-collapsed?` | `false` | Fold a fully collapsed viewer group into one summary row. Needs `:viewer-mode?`. |
+| `:super-collapsed?` | `true` | Fold a fully collapsed group into one summary row (step count + latest block). |
 | `:tool-blocks` | `:collapsed` | `:open` or `:collapsed` for tool call details. A tool awaiting Allow/Deny is always open. |
 | `:thinking-blocks` | `:collapsed` | `:open` or `:collapsed` for thinking blocks. |
 

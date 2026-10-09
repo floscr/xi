@@ -3733,12 +3733,13 @@
                    (str "Show " (min window-step start) " earlier messages"
                         " (" start " hidden)"))])
                (let [editing   (:web/editing-bubble state)
-                     ;; Appearance settings (xi.web.appearance): viewer mode
-                     ;; folds tool/thinking posts into grouped header rows
+                     ;; Appearance settings (xi.web.appearance). Tool/thinking
+                     ;; posts always fold into grouped header rows
                      ;; (group-viewer-items); :tool-blocks / :thinking-blocks
-                     ;; decide whether each block starts open or collapsed.
+                     ;; decide whether each block starts open or collapsed,
+                     ;; :super-collapsed? whether an all-collapsed group folds
+                     ;; further into one summary row.
                      app       (appearance/effective-in state)
-                     viewer?   (:viewer-mode? app)
                      ;; Answered dialogs live in a web-only log, each anchored
                      ;; to the history length at answer time so its static
                      ;; bubble stays in chronological place as the turn resumes.
@@ -3754,7 +3755,7 @@
                      ;; the room's sub-agents, for tool blocks' explanations
                      agents    (get-in room [:ext :subagents :agents])]
                  (group-viewer-items
-                  (and viewer? (:super-collapsed? app))
+                  (:super-collapsed? app)
                   (concat
                    ;; Resolved bubbles anchored above the visible window: pin at top.
                    (mapcat ritems (sort (filter #(< % start) (keys by-anchor))))
@@ -3771,8 +3772,7 @@
                                ;; group and show a decision icon in their header.
                                ;; Thinking blocks fold into the same group as a
                                ;; collapsed "Thinking" row.
-                               groupable? (and viewer?
-                                               (#{:tool-call :thinking} (:kind entry))
+                               groupable? (and (#{:tool-call :thinking} (:kind entry))
                                                (not= p perm-tool-idx))
                                ;; Start collapsed per the block-kind setting; a
                                ;; tool awaiting Allow/Deny always stays open.
@@ -5966,20 +5966,10 @@
               :size :sm
               :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))}))
            (appearance-row
-            "Viewer mode"
-            "Fold runs of tool and thinking rows into one box"
-            (switch/switch-toggle
-             {:checked (:viewer-mode? app)
-              :on-change (fn [^js e]
-                           (dispatch! {:type :appearance/set
-                                       :key :viewer-mode?
-                                       :value (boolean (.. e -target -checked))}))}))
-           (appearance-row
             "Super collapsed"
-            "Fold collapsed groups into one summary row (needs viewer mode)"
+            "Fold a run of collapsed tool and thinking rows into one summary row"
             (switch/switch-toggle
              {:checked (:super-collapsed? app)
-              :disabled (not (:viewer-mode? app))
               :on-change (fn [^js e]
                            (dispatch! {:type :appearance/set
                                        :key :super-collapsed?

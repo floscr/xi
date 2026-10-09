@@ -2,20 +2,23 @@
   (:require [cljs.test :refer [deftest is testing]]
             [xi.web.appearance :as appearance]))
 
-(deftest defaults-are-viewer-mode-collapsed
-  (testing "no overrides → viewer mode on, tool + thinking blocks collapsed"
+(deftest defaults-are-super-collapsed
+  (testing "no overrides → super collapsed on, tool + thinking blocks collapsed"
     (let [app (appearance/effective nil)]
-      (is (true? (:viewer-mode? app)))
-      (is (false? (:super-collapsed? app)) "super collapsed is opt-in")
+      (is (true? (:super-collapsed? app)))
       (is (= :collapsed (:tool-blocks app)))
       (is (= :collapsed (:thinking-blocks app)))))
+  (testing "the retired viewer-mode toggle is gone: viewer mode is always on"
+    (is (not (contains? (appearance/effective nil) :viewer-mode?)))
+    (is (= {} (appearance/normalize {:viewer-mode? false}))
+        "a stored override from before the toggle was removed is dropped"))
   (testing "every default key is present"
     (is (= (set (keys appearance/defaults))
            (set (keys (appearance/effective {})))))))
 
 (deftest overrides-win
-  (let [app (appearance/effective {:viewer-mode? false :tool-blocks :open})]
-    (is (false? (:viewer-mode? app)))
+  (let [app (appearance/effective {:super-collapsed? false :tool-blocks :open})]
+    (is (false? (:super-collapsed? app)))
     (is (= :open (:tool-blocks app)))
     (is (= :collapsed (:thinking-blocks app)) "untouched keys keep their default")))
 
@@ -28,7 +31,7 @@
     (testing "invalid configured values are dropped"
       (is (= :collapsed (:tool-blocks (appearance/effective {:tool-blocks :sideways} nil)))))
     (testing "effective-in reads both layers from state"
-      (is (= {:viewer-mode? true :super-collapsed? false
+      (is (= {:super-collapsed? true
               :tool-blocks :collapsed :thinking-blocks :open}
              (appearance/effective-in {:web/appearance-config configured
                                        :web/appearance {:tool-blocks :collapsed}}))))))
@@ -38,7 +41,7 @@
     (is (= {:tool-blocks :open}
            (appearance/normalize {:tool-blocks :open
                                   :thinking-blocks :sideways
-                                  :viewer-mode? "yes"
+                                  :super-collapsed? "yes"
                                   :bogus 1}))))
   (testing "non-map input is treated as empty"
     (is (= {} (appearance/normalize nil)))
@@ -62,4 +65,4 @@
   (is (false? (appearance/overridden? nil)))
   (is (false? (appearance/overridden? {})))
   (is (false? (appearance/overridden? {:bogus 1})) "garbage-only overrides count as none")
-  (is (true? (appearance/overridden? {:viewer-mode? false}))))
+  (is (true? (appearance/overridden? {:super-collapsed? false}))))

@@ -211,14 +211,13 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
   [view]
   (case view
     "chat" (chat-state)
-    "chat-viewer" (assoc (chat-state) :web/appearance {:viewer-mode? true
+    "chat-viewer" (assoc (chat-state) :web/appearance {:super-collapsed? false
                                                        :tool-blocks :collapsed
                                                        :thinking-blocks :collapsed})
-    "chat-super" (assoc (chat-state) :web/appearance {:viewer-mode? true
-                                                       :super-collapsed? true
+    "chat-super" (assoc (chat-state) :web/appearance {:super-collapsed? true
                                                        :tool-blocks :collapsed
                                                        :thinking-blocks :collapsed})
-    "chat-open" (assoc (chat-state) :web/appearance {:viewer-mode? false
+    "chat-open" (assoc (chat-state) :web/appearance {:super-collapsed? false
                                                      :tool-blocks :open
                                                      :thinking-blocks :open})
     (sessions-state)))

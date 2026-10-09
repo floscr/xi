@@ -124,7 +124,7 @@
   "Known keys → {:valid? (fn [value] → bool)}."
   {;; \"auto\" | \"light\" | \"dark\"
    :theme            {:valid? #{"auto" "light" "dark"}}
-   ;; xi.web.appearance overrides: {:viewer-mode? bool :tool-blocks :open …}
+   ;; xi.web.appearance overrides: {:super-collapsed? bool :tool-blocks :open …}
    :appearance       {:valid? (fn [v]
                                 (and (map? v)
                                      (<= (count v) 16)
